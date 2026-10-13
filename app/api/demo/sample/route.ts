@@ -1,3 +1,4 @@
+import { sampleViewOnly } from "@/lib/workbench/team-boards";
 import { crossOriginProblem } from "@/lib/requestOrigin";
 import { requireSession, requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
@@ -44,7 +45,8 @@ export const POST = withTenant(async function POST(req: Request) {
     if (body?.action === "undo") return Response.json({ undone: await hideSampleMark(auth.user) }, { headers: noStore });
     if (body?.action === "open") {
       const opened = await openSampleDraft(auth.user.id);
-      return Response.json(opened, { headers: noStore });
+      /* Read-only for every viewer: the copy opens with the view-only treatment (the same a shared board gets), and a save of it is refused. */
+      return Response.json({ ...opened, viewOnly: await sampleViewOnly(requireTenant()) }, { headers: noStore });
     }
     return Response.json({ error: "Choose mark, undo or open." }, { status: 400, headers: noStore });
   } catch (error) {

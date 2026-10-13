@@ -88,6 +88,7 @@ test("a shot moved to another project takes its Rig wires along; a wire to the o
     "@/lib/archive": await import("../../lib/archive"),
     "@/lib/mediaMutation": await import("../../lib/mediaMutation"),
     "@/lib/draftProject": await import("../../lib/draftProject"),
+    "@/lib/demo/readonly.server": await import("../../lib/demo/readonly.server"),
     "@/lib/shots": await import("../../lib/shots"),
     "@/lib/workAccess": await import("../../lib/workAccess"),
     "@/lib/cache": cache,

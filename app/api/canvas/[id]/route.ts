@@ -1,3 +1,4 @@
+import { sampleRowRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -13,6 +14,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   if (got.response) return got.response;
   const { id: itemId } = await ctx.params;
   await ready();
+  { const refused = await sampleRowRefusal("canvas_items", itemId); if (refused) return refused; }
   const body = await req.json().catch(() => ({}));
 
   const sets: string[] = [];
@@ -37,6 +39,7 @@ export const DELETE = withTenant(async function DELETE(_req: Request, ctx: { par
   if (got.response) return got.response;
   const { id: itemId } = await ctx.params;
   await ready();
+  { const refused = await sampleRowRefusal("canvas_items", itemId); if (refused) return refused; }
   await archiveAndDelete(db(), "canvas_items", `id = ?`, [itemId]);
   return NextResponse.json({ ok: true });
 });

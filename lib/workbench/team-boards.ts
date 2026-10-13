@@ -12,7 +12,7 @@
  * The platform owner reads as "Particl support" with an opaque id outside the house (lib/platformOwnerPrivacy.ts), as on the Team page.
  */
 import { db } from "@/lib/db";
-import { DRAFT_PROJECT_PREFIX, mappedId, TEAM_SHARED_SQL } from "@/lib/draftProject";
+import { DRAFT_PROJECT_PREFIX, mappedId, sampleMarkNow, TEAM_SHARED_SQL } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
@@ -120,4 +120,11 @@ export async function sharedBoardOfProduction(ws: Pick<TenantWorkspace, "id">, p
 /** The maker of the SHARED board whose own production project is `productionId`, as a teammate sees them. */
 export async function sharedBoardOwnerOf(ws: Pick<TenantWorkspace, "id">, productionId: string): Promise<BoardOwner | null> {
   return (await sharedBoardOfProduction(ws, productionId))?.owner ?? null;
+}
+
+/** The view-only owner the marked sample production names: the person who marked it, as a teammate sees them (the platform owner as "Particl support" outside the house); "Sample" when they are no longer an active member. */
+export async function sampleViewOnly(ws: Pick<TenantWorkspace, "id">): Promise<{ owner: BoardOwner }> {
+  const mark = await sampleMarkNow();
+  const owner = mark?.markedBy ? await ownerOf(ws, await activeMembers(ws), mark.markedBy) : null;
+  return { owner: owner ?? { id: "", name: "Sample" } };
 }

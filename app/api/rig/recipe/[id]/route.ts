@@ -1,3 +1,4 @@
+import { sampleWriteRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { recipeOf, createRecipe, DEFAULT_STAGES, type NewStage } from "@/lib/runs";
@@ -37,6 +38,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await params;
+  /* The marked sample takes no recipe, from anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleWriteRefusal(id); if (refused) return refused; }
   if (await recipeOf(id)) {
     return NextResponse.json({ error: "This project already has a recipe." }, { status: 409 });
   }
