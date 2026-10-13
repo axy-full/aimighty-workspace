@@ -412,3 +412,15 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
    - Yes to adding batch to publicLinkOrigin's stand-in.
    - Yes to adding 'admin' to ShellView in r1OldPagesLinks.
    - Deploy #3 (#675 + #668) is this afternoon, after the owner's backup. Prepare its PR once deploy #2 is live.
+
+## Owner decisions (Akshay, 13 Oct, after 09:50)
+
+- **Point 4 changed:** "admins CAN open any board in their own workspace (view, and edit if they choose), and can transfer a board's ownership when a member leaves — the work belongs to the workspace. Members still can't see each other's private boards. Never across workspaces."
+  - The lead's plan: deploy #2 ships as built, fail-closed (admins have no access to others' private boards). Admin access and ownership transfer follow in their own PR after deploy #2, with an Opus privacy review.
+  - The private-takes PR already lets admins see takes.
+  - #675's upload rule follows board reach for admins once that PR lands.
+- **New priority build after deploy #2** (before testers if possible, before the investor demo at latest):
+  - "Share with team" offers "Can view" or "Can edit".
+  - Can edit means teammates edit the same board together, live, on the existing Liveblocks setup, with no silent overwrites.
+  - Defaults: in Business workspaces new boards are shared · can edit; in Individual workspaces they are private.
+  - NEEDS AKSHAY, with an Opus privacy review. Plan it now, build after deploy #2. Any new screen element goes through Claude Design first.
