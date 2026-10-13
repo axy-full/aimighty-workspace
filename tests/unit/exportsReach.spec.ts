@@ -129,6 +129,13 @@ test("the media is asked about again when the job runs: a deleted take, a lost r
   await m.runExport(disabled.job.id, deps());
   expect((await m.getExport("u_mate", disabled.job.id, deps())).error).toContain("not available any more");
   expect(m.pool.calls).toEqual([]);
+  // Someone who is no longer among the workspace's people (removed, or never listed) reaches nothing, not even an open take.
+  const removed = await m.createExport(request("request-reach-0024", { take: "take_free" }), OWNER, deps());
+  await m.db().execute("DELETE FROM users WHERE id='u_owner'");
+  await m.runExport(removed.job.id, deps());
+  expect(await m.getExport("u_owner", removed.job.id, deps())).toMatchObject({ status: "failed", error: "A file in the export is not available any more. Nothing billed." });
+  expect(m.pool.calls).toEqual([]);
+  await m.db().execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('u_owner','u_owner@example.test','u_owner','x','member',0)", args: [] });
   // While reach holds, it runs.
   const fine = await m.createExport(request("request-reach-0023", { take: "take_free" }), OWNER, deps());
   await m.runExport(fine.job.id, deps());

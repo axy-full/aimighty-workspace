@@ -195,8 +195,9 @@ async function uploadRow(id: string, viewer: ExportViewer) {
  */
 export async function mediaStillReachable(ownerId: string, media: BoundMedia): Promise<boolean> {
   const person = (await db().execute({ sql: "SELECT role, disabled FROM users WHERE id=?", args: [ownerId] }).catch(() => ({ rows: [] as Record<string, unknown>[] }))).rows[0];
-  if (person && Number(person.disabled) === 1) return false;
-  const viewer: ExportViewer = { id: ownerId, ...(person?.role ? { role: String(person.role) } : {}) };
+  // Someone missing from this workspace's people (removed, or never mirrored) reaches nothing, and so does a disabled one.
+  if (!person || Number(person.disabled) === 1) return false;
+  const viewer: ExportViewer = { id: ownerId, ...(person.role ? { role: String(person.role) } : {}) };
   if (media.origin === "take") {
     const row = (await db().execute({ sql: "SELECT status,project_id FROM generations WHERE id=? AND deleted=0 AND kind='video'", args: [media.id] })).rows[0];
     return Boolean(row && row.status === "succeeded" && (await mayReadTake(viewer, row.project_id == null ? null : String(row.project_id))));
