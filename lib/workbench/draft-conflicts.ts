@@ -63,6 +63,8 @@ export function conflictThing(project: Project, conflict: MergeConflict): string
   if (top && ONE[top] && record && SEGMENT.test(record)) {
     const item = valueAt(project, [top, record]);
     const title = isRow(item) ? [item.title, item.name, item.label].find((v): v is string => typeof v === "string" && v.trim() !== "") ?? "" : "";
+    /* A stage's own name is the thing that changed (and either window's new name would read oddly as a title). */
+    if (top === "boardStages" && conflict.path[2] === "label") return "a stage name";
     return title ? title.trim().slice(0, 60) : ONE[top];
   }
   return WORDS[top] ?? humanize(top ?? "the board");

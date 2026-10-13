@@ -77,6 +77,7 @@ test("what the bar says it is about: the card's title, else the field in plain w
   expect(conflictThing(p, c("nodes", "[id=n1]", "title"))).toBe("Shot 3");
   expect(conflictThing(p, c("nodes", "[id=zz]", "title"))).toBe("a card");
   expect(conflictThing(p, c("name"))).toBe("the board's name");
+  expect(conflictThing({ ...p, boardStages: [{ id: "cut", label: "Edit" }] }, c("boardStages", "[id=cut]", "label"))).toBe("a stage name");
   expect(conflictThing(p, c("boardKind"))).toBe("board kind");
   expect(conflictThings(p, [c("nodes", "[id=n1]", "title"), c("nodes", "[id=n1]", "text"), c("brief")])).toEqual(["Shot 3", "the brief"]);
   expect(conflictThings(p, ["a", "b", "c", "d", "e"].map((k) => c(k)))).toEqual(["a", "b", "c", "2 more"]);
