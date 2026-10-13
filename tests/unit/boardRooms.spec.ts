@@ -278,12 +278,21 @@ test("a member switched off or removed closes every Can edit room; re-enabling, 
   await f.as(owner, () => f.post({ action: "team-share", projectId: "d3", mode: "view" }));
   expect(await generations()).toEqual({ d1: 0, d2: 0, d3: 0, d4: 0 });
   const deletes: string[] = [];
+  const pending: (() => Promise<void>)[] = [];
+  let inFlight = 0, mostAtOnce = 0;
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
-    if ((init?.method ?? (input instanceof Request ? input.method : "GET")) === "DELETE" && url.includes("/rooms/")) { deletes.push(decodeURIComponent(url.split("/rooms/")[1])); return new Response(null, { status: 204 }); }
+    if ((init?.method ?? (input instanceof Request ? input.method : "GET")) === "DELETE" && url.includes("/rooms/")) {
+      inFlight++; mostAtOnce = Math.max(mostAtOnce, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      inFlight--;
+      deletes.push(decodeURIComponent(url.split("/rooms/")[1]));
+      return new Response(null, { status: 204 });
+    }
     throw new Error(`unexpected network call ${url}`);
   }) as typeof fetch;
+  const afterResponse = async () => { while (pending.length) await pending.shift()!(); };
   try {
     const admin = { ...who("u_owner", "admin"), owner: true };
     const root = process.cwd();
@@ -291,7 +300,8 @@ test("a member switched off or removed closes every Can edit room; re-enabling, 
     const real = createRequire(path.resolve(file));
     const fakes: Record<string, unknown> = {
       "@/lib/auth": { withTenant: (h: unknown) => h, requireAdmin: async () => ({ user: admin }), isPlatformOwner: async () => false },
-      "next/server": real("next/server"),
+      /* `after` runs what the route hands it once the response has gone: here, when the test says so. */
+      "next/server": { ...real("next/server"), after: (work: unknown) => { pending.push(typeof work === "function" ? (work as () => Promise<void>) : async () => { await work; }); } },
     };
     const compiled = ts.transpileModule(readFileSync(path.resolve(file), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
     const mod = { exports: {} as { PATCH: (r: Request, c: unknown) => Promise<Response>; DELETE: (r: Request, c: unknown) => Promise<Response> } };
@@ -301,8 +311,13 @@ test("a member switched off or removed closes every Can edit room; re-enabling, 
     // Switched off: d1 and d2 move on, d3 (view) and d4 (private) do not; each old room is deleted.
     const off = await patch({ disabled: true });
     expect(off.status, JSON.stringify(await off.clone().json())).toBe(200);
+    // The generations moved before the response went, so no old token is honoured; no room has been deleted yet: that is for after the response.
     expect(await generations()).toEqual({ d1: 1, d2: 1, d3: 0, d4: 0 });
+    expect(deletes).toEqual([]);
+    expect(pending.length).toBe(1);
+    await afterResponse();
     expect(deletes.length).toBe(2);
+    expect(mostAtOnce, "the old rooms are closed together, not one after another").toBe(2);
     // Switched back on, or only the role changed (a role change is the owner's call; the admin is the owner here): nothing moves.
     expect((await patch({ disabled: false })).status).toBe(200);
     expect(await generations()).toEqual({ d1: 1, d2: 1, d3: 0, d4: 0 });
@@ -311,6 +326,8 @@ test("a member switched off or removed closes every Can edit room; re-enabling, 
     const removed = await f.as(admin, () => mod.exports.DELETE(new Request("https://particl.test/api/team/u_mate", { method: "DELETE" }), ctx));
     expect(removed.status, JSON.stringify(await removed.clone().json())).toBe(200);
     expect(await generations()).toEqual({ d1: 2, d2: 2, d3: 0, d4: 0 });
+    expect(deletes.length).toBe(2);
+    await afterResponse();
     expect(deletes.length).toBe(4);
   } finally { globalThis.fetch = realFetch; }
 });

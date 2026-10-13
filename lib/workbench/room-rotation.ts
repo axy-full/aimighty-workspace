@@ -65,16 +65,21 @@ export async function rotateRoom(productionId: string, rooms: Pick<RoomClient, "
 
 /**
  * Every board shared with "Can edit" in this workspace changes room: a member who was switched off or removed may hold a token for any of them (as an
- * editor) or own some (their boards' Can edit lapses with them). Called after the membership change has committed.
+ * editor) or own some (their boards' Can edit lapses with them). Called after the membership change has committed. The generations move here, at once (so no
+ * old token is honoured from this moment); the rooms they replace are returned, to be closed afterwards with `closeRooms`, not inside the request.
  */
-export async function rotateEditRooms(rooms: Pick<RoomClient, "deleteRoom"> | null = liveRooms(), pausesMs?: number[]): Promise<number> {
+export async function bumpEditRooms(): Promise<string[]> {
   const workspaceId = requireTenant().id;
   const boards = (await db().execute({ sql: `SELECT owner, project_id FROM workbench_projects WHERE ${TEAM_EDIT_SQL}`, args: [] })).rows;
-  let rotated = 0;
+  const closed: string[] = [];
   for (const board of boards) {
     const production = mappedId(DRAFT_PROJECT_PREFIX, workspaceId, String(board.owner), String(board.project_id));
-    await rotateRoom(production, rooms, pausesMs);
-    rotated += 1;
+    closed.push((await bumpRoomGeneration(db(), workspaceId, production)).from);
   }
-  return rotated;
+  return closed;
+}
+
+/** Close several old rooms at once (each with its own retries); never throws. */
+export async function closeRooms(rooms: readonly string[], client: Pick<RoomClient, "deleteRoom"> | null = liveRooms(), pausesMs?: number[]): Promise<boolean[]> {
+  return Promise.all(rooms.map((room) => closeRoom(room, client, pausesMs)));
 }
