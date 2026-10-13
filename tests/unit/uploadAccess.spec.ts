@@ -511,7 +511,9 @@ test("moving a record is asked like an addition: B cannot move Y's private take 
     who = { id: "u_mate", role: "member" };
     for (const to of ["", "prod_target"]) {
       const res = await patch(jobs, `gen_mv_take_${run}`, { projectId: to });
-      expect(res.status, `take to "${to}"`).toBe(404);
+      /* Someone else's private take answers as a take that is not there does (#685: reach first, before the move is judged): the same status, and the move below proves nothing moved. */
+      const unknown = await patch(jobs, `gen_unknown_${run}`, { projectId: to });
+      expect(res.status, `take to "${to}"`).toBe(unknown.status);
     }
     const moved = await patch(shots, `shot_mv_${run}`, { projectId: "prod_target" });
     expect(moved.status).toBe(404);
