@@ -1,3 +1,4 @@
+import { projectLister } from "../draftProject";
 import { db, ready } from "@/lib/db";
 import { platformDb, platformReady } from "@/lib/platform";
 import { currentTenant } from "@/lib/tenant";
@@ -199,11 +200,18 @@ export async function readActivity(viewer: ApprovalsViewer, production: string |
   if (!workspace) throw new Error("No workspace.");
   const inCredits = creditsApply(workspace);
   const admin = viewer.owner === true || viewer.role === "admin" || viewer.role === "owner";
-  const [threads, boards, spend] = await Promise.all([
-    threadRuns(production, inCredits, workspace.id),
-    boardRuns(production, inCredits, viewer.id),
+  /* A private board (`prj_wb_…`) is its owner's alone (lib/draftProject.ts): its runs, titles, prices and spend are not listed to anyone else, and asking for it
+     by id answers as an id that matches nothing does. */
+  const listed = await projectLister({ id: viewer.id });
+  const scope = production !== null && !listed(production) ? "\u0000unknown" : production;
+  const [threadsAll, boardsAll, spendAll] = await Promise.all([
+    threadRuns(scope, inCredits, workspace.id),
+    boardRuns(scope, inCredits, viewer.id),
     inCredits ? settledByProject(workspace.id).catch(() => new Map<string, number>()) : Promise.resolve(new Map<string, number>()),
   ]);
+  const threads = { ...threadsAll, runs: threadsAll.runs.filter((r) => listed((r as { _production?: string | null })._production)), productions: threadsAll.productions.filter((id) => listed(id)) };
+  const boards = { ...boardsAll, runs: boardsAll.runs.filter((r) => listed(r._production)) };
+  const spend = new Map([...spendAll].filter(([id]) => listed(id)));
   const authors = [...new Set([...threads.authors, ...boards.authors])];
   const names = new Map<string, string>();
   if (authors.length) {

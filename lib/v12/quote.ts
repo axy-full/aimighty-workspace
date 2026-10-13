@@ -87,11 +87,17 @@ export function quoteRequest(source: QuoteSource): { url: string; init: RequestI
     ({ url, init: { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } });
   switch (source.route) {
     case "generate": return post("/api/generate/quote", source.body);
-    case "audio": return post("/api/audio", { ...source.body, quoteOnly: true });
+    case "audio": return audioRequest(source);
     case "atomik": return post("/api/atomik", { ...source.body, quoteOnly: true });
     case "board-start": return { url: "/api/workbench/team-canvas?agent=1&board=new", init: { cache: "no-store" } };
     case "engine": return engineRequest(source);
   }
+}
+
+/** An audio source (a quote-only read of a speech, sound or music take), as its request: the one route the Voice stage asks, so it takes this and not `quoteRequest`. */
+export type AudioQuoteSource = Extract<QuoteSource, { route: "audio" }>;
+export function audioRequest(source: AudioQuoteSource): { url: string; init: RequestInit } {
+  return { url: "/api/audio", init: { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...source.body, quoteOnly: true }) } };
 }
 
 /** An engine source (one engine at given settings), as its read: the only route the Formats cards ask, so they take this and not `quoteRequest`. */

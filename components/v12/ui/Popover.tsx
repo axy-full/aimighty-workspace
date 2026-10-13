@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { useOverlay, useV12PortalRoot } from "./overlay";
 import type { OverlayLayer } from "./overlay-stack";
 import { place, placeStart, type Side } from "./place";
+import { Tooltip } from "./Tooltip";
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -110,6 +111,8 @@ export type MenuItem =
       submenu?: readonly MenuItem[];
       /** Why the item is disabled, on hover. */
       title?: string;
+      /** One line for the eye, as the new interface's tooltip (not a native title): open while the pointer is on the item or it has keyboard focus, with no delay to wait for. */
+      tip?: string;
     }
   | { separator: true; id: string };
 
@@ -164,7 +167,8 @@ export function Menu({ open, onClose, anchor, label, items, side = "bottom", ali
     <Popover open={open} onClose={onClose} anchor={anchor} label={label} role="menu" side={side} align={align} width={width} onKeyDown={onKeyDown} className="v12-menu" testId={testId} layer={layer} focusPanel={focusPanel}>
       {head}
       {items.map((item) => "separator" in item ? <div key={item.id} role="separator" className="v12-menu-sep" /> : (
-        <button key={item.id} type="button" role="menuitem" className="v12-menu-item" data-tone={item.tone} data-testid={item.testId} aria-disabled={item.disabled || undefined}
+        <MenuTip key={item.id} tip={item.tip}>
+        <button type="button" role="menuitem" className="v12-menu-item" data-tone={item.tone} data-testid={item.testId} aria-disabled={item.disabled || undefined}
           aria-haspopup={item.submenu ? "menu" : undefined} aria-expanded={item.submenu ? sub === item.id : undefined} data-sub={item.submenu ? item.id : undefined}
           title={item.title} data-item={item.id} tabIndex={-1}
           onClick={(e) => {
@@ -176,12 +180,29 @@ export function Menu({ open, onClose, anchor, label, items, side = "bottom", ali
           {item.hint ? <span className="v12-menu-hint">{item.hint}</span> : null}
           {item.shortcut ? <kbd className="v12-menu-key" aria-label={`Shortcut ${item.shortcut}`}>{item.shortcut}</kbd> : null}
         </button>
+        </MenuTip>
       ))}
       {subItems ? (
         <SubMenu anchor={subAnchor} label={subItem && !("separator" in subItem) ? subItem.label : label} items={subItems} width={width}
           onBack={() => { setSub(null); subAnchor.current?.focus(); }} onDone={() => { setSub(null); onClose(); }} layer={layer} />
       ) : null}
     </Popover>
+  );
+}
+
+/**
+ * An item's one-line tooltip (the new interface's, components/v12/ui/Tooltip.tsx): open while the pointer is on the item or it has keyboard focus
+ * (rule 15), shut on leave, blur or Esc. It is driven by those states directly (`pinned`), with no hover delay to wait out. An item with no `tip` is untouched.
+ */
+function MenuTip({ tip, children }: { tip?: string; children: React.ReactElement<{ "aria-describedby"?: string }> }) {
+  const [shown, setShown] = useState(false);
+  if (!tip) return children;
+  return (
+    <span style={{ display: "contents" }}
+      onPointerEnter={(e) => { if (e.pointerType === "mouse") setShown(true); }} onPointerLeave={() => setShown(false)}
+      onFocus={(e) => { if ((e.target as Element).matches?.(":focus-visible")) setShown(true); }} onBlur={() => setShown(false)}>
+      <Tooltip name={tip} side="right" delay={0} pinned={shown}>{children}</Tooltip>
+    </span>
   );
 }
 

@@ -214,9 +214,9 @@ async function creditsProblem(admission: PreparedAdmission): Promise<string | nu
 }
 
 /** What a reservation needs to count a render toward this run: refused when the run was stopped or switched off meanwhile. */
-function runSpend(run: RunRow, band: number, ctx: Pick<PaidContext, "enabled" | "offReason">): RunSpend {
+function runSpend(run: RunRow, band: number, ctx: Pick<PaidContext, "enabled" | "offReason">, auto = false): RunSpend {
   return {
-    id: run.id, limitCredits: run.capCredits ?? 0, band,
+    id: run.id, limitCredits: run.capCredits ?? 0, band, ...(auto ? { auto: true } : {}),
     live: async () => {
       if (!ctx.enabled()) return ctx.offReason;
       const fresh = await getRun(db(), run.id);
@@ -506,7 +506,7 @@ async function send(run: RunRow, step: StepRow, ctx: PaidContext, deps: PaidDeps
   let reply: AdmissionReply;
   try {
     reply = await (deps.asOwner ?? defaultAsOwner)(run.owner, (actor) =>
-      (deps.admit ?? defaultAdmit)(admission, actor, { requestKey: key, defer: deps.defer ?? defaultDefer, run: runSpend(run, band, ctx) }));
+      (deps.admit ?? defaultAdmit)(admission, actor, { requestKey: key, defer: deps.defer ?? defaultDefer, run: runSpend(run, band, ctx, step.approvedBy === "auto") }));
   } catch {
     /* Ambiguous: it may have been accepted. The key stays; the next tick asks what became of it. */
     return wakeIn(run, PENDING_CHECK_MS, { state: "running", more: false });

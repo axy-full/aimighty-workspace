@@ -135,7 +135,7 @@ test.describe("Plan & credits, as the code has it", () => {
     const plans = DEFAULT_PLANS;
     expect(planView(plans, null)).toEqual({ meta: "No plan on record", included: null, renews: null, status: null });
     const v = planView(plans, { planId: "studio", status: "active", currentPeriodEnd: Date.UTC(2026, 10, 1) / 1000 });
-    expect(v).toEqual({ meta: "Studio · $49 a month", included: 400, renews: { word: "Renews", date: "1 Nov 2026" }, status: null });
+    expect(v).toEqual({ meta: "Studio", included: 400, renews: { word: "Renews", date: "1 Nov 2026" }, status: null });
     expect(planView(plans, { planId: "invite", status: "past_due" }).included).toBeNull();
     expect(planView(plans, { planId: "invite", status: "past_due" }).status).toBe("past due");
   });
@@ -154,7 +154,7 @@ test.describe("the spending rules, read-only (DECISIONS 1, 10)", () => {
   test("each line says what the code does", () => {
     const l = spendingLines(base, creditsText);
     expect(l.ruleLine).toBe("Members up to 50 cr a shot; an admin above it.");
-    expect(l.platformLineText).toBe("Any job over 200 cr needs a person’s approval, even under Auto.");
+    expect(l.platformLineText).toBe("Any job over 200 cr needs an admin’s tap, even under Auto.");
     expect(l.modeLine).toBe("Every paid step waits for a person.");
     expect(l.autoLine).toBe("Auto is picked per Board run, for drafts at or under 200 cr.");
     expect(l.budgetLine).toBe("Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it");

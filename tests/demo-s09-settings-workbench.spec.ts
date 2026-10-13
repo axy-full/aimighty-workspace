@@ -206,7 +206,9 @@ test("Plan & credits: the balance with its dollars, this month settled and held,
   await expect(credits).toContainText(/1 credit = \$\d/);
   await expect(credits).toContainText(/[\d,]+ cr · \$[\d,]+\.\d\d/);
   await expect(page.getByTestId("settings-month")).toContainText("163 cr settled · 20 cr held");
-  await expect(page.getByTestId("settings-plan")).toContainText("Studio · $49 a month");
+  /* The plan reads by its name alone (a retired plan's old price is never shown: the plans below carry the owner's prices). */
+  await expect(page.getByTestId("settings-plan")).toContainText("Studio");
+  await expect(page.getByTestId("settings-plan")).not.toContainText("$49");
   await expect(page.getByTestId("settings-plan-included")).toContainText("400 cr");
   await expect(page.getByTestId("settings-plan-renews")).toContainText("Renews");
   await expect(page.getByTestId("settings-change-plan")).toHaveAttribute("href", "/billing");
@@ -274,7 +276,7 @@ test("Spending rules: the rule, the platform line and Ask, read as the code has 
   await expect(page.getByTestId("settings-approve")).toContainText("people only · Atomik never approves");
   await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot; an admin above it.");
   await expect(page.getByTestId("settings-rule").locator(".gs-row-v")).toHaveText("50 cr");
-  await expect(page.getByTestId("settings-platform-line")).toContainText("Any job over 200 cr needs a person’s approval, even under Auto.");
+  await expect(page.getByTestId("settings-platform-line")).toContainText("Any job over 200 cr needs an admin’s tap, even under Auto.");
   await expect(page.getByTestId("settings-budget")).toContainText("Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it");
   /* Spend without asking is Ask, read-only: no Auto switch, no invented pause. */
   await expect(page.getByTestId("settings-auto")).toContainText("Every paid step waits for a person.");

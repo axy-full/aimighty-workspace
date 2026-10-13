@@ -70,6 +70,8 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
   const modules = {
     "next/server": nextServer,
     "@/lib/db": await import("../../lib/db"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
+    "@/lib/security/people-only": await import("../../lib/security/people-only"),
     "@/lib/jobs": { syncActive: async () => {} },
     "@/lib/models": await import("../../lib/models"),
     "@/lib/enhance": { hasFreeTier: () => false, gatewayCredits: async () => null },
@@ -139,6 +141,8 @@ async function writerRoutes(ws: TenantWorkspace, text: string) {
     "@/lib/db": await import("../../lib/db"),
     "@/lib/atomikDocs": { ...atomikDocs, getTreatment: async () => treatment },
     "@/lib/cast": { listCast: async () => [] },
+    "@/lib/draftProject": await import("../../lib/draftProject"),
+    "@/lib/security/people-only": await import("../../lib/security/people-only"),
     "@/lib/atomik": { requestEffort: () => undefined, resolveModel: async () => "test/text" },
     "@/lib/gateway": { gatewayReachable: () => true },
     "@/lib/language-provider": { languageReachable: () => true },

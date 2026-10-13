@@ -25,7 +25,7 @@ async function route(file: string, dependencies: Record<string, unknown>): Promi
     "@/lib/requestOrigin": requestOrigin,
     "@/lib/auth": {
       withTenant: (handler: Handler) => handler,
-      requireUser: async () => ({ user: { id: "owner", name: "Owner" } }),
+      requireUser: async () => ({ user: { id: "owner", name: "Owner", role: "admin" } }),
     },
     ...dependencies,
   };
@@ -53,6 +53,7 @@ test("a project refused by the plan's production ceiling leaves no empty product
   const invite = planById(DEFAULT_PLANS, "invite")!;
   const projects = await route("app/api/projects/route.ts", {
     "@/lib/productions": await import("../../lib/productions"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/db": await import("../../lib/db"),
     "@/lib/cache": await import("../../lib/cache"),
     "@/lib/creditReceipts": await import("../../lib/creditReceipts"),
@@ -86,7 +87,9 @@ test("a shot moved to another project takes its Rig wires along; a wire to the o
     "@/lib/db": await import("../../lib/db"),
     "@/lib/archive": await import("../../lib/archive"),
     "@/lib/mediaMutation": await import("../../lib/mediaMutation"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/shots": await import("../../lib/shots"),
+    "@/lib/workAccess": await import("../../lib/workAccess"),
     "@/lib/cache": cache,
   });
   await runInTenant(workspace("shot-move"), async () => {

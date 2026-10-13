@@ -61,7 +61,7 @@ test("an admin edits the budget per production and the per-shot cap; a field sav
   await expect(panel).toContainText("Admins only. A field saves when you leave it or press Enter.");
   await expect(page.getByTestId("settings-line-field")).toBeDisabled();
   await expect(page.getByTestId("settings-line-field")).toHaveValue("200");
-  await expect(panel).toContainText("Any job over 200 cr needs a person’s approval, even under Auto. Fixed.");
+  await expect(panel).toContainText("Any job over 200 cr needs an admin’s tap, even under Auto. Fixed.");
   await expect(page.getByTestId("settings-budget-undo")).toBeDisabled();
 
   /* A figure still being typed is never saved: "4" on the way to "400" stays unsaved however long it waits. */

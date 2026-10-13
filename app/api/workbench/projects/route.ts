@@ -1,3 +1,4 @@
+import { isDraftProject, isMarkedSample, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
 import { crossOriginProblem } from '@/lib/requestOrigin';
 import { gzipSync } from 'node:zlib';
 import {readProjectBody} from '@/lib/workbench/request-body';
@@ -11,6 +12,7 @@ import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
+import { sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -36,11 +38,25 @@ export const GET=withTenant(async(req:Request)=>{
      Ads draft carries a marketing brief; an empty one is not one). Only when asked: it parses each listed draft. */
   const kinds=new URL(req.url).searchParams.get('kinds')==='1';
   const KIND="CASE WHEN json_valid(body) THEN COALESCE(NULLIF(json_extract(body,'$.boardKind'),''),CASE WHEN NULLIF(json_extract(body,'$.marketingBrief'),'') IS NOT NULL OR NULLIF(json_extract(body,'$.moleculr'),'') IS NOT NULL THEN 'ads' END) END AS kind";
+  /* ?id=&owner=: a teammate's board, to look at (view-only: nothing here writes to it). ?team=1: every member's boards, the caller's marked. */
+  const ownerParam=new URL(req.url).searchParams.get('owner');
+  if(id&&ownerParam&&ownerParam!==auth.user.id){
+    const seen=await readTeamBoard(requireTenant(),auth.user.id,ownerParam,id);
+    if(!seen)return Response.json({error:'Not found'},{status:404,headers:noStore});
+    return projectResponse(req,{projects:[],productions:[],project:seen.project,revision:seen.revision,shared:null,viewOnly:{owner:seen.owner}});
+  }
+  const team=new URL(req.url).searchParams.get('team')==='1'?await listTeamBoards(requireTenant(),auth.user.id,{kinds}):null;
   const [list,productions,draft]=await Promise.all([
     db().execute({sql:`SELECT project_id AS id,name,revision,updated_at AS updatedAt${kinds?`,${KIND}`:''} FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100`,args:[auth.user.id]}),
     db().execute('SELECT id,name FROM projects ORDER BY created_at DESC LIMIT 100'),
     id?readDraft(auth.user.id,id):null,
   ]);
+  /* Asked for by id alone and not this person's own: a teammate's board (a board link), to look at. */
+  const listed=await projectLister(auth.user);
+  if(id&&!draft){
+    const seen=await findTeamBoard(requireTenant(),auth.user.id,id);
+    if(seen)return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:seen.project,revision:seen.revision,shared:null,viewOnly:{owner:seen.owner},...(team?{team}:{})});
+  }
   let shared=null;
   if(draft?.project.productionProjectId){
     const row=(await db().execute({sql:'SELECT body,version,owner FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[draft.project.productionProjectId]})).rows[0];
@@ -51,8 +67,18 @@ export const GET=withTenant(async(req:Request)=>{
       shared={...body,version:Number(row.version)};
     }
   }
-  return projectResponse(req,{projects:list.rows,productions:productions.rows,project:draft?.project||null,revision:draft?.revision||0,shared});
+  /* ?reach=<production>: may this person open it, and if it is a teammate's shared board, which draft opens it view-only (a link to a take asks, lib/shell/use-asset-link.ts). A private board answers as an unknown production does. */
+  const reachParam=new URL(req.url).searchParams.get('reach');
+  const reach=reachParam?await reachOf(auth.user,reachParam):null;
+  return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:draft?.project||null,revision:draft?.revision||0,shared,...(team?{team}:{}),...(reach?{reach}:{})});
 });
+
+/** Whether `user` may open the production `id`, and the shared draft that opens it: an ordinary production, their own board, the marked sample or a shared board are reachable; any other private board is not. */
+async function reachOf(user:{id:string;role?:string},id:string):Promise<{reachable:boolean;shared:{id:string;owner:{id:string;name:string;support?:true}}|null}>{
+  if(!isDraftProject(id)||await ownsDraftProject(user.id,id)||await isMarkedSample(id))return{reachable:true,shared:null};
+  const shared=await sharedBoardOfProduction(requireTenant(),id);
+  return shared?{reachable:true,shared:{id:shared.draftId,owner:shared.owner}}:{reachable:false,shared:null};
+}
 
 /** A feature film's project (and its shared copy) can pass Vercel's 4.5 MB response limit, so a large answer leaves gzipped; browsers unpack it. */
 function projectResponse(req:Request,value:unknown){
@@ -72,6 +98,9 @@ export const PUT=withTenant(async(req:Request)=>{
   if(!parsed.success)return Response.json({error:saveProblem(parsed.error)},{status:400});
   await workbenchReady();
   const {project:p,revision,write}=parsed.data;
+  /* A teammate's board opens view-only: a save of it is refused here, never kept as a second copy under this person's name. */
+  const theirs=await otherOwnersBoard(requireTenant(),auth.user.id,p.id);
+  if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
   try{return Response.json(await saveDraft(auth.user.id,p,revision,write));}
   catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
 });
@@ -96,11 +125,14 @@ export const POST=withTenant(async(req:Request)=>{
   await workbenchReady();
   if(body.action==='open'){
     const row=(await db().execute({sql:'SELECT id,name,description FROM projects WHERE id=?',args:[body.projectId]})).rows[0];
-    if(!row)return Response.json({error:'Project not found'},{status:404});
+    /* A private board is its owner's alone: to anyone else it is as absent as an unknown id (lib/draftProject.ts). */
+    if(!row||!(await mayReachProject(auth.user,body.projectId,'read')))return Response.json({error:'Project not found'},{status:404});
+    /* A teammate's SHARED board is theirs to look at, not to save: it opens view-only (no draft of their own is made or saved against it), as a board link does. */
+    const viewOnly=(await mayReachProject(auth.user,body.projectId,'write'))?null:(await sharedBoardOwnerOf(requireTenant(),body.projectId))??{id:'',name:'A teammate'};
     const latest=(await db().execute({sql:'SELECT body,version FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[body.projectId]})).rows[0];
     const shared=latest?JSON.parse(String(latest.body)):null;
     const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,scriptFormat:shared.scriptFormat==='adfilm'?'adfilm':'screenplay',scriptSource:shared.scriptSource,scriptReviews:shared.scriptReviews,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};
-    return projectResponse(req,{project:p,revision:0});
+    return projectResponse(req,{project:p,revision:0,...(viewOnly?{viewOnly:{owner:viewOnly}}:{})});
   }
   if(body.action==='check-write'){
     /* A save whose reply was lost: did it land (and at which revision)? Checking fences it off, so the answer is final; the draft comes back as it is now. */
@@ -111,7 +143,21 @@ export const POST=withTenant(async(req:Request)=>{
     return projectResponse(req,{landed,project:now?.project??null,revision:now?.revision??0});
   }
   const draft=await readDraft(auth.user.id,body.projectId);
-  if(!draft)return Response.json({error:'Save your project first.'},{status:404});
+  if(!draft){
+    const theirs=await otherOwnersBoard(requireTenant(),auth.user.id,body.projectId);
+    if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
+    return Response.json({error:'Save your project first.'},{status:404});
+  }
+  if(body.action==='team-share'){
+    /* The author shares a board with the workspace's team, or stops (lib/workbench/team-boards.ts): one flag in the draft's own JSON, so nothing
+       else about it changes. Only the author's own draft is found here; a teammate's gets the same "not saved" answer as every other write. */
+    if(typeof body.shared!=='boolean')return Response.json({error:'Say whether to share this board.'},{status:400});
+    if(body.shared===(draft.project.teamShared===true))return Response.json({ok:true,shared:body.shared,revision:draft.revision});
+    try{
+      const saved=await saveDraft(auth.user.id,{...draft.project,teamShared:body.shared},draft.revision);
+      return Response.json({ok:true,shared:body.shared,revision:saved.revision});
+    }catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
+  }
   if(body.action==='map-shot'){
     try{return Response.json({productionProjectId:draft.project.productionProjectId,shotId:await mapNodeShot(auth.user.id,draft.project,String(body.nodeId||''))})}
     catch(e){return Response.json({error:e instanceof Error?e.message:'Cannot map this node'},{status:400})}

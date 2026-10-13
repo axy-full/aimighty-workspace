@@ -1,3 +1,4 @@
+import { mayReachProject } from "@/lib/draftProject";
 import { requireSession, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { db, ready } from "@/lib/db";
@@ -18,17 +19,19 @@ const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
  * someone outside the workspace. Making and withdrawing one is an owner's or admin's, as for every review link.
  * The secret is in the reply to the person who made it, once; it is stored only as a hash.
  */
-async function production(projectId: string | null): Promise<string | null> {
+async function production(projectId: string | null, person: { id: string }, access: "read" | "write"): Promise<string | null> {
   if (!projectId || !ID.test(projectId)) return null;
   await ready();
   const rs = await db().execute({ sql: `SELECT id FROM projects WHERE id = ? LIMIT 1`, args: [projectId] });
-  return rs.rows.length ? projectId : null;
+  /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): asked always, and refused as a production that is not saved is. */
+  const reach = await mayReachProject(person, projectId, access);
+  return rs.rows.length && reach ? projectId : null;
 }
 
 export const GET = withTenant(async (req: Request) => {
   const got = await requireSession();
   if (got.response) return got.response;
-  const projectId = await production(new URL(req.url).searchParams.get("projectId"));
+  const projectId = await production(new URL(req.url).searchParams.get("projectId"), got.user, "read");
   if (!projectId) return Response.json({ error: "Save the production first; a client link opens a saved production." }, { status: 404, headers });
   await reviewLinksReady();
   const all = await listShares(requireTenant().id, projectId);
@@ -49,7 +52,7 @@ export const POST = withTenant(async (req: Request) => {
   if (got.response) return got.response;
   if (got.user.role !== "admin") return Response.json({ error: "An owner or admin makes a client link." }, { status: 403, headers });
   const body = await req.json().catch(() => ({}));
-  const projectId = await production(typeof body?.projectId === "string" ? body.projectId : null);
+  const projectId = await production(typeof body?.projectId === "string" ? body.projectId : null, got.user, "write");
   if (!projectId) return Response.json({ error: "Save the production first; a client link opens a saved production." }, { status: 404, headers });
   const { share, token } = await mintReviewLink({ workspaceId: requireTenant().id, projectId, days: SHARE_DAYS, by: got.user.name, actorId: got.user.id });
   return Response.json({

@@ -77,7 +77,9 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
     "@/lib/serveType": {},
     "@/lib/recovery": { reserveRecoveryContinuation: async (_kind: string, handler: unknown) => handler },
     "@/lib/jobs": {},
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/shots": {},
+    "@/lib/workAccess": await import("../../lib/workAccess"),
     "@/lib/push": {},
     "@/lib/cache": { invalidate: () => {} },
     "@/lib/held": await import("../../lib/held"),
@@ -149,12 +151,21 @@ test("generation DELETE preserves active provider jobs and media referenced by p
     { runInTenant } = await import("../../lib/tenant"),
     { db } = await import("../../lib/db"),
     { workbenchReady } = await import("../../lib/workbench/records");
-  await runInTenant(workspace("generation-delete"), async () => {
+  const deleting = workspace("generation-delete");
+  await runInTenant(deleting, async () => {
     await workbenchReady();
+    /* The takes are on a board of the signed-in person's own (a draft of theirs and the project its id makes), so changing them is theirs to do
+       (lib/workAccess.ts); none has an author recorded, so a held one is still someone else's to discard. */
+    const { mappedId } = await import("../../lib/workbench/records");
+    const board = mappedId("prj_wb_", deleting.id, "owner", "draft-delete");
+    await db().batch([
+      { sql: "INSERT INTO projects(id,name,created_at) VALUES(?,'Board',0)", args: [board] },
+      { sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('owner:draft-delete','owner','draft-delete','Board',?,1,0)", args: [JSON.stringify({ id: "draft-delete", name: "Board", productionProjectId: board })] },
+    ]);
     for (const status of ["queued", "running", "held", "succeeded"])
       await db().execute({
-        sql: "INSERT INTO generations(id,model,prompt,params,status,stored_url,created_at,updated_at) VALUES(?,'fixture','','{}',?,'original',0,0)",
-        args: [status, status],
+        sql: "INSERT INTO generations(id,model,prompt,params,status,stored_url,created_at,updated_at,project_id) VALUES(?,'fixture','','{}',?,'original',0,0,?)",
+        args: [status, status, board],
       });
     // Active renders stay; a held take is someone else's to discard (it has no author here).
     for (const status of ["queued", "running", "held"])
@@ -334,7 +345,7 @@ test("generation DELETE hides the render and keeps its bytes, source and cost", 
   await runInTenant(workspace("route-storage-failure"), async () => {
     await workbenchReady();
     await db().execute(
-      "INSERT INTO generations(id,model,prompt,params,status,stored_url,source_url,bytes,cost_usd,created_at,updated_at) VALUES('take','fixture','','{}','succeeded','original-stored','original-source',7,2.5,0,1)",
+      "INSERT INTO generations(id,model,prompt,params,status,stored_url,source_url,bytes,cost_usd,created_at,updated_at,created_by) VALUES('take','fixture','','{}','succeeded','original-stored','original-source',7,2.5,0,1,'owner')",
     );
     const response = await route.remove("take");
     expect(response.status).toBe(200);

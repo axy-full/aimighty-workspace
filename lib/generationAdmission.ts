@@ -1,3 +1,4 @@
+import { mayReachProject } from "@/lib/draftProject";
 import { ENHANCE_MAX_PROMPT } from "./shell/enhancer";
 import { enhancementRan } from "./enhanceProof";
 import { isGenjutsuModel, GENJUTSU_LIMITS, GENJUTSU_RESOLUTIONS } from "@/lib/genjutsuTypes";
@@ -111,8 +112,10 @@ import {
   RENDER_RATIOS,
 } from "@/lib/identities";
 import { isBatchId } from "@/lib/variations";
+import { batchRefOf, batchTally } from "@/lib/batchLine";
 import { uploadSourceParams } from "@/lib/sourceClip";
-import { shotCapGate } from "@/lib/shotCap";
+import { jobLineGate, shotCapGate } from "@/lib/shotCap";
+import { isAgentId } from "@/lib/security/people-only";
 import { approvedTakeOf } from "@/lib/shots";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
@@ -435,7 +438,10 @@ export async function executeGenerationAdmission(
         sql: `SELECT id FROM projects WHERE id=?`,
         args: [String(body.projectId)],
       });
-      if (!project.rows.length)
+      /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): filing into either is refused as a missing project is,
+         before anything is quoted, held or reserved, so the answer says nothing about whether it exists. An Atomik run (no person) is not asked. */
+      const reach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "write");
+      if (!project.rows.length || !reach)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
     /* The sample workspace spends nothing, filed or not, save the one run its mark is lifted for: refused before anything is held or reserved. A quote (no request claim) still answers. */
@@ -445,7 +451,9 @@ export async function executeGenerationAdmission(
     }
     if (body.shotId) {
       const shot = await getShot(String(body.shotId));
-      if (!shot)
+      /* A shot of a board this person may not write is as absent as an unknown one; the question is asked either way. */
+      const shotReach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, shot?.projectId, "write");
+      if (!shot || !shotReach)
         return admissionReply({ error: "No such shot." }, { status: 404 });
       if (body.projectId && shot.projectId !== String(body.projectId))
         return admissionReply(
@@ -1401,6 +1409,13 @@ export async function executeGenerationAdmission(
           { status: 409 },
         );
       }
+      /* Guardrail 4: a job over the approval line needs an admin's own tap, whatever the rule or shot (lib/approvalRule.ts). */
+      {
+        const batchRef = batchRefOf(body);
+        const over = jobLineGate({ takeUsd: estStillUsd, modelId, key: renderKeyNameFor(model.provider), isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) || options.run?.auto === true,
+          batch: { ref: batchRef, tally: await batchTally(batchRef) } });
+        if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
+      }
       /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
       if (stillShot && stillShotCode) {
         const stop = await shotCapGate({
@@ -1501,7 +1516,7 @@ export async function executeGenerationAdmission(
               shotId: stillShot,
               createdBy: got.user.id,
             },
-            { token: got.token, run: options.run },
+            { token: got.token, run: options.run, batch: batchRefOf(body) },
           );
         } catch (e) {
           await meter({
@@ -1702,7 +1717,7 @@ export async function executeGenerationAdmission(
             shotId: stillShot,
             createdBy: got.user.id,
           },
-          { token: got.token, run: options.run },
+          { token: got.token, run: options.run, batch: batchRefOf(body) },
         );
       } catch (e) {
         /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik
@@ -2083,6 +2098,13 @@ export async function executeGenerationAdmission(
         { status: 409 },
       );
     }
+    /* Guardrail 4: a job over the approval line needs an admin's own tap, whatever the rule or shot (lib/approvalRule.ts); its hold counts. */
+    {
+      const batchRef = batchRefOf(body);
+      const over = jobLineGate({ takeUsd: estUsd, modelId, band, key: renderKeyNameFor(model.provider), isAdmin: got.user.role === "admin", machine: got.token != null || isAgentId(got.user.id) || options.run?.auto === true,
+        batch: { ref: batchRef, tally: await batchTally(batchRef) } });
+      if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
+    }
     /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
     if (shotId && shotCode) {
       const stop = await shotCapGate({
@@ -2396,7 +2418,7 @@ export async function executeGenerationAdmission(
           createdBy: got.user.id,
         },
         /* Cinema Studio holds its quote times its band, recorded on its meter row (lib/cinemaHold.ts). */
-        { token: got.token, run: options.run, holdBand: band },
+        { token: got.token, run: options.run, holdBand: band, batch: batchRefOf(body) },
       );
     } catch (e) {
       /* The last shared slot went to another take a moment ago: this one waits in line, never refused. An Atomik

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import {currentPerson,mappedId,mayReachProject} from '@/lib/draftProject';
 import { db, ready, now } from '@/lib/db';
 import { requireTenant } from '@/lib/tenant';
 import { getPlatformLayer, planOf } from '@/lib/platform';
@@ -38,9 +38,7 @@ export async function workbenchReady() {
   await initialized.get(client);
 }
 
-export function mappedId(prefix: string, ...parts: string[]) {
-  return prefix + createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0,24);
-}
+export {mappedId};
 
 export async function readDraft(owner: string, id: string): Promise<{project: Project; revision:number}|null> {
   await workbenchReady();
@@ -89,7 +87,8 @@ export async function linkProduction(owner: string, project: Project): Promise<s
   await workbenchReady();
   if (project.productionProjectId) {
     const found=(await db().execute({sql:'SELECT id FROM projects WHERE id=?',args:[project.productionProjectId]})).rows[0];
-    if(!found) throw new Error('The linked project no longer exists in this workspace.');
+    /* A private board is its owner's: another person's draft cannot link to it (and so cannot save to its canvas); said as a missing project is. */
+    if(!found||!(await mayReachProject(currentPerson(),project.productionProjectId))) throw new Error('The linked project no longer exists in this workspace.');
     return project.productionProjectId;
   }
   const ws=requireTenant();

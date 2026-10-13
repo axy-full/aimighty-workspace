@@ -1,3 +1,4 @@
+import { currentPerson, projectLister } from "./draftProject";
 import { db, ready } from "./db";
 import { requireTenant } from "./tenant";
 import { platformDb } from "./platform";
@@ -90,8 +91,10 @@ export async function creditUsage(viewer: LedgerViewer) {
       "SELECT kind,queue_ms,refine_ms,submit_ms,engine_ms,notice_ms,store_ms,duration_ms+COALESCE(refine_ms,0) AS wait_ms FROM generations WHERE status='succeeded' AND deleted=0 AND (engine_ms IS NOT NULL OR store_ms IS NOT NULL OR refine_ms IS NOT NULL) ORDER BY created_at DESC LIMIT 400",
     ),
   ]);
+  /* A private board is its owner's alone (lib/draftProject.ts): its spend stays in the totals, its name does not show to anyone else. */
+  const listed = await projectLister(currentPerson());
   const projectLabel = new Map(
-    projectNames.rows.map((r) => [String(r.id), String(r.name)]),
+    projectNames.rows.map((r) => [String(r.id), listed(String(r.id)) ? String(r.name) : "A private board"]),
   );
   const byPerson = await spendByPerson(
     people.rows.map((r) => ({
@@ -207,9 +210,10 @@ export async function creditsByBoard(range: { from: number; to: number }, limit 
     }),
     db().execute("SELECT id,name FROM projects"),
   ]);
-  const label = new Map(names.rows.map((r) => [String(r.id), String(r.name)]));
+  const listed = await projectLister(currentPerson());
+  const label = new Map(names.rows.map((r) => [String(r.id), listed(String(r.id)) ? String(r.name) : "A private board"]));
   return rows.rows.map((r) => {
     const id = r.project_id == null ? null : String(r.project_id);
-    return { id: id && label.has(id) ? id : null, name: id == null ? "Unfiled" : (label.get(id) ?? "Deleted production"), n: Number(r.n ?? 0), credits: Number(r.credits ?? 0) };
+    return { id: id && label.has(id) && listed(id) ? id : null, name: id == null ? "Unfiled" : (label.get(id) ?? "Deleted production"), n: Number(r.n ?? 0), credits: Number(r.credits ?? 0) };
   });
 }

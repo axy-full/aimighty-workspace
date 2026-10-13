@@ -8,7 +8,7 @@ import { Menu, Tooltip, type MenuItem } from "@/components/v12/ui";
  * action lives, and ⋯ (Board menu). `primary` is null on every other stage: what needs a person elsewhere shows in
  * the rail's markers.
  */
-export function StageHeader({ board, stage, meta, selection, primary, menu, badge, onBoard, onStage }: {
+export function StageHeader({ board, stage, meta, selection, primary, menu, badge, viewOnly, onBoard, onStage }: {
   board: string;
   stage: string | null;
   meta: string | null;
@@ -18,6 +18,8 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, badg
   menu: readonly MenuItem[] | null;
   /** The Round badge of a board with a client round (components/v12/rounds), after the meta. */
   badge?: ReactNode;
+  /** A teammate's board, to look at: whose it is ("<name>'s board · view only"), said in the header; such a header has no primary. */
+  viewOnly?: string | null;
   /** The board name: back to the first stage. */
   onBoard?: () => void;
   /** The stage name: clears the selection. */
@@ -35,6 +37,7 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, badg
         </span>
         {meta ? <span className="v12-stagehead-meta" data-testid="v12-stage-meta">{meta}</span> : null}
         {badge}
+        {viewOnly ? <span className="v12-stagehead-view" data-testid="v12-view-only" role="status">{viewOnly}</span> : null}
       </span>
       <span className="v12-stagehead-right">
         {primary ? <button type="button" className="v12-primary" onClick={primary.run} data-testid="v12-stage-primary">{primary.label}</button> : null}
