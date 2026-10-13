@@ -62,7 +62,7 @@
 .v12 .v12-stagehead-right { display: flex; align-items: center; gap: 10px; flex: none; justify-content: flex-end; }
 .v12 .v12-primary { flex: none; height: 32px; padding: 0 14px; border-radius: var(--gx-r-btn); border: 0; background: var(--gx-accent); color: var(--gx-on-accent); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .v12 .v12-primary:hover { background: var(--gx-accent-hover); }
-.v12 .v12-stagehead-menu { width: 30px; height: 30px; border: 1px solid var(--gx-line-control); background: transparent; color: var(--gx-text); border-radius: var(--gx-r-tab); font-size: 16px; line-height: 1; cursor: pointer; }
+.v12 .v12-stagehead-menu { width: 30px; height: 30px; border: 1px solid var(--gx-line-control); background: transparent; color: var(--gx-text); border-radius: var(--gx-r-tab); display: grid; place-items: center; padding: 0; line-height: 1; cursor: pointer; }
 .v12 .v12-stage-canvas { position: relative; flex: 1 1 auto; min-height: 0; }
 
 /* ── Right toolbar ── */
