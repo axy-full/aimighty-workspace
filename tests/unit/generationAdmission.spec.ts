@@ -935,3 +935,43 @@ test("a clip made with the camera on Auto and a prompt rule in scope keeps the w
   /* A take stored before the words were kept (no rawPrompt) loses the server's paragraphs all the same. */
   expect(withoutSetup(String(row.prompt), { shot: "cu" })).toBe(`${words}.`);
 }));
+
+test("a take is marked made in Make only when a person's own request says so, for a still, a clip and a sound; nothing else can mark one", async () => scope("made-in", async (service) => {
+  const { db } = await import("../../lib/db");
+  const { madeInOf } = await import("../../lib/madeIn");
+  const marked = async (id: unknown) => JSON.parse(String((await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [id as string] })).rows[0].params));
+  const base = [
+    { kind: "gen", body: { model: "gemini-3.1-flash-image", prompt: "A tree", projectId: "project", ratio: "16:9", resolution: "1K" } },
+    { kind: "gen", body: { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "720p", duration: 5 } },
+    { kind: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 10, projectId: "project" } },
+  ] as const;
+  let n = 0;
+  const send = async (item: (typeof base)[number], extra: Record<string, unknown>, who: AdmissionActor = actor) => {
+    const body = { ...item.body, ...extra };
+    const prepare = item.kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    const admit = item.kind === "audio" ? service.audio.admitAudio : service.gen.admitGeneration;
+    const prepared = value(await prepare(body as never, who));
+    const reply = await admit(prepared, who, { requestKey: `made-in-${n++}-${item.kind}`, defer: noInline });
+    expect(reply.status, JSON.stringify(reply.body)).toBeLessThan(300);
+    return reply.body.id;
+  };
+  const person = actor;
+  const token = { ...actor, token: { id: "tok_made_in", name: "agent", scope: "render", capUsd: null } } as unknown as AdmissionActor;
+  for (const item of base) {
+    /* Make's own request, from a person: marked, and only that. */
+    expect((await marked(await send(item, { madeIn: "make" }, person))).madeIn).toBe("make");
+    /* Anything else from a person: unmarked. */
+    for (const bad of [undefined, "Make", "make ", "board", "", true, 1, ["make"], { madeIn: "make" }, null])
+      expect((await marked(await send(item, { madeIn: bad }, person))).madeIn, JSON.stringify(bad)).toBeUndefined();
+    /* An API token says it too, and is not Make's composer: unmarked. */
+    const { runInTenant, currentTenant } = await import("../../lib/tenant");
+    const tokenId = await runInTenant(currentTenant()!.workspace!, () => send(item, { madeIn: "make" }, token), { user: actor.user, token: token.token as never });
+    expect((await marked(tokenId)).madeIn).toBeUndefined();
+  }
+  /* Another params key cannot mark a take: only `madeIn` on the request does, and the server writes it. */
+  expect((await marked(await send(base[0], { params: { madeIn: "make" }, shotSpec: { madeIn: "make" } }, person))).madeIn).toBeUndefined();
+  /* An Atomik run (an agent id) is never Make's. */
+  expect(madeInOf("make", { user: { id: "agent:rar_1" } })).toBeUndefined();
+  expect(madeInOf("make", { user: { id: "u_1" }, token: {} })).toBeUndefined();
+  expect(madeInOf("make", { user: { id: "u_1" } })).toBe("make");
+}));

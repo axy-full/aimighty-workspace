@@ -153,7 +153,9 @@ test("desktop: results in justified rows, the composer, prompt reuse, the viewer
   const sent = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/generate" && r.method() === "POST");
   await go.click();
   const enhanceBody = (await enhanced).postDataJSON() as { maxCredits?: number };
-  const body = (await sent).postDataJSON() as { maxCredits?: number };
+  const body = (await sent).postDataJSON() as { maxCredits?: number; madeIn?: string };
+  /* Make's own press says where the take is made: the server marks it, and Make's results are the marked takes (lib/madeIn.ts). */
+  expect(body.madeIn, "Make marks its takes").toBe("make");
   expect((enhanceBody.maxCredits ?? 0) + (body.maxCredits ?? 0), "the approvals together are the figure on the button").toBe(shown);
   await expect(make).toBeVisible();
   await expect(page.getByTestId("v12-make-count")).toHaveText("7 results", { timeout: 90_000 });
