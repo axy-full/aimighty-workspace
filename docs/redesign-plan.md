@@ -424,3 +424,15 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
   - Can edit means teammates edit the same board together, live, on the existing Liveblocks setup, with no silent overwrites.
   - Defaults: in Business workspaces new boards are shared · can edit; in Individual workspaces they are private.
   - NEEDS AKSHAY, with an Opus privacy review. Plan it now, build after deploy #2. Any new screen element goes through Claude Design first.
+
+## Owner decisions (Akshay, 13 Oct late morning): board sharing
+
+- **Answers to the four questions** (docs/plans/board-sharing.md):
+  1. An admin opening a private board is logged in the audit AND shown to the board's owner in the board's history ("Viewed by <admin>, <date>"). No notification.
+  2. Yes: "Can edit" teammates may render (same caps and 200 cr rule). Client review links stay with the owner and admins only.
+  3. Legacy Studio, Agency and Production plans default to private.
+  4. Yes: admins see members' private boards in a separate "All boards" view, not on Home.
+- **Update, which supersedes the two-stage split:** "the investor demo is pushed; quality comes first. Build the full board sharing plan (all 10 PRs, including live co-editing on Liveblocks) properly, one small PR at a time, each with tests and Opus privacy review — no shortcuts for speed."
+- **Order:** deploy #2, then the owner's backup and deploy #3, then the board-sharing PRs.
+- Any new screen element goes through Claude Design first. All of it is NEEDS AKSHAY with an Opus privacy review.
+- **Usage:** 2 lanes until tomorrow's 13:30 reset, unless the owner says otherwise.

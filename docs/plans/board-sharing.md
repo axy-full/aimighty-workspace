@@ -60,3 +60,22 @@ The owner's decisions on 13 Oct are in docs/redesign-plan.md. This plan was read
 2. Can editors render and make client links? Recommended: rendering yes, through the same approval gate; client links stay with the owner and admins.
 3. Do legacy Studio, Agency and Production plans count as Business for the default? Recommended: no, they default to private.
 4. Where do admins see members' private boards? Recommended: in a separate "All boards" view, not in "Your boards".
+
+## Owner's answers and order (13 Oct)
+- The answers are recorded in docs/redesign-plan.md ("board sharing"):
+  - admin opens: audit line plus a "Viewed by <admin>, <date>" line in the board's history;
+  - editors render, client links stay with the owner and admins;
+  - legacy plans default to private;
+  - admins get a separate "All boards" view.
+- All 10 PRs, one at a time, each with tests and an Opus privacy review, after deploy #3.
+- PR 1 now also writes the "Viewed by" history line.
+
+## Claude Design brief (new screen elements, before their PRs)
+1. **Share with team ▸ Can view / Can edit / Not shared:** a submenu in the board's ⋯ menu and right-click menu, with a selected mark (PR 10; PR 6 ships the server side first).
+2. **"Viewed by <admin>, <date>":** a line in the board's history, visible to the owner only (PR 1). Does the board's history surface exist in v14? If not, Design decides where it lives.
+3. **Who's editing:** the row of editors on a shared board (PR 8 and 10), building on Presence.tsx, which the v14 design draws nothing for today.
+4. **"Changed since you opened it":** the conflict notice with Undo, reusing Toast. Design confirms the words.
+5. **Transfer boards to…:** a picker on the Team page when a member leaves (PR 5).
+6. **All boards:** the admins' view of every board in the workspace, not on Home (PR 5).
+7. **The view-only bar for an admin on someone's private board, with an Edit action (PR 1 and 3).**
+Each must pass the one-design and UI-names guards. No new style sheet.
