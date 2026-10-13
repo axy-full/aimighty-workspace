@@ -281,6 +281,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 - **`board-kinds-v12-workbench` "the kind label cycles…"** looks for toast id `toast`, but the real id is `v12-toast`. It fails the same locally on release/1 (lane A, 13 Oct). Find out why CI doesn't catch it, then fix the spec's selector (not a guard).
 - **The owner export includes other members' private-board work** (takes, shots, uploads; noted in the #698 review). It is pre-existing on release/1. Under the owner's 13 Oct point-4 change (admins may open any board in their workspace, and the work belongs to the workspace), the workspace owner exporting all boards is consistent, so it is not a leak. Confirm with the owner when the admin-access PR (board sharing PR 1) lands, and make the export's description say "all boards in the workspace".
 - **House price words without an explicit mode** (from the #701 review): about 76 wording calls render credits on the server, then flip to dollars in the browser. That's a brief "cr" flash and a hydration mismatch, house only, with no cross-workspace effect. Thread the session's unit through those callers.
+- **Flake check: `dots-centred-workbench.spec.ts:45` at 1920x1080** ("board-header-cast: dots drawn": no bright pixels found). It failed in #691's CI run 38389815513 but passed in #703's run on the same release/1 commit. If it recurs, make the capture wait for the header icon to be painted (#695's own spec).
 
 ## Housekeeping rules (owner, 12 Oct)
 
