@@ -142,7 +142,7 @@ export async function mapNodeShot(owner:string, project:Project, nodeId:string, 
  * what is stored; only `setBoardSharing` (the `team-share` action, by the board's owner) changes them. A save that names a different value, a stale
  * window, a copy of the board or a client that never heard of the flag, can neither share a private board nor take a shared one back.
  */
-export const SHARE_FLAGS = ['teamShared'] as const;
+export const SHARE_FLAGS = ['teamShared','teamEdit'] as const;
 function keepStoredSharing<T extends Record<string,unknown>>(body:T,stored:unknown):T {
   const out:Record<string,unknown>={...body};
   const was=stored&&typeof stored==='object'?stored as Record<string,unknown>:{};
@@ -219,19 +219,22 @@ export async function saveDraft(owner:string, project:Project, revision:number, 
 }
 
 /**
- * Share a board with the team, or stop: the one writer of the sharing flags (the `team-share` action calls it for the board's owner). It changes only the
+ * Share a board with the team (to look at, or with `teamEdit` to edit), or stop: the one writer of the sharing flags (the `team-share` action calls it for the board's owner). It changes only the
  * flags in the stored JSON, in one write, and not the revision: every save keeps the flags as stored, so an open window's next save neither undoes nor
  * conflicts with it. `owner` is the key the board is stored under; `actor` is who changed it, recorded on the row. Null when there is no such board.
  */
-export async function setBoardSharing(owner:string, draftId:string, flags:{teamShared:boolean}, actor:string=owner):Promise<{revision:number;teamShared:boolean}|null> {
+export async function setBoardSharing(owner:string, draftId:string, flags:{teamShared:boolean;teamEdit?:boolean}, actor:string=owner):Promise<{revision:number;teamShared:boolean;teamEdit:boolean}|null> {
   await workbenchReady();
+  /* "Can edit" only exists on a shared board: an edit flag without sharing is no flag. */
+  const teamShared=flags.teamShared===true, teamEdit=teamShared&&flags.teamEdit===true;
   return workbenchTransaction(async(tx)=>{
     const row=(await tx.execute({sql:'SELECT body,revision FROM workbench_projects WHERE key=?',args:[owner+':'+draftId]})).rows[0];
     if(!row)return null;
     const body=JSON.parse(String(row.body)) as Record<string,unknown>;
-    if(flags.teamShared)body.teamShared=true; else delete body.teamShared;
+    if(teamShared)body.teamShared=true; else delete body.teamShared;
+    if(teamEdit)body.teamEdit=true; else delete body.teamEdit;
     await tx.execute({sql:'UPDATE workbench_projects SET body=?,updated_at=?,updated_by=? WHERE key=?',args:[JSON.stringify(body),now(),actor,owner+':'+draftId]});
-    return {revision:Number(row.revision),teamShared:flags.teamShared};
+    return {revision:Number(row.revision),teamShared,teamEdit};
   });
 }
 

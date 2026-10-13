@@ -359,6 +359,8 @@ export const projectSchema = z.object({
   boardKind: z.enum(["studio", "ads", "social"]).optional(),
   /* Shared with the workspace's team (lib/workbench/team-boards.ts): the author's choice, off unless set, so every existing board is private. Additive and optional, draft JSON only. */
   teamShared: z.boolean().optional(),
+  /* With teamShared: teammates may edit the board, not only look (the server's flag too: only the team-share action sets it). Additive and optional, draft JSON only. */
+  teamEdit: z.boolean().optional(),
   /* The board's kind in the new interface (lib/v12/board/kinds.ts): Film, Pre-vis, Campaign, Social narrated or clips. Additive and optional, draft JSON only. */
   boardFlavor: z.enum(["film", "previs", "campaign", "narrated", "clips"]).optional(),
   /* The Pre-vis shot list's cells a person wrote (lib/v12/ppm.ts), by the beat sheet's shot id; and the Deliver stage's languages (lib/v12/deliver.ts). Additive and optional, draft JSON only. */

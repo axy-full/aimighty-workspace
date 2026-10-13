@@ -111,20 +111,32 @@ const SHARED_FLAG = '"teamShared":true';
 /**
  * What makes a draft shared with the team: the author's flag in its own saved JSON (a draft whose JSON can't be read is private). The one definition:
  * lib/workbench/team-boards.ts lists and reads shared boards with it, and this file's gate and project lists ask the same question with it.
+ * A shared board is either view-only for teammates or editable (`teamEdit`, which only counts together with `teamShared`): none, view, edit.
  */
 export const TEAM_SHARED_SQL = "json_valid(body) AND json_extract(body,'$.teamShared') = 1";
-const SHARED_BOARDS = `SELECT owner, project_id FROM workbench_projects WHERE instr(body, '${SHARED_FLAG}')>0 AND ${TEAM_SHARED_SQL}`;
+/** Shared AND editable by teammates (the share mode "Can edit"). */
+export const TEAM_EDIT_SQL = `${TEAM_SHARED_SQL} AND json_extract(body,'$.teamEdit') = 1`;
+const SHARED_BOARDS = `SELECT owner, project_id, json_extract(body,'$.teamEdit') AS edit FROM workbench_projects WHERE instr(body, '${SHARED_FLAG}')>0 AND ${TEAM_SHARED_SQL}`;
+
+/** How a board is shared with the team: not at all, to look at, or to edit. */
+export type ShareMode = "none" | "view" | "edit";
 
 /**
- * Whether the author has shared this draft's board with the team: `teamShared: true` in the draft's saved body (set by the author, #667's `lib/workbench/team-boards.ts`). Nothing
- * writes the flag on release/1, so this answers false for every board until it exists; it is the one place the gate learns about sharing. A shared board is
- * for teammates to READ (view-only); writes stay the owner's.
+ * How the author has shared this draft's board: `teamShared: true` in the draft's saved body (set only by the `team-share` action, lib/workbench/records.ts ›
+ * setBoardSharing), plus `teamEdit: true` for "Can edit". Anything but a shared board answers "none". Teammates READ a "view" board; they also WRITE an
+ * "edit" board (mayReachProject).
  */
-export async function draftIsTeamShared(projectId: string, ex: Exec = db()): Promise<boolean> {
-  if (!isDraftProject(projectId)) return false;
+export async function draftShareMode(projectId: string, ex: Exec = db()): Promise<ShareMode> {
+  if (!isDraftProject(projectId)) return "none";
   const workspace = requireTenant().id;
   const rows = (await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows;
-  return rows.some((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)) === projectId);
+  const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)) === projectId);
+  return !hit ? "none" : Number(hit.edit) === 1 ? "edit" : "view";
+}
+
+/** Whether the author has shared this draft's board with the team (to look at, or to edit). */
+export async function draftIsTeamShared(projectId: string, ex: Exec = db()): Promise<boolean> {
+  return (await draftShareMode(projectId, ex)) !== "none";
 }
 
 /**
@@ -138,7 +150,7 @@ export function currentPerson(): { id: string; role?: string } | null {
 
 /**
  * Whether `person` may reach the draft project `projectId`: its owner, for reading and writing; the marked sample, for everyone, as before; a board the
- * author has shared (`teamShared`), for READING only. Any other project is the workspace's.
+ * author has shared (`teamShared`), for READING, or for writing too when shared with "Can edit" (`teamEdit`). Any other project is the workspace's.
  */
 export async function mayReachProject(person: { id: string } | null, projectId: string | null | undefined, access: "read" | "write" | "admit" = "write", ex: Exec = db()): Promise<boolean> {
   if (!person) return true;
@@ -147,7 +159,10 @@ export async function mayReachProject(person: { id: string } | null, projectId: 
   if (!isDraftProject(projectId)) return true;
   if (await ownsDraftProject(person.id, projectId!, ex)) return true;
   if (await isMarkedSample(projectId!, ex)) return true;
-  return access === "read" && (await draftIsTeamShared(projectId!, ex));
+  /* A shared board is the team's to read; one shared with "Can edit" is also theirs to write and to render on. Sharing settings, rename and delete are not
+     this rule's: they stay the owner's or an admin's (lib/workAccess.ts, lib/workbench/team-boards.ts › maySetSharing). */
+  const mode = await draftShareMode(projectId!, ex);
+  return access === "read" ? mode !== "none" : mode === "edit";
 }
 
 /** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
