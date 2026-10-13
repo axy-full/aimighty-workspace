@@ -118,6 +118,7 @@ import { batchRefOf, batchTally } from "@/lib/batchLine";
 import { uploadSourceParams } from "@/lib/sourceClip";
 import { jobLineGate, shotCapGate } from "@/lib/shotCap";
 import { isAgentId } from "@/lib/security/people-only";
+import { madeInOf } from "@/lib/madeIn";
 import { approvedTakeOf } from "@/lib/shots";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
@@ -1582,6 +1583,8 @@ export async function executeGenerationAdmission(
       const ts = now();
       const stillEnhanced = await enhancedLabel(body, prompt);
       const stillParams = {
+        /* Make's own results (lib/madeIn.ts): marked by the server, only for a person's own Make request. */
+        madeIn: madeInOf(body.madeIn, got),
         ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
           soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
@@ -2191,6 +2194,7 @@ export async function executeGenerationAdmission(
       shotSpec: shotSpec ?? undefined,
     } : {
       ...params,
+      madeIn: madeInOf(body.madeIn, got),
       ...(genjutsu ? { workbenchProjectId: body.workbenchProjectId, quoteBasis: "live-provider-estimate" } : {}),
       references: references.map((r) =>
         r.fromGeneration

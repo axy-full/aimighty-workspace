@@ -110,7 +110,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     if (enhanceToggle === null) return undefined;
     return enhanceToggle && lastEnhanced && prompt.trim() === lastEnhanced.to.trim() ? { from: lastEnhanced.from } : false;
   }, [enhanceToggle, lastEnhanced]);
-  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", onSent: sent, hide: hiddenInMake,
+  const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", madeIn: "make", onSent: sent, hide: hiddenInMake,
     preference: MAKE_MODEL_PREFERENCE, initialPicks: MAKE_PICKS, seed, enhanced: enhancedOf });
   const { state, model, offered, settings, submitting } = composer;
   const dispatch = composer.dispatch;
