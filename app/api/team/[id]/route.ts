@@ -1,14 +1,21 @@
 import { securityAuditStatement } from "@/lib/securityAudit";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { requireAdmin, withTenant, isPlatformOwner } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { platformDb, platformReady, now, getPlatformLayer } from "@/lib/platform";
 import {accountTransaction,accountFailure,AccountError} from "@/lib/accountDb";
 import {repairPendingMemberships,ensureMemberSeat} from "@/lib/teamInvitations";
 import { ownerMaskFor, publicActorName, resolveMemberId } from "@/lib/platformOwnerPrivacy";
+import { bumpEditRooms, closeRooms } from "@/lib/workbench/room-rotation";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
+
+/** The rooms move on now (no old token is honoured from here); their old connections are closed after the response, all at once, so the admin's request does not wait on Liveblocks. */
+async function moveEditRooms() {
+  const closed = await bumpEditRooms().catch(() => [] as string[]);
+  if (closed.length) after(async () => { await closeRooms(closed); });
+}
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const PROTECTED = { error: "That account owns the workspace. It can't be demoted, disabled or removed." };
@@ -77,6 +84,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     await tx.execute({sql:'INSERT INTO membership_mirrors(workspace_id,account_id,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id,account_id) DO UPDATE SET updated_at=excluded.updated_at',args:[ws.id,id,now()]});
   });}catch(error){return accountFailure(error);}
   await repairPendingMemberships(id).catch(()=>{});
+  /* Someone switched off may hold a live-room token for any board shared with Can edit, and their own boards' Can edit lapses with them: those rooms move on now. */
+  if(body.disabled===true)await moveEditRooms();
   return NextResponse.json({ ok: true });
 }, { requireRequestScope: true });
 
@@ -105,6 +114,8 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
     await tx.execute({sql:'DELETE FROM membership_mirrors WHERE workspace_id=? AND account_id=?',args:[ws.id,id]});
     await tx.execute(securityAuditStatement({workspaceId:ws.id,actorId:got.user.id,action:"member.removed",targetType:"member",targetId:id}));
   });}catch(error){return accountFailure(error);}
+  /* A removed member's live-room tokens and their boards' Can edit end with them: every Can edit room moves on (lib/workbench/room-rotation.ts). */
+  await moveEditRooms();
   // Platform membership removal already revokes access even if this mirror is offline.
   const {db}=await import('@/lib/db');
   await db().batch([

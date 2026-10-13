@@ -10,6 +10,7 @@ import { recreateBlock, recreatePreset } from "./recipe";
 import { sendReference } from "./reference-inbox";
 import { useShell } from "./state";
 import { withUndoHint } from "./undo";
+import { actingOwnerField } from "@/lib/workbench/acting-on";
 
 /**
  * Recreate (and Use settings only): the take's recipe goes to Make through its
@@ -162,7 +163,7 @@ export function useAssetActions(input: { scope: string; project: Project | null;
     try {
       let shotId = project.shotMappings?.[shot.nodeId] ?? null;
       if (!shotId) {
-        const mapped = await call("/api/workbench/projects", { method: "POST", body: JSON.stringify({ projectId: project.id, action: "map-shot", nodeId: shot.nodeId }) }) as { shotId?: string } | null;
+        const mapped = await call("/api/workbench/projects", { method: "POST", body: JSON.stringify({ projectId: project.id, action: "map-shot", nodeId: shot.nodeId, ...actingOwnerField(project.id) }) }) as { shotId?: string } | null;
         shotId = mapped?.shotId ?? null;
       }
       if (!shotId) throw new Error("This shot has no production shot yet.");
