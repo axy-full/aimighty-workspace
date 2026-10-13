@@ -59,9 +59,9 @@ export async function seedHome(page: Page, { takes = 6 }: { takes?: number } = {
 
   const made: string[] = [];
   for (const [prompt, ratio] of PROMPTS.slice(0, takes)) {
-    const body = { prompt, model: "gemini-3.1-flash-image", projectId: boards[0].productionId, shotId: "", ratio, resolution: "1K", duration: 5, refine: false, references: [] };
+    const body = { prompt, model: "gemini-3.1-flash-image", projectId: boards[0].productionId, shotId: "", ratio, resolution: "1K", duration: 5, refine: false, references: [], madeIn: "make" };
     const quote = await page.request.post("/api/generate/quote", { headers, data: body }).then((r) => r.json());
-    const sent = await page.request.post("/api/generate", { headers: { ...headers, "Idempotency-Key": `home-${randomUUID()}` }, data: { ...body, madeIn: "make", maxCredits: quote.estimatedCredits, quoteFingerprint: quote.fingerprint } });
+    const sent = await page.request.post("/api/generate", { headers: { ...headers, "Idempotency-Key": `home-${randomUUID()}` }, data: { ...body, maxCredits: quote.estimatedCredits, quoteFingerprint: quote.fingerprint } });
     expect(sent.ok(), await sent.text()).toBe(true);
     made.push(String((await sent.json()).id));
   }
