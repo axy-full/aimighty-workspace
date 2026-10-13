@@ -10,6 +10,8 @@ import type { RigContext } from "@/components/workspace/rig/RigProvider";
 import type { Project } from "@/lib/workbench/studio";
 import { Price } from "@/components/v12/ui/Price";
 import { useToast } from "@/components/v12/ui/Toast";
+import { ContextMenu } from "@/components/v12/ui";
+import { useMenuAt } from "@/components/v12/menus/menu-items";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { uid, type CanvasNode } from "@/lib/workbench/studio";
 import { GROUP_LABEL, STATE_WORD, impactPrice, lengthOf, redrawn, shotsList, shotsWord, stepName, stepPriceText, type RigGroup, type RigInput, type RigModel, type RigShot } from "./model";
@@ -48,7 +50,7 @@ function Thumb({ still, kind, className }: { still: { url: string; kind: "image"
     : <img className={className} src={still.url} alt="" loading="lazy" draggable={false} style={{ objectPosition: cropOf(kind ?? "") }} />;
 }
 
-export function RigView({ model, project, scope, userId, apply, onStage, onAsk, readOnly }: {
+export function RigView({ model, project, scope, userId, apply, onStage, onAsk, readOnly, onSelect, onRemove }: {
   model: RigModel;
   project: Project;
   scope: string;
@@ -58,6 +60,10 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
   /** Atomik's panel with these words, never sent (BoardCtx.askAtomik). */
   onAsk: (words: string) => void;
   readOnly: boolean;
+  /** What is picked, by canvas node, for the board's ⋯ menu (an input or a shot: its node). */
+  onSelect?: (nodeIds: string[]) => void;
+  /** Removes these nodes: a shot or an input, planned and recorded in the Trash like any card (BoardView removeNodes). */
+  onRemove?: (nodeIds: string[]) => void;
 }) {
   const toast = useToast();
   const { rates } = useSession();
@@ -78,6 +84,10 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
 
   const input = pick?.kind === "input" ? model.inputs.find((i) => i.id === pick.id) ?? null : null;
   const shot = pick?.kind === "shot" ? model.shots.find((s) => s.nodeId === pick.id) ?? null : null;
+  /* What a pick would remove: a shot's node, or an input's own card. */
+  const pickedNodes = useMemo(() => (pick?.kind === "shot" ? [pick.id] : pick?.kind === "input" ? (model.inputs.find((i) => i.id === pick.id)?.nodeId ? [model.inputs.find((i) => i.id === pick.id)!.nodeId!] : []) : []), [pick, model.inputs]);
+  useEffect(() => { onSelect?.(pickedNodes); }, [pickedNodes, onSelect]);
+  const menu = useMenuAt<{ nodes: string[]; label: string }>();
   const inputById = useMemo(() => new Map(model.inputs.map((i) => [i.id, i])), [model.inputs]);
 
   /* The connections of the selection: an input to each shot it feeds, a shot from each input it uses. */
@@ -139,11 +149,12 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.key !== "Delete" && event.key !== "Backspace") || pick?.kind !== "edge") return;
+      if ((event.key !== "Delete" && event.key !== "Backspace") || !pick) return;
       const t = event.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-      event.preventDefault();
-      removeEdge(pick.input, pick.shot);
+      /* A picked wire is taken off its shot; a picked shot or input is removed (into the Trash, with Undo). */
+      if (pick.kind === "edge") { event.preventDefault(); removeEdge(pick.input, pick.shot); return; }
+      if (onRemove && pickedNodes.length) { event.preventDefault(); onRemove(pickedNodes); setPick(null); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -207,6 +218,10 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
 
   return (
     <div className="v12-rig" data-testid="v12-rig" data-selecting={pick ? "" : undefined}>
+      {menu.menu && onRemove ? (
+        <ContextMenu at={menu.menu.at} onClose={menu.close} label={menu.menu.target.label} width={200} testId="v12-rig-menu"
+          items={[{ id: "remove", label: "Remove", shortcut: "⌫", tone: "danger", testId: "v12-rig-menu-remove", disabled: readOnly, title: readOnly ? "Needs a connection" : undefined, onSelect: () => { const nodes = menu.menu!.target.nodes; onRemove(nodes); setPick(null); } }]} />
+      ) : null}
       <div className="v12-rig-note" role="status" aria-live="polite" data-testid="v12-rig-note">
         {note && "impact" in note && input ? (
           <span className="v12-rig-impact" data-testid="v12-rig-impact">
@@ -243,7 +258,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
               {GROUPS.flatMap(groupOf).filter(shown).map((i) => (
                 <button key={i.id} ref={ref(`i:${i.id}`)} type="button" className="v12-rig-node v12-rig-input" data-testid="v12-rig-input" data-id={i.id} data-kind={i.kind}
                   data-selected={pick?.kind === "input" && pick.id === i.id ? "" : undefined} data-dim={point && !lit.has(`i:${i.id}`) ? "" : undefined}
-                  {...pointing({ kind: "input", id: i.id })} draggable={!readOnly && Boolean(i.nodeId)} onDragStart={(e) => { e.dataTransfer.setData("application/x-particl-rig-input", i.id); e.dataTransfer.effectAllowed = "copy"; }}
+                  {...pointing({ kind: "input", id: i.id })} onContextMenu={(e) => { if (!i.nodeId) return; setPick({ kind: "input", id: i.id }); menu.open(e, { nodes: [i.nodeId], label: i.name }); }} draggable={!readOnly && Boolean(i.nodeId)} onDragStart={(e) => { e.dataTransfer.setData("application/x-particl-rig-input", i.id); e.dataTransfer.effectAllowed = "copy"; }}
                   onClick={(e) => { e.stopPropagation(); setPick(pick?.kind === "input" && pick.id === i.id ? null : { kind: "input", id: i.id }); }}>
                   <Thumb still={i.thumb} kind={i.kind} className="v12-rig-thumb" />
                   <span className="v12-rig-body">
@@ -264,7 +279,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
                     data-selected={pick?.kind === "shot" && pick.id === s.nodeId ? "" : undefined} data-dim={point && !lit.has(`s:${s.nodeId}`) ? "" : undefined} data-over={over === s.nodeId ? "" : undefined}
                     onClick={(e) => { e.stopPropagation(); setPick(pick?.kind === "shot" && pick.id === s.nodeId ? null : { kind: "shot", id: s.nodeId }); }}
                     onDoubleClick={(e) => { e.stopPropagation(); setOpen(expanded ? null : s.nodeId); }}
-                    {...pointing({ kind: "shot", id: s.nodeId })} onKeyDown={(e) => { if (e.key === "Enter") setPick({ kind: "shot", id: s.nodeId }); }}
+                    {...pointing({ kind: "shot", id: s.nodeId })} onContextMenu={(e) => { setPick({ kind: "shot", id: s.nodeId }); menu.open(e, { nodes: [s.nodeId], label: s.label }); }} onKeyDown={(e) => { if (e.key === "Enter") setPick({ kind: "shot", id: s.nodeId }); }}
                     onDragOver={(e) => { if (e.dataTransfer.types.includes("application/x-particl-rig-input")) { e.preventDefault(); setOver(s.nodeId); } }}
                     onDragLeave={() => setOver((o) => (o === s.nodeId ? null : o))} onDrop={(e) => drop(s, e)}>
                     <Thumb still={s.thumb} className="v12-rig-thumb v12-rig-thumb--shot" />

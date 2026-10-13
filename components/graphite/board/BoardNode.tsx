@@ -1,6 +1,7 @@
 "use client";
 import { memo, useState, type CSSProperties } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
+import { isRemovable } from "@/lib/board/remove";
 import { useBoardInternals } from "./BoardContext";
 
 /*
@@ -31,6 +32,7 @@ function BoardNodeImpl({ id, selected, dragging }: NodeProps<BoardFlowNode>) {
       data-card-kind={card.kind}
       data-container={container || undefined}
       data-free={card.region ? undefined : true}
+      data-removable={isRemovable(card) || undefined}
       data-selected={selected || undefined}
       data-dragging={dragging || undefined}
       data-watched={ring ? true : undefined}

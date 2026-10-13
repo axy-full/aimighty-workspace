@@ -124,7 +124,7 @@ test.describe("desktop, switch on", () => {
     await expect(tiles).toHaveCount(7, { timeout: 60_000 });
     await page.getByTestId("v12-library").locator('[data-id="generation:gopen"]').click({ button: "right" });
     const menu = page.getByTestId("v12-card-menu");
-    expect(await menuLabels(page, "v12-card-menu")).toEqual(["Open", "Download original", "Copy", "Use as reference", "Move to board…", "Redraw", "Delete"]);
+    expect(await menuLabels(page, "v12-card-menu")).toEqual(["Open", "Download original", "Copy", "Use as reference", "Move to board…", "Redraw", "Remove"]);
     await expect(menu.locator(".v12-menu-key")).toHaveText(["⌘C", "⌫"]);
     await expect(menu.getByTestId("v12-menu-price")).toHaveAttribute("data-price-state", /loading|ready|error/);
     /* An upload has no recipe: no Redraw. */
@@ -165,7 +165,7 @@ test.describe("desktop, switch on", () => {
     /* One card: right-click selects it and shows what can be done to it. */
     await notes.first().click({ button: "right" });
     await expect(page.getByTestId("v12-card-menu")).toBeVisible();
-    expect(await menuLabels(page, "v12-card-menu")).toEqual(["Open", "Delete"]);
+    expect(await menuLabels(page, "v12-card-menu")).toEqual(["Open", "Remove"]);
     await expect(notes.first()).toHaveAttribute("data-selected", "true");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("v12-card-menu")).toHaveCount(0);
@@ -180,7 +180,7 @@ test.describe("desktop, switch on", () => {
     /* Every card in view is selected, and only those: the cards on other stages are not drawn and not touched. */
     await expect.poll(() => page.locator(".bd-node[data-selected]").count()).toBe(4);
     await rightClickCard(notes.first());
-    expect(await menuLabels(page, "v12-multi-menu")).toEqual(["Delete"]);
+    expect(await menuLabels(page, "v12-multi-menu")).toEqual(["Remove"]);
     await page.getByTestId("v12-menu-delete-all").click();
     await expect(notes).toHaveCount(0);
 
