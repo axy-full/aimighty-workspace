@@ -395,3 +395,20 @@ These answer the lead's 21:00 status page.
     - Clean up worktrees and temp files at the end of the session.
 
 Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR number and contents, what's NEEDS AKSHAY with the exact yes or no needed, CI state, and disk.
+
+## Owner decisions (Akshay, 13 Oct 09:50 IST)
+
+1. Yes to #685's import-list edits, including moneyRoutes. Merge #685, then move deploy/2026-10-13 (#687) to the new green release/1 head and update #687's description (contents, migrations must be none, env names). Tell the owner when #687 is green.
+2. #688:
+   - Yes to the setup-only seed change in noVendorCostToCustomers.
+   - Yes to the Activity change and the restated tests.
+   - Admins may approve another member's over-line step and see its prompt, not the chat.
+   - Merge when green after a fresh review. It goes in deploy #2 if green in time, otherwise the next.
+3. Yes to the privateCanvas sample tightening in #686. Merge after #685, and include it in #687 if green in time.
+4. Admins: no access to other members' private boards.
+5. Yes, hide private boards' takes (the takes list and MCP tools) from everyone except the owner. A small PR, with an Opus privacy review.
+6. #665: retry the five-minute test swap; the owner approves the permission prompt in the lead's window. Hold #665 until after deploy #2 and the owner's screenshot review.
+7. #668:
+   - Yes to adding batch to publicLinkOrigin's stand-in.
+   - Yes to adding 'admin' to ShellView in r1OldPagesLinks.
+   - Deploy #3 (#675 + #668) is this afternoon, after the owner's backup. Prepare its PR once deploy #2 is live.
