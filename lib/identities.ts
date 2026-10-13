@@ -2,6 +2,7 @@ import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { withRecoveryJob } from './recovery';
 import { TRAIN_STEPS, RENDER_USD_PER_MP, trainCostUsd } from "./identityPricing";
 import type { Transaction } from "@libsql/client";
+import { assertUploadsOpenable } from "./uploadAccess";
 import { mediaMutation, validateMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id as newId } from "./db";
@@ -240,6 +241,9 @@ async function verifiedPhotos(
     args: wanted,
   });
   const ok = new Set(rs.rows.map((r: any) => r.id as string));
+  /* The person naming the photos must be able to open each (lib/uploadAccess.ts). */
+  try { await assertUploadsOpenable(tx, ok); }
+  catch { throw new MediaSourceError("A referenced upload is no longer available as an image. Remove or replace it before saving."); }
   if (wanted.some((x) => !ok.has(x)))
     throw new MediaSourceError(
       "A referenced upload is no longer available as an image. Remove or replace it before saving.",

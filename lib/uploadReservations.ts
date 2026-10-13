@@ -60,6 +60,7 @@ export async function uploadReservationsReady() {
         state TEXT NOT NULL, lease TEXT, lease_until INTEGER, PRIMARY KEY(session_id,chunk_index)
       )`,
           `CREATE INDEX IF NOT EXISTS upload_sessions_expiry ON upload_sessions(state,expires_at)`,
+          `CREATE INDEX IF NOT EXISTS upload_sessions_upload ON upload_sessions(upload_id)`,
           `CREATE TABLE IF NOT EXISTS consumer_video_originals (
             job_id TEXT PRIMARY KEY, generation_id TEXT NOT NULL UNIQUE,
             owner_id TEXT NOT NULL, draft_id TEXT NOT NULL, provider_job_id TEXT NOT NULL,
@@ -542,11 +543,11 @@ export async function completeUpload(
     throw new UploadError("The upload has not finished storing.", 409);
   if (prepared.count) await deleteChunks(claim.key, prepared.count, true);
   return transaction(async (tx) => {
-    await owned(tx, claim);
+    const session = await owned(tx, claim);
     const r = prepared.record;
     await tx.execute({
-      sql: `INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at,derivative_url,derivative_bytes,derivative_note)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      sql: `INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at,derivative_url,derivative_bytes,derivative_note,uploader_id)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       args: [
         r.id,
         r.filename,
@@ -563,6 +564,8 @@ export async function completeUpload(
         r.derivativeUrl ?? null,
         r.derivativeBytes ?? null,
         r.derivativeNote ?? null,
+        /* The person whose session this upload is: who may open it later (lib/uploadAccess.ts). */
+        session.owner_id,
       ],
     });
     await tx.execute({

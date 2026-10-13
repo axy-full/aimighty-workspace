@@ -19,10 +19,19 @@ export function mappedId(prefix: string, ...parts: string[]) {
 export const DRAFT_PROJECT_PREFIX = "prj_wb_";
 export const isDraftProject = (projectId: string | null | undefined): boolean => typeof projectId === "string" && projectId.startsWith(DRAFT_PROJECT_PREFIX);
 
+/**
+ * Where a person's takes and identities go when they delete one of their private boards: a project of their own that nobody else can list or reach
+ * (`prj_wb_…`, so nothing in it is shared). Without it the database would unfile them (`ON DELETE SET NULL`) into the shared pool, and the uploads they
+ * name would open to the team. One per person; made the first time they delete a board.
+ */
+export const heldBoardsProjectId = (workspaceId: string, userId: string) => mappedId(DRAFT_PROJECT_PREFIX, workspaceId, userId, "deleted-boards");
+export const heldBoardsProductionId = (workspaceId: string, userId: string) => mappedId("prod_wb_", workspaceId, userId, "deleted-boards");
+
 /** Whether `userId` owns the draft whose own production project is `projectId`: the id is a hash of the workspace, the owner and the draft, so it is recomputed for each of the person's drafts (an indexed read). */
 export async function ownsDraftProject(userId: string, projectId: string, ex: Exec = db()): Promise<boolean> {
   if (!isDraftProject(projectId)) return false;
   const workspace = requireTenant().id;
+  if (projectId === heldBoardsProjectId(workspace, userId)) return true;
   const drafts = (await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [userId] })).rows;
   return drafts.some((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, userId, String(row.project_id)) === projectId);
 }
@@ -142,15 +151,30 @@ export async function mayReachProject(person: { id: string } | null, projectId: 
 }
 
 /** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
+/**
+ * The boards a teammate may look at, by the one definition: every draft its author has shared with the team (`teamShared`), and the marked sample
+ * (lib/demo/mark.server.ts), for everyone. `projects` are those boards' own project ids (`prj_wb_…`); `drafts` the saved drafts behind them (owner and draft id),
+ * whose bodies are what a teammate sees. Whoever opens the boards sees what these hold; the project filter and the upload rule both read this.
+ */
+export async function sharedBoards(ex: Exec = db()): Promise<{ projects: string[]; drafts: { owner: string; draftId: string }[] }> {
+  const workspace = requireTenant().id;
+  const rows = (await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows;
+  const projects = rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)));
+  const drafts = rows.map((row) => ({ owner: String(row.owner), draftId: String(row.project_id) }));
+  /* The marked sample is one definition (sampleMarkNow above): shown to everyone, whatever its kind of project. */
+  const sample = await sampleMarkNow(ex);
+  if (sample) { projects.push(sample.projectId); drafts.push({ owner: sample.draftOwner, draftId: sample.draftId }); }
+  return { projects, drafts };
+}
+
 export async function projectLister(person: { id: string } | null, ex: Exec = db()): Promise<(projectId: string | null | undefined) => boolean> {
   if (!person) return () => true;
   const workspace = requireTenant().id;
   const own = new Set((await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [person.id] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, person.id, String(row.project_id))));
-  const shared = new Set((await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id))));
-  const mark = (await ex.execute({ sql: "SELECT value FROM settings WHERE key=? LIMIT 1", args: [SAMPLE_SETTING_KEY] })).rows[0];
-  let sample: string | null = null;
-  if (mark) { try { sample = parseSampleMark(JSON.parse(String(mark.value)))?.projectId ?? null; } catch { sample = null; } }
-  return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!) || projectId === sample;
+  own.add(heldBoardsProjectId(workspace, person.id));
+  const boards = await sharedBoards(ex);
+  const shared = new Set(boards.projects);
+  return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!);
 }
 
 /** An id that names no project: a route that must answer a private board exactly as it answers an unknown id runs on this in the board's place. */

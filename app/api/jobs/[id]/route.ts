@@ -1,3 +1,4 @@
+import { assertMoveAllowed, MoveRefused, parseJson } from "@/lib/projectMove";
 import {reserveRecoveryContinuation} from "@/lib/recovery";
 import { workbenchReady, workbenchTransaction } from "@/lib/workbench/records";
 import { mediaBindingProblem } from "@/lib/mediaBindings";
@@ -99,18 +100,45 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if (scopeProblem) return NextResponse.json({ error: scopeProblem }, { status: 409 });
   await ready();
   const asked = (await params).id;
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) ?? {};
+  /* A project and a shot are each named by one id: a string, or null / "" for none. Anything else (an array, a number, an object) is refused here, before any
+     read or write, so the id that is checked below is the very id that is written. Every check below reads these, never the raw body. */
+  const idOf = (value: unknown): string | null | "bad" => (value === null || value === "" ? null : typeof value === "string" ? value : "bad");
+  const projectTo = body.projectId === undefined ? undefined : idOf(body.projectId);
+  const shotTo = body.shotId === undefined ? undefined : idOf(body.shotId);
+  if (projectTo === "bad" || shotTo === "bad")
+    return NextResponse.json({ error: "A project or a shot is named by its id, or left empty for none." }, { status: 400 });
   /* Nothing is written into the marked sample production, by anyone: not a take's move into it or out of it, nor its filing against one of its shots (lib/demo/readonly.server.ts).
      Read from the id as it was asked, before the private-board rule below reads such a take as no take: the sample answers "view only" to everyone. */
   {
     const inTake = (await db().execute({ sql: "SELECT project_id FROM generations WHERE id=?", args: [asked] })).rows[0];
-    const named = (value: unknown) => (typeof value === "string" && value ? value : null);
-    const shotProject = named(body.shotId) ? (await getShot(String(body.shotId)))?.projectId ?? null : null;
+    const shotProject = shotTo ? (await getShot(shotTo))?.projectId ?? null : null;
     /* Loaded here: only this edit asks, the delete below never does. */
     const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server");
-    for (const project of [inTake?.project_id == null ? null : String(inTake.project_id), named(body.projectId), shotProject]) { const refused = await sampleWriteRefusal(project); if (refused) return refused; }
+    for (const project of [inTake?.project_id == null ? null : String(inTake.project_id), projectTo ?? null, shotProject]) { const refused = await sampleWriteRefusal(project); if (refused) return refused; }
   }
+  /* A take of a private board this person may not write is read as no take (#685), so every answer after is an unknown take's. */
   const id = await takeIdFor(got.user, asked);
+  /* A move to another project (or to none) changes who may open the uploads the take names: asked like an addition, before anything is written
+     (lib/projectMove.ts). A take in a draft's own project leaves it only with its owner. Refused as an unknown take is. */
+  if (projectTo !== undefined) {
+    const cur = (await db().execute({ sql: "SELECT project_id, params FROM generations WHERE id=?", args: [id] })).rows[0];
+    if (cur) {
+      try { await assertMoveAllowed(db(), { from: cur.project_id == null ? null : String(cur.project_id), to: projectTo, named: [parseJson(cur.params)] }); }
+      catch (error) { if (error instanceof MoveRefused) return NextResponse.json({ error: "Not found" }, { status: 404 }); throw error; }
+    }
+  }
+  /* Filing a take against a shot moves it into the shot's project (the COALESCE in the update below): asked like any move, before anything is written,
+     and refused as a missing shot is. */
+  if (shotTo) {
+    const shot = await getShot(shotTo);
+    const cur = shot ? (await db().execute({ sql: "SELECT project_id, params FROM generations WHERE id=?", args: [id] })).rows[0] : null;
+    if (shot && cur) {
+      const from = cur.project_id == null ? null : String(cur.project_id);
+      try { await assertMoveAllowed(db(), { from, to: shot.projectId ?? from, named: [parseJson(cur.params)] }); }
+      catch (error) { if (error instanceof MoveRefused) return NextResponse.json({ error: "That shot is gone." }, { status: 404 }); throw error; }
+    }
+  }
   /* A review is checked before anything is written: a state the trail knows
      (an unknown word used to clear a sign-off), a take still in the project,
      and a mark only on a take that finished — a render in flight, held or
@@ -128,7 +156,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
      (After the checks above, which only read: a word the trail does not know, a take that is gone or not finished answer as they did.) */
   const refused = await notYours(got.user, id);
   if (refused) return refused;
-  const refusedTarget = await notThere(got.user, body);
+  const refusedTarget = await notThere(got.user, { projectId: projectTo, shotId: shotTo });
   if (refusedTarget) return refusedTarget;
   /* Discard a held take without hiding it: it stays in the list as cancelled. */
   if (body.discard === true) {
@@ -172,10 +200,10 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     if (problem) return NextResponse.json({ error: problem }, { status: 409 });
     invalidate(PROJECTS_KEY);
   }
-  if (body.projectId !== undefined) {
+  if (projectTo !== undefined) {
     await db().execute({
       sql: `UPDATE generations SET project_id=?, updated_at=? WHERE id=?`,
-      args: [body.projectId || null, Date.now(), id],
+      args: [projectTo, Date.now(), id],
     });
   }
   // A name for the render. Empty clears it — the clip id comes back.
@@ -236,8 +264,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
      track takes none and keeps the number it has. The render follows the
      shot into its production. `version` is NOT NULL (lib/db.ts): unfiling
      puts back the default an unfiled render carries, never NULL. */
-  if (body.shotId !== undefined) {
-    const shotId = body.shotId ? String(body.shotId) : null;
+  if (shotTo !== undefined) {
+    const shotId = shotTo;
     if (shotId) {
       const shot = await getShot(shotId);
       if (!shot) return NextResponse.json({ error: "That shot is gone." }, { status: 404 });

@@ -8,6 +8,7 @@ import { assetCursor, assetPageQuery, AssetQueryError } from '@/lib/assetPaginat
 import { listGenerations } from '@/lib/jobs';
 import { withLedgerCharges } from '@/lib/usageLedger';
 import { listLibraryUploads } from '@/lib/uploadLibrary';
+import { uploadOpenableBy } from '@/lib/uploadAccess';
 import { referencedMedia } from '@/lib/mediaBindings';
 import { readDraft, workbenchReady } from './records';
 import { archiveAndDelete } from '@/lib/archive';
@@ -79,7 +80,7 @@ export async function listProjectLibrary(owner: string, params: URLSearchParams)
   const id = lookupId(params);
   const scope = await resolveProjectLibrary(owner, params.get('projectId')!);
   if (source === 'uploads') {
-    const result = await listLibraryUploads(params, scope, id ? {id} : undefined);
+    const result = await listLibraryUploads(params, scope, id ? {id} : undefined, { id: owner });
     const derived = new Set(scope.derivedUploadIds);
     return {...result,...(id?{nextCursor:null}:{}),uploads:result.uploads.map(upload=>({...upload,...(derived.has(upload.id)?{librarySource:'generation' as const}:{})}))};
   }
@@ -95,6 +96,8 @@ export async function linkProjectLibraryUpload(owner: string, projectId: string,
   if (!uploadId || uploadId.length > 200) throw new ProjectLibraryError('Choose a stored upload.');
   /* The marked sample production takes no filing, from anyone (lib/demo/readonly.server.ts). */
   if (await isSampleProject(scope.productionProjectId, undefined, { id: owner })) throw new ProjectLibraryError(viewOnlyRefusal((await sampleViewOnly(requireTenant())).owner.name), 403);
+  /* Filing is not a way to open someone's private upload: the person filing must be able to open it (lib/uploadAccess.ts); said as a missing one is. */
+  if (!(await uploadOpenableBy(uploadId, { id: owner }))) throw new ProjectLibraryError('This upload is no longer available in the workspace.', 404);
   const result = await db().execute({
     sql:`INSERT INTO project_library_uploads(project_id,upload_id,created_by,created_at)
       SELECT ?,id,?,? FROM uploads WHERE id=? ON CONFLICT(project_id,upload_id) DO NOTHING`,

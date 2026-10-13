@@ -17,6 +17,11 @@ const readOnly = (stmt: InStatement) => {
 };
 export class RecoveryDatabaseClient implements Client {
   constructor(private native: Client) {}
+  /**
+   * Counts the writes made through this client (each statement that is not a plain SELECT, and each committed transaction that wrote). A cached "no"
+   * (lib/uploadAccess.ts) is trusted only while this has not moved, so any write that could have granted access ends it at once.
+   */
+  writeGeneration = 0;
   private uncertain(error: unknown) {
     if (this.protocol === "file") return false;
     // A server SQL rejection is an acknowledged end to the statement, not a
@@ -42,20 +47,22 @@ export class RecoveryDatabaseClient implements Client {
       typeof stmt === "string"
         ? this.native.execute(stmt, args)
         : this.native.execute(stmt);
-    return readOnly(stmt)
-      ? run()
-      : withRecoveryActivity("database-statement", run, {
-          uncertainOnError: (error) => this.uncertain(error),
-        });
+    if (readOnly(stmt)) return run();
+    this.writeGeneration++;
+    return withRecoveryActivity("database-statement", run, {
+      uncertainOnError: (error) => this.uncertain(error),
+    }).finally(() => { this.writeGeneration++; });
   }
   batch(stmts: Parameters<Client["batch"]>[0], mode?: TransactionMode) {
+    this.writeGeneration++;
     return withRecoveryActivity(
       "database-batch",
       () => this.native.batch(stmts, mode),
       { uncertainOnError: (error) => this.uncertain(error) },
-    );
+    ).finally(() => { this.writeGeneration++; });
   }
   migrate(stmts: InStatement[]) {
+    this.writeGeneration++;
     return withRecoveryActivity(
       "database-migrate",
       () => this.native.migrate(stmts),
@@ -63,6 +70,7 @@ export class RecoveryDatabaseClient implements Client {
     );
   }
   executeMultiple(sql: string) {
+    this.writeGeneration++;
     return withRecoveryActivity(
       "database-multiple",
       () => this.native.executeMultiple(sql),
@@ -93,13 +101,16 @@ export class RecoveryDatabaseClient implements Client {
     let ended = false;
     const local = this.protocol === "file";
     const finish = () => admission.finish(uncertain);
+    const bump = () => { this.writeGeneration++; };
+    let wrote = false;
     return {
-      execute: (stmt) => native.execute(stmt),
-      batch: (stmts) => native.batch(stmts),
-      executeMultiple: (sql) => native.executeMultiple(sql),
+      execute: (stmt) => { if (!readOnly(stmt)) { wrote = true; bump(); } return native.execute(stmt); },
+      batch: (stmts) => { wrote = true; bump(); return native.batch(stmts); },
+      executeMultiple: (sql) => { wrote = true; bump(); return native.executeMultiple(sql); },
       async commit() {
         try {
           await native.commit();
+          if (wrote) bump();
           ended = true;
           await finish();
         } catch (error) {
@@ -142,3 +153,6 @@ export class RecoveryDatabaseClient implements Client {
 }
 export const fenceDatabase = (client: Client) =>
   new RecoveryDatabaseClient(client);
+
+/** The writes made through a tenant client so far (see RecoveryDatabaseClient.writeGeneration); NaN for a client that is not fenced, which never equals itself, so nothing is cached against it. */
+export const writeGenerationOf = (client: Client): number => (client instanceof RecoveryDatabaseClient ? client.writeGeneration : Number.NaN);

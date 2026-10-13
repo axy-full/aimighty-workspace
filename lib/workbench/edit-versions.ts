@@ -123,7 +123,8 @@ export async function saveEditVersion(
       throw Error(
         "This edit version exceeds the 1 MB metadata limit. Reduce oversized source notes or split the edit.",
       );
-    await validateStoredMedia(tx, edit);
+    /* An edit version is the owner's own draft, captured: it adds nothing the draft did not already name. */
+    await validateStoredMedia(tx, edit, JSON.parse(String(draft.body)));
     const value = {
       id,
       label,
