@@ -263,3 +263,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Disk: 36G / 619G (6%).
   - Status page updated.
 - 13 Oct, 08:32 IST: release/1 0ebd6eb4 full run GREEN 24/24 (all overnight merges in). #668 refreshed (a2189f0d: clean merge, migration unchanged, its own spec counts DEFAULT_PLANS) and in CI.
+- 13 Oct, 08:54 IST: #668 CI failed (a2189f0d): publicLinkOrigin:177 (p.batch not a function in the spec's stand-in platform db), r1OldPagesLinks:90 (ShellView exact union; #668 adds a view), demo-s10-phone-make:59 at 360 (data-spend priced vs unpriced; possibly a flake). Lane A is on it: code fixes first, no guard edits, and it stops and asks if an assertion would need to change.
