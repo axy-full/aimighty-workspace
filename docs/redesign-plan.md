@@ -468,3 +468,9 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
   - With Can edit, each person's undo covers only their own changes.
   - Undo never changes billing: no refunds by undo.
 - Tests for delete, undo/redo and Trash restore, plus screenshots before and after. Can ride in deploy #3 if green, otherwise the next deploy.
+
+## Owner rule (Akshay, 13 Oct afternoon): one board, four lenses
+- **The rule, from now on:** every view (Canvas, List, Strip, Rig) shows the SAME content of the current stage, arranged differently. No view may ever be empty while another has items.
+- **Bug** (production, Skoda board, Script stage): Canvas showed nothing while List showed the beats. Fix: Canvas renders script beats as text cards, in order.
+- **Defaults:** each stage opens in its natural view (Script → List; Storyboard, Shots, Cast and Elements → Canvas; Cut → Strip). The person's manual switch is remembered per board.
+- Audit every stage × view and list the findings before fixing. Tests and screenshots. Can ride in deploy #3 if green, otherwise the next deploy.
