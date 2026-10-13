@@ -455,3 +455,16 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
 2. Bug: the ⋯ button's dots sit left of centre. Centre the icon in every ⋯ button app-wide, with screenshots before and after. Can ride in deploy #3.
 3. Bug: mixed units on one screen (house: "Ask · up to $0.743" beside "8 cr" in the Atomik panel). One screen, one unit, and the house uses the unit its rule already uses on every board price, the Atomik panel included. Dollars are shown with 2 decimals, always rounded UP ($0.743 → $0.75). Money display gets an Opus review. Can ride in deploy #3 if green.
 - Deploy #3 = #675, #668, #686, #688, #690, plus these three if green. Tell the owner when it is pinned; the owner does the backup first.
+
+## Owner bug and rule (Akshay, 13 Oct afternoon): deleting cards, undo
+- **Bug** (production, house workspace, as owner): cards can't be deleted on the board canvas or in the Rig. First explain WHY (a never-delete rule, #680's check misfiring, or a missing control) before changing anything. If the never-delete guard blocks it, show the exact guard lines for the owner's word.
+- **Delete:**
+  - The board's owner, a "Can edit" teammate (once that exists) or an admin removes a card from the canvas and the Rig via Delete/Backspace, right-click › Remove and ⋯ › Remove. Multi-select works.
+  - Removing shows "Removed · Undo" (a shortcut, not a time limit).
+  - A paid take is never destroyed: it goes to the board's Trash (restorable any time) and stays in billing history and the Library. Only empty or unpaid cards (notes, text, frames) are actually deleted.
+- **Undo:**
+  - Every board keeps a session-long undo history (at least 50 steps). ⌘Z / Ctrl+Z undoes, ⌘⇧Z / Ctrl+Shift+Z redoes.
+  - Removing is one step like moves, edits and adds.
+  - With Can edit, each person's undo covers only their own changes.
+  - Undo never changes billing: no refunds by undo.
+- Tests for delete, undo/redo and Trash restore, plus screenshots before and after. Can ride in deploy #3 if green, otherwise the next deploy.
