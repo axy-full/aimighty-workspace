@@ -446,7 +446,12 @@ export async function executeGenerationAdmission(
       if (options.requestClaim && options.requestClaim.key !== filing.requestKey) return admissionReply({ error: "That step is gone." }, { status: 404 });
       /* Built from the step's own kind, model, prompt, settings and references, whatever the client sent; only its ceiling (`maxCredits`) and the step's id are kept. */
       const keep: Record<string, unknown> = { atomikStepId: body.atomikStepId };
-      if (body.maxCredits !== undefined) keep.maxCredits = body.maxCredits;
+      /* The most it may charge is the figure the queue showed: the lower of the client's ceiling and the step's own "up to" price, so a live price above it refuses the render. */
+      if (body.maxCredits != null && typeof body.maxCredits !== "number") keep.maxCredits = body.maxCredits;
+      else {
+        const ceiling = Math.min(typeof body.maxCredits === "number" ? body.maxCredits : Infinity, filing.ceilingCredits ?? Infinity);
+        if (Number.isFinite(ceiling)) keep.maxCredits = ceiling;
+      }
       for (const key of Object.keys(body)) delete body[key];
       Object.assign(body, stepRender({ kind: filing.step.kind as never, title: filing.step.title, prompt: filing.step.prompt, model: filing.step.model, params: filing.step.params as never, refs: filing.step.refs as never }, filing.projectId).body, keep);
       if (body.projectId == null) delete body.projectId;

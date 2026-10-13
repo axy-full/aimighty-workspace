@@ -110,6 +110,8 @@ test("one render per claim, built from the step itself: another key, another pro
     await db.execute({ sql: "INSERT INTO atomik_chats(id,project_id,title,status,created_by,created_at,updated_at) VALUES('ach_s',?,'Chat','waiting','u_member',1,1)", args: [board] });
     await db.execute({ sql: "INSERT INTO atomik_messages(id,chat_id,role,text,created_at) VALUES('ma','ach_s','assistant','A plan',1)", args: [] });
     await db.execute({ sql: "INSERT INTO atomik_steps(id,chat_id,message_id,position,kind,title,prompt,model,params,status,claimed_by,request_key,est_cost_usd,created_at,updated_at) VALUES('st_run','ach_s','ma',0,'video','A step','A tree in rain','grok-imagine-video',?,'running','u_admin','atomik-step:st_run',1,1,1)", args: [JSON.stringify({ ratio: "16:9", resolution: "720p", seconds: 5 })] });
+    /* A step whose own figure is far below what the engine now charges: the queue showed "up to" almost nothing. */
+    await db.execute({ sql: "INSERT INTO atomik_steps(id,chat_id,message_id,position,kind,title,prompt,model,params,status,claimed_by,request_key,est_cost_usd,created_at,updated_at) VALUES('st_low','ach_s','ma',1,'video','A cheap step','A tree in rain','grok-imagine-video',?,'running','u_admin','atomik-step:st_low',0.01,1,1)", args: [JSON.stringify({ ratio: "16:9", resolution: "720p", seconds: 5 })] });
   }, { user: user("u_member") });
   const route = loadRoute<typeof import("../../app/api/generate/route")>("app/api/generate/route.ts", () => as("u_admin", "admin"));
   const rows = () => tenant.runInTenant(ws, async () => ({
@@ -124,6 +126,11 @@ test("one render per claim, built from the step itself: another key, another pro
   }, { user: user("u_admin", "admin") });
   const before = await rows();
   expect(before).toEqual({ gens: [], reservations: 0, meter: 0 });
+  /* A live price above the step's own figure refuses the render, even from a hand-made request with a far higher ceiling: nothing is held, reserved, metered or written. */
+  const over = await post("atomik-step:st_low", { atomikStepId: "st_low", maxCredits: 5000 });
+  expect(over[0], JSON.stringify(over)).toBeGreaterThanOrEqual(400);
+  expect(JSON.stringify(over)).not.toContain("That step is gone");
+  expect(await rows()).toEqual(before);
   /* Another key: refused, and no row is written. */
   expect(await post("some-other-key-0001", {})).toEqual([404, { error: "That step is gone." }]);
   expect(await rows()).toEqual(before);

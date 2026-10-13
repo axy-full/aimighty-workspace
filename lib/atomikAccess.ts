@@ -91,6 +91,8 @@ export type ClaimedStep = {
   projectId: string | null;
   /** The key this claim's one render goes under (set by the claim): admission accepts a render only under it, so release and reconcile can fence it. */
   requestKey: string | null;
+  /** The step's own "up to" price in credits (what the queue showed the admin), or null where the workspace is not billed in credits: a render may not be admitted above it. */
+  ceilingCredits: number | null;
   /** What the render is made from: the step's own, never the client's. */
   step: { kind: string; title: string; prompt: string; model: string; params: Record<string, unknown>; refs: unknown[] };
 };
@@ -98,7 +100,7 @@ export async function claimedStepFiling(stepId: string, viewer: ChatViewer): Pro
   if (!viewer.id || !stepId) return null;
   await ready();
   const row = (await db().execute({
-    sql: `SELECT c.project_id, s.request_key, s.kind, s.title, s.prompt, s.model, s.params, s.refs FROM atomik_steps s JOIN atomik_chats c ON c.id = s.chat_id
+    sql: `SELECT c.project_id, s.request_key, s.kind, s.title, s.prompt, s.model, s.params, s.refs, s.est_cost_usd FROM atomik_steps s JOIN atomik_chats c ON c.id = s.chat_id
           WHERE s.id = ? AND s.status = 'running' AND s.claimed_by = ? AND s.gen_id IS NULL AND s.kind <> 'audio' AND c.deleted = 0 LIMIT 1`,
     args: [stepId, viewer.id],
   }).catch(missing)).rows[0] as Record<string, unknown> | undefined;
@@ -108,6 +110,7 @@ export async function claimedStepFiling(stepId: string, viewer: ChatViewer): Pro
   return {
     projectId: row.project_id == null || row.project_id === "" ? null : String(row.project_id),
     requestKey: row.request_key == null ? null : String(row.request_key),
+    ceilingCredits: stepCredits(row, creditsApply(currentTenant()?.workspace)),
     step: { kind: String(row.kind), title: String(row.title ?? ""), prompt: String(row.prompt ?? ""), model: String(row.model), params: params && typeof params === "object" && !Array.isArray(params) ? params : {}, refs: json<unknown[]>(row.refs, []) },
   };
 }
