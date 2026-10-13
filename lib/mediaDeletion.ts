@@ -62,13 +62,16 @@ export async function markGenerationDeletion(
   if (by) await recordTakeInTrash(tx, id, by, at);
 }
 
-/** A take filed on a board is in that board's Trash (lib/boardTrash.ts): its original is kept and it can be put back. One already there stays as it is. */
+/**
+ * A take a person removed is in a Trash (lib/boardTrash.ts), so its original is kept and it can be put back: its board's, or, for a take filed on no board, the
+ * workspace's (`project_id` is '' and the remover holds it, so only they and the admins who may change it list it). One already there stays as it is.
+ */
 export async function recordTakeInTrash(tx: Transaction, id: string, by: string, at = Date.now()) {
   await tx.execute({
     sql: `INSERT INTO board_trash(id,project_id,kind,item_id,label,payload,removed_by,removed_at,holder)
-          SELECT lower(hex(randomblob(16))),project_id,'take',id,substr(COALESCE(NULLIF(title,''),prompt,''),1,80),NULL,?,?,'' FROM generations WHERE id=? AND project_id IS NOT NULL
+          SELECT lower(hex(randomblob(16))),COALESCE(project_id,''),'take',id,substr(COALESCE(NULLIF(title,''),prompt,''),1,80),NULL,?,?,CASE WHEN project_id IS NULL THEN ? ELSE '' END FROM generations WHERE id=?
           ON CONFLICT DO NOTHING`,
-    args: [by, at, id],
+    args: [by, at, by, id],
   });
 }
 

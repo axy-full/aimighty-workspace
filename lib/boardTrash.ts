@@ -198,6 +198,54 @@ async function withName(entry: TrashEntry): Promise<TrashEntry> {
   return { ...entry, removedBy: { id: entry.removedBy.id, name: names.get(entry.removedBy.id) ?? null } };
 }
 
+/** Puts a take back as it was: the rule of `PATCH trashed:false`, the work rule first, and the take's open record closed (whichever id put it back). `projectId` is the board it was removed from, or null for an unfiled take. */
+async function putTakeBack(person: Actor & { id: string }, itemId: string, projectId: string | null, at: number): Promise<TrashFailure | null> {
+  const take = (await db().execute({ sql: "SELECT project_id, created_by FROM generations WHERE id=?", args: [itemId] })).rows[0] as Record<string, unknown> | undefined;
+  if (!take || (take.project_id == null ? null : String(take.project_id)) !== projectId) return fail(404, "Nothing like that is in the Trash.");
+  if (!(await mayChangeWork(person, { createdBy: take.created_by == null ? null : String(take.created_by), projectId }))) return fail(403, NOT_YOURS.take);
+  return workbenchTransaction(async (tx): Promise<TrashFailure | null> => {
+    const now = (await tx.execute({ sql: "SELECT deleted, stored_url, bytes FROM generations WHERE id=?", args: [itemId] })).rows[0] as Record<string, unknown> | undefined;
+    if (!now) return fail(404, "Nothing like that is in the Trash.");
+    if (Number(now.deleted)) {
+      const pending = (await tx.execute({ sql: "SELECT lease FROM generation_deletions WHERE id=?", args: [itemId] })).rows[0];
+      const state = takeRestorable(now, !!pending && pending.lease != null);
+      if (!state.ok) return fail(409, state.why!);
+      await tx.execute({ sql: "DELETE FROM generation_deletions WHERE id=?", args: [itemId] });
+      await tx.execute({ sql: "UPDATE generations SET deleted=0, updated_at=? WHERE id=?", args: [at, itemId] });
+    }
+    await markGenerationRestored(tx, itemId, person.id, at);
+    return null;
+  });
+}
+
+/**
+ * The workspace's Trash: the takes a person removed that were filed on no board (their record has no board: `project_id` is ''). The remover lists and restores
+ * their own, and an admin those they may change (an unfiled take is the workspace's, as it is in the takes list); nobody else. Restoring never touches billing.
+ */
+export async function listWorkspaceTrash(person: Actor & { id: string }): Promise<{ ok: true; items: TrashEntry[] }> {
+  await ready(); await mediaDeletionReady();
+  const rows = (await db().execute({
+    sql: `SELECT b.id, b.kind, b.item_id, b.label, b.removed_by, b.removed_at, g.stored_url, g.bytes, d.lease FROM board_trash b
+          LEFT JOIN generations g ON g.id=b.item_id LEFT JOIN generation_deletions d ON d.id=b.item_id
+          WHERE b.project_id='' AND b.restored_at IS NULL AND (b.holder=? OR ?=1) ORDER BY b.removed_at DESC, b.id DESC LIMIT ?`,
+    args: [person.id, isAgentId(person.id) ? 0 : (person.role === "admin" || person.owner === true ? 1 : 0), TRASH_LIST_LIMIT],
+  })).rows as Record<string, unknown>[];
+  const names = await namesOf(rows.map((row) => String(row.removed_by)));
+  return { ok: true, items: rows.map((row) => { const t = takeRestorable(row, row.lease != null); return entryOf(row, names, t.ok, t.why); }) };
+}
+
+export async function restoreFromWorkspaceTrash(person: Actor & { id: string }, entryId: string): Promise<Restored | TrashFailure> {
+  await ready(); await mediaDeletionReady(); await workbenchReady();
+  if (!ID.test(entryId)) return fail(404, "Nothing like that is in the Trash.");
+  const admin = !isAgentId(person.id) && (person.role === "admin" || person.owner === true);
+  const row = (await db().execute({ sql: "SELECT * FROM board_trash WHERE id=? AND project_id='' AND kind='take' AND restored_at IS NULL AND (holder=? OR ?=1)", args: [entryId, person.id, admin ? 1 : 0] })).rows[0] as Record<string, unknown> | undefined;
+  if (!row) return fail(404, "Nothing like that is in the Trash.");
+  if (isAgentId(person.id) && String(row.removed_by ?? "") !== person.id) return fail(404, "Nothing like that is in the Trash.");
+  const problem = await putTakeBack(person, String(row.item_id), null, Date.now());
+  if (problem) return problem;
+  return { ok: true, entry: entryOf(row, new Map(), true), payload: null };
+}
+
 export type Restored = { ok: true; entry: TrashEntry; payload: unknown | null };
 
 /** Puts one thing back. Restoring never touches billing: a take comes back as it was, a shot with its wires and the takes that were filed under it. */
@@ -220,23 +268,7 @@ export async function restoreFromTrash(person: Actor & { id: string }, projectId
   const itemId = String(row.item_id);
 
   if (kind === "take") {
-    const take = (await db().execute({ sql: "SELECT project_id, created_by FROM generations WHERE id=?", args: [itemId] })).rows[0] as Record<string, unknown> | undefined;
-    if (!take || String(take.project_id ?? "") !== projectId) return fail(404, "Nothing like that is in the Trash.");
-    if (!(await mayChangeWork(person, { createdBy: take.created_by == null ? null : String(take.created_by), projectId }))) return fail(403, NOT_YOURS.take);
-    const problem = await workbenchTransaction(async (tx): Promise<TrashFailure | null> => {
-      const now = (await tx.execute({ sql: "SELECT deleted, stored_url, bytes FROM generations WHERE id=?", args: [itemId] })).rows[0] as Record<string, unknown> | undefined;
-      if (!now) return fail(404, "Nothing like that is in the Trash.");
-      if (Number(now.deleted)) {
-        const pending = (await tx.execute({ sql: "SELECT lease FROM generation_deletions WHERE id=?", args: [itemId] })).rows[0];
-        const state = takeRestorable(now, !!pending && pending.lease != null);
-        if (!state.ok) return fail(409, state.why!);
-        await tx.execute({ sql: "DELETE FROM generation_deletions WHERE id=?", args: [itemId] });
-        await tx.execute({ sql: "UPDATE generations SET deleted=0, updated_at=? WHERE id=?", args: [at, itemId] });
-      }
-      /* Its open record is closed whichever id put it back (`take:<id>` included). */
-      await markGenerationRestored(tx, itemId, person.id, at);
-      return null;
-    });
+    const problem = await putTakeBack(person, itemId, projectId, at);
     if (problem) return problem;
     return { ok: true, entry: entryOf({ ...row, label: String(row.label ?? "") }, new Map(), true), payload: null };
   }

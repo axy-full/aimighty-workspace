@@ -127,8 +127,8 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "list_trash",
-    description: "What was removed from a board and can be put back: takes and shots, newest first. Only for the person who can edit the board.",
-    inputSchema: { type: "object", properties: { project: { type: "string", description: "The board's project name or id." } }, required: ["project"] },
+    description: "What was removed from a board and can be put back: takes and shots, newest first. Only for the person who can edit the board. Leave out the project for the takes removed that were filed on no board.",
+    inputSchema: { type: "object", properties: { project: { type: "string", description: "The board's project name or id. Omit for takes that were filed on no board." } } },
   },
   {
     name: "remove_to_trash",
@@ -149,10 +149,10 @@ export const TOOLS: ToolDef[] = [
     inputSchema: {
       type: "object",
       properties: {
-        project: { type: "string", description: "The board's exact project name or id." },
+        project: { type: "string", description: "The board's exact project name or id. Omit for a take that was filed on no board." },
         entry: { type: "string", description: "The Trash entry id from list_trash." },
       },
-      required: ["project", "entry"],
+      required: ["entry"],
     },
   },
   {
@@ -396,8 +396,7 @@ export async function runTool(
 
     case "list_trash": {
       const project = await resolveProject(call, args.project as string | undefined, "read");
-      if (!project) throw new Error("Name the board: its project name or id.");
-      const { items } = (await call(`/api/boards/${encodeURIComponent(project.id)}/trash`)) as { items: { id: string; kind: string; label: string; restorable: boolean; why: string | null }[] };
+      const { items } = (await call(project ? `/api/boards/${encodeURIComponent(project.id)}/trash` : "/api/trash")) as { items: { id: string; kind: string; label: string; restorable: boolean; why: string | null }[] };
       if (!items.length) return "The Trash is empty.";
       return items.map((i) => `${i.id} · ${i.kind} · ${i.label || "untitled"}${i.restorable ? "" : ` · cannot be put back: ${i.why ?? "its original is gone"}`}`).join("\n");
     }
@@ -412,8 +411,7 @@ export async function runTool(
 
     case "restore_from_trash": {
       const project = await resolveProject(call, args.project as string | undefined, "spend");
-      if (!project) throw new Error("Name the board: its exact project name or id.");
-      const { entry } = (await call(`/api/boards/${encodeURIComponent(project.id)}/trash/${encodeURIComponent(String(args.entry))}/restore`, { method: "POST", body: {} })) as { entry: { kind: string; label: string } };
+      const { entry } = (await call(`${project ? `/api/boards/${encodeURIComponent(project.id)}/trash` : "/api/trash"}/${encodeURIComponent(String(args.entry))}/restore`, { method: "POST", body: {} })) as { entry: { kind: string; label: string } };
       return `Put the ${entry.kind} ${entry.label ? `“${entry.label}” ` : ""}back. Nothing was charged.`;
     }
 
