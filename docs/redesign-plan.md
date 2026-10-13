@@ -446,3 +446,12 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
   - List its contents, the two migrations (#675's uploader_id column, #668's audit table) with what each changes, and the env names.
   - Don't open it until the owner says deploy #2 is checked.
   - After deploy #3 is pinned, merge #691.
+
+## Owner decisions (Akshay, 13 Oct afternoon, from the deploy #2 check)
+1. Board sharing: the brief is that teammates EDIT together. The live "view only" is #667's interim step.
+   - The "Can edit" PRs move to the FRONT of the queue right after deploy #3.
+   - Business workspaces default to "Shared with team · Can edit", with the "changed since you opened it" protection (v15).
+   - Until then, the live tooltip reads "Editing together is coming next — for now teammates can view." A small PR, which can ride in deploy #3.
+2. Bug: the ⋯ button's dots sit left of centre. Centre the icon in every ⋯ button app-wide, with screenshots before and after. Can ride in deploy #3.
+3. Bug: mixed units on one screen (house: "Ask · up to $0.743" beside "8 cr" in the Atomik panel). One screen, one unit, and the house uses the unit its rule already uses on every board price, the Atomik panel included. Dollars are shown with 2 decimals, always rounded UP ($0.743 → $0.75). Money display gets an Opus review. Can ride in deploy #3 if green.
+- Deploy #3 = #675, #668, #686, #688, #690, plus these three if green. Tell the owner when it is pinned; the owner does the backup first.

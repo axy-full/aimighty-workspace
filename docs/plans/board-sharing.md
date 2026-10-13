@@ -108,3 +108,10 @@ v15 is v14 plus board sharing, and it replaces v14 as THE design (design/particl
 | 13 README and screens file | the design PR |
 
 The design PR (lane C) puts v15 in design/, removes v14 and names v15 in the one-design guard, on the owner's direct word.
+
+## Re-ordered by the owner (13 Oct afternoon): "Can edit" first, after deploy #3
+1. PR 3 (act on a board stored under another key, server-owned share flags) and PR 6 (the teamEdit mode and editor write reach).
+2. PR 8 (the "changed since you opened it" protection: revision catch-up, a conflict bar with Reload and Keep my version).
+3. PR 9 (the Business default "Shared with team · Can edit") and the share submenu screen (part of PR 10).
+4. Then PR 1, 2 and 4 to 7, and the rest of 10.
+Until "Can edit" ships, the tooltip reads: "Editing together is coming next — for now teammates can view."
