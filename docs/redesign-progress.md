@@ -262,3 +262,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Hygiene: removed 11 worktrees and about 23 GB of temp; no test servers.
   - Disk: 36G / 619G (6%).
   - Status page updated.
+- 13 Oct, 08:32 IST: release/1 0ebd6eb4 full run GREEN 24/24 (all overnight merges in). #668 refreshed (a2189f0d: clean merge, migration unchanged, its own spec counts DEFAULT_PLANS) and in CI.
