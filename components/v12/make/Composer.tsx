@@ -11,6 +11,7 @@ import { ENHANCE_ASWRITTEN, enhanceKey, enhanceOffered, workspaceEnhance, writeE
 import { useRead } from "@/components/graphite/settings/use-settings";
 import { EDIT_OPS, MAKE_MODES, REMIX_NEEDS_SOURCE, REMIX_OPS, houseAbout, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
+import { useBarSkills } from "@/components/v12/bar/use-bar-skills";
 import { Price } from "@/components/v12/ui/Price";
 import { Menu, type MenuItem } from "@/components/v12/ui/Popover";
 import { Segment } from "@/components/v12/ui/Segment";
@@ -208,10 +209,12 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
     </div>
   ) : null;
 
+  const skills = useBarSkills(state.prompt, make.setPrompt);
   return (
     <div className="v12-mk-composer" data-testid="v12-make-composer" data-mode={mode}>
       <Bar
         docked
+        skills={skills}
         value={state.prompt}
         onChange={make.setPrompt}
         onSubmit={() => make.go.press()}

@@ -35,7 +35,7 @@ export const GET = withTenant(async (req: Request) => {
   if (got.response) return got.response;
   try {
     const url = new URL(req.url);
-    if (url.searchParams.get("runs") === "1") return reply({ runs: await savableRuns(url.searchParams.get("projectId")) });
+    if (url.searchParams.get("runs") === "1") return reply({ runs: await savableRuns(url.searchParams.get("projectId"), got.user.id) });
     return reply({ skills: await listSkills({ status: url.searchParams.get("status"), query: url.searchParams.get("q") }, got.user.id) });
   } catch (error) { return skillFailure(error, "Skills could not be loaded. Try again."); }
 });
@@ -55,7 +55,7 @@ export const POST = withTenant(async (req: Request) => {
   try {
     switch (body.action) {
       case "draft":
-        return reply({ draft: await draftFromRun(body.chatId) });
+        return reply({ draft: await draftFromRun(body.chatId, got.user.id) });
       case "save":
         return reply({ skill: await saveSkillFromRun({
           chatId: body.chatId, stepIds: body.stepIds, parameters: body.parameters,

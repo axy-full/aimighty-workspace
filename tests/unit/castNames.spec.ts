@@ -26,6 +26,8 @@ async function route(file: string): Promise<Record<string, Handler>> {
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/mediaMutation": await import("../../lib/mediaMutation"),
     "@/lib/cast": await import("../../lib/cast"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
+    "@/lib/demo/readonly.server": await import("../../lib/demo/readonly.server"),
     "@/lib/workbench/request-scope": { workbenchScopeProblem: () => null },
     "@/lib/auth": { withTenant: (handler: Handler) => handler, requireUser: async () => ({ user: { id: "owner", name: "Owner" } }) },
   };

@@ -1,3 +1,4 @@
+import { sampleRowRefusal } from "@/lib/demo/readonly.server";
 import { withMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
 import { db, ready } from "@/lib/db";
@@ -13,6 +14,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
+  { const refused = await sampleRowRefusal("cast_members", id); if (refused) return refused; }
   const body = await req.json().catch(() => ({}));
 
   if (body.name != null) {
@@ -58,6 +60,7 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   if (got.response) return got.response;
   await ready();
   const { id } = await params;
+  { const refused = await sampleRowRefusal("cast_members", id); if (refused) return refused; }
   await archiveAndDelete(db(), "cast_members", `id = ?`, [id]);
   return NextResponse.json({ ok: true });
 });

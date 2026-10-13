@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { db, ready, now } from "@/lib/db";
+import { sampleWriteRefusal } from "@/lib/demo/readonly.server";
+import { mayReachProject } from "@/lib/draftProject";
 import { NOT_YOURS, isAdmin, mayChangeWork, projectMaker } from "@/lib/workAccess";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +21,12 @@ export const POST = withTenant(async function POST(req: Request) {
   const projectId = typeof b.projectId === "string" ? b.projectId : "";
   const ids: string[] = Array.isArray(b.ids) ? b.ids.map(String) : [];
   if (!projectId || !ids.length) return NextResponse.json({ error: "A project and its shots, in order." }, { status: 400 });
+  /* The marked sample takes no new order, from anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleWriteRefusal(projectId); if (refused) return refused; }
   const rs = await db().execute({ sql: `SELECT id FROM shots WHERE project_id = ?`, args: [projectId] });
-  const own = new Set(rs.rows.map((r) => String((r as unknown as { id: unknown }).id)));
+  /* A private board's shots are its owner's alone (lib/draftProject.ts): asked before the rule about who may change work, and answered as a project with no such shots. */
+  const reach = await mayReachProject(got.user, projectId, "write");
+  const own = new Set(!reach ? [] : rs.rows.map((r) => String((r as unknown as { id: unknown }).id)));
   if (!ids.every((id) => own.has(id))) return NextResponse.json({ error: "Those are not all this project's shots." }, { status: 400 });
   /* The order is the sequence: moving shots about is changing them. Their maker, the board's owner or an admin only (lib/workAccess.ts). */
   if (!isAdmin(got.user) && (await projectMaker(projectId)) !== got.user.id) {

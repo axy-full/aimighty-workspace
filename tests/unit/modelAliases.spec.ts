@@ -167,7 +167,7 @@ test("a chat and an idea saved on a dropped id read as the alias; the stored row
     const loaded = (await getChat("pro"))!;
     expect(loaded.chat).toMatchObject({ model: "openai/gpt-5.5", effort: "high" });
     expect(loaded.chat.modelNote).toBeUndefined();
-    expect((await listChats()).find((c) => c.id === "pro")).toMatchObject({ model: "openai/gpt-5.5" });
+    expect((await listChats("owner")).find((c) => c.id === "pro")).toMatchObject({ model: "openai/gpt-5.5" });
     expect((await db().execute({ sql: "SELECT model FROM atomik_chats WHERE id = ?", args: ["pro"] })).rows[0]).toMatchObject({ model: "openai/gpt-5.5-pro" });
     await patchChat("pro", { model: "anthropic/claude-opus-4.8-fast" });
     expect((await db().execute({ sql: "SELECT model FROM atomik_chats WHERE id = ?", args: ["pro"] })).rows[0]).toMatchObject({ model: "anthropic/claude-opus-4.8" });

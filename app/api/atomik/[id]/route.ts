@@ -14,6 +14,7 @@ import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, priceKeyStep } from "@/lib/atomikLibrary";
 import { ARCHIVED_NOTE, ThreadError, archiveThread, renameThread, restoreThread } from "@/lib/atomikThreads";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { CHAT_GONE, chatIsMine } from "@/lib/atomikAccess";
 
 export const dynamic = "force-dynamic";
 /* A bounded 270s provider attempt has enough time for reasoning before this route ends. */
@@ -25,6 +26,8 @@ export const GET = withTenant(async function GET(_req: NextRequest, ctx: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
+  /* A chat is its person's (lib/atomikAccess.ts): to anyone else it is gone. */
+  if (!(await chatIsMine(id, got.user))) return NextResponse.json({ error: CHAT_GONE }, { status: 404 });
   /* Reading the plan settles any step whose approval was cut off mid-way. */
   await reconcileRunningSteps(id);
   const loaded = await getChat(id);
@@ -36,6 +39,8 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
+  /* Someone else's chat answers as a thread that is not there does (lib/atomikAccess.ts). */
+  if (!(await chatIsMine(id, got.user))) return NextResponse.json({ error: "That thread is gone." }, { status: 404 });
   const b = await req.json().catch(() => ({}));
   try {
   /* A thread is renamed, archived or restored (lib/atomikThreads.ts). None of it is activity, none of it
@@ -59,6 +64,8 @@ export const DELETE = withTenant(async function DELETE(_req: NextRequest, ctx: C
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
+  /* Someone else's chat is deleted as an unknown one is: nothing happens (lib/atomikAccess.ts). */
+  if (!(await chatIsMine(id, got.user))) return NextResponse.json({ ok: true });
   await deleteChat(id);
   return NextResponse.json({ ok: true });
 });
@@ -86,6 +93,8 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
   /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
   if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* A turn in someone else's chat is a paid planning call on it: the chat is gone to anyone but its person, before anything is quoted or claimed (asked after the refusals that do not depend on the chat). */
+  if (!(await chatIsMine(id, got.user))) return NextResponse.json({ error: CHAT_GONE }, { status: 404 });
   const run = async () => {
   const text = String(b.text ?? "").trim().slice(0, 20000);
   if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });

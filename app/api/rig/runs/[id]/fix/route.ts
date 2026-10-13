@@ -1,3 +1,4 @@
+import { sampleRowRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { applyFix } from "@/lib/runs";
@@ -17,6 +18,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   const got = await requireRender();
   if (got.response) return got.response;
   const { id } = await params;
+  /* The marked sample's runs take no fix, from anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleRowRefusal("runs", id); if (refused) return refused; }
   const body = await req.json().catch(() => ({}));
 
   const stageId = String(body.stageId ?? "");

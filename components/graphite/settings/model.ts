@@ -112,19 +112,18 @@ export function monthLine(t: MonthTotals): string {
   return [`${creditsText(t.charged)} settled`, t.held > 0 ? `${creditsText(t.held)} held` : null].filter(Boolean).join(" · ");
 }
 
-/** The plan as Settings shows it: its name and price, what it includes, and when it renews. Only what the code holds. */
+/** The plan as Settings shows it: its name (never a price, which only the plans list shows), what it includes, and when it renews. Only what the code holds. */
 export type PlanDefLike = BillingPlan & { priceUsd?: number; includedCredits?: number };
 export function planView(plans: readonly PlanDefLike[] | undefined, sub: BillingSubscription | null | undefined): {
   meta: string; included: number | null; renews: { word: "Renews" | "Ends"; date: string } | null; status: string | null;
 } {
   if (!sub?.planId) return { meta: "No plan on record", included: null, renews: null, status: null };
   const plan = plans?.find((p) => p.id === sub.planId);
-  const price = typeof plan?.priceUsd === "number" ? ` · $${plan.priceUsd.toLocaleString("en-US")} a month` : "";
   /* Stored as the provider sent it: seconds or milliseconds (lib/shell/workspace-view.ts planLine reads it the same way). */
   const at = sub.currentPeriodEnd ? (sub.currentPeriodEnd < 10_000_000_000 ? sub.currentPeriodEnd * 1000 : sub.currentPeriodEnd) : 0;
   const date = at ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : null;
   return {
-    meta: `${plan?.label ?? sub.planId}${price}`,
+    meta: plan?.label ?? sub.planId,
     included: typeof plan?.includedCredits === "number" && plan.includedCredits > 0 ? plan.includedCredits : null,
     renews: date ? { word: sub.cancelAtPeriodEnd ? "Ends" : "Renews", date } : null,
     status: sub.status && sub.status !== "active" ? sub.status.replace(/_/g, " ") : null,
