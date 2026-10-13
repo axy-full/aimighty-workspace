@@ -142,10 +142,13 @@ export async function mapNodeShot(owner:string, project:Project, nodeId:string, 
  * what is stored; only `setBoardSharing` (the `team-share` action, by the board's owner) changes them. A save that names a different value, a stale
  * window, a copy of the board or a client that never heard of the flag, can neither share a private board nor take a shared one back.
  */
+/** The sharing a new board starts with: set by the server at its first save (lib/workbench/board-default.ts), from the workspace's plan. */
+export type InitialSharing={teamShared:boolean;teamEdit:boolean};
 export const SHARE_FLAGS = ['teamShared','teamEdit'] as const;
-function keepStoredSharing<T extends Record<string,unknown>>(body:T,stored:unknown):T {
+function keepStoredSharing<T extends Record<string,unknown>>(body:T,stored:unknown,initial?:InitialSharing):T {
   const out:Record<string,unknown>={...body};
-  const was=stored&&typeof stored==='object'?stored as Record<string,unknown>:{};
+  /* A first save has nothing stored: its sharing is the default the server stamped for it (private unless the workspace's plan says otherwise), never the client's. */
+  const was=stored&&typeof stored==='object'?stored as Record<string,unknown>:(initial?{teamShared:initial.teamShared||undefined,teamEdit:initial.teamShared&&initial.teamEdit||undefined}:{});
   for(const flag of SHARE_FLAGS){
     if(was[flag]===undefined)delete out[flag];
     else out[flag]=was[flag];
@@ -168,7 +171,7 @@ const WRITES_KEPT_MS = 30*24*60*60*1000;
  * a board stored under someone else's key (the route asks `mayReachProject` first; this function does not decide who may). The actor is recorded on the row
  * (`updated_by`) and as the author of what the save implies for the team canvas; the key, the mappings and the revision stay the board's own.
  */
-export async function saveDraft(owner:string, project:Project, revision:number, write?:DraftWriteTag, actor:string=owner) {
+export async function saveDraft(owner:string, project:Project, revision:number, write?:DraftWriteTag, actor:string=owner, initial?:InitialSharing) {
   await workbenchReady();
   const current=await readDraft(owner,project.id);
   if((current?.revision??0)!==revision)throw new DraftConflictError('This project changed in another window. Download your work before reloading.');
@@ -194,7 +197,7 @@ export async function saveDraft(owner:string, project:Project, revision:number, 
     try { before=JSON.parse(String((await tx.execute({sql:'SELECT body FROM workbench_projects WHERE key=?',args:[owner+':'+project.id]})).rows[0]?.body??'null')); } catch { before=undefined; }
     await validateStoredMedia(tx,project,before??undefined);
     const mappings=Object.fromEntries((await tx.execute({sql:'SELECT node_id,shot_id FROM workbench_shots WHERE owner=? AND draft_id=?',args:[owner,project.id]})).rows.map(r=>[String(r.node_id),String(r.shot_id)]));
-    const body=keepStoredSharing({...project,productionProjectId:pid,shotMappings:mappings},before);
+    const body=keepStoredSharing({...project,productionProjectId:pid,shotMappings:mappings},before,initial);
     const result=await tx.execute({sql:`INSERT INTO workbench_projects (key,owner,project_id,name,body,revision,updated_at,updated_by) VALUES (?,?,?,?,?,1,?,?)
       ON CONFLICT(key) DO UPDATE SET name=excluded.name,body=excluded.body,revision=workbench_projects.revision+1,updated_at=excluded.updated_at,updated_by=excluded.updated_by WHERE workbench_projects.revision=?`,
       args:[owner+':'+project.id,owner,project.id,project.name,JSON.stringify(body),now(),actor,revision]});

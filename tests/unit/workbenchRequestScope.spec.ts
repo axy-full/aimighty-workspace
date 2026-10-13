@@ -49,6 +49,7 @@ function route() {
       publishBible: record("publish", { version: 1 }),
     },
     /* Teammates' boards (lib/workbench/team-boards.ts, tests/unit/teamBoards.spec.ts): none is involved here, so no board is another person's. */
+    "@/lib/workbench/board-default": { defaultSharing: async () => ({ teamShared: false, teamEdit: false }) },
     "@/lib/workbench/team-boards": { findTeamBoard: async () => null, listTeamBoards: async () => [], otherOwnersBoard: async () => null, boardKeyFor: async (_ws: unknown, actor: { id: string }) => ({ owner: actor.id }), maySetSharing: () => true, readTeamBoard: async () => null, viewOnlyRefusal },
     /* Studio's first run: seeding the starter production writes to the workspace, so it is gated like a save. */
     "@/lib/workbench/starter-draft": {

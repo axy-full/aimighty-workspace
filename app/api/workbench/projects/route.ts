@@ -10,6 +10,7 @@ import { newProject, type Project } from '@/lib/workbench/studio';
 import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible, checkDraftWrite, setBoardSharing, DraftConflictError } from '@/lib/workbench/records';
 import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
+import { defaultSharing } from '@/lib/workbench/board-default';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
 import { boardKeyFor, maySetSharing, mayWriteBoard, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
@@ -118,7 +119,9 @@ export const PUT=withTenant(async(req:Request)=>{
   /* The marked sample production is read-only for everyone, its marker and the workspace's owner included: a save of it, of a copy opened of it or of the board it was marked from is refused in the same words. */
   const stored=(await readDraft(storageOwner,p.id))?.project.productionProjectId;
   if(await isSampleDraft(storageOwner,p.id,p.productionProjectId||stored,undefined,auth.user.id)){const{owner}=await sampleViewOnly(requireTenant());return Response.json({error:viewOnlyRefusal(owner.name),code:'view_only'},{status:403,headers:noStore});}
-  try{return Response.json(await saveDraft(storageOwner,p,revision,write,auth.user.id));}
+  /* A new board (its first save, under the person's own key) starts shared or private by the workspace's plan; a later save keeps what is stored. */
+  const initial=revision===0&&storageOwner===auth.user.id&&!stored?await defaultSharing():undefined;
+  try{return Response.json(await saveDraft(storageOwner,p,revision,write,auth.user.id,initial));}
   catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
 });
 
