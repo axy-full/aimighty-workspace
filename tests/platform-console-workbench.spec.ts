@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { password, signupInvite } from "./helpers/identityAdmin";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { signInToRedesign } from "./helpers/newInterface";
+import { DEFAULT_PLANS } from "../lib/plans";
 
 /**
  * The platform console (`?view=admin`, components/v12/platform), end to end on a local ENGINE_MOCK server started with
@@ -341,7 +342,8 @@ test("desktop: the nine places draw, work and save as they are touched; no horiz
 
   /* Plans & prices: read only, from config; Edit prices says why it is off. */
   await page.getByTestId("pc-nav-plans").click();
-  await expect(page.getByTestId("pc-plan")).toHaveCount(4);
+  /* One card per plan in the platform layer's list (lib/plans.ts: the new Individual and Business plans since #661, with the retired ones), not a number typed here. */
+  await expect(page.getByTestId("pc-plan")).toHaveCount(DEFAULT_PLANS.length);
   const edit = page.getByTestId("pc-edit-prices");
   await expect(edit).toHaveAttribute("aria-disabled", "true");
   await edit.hover();
