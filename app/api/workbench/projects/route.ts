@@ -12,7 +12,7 @@ import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { boardKeyFor, maySetSharing, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { boardKeyFor, maySetSharing, mayWriteBoard, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -51,7 +51,7 @@ export const GET=withTenant(async(req:Request)=>{
     const seen=await readTeamBoard(requireTenant(),auth.user.id,ownerParam,id);
     if(!seen)return Response.json({error:'Not found'},{status:404,headers:noStore});
     /* To edit, when the board is shared with "Can edit" and this person may write it (`actingOn`: whose board, so saves go to the owner's key); otherwise to look at. */
-    return projectResponse(req,{projects:[],productions:[],project:seen.project,revision:seen.revision,shared:null,...(await openingOf(auth.user,seen))});
+    return projectResponse(req,{projects:[],productions:[],project:seen.project,revision:seen.revision,shared:null,...(await openingOf(requireTenant(),auth.user,seen))});
   }
   const team=new URL(req.url).searchParams.get('team')==='1'?await listTeamBoards(requireTenant(),auth.user.id,{kinds}):null;
   const [list,productions,draft]=await Promise.all([
@@ -63,7 +63,7 @@ export const GET=withTenant(async(req:Request)=>{
   const listed=await projectLister(auth.user);
   if(id&&!draft){
     const seen=await findTeamBoard(requireTenant(),auth.user.id,id);
-    if(seen)return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:seen.project,revision:seen.revision,shared:null,...(await openingOf(auth.user,seen)),...(team?{team}:{})});
+    if(seen)return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:seen.project,revision:seen.revision,shared:null,...(await openingOf(requireTenant(),auth.user,seen)),...(team?{team}:{})});
   }
   let shared=null;
   if(draft?.project.productionProjectId){
@@ -145,10 +145,12 @@ export const POST=withTenant(async(req:Request)=>{
     /* A private board is its owner's alone: to anyone else it is as absent as an unknown id (lib/draftProject.ts). */
     if(!row||!(await mayReachProject(auth.user,body.projectId,'read')))return Response.json({error:'Project not found'},{status:404});
     /* A board shared with "Can edit" opens as the board itself, to edit: its owner's draft, whose saves the server keys to the owner (`actingOn`), not a copy of the production under this person's name. */
-    if(!(await ownsDraftProject(auth.user.id,body.projectId))&&(await mayReachProject(auth.user,body.projectId,'write'))){
+    if(!(await ownsDraftProject(auth.user.id,body.projectId))){
       const board=await sharedBoardOfProduction(requireTenant(),body.projectId);
-      const theirs=board?await readDraft(board.key,board.draftId):null;
-      if(board&&theirs)return projectResponse(req,{project:theirs.project,revision:theirs.revision,actingOn:{owner:board.owner}});
+      if(board&&await mayWriteBoard(requireTenant(),auth.user,board.key,board.draftId)){
+        const theirs=await readDraft(board.key,board.draftId);
+        if(theirs)return projectResponse(req,{project:theirs.project,revision:theirs.revision,actingOn:{owner:board.owner}});
+      }
     }
     /* A teammate's SHARED board is theirs to look at, not to save: it opens view-only (no draft of their own is made or saved against it), as a board link does. */
     const viewOnly=(await mayReachProject(auth.user,body.projectId,'write'))?null:(await sharedBoardOwnerOf(requireTenant(),body.projectId))??((await isSampleProject(body.projectId))?(await sampleViewOnly(requireTenant())).owner:{id:'',name:'A teammate'});
