@@ -9,6 +9,7 @@ import { ATOMIK_SCREEN } from "@/components/graphite/atomik/panel/routes";
 import { CONTROL_ROOM_SCREEN } from "@/lib/control-room/routes";
 import { SETTINGS_SCREEN } from "./settings";
 import { PHONE_SCREEN } from "@/components/graphite/phone/routes";
+import { PLATFORM_SCREEN } from "@/lib/platformConsole";
 
 export type { Row } from "./screen-rows";
 
@@ -29,7 +30,7 @@ export type { Row } from "./screen-rows";
  * normalize), each module's `normalize`, Make's old Gen and Viral addresses (lib/shell/make.ts), then the rows.
  * Every screen shows for everyone (Release 1: the new-interface switch is gone).
  */
-export type ScreenId = "home" | "board" | "board-ads" | "board-social" | "make" | "atomik" | "control-room" | "settings" | "phone";
+export type ScreenId = "home" | "board" | "board-ads" | "board-social" | "make" | "atomik" | "control-room" | "settings" | "platform" | "phone";
 export type ScreenModule = {
   id: ScreenId;
   landed: boolean;
@@ -39,7 +40,7 @@ export type ScreenModule = {
   normalize?: (q: URLSearchParams) => boolean;
 };
 
-export const SCREENS: readonly ScreenModule[] = [HOME_SCREEN, BOARD_SCREEN, ADS_SCREEN, SOCIAL_SCREEN, MAKE_SCREEN, ATOMIK_SCREEN, CONTROL_ROOM_SCREEN, SETTINGS_SCREEN, PHONE_SCREEN];
+export const SCREENS: readonly ScreenModule[] = [HOME_SCREEN, BOARD_SCREEN, ADS_SCREEN, SOCIAL_SCREEN, MAKE_SCREEN, ATOMIK_SCREEN, CONTROL_ROOM_SCREEN, SETTINGS_SCREEN, PLATFORM_SCREEN, PHONE_SCREEN];
 
 /** A kind of board draws on the board itself: it counts as landed only once both have. */
 const NEEDS: Readonly<Partial<Record<ScreenId, readonly ScreenId[]>>> = { "board-ads": ["board"], "board-social": ["board"] };
@@ -74,8 +75,8 @@ export function spelling(search: string, screens: readonly ScreenModule[] = SCRE
   return text(q);
 }
 
-/** The views the shell still has (Release 1): Home, the board and Settings. `crew`, `suite`, `gen` and anything else are not views. */
-const VIEWS: readonly string[] = ["home", "board", "workspace"];
+/** The views the shell still has (Release 1): Home, the board, Settings and the platform console (`admin`, the owner's; the server refuses it to anyone else). `crew`, `suite`, `gen` and anything else are not views. */
+const VIEWS: readonly string[] = ["home", "board", "workspace", "admin"];
 
 /**
  * The last step of `route`: what no row moved. Release 1 has no old page, so an address that names none of the shell's
@@ -153,6 +154,7 @@ export function screenOf(at: { view: string | null; kind: string | null; control
     return isLanded("board", screens) ? "board" : null;
   }
   if (at.view === "workspace") return isLanded("settings", screens) ? "settings" : null;
+  if (at.view === "admin") return isLanded("platform", screens) ? "platform" : null;
   return at.controlRoom && isLanded("control-room", screens) ? "control-room" : null;
 }
 

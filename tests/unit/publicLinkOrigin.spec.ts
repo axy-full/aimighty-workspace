@@ -167,7 +167,7 @@ async function adminInvites(sent: unknown[], writes: string[]) {
     "@/lib/auth": { requireSuperAdmin: async () => ({ user: { id: "platform_owner" } }) },
     "@/lib/platform": {
       platformReady: async () => {}, now: () => 1, platformKeysByDefault: () => true, rowToWorkspace: () => null, grantsByKind: async () => new Map(), getPlatformLayer: async () => ({}),
-      platformDb: () => ({ execute: async (q: { sql: string }) => { writes.push(q.sql); return { rows: [] }; } }),
+      platformDb: () => ({ execute: async (q: { sql: string }) => { writes.push(q.sql); return { rows: [] }; }, batch: async (qs: { sql: string }[]) => qs.map((q) => { writes.push(q.sql); return { rows: [] }; }) }),
     },
     "@/lib/mail": { ...mail, mailConfigured: () => true, sendMail: async (msg: unknown) => { sent.push(msg); return { id: "mail" }; } },
   });

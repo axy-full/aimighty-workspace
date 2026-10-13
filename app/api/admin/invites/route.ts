@@ -15,6 +15,7 @@ import { provisioningConfigured } from "@/lib/provision";
 import { keyringConfigured } from "@/lib/keyring";
 import { meterByWorkspace, meterSummary, marginUsd, engineSpansSince } from "@/lib/meter";
 import { HOUSE_WORKSPACE_ID, isHouseWorkspace } from "@/lib/houseWorkspace";
+import { inviteRef, platformAuditStatement } from "@/lib/platformAudit";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 14;
@@ -104,10 +105,11 @@ export const POST = recoveryRoute(async function POST(req: Request) {
   const ts = now();
   const expiresAt = ts + INVITE_DAYS * 86400_000;
   const p = platformDb();
-  await p.execute({
+  /* The invitation and its audit line commit together (lib/platformAudit.ts): the line names it by a hash of its code, never the code or the address. */
+  await p.batch([{
     sql: `INSERT INTO signup_invites (code, email, name, note, created_by, created_at, expires_at) VALUES (?,?,?,?,?,?,?)`,
     args: [code, email, name, note, got.user.id, ts, expiresAt],
-  });
+  }, platformAuditStatement({ actorId: got.user.id, action: "invite.created", targetType: "invite", targetId: inviteRef(code) })], "write");
   if (body.requestId) await p.execute({ sql: `UPDATE access_requests SET handled_at = ? WHERE id = ?`, args: [ts, String(body.requestId)] });
   /* The emailed link is built only on the configured origin (never the request's headers); the copy shown to this admin matches it. */
   const mailing = mailConfigured() && body.send !== false;
