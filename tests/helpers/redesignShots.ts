@@ -7,14 +7,14 @@ import sharp from "sharp";
 /*
  * Screenshots of a built screen beside the prototype URL it matches (docs/redesign-plan.md › "Screenshots").
  *
- * The prototype (design/particl-prototype-12) is served from a local static server started here, never from the
+ * The prototype (design/particl-prototype-15) is served from a local static server started here, never from the
  * network: requests to any other host are refused, except Google Fonts (the prototype falls back to the system
  * stack without them), so the stand-in stills load from the prototype's own assets/ folder.
  * Output: <REDESIGN_SHOTS_DIR or ../redesign-shots>/<name>/<width>x<height>-{app,proto,beside}.png
  */
 
-/* REDESIGN_PROTOTYPE_DIR points at another round of the prototype (v14 until it is merged); the default is the repo's own. */
-const ROOT = path.resolve(process.env.REDESIGN_PROTOTYPE_DIR ?? path.join(__dirname, "../../design/particl-prototype-12"));
+/* REDESIGN_PROTOTYPE_DIR points at another round of the prototype; the default is the repo's own design, v15 (v12 is kept beside it as the reference). */
+const ROOT = path.resolve(process.env.REDESIGN_PROTOTYPE_DIR ?? path.join(__dirname, "../../design/particl-prototype-15"));
 const PAGE = "Particl prototype.dc.html";
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".webp": "image/webp", ".css": "text/css", ".txt": "text/plain" };
 
