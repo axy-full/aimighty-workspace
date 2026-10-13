@@ -29,7 +29,7 @@ test("share with team: the ⋯ menu, the right-click menu, and a teammate's view
   const item = page.getByTestId("v12-menu-share-team");
   await expect(item).toHaveText("Share with team");
   await item.hover();
-  await expect(page.getByTestId("v12-tooltip")).toHaveText("Teammates can view this board. Only you can edit it.");
+  await expect(page.getByTestId("v12-tooltip")).toHaveText("Editing together is coming next — for now teammates can view.");
   await shot(page, "team-share-board-menu");
   await item.click();
   await expect(page.getByText(/^Shared with team/).first()).toBeVisible();
@@ -46,7 +46,7 @@ test("share with team: the ⋯ menu, the right-click menu, and a teammate's view
   await card.click({ button: "right" });
   await expect(page.getByTestId("v12-menu-share-team")).toHaveText("Stop sharing with team");
   await page.getByTestId("v12-menu-share-team").hover();
-  await expect(page.getByTestId("v12-tooltip")).toHaveText("Teammates can view this board. Only you can edit it.");
+  await expect(page.getByTestId("v12-tooltip")).toHaveText("Editing together is coming next — for now teammates can view.");
   await shot(page, "team-share-context-menu");
   await page.keyboard.press("Escape");
 

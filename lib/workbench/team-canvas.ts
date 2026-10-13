@@ -145,7 +145,7 @@ export async function writeCanvasRow(tx: Transaction, productionId: string, next
   if (body.length > PROJECT_JSON_BYTES) throw new TeamCanvasError("This canvas has reached the 24 MB project limit.", 413);
   /* The marked sample production is read-only for every person, its marker, the workspace's owner and admins included (lib/draftProject.ts): a write to its canvas
      is refused as a project that is not there. A draft save's implied write, and every other writer, meets this too; an Atomik run (no person) is not asked. */
-  if (!isAgentId(by) && (await isSampleProject(productionId, tx))) throw new TeamCanvasError("That project is not in this workspace.", 404);
+  if (!isAgentId(by) && (await isSampleProject(productionId, tx, { id: by }))) throw new TeamCanvasError("That project is not in this workspace.", 404);
   const revision = previous + 1;
   /* A person who puts an upload on the shared canvas must be able to open it (lib/uploadAccess.ts): only uploads the canvas does not already hold are asked,
      so saving a canvas never fails over what is already there. */
