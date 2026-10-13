@@ -1,3 +1,4 @@
+import { mayReachProject, projectLister } from "@/lib/draftProject";
 import { syncCreditReceipts } from "@/lib/creditReceipts";
 import { NextResponse } from "next/server";
 import { billedCreditsSum } from "@/lib/creditSql";
@@ -20,7 +21,10 @@ export const GET = withTenant(async function GET(req: Request) {
   const problem = workbenchScopeProblem(req, requireTenant().id, got.user.id, false);
   if (problem) return NextResponse.json({ error: problem }, { status: 409 });
   const projectId = scope(new URL(req.url).searchParams.get("projectId"));
-  const shots = await listShots(projectId);
+  /* A private board's shots (their titles, their node text) are its owner's alone, and a shared board's are for looking at (lib/draftProject.ts): a list of every
+     shot leaves out the ones of boards this person cannot reach, and a list of one board they cannot reach is as empty as an unknown project's. */
+  const reachable = await projectLister(got.user);
+  const shots = (await listShots(projectId)).filter((s) => reachable(s.projectId));
 
   /* Counts per shot in one pass — the shot list doubles as the revision
    * report. Scoped to the shots we just listed: this runs every time the
@@ -103,6 +107,14 @@ export const POST = withTenant(async function POST(req: Request) {
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
   const projectId = scope(body.projectId ? String(body.projectId) : null);
+  /* A shot is written into a project its writer may write: a private board is its owner's and a shared one is view-only for everyone else, so anyone else's
+     answer is the one an unknown project gets (lib/draftProject.ts). */
+  if (projectId) {
+    await ready();
+    const known = (await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [projectId] })).rows.length > 0;
+    const reach = await mayReachProject(got.user, projectId, "write");
+    if (!known || !reach) return NextResponse.json({ error: "No such project." }, { status: 404 });
+  }
   if (code) {
     const clash = (await listShots(projectId)).find(
       (s) => s.code.toLowerCase() === code.toLowerCase());
