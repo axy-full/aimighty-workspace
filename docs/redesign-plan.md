@@ -505,3 +505,12 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
 2. Make's results grid shows only takes made in Make. Do it without a new column if possible. If it needs a "made in" field, that's a migration: not in deploy #3, queued for the next migration deploy.
 3. Cut stage: opens in Canvas until Strip is built, then in Strip.
 - Deploy #3: pin when release/1 is green (adding #695 and #696 if green within the hour), open the PR, and send its contents, both migrations (what each changes, and whether each is safe to roll back) and the env names. The owner takes the backup, then merges.
+
+## Owner decision (Akshay, 13 Oct ~16:10): Remotion licence key
+- **Option D:** send NO key and NO events to Remotion. This is allowed under the Free License: server-side with no key, nothing is sent. The worker stays sealed, with no internet.
+- **Pin to 4.x.** Before any upgrade to 5.x, flag it to the owner (5.0 may require a key): NEEDS AKSHAY.
+- **CLAUDE.md:** "Remotion: Free License, confirmed by Remotion 13 Oct 2026; no licence key, nothing sent to Remotion; pinned to 4.x."
+- **Everything else as decided:**
+  - the worker's network is like Blender's;
+  - limits: 3 CPU / 8 GB, 2 in parallel, 1 per workspace, 6 per hour;
+  - #700's migration ships in a later deploy.

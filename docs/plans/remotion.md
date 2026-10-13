@@ -78,3 +78,6 @@ Nothing here costs money. Mirrors `ops/render-worker/README.md` › "Setup click
 - **The switch:** `REMOTION_EXPORTS` (env, runtime). Unset or off means the export tool isn't offered, its route answers 404, and no job is admitted. It's off in production until the owner turns it on after testing.
 - **Job states:** the same as other renders. In queue (with the position, "2 ahead of you"), then Rendering, then Saving, then Ready or Failed ("Nothing billed").
 - **Order of PRs:** compositions (1), the worker (2), then the app's export tool and the fair queue (3). Each has mocked tests. Then one real timing test on our server: a 30 s 1080p export run under heavy.sh, CPU only, outside Docker (the lanes never touch Docker), with the result written into "Measure first" to set the limits. The worker's own limits are measured again after the owner deploys it.
+
+## Licence key (owner, 13 Oct ~16:10): option D
+No licence key is passed and nothing is sent to Remotion. The worker stays sealed. Remotion is pinned to 4.x (exactly 4.0.530 today), and any 5.x upgrade is flagged to the owner first. Tests assert that no key is passed and that the usage endpoint is never called. Limits as decided: 3 CPU / 8 GB, concurrency 2, 1 running and 6 per hour per workspace.
