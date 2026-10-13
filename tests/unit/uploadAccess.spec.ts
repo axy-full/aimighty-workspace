@@ -703,5 +703,9 @@ test("the sample: a teammate opens their own copy of it (its uploads are the mar
     expect(await readDraft("u_mate", opened.project.id), "their own copy was saved").not.toBeNull();
     expect(await status(h, art)).toBe(200);
     expect(await status(h, take)).toBe(200);
+    /* Every viewer: an admin who is not the marker opens them too. */
+    h.as("u_admin", "admin");
+    expect(await status(h, art), "an admin").toBe(200);
+    expect(await status(h, take), "an admin").toBe(200);
   }, asUser("u_mate"));
 });
