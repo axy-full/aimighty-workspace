@@ -3,6 +3,18 @@ export function usd(n: number | null | undefined, dp = 3): string {
   return `$${n.toFixed(dp)}`;
 }
 
+/**
+ * A dollar amount as Particl shows one (owner, 13 Oct): always two decimals, always rounded UP to the next cent, so a price never reads below what it can charge:
+ * $0.743 -> $0.75, $1.001 -> $1.01, $2.00 stays $2.00. The one formatter for a job's dollars (the house workspace's prices, holds and bills); display only, it never
+ * changes what is billed or held. A rate (dollars per second or per credit) is not a price and keeps its own decimals. Anything that is not a finite number is "—".
+ */
+export function dollars(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const cents = Math.ceil(Math.abs(n) * 100 - 1e-7);
+  const text = (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${n < 0 && cents > 0 ? "-" : ""}$${text}`;
+}
+
 export function compactTokens(n: number | null | undefined): string {
   if (n == null) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;

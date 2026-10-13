@@ -58,8 +58,8 @@ export type AgentAsk = {
  * The ask is sent with that figure as its limit, so the price on the button is exactly the approval. Disabled, with
  * the reason, while there is no figure, while a run is open, while Atomik is off, or on the sample production.
  */
-export function agentAsk(input: { read: boolean; enabled: boolean; run: RigAgentRunView | null; planning: number | null; words: string; busy: boolean; sample: boolean; offline: boolean }): AgentAsk {
-  const price = upTo(input.planning);
+export function agentAsk(input: { read: boolean; enabled: boolean; run: RigAgentRunView | null; planning: number | null; /** The same in the engines' dollars (the house pays them): `terms.planningUsd`. */ planningUsd?: number | null; words: string; busy: boolean; sample: boolean; offline: boolean }): AgentAsk {
+  const price = upTo(input.planning, input.planningUsd);
   const label = priceWords(price) ? `Ask · ${priceWords(price)}` : "Ask";
   const off = (reason: string): AgentAsk => ({ label, price, disabled: true, reason });
   /* Nothing spends here: disabled with the sample's line, and no price on it. */

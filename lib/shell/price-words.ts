@@ -17,11 +17,17 @@
  * its own wording (PR #523), not a kind here.
  */
 
+import { dollars } from "../format";
+
 export type PriceKind = "exact" | "up-to" | "free";
 
+/**
+ * `usd` is the same figure in the engines' dollars, where the server gave one: the house workspace (lib/houseWorkspace.ts) pays at cost in dollars and reads it
+ * (`setDollarDisplay` below); every other workspace reads the credits and never sees `usd`.
+ */
 export type PriceValue =
-  | { kind: "exact"; credits: number }
-  | { kind: "up-to"; credits: number }
+  | { kind: "exact"; credits: number; usd?: number }
+  | { kind: "up-to"; credits: number; usd?: number }
   | { kind: "free" };
 
 export const FREE: PriceValue = Object.freeze({ kind: "free" });
@@ -33,15 +39,38 @@ const usable = (credits: unknown): credits is number => typeof credits === "numb
  * A price from a server figure and its kind, or null when the figure is missing or is not a figure
  * (NaN, negative, infinite). Null means "show no price": never a zero, a guess or a placeholder.
  */
-export function priceValue(credits: number | null | undefined, kind: Exclude<PriceKind, "free">): PriceValue | null {
+export function priceValue(credits: number | null | undefined, kind: Exclude<PriceKind, "free">, usd?: number | null): PriceValue | null {
   if (!usable(credits)) return null;
-  return kind === "up-to" ? { kind: "up-to", credits } : { kind: "exact", credits };
+  const dollars = usable(usd) ? { usd } : {};
+  return kind === "up-to" ? { kind: "up-to", credits, ...dollars } : { kind: "exact", credits, ...dollars };
 }
 
-/** A figure the server quoted exactly. */
-export const exact = (credits: number | null | undefined): PriceValue | null => priceValue(credits, "exact");
-/** A live estimate the charge cannot go over. */
-export const upTo = (credits: number | null | undefined): PriceValue | null => priceValue(credits, "up-to");
+/** A figure the server quoted exactly (`usd`: the same in the engines' dollars, for the house). */
+export const exact = (credits: number | null | undefined, usd?: number | null): PriceValue | null => priceValue(credits, "exact", usd);
+/** A live estimate the charge cannot go over (`usd`: the same in the engines' dollars, for the house). */
+export const upTo = (credits: number | null | undefined, usd?: number | null): PriceValue | null => priceValue(credits, "up-to", usd);
+
+/* ── The house reads dollars ──────────────────────────────────────────────── */
+
+let dollarMode = false;
+let creditRateForDollars: number | null = null;
+/**
+ * The house workspace pays at cost in dollars, so every price on every screen reads in dollars there (owner, 13 Oct: one screen, one unit). The session says which unit
+ * the workspace pays in (`rates.unit`, lib/session.tsx), and calls this when it changes. With it on, every price below words its dollars: its own `usd` where the server
+ * gave one, else its credits at the public price of a credit (an upper bound for the house, whose credits are its dollars rounded up). Display only: nothing here changes
+ * what is quoted, held or billed.
+ */
+export function setDollarDisplay(on: boolean, creditUsd?: number | null): void {
+  dollarMode = on;
+  creditRateForDollars = creditRate(creditUsd);
+}
+export const dollarDisplay = (): boolean => dollarMode;
+
+/** A price's dollars: its own, else its credits at the credit's price; null when neither is known. */
+function dollarsOf(value: Exclude<PriceValue, { kind: "free" }>): number | null {
+  if (usable(value.usd)) return value.usd;
+  return creditRateForDollars === null ? null : value.credits * creditRateForDollars;
+}
 
 /** Whether `value` is a price this module can word: guards a shape read off the wire. */
 export function isPriceValue(value: unknown): value is PriceValue {
@@ -73,6 +102,13 @@ export function creditsText(credits: number): string {
 /** "43 cr", "up to 69 cr" or "free"; null when there is no price to show. A figure of 0 is "free". */
 export function priceWords(value: PriceValue | null | undefined): string | null {
   if (!isPriceValue(value)) return null;
+  if (dollarMode) {
+    if (value.kind === "free") return "free";
+    const usd = dollarsOf(value);
+    if (usd === null) return null;
+    if (usd === 0) return "free";
+    return value.kind === "up-to" ? `up to ${dollars(usd)}` : dollars(usd);
+  }
   const credits = shownCredits(value);
   if (value.kind === "free" || credits === 0) return "free";
   return value.kind === "up-to" ? `up to ${creditsText(credits)}` : creditsText(credits);
@@ -102,6 +138,8 @@ export function creditsUsd(credits: number, creditUsd: number | null | undefined
  */
 export function priceTitle(value: PriceValue | null | undefined, creditUsd: number | null | undefined): string | null {
   if (!isPriceValue(value) || value.kind === "free") return null;
+  /* The house's price is already dollars: its hover says what it pays (the new interface's Price says the same). */
+  if (dollarMode) return dollarsOf(value) === 0 ? null : "Pays at cost";
   const credits = shownCredits(value);
   if (credits === 0) return null;
   const usd = creditsUsd(credits, creditUsd, value.kind === "up-to");
@@ -129,13 +167,16 @@ export function priceSum(values: readonly (PriceValue | null | undefined)[]): Pr
   if (!values.length || !values.every(isPriceValue)) return null;
   let tenths = 0;
   let estimate = false;
+  let cents = 0;
+  let allDollars = true;
   for (const value of values as readonly PriceValue[]) {
     if (value.kind === "free") continue;
     if (value.kind === "up-to") estimate = true;
     tenths += Math.round(shownCredits(value) * 10);
+    if (usable(value.usd)) cents += Math.round(value.usd * 1e6); else allDollars = false;
   }
   if (tenths === 0) return FREE;
-  return { kind: estimate ? "up-to" : "exact", credits: tenths / 10 };
+  return { kind: estimate ? "up-to" : "exact", credits: tenths / 10, ...(allDollars ? { usd: cents / 1e6 } : {}) };
 }
 
 /**

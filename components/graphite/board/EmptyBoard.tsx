@@ -50,7 +50,7 @@ export function EmptyBoard({ ctx }: { ctx: BoardCtx }) {
     : !price || price.state === "loading" ? "Getting the price…"
     : price.state === "unavailable" ? price.problem ?? "Atomik's thinking cannot be priced right now."
     : null;
-  const figure = price?.state === "ready" && price.credits !== null ? upTo(price.credits) : null;
+  const figure = price?.state === "ready" && price.credits !== null ? upTo(price.credits, price.usd) : null;
   const figureTitle = usePriceTitle(figure);
 
   const attach = (accept: string) => {
