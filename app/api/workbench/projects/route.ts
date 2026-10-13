@@ -1,3 +1,4 @@
+import { rotateRoom } from '@/lib/workbench/room-rotation';
 import { type ShareMode, isDraftProject, isMarkedSample, isSampleDraft, isSampleProject, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
 import { crossOriginProblem } from '@/lib/requestOrigin';
 import { gzipSync } from 'node:zlib';
@@ -12,7 +13,7 @@ import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { boardKeyFor, maySetSharing, mayWriteBoard, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { AMBIGUOUS_BOARD, boardKeyFor, maySetSharing, mayWriteBoard, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -111,6 +112,7 @@ export const PUT=withTenant(async(req:Request)=>{
   /* The key the board is stored under: the person's own, or a teammate's the person may write (lib/workbench/team-boards.ts › boardKeyFor). */
   const key=await boardKeyFor(requireTenant(),auth.user,claimed,p.id);
   if('refused' in key)return notYours(auth.user.id,p.id);
+  if('ambiguous' in key)return Response.json({error:AMBIGUOUS_BOARD,code:'board_id_ambiguous'},{status:409,headers:noStore});
   const storageOwner=key.owner;
   /* A teammate's board opens view-only: a save of it is refused here, never kept as a second copy under this person's name. */
   const theirs=storageOwner===auth.user.id?await otherOwnersBoard(requireTenant(),auth.user.id,p.id):null;
@@ -162,6 +164,7 @@ export const POST=withTenant(async(req:Request)=>{
   /* The key the board is stored under (`owner` in the body): the person's own, or a teammate's the person may write. */
   const key=await boardKeyFor(requireTenant(),auth.user,typeof body.owner==='string'?body.owner:undefined,body.projectId);
   if('refused' in key)return notYours(auth.user.id,body.projectId);
+  if('ambiguous' in key)return Response.json({error:AMBIGUOUS_BOARD,code:'board_id_ambiguous'},{status:409,headers:noStore});
   const storageOwner=key.owner;
   if(body.action==='check-write'){
     /* A save whose reply was lost: did it land (and at which revision)? Checking fences it off, so the answer is final; the draft comes back as it is now. */
@@ -186,7 +189,9 @@ export const POST=withTenant(async(req:Request)=>{
     if(asked===now)return Response.json({ok:true,shared:now!=='none',mode:now,revision:draft.revision});
     const changed=await setBoardSharing(storageOwner,body.projectId,{teamShared:asked!=='none',teamEdit:asked==='edit'},auth.user.id);
     if(!changed)return Response.json({error:'Save your project first.'},{status:404});
-    return Response.json({ok:true,shared:changed.teamShared,mode:asked,revision:changed.revision});
+    /* Can edit taken away (or sharing stopped): the live room closes at once, so a person who could write the board cannot go on through a token or a connection they already hold. */
+    const rotated=now==='edit'&&asked!=='edit'&&draft.project.productionProjectId?await rotateRoom(draft.project.productionProjectId):null;
+    return Response.json({ok:true,shared:changed.teamShared,mode:asked,revision:changed.revision,...(rotated?{roomRotated:true}:{})});
   }
   if(body.action==='map-shot'){
     try{return Response.json({productionProjectId:draft.project.productionProjectId,shotId:await mapNodeShot(storageOwner,draft.project,String(body.nodeId||''),auth.user.id)})}

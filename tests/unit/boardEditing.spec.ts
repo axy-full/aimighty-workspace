@@ -226,3 +226,57 @@ test("reach, as one rule: owner, edit, view, none, for reading, writing and rend
     }
   }
 });
+
+test("a save by draft id alone that cannot be settled is refused with a clear 409: never a guess, never someone else's board", async () => {
+  const f = await fixture("ambiguous");
+  const { newProject } = await import("../../lib/workbench/studio");
+  const { mappedId } = await import("../../lib/workbench/records");
+  const platform = await import("../../lib/platform");
+  const mate = who("u_mate");
+  const put = (project: unknown, revision: number, extra: Record<string, unknown> = {}) => f.as(mate, () => f.put(project, revision, extra));
+  // A second person's board with the very same draft id, also shared with Can edit (ids are random, so this is a collision on purpose).
+  await platform.platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts(id,email,name,password_hash,created_at) VALUES('u_third','u_third@example.test','u_third','x',0)", args: [] });
+  await platform.platformDb().execute({ sql: "INSERT OR REPLACE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,'u_third','member',0,0)", args: [f.ws.id] });
+  const second = mappedId("prj_wb_", f.ws.id, "u_third", "d1");
+  await f.as(who("u_owner"), async () => {
+    await f.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES(?,?,0)", args: [second, "Third's board"] });
+    await f.database.db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)", args: ["u_third:d1", "u_third", "d1", "d1", JSON.stringify({ ...newProject("d1"), id: "d1", productionProjectId: second, teamShared: true, teamEdit: true })] });
+  });
+  await f.as(who("u_owner"), () => f.post({ action: "team-share", projectId: "d1", mode: "edit" }));
+  const all = () => f.as(who("u_owner"), async () => JSON.stringify((await f.database.db().execute("SELECT key,body,revision FROM workbench_projects ORDER BY key")).rows));
+  const before = await all();
+  // Two edit-shared boards under that id: a save by id alone, and a check, are refused, and nothing is written for either owner or for the person.
+  const two = await put({ ...f.board, name: "Which one?" }, 1);
+  expect(two.status).toBe(409);
+  expect(await two.json()).toMatchObject({ code: "board_id_ambiguous", error: expect.stringContaining("Open that board to edit it") });
+  const check = await f.as(mate, () => f.post({ action: "check-write", projectId: "d1", write: { writer: WRITER, seq: 1 } }));
+  expect(check.status).toBe(409);
+  expect(await all()).toBe(before);
+  // Naming the owner settles it: the board is that owner's, and written as such.
+  const named = await put({ ...f.board, name: "Named" }, 1, { owner: "u_owner" });
+  expect(named.status).toBe(200);
+  expect(JSON.parse(String((await f.row()).body)).name).toBe("Named");
+  // One edit-shared board under the id, which the person may not write (its maker is switched off): a new board with that id is refused, not made.
+  await f.as(who("u_owner"), () => f.database.db().execute("DELETE FROM workbench_projects WHERE key='u_third:d1'"));
+  await f.members.disable("u_owner");
+  const collide = await put({ ...newProject("d1"), id: "d1", name: "Mine?" }, 0);
+  expect(collide.status).toBe(409);
+  expect((await collide.json()).code).toBe("board_id_ambiguous");
+  expect(await f.as(mate, () => f.records.readDraft("u_mate", "d1"))).toBeNull();
+  // The person's own draft of an id always wins, and an id nobody has shared is simply new.
+  const fresh = await put({ ...newProject("d9"), id: "d9", name: "Brand new" }, 0);
+  expect(fresh.status).toBe(200);
+  expect(await f.as(mate, () => f.records.readDraft("u_mate", "d9"))).not.toBeNull();
+});
+
+test("an admin who is also an editor keeps an admin's rights over the production (rename, delete, client links); a plain editor has none of them", async () => {
+  const f = await fixture("admin-editor");
+  await f.as(who("u_owner"), () => f.post({ action: "team-share", projectId: "d1", mode: "edit" }));
+  const { mayChangeProject } = await import("../../lib/workAccess");
+  const board = f.first.productionProjectId as string;
+  expect(await f.as(who("u_root", "admin"), () => mayChangeProject({ id: "u_root", role: "admin" }, board)), "an admin").toBe(true);
+  expect(await f.as(who("u_mate"), () => mayChangeProject({ id: "u_mate", role: "member" }, board)), "a plain editor").toBe(false);
+  const { readFileSync } = await import("node:fs");
+  const links = readFileSync("app/api/review-links/route.ts", "utf8");
+  expect((links.match(/got\.user\.role !== "admin"/g) ?? []).length, "making and withdrawing a client link are the admin role's").toBe(2);
+});

@@ -165,14 +165,16 @@ export async function mayWriteBoard(ws: Pick<TenantWorkspace, "id">, actor: { id
  *
  * Without `owner`, a person who has no draft of that id of their own and is asked to write exactly one board shared with "Can edit" under that id, which
  * they may write (`mayWriteBoard`), acts on that one: every editor of the board, the page editors and the composer included, reaches it by its draft id
- * alone. Their own draft of that id wins; two such boards, or none writable, mean the person's own board (a new one).
+ * alone. Their own draft of that id wins. Anything uncertain is refused as `ambiguous` (a clear 409), never settled by guessing and never by writing into
+ * someone else's board: two such boards under that id, or one the person may not write. A board that is simply new (no edit-shared board has that id) is the
+ * person's own.
  */
 export async function boardKeyFor(
   ws: Pick<TenantWorkspace, "id">,
   actor: { id: string; role?: string },
   claimed: string | undefined,
   draftId: string,
-): Promise<{ owner: string } | { refused: true }> {
+): Promise<{ owner: string } | { refused: true } | { ambiguous: true }> {
   if (claimed && claimed !== actor.id) {
     const owner = await resolveMemberId(ws, claimed);
     if (owner === actor.id) return { owner: actor.id };
@@ -181,10 +183,14 @@ export async function boardKeyFor(
   await workbenchReady();
   if ((await db().execute({ sql: "SELECT 1 FROM workbench_projects WHERE key=?", args: [`${actor.id}:${draftId}`] })).rows.length) return { owner: actor.id };
   const rows = (await db().execute({ sql: `SELECT owner FROM workbench_projects WHERE project_id=? AND owner<>? AND ${TEAM_EDIT_SQL}`, args: [draftId, actor.id] })).rows;
-  if (rows.length !== 1) return { owner: actor.id };
+  if (!rows.length) return { owner: actor.id };
+  if (rows.length > 1) return { ambiguous: true };
   const owner = String(rows[0].owner);
-  return (await mayWriteBoard(ws, actor, owner, draftId)) ? { owner } : { owner: actor.id };
+  return (await mayWriteBoard(ws, actor, owner, draftId)) ? { owner } : { ambiguous: true };
 }
+
+/** The refusal a request gets when its board id cannot be settled (see boardKeyFor): say what to do, write nothing. */
+export const AMBIGUOUS_BOARD = "That board id is in use by a board shared with the team. Open that board to edit it, or start a new board with its own id.";
 
 /**
  * A shared board someone else made, opened by `actor`: to edit when it is shared with "Can edit" and they may write it (the answer then names whose board
