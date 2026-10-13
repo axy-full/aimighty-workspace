@@ -1,0 +1,51 @@
+# Remotion export worker: one single-slot CPU container (headless Chromium + FFmpeg), one export at a time.
+# 3 vCPU / 8 GB, no GPU. Starting limits; they are set from the 30 s 1080p measurement (README, "Limits")
+# and changed only through a PR to this file, never by hand in the platform.
+#
+# Deploy as a Docker Compose resource in the self-host platform (Coolify), base directory
+# /ops/remotion-worker, compose file /compose.yaml. No domain, no port: nothing here is published.
+# Full click list and checks: README.md.
+#
+# Build context is the repository root (the compositions are in /remotion); see Dockerfile.
+#
+# Network: the service is on `remotion-internal` only, which is `internal: true` (no gateway: no
+# internet). As with the Astra render workers this is the common starting point of the networking
+# decision (ops/render-worker/README.md, "Networking: owner decision"); README.md here says exactly
+# what changes for option (a), (b) or (c). Whatever the option, the egress check is a hard gate.
+#
+# Secret: REMOTION_WORKER_SECRET, one per worker (at least 32 characters, never in git). The
+# production app holds REMOTION_WORKER_URLS and REMOTION_WORKER_SECRETS (same order) and sends the
+# worker its own secret as `Authorization: Bearer <secret>`.
+#
+# Memory: tmpfs counts against mem_limit. The two tmpfs mounts are at most 1.25 GB + 0.75 GB when full;
+# that is why they are sized here and why 8 GB is the starting figure.
+
+services:
+  remotion-1:
+    build:
+      context: ../..
+      dockerfile: ops/remotion-worker/Dockerfile
+    init: true                  # tini reaps orphans (Chrome helpers); the server sweeps strays per session
+    restart: unless-stopped
+    environment:
+      REMOTION_WORKER_SECRET: ${REMOTION_WORKER_SECRET:?set REMOTION_WORKER_SECRET}
+      REMOTION_CONCURRENCY: "2"   # frames rendered at once; measured in README "Limits"
+      REMOTION_MAX_SECONDS: "120" # longest finished video this worker accepts
+    cpus: 3
+    cpu_shares: 256             # yields to the production app when the machine is busy
+    mem_limit: 8g
+    memswap_limit: 8g
+    pids_limit: 1024            # Chrome and its helpers, the compositor and ffmpeg
+    read_only: true
+    tmpfs:
+      - /vercel/sandbox:size=1280m,uid=10001,gid=10001,mode=0700
+      - /tmp:size=768m,uid=10001,gid=10001,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 15s
+    networks: [remotion-internal]
+
+networks:
+  remotion-internal:
+    name: remotion-internal
+    internal: true

@@ -163,6 +163,18 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
     assert.equal(missing.status, 3);
     const climb = run("climb", { version: 1, composition: "reframe", props: { aspect: "9:16", clip: { source: { ...SOURCE, file: "../sample/sample.mp4" } } } });
     assert.equal(climb.status, 2);
+    // ffprobe reads the file: a declared size or length it contradicts is refused, not rendered.
+    const wrongSize = run("wrong-size", { version: 1, composition: "reframe", props: { aspect: "9:16", scale: 0.25, clip: { source: { ...SOURCE, width: 1920, height: 1080 } } }, output: stills([0]) });
+    assert.equal(wrongSize.status, 3);
+    assert.equal(wrongSize.result.code, "input_mismatch");
+    assert.match(wrongSize.result.errors[0], /is 480x270, the request says 1920x1080/);
+    assert.equal(existsSync(path.join(wrongSize.dir, "output", "still-0.png")), false);
+    const wrongLength = run("wrong-length", { version: 1, composition: "reframe", props: { aspect: "9:16", scale: 0.25, clip: { source: { ...SOURCE, durationSeconds: 7 } } }, output: stills([0]) });
+    assert.equal(wrongLength.status, 3);
+    assert.match(wrongLength.result.errors[0], /8\.00 s, the request says 7 s/);
+    const notMedia = run("not-media", { version: 1, composition: "reframe", props: { aspect: "9:16", scale: 0.25, clip: { source: { ...SOURCE, file: "junk.mp4" } } }, output: stills([0]) }, { files: { "junk.mp4": "not a video at all" } });
+    assert.equal(notMedia.status, 3);
+    assert.match(notMedia.result.errors[0], /could not be read as media/);
     const remote = run("remote", { version: 1, composition: "reframe", props: { aspect: "9:16", clip: { source: { ...SOURCE, file: "https://example.com/a.mp4" } } } });
     assert.equal(remote.status, 2);
   });
