@@ -123,8 +123,9 @@ test("deleting a production archives everything filed under it in one write, and
   const route = loadIsolated<typeof import("../../app/api/projects/[id]/route")>("app/api/projects/[id]/route.ts", {
     "@/lib/db": dbModule,
     "@/lib/archive": archive,
-    "@/lib/auth": { withTenant: (handler: unknown) => handler, requireUser: async () => ({ user: { id: "u1" } }) },
+    "@/lib/auth": { withTenant: (handler: unknown) => handler, requireUser: async () => ({ user: { id: "u1", role: "admin" } }) },
     "@/lib/cache": { invalidate: () => {}, PROJECTS_KEY: "projects" },
+    "@/lib/workAccess": await import("../../lib/workAccess"),
   });
   const remove = (id: string) => route.DELETE(new Request(`https://studio.test/api/projects/${id}`, { method: "DELETE" }), { params: Promise.resolve({ id }) });
   await runInTenant(workspace("project-delete"), async () => {

@@ -1,30 +1,31 @@
 "use client";
 import { useId, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import { Dialog } from "../ui";
-import { PLAN_CARDS } from "@/lib/marketing/planCards";
-import { fmtCredits } from "@/lib/price";
+import { PlanPicker } from "@/components/v12/settings/PlanPicker";
 import { saveJoinReturn } from "@/lib/v12/joinReturn";
 import { COMPANY_SIZES, ROLES, cleanCode, emailPath, inviteTitle, joinTitle, loginPath, requestBody, requestProblem, signupPath, type InviteKind, type RequestFields } from "./join-model";
 import { readCode } from "./read-code";
 import type { JoinState } from "./JoinProvider";
-import { GOOGLE_SIGN_IN } from "./google";
+import { GOOGLE_START, googleJoinFields } from "@/lib/googleSignInText";
 import "./join.css";
 
 /**
  * The join sheet (docs/redesign/inventory.md § 8.3, § 8.5; prototype L59–L69, L34–L42): Particl is invite-only.
  * Desktop: a 720 px dialog with two equal columns, "I have an invite" and "Request access". Phone: the same as one
- * column in a bottom sheet, with Continue with email (and Continue with Google once Google sign-in exists: ./google.ts) and the whole request form.
+ * column in a bottom sheet, with Continue with email (and Continue with Google where Google sign-in is on) and the whole request form.
  *
  * It signs nobody in itself: a code goes to today's pages (/invite/‹code› for a team invite, /signup?invite=‹code› for
  * a new workspace), which verify exactly what they verify today, and a request goes to today's POST /api/access-request.
  * On the overlay stack's join layer: Esc, × or the scrim close it and keep everything typed.
  */
-export function JoinSheet({ state, setState, invite, compact, back, onClose }: {
+export function JoinSheet({ state, setState, invite, compact, back, google, onClose }: {
   state: JoinState;
   setState: Dispatch<SetStateAction<JoinState>>;
   invite: InviteKind | null;
   compact: boolean;
   back: string;
+  /** Continue with Google is on: drawn beside Continue with email. */
+  google: boolean;
   onClose: () => void;
 }) {
   const code = cleanCode(state.code);
@@ -44,7 +45,7 @@ export function JoinSheet({ state, setState, invite, compact, back, onClose }: {
       {state.requested ? (
         <Requested onDone={onClose} />
       ) : focused?.kind === "team" ? (
-        <div className="v12-join-invitebox" data-testid="v12-join-invitebox"><InvitePath state={state} setState={setState} invite={invite} back={back} /></div>
+        <div className="v12-join-invitebox" data-testid="v12-join-invitebox"><InvitePath state={state} setState={setState} invite={invite} back={back} google={google} /></div>
       ) : focused?.kind === "new" ? (
         <NewWorkspace state={state} setState={setState} invite={focused} back={back} />
       ) : focused?.kind === "expired" ? (
@@ -57,7 +58,7 @@ export function JoinSheet({ state, setState, invite, compact, back, onClose }: {
         </div>
       ) : (
         <div className="v12-join-paths" data-compact={compact ? "" : undefined}>
-          <InvitePath state={state} setState={setState} invite={invite} back={back} />
+          <InvitePath state={state} setState={setState} invite={invite} back={back} google={google} />
           <RequestPath state={state} setState={setState} primary={!(invite?.kind === "team" && invite.code === cleanCode(state.code))} />
         </div>
       )}
@@ -79,7 +80,7 @@ function Requested({ onDone }: { onDone: () => void }) {
   );
 }
 
-function InvitePath({ state, setState, invite, back }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; invite: InviteKind | null; back: string }) {
+function InvitePath({ state, setState, invite, back, google }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; invite: InviteKind | null; back: string; google: boolean }) {
   const id = useId();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
@@ -111,16 +112,21 @@ function InvitePath({ state, setState, invite, back }: { state: JoinState; setSt
         onChange={(e) => { setProblem(""); const value = e.target.value; setState((now) => ({ ...now, code: value })); }}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void withEmail(); } }} data-testid="v12-join-code" />
       <div className="v12-join-stack">
-        {/* Google sign-in does not exist yet, so its button is not drawn (./google.ts `ready`, off): with a team invite the next step is Continue with email. */}
-        {GOOGLE_SIGN_IN.ready ? (
-          <button type="button" className={team ? "v12-join-btn v12-join-primary" : "v12-join-btn"} onClick={() => setProblem("")} data-testid="v12-join-google">
-            Continue with Google
-          </button>
+        {/* Continue with Google is drawn only where Google sign-in is on (lib/useGoogleSignIn.ts); with a team invite the filled next step stays Continue with email. */}
+        {google ? (
+          /* A form POST from this page, not a link: only that keeps the invite and the policy accepted (lib/googleSignIn.ts startIntent). */
+          <form method="post" action={GOOGLE_START} onSubmit={() => saveJoinReturn(back)} style={{ display: "contents" }}>
+            {Object.entries(googleJoinFields({ invite: code, next: back })).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}
+            <button type="submit" className="v12-join-btn" data-testid="v12-join-google">
+              Continue with Google
+            </button>
+          </form>
         ) : null}
-        <button type="button" className={team && !GOOGLE_SIGN_IN.ready ? "v12-join-btn v12-join-primary" : "v12-join-btn"} onClick={() => void withEmail()} disabled={busy} aria-busy={busy || undefined} data-testid="v12-join-email">
+        <button type="button" className={team ? "v12-join-btn v12-join-primary" : "v12-join-btn"} onClick={() => void withEmail()} disabled={busy} aria-busy={busy || undefined} data-testid="v12-join-email">
           {busy ? "Checking the code…" : "Continue with email"}
         </button>
       </div>
+      {google ? <p className="v12-join-line" data-testid="v12-join-google-policy">By continuing with Google you accept the <a href="/policy">content policy</a> and <a href="/terms">terms</a>.</p> : null}
       {problem ? <p className="v12-join-problem" role="alert" data-testid="v12-join-invite-problem">{problem}</p> : null}
     </section>
   );
@@ -188,12 +194,11 @@ function RequestPath({ state, setState, primary }: { state: JoinState; setState:
 
 /**
  * A new-workspace invite (§ 8.4): the workspace's name, then the plan to look at, then today's sign-up page for the code.
- * The plan cards are the display-only placeholders (lib/marketing/planCards.ts); the choice is not carried anywhere, and
+ * The plan cards are the owner's plans, display only (lib/planCards.ts, from lib/plans.ts); the choice is not carried anywhere, and
  * the sign-up page and checkout stay as they are today.
  */
 function NewWorkspace({ state, setState, invite, back }: { state: JoinState; setState: Dispatch<SetStateAction<JoinState>>; invite: Extract<InviteKind, { kind: "new" }>; back: string }) {
   const id = useId();
-  const plan = PLAN_CARDS.find((p) => p.id === state.plan) ?? PLAN_CARDS[0];
   const next = () => setState((now) => ({ ...now, step: "plan" }));
   const go = () => { saveJoinReturn(back); window.location.assign(signupPath(invite.code, state.workspace)); };
   return (
@@ -211,18 +216,9 @@ function NewWorkspace({ state, setState, invite, back }: { state: JoinState; set
       ) : (
         <>
           <p className="v12-join-line">Create your workspace · choose a plan or add credits</p>
-          <div className="v12-join-plans" role="group" aria-label="Plan">
-            {PLAN_CARDS.map((p) => (
-              <button key={p.id} type="button" className="v12-join-plan" aria-pressed={p.id === plan.id} data-plan={p.id} data-testid="v12-join-plan"
-                onClick={() => setState((now) => ({ ...now, plan: p.id }))}>
-                <span className="v12-join-plan-name">{p.name}</span>
-                <span className="v12-join-plan-price">{fmtCredits(p.credits)} · ${p.priceUsd.toLocaleString("en-US")}</span>
-                <span className="v12-join-plan-line">{p.line === "hero-takes" ? "Hero takes are priced once you are in" : p.line}</span>
-              </button>
-            ))}
-          </div>
-          <p className="v12-join-note">Prices are placeholders · confirm. Nothing runs without a price shown first.</p>
-          <button type="button" className="v12-join-btn v12-join-primary" onClick={go} data-testid="v12-join-continue">Continue · {fmtCredits(plan.credits)} · ${plan.priceUsd.toLocaleString("en-US")}</button>
+          <PlanPicker selected={state.plan || null} onChoose={(id) => setState((now) => ({ ...now, plan: id }))} />
+          <p className="v12-join-note">Monthly plans. Checkout is not open yet. Nothing runs without a price shown first.</p>
+          <button type="button" className="v12-join-btn v12-join-primary" onClick={go} data-testid="v12-join-continue">Continue</button>
         </>
       )}
     </div>

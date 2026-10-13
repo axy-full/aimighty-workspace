@@ -85,3 +85,22 @@
 @media (prefers-reduced-motion: reduce) {
   .v12-bar-card { transition: none; }
 }
+
+/* The "/" skills list (inventory § 10.4): above the bar, a header and a two-column grid of rows, command and price. */
+.v12-bar-skills {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); max-height: 360px; overflow: auto; padding: 6px;
+  background: var(--gx-card); border: 1px solid var(--gx-dashed); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); z-index: 2;
+}
+.v12-bar-skills-head { padding: 6px 10px; font-size: 12px; color: rgba(235, 235, 245, 0.62); }
+.v12-bar-skills-note { margin: 0; padding: 6px 10px 10px; font-size: 13px; color: var(--gx-text-2); }
+.v12-bar-skills-retry { border: 0; background: none; padding: 0; color: var(--gx-accent-text); font: inherit; text-decoration: underline; cursor: pointer; }
+.v12-bar-skills-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; }
+.v12-bar-skill {
+  min-width: 0; min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 10px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--gx-text); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.v12-bar-skill:hover, .v12-bar-skill[data-active] { background: rgba(255, 255, 255, 0.06); }
+.v12-bar-skill[data-off] { cursor: default; color: var(--gx-text-2); }
+.v12-bar-skill-name { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.v12-bar-skill-price { flex: none; font-family: var(--gx-mono); font-size: 12px; color: var(--gx-text-strong); }
+@media (max-width: 640px) { .v12-bar-skills-grid { grid-template-columns: minmax(0, 1fr); } .v12-bar-skill { min-height: 44px; } }

@@ -1,3 +1,4 @@
+import { projectLister } from "@/lib/draftProject";
 import { db, ready } from "@/lib/db";
 import { platformDb, platformReady } from "@/lib/platform";
 import { currentTenant } from "@/lib/tenant";
@@ -94,7 +95,9 @@ export async function projectsOf(viewer: string, productions: string[]): Promise
     const production = String(r.production ?? "");
     if (production && !draft.has(production)) draft.set(production, String(r.project_id));
   }
-  for (const id of ids) out.set(id, { productionId: id, draftId: draft.get(id) ?? null, name: name.get(id) ?? null });
+  /* A private board (`prj_wb_…`) is its owner's alone (lib/draftProject.ts): to anyone else it has no name and no id here, whoever asks. */
+  const listed = await projectLister({ id: viewer });
+  for (const id of ids) out.set(id, listed(id) ? { productionId: id, draftId: draft.get(id) ?? null, name: name.get(id) ?? null } : NO_PROJECT);
   return out;
 }
 
@@ -172,9 +175,11 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
   const enabled = rigAgentEnabled();
   const items: QueueItem[] = [];
   const productions: string[] = [];
+  /* A run on a private board (`prj_wb_…`) is its owner's alone: its goal, plan and titles are not listed to anyone else (lib/draftProject.ts). */
+  const listed = await projectLister({ id: viewer.id });
   for (const id of ids) {
     const run = await getRun(db(), id);
-    if (!run) continue;
+    if (!run || !listed(run.productionId)) continue;
     const view = runView(run, await stepsOf(db(), run.id), viewer.id, await ledgerOf(run), await planApprovalOf(db(), run.id));
     productions.push(run.productionId);
     const open = { kind: "board" as const, productionId: run.productionId, draftId: null };
@@ -459,7 +464,9 @@ async function releaseDecisions(since: number): Promise<Found[]> {
 }
 
 async function decidedItems(viewer: ApprovalsViewer, ctx: Ctx, since: number): Promise<(DecidedItem & { production: string | null })[]> {
-  const found = (await Promise.all([boardDecisions(since), planDecisions(since), releaseDecisions(since)])).flat();
+  /* A decision on a run of a private board is its owner's alone (lib/draftProject.ts). */
+  const listed = await projectLister({ id: viewer.id });
+  const found = (await Promise.all([boardDecisions(since), planDecisions(since), releaseDecisions(since)])).flat().filter((f) => !f.production || listed(f.production));
   const recent = found.filter((f) => Number.isFinite(f.at)).sort((a, b) => b.at - a.at).slice(0, DECIDED_LIMIT);
   const meter = await meterOf(ctx.workspaceId, recent.map((f) => f.job).filter((id): id is string => !!id)).catch(() => new Map<string, MeterRow>());
   const authors = [...new Set(recent.map((f) => f.author).filter((a): a is string => !!a))];

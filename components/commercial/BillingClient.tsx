@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { PlanDef } from "@/lib/plans";
+import { YEARLY_SHOWN, cadenceFrom, chosenPlanFrom, type PlanDef } from "@/lib/plans";
 import ManagementPage, {
   ManagementCard,
   ManagementNotice,
@@ -123,14 +123,9 @@ export default function BillingClient({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(""),
     [newName, setNewName] = useState("");
-  const [planId, setPlanId] = useState(
-    ["studio", "agency", "production"].includes(initialPlan || "")
-      ? initialPlan!
-      : "studio",
-  );
-  const [cadence, setCadence] = useState<"monthly" | "annual">(
-    initialCadence === "annual" ? "annual" : "monthly",
-  );
+  /* The choice carried from sign-up or the pricing page; a carried "annual" reads as monthly while yearly is hidden (lib/plans.ts). */
+  const [planId, setPlanId] = useState<string>(() => chosenPlanFrom(initialPlan));
+  const [cadence, setCadence] = useState<"monthly" | "annual">(() => cadenceFrom(initialCadence));
   const applyAccount = useCallback(
     ({ responses, bodies }: Awaited<ReturnType<typeof loadAccount>>) => {
       const [billingResponse, workspaceResponse, plansResponse, topupResponse] =
@@ -214,7 +209,7 @@ export default function BillingClient({
   /* What a plan's credits come to as takes: carried by /api/plans only. */
   const reachOf = (id: string) => plans?.plans.find((plan) => plan.id === id)?.reach;
   const availablePlans = (data?.plans || plans?.plans || []).filter(
-      (plan) => plan.id !== "invite",
+      (plan) => plan.offered || plan.id === data?.subscription?.planId,
     ),
     chosen = availablePlans.find((plan) => plan.id === planId),
     discount =
@@ -546,7 +541,7 @@ export default function BillingClient({
                 A plan for your next production.
               </h2>
               <p className="management-muted">
-                The same tools. More room to create. No seat fees on paid plans.
+                The same tools. More room to create. A business plan is priced a seat, and its credits are pooled.
               </p>
             </div>
             <div className="management-actions">
@@ -564,7 +559,7 @@ export default function BillingClient({
                   ))}
                 </select>
               </label>
-              <label className="management-field">
+              {YEARLY_SHOWN && <label className="management-field">
                 <span>Billing period</span>
                 <select
                   aria-label="Billing period"
@@ -574,7 +569,7 @@ export default function BillingClient({
                   <option value="monthly">Monthly</option>
                   <option value="annual">Annual · save {discount}%</option>
                 </select>
-              </label>
+              </label>}
             </div>
           </div>
           <div className="management-grid three">
@@ -593,10 +588,10 @@ export default function BillingClient({
                     )}
                   </div>
                   <div className="management-plan-price">
-                    {formatUsd(price)} <small>/ month</small>
+                    {formatUsd(price)} <small>{plan.perSeat ? "/ seat / month" : "/ month"}</small>
                   </div>
                   <strong className="management-amount">
-                    {plan.includedCredits.toLocaleString()} credits / month
+                    {plan.includedCredits.toLocaleString()} credits {plan.perSeat ? "a seat / month" : "/ month"}
                   </strong>
                   <PlanReach
                     videos={reachOf(plan.id)?.videos}
@@ -607,9 +602,9 @@ export default function BillingClient({
                   <p>
                     {cadence === "annual"
                       ? `${formatUsd(annual)} billed annually`
-                      : `${formatUsd(plan.priceUsd)} billed monthly`}
+                      : `${formatUsd(plan.priceUsd)}${plan.perSeat ? " a seat" : ""} billed monthly`}
                   </p>
-                  <p>Unlimited members · included credits renew monthly</p>
+                  <p>{plan.perSeat ? "One shared workspace · credits pooled across seats · renew monthly" : plan.group === "individual" ? "One person · included credits renew monthly" : "Unlimited members · included credits renew monthly"}</p>
                   <button
                     aria-pressed={planId === plan.id}
                     className={`management-button ${planId === plan.id ? "primary" : ""}`}

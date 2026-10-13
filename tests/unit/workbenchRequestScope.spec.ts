@@ -9,6 +9,7 @@ import * as requestBody from "../../lib/workbench/request-body";
 import * as requestScope from "../../lib/workbench/request-scope";
 import * as requestOrigin from "../../lib/requestOrigin";
 import * as saveProblem from "../../lib/workbench/save-problem";
+import { viewOnlyRefusal } from "../../lib/workbench/view-only";
 
 /** Execute the real route with storage spies: a rejected tab must not reach data. */
 function route() {
@@ -20,6 +21,8 @@ function route() {
   const draft = newProject("Private production");
   const mocks: Record<string, unknown> = {
     "@/lib/workbench/request-body": requestBody,
+    /* The list of private boards is tests/unit/privateCanvas.spec.ts's; this spec is about what a refused save touches. */
+    "@/lib/draftProject": { projectLister: async () => () => true },
     "@/lib/requestOrigin": requestOrigin,
     "@/lib/auth": {
       withTenant: (handler: unknown) => handler,
@@ -44,6 +47,8 @@ function route() {
       mapNodeShot: record("map", "shot"),
       publishBible: record("publish", { version: 1 }),
     },
+    /* Teammates' boards (lib/workbench/team-boards.ts, tests/unit/teamBoards.spec.ts): none is involved here, so no board is another person's. */
+    "@/lib/workbench/team-boards": { findTeamBoard: async () => null, listTeamBoards: async () => [], otherOwnersBoard: async () => null, readTeamBoard: async () => null, viewOnlyRefusal },
     /* Studio's first run: seeding the starter production writes to the workspace, so it is gated like a save. */
     "@/lib/workbench/starter-draft": {
       openStarterDraft: record("starter", { project: draft, revision: 1, created: true, seeded: true }),

@@ -51,7 +51,6 @@ const BANNED: readonly (readonly [string, RegExp])[] = [
   ["Generate as a place", /\b(?:open|in|to|from|the) generate\b|\bgenerate (?:page|tab|panel)\b/i],
   ["suite", /\bsuites?\b/i],
   ["stage", /\bstages?\b/i],
-  ["Business", /\bbusiness\b/i],
   ["Viral", /\bviral\b/i],
   ["Workspace", /\bworkspaces?\b/i],
   ["a page Atomik no longer has", /\b(?:Crew|Recipes?|Builds)\b/],

@@ -84,6 +84,41 @@ export const UNPRICED = {
     why: "Product voice-over and Website walk-through have no creative brief in lib/workbench/moleculr-creative.ts and no engine path; nothing can be quoted or made.",
     hover: "This format is priced once it can be made.",
   },
+  skillPriceWords: {
+    action: "A saved \"/\" skill with a parameter still to fill in",
+    why: "A saved skill is priced by its free preview (POST /api/atomik/skills/[id]/run {dryRun:true}), which refuses a blank parameter that has no default, so there is no figure until its run form has the words.",
+    hover: "This skill is priced when you fill in its words; each step shows its own price before it runs.",
+  },
+  skillPriceEngine: {
+    action: "A saved \"/\" skill with an engine to choose",
+    why: "A step's engine is switched off for Atomik in Settings › Engines, or is no longer offered, so the free preview (POST /api/atomik/skills/[id]/run {dryRun:true}) cannot price that step until its run form names another engine.",
+    hover: "An engine for this skill is off or gone. Choose another in its run form, and it is priced then.",
+  },
+  skillPriceStep: {
+    action: "A saved \"/\" skill with a step that has no list rate",
+    why: "The free preview (POST /api/atomik/skills/[id]/run {dryRun:true}) gives a figure only for steps with a list rate; a voice line, a library step, or a skill with no steps has none, so the skill's total cannot be added up here.",
+    hover: "This skill has a step with no list price; each step shows its own price before it runs.",
+  },
+  remixMotion: {
+    action: "Transfer motion (Make › Remix)",
+    why: "Motion transfer is priced by its own tool from the source clip's length and the resolution (a provider estimate); no quote exists before a source is chosen in it, and Make holds no source's length to ask one.",
+    hover: "The tool shows this price once you pick a source.",
+  },
+  remixSwap: {
+    action: "Swap an object (Make › Remix)",
+    why: "Object swap is priced by its own tool from the source clip's length and the resolution (a provider estimate), and it needs a source frame and the picture of what replaces the object; no quote exists before both are chosen in it, and Make holds neither to ask one.",
+    hover: "The tool shows this price once you pick the clip and what replaces the object.",
+  },
+  remixCut: {
+    action: "Cut into clips (Make › Remix)",
+    why: "No engine cuts a video into clips yet (Social clips has no 'find moments' path), so nothing can be quoted or made.",
+    hover: "This is priced once clips can be cut.",
+  },
+  remixEffect: {
+    action: "Add an effect (Make › Remix)",
+    why: "Saved looks exist only as cards on a board; Make has no path that applies one, so nothing can be quoted or made from here.",
+    hover: "This is priced once a saved look can be applied from Make.",
+  },
 } as const satisfies Record<string, Unpriced>;
 
 export type UnpricedId = keyof typeof UNPRICED;

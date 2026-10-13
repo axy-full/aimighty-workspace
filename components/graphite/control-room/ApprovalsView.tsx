@@ -129,7 +129,7 @@ function WhoMayApprove({ rules, onEdit }: { rules: SpendingRules; onEdit: () => 
         {rules.rule === "cap" ? <>Members up to <Price value={exact(rules.shotCap ?? 0)} /> a shot; an admin above it.</>
           : rules.rule === "producer" ? "A producer signs off on every take."
           : "Members render freely."}
-        {rules.platformLine !== null ? <>{" "}Any job over <Price value={exact(rules.platformLine)} /> needs a person&rsquo;s approval, even under Auto.</> : null}
+        {rules.platformLine !== null ? <>{" "}Any job over <Price value={exact(rules.platformLine)} /> needs an admin&rsquo;s tap, even under Auto.</> : null}
       </p>
       <button type="button" className="cr-link" onClick={onEdit} data-testid="rules-edit">Edit in Settings › Spending rules ›</button>
     </div>

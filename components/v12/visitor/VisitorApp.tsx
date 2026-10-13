@@ -30,6 +30,8 @@ export type VisitorAppProps = {
   /** The public sample production as words (no media, no ids), or null while none is marked. */
   sampleBoard: GuestBoard | null;
   ask: VisitorAsk;
+  /** "Continue with Google" is on (the server has its client id, secret and origin): decided on the server, so the page asks nothing to know. */
+  google?: boolean;
 };
 
 const subscribe = () => () => {};
@@ -54,7 +56,7 @@ function Inside(props: VisitorAppProps) {
   const { ask } = props;
   const back = typeof window === "undefined" ? "/" : `${window.location.pathname}${window.location.search}`;
   return (
-    <JoinProvider compact={compact} back={back} initial={{ open: Boolean(ask.join), reason: ask.join ?? "start", requested: ask.requested, step: ask.step === "plan" ? "plan" : "name" }}>
+    <JoinProvider compact={compact} back={back} google={props.google === true} initial={{ open: Boolean(ask.join), reason: ask.join ?? "start", requested: ask.requested, step: ask.step === "plan" ? "plan" : "name" }}>
       <Screens {...props} compact={compact} />
     </JoinProvider>
   );

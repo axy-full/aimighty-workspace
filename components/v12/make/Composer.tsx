@@ -9,8 +9,9 @@ import { creditRate } from "@/lib/shell/price-words";
 import { EnhanceSwitch } from "./EnhanceSwitch";
 import { ENHANCE_ASWRITTEN, enhanceKey, enhanceOffered, workspaceEnhance, writeEnhance } from "@/lib/v12/enhance";
 import { useRead } from "@/components/graphite/settings/use-settings";
-import { EDIT_OPS, MAKE_MODES, REMIX_OPS, houseAbout, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
+import { EDIT_OPS, MAKE_MODES, REMIX_NEEDS_SOURCE, REMIX_OPS, houseAbout, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
+import { useBarSkills } from "@/components/v12/bar/use-bar-skills";
 import { Price } from "@/components/v12/ui/Price";
 import { Menu, type MenuItem } from "@/components/v12/ui/Popover";
 import { Segment } from "@/components/v12/ui/Segment";
@@ -90,7 +91,9 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
     else if (asked === "auto") unpick();
   }, [asked, pickType, unpick]);
   const mode: MakeMode = extra ?? (make.picked ? make.state.type : "auto");
+  const [sourceAsked, setSourceAsked] = useState(false);
   const onMode = useCallback((next: MakeMode) => {
+    setSourceAsked(false);
     if (next === "remix" || next === "edit") { setExtra({ mode: next, recipe: recipeName }); return; }
     setExtra(null);
     const type = modeType(next);
@@ -98,7 +101,14 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   }, [pickType, unpick, recipeName]);
   const { state, model, settings, composer } = make;
   const ops = mode === "remix" ? REMIX_OPS : mode === "edit" ? EDIT_OPS : null;
-  const runOp = (op: MakeOp) => { if (op.tool) shell.openMake(op.tool); };
+  /* Remix works on a source: with none in the composer an op says so, and opens nothing. */
+  const hasSource = make.references.some((r) => r.kind === "video");
+  const sourceNote = sourceAsked && mode === "remix" && !hasSource;
+  const runOp = (op: MakeOp) => {
+    if (!op.tool) return;
+    if (mode === "remix" && !hasSource) { setSourceAsked(true); return; }
+    shell.openMake(op.tool);
+  };
 
   /* The settings chips, for what the engine offers. */
   const chips: { k: string; v: ReactNode; title: string; items: MenuItem[]; onOpen?: () => void; onClose?: () => void; testId: string }[] = [];
@@ -138,7 +148,8 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
     files.forEach((f) => dt.items.add(f));
     make.dropOnWell(dt);
   };
-  const note = make.wellError ? { tone: "problem" as const, text: make.wellError }
+  const note = sourceNote ? { tone: "note" as const, text: REMIX_NEEDS_SOURCE }
+    : make.wellError ? { tone: "problem" as const, text: make.wellError }
     : make.result ? { tone: "problem" as const, text: make.result }
       : make.short ? { tone: "problem" as const, text: make.short }
         : make.notices[0] ? { tone: "note" as const, text: make.notices[0] }
@@ -156,10 +167,16 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
       {ops ? (
         <span className="v12-mk-ops" role="group" aria-label={mode === "remix" ? "Remix" : "Edit"} data-testid="v12-make-ops">
           {mode === "remix" ? <span className="v12-mk-quiet">{make.references[0]?.name ?? "Your source"} · what do we do with it?</span> : null}
+          {/* aria-disabled, not disabled: a disabled button gets no hover in some browsers, and the price's reason is on that hover. */}
           {ops.map((op) => (
-            <button key={op.id} type="button" className="v12-mk-op" disabled={!op.tool} onClick={() => runOp(op)}
-              title={op.tool ? `${op.label} — opens the tool, which shows its price` : op.why ?? undefined} data-testid="v12-make-op" data-op={op.id}>{op.label}</button>
+            <button key={op.id} type="button" className="v12-mk-op" aria-disabled={!op.tool || undefined} onClick={() => runOp(op)}
+              title={op.tool ? `${op.label} — opens the tool, which shows its price` : op.why ?? undefined} data-testid="v12-make-op" data-op={op.id}>
+              {op.label}{op.reason ? <> · <Price quote={null} reason={op.reason} /></> : null}
+            </button>
           ))}
+          {mode === "remix" ? (
+            <button type="button" className="v12-mk-op" onClick={() => shell.openAtomik("panel", "What should we do with this video: ")} data-testid="v12-make-remix-ask">Ask Atomik</button>
+          ) : null}
         </span>
       ) : null}
       <span className="v12-mk-grow" />
@@ -192,10 +209,12 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
     </div>
   ) : null;
 
+  const skills = useBarSkills(state.prompt, make.setPrompt);
   return (
     <div className="v12-mk-composer" data-testid="v12-make-composer" data-mode={mode}>
       <Bar
         docked
+        skills={skills}
         value={state.prompt}
         onChange={make.setPrompt}
         onSubmit={() => make.go.press()}
