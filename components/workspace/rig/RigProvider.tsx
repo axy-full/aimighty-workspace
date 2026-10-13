@@ -2,7 +2,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { useProductionJobs } from "@/components/workbench/use-production-jobs";
-import { DraftRequestError, draftRequest, draftWriter, writeMergedDraft, type DraftWriter } from "@/lib/workbench/draft-request";
+import { DraftChangedError, DraftRequestError, draftRequest, draftWriter, writeMergedDraft, type DraftWriter } from "@/lib/workbench/draft-request";
+import { conflictThings, takeTheirs } from "@/lib/workbench/draft-conflicts";
+import type { MergeConflict } from "@/lib/workbench/merge";
 import { mergeDraft, rebaseProject } from "@/lib/workbench/draft-merge";
 import { noteTakenOut, recordMade, sameJson, type MadeRecords } from "@/lib/workbench/merge";
 import { resolveGenerationReferences } from "@/lib/workbench/generation-request";
@@ -92,7 +94,14 @@ export type RigContext = {
   project: Project | null;
   shots: RigShot[];
   jobs: MediaJob[];
-  saveState: "saved" | "saving" | "error";
+  saveState: "saved" | "saving" | "held" | "error";
+  /**
+   * Another window saved a change to a value this window has also changed, to something else: this window's is kept here, nothing of this window is sent, until the
+   * person chooses (resolveChanged). `by` is the saver's name as this workspace may read it (null when unknown), `at` when it was saved.
+   */
+  changedSince: { by: string | null; at: number; things: string[] } | null;
+  /** "reload": take the saved version at those places (the rest of this window's edits stay and are saved); "keep": save this window's version over it. */
+  resolveChanged: (choice: "reload" | "keep") => void;
   /** A teammate's board, to look at: it takes no edit and is never saved. Null on one's own. */
   viewOnly: ViewOnly | null;
   /** Whose board this is when it is a teammate's, opened to edit ("Can edit"); null for the person's own. */
@@ -161,6 +170,7 @@ export function useRig(): RigContext {
 const API = "/api/workbench";
 const SAVE_DEBOUNCE_MS = 700;
 /** A save whose outcome is unknown (the connection dropped) is tried again after this, then less often. */
+const HEAD_POLL_MS = 8_000;
 const RETRY_MS = 4000;
 const RETRY_MAX_MS = 60_000;
 const DONE_HOLD_MS = 1400;
@@ -212,6 +222,11 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const [error, setError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<RigContext["saveState"]>("saved");
   const [saveError, setSaveError] = useState<string | null>(null);
+  /* A saved change to a value this window also changed (see RigContext.changedSince): held until the person chooses. */
+  const [heldSince, setChangedSince] = useState<(NonNullable<RigContext["changedSince"]> & { id: string }) | null>(null);
+  const changedSince = heldSince && heldSince.id === projectId ? heldSince : null;
+  const changedRef = useRef<{ id: string; latest: Project; revision: number; conflicts: MergeConflict[] } | null>(null);
+  const holdRef = useRef<(latest: Project, revision: number, conflicts: MergeConflict[]) => void>(() => {});
   const draftRef = useRef<Draft | null>(null);
   const dirty = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -241,13 +256,16 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const publishRef = useRef<((before: Project, after: Project) => void) | null>(null);
   /* What a merge brought in: onto the team canvas only where it still holds what the Rig had. */
   const catchUpRef = useRef<((before: Project, after: Project) => void) | null>(null);
+  const announceRef = useRef<((revision: number) => void) | null>(null);
   const retries = useRef(0);
   const flushRef = useRef<() => Promise<boolean>>(() => Promise.resolve(true));
-  const flush = useCallback((options: { force?: boolean } = {}): Promise<boolean> => {
+  const flush = useCallback((options: { force?: boolean; keep?: boolean } = {}): Promise<boolean> => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     /* One save at a time; a save that failed never stops the next. */
     chain.current = chain.current.catch(() => false).then(async () => {
       if (!draftRef.current) return false;
+      /* A change of someone else's to the same value is waiting for the person's choice: nothing is sent over it. */
+      if (changedRef.current && changedRef.current.id === draftRef.current?.project.id && !options.keep) return false;
       if (!dirty.current && !options.force) return true;
       /* The switch route has been asked (lib/shell/switch-workspace.ts): nothing more goes to this workspace. */
       if (!sendsAllowed()) return !dirty.current;
@@ -258,7 +276,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       dirty.current = false;
       setSaveState("saving");
       try {
-        const saved = await writeMergedDraft(API, scope, { base: current.base, mine: current.project, revision: current.revision, writer: current.writer, ancestors: current.ancestors, made: current.made, owner: current.actingOn?.owner.id });
+        const saved = await writeMergedDraft(API, scope, { base: current.base, mine: current.project, revision: current.revision, writer: current.writer, ancestors: current.ancestors, made: current.made, owner: current.actingOn?.owner.id, conflicts: options.keep ? "keep" : "ask" });
         retries.current = 0;
         const now = draftRef.current;
         if (!now || now.project.id !== current.project.id) return false;
@@ -273,8 +291,20 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
         setSaveState(dirty.current ? "saving" : "saved");
         setSaveError(null);
         if (saved.notes.length) toast(saved.notes.join(" "));
+        announceRef.current?.(saved.revision);
         return true;
       } catch (err) {
+        if (err instanceof DraftChangedError) {
+          /* Someone saved a change to the same value: nothing was sent. This window's version (the saved version's other changes folded in) stays on screen, saved changes are held. */
+          const now = draftRef.current;
+          if (now && now.project.id === current.project.id) {
+            const project = rebaseProject(current.project, now.project, err.merged);
+            setDraft({ ...now, project, base: err.latest, revision: err.revision });
+            dirty.current = true;
+            holdRef.current(err.latest, err.revision, err.conflicts);
+          }
+          return false;
+        }
         const message = err instanceof Error ? err.message : "The project could not be saved.";
         if (err instanceof DraftRequestError && (err.retryable || err.uncertain)) {
           /* Unconfirmed or temporary: keep the edits and save again later; a save whose reply was lost is checked first, never guessed at. */
@@ -440,12 +470,49 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       catch { return true; }
       const now = draftRef.current;
       if (!data.project || !now || now.project.id !== id || !(data.revision > now.revision) || now.writer.unconfirmed) return true;
-      const project = mergeDraft(now.base, now.project, data.project, { ancestors: now.ancestors, made: now.made });
+      const conflicts: MergeConflict[] = [];
+      const project = mergeDraft(now.base, now.project, data.project, { ancestors: now.ancestors, made: now.made, conflicts });
       setDraft({ ...now, project, base: data.project, revision: data.revision });
       if (project !== now.project) catchUpRef.current?.(now.project, project);
+      /* A value changed in both windows: this window's stays on screen, and nothing is saved over the other's until the person chooses. */
+      if (conflicts.length) { dirty.current = true; holdRef.current(data.project, data.revision, conflicts); }
       return true;
     });
   }, [scope, setDraft]);
+
+  /* Someone else's saved change touches a value this window also changed: held (nothing is sent), named, until the person chooses. Who saved it is asked of the server
+     (the name this workspace may read); a failed ask still shows the bar, without a name. */
+  const hold = useCallback((latest: Project, revision: number, conflicts: MergeConflict[]) => {
+    const current = draftRef.current;
+    if (!current) return;
+    changedRef.current = { id: current.project.id, latest, revision, conflicts };
+    setSaveState("held");
+    const things = conflictThings(current.project, conflicts);
+    setChangedSince({ id: current.project.id, by: null, at: Date.now(), things });
+    const ownerQuery = current.actingOn ? `&owner=${encodeURIComponent(current.actingOn.owner.id)}` : "";
+    void draftRequest<{ by: string | null; updatedAt: number; mine: boolean }>(`${API}/projects?id=${encodeURIComponent(current.project.id)}&head=1${ownerQuery}`, scope)
+      .then((head) => { if (changedRef.current?.latest === latest) setChangedSince({ id: current.project.id, by: head.mine ? null : head.by, at: head.updatedAt, things }); })
+      .catch(() => {});
+  }, [scope]);
+  useEffect(() => { holdRef.current = hold; }, [hold]);
+
+  /* The person's choice: take the saved version at those places (the rest of this window's edits stay and are saved), or save this window's over it. */
+  const resolveChanged = useCallback((choice: "reload" | "keep") => {
+    const held = changedRef.current, current = draftRef.current;
+    if (!held || !current) return;
+    changedRef.current = null;
+    setChangedSince(null);
+    if (choice === "reload") setDraft({ ...current, project: takeTheirs(current.project, held.latest, held.conflicts) });
+    dirty.current = true;
+    setSaveState("saving");
+    void flush({ keep: choice === "keep" });
+  }, [flush, setDraft]);
+
+  /* Another window saved: the live room says so (a hint; the server's revision is what counts), and with no room the head is asked every few seconds. */
+  const onSavedHint = useCallback((revision: number) => {
+    const current = draftRef.current;
+    if (current && revision > current.revision) catchUpSaved(current.project.id);
+  }, [catchUpSaved]);
 
   /* Back on the Rig after another page of this tab saved the draft (a Studio stage, Marketing): it catches up before
      anything is built from it. */
@@ -483,7 +550,20 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* ── The production's team canvas (shared Rig nodes, live when Liveblocks is set up) ── */
   const readDraft = useCallback(() => draftRef.current?.project ?? null, []);
-  const team = useTeamCanvas({ scope, productionId: project?.productionProjectId ?? null, current: readDraft, fold });
+  const team = useTeamCanvas({ scope, productionId: project?.productionProjectId ?? null, current: readDraft, fold, onSaved: onSavedHint });
+  useEffect(() => { announceRef.current = team.announceSaved; }, [team.announceSaved]);
+  useEffect(() => {
+    if (!projectId || status !== "ready" || team.mode === "live") return;
+    const timer = setInterval(() => {
+      const current = draftRef.current;
+      if (!current || current.viewOnly || current.project.id !== projectId || document.visibilityState === "hidden") return;
+      const ownerQuery = current.actingOn ? `&owner=${encodeURIComponent(current.actingOn.owner.id)}` : "";
+      void draftRequest<{ revision: number }>(`${API}/projects?id=${encodeURIComponent(projectId)}&head=1${ownerQuery}`, scope)
+        .then((head) => { const now = draftRef.current; if (now && now.project.id === projectId && head.revision > now.revision) catchUpSaved(projectId); })
+        .catch(() => {});
+    }, HEAD_POLL_MS);
+    return () => clearInterval(timer);
+  }, [projectId, status, scope, team.mode, catchUpSaved]);
   useEffect(() => { publishRef.current = team.publish; catchUpRef.current = team.catchUp; teamFlushRef.current = team.flush; teamDrainRef.current = team.drain; }, [team.publish, team.catchUp, team.flush, team.drain]);
   useEffect(() => { mastersRef.current = team.locks; }, [team.locks]);
 
@@ -986,10 +1066,10 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   const teamView = useMemo(() => ({ mode: team.mode, peers: team.peers, presence: team.presence, server: team.server, tidy: team.tidy, refresh: team.refresh, rejoin: team.rejoin }), [team.mode, team.peers, team.presence, team.server, team.tidy, team.refresh, team.rejoin]);
   const masters = team.locks;
   const value = useMemo<RigContext>(() => ({
-    status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, viewOnly, actingOn, saveError, selected, selectedNode, selectedCard,
+    status: projectId ? status : "idle", error, project, shots, jobs: mediaJobs, saveState, changedSince, resolveChanged, viewOnly, actingOn, saveError, selected, selectedNode, selectedCard,
     select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, adoptSharing, save, removeShot, team: teamView,
     masters, canUnlock, lockMaster, unlockMaster, cutouts: cut.cutouts, quoteCutout: cut.quote, startCutout: cut.start,
-  }), [projectId, status, error, project, shots, mediaJobs, saveState, viewOnly, actingOn, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, adoptSharing, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
+  }), [projectId, status, error, project, shots, mediaJobs, saveState, changedSince, resolveChanged, viewOnly, actingOn, saveError, selected, selectedNode, selectedCard, select, setRefKind, patchShot, addShot, connect, quote, generate, blocked, notice, submitting, scope, planRequests, apply, adoptSharing, save, removeShot, teamView, masters, canUnlock, lockMaster, unlockMaster, cut.cutouts, cut.quote, cut.start]);
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

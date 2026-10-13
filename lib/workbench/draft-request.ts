@@ -1,5 +1,5 @@
 import { mergeDraft } from "./draft-merge";
-import type { MergeOptions } from "./merge";
+import type { MergeConflict, MergeOptions } from "./merge";
 import { PROJECT_ENCODING_HEADER, PROJECT_GZIP_FROM } from "./project-limits";
 import type { Project } from "./studio";
 import { projectSchema } from "./studio-schema";
@@ -318,6 +318,19 @@ export const MERGE_TRIES = 3;
 const UNKNOWN_PAUSE_MS = 250;
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/**
+ * A newer save changed a value this window has also changed, to something else (`conflicts`, from the merge). With `conflicts: "ask"` the save is NOT sent:
+ * this window's version (`merged`, the saved version's other changes folded in, this side's kept at the conflicts) and the saved one (`latest`, at `revision`) are
+ * handed back, for the person to choose. Nothing of the other window's is overwritten in silence.
+ */
+export class DraftChangedError extends Error {
+  readonly code = "changed_since";
+  constructor(readonly latest: Project, readonly revision: number, readonly merged: Project, readonly conflicts: MergeConflict[]) {
+    super("Someone saved a change to the same thing. Your change is kept here until you choose.");
+    this.name = "DraftChangedError";
+  }
+}
+
 export type MergedWrite = {
   /** The draft exactly as the server held it at `revision` (last read or saved): what `mine` was edited from. */
   base: Project;
@@ -335,6 +348,11 @@ export type MergedWrite = {
   made?: MergeOptions["made"];
   /** The key the board is stored under, when the editor is not its author (see DraftWrite). */
   owner?: string;
+  /**
+   * What to do when the newer save and this one changed the same value to different values: "keep" (the default, as before) saves this side's; "ask"
+   * throws a DraftChangedError instead and sends nothing.
+   */
+  conflicts?: "keep" | "ask";
 };
 
 /** What a merged save holds, and what of this editor's did not fit it (a full list another window filled first), said plainly. */
@@ -374,9 +392,12 @@ export async function writeMergedDraft(
   const mine = write.mine, notes: string[] = [];
   let from = write.base, body = mine, revision = write.revision;
   /* The notes of the merge that is sent, not of one a later merge replaced. */
-  const merge = (latest: Project) => {
+  const merge = (latest: Project, revisionOf: number) => {
     notes.length = 0;
-    return mergeDraft(from, mine, latest, { ancestors: write.ancestors, made: write.made, notes });
+    const found: MergeConflict[] = [];
+    const merged = mergeDraft(from, mine, latest, { ancestors: write.ancestors, made: write.made, notes, ...(write.conflicts === "ask" ? { conflicts: found } : {}) });
+    if (found.length) throw new DraftChangedError(latest, revisionOf, merged, found);
+    return merged;
   };
 
   const settle = async (tag: DraftWriteTag, carried: Project, edited: Project) => {
@@ -395,7 +416,7 @@ export async function writeMergedDraft(
     const checked = await settle({ writer: writer.id, seq: pending.seq }, pending.mine, pending.base);
     if (checked.project) {
       from = checked.landed !== null ? pending.mine : pending.base;
-      const merged = merge(checked.project);
+      const merged = merge(checked.project, checked.revision);
       if (sameDraftContent(merged, checked.project)) return { project: checked.project, revision: checked.revision, notes };
       body = merged;
       revision = checked.revision;
@@ -432,7 +453,7 @@ export async function writeMergedDraft(
         }
       }
       if (!latest.project || latest.project.id !== mine.id || !Number.isSafeInteger(latest.revision)) throw error;
-      const merged = merge(latest.project);
+      const merged = merge(latest.project, latest.revision);
       /* Everything this save carries is already there (another window made the same edits). */
       if (sameDraftContent(merged, latest.project)) return { project: latest.project, revision: latest.revision, notes };
       body = merged;

@@ -248,6 +248,25 @@ export async function setBoardSharing(owner:string, draftId:string, flags:{teamS
 }
 
 /**
+ * Who last saved a board and when, for "changed since you opened it": the revision, the time, and the saver's name as this workspace may read it (the
+ * workspace's own `users` name, run through the platform owner's mask: lib/platformOwnerPrivacy.ts › storedActorMaskHere). `mine` says it was `viewer`;
+ * no id is ever returned. Null when there is no such board.
+ */
+export async function draftStamp(owner:string, draftId:string, viewer:string):Promise<{revision:number;updatedAt:number;by:string|null;mine:boolean}|null> {
+  await workbenchReady();
+  const row=(await db().execute({sql:'SELECT revision,updated_at,updated_by FROM workbench_projects WHERE key=?',args:[owner+':'+draftId]})).rows[0];
+  if(!row)return null;
+  const who=row.updated_by==null?null:String(row.updated_by);
+  let by:string|null=null;
+  if(who&&who!==viewer){
+    const named=(await db().execute({sql:'SELECT name FROM users WHERE id=?',args:[who]}).catch(()=>({rows:[]}))).rows[0];
+    const { storedActorMaskHere }=await import('@/lib/platformOwnerPrivacy');
+    by=named?(await storedActorMaskHere())(String(named.name)):'A teammate';
+  }
+  return {revision:Number(row.revision),updatedAt:Number(row.updated_at),by,mine:who===viewer||who===null};
+}
+
+/**
  * Whether an editor's save landed, when its reply was lost: the revision it
  * landed at, or null. A save found not to have landed is fenced off in the
  * same step, so it can never land afterwards — the answer is final.

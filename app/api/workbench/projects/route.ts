@@ -8,7 +8,7 @@ import { db } from '@/lib/db';
 import { draftWriteTagSchema, saveSchema } from '@/lib/workbench/studio-schema';
 import { saveProblem } from '@/lib/workbench/save-problem';
 import { newProject, type Project } from '@/lib/workbench/studio';
-import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible, checkDraftWrite, setBoardSharing, DraftConflictError } from '@/lib/workbench/records';
+import { workbenchReady, readDraft, draftStamp, mapNodeShot, saveDraft, publishBible, checkDraftWrite, setBoardSharing, DraftConflictError } from '@/lib/workbench/records';
 import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import { defaultSharing } from '@/lib/workbench/board-default';
@@ -35,6 +35,13 @@ export const GET=withTenant(async(req:Request)=>{
   if(scopeError)return Response.json({error:scopeError},{status:409,headers:noStore});
   await workbenchReady();
   const id=new URL(req.url).searchParams.get('id');
+  /* ?id=&head=1[&owner=]: where the saved board stands, without the board (a window with no live room asks this every few seconds, and when the room says someone saved):
+     its revision, when and by whom (the name this workspace may read, never an id), for the person's own board or one they may write. Anything else is not found. */
+  if(id&&new URL(req.url).searchParams.get('head')==='1'){
+    const key=await boardKeyFor(requireTenant(),auth.user,new URL(req.url).searchParams.get('owner')??undefined,id);
+    const stamp='owner' in key?await draftStamp(key.owner,id,auth.user.id):null;
+    return stamp?Response.json(stamp,{headers:noStore}):Response.json({error:'Not found'},{status:404,headers:noStore});
+  }
   /* ?production=<id>: this person's newest Studio project for that production,
      so a screen scoped to a production (the shot builder) opens Generate on the
      project that files and bills there, not on whichever one Generate last had. */

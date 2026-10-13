@@ -115,10 +115,33 @@ export type MergeOptions = {
   takenOut?: ReadonlySet<string>;
   /** Set when a merged list or text came out longer than either side's: it may be past a limit neither side reached. */
   grew?: { value: boolean };
+  /**
+   * Filled with every place both sides changed the same single value (a number, a switch, a one-line text, a record's whole content) to different values: the merge
+   * keeps this side's there, and says so here, so a caller can ask rather than overwrite another window's saved change in silence.
+   */
+  conflicts?: MergeConflict[];
+  /** Where the merge is now, while it runs (set by merge3 when `conflicts` is asked for). */
+  trail?: string[];
+};
+
+/**
+ * One place both sides changed to different values, this side's kept. `path` runs from the top of the draft: a key, or `[id=value]` for a record of a list
+ * (the list's identity key and the record's value). `mine` and `theirs` are the two values (lists and rows are named, not copied: the path says where).
+ */
+export type MergeConflict = { path: string[]; mine: unknown; theirs: unknown };
+
+const within = <T>(options: MergeOptions, segment: string, run: () => T): T => {
+  options.trail?.push(segment);
+  try { return run(); } finally { options.trail?.pop(); }
+};
+const conflict = (options: MergeOptions, mine: unknown, theirs: unknown) => {
+  if (!options.conflicts || !options.trail) return;
+  const brief = (value: unknown) => (typeof value === "string" ? value.slice(0, 200) : typeof value === "number" || typeof value === "boolean" || value === null ? value : Array.isArray(value) ? "[list]" : "[record]");
+  options.conflicts.push({ path: [...options.trail], mine: brief(mine), theirs: brief(theirs) });
 };
 
 export function merge3<T>(base: T | undefined, mine: T, theirs: T, options: MergeOptions = {}): T {
-  return mergeValue(base, mine, theirs, options) as T;
+  return mergeValue(base, mine, theirs, options.conflicts ? { ...options, trail: [] } : options) as T;
 }
 
 function mergeValue(base: unknown, mine: unknown, theirs: unknown, options: MergeOptions): unknown {
@@ -138,8 +161,11 @@ function mergeValue(base: unknown, mine: unknown, theirs: unknown, options: Merg
       if (options.grew && out.length > Math.max(mine.length, theirs.length)) options.grew.value = true;
       return out;
     }
-    return continues(before, mine, theirs) ? theirs : mine;
+    if (continues(before, mine, theirs)) return theirs;
+    conflict(options, mine, theirs);
+    return mine;
   }
+  conflict(options, mine, theirs);
   return mine;
 }
 
@@ -148,6 +174,7 @@ function mergeList(base: unknown[], mine: unknown[], theirs: unknown[], options:
   const key = identityKey(base, mine, theirs);
   if (key) return mergeById(key, base, mine, theirs, options);
   if (sequence(base, mine, theirs)) return mergeSequence(base, mine, theirs, { text: [...base, ...mine, ...theirs].every((item) => typeof item === "string") });
+  conflict(options, mine, theirs);
   return mine;
 }
 
@@ -157,7 +184,7 @@ function mergeRows(base: Row | undefined, mine: Row, theirs: Row, options: Merge
     const inMine = has(mine, key), inTheirs = has(theirs, key);
     if (!inMine && !inTheirs) continue;
     const before = base && has(base, key) ? base[key] : undefined;
-    if (inMine && inTheirs) put(out, key, mergeValue(before, mine[key], theirs[key], options));
+    if (inMine && inTheirs) put(out, key, within(options, key, () => mergeValue(before, mine[key], theirs[key], options)));
     else {
       const kept = inMine ? mine[key] : theirs[key];
       /* One side lacks it: added by the other (no base), or deleted by this one, which stands only over an unchanged value. */
@@ -223,7 +250,7 @@ function mergeById(key: string, base: unknown[], mine: unknown[], theirs: unknow
     if (m !== undefined && t !== undefined) {
       /* Both hold it. With no base between them, a known ancestor (put back by an undo, or as this side made it) is what each side changed. */
       const from = was ?? (key === "id" && !repeats ? options.ancestors?.get(k) : undefined) ?? made(k);
-      kept.set(k, mergeValue(from, m, t, options));
+      kept.set(k, within(options, `[${key}=${identity(m)}]`, () => mergeValue(from, m, t, options)));
       continue;
     }
     const inMine = m !== undefined, item = inMine ? m : t;

@@ -9,7 +9,7 @@ import type { DraftEditor } from "@/lib/workspace/use-draft-editor";
  * auto-saving draft every card of the board shares: a second editor on the same project would race it. So the
  * Ads cards and panels edit through this thin view of the Rig, never a second copy of the draft.
  */
-const SAVE_WORDS: Record<RigContext["saveState"], string> = { saved: "Saved", saving: "Saving", error: "Not saved" };
+const SAVE_WORDS: Record<RigContext["saveState"], string> = { saved: "Saved", saving: "Saving", held: "Not saved yet", error: "Not saved" };
 
 export function riggedEditor(rig: Pick<RigContext, "status" | "project" | "saveState" | "saveError" | "apply" | "save">): DraftEditor {
   return {
