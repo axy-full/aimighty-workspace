@@ -275,9 +275,9 @@ export async function checkDraftWrite(base: string, scope: string, projectId: st
  * case the saved version read next holds it. Throws when the server cannot be
  * asked: the saved version is not safe to show yet.
  */
-export async function setAsideDraftWriter(base: string, scope: string, projectId: string, writer: DraftWriter): Promise<void> {
+export async function setAsideDraftWriter(base: string, scope: string, projectId: string, writer: DraftWriter, owner?: string): Promise<void> {
   writer.setAside = true;
-  if (writer.seq > 0) await checkDraftWrite(base, scope, projectId, { writer: writer.id, seq: writer.seq });
+  if (writer.seq > 0) await checkDraftWrite(base, scope, projectId, { writer: writer.id, seq: writer.seq }, owner);
 }
 
 export async function writeDraft(
