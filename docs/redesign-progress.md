@@ -333,3 +333,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - 13 Oct, 18:35 IST: #708 fixed (3a16454d): the hold lives on the draft and is never written without Reload or Keep (park, drain, flush); board-wide on the draft editors; narrow mayWriteBoard; the v15 changed bar is in. Opus re-check running. Lead noted the one-filled-primary check versus v15 (the Atomik panel's filled buttons). The #704 nit (after(), concurrent closes) is done.
 - 13 Oct, 18:36 IST: **#708 Opus APPROVED (3a16454d)**: holds cover every draft-save path; other writers can't reintroduce held content; mayWriteBoard keeps all #704 rules. Follow-up PR 8b: compare-and-set for canvas card fields in saved mode (live mode stays last-writer-wins with presence). The 'made alike' first-creation stage-list case is not worth fixing now.
 - 13 Oct, 18:40 IST: **Merged #693** (CLAUDE.md: 'Remotion: Free License, confirmed by Remotion 13 Oct 2026; no licence key, nothing sent to Remotion; pinned to 4.x'; Company License at 4 people; 5.x needs the owner; docs only; CI green).
+- 13 Oct, 18:59 IST: **PAUSED by the owner.** Lanes A, C and D stopped mid-task:
+  - lane A: undo/redo PR 3 WIP, plus the #707 fix;
+  - lane C: four lenses PR 2 WIP;
+  - lane D: 8b compare-and-set, then the screens.
+  The lane CI run on four-lenses was cancelled. Two lane test servers were left on localhost (ports 3171 orphaned with no timeout, and 4571 behind a 45 min timeout); the lead can't kill (denied), so they're reported to the owner. Deploy #3 PR #703 green, untouched, waiting for the owner. The release/1 run on 890d559c (#693 docs) was left to finish.
