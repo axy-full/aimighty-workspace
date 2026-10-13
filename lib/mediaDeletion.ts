@@ -73,6 +73,7 @@ export async function cleanupDeletedGenerations(
     WHERE g.deleted=1 AND g.status NOT IN ('queued','running','held') AND (? IS NULL OR g.id=?)
     AND (COALESCE(g.bytes,0)>0 OR g.stored_url IS NOT NULL OR d.id IS NOT NULL) AND COALESCE(d.lease_until,0)<=?
     ${pendingOriginals ? `AND g.id NOT IN (${pendingOriginals})` : ""}
+    AND g.id NOT IN (SELECT item_id FROM board_trash WHERE kind='take' AND restored_at IS NULL)
     ORDER BY COALESCE(d.updated_at,0),g.updated_at,g.id LIMIT ?`,
       args: [
         onlyId ?? null,

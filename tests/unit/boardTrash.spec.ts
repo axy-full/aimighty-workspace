@@ -1,0 +1,225 @@
+import { test, expect } from "@playwright/test";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import ts from "typescript";
+import type { TenantWorkspace } from "../../lib/tenant";
+
+/**
+ * A board's Trash (lib/boardTrash.ts): a take or a shot removed to it, what the browser removed recorded in it, and each put back; nothing erased and nothing
+ * that touches billing. Scoped to the workspace and to the people who can write the board (a private board's is its owner's; to anyone else it is as absent as
+ * an unknown board). Real temporary databases; sign-in is a fake; nothing is sent or spent.
+ */
+const dir = mkdtempSync(path.join(tmpdir(), "particl-board-trash-"));
+process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
+process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
+process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
+process.env.ENGINE_MOCK = "1";
+const run = Math.random().toString(36).slice(2, 8);
+const workspace = (id: string) => ({ id, name: id, slug: id, legacy: false, dbUrl: `file:${path.join(dir, id + ".db")}`, dbToken: null, keys: {}, usesPlatformKeys: true }) as TenantWorkspace;
+const user = (id: string, role: "admin" | "member" = "member", owner = false) => ({ id, email: `${id}@example.test`, name: id, role, owner, disabled: false, lastSeen: null, createdAt: 0 });
+type Actor = { user: ReturnType<typeof user>; token?: unknown };
+const as = (id: string, role: "admin" | "member" = "member", token = false, owner = false): Actor => ({ user: user(id, role, owner), ...(token ? { token: { id: `tok_${id}`, name: "agent", scope: "render" as const, capUsd: null } } : {}) });
+const OWNER = as("u_owner"), MATE = as("u_mate"), MATE_TOKEN = as("u_mate", "member", true), ADMIN = as("u_admin", "admin"), ADMIN_TOKEN = as("u_admin", "admin", true);
+
+function loadRoute<T>(file: string, who: () => Actor): T {
+  const root = process.cwd();
+  const real = createRequire(path.resolve(file));
+  const fakes: Record<string, unknown> = { "@/lib/auth": { withTenant: (handler: unknown) => handler, requireUser: async () => ({ ...who() }) } };
+  const filename = path.resolve(file);
+  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", compiled)((name: string) => (Object.hasOwn(fakes, name) ? fakes[name] : name.startsWith("@/") ? real(path.join(root, name.slice(2))) : real(name)), mod, mod.exports);
+  return mod.exports as T;
+}
+
+/* Boards: a private one (the owner's), and an ordinary production nobody owns as a draft (the workspace's, so a member changes only what is their own and an admin anything). */
+async function fixture(ws: TenantWorkspace) {
+  const tenant = await import("../../lib/tenant"), database = await import("../../lib/db"), draft = await import("../../lib/draftProject");
+  const { newProject } = await import("../../lib/workbench/studio");
+  const { workbenchReady } = await import("../../lib/workbench/records");
+  const priv = draft.mappedId("prj_wb_", ws.id, "u_owner", "d1");
+  await tenant.runInTenant(ws, async () => {
+    await database.ready(); await workbenchReady();
+    const db = database.db();
+    for (const id of ["u_owner", "u_mate", "u_admin"]) await db.execute({ sql: "INSERT OR IGNORE INTO users(id,email,name,password_hash,created_at) VALUES(?,?,?,'x',0)", args: [id, `${id}@example.test`, id] });
+    await db.execute({ sql: "INSERT INTO projects(id,name,created_at) VALUES(?,'Private',0),('prod_open','Ordinary',0)", args: [priv] });
+    await db.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)", args: ["u_owner:d1", "u_owner", "d1", "d1", JSON.stringify({ ...newProject("d1"), id: "d1", productionProjectId: priv })] });
+    const take = (id: string, project: string, by: string, status = "succeeded", cost = 0.5) => db.execute({
+      sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,title,deleted,created_by,project_id,stored_url,bytes,cost_usd) VALUES(?,?,?,?,?,1,1,'image',?,0,?,?,?,?,?)",
+      args: [id, "m", `prompt ${id}`, "{}", status, `Title ${id}`, by, project, status === "succeeded" ? `/api/media/${id}` : null, status === "succeeded" ? 1000 : 0, cost] });
+    await take(`t_priv_${run}`, priv, "u_owner"); await take(`t_run_${run}`, priv, "u_owner", "running"); await take(`t_held_${run}`, priv, "u_owner", "held");
+    await take(`t_mate_${run}`, "prod_open", "u_mate"); await take(`t_owner_${run}`, "prod_open", "u_owner");
+    await db.execute({ sql: "INSERT INTO shots(id,project_id,code,title,description,status,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'open',1,'u_owner',1,1)", args: [`shot_${run}`, priv, "010", "Opening", "d"] });
+    await db.execute({ sql: "INSERT INTO shots(id,project_id,code,title,description,status,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,'open',1,'u_owner',1,1)", args: [`shot_open_${run}`, "prod_open", "010", "Open shot", "d"] });
+    await take(`t_inshot1_${run}`, priv, "u_owner"); await take(`t_inshot2_${run}`, priv, "u_owner");
+    await db.execute({ sql: "UPDATE generations SET shot_id=? WHERE id IN (?,?)", args: [`shot_${run}`, `t_inshot1_${run}`, `t_inshot2_${run}`] });
+    await db.execute({ sql: "INSERT INTO bindings(id,shot_id,project_id,slot,ordinal,element_id,created_by,created_at,updated_at) VALUES(?,?,?,?,0,'el1','u_owner',1,1)", args: [`b_${run}`, `shot_${run}`, priv, "character"] });
+  }, { user: user("u_owner") });
+  return { tenant, database, priv };
+}
+
+function api(tenant: typeof import("../../lib/tenant"), ws: TenantWorkspace) {
+  let who: Actor = OWNER;
+  const list = loadRoute<typeof import("../../app/api/boards/[id]/trash/route")>("app/api/boards/[id]/trash/route.ts", () => who);
+  const restore = loadRoute<typeof import("../../app/api/boards/[id]/trash/[entryId]/restore/route")>("app/api/boards/[id]/trash/[entryId]/restore/route.ts", () => who);
+  const call = <R>(actor: Actor, fn: () => Promise<R>, within = ws) => { who = actor; return tenant.runInTenant(within, fn, { user: actor.user, token: actor.token as never }); };
+  const json = async (res: Response) => [res.status, await res.json()] as const;
+  return {
+    items: (actor: Actor, board: string, within?: TenantWorkspace) => call(actor, async () => json(await list.GET(new Request("https://particl.test/x"), { params: Promise.resolve({ id: board }) })), within),
+    remove: (actor: Actor, board: string, body: unknown, within?: TenantWorkspace) => call(actor, async () => json(await list.POST(new Request("https://particl.test/x", { method: "POST", body: JSON.stringify(body) }), { params: Promise.resolve({ id: board }) })), within),
+    restore: (actor: Actor, board: string, entry: string, within?: TenantWorkspace) => call(actor, async () => json(await restore.POST(new Request("https://particl.test/x", { method: "POST" }), { params: Promise.resolve({ id: board, entryId: entry }) })), within),
+  };
+}
+
+/** What billing and the take's own money are, as one string: nothing the Trash does may change it. */
+async function money(tenant: typeof import("../../lib/tenant"), database: typeof import("../../lib/db"), ws: TenantWorkspace) {
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  const ledger = JSON.stringify((await platformDb().execute({ sql: "SELECT * FROM meter_events WHERE workspace_id=? ORDER BY id", args: [ws.id] })).rows) + JSON.stringify((await platformDb().execute({ sql: "SELECT * FROM credit_grants WHERE workspace_id=? ORDER BY id", args: [ws.id] })).rows);
+  const takes = await tenant.runInTenant(ws, async () => JSON.stringify((await database.db().execute("SELECT id, cost_usd, refine_cost_usd, params, status, bytes, stored_url FROM generations ORDER BY id")).rows), { user: user("u_owner") });
+  return ledger + takes;
+}
+
+test("a take: removed to the Trash and put back whole; billing and its bytes untouched; removing twice is one removal; a render still going is refused", async () => {
+  const ws = workspace(`bt-a-${run}`);
+  const { tenant, database, priv } = await fixture(ws);
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,'image','google','m','succeeded',0.5,5,1,'u_owner',1,1)", args: [`t_priv_${run}`, ws.id, priv] });
+  const trash = api(tenant, ws);
+  const before = await money(tenant, database, ws);
+  const removed = await trash.remove(OWNER, priv, { kind: "take", itemId: `t_priv_${run}` });
+  expect(removed[0]).toBe(200);
+  expect(removed[1].entry).toMatchObject({ kind: "take", itemId: `t_priv_${run}`, label: `Title t_priv_${run}`, restorable: true });
+  expect(await trash.remove(OWNER, priv, { kind: "take", itemId: `t_priv_${run}` })).toEqual([200, { entry: { ...removed[1].entry, removedBy: removed[1].entry.removedBy } }]);
+  const read = async (id: string) => tenant.runInTenant(ws, async () => (await database.db().execute({ sql: "SELECT deleted, stored_url, bytes FROM generations WHERE id=?", args: [id] })).rows[0], { user: user("u_owner") });
+  expect(Number((await read(`t_priv_${run}`)).deleted)).toBe(1);
+  const items = await trash.items(OWNER, priv);
+  expect(items[1].items.map((i: { itemId: string }) => i.itemId)).toEqual([`t_priv_${run}`]);
+  expect(items[1].items[0].removedBy).toEqual({ id: "u_owner", name: "u_owner" });
+  /* Its original is kept: the clean-up of deleted takes leaves a take in the Trash alone. */
+  const { cleanupDeletedGenerations } = await import("../../lib/mediaDeletion");
+  await tenant.runInTenant(ws, () => cleanupDeletedGenerations(20), { user: user("u_owner") });
+  expect(await read(`t_priv_${run}`)).toMatchObject({ stored_url: `/api/media/t_priv_${run}`, bytes: 1000 });
+  /* Restore: once, whole. */
+  const back = await trash.restore(OWNER, priv, removed[1].entry.id);
+  expect(back[0]).toBe(200);
+  expect(Number((await read(`t_priv_${run}`)).deleted)).toBe(0);
+  expect((await trash.items(OWNER, priv))[1].items).toEqual([]);
+  expect((await trash.restore(OWNER, priv, removed[1].entry.id))[0]).toBe(404);
+  /* Billing and the take's money are exactly as they were. */
+  expect(await money(tenant, database, ws)).toBe(before);
+  /* A render still going, and one waiting for approval, are not removed; a take of another board is an unknown take. */
+  expect((await trash.remove(OWNER, priv, { kind: "take", itemId: `t_run_${run}` }))[0]).toBe(409);
+  expect((await trash.remove(OWNER, priv, { kind: "take", itemId: `t_held_${run}` }))[0]).toBe(409);
+  expect((await trash.remove(OWNER, priv, { kind: "take", itemId: `t_mate_${run}` }))[0]).toBe(404);
+  expect((await trash.remove(OWNER, priv, { kind: "take", itemId: "t_none" }))[0]).toBe(404);
+  /* A take hidden before the Trash existed is listed (no one recorded), and can be put back by its `take:` id. */
+  await tenant.runInTenant(ws, () => database.db().execute({ sql: "UPDATE generations SET deleted=1 WHERE id=?", args: [`t_inshot1_${run}`] }), { user: user("u_owner") });
+  const legacy = (await trash.items(OWNER, priv))[1].items.find((i: { itemId: string }) => i.itemId === `t_inshot1_${run}`);
+  expect(legacy).toMatchObject({ id: `take:t_inshot1_${run}`, removedBy: null, restorable: true });
+  expect((await trash.restore(OWNER, priv, legacy.id))[0]).toBe(200);
+  expect(Number((await read(`t_inshot1_${run}`)).deleted)).toBe(0);
+  expect(await money(tenant, database, ws)).toBe(before);
+});
+
+test("a shot: removed with its wires and its takes unfiled, put back with its wires and the takes that were filed under it", async () => {
+  const ws = workspace(`bt-b-${run}`);
+  const { tenant, database, priv } = await fixture(ws);
+  const trash = api(tenant, ws);
+  const before = await money(tenant, database, ws);
+  const inDb = <R>(fn: (db: ReturnType<typeof database.db>) => Promise<R>) => tenant.runInTenant(ws, () => fn(database.db()), { user: user("u_owner") });
+  const removed = await trash.remove(OWNER, priv, { kind: "shot", itemId: `shot_${run}` });
+  expect(removed[0]).toBe(200);
+  expect(removed[1].entry).toMatchObject({ kind: "shot", label: "Opening" });
+  expect(await inDb(async (db) => (await db.execute({ sql: "SELECT id FROM shots WHERE id=?", args: [`shot_${run}`] })).rows.length)).toBe(0);
+  expect(await inDb(async (db) => (await db.execute({ sql: "SELECT id FROM bindings WHERE shot_id=?", args: [`shot_${run}`] })).rows.length)).toBe(0);
+  expect(await inDb(async (db) => (await db.execute({ sql: "SELECT id FROM generations WHERE shot_id=?", args: [`shot_${run}`] })).rows.length)).toBe(0);
+  /* The usual archive copy is there too: nothing erased. */
+  expect(await inDb(async (db) => (await db.execute({ sql: "SELECT id FROM archived_rows WHERE table_name='shots' AND row_id=?", args: [`shot_${run}`] })).rows.length)).toBe(1);
+  expect((await trash.remove(OWNER, priv, { kind: "shot", itemId: `shot_${run}` }))[0]).toBe(404);
+  const back = await trash.restore(OWNER, priv, removed[1].entry.id);
+  expect(back[0]).toBe(200);
+  expect(await inDb(async (db) => (await db.execute({ sql: "SELECT title, code FROM shots WHERE id=?", args: [`shot_${run}`] })).rows[0])).toMatchObject({ title: "Opening", code: "010" });
+  expect(await inDb(async (db) => (await db.execute({ sql: "SELECT id FROM bindings WHERE shot_id=?", args: [`shot_${run}`] })).rows.length)).toBe(1);
+  expect(await inDb(async (db) => (await db.execute({ sql: "SELECT id FROM generations WHERE shot_id=? ORDER BY id", args: [`shot_${run}`] })).rows.map((r) => String(r.id)))).toEqual([`t_inshot1_${run}`, `t_inshot2_${run}`]);
+  expect((await trash.restore(OWNER, priv, removed[1].entry.id))[0]).toBe(404);
+  expect(await money(tenant, database, ws)).toBe(before);
+});
+
+test("what the browser removed (a card, a note, a frame...) is recorded whole and handed back once; a bad kind or an oversized item is refused", async () => {
+  const ws = workspace(`bt-c-${run}`);
+  const { tenant, priv } = await fixture(ws);
+  const trash = api(tenant, ws);
+  const node = { id: "node-abc", type: "note", title: "A note", text: "words", x: 10, y: 20, width: 200, linked: [] };
+  const saved = await trash.remove(OWNER, priv, { kind: "note", itemId: "node-abc", label: "A note", payload: node });
+  expect(saved[0]).toBe(200);
+  expect(saved[1].entry).toMatchObject({ kind: "note", itemId: "node-abc", label: "A note", restorable: true });
+  expect(JSON.stringify(saved[1])).not.toContain("words");
+  expect((await trash.remove(OWNER, priv, { kind: "note", itemId: "node-abc", payload: node }))[1].entry.id).toBe(saved[1].entry.id);
+  const listed = await trash.items(OWNER, priv);
+  expect(listed[1].items.map((i: { kind: string }) => i.kind)).toEqual(["note"]);
+  expect(JSON.stringify(listed[1])).not.toContain("words");
+  const back = await trash.restore(OWNER, priv, saved[1].entry.id);
+  expect(back[1].payload).toEqual(node);
+  expect((await trash.restore(OWNER, priv, saved[1].entry.id))[0]).toBe(404);
+  expect((await trash.remove(OWNER, priv, { kind: "nonsense", itemId: "x", payload: {} }))[0]).toBe(400);
+  expect((await trash.remove(OWNER, priv, { kind: "frame", itemId: "x" }))[0]).toBe(400);
+  expect((await trash.remove(OWNER, priv, { kind: "frame", itemId: "../x", payload: {} }))[0]).toBe(400);
+  expect((await trash.remove(OWNER, priv, { kind: "frame", itemId: "big", payload: { text: "x".repeat(250_000) } }))[0]).toBe(413);
+});
+
+test("who may: the board's owner on a private board; a member only their own work on an ordinary one; an admin anything there; a private board is absent to everyone else; another workspace has none", async () => {
+  const ws = workspace(`bt-d-${run}`);
+  const { tenant, database, priv } = await fixture(ws);
+  const trash = api(tenant, ws);
+  /* A private board: as absent as an unknown board to a teammate, a teammate's token and an admin (the board's reach is its owner's; lib/draftProject.ts). */
+  const unknown = await trash.items(MATE, "prj_wb_doesnotexist0000000000");
+  expect(unknown[0]).toBe(404);
+  for (const actor of [MATE, MATE_TOKEN, ADMIN, ADMIN_TOKEN]) {
+    expect(await trash.items(actor, priv), actor.user.id).toEqual(unknown);
+    expect(await trash.remove(actor, priv, { kind: "take", itemId: `t_priv_${run}` }), actor.user.id).toEqual(unknown);
+    expect(await trash.remove(actor, priv, { kind: "note", itemId: "n1", payload: {} }), actor.user.id).toEqual(unknown);
+  }
+  const mine = await trash.remove(OWNER, priv, { kind: "take", itemId: `t_priv_${run}` });
+  for (const actor of [MATE, MATE_TOKEN, ADMIN]) expect(await trash.restore(actor, priv, mine[1].entry.id), actor.user.id).toEqual(unknown);
+  expect((await trash.restore(OWNER, priv, mine[1].entry.id))[0]).toBe(200);
+  /* An ordinary production: a member removes their own take and not the owner's; an admin removes anything. */
+  expect((await trash.remove(MATE, "prod_open", { kind: "take", itemId: `t_mate_${run}` }))[0]).toBe(200);
+  expect((await trash.remove(MATE, "prod_open", { kind: "take", itemId: `t_owner_${run}` }))[0]).toBe(403);
+  expect((await trash.remove(MATE_TOKEN, "prod_open", { kind: "shot", itemId: `shot_open_${run}` }))[0]).toBe(403);
+  expect((await trash.remove(ADMIN_TOKEN, "prod_open", { kind: "take", itemId: `t_owner_${run}` }))[0]).toBe(200);
+  expect((await trash.remove(ADMIN, "prod_open", { kind: "shot", itemId: `shot_open_${run}` }))[0]).toBe(200);
+  const open = await trash.items(MATE, "prod_open");
+  expect(open[1].items.map((i: { kind: string }) => i.kind).sort()).toEqual(["shot", "take", "take"]);
+  /* Put back by someone who may not change that work: refused, and nothing changes. */
+  const theirs = open[1].items.find((i: { itemId: string }) => i.itemId === `t_owner_${run}`);
+  expect((await trash.restore(MATE, "prod_open", theirs.id))[0]).toBe(403);
+  expect((await trash.restore(ADMIN, "prod_open", theirs.id))[0]).toBe(200);
+  /* Another workspace: its database has none of these boards or entries. */
+  const other = workspace(`bt-d2-${run}`);
+  await tenant.runInTenant(other, async () => { await database.ready(); }, { user: user("u_admin", "admin") });
+  expect(await trash.items(ADMIN, "prod_open", other)).toEqual(unknown);
+  expect(await trash.items(ADMIN, priv, other)).toEqual(unknown);
+  expect(await trash.restore(ADMIN, "prod_open", theirs.id, other)).toEqual(unknown);
+});
+
+test("the marked sample is nobody's to write: removing from it or restoring into it is the view-only refusal, and its Trash is not listed", async () => {
+  const ws = workspace(`bt-e-${run}`);
+  const { tenant, database, priv } = await fixture(ws);
+  const trash = api(tenant, ws);
+  const mine = await trash.remove(OWNER, priv, { kind: "take", itemId: `t_priv_${run}` });
+  expect(mine[0]).toBe(200);
+  /* The owner's board is now the workspace's marked sample: a write into it is refused for everyone, and nothing moves. */
+  await tenant.runInTenant(ws, () => database.db().execute({ sql: "INSERT OR REPLACE INTO settings(key,value,updated_by,updated_at) VALUES('sampleProduction',?,'u_admin',0)", args: [JSON.stringify({ version: 1, projectId: priv, name: "Sample", draftOwner: "u_owner", draftId: "d1", markedBy: "u_admin", markedAt: 0 })] }), { user: user("u_admin", "admin") });
+  for (const actor of [OWNER, MATE, ADMIN]) {
+    const removed = await trash.remove(actor, priv, { kind: "note", itemId: "n1", payload: {} });
+    expect(removed[0], actor.user.id).toBe(403);
+    expect(removed[1].code ?? removed[1].error, actor.user.id).toBeTruthy();
+    expect((await trash.restore(actor, priv, mine[1].entry.id))[0], actor.user.id).toBe(403);
+  }
+  expect((await trash.items(OWNER, priv))[0]).toBe(404);
+  expect(await tenant.runInTenant(ws, async () => Number((await database.db().execute({ sql: "SELECT deleted FROM generations WHERE id=?", args: [`t_priv_${run}`] })).rows[0].deleted), { user: user("u_owner") })).toBe(1);
+});

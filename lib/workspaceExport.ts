@@ -29,6 +29,7 @@ const SHARED_TABLES = [
   "element_attributes",
   "attribute_versions",
   "bindings",
+  "board_trash",
   "recipes",
   "recipe_stages",
   "runs",

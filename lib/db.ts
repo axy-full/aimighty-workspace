@@ -315,6 +315,22 @@ const SCHEMA = [
      updated_at  INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_shots_project ON shots(project_id, position)`,
+  /* A board's Trash (lib/boardTrash.ts): what was removed from a board, who removed it and when; restored_at set once it is put back. For what the browser
+     held (a card, a note, a frame...) `payload` is the item whole; for a take or a shot it is what is needed to put it back. Nothing here is ever erased. */
+  `CREATE TABLE IF NOT EXISTS board_trash (
+     id          TEXT PRIMARY KEY,
+     project_id  TEXT NOT NULL,
+     kind        TEXT NOT NULL,
+     item_id     TEXT NOT NULL,
+     label       TEXT NOT NULL DEFAULT '',
+     payload     TEXT,
+     removed_by  TEXT NOT NULL,
+     removed_at  INTEGER NOT NULL,
+     restored_by TEXT,
+     restored_at INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_board_trash_project ON board_trash(project_id, removed_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_board_trash_open ON board_trash(project_id, kind, item_id) WHERE restored_at IS NULL`,
   /* Atomik's words. An IDEA is a card: a logline, a tone, a few references,
      pinned by whoever thinks it is worth a brief. A TREATMENT is one document
      per production: scenes with prose, the setup defaults and the margin
