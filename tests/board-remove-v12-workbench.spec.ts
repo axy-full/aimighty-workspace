@@ -31,7 +31,7 @@ test.describe("desktop", () => {
     expect(count).toBeGreaterThan(2);
     const ids = await cards.evaluateAll((els) => els.map((el) => el.getAttribute("data-card-id")!));
     const card = (id: string) => page.locator(`.bd-node[data-card-id="${id}"]`);
-    const toast = page.getByTestId("v12-toast");
+    const toast = page.getByTestId("toast");
 
     /* Delete: the card is gone, said with its name and an Undo, and recorded. */
     await card(ids[0]).click();
