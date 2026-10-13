@@ -437,3 +437,12 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
 - **Order:** deploy #2, then the owner's backup and deploy #3, then the board-sharing PRs.
 - Any new screen element goes through Claude Design first. All of it is NEEDS AKSHAY with an Opus privacy review.
 - **Usage:** 2 lanes until tomorrow's 13:30 reset, unless the owner says otherwise.
+
+## Owner decisions (Akshay, 13 Oct 12:50)
+- Deploying #687 as it is (merged to main 925116fb).
+- Yes to #690's studioRoutes import line.
+- **Deploy #3** = #675 + #668 + #686 + #688 + #690, whichever are green on release/1.
+  - Pin it BEFORE #691 merges.
+  - List its contents, the two migrations (#675's uploader_id column, #668's audit table) with what each changes, and the env names.
+  - Don't open it until the owner says deploy #2 is checked.
+  - After deploy #3 is pinned, merge #691.
