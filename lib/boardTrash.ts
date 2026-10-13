@@ -220,15 +220,15 @@ async function putTakeBack(person: Actor & { id: string }, itemId: string, proje
 
 /**
  * The workspace's Trash: the takes a person removed that were filed on no board (their record has no board: `project_id` is ''). The remover lists and restores
- * their own, and an admin those they may change (an unfiled take is the workspace's, as it is in the takes list); nobody else. Restoring never touches billing.
+ * their own, the take's maker one an admin removed, and an admin those they may change (an unfiled take is the workspace's, as it is in the takes list); nobody else. Restoring never touches billing.
  */
 export async function listWorkspaceTrash(person: Actor & { id: string }): Promise<{ ok: true; items: TrashEntry[] }> {
   await ready(); await mediaDeletionReady();
   const rows = (await db().execute({
     sql: `SELECT b.id, b.kind, b.item_id, b.label, b.removed_by, b.removed_at, g.stored_url, g.bytes, d.lease FROM board_trash b
           LEFT JOIN generations g ON g.id=b.item_id LEFT JOIN generation_deletions d ON d.id=b.item_id
-          WHERE b.project_id='' AND b.restored_at IS NULL AND (b.holder=? OR ?=1) ORDER BY b.removed_at DESC, b.id DESC LIMIT ?`,
-    args: [person.id, isAgentId(person.id) ? 0 : (person.role === "admin" || person.owner === true ? 1 : 0), TRASH_LIST_LIMIT],
+          WHERE b.project_id='' AND b.restored_at IS NULL AND (b.holder=? OR ?=1 OR g.created_by=?) ORDER BY b.removed_at DESC, b.id DESC LIMIT ?`,
+    args: [person.id, isAgentId(person.id) ? 0 : (person.role === "admin" || person.owner === true ? 1 : 0), person.id, TRASH_LIST_LIMIT],
   })).rows as Record<string, unknown>[];
   const names = await namesOf(rows.map((row) => String(row.removed_by)));
   return { ok: true, items: rows.map((row) => { const t = takeRestorable(row, row.lease != null); return entryOf(row, names, t.ok, t.why); }) };
@@ -238,7 +238,7 @@ export async function restoreFromWorkspaceTrash(person: Actor & { id: string }, 
   await ready(); await mediaDeletionReady(); await workbenchReady();
   if (!ID.test(entryId)) return fail(404, "Nothing like that is in the Trash.");
   const admin = !isAgentId(person.id) && (person.role === "admin" || person.owner === true);
-  const row = (await db().execute({ sql: "SELECT * FROM board_trash WHERE id=? AND project_id='' AND kind='take' AND restored_at IS NULL AND (holder=? OR ?=1)", args: [entryId, person.id, admin ? 1 : 0] })).rows[0] as Record<string, unknown> | undefined;
+  const row = (await db().execute({ sql: "SELECT b.* FROM board_trash b LEFT JOIN generations g ON g.id=b.item_id WHERE b.id=? AND b.project_id='' AND b.kind='take' AND b.restored_at IS NULL AND (b.holder=? OR ?=1 OR g.created_by=?)", args: [entryId, person.id, admin ? 1 : 0, person.id] })).rows[0] as Record<string, unknown> | undefined;
   if (!row) return fail(404, "Nothing like that is in the Trash.");
   if (isAgentId(person.id) && String(row.removed_by ?? "") !== person.id) return fail(404, "Nothing like that is in the Trash.");
   const problem = await putTakeBack(person, String(row.item_id), null, Date.now());
