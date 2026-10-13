@@ -46,7 +46,7 @@ export function useConfirm() {
 function hereOf(shell: Shell): Here {
   /* The Studio board's own address, so an Open to the place it is already at carries none. */
   const board = shell.screen === "board" && (!shell.params.kind || shell.params.kind === "studio") ? `?view=board${shell.params.region ? `&region=${shell.params.region}` : ""}` : null;
-  return { view: shell.view === "board" || shell.view === "home" ? "suite" : shell.view, suite: shell.suite.id, page: shell.page.id, board, make: shell.make !== null, library: false };
+  return { view: shell.view === "board" || shell.view === "home" || shell.view === "admin" ? "suite" : shell.view, suite: shell.suite.id, page: shell.page.id, board, make: shell.make !== null, library: false };
 }
 
 /**

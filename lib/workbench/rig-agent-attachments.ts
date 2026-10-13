@@ -1,3 +1,4 @@
+import { currentViewer, openableAmong } from "../uploadAccess";
 import { db } from "../db";
 import { readUploadBytes } from "../storage";
 import { IMAGE_MIMES, MAX_SOURCE_BYTES, normalize } from "./atomik-references";
@@ -48,7 +49,10 @@ export async function resolvePlanAttachments(productionId: string, ids: readonly
           WHERE p.project_id = ? AND u.id IN (${uploadIds.map(() => "?").join(",")})`,
     args: [productionId, ...(uploadIds as string[])],
   })).rows;
-  const byId = new Map(rows.map((row) => [String(row.id), row]));
+  /* Filed in the production's Library is not enough: the person asking must be able to open each file (lib/uploadAccess.ts). Said as a file not in the Library is. */
+  const viewer = currentViewer();
+  const open = viewer ? await openableAmong(rows.map((row) => String(row.id)), viewer) : null;
+  const byId = new Map(rows.filter((row) => !open || open.has(String(row.id))).map((row) => [String(row.id), row]));
   return (uploadIds as string[]).map((uploadId) => {
     const row = byId.get(uploadId);
     if (!row) throw new PlanAttachmentError("An attached file isn't in this project's Library. Attach it again.");

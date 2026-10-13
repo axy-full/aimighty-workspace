@@ -1,3 +1,5 @@
+import { mayReachProject } from "@/lib/draftProject";
+import { assertMoveAllowed, MoveRefused, parseJson } from "@/lib/projectMove";
 import { withMediaSources } from "@/lib/mediaMutation";
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
@@ -5,7 +7,6 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { getShot, STATUSES, codeProblem } from "@/lib/shots";
 import { archiveAndDelete, archiveDeleteStatements, archiveTransaction } from "@/lib/archive";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
-import { mayReachProject } from "@/lib/draftProject";
 import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,16 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
   if (typeof body.projectId === "string" && body.projectId && body.projectId !== shot.projectId) {
     const target = await db().execute({ sql: `SELECT id FROM projects WHERE id = ?`, args: [body.projectId] });
     if (!target.rows.length || !(await mayReachProject(got.user, body.projectId, "write"))) return NextResponse.json({ error: "No such project." }, { status: 404 });
+    /* The shot's setup and its takes go with it, and which project they are in decides who may open the uploads they name (lib/projectMove.ts). */
+    try {
+      await assertMoveAllowed(db(), {
+        from: shot.projectId ?? null, to: body.projectId,
+        named: [
+          parseJson((await db().execute({ sql: "SELECT setup FROM shots WHERE id=?", args: [shotId] })).rows[0]?.setup),
+          ...(await db().execute({ sql: "SELECT params FROM generations WHERE shot_id=? AND deleted=0", args: [shotId] })).rows.map((r) => parseJson(r.params)),
+        ],
+      });
+    } catch (error) { if (error instanceof MoveRefused) return NextResponse.json({ error: "No such shot." }, { status: 404 }); throw error; }
     /* Where it goes is asked as well as the shot: a project that is someone else's work takes it from its owner or an admin only. */
     if (!(await mayChangeProject(got.user, body.projectId))) return NextResponse.json({ error: NOT_YOURS.moveToProject }, { status: 403 });
     sets.push("project_id = ?"); args.push(body.projectId);
@@ -84,7 +95,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, ctx: { params
       await tx.execute({ sql: `UPDATE bindings SET project_id=? WHERE shot_id=?`, args: [moveTo, shotId] });
     }
     await tx.execute({ sql: `UPDATE shots SET ${sets.join(", ")} WHERE id = ?`, args });
-  });
+  }, async (tx) => { try { return JSON.parse(String((await tx.execute({ sql: "SELECT setup FROM shots WHERE id=?", args: [shotId] })).rows[0]?.setup ?? "null")); } catch { return null; } });
   /* Both projects' shot and approval counts changed. */
   if (moveTo) invalidate(PROJECTS_KEY);
   return NextResponse.json({ shot: await getShot(shotId) });

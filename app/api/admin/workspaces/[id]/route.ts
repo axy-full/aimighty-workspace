@@ -57,7 +57,7 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   const out: Record<string, unknown> = { ok: true };
   if ("suspended" in body) {
     const on = Boolean(body.suspended);
-    await setWorkspaceSuspended(id, on, on ? String(body.reason ?? "") : null);
+    await setWorkspaceSuspended(id, on, on ? String(body.reason ?? "") : null, { actorId: got.user.id });
     out.suspended = on;
   }
   if ("limits" in body && body.limits && typeof body.limits === "object") {
@@ -82,13 +82,13 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   }
   if ("grantCredits" in body) {
     const n = Number(body.grantCredits);
-    if (!Number.isFinite(n) || n === 0 || Math.abs(n) > 1_000_000) {
-      return NextResponse.json({ error: "Credits to add: a number, negative to take some away." }, { status: 400 });
+    if (!Number.isInteger(n) || n === 0 || Math.abs(n) > 1_000_000) {
+      return NextResponse.json({ error: "Credits to add: a whole number, negative to take some away." }, { status: 400 });
     }
     /* `manual`, which counts as free. Management adding credits is usually
        goodwill; when it is a payment taken off-platform there is nowhere yet
        to say so, and booking goodwill as revenue is the worse mistake. */
-    await grantCredits(id, n, String(body.note ?? "Added by management"), got.user.id, "manual");
+    await grantCredits(id, n, String(body.note ?? "Added by management"), got.user.id, "manual", { actorId: got.user.id });
     // Credits arriving release what they cover, oldest take first.
     try {
       const ws = await getWorkspace(id);

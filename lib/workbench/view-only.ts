@@ -12,7 +12,7 @@ export const viewOnlyRefusal = (ownerName: string) => `This is ${ownerName}’s 
 export const SHARE_TEAM = {
   share: "Share with team",
   stop: "Stop sharing with team",
-  tip: "Teammates can view this board. Only you can edit it.",
+  tip: "Editing together is coming next — for now teammates can view.",
   shared: "Shared with team",
   stopped: "No longer shared with the team",
 } as const;

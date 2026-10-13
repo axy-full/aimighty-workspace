@@ -112,7 +112,7 @@ export async function registerAstraArtifacts(jobId: string, owner: string, proje
         const missing=project?artifacts.filter(item=>!project.assets.some(asset=>asset.id===item.assetId)).length:artifacts.length;
         const canAttach=!!project&&project.assets.length+missing<=PROJECT_LIMITS.assets;
         for (const item of artifacts) {
-            await tx.execute({ sql: 'INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at) VALUES(?,?,?,?,?,?,NULL,NULL,?,?,NULL,?) ON CONFLICT(id) DO NOTHING', args: [item.uploadId, item.filename, item.mime, item.ext, item.bytes, item.sha256, item.storedUrl, item.kind === 'preview' ? 'image' : 'file', Date.now()] });
+            await tx.execute({ sql: 'INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at,uploader_id) VALUES(?,?,?,?,?,?,NULL,NULL,?,?,NULL,?,?) ON CONFLICT(id) DO NOTHING', args: [item.uploadId, item.filename, item.mime, item.ext, item.bytes, item.sha256, item.storedUrl, item.kind === 'preview' ? 'image' : 'file', Date.now(), owner] });
             if (canAttach && project && !project.assets.some(asset => asset.id === item.assetId))
                 project.assets.push({ id: item.assetId, name: `3D render ${item.filename}`, kind: item.kind === 'preview' ? 'image' : 'document', category: '3D', url: item.url, mime: item.mime, uploadId: item.uploadId, description: 'Native 3D render output', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] });
         }

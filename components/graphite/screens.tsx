@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Boundary, { type Fault } from "@/components/Boundary";
 import { PanelFault } from "./PanelFault";
 import type { WorkspaceAccount, useProjects } from "@/lib/workspace/data";
@@ -33,6 +33,8 @@ const BoardEntry = dynamic(() => import("./board/BoardView").then((m) => m.Board
 const NewBoardEntry = dynamic(() => import("@/components/v12/board/NewBoard").then((m) => m.NewBoard), { ssr: false });
 const ControlRoomEntry = dynamic(() => import("./control-room/ControlRoom").then((m) => m.ControlRoom), { ssr: false });
 const SettingsEntry = dynamic(() => import("./settings/SettingsView").then((m) => m.SettingsView), { ssr: false });
+/* The platform console (components/v12/platform, `?view=admin`): the platform owner's, in the new interface's frame, loaded only when asked for. */
+const PlatformEntry = dynamic(() => import("@/components/v12/platform/PlatformConsole").then((m) => m.PlatformConsole), { ssr: false });
 const PhoneEntry = dynamic(() => import("./phone/PhoneApp").then((m) => m.PhoneApp), { ssr: false });
 const AtomikEntry = dynamic(() => import("./atomik/panel/AtomikPanel").then((m) => m.AtomikPanel), { ssr: false });
 
@@ -95,9 +97,25 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
         </Boundary>
       );
     }
+    case "platform":
+      return (
+        <Boundary what="The platform console" probe="platform" resetKey="platform" fallback={(f) => <ScreenFault fault={f} name="platform" />}>
+          <PlatformSlot />
+        </Boundary>
+      );
     default:
       return null;
   }
+}
+
+/**
+ * The platform console draws in the new interface's frame at desktop sizes. In a workspace without it, the owner is sent to today's
+ * platform desk (/admin), which is where everything the console shows was before; the console has no second, older look of its own.
+ */
+function PlatformSlot() {
+  const v12 = useNewInterface();
+  useEffect(() => { if (!v12) window.location.replace("/admin"); }, [v12]);
+  return v12 ? <PlatformEntry /> : null;
 }
 
 /**

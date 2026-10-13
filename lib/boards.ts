@@ -110,7 +110,8 @@ async function writeBoard(boardId: string, patch: BoardPatch, expected: number |
   sets.push("updated_at = ?"); args.push(expected == null ? now() : Math.max(now(), expected + 1), boardId);
   const where = expected == null ? "id = ?" : "id = ? AND updated_at = ?";
   if (expected != null) args.push(expected);
-  const written = await withMediaSources(patch.nodes?.slice(0, 200), (tx) => tx.execute({ sql: `UPDATE boards SET ${sets.join(", ")} WHERE ${where}`, args: args as never[] }));
+  const written = await withMediaSources(patch.nodes?.slice(0, 200), (tx) => tx.execute({ sql: `UPDATE boards SET ${sets.join(", ")} WHERE ${where}`, args: args as never[] }),
+    async (tx) => { try { return JSON.parse(String((await tx.execute({ sql: "SELECT nodes FROM boards WHERE id=?", args: [boardId] })).rows[0]?.nodes ?? "null")); } catch { return null; } });
   const board = await getBoard(boardId);
   if (!board) return null;
   if (expected != null && Number(written.rowsAffected ?? 0) === 0) return { conflict: board };

@@ -1,3 +1,4 @@
+import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import type { Reference } from "./ark";
 import { db, ready, now } from "./db";
 import { INSPECTABLE_AUDIO_EXTS, isAudioMime } from "./audioMeta";
@@ -192,6 +193,10 @@ export async function findStoredSource(ref: SourceRef): Promise<StoredSource | n
       args: [String(ref.uploadId)],
     })).rows[0] as unknown as { id: string; filename: string; mime: string; ext: string; bytes: number; kind: string; duration_s: number | null; stored_url: string } | undefined;
     if (!row) return null;
+    /* A person's request reads only an upload they may open (lib/uploadAccess.ts): transcription, dubbing and voice change all start here, so none of them can
+       use someone else's private upload as a source, or leave a take that names it. Background work with no signed-in person is not asked. */
+    const viewer = currentViewer();
+    if (viewer && !(await uploadOpenableBy(String(row.id), viewer))) return null;
     const ext = String(row.ext ?? "").toLowerCase();
     // An .m4a/.m4b stored before its ftyp brand was read as audio carries
     // kind 'video' (lib/imagemeta.ts); the container says it is sound. A

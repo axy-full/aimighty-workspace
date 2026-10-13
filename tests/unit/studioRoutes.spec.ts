@@ -87,6 +87,7 @@ test("a shot moved to another project takes its Rig wires along; a wire to the o
     "@/lib/db": await import("../../lib/db"),
     "@/lib/archive": await import("../../lib/archive"),
     "@/lib/mediaMutation": await import("../../lib/mediaMutation"),
+    "@/lib/projectMove": await import("../../lib/projectMove"),
     "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/demo/readonly.server": await import("../../lib/demo/readonly.server"),
     "@/lib/shots": await import("../../lib/shots"),
@@ -146,6 +147,7 @@ test("the selects count is one per approved take, even when a prompt holds a lin
   const { db, ready } = await import("../../lib/db");
   const selects = await route("app/api/export/selects/route.ts", {
     "@/lib/db": await import("../../lib/db"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/settings": await import("../../lib/settings"),
     "@/lib/naming": await import("../../lib/naming"),
     "@/lib/models": await import("../../lib/models"),

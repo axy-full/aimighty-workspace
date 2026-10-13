@@ -350,7 +350,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
 
   /* The screens (lib/shell/screens.ts): Home and the board fill the body under the header; Settings and Atomik's control room are the
      other two places, and the control room keeps the project chip and the strip. Nothing else is a page. */
-  const fullScreen = shell.screen === "home" || shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social";
+  const fullScreen = shell.screen === "home" || shell.screen === "board" || shell.screen === "board-ads" || shell.screen === "board-social" || shell.screen === "platform";
   const projectHead = (
     <ProjectHead project={project} projects={data.projects} loading={data.status === "loading"} error={projectsError}
       onPick={pickProject} onCreate={createProject} />

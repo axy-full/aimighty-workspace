@@ -5,12 +5,12 @@ import { sampleViewOnly } from "../workbench/team-boards";
 import { viewOnlyRefusal } from "../workbench/view-only";
 
 /**
- * The marked sample production is read-only for every viewer, the workspace's owner and admins included (owner, 12 Oct): nothing is written into it. A route that
+ * The marked sample production is read-only for every viewer except the person it was marked from and the platform owner (owner, 13 Oct; lib/draftProject.ts mayEditSample): nothing is written into it by anyone else, admins included. A route that
  * would write a shot, a take or a library filing into a project asks first; the answer is the one a shared board gives a teammate (403, `view_only`, in the same
  * words). Making one's own board from the sample is not a write into it. Undoing the mark lifts all of it. Background work and Atomik runs (no person) are not asked.
  */
 export async function sampleWriteRefusal(projectId: string | null | undefined, person = currentPerson()): Promise<Response | null> {
-  if (!person || !projectId || !(await isSampleProject(projectId))) return null;
+  if (!person || !projectId || !(await isSampleProject(projectId, undefined, person))) return null;
   const { owner } = await sampleViewOnly(requireTenant());
   return Response.json({ error: viewOnlyRefusal(owner.name), code: "view_only" }, { status: 403, headers: { "Cache-Control": "no-store" } });
 }
@@ -54,7 +54,7 @@ export async function sampleDraftRefusal(owner: string, project: { id: string; p
  * lifter. Anyone else is refused as view-only, whoever they are. Not asked off the sample, or of a run that is not there (the route's own answer for one stands).
  */
 export async function sampleRunRefusal(productionId: string, runId: string, person = currentPerson()): Promise<Response | null> {
-  if (!person || !(await isSampleProject(productionId))) return null;
+  if (!person || !(await isSampleProject(productionId, undefined, person))) return null;
   const row = await db().execute({ sql: "SELECT owner FROM rig_agent_runs WHERE id=? AND production_id=?", args: [runId, productionId] })
     .then((r) => r.rows[0], (error: unknown) => { if (/no such table/i.test(String(error))) return undefined; throw error; });
   if (!row || String(row.owner) === person.id) return null;
