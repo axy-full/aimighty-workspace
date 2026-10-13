@@ -53,6 +53,13 @@ async function fixture(name: string, options: { sample?: boolean } = {}) {
   const tenant = await import("../../lib/tenant"), database = await import("../../lib/db"), records = await import("../../lib/workbench/records");
   const { newProject } = await import("../../lib/workbench/studio");
   const { createNode } = await import("../../lib/workbench/node-graph");
+  const platform = await import("../../lib/platform");
+  /* The workspace's people, as the platform holds them: a key named in a request must be an active member's. */
+  await platform.platformReady();
+  for (const id of ["u_owner", "u_mate", "u_root"]) {
+    await platform.platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts(id,email,name,password_hash,created_at) VALUES(?,?,?,?,0)", args: [id, `${id}@example.test`, id, "x"] });
+    await platform.platformDb().execute({ sql: "INSERT OR REPLACE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,?,0,0)", args: [ws.id, id, "member"] });
+  }
   let current = who("u_owner");
   const route = loadRoute<Route>("app/api/workbench/projects/route.ts", () => current);
   const as = <T,>(person: Who, fn: () => Promise<T>) => { current = person; return tenant.runInTenant(ws, fn, asUser(person)); };
@@ -67,8 +74,9 @@ async function fixture(name: string, options: { sample?: boolean } = {}) {
   if (options.sample) await as(who("u_owner"), async () => {
     await database.db().execute({ sql: "INSERT OR REPLACE INTO settings(key,value,updated_by,updated_at) VALUES('sampleProduction',?,'u_owner',0)", args: [JSON.stringify({ version: 1, projectId: first.productionProjectId, name: "Sample", draftOwner: "u_owner", draftId: "d1", markedBy: "u_owner", markedAt: 1 })] });
   });
+  const members = { disable: (id: string) => platform.platformDb().execute({ sql: "UPDATE memberships SET disabled=1 WHERE workspace_id=? AND account_id=?", args: [ws.id, id] }) };
   const row = (owner = "u_owner") => as(who("u_owner"), async () => (await database.db().execute({ sql: "SELECT body,revision,updated_by,owner FROM workbench_projects WHERE key=?", args: [`${owner}:d1`] })).rows[0]);
-  return { ws, tenant, database, records, route, as, put, post, board, row, first };
+  return { ws, tenant, database, records, members, route, as, put, post, board, row, first };
 }
 
 test("a save under another key records the actor and keeps the board's own key, mappings and revision; a stale revision is refused and overwrites nothing", async () => {
@@ -214,4 +222,54 @@ test("with write reach (the sample's editor, #694) the route saves, checks, maps
   expect(bible.owner).toBe("u_root");
   // Sharing stays the owner's: not the sample's editor acting on their key.
   expect((await f.as(root, () => f.post({ action: "team-share", projectId: "d1", shared: true, owner: "u_owner" }))).status).toBeGreaterThanOrEqual(400);
+});
+
+test("a board linked to an ordinary production (a starter draft, one opened from a production or a take link) is not reachable by naming its owner: nothing is read, written or fenced", async () => {
+  const f = await fixture("ordinary", { sample: true });
+  // The owner's other drafts: linked to the workspace's ordinary productions, as a starter or an opened production is. Their ids are derivable.
+  const { createNode } = await import("../../lib/workbench/node-graph");
+  const { newProject } = await import("../../lib/workbench/studio");
+  await f.as(who("u_owner"), async () => {
+    await f.database.db().execute({ sql: "INSERT OR IGNORE INTO productions(id,name,created_at) VALUES('prod_ordinary','Ordinary',0)", args: [] });
+    await f.database.db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at,production_id) VALUES('prj_ordinary','Ordinary project',0,'prod_ordinary')", args: [] });
+    for (const id of ["starter-d", "opened-d"]) {
+      const draft = { ...newProject(id), id, productionProjectId: "prj_ordinary", nodes: [{ ...createNode("scene", 0), id: "n1" }] };
+      await f.database.db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,3,0)", args: [`u_owner:${id}`, "u_owner", id, id, JSON.stringify(draft)] });
+    }
+  });
+  const snapshot = () => f.as(who("u_owner"), async () => JSON.stringify([(await f.database.db().execute("SELECT key,body,revision,updated_by FROM workbench_projects ORDER BY key")).rows, (await f.database.db().execute("SELECT * FROM workbench_draft_writes")).rows, (await f.database.db().execute("SELECT COUNT(*) AS n FROM workbench_bibles")).rows, (await f.database.db().execute("SELECT COUNT(*) AS n FROM workbench_shots")).rows]));
+  const before = await snapshot();
+  const unknown = async (who_: Who, body: Record<string, unknown>) => (await f.as(who_, () => f.post(body)));
+  for (const stranger of [who("u_mate"), who("u_root")]) {
+    for (const id of ["starter-d", "opened-d"]) {
+      const probes = [
+        { action: "check-write", projectId: id, owner: "u_owner", write: { writer: WRITER, seq: 1 } },
+        { action: "map-shot", projectId: id, owner: "u_owner", nodeId: "n1" },
+        { action: "publish", projectId: id, owner: "u_owner", expectedBibleVersion: 0 },
+        { action: "team-share", projectId: id, owner: "u_owner", shared: true },
+      ];
+      // The answer for a board that is not there at all.
+      const missing = await unknown(stranger, { ...probes[0], projectId: `no-such-${id}` });
+      for (const probe of probes) {
+        const res = await unknown(stranger, probe);
+        expect([res.status, await res.clone().text().then((t) => /"project"|productionProjectId|"revision"/.test(t))], `${stranger.id} ${probe.action} ${id}`).toEqual([missing.status, false]);
+      }
+      const put = await f.as(stranger, () => f.put({ ...newProject(id), id, productionProjectId: "prj_ordinary", name: "Overwritten" }, 3, { owner: "u_owner" }));
+      expect([put.status, await put.clone().text().then((t) => /"revision"/.test(t))], `${stranger.id} PUT ${id}`).toEqual([missing.status, false]);
+    }
+  }
+  // Nothing was read into an answer, written, mapped, published or fenced.
+  expect(await snapshot()).toBe(before);
+});
+
+test("the key must be an active member's: a disabled owner's board is not reachable even through a grant", async () => {
+  const f = await fixture("disabled", { sample: true });
+  const root = who("u_root");
+  expect((await f.as(root, () => f.put({ ...f.board, name: "Works" }, 1, { owner: "u_owner" }))).status).toBe(200);
+  await f.members.disable("u_owner");
+  const refused = await f.as(root, () => f.put({ ...f.board, name: "Not now" }, 2, { owner: "u_owner" }));
+  expect(refused.status).toBeGreaterThanOrEqual(400);
+  expect(JSON.parse(String((await f.row()).body)).name).toBe("Works");
+  const checked = await f.as(root, () => f.post({ action: "check-write", projectId: "d1", write: { writer: WRITER, seq: 9 }, owner: "u_owner" }));
+  expect(checked.status).toBeGreaterThanOrEqual(400);
 });
