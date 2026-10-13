@@ -137,7 +137,8 @@ export function runStepPrice(step: RigAgentPaidStepView): PriceValue | null {
   if (step.state === "done") return step.charged != null ? exact(step.charged) : null;
   if (step.state === "failed") return step.charge ? exact(step.charge.credits) : null;
   if (step.quote == null) return null;
-  return step.worst != null && step.worst > step.quote ? upTo(step.worst) : exact(step.quote);
+  /* The house reads the render's own dollars (step.*Usd, set only there); the credits above stay what the run holds. */
+  return step.worst != null && step.worst > step.quote ? upTo(step.worst, step.worstUsd) : exact(step.quote, step.quoteUsd);
 }
 
 /** The credits a price may come to: its figure, rounded up the way price-words shows it. */
@@ -227,7 +228,7 @@ export function planModel(input: PlanInput): PlanModel | null {
   const approval = plan?.approval ?? null;
   /* The plan's figures are the server's only (review L2): its quote at the gate, then the approved total. Before the gate
      (the proposal, Build · free) the card adds nothing up: no total, no "at most", no fix line, no balance after. */
-  const total: PriceValue | null = gate ? (gate.approximate ? upTo(gate.total) : exact(gate.total))
+  const total: PriceValue | null = gate ? (gate.approximate ? upTo(gate.total, gate.totalUsd) : exact(gate.total, gate.totalUsd))
     : approval ? (approval.approximate ? upTo(approval.total) : exact(approval.total))
     : !steps.length ? FREE : null;
   const totalCredits = total ? ceilingOf(total) : null;

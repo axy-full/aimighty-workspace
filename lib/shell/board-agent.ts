@@ -32,9 +32,9 @@ export function renderItemOf(items: readonly QueueItem[], run: RigAgentRunView |
 }
 
 /** A render's price as the run holds it: its price, or up to the most it may settle at when that is higher. Null: nothing has priced it. */
-export function renderPrice(step: Pick<RigAgentPaidStepView, "quote" | "worst">): PriceValue | null {
+export function renderPrice(step: Pick<RigAgentPaidStepView, "quote" | "worst" | "quoteUsd" | "worstUsd">): PriceValue | null {
   if (step.quote == null) return null;
-  return step.worst != null && step.worst > step.quote ? upTo(step.worst) : exact(step.quote);
+  return step.worst != null && step.worst > step.quote ? upTo(step.worst, step.worstUsd) : exact(step.quote, step.quoteUsd);
 }
 
 /** The limit a paused render needs: the run's limit, plus what this render's worst case is short of what is left. */

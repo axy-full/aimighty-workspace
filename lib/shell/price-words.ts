@@ -96,6 +96,8 @@ function shownCredits(value: PriceValue): number {
 
 /** "1,234 cr": a count of credits, grouped en-US, at most one decimal. */
 export function creditsText(credits: number): string {
+  /* The house reads dollars (a count of credits at the public price of one: an upper bound for it). */
+  if (dollarMode && creditRateForDollars !== null && Number.isFinite(credits)) return dollars(credits * creditRateForDollars);
   return `${credits.toLocaleString("en-US", { maximumFractionDigits: 1 })} cr`;
 }
 

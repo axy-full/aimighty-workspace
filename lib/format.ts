@@ -10,7 +10,7 @@ export function usd(n: number | null | undefined, dp = 3): string {
  */
 export function dollars(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
-  const cents = Math.ceil(Math.abs(n) * 100 - 1e-7);
+  const cents = Math.max(0, Math.ceil(Math.abs(n) * 100 - 1e-7));
   const text = (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${n < 0 && cents > 0 ? "-" : ""}$${text}`;
 }
