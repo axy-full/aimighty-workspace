@@ -22,7 +22,7 @@ export type CtxCommand =
   | "copy" | "cut" | "paste" | "duplicate"
   | "use-as-reference" | "open-in-inspector"
   | "bypass" | "unplug"
-  | "move" | "retry" | "delete" | "undo"
+  | "move" | "retry" | "delete" | "undo" | "redo"
   | "generate-here" | "open-library";
 
 export type CtxItem =
@@ -108,7 +108,8 @@ export function shortcutCommand(event: { key: string; metaKey: boolean; ctrlKey:
   if (event.altKey) return null;
   const key = event.key.toLowerCase();
   if (!mod) return key === "backspace" || key === "delete" ? "delete" : null;
-  if (event.shiftKey) return null;
+  /* ⌘⇧Z / Ctrl+Shift+Z: the step undone, done again. */
+  if (event.shiftKey) return key === "z" ? "redo" : null;
   switch (key) {
     case "c": return "copy";
     case "x": return "cut";

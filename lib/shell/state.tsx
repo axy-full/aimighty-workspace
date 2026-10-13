@@ -7,7 +7,7 @@ import { isStageId, stageAddress } from "./stage-redirects";
 import { platformAddress, type PlatformSectionId } from "@/lib/platformConsole";
 import { SCREENS, atomikAt, isLanded, phoneAt, route, sameSearch, screenOf, screenParams, type BoardKindId, type ScreenId } from "./screens";
 import { useCompact } from "./use-compact";
-import { canUndo, popUndo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
+import { canRedo, canUndo, popRedo, popUndo, pushRedo, pushUndo, undoneLabel, type UndoEntry } from "./undo";
 import { findRequested, withoutFind } from "./fault";
 import type { CtxCommand, CtxTarget } from "./context-menu";
 import { useSession } from "@/lib/session";
@@ -71,6 +71,8 @@ export type Shell = {
   ctx: CtxState | null;
   clip: Clip | null;
   canUndo: boolean;
+  /** ⌘⇧Z has a step to do again in this project. */
+  canRedo: boolean;
   /** `closeMake`: the page is where the person is going from Make, so Make closes. */
   goSuite: (suite: ShellSuiteId, page?: string, opts?: { closeMake?: boolean }) => void;
   /** The header's project segment: the board. */
@@ -140,6 +142,8 @@ export type Shell = {
   runCommand: ((command: CtxCommand, target: CtxTarget) => void) | null;
   setRunCommand: (run: ((command: CtxCommand, target: CtxTarget) => void) | null) => void;
   undo: () => Promise<void>;
+  /** Does the step ⌘Z undid again (⌘⇧Z). */
+  redo: () => Promise<void>;
   /** The shell as it is now, for work that finishes after the component that started it has gone (a toast's Open). */
   live: () => Shell;
   /** The selected take as the address bar carries it (`asset`), or null. */
@@ -259,6 +263,13 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
   const setUndoStack = useCallback((next: (stack: UndoEntry[]) => UndoEntry[]) => {
     undoRef.current = next(undoRef.current);
     setUndoState(undoRef.current);
+  }, []);
+  /* The steps undone, newest last, for ⌘⇧Z: a new step of a project ends that project's redo. */
+  const [redoStack, setRedoState] = useState<UndoEntry[]>([]);
+  const redoRef = useRef(redoStack);
+  const setRedoStack = useCallback((next: (stack: UndoEntry[]) => UndoEntry[]) => {
+    redoRef.current = next(redoRef.current);
+    setRedoState(redoRef.current);
   }, []);
   /* Every step remembers the project it was made in (lib/shell/undo.ts). */
   const projectRef = useRef(ws.state.projectId);
@@ -476,7 +487,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
 
   const value = useMemo<Shell>(() => ({
     view: params.view, suite, page, wsTab: params.tab, wide,
-    palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId),
+    palette, ctx, clip, canUndo: canUndo(undoStack, ws.state.projectId), canRedo: canRedo(redoStack, ws.state.projectId),
     goSuite,
     goProject,
     make: params.make,
@@ -518,6 +529,7 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
     pushUndo: (entry, say) => {
       const stamped = { ...entry, projectId: entry.projectId ?? projectRef.current };
       setUndoStack((stack) => pushUndo(stack, stamped));
+      setRedoStack((stack) => stack.filter((e) => e.projectId != null && e.projectId !== stamped.projectId));
       /* The toast's Undo (lib/workspace/state › ToastAction) stays as long as an Open does, long enough to reach on a phone, and
          shows only while this step is still the one ⌘Z would undo in this project. */
       if (say) ws.toast(say, { label: "Undo", kind: "undo", run: () => void live().undo(), live: () => popUndo(undoRef.current, projectRef.current)?.entry === stamped });
@@ -549,15 +561,32 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
       if (!popped) { ws.toast(undoRef.current.length ? "Nothing to undo in this project." : "Nothing to undo."); return; }
       setUndoStack((stack) => stack.filter((entry) => entry !== popped.entry));
       try {
-        ws.toast(undoneLabel(popped.entry, await popped.entry.undo()));
+        const said = await popped.entry.undo();
+        /* Undone, it can be done again (⌘⇧Z) when the step knows how; it waits there until a new step of this project is made. */
+        if (popped.entry.redo) setRedoStack((stack) => pushRedo(stack, popped.entry));
+        ws.toast(undoneLabel(popped.entry, said));
       } catch (error) {
         /* The step is still owed: it goes back on the stack, and the toast says why it did not happen. */
         setUndoStack((stack) => pushUndo(stack, popped.entry));
         ws.toast(`Could not undo: ${error instanceof Error && error.message ? error.message : "try again."}`);
       }
     },
+    redo: async () => {
+      const popped = popRedo(redoRef.current, ws.state.projectId);
+      if (!popped) { ws.toast(redoRef.current.length ? "Nothing to redo in this project." : "Nothing to redo."); return; }
+      setRedoStack((stack) => stack.filter((entry) => entry !== popped.entry));
+      try {
+        const said = await popped.entry.redo!();
+        /* Done again, it is a step like any other: ⌘Z undoes it again. */
+        setUndoStack((stack) => pushUndo(stack, popped.entry));
+        ws.toast(typeof said === "string" && said.trim() ? said : (popped.entry.redoLabel ?? `Done again: ${popped.entry.label}`));
+      } catch (error) {
+        setRedoStack((stack) => pushRedo(stack, popped.entry));
+        ws.toast(`Could not redo: ${error instanceof Error && error.message ? error.message : "try again."}`);
+      }
+    },
     live,
-  }), [params, lastMake, openMake, suite, page, wide, palette, ctx, clip, undoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, screen, phone, navigate, goHome, goPlatform, goBoard, setScreenParams, openAtomik, dock, settingsRequested]);
+  }), [params, lastMake, openMake, suite, page, wide, palette, ctx, clip, undoStack, redoStack, setRedoStack, goSuite, goProject, apply, ws, setUndoStack, live, link, take, screen, phone, navigate, goHome, goPlatform, goBoard, setScreenParams, openAtomik, dock, settingsRequested]);
   useEffect(() => { liveRef.current = value; }, [value]);
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

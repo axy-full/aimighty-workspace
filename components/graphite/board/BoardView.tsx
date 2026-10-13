@@ -16,7 +16,7 @@ import { useOnline } from "@/lib/board/online";
 import { railStatus } from "@/lib/board/regions";
 import { useBoardCommands } from "@/lib/board/commands";
 import { canReorder, moved, reorderNodes, reorderSlot, siblingsOf, type ReorderSlot } from "@/lib/board/reorder";
-import { addFreeCard, addFreeMedia, FREE_MEDIA_WIDTH, moveFreeCards, removeFreeCards, type FreeMove } from "@/lib/board/snap";
+import { addFreeCard, addFreeMedia, FREE_MEDIA_WIDTH, moveFreeCards, removeFreeCards, restoreFreeCards, type FreeMove } from "@/lib/board/snap";
 import { tidyFree } from "@/lib/board/tidy";
 import { isBoardKind, type BoardBox, type BoardCard, type BoardKind, type BoardPoint, type BoardSource, type RegionId } from "@/lib/board/types";
 import { readBoardView, saveBoardView } from "@/lib/board/view";
@@ -28,7 +28,7 @@ import { useCompact } from "@/lib/shell/use-compact";
 import { useNewInterface } from "@/lib/session";
 import { findProjectTake, libraryEntries, projectLibraryState, uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
-import { uid, type Asset, type Project } from "@/lib/workbench/studio";
+import { uid, type Asset, type CanvasNode, type Project } from "@/lib/workbench/studio";
 import { assetFromUpload } from "@/lib/workspace/draft-editor";
 import type { RoomPeer } from "@/lib/workbench/team-canvas-model";
 import { withBoardText } from "@/lib/workspace/rig-board";
@@ -339,8 +339,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   }, [flow, gridAcross, measureInView, placed.arranged, placed.bounds, projectId, scope, store]);
 
   /* ── Edits a person makes on the board: each one draft edit, free, with ⌘Z ── */
-  const undoable = useCallback((label: string, undo: () => void, say?: string) => {
-    if (project) rigUndoSink()?.({ label, projectId: project.id, undo, ...(say ? { say } : {}) });
+  /* Each step is an operation on the draft as it is now, never a snapshot: ⌘Z undoes it and ⌘⇧Z does it again (lib/shell/undo.ts), and a teammate's later change is
+     never overwritten by either. `redo` is how it is done again; without one the step can be undone but not redone. */
+  const undoable = useCallback((label: string, undo: () => void | Promise<void>, say?: string, redo?: () => void | Promise<void>) => {
+    if (project) rigUndoSink()?.({ label, projectId: project.id, undo, ...(say ? { say } : {}), ...(redo ? { redo } : {}) });
   }, [project]);
   const onFreeMoved = useCallback((moves: FreeMove[]) => {
     const current = rig.project;
@@ -351,7 +353,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     });
     const refusal = rig.apply((p) => moveFreeCards(p, moves));
     if (refusal) { ws.toast(refusal); return; }
-    undoable("The card is back where it was", () => { rig.apply((p) => moveFreeCards(p, before)); });
+    undoable("The card is back where it was", () => { rig.apply((p) => moveFreeCards(p, before)); }, undefined, () => { rig.apply((p) => moveFreeCards(p, moves)); });
   }, [rig, undoable, ws]);
   /* Tidy: the free cards in one block, in canvas order, on the dots; one edit, with Undo. Arranged cards are always in order. */
   const freeCards = useMemo(() => placed.cards.filter((card) => !card.region && card.nodeId), [placed.cards]);
@@ -369,7 +371,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     const before = moves.flatMap((move) => { const node = nodes.get(move.id); return node ? [{ id: node.id, x: node.x, y: node.y }] : []; });
     const refusal = rig.apply((p) => moveFreeCards(p, moves));
     if (refusal) { ws.toast(refusal); return true; }
-    undoable("The cards are back where they were", () => { rig.apply((p) => moveFreeCards(p, before)); });
+    undoable("The cards are back where they were", () => { rig.apply((p) => moveFreeCards(p, before)); }, undefined, () => { rig.apply((p) => moveFreeCards(p, moves)); });
     /* The block lands right of the bands: if it is not in view, the board goes to it. */
     const sizes = new Map(sized.map(({ node, box }) => [node.id, box]));
     const block = moves.reduce<BoardBox | null>((acc, move) => {
@@ -409,17 +411,26 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       const next = moved(was, card.nodeId, slot.index);
       const refusal = rig.apply((p) => reorderNodes(p, next));
       if (refusal) { ws.toast(refusal); return; }
-      undoable("The order is back as it was", () => { rig.apply((p) => reorderNodes(p, was)); });
+      undoable("The order is back as it was", () => { rig.apply((p) => reorderNodes(p, was)); }, undefined, () => { rig.apply((p) => reorderNodes(p, next)); });
     },
   }, [offline, placed.boxes, placed.byId, placed.cards, rig, undoable, ws]);
   const [editing, setEditing] = useState<string | null>(null);
+  /* The cards just placed (their first words are part of placing them) and the node each held when taken off again, so redo brings back exactly it. */
+  const justPlaced = useRef(new Set<string>());
+  const placedNodes = useRef(new Map<string, CanvasNode>());
   const finishEdit = useCallback((id: string, value: string | null) => {
     setEditing(null);
     if (value === null) return;
     const card = placed.byId.get(id);
-    const refusal = rig.apply((p) => withBoardText(p, id, card?.kind === "label" ? "title" : "text", value));
-    if (refusal) ws.toast(refusal);
-  }, [placed.byId, rig, ws]);
+    const field = card?.kind === "label" ? "title" : "text";
+    const node = rig.project?.nodes.find((n) => n.id === id);
+    const before = node ? (field === "title" ? node.title : node.text ?? "") : null;
+    const refusal = rig.apply((p) => withBoardText(p, id, field, value));
+    if (refusal) { ws.toast(refusal); return; }
+    /* A change to the words is a step like any other: ⌘Z puts the old words back, ⌘⇧Z the new. (Text written into a card just placed is part of placing it.) */
+    if (before !== null && before !== value && !justPlaced.current.has(id))
+      undoable("The words are back as they were", () => { rig.apply((p) => withBoardText(p, id, field, before)); }, undefined, () => { rig.apply((p) => withBoardText(p, id, field, value)); });
+  }, [placed.byId, rig, undoable, ws]);
   const [tool, setTool] = useState<BoardTool>("select");
   const files = useRef<HTMLInputElement>(null);
   const place = useCallback((at: BoardPoint) => {
@@ -430,7 +441,18 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     if (refusal) { ws.toast(refusal); return; }
     pick(new Set([id]), id);
     setEditing(id);
-  }, [pick, rig, tool, ws]);
+    /* Placing a note or text is a step: ⌘Z takes it off again (what was written in it goes with it), ⌘⇧Z puts it back as it was then. */
+    const kindOfCard = tool === "note" ? "note" : "label";
+    undoable(kindOfCard === "note" ? "The note is off the board" : "The text is off the board", () => {
+      const card = rig.project?.nodes.find((n) => n.id === id);
+      if (card) placedNodes.current.set(id, card);
+      rig.apply((p) => removeFreeCards(p, [id]).project);
+    }, undefined, () => {
+      const card = placedNodes.current.get(id);
+      rig.apply((p) => (card ? restoreFreeCards(p, [card]) : addFreeCard(p, kindOfCard, at, id)));
+    });
+    justPlaced.current.add(id);
+  }, [pick, rig, tool, undoable, ws]);
   /* Remove (owner, 13 Oct 2026): every removable card, by Delete/Backspace, right-click › Remove and ⋯ › Remove. One reading of the draft and ONE edit for the whole
      selection (lib/board/remove.ts), so removing a mix of shots and free cards never brings one back; the draft's edit is refused in its own words (view-only,
      a switch in progress), never claimed; a locked card says so. Everything removed goes to the board's Trash (lib/boardTrash.ts) and ⌘Z puts it back. */

@@ -1,14 +1,16 @@
 /**
  * The undo stack (README › Right-click menu): every mutation pushes its
- * inverse; the stack holds the last twenty. Pure, so it is unit-tested
- * without a browser.
+ * inverse; the stack holds the last hundred steps of the session (owner, 13 Oct:
+ * at least fifty per board, no time limit), and a step undone goes on the redo
+ * stack with the way to do it again (⌘⇧Z). Pure, so it is unit-tested without a
+ * browser.
  *
  * One stack for the shell, but every entry remembers the project it was made
  * in: ⌘Z undoes the newest step of the project that is open, so a Rig shot
  * deleted in one project is never restored into another. Steps from other
  * projects wait on the stack until their project is open again.
  */
-export const UNDO_DEPTH = 20;
+export const UNDO_DEPTH = 100;
 
 export type UndoEntry = {
   /** What the toast says once it is undone — "Deleted take restored". */
@@ -20,6 +22,13 @@ export type UndoEntry = {
    * toast says that string instead of `label`.
    */
   undo: () => void | string | Promise<void | string>;
+  /**
+   * Does the step again after it was undone (⌘⇧Z). Same contract as `undo`. Absent: the step cannot be redone, and is dropped when undone. Like `undo`, it
+   * works on the draft as it is now (an operation, never a snapshot), so a teammate's later change is never overwritten.
+   */
+  redo?: () => void | string | Promise<void | string>;
+  /** What the toast says once it is done again; `label` when absent. */
+  redoLabel?: string;
   /** The project the step was made in; the shell stamps it when the step is pushed. Absent: any project. */
   projectId?: string | null;
 };
@@ -54,6 +63,13 @@ export function canUndo(stack: readonly UndoEntry[], projectId?: string | null):
   return stack.some((entry) => belongs(entry, projectId));
 }
 
+/** A step undone, on the redo stack (the same depth). */
+export const pushRedo = pushUndo;
+/** The newest step that can be done again for this project, and the stack without it. */
+export const popRedo = popUndo;
+/** Whether ⌘⇧Z has anything to do in this project. */
+export const canRedo = canUndo;
+
 /**
  * A step bound to the draft it was made in: it runs only while `current()`
  * still names project `made`, and otherwise throws `why` — the shell then
@@ -67,6 +83,7 @@ export function boundUndo(entry: UndoEntry, made: string | null, current: () => 
       if (current() !== made) throw new Error(why);
       return entry.undo();
     },
+    ...(entry.redo ? { redo: () => { if (current() !== made) throw new Error(why); return entry.redo!(); } } : {}),
   };
 }
 

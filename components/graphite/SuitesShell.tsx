@@ -128,6 +128,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
       /* The Library is the board's drawer. */
       case "open-library": shell.goBoard({ drawer: "library" }); return;
       case "undo": void shell.undo(); return;
+      case "redo": void shell.redo(); return;
       case "paste": void actions.paste(); return;
     }
     if (target.kind === "node") {
@@ -270,7 +271,7 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
       const cmd = shortcutCommand(event);
       if (!cmd) return;
       const target = selection();
-      if (cmd !== "undo" && cmd !== "paste" && target.kind === "empty") return;
+      if (cmd !== "undo" && cmd !== "redo" && cmd !== "paste" && target.kind === "empty") return;
       if (cmd === "paste" && !shell.clip) return;
       /* A selection lingers after its click: selected text keeps the browser's ⌘C/⌘X, and ⌫/⌘R/⌘D act only from where the selection is shown. */
       if (!shortcutApplies(cmd, { target: event.target, textSelected: Boolean(window.getSelection()?.toString()), selection: target.kind, pressedInSurface: pressedInSurface.current })) return;
