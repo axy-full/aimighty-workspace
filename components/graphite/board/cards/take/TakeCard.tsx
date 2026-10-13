@@ -235,7 +235,7 @@ function VersionChips({ row, current, onPick }: { row: ShotTakes; current: ShotV
   );
 }
 
-export function ReviewTakeCard({ data, ctx }: CardProps<TakeCardData>) {
+export function ReviewTakeCard({ card, data, ctx }: CardProps<TakeCardData>) {
   const { row } = data;
   const judge = useJudge(ctx.scope, ctx.project.id, ctx.toast);
   const [pickedId, setPickedId] = useState<string | null>(null);
@@ -252,6 +252,9 @@ export function ReviewTakeCard({ data, ctx }: CardProps<TakeCardData>) {
   const open = judgeable(current) && !ctx.offline;
   const role = referenceRole(current.media === "image" || current.media === "video" ? current.media : null);
   const cancel = () => setRejecting(false);
+  /* Opening the reasons brings the card into the canvas's view: its panel grows downward, and a Cancel or Reject below the canvas's edge can only be reached by
+     scrolling the canvas element, which React Flow snaps back (a press then lands where the button was). The board pans instead. */
+  const openReasons = () => ctx.glide({ card: card.id });
   const reject = (reason: string) => { setPickedId(current.genId); void judge.reject(row, current, reason).then((ok) => { if (ok) cancel(); }); };
   const change = () => {
     setPickedId(current.genId);
@@ -279,7 +282,7 @@ export function ReviewTakeCard({ data, ctx }: CardProps<TakeCardData>) {
           </div>
           {rejecting ? null : (
             <div className="gx-take-acts">
-              <Btn onClick={(e) => { e.stopPropagation(); setRejecting(true); }} disabled={!open || current.status === "changes" || Boolean(judge.busy)} aria-expanded={false}
+              <Btn onClick={(e) => { e.stopPropagation(); setRejecting(true); openReasons(); }} disabled={!open || current.status === "changes" || Boolean(judge.busy)} aria-expanded={false}
                 title={ctx.offline ? "Needs a connection" : undefined} data-testid="take-reject">{current.status === "changes" ? "Rejected" : "Reject"}</Btn>
               <Btn className="gx-take-btn--approve" onClick={(e) => { e.stopPropagation(); setPickedId(current.genId); void judge.approve(row, current); }} disabled={!open || current.status === "approved" || Boolean(judge.busy)}
                 title={ctx.offline ? "Needs a connection" : undefined} data-testid="take-approve">{current.status === "approved" ? "Approved" : "Approve"}</Btn>
