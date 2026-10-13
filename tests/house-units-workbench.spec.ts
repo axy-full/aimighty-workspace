@@ -57,6 +57,8 @@ test("the board reads one unit: dollars at cost in the house, credits in a custo
     if (desktop) await expect.poll(async () => (await priceLines(page)).length, { timeout: 60_000 }).toBeGreaterThan(0);
     else await page.waitForTimeout(4000);
     const board = await priceLines(page);
+    /* A price with no dollar figure reads a dash: the house has none on this board. */
+    expect(await page.locator("[data-price]").filter({ hasText: /^—$/ }).count(), `${label}: no price reads a dash`).toBe(0);
     if (OUT) await page.screenshot({ path: `${OUT}/${label}-board-${size}.png` });
     /* A real plan on the mock planner: ask, build (free), then the plan prices every render. */
     const headers = { "X-Workbench-Scope": scope };
@@ -72,6 +74,7 @@ test("the board reads one unit: dollars at cost in the house, credits in a custo
     if (desktop) await expect.poll(async () => (await priceLines(page)).some((l) => /ready to render/.test(l)), { timeout: 60_000 }).toBe(true);
     else await page.waitForTimeout(4000);
     const plan = await priceLines(page);
+    expect(await page.locator("[data-price]").filter({ hasText: /^—$/ }).count(), `${label}: no price on the plan reads a dash`).toBe(0);
     if (OUT) await page.screenshot({ path: `${OUT}/${label}-plan-${size}.png` });
     return { board, plan };
   };

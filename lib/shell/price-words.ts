@@ -23,11 +23,12 @@ export type PriceKind = "exact" | "up-to" | "free";
 
 /**
  * `usd` is the same figure in the engines' dollars, where the server gave one: the house workspace (lib/houseWorkspace.ts) pays at cost in dollars and reads it
- * (`setDollarDisplay` below); every other workspace reads the credits and never sees `usd`.
+ * (`DollarMode` below); every other workspace reads the credits and never sees `usd`. `capped` marks a limit, ceiling or hold the plan keeps in credits: in dollar
+ * mode it reads at the public price of a credit (the at-cost figure for the house). A quote with neither has no dollar figure to show there, and reads "—".
  */
 export type PriceValue =
-  | { kind: "exact"; credits: number; usd?: number }
-  | { kind: "up-to"; credits: number; usd?: number }
+  | { kind: "exact"; credits: number; usd?: number; capped?: true }
+  | { kind: "up-to"; credits: number; usd?: number; capped?: true }
   | { kind: "free" };
 
 export const FREE: PriceValue = Object.freeze({ kind: "free" });
@@ -47,29 +48,50 @@ export function priceValue(credits: number | null | undefined, kind: Exclude<Pri
 
 /** A figure the server quoted exactly (`usd`: the same in the engines' dollars, for the house). */
 export const exact = (credits: number | null | undefined, usd?: number | null): PriceValue | null => priceValue(credits, "exact", usd);
+/** A limit, ceiling or hold kept in credits (an approved plan's total): in the house it reads at the public price of a credit, its dollars at cost. */
+export const heldExact = (credits: number | null | undefined): PriceValue | null => { const v = priceValue(credits, "exact"); return v && v.kind !== "free" ? { ...v, capped: true } : v; };
+export const heldUpTo = (credits: number | null | undefined): PriceValue | null => { const v = priceValue(credits, "up-to"); return v && v.kind !== "free" ? { ...v, capped: true } : v; };
 /** A live estimate the charge cannot go over (`usd`: the same in the engines' dollars, for the house). */
 export const upTo = (credits: number | null | undefined, usd?: number | null): PriceValue | null => priceValue(credits, "up-to", usd);
 
 /* ── The house reads dollars ──────────────────────────────────────────────── */
 
-let dollarMode = false;
-let creditRateForDollars: number | null = null;
 /**
- * The house workspace pays at cost in dollars, so every price on every screen reads in dollars there (owner, 13 Oct: one screen, one unit). The session says which unit
- * the workspace pays in (`rates.unit`, lib/session.tsx), and calls this when it changes. With it on, every price below words its dollars: its own `usd` where the server
- * gave one, else its credits at the public price of a credit (an upper bound for the house, whose credits are its dollars rounded up). Display only: nothing here changes
- * what is quoted, held or billed.
+ * The house workspace pays at cost in dollars, so every price on every screen reads in dollars there (owner, 13 Oct: one screen, one unit). Which unit a workspace pays in
+ * is `rates.unit` in its session (lib/session.tsx), and `modeOf` turns that into a mode.
+ *
+ * The mode is carried, never shared: the components that word a price (components/graphite/Price.tsx) read it from their own session and pass it down, so two renders at
+ * the same moment, a customer's and the house's, cannot see each other's. The words with no mode passed read the BROWSER's mode, set once by the session provider in the
+ * browser (`setDollarDisplay`, a no-op on the server, where nothing is shared between requests): on the server they read credits.
+ *
+ * With dollars on, a price words its own `usd` where the server gave one; a limit, ceiling or hold (`capped`) words its credits at the public price of a credit, which is
+ * its dollars at cost; a quote with neither has no dollar figure and reads "—" (never its credits times a credit's price). Display only: nothing here changes what is
+ * quoted, held or billed.
  */
-export function setDollarDisplay(on: boolean, creditUsd?: number | null): void {
-  dollarMode = on;
-  creditRateForDollars = creditRate(creditUsd);
+export type DollarMode = { readonly on: boolean; readonly creditUsd: number | null };
+export const CREDITS_MODE: DollarMode = Object.freeze({ on: false, creditUsd: null });
+/** The mode a session's rates say: dollars when the workspace pays at cost (`unit: "usd"`). */
+export function modeOf(rates: { unit?: string | null; creditUsd?: number | null } | null | undefined): DollarMode {
+  return rates?.unit === "usd" ? { on: true, creditUsd: creditRate(rates.creditUsd) } : CREDITS_MODE;
 }
-export const dollarDisplay = (): boolean => dollarMode;
 
-/** A price's dollars: its own, else its credits at the credit's price; null when neither is known. */
-function dollarsOf(value: Exclude<PriceValue, { kind: "free" }>): number | null {
+let browserMode: DollarMode = CREDITS_MODE;
+/** The browser's mode, from its session. Never writes on the server: concurrent server renders share one module, so nothing a render sets may outlive it. */
+export function setDollarDisplay(on: boolean, creditUsd?: number | null): void {
+  if (typeof window === "undefined") return;
+  browserMode = on ? { on: true, creditUsd: creditRate(creditUsd) } : CREDITS_MODE;
+}
+export const dollarDisplay = (): boolean => (typeof window === "undefined" ? false : browserMode.on);
+const modeNow = (): DollarMode => (typeof window === "undefined" ? CREDITS_MODE : browserMode);
+
+/** The shown line when the house has no dollar figure for a quote yet (houseAtCostPrice.spec's rule: never the customer price turned into dollars). */
+export const NO_AT_COST_FIGURE = "—";
+export const NO_AT_COST_TITLE = "Priced at cost once the engine's price is read.";
+
+/** A price's dollars: its own, else (a limit, ceiling or hold) its credits at the credit's price; null when neither is known. */
+function dollarsOf(value: Exclude<PriceValue, { kind: "free" }>, mode: DollarMode): number | null {
   if (usable(value.usd)) return value.usd;
-  return creditRateForDollars === null ? null : value.credits * creditRateForDollars;
+  return value.capped && mode.creditUsd !== null ? value.credits * mode.creditUsd : null;
 }
 
 /** Whether `value` is a price this module can word: guards a shape read off the wire. */
@@ -95,19 +117,19 @@ function shownCredits(value: PriceValue): number {
 }
 
 /** "1,234 cr": a count of credits, grouped en-US, at most one decimal. */
-export function creditsText(credits: number): string {
-  /* The house reads dollars (a count of credits at the public price of one: an upper bound for it). */
-  if (dollarMode && creditRateForDollars !== null && Number.isFinite(credits)) return dollars(credits * creditRateForDollars);
+export function creditsText(credits: number, mode: DollarMode = modeNow()): string {
+  /* The house reads dollars: a count of credits here is a limit, ceiling or balance, at the public price of a credit (its dollars at cost). */
+  if (mode.on && mode.creditUsd !== null && Number.isFinite(credits)) return dollars(credits * mode.creditUsd);
   return `${credits.toLocaleString("en-US", { maximumFractionDigits: 1 })} cr`;
 }
 
 /** "43 cr", "up to 69 cr" or "free"; null when there is no price to show. A figure of 0 is "free". */
-export function priceWords(value: PriceValue | null | undefined): string | null {
+export function priceWords(value: PriceValue | null | undefined, mode: DollarMode = modeNow()): string | null {
   if (!isPriceValue(value)) return null;
-  if (dollarMode) {
+  if (mode.on) {
     if (value.kind === "free") return "free";
-    const usd = dollarsOf(value);
-    if (usd === null) return null;
+    const usd = dollarsOf(value, mode);
+    if (usd === null) return NO_AT_COST_FIGURE;
     if (usd === 0) return "free";
     return value.kind === "up-to" ? `up to ${dollars(usd)}` : dollars(usd);
   }
@@ -138,10 +160,10 @@ export function creditsUsd(credits: number, creditUsd: number | null | undefined
  * The hover for a price: "$4.30", "up to $6.90", or null. It is null for "free", and for any price
  * while the rate is unknown.
  */
-export function priceTitle(value: PriceValue | null | undefined, creditUsd: number | null | undefined): string | null {
+export function priceTitle(value: PriceValue | null | undefined, creditUsd: number | null | undefined, mode: DollarMode = modeNow()): string | null {
   if (!isPriceValue(value) || value.kind === "free") return null;
-  /* The house's price is already dollars: its hover says what it pays (the new interface's Price says the same). */
-  if (dollarMode) return dollarsOf(value) === 0 ? null : "Pays at cost";
+  /* The house's price is already dollars: its hover says what it pays (the new interface's Price says the same), or why there is no figure yet. */
+  if (mode.on) { const usd = dollarsOf(value, mode); return usd === null ? NO_AT_COST_TITLE : usd === 0 ? null : "Pays at cost"; }
   const credits = shownCredits(value);
   if (credits === 0) return null;
   const usd = creditsUsd(credits, creditUsd, value.kind === "up-to");
@@ -153,10 +175,10 @@ export function priceTitle(value: PriceValue | null | undefined, creditUsd: numb
 export type PriceView = { text: string; title: string | null; kind: PriceKind };
 
 /** Price's drawing for `value` at `creditUsd` a credit, or null when there is no price to draw. */
-export function priceView(value: PriceValue | null | undefined, creditUsd: number | null | undefined): PriceView | null {
-  const text = priceWords(value);
+export function priceView(value: PriceValue | null | undefined, creditUsd: number | null | undefined, mode: DollarMode = modeNow()): PriceView | null {
+  const text = priceWords(value, mode);
   if (text === null || !value) return null;
-  return { text, title: priceTitle(value, creditUsd), kind: text === "free" ? "free" : value.kind };
+  return { text, title: priceTitle(value, creditUsd, mode), kind: text === "free" ? "free" : value.kind };
 }
 
 /**
@@ -171,14 +193,16 @@ export function priceSum(values: readonly (PriceValue | null | undefined)[]): Pr
   let estimate = false;
   let cents = 0;
   let allDollars = true;
+  let allCapped = true;
   for (const value of values as readonly PriceValue[]) {
     if (value.kind === "free") continue;
     if (value.kind === "up-to") estimate = true;
     tenths += Math.round(shownCredits(value) * 10);
     if (usable(value.usd)) cents += Math.round(value.usd * 1e6); else allDollars = false;
+    if (!value.capped) allCapped = false;
   }
   if (tenths === 0) return FREE;
-  return { kind: estimate ? "up-to" : "exact", credits: tenths / 10, ...(allDollars ? { usd: cents / 1e6 } : {}) };
+  return { kind: estimate ? "up-to" : "exact", credits: tenths / 10, ...(allDollars ? { usd: cents / 1e6 } : allCapped ? { capped: true as const } : {}) };
 }
 
 /**

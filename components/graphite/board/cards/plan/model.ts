@@ -1,5 +1,5 @@
 import type { ApprovalRule } from "@/lib/approvalRule";
-import { FREE, creditsText, exact, priceWords, shortBy, upTo, type PriceValue } from "@/lib/shell/price-words";
+import { FREE, creditsText, exact, heldExact, heldUpTo, priceWords, shortBy, upTo, type PriceValue } from "@/lib/shell/price-words";
 import { STATED_CHARGE_BAND, ceilTenths, fromTenths, toTenths } from "@/lib/runLimit";
 import type { RigAgentPaidStepView, RigAgentRunView, RigAgentStepState } from "@/lib/workbench/rig-agent-plan";
 
@@ -229,7 +229,7 @@ export function planModel(input: PlanInput): PlanModel | null {
   /* The plan's figures are the server's only (review L2): its quote at the gate, then the approved total. Before the gate
      (the proposal, Build · free) the card adds nothing up: no total, no "at most", no fix line, no balance after. */
   const total: PriceValue | null = gate ? (gate.approximate ? upTo(gate.total, gate.totalUsd) : exact(gate.total, gate.totalUsd))
-    : approval ? (approval.approximate ? upTo(approval.total) : exact(approval.total))
+    : approval ? (approval.approximate ? heldUpTo(approval.total) : heldExact(approval.total))
     : !steps.length ? FREE : null;
   const totalCredits = total ? ceilingOf(total) : null;
   const takesCounted = counted.filter((s) => s.kind === "take");
