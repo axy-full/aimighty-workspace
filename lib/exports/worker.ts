@@ -139,7 +139,7 @@ function sessionOn(config: ExportWorkerConfig, doFetch: Fetch, index: number, na
       // Exactly what the worker's protocol names: the fixed command, nothing else.
       const response = await call(config, doFetch, index, "POST", `${sessionPath(name)}/run`, {
         json: { cmd: EXPORT_COMMAND.cmd, args: [...EXPORT_COMMAND.args], cwd: REMOTION_ROOT, timeoutMs },
-        timeoutMs: timeoutMs + 30_000,
+        timeoutMs: timeoutMs + 5_000,
         signal,
       });
       if (!response.ok) { await discard(response); throw new ExportWorkerError("An export worker did not run the export."); }

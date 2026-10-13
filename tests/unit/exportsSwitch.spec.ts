@@ -35,7 +35,7 @@ test("off: nothing is admitted, read, run, recovered or dispatched, and no table
   await runInTenant(workspace("off"), async () => {
     await ready();
     const request = { requestId: "request-off-0001", composition: "title-card" as const, props: { aspect: "16:9", card: { title: "Hello" } } };
-    await expect(jobs.createExport(request, "u_test")).rejects.toMatchObject({ status: 404 });
+    await expect(jobs.createExport(request, { id: "u_test" })).rejects.toMatchObject({ status: 404 });
     await expect(jobs.getExport("u_test", "export_" + "a".repeat(32))).rejects.toMatchObject({ status: 404 });
     await expect(jobs.listExports("u_test")).rejects.toMatchObject({ status: 404 });
     await expect(jobs.cancelExport("u_test", "export_" + "a".repeat(32))).rejects.toMatchObject({ status: 404 });
@@ -112,10 +112,10 @@ test("worker settings: one to three origins, one secret each, nothing else accep
     expect(exportWorkerConfig(env as never), JSON.stringify(env)).toBeNull();
   }
   expect(exportWorkerSlots({})).toBe(1);
-  expect(exportLimits({})).toEqual({ maxRunningPerWorkspace: 1, maxPerHourPerWorkspace: 6, runTimeoutMs: 280_000, queueExpiryMs: 1_800_000 });
+  expect(exportLimits({})).toEqual({ maxRunningPerWorkspace: 1, maxPerHourPerWorkspace: 6, runTimeoutMs: 200_000, queueExpiryMs: 1_800_000 });
   expect(exportLimits({ REMOTION_EXPORT_MAX_RUNNING: "2", REMOTION_EXPORT_MAX_PER_HOUR: "12", REMOTION_EXPORT_RUN_TIMEOUT_MS: "600000" })).toMatchObject({ maxRunningPerWorkspace: 2, maxPerHourPerWorkspace: 12, runTimeoutMs: 600_000 });
   // Out of range or not a whole number: the default, never a surprise.
-  expect(exportLimits({ REMOTION_EXPORT_MAX_RUNNING: "50", REMOTION_EXPORT_MAX_PER_HOUR: "0", REMOTION_EXPORT_RUN_TIMEOUT_MS: "x" })).toMatchObject({ maxRunningPerWorkspace: 1, maxPerHourPerWorkspace: 6, runTimeoutMs: 280_000 });
+  expect(exportLimits({ REMOTION_EXPORT_MAX_RUNNING: "50", REMOTION_EXPORT_MAX_PER_HOUR: "0", REMOTION_EXPORT_RUN_TIMEOUT_MS: "x" })).toMatchObject({ maxRunningPerWorkspace: 1, maxPerHourPerWorkspace: 6, runTimeoutMs: 200_000 });
 });
 
 /* ---- the routes ---- */

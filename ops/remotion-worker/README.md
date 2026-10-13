@@ -25,7 +25,7 @@ Tests: `node --test tests/ops/remotion-worker.test.mjs` (a stand-in for the expo
 | `REMOTION_EXPORTS` | the production app only | The switch. **Leave it unset or off** until the screens exist and the owner has tested it. Off: `/api/exports` answers 404, the export tools are not offered over MCP, nothing is admitted, written or dispatched. |
 | `REMOTION_EXPORT_MAX_RUNNING` | the production app (platform setting) | Exports one workspace may have rendering at once. Default 1, 1 to 4. Not a price. |
 | `REMOTION_EXPORT_MAX_PER_HOUR` | the production app (platform setting) | Exports one workspace may start in a rolling hour. Default 6, 1 to 120. Not a price. |
-| `REMOTION_EXPORT_RUN_TIMEOUT_MS` | the production app (platform setting) | How long the app waits for one run. Default 280000 (the native worker route lives 300 s); up to 900000 on a deployment without that ceiling. |
+| `REMOTION_EXPORT_RUN_TIMEOUT_MS` | the production app (platform setting) | How long the app waits for one run. Default 200000: uploads, the run and saving are one invocation of the native worker route, which lives 300 s, so the run gets 200 s and the rest 100 s. Up to 900000 on a deployment without that ceiling. |
 
 Tuning of the export command (`REMOTION_CONCURRENCY`, `REMOTION_MAX_SECONDS`) is set in `compose.yaml`, from the measurement below, and never comes from a request.
 

@@ -8,7 +8,7 @@ export type ExportLimits = {
   maxRunningPerWorkspace: number;
   /** Exports one workspace may start in any rolling hour. */
   maxPerHourPerWorkspace: number;
-  /** How long one run call to the worker may take, in ms. Inside the 300 s a worker invocation lives. */
+  /** How long one run call to the worker may take, in ms. The whole job (uploads, the run, saving) is one 300 s worker invocation, so this leaves it 100 s. */
   runTimeoutMs: number;
   /** A queued export that has not started after this long is ended ("Nothing billed"). */
   queueExpiryMs: number;
@@ -29,7 +29,7 @@ export function exportLimits(env: Env = process.env): ExportLimits {
   return {
     maxRunningPerWorkspace: bounded(env, "REMOTION_EXPORT_MAX_RUNNING", 1, 1, 4),
     maxPerHourPerWorkspace: bounded(env, "REMOTION_EXPORT_MAX_PER_HOUR", 6, 1, 120),
-    runTimeoutMs: bounded(env, "REMOTION_EXPORT_RUN_TIMEOUT_MS", 280_000, 30_000, 900_000),
+    runTimeoutMs: bounded(env, "REMOTION_EXPORT_RUN_TIMEOUT_MS", 200_000, 30_000, 900_000),
     queueExpiryMs: bounded(env, "REMOTION_EXPORT_QUEUE_EXPIRY_MS", 30 * 60_000, 60_000, 24 * 3600_000),
   };
 }

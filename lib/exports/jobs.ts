@@ -20,7 +20,7 @@ import {
   type ExportRequest,
   type ExportStatus,
 } from "./contract";
-import { bindMedia, createMediaResolver, loadMedia, type BoundMedia, type MediaLoader, type MediaResolver } from "./inputs";
+import { bindMedia, createMediaResolver, loadMedia, mediaStillReachable, type BoundMedia, type ExportViewer, type MediaLoader, type MediaResolver } from "./inputs";
 import { exportLimits, exportWorkerSlots, type ExportLimits } from "./limits";
 import { exportsEnabled } from "./switch";
 import {
@@ -51,8 +51,11 @@ import {
 export type ExportDeps = {
   enabled?: () => boolean;
   limits?: () => ExportLimits;
-  resolver?: MediaResolver;
+  /** Builds the resolver for the caller; the real one reads the caller's reach (tests substitute it). */
+  resolver?: (viewer: ExportViewer) => MediaResolver;
   loader?: MediaLoader;
+  /** Whether the job's owner can still reach a file when the job runs. */
+  reach?: (ownerId: string, media: BoundMedia) => Promise<boolean>;
   worker?: ExportWorkerDeps;
   clock?: () => number;
 };
@@ -83,6 +86,7 @@ export async function exportJobsReady() {
  runtime_id TEXT,
  cancel_requested INTEGER NOT NULL DEFAULT 0,
  attempts INTEGER NOT NULL DEFAULT 1,
+ retry_times TEXT NOT NULL DEFAULT '[]',
  error TEXT,
  outputs_json TEXT NOT NULL DEFAULT '[]',
  created_at INTEGER NOT NULL,
@@ -173,6 +177,31 @@ async function publicJob(row: Row): Promise<ExportJob> {
   };
 }
 
+/* ---- the fair share ---- */
+
+/**
+ * Starts in the last hour for this workspace: every export admitted, and every retry (a retry is a start). Returns the
+ * count and the oldest start, so a refusal can say when the hour frees up.
+ */
+async function hourUsage(ex: { execute: Client["execute"] }, wsId: string, since: number): Promise<{ n: number; first: number | null }> {
+  const row = (
+    await ex.execute({
+      sql: `WITH starts(t) AS (
+              SELECT created_at FROM export_jobs WHERE workspace_id=?
+              UNION ALL
+              SELECT CAST(e.value AS INTEGER) FROM export_jobs j, json_each(j.retry_times) e WHERE j.workspace_id=?
+            ) SELECT COUNT(*) AS n, MIN(t) AS first FROM starts WHERE t>=?`,
+      args: [wsId, wsId, since],
+    })
+  ).rows[0];
+  return { n: Number(row?.n ?? 0), first: row?.first == null ? null : Number(row.first) };
+}
+
+function hourRefusal(limits: ExportLimits, usage: { first: number | null }, at: number): ExportError {
+  const wait = Math.max(60, Math.ceil(((usage.first ?? at) + 3_600_000 - at) / 1000));
+  return new ExportError(`This workspace has started ${limits.maxPerHourPerWorkspace} exports in the last hour. Try again in ${Math.ceil(wait / 60)} minutes. Nothing was started or billed.`, 429, wait);
+}
+
 /* ---- requesting ---- */
 
 /**
@@ -182,7 +211,7 @@ async function publicJob(row: Row): Promise<ExportJob> {
  */
 export async function createExport(
   input: ExportRequest,
-  owner: string,
+  viewer: ExportViewer,
   deps: ExportDeps = {},
 ): Promise<{ job: ExportJob; scheduled: boolean; duplicate: boolean }> {
   gate(deps);
@@ -190,6 +219,7 @@ export async function createExport(
   const clock = deps.clock ?? Date.now;
   const limits = (deps.limits ?? exportLimits)();
   const wsId = workspaceId();
+  const owner = viewer.id;
   const fingerprint = hash({ composition: input.composition, props: input.props });
 
   const find = async () =>
@@ -200,7 +230,11 @@ export async function createExport(
     return { job: await publicJob(prior), scheduled: prior.status === "queued", duplicate: true };
   }
 
-  const bound = await bindMedia(input.composition, input.props, deps.resolver ?? createMediaResolver());
+  // A cheap read first, before any file is opened or inspected; the count inside the write below is the authoritative one.
+  const early = await hourUsage(db(), wsId, clock() - 3_600_000);
+  if (early.n >= limits.maxPerHourPerWorkspace) throw hourRefusal(limits, early, clock());
+
+  const bound = await bindMedia(input.composition, input.props, (deps.resolver ?? ((who: ExportViewer) => createMediaResolver(who)))(viewer));
   const checked = validateProps(input.composition, bound.props);
   if (!checked.ok) throw new ExportError(`The export request is not valid. ${checked.errors.slice(0, 4).join(" ")}`.slice(0, 600), 400);
   let seconds: number;
@@ -225,12 +259,9 @@ export async function createExport(
       if (duplicate.fingerprint !== fingerprint) throw new ExportError("This request id is already used by a different export.", 409);
       return { row: duplicate, duplicate: true };
     }
-    // The fair share: this workspace's exports in the last hour, counted where the row is written.
-    const hour = (await tx.execute({ sql: "SELECT COUNT(*) AS n, MIN(created_at) AS first FROM export_jobs WHERE workspace_id=? AND created_at>=?", args: [wsId, at - 3_600_000] })).rows[0];
-    if (Number(hour?.n ?? 0) >= limits.maxPerHourPerWorkspace) {
-      const wait = Math.max(60, Math.ceil((Number(hour?.first ?? at) + 3_600_000 - at) / 1000));
-      throw new ExportError(`This workspace has started ${limits.maxPerHourPerWorkspace} exports in the last hour. Try again in ${Math.ceil(wait / 60)} minutes. Nothing was started or billed.`, 429, wait);
-    }
+    // The fair share: this workspace's starts in the last hour, counted where the row is written.
+    const usage = await hourUsage(tx, wsId, at - 3_600_000);
+    if (usage.n >= limits.maxPerHourPerWorkspace) throw hourRefusal(limits, usage, at);
     await tx.execute({
       sql: `INSERT INTO export_jobs(id,workspace_id,owner,request_id,fingerprint,composition,spec_json,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?, 'queued',?,?)`,
       args: [id, wsId, owner, input.requestId, fingerprint, input.composition, JSON.stringify(spec), at, at],
@@ -296,9 +327,16 @@ export async function retryExport(owner: string, id: string, deps: ExportDeps = 
   if (!row || row.owner !== owner) throw new ExportError("That export was not found.", 404);
   if (row.status !== "failed") throw new ExportError("Only an export that failed can be retried.", 409);
   if (Number(row.attempts) >= EXPORT_MAX_ATTEMPTS) throw new ExportError("This export has been tried three times. Start a new one.", 409);
-  await db().execute({
-    sql: "UPDATE export_jobs SET status='queued', error=NULL, runtime_id=NULL, claimed_at=NULL, finished_at=NULL, cancel_requested=0, attempts=attempts+1, outputs_json='[]', updated_at=? WHERE id=? AND workspace_id=? AND status='failed'",
-    args: [clock(), row.id, row.workspace_id],
+  const limits = (deps.limits ?? exportLimits)();
+  const at = clock();
+  // A retry is a start: it counts against the workspace's hour like a new export, and is refused the same way.
+  await workbenchTransaction(async (tx) => {
+    const usage = await hourUsage(tx, row.workspace_id, at - 3_600_000);
+    if (usage.n >= limits.maxPerHourPerWorkspace) throw hourRefusal(limits, usage, at);
+    await tx.execute({
+      sql: "UPDATE export_jobs SET status='queued', error=NULL, runtime_id=NULL, claimed_at=NULL, finished_at=NULL, cancel_requested=0, attempts=attempts+1, retry_times=json_insert(retry_times,'$[#]',?), outputs_json='[]', updated_at=? WHERE id=? AND workspace_id=? AND status='failed'",
+      args: [at, at, row.id, row.workspace_id],
+    });
   });
   return publicJob((await record(id))!);
 }
@@ -367,6 +405,13 @@ export async function runExport(id: string, deps: ExportDeps = {}): Promise<"bus
   try {
     const spec = JSON.parse(row.spec_json) as StoredSpec;
     const cancelled = async () => Boolean((await record(id))?.cancel_requested);
+    // The request bound its media earlier: ask again, as the job's owner, before anything leaves the workspace.
+    for (const media of spec.media) {
+      if (!(await (deps.reach ?? mediaStillReachable)(row.owner, media))) {
+        await end((await record(id))!, "failed", failure("A file in the export is not available any more."), clock);
+        return undefined;
+      }
+    }
     try {
       session = await openExportSession(name, deps.worker);
     } catch (error) {

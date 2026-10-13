@@ -49,7 +49,7 @@ async function setup(name: string) {
   await (await import("../../lib/db")).ready();
   await jobs.exportJobsReady();
   const pool = exportWorkerPool();
-  const deps = (extra: Record<string, unknown> = {}) => ({ enabled: on, limits: () => LIMITS, resolver, loader, worker: { config: pool.config, fetch: pool.fetch }, ...extra });
+  const deps = (extra: Record<string, unknown> = {}) => ({ enabled: on, limits: () => LIMITS, resolver: () => resolver, reach: async () => true, loader, worker: { config: pool.config, fetch: pool.fetch }, ...extra });
   const row = async (id: string) => (await db().execute({ sql: "SELECT * FROM export_jobs WHERE id=?", args: [id] })).rows[0] as Record<string, unknown>;
   const count = async (table: string, client: { execute: (sql: string) => Promise<{ rows: unknown[] }> } = db()) => {
     try { return Number(((await client.execute(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0] as Record<string, unknown>).n); } catch { return -1; }
@@ -58,13 +58,13 @@ async function setup(name: string) {
 }
 
 test("a request is admitted at 0 cr, runs In queue -> Rendering -> Saving -> Ready, and writes no billing row at all", async () => context("run", async (m) => {
-  const warm = await m.createExport(request("request-warm-0001"), "u_test", m.deps()); // one admission first, so every lazily made table exists
+  const warm = await m.createExport(request("request-warm-0001"), { id: "u_test" }, m.deps()); // one admission first, so every lazily made table exists
   await m.cancelExport("u_test", warm.job.id, m.deps());
   const billingTables = ["meter_events", "credit_ledger", "usage_ledger", "credit_receipts", "billing_ledger"];
   const before: number[] = [];
   for (const table of billingTables) before.push(await m.count(table, m.platformDb()), await m.count(table));
   const metered: string[] = [];
-  const created = await m.createExport(request("request-run-0001"), "u_test", m.deps());
+  const created = await m.createExport(request("request-run-0001"), { id: "u_test" }, m.deps());
   expect(created).toMatchObject({ scheduled: true, duplicate: false });
   expect(created.job).toMatchObject({ status: "queued", ahead: 0, queueLine: "Export queued — you are next", price: { credits: 0, label: "Free" }, outputs: [], error: null });
   const seen: string[] = [];
@@ -108,11 +108,11 @@ test("the export code cannot reach the meter, the ledger or the credit tables", 
 });
 
 test("a repeated request id returns the same job; the same id with a different request is refused", async () => context("idempotent", async (m) => {
-  const first = await m.createExport(request("request-same-0001"), "u_test", m.deps());
-  const again = await m.createExport(request("request-same-0001"), "u_test", m.deps());
+  const first = await m.createExport(request("request-same-0001"), { id: "u_test" }, m.deps());
+  const again = await m.createExport(request("request-same-0001"), { id: "u_test" }, m.deps());
   expect(again).toMatchObject({ duplicate: true, scheduled: true });
   expect(again.job.id).toBe(first.job.id);
-  await expect(m.createExport(request("request-same-0001", { captionStyle: "clean" }), "u_test", m.deps())).rejects.toMatchObject({ status: 409 });
+  await expect(m.createExport(request("request-same-0001", { captionStyle: "clean" }), { id: "u_test" }, m.deps())).rejects.toMatchObject({ status: 409 });
   expect(await m.count("export_jobs")).toBe(1);
   // Duplicate delivery of the run event runs it once.
   let runs = 0;
@@ -124,22 +124,22 @@ test("a repeated request id returns the same job; the same id with a different r
 
 test("the fair share: six an hour, one running at once, and a refusal writes nothing", async () => context("fair", async (m) => {
   const limits = () => ({ ...LIMITS, maxPerHourPerWorkspace: 2 });
-  const a = await m.createExport(request("request-fair-0001"), "u_test", m.deps({ limits }));
-  await m.createExport(request("request-fair-0002"), "u_test", m.deps({ limits }));
-  const refused = await m.createExport(request("request-fair-0003"), "u_test", m.deps({ limits })).catch((e) => e);
+  const a = await m.createExport(request("request-fair-0001"), { id: "u_test" }, m.deps({ limits }));
+  await m.createExport(request("request-fair-0002"), { id: "u_test" }, m.deps({ limits }));
+  const refused = await m.createExport(request("request-fair-0003"), { id: "u_test" }, m.deps({ limits })).catch((e) => e);
   expect(refused).toMatchObject({ status: 429, retryAfterSeconds: expect.any(Number) });
   expect(refused.message).toContain("2 exports in the last hour");
   expect(refused.message).toContain("Nothing was started or billed");
   expect(await m.count("export_jobs")).toBe(2);
   // The hour rolls over.
-  const later = await m.createExport(request("request-fair-0004"), "u_test", m.deps({ limits, clock: () => Date.now() + 3_700_000 }));
+  const later = await m.createExport(request("request-fair-0004"), { id: "u_test" }, m.deps({ limits, clock: () => Date.now() + 3_700_000 }));
   expect(later.duplicate).toBe(false);
   expect(a.job.id).toBeTruthy();
 }));
 
 test("one running per workspace: a second export waits in the queue, then runs when the first is done", async () => context("running", async (m) => {
-  const one = await m.createExport(request("request-run-a0001"), "u_test", m.deps());
-  const two = await m.createExport(request("request-run-b0001"), "u_test", m.deps());
+  const one = await m.createExport(request("request-run-a0001"), { id: "u_test" }, m.deps());
+  const two = await m.createExport(request("request-run-b0001"), { id: "u_test" }, m.deps());
   expect(two.job).toMatchObject({ status: "queued", ahead: 1, queueLine: "Export queued — 1 ahead of you" });
   let secondOutcome: unknown;
   m.pool.behave({ during: async () => { secondOutcome = await m.runExport(two.job.id, m.deps()); } });
@@ -150,8 +150,8 @@ test("one running per workspace: a second export waits in the queue, then runs w
   expect(await m.runExport(two.job.id, m.deps())).toBeUndefined();
   expect((await m.getExport("u_test", two.job.id, m.deps())).status).toBe("ready");
   // Two at once are allowed when the platform says two.
-  const three = await m.createExport(request("request-run-c0001"), "u_test", m.deps());
-  const four = await m.createExport(request("request-run-d0001"), "u_test", m.deps());
+  const three = await m.createExport(request("request-run-c0001"), { id: "u_test" }, m.deps());
+  const four = await m.createExport(request("request-run-d0001"), { id: "u_test" }, m.deps());
   let fourOutcome: unknown = "unset";
   m.pool.behave({ during: async () => { fourOutcome = await m.runExport(four.job.id, m.deps({ limits: () => ({ ...LIMITS, maxRunningPerWorkspace: 2 }) })); } });
   await m.runExport(three.job.id, m.deps({ limits: () => ({ ...LIMITS, maxRunningPerWorkspace: 2 }) }));
@@ -160,7 +160,7 @@ test("one running per workspace: a second export waits in the queue, then runs w
 }));
 
 test("every worker busy: back to the queue, nothing stored, nothing billed; it runs when a worker is free", async () => context("busy", async (m) => {
-  const created = await m.createExport(request("request-busy-0001"), "u_test", m.deps());
+  const created = await m.createExport(request("request-busy-0001"), { id: "u_test" }, m.deps());
   m.pool.set("http://remotion-1:8790", "busy");
   expect(await m.runExport(created.job.id, m.deps())).toBe("busy");
   let job = await m.getExport("u_test", created.job.id, m.deps());
@@ -177,7 +177,7 @@ test("every worker busy: back to the queue, nothing stored, nothing billed; it r
 }));
 
 test("a failed export says Nothing billed, with the reason in the customer's words, and Retry runs it again", async () => context("failed", async (m) => {
-  const created = await m.createExport(request("request-fail-0001"), "u_test", m.deps());
+  const created = await m.createExport(request("request-fail-0001"), { id: "u_test" }, m.deps());
   m.pool.behave({ exitCode: 3, result: { ok: false, code: "input_mismatch", errors: ["input/m1.mp4: is 1280x720, the request says 1920x1080"] } });
   await m.runExport(created.job.id, m.deps());
   let job = await m.getExport("u_test", created.job.id, m.deps());
@@ -195,7 +195,7 @@ test("a failed export says Nothing billed, with the reason in the customer's wor
   expect((await m.getExport("u_test", created.job.id, m.deps())).status).toBe("ready");
   await expect(m.retryExport("u_test", created.job.id, m.deps())).rejects.toMatchObject({ status: 409 });
   // At most three tries.
-  const second = await m.createExport(request("request-fail-0002"), "u_test", m.deps());
+  const second = await m.createExport(request("request-fail-0002"), { id: "u_test" }, m.deps());
   for (let attempt = 1; attempt <= 3; attempt++) {
     m.pool.behave({ exitCode: 4, result: { ok: false, code: "render_failed", errors: ["Chrome crashed"] } });
     await m.runExport(second.job.id, m.deps());
@@ -206,15 +206,15 @@ test("a failed export says Nothing billed, with the reason in the customer's wor
 }));
 
 test("a timeout, a missing file and an unreachable worker all end the job as failed with Nothing billed", async () => context("ends", async (m) => {
-  const timeout = await m.createExport(request("request-end-0001"), "u_test", m.deps());
+  const timeout = await m.createExport(request("request-end-0001"), { id: "u_test" }, m.deps());
   m.pool.behave({ exitCode: 137, timedOut: true });
   await m.runExport(timeout.job.id, m.deps());
   expect((await m.getExport("u_test", timeout.job.id, m.deps())).error).toBe("The export took longer than allowed. Nothing billed.");
-  const missing = await m.createExport(request("request-end-0002"), "u_test", m.deps());
+  const missing = await m.createExport(request("request-end-0002"), { id: "u_test" }, m.deps());
   m.pool.behave({ mp4: null });
   await m.runExport(missing.job.id, m.deps());
   expect((await m.getExport("u_test", missing.job.id, m.deps())).error).toBe("The export finished without a file. Nothing billed.");
-  const down = await m.createExport(request("request-end-0003"), "u_test", m.deps());
+  const down = await m.createExport(request("request-end-0003"), { id: "u_test" }, m.deps());
   m.pool.behave({});
   m.pool.set("http://remotion-1:8790", "refuse");
   await m.runExport(down.job.id, m.deps());
@@ -223,12 +223,12 @@ test("a timeout, a missing file and an unreachable worker all end the job as fai
 }));
 
 test("cancel: a queued export ends at once; a rendering one stops its worker session; both say Nothing billed", async () => context("cancel", async (m) => {
-  const queued = await m.createExport(request("request-cancel-0001"), "u_test", m.deps());
+  const queued = await m.createExport(request("request-cancel-0001"), { id: "u_test" }, m.deps());
   const cancelled = await m.cancelExport("u_test", queued.job.id, m.deps());
   expect(cancelled).toMatchObject({ status: "cancelled", error: "Cancelled. Nothing billed." });
   expect(await m.runExport(queued.job.id, m.deps())).toBeUndefined();
   expect(m.pool.calls).toEqual([]);
-  const running = await m.createExport(request("request-cancel-0002"), "u_test", m.deps());
+  const running = await m.createExport(request("request-cancel-0002"), { id: "u_test" }, m.deps());
   let cancelResult: unknown;
   m.pool.behave({ during: async () => { cancelResult = (await m.cancelExport("u_test", running.job.id, m.deps())).status; await new Promise(() => {}); } });
   await m.runExport(running.job.id, m.deps());
@@ -236,7 +236,7 @@ test("cancel: a queued export ends at once; a rendering one stops its worker ses
   expect(await m.getExport("u_test", running.job.id, m.deps())).toMatchObject({ status: "cancelled", error: "Cancelled. Nothing billed.", outputs: [] });
   expect(m.pool.running()).toEqual([]);
   // A finished export cannot be cancelled into something else.
-  const done = await m.createExport(request("request-cancel-0003"), "u_test", m.deps());
+  const done = await m.createExport(request("request-cancel-0003"), { id: "u_test" }, m.deps());
   m.pool.behave({});
   await m.runExport(done.job.id, m.deps());
   expect((await m.cancelExport("u_test", done.job.id, m.deps())).status).toBe("ready");
@@ -245,7 +245,7 @@ test("cancel: a queued export ends at once; a rendering one stops its worker ses
 test("tenant isolation: another workspace's export, and another person's, are not found; every row carries its workspace", async () => {
   let aId = "";
   await context("tenant-a", async (m) => {
-    const created = await m.createExport(request("request-iso-a0001"), "u_test", m.deps());
+    const created = await m.createExport(request("request-iso-a0001"), { id: "u_test" }, m.deps());
     aId = created.job.id;
     expect((await m.row(aId)).workspace_id).toBe("ws_tenant-a");
     // A row written for another workspace in this very database is never read or changed here.
@@ -272,13 +272,13 @@ test("tenant isolation: another workspace's export, and another person's, are no
 test("the media must be this workspace's: a handle that does not resolve refuses the request and writes nothing", async () => context("media", async (m) => {
   const { ExportError } = await import("../../lib/exports/contract");
   const strict: MediaResolver = { ...resolver, async video() { throw new ExportError("That take isn't available in this workspace.", 404); } };
-  await expect(m.createExport(request("request-media-0001"), "u_test", m.deps({ resolver: strict }))).rejects.toMatchObject({ status: 404 });
+  await expect(m.createExport(request("request-media-0001"), { id: "u_test" }, m.deps({ resolver: () => strict }))).rejects.toMatchObject({ status: 404 });
   expect(await m.count("export_jobs")).toBe(0);
 }));
 
 test("a paid step inside an export is not the export's: a take still being made is refused, and plans add the export at 0", async () => context("paid", async (m) => {
   const waiting = request("request-paid-0001", { clip: { source: { take: "take_making" }, cues: [] } });
-  await expect(m.createExport(waiting, "u_test", m.deps())).rejects.toMatchObject({ status: 409, message: expect.stringContaining("still being made") });
+  await expect(m.createExport(waiting, { id: "u_test" }, m.deps())).rejects.toMatchObject({ status: 409, message: expect.stringContaining("still being made") });
   expect(await m.count("export_jobs")).toBe(0);
   const { EXPORT_TOOL, planTotalCredits } = await import("../../lib/exports/tool");
   expect(EXPORT_TOOL.price()).toEqual({ credits: 0, label: "Free" });
@@ -289,15 +289,15 @@ test("a paid step inside an export is not the export's: a take still being made 
 
 test("requests the template refuses never reach the queue: too long, unknown keys, a URL for a file", async () => context("refused", async (m) => {
   const long = { requestId: "request-long-0001", composition: "final" as const, props: { aspect: "16:9", clips: Array.from({ length: 13 }, () => ({ source: { take: "take_one" } })) } };
-  await expect(m.createExport(long, "u_test", m.deps())).rejects.toMatchObject({ status: 413 });
-  await expect(m.createExport(request("request-bad-00001", { surprise: 1 }), "u_test", m.deps())).rejects.toMatchObject({ status: 400 });
+  await expect(m.createExport(long, { id: "u_test" }, m.deps())).rejects.toMatchObject({ status: 413 });
+  await expect(m.createExport(request("request-bad-00001", { surprise: 1 }), { id: "u_test" }, m.deps())).rejects.toMatchObject({ status: 400 });
   const url = request("request-bad-00002", { clip: { source: { take: "https://example.com/a.mp4" }, cues: [] } });
-  await expect(m.createExport(url, "u_test", m.deps())).rejects.toMatchObject({ status: 400 });
+  await expect(m.createExport(url, { id: "u_test" }, m.deps())).rejects.toMatchObject({ status: 400 });
   expect(await m.count("export_jobs")).toBe(0);
 }));
 
 test("recovery: a queued export is handed on, a run past its ceiling is ended with its session stopped, and it never runs inline when a queue took it", async () => context("recover", async (m) => {
-  const queued = await m.createExport(request("request-rec-00001"), "u_test", m.deps());
+  const queued = await m.createExport(request("request-rec-00001"), { id: "u_test" }, m.deps());
   const sent: string[] = [];
   const outcome = await m.recoverExports({}, m.deps({ enqueue: async (id: string) => { sent.push(id); return true; }, run: async () => { throw new Error("must not run inline"); } }));
   expect(sent).toEqual([queued.job.id]);

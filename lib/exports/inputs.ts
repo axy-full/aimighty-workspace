@@ -1,6 +1,8 @@
 import { db } from "../db";
 import { openMediaStream, openUploadStream } from "../storage";
 import { inspectOriginalVideo } from "../videoMetadata.server";
+import { mayReadTake } from "../draftProject";
+import { uploadOpenableBy } from "../uploadAccess";
 import type { Reference } from "../ark";
 import { ExportError, type ExportComposition } from "./contract";
 
@@ -31,6 +33,9 @@ export type BoundMedia = {
 };
 
 type VideoFacts = { durationSeconds: number; width: number; height: number };
+
+/** Who is asking: a person, or the person a token acts as. Their reach decides which takes and uploads they may export. */
+export type ExportViewer = { id: string; role?: string };
 
 /** What the server knows about one stored file; the real one reads the tenant database and storage. */
 export type MediaResolver = {
@@ -128,29 +133,36 @@ export async function bindMedia(
 
 const gone = (what: string) => new ExportError(`${what} isn't available in this workspace.`, 404);
 
-export function createMediaResolver(): MediaResolver {
+/**
+ * The caller's own reach decides what resolves. A take filed under a private board is the board's owner's (and, once
+ * the board is shared, the team's; an admin of the workspace sees every board); an upload opens for its uploader, or
+ * once shared work holds it (lib/uploadAccess.ts). Anything the caller cannot reach answers exactly as an id that
+ * does not exist: the same 404, before anything about the file (its state, size or length) is read or said.
+ */
+export function createMediaResolver(viewer: ExportViewer, options: { facts?: typeof facts } = {}): MediaResolver {
+  const read = options.facts ?? facts;
   return {
     async video(handle) {
       if (handle.take) {
-        const row = (await db().execute({ sql: "SELECT id,kind,status,stored_url,bytes FROM generations WHERE id=? AND deleted=0", args: [handle.take] })).rows[0];
-        if (!row || row.kind !== "video") throw gone("That take");
+        const row = (await db().execute({ sql: "SELECT id,kind,status,stored_url,bytes,project_id FROM generations WHERE id=? AND deleted=0", args: [handle.take] })).rows[0];
+        if (!row || row.kind !== "video" || !(await mayReadTake(viewer, row.project_id == null ? null : String(row.project_id)))) throw gone("That take");
         if (row.status === "queued" || row.status === "running") throw new ExportError("That take is still being made. Export it when it is ready.", 409);
         if (row.status !== "succeeded" || !row.stored_url) throw gone("That take");
         const bytes = Number(row.bytes);
         if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > MAX_MEDIA_BYTES) throw new ExportError("That take's file is too large to export (200 MB at most).", 413);
         const ref: Reference = { id: String(row.id), mime: "video/mp4", ext: "mp4", storedUrl: String(row.stored_url), role: "reference_video", kind: "video", fromGeneration: true };
-        return { origin: "take", id: String(row.id), ext: "mp4", storedUrl: String(row.stored_url), bytes, ...(await facts(ref, bytes)) };
+        return { origin: "take", id: String(row.id), ext: "mp4", storedUrl: String(row.stored_url), bytes, ...(await read(ref, bytes)) };
       }
-      const row = await uploadRow(handle.upload!);
+      const row = await uploadRow(handle.upload!, viewer);
       const ext = String(row.ext).toLowerCase();
       if (!String(row.mime).startsWith("video/") || !VIDEO_EXT.includes(ext)) throw new ExportError("That file is not a video the export can use (MP4, MOV or WebM).", 415);
       const bytes = Number(row.bytes);
       if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > MAX_MEDIA_BYTES) throw new ExportError("That video is too large to export (200 MB at most).", 413);
       const ref: Reference = { id: String(row.id), mime: String(row.mime), ext, storedUrl: String(row.stored_url), role: "reference_video", kind: "video" };
-      return { origin: "upload", id: String(row.id), ext, storedUrl: String(row.stored_url), bytes, ...(await facts(ref, bytes)) };
+      return { origin: "upload", id: String(row.id), ext, storedUrl: String(row.stored_url), bytes, ...(await read(ref, bytes)) };
     },
     async image(handle) {
-      const row = await uploadRow(handle.upload!);
+      const row = await uploadRow(handle.upload!, viewer);
       const ext = IMAGE_MIMES[String(row.mime)];
       if (!ext) throw new ExportError("A logo must be a PNG, JPEG or WebP image.", 415);
       const bytes = Number(row.bytes);
@@ -158,7 +170,7 @@ export function createMediaResolver(): MediaResolver {
       return { id: String(row.id), ext, storedUrl: String(row.stored_url), bytes };
     },
     async audio(handle) {
-      const row = await uploadRow(handle.upload!);
+      const row = await uploadRow(handle.upload!, viewer);
       const ext = String(row.ext).toLowerCase();
       if (!String(row.mime).startsWith("audio/") || !AUDIO_EXT.includes(ext)) throw new ExportError("Music must be an MP3, WAV, M4A, AAC or OGG file.", 415);
       const bytes = Number(row.bytes);
@@ -170,10 +182,27 @@ export function createMediaResolver(): MediaResolver {
   };
 }
 
-async function uploadRow(id: string) {
+async function uploadRow(id: string, viewer: ExportViewer) {
   const row = (await db().execute({ sql: "SELECT id,mime,ext,bytes,duration_s,stored_url FROM uploads WHERE id=?", args: [id] })).rows[0];
-  if (!row) throw gone("That upload");
+  if (!row || !(await uploadOpenableBy(id, viewer))) throw gone("That upload");
   return row;
+}
+
+/**
+ * Asked again when the job runs (the request bound its media earlier): the file still exists, is not deleted, and the
+ * person who asked can still reach it (their role and the board's sharing are read afresh). A person who is gone or
+ * disabled reaches nothing.
+ */
+export async function mediaStillReachable(ownerId: string, media: BoundMedia): Promise<boolean> {
+  const person = (await db().execute({ sql: "SELECT role, disabled FROM users WHERE id=?", args: [ownerId] }).catch(() => ({ rows: [] as Record<string, unknown>[] }))).rows[0];
+  if (person && Number(person.disabled) === 1) return false;
+  const viewer: ExportViewer = { id: ownerId, ...(person?.role ? { role: String(person.role) } : {}) };
+  if (media.origin === "take") {
+    const row = (await db().execute({ sql: "SELECT status,project_id FROM generations WHERE id=? AND deleted=0 AND kind='video'", args: [media.id] })).rows[0];
+    return Boolean(row && row.status === "succeeded" && (await mayReadTake(viewer, row.project_id == null ? null : String(row.project_id))));
+  }
+  const row = (await db().execute({ sql: "SELECT id FROM uploads WHERE id=?", args: [media.id] })).rows[0];
+  return Boolean(row && (await uploadOpenableBy(media.id, viewer)));
 }
 
 async function facts(ref: Reference, bytes: number): Promise<VideoFacts> {

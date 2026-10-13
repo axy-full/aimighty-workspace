@@ -32,7 +32,7 @@ export const POST = whenOn(withTenant(async (req: Request) => {
     const input = exportRequestSchema.parse(JSON.parse(await readBoundedText(req, 64 * 1024)));
     const sample = await sampleWorkspaceOff();
     if (sample) return sample;
-    const result = await createExport(input, auth.user.id);
+    const result = await createExport(input, { id: auth.user.id, role: auth.user.role });
     if (result.scheduled && !result.duplicate) await scheduleExport(result.job.id);
     return reply({ job: result.job }, result.duplicate ? 200 : 202);
   } catch (error) {
