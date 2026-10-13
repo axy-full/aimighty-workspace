@@ -278,6 +278,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 - **Flake: `demo-int-board-everyone-workbench.spec.ts:62` at 1920x1080** ("Make sits left of the board's dock"). It failed once in #688's CI (run 38312050459) and passed 5 of 5 locally on release/1 and on the branch. Likely the panel was measured mid-animation. Root-cause it when it recurs.
 - **Flake: `demo-s10-phone-make-workbench.spec.ts:59` at 360x640** (`phone-make-go` data-spend "priced" where "unpriced" is expected). It failed once in #668's CI, and with --repeat-each it fails 8-9 of 10 on release/1 0ebd6eb4 too, so state carries between repeats. Not #668. Root-cause it in a small PR.
 - **Flake: `enhance-house-v12-workbench.spec.ts:37` at 1440x900** (waits 5 min for the Enhance quote request). It failed once in #686's CI (run 38347765648) and passed on the rerun. #686 doesn't touch Enhance. Root-cause it if it recurs.
+- **`board-kinds-v12-workbench` "the kind label cycles…"** looks for toast id `toast`, but the real id is `v12-toast`. It fails the same locally on release/1 (lane A, 13 Oct). Find out why CI doesn't catch it, then fix the spec's selector (not a guard).
 
 ## Housekeeping rules (owner, 12 Oct)
 
