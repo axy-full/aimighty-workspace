@@ -233,21 +233,24 @@ test("GET /api/usage: a private board's render stays in the spend and loses its 
   await platformReady(); await alignLedgerUnit();
   const meter = (id: string, projectId: string | null, credits: number, at: number) => platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,'image','google','gemini-3.1-flash-image','succeeded',0.01,?,1,'u_owner',?,?)", args: [id, ws.id, projectId, credits, at, at] });
   await meter(`t_priv1_${run}`, projects.private, 12, 80); await meter(`t_shared_${run}`, projects.shared, 5, 70); await meter(`t_open_${run}`, "prod_open", 3, 50);
+  /* A take moved into the private board after its meter line was written: the line still names the ordinary production, the take is in the private board now. */
+  await meter(`t_priv2_${run}`, "prod_open", 7, 90);
   const usage = (actor: Actor, within: TenantWorkspace = ws) => tenant.runInTenant(within, () => creditUsage({ id: actor.user.id, admin: actor.user.role === "admin" }), { user: actor.user, token: actor.token as never });
   const total = (body: { byModel: { credits: number }[] }) => body.byModel.reduce((n, m) => n + m.credits, 0);
   for (const actor of HIDDEN_FROM) {
     const body = await usage(actor);
-    /* The money is whole: 12 + 5 + 3. The words are not: no id, title, prompt or settings of the hidden render. */
-    expect(total(body), actor.user.id).toBe(20);
-    const hidden = body.recent.find((r: { credits: number }) => r.credits === 12)!;
-    expect(hidden, actor.user.id).toMatchObject({ id: "", title: "A private board", prompt: "", params: {}, status: "succeeded" });
+    /* The money is whole: 12 + 7 + 5 + 3. The words are not: no id, title, prompt or settings of a hidden render, whichever project its meter line names. */
+    expect(total(body), actor.user.id).toBe(27);
+    for (const credits of [12, 7]) expect(body.recent.find((r: { credits: number }) => r.credits === credits)!, `${actor.user.id} ${credits}`).toMatchObject({ id: "", title: "A private board", prompt: "", params: {}, status: "succeeded" });
     expect(JSON.stringify(body), actor.user.id).not.toContain(`t_priv1_${run}`);
+    expect(JSON.stringify(body), actor.user.id).not.toContain(`t_priv2_${run}`);
     expect(JSON.stringify(body), actor.user.id).not.toContain(PRIV);
     expect(body.recent.find((r: { credits: number }) => r.credits === 5), actor.user.id).toMatchObject({ id: `t_shared_${run}`, prompt: `${SHARED}-one` });
   }
   for (const actor of SEES_PRIVATE) {
-    const row = (await usage(actor)).recent.find((r: { credits: number }) => r.credits === 12)!;
-    expect(row, actor.user.id).toMatchObject({ id: `t_priv1_${run}`, prompt: `${PRIV}-one` });
+    const recent = (await usage(actor)).recent;
+    expect(recent.find((r: { credits: number }) => r.credits === 12)!, actor.user.id).toMatchObject({ id: `t_priv1_${run}`, prompt: `${PRIV}-one` });
+    expect(recent.find((r: { credits: number }) => r.credits === 7)!, actor.user.id).toMatchObject({ id: `t_priv2_${run}`, prompt: `${PRIV}-two` });
   }
   /* Another workspace: its ledger has none of these. */
   const other = workspace(`pt-e2-${run}`);
@@ -296,12 +299,11 @@ test("a thumbnail, a take's provenance and the strip's take: a hidden take is th
   expect(await tenant.runInTenant(other, async () => { const res = await provenance.GET(new Request("https://particl.test/x"), { params: Promise.resolve({ id: `t_priv1_${run}` }) }); return [res.status, await res.json()] as const; }, { user: ADMIN.user })).toEqual(unknownProv);
 });
 
-test("Atomik: a project the caller may not read is the id of no project for the model, before anything is read; an owner and an admin read it; another workspace reads nothing", async () => {
+test("Atomik: a project the caller may not read is no project for the model, before anything is read; an owner and an admin read it; another workspace reads nothing", async () => {
   const ws = workspace(`pt-g-${run}`);
   const { tenant, projects } = await fixture(ws);
   const atomik = await import("../../lib/atomik");
   const { PaidTextError } = await import("../../lib/paidText");
-  const { NO_SUCH_PROJECT } = await import("../../lib/draftProject");
   type Seen = { projectId: string | null | undefined; context: string | undefined; library: unknown };
   const seen: Seen[] = [];
   /* runTurn is the model: stand-in records what it was handed and stops. Everything before it (the cast, memory, library reads) is real. */
@@ -324,7 +326,7 @@ test("Atomik: a project the caller may not read is the id of no project for the 
   expect(unknown).toHaveLength(2);
   for (const actor of HIDDEN_FROM) {
     const got = await ask(actor, projects.private);
-    expect(got.map((s) => s.projectId), actor.user.id).toEqual([NO_SUCH_PROJECT, NO_SUCH_PROJECT]);
+    expect(got.map((s) => s.projectId), actor.user.id).toEqual([null, null]);
     expect(JSON.stringify(got), actor.user.id).not.toMatch(/SecretCast|PRIV-|Only the owner/);
     expect(got.map((s) => s.context), actor.user.id).toEqual(unknown.map((s) => s.context));
   }
@@ -341,4 +343,41 @@ test("Atomik: a project the caller may not read is the id of no project for the 
   await tenant.runInTenant(other, async () => { await (await import("../../lib/db")).ready(); }, { user: user("u_admin", "admin") });
   const there = await ask(ADMIN, projects.private, other);
   expect(JSON.stringify(there)).not.toContain("SecretCast");
+});
+
+test("a member's real turn on a private board's chat writes the placeholder nowhere: no meter line, reservation or memory carries it", async () => {
+  const ws = workspace(`pt-h-${run}`);
+  const { tenant, database, projects } = await fixture(ws);
+  const atomik = await import("../../lib/atomik");
+  const { platformDb } = await import("../../lib/platform");
+  const { alignLedgerUnit } = await import("../helpers/ledgerUnit");
+  const { platformReady } = await import("../../lib/platform");
+  await platformReady(); await alignLedgerUnit();
+  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,note,created_at) VALUES(?,?,?,?,?)", args: [`grant_pt_${run}`, ws.id, 5000, "Test", Date.now()] });
+  /* A workspace with no sample production, so the turn is let spend (it is the mocked planner, nothing real). */
+  await tenant.runInTenant(ws, () => database.db().execute("DELETE FROM settings WHERE key='sampleProduction'"), { user: user("u_owner") });
+  const turn = loadRoute<typeof import("../../app/api/atomik/[id]/route")>("app/api/atomik/[id]/route.ts", () => MATE);
+  const headers = { "Content-Type": "application/json", "X-Workbench-Scope": `particl-active-${ws.id}-${MATE.user.id}` };
+  const res = await tenant.runInTenant(ws, async () => {
+    const chat = await atomik.createChat({ userId: MATE.user.id, projectId: projects.private, model: "auto", agentMode: "ask" });
+    const out = await turn.POST(new Request(`https://particl.test/api/atomik/${chat}`, { method: "POST", headers, body: JSON.stringify({ text: "remember that the board is green", maxCredits: 50 }) }) as never, { params: Promise.resolve({ id: chat }) });
+    return [out.status, await out.text()] as const;
+  }, { user: MATE.user });
+  expect(res[0], res[1].slice(0, 200)).toBe(200);
+  /* The turn did spend and record (a planning line in the meter), against no project. */
+  const lines = (await platformDb().execute({ sql: "SELECT project_id,kind FROM meter_events WHERE workspace_id=?", args: [ws.id] })).rows;
+  expect(lines.length).toBeGreaterThan(0);
+  expect(lines.every((l) => l.project_id == null)).toBe(true);
+  /* Every table a turn writes, in the workspace's own database and the platform's: none holds the placeholder id, nor the private board's. */
+  const dump = async (client: { execute: (q: string | { sql: string; args: unknown[] }) => Promise<{ rows: Record<string, unknown>[] }> }, tables: string[]) => {
+    const out: Record<string, string> = {};
+    for (const t of tables) { try { out[t] = JSON.stringify((await client.execute(`SELECT * FROM ${t}`)).rows); } catch { out[t] = ""; } }
+    return out;
+  };
+  const platform = await dump(platformDb() as never, ["meter_events", "generation_reservations", "spend_reservations", "credit_grants"]);
+  const tenantRows = await tenant.runInTenant(ws, () => dump(database.db() as never, ["atomik_chats", "atomik_messages", "atomik_steps", "memory_items", "workspace_memory", "generation_requests"]), { user: MATE.user });
+  for (const [table, text] of Object.entries({ ...platform, ...tenantRows })) {
+    expect(text, table).not.toContain("\\u0000unknown");
+    if (table === "meter_events" || table === "generation_reservations" || table === "spend_reservations") expect(text, table).not.toContain(projects.private);
+  }
 });

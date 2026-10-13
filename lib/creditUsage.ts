@@ -110,7 +110,7 @@ export async function creditUsage(viewer: LedgerViewer) {
   const descriptions = ids.length
     ? (
         await db().execute({
-          sql: `SELECT id,title,prompt,params FROM generations WHERE id IN (${ids.map(() => "?").join(",")})`,
+          sql: `SELECT id,title,prompt,params,project_id FROM generations WHERE id IN (${ids.map(() => "?").join(",")})`,
           args: ids,
         })
       ).rows
@@ -170,9 +170,12 @@ export async function creditUsage(viewer: LedgerViewer) {
     byPerson,
     byMonth: months.rows.map((r) => ({ month: String(r.month), ...amount(r) })),
     recent: recent.rows.map((r) => {
-      /* A render in a private board this person may not see keeps its spend (the totals above stay whole) and its engine, kind, status and time,
+      /* A render now in a private board this person may not see keeps its spend (the totals above stay whole) and its engine, kind, status and time,
          and nothing that says what it was: no id, title, prompt or settings. Its row reads as the board's name does in the per-board list. */
-      if (r.project_id != null && !takesListed(String(r.project_id)))
+      const take = descriptionsById.get(String(r.id));
+      /* Where the take is NOW (generations.project_id: it may have been moved into a private board since the meter line was written); a line with no take behind it (text, training) has the meter's own project. */
+      const now_ = take ? take.project_id : r.project_id;
+      if (now_ != null && !takesListed(String(now_)))
         return { id: "", model: String(r.model), label: modelLabel(String(r.model)), provider: String(r.engine), kind: String(r.kind), status: String(r.status), title: "A private board", prompt: "", credits: Number(r.credits), params: {}, createdAt: Number(r.created_at), refineLabel: null };
       const detail = descriptionsById.get(String(r.id));
       return {
