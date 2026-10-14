@@ -467,3 +467,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - forwarded: #708 f457fe34, #713 4f984a87, #715 02088991;
   - #725 f4629415 and #727 6f8727ba review fixes.
   Opus is confirming each entry under the rule, giving #718 a final review, and re-reviewing #725/#727, including whether #725's CI comparison with main would block any approved ratchet date move. **Hung processes:** a lane D `node --test tests/ops/vercel-census.test.mjs` (pids 265935/265945/265951, ~26 min) is stuck in the Blob SDK retry loop behind the network tripwire. It holds one of the 3 heavy.sh slots; the lead can't kill (denied). Asked the owner.
+- **14 Oct 21:37 IST.** **#701 CI GREEN 24/24** (run 38583582694, base 74794f5d) and **merged** into release/1: house units in dollars at cost, 2 decimals rounded up; the plan row shows the enforced ceiling.
