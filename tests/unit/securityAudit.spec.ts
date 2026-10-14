@@ -404,6 +404,7 @@ async function membershipRoute(
     "@/lib/teamInvitations": await import("../../lib/teamInvitations"),
     "@/lib/platformOwnerPrivacy": await import("../../lib/platformOwnerPrivacy"),
     "@/lib/db": await import("../../lib/db"),
+    "@/lib/workbench/room-rotation": await import("../../lib/workbench/room-rotation"),
     "@/lib/auth": {
       withTenant: (handler: MembershipHandler) => handler,
       requireAdmin: async () => ({
