@@ -576,3 +576,12 @@ How the lead applies it:
 
 ## Owner correction (Akshay, 14 Oct, 20:45 IST): #719 item 5
 Verbatim: "Correction to 5): I'm NOT deleting particlstudio's previews one by one. They stay until the Vercel cutover is done; then I delete the whole project in one step. Add "delete Vercel project particlstudio" as the last step of the #719 cutover checklist, after the Blob→R2 copy is verified and the 7-day watch passes."
+
+## Owner decision (Akshay, 14 Oct, 21:00 IST): Gemini safety settings
+Verbatim:
+- Set all four adjustable categories (harassment, hate speech, sexually explicit, dangerous content) to BLOCK_NONE on every Gemini call where the setting is supported. Google's own fixed filters stay as they are; we don't try to get around them.
+- One shared config (e.g. lib/geminiSafety.ts) used by every Gemini call, not set per call. Add a test that pins it to BLOCK_NONE so it can't change silently.
+- If Gemini still blocks something (its fixed filters): show the user a plain message, charge nothing, and log only the block reason, never the prompt.
+- Model id comes from the routing table, never hard-coded. No model names shown in Agent mode.
+- Add to the counsel list: Terms of use must say the customer is responsible for what they generate, plus a report/takedown process (India IT Rules).
+- Owner-approved. Open the PR, Opus reviews, merge into release/1 on green. Never main.
