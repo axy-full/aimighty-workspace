@@ -70,8 +70,10 @@ test("a teammate cannot reach a private board's canvas, and is answered as for a
   expect(await message(privateProject, person("agent:run_1")), "an Atomik run").toBe("ok");
   expect(await message(privateProject, person("u_mate"), "agent:run_1"), "an Atomik run named as the actor").toBe("ok");
   expect(await message("prod_shared", person("u_mate")), "an ordinary production is the workspace's").toBe("ok");
-  /* An admin is not the owner either. */
-  expect(await tenant.runInTenant(ws, () => requireProduction(privateProject).then(() => "ok", () => "refused"), { user: { ...person("u_admin").user, role: "admin" } })).toBe("refused");
+  /* An admin of this workspace reaches it (owner, 13 Oct: admins open any board in their own workspace); an admin of another workspace, and a plain member, do not. */
+  expect(await tenant.runInTenant(ws, () => requireProduction(privateProject).then(() => "ok", () => "refused"), { user: { ...person("u_admin").user, role: "admin" } })).toBe("ok");
+  expect(await tenant.runInTenant(workspace(`pc-a2-${run}`), () => requireProduction(privateProject).then(() => "ok", () => "refused"), { user: { ...person("u_admin").user, role: "admin" } }), "an admin of another workspace").toBe("refused");
+  expect(await tenant.runInTenant(ws, () => requireProduction(privateProject).then(() => "ok", () => "refused"), { user: { ...person("u_mate").user, role: "member" } }), "a plain member").toBe("refused");
 });
 
 test("the routes that serve the canvas: a teammate reads and writes nothing; the owner still does; the Rig's state and ops follow", async () => {
