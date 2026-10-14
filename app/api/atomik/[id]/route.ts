@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
-  getChat, patchChat, deleteChat, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
+  getChat, patchChat, clearChatProject, deleteChat, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
   type AgentMode,
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
@@ -113,7 +113,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     /* A project this person may not file into (a private board of someone else's, even for an admin; lib/draftProject.ts) is no project (null): nothing of it is read for the model, spent against or filed into, before anything is reserved. */
     const projectId = await admittedProjectOr(got.user, loaded.chat.projectId);
     /* A project this person can no longer file into is dropped from the chat itself, so its steps stop being proposed for a board they cannot render into. */
-    if (!quoteOnly && loaded.chat.projectId && !projectId) await patchChat(id, { projectId: null });
+    if (!quoteOnly && loaded.chat.projectId && !projectId) await clearChatProject(id, loaded.chat.projectId!);
     const context = await projectContext(projectId);
     /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */
     const memory = await plannerMemoryText({ projectId, query: text }).catch(() => "");

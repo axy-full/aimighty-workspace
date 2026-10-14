@@ -326,6 +326,12 @@ export async function patchChat(chatId: string, patch: {
   await db().execute({ sql: `UPDATE atomik_chats SET ${sets.join(", ")} WHERE id = ?`, args });
 }
 
+/** Drops a chat's project, but only where it still is what the caller read: a PATCH that landed meanwhile stands. */
+export async function clearChatProject(chatId: string, was: string): Promise<void> {
+  await ready();
+  await db().execute({ sql: "UPDATE atomik_chats SET project_id = NULL, updated_at = ? WHERE id = ? AND project_id IS ?", args: [now(), chatId, was] });
+}
+
 export async function deleteChat(chatId: string): Promise<void> {
   await ready();
   /* A chat is soft-deleted and its transcript and proposals stay with it:

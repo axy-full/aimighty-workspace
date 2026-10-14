@@ -260,8 +260,3 @@ export async function takeLister(viewer: Viewer, ex: Exec = db()): Promise<(proj
   return projectLister(viewer, ex);
 }
 
-/** `projectId` when `viewer` may READ that project (its owner, an admin of the workspace, anyone for a shared board or the sample), else null, no project: what a route that feeds a project's takes, titles or prompts to a model runs on, so nothing of a private board is read and no record (a meter line, a reservation, a memory) is ever written against it or against a placeholder id. */
-export async function readableProjectOr(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
-  if (projectId == null) return null;
-  return seesEveryBoard(viewer) || (await mayReachProject(viewer, projectId, "read", ex)) ? projectId : null;
-}

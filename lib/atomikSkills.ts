@@ -550,12 +550,15 @@ export async function runSkill(id: unknown, input: {
   /* Where the plan is filed: the chat the person is in, or a new one for the project. */
   const chatId = typeof input.chatId === "string" && input.chatId ? input.chatId : null;
   let projectId: string | null = null;
+  /* The chat's project as read, so the clear below lands only if it is still that (a PATCH that landed meanwhile stands). */
+  let storedProject: string | null = null;
   if (chatId) {
     const chat = (await db().execute({ sql: "SELECT id, project_id, status FROM atomik_chats WHERE id = ? AND deleted = 0 AND created_by = ?", args: [chatId, by] })).rows[0] as Row | undefined;
     if (!chat) throw new SkillError("That chat is gone.", 404);
     if (chat.status === "running") throw new SkillError("Atomik is still planning in this chat. Run the skill when it has answered.", 409);
     /* The chat's project as this person may file into it now: none where they may not (the rule chats live by, lib/draftProject.ts). */
-    projectId = await admittedProjectOr({ id: by }, text(chat.project_id));
+    storedProject = text(chat.project_id);
+    projectId = await admittedProjectOr({ id: by }, storedProject);
   } else if (input.projectId != null && input.projectId !== "") {
     if (typeof input.projectId !== "string" || !PROJECT_ID.test(input.projectId)) throw new SkillError("Choose a saved project.");
     /* A project this person may not file into (someone else's private board, or an id that is none) is no project, the same for both; any other must be in this workspace. */
@@ -581,8 +584,10 @@ export async function runSkill(id: unknown, input: {
     if (chatId) {
       /* Never under a turn still planning: the guard is the row itself. */
       /* The chat keeps a project only if its person may file into it now (an old chat on a board they can no longer reach is cleared here, as at a turn). */
-      const moved = await tx.execute({ sql: "UPDATE atomik_chats SET status = 'waiting', project_id = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND status <> 'running'", args: [projectId, ts + 1, chatId] });
+      const moved = await tx.execute({ sql: "UPDATE atomik_chats SET status = 'waiting', updated_at = ? WHERE id = ? AND deleted = 0 AND status <> 'running'", args: [ts + 1, chatId] });
       if (!Number(moved.rowsAffected ?? 0)) throw new SkillError("Atomik is still planning in this chat. Run the skill when it has answered.", 409);
+      /* A project the person can no longer file into is dropped, but only where the chat still holds the one that was read. */
+      if (storedProject !== projectId) await tx.execute({ sql: "UPDATE atomik_chats SET project_id = ? WHERE id = ? AND project_id IS ?", args: [projectId, chatId, storedProject] });
     } else {
       await tx.execute({
         sql: `INSERT INTO atomik_chats (id, project_id, title, model, effort, agent_mode, status, text_cost_usd, created_by, created_at, updated_at, deleted)
