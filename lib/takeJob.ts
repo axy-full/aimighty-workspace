@@ -23,13 +23,8 @@ const FITS: Record<Job, readonly JobKind[]> = {
   ad: ["video", "image"], other: ["video", "image", "audio"],
 };
 
-/** A request's hint: absent (`undefined` or `null`), a job that fits the kind, or an error to answer with a 400. */
-export function jobHint(value: unknown, kind: JobKind): { hint: Job | null } | { error: string } {
-  if (value === undefined || value === null) return { hint: null };
-  if (!isJob(value)) return { error: "Name the take's job from the list, or leave it out." };
-  if (!FITS[value].includes(kind)) return { error: `A ${kind} take cannot be a ${value.replace("_", " ")}.` };
-  return { hint: value };
-}
+/** The jobs the take itself decides, from facts the server holds: a request can never name one it is not. */
+const FACT_ONLY: readonly Job[] = ["fix", "upscale", "shot_draft", "shot_final", "voice", "music", "sound"];
 
 export type JobFacts = {
   kind: JobKind;
@@ -64,6 +59,15 @@ export function jobOf(facts: JobFacts): Job {
     return facts.hint ?? (facts.onShot ? "shot" : "other");
   }
   return facts.hint ?? (facts.useAs === "first" ? "keyframe" : facts.useAs === "cast" ? "cast" : "other");
+}
+
+/** A request's hint: absent (`undefined` or `null`), a job that fits the kind and, if the take decides it for itself, agrees with the take, or an error to answer with a 400. */
+export function jobHint(value: unknown, facts: Omit<JobFacts, "hint">): { hint: Job | null } | { error: string } {
+  if (value === undefined || value === null) return { hint: null };
+  if (!isJob(value)) return { error: "Name the take's job from the list, or leave it out." };
+  if (!FITS[value].includes(facts.kind)) return { error: `A ${facts.kind} take cannot be a ${value.replace("_", " ")}.` };
+  if (FACT_ONLY.includes(value) && jobOf(facts) !== value) return { error: `This take is not a ${value.replace("_", " ")}: that comes from the take itself, not from a request.` };
+  return { hint: value };
 }
 
 type Row = { kind?: unknown; task?: unknown; params?: unknown };

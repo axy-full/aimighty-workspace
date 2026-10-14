@@ -1003,10 +1003,21 @@ test("a take's job (lib/takeJob.ts) is written by the server for a still, a clip
   /* A hint that is on the list and fits the kind counts where the facts do not decide; the facts win where they do. */
   expect((await params((await press("gen", { ...still, job: "storyboard" })).id)).job).toBe("storyboard");
   expect((await params((await press("gen", { ...clip, job: "shot" })).id)).job).toBe("shot");
-  expect((await params((await press("gen", { ...draft, job: "shot_final" })).id)).job).toBe("shot_draft");
-  expect((await params((await press("audio", { ...sound, job: "voice" })).id)).job).toBe("sound");
+  expect(await service.gen.prepareGeneration({ ...draft, job: "shot_final" } as never, actor)).toMatchObject({ ok: false, status: 400 });
   /* Nothing else writes it: not another params key, not a shotSpec. */
   expect((await params((await press("gen", { ...still, params: { job: "cast" }, shotSpec: { job: "cast" } })).id)).job).toBe("other");
+  /* The jobs a take decides for itself (fix, upscale, draft, final, and a sound's own) cannot be named by a request that the take does not bear out. */
+  const refusals: [("gen" | "audio"), Record<string, unknown>][] = [
+    ["gen", { ...clip, job: "upscale" }], ["gen", { ...clip, job: "fix" }], ["gen", { ...clip, job: "shot_draft" }], ["gen", { ...clip, job: "shot_final" }],
+    ["gen", { ...still, job: "upscale" }], ["gen", { ...still, job: "fix" }], ["audio", { ...sound, job: "voice" }], ["audio", { ...sound, job: "music" }],
+  ];
+  for (const [kind, body] of refusals) {
+    const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    expect(await prepare(body as never, actor), JSON.stringify(body)).toMatchObject({ ok: false, status: 400 });
+  }
+  /* ...and the same hint that the take bears out is only the fact. */
+  expect((await params((await press("gen", { ...draft, job: "shot_draft" })).id)).job).toBe("shot_draft");
+  expect((await params((await press("audio", { ...sound, job: "sound" })).id)).job).toBe("sound");
   /* A hint off the list or for another kind of take is refused (a quote as a press), before anything is held. */
   for (const [kind, body] of [["gen", { ...still, job: "shot_final" }], ["gen", { ...clip, job: "storyboard" }], ["gen", { ...still, job: "Shot" }], ["gen", { ...still, job: 7 }], ["gen", { ...still, job: "" }], ["audio", { ...sound, job: "keyframe" }]] as const) {
     const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;

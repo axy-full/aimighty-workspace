@@ -524,10 +524,6 @@ export async function executeGenerationAdmission(
         { status: 400 },
       );
     }
-    /* The take's job (lib/takeJob.ts): a hint from the request must be on the closed list and fit the kind, or the request is refused here, with a quote as with a press, before anything is held. */
-    const hinted = jobHint(body.job, model.kind === "image" ? "image" : "video");
-    if ("error" in hinted) return admissionReply({ error: hinted.error }, { status: 400 });
-    const jobHinted: Job | null = hinted.hint;
     /* An engine no longer offered for new renders (lib/models.ts › retired) stops here, for a quote and a submit
        alike: before any identity is resolved, anything is priced or reserved, or any vendor is called. Takes it
        already made are untouched — they are read, collected and settled elsewhere. */
@@ -655,6 +651,12 @@ export async function executeGenerationAdmission(
       if (body.resolution != null && body.resolution !== DRAFT_RESOLUTION)
         return admissionReply({ error: `A draft renders at ${DRAFT_RESOLUTION}.` }, { status: 400 });
     }
+    /* The take's job (lib/takeJob.ts): a hint from the request must be on the closed list, fit the kind, and, for the jobs the take itself decides (fix, upscale, draft, final), agree
+       with it, or the request is refused here, for a quote as for a press, before anything is held. */
+    const jobFacts = { kind: (model.kind === "image" ? "image" : "video") as "image" | "video", task: model.kind === "image" ? model.stillTask ?? "generate" : task.id, draft, finalOf: final != null };
+    const hinted = jobHint(body.job, jobFacts);
+    if ("error" in hinted) return admissionReply({ error: hinted.error }, { status: 400 });
+    const jobHinted: Job | null = hinted.hint;
     const sourceGenId = body.sourceGenId ? String(body.sourceGenId) : null;
     /* An uploaded clip as the source of a locked task: the client sends it here, not among the references. */
     const sourceUploadId =

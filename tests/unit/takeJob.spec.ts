@@ -15,18 +15,31 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 
-test("the closed list, and a hint that must be on it and fit the kind", () => {
+test("the closed list, and a hint that must be on it, fit the kind and, where the take decides the job itself, agree with the take", () => {
   expect(JOBS).toHaveLength(14);
   expect(JOBS.every(isJob)).toBe(true);
   for (const bad of ["", "Shot", "shot ", "movie", 3, {}, ["shot"], true]) expect(isJob(bad), JSON.stringify(bad)).toBe(false);
-  expect(jobHint(undefined, "video")).toEqual({ hint: null });
-  expect(jobHint(null, "image")).toEqual({ hint: null });
-  expect(jobHint("storyboard", "image")).toEqual({ hint: "storyboard" });
-  expect(jobHint("ad", "video")).toEqual({ hint: "ad" });
-  expect(jobHint("other", "audio")).toEqual({ hint: "other" });
+  expect(jobHint(undefined, { kind: "video" })).toEqual({ hint: null });
+  expect(jobHint(null, { kind: "image" })).toEqual({ hint: null });
+  expect(jobHint("storyboard", { kind: "image", task: "generate" })).toEqual({ hint: "storyboard" });
+  expect(jobHint("ad", { kind: "video", task: "generate" })).toEqual({ hint: "ad" });
+  expect(jobHint("shot", { kind: "video", task: "generate" })).toEqual({ hint: "shot" });
+  expect(jobHint("other", { kind: "audio", task: "speech" })).toEqual({ hint: "other" });
   for (const [hint, kind] of [["storyboard", "video"], ["keyframe", "audio"], ["shot_final", "image"], ["voice", "video"], ["music", "image"], ["cast", "video"], ["ad", "audio"]] as const)
-    expect(jobHint(hint, kind), `${hint} on ${kind}`).toHaveProperty("error");
-  for (const bad of ["", "Shot", 7, ["shot"], {}, false]) expect(jobHint(bad, "video"), JSON.stringify(bad)).toHaveProperty("error");
+    expect(jobHint(hint, { kind, task: "generate", draft: true, finalOf: true }), `${hint} on ${kind}`).toHaveProperty("error");
+  for (const bad of ["", "Shot", 7, ["shot"], {}, false]) expect(jobHint(bad, { kind: "video" }), JSON.stringify(bad)).toHaveProperty("error");
+  /* fix, upscale, draft, final, voice, music and sound are the take's own to decide: a hint that the take does not bear out is refused, one it does is just the fact. */
+  const plainClip = { kind: "video", task: "generate" } as const, plainStill = { kind: "image", task: "generate" } as const;
+  for (const hint of ["fix", "upscale", "shot_draft", "shot_final"] as const) expect(jobHint(hint, plainClip), `${hint} on a plain clip`).toHaveProperty("error");
+  for (const hint of ["fix", "upscale"] as const) expect(jobHint(hint, plainStill), `${hint} on a plain still`).toHaveProperty("error");
+  expect(jobHint("upscale", { kind: "image", task: "outpaint" })).toHaveProperty("error");
+  expect(jobHint("fix", { kind: "video", task: "upscale" })).toHaveProperty("error");
+  for (const hint of ["voice", "music"] as const) expect(jobHint(hint, { kind: "audio", task: "sound" }), `${hint} on a sound effect`).toHaveProperty("error");
+  expect(jobHint("fix", { kind: "video", task: "edit" })).toEqual({ hint: "fix" });
+  expect(jobHint("upscale", { kind: "image", task: "upscale" })).toEqual({ hint: "upscale" });
+  expect(jobHint("shot_draft", { kind: "video", task: "generate", draft: true })).toEqual({ hint: "shot_draft" });
+  expect(jobHint("shot_final", { kind: "video", task: "generate", finalOf: true })).toEqual({ hint: "shot_final" });
+  expect(jobHint("sound", { kind: "audio", task: "sound" })).toEqual({ hint: "sound" });
 });
 
 test("the label comes from the facts first: the task, a final, a draft, the audio task; then a valid hint; then a default", () => {

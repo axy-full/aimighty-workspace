@@ -340,7 +340,7 @@ export async function executeAudioAdmission(
   const madeIn = madeInOf(body.madeIn, got);
   if (madeIn) params.madeIn = madeIn;
   /* What the take is for (lib/takeJob.ts): decided by the audio task; a hint on the request must be on the list and fit a sound, or it is refused here (a quote too). */
-  const hinted = jobHint(body.job, "audio");
+  const hinted = jobHint(body.job, { kind: "audio", task });
   if ("error" in hinted) return admissionReply({ error: hinted.error }, { status: 400 });
   params.job = jobOf({ kind: "audio", task, hint: hinted.hint });
   const genId = newId("gen");
