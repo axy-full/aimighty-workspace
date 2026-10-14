@@ -577,3 +577,12 @@ test("Movement on Auto writes no camera sentence; a picked movement goes as its 
   const expanded = String((await seedance(named)).compiled.prompt);
   expect(expanded).toContain(moduleFor("move", "handheld"));
 }));
+
+test("a Cinema take's params.quote matches the quote the person was shown: the credits, the ceiling its band makes, and the approval", async () => fixture("cinema_quote_snapshot", async (f) => {
+  const quoted = prepared(await f.admission.prepareGeneration(f.body(), actor)).quote;
+  expect(quoted.ceilingCredits, "a Cinema take holds a band").toBeGreaterThan(quoted.estimatedCredits);
+  const reply = await f.post({ ...f.body(), maxCredits: quoted.ceilingCredits, quoteFingerprint: quoted.fingerprint }, "cinema-quote-snapshot");
+  expect(reply.status, await reply.clone().text()).toBe(202);
+  const [row] = await f.rows();
+  expect(JSON.parse(String(row.params)).quote).toEqual({ credits: quoted.estimatedCredits, ceilingCredits: quoted.ceilingCredits, maxCredits: quoted.ceilingCredits });
+}));

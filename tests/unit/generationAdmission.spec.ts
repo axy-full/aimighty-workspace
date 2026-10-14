@@ -1020,6 +1020,8 @@ test("the house (billed in dollars at cost) keeps no credit quote on its takes; 
   await runInTenant(house, async () => { expect(services().gen.quoteSnapshot(7, 9)).toBeUndefined(); });
   await scope("quote-snapshot-credits", async (service) => {
     expect(service.gen.quoteSnapshot(7, 9)).toEqual({ credits: 7, maxCredits: 9 });
+    expect(service.gen.quoteSnapshot(7, 21, 3)).toEqual({ credits: 7, ceilingCredits: 21, maxCredits: 21 });
+    expect(service.gen.quoteSnapshot(7, 9, 1)).toEqual({ credits: 7, maxCredits: 9 });
     expect(service.gen.quoteSnapshot(7, undefined)).toEqual({ credits: 7 });
     for (const bad of [1.5, -1, "9", null, NaN]) expect(service.gen.quoteSnapshot(7, bad), String(bad)).toEqual({ credits: 7 });
     for (const credits of [NaN, Infinity, -1]) expect(service.gen.quoteSnapshot(credits, 9), String(credits)).toBeUndefined();
