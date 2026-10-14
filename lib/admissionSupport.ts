@@ -85,6 +85,8 @@ export function admissionCheckpoint(
   if (!options.checkpoint) return;
   // Explicit source identities also let deletion guards protect quoted implicit cast references.
   const resolved = structuredClone(compiled);
+  /* What the take was quoted at and approved up to (`params.quote`, lib/generationAdmission.ts) is a record of the quote, never an input to it: it is not part of the fingerprint. */
+  if (resolved.params && typeof resolved.params === "object") delete (resolved.params as Record<string, unknown>).quote;
   const engine =
     kind === "audio"
       ? "elevenlabs"

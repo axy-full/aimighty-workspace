@@ -218,6 +218,16 @@ function validateReferences(
   return null;
 }
 
+/**
+ * What a take was quoted at, kept on the take (owner, 14 Oct 2026; docs/plans/step-0-data.md item 4): `{ credits, maxCredits }`, written once at admission in the same insert, so
+ * "quoted 43, approved up to 60, charged 43" can be read afterwards. `credits` is our price in credits (the server's price path, times a held take's band), `maxCredits` the ceiling
+ * the person (or the plan's approval) set, when there is one. Never a vendor dollar; nothing on a workspace on its own keys (it has no credit quote); never part of the quote's fingerprint.
+ */
+export function quoteSnapshot(credits: number, maxCredits: unknown): { credits: number; maxCredits?: number } | undefined {
+  if (!creditsApply(requireTenant()) || !Number.isFinite(credits) || credits < 0) return undefined;
+  return { credits, ...(typeof maxCredits === "number" && Number.isInteger(maxCredits) && maxCredits >= 0 ? { maxCredits } : {}) };
+}
+
 /** What a draft's final is made from: the draft's own row, never the request (lib/draftFinal.ts). */
 type FinalSource = {
   draftId: string;
@@ -1585,6 +1595,7 @@ export async function executeGenerationAdmission(
       const stillParams = {
         /* Make's own results (lib/madeIn.ts): marked by the server, only for a person's own Make request. */
         madeIn: madeInOf(body.madeIn, got),
+        quote: quoteSnapshot(quotedCredits(estStillUsd, modelId), body.maxCredits),
         ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
           soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
@@ -2185,6 +2196,7 @@ export async function executeGenerationAdmission(
     const storedParams: Record<string, unknown> = final ? {
       ...params,
       finalOf: final.draftId,
+      quote: quoteSnapshot(quotedCredits(estUsd, modelId) * band, body.maxCredits),
       draftExpiresAt: final.expiresAt,
       hasVideoInput,
       inputSeconds: hasVideoInput ? inputSeconds : undefined,
@@ -2195,6 +2207,7 @@ export async function executeGenerationAdmission(
     } : {
       ...params,
       madeIn: madeInOf(body.madeIn, got),
+      quote: quoteSnapshot(quotedCredits(estUsd, modelId) * band, body.maxCredits),
       ...(genjutsu ? { workbenchProjectId: body.workbenchProjectId, quoteBasis: "live-provider-estimate" } : {}),
       references: references.map((r) =>
         r.fromGeneration
