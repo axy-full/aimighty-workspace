@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ReactFlowProvider, useReactFlow, useStoreApi, type Viewport } from "@xyflow/react";
 import { useRig } from "@/components/workspace/rig/RigProvider";
+import { useScopedFetch } from "@/lib/useScopedFetch";
 import { SHARE_TEAM, viewOnlyLine } from "@/lib/workbench/view-only";
 import { markBoardOpen } from "@/lib/board/active";
 import { GLIDE_MS, glideEase } from "@/lib/board/ease";
@@ -73,6 +74,8 @@ import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
 import { StageHeader } from "@/components/v12/board/StageHeader";
+import { CHANGED_WORDS } from "@/lib/workbench/changed-since";
+import { ChangedBar } from "@/components/v12/board/ChangedBar";
 import { StageEmpty } from "@/components/v12/board/StageEmpty";
 import { cleanLanguages } from "@/lib/v12/deliver";
 import { isDubbingLanguage } from "@/lib/workbench/dubbing-options";
@@ -653,16 +656,29 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     shell.setScreenParams({ kind: null, stage: stays ? stage.id : null }, "replace");
     undoable("The board kind is back as it was", () => { rig.apply((p) => ({ ...p, ...before })); }, withUndoHint(`Board kind · ${KIND_LABEL[to]} · the rail changed; your cards are kept`));
   }, [flavor, rig, shell, stage, undoable, ws]);
-  /* Share with team (owner, 12 Oct 2026): the author's one flag in the draft's own JSON, saved like every edit, with ⌘Z. Teammates then open the board view-only. */
+  /* Share with team (owner, 12 Oct 2026): the flag is the SERVER's (a save of the board never carries it), so it is changed by the `team-share` action, with Undo
+     (the same action the other way), and shown at once in the open board. Teammates then open the board view-only. */
   const teamShared = rig.project?.teamShared === true;
+  const fetcher = useScopedFetch(rig.scope);
+  const setShared = useCallback(async (to: boolean): Promise<boolean> => {
+    const current = rig.project;
+    if (!current) return false;
+    const reply = await fetcher("/api/workbench/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "team-share", projectId: current.id, shared: to }) }).catch(() => null);
+    if (!reply?.ok) { ws.toast("Sharing was not changed. Try again."); return false; }
+    const answer = (await reply.json().catch(() => null)) as { roomRotated?: boolean } | null;
+    rig.adoptSharing(to);
+    /* The live room was closed (Can edit was on): this window joins the new one, from the saved canvas. */
+    if (answer?.roomRotated) rig.team.rejoin();
+    return true;
+  }, [fetcher, rig, ws]);
   const toggleShare = useCallback(() => {
     const current = rig.project;
     if (!current) return;
     const to = current.teamShared !== true;
-    const refusal = rig.apply((p) => ({ ...p, teamShared: to }));
-    if (refusal) { ws.toast(refusal); return; }
-    undoable(to ? SHARE_TEAM.stopped : SHARE_TEAM.shared, () => { rig.apply((p) => ({ ...p, teamShared: !to })); }, withUndoHint(to ? SHARE_TEAM.shared : SHARE_TEAM.stopped));
-  }, [rig, undoable, ws]);
+    void setShared(to).then((done) => {
+      if (done) undoable(to ? SHARE_TEAM.stopped : SHARE_TEAM.shared, () => { void setShared(!to); }, withUndoHint(to ? SHARE_TEAM.shared : SHARE_TEAM.stopped));
+    });
+  }, [rig, setShared, undoable]);
   /* 1–9 jump to stage N; [ and ] to the stage before and after (inventory § 4.2). Never while typing. */
   useEffect(() => {
     if (!v12Frame) return;
@@ -753,7 +769,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     { id: "fit", label: "Fit to view", shortcut: "0", onSelect: () => void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }) },
     ...(freeCards.length && !offline ? [{ id: "tidy", label: "Tidy", onSelect: () => void tidy() }] : []),
     /* Author only: a teammate's board is view-only and a sample is nobody's to share. */
-    ...(v12Frame && !viewing && !offline && !gate.exploreOnly ? [{ id: "share-team", label: teamShared ? SHARE_TEAM.stop : SHARE_TEAM.share, tip: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: toggleShare }] : []),
+    ...(v12Frame && !viewing && !rig.actingOn && !offline && !gate.exploreOnly ? [{ id: "share-team", label: teamShared ? SHARE_TEAM.stop : SHARE_TEAM.share, tip: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: toggleShare }] : []),
   ];
   const regionBoxes = board.rail.flatMap((entry) => { const box = placed.regions.get(entry.id); return box ? [box] : []; });
   return (
@@ -764,8 +780,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} addBlocked={stageLimit(stages.length)} />
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">
-          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
+          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing} quietPrimary={Boolean(rig.changedSince)} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
             onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
+          {v12Frame && rig.changedSince ? <ChangedBar changed={rig.changedSince} onReload={() => { rig.resolveChanged("reload"); ws.toast(CHANGED_WORDS.reloaded); }} onKeep={() => { rig.resolveChanged("keep"); ws.toast(CHANGED_WORDS.kept); }} /> : null}
           <StageColumn on={v12Frame}>
           {list ? <List ctx={ctx} cards={placed.cards} /> : (
             <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline || Boolean(viewing)} onMoveEnd={onMoveEnd}

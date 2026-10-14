@@ -1,4 +1,5 @@
 import { db, ready, now } from "./db";
+import { ownedDraftsSql } from "./draftProject";
 import { requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
 import { creditsApply } from "./credits";
@@ -106,8 +107,8 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     contents.soul_identities = tables.has("soul_identities") ? (await tx.execute({
       sql: `SELECT id,project_id,production_project_id,name,description,subject_type,references_json,status,cost_usd,error,created_at,updated_at
         FROM soul_identities WHERE purged_at IS NULL AND (owner=? OR production_project_id IS NULL OR production_project_id IN
-          (SELECT json_extract(body,'$.productionProjectId') FROM workbench_projects WHERE owner=?))`,
-      args: [ownerId, ownerId],
+          (SELECT json_extract(body,'$.productionProjectId') FROM workbench_projects WHERE ${ownedDraftsSql(ownerId).sql}))`,
+      args: [ownerId, ...ownedDraftsSql(ownerId).args],
     })).rows.map(row => ({ ...row })) : [];
     if (creditWorkspace) {
       // Customer billing is in credits. Provider costs and rate cards belong
@@ -129,11 +130,13 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
       "workbench_shots",
       "workbench_media",
     ] as const) {
+      /* The drafts this person owns now: stored under their key and not handed away, or handed to them (lib/draftProject.ts › ownedDraftsSql). */
+      const mine = name === "workbench_projects" ? ownedDraftsSql(ownerId) : { sql: "owner=?", args: [ownerId] };
       contents[name] = tables.has(name)
         ? (
             await tx.execute({
-              sql: `SELECT * FROM ${name} WHERE owner=?`,
-              args: [ownerId],
+              sql: `SELECT * FROM ${name} WHERE ${mine.sql}`,
+              args: mine.args,
             })
           ).rows.map((row) => ({ ...row }))
         : [];

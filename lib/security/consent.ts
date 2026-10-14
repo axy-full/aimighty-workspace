@@ -1,5 +1,6 @@
 import type { Client } from "@libsql/client";
 import { db, ready, now, id as newId } from "../db";
+import { ownKeyOf } from "../draftProject";
 import { requireTenant } from "../tenant";
 import { securityAuditStatement } from "../securityAudit";
 import { assertPerson, type Caller } from "./people-only";
@@ -219,7 +220,9 @@ export async function consentForTraining(consentId: unknown, projectIds: (string
 export async function projectKeysFor(draftId: unknown, owner: string): Promise<string[]> {
   if (typeof draftId !== "string" || !draftId) return [];
   const keys = [draftId];
-  const rs = await db().execute({ sql: `SELECT body FROM workbench_projects WHERE project_id = ? AND owner = ? LIMIT 1`, args: [draftId, owner] }).catch(() => ({ rows: [] as Row[] }));
+  /* The draft this person owns now (lib/draftProject.ts › ownKeyOf): under their key, or the first owner's when handed to them; none when handed away. */
+  const key = await ownKeyOf(owner, draftId).catch(() => owner);
+  const rs = await db().execute({ sql: `SELECT body FROM workbench_projects WHERE project_id = ? AND owner = ? LIMIT 1`, args: [draftId, key ?? "\u0000none"] }).catch(() => ({ rows: [] as Row[] }));
   try {
     const production = JSON.parse(String(rs.rows[0]?.body ?? "{}")).productionProjectId;
     if (typeof production === "string" && production) keys.push(production);

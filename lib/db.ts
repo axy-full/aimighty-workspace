@@ -56,6 +56,13 @@ const SCHEMA = [
      updated_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_workbench_owner ON workbench_projects(owner,updated_at)`,
+  /* Who owns a board that has been handed over (board sharing, PR 4; lib/workbench/board-transfer.ts). Additive: a board's draft stays stored under its first owner's key and its
+     project id stays what it was; a row here says whose it is now. No row, no hand-over. previous_owner is who it was just before, so Undo can give it back. Never deleted from. */
+  `CREATE TABLE IF NOT EXISTS workbench_board_owners (
+     project_id TEXT PRIMARY KEY, draft_owner TEXT NOT NULL, draft_id TEXT NOT NULL,
+     owner TEXT NOT NULL, previous_owner TEXT NOT NULL, transferred_by TEXT NOT NULL, at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS workbench_board_owners_owner ON workbench_board_owners(owner)`,
   `CREATE TABLE IF NOT EXISTS workbench_edit_versions (
      owner TEXT NOT NULL, draft_id TEXT NOT NULL, id TEXT NOT NULL,
      label TEXT NOT NULL, source_revision INTEGER NOT NULL, created_at INTEGER NOT NULL,
@@ -916,6 +923,9 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
 
       // Lightweight migrations for columns added after first deploy.
       await addColumn("generations", `deleted INTEGER NOT NULL DEFAULT 0`);
+      /* Who made the last save of a board (lib/workbench/records.ts › saveDraft): the person acting, which is not the board's owner when a teammate or an
+         admin saves a board stored under the owner's key. Recorded so each person's undo can cover only their own changes. NULL on older rows. */
+      await addColumn("workbench_projects", `updated_by TEXT`);
       await addColumn("uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
       await addColumn("uploads", `duration_s REAL`);
       /* Who uploaded it (lib/uploadAccess.ts): a member opens an upload only if they uploaded it or shared work uses it. Rows from before this column are

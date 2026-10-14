@@ -2,6 +2,7 @@ import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import type { Client, Row, Transaction } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 import { db, ready, now, id as newId } from "./db";
+import { ownedDraftsSql, ownKeyOf } from "./draftProject";
 import { currentTenant, requireTenant } from "./tenant";
 import { mediaMutation, validateMediaSources } from "./mediaMutation";
 import { presignedReadUrl, uploadPath, imagePath, usingBlob } from "./storage";
@@ -217,12 +218,14 @@ async function productionFor(
   owner: string,
 ): Promise<string | null> {
   if (!projectId) return null;
-  const draft = (
+  /* The draft this person owns now: under their key, or the first owner's when the board was handed to them (lib/draftProject.ts › ownKeyOf). */
+  const key = await ownKeyOf(owner, projectId, tx);
+  const draft = key ? (
     await tx.execute({
       sql: "SELECT body FROM workbench_projects WHERE owner=? AND project_id=?",
-      args: [owner, projectId],
+      args: [key, projectId],
     })
-  ).rows[0];
+  ).rows[0] : undefined;
   if (!draft)
     throw new SoulIdentityError(
       "Save this production before training its identity, using the account that owns the draft.",
@@ -250,9 +253,10 @@ async function canRead(row: Row): Promise<boolean> {
   const owner = currentTenant()?.user?.id;
   if (!owner) return false;
   if (row.owner === owner || row.production_project_id == null) return true;
+  const mine = ownedDraftsSql(owner);
   const drafts = await db().execute({
-    sql: "SELECT body FROM workbench_projects WHERE owner=?",
-    args: [owner],
+    sql: `SELECT body FROM workbench_projects WHERE ${mine.sql}`,
+    args: mine.args,
   });
   return drafts.rows.some((draft) => {
     try {
@@ -356,16 +360,10 @@ export async function listSoulIdentities(
   const owner = currentTenant()?.user?.id;
   if (!owner) throw new SoulIdentityError("Sign in to view identities.", 401);
   // A new unsaved draft can view configuration and terms before its first save.
-  if (
-    projectId &&
-    !(
-      await db().execute({
-        sql: "SELECT 1 FROM workbench_projects WHERE owner=? AND project_id=?",
-        args: [owner, projectId],
-      })
-    ).rows.length
-  )
-    return [];
+  if (projectId) {
+    const key = await ownKeyOf(owner, projectId);
+    if (!key || !(await db().execute({ sql: "SELECT 1 FROM workbench_projects WHERE owner=? AND project_id=?", args: [key, projectId] })).rows.length) return [];
+  }
   const productionId = await productionFor(db(), projectId ?? null, owner);
   const rows = await db().execute({
     sql: `SELECT * FROM soul_identities WHERE purged_at IS NULL AND ${productionId ? "(production_project_id=? OR production_project_id IS NULL)" : "owner=?"} ORDER BY created_at DESC LIMIT 200`,

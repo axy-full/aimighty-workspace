@@ -18,7 +18,7 @@ import { isDirectText, textEngine } from "@/lib/openai-direct";
 import { fromTenths, isRunLimitAmount, runTally, toTenths, type RunCharge } from "@/lib/runLimit";
 import { applyCanvasOps } from "./canvas-ops";
 import type { OpOutcome } from "./canvas-ops-model";
-import { readDraft, workbenchTransaction } from "./records";
+import { readOwnDraft, workbenchTransaction } from "./records";
 import { sampleMarkNow } from "@/lib/draftProject";
 import { bindSampleLift } from "@/lib/demo/lift.server";
 import { SAMPLE_LINE } from "@/lib/demo/sample";
@@ -274,7 +274,7 @@ async function askTerms(productionId: string, draftId: string, viewer: string, a
   const [limit, jobCeiling] = await Promise.all([suggestedRunLimit(), rigJobCeiling()]);
   let planning: number | null = null;
   let planningUsd: number | null = null;
-  const draft = await readDraft(viewer, draftId);
+  const draft = await readOwnDraft(viewer, draftId);
   if (draft && draft.project.productionProjectId === productionId) {
     const saved = await readTeamCanvas(productionId);
     const nodes = saved ? orderedIds(saved.canvas).map((id) => saved.canvas.nodes[id]) : draft.project.nodes;
@@ -350,7 +350,7 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   if (!RIG_AGENT_MODES.includes(mode)) throw new RigAgentError("Choose Ask or Auto.", 400);
   /* An ask writes no canvas row itself, it makes a run: in the sample the spend guard below answers it (409), as it always has, not the board's view-only lock. */
   await requireProduction(input.productionId, input.userId, await accessToAsk(input.productionId));
-  const draft = await readDraft(input.userId, input.draftId);
+  const draft = await readOwnDraft(input.userId, input.draftId);
   if (!draft) throw new RigAgentError("Open this project's Rig first.", 404);
   if (draft.project.productionProjectId !== input.productionId) throw new RigAgentError("This project is not saved to that production.", 409);
   /* The files attached to the ask: each must be filed in this production's Library, in this workspace. */
@@ -850,7 +850,7 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
   /* Held for as long as the turn may take, so no other worker takes a slow plan for a lost one. */
   await renewRun(lease, PLANNER_TIMEOUT_MS + LEASE_MS);
   if (!(await patchRun(db(), run.id, { planning_started_at: now() }, ["planning"]))) return (await getRun(db(), run.id))!.state;
-  const draft = await readDraft(run.owner, run.draftId);
+  const draft = await readOwnDraft(run.owner, run.draftId);
   if (!draft || draft.project.productionProjectId !== run.productionId) return failRun(run.id, "The project this was asked from is no longer here.", ["planning"]);
   const saved = await readTeamCanvas(run.productionId);
   const nodes = saved ? orderedIds(saved.canvas).map((id) => saved.canvas.nodes[id]) : draft.project.nodes;

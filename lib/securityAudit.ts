@@ -21,9 +21,10 @@ const actions = [
   "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed", "workspace.mfa_required", "workspace.mfa_optional", "workspace.restored",
   "api_token.created", "api_token.revoked", "review_link.created", "review_link.revoked",
   "identity_consent.recorded", "identity_consent.withdrawn",
+  "board.opened_by_admin", "board.edited_by_admin", "board.transferred", "board.transfer_undone",
 ] as const;
 export type SecurityAction = (typeof actions)[number];
-type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link" | "identity_consent";
+type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link" | "identity_consent" | "board";
 type Details = {
   role?: "admin" | "member";
   disabled?: boolean;
@@ -31,6 +32,8 @@ type Details = {
   mode?: "platform" | "own";
   scope?: "read" | "render" | "prepare";
   expiresAt?: number;
+  /** A board handed over: the account ids of who it was and who it is now. */
+  from?: string; to?: string;
 };
 export type SecurityAuditInput = {
   workspaceId: string | null;
@@ -50,7 +53,7 @@ function identifier(value: string | null) {
 /** Explicit fields only. Never accept prompts, names, emails, URLs or credentials. */
 export function securityAuditStatement(input: SecurityAuditInput, changedOnly = false): InStatement {
   if (!(actions as readonly string[]).includes(input.action) ||
-      !["account", "member", "workspace", "vendor", "api_token", "review_link", "identity_consent"].includes(input.targetType))
+      !["account", "member", "workspace", "vendor", "api_token", "review_link", "identity_consent", "board"].includes(input.targetType))
     throw new Error("Invalid security history action");
   const details = input.details ?? {};
   for (const [key, value] of Object.entries(details)) {
@@ -59,6 +62,7 @@ export function securityAuditStatement(input: SecurityAuditInput, changedOnly = 
       : key === "scope" ? ["read", "render", "prepare"].includes(String(value))
       : key === "disabled" || key === "unlocked" ? typeof value === "boolean"
       : key === "expiresAt" ? typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+      : key === "from" || key === "to" ? typeof value === "string" && /^[A-Za-z0-9_.:-]{1,160}$/.test(value)
       : false;
     if (!valid) throw new Error("Invalid security history detail");
   }

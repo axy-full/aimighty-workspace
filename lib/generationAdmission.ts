@@ -9,7 +9,7 @@ import { CINEMA_STUDIO_LIMITS, isCinemaStudioAudioMime, isCinemaStudioModel, rea
 import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH } from "@/lib/cinemaStudio";
 import { HOLD_NEEDS_A_PERSON, holdBandOf, isAgentApprover } from "@/lib/cinemaHold";
 import { CINEMA_SOUND_UNAVAILABLE, cinemaSoundOffered } from "@/lib/cinemaSoundPricing";
-import { readDraft } from "@/lib/workbench/records";
+import { readOwnDraft } from "@/lib/workbench/records";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
 import { MediaSourceError } from "@/lib/mediaBindings";
@@ -541,7 +541,7 @@ export async function executeGenerationAdmission(
           Object.keys(r).some(k => !["uploadId", "genId", "role"].includes(k));
       })) return admissionReply({ error: "Choose one to eight original still references using saved media identities." }, { status: 400 });
       if (typeof body.workbenchProjectId !== "string" || !body.projectId) return admissionReply({ error: "Save and select a project before using transforms." }, { status: 400 });
-      const draft = await readDraft(got.user.id, body.workbenchProjectId);
+      const draft = await readOwnDraft(got.user.id, body.workbenchProjectId);
       if (!draft || draft.project.productionProjectId !== body.projectId) return admissionReply({ error: "This saved project is unavailable in the current account." }, { status: 409 });
     }
     const cinema = isCinemaStudioModel(modelId);

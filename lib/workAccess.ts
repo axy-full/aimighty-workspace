@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { requireTenant } from "./tenant";
 import { mappedId, workbenchReady } from "./workbench/records";
+import { boardOwnerRows } from "./draftProject";
 
 /**
  * Who may change work that is not theirs (owner, 12 Oct 2026): only the board's owner or a workspace admin may rename, move, pick, approve,
@@ -37,6 +38,9 @@ export async function projectMaker(projectId: string | null | undefined): Promis
   if (!projectId) return null;
   await workbenchReady();
   const ws = requireTenant();
+  /* A board handed over has the owner its row names, whoever's key holds the draft (board sharing, PR 4). */
+  const handed = (await boardOwnerRows()).find((h) => h.projectId === projectId);
+  if (handed) return handed.owner;
   const rows = (await db().execute({
     sql: `SELECT owner, project_id FROM workbench_projects WHERE json_valid(body) AND json_extract(body,'$.productionProjectId') = ?`,
     args: [projectId],

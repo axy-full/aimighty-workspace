@@ -4,7 +4,7 @@ import { currentTenant, requireTenant } from "./tenant";
 import { MediaSourceError, referencedMedia } from "./mediaBindings";
 import { writeGenerationOf } from "./recoveryDatabaseClient";
 import { isAgentId } from "./security/people-only";
-import { sharedBoards } from "./draftProject";
+import { boardOwnerRows, sharedBoards } from "./draftProject";
 
 /**
  * Who may open an upload (its bytes, a thumbnail, its metadata, its place in a list). The tenant database already keeps every workspace to itself; inside
@@ -97,11 +97,11 @@ async function usedBySharedWork(ex: Exec, id: string): Promise<boolean> {
 const FEW = 6;
 
 /** The ids among `ids` that shared work uses: one pass per source for the whole set (a list, or a save that adds several). */
-async function sharedAmong(ex: Exec, ids: readonly string[]): Promise<Set<string>> {
+async function sharedAmong(ex: Exec, ids: readonly string[], only?: { projects: string[]; drafts: { owner: string; draftId: string }[] }): Promise<Set<string>> {
   const used = new Set<string>();
   if (!ids.length) return used;
-  /* Which draft boards are shared is asked once for the whole pass. */
-  const boards = await sharedBoards(ex).catch((error: unknown) => { if (missingTable(error)) return { projects: [] as string[], drafts: [] as { owner: string; draftId: string }[] }; throw error; });
+  /* Which draft boards are shared is asked once for the whole pass (or, for `only`, which boards handed to one person: see usedByHandedBoards). */
+  const boards = only ?? await sharedBoards(ex).catch((error: unknown) => { if (missingTable(error)) return { projects: [] as string[], drafts: [] as { owner: string; draftId: string }[] }; throw error; });
   const shared: Shared = {
     list: boards.projects.length ? boards.projects.map(literal).join(",") : "''",
     drafts: boards.drafts.length ? `(${boards.drafts.map((d) => `(t.owner=${literal(d.owner)} AND t.project_id=${literal(d.draftId)})`).join(" OR ")})` : "0",
@@ -151,6 +151,16 @@ async function sharedAmong(ex: Exec, ids: readonly string[]): Promise<Set<string
   return used;
 }
 
+/**
+ * The ids among `ids` that a board HANDED TO `viewerId` uses (board sharing, PR 4): the new owner opens what their board holds, as its first owner did, though to the
+ * team it is private. Only for that person: nothing here is remembered for anyone else, and a board handed to someone else grants nothing.
+ */
+async function usedByHandedBoards(ex: Exec, viewerId: string, ids: readonly string[]): Promise<Set<string>> {
+  const handed = (await boardOwnerRows(ex)).filter((h) => h.owner === viewerId && h.draftOwner !== viewerId);
+  if (!handed.length || !ids.length) return new Set();
+  return sharedAmong(ex, ids, { projects: handed.map((h) => h.projectId), drafts: handed.map((h) => ({ owner: h.draftOwner, draftId: h.draftId })) });
+}
+
 /** The person making this request: the workspace's signed-in user (a token or an agent identity too), or nobody (background work). */
 export function currentViewer(): Viewer | null {
   const user = currentTenant()?.user;
@@ -176,8 +186,12 @@ export async function openableAmong(ids: readonly string[], viewer: Viewer, ex: 
     }
   }
   if (rest.length) {
+    /* What a board handed to this person holds is theirs to open. */
+    for (const id of await usedByHandedBoards(ex, viewer.id, rest)) ok.add(id);
+  }
+  if (rest.length) {
     const generation = generationNow();
-    const toScan = rest.filter((id) => !refusedBefore(`${workspace}:${viewer.id}:${id}`, generation));
+    const toScan = rest.filter((id) => !ok.has(id)).filter((id) => !refusedBefore(`${workspace}:${viewer.id}:${id}`, generation));
     const found = toScan.length ? await sharedAmong(ex, toScan) : new Set<string>();
     for (const id of found) {
       ok.add(id);
@@ -199,6 +213,7 @@ export async function uploadOpenableBy(id: string, viewer: Viewer, ex: Exec = db
   if (row.uploader_id == null || String(row.uploader_id) === viewer.id) return true;
   const key = `${workspace}:${id}`;
   if ((yes.get(key) ?? 0) > Date.now()) return true;
+  if ((await usedByHandedBoards(ex, viewer.id, [id])).has(id)) return true;
   const generation = generationNow();
   const refused = `${workspace}:${viewer.id}:${id}`;
   if (refusedBefore(refused, generation)) return false;

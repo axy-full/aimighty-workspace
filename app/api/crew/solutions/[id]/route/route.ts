@@ -3,6 +3,7 @@ import { NO_STORE, crewCaller, crewFailure } from "@/lib/crew/http";
 import { solutionShot } from "@/lib/crew/room";
 import { CrewError, readSolution, setSolutionStatus } from "@/lib/crew/store";
 import { readDraft, saveDraft, workbenchReady } from "@/lib/workbench/records";
+import { ownKeyOf } from "@/lib/draftProject";
 import { uid, type CanvasNode } from "@/lib/workbench/studio";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +35,9 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
     }
     if (to !== "brief" && to !== "boards") throw new CrewError("Choose Brief, Boards or Gen.", 400);
     await workbenchReady();
-    const draft = await readDraft(caller.userId, solution.projectId);
+    /* The draft this person owns now, stored under their key or the first owner's (lib/draftProject.ts › ownKeyOf); a board handed away is not theirs to send onward. */
+    const key = await ownKeyOf(caller.userId, solution.projectId);
+    const draft = key ? await readDraft(key, solution.projectId) : null;
     if (!draft) throw new CrewError("Save your project first.", 404);
     /* The sample's copies and the board it was marked from take nothing sent onward (lib/demo/readonly.server.ts). */
     { const { sampleDraftRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleDraftRefusal(caller.userId, draft.project); if (refused) return refused; }
@@ -50,7 +53,7 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
       project.nodes = [...project.nodes, node];
       placed = { nodeId: node.id, title: node.title };
     }
-    try { await saveDraft(caller.userId, project, draft.revision); }
+    try { await saveDraft(key!, project, draft.revision, undefined, caller.userId); }
     catch (error) { throw new CrewError(error instanceof Error ? error.message : "The project changed in another window. Reload and try again.", 409); }
     const status = to === "brief" ? "sent_to_brief" : "boarded";
     await setSolutionStatus(solution.id, status);

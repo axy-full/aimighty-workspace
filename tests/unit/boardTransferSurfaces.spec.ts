@@ -1,0 +1,186 @@
+import { test, expect } from "@playwright/test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { TenantWorkspace } from "../../lib/tenant";
+
+/**
+ * One rule for "the draft this person owns now" (lib/draftProject.ts › ownKeyOf, ownedDraftsSql, lib/workbench/records.ts › readOwnDraft), used wherever a person's own draft
+ * is read or written by their user id. After a board is handed over (board sharing, PR 4) the draft stays under the first owner's key: the new owner is admitted at every
+ * surface, the old owner is refused, and nothing is spent or sent (the paid and network steps are stubbed and counted). Real temporary databases; sign-in is a fake.
+ */
+const dir = mkdtempSync(path.join(tmpdir(), "particl-board-surfaces-"));
+process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
+process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
+process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
+process.env.ENGINE_MOCK = "1";
+const run = Math.random().toString(36).slice(2, 8);
+type Who = { id: string; role: "admin" | "member"; name: string; email: string };
+const who = (id: string, role: "admin" | "member" = "member"): Who => ({ id, role, name: id, email: `${id}@example.test` });
+const asUser = (w: Who) => ({ user: { ...w, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
+const OLD = who("u_old"), NEW = who("u_new"), ADMIN = who("u_admin", "admin");
+
+async function fixture(name: string, options: { platformRow?: boolean } = {}) {
+  let ws = { id: `bts-${name}-${run}`, name, slug: name, legacy: false, dbUrl: `file:${path.join(dir, `bts-${name}-${run}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true } as TenantWorkspace;
+  const tenant = await import("../../lib/tenant"), database = await import("../../lib/db"), records = await import("../../lib/workbench/records");
+  const { newProject } = await import("../../lib/workbench/studio");
+  const platform = await import("../../lib/platform");
+  const { transferBoards } = await import("../../lib/workbench/board-transfer");
+  await platform.platformReady();
+  /* The starter production reads the workspace's plan, so its workspace is a real platform row. */
+  if (options.platformRow) {
+    await platform.platformDb().execute({ sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at) VALUES(?,?,?,?,1,'owner',0,0)", args: [ws.id, ws.id, ws.id, ws.dbUrl] });
+    ws = platform.rowToWorkspace((await platform.platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [ws.id] })).rows[0]);
+  }
+  for (const [id, role] of [["u_old", "member"], ["u_new", "member"], ["u_admin", "admin"]] as const) {
+    await platform.platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts(id,email,name,password_hash,created_at) VALUES(?,?,?,?,0)", args: [id, `${id}@example.test`, id, "x"] });
+    await platform.platformDb().execute({ sql: "INSERT OR REPLACE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,?,0,0)", args: [ws.id, id, role] });
+  }
+  const as = <T,>(p: Who, fn: () => Promise<T>) => tenant.runInTenant(ws, fn, asUser(p));
+  const first = await as(OLD, async () => { await records.workbenchReady(); return records.saveDraft("u_old", { ...newProject("Board"), id: "d1", nodes: [], assets: [] } as never, 0); });
+  const production = first.productionProjectId as string;
+  const handOver = async () => {
+    const moved = await as(ADMIN, () => transferBoards(ws, { ...ADMIN, owner: true } as never, [production], "u_new"));
+    expect(moved.moved).toHaveLength(1);
+  };
+  return { ws, as, production, handOver, database, records };
+}
+const settle = async <T,>(p: Promise<T>) => p.then((value) => ({ ok: true as const, value }), (error: Error & { status?: number }) => ({ ok: false as const, message: error.message, status: error.status }));
+
+test("the resolver and the SQL rule: the new owner owns the draft under the first owner's key, the old owner owns nothing of it, nobody else gains anything", async () => {
+  const f = await fixture("rule");
+  const { ownKeyOf, ownedDraftsSql, ownedDrafts } = await import("../../lib/draftProject");
+  const listed = (p: Who) => f.as(p, async () => (await f.database.db().execute({ sql: `SELECT project_id FROM workbench_projects WHERE ${ownedDraftsSql(p.id).sql}`, args: ownedDraftsSql(p.id).args })).rows.map((r) => String(r.project_id)));
+  const keys = async () => ({ old: await f.as(OLD, () => ownKeyOf("u_old", "d1")), now: await f.as(NEW, () => ownKeyOf("u_new", "d1")), admin: await f.as(ADMIN, () => ownKeyOf("u_admin", "d1")) });
+  expect(await keys()).toEqual({ old: "u_old", now: "u_new", admin: "u_admin" });
+  expect(await listed(OLD)).toEqual(["d1"]);
+  await f.handOver();
+  expect(await keys()).toEqual({ old: null, now: "u_old", admin: "u_admin" });
+  expect(await listed(OLD)).toEqual([]);
+  expect(await listed(NEW)).toEqual(["d1"]);
+  expect(await listed(ADMIN)).toEqual([]);
+  expect((await f.as(NEW, () => ownedDrafts("u_new"))).map((d) => [d.key, d.draftId])).toEqual([["u_old", "d1"]]);
+});
+
+test("Atomik and the 3D render jobs read the project through the one rule", async () => {
+  const f = await fixture("atomik");
+  const { getAtomikProject } = await import("../../lib/workbench/atomik-server");
+  const { listAstraRenderJobs } = await import("../../lib/astra-blender/render-jobs");
+  const read = (p: Who) => f.as(p, () => settle(getAtomikProject(p.id, "d1")));
+  const jobs = (p: Who) => f.as(p, () => settle(listAstraRenderJobs(p.id, "d1")));
+  expect((await read(OLD)).ok).toBe(true);
+  await f.handOver();
+  const old = await read(OLD), now = await read(NEW);
+  expect(old).toMatchObject({ ok: false, status: 404 });
+  expect(now.ok).toBe(true);
+  expect(await jobs(OLD)).toMatchObject({ ok: false, status: 404 });
+  expect(await jobs(NEW)).toEqual({ ok: true, value: [] });
+});
+
+test("a 3D render's outputs are filed into the draft its job's owner owns now, and into none they handed away", async () => {
+  const f = await fixture("astra");
+  const { astraRenderReady } = await import("../../lib/astra-blender/render-jobs");
+  const { registerAstraArtifacts } = await import("../../lib/astra-blender/render-storage");
+  await f.handOver();
+  const artifacts = (n: string) => [
+    { kind: "blend", assetId: `a_blend_${n}`, uploadId: `up_blend_${n}`, filename: "scene.blend", mime: "application/octet-stream", ext: "blend", bytes: 1, sha256: "x", storedUrl: "", url: "/u/blend" },
+    { kind: "preview", assetId: `a_prev_${n}`, uploadId: `up_prev_${n}`, filename: "preview.png", mime: "image/png", ext: "png", bytes: 1, sha256: "y", storedUrl: "", url: "/u/prev" },
+  ] as never;
+  const assets = (key: string) => f.as(ADMIN, async () => JSON.parse(String((await f.database.db().execute({ sql: "SELECT body FROM workbench_projects WHERE owner=? AND project_id='d1'", args: [key] })).rows[0].body)).assets.map((a: { id: string }) => a.id) as string[]);
+  await f.as(NEW, async () => { await astraRenderReady(); await registerAstraArtifacts("job_new", "u_new", "d1", artifacts("new")); });
+  expect(await assets("u_old"), "the new owner's outputs are in the board").toEqual(["a_blend_new", "a_prev_new"]);
+  await f.as(OLD, async () => { await astraRenderReady(); await registerAstraArtifacts("job_old", "u_old", "d1", artifacts("old")); });
+  expect(await assets("u_old"), "the old owner's are not").toEqual(["a_blend_new", "a_prev_new"]);
+});
+
+test("Crew, the project library, edit versions, consent's project keys and the Studio project of a production use the one rule", async () => {
+  const f = await fixture("crew");
+  const { crewProject } = await import("../../lib/crew/http");
+  const { resolveProjectLibrary } = await import("../../lib/workbench/project-library");
+  const { saveEditVersion } = await import("../../lib/workbench/edit-versions");
+  const { projectKeysFor } = await import("../../lib/security/consent");
+  const { studioProjectFor } = await import("../../lib/atomikLibrary");
+  await f.handOver();
+  const crew = (p: Who) => f.as(p, () => settle(crewProject(p.id, "d1")));
+  expect((await crew(OLD))).toMatchObject({ ok: false, status: 404 });
+  expect((await crew(NEW)).ok).toBe(true);
+  const library = (p: Who) => f.as(p, () => settle(resolveProjectLibrary(p.id, "d1")));
+  expect(await library(OLD)).toMatchObject({ ok: false, status: 404 });
+  const lib = await library(NEW);
+  expect(lib.ok, JSON.stringify(lib)).toBe(true);
+  const version = (p: Who) => f.as(p, () => settle(saveEditVersion(p.id, "d1", `ver-${p.id.replace(/_/g, "")}-0123456789abcdef`, "Cut", 1)));
+  expect(await version(OLD)).toMatchObject({ ok: false, message: "Save your project before saving an edit version." });
+  const cut = await version(NEW);
+  expect(cut.ok || (cut as { message: string }).message !== "Save your project before saving an edit version.", "the new owner gets past the draft lookup").toBe(true);
+  const keys = (p: Who) => f.as(p, () => projectKeysFor("d1", p.id));
+  expect(await keys(OLD)).toEqual(["d1"]);
+  expect(await keys(NEW)).toEqual(["d1", f.production]);
+  const studio = (p: Who) => f.as(p, () => studioProjectFor(p.id, f.production));
+  expect([await studio(OLD), await studio(NEW), await studio(ADMIN)]).toEqual([null, "d1", null]);
+});
+
+test("Atomik's board building prices an ask for the new owner's draft and none for the old owner's, and spends nothing either way", async () => {
+  const f = await fixture("rig");
+  const saved = process.env.RIG_AGENT_ENABLED; process.env.RIG_AGENT_ENABLED = "1";
+  try {
+    const { rigAgentState } = await import("../../lib/workbench/rig-agent");
+    const platform = await import("../../lib/platform");
+    const meter = async () => Number((await platform.platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", args: [f.ws.id] })).rows[0].n);
+    const before = await meter();
+    await f.handOver();
+    const terms = (p: Who) => f.as(p, async () => (await settle(rigAgentState(f.production, p.id, "d1"))));
+    const old = await terms(OLD), now = await terms(NEW);
+    /* The old owner no longer reaches the board at all; the new owner does, and is quoted the planning price. */
+    expect(old.ok).toBe(false);
+    expect(now.ok, JSON.stringify(now)).toBe(true);
+    if (now.ok) expect(now.value.ask, "the new owner's ask is priced from their draft").not.toBeNull();
+    expect(await meter(), "nothing was spent").toBe(before);
+  } finally { if (saved === undefined) delete process.env.RIG_AGENT_ENABLED; else process.env.RIG_AGENT_ENABLED = saved; }
+});
+
+test("uploads: the new owner opens exactly the uploads ON the transferred board (its draft, its canvas), never the previous owner's other uploads, not even those on their other private boards", async () => {
+  const f = await fixture("uploads");
+  const { uploadOpenableBy } = await import("../../lib/uploadAccess");
+  const { newProject } = await import("../../lib/workbench/studio");
+  await f.as(OLD, async () => { await f.records.workbenchReady(); await f.records.saveDraft("u_old", { ...newProject("Second"), id: "d2", nodes: [], assets: [] } as never, 0); });
+  await f.as(ADMIN, async () => {
+    const db = f.database.db();
+    for (const id of ["upl_on_draft", "upl_on_canvas", "upl_other_board", "upl_loose"])
+      await db.execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind,uploader_id) VALUES(?,?,?,?,1,'x',NULL,NULL,'',1,'image','u_old')", args: [id, "a.png", "image/png", "png"] });
+    await db.execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.zzRef',json('{\"uploadId\":\"upl_on_draft\"}')) WHERE key='u_old:d1'", args: [] });
+    await db.execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.zzRef',json('{\"uploadId\":\"upl_other_board\"}')) WHERE key='u_old:d2'", args: [] });
+    const { teamCanvasReady } = await import("../../lib/workbench/team-canvas");
+    await teamCanvasReady();
+    await db.execute({ sql: "INSERT INTO workbench_team_canvas(production_id,body,revision,updated_by,updated_at) VALUES(?,?,1,'u_old',1)", args: [f.production, JSON.stringify({ nodes: { n1: { id: "n1", title: "x", uploadId: "upl_on_canvas" } } })] });
+  });
+  await f.handOver();
+  const opens = (p: Who, id: string) => f.as(p, () => uploadOpenableBy(id, { id: p.id, role: p.role }));
+  expect([await opens(NEW, "upl_on_draft"), await opens(NEW, "upl_on_canvas")], "what is ON the transferred board").toEqual([true, true]);
+  expect([await opens(NEW, "upl_other_board"), await opens(NEW, "upl_loose")], "the previous owner's other uploads").toEqual([false, false]);
+  for (const id of ["upl_on_draft", "upl_on_canvas", "upl_other_board", "upl_loose"]) expect(await opens(OLD, id), `the uploader keeps their own: ${id}`).toBe(true);
+  expect(await opens(who("u_mate"), "upl_on_draft"), "nobody else gains anything").toBe(false);
+});
+
+test("a starter board is not handed over: transfer-all leaves it, an explicit hand-over is refused, and the starter's door still opens only its own person's copy", async () => {
+  const f = await fixture("starter", { platformRow: true });
+  const { openStarterDraft } = await import("../../lib/workbench/starter-draft");
+  const { transferAllOf, transferBoards } = await import("../../lib/workbench/board-transfer");
+  const { mappedId } = await import("../../lib/draftProject");
+  const opened = await f.as(OLD, () => openStarterDraft("u_old"));
+  const starterDraft = opened.project.id;
+  const starterBoard = mappedId("prj_wb_", f.ws.id, "u_old", starterDraft);
+  /* Saved once, so the old owner's copy holds their own work. */
+  await f.as(OLD, () => f.records.saveDraft("u_old", { ...opened.project, name: "Old owner's starter" } as never, opened.revision));
+  const all = await f.as(ADMIN, () => transferAllOf(f.ws, { ...ADMIN, owner: true } as never, "u_old", "u_new"));
+  expect(all.moved.map((m) => m.draftId), "the starter stays; the board made for the fixture moves").toEqual(["d1"]);
+  const refused = await f.as(ADMIN, () => settle(transferBoards(f.ws, { ...ADMIN, owner: true } as never, [starterBoard], "u_new")));
+  expect(refused).toMatchObject({ ok: false, status: 409 });
+  expect(await f.as(ADMIN, async () => (await (await import("../../lib/draftProject")).boardOwnerOf(starterBoard))?.owner)).toBe("u_old");
+  /* The new owner opens their own starter, never the old owner's; the old owner opens theirs again, whole, with their work. */
+  const theirs = await f.as(NEW, () => openStarterDraft("u_new"));
+  expect(theirs.project.id).not.toBe(starterDraft);
+  expect(theirs.project.name).not.toBe("Old owner's starter");
+  const again = await f.as(OLD, () => openStarterDraft("u_old"));
+  expect(again).toMatchObject({ created: false });
+  expect(again.project.name).toBe("Old owner's starter");
+});

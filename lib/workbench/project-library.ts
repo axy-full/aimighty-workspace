@@ -10,7 +10,7 @@ import { withLedgerCharges } from '@/lib/usageLedger';
 import { listLibraryUploads } from '@/lib/uploadLibrary';
 import { uploadOpenableBy } from '@/lib/uploadAccess';
 import { referencedMedia } from '@/lib/mediaBindings';
-import { readDraft, workbenchReady } from './records';
+import { readOwnDraft, workbenchReady } from './records';
 import { archiveAndDelete } from '@/lib/archive';
 
 export class ProjectLibraryError extends Error {
@@ -34,7 +34,7 @@ export async function projectLibraryReady() {
 export async function resolveProjectLibrary(owner: string, id: string) {
   if (!id || id.length > 100 || /[\u0000-\u001f\u007f]/.test(id)) throw new ProjectLibraryError('Choose a saved Studio project.');
   await projectLibraryReady();
-  const draft = await readDraft(owner, id);
+  const draft = await readOwnDraft(owner, id);
   if (!draft) throw new ProjectLibraryError('Save or open this Studio project before using its library.', 404);
   const productionProjectId = draft.project.productionProjectId;
   if (!productionProjectId || !(await db().execute({sql:'SELECT id FROM projects WHERE id=?',args:[productionProjectId]})).rows.length)

@@ -126,3 +126,13 @@ html[data-v12-tray] .v12 .v12-viewswitch { left: calc(var(--gx-w-tray) + 16px); 
 .v12 .v12-rail-add:disabled { opacity: 0.45; cursor: default; }
 .v12 .v12-rail-add:disabled:hover { background: transparent; }
 .v12 .v12-stagehead-view { flex: none; margin-left: 12px; padding: 2px 10px; border: 1px solid var(--gx-line-control); border-radius: 999px; font-size: 12px; color: var(--gx-text); white-space: nowrap; }
+
+/* The "changed since you opened it" bar (ChangedBar.tsx): under the stage header, pushes the canvas down. Reload is the one filled button; the stage's own primary turns to an outline. */
+.v12 .v12-changedbar { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 8px 20px; border-bottom: 1px solid var(--gx-hair-strong); background: var(--gx-root); color: var(--gx-text); font-size: 13px; line-height: 1.4; }
+.v12 .v12-changedbar-line { min-width: 0; flex: 1 1 320px; }
+.v12 .v12-changedbar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.v12 .v12-changedbar-keep { height: 32px; padding: 0 12px; border: 0; border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-text-2); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.v12 .v12-changedbar-keep:hover { color: var(--gx-text); background: var(--gx-hover, rgba(255, 255, 255, 0.06)); }
+.v12 .v12-primary-outline { background: transparent; color: var(--gx-text); border: 1px solid var(--gx-line-control); }
+.v12 .v12-primary-outline:hover { background: var(--gx-hover, rgba(255, 255, 255, 0.06)); }
+@media (pointer: coarse) { .v12 .v12-changedbar .v12-primary, .v12 .v12-changedbar-keep { min-height: 44px; } }
