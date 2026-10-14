@@ -1,0 +1,9 @@
+{
+  "name": "v25-card-hover",
+  "app": "/v25-board-parts",
+  "prototype": "mode=director&step=shots&hovercard=s4",
+  "size": {
+    "width": 1280,
+    "height": 800
+  }
+}
