@@ -40,7 +40,7 @@ What actually happened, for the record and for the next switch. No secret values
 **Checks before the switch (production app, terminal).**
 - Keyring check: `KEYRING OK` (`KEYRING_SECRET` equals Vercel's).
 - Sandbox: the `node -e` SDK check cannot run in the image. `node -e` from `/app` fails with `ERR_MODULE_NOT_FOUND '@vercel/sandbox'` because Next bundles the SDK into the server chunks of the routes that use it (`/api/workbench/astra-blender/render`, `/api/inngest`, `/api/worker`, `/api/workbench/development`) instead of shipping it in `node_modules`. That is expected. Proof in a running container: `grep -rl 'v2/sandboxes/sessions' /app/.next/server | head -1` prints a chunk path. The credentials were checked instead through the Vercel API (project lookup with `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` = 200), and the snapshot in `ASTRA_BLENDER_SNAPSHOT_ID` exists in that project.
-- `/api/health` pinned to the server: `ok:true`, `mock:false`, dispatch `inngest`, database ok, storage ok.
+- `/api/health` pinned to the server: `ok:true`, `mock:false`, dispatch `inngest`, database ok, storage ok (read as the platform owner, signed in; since 14 Oct the anonymous answer is `{ok, commit}` only, and `ok` covers the database and storage).
 - Restore point A 10:36:26 UTC and restore point B 10:37:56 UTC (`turso db shell <db> .dump` of the platform database and the one workspace database, both non-empty).
 
 **Production app settings (Coolify), as set.**
@@ -148,7 +148,7 @@ How to read the table:
 | `BLOB_READ_WRITE_TOKEN` | copy from Vercel, or Vercel, **Storage**, the Blob store, its token | **yes (same store). Keep it:** with `STORAGE_BACKEND=r2` and this token, the app reads R2 first and falls back to Blob, so old links keep working. Without it they break. |
 | `BLOB_USD_PER_GB_MONTH`, `BLOB_USD_PER_GB_TRANSFER` | copy from Vercel if set | yes |
 
-Check the bucket's CORS list contains `https://particl.si`. The origin does not change, so nothing else in R2 changes. Without R2 or Blob, `/api/health` answers 503 (`storage: missing`) and anything kept on the container's disk is lost on the next deploy.
+Check the bucket's CORS list contains `https://particl.si`. The origin does not change, so nothing else in R2 changes. Without R2 or Blob, `/api/health` answers 503 (`ok:false`; the platform owner's signed-in answer says `storage: missing`) and anything kept on the container's disk is lost on the next deploy.
 
 ### Background work (Inngest)
 
@@ -646,7 +646,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
       The first six must print `set`; `VERCEL`, `VERCEL_ENV` and `TRUST_CF_CONNECTING_IP` must print **MISSING**.
     - From the outside network: Coolify's ports still time out.
 13. **Cron check (OWNER).**
-    - `cron-sync` (enabled in step 8) shows `cron-sync: 200` in its log on two runs, and the cron time in the signed-in `/api/health` answer keeps advancing.
+    - `cron-sync` (enabled in step 8) shows `cron-sync: 200` in its log on two runs, and the cron time in the platform owner's signed-in `/api/health` answer keeps advancing, with `by: "scheduler"` (the task names itself `particl-scheduler/1`).
     - Vercel, the project, **Settings, Cron Jobs** shows the cron jobs disabled (step 8).
     - If `cron-sync` does not answer 200 (for example 401: `CRON_SECRET` missing in the container), fix it in the app's env. Meanwhile re-enabling Vercel Cron Jobs is safe (the lease, step 8); disable it again once `cron-sync` answers 200.
 14. **Watch window: 14 days; Vercel fallback: owner's choice, at least 1–2 days.**
