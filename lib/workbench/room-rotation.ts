@@ -1,6 +1,6 @@
 import type { InStatement, ResultSet } from "@libsql/client";
 import { db, now } from "@/lib/db";
-import { DRAFT_PROJECT_PREFIX, mappedId, TEAM_EDIT_SQL } from "@/lib/draftProject";
+import { TEAM_EDIT_SQL } from "@/lib/draftProject";
 import { requireTenant } from "@/lib/tenant";
 import { liveRooms, type RoomClient } from "./canvas-push";
 import { teamRoomFor } from "./team-canvas";
@@ -70,12 +70,12 @@ export async function rotateRoom(productionId: string, rooms: Pick<RoomClient, "
  */
 export async function bumpEditRooms(): Promise<string[]> {
   const workspaceId = requireTenant().id;
-  const boards = (await db().execute({ sql: `SELECT owner, project_id FROM workbench_projects WHERE ${TEAM_EDIT_SQL}`, args: [] })).rows;
+  /* The production each board is edited in is the one its draft is linked to (`productionProjectId`), the same one setBoardSharing rotates: not a recomputed default, which would
+     miss the real room of a draft linked to another production and leave a removed member's token for it honoured. */
+  const boards = (await db().execute({ sql: `SELECT CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END AS production FROM workbench_projects WHERE ${TEAM_EDIT_SQL}`, args: [] })).rows;
+  const productions = [...new Set(boards.flatMap((board) => (typeof board.production === "string" && board.production ? [board.production] : [])))];
   const closed: string[] = [];
-  for (const board of boards) {
-    const production = mappedId(DRAFT_PROJECT_PREFIX, workspaceId, String(board.owner), String(board.project_id));
-    closed.push((await bumpRoomGeneration(db(), workspaceId, production)).from);
-  }
+  for (const production of productions) closed.push((await bumpRoomGeneration(db(), workspaceId, production)).from);
   return closed;
 }
 
