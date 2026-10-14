@@ -174,9 +174,10 @@ test("a cache the snapshot has no price for is unpriced: no quote, and a call th
 
 test("the meter engine and the ledger are the vendor for a direct door, the gateway's otherwise", async () => {
   const { textEngine, textKeyName, isDirectText } = await import("../../lib/openai-direct");
+  /* With TEXT_DIRECT empty Claude and Grok stay on the gateway; Gemini text always goes direct to Google (Vercel out, owner 14 Oct 2026). */
   for (const row of VENDORS) {
-    expect(textEngine(row.model)).toBe("vercel");
-    expect(isDirectText(row.model)).toBe(false);
+    expect(textEngine(row.model), row.vendor).toBe(row.vendor === "google" ? "google" : "vercel");
+    expect(isDirectText(row.model), row.vendor).toBe(row.vendor === "google");
   }
   process.env.TEXT_DIRECT = "anthropic,google,xai";
   for (const row of VENDORS) {

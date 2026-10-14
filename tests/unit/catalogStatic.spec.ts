@@ -12,9 +12,9 @@ import { ENHANCER_MODELS } from "../../lib/shell/enhancer";
 import { DEFAULT_TEXT_MODELS } from "../../lib/platformLayer";
 import { ASTRA_BLENDER_MODEL } from "../../lib/astra-blender/scene";
 import { OFFERED_CATALOG_IDS, PRICED_TEXT_IDS, SNAPSHOT_CATALOG_IDS, STILL_CATALOG_IDS } from "../../lib/catalogOffered";
-import { DROPPED_MODEL_IDS } from "../../lib/modelAliases";
+import { AUTO_MODEL_IDS, DROPPED_MODEL_IDS } from "../../lib/modelAliases";
 import committedJson from "../../lib/modelCatalog.json";
-import { UNMAPPED_DIRECT_MODEL_IDS } from "../../lib/textRoute";
+import { DIRECT_PRICE_TO_CONFIRM, UNMAPPED_DIRECT_MODEL_IDS } from "../../lib/textRoute";
 
 /*
  * lib/modelCatalog.json freezes the gateway's public /v1/models for the ids we
@@ -148,11 +148,17 @@ test("the static catalogue serves exactly what the gateway read serves", async (
   expect(offered.map((m) => m.id).sort()).toEqual(committed.models.map((m) => m.id).sort());
   const snapshot = JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE))) as CatalogSnapshot;
   const served = staticCatalog(snapshot);
-  expect(served).toEqual(offered);
-  expect(JSON.stringify(served)).toBe(JSON.stringify(offered));
+  /* Google text always goes direct (Vercel out), so the seven Gemini ids with no direct route (four have no direct model, three have a price Google's page does not confirm) are
+   * not served: they are on no menu. Every other entry is served exactly as the live read has it. */
+  const noRoute = offered.filter((m) => (AUTO_MODEL_IDS as readonly string[]).includes(m.id));
+  expect(noRoute.map((m) => m.id).sort(), "the seven are in the live read and are Google text").toEqual([...AUTO_MODEL_IDS].sort());
+  const reachable = offered.filter((m) => !noRoute.includes(m));
+  expect(served).toEqual(reachable);
+  expect(JSON.stringify(served)).toBe(JSON.stringify(reachable));
 
-  // The committed file holds the same entries the live read made of the fixture.
-  const committedById = new Map(staticCatalog().map((m) => [m.id, m]));
+  // The committed file holds the same entries the live read made of the fixture. Unfiltered (snapshotModels, not staticCatalog), so all 13 Google entries' prices are still checked.
+  const committedById = new Map(snapshotModels().map(({ providerId, ...m }) => { void providerId; return [m.id, m]; }));
+  expect(offered.filter((m) => m.owner === "google").length, "every Google entry is compared").toBe(committed.models.filter((m) => m.owner === "google").length);
   for (const m of offered) expect(JSON.stringify(committedById.get(m.id)), m.id).toBe(JSON.stringify(m));
 
   // And catalog() hands callers the same objects either way.
@@ -166,16 +172,20 @@ test("the static catalogue serves exactly what the gateway read serves", async (
 test("OpenAI models and stills are served on their provider's key; ENGINE_MOCK serves everything", async () => {
   const snapshot = buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE);
   const ids = () => new Set(staticCatalog(snapshot).map((m) => m.id));
-  expect(ids()).toEqual(new Set(snapshot.models.map((m) => m.id)));
+  /* Every entry but the seven Gemini ids with no direct route (Google text always goes direct, never the gateway). */
+  expect(ids()).toEqual(new Set(snapshot.models.map((m) => m.id).filter((id) => !(AUTO_MODEL_IDS as readonly string[]).includes(id))));
+  expect(ids().has("google/gemini-3.6-flash"), "a Gemini with a direct route and a confirmed price is served on the Gemini key").toBe(true);
   delete process.env.OPENAI_API_KEY;
   expect([...ids()].filter((id) => id.startsWith("openai/"))).toEqual([]);
-  // Stills go direct on their own key; the gateway keeps carrying Gemini and Grok text.
+  // Stills go direct on their own key; the gateway keeps carrying Grok and Claude text only. Gemini text is direct on the Gemini key alone.
   delete process.env.GEMINI_API_KEY;
   delete process.env.XAI_API_KEY;
   let now = ids();
   for (const id of ["google/gemini-3-pro-image", "google/gemini-3.1-flash-image", "spacexai/grok-imagine-image", "spacexai/grok-imagine-image-2.0"])
     expect(now.has(id), id).toBe(false);
-  for (const id of ["google/gemini-3.5-flash", "spacexai/grok-4.7", "anthropic/claude-sonnet-4.6"]) expect(now.has(id), id).toBe(true);
+  for (const id of ["spacexai/grok-4.7", "anthropic/claude-sonnet-4.6"]) expect(now.has(id), id).toBe(true);
+  /* Gemini text is not carried by the gateway: without the Gemini key it is not served (3.5 Flash is on no menu at all, and a confirmed Gemini goes with the key). */
+  for (const id of ["google/gemini-3.5-flash", "google/gemini-3.6-flash"]) expect(now.has(id), id).toBe(false);
   delete process.env.AI_GATEWAY_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
   expect(staticCatalog(snapshot)).toEqual([]);
@@ -205,7 +215,7 @@ test("with the static catalogue, OpenAI text still needs an id the key can list;
   expect(ids).not.toContain("google/veo-3.1-generate-001");
 });
 
-test("in static mode Claude, Gemini and Grok text is offered where its calls will go: direct needs the key, the gateway needs only the gateway", () => {
+test("in static mode Claude and Grok text is offered where its calls will go (direct needs the key, the gateway needs only the gateway); Gemini text is always direct, so it needs the Gemini key and never the gateway", () => {
   const snapshot = buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE);
   const textOf = (owner: string) => snapshot.models.filter((m) => m.owner === owner && !m.outputModalities?.includes("image")).map((m) => m.id);
   const claude = textOf("anthropic"), gemini = textOf("google"), grok = textOf("spacexai");
@@ -213,34 +223,51 @@ test("in static mode Claude, Gemini and Grok text is offered where its calls wil
   const offered = (ids: string[]) => { const served = new Set(staticCatalog(snapshot).map((m) => m.id)); return ids.filter((id) => served.has(id)); };
   const gateway = (up: boolean) => { if (up) process.env.AI_GATEWAY_API_KEY = "gw-unit-static"; else delete process.env.AI_GATEWAY_API_KEY; };
 
-  // 1. Direct with key: offered even with the gateway down (the ids the direct door can send).
+  // The ids a direct door can send (mapped), and for Gemini only those whose price Google's page confirms: the seven others are on no menu.
   const sendable = (ids: string[]) => ids.filter((id) => !UNMAPPED_DIRECT_MODEL_IDS.includes(id));
+  const geminiServed = sendable(gemini).filter((id) => !DIRECT_PRICE_TO_CONFIRM.includes(id));
+  expect(geminiServed, "mapped and confirmed Gemini text is the catalogue's Gemini text minus the seven").toEqual(gemini.filter((id) => !(AUTO_MODEL_IDS as readonly string[]).includes(id)));
+  expect(geminiServed.length).toBeGreaterThan(0);
+
+  // 1. Direct with key: offered even with the gateway down (the ids the direct door can send). Gemini is always direct, whatever TEXT_DIRECT says.
   gateway(false);
   process.env.TEXT_DIRECT = "anthropic";
   expect(offered(claude)).toEqual(sendable(claude));
+  expect(offered(gemini)).toEqual(geminiServed);
 
-  // 2. Direct without key: hidden, even with the gateway up (the call would not go there).
+  // 2. Direct without key: hidden, even with the gateway up (the call would not go there). Gemini keeps its own key.
   gateway(true);
   delete process.env.ANTHROPIC_API_KEY;
   expect(offered(claude)).toEqual([]);
+  expect(offered(gemini)).toEqual(geminiServed);
 
-  // 3. Gateway up without key, vendor not direct: offered, exactly as today.
+  // 3. Gateway up without key, vendor not direct: offered, exactly as today. Gemini is always direct: without the Gemini key it is hidden even with the gateway up.
   delete process.env.TEXT_DIRECT;
   expect(offered(claude)).toEqual(claude);
-  expect(offered(gemini)).toEqual(gemini);
   expect(offered(grok)).toEqual(grok);
+  expect(offered(gemini)).toEqual(geminiServed);
+  const geminiKey = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  expect(offered(gemini), "no key, gateway up").toEqual([]);
+  process.env.GEMINI_API_KEY = geminiKey;
 
-  // 4. Gateway down without direct: hidden, keys or not.
+  // 4. Gateway down without direct: Claude and Grok are hidden, keys or not; Gemini is offered on its key alone.
   gateway(false);
   process.env.ANTHROPIC_API_KEY = "ak-unit-static";
-  expect(offered([...claude, ...gemini, ...grok])).toEqual([]);
+  expect(offered([...claude, ...grok])).toEqual([]);
+  expect(offered(gemini)).toEqual(geminiServed);
+  delete process.env.GEMINI_API_KEY;
+  expect(offered([...claude, ...gemini, ...grok]), "no Gemini key, no gateway").toEqual([]);
+  process.env.GEMINI_API_KEY = geminiKey;
 
   // Each vendor follows its own route; unknown names in TEXT_DIRECT are ignored.
   process.env.TEXT_DIRECT = " anthropic ,nobody,xai";
   expect(offered(claude)).toEqual(sendable(claude));
   // A direct door offers only the ids it can send (an unmapped id has no working route).
   expect(offered(grok)).toEqual(sendable(grok));
-  expect(offered(gemini)).toEqual([]);
+  expect(offered(gemini)).toEqual(geminiServed);
+  delete process.env.GEMINI_API_KEY;
+  expect(offered(gemini), "no key").toEqual([]);
 });
 
 test("MODEL_CATALOG: only the exact value static reads the snapshot; an unknown value warns once and reads the gateway", () => {
@@ -271,9 +298,11 @@ test("MODEL_CATALOG: only the exact value static reads the snapshot; an unknown 
 
 test("textCostUsd and the quote functions give the same numbers on both catalogues", async () => {
   const live = (await gatewayCatalog(true)).filter((m) => m.type === "language" && SNAPSHOT_CATALOG_IDS.includes(m.id));
-  const committedById = new Map(staticCatalog().map((m) => [m.id, m]));
-  const fromFixture = new Map(staticCatalog(JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE)))).map((m) => [m.id, m]));
+  /* snapshotModels, not staticCatalog: unfiltered by route, so every id is priced, the seven Gemini ids that are on no menu included. */
+  const committedById = new Map(snapshotModels().map(({ providerId, ...m }) => { void providerId; return [m.id, m]; }));
+  const fromFixture = new Map(snapshotModels(JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE)))).map(({ providerId, ...m }) => { void providerId; return [m.id, m]; }));
   expect(live.length).toBeGreaterThan(8);
+  for (const id of AUTO_MODEL_IDS) expect(live.map((m) => m.id), `${id} is still priced here`).toContain(id);
   const sizes: [number, number][] = [[0, 0], [1, 1], [8_000, 1_800], [199_999, 4_000], [200_000, 4_000], [200_001, 4_000], [271_999, 1_000], [272_000, 1_000], [272_001, 1_000], [1_000_000, 32_000]];
   const numbers = (m: CatalogModel) => sizes.flatMap(([i, o]) => {
     const read = Math.floor(i / 2), write = Math.floor(i / 4);

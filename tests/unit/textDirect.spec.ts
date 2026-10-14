@@ -52,12 +52,14 @@ const body = (model: string, extra: Record<string, unknown> = {}) => JSON.string
   messages: [{ role: 'system', content: 'Inspect the references.' }, { role: 'user', content: [{ type: 'text', text: 'Review.' }, { type: 'image_url', image_url: { url: picture, detail: 'low' } }] }],
 });
 
-test('TEXT_DIRECT empty keeps every non-OpenAI model on the gateway, unchanged', async () => {
-  expect(textDirectVendors().size).toBe(0);
-  for (const model of ['anthropic/claude-sonnet-4.6', 'google/gemini-2.5-flash', 'spacexai/grok-4.6']) {
+test('TEXT_DIRECT empty keeps Claude and Grok on the gateway, unchanged; Gemini text always goes direct to Google', async () => {
+  /* Google is always direct (Vercel out, owner 14 Oct 2026), so it is in the set whatever TEXT_DIRECT says. */
+  expect([...textDirectVendors()]).toEqual(['google']);
+  for (const model of ['anthropic/claude-sonnet-4.6', 'spacexai/grok-4.6']) {
     expect(textRoute(model)).toBe('gateway'); expect(textVendor(model)).toBe('gateway');
     expect(await languageAuth(model)).toEqual({ Authorization: `Bearer ${KEYS.AI_GATEWAY_API_KEY}`, [TEXT_PROVIDER_HEADER]: 'gateway' });
   }
+  expect(textRoute('google/gemini-2.5-flash')).toBe('google'); expect(textVendor('google/gemini-2.5-flash')).toBe('google');
   const sent: { url: string; body: string; auth: string | null }[] = [];
   globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: String(init?.body), auth: new Headers(init?.headers).get('authorization') }); return Response.json({ choices: [{ message: { content: 'ok' } }], usage: { cost: 0.001 } }); };
   const raw = body('anthropic/claude-sonnet-4.6');

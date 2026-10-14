@@ -41,7 +41,7 @@ import {
 } from "./refineGate";
 import { getPlatformLayer } from "./platform";
 import { prettyModel } from "./models";
-import { textModelFor } from "./platformLayer";
+import { DEFAULT_TEXT_MODELS, textModelFor } from "./platformLayer";
 import { currentTenant } from "./tenant";
 import { aliasDropped, readsAsAuto } from "./modelAliases";
 import { textRouteWorks } from "./textRoute";
@@ -117,7 +117,8 @@ export const PROMPT_MODELS = (): string[] =>
 export function enhanceModelFor(routed: string): string {
   /* A Gemini id that left the menus reads as Auto (lib/modelAliases.ts): never the choice, and never the deployment's pick either. */
   const list = PROMPT_MODELS().filter((id) => !readsAsAuto(id));
-  const fallback = list.find((id) => textRouteWorks(id)) ?? list[0] ?? PROMPT_MODELS()[0];
+  /* A list of only removed ids is empty here: the last resort is the writer's own default, never a removed id (which would be refused). */
+  const fallback = list.find((id) => textRouteWorks(id)) ?? list[0] ?? DEFAULT_TEXT_MODELS.enhance;
   return TEXT_RATES[routed] && !readsAsAuto(routed) && textRouteWorks(routed) ? routed : fallback;
 }
 /** Whether the inline prompt writer can run this model as chosen (no fallback). */
@@ -454,7 +455,7 @@ async function refineThroughRouter(
 ): Promise<RefineResult & { cachedIn: number }> {
   const selected = currentTenant()?.workspace ? await activeWriter() : null;
   const model =
-    selected?.provider === "gateway" ? selected.model : (PROMPT_MODELS().find((id) => !readsAsAuto(id)) ?? PROMPT_MODELS()[0]);
+    selected?.provider === "gateway" ? selected.model : (PROMPT_MODELS().find((id) => !readsAsAuto(id)) ?? DEFAULT_TEXT_MODELS.enhance);
   // Inline refinement has only legacy static writer pricing and is skipped
   // for subscribed workspaces. OpenAI planning belongs to the durable, quoted
   // Atomik path; a manual environment override must not create an unpriced call.

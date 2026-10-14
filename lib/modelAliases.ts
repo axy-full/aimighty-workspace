@@ -33,7 +33,9 @@ export const MODEL_ALIASES = {
 } as const satisfies Record<string, string>;
 
 /**
- * Gemini models that left every menu when Gemini text went straight to Google (Vercel out; owner, 14 Oct 2026): their ids have no direct model, so no route.
+ * Gemini models that left every menu when Gemini text went straight to Google (Vercel out; owner, 14 Oct 2026). Four have no direct model, so no route; the other three
+ * (3.1 Flash-Lite, 3.5 Flash, 3.7 Flash) have one, but their price is not confirmed on Google's page, and a price that is not confirmed is never charged
+ * (lib/textRoute.ts DIRECT_PRICE_TO_CONFIRM; owner, 14 Oct 23:35: "remove all SEVEN from the menus for now"). They return in a small PR when the price is confirmed.
  * A saved choice naming one (a chat, a board agent's run, the platform's routing, an env list) reads as Auto, with no error and nothing to say: Auto is the model
  * that is quoted, run and billed, so the price is Auto's own. Unlike the aliases above they have no nearest model: Auto is the default each place already has.
  * They keep their lib/modelCatalog.json entries so old ledger rows still have a price.
@@ -43,6 +45,9 @@ export const AUTO_MODEL_IDS = [
   "google/gemini-2.5-flash-lite",
   "google/gemini-2.5-pro",
   "google/gemini-3.8-flash",
+  "google/gemini-3.1-flash-lite",
+  "google/gemini-3.5-flash",
+  "google/gemini-3.7-flash",
 ] as const;
 export const readsAsAuto = (id: unknown): boolean => typeof id === "string" && (AUTO_MODEL_IDS as readonly string[]).includes(id);
 
