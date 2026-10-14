@@ -119,7 +119,7 @@ export const POST=withTenant(async(req:Request)=>{
   /* Studio's first run: the workspace's starter production, seeded once and opened as this person's draft.
      Sample takes on the platform's own previews: no engine is called and nothing is charged (lib/starter.ts). */
   if(body?.action==='starter'){
-    try{return projectResponse(req,await openStarterDraft(auth.user.id));}
+    try{return projectResponse(req,await openStarterDraft({id:auth.user.id,name:auth.user.name}));}
     catch(error){
       if(error instanceof StarterUnavailableError)return Response.json({error:error.message},{status:409,headers:noStore});
       console.error('The starter production could not be opened:',error);
