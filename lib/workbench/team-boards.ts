@@ -12,7 +12,7 @@
  * The platform owner reads as "Particl support" with an opaque id outside the house (lib/platformOwnerPrivacy.ts), as on the Team page.
  */
 import { db } from "@/lib/db";
-import { boardDraftOf, boardOwnerRows, ownedDrafts, DRAFT_PROJECT_PREFIX, isWorkspaceAdmin, mappedId, mayEditSample, mayReachProject, sampleMarkNow, TEAM_EDIT_SQL, TEAM_SHARED_SQL, type Person } from "@/lib/draftProject";
+import { boardDraftOf, boardOwnerRows, ownedDrafts, DRAFT_PROJECT_PREFIX, heldBoardsProjectId, isWorkspaceAdmin, mappedId, mayEditSample, mayReachProject, sampleMarkNow, TEAM_EDIT_SQL, TEAM_SHARED_SQL, type Person } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, storedActorMaskHere, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
@@ -324,8 +324,9 @@ export type BoardView = { boardId: string; by: { id: string; name: string; suppo
 export async function boardViews(ws: Pick<TenantWorkspace, "id">, me: string, onlyBoard?: string): Promise<BoardView[]> {
   await workbenchReady();
   const mine = (await ownedDrafts(me)).filter((d) => !onlyBoard || d.draftId === onlyBoard);
-  if (!mine.length) return [];
   const byProject = new Map(mine.map((d) => [d.projectId, d.draftId]));
+  /* The takes of the maker's deleted boards are held in one project of theirs; an admin's read of them is a line too (owner, 14 Oct, 23:35: no exception). */
+  if (!onlyBoard) byProject.set(heldBoardsProjectId(ws.id, me), "deleted-boards");
   const ids = [...byProject.keys()];
   const rows = (await db().execute({
     sql: `SELECT actor_id, action, target_id, created_at FROM security_audit WHERE workspace_id=? AND action IN ('board.opened_by_admin','board.edited_by_admin') AND target_id IN (${ids.map(() => "?").join(",")}) ORDER BY created_at DESC, id DESC LIMIT 100`,
@@ -361,7 +362,7 @@ export async function maySetSharing(actor: { id: string; role?: string }, storag
  * platform owner reads "Particl support" outside the house), when, and whether it is live, for BOTH kinds of link (the Crew review link and the older Approved-takes link), so
  * the owner sees and can withdraw every active link on the board. Only the caller's own boards are asked about, so only the owner reads these; nobody is notified.
  */
-export type ClientLinkEvent = { boardId: string; linkId: string; kind: "review" | "approved"; by: string; at: number; expiresAt: number; revokedAt: number | null; live: boolean };
+export type ClientLinkEvent = { boardId: string; linkId: string; kind: "review" | "approved"; by: string; at: number; expiresAt: number; revokedAt: number | null; /** "Client link revoked by <name>": who withdrew it (an admin may withdraw any link of the workspace), masked as `by` is; null while live, or when no line says. */ revokedBy: string | null; live: boolean };
 export async function clientLinks(ws: Pick<TenantWorkspace, "id">, me: string, onlyBoard?: string): Promise<ClientLinkEvent[]> {
   await workbenchReady();
   const mine = (await ownedDrafts(me)).filter((d) => !onlyBoard || d.draftId === onlyBoard);
@@ -380,9 +381,28 @@ export async function clientLinks(ws: Pick<TenantWorkspace, "id">, me: string, o
   } catch { /* no client link was ever made in this workspace: every link is the older kind */ }
   const shown = await storedActorMaskHere();
   const at = Date.now();
+  /* The workspace's history holds who withdrew each link (lib/shares.ts › revokeShare writes it with the revoke, in one batch). */
+  const revokers = new Map<string, string>();
+  const gone = rows.filter((r) => r.revoked_at != null).map((r) => String(r.id));
+  if (gone.length) {
+    const lines = (await platformDb().execute({
+      sql: `SELECT target_id, actor_id FROM security_audit WHERE workspace_id=? AND action='review_link.revoked' AND target_id IN (${gone.map(() => "?").join(",")}) ORDER BY created_at ASC`,
+      args: [ws.id, ...gone],
+    })).rows;
+    const actors = [...new Set(lines.filter((l) => l.actor_id != null).map((l) => String(l.actor_id)))];
+    const named = new Map<string, string>();
+    if (actors.length) {
+      /* An account's name as this workspace may read it: the platform owner reads "Particl support" outside the house (the same mask as "Viewed by"). */
+      const mask = await ownerMaskFor(ws);
+      const found = (await platformDb().execute({ sql: `SELECT id, email, name FROM accounts WHERE id IN (${actors.map(() => "?").join(",")})`, args: actors })).rows;
+      for (const row of found) named.set(String(row.id), mask.hides({ id: row.id, email: row.email }) ? mask.name({ id: row.id, email: row.email, name: row.name }) : String(row.name));
+    }
+    for (const line of lines) if (line.actor_id != null) revokers.set(String(line.target_id), named.get(String(line.actor_id)) ?? "An admin");
+  }
   return rows.map((r) => ({
     boardId: byProject.get(String(r.project_id))!, linkId: String(r.id), kind: scopes.get(String(r.id)) === "review" ? "review" as const : "approved" as const,
     by: String(shown(String(r.created_by ?? ""))), at: Number(r.created_at), expiresAt: Number(r.expires_at), revokedAt: r.revoked_at == null ? null : Number(r.revoked_at),
+    revokedBy: revokers.get(String(r.id)) ?? null,
     live: r.revoked_at == null && Number(r.expires_at) > at,
   }));
 }

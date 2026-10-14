@@ -68,12 +68,17 @@ async function fixture(name: string) {
     const db = database.db();
     await db.execute({ sql: "INSERT INTO generations(id,project_id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,version,review_state,review_by,approved_by,approved_at,deleted) VALUES('g_priv',?,'video','mock','m','p','{}','succeeded','u_owner',1,1,1,'approved','Name u_owner','Name u_owner',1,0)", args: [board] });
     await db.execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('prod_plain','Plain production',0)", args: [] });
+    /* A take of a board whose draft is gone (held or deleted), and one of an ordinary production. */
+    await db.execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES(?,'Deleted board',0)", args: [HELD] });
+    await db.execute({ sql: "INSERT INTO generations(id,project_id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,version,review_state,deleted) VALUES('g_held',?,'video','mock','m','held p','{}','succeeded','u_owner',2,2,1,'draft',0)", args: [HELD] });
+    await db.execute({ sql: "INSERT INTO generations(id,project_id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,version,review_state,deleted) VALUES('g_plain','prod_plain','video','mock','m','plain p','{}','succeeded','u_owner',3,3,1,'draft',0)", args: [] });
   });
   const route = <T,>(file: string, extra: Record<string, unknown> = {}) => loadRoute<T>(file, () => current, extra);
   const lines = () => as(who("u_owner", "admin"), async () => (await database.db().execute({ sql: "SELECT actor_id, action, target_id FROM security_audit WHERE action LIKE 'board.%' ORDER BY created_at, id", args: [] })).rows.map((r) => `${r.actor_id}:${r.action}`));
   const breakAudit = (on: boolean) => as(who("u_owner", "admin"), async () => { await database.db().execute(on ? "CREATE TRIGGER arr_no_audit BEFORE INSERT ON security_audit WHEN NEW.action LIKE 'board.%' BEGIN SELECT RAISE(ABORT,'history is down'); END" : "DROP TRIGGER arr_no_audit"); });
   return { ws, as, board, route, lines, breakAudit, tenant, database, platform, draft, records };
 }
+const HELD = "prj_wb_heldboardnodraft0000000";
 const ADMIN = who("u_admin", "admin");
 
 test("an admin's read of a private board's takes is one history line each time it is made, and a history that cannot be written refuses the read", async () => {
@@ -87,23 +92,74 @@ test("an admin's read of a private board's takes is one history line each time i
   expect(await f.as(ADMIN, () => mayReadTake({ id: "u_admin", role: "admin" }, f.board))).toBe(true);
   expect((await count()).body).toEqual({ approved: 1 });
   expect((await f.lines()).filter((l) => l.startsWith("u_admin:")), "the same look soon after is the same line").toHaveLength(1);
-  /* A different admin is a different line; the owner reading their own is none; a held board no draft holds is still an admin's. */
+  /* A different admin is a different line; the owner reading their own is none. A held or deleted board is no exception (owner, 14 Oct, 23:35): the same audited read, a line against its id. */
   await f.as(who("u_root", "admin"), () => readableProjectOr({ id: "u_root", role: "admin" }, f.board));
   expect(await f.lines()).toEqual(["u_admin:board.opened_by_admin", "u_root:board.opened_by_admin"]);
   await f.as(who("u_owner", "admin"), () => readableProjectOr({ id: "u_owner", role: "admin" }, f.board));
   expect(await f.lines()).toHaveLength(2);
-  expect(await f.as(ADMIN, () => mayReadTake({ id: "u_admin", role: "admin" }, "prj_wb_heldboardnodraft0000000"))).toBe(true);
-  expect(await f.as(ADMIN, () => readableProjectOr({ id: "u_admin", role: "admin" }, "prj_wb_heldboardnodraft0000000"))).toBe("prj_wb_heldboardnodraft0000000");
+  const heldLines = () => f.as(who("u_owner", "admin"), async () => (await f.database.db().execute({ sql: "SELECT actor_id, action FROM security_audit WHERE target_id=?", args: [HELD] })).rows.map((r) => `${r.actor_id}:${r.action}`));
+  expect(await heldLines()).toEqual([]);
+  expect(await f.as(ADMIN, () => mayReadTake({ id: "u_admin", role: "admin" }, HELD)), "a held board's take: read through the gate").toBe(true);
+  expect(await f.as(ADMIN, () => readableProjectOr({ id: "u_admin", role: "admin" }, HELD))).toBe(HELD);
+  expect(await heldLines(), "one line against the board's id, though no draft holds it").toEqual(["u_admin:board.opened_by_admin"]);
+  expect(await f.as(ADMIN, () => mayReadTake({ id: "u_admin", role: "admin" }, "prj_wb_nodraftnotakes000000000")), "an id with neither a draft nor takes is nobody's").toBe(false);
+  expect(await f.as(ADMIN, () => f.draft.mayReachProject({ id: "u_admin", role: "admin" }, HELD, "write")), "a write needs the draft").toBe(false);
   /* A third admin whose line cannot be written: refused, both ways. */
   const third = who("u_third", "admin");
   await f.platform.platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts(id,email,name,password_hash,created_at) VALUES('u_third','u_third@example.test','Name u_third','x',0)", args: [] });
   await f.breakAudit(true);
   expect(await f.as(third, () => readableProjectOr({ id: "u_third", role: "admin" }, f.board)), "no line, no read: Atomik reads nothing of the board").toBeNull();
   expect(await f.as(third, () => mayReadTake({ id: "u_third", role: "admin" }, f.board))).toBe(false);
+  expect(await f.as(third, () => mayReadTake({ id: "u_third", role: "admin" }, HELD)), "a held board fails closed too").toBe(false);
   const refusedCount = await f.as(third, async () => { const res = await selects.GET(new Request(`https://particl.test/api/export/selects?projectId=${f.board}&format=count`)); return res.status; });
   expect(refusedCount, "the export answers as for a production with nothing approved").toBe(404);
   await f.breakAudit(false);
   expect((await f.lines()).filter((l) => l.startsWith("u_third"))).toEqual([]);
+});
+
+test("an admin's lists hide a member's private takes; the admin opens the board (audited) and sees them; held boards are no exception", async () => {
+  const f = await fixture("lists");
+  const jobs = f.route<{ GET: (r: Request) => Promise<Response> }>("app/api/jobs/route.ts");
+  const ids = (p: Who, query: string) => f.as(p, async () => ((await (await jobs.GET(new Request(`https://particl.test/api/jobs${query}`))).json()) as Json).generations.map((g: Json) => g.id).sort() as string[]);
+  const OWNER = who("u_owner", "admin"), MATE = who("u_mate");
+  expect(await ids(OWNER, "?sync=0&limit=60"), "the owner's own list holds their private board's takes (the fixture's held board is no one's own)").toEqual(["g_plain", "g_priv"]);
+  expect(await ids(ADMIN, "?sync=0&limit=60"), "an admin's list holds ordinary takes only: no private board's, a held board's either").toEqual(["g_plain"]);
+  expect(await ids(MATE, "?sync=0&limit=60")).toEqual(["g_plain"]);
+  expect(await f.lines(), "a list is not an open: no line").toEqual([]);
+  expect(await ids(ADMIN, `?sync=0&limit=60&projectId=${f.board}`), "the admin opens the board").toEqual(["g_priv"]);
+  expect(await f.lines()).toEqual(["u_admin:board.opened_by_admin"]);
+  expect(await ids(ADMIN, `?sync=0&limit=60&projectId=${f.board}`)).toEqual(["g_priv"]);
+  expect(await f.lines(), "the same look soon after is the same line").toHaveLength(1);
+  expect(await ids(ADMIN, `?sync=0&limit=60&projectId=${HELD}`), "a held board is opened the same audited way").toEqual(["g_held"]);
+  expect((await f.lines()).length).toBe(2);
+  expect(await ids(MATE, `?sync=0&limit=60&projectId=${f.board}`), "a member opens nothing").toEqual([]);
+  /* The usage screen keeps the spend and masks the words, as for a member. */
+  const { takeLister } = f.draft;
+  const listed = await f.as(ADMIN, () => takeLister({ id: "u_admin", role: "admin" }));
+  expect([listed(f.board), listed(HELD), listed("prod_plain"), listed(null)]).toEqual([false, false, true, true]);
+  /* Background work (nobody) is not asked. */
+  expect((await f.as(ADMIN, () => takeLister(null)))(f.board)).toBe(true);
+});
+
+test("an admin's approvals queue shows a member's private-board take only through the audited read, one line per board", async () => {
+  const f = await fixture("approvals");
+  await f.as(who("u_owner", "admin"), async () => {
+    const db = f.database.db();
+    for (const [id, project] of [["h_priv", f.board], ["h_plain", "prod_plain"]] as const)
+      await db.execute({ sql: "INSERT INTO generations(id,project_id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,version,review_state,deleted) VALUES(?,?,'video','mock','m',?,?,'held','u_owner',5,5,1,'draft',0)", args: [id, project, `${id} prompt`, JSON.stringify({ held: { why: "credits", needs: 40 } })] });
+  });
+  const { readApprovals } = await import("../../lib/control-room/approvals.server");
+  const read = (p: Who) => f.as(p, async () => ((await readApprovals({ id: p.id, role: p.role, owner: false })) as { items: { id: string }[] }).items.map((i) => i.id).filter((id) => id.startsWith("held:")).sort());
+  expect(await read(ADMIN), "the admin approves what the queue shows").toEqual(["held:h_plain", "held:h_priv"]);
+  expect(await f.lines(), "one line for the one private board shown").toEqual(["u_admin:board.opened_by_admin"]);
+  await read(ADMIN);
+  expect(await f.lines(), "the 15-minute rule: not another").toHaveLength(1);
+  await f.breakAudit(true);
+  expect(await read(who("u_root", "admin")), "no line, no row").toEqual(["held:h_plain"]);
+  await f.breakAudit(false);
+  expect(await read(who("u_mate")), "a member sees no one else's private board").toEqual(["held:h_plain"]);
+  expect(await read(who("u_owner", "admin")), "the owner's own board needs no line").toEqual(["held:h_plain", "held:h_priv"]);
+  expect(await f.lines()).toHaveLength(1);
 });
 
 test("an admin's Atomik quote on a private board writes one history line, and the board's context is read only through it", async () => {
@@ -179,12 +235,19 @@ test("a client link on a private board is its owner's alone; the owner (admin or
   /* Withdraw: the owner (the board's owner, even a plain member), an admin, and nobody else; the same 403 for a link that is not there. */
   const withdraw = (route: typeof links, p: Who, id: string) => f.as(p, async () => { const res = await route.DELETE(new Request(`https://particl.test/x?id=${id}`, { method: "DELETE" })); return res.status; });
   const [review, approved] = [mine.find((l) => l.kind === "review")!.linkId as string, mine.find((l) => l.kind === "approved")!.linkId as string];
+  expect(mine.every((l) => l.revokedBy === null), "a live link says nobody withdrew it").toBe(true);
   expect(await withdraw(links, MATE, review)).toBe(403);
   expect(await withdraw(links, MATE, "shr_doesnotexist0000")).toBe(403);
   expect(await withdraw(links, OWNER, review)).toBe(200);
   expect(await withdraw(legacy, ADMIN, approved)).toBe(200);
   for (const l of mine) if (l.linkId !== review && l.linkId !== approved) expect(await withdraw(links, OWNER_MEMBER, l.linkId as string), "the owner, a plain member, withdraws the rest").toBe(200);
   expect((await read(OWNER)).links.filter((l: Json) => l.live)).toEqual([]);
+  /* "Client link revoked by <name>": the owner reads who withdrew each link, an admin of the workspace included (an admin may withdraw any link, never make one on another's private board). */
+  const after = (await read(OWNER)).links as Json[];
+  expect(after.find((l) => l.linkId === review)!.revokedBy, "withdrawn by the board's owner").toBe("Name u_owner");
+  expect(after.find((l) => l.linkId === approved)!.revokedBy, "withdrawn by an admin").toBe("Name u_admin");
+  expect(after.every((l) => typeof l.revokedBy === "string" && l.revokedAt > 0)).toBe(true);
+  expect((await read(ADMIN)).links, "the admin who withdrew it reads no one's list of another's board").toEqual([]);
 });
 
 test("a link made by the platform owner reads Particl support in a client workspace's history", async () => {
@@ -195,18 +258,24 @@ test("a link made by the platform owner reads Particl support in a client worksp
   const read = await f.as(who("u_owner", "admin"), async () => (await (await projects.GET(new Request("https://particl.test/api/workbench/projects?links=1"))).json()) as Json);
   expect(read.links).toHaveLength(1);
   expect(read.links[0].by).toBe("Particl support");
-  expect(JSON.stringify(read)).not.toContain("Rootname");
+  expect(read.links[0].revokedBy).toBeNull();
+  /* Withdrawn by the platform owner: the same mask. */
+  const { revokeShare } = await import("../../lib/shares");
+  await f.as(who("u_owner", "admin"), () => revokeShare(f.ws.id, read.links[0].linkId, "u_root"));
+  const gone = await f.as(who("u_owner", "admin"), async () => (await (await projects.GET(new Request("https://particl.test/api/workbench/projects?links=1"))).json()) as Json);
+  expect(gone.links[0].revokedBy).toBe("Particl support");
+  expect(JSON.stringify(gone)).not.toContain("Rootname");
 });
 
 test("a token acts as a plain member whatever its creator's role: no admin reach, read-only or not", async () => {
   const f = await fixture("tokens");
-  const { mayReachProject, seesEveryBoard, readableProjectOr } = f.draft;
+  const { mayReachProject, isWorkspaceAdmin, readableProjectOr } = f.draft;
   const token = { ...ADMIN, token: true };
   const reach = (p: Who, access: "read" | "write") => f.as(p, () => mayReachProject({ id: p.id, role: p.role }, f.board, access));
   expect([await reach(ADMIN, "read"), await reach(ADMIN, "write")], "a signed-in admin").toEqual([true, true]);
   expect([await reach(token, "read"), await reach(token, "write")], "the same admin's token").toEqual([false, false]);
-  expect(await f.as(ADMIN, async () => seesEveryBoard({ id: "u_admin", role: "admin" }))).toBe(true);
-  expect(await f.as(token, async () => seesEveryBoard({ id: "u_admin", role: "admin" }))).toBe(false);
+  expect(await f.as(ADMIN, async () => isWorkspaceAdmin({ id: "u_admin", role: "admin" }))).toBe(true);
+  expect(await f.as(token, async () => isWorkspaceAdmin({ id: "u_admin", role: "admin" }))).toBe(false);
   expect(await f.as(token, () => readableProjectOr({ id: "u_admin", role: "admin" }, f.board))).toBeNull();
   /* The routes: the list of every board and an admin's open of a member's board answer a token as a route that is not there. */
   const projects = f.route<{ GET: (r: Request) => Promise<Response> }>("app/api/workbench/projects/route.ts");
