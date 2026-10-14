@@ -156,6 +156,9 @@ type Gen = {
   params?: Record<string, unknown>;
   costUsd?: number | null; refineCostUsd?: number | null; creditsBilled?: number | null;
   authorName?: string | null; error?: string | null;
+  reviewState?: string;
+  /** Who picked, approved or sent it back, by name (never an account id), and the reason codes of a send-back: `null` is "not recorded" (lib/takeReviewReads.ts). */
+  review?: { picked: { by: string | null; via: string } | null; approved: { by: string | null; via: string } | null; changes: { by: string | null; via: string; reasons: string[] } | null };
   /** A failed take's receipt, when Particl's ledger holds one (lib/usageLedger.ts withLedgerCharges). */
   failure?: { charge?: { credits: number; settled: boolean } | null } | null;
 };
@@ -169,6 +172,15 @@ const takeCost = (g: Gen): string | null => {
   }
   return g.creditsBilled != null ? cr(g.creditsBilled) : g.costUsd != null ? usd((g.costUsd ?? 0) + (g.refineCostUsd ?? 0)) : null;
 };
+
+/** The take's review in a line: its state and, for a send-back, the reason codes; who picked and approved it, by name, where the history records it. */
+export function reviewLine(g: Gen): string {
+  const who = (m: { by: string | null; via: string } | null | undefined, verb: string) => (m ? `${verb} ${m.by ?? "someone"} (${m.via})` : null);
+  const state = g.reviewState === "approved" ? "approved" : g.reviewState === "picked" ? "picked" : g.reviewState === "changes" ? "sent back" : "not reviewed";
+  const codes = g.reviewState === "changes" && g.review?.changes?.reasons.length ? `: ${g.review.changes.reasons.join(", ")}` : "";
+  const parts = [`review: ${state}${codes}`, who(g.review?.picked, "picked by"), who(g.review?.approved, "approved by")].filter(Boolean);
+  return `  ${parts.join(" · ")}`;
+}
 
 function describe(g: Gen): string {
   const p = (g.params ?? {}) as { resolution?: string; ratio?: string; duration?: number };
@@ -361,7 +373,7 @@ export async function runTool(
         ? `\n\nWatch or download: ${origin}/api/media/${generation.id}` +
           `\n(That link needs the same token — it is not public.)`
         : "";
-      return `${describe(generation)}${generation.authorName ? `\n  by ${generation.authorName}` : ""}${link}`;
+      return `${describe(generation)}${generation.authorName ? `\n  by ${generation.authorName}` : ""}\n${reviewLine(generation)}${link}`;
     }
 
     case "list_projects": {

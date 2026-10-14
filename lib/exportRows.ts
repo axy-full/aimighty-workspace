@@ -4,6 +4,7 @@ import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billedCreditsExpr } from "./creditSql";
 import { syncCreditReceipts } from "./creditReceipts";
+import { reviewReadsFor } from "./takeReviewReads";
 import { getSetting } from "./settings";
 import { getModel, modelLabel } from "./models";
 import { buildFilename } from "./naming";
@@ -21,15 +22,17 @@ export type ExportRow = {
   id: string; createdAt: number; production: string; shotCode: string; shotTitle: string; take: string;
   kind: string; engine: string; resolution: string; duration: string; status: string;
   credits: number; usd: number; prompt: string; filename: string; url: string; bytes: number | null;
+  /** The reason codes of the take's latest send-back, joined by ";" (lib/rejectReasons.ts); empty where none is recorded. Never the person's own words, which stay in the notes. */
+  rejectReasons?: string;
 };
 
 
 /** One row per take, the money column in the workspace's unit. */
 export function takesCsv(rows: ExportRow[], unit: "cr" | "$"): string {
-  const head = ["id", "created", "production", "shot", "shot_title", "take", "kind", "engine", "resolution", "duration", "status", unit === "cr" ? "credits" : "usd", "prompt", "filename", "url"];
+  const head = ["id", "created", "production", "shot", "shot_title", "take", "kind", "engine", "resolution", "duration", "status", unit === "cr" ? "credits" : "usd", "prompt", "filename", "url", "reject_reasons"];
   const lines = rows.map((r) => [
     r.id, new Date(r.createdAt).toISOString(), r.production, r.shotCode, r.shotTitle, r.take, r.kind, r.engine, r.resolution, r.duration, r.status,
-    unit === "cr" ? r.credits : Math.round(r.usd * 10000) / 10000, r.prompt, r.filename, r.url,
+    unit === "cr" ? r.credits : Math.round(r.usd * 10000) / 10000, r.prompt, r.filename, r.url, r.rejectReasons ?? "",
   ].map(csvCell).join(","));
   return [head.join(","), ...lines].join("\r\n") + "\r\n";
 }
@@ -78,11 +81,15 @@ export async function exportRows(): Promise<{ rows: ExportRow[]; unit: "cr" | "$
       duration: kind === "video" && p.duration ? `${p.duration}s` : "", status: String(r.status),
       credits: unit === "cr" ? Number(r.receipt_credits ?? 0) : 0, usd: unit === "$" ? usd : 0,
       prompt: String(r.prompt ?? ""), filename, url: hasMaster ? `/api/media/${id}` : "", bytes: r.bytes == null ? null : Number(r.bytes),
+      rejectReasons: "",
     };
     rows.push(row);
     if (hasMaster && blob)
       masters.push({ row, pathname: kind === "image" ? imagePath(id) : kind === "audio" ? audioPath(id) : kind === "model" ? modelPath(id) : videoPath(id) });
   }
+  /* The reason codes of each take's latest send-back, from the review history. */
+  const reviews = await reviewReadsFor(rows.map((row) => row.id));
+  for (const row of rows) row.rejectReasons = (reviews.get(row.id)?.changes?.reasons ?? []).join(";");
   /* Each presign is a round trip to the store. One after another, a few
      hundred takes outran the route's time limit; a bounded pool keeps the
      export to seconds without flooding the store. A presign that fails keeps
