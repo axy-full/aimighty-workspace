@@ -553,3 +553,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **15 Oct 00:55 IST.** **#721 CI GREEN 24/24** (run 38616142030, base 67d0dc68), so **merged** (the live room hides the owner's account id).
 - **15 Oct 01:05 IST.** **#736 CI GREEN 24/24** (run 38618011420), so **merged** (11 screen entries to 30 Nov with the owner's extended records). #735 needs release/1 merged in (both edit ui-names-ratchet.json); lane B is on it.
 - **15 Oct 01:49 IST.** #735 CI (run 38625121681, base 808db3f5): 1 failure: board-kinds-v12-workbench:177 saw "POST /api/generate/quote" in sent.paid during Start. A flake or a cause is being checked: failed jobs re-run, and the release/1 run on the same head is being watched.
+- **15 Oct 02:01 IST.** **#724 CI GREEN 24/24** (run 38625262897, base 808db3f5), so **merged** (Step 0 job label). #729 retargeted to release/1.
