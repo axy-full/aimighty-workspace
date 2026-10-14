@@ -32,7 +32,7 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
       await setSolutionStatus(solution.id, "generated");
       return Response.json({ to, status: "generated", prompt: solution.text }, { headers: NO_STORE });
     }
-    if (to !== "brief" && to !== "boards") throw new CrewError("Choose Brief, Boards or Gen.", 400);
+    if (to !== "brief" && to !== "boards") throw new CrewError("Choose Brief or Boards.", 400);
     await workbenchReady();
     const draft = await readDraft(caller.userId, solution.projectId);
     if (!draft) throw new CrewError("Save your project first.", 404);

@@ -13,7 +13,7 @@ const ENV: Record<VendorKeyName, string> = {
 export const VENDOR_KEYS: { name: VendorKeyName; label: string; does: string }[] = [
   { name: "ark", label: "Connected video account", does: "Seedance video · prompt writer" },
   { name: "gateway", label: "Connected model gateway", does: "Prompt writer · Nano Banana stills" },
-  { name: "openai", label: "Connected language account", does: "Thinking models · Atomik · script development · Astra, direct" },
+  { name: "openai", label: "Connected language account", does: "Thinking models · Atomik · script development · 3D scenes, direct" },
   { name: "anthropic", label: "Anthropic · Claude", does: "Claude text models, direct (when switched on)" },
   { name: "gemini", label: "Connected image account", does: "Nano Banana stills, direct" },
   { name: "fal", label: "Connected render account", does: "Kling 3.0 video · motion control · Topaz upscale · identity training" },

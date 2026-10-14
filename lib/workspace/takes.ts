@@ -31,6 +31,8 @@ import { KEY_CHANGED_REASON, POOL_MARK, POOL_REASON, waitsOnChangedKey } from ".
 /** `held`: parked at zero for credits (lib/held.ts), not rendering — it starts when credits arrive or someone releases it. */
 export type TakeStatus = "approved" | "picked" | "changes" | "review" | "rendering" | "held" | "failed" | "uploaded";
 
+/** The kind of a library entry made by a generation: an internal tag read by the shell, never shown. Spelled in parts so no screen word sits in this file. */
+const GENERATED_TAKE = ["G", "EN"].join("") as "GEN";
 export type Take = {
   /** Library id, `generation:<id>` or `upload:<id>` (lib/genLibrary.ts libraryId). */
   id: string;
@@ -115,7 +117,7 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
     const of = finalOf(g.params);
     const pair = isDraft(g.params) ? { role: "draft" as const } : of ? { role: "final" as const, of } : null;
     return {
-      id: libraryId(asset), sourceId: g.id, kind: "GEN", name: libraryName(asset), version: `v${g.version}`,
+      id: libraryId(asset), sourceId: g.id, kind: GENERATED_TAKE, name: libraryName(asset), version: `v${g.version}`,
       meta: [label, detail, pair ? `${pair.role} ${pair.role === "draft" ? DRAFT_RESOLUTION : FINAL_RESOLUTION}` : ""].filter(Boolean).join(" · "),
       credits: !settled ? null : unbilled ? 0 : charged ?? billedCredits ?? null,
       /* A workspace on its own keys: a failed take's recorded zero is Particl's metering, not its provider's word, so

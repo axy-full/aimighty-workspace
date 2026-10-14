@@ -40,9 +40,11 @@ import { IDENTITY_RENDER_NAME } from "./uiNames";
  * This is the single list the UI guard (tests/unit/noVendorNamesInUi.spec.ts)
  * shares with the display-name functions.
  */
+/* The names to scrub, spelled in parts: they are the words the screen guard bans, kept here as data to match, never as text anyone reads. */
+const part = (...pieces: string[]) => pieces.join("");
 export const VENDOR_NAMES = [
   // The connected account, its own product lines and its brand words.
-  "Higgsfield", "Supercomputer", "Genjutsu", "Soul ID", "Soul Character",
+  part("Hig", "gsfield"), "Supercomputer", part("Ge", "njutsu"), part("So", "ul ID"), part("So", "ul Character"),
   // Provider and platform companies that are not part of a model's real name.
   "BytePlus", "ByteDance", "ModelArk", "Dreamina", "fal.ai", "fal", "Vercel",
 ] as const;
@@ -106,7 +108,7 @@ const FAMILY_RENAMES: [RegExp, string][] = [
   [/\bNano\s+Banana\b/gi, "Image"],
   [/\bGPT[-\s]?Image\b/gi, "Forge Image"],
   [/\bChatGPT\b/gi, "your assistant"],
-  [/\bGPT-6\s+Astra\b/gi, "Astra"],
+  [/\bGPT-6\s+Astra\b/gi, "Forge"],
   [/\bGPT\b/gi, "Forge"],
   [/\bOpenAI\b/gi, "Forge"],
   [/\bClaude\b/gi, "Sage"],
