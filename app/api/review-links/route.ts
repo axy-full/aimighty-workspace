@@ -1,8 +1,8 @@
-import { mayReachProject } from "@/lib/draftProject";
+import { mayMakeClientLink, mayReachProject, ownsDraftProject } from "@/lib/draftProject";
 import { requireSession, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { db, ready } from "@/lib/db";
-import { listShares, revokeShare, shareLive, SHARE_DAYS } from "@/lib/shares";
+import { listShares, revokeShare, shareLive, shareProject, SHARE_DAYS } from "@/lib/shares";
 import { clientResponses, mintReviewLink, reviewLinksReady, scopeOf } from "@/lib/security/review-link";
 import { linkOrigin } from "@/lib/site";
 
@@ -19,6 +19,11 @@ const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
  * someone outside the workspace. Making and withdrawing one is an owner's or admin's, as for every review link.
  * The secret is in the reply to the person who made it, once; it is stored only as a hash.
  */
+/** Whether the person owns the private board a link of this workspace opens. */
+async function ownsShareProject(userId: string, shareId: string): Promise<boolean> {
+  const projectId = await shareProject(requireTenant().id, shareId);
+  return projectId !== null && (await ownsDraftProject(userId, projectId));
+}
 async function production(projectId: string | null, person: { id: string }, access: "read" | "write"): Promise<string | null> {
   if (!projectId || !ID.test(projectId)) return null;
   await ready();
@@ -53,7 +58,8 @@ export const POST = withTenant(async (req: Request) => {
   if (got.user.role !== "admin") return Response.json({ error: "An owner or admin makes a client link." }, { status: 403, headers });
   const body = await req.json().catch(() => ({}));
   const projectId = await production(typeof body?.projectId === "string" ? body.projectId : null, got.user, "write");
-  if (!projectId) return Response.json({ error: "Save the production first; a client link opens a saved production." }, { status: 404, headers });
+  /* A private board's client link is its owner's alone (owner, 14 Oct), answered as a production that is not saved is. The role check above comes first, so a member learns nothing about which boards exist. */
+  if (!projectId || !(await mayMakeClientLink(got.user, projectId))) return Response.json({ error: "Save the production first; a client link opens a saved production." }, { status: 404, headers });
   const { share, token } = await mintReviewLink({ workspaceId: requireTenant().id, projectId, days: SHARE_DAYS, by: got.user.name, actorId: got.user.id });
   return Response.json({
     link: { id: share.id, live: true, createdAt: share.createdAt, expiresAt: share.expiresAt, revokedAt: null },
@@ -64,9 +70,10 @@ export const POST = withTenant(async (req: Request) => {
 export const DELETE = withTenant(async (req: Request) => {
   const got = await requireSession();
   if (got.response) return got.response;
-  if (got.user.role !== "admin") return Response.json({ error: "An owner or admin withdraws a client link." }, { status: 403, headers });
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!ID.test(id)) return Response.json({ error: "Which link?" }, { status: 400, headers });
+  /* An admin withdraws any link of this workspace; a private board's owner withdraws its links too (owner, 14 Oct: the owner sees and can revoke). Anyone else is told the same thing, whether or not the link exists. */
+  if (got.user.role !== "admin" && !(await ownsShareProject(got.user.id, id))) return Response.json({ error: "An owner or admin withdraws a client link." }, { status: 403, headers });
   /* Scoped to this workspace in the platform database: another workspace's link id changes nothing. */
   return Response.json({ ok: await revokeShare(requireTenant().id, id, got.user.id) }, { headers });
 }, { requireRequestScope: true });

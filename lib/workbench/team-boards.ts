@@ -14,7 +14,7 @@
 import { db } from "@/lib/db";
 import { boardDraftOf, boardOwnerRows, ownedDrafts, DRAFT_PROJECT_PREFIX, isWorkspaceAdmin, mappedId, mayEditSample, mayReachProject, sampleMarkNow, TEAM_EDIT_SQL, TEAM_SHARED_SQL, type Person } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
-import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
+import { ownerMaskFor, resolveMemberId, storedActorMaskHere, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
 import { readDraft, workbenchReady } from "./records";
 export { viewOnlyLine, viewOnlyRefusal } from "./view-only";
@@ -353,4 +353,36 @@ export async function boardViews(ws: Pick<TenantWorkspace, "id">, me: string, on
  */
 export async function maySetSharing(actor: { id: string; role?: string }, storageOwner: string, draftId: string): Promise<boolean> {
   return (await whoOwns())(storageOwner, draftId) === actor.id;
+}
+
+
+/**
+ * Every client link of the caller's OWN boards ("Client link created by <name>", for the board's history): which board, who made it (the name this workspace may read: the
+ * platform owner reads "Particl support" outside the house), when, and whether it is live, for BOTH kinds of link (the Crew review link and the older Approved-takes link), so
+ * the owner sees and can withdraw every active link on the board. Only the caller's own boards are asked about, so only the owner reads these; nobody is notified.
+ */
+export type ClientLinkEvent = { boardId: string; linkId: string; kind: "review" | "approved"; by: string; at: number; expiresAt: number; revokedAt: number | null; live: boolean };
+export async function clientLinks(ws: Pick<TenantWorkspace, "id">, me: string, onlyBoard?: string): Promise<ClientLinkEvent[]> {
+  await workbenchReady();
+  const mine = (await ownedDrafts(me)).filter((d) => !onlyBoard || d.draftId === onlyBoard);
+  if (!mine.length) return [];
+  const byProject = new Map(mine.map((d) => [d.projectId, d.draftId]));
+  await platformReady();
+  const rows = (await platformDb().execute({
+    sql: `SELECT id, project_id, created_by, created_at, expires_at, revoked_at FROM p_shares WHERE workspace_id=? AND project_id IN (${[...byProject.keys()].map(() => "?").join(",")}) ORDER BY created_at DESC, id DESC LIMIT 200`,
+    args: [ws.id, ...byProject.keys()],
+  })).rows;
+  if (!rows.length) return [];
+  const scopes = new Map<string, string>();
+  try {
+    const found = (await db().execute({ sql: `SELECT share_id, scope FROM review_link_scopes WHERE share_id IN (${rows.map(() => "?").join(",")})`, args: rows.map((r) => String(r.id)) })).rows;
+    for (const r of found) scopes.set(String(r.share_id), String(r.scope));
+  } catch { /* no client link was ever made in this workspace: every link is the older kind */ }
+  const shown = await storedActorMaskHere();
+  const at = Date.now();
+  return rows.map((r) => ({
+    boardId: byProject.get(String(r.project_id))!, linkId: String(r.id), kind: scopes.get(String(r.id)) === "review" ? "review" as const : "approved" as const,
+    by: String(shown(String(r.created_by ?? ""))), at: Number(r.created_at), expiresAt: Number(r.expires_at), revokedAt: r.revoked_at == null ? null : Number(r.revoked_at),
+    live: r.revoked_at == null && Number(r.expires_at) > at,
+  }));
 }

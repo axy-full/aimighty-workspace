@@ -83,13 +83,13 @@ export function roomParts(room: string, workspaceId: string): { productionId: st
  * `actor` is the person asking; omitted, the signed-in person of this request. `access` is "write" by default: a board the author has shared (`teamShared`) is a
  * teammate's to READ only, and the marked sample is everyone's (lib/draftProject.ts). Background work and Atomik runs (no person) are not asked.
  */
-export async function requireProduction(productionId: string, actor?: string | null, access: "read" | "write" = "write") {
+export async function requireProduction(productionId: string, actor?: string | null, access: "read" | "write" = "write", options: { admin?: boolean } = {}) {
   if (!ID.test(productionId)) throw new TeamCanvasError("Open a saved project first.", 400);
   await ready();
   const row = (await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [productionId] })).rows[0];
   if (!row) throw new TeamCanvasError("That project is not in this workspace.", 404);
   const person = actor === undefined ? currentPerson() : actor && !isAgentId(actor) ? { id: actor } : null;
-  if (!(await mayReachProject(person, productionId, access))) throw new TeamCanvasError("That project is not in this workspace.", 404);
+  if (!(await mayReachProject(person, productionId, access, undefined, options))) throw new TeamCanvasError("That project is not in this workspace.", 404);
 }
 
 export async function readTeamCanvas(productionId: string): Promise<{ canvas: TeamCanvas; revision: number } | null> {
