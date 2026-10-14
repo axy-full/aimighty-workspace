@@ -18,7 +18,6 @@ import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOw
 import type { TenantWorkspace } from "@/lib/tenant";
 import { readDraft, workbenchReady } from "./records";
 export { viewOnlyLine, viewOnlyRefusal } from "./view-only";
-export { TransferRefused, transferAllOf, transferBoards, undoTransfers } from "./board-transfer";
 
 export type BoardOwner = { id: string; name: string; support?: true; /** An admin reads the board of someone who is no longer a member here. */ former?: true };
 export type TeamBoard = { id: string; name: string; revision: number; updatedAt: number; kind?: string | null; owner: BoardOwner; mine: boolean };

@@ -43,6 +43,8 @@ function fixture() {
       return { requiresReview: true, brand: { name: "Review me", description: "", colors: [], fontFamilies: [] }, logoCandidates: [], imageryCandidates: [] };
     } },
   };
+  /* The route reads the draft through the one rule for "the draft this person owns now" (lib/workbench/records.ts readOwnDraft); here, as for readDraft above, only the owner's own draft exists. */
+  (dependencies["@/lib/workbench/records"] as Record<string, unknown>).readOwnDraft = (dependencies["@/lib/workbench/records"] as Record<string, unknown>).readDraft;
   const output = { exports: {} as { POST(req: Request): Promise<Response> } };
   const code = ts.transpileModule(readFileSync("app/api/workbench/moleculr/extract-brand/route.ts", "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

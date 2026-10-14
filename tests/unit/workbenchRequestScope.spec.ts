@@ -58,6 +58,17 @@ function route() {
       StarterUnavailableError: class StarterUnavailableError extends Error {},
     },
   };
+  /* Board sharing, PR 4. The route reads a person's own drafts through the one rule for "the drafts this person owns now" (lib/draftProject.ts ownedDraftsSql, lib/workbench/records.ts
+     readOwnDraft) and hands boards over through lib/workbench/board-transfer.ts; the rule itself is tests/unit/boardTransferSurfaces.spec.ts's, the transfer's tests/unit/boardTransfer*.spec.ts.
+     Here, as for readDraft above, only the signed-in person's own draft exists, and a transfer is recorded as a call. */
+  (mocks["@/lib/draftProject"] as Record<string, unknown>).ownedDraftsSql = () => ({ sql: "1 = 1", args: [] });
+  (mocks["@/lib/workbench/records"] as Record<string, unknown>).readOwnDraft = record("read", { project: draft, revision: 1 });
+  mocks["@/lib/workbench/board-transfer"] = {
+    TransferRefused: class TransferRefused extends Error { constructor(message: string, readonly status: number) { super(message); } },
+    transferBoards: record("transfer", { moved: [] }),
+    transferAllOf: record("transfer", { moved: [] }),
+    undoTransfers: record("transfer", { restored: [] }),
+  };
   const compiled = ts.transpileModule(
     readFileSync("app/api/workbench/projects/route.ts", "utf8"),
     {
@@ -102,6 +113,10 @@ for (const [label, captured] of [
       ["POST", { action: "map-shot", projectId: draft.id, nodeId: "a" }],
       ["POST", { action: "open", projectId: "existing-production" }],
       ["POST", { action: "starter" }],
+      /* Handing boards to another owner touches nothing either (board sharing, PR 4). */
+      ["POST", { action: "transfer-boards", projectIds: ["prj_wb_x"], to: "someone" }],
+      ["POST", { action: "transfer-all", from: "gone", to: "someone" }],
+      ["POST", { action: "undo-transfer", projectIds: ["prj_wb_x"] }],
     ] as const) {
       const response = await exports[method](
         new Request("http://localhost/api/workbench/projects", {
@@ -188,4 +203,14 @@ test("a save the schema refuses says which rule it broke, not a generic line", a
   expect(await put({ ...draft, scriptSource: { assetId: "missing", filename: "script.pdf", sha256: "a".repeat(64), pages: [], importedAt: "2026-09-25", edited: false, acknowledgedEmptyPages: [] } })).toEqual({ status: 400, error: "Keep the uploaded screenplay source in the asset library." });
   expect(await put({ ...draft, fps: 23 })).toEqual({ status: 400, error: "Check the project's fps: it is not valid." });
   expect(calls).not.toContain("save");
+});
+
+test("the current captured account's board hand-overs reach the transfer code, as themselves; a refusal there is its own answer", async () => {
+  const { exports, calls } = route();
+  const headers = { "X-Workbench-Scope": requestScope.workbenchScopeFor("current-workspace", "new-account") };
+  const post = (body: unknown) => exports.POST(new Request("http://localhost/api/workbench/projects", { method: "POST", headers, body: JSON.stringify(body) }));
+  expect((await post({ action: "transfer-boards", projectIds: ["prj_wb_x"], to: "someone" })).status).toBe(200);
+  expect((await post({ action: "transfer-all", from: "gone", to: "someone" })).status).toBe(200);
+  expect((await post({ action: "undo-transfer", projectIds: ["prj_wb_x"] })).status).toBe(200);
+  expect(calls.filter((c) => c === "transfer")).toHaveLength(3);
 });

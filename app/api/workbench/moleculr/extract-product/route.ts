@@ -3,7 +3,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
-import { readDraft } from "@/lib/workbench/records";
+import { readOwnDraft } from "@/lib/workbench/records";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { extractProduct } from "@/lib/workbench/product-extraction";
 import { ProductExtractionError } from "@/lib/workbench/product-fetch";
@@ -47,7 +47,7 @@ export const POST = withTenant(
           { error: "Choose a saved project and a public product URL." },
           { status: 400, headers },
         );
-      if (!(await readDraft(auth.user.id, input.data.projectId)))
+      if (!(await readOwnDraft(auth.user.id, input.data.projectId)))
         return Response.json(
           {
             error:

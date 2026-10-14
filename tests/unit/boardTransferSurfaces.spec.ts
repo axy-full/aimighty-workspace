@@ -132,3 +132,26 @@ test("Atomik's board building prices an ask for the new owner's draft and none f
     expect(await meter(), "nothing was spent").toBe(before);
   } finally { if (saved === undefined) delete process.env.RIG_AGENT_ENABLED; else process.env.RIG_AGENT_ENABLED = saved; }
 });
+
+test("uploads: the new owner opens exactly the uploads ON the transferred board (its draft, its canvas), never the previous owner's other uploads, not even those on their other private boards", async () => {
+  const f = await fixture("uploads");
+  const { uploadOpenableBy } = await import("../../lib/uploadAccess");
+  const { newProject } = await import("../../lib/workbench/studio");
+  await f.as(OLD, async () => { await f.records.workbenchReady(); await f.records.saveDraft("u_old", { ...newProject("Second"), id: "d2", nodes: [], assets: [] } as never, 0); });
+  await f.as(ADMIN, async () => {
+    const db = f.database.db();
+    for (const id of ["upl_on_draft", "upl_on_canvas", "upl_other_board", "upl_loose"])
+      await db.execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind,uploader_id) VALUES(?,?,?,?,1,'x',NULL,NULL,'',1,'image','u_old')", args: [id, "a.png", "image/png", "png"] });
+    await db.execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.zzRef',json('{\"uploadId\":\"upl_on_draft\"}')) WHERE key='u_old:d1'", args: [] });
+    await db.execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.zzRef',json('{\"uploadId\":\"upl_other_board\"}')) WHERE key='u_old:d2'", args: [] });
+    const { teamCanvasReady } = await import("../../lib/workbench/team-canvas");
+    await teamCanvasReady();
+    await db.execute({ sql: "INSERT INTO workbench_team_canvas(production_id,body,revision,updated_by,updated_at) VALUES(?,?,1,'u_old',1)", args: [f.production, JSON.stringify({ nodes: { n1: { id: "n1", title: "x", uploadId: "upl_on_canvas" } } })] });
+  });
+  await f.handOver();
+  const opens = (p: Who, id: string) => f.as(p, () => uploadOpenableBy(id, { id: p.id, role: p.role }));
+  expect([await opens(NEW, "upl_on_draft"), await opens(NEW, "upl_on_canvas")], "what is ON the transferred board").toEqual([true, true]);
+  expect([await opens(NEW, "upl_other_board"), await opens(NEW, "upl_loose")], "the previous owner's other uploads").toEqual([false, false]);
+  for (const id of ["upl_on_draft", "upl_on_canvas", "upl_other_board", "upl_loose"]) expect(await opens(OLD, id), `the uploader keeps their own: ${id}`).toBe(true);
+  expect(await opens(who("u_mate"), "upl_on_draft"), "nobody else gains anything").toBe(false);
+});
