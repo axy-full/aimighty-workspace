@@ -423,3 +423,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **14 Oct 20:06 IST.** **#717 CI red** (run 38574576834):
   - (1) mediaBindings.spec.ts :153/:344 "Unexpected import @/lib/platformOwnerPrivacy": the spec pins the jobs/[id] route's imports, and the PATCH masking added one (the DELETE path under test never calls it). The honest fix is one stub line in the spec's map (like `@/lib/jobs: {}`): a guard edit, asked of the owner. A standing rule for import-pinned maps was proposed.
   - (2) cinemaSound.spec.ts:502 UNIQUE workspaces.id: most likely #717's own new actorIdGuard spec leaving a row; lane D is fixing it in that spec.
+- **14 Oct 20:07 IST.** **#721 Opus APPROVED at 7e1f244e** (no room consumer reads the user id; userInfo name is already masked; no other room field carries an account id; serverMade is used for truthiness only). Nits for later:
+  - a unit test for the use-team-canvas.ts:419 seed;
+  - the canvas push could write "server" too;
+  - older room storage keeps raw ids until an empty room is re-seeded;
+  - #720 and #721 fall back to the raw id if the platform database is unreadable.
+  #721 merges after #720 (stacked); both wait for the owner's word on #720.
