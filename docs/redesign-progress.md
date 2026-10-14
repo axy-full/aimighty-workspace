@@ -338,3 +338,5 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - lane C: four lenses PR 2 WIP;
   - lane D: 8b compare-and-set, then the screens.
   The lane CI run on four-lenses was cancelled. Two lane test servers were left on localhost (ports 3171 orphaned with no timeout, and 4571 behind a 45 min timeout); the lead can't kill (denied), so they're reported to the owner. Deploy #3 PR #703 green, untouched, waiting for the owner. The release/1 run on 890d559c (#693 docs) was left to finish.
+
+- **14 Oct 12:02 IST.** Handover written for a new lead and the advisor at the owner's pause: PR #710 (`docs/handover-2026-10-14.md`, docs only, to release/1; its CI run cancelled, work paused). Covers rules, workflow, deploys, every open PR with its next step, every worktree in `~/wt`, open owner questions, flakes and what each take records. Lens names are Canvas · List · Strip · Rig in the plan and code, not Board · List · Map · Timeline; nothing renamed. Disk 49G / 619G (8%).
