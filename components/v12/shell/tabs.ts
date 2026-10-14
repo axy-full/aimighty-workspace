@@ -52,6 +52,12 @@ export function pruneTabs(state: TabsState, known: ReadonlySet<string> | null): 
   return open.length === state.open.length && closed.length === state.closed.length ? state : { open, closed };
 }
 
+/** The letter a board's tab shows in its tile (v25): the first letter or digit of its name, upper-cased; "·" for a name with none. */
+export function tabInitial(name: string): string {
+  const first = [...name.trim()].find((ch) => /[\p{L}\p{N}]/u.test(ch));
+  return first ? first.toLocaleUpperCase() : "·";
+}
+
 /**
  * Which board tabs show and which go under "+N ▾": the first four, except that the open board always shows, taking
  * the last place when it would otherwise be hidden.

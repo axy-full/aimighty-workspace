@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { TRAIL } from "@/components/ui/Mark";
+import { HeaderLogo } from "./Logo";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { isLanded } from "@/lib/shell/screens";
@@ -16,7 +16,7 @@ import { PlusPopover } from "./PlusPopover";
 import { boardStates } from "./activity";
 import { boardRings } from "@/lib/v12/boardRing";
 import { useTick } from "../render/use-render";
-import { MAX_BOARD_TABS, afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, visibleTabs } from "./tabs";
+import { MAX_BOARD_TABS, afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, tabInitial, visibleTabs } from "./tabs";
 import { useTabFit } from "./use-tab-fit";
 import { useBoardTabs } from "./use-board-tabs";
 import { copyBoardLink } from "../menus/menu-items";
@@ -167,14 +167,7 @@ export function V12Header({ account, project, projects, onPick }: {
   const ordinal = (i: number) => (i + 3 <= 9 ? keyOf(`tab-${i + 3}`) : undefined);
   return (
     <header ref={headerRef} className="v12-header" data-testid="v12-header" data-row="header">
-      <Tooltip name="Home" shortcut={[keyOf("home-seq"), keyOf("home")]}>
-        <button type="button" className="v12-logo" onClick={goHome} aria-label="particl, Home" data-testid="v12-logo">
-          <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
-            {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
-          </svg>
-          <span className="v12-logo-name">particl</span>
-        </button>
-      </Tooltip>
+      <HeaderLogo onClick={goHome} testId="v12-logo" />
 
       <nav className="v12-tabs" aria-label="Tabs" data-testid="v12-tabs">
         <div className="v12-tab" data-active={shell.screen === "home" && !shell.make ? "" : undefined} data-testid="v12-tab-home">
@@ -204,9 +197,10 @@ export function V12Header({ account, project, projects, onPick }: {
               onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); tabAnchor.current = e.currentTarget; setTabMenu(id); }}>
               <Tooltip name={name} line={ring ? `${ring.words}.` : stateWord === "open" ? undefined : `${stateWord[0].toUpperCase()}${stateWord.slice(1)}.`} shortcut={ordinal(i)}>
                 <button type="button" className="v12-tab-main" onClick={() => goBoard(id)} aria-current={active ? "page" : undefined}>
+                  <span className="v12-tab-tile" aria-hidden="true">{tabInitial(name)}</span>
+                  <span className="v12-tab-label">{name}</span>
                   {ring ? <span className="v12-tab-ring" style={{ "--p": `${Math.round(ring.pct * 100)}%` } as CSSProperties} data-testid="v12-tab-ring" aria-hidden="true" />
                     : <span className="v12-tab-dot" data-state={state ?? "idle"} aria-hidden="true" />}
-                  <span className="v12-tab-label">{name}</span>
                 </button>
               </Tooltip>
               <IconButton tooltip={{ name: "Close tab" }} label={`Close ${name}`} size="sm" className="v12-tab-x" onClick={() => close(id)} data-testid="v12-tab-close">
@@ -219,8 +213,9 @@ export function V12Header({ account, project, projects, onPick }: {
           <div className="v12-tab" data-board="" data-active={shell.make ? undefined : ""} data-testid="v12-tab-new-board">
             <Tooltip name="New board" line="Pick a kind and say what to make.">
               <button type="button" className="v12-tab-main" aria-current={shell.make ? undefined : "page"} onClick={() => shell.goBoard({ newBoard: shell.params.pick ?? true, closeMake: true })}>
-                <span className="v12-tab-dot" data-state="idle" aria-hidden="true" />
+                <span className="v12-tab-tile" aria-hidden="true">N</span>
                 <span className="v12-tab-label">New board</span>
+                <span className="v12-tab-dot" data-state="idle" aria-hidden="true" />
               </button>
             </Tooltip>
             <IconButton tooltip={{ name: "Close tab" }} label="Close New board" size="sm" className="v12-tab-x" onClick={closeNewBoard} data-testid="v12-tab-new-board-close">
@@ -240,11 +235,14 @@ export function V12Header({ account, project, projects, onPick }: {
         </IconButton>
       </nav>
 
+      <span className="v12-spacer" aria-hidden="true" />
+      {/* The ⌘K bar: on the right, directly left of the Activity pill, a fixed width that widens on focus (v25). As v25's app screens draw it, the panel's button is inside it; the board's own bar (no icon) comes with the board screen, where Atomik's button is in its second row. */}
       <div className="v12-field" data-open={atomikOpen ? "" : undefined} data-testid="v12-atomik-field">
         <Tooltip name="Ask Atomik, search or go to" line="Ask a question, find a board, stage, card or library item, or run an action." shortcut={keyOf("palette")}>
           <button type="button" className="v12-field-ask" onClick={() => shell.setPalette(true)} aria-keyshortcuts="Meta+K" data-testid="v12-ask">
             <span className="v12-field-mark" aria-hidden="true">◆</span>
-            <span className="v12-field-text">Ask Atomik, search or go to · {keyOf("palette")}</span>
+            <span className="v12-field-text">Ask Atomik, search or go to</span>
+            <span className="v12-field-key" aria-hidden="true">{keyOf("palette")}</span>
           </button>
         </Tooltip>
         <IconButton className="v12-field-panel" pressed={atomikOpen} onClick={toggleAtomik} aria-keyshortcuts="Meta+J" data-testid="v12-atomik-panel"
@@ -263,7 +261,7 @@ export function V12Header({ account, project, projects, onPick }: {
       <div className="v12-tabs-measure" aria-hidden="true">
         {tabs.state.open.map((id) => (
           <div key={id} className="v12-tab" data-board="" data-m={id}>
-            <span className="v12-tab-main"><span className="v12-tab-dot" /><span className="v12-tab-label">{nameOf(id)}</span></span>
+            <span className="v12-tab-main"><span className="v12-tab-tile" /><span className="v12-tab-label">{nameOf(id)}</span><span className="v12-tab-dot" /></span>
             <span className="v12-tab-xspace" />
           </div>
         ))}

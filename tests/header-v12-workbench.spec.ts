@@ -181,13 +181,13 @@ test.describe("desktop", () => {
     await expect(page.getByTestId("v12-newboard")).toHaveCount(0);
   });
 
-  test("how many board tabs show is what fits: three at 1440, two at 1280, six at 1920; the field never below 280, the pill and avatar never move", async ({ page }) => {
+  test("how many board tabs show is what fits: two at 1440, two at 1280, four at 1920 (v25 tabs are up to 200 px); the field is fixed, the pill and avatar never move", async ({ page }) => {
     test.setTimeout(240_000);
     const names = Array.from({ length: 10 }, (_, i) => `Board ${i + 1} with a long working title`);
     const { ids } = await redesignWithBoards(page, names);
     await openAsTabs(page, ids);
     const right = async () => { const a = (await page.getByTestId("v12-avatar").boundingBox())!, p = (await page.getByTestId("v12-activity").boundingBox())!; return { avatarRight: a.x + a.width, pillX: p.x }; };
-    for (const [width, height, count] of [[1440, 900, 3], [1280, 800, 2], [1920, 1080, 6]] as const) {
+    for (const [width, height, count] of [[1440, 900, 2], [1280, 800, 2], [1920, 1080, 4]] as const) {
       await page.setViewportSize({ width, height });
       await expect(page.getByTestId("v12-tab-board"), `${width}: board tabs`).toHaveCount(count);
       await expect(page.getByTestId("v12-tab-more")).toHaveText(`+${10 - count} ▾`);
@@ -205,7 +205,7 @@ test.describe("desktop", () => {
     }
     /* Going back to the narrower window brings the overflow back with no reload. */
     await page.setViewportSize({ width: 1440, height: 900 });
-    await expect(page.getByTestId("v12-tab-board")).toHaveCount(3);
+    await expect(page.getByTestId("v12-tab-board")).toHaveCount(2);
   });
 
   test("Activity opens what needs you and what runs; the avatar menu holds the balance, Top up and Sign out", async ({ page }) => {

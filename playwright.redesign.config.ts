@@ -8,6 +8,7 @@ import { defineConfig } from "@playwright/test";
 const sizes = [
   [1440, 900],
   [1280, 800],
+  [1920, 1080],
 ];
 export default defineConfig({
   testDir: "tests/redesign",

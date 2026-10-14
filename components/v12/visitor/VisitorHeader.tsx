@@ -1,5 +1,5 @@
 "use client";
-import { TRAIL } from "@/components/ui/Mark";
+import { HeaderLogo } from "@/components/v12/shell/Logo";
 import { IconButton, Tooltip } from "@/components/v12/ui";
 import { useJoin } from "@/components/v12/join/JoinProvider";
 import { loginPath } from "@/components/v12/join/join-model";
@@ -15,16 +15,7 @@ export function VisitorHeader({ screen, sampleTitle, compact, onGo }: { screen: 
   const join = useJoin();
   const open = join?.openJoin;
   const here = typeof window === "undefined" ? "/" : `${window.location.pathname}${window.location.search}`;
-  const logo = (
-    <Tooltip name="Home">
-      <button type="button" className="v12-logo" onClick={() => onGo("home")} aria-label="particl, Home" data-testid="v12-visitor-logo">
-        <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
-          {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
-        </svg>
-        <span className="v12-logo-name">particl</span>
-      </button>
-    </Tooltip>
-  );
+  const logo = <HeaderLogo onClick={() => onGo("home")} testId="v12-visitor-logo" />;
   const login = <a className="v12-vlogin" href={loginPath(here)} data-testid="v12-visitor-login">Log in</a>;
   const request = <button type="button" className="v12-vbtn v12-vbtn-primary" onClick={() => open?.("request")} data-testid="v12-visitor-request">Request access</button>;
   if (compact) {

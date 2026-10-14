@@ -28,7 +28,7 @@ function measureFit(root: HTMLElement, open: readonly string[], active: string |
   const moreEl = nav.querySelector<HTMLElement>(".v12-tab-more");
   if (moreEl) more.current = moreEl.getBoundingClientRect().width;
   const base = px(navStyle.paddingLeft) + px(navStyle.paddingRight) + fixed.reduce((sum, el) => sum + el.getBoundingClientRect().width, 0) + navGap * Math.max(0, fixed.length - 1);
-  const room = inner - logo.getBoundingClientRect().width - right.getBoundingClientRect().width - px(getComputedStyle(field).minWidth) - gap * 3 - px(navStyle.marginLeft) - base - 1;
+  const room = inner - logo.getBoundingClientRect().width - right.getBoundingClientRect().width - px(getComputedStyle(field).minWidth) - gap * 4 - px(navStyle.marginLeft) - base - 1;
   const widths: Record<string, number> = {};
   for (const el of root.querySelectorAll<HTMLElement>(".v12-tabs-measure [data-m]")) widths[el.dataset.m ?? ""] = el.getBoundingClientRect().width + RING_EXTRA + navGap;
   return fitBoardTabs({ open, active, widths, moreWidth: more.current + navGap, room });
