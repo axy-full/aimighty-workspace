@@ -48,7 +48,7 @@ test("desktop: Home lists a teammate's board with its maker; it opens view-only 
     const shareItem = page.getByTestId("v12-menu-share-team");
     await expect(shareItem).toHaveText("Share with team");
     /* The one-line tooltip (the new interface's, not a native title): on hover, and on keyboard focus. */
-    const TIP = "Teammates can view this board. Only you can edit it.";
+    const TIP = "Editing together is coming next — for now teammates can view.";
     await expect(shareItem).not.toHaveAttribute("title", /.+/);
     await shareItem.hover();
     await expect(page.getByTestId("v12-tooltip")).toHaveText(TIP);
@@ -104,7 +104,7 @@ test("desktop: Home lists a teammate's board with its maker; it opens view-only 
     const stop = page.getByTestId("v12-menu-share-team");
     await expect(stop).toHaveText("Stop sharing with team");
     await stop.hover();
-    await expect(page.getByTestId("v12-tooltip")).toHaveText("Teammates can view this board. Only you can edit it.");
+    await expect(page.getByTestId("v12-tooltip")).toHaveText("Editing together is coming next — for now teammates can view.");
     await stop.click();
     await expect(page.getByTestId("v12-toast")).toContainText("No longer shared with the team");
     await expect.poll(async () => ((await (await mate.request.get(`/api/workbench/projects?id=${made.project.id}`, { headers: { "X-Workbench-Scope": scope } })).json()) as { project: unknown }).project ?? null, { timeout: 30_000 }).toBeNull();

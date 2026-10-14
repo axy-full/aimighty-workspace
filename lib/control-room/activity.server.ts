@@ -61,15 +61,17 @@ function fold(outcomes: Outcome[]): { settled: number; settling: boolean } {
 type Names = { names: Map<string, string>; viewer: LedgerViewer };
 const who = (author: string | null, n: Names) => (author ? nameFor(n.viewer, author, n.names) : null);
 
-/* ── Threads: a request in Atomik's panel and the plans it made (lib/atomik.ts) ── */
+/* ── Threads: a request in Atomik's panel and the plans it made (lib/atomik.ts) ──
+   A chat is its own person's here (owner, 12 Oct): the viewer's own chats only, whoever they are. What of another member's step needs an admin's tap is in the approvals
+   queue, as a title and a price (lib/control-room/approvals.server.ts). */
 
-async function threadRuns(production: string | null, inCredits: boolean, workspaceId: string): Promise<{ runs: Omit<ActivityRun, "n" | "project">[]; authors: string[]; productions: string[]; meter: Map<string, MeterRow> }> {
+async function threadRuns(production: string | null, inCredits: boolean, workspaceId: string, viewerId: string): Promise<{ runs: Omit<ActivityRun, "n" | "project">[]; authors: string[]; productions: string[]; meter: Map<string, MeterRow> }> {
   const chats = (await db().execute({
     sql: `SELECT c.id, c.project_id, c.title, c.status, c.created_by, c.created_at,
                  (SELECT u.text FROM atomik_messages u WHERE u.chat_id = c.id AND u.role = 'user' ORDER BY u.created_at ASC, u.rowid ASC LIMIT 1) AS first_ask
-          FROM atomik_chats c WHERE c.deleted = 0 ${production === null ? "" : "AND c.project_id IS ?"}
+          FROM atomik_chats c WHERE c.deleted = 0 AND c.created_by = ? ${production === null ? "" : "AND c.project_id IS ?"}
           ORDER BY c.created_at DESC LIMIT ?`,
-    args: production === null ? [RUNS_LIMIT] : [production, RUNS_LIMIT],
+    args: production === null ? [viewerId, RUNS_LIMIT] : [viewerId, production, RUNS_LIMIT],
   }).catch((error: unknown) => {
     if (missingTable(error)) return { rows: [] as Row[] };
     throw error;
@@ -205,7 +207,7 @@ export async function readActivity(viewer: ApprovalsViewer, production: string |
   const listed = await projectLister({ id: viewer.id });
   const scope = production !== null && !listed(production) ? "\u0000unknown" : production;
   const [threadsAll, boardsAll, spendAll] = await Promise.all([
-    threadRuns(scope, inCredits, workspace.id),
+    threadRuns(scope, inCredits, workspace.id, viewer.id),
     boardRuns(scope, inCredits, viewer.id),
     inCredits ? settledByProject(workspace.id).catch(() => new Map<string, number>()) : Promise.resolve(new Map<string, number>()),
   ]);

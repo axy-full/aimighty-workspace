@@ -1,7 +1,7 @@
 "use client";
 import { spendAttrsOf } from "@/lib/spend";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { countsByDraft, sortQueue, type QueueItem } from "@/lib/control-room/queue";
+import { countsByDraft, sortQueue, viaPlan, type QueueItem } from "@/lib/control-room/queue";
 import type { ApprovalsState } from "@/lib/control-room/use-approvals";
 import { moving, type TrayJob } from "@/lib/jobsTray";
 import { creditsText, priceWords } from "@/lib/shell/price-words";
@@ -130,7 +130,7 @@ function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan, onThread }
   };
   let action: React.ReactNode;
   /* An Atomik plan's step is approved with its plan's Continue, never from this row: Open shows the plan, as on the desktop. */
-  if (item.approve?.kind === "thread") action = (
+  if (viaPlan(item)) action = (
     <button type="button" className="ph-btn" onClick={() => onThread(item)} aria-label={`Open the plan: ${item.title}`} data-testid="phone-row-open">Open</button>
   );
   /* The sample spends nothing: its row says so in its line, and offers no priced button. */

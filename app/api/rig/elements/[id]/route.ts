@@ -1,3 +1,4 @@
+import { sampleRowRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now } from "@/lib/db";
@@ -152,6 +153,8 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
   await ready();
 
   const { id } = await params;
+  /* The marked sample's assets are nobody's to lock or unlock (lib/demo/readonly.server.ts). */
+  { const refused = await sampleRowRefusal("elements", id); if (refused) return refused; }
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown> | null;
   const locked = body?.locked;
   if (typeof locked !== "boolean") {

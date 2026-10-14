@@ -26,7 +26,7 @@ const params = (search: string) => Object.fromEntries(new URLSearchParams(search
 
 test("module ids are unique, every module is in the registry, and each declares the pure shape", () => {
   expect(new Set(IDS).size).toBe(IDS.length);
-  expect([...IDS].sort()).toEqual(["atomik", "board", "board-ads", "board-social", "control-room", "home", "make", "phone", "settings"]);
+  expect([...IDS].sort()).toEqual(["atomik", "board", "board-ads", "board-social", "control-room", "home", "make", "phone", "platform", "settings"]);
   for (const s of SCREENS) {
     expect(typeof s.landed, s.id).toBe("boolean");
     for (const key of s.params) expect(typeof key, s.id).toBe("string");

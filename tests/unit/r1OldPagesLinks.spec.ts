@@ -90,7 +90,7 @@ test("no in-app link or command targets Business, Viral, Crew, the Studio overvi
 test("the shell's types no longer name the retired places", () => {
   const ia = readFileSync(join(ROOT, "lib/shell/ia.ts"), "utf8");
   expect(ia).toMatch(/export type ShellSuiteId = "studio" \| "atomik";/);
-  expect(ia).toMatch(/export type ShellView = "suite" \| "workspace" \| "home" \| "board";/);
+  expect(ia).toMatch(/export type ShellView = "suite" \| "workspace" \| "home" \| "board" \| "admin";/);
   expect(ia).not.toMatch(/CrewPageId|CREW_PAGES|SHELL_PAGE_ALIASES/);
   const state = readFileSync(join(ROOT, "lib/shell/state.tsx"), "utf8");
   expect(state).not.toMatch(/goCrew|crewPage|viralTool|fromMakeLink/);

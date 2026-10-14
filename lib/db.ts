@@ -176,6 +176,8 @@ const SCHEMA = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC)`,
+  /* The upload access check and the uploader backfill look a message up by its upload (lib/uploadAccess.ts). In the schema batch, so a boot pays no extra round trip. */
+  `CREATE INDEX IF NOT EXISTS idx_messages_upload ON messages(upload_id)`,
   `CREATE TABLE IF NOT EXISTS chat_reads (
      user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
      last_read_at INTEGER NOT NULL
@@ -916,6 +918,16 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       await addColumn("generations", `deleted INTEGER NOT NULL DEFAULT 0`);
       await addColumn("uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
       await addColumn("uploads", `duration_s REAL`);
+      /* Who uploaded it (lib/uploadAccess.ts): a member opens an upload only if they uploaded it or shared work uses it. Rows from before this column are
+         filled once, in the same write that adds it, from the records that still name their uploader (the first chat message that carried it; a finished
+         upload session while its record is kept); the rest stay NULL, unowned, and stay open to the workspace's members as they were. It runs only when the
+         column is new, never again on a boot or a re-bootstrap. */
+      await addColumn("uploads", `uploader_id TEXT`, (hasTable) => [
+        `UPDATE uploads SET uploader_id=(SELECT m.user_id FROM messages m WHERE m.upload_id=uploads.id ORDER BY m.created_at LIMIT 1)
+          WHERE uploader_id IS NULL AND EXISTS(SELECT 1 FROM messages m WHERE m.upload_id=uploads.id)`,
+        ...(hasTable("upload_sessions") ? [`UPDATE uploads SET uploader_id=(SELECT s.owner_id FROM upload_sessions s WHERE s.upload_id=uploads.id AND s.state='committed' ORDER BY s.created_at LIMIT 1)
+          WHERE uploader_id IS NULL AND EXISTS(SELECT 1 FROM upload_sessions s WHERE s.upload_id=uploads.id AND s.state='committed')`] : []),
+      ]);
       // The stored original's own length, read from its header at store time
       // or lazily on first read (lib/mediaSource.server.ts); audio and video.
       await addColumn("generations", `duration_s REAL`);

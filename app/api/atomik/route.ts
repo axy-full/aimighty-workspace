@@ -1,5 +1,6 @@
 import { NextResponse, after, type NextRequest } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
+import { readableProjectOr } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { listChats, createChat, engines, requestEffort, runTurn, projectContext, type AgentMode } from "@/lib/atomik";
@@ -58,7 +59,7 @@ export const GET = withTenant(async function GET() {
   if (got.response) return got.response;
 
   /* Particl's own engines only: Atomik never plans on a signed-in account. */
-  const [chats, menu, eng] = await Promise.all([listChats(), menuFor("planner"), engines()]);
+  const [chats, menu, eng] = await Promise.all([listChats(got.user.id), menuFor("planner"), engines()]);
   /* The Marketing Studio presets the planner may name are the ones this key listed within the hour. When
      none are, the catalogue is read after this response (free, non-generating), never inside a planning quote. */
   if (await plannerPresetsStale().catch(() => false)) {
@@ -86,7 +87,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure;
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
-    const projectId = typeof body.projectId === "string" ? body.projectId : null;
+    /* A project this person may not read (a private board; lib/draftProject.ts) is no project (null): nothing of its takes, titles or prompts is read for the model. */
+    const projectId = await readableProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null);
     /* The project's library and presets for library steps, read as the turn will read them. */
     const inputs = await plannerInputs(auth.user.id, projectId);
     return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,

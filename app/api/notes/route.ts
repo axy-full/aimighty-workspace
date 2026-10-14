@@ -49,6 +49,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const genId = String(body.genId ?? "");
   const text = String(body.text ?? "").trim().slice(0, 2000);
   if (!genId || !text) return NextResponse.json({ error: "A note needs a shot and some words" }, { status: 400 });
+  /* A take of the marked sample takes no note, from anyone (lib/demo/readonly.server.ts). */
+  { const { sampleRowRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleRowRefusal("generations", genId); if (refused) return refused; }
 
   /* A note that names someone should reach them (brief 2.1): "the 3rd one
      but with the pan slower" belongs on the take, and the person it is

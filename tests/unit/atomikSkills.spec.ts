@@ -44,7 +44,7 @@ async function rows(sql: string, args: (string | number | null)[] = []) {
  * still that rendered, a clip still waiting, music that failed, and a step the
  * person turned down.
  */
-async function seedRun(opts: { chatId?: string; projectId?: string | null; videoModel?: string; refs?: boolean } = {}) {
+async function seedRun(opts: { chatId?: string; projectId?: string | null; videoModel?: string; refs?: boolean; by?: string } = {}) {
   const { db, ready } = await import("../../lib/db");
   await ready();
   const chatId = opts.chatId ?? `ach_${randomUUID().slice(0, 8)}`;
@@ -58,7 +58,7 @@ async function seedRun(opts: { chatId?: string; projectId?: string | null; video
     { sql: `INSERT INTO users(id, email, name, password_hash, role, created_at) VALUES ('u1','u1@example.test','Asha','x','admin',0), ('u2','u2@example.test','Ben','x','member',0)
             ON CONFLICT DO NOTHING`, args: [] },
     { sql: `INSERT INTO atomik_chats (id, project_id, title, model, agent_mode, status, text_cost_usd, created_by, created_at, updated_at, deleted)
-            VALUES (?,?,?,?,?,?,?,?,?,?,0)`, args: [chatId, opts.projectId ?? null, "Wave Runner spot", "auto", "ask", "waiting", 0.0301, "u1", at, at + 10] },
+            VALUES (?,?,?,?,?,?,?,?,?,?,0)`, args: [chatId, opts.projectId ?? null, "Wave Runner spot", "auto", "ask", "waiting", 0.0301, opts.by ?? "u1", at, at + 10] },
     { sql: `INSERT INTO atomik_messages (id, chat_id, role, text, activity, created_at) VALUES (?,?,?,?,?,?)`,
       args: [`${chatId}_m1`, chatId, "user", "A 15 second spot for our Wave Runner sneakers on a beach at sunset, with @Maya skating.", "[]", at] },
     { sql: `INSERT INTO atomik_messages (id, chat_id, role, text, activity, cost_usd, model, created_at) VALUES (?,?,?,?,?,?,?,?)`,
@@ -91,7 +91,7 @@ test("a run becomes a template: its steps, engines and settings, the person's wo
   await inTenant(workspace(), async () => {
     const chatId = await seedRun();
     /* The form is filled from the run: the steps a skill can keep, and what looks like the person's input. */
-    const draft = await s.draftFromRun(chatId);
+    const draft = await s.draftFromRun(chatId, "u1");
     expect(draft).toMatchObject({ chatId, name: "Wave Runner spot", slug: "wave-runner-spot" });
     expect(draft.steps.map((x) => [x.title, x.keep])).toEqual([["Wave Runner hero still", true], ["Skate pass", true], ["Surf bed", true]]);
     expect(draft.parameters.map((p) => p.phrase)).toEqual(expect.arrayContaining(["@Maya", "Wave Runner sneakers", "beach at sunset"]));
@@ -221,7 +221,7 @@ test("a personal skill is its maker's alone; a workspace skill is the team's, un
       () => s.editSkill(mine.id, { expectedVersion: 1, name: "Taken" }, "u2"), () => s.setSkillStatus(mine.id, "archived", "u2"),
     ]) await expect(attempt()).rejects.toMatchObject({ status: 404, message: "That skill is gone." });
     /* Its command is still taken, said without naming it. */
-    await expect(saveSkill(chatId, "u2", { slug: "my-look", scope: "personal" })).rejects.toThrow("That command is taken in this workspace. Choose another.");
+    await expect(saveSkill(await seedRun({ by: "u2" }), "u2", { slug: "my-look", scope: "personal" })).rejects.toThrow("That command is taken in this workspace. Choose another.");
 
     /* Memory's rule for the workspace's entries: any member may edit, archive and restore them. */
     expect(await s.editSkill(ours.id, { expectedVersion: 1, description: "Ben's better line." }, "u2")).toMatchObject({ version: 2, editedByName: "Ben", canChangeScope: false });
@@ -341,6 +341,8 @@ test("a skill run files proposals that each wait at their checkpoint: nothing is
         /* Filed into a chat the person is in, it joins that conversation; never under a turn still planning. */
         const again = await s.runSkill(skill.id, { values: { product: "Canvas slip-ons" }, chatId: run.chatId }, "u1") as { chatId: string; steps: unknown[] };
         expect(again.chatId).toBe(run.chatId);
+        /* A chat is its person's (lib/atomikAccess.ts): another person's run is not filed into it, and is told it is gone. */
+        await expect(s.runSkill(skill.id, { values: { product: "Canvas slip-ons" }, chatId: run.chatId }, "u2")).rejects.toMatchObject({ status: 404, message: "That chat is gone." });
         expect(Number((await rows("SELECT COUNT(*) AS n FROM atomik_steps WHERE chat_id = ? AND status = 'proposed'", [run.chatId]))[0].n)).toBe(6);
         await rows("UPDATE atomik_chats SET status = 'running' WHERE id = ?", [run.chatId]);
         await expect(s.runSkill(skill.id, { chatId: run.chatId }, "u1")).rejects.toMatchObject({ status: 409 });
@@ -368,7 +370,7 @@ test("a save keeps the chat's latest plan by default, earlier plans start untick
     await rows(`INSERT INTO atomik_steps (id, chat_id, message_id, position, kind, title, prompt, model, params, refs, status, created_at, updated_at)
                 VALUES (?,?,?,0,'image','Night still','Teal Wave Runner sneakers under a streetlight at night.',?,?,'[]','proposed',?,?)`,
       [`${chatId}_s5`, chatId, `${chatId}_m4`, NANO_PRO, JSON.stringify({ ratio: "1:1", resolution: "2K" }), at + 2, at + 2]);
-    const draft = await s.draftFromRun(chatId);
+    const draft = await s.draftFromRun(chatId, "u1");
     expect(draft.steps.map((x) => [x.title, x.latest, x.keep])).toEqual([
       ["Wave Runner hero still", false, false], ["Skate pass", false, false], ["Surf bed", false, false], ["Night still", true, true],
     ]);
@@ -402,7 +404,7 @@ test("a library step is never kept: the form says why, a template refuses its en
     await libraryStep(`${chatId}_k1`, 4, "image", "Campaign still", MARKETING, { ratio: "1:1", resolution: "2k", marketing: { quality: "high", enhancePrompt: false }, inputs: { references: [] } }, []);
     await libraryStep(`${chatId}_k2`, 5, "video", "Motion transfer", MOTION, { task: "genjutsu", ratio: "adaptive", resolution: "720p", sourceUploadId: "up_clip", inputs: { source: "Skate.mp4", references: ["Shoe.png"] } }, [{ uploadId: "up_still", role: "reference_image" }]);
 
-    const draft = await s.draftFromRun(chatId);
+    const draft = await s.draftFromRun(chatId, "u1");
     const library = draft.steps.filter((x) => x.model === MARKETING || x.model === MOTION);
     expect(library.map((x) => [x.title, x.label, x.keep, x.why])).toEqual([
       ["Campaign still", "Product image", false, t.LIBRARY_STEP_REASON],
@@ -427,7 +429,7 @@ test("a library step is never kept: the form says why, a template refuses its en
                 VALUES (?, 'p_lib', 'Campaign stills', 'auto', 'ask', 'waiting', 0, 'u1', ?, ?, 0)`, [onlyLibrary, at, at + 50]);
     await rows(`INSERT INTO atomik_steps (id, chat_id, message_id, position, kind, title, prompt, model, params, refs, status, created_at, updated_at)
                 VALUES (?,?,?,0,'image','Campaign still','A campaign still.',?,'{}','[]','proposed',?,?)`, [`${onlyLibrary}_k`, onlyLibrary, `${onlyLibrary}_m`, MARKETING, at, at]);
-    const runs = await s.savableRuns("p_lib");
+    const runs = await s.savableRuns("p_lib", "u1");
     expect(runs.map((r) => [r.chatId, r.steps])).toEqual([[chatId, 3]]);
   });
 });

@@ -3,6 +3,7 @@ import { fenceDatabase } from "./recoveryDatabaseClient";
 import { columnInstaller } from "./schemaInitialization";
 import { ACCOUNT_SECURITY_SCHEMA } from "./accountSecuritySchema";
 import { SECURITY_AUDIT_SCHEMA, securityAuditStatement } from "./securityAudit";
+import { PLATFORM_AUDIT_SCHEMA, platformAuditStatement } from "./platformAudit";
 import { createClient, type Client } from "@libsql/client";
 import { isPaidKind, type GrantKind } from "./creditTerms";
 import { asPlanId, planById, DEFAULT_PLANS, type PlanId, type PlanDef } from "./plans";
@@ -56,6 +57,7 @@ export const isSuperAdmin = (email: string | null | undefined) => {
 const SCHEMA = [
   ...CREW_MCP_SCHEMA,
   ...SECURITY_AUDIT_SCHEMA,
+  ...PLATFORM_AUDIT_SCHEMA,
   ...ACCOUNT_SECURITY_SCHEMA,
   `CREATE TABLE IF NOT EXISTS accounts (
      id            TEXT PRIMARY KEY,
@@ -342,12 +344,15 @@ export async function setWorkspaceLimits(id: string, l: { concurrency?: number |
 }
 
 /** Pause a workspace's rendering, with a reason it will be shown — or lift it. */
-export async function setWorkspaceSuspended(id: string, suspended: boolean, reason: string | null): Promise<void> {
+export async function setWorkspaceSuspended(id: string, suspended: boolean, reason: string | null, audit?: { actorId: string }): Promise<void> {
   await platformReady();
-  await platformDb().execute({
+  const update = {
     sql: `UPDATE workspaces SET suspended_at = ?, suspended_reason = ?, updated_at = ? WHERE id = ?`,
     args: [suspended ? now() : null, suspended ? (reason ?? "").slice(0, 300) || null : null, now(), id],
-  });
+  };
+  /* From the platform console the change and its audit line commit together (lib/platformAudit.ts). */
+  if (audit) await platformDb().batch([update, platformAuditStatement({ actorId: audit.actorId, action: suspended ? "workspace.paused" : "workspace.resumed", targetType: "workspace", targetId: id, workspaceId: id }, true)], "write");
+  else await platformDb().execute(update);
 }
 
 /** Mark a workspace for review — a content-policy flag with a note — or clear it. */
@@ -580,8 +585,8 @@ export async function setWorkspaceAllowance(id: string, usd: number | null): Pro
  * figure is answered from, and a default would let the next caller not think
  * about it — which is exactly how the welcome grant came to read as revenue.
  */
-export async function grantCredits(workspaceId: string, credits: number, note: string, by: string | null, kind: GrantKind): Promise<void> {
-  await grantCreditsBatch([{workspaceId,credits,note,by,kind}]);
+export async function grantCredits(workspaceId: string, credits: number, note: string, by: string | null, kind: GrantKind, audit?: { actorId: string }): Promise<void> {
+  await grantCreditsBatch([{workspaceId,credits,note,by,kind}], audit);
 }
 
 /**
@@ -599,6 +604,8 @@ export async function grantCredits(workspaceId: string, credits: number, note: s
  */
 export async function grantCreditsBatch(
   rows: { workspaceId: string; credits: number; note: string; by: string | null; kind: GrantKind }[],
+  /** The platform console's grant: one audit line per workspace, in the same transaction as its credits (lib/platformAudit.ts). */
+  audit?: { actorId: string },
 ): Promise<void> {
   if (!rows.length) return;
   if (rows.some((r) => isHouseWorkspace({ id: r.workspaceId }))) throw new Error(HOUSE_NOT_BILLED);
@@ -612,6 +619,9 @@ export async function grantCreditsBatch(
       sql: `INSERT INTO credit_grants (id, workspace_id, credits, note, kind, created_by, created_at) VALUES (?,?,?,?,?,?,?)`,
       args: [newId("cg"), r.workspaceId, r.credits, r.note.slice(0, 200), r.kind, r.by, ts],
     });
+    if (audit) for (const workspaceId of workspaces)
+      await tx.execute(platformAuditStatement({ actorId: audit.actorId, action: "credits.granted", targetType: "workspace", targetId: workspaceId, workspaceId,
+        details: { credits: rows.filter((r) => r.workspaceId === workspaceId).reduce((n, r) => n + r.credits, 0), kind: "manual" } }));
     for(const workspaceId of workspaces)await syncBillingLedger(tx,workspaceId,ts);
   });
 }
@@ -806,18 +816,23 @@ export async function platformLayerState(): Promise<{ value: PlatformLayer; stor
 export async function setPlatformLayer(key: LayerKey, value: unknown, by: string | null): Promise<PlatformLayer> {
   await platformReady();
   const cleaned = mergeLayer({ [key]: value })[key];
-  await platformDb().execute({
+  const upsert = {
     sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES (?,?,?,?)
           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
     args: [key, JSON.stringify(cleaned), now(), by],
-  });
+  };
+  /* A save by a person carries its audit line in the same batch (lib/platformAudit.ts). */
+  if (by) await platformDb().batch([upsert, platformAuditStatement({ actorId: by, action: "layer.saved", targetType: "layer", targetId: key, details: { part: key } })], "write");
+  else await platformDb().execute(upsert);
   _layer = null;
   return getPlatformLayer();
 }
 
-export async function resetPlatformLayer(key: LayerKey): Promise<PlatformLayer> {
+export async function resetPlatformLayer(key: LayerKey, by?: string | null): Promise<PlatformLayer> {
   await platformReady();
-  await platformDb().execute({ sql: `DELETE FROM platform_layer WHERE key = ?`, args: [key] });
+  const remove = { sql: `DELETE FROM platform_layer WHERE key = ?`, args: [key] };
+  if (by) await platformDb().batch([remove, platformAuditStatement({ actorId: by, action: "layer.reset", targetType: "layer", targetId: key, details: { part: key } })], "write");
+  else await platformDb().execute(remove);
   _layer = null;
   return getPlatformLayer();
 }

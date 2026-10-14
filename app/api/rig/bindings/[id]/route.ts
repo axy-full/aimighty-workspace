@@ -1,7 +1,9 @@
 import { syncCreditReceipts } from "@/lib/creditReceipts";
+import { sampleRowRefusal } from "@/lib/demo/readonly.server";
 import { NextResponse } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { db, ready, now } from "@/lib/db";
+import { mayReadTake } from "@/lib/draftProject";
 import { listElements, listBindings, setBinding, clearBinding } from "@/lib/elements";
 import { quoteShots } from "@/lib/impact";
 import { isSlot, type Slot } from "@/lib/rig";
@@ -60,7 +62,7 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
        disagreeing with the impact panel, which asks whether the SHOT has an
        approved take at all. */
     db().execute({
-      sql: `SELECT id, version, review_state, params, kind, ${billedCreditsExpr("generations")} AS credits
+      sql: `SELECT id, version, review_state, params, kind, project_id, ${billedCreditsExpr("generations")} AS credits
             FROM generations
             WHERE shot_id = ? AND deleted = 0 AND status = 'succeeded'
             ORDER BY CASE review_state WHEN 'approved' THEN 0 WHEN 'picked' THEN 1 ELSE 2 END,
@@ -72,7 +74,8 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
   ]);
 
   let take = null as null | { id: string; version: number; state: string; approved: boolean; kind: string; seconds: number | null; credits: number };
-  if (takeRs.rows.length) {
+  /* A take of a private board this person may not see (lib/draftProject.ts) is left off the strip: the shot reads as one with no take yet. */
+  if (takeRs.rows.length && (await mayReadTake(got.user, takeRs.rows[0].project_id == null ? null : String(takeRs.rows[0].project_id)))) {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
     const r = takeRs.rows[0] as any;
     let seconds: number | null = null;
@@ -127,6 +130,8 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
   const { id: shotId } = await params;
   const shot = await shotOf(shotId);
   if (!shot) return NextResponse.json({ error: "No such shot." }, { status: 404 });
+  /* The marked sample's shots take no wire, from anyone (lib/demo/readonly.server.ts). */
+  { const refused = await sampleRowRefusal("shots", shotId); if (refused) return refused; }
 
   const body = await req.json().catch(() => ({}));
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */

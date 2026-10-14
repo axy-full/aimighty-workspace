@@ -13,7 +13,7 @@ export type ShellSuiteId = "studio" | "atomik";
  * The shell's views: Home, the board and Settings are screens (lib/shell/screens.ts); `suite` is Atomik's control room. Crew, Business,
  * Viral, the Studio overview and the old Gen view are gone (owner decision 21): their addresses are rewritten by `route`.
  */
-export type ShellView = "suite" | "workspace" | "home" | "board";
+export type ShellView = "suite" | "workspace" | "home" | "board" | "admin";
 /** Workspace's seven old tabs, and Settings' five sections (lib/shell/settings.ts), which the new Settings screen reads as `tab`. */
 export type OldWorkspaceTabId = "general" | "people" | "credits" | "usage" | "dashboard" | "engines" | "security";
 export type WorkspaceTabId = OldWorkspaceTabId | SettingsSectionId;

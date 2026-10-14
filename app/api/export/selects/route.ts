@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
+import { mayReadTake } from "@/lib/draftProject";
 import { db, ready } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { buildFilename } from "@/lib/naming";
@@ -70,7 +71,8 @@ export const GET = withTenant(async function GET(req: Request) {
   const format = url.searchParams.get("format") ?? "zip";
   if (!projectId) return NextResponse.json({ error: "Which production?" }, { status: 400 });
 
-  const { rows, production } = await approvedSelects(projectId);
+  /* A private board's approved takes (lib/draftProject.ts) are not packaged for someone who may not see them: the answer is the one for a production with nothing approved. */
+  const { rows, production } = (await mayReadTake(got.user, projectId)) ? await approvedSelects(projectId) : { rows: [], production: "" };
   const unit: "cr" | "$" = creditsApply(currentTenant()?.workspace) ? "cr" : "$";
   const stem = (production || "production").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "production";
   if (!rows.length) return NextResponse.json({ error: "Nothing is approved in this production yet." }, { status: 404 });
