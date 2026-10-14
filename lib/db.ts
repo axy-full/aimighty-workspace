@@ -47,6 +47,10 @@ export function db(): Client {
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS credit_receipts (event_id TEXT PRIMARY KEY, credits REAL NOT NULL, revision INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS credit_receipt_cursor (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL)`,
+  /* The figure of each take made before metering, frozen once at the terms of the day it was frozen (lib/estimatedCredits.ts), and never computed again: a change to the margin
+     table cannot reprice history. A take with a row here is "estimated". The marker says the one-time fill has run. Rows are only ever added. */
+  `CREATE TABLE IF NOT EXISTS estimated_credits (gen_id TEXT PRIMARY KEY, credits INTEGER NOT NULL, frozen_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS estimated_credits_fill (id INTEGER PRIMARY KEY CHECK(id=1), filled_at INTEGER NOT NULL, first_meter_at INTEGER)`,
   ...SECURITY_AUDIT_SCHEMA,
   /* Workbench redesign: private drafts inside the resolved tenant database.
      Shared bible versions and node/shot mappings are added by workbenchReady. */
