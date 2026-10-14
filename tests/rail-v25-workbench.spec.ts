@@ -65,7 +65,7 @@ test("at 1280 x 800 all ten steps and Add step fit without scrolling, 26 px circ
   await expect.poll(() => film(page).locator(".v12-steprail-scroll").evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
 });
 
-test("fourteen steps scroll inside the panel, with a fade where more is hidden, and the current step is in view", async ({ page }) => {
+test("fifteen steps scroll inside the panel, with a fade where more is hidden, and the current step is in view", async ({ page }) => {
   const many = page.getByTestId("v25-rail-many");
   await many.scrollIntoViewIfNeeded();
   const scroll = many.locator(".v12-steprail-scroll");
@@ -99,4 +99,16 @@ test("every word on the rail is 12 px or more, the steps are 44 px tall, and the
   expect(small, "text under 12 px").toEqual([]);
   for (const box of await steps(page).evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))) expect(box).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `no horizontal overflow at ${info.project.name}`).toBeLessThanOrEqual(0);
+});
+
+test("a label too long for the panel ends in an ellipsis, and its tooltip says the whole name", async ({ page }) => {
+  const many = page.getByTestId("v25-rail-many");
+  await many.scrollIntoViewIfNeeded();
+  const label = many.locator(".v12-steprail-step", { hasText: "A long step name" }).locator(".v12-steprail-label");
+  await label.scrollIntoViewIfNeeded();
+  await expect(label).toHaveCSS("text-overflow", "ellipsis");
+  expect(await label.evaluate((el) => el.scrollWidth > el.clientWidth), "the name is cut").toBe(true);
+  expect(await label.evaluate((el) => el.getBoundingClientRect().width), "within the panel").toBeLessThanOrEqual(80);
+  await label.hover();
+  await expect(page.getByTestId("v12-tooltip")).toContainText("A long step name that cannot fit");
 });

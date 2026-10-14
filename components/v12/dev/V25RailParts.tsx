@@ -34,6 +34,7 @@ const CLIPS: RailStep[] = [
 ];
 const MANY: RailStep[] = [
   ...FILM.slice(0, 7),
+  step("pitchdeck", "A long step name that cannot fit", "Not started"),
   ...["look", "formats", "variants", "hook", "voice", "captions", "moments"].map((id) => step(id, id[0].toUpperCase() + id.slice(1), "Not started")),
 ];
 const POOL = ["moments", "captions", "hook", "look", "formats"];
@@ -60,7 +61,7 @@ export function V25RailParts() {
         <div className="v12 v25-parts">
           <div className="v25-parts-head" aria-hidden="true">The board&apos;s two header rows stand here (mock)</div>
           <Frame label="Film" initial={FILM} current="shots" tall addable />
-          <h1 className="v25-parts-h">Rail · five steps (Social clips) · fourteen steps, which scroll (mock data)</h1>
+          <h1 className="v25-parts-h">Rail · five steps (Social clips) · fifteen steps, which scroll (mock data)</h1>
           <div className="v25-parts-pair">
             <Frame label="Clips" initial={CLIPS} current="moments" />
             <Frame label="Many" initial={MANY} current="look" />

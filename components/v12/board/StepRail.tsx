@@ -52,7 +52,7 @@ export function StepRail({ steps, current, onPick, onAdd }: {
   }, []);
 
   const geometry = railGeometry({ height: height || 700, count: steps.length });
-  /* The geometry is set inline: its numbers change with the window, and a style sheet may only read the token set. */
+  /* The geometry is set inline as style props, not as rules or custom properties in the sheet: its numbers change with the window and the step count. */
   const pad = { padding: `${geometry.gap}px 0` };
   const line = { height: geometry.gap };
   const circle = { width: geometry.circle, height: geometry.circle };
