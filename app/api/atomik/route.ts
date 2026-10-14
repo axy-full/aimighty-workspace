@@ -1,6 +1,6 @@
 import { NextResponse, after, type NextRequest } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
-import { mayReachProject, readableProjectOr } from "@/lib/draftProject";
+import { admittedProjectOr, mayReachProject } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { listChats, createChat, engines, requestEffort, runTurn, projectContext, type AgentMode } from "@/lib/atomik";
@@ -88,7 +88,7 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
     /* A project this person may not read (a private board; lib/draftProject.ts) is no project (null): nothing of its takes, titles or prompts is read for the model. */
-    const projectId = await readableProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null);
+    const projectId = await admittedProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null);
     /* The project's library and presets for library steps, read as the turn will read them. */
     const inputs = await plannerInputs(auth.user.id, projectId);
     return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,

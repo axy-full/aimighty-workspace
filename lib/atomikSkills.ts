@@ -2,6 +2,7 @@ import { chatIsMine } from "./atomikAccess";
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
 import { requireTenant } from "./tenant";
+import { admittedProjectOr } from "./draftProject";
 import { getSetting } from "./settings";
 import { MODELS } from "./models";
 import { mediaMutation } from "./mediaMutation";
@@ -553,11 +554,13 @@ export async function runSkill(id: unknown, input: {
     const chat = (await db().execute({ sql: "SELECT id, project_id, status FROM atomik_chats WHERE id = ? AND deleted = 0 AND created_by = ?", args: [chatId, by] })).rows[0] as Row | undefined;
     if (!chat) throw new SkillError("That chat is gone.", 404);
     if (chat.status === "running") throw new SkillError("Atomik is still planning in this chat. Run the skill when it has answered.", 409);
-    projectId = text(chat.project_id);
+    /* The chat's project as this person may file into it now: none where they may not (the rule chats live by, lib/draftProject.ts). */
+    projectId = await admittedProjectOr({ id: by }, text(chat.project_id));
   } else if (input.projectId != null && input.projectId !== "") {
     if (typeof input.projectId !== "string" || !PROJECT_ID.test(input.projectId)) throw new SkillError("Choose a saved project.");
-    if (!(await db().execute({ sql: "SELECT 1 FROM projects WHERE id = ? LIMIT 1", args: [input.projectId] })).rows.length) throw new SkillError("That project is not in this workspace.", 404);
-    projectId = input.projectId;
+    /* A project this person may not file into (someone else's private board, or an id that is none) is no project, the same for both; any other must be in this workspace. */
+    projectId = await admittedProjectOr({ id: by }, input.projectId);
+    if (projectId && !(await db().execute({ sql: "SELECT 1 FROM projects WHERE id = ? LIMIT 1", args: [projectId] })).rows.length) throw new SkillError("That project is not in this workspace.", 404);
   }
 
   const said = describeValues(template.parameters, values);
@@ -577,7 +580,8 @@ export async function runSkill(id: unknown, input: {
   await mediaMutation(async (tx) => {
     if (chatId) {
       /* Never under a turn still planning: the guard is the row itself. */
-      const moved = await tx.execute({ sql: "UPDATE atomik_chats SET status = 'waiting', updated_at = ? WHERE id = ? AND deleted = 0 AND status <> 'running'", args: [ts + 1, chatId] });
+      /* The chat keeps a project only if its person may file into it now (an old chat on a board they can no longer reach is cleared here, as at a turn). */
+      const moved = await tx.execute({ sql: "UPDATE atomik_chats SET status = 'waiting', project_id = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND status <> 'running'", args: [projectId, ts + 1, chatId] });
       if (!Number(moved.rowsAffected ?? 0)) throw new SkillError("Atomik is still planning in this chat. Run the skill when it has answered.", 409);
     } else {
       await tx.execute({

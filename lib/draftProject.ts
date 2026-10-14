@@ -150,6 +150,15 @@ export async function mayReachProject(person: { id: string } | null, projectId: 
   return access === "read" && (await draftIsTeamShared(projectId!, ex));
 }
 
+/**
+ * `projectId` when `person` may FILE into it ("admit": their own board, the sample, or any project that is not a private board), else null, no project. The one rule a chat's project
+ * lives by (chat create and PATCH, skills, the turn): a private board of someone else's and an id that is none give the same null, so nothing says whether one exists.
+ */
+export async function admittedProjectOr(person: { id: string } | null, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
+  if (projectId == null || projectId === "") return null;
+  return (await mayReachProject(person, projectId, "admit", ex)) ? projectId : null;
+}
+
 /** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
 /**
  * The boards a teammate may look at, by the one definition: every draft its author has shared with the team (`teamShared`), and the marked sample

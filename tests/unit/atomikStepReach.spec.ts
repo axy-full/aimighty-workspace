@@ -86,12 +86,13 @@ test("a step's render is filed only where the chat's maker may file: someone els
   expect(await ask(as("u_admin", "admin"), "st_apprv")).toMatchObject({ ok: true, project: f.boardOf("u_member") });
 });
 
-function loadRoute<T>(file: string, who: () => { user: ReturnType<typeof user> }): T {
+function loadRoute<T>(file: string, who: () => { user: ReturnType<typeof user> }, extra: Record<string, unknown> = {}): T {
   const root = process.cwd();
   const real = createRequire(path.resolve(file));
   const fakes: Record<string, unknown> = {
     "@/lib/auth": { withTenant: (handler: unknown) => handler, requireRender: async () => ({ ...who() }), requireUser: async () => ({ ...who() }) },
     "next/server": { ...real("next/server"), after: () => undefined },
+    ...extra,
   };
   const compiled = ts.transpileModule(readFileSync(path.resolve(file), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const mod = { exports: {} };
@@ -131,4 +132,31 @@ test("a chat made or patched with a project its person may not file into stores 
   expect(await patched("ach_plain", f.ghost)).toBeNull();
   expect(await patched("ach_plain", f.boardOf("u_member"))).toBe(f.boardOf("u_member"));
   expect(await patched("ach_plain", "")).toBeNull();
+});
+
+test("a turn in an old chat ignores a project its person can no longer file into: no context, spend, memory or filing through it, and the chat's project is cleared; their own board and a shared project are kept", async () => {
+  const f = await fixture("turn");
+  let who = as("u_member");
+  const seen: unknown[] = [];
+  const atomik = await import("../../lib/atomik");
+  const turn = loadRoute<typeof import("../../app/api/atomik/[id]/route")>("app/api/atomik/[id]/route.ts", () => who, {
+    "@/lib/atomik": { ...atomik, runTurn: async (_id: string, opts: { projectId: string | null }) => { seen.push(opts.projectId); } },
+  });
+  const projectOf = (chat: string) => f.tenant.runInTenant(f.ws, async () => (await f.database.db().execute({ sql: "SELECT project_id FROM atomik_chats WHERE id=?", args: [chat] })).rows[0]?.project_id ?? null, { user: who.user });
+  const say = async (chat: string, n: number) => {
+    const res = await f.tenant.runInTenant(f.ws, () => turn.POST(new Request("https://particl.test/api/atomik/x", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `turn-${chat}-${n}-${run}` }, body: JSON.stringify({ text: "Plan it" }) }) as never, { params: Promise.resolve({ id: chat }) }), { user: who.user });
+    expect(res.status, await res.clone().text()).toBe(200);
+  };
+  /* The chats the fixture made for u_member: on their own board, on someone else's private board (an old chat), on a shared production, on a board nobody owns. */
+  for (const [chat, expected] of [["ach_own", f.boardOf("u_member")], ["ach_plain", "proj_plain"], ["ach_cross", null], ["ach_ghost", null]] as const) {
+    seen.length = 0;
+    await say(chat, 1);
+    expect([chat, seen[0] ?? null]).toEqual([chat, expected]);
+    expect([chat, await projectOf(chat)]).toEqual([chat, expected]);
+  }
+  /* An admin's existing chat on a member's private board: no board context or billing through it either. */
+  who = as("u_admin", "admin");
+  seen.length = 0;
+  await say("ach_admin_cross", 1);
+  expect([seen[0] ?? null, await projectOf("ach_admin_cross")]).toEqual([null, null]);
 });

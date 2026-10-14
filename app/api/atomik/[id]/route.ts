@@ -1,4 +1,4 @@
-import { mayReachProject, readableProjectOr } from "@/lib/draftProject";
+import { admittedProjectOr, mayReachProject } from "@/lib/draftProject";
 import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
@@ -110,8 +110,10 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const effort = requestEffort(b.effort);
     if (b.model !== undefined && (typeof b.model !== "string" || !b.model || b.model.length > 120))
       return NextResponse.json({ error: "Choose an available Atomik model." }, { status: 400 });
-    /* A project this person may not read (a private board; lib/draftProject.ts) is no project (null): nothing of its takes, titles or prompts is read for the model, before anything is reserved. */
-    const projectId = await readableProjectOr(got.user, loaded.chat.projectId);
+    /* A project this person may not file into (a private board of someone else's, even for an admin; lib/draftProject.ts) is no project (null): nothing of it is read for the model, spent against or filed into, before anything is reserved. */
+    const projectId = await admittedProjectOr(got.user, loaded.chat.projectId);
+    /* A project this person can no longer file into is dropped from the chat itself, so its steps stop being proposed for a board they cannot render into. */
+    if (!quoteOnly && loaded.chat.projectId && !projectId) await patchChat(id, { projectId: null });
     const context = await projectContext(projectId);
     /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */
     const memory = await plannerMemoryText({ projectId, query: text }).catch(() => "");
