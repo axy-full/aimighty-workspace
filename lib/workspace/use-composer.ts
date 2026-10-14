@@ -616,7 +616,7 @@ export function useComposer(options: {
           const request = (variation: number): DispatchRequest => model.audioTask
             ? {
                 endpoint: "/api/audio",
-                quoteBody: { ...now.audioBody!, batchId, variation, batchSize: count },
+                quoteBody: { ...now.audioBody!, batchId, variation, batchSize: count, ...(madeInRef.current ? { madeIn: madeInRef.current } : {}) },
                 body: { ...now.audioBody!, projectId: mapping.productionProjectId, shotId: mapping.shotId, batchId, variation, batchSize: count, ...(madeInRef.current ? { madeIn: madeInRef.current } : {}) },
               }
             : {
@@ -728,7 +728,7 @@ export function useComposer(options: {
           request: model.audioTask
             ? {
                 endpoint: "/api/audio",
-                quoteBody: { ...now.audioBody! },
+                quoteBody: { ...now.audioBody!, ...(madeInRef.current ? { madeIn: madeInRef.current } : {}) },
                 body: { ...now.audioBody!, projectId: mapping.productionProjectId, shotId: mapping.shotId, ...(madeInRef.current ? { madeIn: madeInRef.current } : {}) },
               }
             : {
