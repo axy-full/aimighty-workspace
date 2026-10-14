@@ -4,7 +4,7 @@ import { requireTenant } from "@/lib/tenant";
 import { AccountError, takeAccountLimit } from "@/lib/accountDb";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { attachmentDisposition } from "@/lib/contentDisposition";
-import { readOwnDraft } from "@/lib/workbench/records";
+import { readDraft } from "@/lib/workbench/records";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { downloadProductImage } from "@/lib/workbench/product-image";
 import { ProductExtractionError } from "@/lib/workbench/product-fetch";
@@ -78,7 +78,7 @@ export const POST = withTenant(
           { error: "Choose a saved project and a public image URL." },
           { status: 400, headers },
         );
-      if (!(await readOwnDraft(auth.user.id, input.data.projectId)))
+      if (!(await readDraft(auth.user.id, input.data.projectId)))
         return Response.json(
           {
             error:

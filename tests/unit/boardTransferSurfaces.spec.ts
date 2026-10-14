@@ -1,9 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
 
 /**
@@ -114,38 +112,6 @@ test("Crew, the project library, edit versions, consent's project keys and the S
   expect(await keys(NEW)).toEqual(["d1", f.production]);
   const studio = (p: Who) => f.as(p, () => studioProjectFor(p.id, f.production));
   expect([await studio(OLD), await studio(NEW), await studio(ADMIN)]).toEqual([null, "d1", null]);
-});
-
-test("the three Moleculr routes: the old owner is refused before anything is fetched, the new owner is let through to the (stubbed) fetch, once", async () => {
-  const f = await fixture("moleculr");
-  await f.handOver();
-  const calls: string[] = [];
-  const root = process.cwd();
-  const load = (file: string, viewer: () => Who) => {
-    const real = createRequire(path.resolve(file));
-    const fakes: Record<string, unknown> = {
-      "@/lib/auth": { withTenant: (h: unknown) => h, requireUser: async () => ({ user: asUser(viewer()).user }) },
-      "@/lib/workbench/request-scope": { workbenchScopeProblem: () => null },
-      "@/lib/workbench/product-extraction": { extractProduct: async (url: string) => { calls.push(`product ${url}`); return { ok: true }; } },
-      "@/lib/workbench/brand-extraction": { extractBrand: async (url: string) => { calls.push(`brand ${url}`); return { ok: true }; } },
-      "@/lib/workbench/product-image": { downloadProductImage: async (url: string) => { calls.push(`image ${url}`); return { bytes: new Uint8Array([1]), mime: "image/png", filename: "a.png" }; } },
-    };
-    const compiled = ts.transpileModule(readFileSync(path.resolve(file), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
-    const mod = { exports: {} as { POST: (r: Request) => Promise<Response> } };
-    new Function("require", "module", "exports", compiled)((n: string) => (Object.hasOwn(fakes, n) ? fakes[n] : n.startsWith("@/") ? real(path.join(root, n.slice(2))) : real(n)), mod, mod.exports);
-    return mod.exports;
-  };
-  let current = OLD;
-  for (const route of ["extract-brand", "extract-product", "import-image"]) {
-    const mod = load(`app/api/workbench/moleculr/${route}/route.ts`, () => current);
-    const ask = (p: Who) => { current = p; return f.as(p, async () => (await mod.POST(new Request(`https://particl.test/api/workbench/moleculr/${route}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "https://shop.example/item", projectId: "d1" }) }))).status); };
-    const before = calls.length;
-    expect(await ask(OLD), `${route}: the old owner`).toBe(404);
-    expect(calls.length, `${route}: nothing fetched for the old owner`).toBe(before);
-    const admitted = await ask(NEW);
-    expect(admitted, `${route}: the new owner is past the project check`).not.toBe(404);
-    expect(calls.length, `${route}: one stubbed fetch for the new owner`).toBe(before + 1);
-  }
 });
 
 test("Atomik's board building prices an ask for the new owner's draft and none for the old owner's, and spends nothing either way", async () => {

@@ -28,6 +28,7 @@ async function fixture(name: string) {
   const { newProject } = await import("../../lib/workbench/studio");
   const platform = await import("../../lib/platform");
   const transfer = await import("../../lib/workbench/board-transfer");
+  const { mappedId } = await import("../../lib/draftProject");
   const rooms = await import("../../lib/workbench/room-rotation");
   const { teamRoomFor } = await import("../../lib/workbench/team-canvas");
   await platform.platformReady();
@@ -40,7 +41,9 @@ async function fixture(name: string) {
   const ids: Record<string, string> = {};
   for (const [draft, linked] of [["d1", "prod_linked"], ["d2", undefined]] as const) {
     const saved = await as(who("u_owner"), async () => { await records.workbenchReady(); return records.saveDraft("u_owner", { ...newProject(draft), id: draft, nodes: [], ...(linked ? { productionProjectId: linked } : {}) } as never, 0); });
-    ids[draft] = saved.productionProjectId as string;
+    void saved;
+    /* The board's own project (the id a hand-over names); the room is the production its draft is linked to. */
+    ids[draft] = mappedId("prj_wb_", ws.id, "u_owner", draft);
   }
   const move = (projectIds: string[], to: string) => as(ADMIN, () => settle(transfer.transferBoards(ws, ADMIN as never, projectIds, to)));
   const undo = (projectIds: string[]) => as(ADMIN, () => settle(transfer.undoTransfers(ws, ADMIN as never, projectIds)));
@@ -64,7 +67,8 @@ test("the room each moved board is edited in moves with the change, and the old 
   }) as typeof fetch;
   try {
     expect([await f.generation("prod_linked"), await f.generation(f.ids.d2)]).toEqual([0, 0]);
-    expect((await f.move([f.ids.d1, f.ids.d2], "u_new")).ok).toBe(true);
+    const first = await f.move([f.ids.d1, f.ids.d2], "u_new");
+    expect(first.ok, JSON.stringify(first)).toBe(true);
     /* The room of a draft LINKED to another production is that production's, not a recomputed default. */
     expect([await f.generation("prod_linked"), await f.generation(f.ids.d2)]).toEqual([1, 1]);
     expect(deletes.sort()).toEqual([f.teamRoomFor(f.ws.id, "prod_linked", 0), f.teamRoomFor(f.ws.id, f.ids.d2, 0)].sort());
