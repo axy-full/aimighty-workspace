@@ -389,3 +389,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - (4) Undo skips the active-member check.
   The guard-dodge verdict is "soft dodge": a re-export through team-boards plus inline SQL keeps `workbenchRequestScope.spec.ts` unedited. The honest fix is the owner's word to add stubs (additive), then delete the inline copies. Nit: no registry tool (rule 11). Queued for lane D after #715 and the #704 fixes.
 - **14 Oct 19:29 IST.** Owner amended #714: lip-sync DIRECT through sync.so (lipsync-2-pro, sync-3), not via fal; Sarvam direct; vendor copies deleted after storing. The plan update is queued for the next free slot (lane cap 3).
+- **14 Oct 19:32 IST.** **#719 Vercel-out plan** opened (02d9e110; CI run cancelled):
+  - most of the named "dead weight" is live (gateway.ts carries direct OpenAI text and the mock; engines/vercel.ts is the text adapter; revokeGatewayKey runs in the cron);
+  - `ai` pulls in @ai-sdk/gateway and @vercel/oidc;
+  - the model catalogue may still call Vercel unless MODEL_CATALOG=static;
+  - (b) recommends our own ~150-line loop over #553;
+  - a ratchet guard lands first.
+  9 owner decisions are in its body. **#706 CI GREEN 24/24** (base 890d559c); it merges after the release/1 run on 05e93d09 is green. Planner resumed on the #712/#714 updates.
