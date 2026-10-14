@@ -444,3 +444,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#723** Step 0 people-only approval (d330a082: tokens, MCP and agents get 403 PEOPLE_ONLY on approve and un-approve; guests untouched; open point: a token can still send an approved take back);
   - **#724** Step 0 job label (cef537ad: params.job, 14 codes, server-written; `job` excluded from the quote fingerprint in admissionCheckpoint, a money review; ?job= filter).
   Opus reviews of #722 (re-check), #723 and #724 running. Lane C next: review events (M1) and the quote snapshot.
+- **14 Oct 20:29 IST.** **#722 Opus APPROVED at ce0937cc** (no guard touched; 30 specs). Fresh CI started. The merge waits for the owner's word (and the operationalHealth edit OK). After the deploy, the owner's signed-in health should show cron `by: "scheduler"`.
