@@ -1,0 +1,9 @@
+{
+  "name": "v25-topbar",
+  "app": "/suites?project=project-a8f90b1c&suite=particl&page=brief&view=home",
+  "prototype": "",
+  "size": {
+    "width": 1440,
+    "height": 900
+  }
+}
