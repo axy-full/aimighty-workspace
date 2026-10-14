@@ -251,7 +251,7 @@ test("closing the old room is retried, and when Liveblocks cannot be reached the
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, mode: "none", roomRotated: true });
     expect(deletes.length).toBe(3);
-    let current = who("u_owner");
+    const current = who("u_owner");
     const auth = authRoute(() => current);
     const token = (room: string) => f.as(current, () => auth.POST(new Request("https://particl.test/api/collab/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ room }) })));
     expect((await token(teamRoomFor(f.ws.id, production))).status, "the old room, never closed by Liveblocks").toBe(403);
@@ -312,22 +312,23 @@ test("a member switched off or removed closes every Can edit room; re-enabling, 
     const off = await patch({ disabled: true });
     expect(off.status, JSON.stringify(await off.clone().json())).toBe(200);
     // The generations moved before the response went, so no old token is honoured; no room has been deleted yet: that is for after the response.
-    expect(await generations()).toEqual({ d1: 1, d2: 1, d3: 0, d4: 0 });
+    expect(await generations()).toEqual({ d1: 2, d2: 2, d3: 0, d4: 0 });
     expect(deletes).toEqual([]);
     expect(pending.length).toBe(1);
     await afterResponse();
-    expect(deletes.length).toBe(2);
-    expect(mostAtOnce, "the old rooms are closed together, not one after another").toBe(2);
+    /* Each Can edit room moved twice (before the change and again after it, for any room opened in between), and all four old rooms are closed. */
+    expect(deletes.length).toBe(4);
+    expect(mostAtOnce, "the old rooms are closed together, not one after another").toBe(4);
     // Switched back on, or only the role changed (a role change is the owner's call; the admin is the owner here): nothing moves.
     expect((await patch({ disabled: false })).status).toBe(200);
-    expect(await generations()).toEqual({ d1: 1, d2: 1, d3: 0, d4: 0 });
-    expect(deletes.length).toBe(2);
+    expect(await generations()).toEqual({ d1: 2, d2: 2, d3: 0, d4: 0 });
+    expect(deletes.length).toBe(4);
     // Removed: every Can edit room moves again.
     const removed = await f.as(admin, () => mod.exports.DELETE(new Request("https://particl.test/api/team/u_mate", { method: "DELETE" }), ctx));
     expect(removed.status, JSON.stringify(await removed.clone().json())).toBe(200);
-    expect(await generations()).toEqual({ d1: 2, d2: 2, d3: 0, d4: 0 });
-    expect(deletes.length).toBe(2);
-    await afterResponse();
+    expect(await generations()).toEqual({ d1: 4, d2: 4, d3: 0, d4: 0 });
     expect(deletes.length).toBe(4);
+    await afterResponse();
+    expect(deletes.length).toBe(8);
   } finally { globalThis.fetch = realFetch; }
 });
