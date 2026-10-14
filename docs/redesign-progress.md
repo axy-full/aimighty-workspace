@@ -348,3 +348,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#713** (8b, compare-and-set on saved-mode canvas edits; stacks on #708; head 3039020e);
   - **#715** (draft; board-sharing PR 1 server: admin reach, audit in `security_audit`, "Viewed by" data; head 54ea3a68).
   Both are in Opus review. **Blocker found:** since #704, `tests/unit/securityAudit.spec.ts:431` and `tests/unit/platformOwnerPrivacy.spec.ts:139` fail: their route loaders pin the allowed `@/lib` imports, and #704 added `@/lib/workbench/room-rotation` to `app/api/team/[id]/route.ts`. The fix maps the real module in both lists (no assertion loosened), but it is a guard edit, so it needs the owner's word. #715 guard moves (privateCanvas:74, privateShots :72-77 to :353) also wait for the owner.
+- **14 Oct 18:09 IST.** Fresh CI on release/1 890d559c:
+  - **#701 red:**
+    - unit specs still expect the old 3-decimal dollars (v12-render-state :82 :212 :247, jobsTray :252) against the owner's 2-decimal decision;
+    - demo-s04-plan-model:102;
+    - house-units at phone sizes;
+    - credits-reachable :66 at desktop sizes.
+  - **#706 red:** hf-gen-output-coverage:165 (voice list) at 1440 and 1920.
+  Lane C started on both: exact 2-decimal expectations only where the owner's format decision makes them stale (not listed guards; no matcher loosened); anything else is fixed in code. #713 Opus CHANGES NEEDED (in-flight canvas send vs draft save; a skipped delete): lane D fixing.
