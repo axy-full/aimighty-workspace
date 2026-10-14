@@ -397,3 +397,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - a ratchet guard lands first.
   9 owner decisions are in its body. **#706 CI GREEN 24/24** (base 890d559c); it merges after the release/1 run on 05e93d09 is green. Planner resumed on the #712/#714 updates.
 - **14 Oct 19:33 IST.** **Owner: backup done for deploy #3.** Restore point 2026-10-14T14:00:21Z. Copies platform-backup-20261014 and tenant-backup-20261014; PRAGMA integrity_check ok on both; row counts match live (platform workspaces 2/2; tenant uploads 4/4, generations 2/2). SQL dumps held privately by the owner. The owner is merging #703 and deploying in Coolify; the lead runs the read-only post-deploy checks.
+- **14 Oct 19:40 IST.** **DEPLOY #3 LIVE:** #703 merged by the owner 14:03:29Z (main d380ce75); `/api/health` reports d380ce7 on 5 hits in a row from 19:39 IST.
+  - Read-only checks: health 200 (database ok, storage ok); readiness 401 anonymous; / /login /pricing /privacy 200; the Google start redirect 303 to Google with PKCE; anonymous /api/jobs /api/uploads /api/notes /api/chat /api/workbench/projects /api/team /api/workspaces/audit /api/me all 401; ?view=admin redirects anonymous visitors.
+  - Page and chunk word counts are the same as the deploy #2 baseline.
+  Waiting for the owner's signed-in checks. **Deploy #4 may be prepared after 24 h clean: from 15 Oct ~19:40 IST.**
