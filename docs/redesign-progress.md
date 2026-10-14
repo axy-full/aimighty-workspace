@@ -439,3 +439,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - (1) bumpEditRooms needs `await ready()`: without it an un-bootstrapped workspace 503s member removal, and securityAudit's 503 case passes for the wrong reason.
   - (2) The window between the bump and the commit lets the member being removed get a token for the NEW room, and a Liveblocks connection outlives its token: a second bump after commit, closing both sets of rooms.
   boardRooms.spec.ts is #704's own spec, so its counts may change. With the proposed import-list line plus (1), securityAudit, platformOwnerPrivacy and boardRooms pass 30/30 (reviewer-tested). Fix (1) of the earlier pair is correct, and the privacy verdict is unchanged. Queued for lane D after the Vercel guard PR.
+- **14 Oct 20:28 IST.** Lane C:
+  - **#722 fixed** (ce0937cc: the cron check inline, cronCaller deleted, no guard touched);
+  - **#723** Step 0 people-only approval (d330a082: tokens, MCP and agents get 403 PEOPLE_ONLY on approve and un-approve; guests untouched; open point: a token can still send an approved take back);
+  - **#724** Step 0 job label (cef537ad: params.job, 14 codes, server-written; `job` excluded from the quote fingerprint in admissionCheckpoint, a money review; ?job= filter).
+  Opus reviews of #722 (re-check), #723 and #724 running. Lane C next: review events (M1) and the quote snapshot.
