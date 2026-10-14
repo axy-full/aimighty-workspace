@@ -475,3 +475,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - (1) gatewayPost sends google/* text with no safety config (enhance, Atomik raw jobs, gatewayChat), plus classify gateway blocks as free (today an Atomik raw job is charged on a block);
   - (2) the GEMINI_IMAGE_MODEL env override bypasses the routing table and under-bills.
   Block handling, logs (no prompt), the pin test and the textDirectRequests edit all check out. Follow-ups: the agent loops' direct Gemini blocks; Agent-mode model names (v21). Queued for lane C after the urgent UI-names PR.
+- **14 Oct 21:47 IST.** **#724 Opus APPROVED at c990db1f.**
+  - **#729 must-fix:** 3 recipes can't be named under Auto camera (an unset shot size is refused).
+  - **#732 must-fix:** the Cinema quote snapshot stores N×band as "quoted"; it should be N with ceiling N×band.
+  Both clean on money; the merged admissionCheckpoint must drop job, shotType and quote in one line. Queued for lane C (after UI-names and #730). Lane D on Vercel-out A1, A3, B1.
