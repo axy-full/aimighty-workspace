@@ -648,3 +648,44 @@ Verbatim:
    b) Admin list views must NOT show other members' private takes without an audit line. Preferred: lists hide them; the admin opens the board (audited). If hiding breaks the control room or another admin screen, name those screens first, then write one deduplicated audit line per list view (same 15-min rule).
    c) Held or deleted boards: NO exception. An admin read is audited the same way.
    Fresh Opus review of #715 after these, as before.
+
+## Owner instructions (Akshay, 15 Oct, 00:15 IST): overnight
+Verbatim:
+"I'm going to sleep. Keep working through the night within all standing rules, and have a report on the status page by 10:30 IST.
+
+DESIGN
+1) Prototype v25 (attached zip: "Particl app v25.html" + "Particl board v25.html" + sources) is approved and replaces v15 as THE design. Import it as design/particl-prototype-25 (design files only, no code) and update the one-design guard to name v25. v15 stays as reference until its screens are rebuilt. This PR may merge into release/1 on green + Opus review.
+2) Write the first-version build plan (for my review in the morning): each PR in order (screen + server), smallest useful slice first; what each replaces; which steps need new server work vs screen-only; anything in v25 with no API/provider behind it today (be explicit); what's NEEDS AKSHAY (money, sign-in, migration, env, privacy). My proposed first slice: the Film board end to end in Agent mode, plus Director on Shots, plus Preview everywhere; Social narrated next. Tell me if the code suggests a better first slice.
+3) You MAY start the first slice's foundation overnight (the shared top bar/app frame, the card component with the five statuses and ✓/✕, the stepper rail) behind the new-interface switch (house workspace only). Open them as PRs with screenshots at 1440/1280/1920 and an Opus review. Do NOT merge any v25 screen PR until I've approved the plan.
+4) Carry into the build: the Brief card shows the brand tile twice; Home's sample counts and tabs must match the board's.
+
+KEEP GOING
+5) The 17 Oct deadline chain first: #734 → #736 → #735, then #720 → #721. Merge each on green into release/1 as already approved.
+6) Then the other approved PRs on green, two in CI at a time: Step 0 (#724, #729, #732, #723, #726, #740), #730, #738 (with my 23:35 conditions), #742 + #743 (after a fresh Opus review, and #743 with the read/admit split), #715 (only if its fresh Opus review approves my 23:35 answers), #725, #727, #737, #739 (only after its money review approves).
+7) Migrations #728 and #731: don't merge yet. Have the throwaway-copy test steps (turso CLI, run by me on my Mac) ready in the report.
+8) Deploy #4 prep: the release notes, the exact list of commits/PRs going in, my backup steps, my migration-test steps, and the click steps for Coolify. Nothing deployed; I do that this evening.
+
+LIMITS (unchanged)
+- Never main, never deploy, never a paid generation (mocks only), never Coolify/DNS/Cloudflare/GitHub/firewall/SSH settings, never secrets in chat, code or PRs.
+- Anything NEEDS AKSHAY stays open. No guard or safety test edited or loosened without my word.
+- Cost: Sonnet for builds, Opus only for money/privacy/sign-in reviews and design-import review; at most 2 lanes building at once; no idle polling; on any usage or spend-cap error, stop all lanes cleanly and note it in the report.
+- If something needs my decision, park it, move on, and put it in the report. Don't wait on it.
+
+10:30 REPORT (status page), in this order:
+1. Decisions needed from me, numbered, each with your recommendation.
+2. What merged overnight (PR, one line each).
+3. What's open and ready for me (PR, one line each).
+4. The first-version build plan.
+5. Deploy #4 checklist (backup → migration test → deploy steps).
+6. Incidents or slips, if any.
+7. /api/health summary and df -h /."
+
+How the lead applies it:
+- **Design:** v25 is THE design; the freeze now waits for the owner's approval of the v25 build plan (supersedes v18/v21/v22).
+- **Parked, waiting for the owner's word, by the "park and move on" rule:**
+  - #738 (the :184 line beyond the 8 listed);
+  - #715 (two stricter privateTakes lines; the export decision);
+  - #744/#745 (not in the merge list);
+  - house style;
+  - #740 (stacked on migration #728, so it can't merge without it).
+- **Migrations in deploy #4 (#702, #698, #718, #700):** CI is run, but they are not merged until the owner's throwaway-copy test passes ("Only after that passes do they ship in deploy #4").
