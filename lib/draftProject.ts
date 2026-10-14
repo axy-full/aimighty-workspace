@@ -183,7 +183,7 @@ export function currentPerson(): Person | null {
  * Whether `person` may reach the draft project `projectId`: its owner, for reading and writing; the marked sample, for everyone, as before; a board the
  * author has shared (`teamShared`), for READING, or for writing too when shared with "Can edit" (`teamEdit`). Any other project is the workspace's.
  */
-export async function mayReachProject(person: Person | null, projectId: string | null | undefined, access: "read" | "write" | "admit" = "write", ex: Exec = db()): Promise<boolean> {
+export async function mayReachProject(person: Person | null, projectId: string | null | undefined, access: "read" | "write" | "admit" = "write", ex: Exec = db(), options: { admin?: boolean } = {}): Promise<boolean> {
   if (!person) return true;
   /* The sample is nobody's to write: not its marker's, not the workspace owner's or an admin's. */
   if (access === "write" && (await isSampleProject(projectId, ex, person))) return false;
@@ -198,7 +198,7 @@ export async function mayReachProject(person: Person | null, projectId: string |
   if (access !== "read" && mode === "edit" && !!owner && (await isActiveMember(owner))) return true;
   /* An admin of this workspace reaches any board in it, to look at and to write (not to render on: a render's admission is the board's owner's or an editor's, as
      before). Each such reach of a board that is not shared that way is written to the workspace's history first, and without that line there is no reach. */
-  if (access === "admit" || !isWorkspaceAdmin(person)) return false;
+  if (access === "admit" || options.admin === false || !isWorkspaceAdmin(person)) return false;
   return recordAdminReach(person.id, projectId!, access, ex);
 }
 
@@ -300,14 +300,15 @@ export type Viewer = { id: string; role?: string } | null;
  * only once it is shared (to look at) or if it is the marked sample, and a workspace admin (the owner included) of the SAME workspace, whose queries
  * these are, for the work belongs to the workspace. Another workspace's people never reach these queries at all.
  *
- * This is the one place that rule is written for takes. The wider change, where admins read and write every board in their workspace
- * (`mayReachProject`), replaces `seesEveryBoard` here and nothing else.
+ * This is the one place that rule is written for takes. An admin's read of ONE board goes through `mayReachProject` (audited, failing closed: no history line, no read);
+ * `seesEveryBoard` answers only for takes under a board no draft holds (a held or deleted board), and for the lists below, which are lists.
  */
 export const seesEveryBoard = (viewer: Viewer): boolean => viewer?.role === "admin";
 
 /** Whether `viewer` may see a take filed under `projectId`: one read for a private board, none for anything else. */
 export async function mayReadTake(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
-  if (!viewer || seesEveryBoard(viewer) || !isDraftProject(projectId)) return true;
+  if (!viewer || !isDraftProject(projectId)) return true;
+  if (seesEveryBoard(viewer) && !(await boardDraftOf(projectId!, ex))) return true;
   return mayReachProject(viewer, projectId, "read", ex);
 }
 
@@ -341,5 +342,7 @@ export async function takeLister(viewer: Viewer, ex: Exec = db()): Promise<(proj
 /** `projectId` when `viewer` may READ that project (its owner, an admin of the workspace, anyone for a shared board or the sample), else null, no project: what a route that feeds a project's takes, titles or prompts to a model runs on, so nothing of a private board is read and no record (a meter line, a reservation, a memory) is ever written against it or against a placeholder id. */
 export async function readableProjectOr(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
   if (projectId == null) return null;
-  return seesEveryBoard(viewer) || (await mayReachProject(viewer, projectId, "read", ex)) ? projectId : null;
+  if (await mayReachProject(viewer, projectId, "read", ex)) return projectId;
+  /* Takes under a board no draft holds (held or deleted) stay an admin's, as before; a board that exists is reached through the audited gate above. */
+  return seesEveryBoard(viewer) && isDraftProject(projectId) && !(await boardDraftOf(projectId, ex)) ? projectId : null;
 }

@@ -30,7 +30,8 @@ export const POST = withTenant(async (req: Request) => {
   const productionId = parts.productionId;
   /* A room that was closed (the people who may write the board changed for the worse, lib/workbench/room-rotation.ts) gets no token: the current one does. */
   if (parts.generation !== (await roomGeneration(productionId))) return Response.json({ error: "forbidden", reason: "That room has been closed." }, { status: 403, headers: NO_STORE });
-  try { await requireProduction(productionId); }
+  /* A live room is the owner's and the editors': the admin rule does not open it (an admin looks and edits through the saved board, audited; live rooms for admins wait for their screens), so no room token outlives an admin's role. */
+  try { await requireProduction(productionId, undefined, "write", { admin: false }); }
   catch (error) {
     if (error instanceof TeamCanvasError) return Response.json({ error: "forbidden", reason: error.message }, { status: 403, headers: NO_STORE });
     throw error;

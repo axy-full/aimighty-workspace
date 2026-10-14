@@ -241,7 +241,7 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
   expect(sentinel, "nothing was written under the sentinel or the unknown id").toEqual([0, 0, 0]);
   const titles = await tenant.runInTenant(ws, async () => (await database.db().execute({ sql: "SELECT title FROM treatments WHERE project_id=?", args: [privateProject] })).rows.map((r) => r.title), { user: user("u_owner") });
   expect(titles).not.toContain("Hijack");
-  /* An admin of this workspace reaches the board (owner, 13 Oct): reads, writes, makes a client link, and the drafter and the scene rewrite no longer answer as for an unknown project. */
+  /* An admin of this workspace reaches the board (owner, 13 Oct): reads, writes and makes a client link. Paid generation there is NOT theirs (owner, 14 Oct: an admin cannot start work that spends on a member's private board): the drafter and the scene rewrite still answer as for an unknown project, and nothing is metered or reserved. */
   const admin = as("u_admin", "admin");
   expect(JSON.stringify(await asking(admin, () => treatment.GET(url(`/api/atomik/treatment?projectId=${privateProject}`), undefined as never))), "an admin reads the treatment").toContain("Secret logline");
   expect(JSON.stringify(await asking(admin, () => cast.GET(url(`/api/cast?projectId=${privateProject}`), undefined as never))), "an admin reads the cast").toContain("SecretCast");
@@ -249,8 +249,9 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
   for (const [route, body, label] of [[drafter, { projectId: privateProject, scene: 1 }, "drafter"], [scene, { projectId: privateProject, n: 1 }, "scene"]] as const) {
     const reached = await asking(admin, () => route.POST(json("POST", body), undefined as never));
     const unknown = await asking(admin, () => route.POST(json("POST", { ...body, projectId: unknownId }), undefined as never));
-    expect(reached, `an admin: ${label} is no longer answered as for an unknown project`).not.toEqual(unknown);
+    expect(reached, `an admin: ${label} is refused as an unknown project is`).toEqual(unknown);
   }
+  expect(await tenant.runInTenant(ws, moneyRows, { user: user("u_owner") }), "an admin's paid text on the board reserved and metered nothing").toBe(before);
   expect((await asking(admin, () => treatment.PUT(json("PUT", { projectId: privateProject, title: "Admin edit", logline: "Secret logline", scenes: [], notes: [], expectedUpdatedAt: 1 }), undefined as never)))[0], "an admin writes the treatment").toBe(200);
   expect((await asking(admin, () => cast.POST(json("POST", { projectId: privateProject, name: "AdminCast" }), undefined as never)))[0], "an admin adds cast").toBe(200);
   expect((await asking(admin, () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0], "an admin makes a client link").toBe(201);
