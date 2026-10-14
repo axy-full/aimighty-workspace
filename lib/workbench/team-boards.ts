@@ -12,12 +12,13 @@
  * The platform owner reads as "Particl support" with an opaque id outside the house (lib/platformOwnerPrivacy.ts), as on the Team page.
  */
 import { db } from "@/lib/db";
-import { boardDraftOf, DRAFT_PROJECT_PREFIX, isWorkspaceAdmin, mappedId, mayEditSample, mayReachProject, sampleMarkNow, TEAM_EDIT_SQL, TEAM_SHARED_SQL, type Person } from "@/lib/draftProject";
+import { boardDraftOf, boardOwnerRows, ownedDrafts, DRAFT_PROJECT_PREFIX, isWorkspaceAdmin, mappedId, mayEditSample, mayReachProject, sampleMarkNow, TEAM_EDIT_SQL, TEAM_SHARED_SQL, type Person } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
 import { readDraft, workbenchReady } from "./records";
 export { viewOnlyLine, viewOnlyRefusal } from "./view-only";
+export { TransferRefused, transferAllOf, transferBoards, undoTransfers } from "./board-transfer";
 
 export type BoardOwner = { id: string; name: string; support?: true; /** An admin reads the board of someone who is no longer a member here. */ former?: true };
 export type TeamBoard = { id: string; name: string; revision: number; updatedAt: number; kind?: string | null; owner: BoardOwner; mine: boolean };
@@ -44,6 +45,17 @@ async function ownerOf(ws: Pick<TenantWorkspace, "id">, people: Map<string, Memb
 
 const KIND = "CASE WHEN json_valid(body) THEN COALESCE(NULLIF(json_extract(body,'$.boardKind'),''),CASE WHEN NULLIF(json_extract(body,'$.marketingBrief'),'') IS NOT NULL OR NULLIF(json_extract(body,'$.moleculr'),'') IS NOT NULL THEN 'ads' END) END AS kind";
 
+/** Whose a stored draft is now: the person it was handed to, else the key it is stored under. Read once for a pass over many drafts. */
+async function whoOwns(): Promise<(key: string, draftId: string) => string> {
+  const handed = new Map((await boardOwnerRows()).map((h) => [`${h.draftOwner}\u0000${h.draftId}`, h.owner]));
+  return (key, draftId) => handed.get(`${key}\u0000${draftId}`) ?? key;
+}
+/** The key a draft is stored under, from the owner a request names: a board handed to that person is stored under its first owner's key; otherwise the key is the name itself. */
+async function storageKeyFor(ownerId: string, draftId: string): Promise<string> {
+  const hit = (await boardOwnerRows()).find((h) => h.owner === ownerId && h.draftId === draftId && h.draftOwner !== ownerId);
+  return hit ? hit.draftOwner : ownerId;
+}
+
 /** What makes a draft shared: the author's flag in its own JSON (and a draft whose JSON can't be read is private). The one definition, shared with the project gate (lib/draftProject.ts). */
 const SHARED = TEAM_SHARED_SQL;
 
@@ -53,10 +65,12 @@ export async function listTeamBoards(ws: Pick<TenantWorkspace, "id">, me: string
   const people = await activeMembers(ws);
   const rows = (await db().execute({ sql: `SELECT project_id AS id, owner, name, revision, updated_at AS updatedAt${options.kinds ? `, ${KIND}` : ""} FROM workbench_projects WHERE ${SHARED} ORDER BY updated_at DESC LIMIT 200` })).rows;
   const out: TeamBoard[] = [];
+  const owns = await whoOwns();
   for (const row of rows) {
-    const owner = await ownerOf(ws, people, String(row.owner));
+    const now = owns(String(row.owner), String(row.id));
+    const owner = await ownerOf(ws, people, now);
     if (!owner) continue;
-    out.push({ id: String(row.id), name: String(row.name), revision: Number(row.revision), updatedAt: Number(row.updatedAt), ...(options.kinds ? { kind: row.kind == null ? null : String(row.kind) } : {}), owner, mine: String(row.owner) === me });
+    out.push({ id: String(row.id), name: String(row.name), revision: Number(row.revision), updatedAt: Number(row.updatedAt), ...(options.kinds ? { kind: row.kind == null ? null : String(row.kind) } : {}), owner, mine: now === me });
   }
   return out;
 }
@@ -65,14 +79,17 @@ export async function listTeamBoards(ws: Pick<TenantWorkspace, "id">, me: string
 export async function readTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string, ownerParam: string, id: string): Promise<{ project: NonNullable<Awaited<ReturnType<typeof readDraft>>>["project"]; revision: number; owner: BoardOwner; key: string } | null> {
   const accountId = await resolveMemberId(ws, ownerParam);
   if (accountId === me) return null;
+  /* The key the draft is stored under: a board handed to the person named is stored under its first owner's key, and a first owner no longer owns what was handed away. */
+  const key = await storageKeyFor(accountId, id);
+  if ((await whoOwns())(key, id) !== accountId) return null;
   const people = await activeMembers(ws);
   const owner = await ownerOf(ws, people, accountId);
   if (!owner) return null;
   /* Shared is asked of the stored row first: a private draft (or one that can't be read) is never opened, however it is asked for. */
   await workbenchReady();
-  if (!(await db().execute({ sql: `SELECT 1 FROM workbench_projects WHERE key=? AND ${SHARED}`, args: [`${accountId}:${id}`] })).rows.length) return null;
-  const draft = await readDraft(accountId, id);
-  return draft && draft.project.teamShared === true ? { ...draft, owner, key: accountId } : null;
+  if (!(await db().execute({ sql: `SELECT 1 FROM workbench_projects WHERE key=? AND ${SHARED}`, args: [`${key}:${id}`] })).rows.length) return null;
+  const draft = await readDraft(key, id);
+  return draft && draft.project.teamShared === true ? { ...draft, owner, key } : null;
 }
 
 /**
@@ -82,11 +99,12 @@ export async function readTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string,
 export async function otherOwnersBoard(ws: Pick<TenantWorkspace, "id">, me: string, id: string): Promise<BoardOwner | null> {
   await workbenchReady();
   /* The caller's own board (the common save) is one primary-key read; only a new id looks further. */
-  if ((await db().execute({ sql: "SELECT 1 FROM workbench_projects WHERE key=?", args: [`${me}:${id}`] })).rows.length) return null;
+  const owns = await whoOwns();
+  if ((await db().execute({ sql: "SELECT 1 FROM workbench_projects WHERE key=?", args: [`${me}:${id}`] })).rows.length && owns(me, id) === me) return null;
   const rows = (await db().execute({ sql: `SELECT owner FROM workbench_projects WHERE project_id=? AND ${SHARED}`, args: [id] })).rows;
   if (!rows.length) return null;
   const people = await activeMembers(ws);
-  for (const row of rows) { const owner = await ownerOf(ws, people, String(row.owner)); if (owner) return owner; }
+  for (const row of rows) { const owner = await ownerOf(ws, people, owns(String(row.owner), id)); if (owner) return owner; }
   return null;
 }
 
@@ -96,10 +114,13 @@ export async function otherOwnersBoard(ws: Pick<TenantWorkspace, "id">, me: stri
  */
 export async function findTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string, id: string): Promise<{ project: NonNullable<Awaited<ReturnType<typeof readDraft>>>["project"]; revision: number; owner: BoardOwner; key: string } | null> {
   await workbenchReady();
-  const rows = (await db().execute({ sql: `SELECT owner FROM workbench_projects WHERE project_id=? AND owner<>? AND ${SHARED} ORDER BY updated_at DESC`, args: [id, me] })).rows;
+  const rows = (await db().execute({ sql: `SELECT owner FROM workbench_projects WHERE project_id=? AND ${SHARED} ORDER BY updated_at DESC`, args: [id] })).rows;
   const people = await activeMembers(ws);
+  const owns = await whoOwns();
   for (const row of rows) {
-    const owner = await ownerOf(ws, people, String(row.owner));
+    const now = owns(String(row.owner), id);
+    if (now === me) continue;
+    const owner = await ownerOf(ws, people, now);
     if (!owner) continue;
     const draft = await readDraft(String(row.owner), id);
     if (draft && draft.project.teamShared === true) return { ...draft, owner, key: String(row.owner) };
@@ -113,7 +134,7 @@ export async function sharedBoardOfProduction(ws: Pick<TenantWorkspace, "id">, p
   const rows = (await db().execute({ sql: `SELECT owner, project_id FROM workbench_projects WHERE ${SHARED}`, args: [] })).rows;
   const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, ws.id, String(row.owner), String(row.project_id)) === productionId);
   if (!hit) return null;
-  const owner = await ownerOf(ws, await activeMembers(ws), String(hit.owner));
+  const owner = await ownerOf(ws, await activeMembers(ws), (await whoOwns())(String(hit.owner), String(hit.project_id)));
   return owner ? { draftId: String(hit.project_id), owner, key: String(hit.owner) } : null;
 }
 
@@ -145,12 +166,16 @@ export async function mayWriteBoard(ws: Pick<TenantWorkspace, "id">, actor: Pers
 
 /** `mayWriteBoard`, with the admin rule on or off: opening a board asks it OFF first (an admin looks, and edits only if they choose; `openingOf`). */
 async function writeGrant(ws: Pick<TenantWorkspace, "id">, actor: Person, owner: string, draftId: string, admin: boolean): Promise<boolean> {
-  if (!(await activeMembers(ws)).has(owner)) return false;
+  /* `owner` is the key the draft is stored under; whose it is now may be someone else (a board handed over). */
+  const now = (await whoOwns())(owner, draftId);
   const board = mappedId(DRAFT_PROJECT_PREFIX, ws.id, owner, draftId);
   /* One narrow read of the board's row (its production and whether it is shared for editing), not the board and not a scan of every shared board. */
   await workbenchReady();
   const row = (await db().execute({ sql: `SELECT CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END AS production, (${TEAM_EDIT_SQL}) AS edit FROM workbench_projects WHERE key=?`, args: [`${owner}:${draftId}`] })).rows[0];
   if (!row || row.production !== board) return false;
+  /* Its owner now, who is not the key it is stored under: theirs to write, with nothing else asked (and the first owner having left changes nothing). */
+  if (now === actor.id && owner !== actor.id) return mayReachProject(actor, board, "write");
+  if (!(await activeMembers(ws)).has(now)) return false;
   const sampleGrant = async () => { const mark = await sampleMarkNow(); return !!mark && mark.draftOwner === owner && mark.draftId === draftId && mark.projectId === board && (await mayEditSample(actor.id)); };
   /* An admin of this workspace may write any board in it (owner, 13 Oct); `mayReachProject` below is where that is recorded in the workspace's history. */
   if (Number(row.edit) !== 1 && !(admin && isWorkspaceAdmin(actor)) && !(await sampleGrant())) return false;
@@ -181,17 +206,28 @@ export async function boardKeyFor(
   options: { admin?: boolean } = {},
 ): Promise<{ owner: string } | { refused: true } | { ambiguous: true }> {
   if (claimed && claimed !== actor.id) {
-    const owner = await resolveMemberId(ws, claimed);
-    if (owner === actor.id) return { owner: actor.id };
-    return (await writeGrant(ws, actor, owner, draftId, options.admin !== false)) ? { owner } : { refused: true };
+    const named = await resolveMemberId(ws, claimed);
+    if (named !== actor.id) {
+      const owner = await storageKeyFor(named, draftId);
+      return (await writeGrant(ws, actor, owner, draftId, options.admin !== false)) ? { owner } : { refused: true };
+    }
   }
   await workbenchReady();
-  if ((await db().execute({ sql: "SELECT 1 FROM workbench_projects WHERE key=?", args: [`${actor.id}:${draftId}`] })).rows.length) return { owner: actor.id };
+  /* The person's own board: stored under their key (unless they handed it away), or handed to them and stored under its first owner's. */
+  const handed = await boardOwnerRows();
+  const own = (await db().execute({ sql: "SELECT 1 FROM workbench_projects WHERE key=?", args: [`${actor.id}:${draftId}`] })).rows.length > 0;
+  const away = own && handed.some((h) => h.draftOwner === actor.id && h.draftId === draftId && h.owner !== actor.id);
+  if (own && !away) return { owner: actor.id };
+  const toMe = handed.filter((h) => h.owner === actor.id && h.draftId === draftId && h.draftOwner !== actor.id);
+  if (toMe.length === 1) return { owner: toMe[0].draftOwner };
+  if (toMe.length > 1) return { ambiguous: true };
+  /* A board the person handed away is a teammate's now: theirs to write only through a grant (shared with "Can edit"), else not theirs. */
+  if (away) return (await writeGrant(ws, actor, actor.id, draftId, options.admin !== false)) ? { owner: actor.id } : { refused: true };
   const rows = (await db().execute({ sql: `SELECT owner FROM workbench_projects WHERE project_id=? AND owner<>? AND ${TEAM_EDIT_SQL}`, args: [draftId, actor.id] })).rows;
   if (!rows.length) return { owner: actor.id };
   if (rows.length > 1) return { ambiguous: true };
   const owner = String(rows[0].owner);
-  return (await mayWriteBoard(ws, actor, owner, draftId)) ? { owner } : { ambiguous: true };
+  return (await writeGrant(ws, actor, owner, draftId, true)) ? { owner } : { ambiguous: true };
 }
 
 /** The refusal a request gets when its board id cannot be settled (see boardKeyFor): say what to do, write nothing. */
@@ -228,14 +264,17 @@ async function ownerForAdmin(ws: Pick<TenantWorkspace, "id">, people: Map<string
  */
 export async function readBoardAsAdmin(ws: Pick<TenantWorkspace, "id">, admin: Person, ownerParam: string, id: string): Promise<{ project: NonNullable<Awaited<ReturnType<typeof readDraft>>>["project"]; revision: number; owner: BoardOwner; key: string } | null> {
   if (!isWorkspaceAdmin(admin)) return null;
-  const accountId = await resolveMemberId(ws, ownerParam);
-  if (accountId === admin.id) return null;
+  const named = await resolveMemberId(ws, ownerParam);
+  const accountId = await storageKeyFor(named, id);
+  const now = (await whoOwns())(accountId, id);
+  /* The admin's own board (the maker, or whom it was handed to) opens the ordinary way. */
+  if (now === admin.id) return null;
   await workbenchReady();
   const draft = await readDraft(accountId, id);
   if (!draft) return null;
   const board = mappedId(DRAFT_PROJECT_PREFIX, ws.id, accountId, id);
   if (!(await mayReachProject(admin, board, "read"))) return null;
-  return { ...draft, owner: await ownerForAdmin(ws, await activeMembers(ws), accountId), key: accountId };
+  return { ...draft, owner: await ownerForAdmin(ws, await activeMembers(ws), now), key: accountId };
 }
 
 /** Which draft holds the board whose own production project is `productionId`, and its maker, for an admin of this workspace: a lookup of ids, no contents, so no history line (reading the board writes it). */
@@ -243,18 +282,19 @@ export async function adminBoardOfProduction(ws: Pick<TenantWorkspace, "id">, ad
   if (!isWorkspaceAdmin(admin)) return null;
   await workbenchReady();
   const board = await boardDraftOf(productionId);
-  return board ? { draftId: board.draftId, owner: await ownerForAdmin(ws, await activeMembers(ws), board.owner), key: board.owner } : null;
+  return board ? { draftId: board.draftId, owner: await ownerForAdmin(ws, await activeMembers(ws), (await whoOwns())(board.owner, board.draftId)), key: board.owner } : null;
 }
 
 /** The draft behind a board's own production project, and its maker, for an admin: the same reach and the same history line as `readBoardAsAdmin`. */
 export async function readBoardOfProductionAsAdmin(ws: Pick<TenantWorkspace, "id">, admin: Person, productionId: string): Promise<{ project: NonNullable<Awaited<ReturnType<typeof readDraft>>>["project"]; revision: number; owner: BoardOwner; key: string } | null> {
   if (!isWorkspaceAdmin(admin)) return null;
   const board = await boardDraftOf(productionId);
-  if (!board || board.owner === admin.id) return null;
-  return readBoardAsAdmin(ws, admin, board.owner, board.draftId);
+  const now = board ? (await whoOwns())(board.owner, board.draftId) : null;
+  if (!board || now === admin.id) return null;
+  return readBoardAsAdmin(ws, admin, now!, board.draftId);
 }
 
-export type WorkspaceBoard = TeamBoard & { /** Who it is open to besides its maker. */ sharing: "private" | "view" | "edit" };
+export type WorkspaceBoard = TeamBoard & { /** Who it is open to besides its owner. */ sharing: "private" | "view" | "edit"; /** It has been handed to someone other than the person whose key holds it. */ transferred: boolean };
 
 /**
  * Every board in the workspace, for an admin ("All boards"): private ones and those of members who have left included, each with its maker. Null for anyone who is not an admin
@@ -264,11 +304,13 @@ export async function listWorkspaceBoards(ws: Pick<TenantWorkspace, "id">, admin
   if (!isWorkspaceAdmin(admin)) return null;
   await workbenchReady();
   const people = await activeMembers(ws);
+  const owns = await whoOwns();
   const rows = (await db().execute({ sql: `SELECT project_id AS id, owner, name, revision, updated_at AS updatedAt, CASE WHEN ${TEAM_EDIT_SQL} THEN 'edit' WHEN ${TEAM_SHARED_SQL} THEN 'view' ELSE 'private' END AS sharing${options.kinds ? `, ${KIND}` : ""} FROM workbench_projects ORDER BY updated_at DESC LIMIT 500` })).rows;
   const out: WorkspaceBoard[] = [];
   for (const row of rows) {
-    const owner = await ownerForAdmin(ws, people, String(row.owner));
-    out.push({ id: String(row.id), name: String(row.name), revision: Number(row.revision), updatedAt: Number(row.updatedAt), ...(options.kinds ? { kind: row.kind == null ? null : String(row.kind) } : {}), owner, mine: String(row.owner) === admin.id, sharing: row.sharing === "edit" ? "edit" : row.sharing === "view" ? "view" : "private" });
+    const now = owns(String(row.owner), String(row.id));
+    const owner = await ownerForAdmin(ws, people, now);
+    out.push({ id: String(row.id), name: String(row.name), revision: Number(row.revision), updatedAt: Number(row.updatedAt), ...(options.kinds ? { kind: row.kind == null ? null : String(row.kind) } : {}), owner, mine: now === admin.id, transferred: now !== String(row.owner), sharing: row.sharing === "edit" ? "edit" : row.sharing === "view" ? "view" : "private" });
   }
   return out;
 }
@@ -282,9 +324,9 @@ export type BoardView = { boardId: string; by: { id: string; name: string; suppo
  */
 export async function boardViews(ws: Pick<TenantWorkspace, "id">, me: string, onlyBoard?: string): Promise<BoardView[]> {
   await workbenchReady();
-  const mine = (await db().execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?" + (onlyBoard ? " AND project_id=?" : ""), args: onlyBoard ? [me, onlyBoard] : [me] })).rows.map((row) => String(row.project_id));
+  const mine = (await ownedDrafts(me)).filter((d) => !onlyBoard || d.draftId === onlyBoard);
   if (!mine.length) return [];
-  const byProject = new Map(mine.map((draftId) => [mappedId(DRAFT_PROJECT_PREFIX, ws.id, me, draftId), draftId]));
+  const byProject = new Map(mine.map((d) => [d.projectId, d.draftId]));
   const ids = [...byProject.keys()];
   const rows = (await db().execute({
     sql: `SELECT actor_id, action, target_id, created_at FROM security_audit WHERE workspace_id=? AND action IN ('board.opened_by_admin','board.edited_by_admin') AND target_id IN (${ids.map(() => "?").join(",")}) ORDER BY created_at DESC, id DESC LIMIT 100`,
@@ -310,6 +352,6 @@ export async function boardViews(ws: Pick<TenantWorkspace, "id">, me: string, on
  * Who may change a board's sharing, its mode included (none, view, edit): its author (admins join with the admin rule, one line here). Not a teammate who
  * may edit its cards, and not anyone through a save: the flags are the server's (lib/workbench/records.ts › setBoardSharing).
  */
-export function maySetSharing(actor: { id: string; role?: string }, storageOwner: string): boolean {
-  return actor.id === storageOwner;
+export async function maySetSharing(actor: { id: string; role?: string }, storageOwner: string, draftId: string): Promise<boolean> {
+  return (await whoOwns())(storageOwner, draftId) === actor.id;
 }

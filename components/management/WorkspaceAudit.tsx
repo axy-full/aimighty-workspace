@@ -53,6 +53,8 @@ export const labels: Record<string, string> = {
   "identity_consent.withdrawn": "Withdrew identity consent",
   "board.opened_by_admin": "Opened a private board",
   "board.edited_by_admin": "Edited a private board",
+  "board.transferred": "Moved a board to another owner",
+  "board.transfer_undone": "Gave a moved board back",
 };
 const targetLabels: Record<string, string> = {
   account: "Account",

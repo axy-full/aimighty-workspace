@@ -14,12 +14,21 @@ import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import { defaultSharing } from '@/lib/workbench/board-default';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { AMBIGUOUS_BOARD, boardKeyFor, maySetSharing, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, adminBoardOfProduction, listWorkspaceBoards, boardViews, readBoardAsAdmin, readBoardOfProductionAsAdmin, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { AMBIGUOUS_BOARD, TransferRefused, transferAllOf, transferBoards, undoTransfers, boardKeyFor, maySetSharing, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, adminBoardOfProduction, listWorkspaceBoards, boardViews, readBoardAsAdmin, readBoardOfProductionAsAdmin, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
 function originProblem(req:Request) {
   return crossOriginProblem(req);
+}
+
+/** The draft `id` the person owns now: stored under their key, or under the first owner's when it was handed to them; none when they handed it away. */
+async function readOwnDraft(me:string,id:string){
+  const toMe=(await db().execute({sql:'SELECT draft_owner FROM workbench_board_owners WHERE owner=? AND draft_id=? AND draft_owner<>owner',args:[me,id]})).rows;
+  if(toMe.length===1)return readDraft(String(toMe[0].draft_owner),id);
+  if(toMe.length>1)return null;
+  const away=(await db().execute({sql:'SELECT 1 FROM workbench_board_owners WHERE draft_owner=? AND draft_id=? AND owner<>draft_owner',args:[me,id]})).rows.length>0;
+  return away?null:readDraft(me,id);
 }
 
 /** A write to a board that is not the person's to write, answered as it always was: view-only, naming the maker, when the board is shared and visible; otherwise not found. */
@@ -74,10 +83,13 @@ export const GET=withTenant(async(req:Request)=>{
   /* ?views=1[&id=<draft>]: who has looked at or changed the caller's own boards as an admin ("Viewed by <admin>, <date>"). Always the caller's own boards, whoever asks. */
   if(new URL(req.url).searchParams.get('views')==='1')return Response.json({views:await boardViews(requireTenant(),auth.user.id,id??undefined)},{headers:noStore});
   const team=new URL(req.url).searchParams.get('team')==='1'?await listTeamBoards(requireTenant(),auth.user.id,{kinds}):null;
+  /* The person's boards: stored under their key, except any they handed away, and any handed to them (stored under the first owner's key; lib/workbench/board-transfer.ts). */
+  const handedAway="EXISTS (SELECT 1 FROM workbench_board_owners o WHERE o.draft_owner=p.owner AND o.draft_id=p.project_id AND o.owner<>p.owner)";
+  const handedToMe="EXISTS (SELECT 1 FROM workbench_board_owners o WHERE o.draft_owner=p.owner AND o.draft_id=p.project_id AND o.owner=?)";
   const [list,productions,draft]=await Promise.all([
-    db().execute({sql:`SELECT project_id AS id,name,revision,updated_at AS updatedAt${kinds?`,${KIND}`:''} FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100`,args:[auth.user.id]}),
+    db().execute({sql:`SELECT p.project_id AS id,p.name,p.revision,p.updated_at AS updatedAt${kinds?`,${KIND}`:''} FROM workbench_projects p WHERE (p.owner=? AND NOT ${handedAway}) OR ${handedToMe} ORDER BY p.updated_at DESC LIMIT 100`,args:[auth.user.id,auth.user.id]}),
     db().execute('SELECT id,name FROM projects ORDER BY created_at DESC LIMIT 100'),
-    id?readDraft(auth.user.id,id):null,
+    id?readOwnDraft(auth.user.id,id):null,
   ]);
   /* Asked for by id alone and not this person's own: a teammate's board (a board link), to look at. */
   const listed=await projectLister(auth.user);
@@ -168,6 +180,18 @@ export const POST=withTenant(async(req:Request)=>{
       return Response.json({error:'The starter production could not be opened. Try again.'},{status:500,headers:noStore});
     }
   }
+  /* Handing boards to another owner (board sharing, PR 4): an admin's, to an active member of this workspace; one board, all of a member's, or Undo (lib/workbench/board-transfer.ts). */
+  if(body?.action==='transfer-boards'||body?.action==='transfer-all'||body?.action==='undo-transfer'){
+    try{
+      const ids:string[]=Array.isArray(body.projectIds)?body.projectIds.filter((x:unknown):x is string=>typeof x==='string'):typeof body.projectId==='string'?[body.projectId]:[];
+      if(body.action==='transfer-all')return Response.json(await transferAllOf(requireTenant(),auth.user,body.from,body.to),{headers:noStore});
+      if(body.action==='undo-transfer')return Response.json(await undoTransfers(requireTenant(),auth.user,ids),{headers:noStore});
+      return Response.json(await transferBoards(requireTenant(),auth.user,ids,body.to),{headers:noStore});
+    }catch(error){
+      if(error instanceof TransferRefused)return Response.json({error:error.message},{status:error.status,headers:noStore});
+      throw error;
+    }
+  }
   if(!body || typeof body.projectId!=='string')return Response.json({error:'Choose a project.'},{status:400});
   await workbenchReady();
   if(body.action==='open'){
@@ -222,7 +246,7 @@ export const POST=withTenant(async(req:Request)=>{
     /* The mode is "none", "view" (teammates look) or "edit" ("Can edit"); the older `shared: true/false` still works (true shares to look at unless already shared). */
     const asked:ShareMode|null=body.mode==='none'||body.mode==='view'||body.mode==='edit'?body.mode:typeof body.shared==='boolean'&&body.mode===undefined?(body.shared?(now==='none'?'view':now):'none'):null;
     if(!asked)return Response.json({error:'Say how to share this board: not shared, view or edit.'},{status:400});
-    if(!maySetSharing(auth.user,storageOwner))return Response.json({error:'Only the board’s owner can change who it is shared with.',code:'owner_only'},{status:403,headers:noStore});
+    if(!(await maySetSharing(auth.user,storageOwner,body.projectId)))return Response.json({error:'Only the board’s owner can change who it is shared with.',code:'owner_only'},{status:403,headers:noStore});
     if(asked===now)return Response.json({ok:true,shared:now!=='none',mode:now,revision:draft.revision});
     const changed=await setBoardSharing(storageOwner,body.projectId,{teamShared:asked!=='none',teamEdit:asked==='edit'},auth.user.id);
     if(!changed)return Response.json({error:'Save your project first.'},{status:404});

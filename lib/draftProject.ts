@@ -203,7 +203,8 @@ export async function draftShare(projectId: string, ex: Exec = db()): Promise<{ 
   const workspace = requireTenant().id;
   const rows = (await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows;
   const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)) === projectId);
-  return !hit ? { mode: "none", owner: null } : { mode: Number(hit.edit) === 1 ? "edit" : "view", owner: String(hit.owner) };
+  /* The maker is whoever owns it now: a board handed over keeps "Can edit" only while its new owner is a member. */
+  return !hit ? { mode: "none", owner: null } : { mode: Number(hit.edit) === 1 ? "edit" : "view", owner: (await boardOwnerRow(projectId, ex))?.owner ?? String(hit.owner) };
 }
 
 /**
