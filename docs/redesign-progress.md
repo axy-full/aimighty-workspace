@@ -388,3 +388,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - (3) concurrent Undo and transfer corrupt state and the audit (reads outside the transaction);
   - (4) Undo skips the active-member check.
   The guard-dodge verdict is "soft dodge": a re-export through team-boards plus inline SQL keeps `workbenchRequestScope.spec.ts` unedited. The honest fix is the owner's word to add stubs (additive), then delete the inline copies. Nit: no registry tool (rule 11). Queued for lane D after #715 and the #704 fixes.
+- **14 Oct 19:29 IST.** Owner amended #714: lip-sync DIRECT through sync.so (lipsync-2-pro, sync-3), not via fal; Sarvam direct; vendor copies deleted after storing. The plan update is queued for the next free slot (lane cap 3).
