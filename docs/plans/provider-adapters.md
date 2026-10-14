@@ -1,8 +1,29 @@
-# Provider adapters as registry tools: Runway, Sarvam, sync.so, AWS Rekognition (plan, 14 Oct)
+# Provider adapters as registry tools: sync.so, Sarvam, AWS Rekognition, Google Cloud Vision, Recraft, Black Forest Labs, Runway, and Topaz (plan, 14 Oct; owner answers added)
 
 The owner asked for this on 14 Oct: plans first, no paid calls. This plan was read from release/1 at 890d559c. The providers' public pages were read on 14 Oct 2026; the links are at the end.
 
 **No provider API was called while writing this,** not even a free one, and no key was used. **Every price below is a sample / proposal.** The owner approves every rate-card row. Screens are not specified here: anything a person will see **waits for Claude Design / v18**.
+
+## Owner decisions (14 Oct, final)
+In the owner's words: "order accepted with one change — lip-sync goes DIRECT through sync.so (I'm buying the account; not via fal), including lipsync-2-pro and sync-3. Then Sarvam direct (I'm buying the account), then Rekognition, then Runway standby (house only until training-free terms). Voice cloning: not now. Counsel before any customer switch. Delete the vendor's copy once we've stored the output (sync.so DELETE, Sarvam retention 0). ADD to the plan: Recraft (raster, vector, vectorize, remove background), Black Forest Labs FLUX.2 (create + multi-reference edit), Google Cloud Vision text detection (GOOGLE_VISION_API_KEY is set), and a Topaz direct vs fal price comparison. Give me the exact Coolify setting NAMES per provider (names only; AWS names distinct from anything R2/S3 reads)."
+
+- **DECIDED, the order:**
+  1. lip-sync **direct on sync.so** (§1), with lipsync-2, lipsync-2-pro and sync-3;
+  2. **Sarvam direct** (§2);
+  3. **Rekognition** (§3);
+  4. **Runway on standby**, in the house workspace only until training-free terms (§7).
+  
+  The additions (§4 Google Cloud Vision, §5 Recraft, §6 Black Forest Labs FLUX.2) are slotted in §10. Owner question A confirms where.
+- **DECIDED: no voice cloning for now.** Stock voices only.
+- **DECIDED: counsel before any switch is turned on for a customer workspace.** Building behind switches that are off may go ahead. Turning a switch on for a customer waits for counsel.
+- **DECIDED: delete the vendor's copy once ours is stored.** sync.so `DELETE /v2/generations/{id}`, Sarvam retention 0 days, Runway `DELETE /v1/tasks/{id}`. It is the vendor's copy, so Particl's never-delete rule is untouched.
+- **Added:**
+  - Recraft (§5);
+  - FLUX.2 on Black Forest Labs' own API (§6);
+  - Google Cloud Vision text detection (§4);
+  - a Topaz direct-versus-fal comparison (§8);
+  - every Coolify setting name, in one table (§9).
+- **Still open from the first draft:** the rupee rate (D), the face-check threshold and its pricing (E), and Sarvam versus Grok for transcripts (F). See §12.
 
 ## 0. How a provider becomes a tool in Particl today
 
@@ -25,7 +46,7 @@ The owner asked for this on 14 Oct: plans first, no paid calls. This plan was re
   6. settle.
   
   Atomik, MCP and API tokens prepare. They never approve (`lib/security/people-only.ts:1-5`, `:18`). A job above 200 cr always asks (guardrail 4).
-- **Switches:** each provider gets a `<VENDOR>_ENABLED=1` switch, off by default, like `HF_SOUL_CHARACTER_ENABLED` (`lib/vendorRates.ts:16-18`). It stays **off in production**. The owner turns it on in the house workspace for one paid qualification run, after a yes (rule 1).
+- **Switches:** each provider gets a `<VENDOR>_ENABLED=1` switch, off by default, like `HF_SOUL_CHARACTER_ENABLED` (`lib/vendorRates.ts:16-18`). It stays **off in production**. The owner turns it on in the house workspace for one paid qualification run, after a yes (rule 1). Every setting name is in the table in §9.
 - **Mocks:** `ENGINE_MOCK=1` makes every adapter answer from a fixture (`lib/mock.ts:9-19`). Every test below runs under it.
 - **Tenant isolation:**
   - Inputs come from the workspace's own storage. Either a presigned read of at most 15 minutes that refuses another workspace's key (`presignedReadUrl` and `assertWorkspaceKey`, `lib/storage.ts:682-686`), or bytes read on the server.
@@ -48,7 +69,350 @@ The owner asked for this on 14 Oct: plans first, no paid calls. This plan was re
 
 ---
 
-## 1. Runway
+## 1. sync.so lip-sync, direct (DECIDED: first; the owner is buying the account)
+
+### What it adds
+- **Lip-sync:** a clip plus a voice track gives the clip with the mouth matched to the words. Today Particl has no lip-sync engine (`lib/v12/unpriced.ts:17-21`; `lib/v12/make.ts:229`). It is needed for dubbing a cut into another language (with ElevenLabs or Sarvam speech), and for ads with a presenter.
+- **Three models (DECIDED):**
+  - **lipsync-2:** "the best lipsync for the majority of videos"; 512×512 faces.
+  - **lipsync-2-pro:** the same, with "diffusion-based super resolution", for beards, teeth and fine detail.
+  - **sync-3:** processes the whole shot at once, handles profile and over-the-shoulder angles and obstructions, keeps the speaker's emotion, and outputs 4K.
+- **Not via fal** (DECIDED). This replaces the SOW 4 Oct §5.1 row "Sync Lipsync 2.0 (fal)".
+
+### The API
+| | |
+|---|---|
+| Base URL | `https://api.sync.so` |
+| Auth | header `x-api-key` |
+| Settings | see §9: `SYNC_API_KEY`, `SYNC_BASE_URL`, `SYNC_ENABLED`, and `SYNC_WEBHOOK_SECRET` only if webhooks are turned on |
+| Endpoints | `POST /v2/assets/upload` (a presigned upload for our bytes); `POST /v2/assets`; `POST /v2/generate` (a JSON body: `model`, `input` = a video and an audio, each by `assetId` or `url`, `options` with `sync_mode`, optional `webhookUrl`); `GET /v2/generate/{id}` (may wait up to 10 s); `GET /v2/generations/{id}/download`; `POST /v2/generations/estimate`; `DELETE /v2/generations/{id}` |
+| Models (`model`) | `lipsync-2`, `lipsync-2-pro`, `sync-3` (also listed: `lipsync-1.9.0-beta`, `react-1`, not proposed) |
+| When the lengths differ | `sync_mode`: `bounce` (default), `loop`, `cut_off`, `silence`, `remap` |
+| Async | A job. Statuses: `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `REJECTED`. **Poll first**, through the existing poll path and cron rescue. Webhooks exist: a POST on a terminal state, signed with a `Sync-Signature` header, verified with the organisation's webhook secret. They are a later PR (Y4). |
+| Limits by plan | Hobbyist ($5/mo): 1 job at once, 1 minute of video. Creator ($19): 3, 5 min. Growth ($49): 6, 10 min. Scale ($249): 15, 30 min. Longer videos are processed in 30 to 40 s chunks on lipsync-2 and -pro. |
+| Billing | "Usage is billed on output frames": frames in the output × the per-frame price, quoted per second at 25 fps. Invoiced when usage reaches the plan's threshold ($6, $20, $50 or $250). |
+| Deleting | `DELETE /v2/generations/{id}` works only on a finished job ("409 while processing"). So a running job cannot be cancelled (docs/redesign/app-map.md:409). |
+| Region and data | Handled in the United States. The privacy policy (effective 27 May 2024) says personal information may be used for "developing, training, and fine-tuning" its models, and states no opt-out. |
+
+- **Inputs go up as assets, from bytes read on the server** (`POST /v2/assets/upload`), not as our storage links. Our presigned links stay inside Particl.
+- **DECIDED: the vendor's copy is deleted.** Once the output is stored under the workspace's prefix, the collector calls `DELETE /v2/generations/{id}` (and deletes the uploaded assets, if the asset API allows it; to be checked in Y1). A failed delete is retried by the cron and never blocks the take.
+
+### The tool
+| Tool | Kind | Inputs | Output | Who may call | Gate |
+|---|---|---|---|---|---|
+| `lip_sync` | engine (a new video task `lipsync`, `lib/tasks.ts:25`) | a clip (a take or upload from this workspace), a voice track (a take, an upload, or a speech take), model `lipsync-2`, `lipsync-2-pro` or `sync-3`, `sync_mode` | a video take, linked to both sources | anyone may prepare; a person approves | paid; **a live consent record for the face in the clip, and for the voice if it is a real person's** (not a stock voice) |
+
+- **sync-3's still-image input** (a talking person from a photo) is not offered in v1 (owner question I). It overlaps "talking person from a photo" (OmniHuman, SOW §5.1).
+
+### Prices (sample / proposal; through `billCredits()`, on output seconds)
+| Row | Vendor's public price, Hobbyist and Creator | Sells at (sample) | At the Scale plan's rate | Sells at (sample) |
+|---|---|---|---|---|
+| lipsync-2, 5 s | $0.05/s | 4 cr | $0.04/s | 3 cr |
+| lipsync-2, 30 s | | 23 cr | | 18 cr |
+| lipsync-2, 60 s | | 45 cr | | 36 cr |
+| lipsync-2-pro, 5 s | $0.083/s | 7 cr | $0.067/s | 6 cr |
+| lipsync-2-pro, 30 s | | 38 cr | | 31 cr |
+| lipsync-2-pro, 60 s | | 75 cr | | 61 cr |
+| sync-3, 5 s | $0.133/s | 10 cr | $0.107/s | 9 cr |
+| sync-3, 30 s | | 60 cr | | 49 cr |
+| sync-3, 60 s | | 120 cr | | 97 cr |
+
+- **Quote:** the output seconds (the audio's length for `cut_off`, the longer track otherwise) times the rate for the plan the owner buys (`lib/vendorRates.ts`, `secondRates`). Reserve at the quote.
+- **Settle:** at the delivered `outputDuration` times the rate, never above the hold.
+
+### Privacy and law (counsel before any customer switch)
+- **Lip-sync changes what a real person appears to say.** That is the clearest deep-fake risk in this plan. It needs a consent record covering the face, for the use it is made for (`production`, `ads` or `social`, `lib/security/consent-words.ts:12`). A voice that is not a stock voice needs a record covering the voice too.
+- **The vendor's training clause** (above): counsel reads it before any customer switch. The owner asks sync.so for written terms that exclude training (owner action).
+
+### Failure and refunds
+- sync.so's billing page does not say whether `FAILED` or `REJECTED` jobs are billed. So `BASIS` (`lib/providerOutcome.ts:34`) reads `unknown`, and the job settles at 0, absorbed by the platform (the meter's `unbilled`, `lib/meter.ts:54-59`). The take reads "Nothing billed", with Retry under the same approval.
+- Settling at 0 stops once sync.so confirms its rule in writing, or the first invoice shows it.
+
+### Risks
+- Misuse for putting words in a real person's mouth (the consent gate above).
+- Quality falls with several faces in the frame (sync.so's own advice).
+- The training clause.
+- A low plan has 1 to 3 jobs at once, so jobs queue (THROTTLED-style waiting, shown as waiting).
+
+## 2. Sarvam, direct (DECIDED: second; the owner is buying the account)
+
+### What it adds
+- **Indian-language speech (text to speech).** Bulbul v3 and v4-flash read 11 languages, including mixed English and Indian-language text. The voices are built for Indian speech, beside ElevenLabs (in use).
+- **Indian-language transcription (speech to text),** in Saaras v4. Particl transcribes with Grok today (`lib/transcription.ts`; owner, 23 Sep: "Grok APIs wherever possible"). Sarvam would be the engine for Indian languages where it does better.
+- **Translation** of scripts, captions and dub lines between English and 22 Indian languages (`sarvam-translate:v1`; `mayura:v1` for 11 of them with colloquial modes). Today "a language of a finished cut … translated on-screen text has no path" (`lib/v12/unpriced.ts:73-74`).
+
+### The API
+| | |
+|---|---|
+| Base URL | `https://api.sarvam.ai` |
+| Auth | header `api-subscription-key` |
+| Settings | see §9: `SARVAM_API_KEY`, `SARVAM_BASE_URL`, `SARVAM_ENABLED`, `SARVAM_USD_PER_INR` |
+| Endpoints | `POST /text-to-speech` (JSON; returns base64 audio); `POST /speech-to-text` (multipart; for clips under about 30 s); batch transcription: `POST /speech-to-text/job/v1`, `GET /speech-to-text/job/v1/{job_id}/status`, `POST /speech-to-text/job/v1/download-files`; `POST /translate` (JSON) |
+| Async | Speech, short transcripts and translation answer at once. Batch transcription is a job: poll, or take a callback (`X-SARVAM-JOB-CALLBACK-TOKEN`; the reply must be 200 within 30 s; status only). |
+| Limits | Speech: 2,500 characters a request on v3 and v4-flash. Translation: 2,000 characters on `sarvam-translate:v1`, 1,000 on `mayura:v1`. Batch transcription: files up to 2 hours, 20 a job, diarization up to 20 speakers. Rate limits on the Starter plan: 60 a minute (30 for Bulbul v3); higher on Pro and Business. |
+| Billing | In rupees, against prepaid credit (₹100 free on sign-up). |
+| Region and law | "We process and store information in India", and may transfer it abroad. Indian law, Bengaluru courts. |
+| Retention | Set by the org Owner, from 0 days to 24 months. **Until set, data is kept indefinitely.** Zero retention is available for the model APIs. **DECIDED: 0 days**, set by the owner in Sarvam's console before `SARVAM_ENABLED` is turned on anywhere. |
+| Training | "Subject to your consent, which you may decline or withdraw." |
+
+### The tools
+| Tool | Kind | Inputs | Output | Who may call | Gate |
+|---|---|---|---|---|---|
+| `sarvam_speech` | engine (audio task `speech`) | text (split server-side at 2,500 characters), language, a stock voice, model, pace | an audio take | anyone may prepare; a person approves | paid; **stock voices only (DECIDED: no voice cloning for now)** |
+| `sarvam_transcribe` | engine (transcript) | a stored audio or video original, language or auto-detect, diarization | a transcript in the same shape as Grok's (timed words, SRT) | as above | paid; quoted from the measured length, as Grok's is (`lib/transcription.ts` header) |
+| `sarvam_translate` | engine (text) | text (up to 2,000 characters a call; longer text is split), source and target language, mode | text, written back where it was asked for (a script, a caption, a dub line) | as above | paid |
+
+### Prices (sample / proposal; rupees converted at a sample ₹85 = US$1, which is illustrative only)
+| Row | Vendor's public price (pay as you go) | Sells at (sample) |
+|---|---|---|
+| Speech, Bulbul v3, 500 characters | ₹30 per 10,000 characters | 1 cr |
+| Speech, Bulbul v3, 10,000 characters | | 6 cr |
+| Speech, Bulbul v4-flash, 10,000 characters | ₹20 per 10,000 characters | 4 cr |
+| Transcript, 10 minutes | ₹29.40 an hour | 1 cr |
+| Transcript, 60 minutes | | 6 cr |
+| Transcript with speakers, 60 minutes | ₹35.40 an hour | 7 cr |
+| Translation, 2,000 characters | ₹20 per 10,000 characters | 1 cr |
+| Translation, 10,000 characters | | 4 cr |
+
+- Like an ElevenLabs line, speech and translation are priced by length, so they are "up to N cr" estimates on the button, not single card rows (CLAUDE.md § Pricing, the VO note).
+
+### Privacy and law (for counsel)
+- **Voice is personal data.** Stock voices raise no consent question for the speaker. **DECIDED: no voice cloning for now.**
+- **A transcript of a real person's speech is their personal data,** and so is a translation of what they said. Both stay in the workspace's database only.
+- **DECIDED: Sarvam's retention is 0 days** for the model APIs, an org-Owner setting in Sarvam's console (owner action), so Sarvam keeps no copy once it has answered.
+- **Sarvam's terms §10.5(d) forbid "providing access to the APIs … to third parties"** unless product terms allow it. Particl's customers would be reaching Sarvam through Particl. **Counsel should confirm a platform may offer it,** or the owner should get it in writing.
+- **Data stays in India by default,** which suits DPDP better than a US vendor. Sarvam names itself a Data Fiduciary for its own users; for our customers it would act as our processor. That needs a processing agreement.
+
+### Failure and refunds
+- Errors (400, 403, 422, 429, 500) are answered at once. Sarvam's docs fetched here say nothing about billing a failed call, so `BASIS` reads `unknown` until Sarvam confirms in writing.
+  - **Until then, a failure is settled at 0 and says "Nothing billed".** The platform absorbs any charge, using the meter's existing `unbilled` flag (`lib/meter.ts:54-59`).
+- A long text split into several calls that fails partway settles at the parts that succeeded. Nothing is charged for the part that failed.
+
+### Risks
+- Rupee billing against dollar rates: the exchange rate moves. Quote with the owner's rate (`SARVAM_USD_PER_INR`, reviewed monthly; owner question D).
+- Retention is indefinite until the setting is changed.
+- The resale clause.
+- Low Starter limits (30 to 60 a minute).
+
+---
+
+## 3. AWS Rekognition (DECIDED: third; face checks for identity and consent)
+
+### What it adds
+- **"Same face":** a score for whether the person in a take is the cast member they should be. It becomes one more score inside the identity check that Verify already makes (`lib/workbench/verify.ts:25`, checks identity, wardrobe, environment, props, artifacts), as the handover planned (docs/handover-2026-10-05.md:1213).
+- **A face check on references before training.** Is there exactly one usable face in each photo? This catches bad uploads before a training run is paid for.
+- **What it is not:** it does not identify who someone is, it keeps no face collection, and it never searches a database of faces.
+
+### The API
+| | |
+|---|---|
+| Region | Asia Pacific (Mumbai), `ap-south-1`; endpoint `rekognition.ap-south-1.amazonaws.com` |
+| Auth | AWS Signature Version 4, with an IAM user allowed only `rekognition:CompareFaces` and `rekognition:DetectFaces` |
+| Settings | see §9: `REKOGNITION_ACCESS_KEY_ID`, `REKOGNITION_SECRET_ACCESS_KEY`, `REKOGNITION_REGION`, `REKOGNITION_ENABLED`. None starts with `AWS_`, so nothing the AWS SDK reads by itself and nothing the storage code reads can collide with them (the proof is in §9). |
+| Endpoints | `CompareFaces` (the largest face in the source against up to 100 faces in the target); `DetectFaces` |
+| Async | None. Both answer at once. |
+| Inputs | PNG or JPEG bytes, at most 5 MB (15 MB from S3, which we do not use). At least 80 px a side. A face must be at least 40×40 px in a 1920×1080 image. |
+| Limits | 25 calls a second for each of `CompareFaces` and `DetectFaces` in Mumbai (default). |
+| Storage at AWS | "This is a stateless API operation. That is, data returned by this operation doesn't persist." No face collection is created. The Rekognition FAQ says inputs "may" be stored and used to improve the service **unless the account opts out** through an AWS Organizations AI-services opt-out policy. |
+
+- **Library choice (recommended): sign the request with the SigV4 header signing already in `lib/storage/r2.ts:115-116` (`signRequest`), with no AWS SDK.** Then no AWS SDK default (any `AWS_*` setting, shared config file or instance role) can ever be consulted. If the SDK is used instead (`@aws-sdk/client-rekognition`), the client must be given its region, credentials and endpoint explicitly, as the R2 client is (`lib/storage/r2.ts:190-194`).
+
+### The tools
+| Tool | Kind | Inputs | Output | Who may call | Gate |
+|---|---|---|---|---|---|
+| `face_check` | app action, priced inside Verify | a take (its three review frames for a clip, `lib/workbench/verify.ts:39`; one frame for a still) and up to 5 cast masters that are real people | for each master: the best similarity (0 to 100), faces found, pass or fail against the workspace's threshold | anyone, as part of a Verify step the person approved | **a live consent record covering the face, for each master**; without one, that master is skipped and says "Needs consent" |
+| `face_detect` | app action | a reference photo from this workspace | the number of faces, each face's size, sharpness and brightness | anyone | the same consent rule, when the photo is of a real person |
+| `record_face_consent` | app action (exists: `recordConsent`, `lib/security/consent.ts:159`) | the person, face and/or voice, the uses, an expiry date, a recording | a consent record | **people only.** Atomik and outside agents may prepare it; they never record it (rule 11). | — |
+
+- **Threshold (proposal; still open, owner question E):** a workspace setting that only an admin changes, with a platform-layer default (rule 3). AWS's default is 80; the plan proposes 90 for "same face".
+- **AWS's own advice:** before acting on a result that affects a person, a human should review it. So a low score marks the take for a person to look at. It never blocks or deletes anything by itself.
+- **Stored:** the scores, in the take's existing `take_verifications` row (`lib/workbench/verify-server.ts:23`). No frames, face crops or face vectors are kept beyond what the take already is.
+
+### Prices (sample / proposal)
+| Row | Vendor's public price (Mumbai, first million images a month; AWS price list published 11 Sep 2026) | Sells at (sample) |
+|---|---|---|
+| Face check, a still against 1 master | $0.00125 an image (one image per call; to be confirmed on the first bill) | 1 cr on its own |
+| Face check, a clip (3 frames) against 1 master | 3 calls | 1 cr on its own |
+| Face check, a clip against 5 masters | 15 calls | 1 cr on its own |
+| Face detect, one photo | $0.00125 an image | 1 cr on its own |
+
+- **Recommended (owner question E):** add the face check's dollars to the Verify step's own quote **before rounding**, as "batches multiply before rounding" says (CLAUDE.md § Credits). The check then usually adds 0 or 1 cr to Verify, instead of being a separate 1 cr line. A low score marks the take for a person and never blocks it.
+
+### Privacy and law: biometric data (for counsel; not decided here)
+- **Consent first.** No face is sent to AWS without a live consent record covering that person's face. Recording consent is a person-only action (rule 11; `lib/security/consent.ts:15-16`).
+  - Today's consent uses do not name biometric comparison. **Counsel decides** whether `production` already covers it, or whether a new use is needed, for example "face checks". Adding a use is a word in `CONSENT_USES` (`lib/security/consent-words.ts:12`); it needs no migration.
+- **No face collections.** Only the stateless calls are used. No `IndexFaces`, `CreateCollection` or search.
+- **Opt out of AWS service improvement** with an AWS Organizations AI-services opt-out policy, before any customer use (owner action). AWS's FAQ asks customers who collect consent to collect it on behalf of AWS too.
+- **Region:** Mumbai, so faces do not leave India for this step.
+- **Deletion and Particl's never-delete rule.** Particl erases nothing (owner, 24 Sep), and consent records are never deleted (`lib/security/consent.ts:16-17`). India's DPDP Act gives a person the right to have their data erased once consent is withdrawn.
+  - What we would keep are similarity scores, not face templates. **Counsel must say** whether a score is personal data that must be erased on withdrawal, and how that fits the never-delete rule.
+  - Until then: a withdrawal stops all new checks at once (`consentLive`, `lib/security/consent-words.ts:118`).
+- **India's DPDP Act 2023, at a high level** (counsel to confirm; nothing here is legal advice):
+  - Faces and voices are personal data. The Act asks for consent that is free, specific, informed and unambiguous, given after a clear notice.
+  - Particl would be a Data Fiduciary for its own users. For a customer's cast, it is probably the customer's processor. **Counsel to decide.**
+  - Transfers abroad are allowed unless the government restricts a country. This matters for Runway and sync.so (US). Rekognition in Mumbai and Sarvam in India stay in the country.
+  - Commencement is phased. The Rules were notified in November 2025. Consent-manager rules follow in November 2026. Most duties (notice, consent standards, security, breach notice, erasure and the data principal's rights) apply from **13 May 2027**.
+
+### Failure and refunds
+- A call that fails is answered at once. AWS bills images processed, and a refused image (no face, too large, bad format) is answered with an error before analysis. `BASIS` cites AWS's pricing page. Until confirmed: settle at 0, "Nothing billed".
+- When a face check fails, the Verify step still finishes on its other scores, and says the face score is missing.
+
+### Risks
+- **Biometric law is the biggest risk in this plan:** consent wording, erasure and notice. Counsel, before any customer use.
+- False negatives on side angles and low light. AWS itself recommends a human review, so a score is advice, never a block.
+- AWS bills the account, not a workspace. Spend must go through our meter like every other engine.
+
+---
+
+## 4. Google Cloud Vision, text detection (added by the owner)
+
+### What Particl would use it for (proposal; owner question G)
+Reading the text inside a picture: OCR.
+1. **A "no stray lettering" check inside Verify.** The platform rule `no-lettering` asks stills to carry no lettering, captions or logos (`lib/platformLayer.ts:78`). Generated frames often carry stray, garbled text, which is a known artifact.
+   - Vision reads the take's three review frames (`lib/workbench/verify.ts:39`). Any text found becomes part of Verify's `artifacts` check (`lib/workbench/verify.ts:25`), with the words and where they sit.
+   - Where text is *wanted* (a title card, a packshot with its label), the check reports it rather than failing it.
+2. **On-screen text for translating a cut.** Today "translated on-screen text has no path" (`lib/v12/unpriced.ts:73-74`). Vision reads the text in a frame, and Sarvam (§2) translates it.
+3. **Later: the brand mandatories check** (legal line, VO tagline). It waits until mandatories are stored at all ("Brand mandatories aren't stored in Particl yet", `lib/v12/deliver.ts:104-105`).
+
+### The API
+| | |
+|---|---|
+| Endpoint | `POST https://vision.googleapis.com/v1/images:annotate`, feature `TEXT_DETECTION` (`DOCUMENT_TEXT_DETECTION` for dense text) |
+| Auth | a Google Cloud API key, restricted to the Vision API (and to the server's address). Google's OCR page shows OAuth in its examples; the key route is Google's standard API-key auth (to confirm in V1). |
+| Settings | see §9: `GOOGLE_VISION_API_KEY` (**already set in Coolify**, but **no code reads it yet**: it is nowhere in the repo), `GOOGLE_VISION_BASE_URL`, `GOOGLE_VISION_ENABLED` |
+| Async | None for this use: one request answers at once, up to 16 images a request |
+| Inputs | Base64 image bytes in the JSON body, read on the server from the workspace's storage (no links leave Particl). 20 MB an image; 10 MB a request. |
+| Limits | 1,800 requests a minute (default) |
+| Output | `textAnnotations` (the full text, then each word with its box) and `fullTextAnnotation` |
+| Data | For answers given at once, "the image data is processed in memory and not persisted to disk". "Google does not use the content you send to train and improve our Cloud Vision features." Some request metadata is logged for a short time. |
+| Region | Global by default, with "no guarantee that data stays in one location". EU and US endpoints exist for OCR. **There is no India endpoint.** |
+
+### The tools
+| Tool | Kind | Inputs | Output | Who may call | Gate |
+|---|---|---|---|---|---|
+| `text_check` | app action, priced inside Verify | the take's review frames | the text found, its boxes, and pass, or "text found" against the take's rules | anyone, as part of a Verify step a person approved | none beyond Verify's own |
+| `read_text` | app action | a frame or still from this workspace | the text and its boxes, stored with the take or the cut | anyone may prepare; a person approves when it is charged | paid (1 cr on its own) |
+
+### Prices (sample / proposal)
+| Row | Vendor's public price (Text Detection) | Sells at (sample) |
+|---|---|---|
+| Text check, 3 review frames | $1.50 per 1,000 images after the first 1,000 a month (free) | inside Verify's quote, usually +0 cr |
+| Read text, one frame | $0.0015 an image | 1 cr on its own |
+
+### Tenant isolation, privacy and failure
+- **Isolation:** bytes are read from the workspace's own storage. The words found are stored in that workspace's `take_verifications` row or on its cut.
+- **Privacy:** frames can show people and private text (a name tag, a screen). Google keeps no image and trains on nothing (above). It is processed abroad (global), which counsel notes with the other transfers.
+- **Failure:** an error answers at once. Google bills images processed; a refused request settles at 0, "Nothing billed". If the text check fails, Verify finishes on its other scores and says the text check is missing.
+
+### Risks
+- OCR reads garbled generated text unevenly. It is advice, never a block.
+- No India region.
+- The key is already set but unused. It should be restricted to the Vision API before V1 lands (owner action).
+
+## 5. Recraft (added by the owner): raster, vector, vectorize, remove background
+
+### What it adds
+- **Vector images (SVG)** and design-style raster images, which none of today's engines make. SOW 4 Oct §5.1 lists "Vector and type: Recraft V4 (Recraft API), `RECRAFT_API_KEY` (new), E2". The handover asks for "the SVG kept as the original" (docs/handover-2026-10-05.md:1263).
+- **Vectorize:** a PNG or JPG logo from a product page (`lib/v12/campaign.ts:21-31`, the Product stage's logo candidates) turned into a clean SVG, for end cards and the Remotion templates.
+- **Remove background:** a second engine beside Bria cut-out on fal (`lib/stillTools.ts:15`; $0.018 a call, `lib/vendorRates.ts:161-166`). Recraft costs $0.01 a call. Both sell at 1 cr, so Auto can choose on quality, not price.
+
+### The API
+| | |
+|---|---|
+| Base URL | `https://external.api.recraft.ai/v1` |
+| Auth | `Authorization: Bearer <token>` |
+| Settings | see §9: `RECRAFT_API_KEY` (the name SOW §5.1 and the handover already use; Recraft's own docs call it `RECRAFT_API_TOKEN`, but we keep one name), `RECRAFT_BASE_URL`, `RECRAFT_ENABLED` |
+| Endpoints | `POST /v1/images/generations` (models `recraftv4_1`, `recraftv4_1_vector`, V4, V4 Styles; `size`, `style`, `n` 1 to 6, `response_format`, `image_format`); `POST /v1/images/vectorize`; `POST /v1/images/removeBackground`; later `imageToImage`, `replaceBackground`, `crispUpscale` |
+| Async | None documented: the reply carries the image. |
+| Inputs | JSON with the image as a data URL, or multipart with the file. Under 20 MB, up to 16 MP and 4,096 px on the longest side, at least 256 px on the shortest. |
+| Outputs | `response_format` is `url` (a link "valid for about 24 hours"), `b64_json` or `multipart`. **We use `b64_json` or `multipart`,** so no vendor link is ever kept. Raster comes back as WebP by default (PNG on request); vector models give SVG. |
+| Limits | 100 images a minute and 5 requests a second, per account |
+| Billing | API units: $1 = 1,000 units; bought in advance; they never expire. The reply states the `credits` it used. |
+| Data | Recraft's data-use page says API inputs and outputs "are never used for model training", and API data "is not stored or used to improve models". The Developer Terms (11 Aug 2026) govern. |
+
+### The tools
+| Tool | Kind | Inputs | Output | Who may call | Gate |
+|---|---|---|---|---|---|
+| `recraft_image` | engine (still; raster or vector) | words, model, size or aspect, style, count 1 to 6, optional style references (1 to 10) | an image take; a vector take keeps its SVG as the original | anyone may prepare; a person approves | paid |
+| `recraft_vectorize` | engine (still tool) | a PNG, JPG or WebP from this workspace | an SVG take, linked to its source | as above | paid |
+| `recraft_remove_background` | engine (still tool, beside Bria's `cutout`) | a still from this workspace | a transparent PNG take | as above | paid |
+
+- **SVG is a new kind of original.** Storage knows video, image, audio and model originals (`lib/storage.ts:39-41`), so C2 adds an `svg` path.
+- **An SVG can carry script.** So it is served only as a download, or with a strict content-security policy (`Content-Type: image/svg+xml` plus `Content-Security-Policy: default-src 'none'`). It is never inlined into a page. This is a security point for the review.
+
+### Prices (sample / proposal)
+| Row | Vendor's public price | Sells at (sample) |
+|---|---|---|
+| Raster image, V4.1 | $0.035 | 1 cr |
+| Raster image, V4.1 Pro (2K) | $0.21 | 4 cr |
+| Vector image, V4.1 | $0.08 | 2 cr |
+| Vector image, V4.1 Pro | $0.30 | 5 cr |
+| Vectorize | $0.01 | 1 cr |
+| Remove background | $0.01 | 1 cr |
+| Style references, added to a request | $0.005 | added before rounding |
+
+- **Settle** at the units the reply states (`credits`), never above the quote.
+
+### Tenant isolation, privacy and failure
+- **Isolation:** inputs are sent as bytes or data URLs read from this workspace. Outputs are stored under its prefix.
+- **Privacy:** no training and no storage on Recraft's side for API data (above). A logo or a product photo is usually not personal data. A photo of a person sent for background removal is, but it is not processed as biometric.
+- **Failure:** the reply comes at once. Recraft's pages do not say whether a failed call uses units. Until confirmed: settle at 0, "Nothing billed", absorbed by the platform.
+- **Risks:**
+  - the SVG security point above;
+  - units are bought in advance and are "non-refundable", so the owner tops them up;
+  - the region is not stated on the pages read.
+
+## 6. Black Forest Labs FLUX.2, direct (added by the owner): create, and edit from several references
+
+### What it adds
+- **Create:** FLUX.2 [pro] (and [flex] and [max]) stills from words, up to 4 MP.
+- **Edit from several references:** up to **8 reference images through the API** (10 in BFL's own playground). For example: put this product in this setting, in this look, on this person. This is the "style transfer, in-context edits" row of SOW 4 Oct §5.1, and the fix step for a failed region that P6b plans.
+- **On BFL's own API** (as the owner named it), not fal. The SOW row says "(fal)"; this plan follows the owner. Owner question B confirms it.
+
+### The API
+| | |
+|---|---|
+| Base URL | `https://api.bfl.ai` (global). Regional: `api.eu.bfl.ai` ("EU multi-cluster", GDPR) and `api.us.bfl.ai`. |
+| Auth | header `x-key` |
+| Settings | see §9: `BFL_API_KEY` (BFL's own docs use this name), `BFL_BASE_URL`, `BFL_ENABLED` |
+| Endpoints | `POST /v1/flux-2-pro` (a fixed snapshot; recommended, so results don't drift) or `/v1/flux-2-pro-preview` (the latest). Also [flex] and [max]. Body: `prompt`, `input_image`, `input_image_2` … up to 8, then size, seed and output format per the API reference. |
+| Async | Submit returns `id` and `polling_url`. "You must use the `polling_url` returned." Statuses: `Ready` (the image is in `result.sample`), `Error`, `Failed`, plus pending and moderated states. |
+| Outputs | "Signed URLs are only valid for 10 minutes." **The collector must copy the image within 10 minutes of `Ready`.** So BFL jobs are polled by the worker in a tight loop, not left to the next page load or the cron. This is the main build risk. |
+| Billing | Credits at $0.01. FLUX.2 is priced by megapixel. The docs give from-prices ([pro] from $0.03 to create and from $0.045 to edit; [flex] from $0.05; [max] from $0.07) and point to BFL's calculator for exact figures. Secondary sources describe [pro] as $0.03 for the first output megapixel, $0.015 for each further one, and $0.015 per megapixel of reference. **To confirm on the first bill.** |
+| Data | BFL's privacy policy (revised 1 Aug 2026) says inputs and outputs "may be used to train and improve our AI models". It allows an objection by email ("Training Opt Out") and excludes enterprise customers, whose agreements govern instead. Retention: "as long as is reasonably necessary". |
+
+### The tools
+| Tool | Kind | Inputs | Output | Who may call | Gate |
+|---|---|---|---|---|---|
+| `flux2_image` | engine (still) | words, size (up to 4 MP), model [pro], [flex] or [max], seed | an image take | anyone may prepare; a person approves | paid |
+| `flux2_edit` | engine (still; edit) | words, 1 to 8 reference stills from this workspace, size | an image take, linked to every reference | as above | paid; **a live consent record (face) for every real person among the references** |
+
+### Prices (sample / proposal; [pro] unless named)
+| Row | Vendor's public price | Sells at (sample) |
+|---|---|---|
+| Create, 1 MP | from $0.03 | 1 cr |
+| Create, 4 MP | about $0.075 (reported per-MP rule) | 2 cr |
+| Edit, 1 reference, 1 MP | from $0.045 | 1 cr |
+| Edit, 4 references, 1 MP | about $0.09 (reported) | 2 cr |
+| Edit, 8 references, 1 MP | about $0.15 (reported) | 3 cr |
+| Create, [max], 1 MP | from $0.07 | 2 cr |
+
+- **Quote** from the per-megapixel rule, with the references counted.
+- **Settle** at the job's cost if BFL's reply states one; otherwise at the quote. Which one applies is to be checked in B1.
+
+### Tenant isolation, privacy and failure
+- **Isolation:** references are read from this workspace. BFL takes image URLs or data; we send data, or a presigned link of at most 15 minutes (`lib/storage.ts:682-686`). The output is copied under the workspace's prefix within the 10 minutes.
+- **Privacy:**
+  - **The training clause:** before any customer switch, the owner sends BFL the training opt-out, or signs enterprise terms (owner action; counsel reads them).
+  - A reference showing a real person needs a face consent record (above).
+  - Data leaves India. The EU endpoint gives GDPR terms (owner question B).
+- **Failure:** BFL's pricing page says nothing about failed or moderated jobs. Until confirmed: settle at 0, "Nothing billed", absorbed by the platform. A job whose image could not be copied within the 10 minutes is a failure to collect. It is retried only if BFL still answers, and it is settled as "Nothing billed" if the image is lost (the platform absorbs it).
+- **Risks:**
+  - the 10-minute link;
+  - the training clause;
+  - pricing that is only "from" figures until the first bill.
+
+## 7. Runway (DECIDED: standby; the house workspace only until training-free terms)
 
 ### What it adds
 - **Act-Two, "character performance":** a performance video (a person acting) drives a character image or video. Particl already has motion transfer on the Higgsfield API key (task `motion`, `lib/tasks.ts:25`). Runway is the fallback that SOW 4 Oct §5.1 names, "if Higgsfield's API changes".
@@ -62,7 +426,7 @@ The owner asked for this on 14 Oct: plans first, no paid calls. This plan was re
 |---|---|
 | Base URL | `https://api.dev.runwayml.com/v1` |
 | Auth | `Authorization: Bearer <key>` and `X-Runway-Version: 2024-11-06` |
-| Proposed env names | `RUNWAY_API_KEY` (the name SOW §5.1 already uses), `RUNWAY_BASE_URL`, `RUNWAY_ENABLED` |
+| Settings | see §9: `RUNWAY_API_KEY` (the name SOW §5.1 already uses), `RUNWAY_BASE_URL`, `RUNWAY_ENABLED` |
 | Endpoints | `POST /v1/character_performance` (model `act_two`); `POST /v1/video_to_video` (model `aleph2`); `POST /v1/image_to_video` (models `gen4.5`, `gen4_turbo`); `POST /v1/uploads` (ephemeral `runway://` inputs); `GET /v1/tasks/{id}`; `DELETE /v1/tasks/{id}` |
 | Async | Create, then poll `GET /v1/tasks/{id}`. Statuses: `PENDING`, `THROTTLED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`. **No webhooks are documented,** so we poll through the existing poll path and the cron rescue. |
 | What it reports | A running task has `estimatedCost.credits`. A finished one has `cost.credits`, and "fully refunded tasks report 0". A failure has `failure` and `failureCode`. |
@@ -100,10 +464,10 @@ The owner asked for this on 14 Oct: plans first, no paid calls. This plan was re
 
 ### Privacy and law (for counsel; not decided here)
 - **Runway's standard terms (updated 15 Sep 2026) let Runway "train and improve its AI models" on Inputs and Outputs,** under a "perpetual, worldwide" licence. The page states no API opt-out. A separate Enterprise agreement exists, which the page does not reproduce.
-  - That would put customers' faces and footage into a vendor's training set. **The plan recommends no customer workspace uses Runway until the owner has Enterprise terms, or written confirmation, that excludes training.**
+  - That would put customers' faces and footage into a vendor's training set. **DECIDED: no customer workspace uses Runway until the owner has Enterprise terms, or written confirmation, that excludes training.** Until then `RUNWAY_ENABLED` is on in the house workspace only.
 - **The terms require "Powered by Runway"** to be shown prominently, with a link, in apps that reach end users. That is a screen element: it **waits for Claude Design / v18**, and the owner decides.
 - **Act-Two processes two people's faces:** the character and the performer. Both need a consent record that covers the face.
-- **After the output is copied, the plan proposes `DELETE /v1/tasks/{id}`,** so the vendor keeps as little as possible (owner question 7).
+- **DECIDED: after the output is copied, `DELETE /v1/tasks/{id}`,** so the vendor keeps as little as possible.
 
 ### Failure and refunds
 - A `FAILED` or `CANCELLED` task with `cost.credits = 0` settles at 0 and reads "Nothing billed". This is new `BASIS` evidence: the task's reported cost.
@@ -114,249 +478,190 @@ The owner asked for this on 14 Oct: plans first, no paid calls. This plan was re
 - The training licence and the "Powered by Runway" clause (above).
 - Low tier-1 limits until credit is bought.
 - The product moves fast: `gen4_aleph` was replaced within months. Model ids must be checked again before each PR.
-- A new US data transfer for customers in India (see §4, DPDP).
+- A new US data transfer for customers in India (see §3, DPDP).
 
 ---
 
-## 2. Sarvam
+## 8. Topaz: direct versus fal (added by the owner)
 
-### What it adds
-- **Indian-language speech (text to speech).** Bulbul v3 and v4-flash read 11 languages, including mixed English and Indian-language text. The voices are built for Indian speech, beside ElevenLabs (in use).
-- **Indian-language transcription (speech to text),** in Saaras v4. Particl transcribes with Grok today (`lib/transcription.ts`; owner, 23 Sep: "Grok APIs wherever possible"). Sarvam would be the engine for Indian languages where it does better.
-- **Translation** of scripts, captions and dub lines between English and 22 Indian languages (`sarvam-translate:v1`; `mayura:v1` for 11 of them with colloquial modes). Today "a language of a finished cut … translated on-screen text has no path" (`lib/v12/unpriced.ts:73-74`).
+**Today the code uses Topaz through fal:**
+- Astra 2 creative video upscale at $0.30/s up to 1080p and $0.50/s at 4K, doubled at 60 fps (`lib/vendorRates.ts:132-142`; model row `lib/models.ts:302-330`; docs/astra-video-upscale.md);
+- image upscale at $0.08 for 24 MP and $0.16 for 48 MP (`lib/vendorRates.ts:152-153`).
 
-### The API
-| | |
-|---|---|
-| Base URL | `https://api.sarvam.ai` |
-| Auth | header `api-subscription-key` |
-| Proposed env names | `SARVAM_API_KEY`, `SARVAM_BASE_URL`, `SARVAM_ENABLED`, plus the INR-to-dollar rate the owner sets (owner question 4) |
-| Endpoints | `POST /text-to-speech` (JSON; returns base64 audio); `POST /speech-to-text` (multipart; for clips under about 30 s); batch transcription: `POST /speech-to-text/job/v1`, `GET /speech-to-text/job/v1/{job_id}/status`, `POST /speech-to-text/job/v1/download-files`; `POST /translate` (JSON) |
-| Async | Speech, short transcripts and translation answer at once. Batch transcription is a job: poll, or take a callback (`X-SARVAM-JOB-CALLBACK-TOKEN`; the reply must be 200 within 30 s; status only). |
-| Limits | Speech: 2,500 characters a request on v3 and v4-flash. Translation: 2,000 characters on `sarvam-translate:v1`, 1,000 on `mayura:v1`. Batch transcription: files up to 2 hours, 20 a job, diarization up to 20 speakers. Rate limits on the Starter plan: 60 a minute (30 for Bulbul v3); higher on Pro and Business. |
-| Billing | In rupees, against prepaid credit (₹100 free on sign-up). |
-| Region and law | "We process and store information in India", and may transfer it abroad. Indian law, Bengaluru courts. |
-| Retention | Set by the org Owner, from 0 days to 24 months. **Until set, data is kept indefinitely.** Zero retention is available for the model APIs. |
-| Training | "Subject to your consent, which you may decline or withdraw." |
+The rate card's Topaz rows (CLAUDE.md § Pricing: 23 cr for 5 s 1080p, 38 cr for 5 s 4K) come from these.
 
-### The tools
-| Tool | Kind | Inputs | Output | Who may call | Gate |
-|---|---|---|---|---|---|
-| `sarvam_speech` | engine (audio task `speech`) | text (split server-side at 2,500 characters), language, a stock voice, model, pace | an audio take | anyone may prepare; a person approves | paid; stock voices only (owner question 5) |
-| `sarvam_transcribe` | engine (transcript) | a stored audio or video original, language or auto-detect, diarization | a transcript in the same shape as Grok's (timed words, SRT) | as above | paid; quoted from the measured length, as Grok's is (`lib/transcription.ts` header) |
-| `sarvam_translate` | engine (text) | text (up to 2,000 characters a call; longer text is split), source and target language, mode | text, written back where it was asked for (a script, a caption, a dub line) | as above | paid |
+**Topaz's own API** sells credits on a plan:
+- Developer: $0.10 a credit, $50 a month for 500;
+- Scale: $0.08 a credit, $240 a month for 3,000;
+- Starter: $0.12 ("coming soon");
+- Enterprise: on request.
 
-### Prices (sample / proposal; rupees converted at a sample ₹85 = US$1, which is illustrative only)
-| Row | Vendor's public price (pay as you go) | Sells at (sample) |
-|---|---|---|
-| Speech, Bulbul v3, 500 characters | ₹30 per 10,000 characters | 1 cr |
-| Speech, Bulbul v3, 10,000 characters | | 6 cr |
-| Speech, Bulbul v4-flash, 10,000 characters | ₹20 per 10,000 characters | 4 cr |
-| Transcript, 10 minutes | ₹29.40 an hour | 1 cr |
-| Transcript, 60 minutes | | 6 cr |
-| Transcript with speakers, 60 minutes | ₹35.40 an hour | 7 cr |
-| Translation, 2,000 characters | ₹20 per 10,000 characters | 1 cr |
-| Translation, 10,000 characters | | 4 cr |
+Astra is billed by output frame: about 7.7 frames a credit at 1080p, and 4.3 at 4K. Gigapixel image upscale is 24 output megapixels a credit (the API page also says 48 MP costs 3 credits; the two figures disagree).
 
-- Like an ElevenLabs line, speech and translation are priced by length, so they are "up to N cr" estimates on the button, not single card rows (CLAUDE.md § Pricing, the VO note).
+| Job (30 fps) | fal, in the code today | Topaz direct, Developer ($0.10/credit) | Topaz direct, Scale ($0.08/credit, $240/mo) |
+|---|---|---|---|
+| Astra, 5 s at 1080p (150 frames) | $1.50 → **23 cr** | ≈19.5 credits ≈ $1.95 → 30 cr | ≈ $1.56 → 24 cr |
+| Astra, 5 s at 4K | $2.50 → **38 cr** | ≈34.9 credits ≈ $3.49 → 53 cr | ≈ $2.79 → 42 cr |
+| Image upscale to 24 MP | $0.08 → 2 cr | 1 credit, $0.10 → 2 cr | $0.08 → 2 cr |
+| Image upscale to 48 MP | $0.16 → 3 cr | 2 or 3 credits, $0.20 to $0.30 → 3 to 5 cr | $0.16 to $0.24 → 3 to 4 cr |
+| (not in the code) Proteus precision video, 5 s at 1080p | $0.02/s on fal → $0.10 | 4 credits per 10 s → ≈ $0.20 | ≈ $0.16 |
 
-### Privacy and law (for counsel)
-- **Voice is personal data.** Stock voices raise no consent question for the speaker. **Voice cloning is not proposed:** it needs a consent record that covers the voice, for a new use (owner question 5).
-- **A transcript of a real person's speech is their personal data,** and so is a translation of what they said. Both stay in the workspace's database only.
-- **Set Sarvam's retention to 0 days** for the model APIs before any customer use. This is an org-Owner setting in Sarvam's console (owner action).
-- **Sarvam's terms §10.5(d) forbid "providing access to the APIs … to third parties"** unless product terms allow it. Particl's customers would be reaching Sarvam through Particl. **Counsel should confirm a platform may offer it,** or the owner should get it in writing.
-- **Data stays in India by default,** which suits DPDP better than a US vendor. Sarvam names itself a Data Fiduciary for its own users; for our customers it would act as our processor. That needs a processing agreement.
+Both sides double at 60 fps: fal by its rule, Topaz because it bills by frame. The "sells at" figures are samples through `billCredits()`.
 
-### Failure and refunds
-- Errors (400, 403, 422, 429, 500) are answered at once. Sarvam's docs fetched here say nothing about billing a failed call, so `BASIS` reads `unknown` until Sarvam confirms in writing.
-  - **Until then, a failure is settled at 0 and says "Nothing billed".** The platform absorbs any charge, using the meter's existing `unbilled` flag (`lib/meter.ts:54-59`).
-- A long text split into several calls that fails partway settles at the parts that succeeded. Nothing is charged for the part that failed.
+**Recommendation (owner question H): stay on fal for Topaz.**
+- fal is cheaper or equal on every job Particl runs.
+- It needs no subscription.
+- It is already built, with its recovery path (docs/astra-video-upscale.md).
 
-### Risks
-- Rupee billing against dollar rates: the exchange rate moves. Quote with the owner's rate; the margin covers small moves (owner question 4).
-- Retention is indefinite until the setting is changed.
-- The resale clause.
-- Low Starter limits (30 to 60 a minute).
+Look again only if Topaz quotes an Enterprise price below fal's, or if a model Particl wants is only on the direct API. No PR is proposed, and no Topaz setting is added.
 
----
+## 9. Coolify setting names, per provider (names only)
 
-## 3. sync.so (lip-sync)
+**How the names were chosen:**
+- Names already in the code or the scope are reused: `FAL_KEY` (`lib/providers.ts:139`), `RUNWAY_API_KEY` and `RECRAFT_API_KEY` (SOW 4 Oct §5.1), and `GOOGLE_VISION_API_KEY` (already set; no code reads it yet).
+- New ones follow the code's pattern: `<VENDOR>_API_KEY` for the key, and `<VENDOR>_BASE_URL` for the address, as in `FAL_BASE_URL` and `ELEVENLABS_BASE_URL` (`lib/providers.ts:116`, `:140`; read at `:327`). The base URL is optional; it exists so a local echo server can stand in during tests.
+- Every new provider gets an on/off switch, `<VENDOR>_ENABLED=1`. Unset means off.
+- I found no `TOPAZ_*` or `BFL_*` setting in the code. (`TOPAZ_IMAGE_MODEL` and `TOPAZ_IMAGE_PRESETS` are code constants in `lib/topaz.ts`, not settings.)
 
-### What it adds
-- **Lip-sync:** a clip plus a voice track gives the clip with the mouth matched to the words. Today Particl has no lip-sync engine (`lib/v12/unpriced.ts:17-21`; `lib/v12/make.ts:229`). It is needed for dubbing a cut into another language (with ElevenLabs or Sarvam speech), and for ads with a presenter.
+| Provider | Key (secret) | Address (optional) | Switch | Other |
+|---|---|---|---|---|
+| sync.so | `SYNC_API_KEY` | `SYNC_BASE_URL` | `SYNC_ENABLED` | `SYNC_WEBHOOK_SECRET` (only when webhooks are turned on, Y4) |
+| Sarvam | `SARVAM_API_KEY` | `SARVAM_BASE_URL` | `SARVAM_ENABLED` | `SARVAM_USD_PER_INR` (the rupee rate the owner sets) |
+| AWS Rekognition | `REKOGNITION_ACCESS_KEY_ID`, `REKOGNITION_SECRET_ACCESS_KEY` | `REKOGNITION_REGION` (`ap-south-1`) | `REKOGNITION_ENABLED` | — |
+| Google Cloud Vision | `GOOGLE_VISION_API_KEY` (already set) | `GOOGLE_VISION_BASE_URL` | `GOOGLE_VISION_ENABLED` | — |
+| Recraft | `RECRAFT_API_KEY` | `RECRAFT_BASE_URL` | `RECRAFT_ENABLED` | — |
+| Black Forest Labs | `BFL_API_KEY` | `BFL_BASE_URL` (global or `api.eu.bfl.ai`, owner question B) | `BFL_ENABLED` | — |
+| Runway (standby) | `RUNWAY_API_KEY` | `RUNWAY_BASE_URL` | `RUNWAY_ENABLED` (house workspace only) | — |
+| Topaz | none: stays on fal, `FAL_KEY` (existing) | `FAL_BASE_URL` (existing) | — | — |
 
-### Two doors to the same model (owner question 3)
-- **Through fal** (`fal-ai/sync-lipsync/v2` and `/v2/pro`). This is what SOW 4 Oct §5.1 already lists, on `FAL_KEY`, which is in use. It needs no new vendor, key or contract. It reuses the fal adapter, queue, cancel and recovery (`lib/engines/fal.ts`). Price: $3 a minute (lipsync-2), $5 a minute (pro).
-- **Direct** (`https://api.sync.so`, header `x-api-key`). Proposed env: `SYNC_API_KEY`, `SYNC_BASE_URL`, `SYNC_ENABLED`. It adds the newer `sync-3`, segments, active-speaker detection, signed webhooks and per-plan discounts (lipsync-2 is $0.04 to $0.05 a second by plan; pro is $0.067 to $0.083).
-  - Endpoints: `POST /v2/generate`, `GET /v2/generate/{id}`, `POST /v2/generations/estimate`, `DELETE /v2/generations/{id}`, `POST /v2/assets/upload`.
-  - Statuses: `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `REJECTED`.
-  - Webhooks: signed with `Sync-Signature`.
-  - Input length: 1 minute on the Hobbyist plan, up to 30 minutes on Scale+.
-- **Recommended: fal first.** Go direct only if the owner wants sync-3, or the volume discount.
+**Why the AWS names cannot collide.** None of the Rekognition names starts with `AWS_`, `R2_`, `S3_`, `STORAGE_` or `BLOB_`.
+- **What the storage code reads:**
+  - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT`, `STORAGE_BACKEND` and `BLOB_READ_WRITE_TOKEN` (`lib/storage/*.ts`);
+  - the same R2 names in the backup and copy scripts (`scripts/ops/blob-to-r2.mjs:51-56`, `scripts/ops/backup-lib.mjs:392`).
+  
+  The R2 client is given its region, endpoint and credentials in code (`lib/storage/r2.ts:190-194`).
+- **What the AWS SDKs read by themselves:** every environment setting in AWS's settings reference starts with `AWS_`:
+  - credentials: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`;
+  - region and profile files: `AWS_REGION`, `AWS_PROFILE`, `AWS_CONFIG_FILE`, `AWS_SHARED_CREDENTIALS_FILE`;
+  - endpoints: `AWS_ENDPOINT_URL`, `AWS_ENDPOINT_URL_<SERVICE>`, `AWS_IGNORE_CONFIGURED_ENDPOINT_URLS`, `AWS_USE_FIPS_ENDPOINT`, `AWS_USE_DUALSTACK_ENDPOINT`;
+  - roles and containers: `AWS_ROLE_ARN`, `AWS_ROLE_SESSION_NAME`, `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`;
+  - instance metadata: `AWS_EC2_METADATA_DISABLED`, `AWS_EC2_METADATA_SERVICE_ENDPOINT`, `AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE`, `AWS_EC2_METADATA_V1_DISABLED`, `AWS_METADATA_SERVICE_NUM_ATTEMPTS`, `AWS_METADATA_SERVICE_TIMEOUT`;
+  - retries and defaults: `AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE`, `AWS_DEFAULTS_MODE`;
+  - checksums and compression: `AWS_REQUEST_CHECKSUM_CALCULATION`, `AWS_RESPONSE_CHECKSUM_VALIDATION`, `AWS_DISABLE_REQUEST_COMPRESSION`, `AWS_REQUEST_MIN_COMPRESSION_SIZE_BYTES`;
+  - S3: `AWS_S3_USE_ARN_REGION`, `AWS_S3_DISABLE_MULTIREGION_ACCESS_POINTS`, `AWS_S3_DISABLE_EXPRESS_SESSION_AUTH`;
+  - the rest: `AWS_ACCOUNT_ID`, `AWS_ACCOUNT_ID_ENDPOINT_MODE`, `AWS_AUTH_SCHEME_PREFERENCE`, `AWS_SIGV4A_SIGNING_REGION_SET`, `AWS_CA_BUNDLE`, `AWS_DISABLE_HOST_PREFIX_INJECTION`, `AWS_ENABLE_ENDPOINT_DISCOVERY`, `AWS_SDK_UA_APP_ID`, `AWS_STS_REGIONAL_ENDPOINTS`.
+- **No `AWS_*` setting should be added to Coolify for this work.** The Rekognition adapter signs with `signRequest` (`lib/storage/r2.ts:115-116`) and reads only the `REKOGNITION_*` names. So neither the storage client nor any AWS SDK default can pick the Rekognition keys up, and the Rekognition code can never pick up the R2 keys.
 
-### The tool
-| Tool | Kind | Inputs | Output | Who may call | Gate |
-|---|---|---|---|---|---|
-| `lip_sync` | engine (a new video task `lipsync`) | a clip (a take or upload from this workspace), a voice track (a take, an upload, or a speech take), model `lipsync-2` or `lipsync-2-pro`, what to do when lengths differ (`cut_off`, `loop`, `bounce`, `silence`, `remap`) | a video take, linked to both sources | anyone may prepare; a person approves | paid; **a live consent record for the face in the clip and, if the voice is a real person's (not a stock voice), for the voice** |
+## 10. Order and PRs
 
-### Prices (sample / proposal; billed on output length)
-| Row | Vendor's public price (fal) | Sells at (sample) |
-|---|---|---|
-| Lip-sync, 5 s | $3 a minute | 4 cr |
-| Lip-sync, 30 s | | 23 cr |
-| Lip-sync, 60 s | | 45 cr |
-| Lip-sync Pro, 5 s | $5 a minute | 7 cr |
-| Lip-sync Pro, 30 s | | 38 cr |
-| Lip-sync Pro, 60 s | | 75 cr |
+**The order (DECIDED for the first four; the additions slotted per owner question A):**
+1. **sync.so lip-sync, direct.**
+2. **Sarvam, direct.**
+3. **Rekognition**, with **Google Cloud Vision's text check** in the same Verify lane. Vision has no consent or biometric question, so its V-PRs can land before the Rekognition ones.
+4. **Recraft, then Black Forest Labs**: an image lane (SOW E2) that can run beside 2 and 3, because it shares no code with them.
+5. **Runway**: standby, house workspace only.
+6. **Topaz**: no change (stay on fal).
 
-### Privacy and law (for counsel)
-- **Lip-sync changes what a real person appears to say.** That is the clearest deep-fake risk in this plan. It needs a consent record covering the face, for the use it is made for (`production`, `ads` or `social`). A voice that is not a stock voice needs a record covering the voice as well.
-- **sync.so's own privacy policy (effective 27 May 2024) says personal information may be used for "developing, training, and fine-tuning" its models.** It states no opt-out. Data is handled in the United States. Going through fal puts fal's terms in between; **counsel should read both** before customer use.
-- **After the output is copied:** on the direct route, `DELETE /v2/generations/{id}` (allowed only once a job has finished). On fal, the existing behaviour applies.
-
-### Failure and refunds
-- fal: "server errors (HTTP 500+) are never charged" (`lib/providerOutcome.ts` `fal-5xx`). Other failures read `unknown` and settle at 0, absorbed by the platform, until fal or sync says otherwise.
-- Direct: sync.so's billing page does not say whether failed or `REJECTED` jobs are billed. Same rule: settle at 0, absorb, "Nothing billed".
-- A cancel is only possible once the job has finished, so a running lip-sync cannot be stopped (docs/redesign/app-map.md:409).
-
-### Risks
-- Misuse for putting words in a real person's mouth (the consent gate above).
-- Quality falls with several faces in the frame.
-- The vendor's training clause.
-
----
-
-## 4. AWS Rekognition (face checks for identity and consent)
-
-### What it adds
-- **"Same face":** a score for whether the person in a take is the cast member they should be. It becomes one more score inside the identity check that Verify already makes (`lib/workbench/verify.ts:25`, checks identity, wardrobe, environment, props, artifacts), as the handover planned (docs/handover-2026-10-05.md:1213).
-- **A face check on references before training.** Is there exactly one usable face in each photo? This catches bad uploads before a training run is paid for.
-- **What it is not:** it does not identify who someone is, it keeps no face collection, and it never searches a database of faces.
-
-### The API
-| | |
-|---|---|
-| Region | Asia Pacific (Mumbai), `ap-south-1`; endpoint `rekognition.ap-south-1.amazonaws.com` |
-| Auth | AWS Signature Version 4, with an IAM user allowed only `rekognition:CompareFaces` and `rekognition:DetectFaces` |
-| Proposed env names | `AWS_REKOGNITION_REGION`, `AWS_REKOGNITION_ACCESS_KEY_ID`, `AWS_REKOGNITION_SECRET_ACCESS_KEY`, `FACE_CHECK_ENABLED`. They are deliberately not the generic `AWS_*` names, so the SDK can never pick up the storage keys (`R2_*`, `lib/storage/r2.ts`) or any other AWS credentials by accident. |
-| Endpoints | `CompareFaces` (the largest face in the source against up to 100 faces in the target); `DetectFaces` |
-| Async | None. Both answer at once. |
-| Inputs | PNG or JPEG bytes, at most 5 MB (15 MB from S3, which we do not use). At least 80 px a side. A face must be at least 40×40 px in a 1920×1080 image. |
-| Limits | 25 calls a second for each of `CompareFaces` and `DetectFaces` in Mumbai (default). |
-| Storage at AWS | "This is a stateless API operation. That is, data returned by this operation doesn't persist." No face collection is created. The Rekognition FAQ says inputs "may" be stored and used to improve the service **unless the account opts out** through an AWS Organizations AI-services opt-out policy. |
-
-- **Library choice:** either add `@aws-sdk/client-rekognition`, from the same family as the `@aws-sdk/client-s3` already used, or sign the request with the SigV4 header signing already in `lib/storage/r2.ts:115-116` (`signRequest`). The PR chooses; fewer new dependencies is better.
-
-### The tools
-| Tool | Kind | Inputs | Output | Who may call | Gate |
-|---|---|---|---|---|---|
-| `face_check` | app action, priced inside Verify | a take (its three review frames for a clip, `lib/workbench/verify.ts:39`; one frame for a still) and up to 5 cast masters that are real people | for each master: the best similarity (0 to 100), faces found, pass or fail against the workspace's threshold | anyone, as part of a Verify step the person approved | **a live consent record covering the face, for each master**; without one, that master is skipped and says "Needs consent" |
-| `face_detect` | app action | a reference photo from this workspace | the number of faces, each face's size, sharpness and brightness | anyone | the same consent rule, when the photo is of a real person |
-| `record_face_consent` | app action (exists: `recordConsent`, `lib/security/consent.ts:159`) | the person, face and/or voice, the uses, an expiry date, a recording | a consent record | **people only.** Atomik and outside agents may prepare it; they never record it (rule 11). | — |
-
-- **Threshold:** a workspace setting that only an admin changes, with a platform-layer default (rule 3). AWS's default is 80. The plan proposes 90 for "same face" (owner question 8).
-- **AWS's own advice:** before acting on a result that affects a person, a human should review it. So a low score marks the take for a person to look at. It never blocks or deletes anything by itself.
-- **Stored:** the scores, in the take's existing `take_verifications` row (`lib/workbench/verify-server.ts:23`). No frames, face crops or face vectors are kept beyond what the take already is.
-
-### Prices (sample / proposal)
-| Row | Vendor's public price (Mumbai, first million images a month; AWS price list published 11 Sep 2026) | Sells at (sample) |
-|---|---|---|
-| Face check, a still against 1 master | $0.00125 an image (one image per call; to be confirmed on the first bill) | 1 cr on its own |
-| Face check, a clip (3 frames) against 1 master | 3 calls | 1 cr on its own |
-| Face check, a clip against 5 masters | 15 calls | 1 cr on its own |
-| Face detect, one photo | $0.00125 an image | 1 cr on its own |
-
-- **Recommended:** add the face check's dollars to the Verify step's own quote **before rounding**, as "batches multiply before rounding" says (CLAUDE.md § Credits). The check then usually adds 0 or 1 cr to Verify, instead of being a separate 1 cr line (owner question 8).
-
-### Privacy and law: biometric data (for counsel; not decided here)
-- **Consent first.** No face is sent to AWS without a live consent record covering that person's face. Recording consent is a person-only action (rule 11; `lib/security/consent.ts:15-16`).
-  - Today's consent uses do not name biometric comparison. **Counsel decides** whether `production` already covers it, or whether a new use is needed, for example "face checks". Adding a use is a word in `CONSENT_USES` (`lib/security/consent-words.ts:12`); it needs no migration.
-- **No face collections.** Only the stateless calls are used. No `IndexFaces`, `CreateCollection` or search.
-- **Opt out of AWS service improvement** with an AWS Organizations AI-services opt-out policy, before any customer use (owner action). AWS's FAQ asks customers who collect consent to collect it on behalf of AWS too.
-- **Region:** Mumbai, so faces do not leave India for this step.
-- **Deletion and Particl's never-delete rule.** Particl erases nothing (owner, 24 Sep), and consent records are never deleted (`lib/security/consent.ts:16-17`). India's DPDP Act gives a person the right to have their data erased once consent is withdrawn.
-  - What we would keep are similarity scores, not face templates. **Counsel must say** whether a score is personal data that must be erased on withdrawal, and how that fits the never-delete rule.
-  - Until then: a withdrawal stops all new checks at once (`consentLive`, `lib/security/consent-words.ts:118`).
-- **India's DPDP Act 2023, at a high level** (counsel to confirm; nothing here is legal advice):
-  - Faces and voices are personal data. The Act asks for consent that is free, specific, informed and unambiguous, given after a clear notice.
-  - Particl would be a Data Fiduciary for its own users. For a customer's cast, it is probably the customer's processor. **Counsel to decide.**
-  - Transfers abroad are allowed unless the government restricts a country. This matters for Runway and sync.so (US). Rekognition in Mumbai and Sarvam in India stay in the country.
-  - Commencement is phased. The Rules were notified in November 2025. Consent-manager rules follow in November 2026. Most duties (notice, consent standards, security, breach notice, erasure and the data principal's rights) apply from **13 May 2027**.
-
-### Failure and refunds
-- A call that fails is answered at once. AWS bills images processed, and a refused image (no face, too large, bad format) is answered with an error before analysis. `BASIS` cites AWS's pricing page. Until confirmed: settle at 0, "Nothing billed".
-- When a face check fails, the Verify step still finishes on its other scores, and says the face score is missing.
-
-### Risks
-- **Biometric law is the biggest risk in this plan:** consent wording, erasure and notice. Counsel, before any customer use.
-- False negatives on side angles and low light. AWS itself recommends a human review, so a score is advice, never a block.
-- AWS bills the account, not a workspace. Spend must go through our meter like every other engine.
-
----
-
-## 5. PRs and order
-
-**Recommended order:**
-1. **sync via fal.** This fills a known gap (lip-sync has no engine) with no new vendor, and it is the fastest.
-2. **Sarvam.** A new market strength, with data kept in India. It waits for counsel on the resale clause.
-3. **Rekognition.** Small to build, but it waits for counsel on biometric consent and erasure.
-4. **Runway.** Kept on standby, as SOW §5.1 says. It waits for training-free terms and the owner's word on "Powered by Runway".
-
-Each provider's adapter ships **behind its switch, off in production.** None needs board UI to land. Every screen **waits for Claude Design / v18**.
+Every adapter lands **behind its switch, off in production.** None needs board UI. Every screen **waits for Claude Design / v18**. **No switch is turned on for a customer before counsel** (DECIDED). Qualification runs happen in the house workspace only, at the stated cost, after the owner's yes.
 
 | # | PR | Size | Review | After |
 |---|---|---|---|---|
-| Y1 | Lip-sync through fal: model rows `fal-ai/sync-lipsync/v2` and `/v2/pro`, a new task `lipsync`, `BASIS` lines, mocks | S, 4h | Opus (money) | — |
-| Y2 | `lip_sync` tool: consent gate (face, and voice if not a stock voice), source links, MCP | M, 6h | **Opus (privacy)** | Y1 |
-| Y3 | Lip-sync rate rows | S, 2h | **NEEDS OWNER (prices)** | Y1 |
-| Y4 | One paid qualification run in the house workspace (about $0.70: one 5 s run of each model) | — | **NEEDS OWNER (spend)** | Y2, Y3 |
-| S1 | Sarvam adapter: speech, short transcripts and translation (answered at once), batch transcription (polled), `SARVAM_ENABLED` off, rupee rates and the exchange-rate setting, mocks | M, 8h | **Opus (money)** | counsel on §10.5(d) |
-| S2 | `sarvam_speech` (stock voices) | S, 4h | — | S1 |
+| Y1 | sync.so adapter: asset upload from bytes, `POST /v2/generate`, poll, `DELETE` after storing, `BASIS`, a new task `lipsync`, `SYNC_ENABLED` off, mocks | M, 8h | **Opus (money)** | — |
+| Y2 | `lip_sync` tool: lipsync-2, lipsync-2-pro, sync-3; consent gate (face, and voice if not stock); source links; MCP | M, 6h | **Opus (privacy)** | Y1 |
+| Y3 | Lip-sync rate rows for the plan bought | S, 2h | **NEEDS OWNER (prices)** | Y1 |
+| Y4 | Signed webhooks (`Sync-Signature`) as a faster path beside polling | S, 3h | Opus (security) | Y2 |
+| Y5 | Qualification run: one 5 s job on each model, about $1.33 | — | **NEEDS OWNER (spend)** | Y2, Y3 |
+| S1 | Sarvam adapter: speech, short transcripts and translation (answered at once), batch transcription (polled), `SARVAM_ENABLED` off, rupee rates and `SARVAM_USD_PER_INR`, mocks | M, 8h | **Opus (money)** | — |
+| S2 | `sarvam_speech` (stock voices only) | S, 4h | — | S1 |
 | S3 | `sarvam_translate` | S, 3h | — | S1 |
-| S4 | `sarvam_transcribe`, with Auto choosing it by language | M, 6h | Opus (privacy) | S1 |
-| S5 | Sarvam rate rows; qualification run (about ₹4, inside the free ₹100) | S, 2h | **NEEDS OWNER** | S2-S4 |
-| K1 | Rekognition adapter: SigV4, Mumbai, `FACE_CHECK_ENABLED` off, mocks | S, 4h | — | AWS account set up |
+| S4 | `sarvam_transcribe` (Auto by language, per owner question F) | M, 6h | Opus (privacy) | S1 |
+| S5 | Sarvam rate rows; qualification run (about ₹4) | S, 2h | **NEEDS OWNER** | S2-S4 |
+| V1 | Vision adapter: `images:annotate` `TEXT_DETECTION`, bytes in, `GOOGLE_VISION_ENABLED` off, mocks | S, 3h | — | — |
+| V2 | `text_check` inside Verify (the `artifacts` check; priced into Verify's quote) | M, 5h | **Opus (money)** | V1 |
+| V3 | `read_text` for on-screen text (feeds S3) | S, 3h | — | V1, S3 |
+| V4 | Qualification run (inside Google's 1,000 free images a month) | — | NEEDS OWNER | V2 |
+| K1 | Rekognition adapter: `signRequest` SigV4, Mumbai, `REKOGNITION_*` names, `REKOGNITION_ENABLED` off, mocks | S, 4h | — | AWS account set up |
 | K2 | Consent gate for face checks (any new use word, after counsel); `record_face_consent` as a people-only tool | S, 4h | **Opus (privacy)**, NEEDS OWNER | counsel |
-| K3 | `face_check` inside Verify: priced into its quote, threshold setting, scores in `take_verifications` | M, 6h | **Opus (privacy, money)** | K1, K2 |
+| K3 | `face_check` inside Verify: priced into its quote, threshold setting (owner question E), scores in `take_verifications` | M, 6h | **Opus (privacy, money)** | K1, K2 |
 | K4 | `face_detect` on references before training | S, 3h | Opus (privacy) | K2 |
 | K5 | Qualification run (about 10 calls, $0.0125, or inside AWS's free tier) | — | **NEEDS OWNER** | K3 |
-| R1 | Runway adapter: uploads, poll, settle at the reported cost, `THROTTLED`, `BASIS`, `RUNWAY_ENABLED` off, mocks | M, 8h | **Opus (money)** | training-free terms |
-| R2 | Model and rate rows `act_two`, `aleph2`, `gen4.5`, `gen4_turbo` | S, 3h | **NEEDS OWNER (prices)** | R1 |
-| R3 | `runway_performance` (task `motion`), consent for both faces | M, 6h | **Opus (privacy)** | R2 |
-| R4 | `runway_edit` (`aleph2`, task `edit`) | S, 4h | — | R2 |
-| R5 | Qualification run (about $1.41: Act-Two 5 s, Aleph 2 at 2 s, Gen-4.5 5 s) | — | **NEEDS OWNER (spend)** | R3, R4 |
+| C1 | Recraft adapter: generate, vectorize, remove background; `b64_json`; settle at the reply's units; `RECRAFT_ENABLED` off; mocks | M, 6h | **Opus (money)** | — |
+| C2 | `svg` originals in storage, served safely (download only or a strict CSP) | S, 3h | **Opus (security)** | C1 |
+| C3 | `recraft_image`, `recraft_vectorize`, `recraft_remove_background` tools; MCP | S, 4h | — | C1, C2 |
+| C4 | Recraft rate rows; qualification run (about $0.14, one of each) | S, 2h | **NEEDS OWNER** | C3 |
+| B1 | BFL adapter: submit, worker poll of `polling_url`, copy within 10 minutes, `BFL_ENABLED` off, mocks | M, 6h | **Opus (money)** | — |
+| B2 | `flux2_image` and `flux2_edit` (up to 8 references; consent gate for real people) | S, 5h | **Opus (privacy)** | B1 |
+| B3 | BFL rate rows; qualification run (about $0.15) | S, 2h | **NEEDS OWNER** | B2 |
+| R1-R5 | Runway (standby), unchanged from the first draft: adapter (M, 8h, Opus money), rows (NEEDS OWNER), `runway_performance` (Opus privacy), `runway_edit`, house-only qualification (about $1.41) | about 21h | as listed | training-free terms for any customer use |
 
-**About 100 hours in total.** No PR here changes a migration-guarded table. The one schema change is in K2, and only if counsel asks for a new kind of consent record rather than a new use word. If so, it ships after the owner's backup.
+**About 120 hours in total,** Runway's 21 included.
+
+- **No migration.** The one possible schema change is K2's, and only if counsel asks for a new kind of consent record rather than a new use word. If so, it ships after the owner's backup.
+- **The `svg` original in C2** is a storage path and a content type, not a table change.
 
 **Guard tests: added to, never weakened.**
 - `tests/unit/bundle.spec.ts`: new vendor rates stay off the browser.
-- `tests/unit/noVendorCostToCustomers.spec.ts`: no rupee or dollar vendor figure reaches a customer.
-- `tests/unit/signinRetiredGuard.spec.ts` and `signinOffRelease1.spec.ts`: untouched. Nothing here uses any sign-in.
+- `tests/unit/noVendorCostToCustomers.spec.ts`: no rupee, dollar or units figure from a vendor reaches a customer.
+- `tests/unit/engines.spec.ts:6`: each new adapter estimates what the catalogue says.
 - The people-only tests: `record_face_consent` refuses Atomik and tokens.
-- `tests/unit/engines.spec.ts:6`: "every provider has an adapter, and the adapters estimate what the catalogue says". Each new adapter must pass it.
+- `tests/unit/signinRetiredGuard.spec.ts` and `signinOffRelease1.spec.ts`: untouched. Nothing here uses a sign-in.
+- **New:** a test that no `REKOGNITION_*` value can reach the R2 client, and no `R2_*` value the Rekognition adapter.
 
-## 6. What needs the owner
-- **Accounts and keys** (put into the server's settings by the owner; never by an agent, and never in the repo):
-  - **Runway:** a developer organisation and credit (tier 1 caps spend at $100 a month); `RUNWAY_API_KEY`.
-  - **Sarvam:** an account, retention set to 0 days, and the plan tier; `SARVAM_API_KEY`.
-  - **sync.so:** nothing if we go through fal. If direct: an account and `SYNC_API_KEY`.
-  - **AWS:** an account under AWS Organizations with the AI-services opt-out policy, and an IAM user limited to the two calls in `ap-south-1`; the `AWS_REKOGNITION_*` settings.
-- **Prices:** every rate row above, and the rupee-to-dollar rate for Sarvam.
-- **Contracts:** Runway Enterprise terms (no training on inputs); a processing agreement with Sarvam and written permission to offer it through a platform; sync.so's terms (and fal's) on training; AWS's standard data processing terms, which come with the account.
-- **Counsel:** biometric consent wording, erasure versus never-delete, and DPDP roles and timing.
-- **Screens** (waits for Claude Design / v18): "Powered by Runway"; the consent prompt for face checks and lip-sync; showing the face score; picking a language and voice.
-- **Each qualification run:** a yes, at the stated cost, in the house workspace only.
+## 11. What needs the owner
+- **Accounts and keys.** The owner puts them into Coolify (names in §9), never an agent, never the repo.
+  - **sync.so:** the plan (owner question C); `SYNC_API_KEY`; written terms that exclude training.
+  - **Sarvam:** the account and plan tier; **retention set to 0 days**; `SARVAM_API_KEY`; `SARVAM_USD_PER_INR`.
+  - **AWS:** an account under AWS Organizations with the AI-services opt-out policy; an IAM user allowed only `rekognition:CompareFaces` and `rekognition:DetectFaces` in `ap-south-1`; the `REKOGNITION_*` settings.
+  - **Google Cloud Vision:** `GOOGLE_VISION_API_KEY` is set. Restrict it to the Vision API and the server's address, and make sure the project has billing on.
+  - **Recraft:** API units bought in advance; `RECRAFT_API_KEY`.
+  - **Black Forest Labs:** an account and credits; `BFL_API_KEY`; the training opt-out email, or enterprise terms.
+  - **Runway:** standby. Only for a house-only qualification run.
+- **Prices:** every rate row (sync.so, Sarvam, Rekognition and Vision inside Verify, Recraft, BFL, Runway). Every figure here is a sample.
+- **Contracts, for counsel to read before any customer switch:**
+  - sync.so and BFL on training;
+  - Sarvam's processing terms and its §10.5(d) (offering access to third parties);
+  - Runway's Enterprise terms;
+  - AWS's and Google's standard data terms (they come with the accounts);
+  - Recraft's Developer Terms.
+- **Counsel (DECIDED: before any customer switch):** biometric consent wording; whether similarity scores must be erased when consent is withdrawn (versus never-delete); Particl's DPDP role for a customer's cast; transfers outside India (sync.so, BFL, Runway and Vision process abroad; Sarvam and Rekognition in India).
+- **Screens** (wait for Claude Design / v18): the consent prompts for lip-sync, face checks and references; the lip-sync model choice; showing the face and text scores; language and voice pickers; "Powered by Runway" if Runway is ever used for customers.
+- **Each qualification run's spend** (house workspace only):
 
-## 7. Owner questions (with recommendations)
-1. **Order.** **Recommended:** sync via fal, then Sarvam, then Rekognition, then Runway (standby).
-2. **Runway and training.** Use Runway for customers only under terms that exclude training on their inputs? **Recommended: yes.** Until then, Runway runs in the house workspace only.
-3. **Lip-sync through fal or sync.so directly?** **Recommended: fal**, with no new vendor. Go direct later for sync-3 or volume.
-4. **The rupee rate for Sarvam:** a fixed rate the owner updates, or a weekly published rate? **Recommended:** a fixed rate in the server's settings, reviewed monthly by the owner.
-5. **Voice cloning (Sarvam or ElevenLabs):** not now? **Recommended: not now.** Stock voices only, until counsel approves the voice-consent wording.
-6. **Transcripts:** Sarvam for Indian languages, and Grok for the rest? **Recommended: yes,** chosen by Auto from the language (rule 13).
-7. **Vendor copies:** delete the vendor's copy of each job once we have stored it (Runway `DELETE /v1/tasks/{id}`, sync.so `DELETE /v2/generations/{id}`, Sarvam retention 0)? **Recommended: yes.** It is the vendor's copy, not ours, so the never-delete rule is untouched.
-8. **Face checks:** a 90 threshold, priced inside Verify (usually +0 or +1 cr)? **Recommended: yes**, and a low score marks the take for a person; it never blocks.
-9. **Counsel** for: biometric consent wording; whether similarity scores must be erased when consent is withdrawn; Particl's DPDP role for a customer's cast; and transfers to US vendors. **Recommended: before any switch is turned on for a customer workspace.**
+  | Provider | About |
+  |---|---|
+  | sync.so | $1.33 |
+  | Sarvam | ₹4 |
+  | Vision | free tier |
+  | Rekognition | $0.01 |
+  | Recraft | $0.14 |
+  | BFL | $0.15 |
+  | Runway | $1.41 |
+
+## 12. Owner questions
+
+**Answered (14 Oct):**
+- The order: sync.so direct, then Sarvam direct, then Rekognition, then Runway on standby.
+- No voice cloning.
+- Counsel before any customer switch.
+- Delete the vendor's copy.
+- Recraft, BFL FLUX.2, Vision and the Topaz comparison added.
+- The Coolify names (§9).
+
+**Still open from the first draft:**
+- **D. The rupee rate for Sarvam.** A fixed `SARVAM_USD_PER_INR`, reviewed monthly by the owner? **Recommended: yes.**
+- **E. Face checks.** A threshold of 90, priced inside Verify (usually +0 or +1 cr), and a low score marks the take for a person and never blocks it? **Recommended: yes.**
+- **F. Transcripts.** Sarvam for Indian languages and Grok for the rest, chosen by Auto from the language? **Recommended: yes.**
+
+**New:**
+- **A. Where the additions go.** **Recommended:**
+  - Vision's text check in the Verify lane with Rekognition, but free to land first (no consent question);
+  - Recraft, then BFL, as an image lane beside Sarvam and Rekognition;
+  - Topaz unchanged.
+- **B. BFL.** Direct, as named (the SOW said fal)? And the global or the EU endpoint? **Recommended:** direct, on the EU endpoint (GDPR terms), with the training opt-out sent before any customer use.
+- **C. Which sync.so plan to buy.** **Recommended: Creator** ($19 a month: 3 jobs at once, 5-minute videos). Move to Scale (20% off usage, 15 at once) when volume justifies $249 a month.
+- **G. Vision's uses.** The Verify text check and reading on-screen text for translation now; the mandatories check once mandatories are stored? **Recommended: yes.**
+- **H. Topaz.** Stay on fal, with no direct account (fal is cheaper or equal on every job Particl runs)? **Recommended: yes.**
+- **I. sync-3's photo input** (a talking person from a still). Leave it out of v1? **Recommended: yes**, video only, until the consent design for it exists.
 
 ## Sources (all read 14 Oct 2026)
 - Runway:
@@ -392,4 +697,31 @@ Each provider's adapter ships **behind its switch, off in production.** None nee
   - FAQ: https://aws.amazon.com/rekognition/faqs/
   - Pricing: https://aws.amazon.com/rekognition/pricing/
   - Mumbai price list: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRekognition/current/ap-south-1/index.json
+- sync.so (direct):
+  - Pricing: https://sync.so/pricing
+  - Models: https://sync.so/docs/models
+- Google Cloud Vision:
+  - OCR: https://docs.cloud.google.com/vision/docs/ocr
+  - Pricing: https://cloud.google.com/vision/pricing
+  - Data usage: https://docs.cloud.google.com/vision/docs/data-usage
+  - Quotas: https://docs.cloud.google.com/vision/quotas
+- Recraft:
+  - Docs: https://www.recraft.ai/docs
+  - Pricing: https://www.recraft.ai/docs/api-reference/pricing
+  - Endpoints: https://www.recraft.ai/docs/api-reference/endpoints
+  - Limits: https://www.recraft.ai/docs/api-reference/appendix
+  - Data use: https://www.recraft.ai/docs/trust-and-security/data-use-and-model-training.md
+- Black Forest Labs:
+  - Generating images: https://docs.bfl.ai/quick_start/generating_images
+  - Pricing: https://docs.bfl.ai/quick_start/pricing
+  - FLUX.2 overview: https://docs.bfl.ai/flux_2/flux2_overview
+  - Image editing: https://docs.bfl.ai/flux_2/flux2_image_editing
+  - Privacy policy (revised 1 Aug 2026): https://bfl.ai/legal/privacy-policy
+- Topaz:
+  - Pricing: https://developer.topazlabs.com/getting-started/pricing
+  - Astra: https://developer.topazlabs.com/video-models/astra.md
+  - Enhance API prices: https://www.topazlabs.com/enhance-api
+  - fal Astra: https://fal.ai/models/topaz/upscale/video/creative
+  - fal video upscale: https://fal.ai/models/fal-ai/topaz/upscale/video
+- AWS SDK settings reference (the `AWS_*` names): https://docs.aws.amazon.com/sdkref/latest/guide/settings-reference.html
 - DPDP: the Act (2023) and the DPDP Rules 2025, phased dates from secondary summaries. Counsel to confirm against the Gazette.
