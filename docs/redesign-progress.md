@@ -496,3 +496,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **14 Oct 22:14 IST.** **#722 CI GREEN 24/24** (run 38585526838, base 74794f5d). It merges after the release/1 run on f61b4621 (#701) is green (independent code; owner's merge-on-green).
 - **14 Oct 22:16 IST.** **#729 and #732 Opus APPROVED** (3c41cb6d, 405cb4ae). CI order: #734 (started), #736, #735 (deadline 16 Oct UTC), then #724 → #729 → #732 (the admissionCheckpoint merge per the reviewer), then #723, #726, #728, #731.
 - **14 Oct 22:17 IST.** **#728 code Opus-approved at 63265344** (triggers, no-mark clear, 7 tests; additive only, 67/67). The PR body was missing rollback steps (the owner's condition); the lead added a Rollback section and the update notes to the body.
+- **14 Oct 22:19 IST.**
+  - **#735 Opus: REQUEST CHANGES:** the three "spelled in parts" sites are guard dodges (honest fixes: one regex literal, comparisons, a lower-case internal tag; no owner word needed); a wording regression (Make missing); "Motion transfer" should be "Motion transfer / Object swap". "Forge" is not new (already the connected-surface rename). Lane C is reprioritised to #735 first (deadline).
+  - **#730 code Opus-APPROVED (aa41da1d);** the lead corrected two PR-body sentences that claimed gateway Gemini text was covered.
+  - **#731 Opus:** money OK; must-fix: the `estimated` flag must exclude metered takes; run the costed-take browser specs; rollback steps in the body (queued for lane C after #735).
+  - The reviewer's stray full unit-suite run was stopped (by stopping its task).
