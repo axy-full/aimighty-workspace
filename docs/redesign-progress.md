@@ -562,3 +562,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **15 Oct 02:58 IST.** **#729 CI GREEN 24/24** (run 38634561140), so **merged** (Step 0 shot type). #732 needs release/1 merged in (admissionCheckpoint: job, shotType and quote in one line).
 - **15 Oct 03:04 IST.** **#732 merge-resolution Opus APPROVED at fbdbee8a** (no release/1 test lost; the checkpoint excludes exactly job/shotType/quote; the fingerprint is unchanged). Queued for CI after #723/#730.
 - **15 Oct 03:27 IST.** #723 CI red (run 38638071875): mediaBindings.spec.ts :153/:344 "Unexpected import @/lib/security/people-only" (that spec pins jobs/[id] route imports; DELETE only). The standing-rule fix (one stub entry) is with lane B, then an Opus confirmation.
+- **15 Oct 03:29 IST.** **#723 entry CONFIRMED** by Opus (one line `@/lib/security/people-only: {}` in mediaBindings; DELETE never uses it; nothing hidden). #723 queued for CI after #730/#732.
