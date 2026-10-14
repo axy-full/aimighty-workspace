@@ -599,7 +599,7 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
       if (!project.ok) return project;
       return /^[a-f0-9]{64}$/.test(ctx.request?.astra?.sourceDigest ?? "")
         ? OK
-        : notYet("save the scene in Astra first.");
+        : notYet("save the 3D scene first.");
     },
     steps: [
       step(
@@ -893,13 +893,13 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
 
   generate: plan("generate", {
     title: "Generate one take",
-    line: "Single generations run in Gen, on Particl's own engines, each priced before it runs.",
+    line: "Single generations run in Make, on Particl's own engines, each priced before it runs.",
     priceLabel: "Not runnable yet",
     doneLine: () => "Generated",
     missingBackend:
-      "Atomik no longer generates on a signed-in account (API-key and direct engines only). One-off generations are Gen's: its composer quotes and runs Particl's own engines through /api/generate.",
-    runnable: () => notYet("single generations run in Gen, on Particl's own engines."),
-    steps: [step("Generate", "dispatch", "", missing("single generations run in Gen"))],
+      "Atomik no longer generates on a signed-in account (API-key and direct engines only). One-off generations are Make's: its composer quotes and runs Particl's own engines through /api/generate.",
+    runnable: () => notYet("single generations run in Make, on Particl's own engines."),
+    steps: [step("Generate", "dispatch", "", missing("single generations run in Make"))],
   }),
 
   recipes: plan("recipes", {

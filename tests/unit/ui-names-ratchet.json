@@ -1,10 +1,5 @@
 {
   "ratchet": {
-    "app/api/crew/solutions/[id]/route/route.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
     "components/graphite/business/FormatTool.tsx": {
       "count": 5,
       "until": "2026-11-30",
@@ -31,101 +26,6 @@
         "from": "2026-10-16",
         "owner": "Owner, 14 Oct 21:55 (resent; addendum 22:00): Move the remaining 11 screen entries' expiry to 30 Nov 2026 … each entry is removed in the PR that rebuilds its screen."
       }
-    },
-    "lib/astra-blender/agent.ts": {
-      "count": 7,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/astra-blender/blender-export.ts": {
-      "count": 6,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/astra-blender/proposal.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/astra-blender/scene.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/astra.ts": {
-      "count": 3,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/falVideo.ts": {
-      "count": 3,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/generationAdmission.ts": {
-      "count": 2,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/models.ts": {
-      "count": 2,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/production/boards.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/submitVideo.ts": {
-      "count": 4,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/usageLedgerTerms.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/vendorKeys.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/vendorNames.ts": {
-      "count": 5,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/videoMetadata.server.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workbench/development-plan.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workers.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workspace/plans.ts": {
-      "count": 5,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workspace/spec-cards.ts": {
-      "count": 3,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
-    },
-    "lib/workspace/takes.ts": {
-      "count": 1,
-      "until": "2026-10-16",
-      "by": "no owner yet (inventory section 9, item 7): the lead assigns it"
     }
   },
   "strict": {},

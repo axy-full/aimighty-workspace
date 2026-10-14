@@ -309,7 +309,7 @@ export const MODELS: ModelDef[] = [
     billing: "second",
     use: "Creative video upscale with frame rate and detail controls.",
     label: "Topaz Astra 2",
-    short: "ASTRA",
+    short: "TOPAZ",
     family: "topaz",
     provider: "fal",
     kind: "video",
@@ -324,7 +324,7 @@ export const MODELS: ModelDef[] = [
     maxReferenceImages: 0,
     maxReferenceVideos: 0,
     maxVideoSecondsTotal: 300,
-    note: "Astra 2 creative video upscale. The provider chooses output dimensions, typically 4K; quotes use the 4K tier and an explicit 30 or 60 fps output.",
+    note: "Topaz Astra 2 creative video upscale. The provider chooses output dimensions, typically 4K; quotes use the 4K tier and an explicit 30 or 60 fps output.",
   },
   /* ── Luma Ray 2 Flash Reframe, on fal.ai ─────────────────────────────
    * Luma's reframe: a finished clip re-cut to another aspect, the missing
