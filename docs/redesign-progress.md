@@ -454,3 +454,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#727** C1 census and R2-only open check (c898d787).
   Slip, logged: one early C1 test made a real @vercel/blob list call with a fixture token (refused by Vercel; no credential; fixed). Opus is reviewing #725 and #727 (including whether the 27 Oct `until` would break CI before cutover). Lane D is now adding the pinned-import entries under the owner's standing rule (#704, #717, #718 incl. the Moleculr routes).
 - **14 Oct 20:45 IST.** Owner correction: particlstudio's previews stay until the cutover is done; deleting the whole project is the LAST step of the #719 checklist (after the R2 copy is verified and the 7-day watch passes). Added to the plan doc.
+- **14 Oct 20:52 IST.** **#725 and #727 Opus: must-fixes.**
+  - **#725:** 27 Oct `until` dates would fail CI on 28 Oct (set per phase now: 15 Nov / 15 Dec / 28 Feb 2027); "only goes down" isn't enforced in CI (fetch-depth 1 means no origin/main, so the comparison is skipped; this also affects the UI-names and spend ratchets); missed comebacks (the vercel CLI, root files, .vercelignore, vercel.ts); string-literal package names.
+  - **#727:** the new verify kinds leak into backup and restore (gate them behind an option); the ratchet clash with #725; a standing network tripwire in the ops test fakes.
+  Queued for lane D.
+  **INCIDENT:** the reviewer ran `rm -f` on the lead's scratchpad and deleted every loose file (freshrun.sh, w.sh, postdeploy.sh, the status page source, the handover draft; the handover is safe in #710). The scripts were rebuilt in ~/lead-notes/bin.
+  **URGENT (owner):** 31 guard ratchet entries (UI-names 23, spend 8) expire 2026-10-16. From 17 Oct 05:30 IST every CI run fails ui-names-guard and the spend guard unless those files are fixed or the dates are moved, and moving dates later needs the owner's direct word.
