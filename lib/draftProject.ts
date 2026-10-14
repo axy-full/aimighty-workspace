@@ -39,13 +39,68 @@ export const isWorkspaceAdmin = (person: Person | null | undefined): boolean => 
 export const heldBoardsProjectId = (workspaceId: string, userId: string) => mappedId(DRAFT_PROJECT_PREFIX, workspaceId, userId, "deleted-boards");
 export const heldBoardsProductionId = (workspaceId: string, userId: string) => mappedId("prod_wb_", workspaceId, userId, "deleted-boards");
 
-/** Whether `userId` owns the draft whose own production project is `projectId`: the id is a hash of the workspace, the owner and the draft, so it is recomputed for each of the person's drafts (an indexed read). */
+/* ── Who owns a board (board sharing, PR 4) ──
+   A board's draft is stored under its first owner's key (`workbench_projects.owner`) and its project id is a hash of that owner, the draft id and the workspace.
+   A board that has been handed over has a row in `workbench_board_owners` saying whose it is now; the draft is not moved and the id does not change. A workspace
+   that never handed a board over has no such table or rows, and everything below reads as it always did. */
+export type BoardOwnerRow = { projectId: string; draftOwner: string; draftId: string; owner: string; previousOwner: string };
+const noTable = (error: unknown) => /no such table/i.test(String((error as { cause?: unknown; message?: unknown })?.cause ?? (error as Error)?.message));
+const ownerRow = (row: Record<string, unknown>): BoardOwnerRow => ({ projectId: String(row.project_id), draftOwner: String(row.draft_owner), draftId: String(row.draft_id), owner: String(row.owner), previousOwner: String(row.previous_owner) });
+
+/** Every board of this workspace that has been handed over, now. One small table, read whole. */
+export async function boardOwnerRows(ex: Exec = db()): Promise<BoardOwnerRow[]> {
+  try { return (await ex.execute({ sql: "SELECT project_id, draft_owner, draft_id, owner, previous_owner FROM workbench_board_owners", args: [] })).rows.map(ownerRow); }
+  catch (error) { if (noTable(error)) return []; throw error; }
+}
+async function boardOwnerRow(projectId: string, ex: Exec): Promise<BoardOwnerRow | null> {
+  try {
+    const row = (await ex.execute({ sql: "SELECT project_id, draft_owner, draft_id, owner, previous_owner FROM workbench_board_owners WHERE project_id=? LIMIT 1", args: [projectId] })).rows[0];
+    return row ? ownerRow(row) : null;
+  } catch (error) { if (noTable(error)) return null; throw error; }
+}
+
+/** The one question "whose board is this": the person it was handed to, else the person whose key holds it. Null when no draft of this workspace maps to it. */
+export async function boardOwnerOf(projectId: string, ex: Exec = db()): Promise<{ owner: string; draftOwner: string; draftId: string; transferred: boolean } | null> {
+  const stored = await boardDraftOf(projectId, ex);
+  if (!stored) return null;
+  const row = await boardOwnerRow(projectId, ex);
+  return { owner: row?.owner ?? stored.owner, draftOwner: stored.owner, draftId: stored.draftId, transferred: !!row && row.owner !== stored.owner };
+}
+
+/** Whether `userId` owns the draft whose own production project is `projectId`: the id is a hash of the workspace, the owner and the draft, so it is recomputed for each of the person's drafts (an indexed read); a board handed over is the one its row names. */
 export async function ownsDraftProject(userId: string, projectId: string, ex: Exec = db()): Promise<boolean> {
   if (!isDraftProject(projectId)) return false;
   const workspace = requireTenant().id;
   if (projectId === heldBoardsProjectId(workspace, userId)) return true;
+  const handed = await boardOwnerRow(projectId, ex);
+  if (handed) return handed.owner === userId;
   const drafts = (await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [userId] })).rows;
   return drafts.some((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, userId, String(row.project_id)) === projectId);
+}
+
+/** The drafts `userId` owns now, each with the key it is stored under: their own that were not handed away, and those handed to them. */
+export async function ownedDrafts(userId: string, ex: Exec = db()): Promise<{ key: string; draftId: string; projectId: string }[]> {
+  const workspace = requireTenant().id;
+  const handed = await boardOwnerRows(ex);
+  const away = new Set(handed.filter((h) => h.draftOwner === userId && h.owner !== userId).map((h) => h.projectId));
+  const own = (await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [userId] })).rows
+    .map((row) => ({ key: userId, draftId: String(row.project_id), projectId: mappedId(DRAFT_PROJECT_PREFIX, workspace, userId, String(row.project_id)) }))
+    .filter((d) => !away.has(d.projectId));
+  const toMe = handed.filter((h) => h.owner === userId && h.draftOwner !== userId).map((h) => ({ key: h.draftOwner, draftId: h.draftId, projectId: h.projectId }));
+  return [...own, ...toMe];
+}
+
+/** The key the draft `draftId` the person owns is stored under: their own, or the first owner's when it was handed to them. `ambiguous` when more than one draft they own has that id. */
+export async function ownedKeyOf(userId: string, draftId: string, ex: Exec = db()): Promise<{ key: string } | { ambiguous: true } | null> {
+  const mine = (await ownedDrafts(userId, ex)).filter((d) => d.draftId === draftId);
+  return mine.length === 1 ? { key: mine[0].key } : mine.length > 1 ? { ambiguous: true } : null;
+}
+
+/** Whether the draft stored under `userId`'s own key for `draftId` has been handed to someone else. */
+export async function handedAway(userId: string, draftId: string, ex: Exec = db()): Promise<boolean> {
+  const projectId = mappedId(DRAFT_PROJECT_PREFIX, requireTenant().id, userId, draftId);
+  const row = await boardOwnerRow(projectId, ex);
+  return !!row && row.owner !== userId;
 }
 
 /**
@@ -254,7 +309,7 @@ export async function sharedBoards(ex: Exec = db()): Promise<{ projects: string[
 export async function projectLister(person: Person | null, ex: Exec = db(), opts: { only?: string | null } = {}): Promise<(projectId: string | null | undefined) => boolean> {
   if (!person) return () => true;
   const workspace = requireTenant().id;
-  const own = new Set((await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [person.id] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, person.id, String(row.project_id))));
+  const own = new Set((await ownedDrafts(person.id, ex)).map((d) => d.projectId));
   own.add(heldBoardsProjectId(workspace, person.id));
   const boards = await sharedBoards(ex);
   const shared = new Set(boards.projects);
