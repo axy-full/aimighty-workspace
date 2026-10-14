@@ -406,3 +406,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - (b) a note on withTenant that any route taking a member id must call resolveMemberId;
   - (c) /api/export re-serialisation cost on large workspaces: watch.
   #720 CI after #717 and #701; merge waits for the owner's word.
+- **14 Oct 19:47 IST.** Plans updated with the owner's answers:
+  - **#712 (770fce40):** shot type (13 codes, set by the server at admission); people-only approval as PR 2; "estimated" frozen in a new `estimated_credits` table (M2), fed by four readers; 12 PRs, about 47 h.
+  - **#714 (489b0159):** sync.so direct (lipsync-2, -2-pro, sync-3, DELETE after storing); Sarvam direct; Vision OCR; Recraft; BFL FLUX.2; Topaz stays on fal (cheaper); a Coolify names table with no AWS_ prefix.
+  New owner questions: A-C on #712; A-I on #714. Lane C started on the Liveblocks owner-id follow-up.
