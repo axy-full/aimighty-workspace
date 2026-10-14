@@ -225,10 +225,10 @@ test("a free failure releases the reservation through the existing meter: the cr
   await runInTenant(workspace("gemini-safety-release", true), async () => {
     await fundFixtureWorkspace();
     await ready();
-    await db().execute(`INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at) VALUES('gen_release','image','gemini-3-pro-image','p','{}','running',0,0)`);
-    await reserveGenerationSpend({ id: "gen_release", kind: "image", engine: "google", model: "gemini-3-pro-image", status: "running", engineCostUsd: 0.134 });
+    await db().execute(`INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at) VALUES('gen_gemini_safety_release','image','gemini-3-pro-image','p','{}','running',0,0)`);
+    await reserveGenerationSpend({ id: "gen_gemini_safety_release", kind: "image", engine: "google", model: "gemini-3-pro-image", status: "running", engineCostUsd: 0.134 });
     expect(await creditsUsed("ws_gemini-safety-release")).toBeGreaterThan(0);
-    await failJob("gen_release", SAFETY_BLOCK_MESSAGE, true, safetyBlockOutcome("google", "SAFETY"));
+    await failJob("gen_gemini_safety_release", SAFETY_BLOCK_MESSAGE, true, safetyBlockOutcome("google", "SAFETY"));
     expect(await creditsUsed("ws_gemini-safety-release")).toBe(0);
   });
 });
