@@ -282,7 +282,7 @@ export const productionSchema = z.object({
   /* Production › Environment (owner, 24 September): the world, place by place; plates are renders or uploads. */
   environment: z.object({
     world: z.string().max(6000),
-    model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gpt-image-2', 'gpt-image-2.5-flare', 'grok-imagine-image-2.0']),
+    model: z.enum([NANO_BANANA_2_ID, NANO_BANANA_PRO_ID, 'gpt-image-2', 'gpt-image-2.5-flare', 'grok-imagine-image-2.0']),
     entries: z.array(z.object({
       id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), name: z.string().max(120), notes: z.string().max(4000), prompt: z.string().max(5000),
       references: z.array(z.string().max(100)).max(6),

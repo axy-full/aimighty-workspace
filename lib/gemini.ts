@@ -232,6 +232,7 @@ async function viaGateway(opts: {
   // Should the gateway ever refuse the safety block itself, the render must
   // not die for it: send once more the way it went before the block existed.
   if (res.status === 400 && safety && /safety/i.test(raw)) {
+    console.warn(JSON.stringify({ event: "gemini_safety_settings_refused", status: res.status })); // no body: it can carry the prompt
     res = await send(bodyFor(false));
     raw = await res.text();
   }
@@ -303,7 +304,7 @@ async function viaGoogle(opts: {
      by Google's defaults while the refusal text claimed otherwise. */
   const safety = geminiSafetySettings();
   const bodyFor = (withSafety: boolean) => JSON.stringify({
-    model: process.env.GEMINI_IMAGE_MODEL ?? opts.model.id,
+    model: opts.model.id,
     input,
     ...(withSafety && safety ? { safety_settings: safety } : {}),
     response_format: {
@@ -330,6 +331,7 @@ async function viaGoogle(opts: {
   // the block itself, the render must not die for it -- send it once more
   // the way it went before the block existed.
   if (res.status === 400 && safety && /safety/i.test(raw)) {
+    console.warn(JSON.stringify({ event: "gemini_safety_settings_refused", status: res.status })); // no body: it can carry the prompt
     res = await send(bodyFor(false));
     raw = await res.text();
   }

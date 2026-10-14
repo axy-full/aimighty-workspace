@@ -47,6 +47,7 @@ test("no other file builds safety settings: HARM_CATEGORY and a threshold are na
   const rel = (f: string) => path.relative(process.cwd(), f);
   const naming = files.filter((f) => /HARM_CATEGORY|BLOCK_ONLY_HIGH|BLOCK_MEDIUM_AND_ABOVE|BLOCK_LOW_AND_ABOVE|BLOCK_NONE/.test(readFileSync(f, "utf8"))).map(rel);
   expect(naming).toEqual(["lib/geminiSafety.ts"]);
+  expect(files.filter((f) => /GEMINI_IMAGE_MODEL/.test(readFileSync(f, "utf8"))).map(rel)).toEqual([]);
   const keyed = files.filter((f) => /safetySettings|safety_settings/.test(readFileSync(f, "utf8"))).map(rel).sort();
   expect(keyed).toEqual(["lib/gemini.ts", "lib/geminiSafety.ts"]);
   const gemini = readFileSync("lib/gemini.ts", "utf8");
@@ -102,6 +103,24 @@ test("both image doors send the four categories at BLOCK_NONE, from the one conf
     expect(options.google.safetySettings).toEqual(FOUR);
     expect(options.vertex.safetySettings).toEqual(FOUR);
   });
+});
+
+test("the model id on the wire is the routing table's, whatever the environment says; a refusal of the settings is retried once and logged without a body", async () => {
+  const before = process.env.GEMINI_IMAGE_MODEL;
+  process.env.GEMINI_IMAGE_MODEL = "some-dearer-model";
+  const warned: string[] = []; const warn = console.warn; console.warn = (...args: unknown[]) => { warned.push(args.map(String).join(" ")); };
+  try {
+    await withDoor("google", async () => {
+      const { lib, sent } = gemini([{ status: 400, body: { error: { message: "safety_settings is not supported here, a private secret word" } } }, { body: { output_image: { data: png, mime_type: "image/jpeg" } } }]);
+      await lib.generateImage(ask);
+      expect(sent.map((s) => s.body.model)).toEqual(["gemini-3-pro-image", "gemini-3-pro-image"]);
+      expect(sent[0].body.safety_settings).toEqual(FOUR);
+      expect(sent[1].body.safety_settings).toBeUndefined();
+    });
+  } finally { console.warn = warn; if (before === undefined) delete process.env.GEMINI_IMAGE_MODEL; else process.env.GEMINI_IMAGE_MODEL = before; }
+  const lines = warned.filter((l) => l.includes("gemini_safety_settings_refused"));
+  expect(lines.map((l) => JSON.parse(l))).toEqual([{ event: "gemini_safety_settings_refused", status: 400 }]);
+  expect(warned.join("\n")).not.toContain("secret");
 });
 
 test("a block by Google's own fixed filter is a plain message with no model and no prompt, billed as not charged; an ordinary decline stays an ordinary decline", async () => {

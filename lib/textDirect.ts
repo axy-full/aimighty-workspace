@@ -267,7 +267,7 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
     });
     /* Google's own fixed safety filter blocked the answer (lib/geminiSafety.ts): a plain message, nothing charged, and only the reason is logged, never the prompt or the output. */
     if (vendor === 'google') {
-      const blocked = result.finishReason === 'content-filter' ? 'CONTENT_FILTER' : geminiBlockReason({ finishReason: (result as { rawFinishReason?: unknown }).rawFinishReason }) ?? geminiBlockReason(result.providerMetadata?.google);
+      const blocked = geminiBlockReason({ finishReason: (result as { rawFinishReason?: unknown }).rawFinishReason }) ?? (result.finishReason === 'content-filter' ? 'CONTENT_FILTER' : null) ?? geminiBlockReason(result.providerMetadata?.google);
       if (blocked) { console.warn(safetyBlockLog(blocked, null)); return reply(422, TEXT_SAFETY_BLOCK_MESSAGE); }
     }
     // The step's usage carries the provider's raw counts; the aggregate drops them. No tools, so one step.
