@@ -92,14 +92,12 @@ test("?deep=1 is unchanged: the platform owner only, and a member or a visitor i
   expect((await health("owner", { deep: true })).status).toBe(200);
 });
 
-test("the heartbeat's caller is 'scheduler' for our own scheduled task and 'manual' for anything else, Vercel's agent included", async () => {
-  const { cronCaller, SCHEDULER_AGENT } = await import("../../lib/cronCaller");
-  expect(SCHEDULER_AGENT).toBe("particl-scheduler/1");
-  expect(cronCaller("particl-scheduler/1")).toBe("scheduler");
-  for (const other of ["vercel-cron/1.0", "curl/8.0", "", null, undefined, "particl-scheduler/2"]) expect(cronCaller(other as string | null)).toBe("manual");
-  /* The task that calls the route names itself that, and the route records it through cronCaller. */
-  expect(readFileSync(path.resolve("ops/selfhost/cron-sync.mjs"), "utf8")).toContain(`"user-agent": "${SCHEDULER_AGENT}"`);
+test("the heartbeat's caller is 'scheduler' for our own scheduled task and 'manual' for anything else: the route and the task use the same literal", async () => {
   const route = readFileSync(path.resolve("app/api/cron/sync/route.ts"), "utf8");
-  expect(route).toContain('cronCaller(req.headers.get("user-agent"))');
+  const task = readFileSync(path.resolve("ops/selfhost/cron-sync.mjs"), "utf8");
+  const agent = /user-agent"\)\?\.trim\(\) === "([^"]+)" \? "scheduler" : "manual"/.exec(route)?.[1];
+  expect(agent).toBe("particl-scheduler/1");
+  /* The task that calls the route names itself that, and nothing in the route knows Vercel's agent any more. */
+  expect(task).toContain(`"user-agent": "${agent}"`);
   expect(route).not.toMatch(/vercel-cron/i);
 });

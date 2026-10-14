@@ -27,7 +27,6 @@ import { drainCanvasPushes } from "@/lib/workbench/canvas-push";
 import { drainRigAgentWakeups } from "@/lib/workbench/rig-agent";
 import { expireUnansweredCinemaTakes } from "@/lib/genjutsuVideo";
 import { reconcilePaidTextJobs } from "@/lib/paidText";
-import { cronCaller } from "@/lib/cronCaller";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -58,7 +57,8 @@ export async function GET(req: Request) {
     );
   return recoveryRoute(async () => {
     const startedAt = Date.now();
-    const by = cronCaller(req.headers.get("user-agent"));
+    /* Our own server's scheduled task (ops/selfhost/cron-sync.mjs) names itself in its user-agent; anything else holding the secret is manual. Recorded, never trusted: the bearer secret is what lets a caller in. */
+    const by = req.headers.get("user-agent")?.trim() === "particl-scheduler/1" ? "scheduler" : "manual";
     try {
       await platformReady();
       const result = await reconcileWorkspaces({

@@ -1,7 +1,7 @@
 // Runs inside the app container: calls the heartbeat route with the bearer secret
 // the route checks (Authorization: Bearer <CRON_SECRET>). The secret is read from the
 // container's own environment and never printed. It names itself in its user-agent so the route can record that
-// the call came from our own scheduler (lib/cronCaller.ts). Exit 0 on a 2xx answer.
+// the call came from our own scheduler (app/api/cron/sync/route.ts). Exit 0 on a 2xx answer.
 const secret = process.env.CRON_SECRET;
 if (!secret) { console.error("cron-sync: CRON_SECRET is not set in this container"); process.exit(2); }
 const url = `http://127.0.0.1:${process.env.PORT || 3000}/api/cron/sync`;
