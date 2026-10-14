@@ -430,3 +430,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #720 and #721 fall back to the raw id if the platform database is unreadable.
   #721 merges after #720 (stacked); both wait for the owner's word on #720.
 - **14 Oct 20:09 IST.** **#722 Opus: one must-fix.** The new `@/lib/cronCaller` import breaks signinOffRelease1.spec.ts:167/:178 (a switch-off guard) and demo-13a:132. Fix: inline the one-line user-agent check (as the old code did), drop the module, no guard touched. Lane C is fixing it. Everything else checks out: the gate is isPlatformOwner (fails closed; tokens can't pass; no-store); anonymous {ok, commit} for everyone; consumers fine; the operationalHealth edit only moves the old shape (stricter); CRON_SECRET unchanged. Correction: nothing in production refuses ENGINE_MOCK, so `mock:true` could appear if someone set it there (a harmless honest flag; readiness already flags it).
+- **14 Oct 20:21 IST.** Lane D:
+  - **#717** test cleanup (24b0c7c6; the mediaBindings pin still waits for the owner);
+  - **#704** fixes (51745682: rotation uses productionProjectId; a bump failure answers 503 before the membership change; a residual window between bump and commit is noted), merged forward: #708 61696f93, #713 b3804e71, #715 dfb2da67;
+  - **#718** review fixes (41ab94cc: one resolver at every site, room moves in the transaction, conditional writes plus 409, Undo member check). The three Moleculr routes were left unchanged because their specs pin imports (owner decision).
+  Opus re-reviews of #704 and #718 are running. Lane D is now on Vercel out: the guard ratchet first, then C1 (census and an R2-only open check).
