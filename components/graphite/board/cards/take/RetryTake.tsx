@@ -19,7 +19,7 @@ export function RetryTake({ entry, scope, onRetry, className }: { entry: Library
   const body = g ? retryQuoteBody(g) : null;
   const quotes = useStageQuotes(scope, body ? { retry: { body } } : {});
   const quote = quotes.quotes.retry;
-  const price = quote && quote.credits != null && !quote.approximate ? exact(quote.credits) : null;
+  const price = quote && quote.credits != null && !quote.approximate ? exact(quote.credits, quote.usd) : null;
   const words = priceWords(price);
   const title = usePriceTitle(price);
   return (

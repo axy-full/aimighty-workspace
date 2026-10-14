@@ -1,3 +1,4 @@
+import { dollars } from "./format";
 /**
  * The usage ledger, per job: its row shapes, its states and their words.
  *
@@ -103,7 +104,8 @@ const WORKFLOWS: Record<string, string> = {
 export const workflowLabel = (workflow: string): string => WORKFLOWS[workflow] ?? "Connected job";
 
 export const fmtLedgerCredits = (n: number): string => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} cr`;
-export const fmtLedgerUsd = (n: number): string => `$${n.toFixed(n < 1 ? 3 : 2)}`;
+/** A job's dollars, as the hold and the bill read it: two decimals, rounded up to the next cent (lib/format.ts dollars). */
+export const fmtLedgerUsd = (n: number): string => dollars(n);
 export const fmtConnectedCredits = (n: number): string => `${n.toLocaleString("en-US", { maximumFractionDigits: 8 })} connected cr`;
 
 /** What a row's amount column says: blank for work that has not been priced. */

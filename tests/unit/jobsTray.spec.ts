@@ -249,7 +249,8 @@ test("with nothing running, what finished is news until it is seen in the tray; 
 test("figures are written the ledger's way, and ages say how long it has run or when it finished", () => {
   expect(priceLabel({ amount: 1250, unit: "cr" })).toBe("1,250 cr");
   expect(priceLabel({ amount: 12.5, unit: "cr" })).toBe("12.5 cr");
-  expect(priceLabel({ amount: 0.84, unit: "usd" })).toBe("$0.840");
+  expect(priceLabel({ amount: 0.84, unit: "usd" })).toBe("$0.84");
+  expect(priceLabel({ amount: 0.841, unit: "usd" })).toBe("$0.85");
   expect(priceLabel({ amount: 1.5, unit: "usd" })).toBe("$1.50");
   expect(priceLabel({ amount: 40, unit: "account-cr" })).toBe("40 connected cr");
   expect(priceLabel(null)).toBeNull();

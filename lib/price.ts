@@ -12,7 +12,7 @@
  */
 import { useMemo } from "react";
 import { useSession } from "@/lib/session";
-import { usd } from "@/lib/format";
+import { dollars, usd } from "@/lib/format";
 import { providerCreditQuote, formatProviderCreditQuote, sumWithProviderCreditQuotes, type ProviderCreditQuote } from "./providerCreditQuote";
 
 
@@ -73,14 +73,14 @@ export function useMoney(): Money {
       const all = (g: Priced) => (g.costUsd ?? 0) + (g.refineCostUsd ?? 0);
       return {
         inCredits: false,
-        price: (n) => (n > 0 && n < 0.005 ? "<1¢" : usd(n, 2)),
+        price: (n) => dollars(n),
         rate: (n) => usd(n, 3),
-        take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : usd(all(g), 2); },
+        take: (g) => { const quote = providerCreditQuote(g.providerCreditQuote); return quote ? formatProviderCreditQuote(quote) : dollars(all(g)); },
         takeCredits: () => 0,
-        sum: (list) => sumWithProviderCreditQuotes(list, standard => usd(standard.reduce((a, g) => a + all(g), 0), 2)),
-        of: (v) => usd(v.spend ?? 0, 2),
-        each: (v, n) => (n > 0 ? usd((v.spend ?? 0) / n, 2) : "—"),
-        approx: (n) => usd(n, 0),
+        sum: (list) => sumWithProviderCreditQuotes(list, standard => dollars(standard.reduce((a, g) => a + all(g), 0))),
+        of: (v) => dollars(v.spend ?? 0),
+        each: (v, n) => (n > 0 ? dollars((v.spend ?? 0) / n) : "—"),
+        approx: (n) => dollars(n),
       };
     }
     // A table in any other unit must never expose or relabel vendor costs.
