@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { projectLister } from "@/lib/draftProject";
+import { isDraftProject, mayReachProject, projectLister } from "@/lib/draftProject";
 import { db, ready } from "@/lib/db";
 import { platformDb, platformReady } from "@/lib/platform";
 import { currentTenant } from "@/lib/tenant";
@@ -111,7 +111,13 @@ function capGate(credits: number | null, cap: number | null, admin: boolean): { 
 /* ── Held takes (lib/held.ts) ──────────────────────────────────────────── */
 
 async function heldItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: QueueItem[]; productions: string[] }> {
-  const rows = await listGenerations({ status: "held", limit: SOURCE_LIMIT });
+  /* This screen is the one list that needs another person's private-board takes: an admin cannot approve what the queue does not show. Every private board it shows goes through the
+     audited gate (`mayReachProject`: one line per board, the 15-minute rule; no line, no row), the viewer's own boards and shared ones need none, and a member sees only what they could see. */
+  const asked = await listGenerations({ status: "held", limit: SOURCE_LIMIT, viewer: null });
+  const person = { id: viewer.id, role: viewer.role === "admin" ? "admin" : "member", owner: viewer.owner };
+  const reach = new Map<string, boolean>();
+  for (const id of new Set(asked.map((g) => g.projectId).filter((id): id is string => isDraftProject(id)))) reach.set(id, await mayReachProject(person, id, "read"));
+  const rows = asked.filter((g) => !isDraftProject(g.projectId) || reach.get(g.projectId!) === true);
   /* Held for a slot is a place in the line and starts on its own; held for credits waits for a person. */
   const waiting = rows.filter((g) => (g.params?.held as { why?: unknown } | undefined)?.why === "credits");
   const items = waiting.map((g): QueueItem => {
