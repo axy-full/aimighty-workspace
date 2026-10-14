@@ -480,3 +480,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#732 must-fix:** the Cinema quote snapshot stores N×band as "quoted"; it should be N with ceiling N×band.
   Both clean on money; the merged admissionCheckpoint must drop job, shotType and quote in one line. Queued for lane C (after UI-names and #730). Lane D on Vercel-out A1, A3, B1.
 - **14 Oct 21:47 IST.** **#726 Opus APPROVED** (fe510854). **#728 must-fix:** append-only isn't enforced; add no-update/no-delete triggers inside M1 (same pattern as security_audit). Everything else is OK: one write batch, no prompt or name stored, tenant DB only, nothing reads it yet, migration additive. Queued for lane C.
+- **14 Oct 21:51 IST.** **#715 fresh Opus review: NOT APPROVED, 3 must-fixes** (the original reviewer never reported):
+  - (1) admin reads via seesEveryBoard skip the audit (Atomik chat, selects export, per-take reads);
+  - (2) admin live-room tokens outlive a demotion (recommend keeping room sign-in off the admin rule until PR 7);
+  - (3) admins can spend paid text (shots/draft, treatment/scene) on a member's private board, against the owner's "admins can't render there".
+  Checks that pass: never across workspaces; members refused; "Viewed by" scoped; audit fails closed with no content; render admission still refused; guard moves admin-only. Owner questions: should a client link made by an admin show to the board's maker? Do admin API/MCP tokens get admin reach? Lane D moved to #715 first (deploy #4).
