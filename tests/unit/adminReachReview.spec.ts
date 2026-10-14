@@ -150,37 +150,40 @@ test("paid text on a member's private board is refused to an admin and writes no
   expect(await f.lines(), "an admin refused a spend writes no 'edited' line").toEqual([]);
 });
 
-test("a client link on a private board is its owner's alone; the owner reads every link on it, who made it and when, and withdraws it; the role check comes first", async () => {
+test("a client link on a private board is its owner's alone; the owner (admin or not) makes one, reads every link on it, who made it and when, and withdraws it; anyone else is answered as for no such board", async () => {
   const f = await fixture("links");
   const links = f.route<{ POST: (r: Request) => Promise<Response>; DELETE: (r: Request) => Promise<Response>; GET: (r: Request) => Promise<Response> }>("app/api/review-links/route.ts");
   const legacy = f.route<{ POST: (r: Request) => Promise<Response>; DELETE: (r: Request) => Promise<Response>; GET: (r: Request) => Promise<Response> }>("app/api/shares/route.ts");
   const projects = f.route<{ GET: (r: Request) => Promise<Response> }>("app/api/workbench/projects/route.ts");
   const make = (route: typeof links, p: Who, projectId: string) => f.as(p, async () => { const res = await route.POST(new Request("https://particl.test/x", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId }) })); return { status: res.status, body: await res.json() as Json }; });
-  const OWNER = who("u_owner", "admin"), MATE = who("u_mate");
+  const OWNER = who("u_owner", "admin"), OWNER_MEMBER = who("u_owner", "member"), MATE = who("u_mate");
   const unknownId = "prj_wb_doesnotexist0000000000";
   for (const [label, route] of [["client link", links], ["older link", legacy]] as const) {
     expect((await make(route, ADMIN, f.board)).status, `${label}: an admin of the workspace makes none on a member's private board`).toBe(404);
     expect((await make(route, ADMIN, f.board)).body, `${label}: answered as a production that is not saved`).toEqual((await make(route, ADMIN, unknownId)).body);
     const member = await make(route, MATE, f.board);
-    expect(member.status, `${label}: a member`).toBe(403);
-    expect(member, `${label}: the role check is first: the same answer for the board and for nothing`).toEqual(await make(route, MATE, unknownId));
-    expect((await make(route, OWNER, f.board)).status, `${label}: the owner`).toBe(201);
+    expect(member.status, `${label}: a member`).toBe(404);
+    expect(member, `${label}: the same answer for another's private board and for nothing, so nothing says which boards exist`).toEqual(await make(route, MATE, unknownId));
+    expect((await make(route, OWNER, f.board)).status, `${label}: the owner, who is an admin`).toBe(201);
+    expect((await make(route, OWNER_MEMBER, f.board)).status, `${label}: the owner, a plain member, makes their own private board's link`).toBe(201);
   }
   expect((await make(links, ADMIN, "prod_plain")).status, "a production of the workspace is an admin's, as before").toBe(201);
+  expect((await make(links, MATE, "prod_plain")).status, "and a member's is refused, as before").toBe(403);
   /* The owner reads every link on their board, both kinds, who made it; other people read none. */
   const read = (p: Who) => f.as(p, async () => (await (await projects.GET(new Request("https://particl.test/api/workbench/projects?links=1"))).json()) as Json);
   const mine = (await read(OWNER)).links as Json[];
-  expect(mine.map((l) => l.kind).sort()).toEqual(["approved", "review"]);
+  expect(mine.map((l) => l.kind).sort(), "both kinds, each made twice above (as an admin and as a plain member)").toEqual(["approved", "approved", "review", "review"]);
   expect(mine.every((l) => l.boardId === "d1" && l.live === true && l.by === "Name u_owner" && l.at > 0)).toBe(true);
   expect((await read(ADMIN)).links, "an admin reads none of another's board").toEqual([]);
   expect((await read(MATE)).links).toEqual([]);
-  /* Withdraw: the owner (even a plain member would be refused creating, but may withdraw their board's), an admin, and nobody else; the same 403 for a link that is not there. */
+  /* Withdraw: the owner (the board's owner, even a plain member), an admin, and nobody else; the same 403 for a link that is not there. */
   const withdraw = (route: typeof links, p: Who, id: string) => f.as(p, async () => { const res = await route.DELETE(new Request(`https://particl.test/x?id=${id}`, { method: "DELETE" })); return res.status; });
   const [review, approved] = [mine.find((l) => l.kind === "review")!.linkId as string, mine.find((l) => l.kind === "approved")!.linkId as string];
   expect(await withdraw(links, MATE, review)).toBe(403);
   expect(await withdraw(links, MATE, "shr_doesnotexist0000")).toBe(403);
   expect(await withdraw(links, OWNER, review)).toBe(200);
   expect(await withdraw(legacy, ADMIN, approved)).toBe(200);
+  for (const l of mine) if (l.linkId !== review && l.linkId !== approved) expect(await withdraw(links, OWNER_MEMBER, l.linkId as string), "the owner, a plain member, withdraws the rest").toBe(200);
   expect((await read(OWNER)).links.filter((l: Json) => l.live)).toEqual([]);
 });
 

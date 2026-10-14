@@ -80,8 +80,8 @@ async function fixture(ws: TenantWorkspace) {
 const prompts = (body: { generations: { prompt: string }[] }) => body.generations.map((g) => g.prompt);
 const OWNER = as("u_owner"), MATE = as("u_mate"), MATE_TOKEN = as("u_mate", "member", true);
 const ADMIN = as("u_admin", "admin"), ADMIN_TOKEN = as("u_admin", "admin", true), WS_OWNER = as("u_wsowner", "admin", false, true);
-const SEES_PRIVATE = [OWNER, ADMIN, ADMIN_TOKEN, WS_OWNER];
-const HIDDEN_FROM = [MATE, MATE_TOKEN];
+const SEES_PRIVATE = [OWNER, ADMIN, WS_OWNER];
+const HIDDEN_FROM = [MATE, MATE_TOKEN, ADMIN_TOKEN];
 
 test("GET /api/jobs: a private board's takes are its owner's and the workspace's admins'; shared and sample boards are for everyone; pages and cursors hold only what is seen", async () => {
   const ws = workspace(`pt-a-${run}`);
@@ -180,7 +180,7 @@ test("MCP list_renders and get_render: a hidden take is not listed and get_rende
     expect(text, actor.user.id).toContain(`${SAMPLE}-one`);
     expect(await message(actor, `t_priv1_${run}`), actor.user.id).toBe(unknown);
   }
-  for (const actor of [ADMIN_TOKEN, OWNER]) {
+  for (const actor of [OWNER]) {
     expect(await tool(actor, "list_renders", { limit: 60 }), actor.user.id).toContain(`${PRIV}-one`);
     expect(await message(actor, `t_priv1_${run}`), actor.user.id).toContain(`${PRIV}-one`);
   }
@@ -333,7 +333,7 @@ test("Atomik: a project the caller may not read is no project for the model, bef
   /* Shared and the sample: readable (view), as for anyone. */
   expect((await ask(MATE, projects.shared)).map((s) => s.projectId)).toEqual([projects.shared, projects.shared]);
   expect((await ask(MATE, projects.sample)).map((s) => s.projectId)).toEqual([projects.sample, projects.sample]);
-  for (const actor of [OWNER, ADMIN, ADMIN_TOKEN, WS_OWNER]) {
+  for (const actor of [OWNER, ADMIN, WS_OWNER]) {
     const got = await ask(actor, projects.private);
     expect(got.map((s) => s.projectId), actor.user.id).toEqual([projects.private, projects.private]);
     expect(got[0].context, actor.user.id).toContain("SecretCast");
