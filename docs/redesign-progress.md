@@ -374,3 +374,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - lane D: #715 guard moves (owner's word quoted), then hiding the owner's account id in client workspaces;
   - Opus planner: **Vercel-out plan**.
   - The #712/#714 plan updates (params.shot; Recraft, FLUX.2, Google Vision, Topaz comparison, Coolify names) start when lane A frees a slot.
+- **14 Oct 19:17 IST.** Opus room-rotation check for the owner's #704 condition:
+  - it only closes live rooms, and returns and exposes nothing;
+  - but it adds **two new internal reads** to the team route: `workbench_projects` (owner and project_id of Can-edit boards) and the room-generation `settings` rows. The literal "reads nothing new" is NOT met, so the guard edit is **held for the owner's word**.
+  Also found in #704 (code, no guard involved):
+  - (1) the rotation recomputes the production id with mappedId instead of the board's productionProjectId, so a board linked to another production misses its real room and the old tokens stay honoured;
+  - (2) a bump failure is swallowed (fails open);
+  - (3) it rotates every Can-edit board in the workspace, not only the member's.
+  Fix (1)+(2) in #704 before merge.
