@@ -64,7 +64,7 @@ Do this only when one server is not enough: CPU stays above about 70 % at peak w
 ### 3.1 Prepare the app (on the one server, no traffic change)
 
 1. **Remove the `/app/.data` volume.**
-   - First confirm production does not use it. Signed in as the owner, `/api/health` shows `"database":"turso"` and storage on R2. Anonymous health only says `"ok"`. Also check both database URLs are `libsql://` and `STORAGE_BACKEND=r2`.
+   - First confirm production does not use it. Signed in as the owner, `/api/health` shows `"database":"turso"` and storage on R2. Anonymous health (and any member's) is `{"ok","commit"}` only. Also check both database URLs are `libsql://` and `STORAGE_BACKEND=r2`.
    - List what the volume holds (Coolify, the app, **Persistent Storage**, or `ls -la /app/.data` in the container terminal) and keep a copy before deleting: `tar czf /tmp/data-volume-$(date +%F).tgz -C /app .data` in the container terminal, then copy it off the server.
    - Then delete the volume and Deploy. The image creates `/app/.data` owned by the app user, so it becomes per-container scratch.
    - Run the stage A checks again.

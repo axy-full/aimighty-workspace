@@ -12,7 +12,7 @@ Background work — stills and audio (`render/requested`), video submission (the
 | `inngest` | `DISPATCH_MODE=inngest` **and** both `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` are set | Events go to Inngest, which calls `/api/inngest` back with retries and step memoisation, as before. A half-configured Inngest (one key, or keys without the opt-in) is never used. |
 | `inline` | Everything else: local development, mocks, a production deployment missing its secret or origin | No queue. The request runs the work in its own `after()` continuation, exactly the fallback that always existed. |
 
-`/api/health` reports the decided mode as `dispatch.mode`. `/api/inngest` answers 503 with the same mode whenever it is not `inngest`. Production readiness (`lib/deploymentReadiness.ts`, `/api/admin/readiness`) requires `CRON_SECRET` and `APP_ORIGIN`; the Inngest keys are only required when `DISPATCH_MODE=inngest`.
+`/api/health` reports the decided mode as `dispatch.mode` (to the platform owner, signed in). `/api/inngest` answers 503 with the same mode whenever it is not `inngest`. Production readiness (`lib/deploymentReadiness.ts`, `/api/admin/readiness`) requires `CRON_SECRET` and `APP_ORIGIN`; the Inngest keys are only required when `DISPATCH_MODE=inngest`.
 
 Environment, names only:
 
@@ -71,12 +71,12 @@ then redeploy. `/api/inngest` will answer 503 "dispatch is native", the Inngest 
 
 On — set `DISPATCH_MODE=inngest` with both keys present and redeploy. The functions in `lib/workers.ts` and `lib/workbench/development-worker.ts` register with their original ids, triggers, concurrency and retries.
 
-## Verifying in production: `/api/health` as the owner
+## Verifying in production: `/api/health` as the platform owner
 
 Every native hand-off and every worker run is also written to the platform database — table `dispatch_log` (`lib/dispatch-log.ts`, created by the platform bootstrap next to `worker_slots`) — so the outcome can be read back without the Vercel log viewer:
 
 1. Trigger a render (a still, an audio clip, an Astra render — anything that dispatches).
-2. Signed in as the workspace owner, `GET /api/health`. The full JSON's `dispatch` is `{ mode, recent: [...] }`: the last ten rows, newest first. The public (anonymous) JSON keeps `dispatch: { mode }` only.
+2. Signed in as the platform owner (the console's own gate), `GET /api/health`. The full JSON's `dispatch` is `{ mode, recent: [...] }`: the last ten rows, newest first. Everyone else, signed in or not, gets `{ ok, commit }` only, with no dispatch mode.
 3. For one taken render you see, reading upward from the oldest of the pair, `phase: "send", outcome: "sent", status: 202` followed by `phase: "run", outcome: "finished-ok"` with a `durationMs`; both share the same `eventId` (e.g. `render-<workspace>-<generation>`).
 
 What the rows mean:

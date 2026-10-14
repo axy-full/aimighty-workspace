@@ -40,7 +40,7 @@ What actually happened, for the record and for the next switch. No secret values
 **Checks before the switch (production app, terminal).**
 - Keyring check: `KEYRING OK` (`KEYRING_SECRET` equals Vercel's).
 - Sandbox: the `node -e` SDK check cannot run in the image. `node -e` from `/app` fails with `ERR_MODULE_NOT_FOUND '@vercel/sandbox'` because Next bundles the SDK into the server chunks of the routes that use it (`/api/workbench/astra-blender/render`, `/api/inngest`, `/api/worker`, `/api/workbench/development`) instead of shipping it in `node_modules`. That is expected. Proof in a running container: `grep -rl 'v2/sandboxes/sessions' /app/.next/server | head -1` prints a chunk path. The credentials were checked instead through the Vercel API (project lookup with `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` = 200), and the snapshot in `ASTRA_BLENDER_SNAPSHOT_ID` exists in that project.
-- `/api/health` pinned to the server: `ok:true`, `mock:false`, dispatch `inngest`, database ok, storage ok.
+- `/api/health` pinned to the server: `ok:true`, `mock:false`, dispatch `inngest`, database ok, storage ok (read as the platform owner, signed in; since 14 Oct the anonymous answer is `{ok, commit}` only, and `ok` covers the database and storage).
 - Restore point A 10:36:26 UTC and restore point B 10:37:56 UTC (`turso db shell <db> .dump` of the platform database and the one workspace database, both non-empty).
 
 **Production app settings (Coolify), as set.**
@@ -148,7 +148,7 @@ How to read the table:
 | `BLOB_READ_WRITE_TOKEN` | copy from Vercel, or Vercel, **Storage**, the Blob store, its token | **yes (same store). Keep it:** with `STORAGE_BACKEND=r2` and this token, the app reads R2 first and falls back to Blob, so old links keep working. Without it they break. |
 | `BLOB_USD_PER_GB_MONTH`, `BLOB_USD_PER_GB_TRANSFER` | copy from Vercel if set | yes |
 
-Check the bucket's CORS list contains `https://particl.si`. The origin does not change, so nothing else in R2 changes. Without R2 or Blob, `/api/health` answers 503 (`storage: missing`) and anything kept on the container's disk is lost on the next deploy.
+Check the bucket's CORS list contains `https://particl.si`. The origin does not change, so nothing else in R2 changes. Without R2 or Blob, `/api/health` answers 503 (`ok:false`; the platform owner's signed-in answer says `storage: missing`) and anything kept on the container's disk is lost on the next deploy.
 
 ### Background work (Inngest)
 
@@ -646,7 +646,7 @@ Steps 1 to 7 do not move live traffic. From step 8 the live site is affected. Do
       The first six must print `set`; `VERCEL`, `VERCEL_ENV` and `TRUST_CF_CONNECTING_IP` must print **MISSING**.
     - From the outside network: Coolify's ports still time out.
 13. **Cron check (OWNER).**
-    - `cron-sync` (enabled in step 8) shows `cron-sync: 200` in its log on two runs, and the cron time in the signed-in `/api/health` answer keeps advancing.
+    - `cron-sync` (enabled in step 8) shows `cron-sync: 200` in its log on two runs, and the cron time in the platform owner's signed-in `/api/health` answer keeps advancing, with `by: "scheduler"` (the task names itself `particl-scheduler/1`).
     - Vercel, the project, **Settings, Cron Jobs** shows the cron jobs disabled (step 8).
     - If `cron-sync` does not answer 200 (for example 401: `CRON_SECRET` missing in the container), fix it in the app's env. Meanwhile re-enabling Vercel Cron Jobs is safe (the lease, step 8); disable it again once `cron-sync` answers 200.
 14. **Watch window: 14 days; Vercel fallback: owner's choice, at least 1–2 days.**
@@ -734,7 +734,7 @@ The owner closes the Vercel account before **27 October 2026**. Closing it delet
    Or, with no inventory file, read the database list from production itself: `node --env-file=/private/coolify.env scripts/ops/blob-to-r2.mjs --verify --live --private-dir /private/blob-to-r2` (needs `PLATFORM_DATABASE_URL`, `PLATFORM_AUTH_TOKEN` and the deployment's own `KEYRING_SECRET` besides the R2 names; legacy workspaces are checked in the platform database, every other workspace or pending provisioned database by its `db_url`, its sealed token opened in memory only and never printed or written).
    `--config` is the backup source inventory (database ids and env-variable names, "Capture" in `docs/backup-restore.md`). Its URL/token variables are read-only here. The script snapshots each database into the private folder, checks that every media row resolves on R2 with **no Blob fallback** (the same rules as the backup's r2-only coverage, `verifyMediaReferences`), then deletes the snapshots. With the Blob token in the environment, it also checks that every Blob object is on R2 at its keys. It must print `"ok":true` and `"blobObjectsNotOnR2":0`. If it fails, it names database/table/row ids only. Copy again, then verify again.
 4. **Remove `BLOB_READ_WRITE_TOKEN` from the app** (Coolify production app; also Vercel while it still serves) and redeploy. Keep the value in the owner's private record until step 6.
-5. **Confirm old links still load.** Signed in, open an old image from before R2, download an old upload, play an old video (it should seek), and open an old review link. `/api/health` still says `r2-configured`. Expect one false alarm: the platform-admin readiness check (`lib/deploymentReadiness.ts`) still counts storage as ready only when the Blob token is set, so it shows storage as not ready. That needs a small fix (accept the R2 variables too). It does not affect the app. If an old file does not load, put the token back, redeploy, and report it.
+5. **Confirm old links still load.** Signed in, open an old image from before R2, download an old upload, play an old video (it should seek), and open an old review link. As the platform owner, signed in, `/api/health` still says `r2-configured` (everyone else's answer is `ok` and the commit only). Expect one false alarm: the platform-admin readiness check (`lib/deploymentReadiness.ts`) still counts storage as ready only when the Blob token is set, so it shows storage as not ready. That needs a small fix (accept the R2 variables too). It does not affect the app. If an old file does not load, put the token back, redeploy, and report it.
 6. **Only then** can Vercel Blob, and Vercel, be cancelled (after section 2 below).
 
 ### 2. Other Vercel services that stop when the account closes
