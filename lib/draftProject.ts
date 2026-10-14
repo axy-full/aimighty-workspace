@@ -308,12 +308,19 @@ export type Viewer = { id: string; role?: string } | null;
 export const seesEveryBoard = (viewer: Viewer): boolean => viewer?.role === "admin" && !currentTenant()?.token;
 
 /**
- * Whether `person` may make a client review link for `projectId`: for a production of the workspace, whoever may make links (the routes ask for an admin); for a private board,
- * only its OWNER (owner, 14 Oct: "admins may NOT create client review links on a member's private board. Only the owner can"). A board that does not exist is no one's.
+ * Who may make a client review link for `projectId` (owner, 14 Oct, 22:50: "the board's OWNER can create a client link for their own private board, admin or not. Nobody
+ * else can make one on someone else's private board (admins included)"):
+ *  - "owner": the person owns the board, whatever their role;
+ *  - "none": a private board (a draft board that is not shared and not the marked sample) that is not theirs: the routes answer as for a production that is not saved;
+ *  - "admin": anything else (an ordinary production, a shared board, the sample): today's rule, the routes ask for an admin.
+ * A board that does not exist is not asked here: the routes check that first and answer the same.
  */
-export async function mayMakeClientLink(person: Person, projectId: string, ex: Exec = db()): Promise<boolean> {
-  if (!isDraftProject(projectId)) return true;
-  return ownsDraftProject(person.id, projectId, ex);
+export type ClientLinkVerdict = "owner" | "admin" | "none";
+export async function clientLinkVerdict(person: Person, projectId: string, ex: Exec = db()): Promise<ClientLinkVerdict> {
+  if (!isDraftProject(projectId)) return "admin";
+  if (await ownsDraftProject(person.id, projectId, ex)) return "owner";
+  const isPrivate = !(await isMarkedSample(projectId, ex)) && (await draftShare(projectId, ex)).mode === "none";
+  return isPrivate ? "none" : "admin";
 }
 
 /** Whether `viewer` may see a take filed under `projectId`: one read for a private board, none for anything else. */

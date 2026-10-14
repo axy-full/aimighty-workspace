@@ -215,8 +215,9 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
         await asking(actor, () => treatment.PUT(json("PUT", { projectId: unknownId, title: "Hijack", scenes: [], notes: [] }), undefined as never)));
       expect(await asking(actor, () => cast.POST(json("POST", { projectId: id, name: "Hijack" }), undefined as never)), `${actor.user.id}: cast POST`).toEqual(
         await asking(actor, () => cast.POST(json("POST", { projectId: unknownId, name: "Hijack" }), undefined as never)));
-      /* A client link is an owner's or an admin's to make: a member, or a member's token, is refused (and none is made). */
-      expect((await asking(actor, () => reviewLinks.POST(json("POST", { projectId: id }), undefined as never)))[0], `${actor.user.id}: a client link`).toBe(403);
+      /* A private board's client link is its owner's alone (owner, 14 Oct, 22:50): a member, or a member's token, is answered as for a production that is not saved (and none is made). */
+      expect(await asking(actor, () => reviewLinks.POST(json("POST", { projectId: id }), undefined as never)), `${actor.user.id}: a client link`).toEqual(
+        await asking(actor, () => reviewLinks.POST(json("POST", { projectId: unknownId }), undefined as never)));
       for (const [route, body] of [[drafter, { projectId: id, scene: 1 }], [scene, { projectId: id, n: 1 }]] as const) {
         const refused = await asking(actor, () => route.POST(json("POST", body), undefined as never));
         const unknown = await asking(actor, () => route.POST(json("POST", { ...body, projectId: unknownId }), undefined as never));
@@ -274,10 +275,9 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
   expect(JSON.stringify(await asking(as("u_mate"), () => cast.GET(url(`/api/cast?projectId=${privateProject}`), undefined as never)))).toContain("SecretCast");
   expect(JSON.stringify(await asking(as("u_mate"), () => treatment.GET(url(`/api/atomik/treatment?projectId=${privateProject}`), undefined as never)))).toContain("Secret logline");
   expect((await asking(as("u_mate"), () => cast.POST(json("POST", { projectId: privateProject, name: "Hijack" }), undefined as never)))[0]).not.toBe(200);
-  expect((await asking(as("u_admin", "admin"), () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0], "an admin makes no client link on a shared board either: it is the owner's").toBe(404);
+  /* A shared board is not private: it keeps today's rule (owner, 14 Oct, 22:50), an admin makes its client link and a member does not; the same-answer rule is for a private board and is asserted above. */
+  expect((await asking(as("u_admin", "admin"), () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0], "an admin makes a shared board's client link").toBe(201);
   expect((await asking(as("u_mate"), () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0], "a member does not").toBe(403);
-  /* The role check comes first: a member gets the same 403 for a private board and for an id that does not exist, so nothing says which boards are there. */
-  expect(await asking(as("u_mate"), () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)), "a member: private board or nothing, the same answer").toEqual(await asking(as("u_mate"), () => reviewLinks.POST(json("POST", { projectId: unknownId }), undefined as never)));
   /* The owner (an admin of the workspace who owns the board) makes it. */
   expect((await asking({ ...as("u_owner"), user: { ...as("u_owner").user, role: "admin" } }, () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0], "the owner makes their board's client link").toBe(201);
 });
