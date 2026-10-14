@@ -113,3 +113,87 @@ test("picking, sending back and clearing a pick stay open to a token and an agen
     expect(await api.row("t3"), who).toMatchObject({ review_state: "" });
   }
 });
+
+test("a review that is not a word cannot pass the gate or be written as something else: refused whole, from a person, a token and an agent, with nothing written", async () => {
+  const api = await setup();
+  await seed(api, ["t4"]);
+  for (const who of ["person", "renderToken", "mcpToken", "agent"]) {
+    api.as(who);
+    for (const bad of [["approved"], ["picked"], 1, true, { state: "approved" }, [""]]) {
+      const res = await api.patch("t4", { reviewState: bad, title: "Renamed" });
+      expect([who, JSON.stringify(bad), res.status]).toEqual([who, JSON.stringify(bad), 400]);
+      expect(await api.row("t4"), `${who} ${JSON.stringify(bad)}`).toMatchObject({ title: "Original", review_state: "", approved_by: null, picked_by: null });
+    }
+  }
+});
+
+test("a token or an agent cannot end a person's sign-off any way: clear, pick over it or send it back; a person can", async () => {
+  const api = await setup();
+  await seed(api, ["t5"]);
+  api.as("person");
+  expect((await api.patch("t5", { reviewState: "approved" })).status).toBe(200);
+  for (const who of ["renderToken", "mcpToken", "agent"]) {
+    api.as(who);
+    for (const state of ["", "picked", "changes", null]) {
+      const res = await api.patch("t5", { reviewState: state });
+      expect([who, state, res.status, res.body.error]).toEqual([who, state, 403, PEOPLE_ONLY]);
+      expect(await api.row("t5"), `${who} ${state}`).toMatchObject({ review_state: "approved", approved_by: "u_admin" });
+    }
+  }
+  api.as("person");
+  expect((await api.patch("t5", { reviewState: "changes" })).status).toBe(200);
+  expect(await api.row("t5")).toMatchObject({ review_state: "changes" });
+});
+
+test("the attribute swap un-approves takes only for a person: a token or an agent is refused before the version moves; a swap that returns nothing is open", async () => {
+  const api = await setup();
+  const calls: string[] = [];
+  const impact = (approved: boolean) => ({
+    shots: [{ shotId: "s_attr", approved }],
+    choices: ["none", "approved", "all"].map((key) => ({ key, verdict: { allow: true, line: "" }, quote: { totalCredits: 0 }, shots: [] })),
+  });
+  let current = impact(true);
+  let who = WHO.person;
+  const route = load<typeof import("../../app/api/rig/attributes/[id]/current/route")>("app/api/rig/attributes/[id]/current/route.ts", {
+    "@/lib/auth": {
+      withTenant: (handler: (...a: unknown[]) => Promise<unknown>) => (...a: unknown[]) => api.tenant.runInTenant(WS, () => handler(...a)),
+      requireRender: async () => ({ user: { id: who.id, name: who.id, role: "admin" }, ...(who.token ? { token: who.token } : {}) }),
+    },
+    "@/lib/db": api.database, "@/lib/cache": { invalidate: () => {}, PROJECTS_KEY: "projects" },
+    "@/lib/impact": { impactOf: async () => current },
+    "@/lib/elements": { setCurrentVersion: async (_a: string, v: string) => { calls.push(v); } },
+  });
+  await api.tenant.runInTenant(WS, async () => {
+    await api.database.ready();
+    await api.database.db().batch([
+      { sql: "INSERT INTO projects(id,name,created_at) VALUES('p','Board',0)", args: [] },
+      { sql: "INSERT INTO elements(id,project_id,kind,name,created_at,updated_at) VALUES('el_a','p','character','Lead',1,1)", args: [] },
+      { sql: "INSERT INTO element_attributes(id,element_id,kind,current_id,created_at,updated_at) VALUES('at_a','el_a','face','v_old',1,1)", args: [] },
+      { sql: "INSERT INTO attribute_versions(id,attribute_id,element_id,status,created_at) VALUES('v_new','at_a','el_a','ready',1)", args: [] },
+      { sql: "INSERT INTO shots(id,project_id,code,title,status,position,created_at,updated_at) VALUES('s_attr','p','010','S','open',0,0,0)", args: [] },
+      { sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,title,deleted,created_by,shot_id,review_state,approved_by) VALUES('t_attr','m','p','{}','succeeded',1,1,'video','T',0,'u_admin','s_attr','approved','Admin')", args: [] },
+    ], "write");
+  });
+  const post = (body: unknown) => route.POST(new Request("https://studio.test/api/rig/attributes/at_a/current", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), { params: Promise.resolve({ id: "at_a" }) });
+  const state = async () => String((await api.row("t_attr"))?.review_state);
+  for (const name of ["renderToken", "mcpToken", "agent"]) {
+    who = WHO[name];
+    for (const choice of ["approved", "all"]) {
+      const res = await post({ versionId: "v_new", choice });
+      expect([name, choice, res.status, (await res.json()).error]).toEqual([name, choice, 403, PEOPLE_ONLY]);
+    }
+    expect(calls, name).toEqual([]);
+    expect(await state(), name).toBe("approved");
+    /* Nothing approved is reached, or the choice returns nothing: nothing to undo, open as before. */
+    current = impact(false);
+    expect((await post({ versionId: "v_new", choice: "approved" })).status, `${name} none approved`).toBe(200);
+    current = impact(true);
+    expect((await post({ versionId: "v_new", choice: "none" })).status, `${name} choice none`).toBe(200);
+    calls.length = 0;
+  }
+  who = WHO.person;
+  const done = await post({ versionId: "v_new", choice: "approved" });
+  expect(done.status, JSON.stringify(await done.clone().json())).toBe(200);
+  expect(calls).toEqual(["v_new"]);
+  expect(await state()).toBe("");
+});

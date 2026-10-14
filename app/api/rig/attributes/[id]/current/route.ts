@@ -7,6 +7,7 @@ import { setCurrentVersion } from "@/lib/elements";
 import { isChoiceKey, takesReturnedToDraft } from "@/lib/impactChoice";
 import { isVisual, type AttributeKind } from "@/lib/rig";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 
 /**
  * Swap which version of an attribute everything follows (brief 3, surface 1b).
@@ -98,6 +99,10 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (!chosen.verdict.allow) {
     return NextResponse.json({ error: chosen.verdict.line, impact }, { status: 409 });
   }
+
+  /* A choice that returns approved takes to draft undoes a person's sign-off: a person's alone, like approving (CLAUDE.md rules 11 and 14). Asked before the version moves, so a refusal writes nothing. */
+  if (takesReturnedToDraft(body.choice) !== "none" && impact.shots.some((s) => s.approved) && !isPerson({ user: got.user, token: got.token }))
+    return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
 
   await setCurrentVersion(attributeId, versionId);
 
