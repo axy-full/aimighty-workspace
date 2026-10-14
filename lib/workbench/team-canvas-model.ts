@@ -62,6 +62,12 @@ export type TeamPatch = {
    * window, which joins only a canvas that never held it.
    */
   expect?: Record<string, CanvasNode | null>;
+  /**
+   * Compare and set, for an edit a window made with no live room (the saved canvas only): `expect` holds each changed node as the window had it, and a field the
+   * canvas no longer holds that way is not written (a teammate changed it since: refusedWrites names it, and the window asks its person). Unlike a catch-up's
+   * `expect`, a node the canvas has taken off still comes back with the change.
+   */
+  cas?: boolean;
   /** Who wrote it (set by the server, never taken from a window): recorded per node it changed (TeamCanvas.writers). */
   author?: string;
   /**
@@ -164,14 +170,42 @@ export function nodeAfterEdit(live: CanvasNode | undefined, gone: CanvasNode | u
  * the write does not land: one that expects what the canvas no longer holds
  * (TeamPatch.expect) writes only the fields still as expected.
  */
-export function landedWrite(live: CanvasNode | undefined, gone: CanvasNode | undefined, node: CanvasNode, patch: Pick<TeamPatch, "fields" | "made" | "expect">): CanvasNode | undefined {
+export function landedWrite(live: CanvasNode | undefined, gone: CanvasNode | undefined, node: CanvasNode, patch: Pick<TeamPatch, "fields" | "made" | "expect" | "cas">): CanvasNode | undefined {
   const was = patch.expect?.[node.id];
   if (was === undefined) return nodeAfterEdit(live, gone, node, patch);
   if (was === null) return live || gone ? undefined : node;
-  if (!live) return undefined;
+  if (!live) return patch.cas ? nodeAfterEdit(live, gone, node, patch) : undefined;
   const current = live as unknown as Record<string, unknown>, before = was as unknown as Record<string, unknown>;
   const fields = (patch.fields?.[node.id] ?? []).filter((key) => sameJson(current[key], before[key]));
   return fields.length ? nodeAfterEdit(live, undefined, node, { fields: { [node.id]: fields } }) : undefined;
+}
+
+/**
+ * An edit made with no live room, as a compare and set: each node it changed travels with the node as the window had it (`expect`), so the server writes
+ * only the fields the canvas still holds that way. Nodes the edit made or removed are as they were.
+ */
+export function startedFrom(patch: TeamPatch, before: Project): TeamPatch {
+  const prev = new Map(before.nodes.map((n) => [n.id, n]));
+  const expect: Record<string, CanvasNode> = {};
+  for (const n of patch.upsertNodes) if (patch.fields?.[n.id]?.length && prev.has(n.id) && !patch.made?.includes(n.id)) expect[n.id] = prev.get(n.id)!;
+  return Object.keys(expect).length ? { ...patch, expect: { ...patch.expect, ...expect }, cas: true } : patch;
+}
+
+/** A write a compare and set refused: the card, and the fields the canvas holds differently from what the window started from (a teammate changed them). */
+export type RefusedWrite = { nodeId: string; fields: string[] };
+
+/** What a patch's compare and set will refuse on this canvas (before it is applied): per card, the changed fields the canvas no longer holds as the sender had them. */
+export function refusedWrites(canvas: Pick<TeamCanvas, "nodes">, patch: Pick<TeamPatch, "upsertNodes" | "fields" | "expect" | "cas">): RefusedWrite[] {
+  if (!patch.cas || !patch.expect) return [];
+  const out: RefusedWrite[] = [];
+  for (const n of patch.upsertNodes) {
+    const was = patch.expect[n.id], live = canvas.nodes[n.id];
+    if (!was || !live) continue;
+    const a = live as unknown as Record<string, unknown>, b = was as unknown as Record<string, unknown>;
+    const fields = (patch.fields?.[n.id] ?? []).filter((key) => !sameJson(a[key], b[key]));
+    if (fields.length) out.push({ nodeId: n.id, fields });
+  }
+  return out;
 }
 
 /** Whether a patch's removal of a node lands: one that expects the node as it was lands only on it unchanged. */
@@ -533,7 +567,9 @@ export const masterView = (canvas: Pick<TeamCanvasView, "nodes" | "assets">) => 
  */
 export function overlay(canvas: TeamCanvasView, sent: TeamPatch | null, locks?: ReadonlySet<string>): TeamCanvasView {
   if (!sent) return canvas;
-  const patch = locks?.size ? guardMasters(masterView(canvas), sent, { locks }).patch : sent;
+  /* An edit waiting to be sent (or refused) still shows as this window's own: a compare and set decides on the server, not in what is drawn here. */
+  const own = sent.cas ? { ...sent, expect: undefined, cas: undefined } : sent;
+  const patch = locks?.size ? guardMasters(masterView(canvas), own, { locks }).patch : own;
   const nodes = { ...canvas.nodes }, assets = { ...canvas.assets };
   const removedIds = new Set(canvas.removedIds);
   for (const n of patch.upsertNodes) {

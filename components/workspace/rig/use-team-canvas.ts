@@ -4,7 +4,7 @@ import type { Json, LiveMap, Room } from "@liveblocks/client";
 import { DraftRequestError, draftBody, draftRequest } from "@/lib/workbench/draft-request";
 import type { Asset, CanvasNode, Project } from "@/lib/workbench/studio";
 import {
-  MASTER_NODE_FIELDS, catchUpForTeam, diffForTeam, guardMasters, joinTeamCanvas, landedWrite, masterView, orderedIds, overlay, plainJson, restoreHeld, roomPeer, withTeamCanvas, writeRoom,
+  MASTER_NODE_FIELDS, catchUpForTeam, diffForTeam, guardMasters, joinTeamCanvas, landedWrite, masterView, orderedIds, overlay, plainJson, restoreHeld, roomPeer, startedFrom, withTeamCanvas, writeRoom,
   type MasterHold, type RoomDrag, type RoomPeer, type RoomPoint, type RoomStorage, type TeamCanvasView, type TeamPatch,
 } from "@/lib/workbench/team-canvas-model";
 import { mergePatches, sendFailure, TeamOutbox } from "@/lib/workspace/team-canvas-outbox";
@@ -68,6 +68,8 @@ export type TeamCanvasApi = {
   tidy: () => Promise<TidyOutcome>;
   /** Folds in what the server just changed (Atomik's build), now rather than at the next check. A live room brings it by itself. */
   refresh: () => Promise<void>;
+  /** The person kept their version of fields the canvas refused: sent again, as this window's own edit with no compare. */
+  resend: (cards: { nodeId: string; fields: string[] }[]) => void;
   /** Tells the others in the live room that a save landed at this revision (a hint to go and read it; the server's revision is the truth). */
   announceSaved: (revision: number) => void;
   /** Leaves the live room and joins the production's current one: after the room was closed (Can edit taken away or sharing stopped), the owner's window starts from the saved canvas in the new room. */
@@ -79,6 +81,15 @@ export type TeamCanvasApi = {
   /** A card as the server now holds it after a lock or unlock: into the live room as it is (the server wrote it, so it is not sent again). */
   writeServer: (node: CanvasNode, fields: string[]) => void;
 };
+
+/**
+ * Fields a teammate changed since this window's edit began, which the server did not write over (a compare and set, saved mode only): the card as the canvas holds
+ * it now, who changed it (null: this person's own other window) and when.
+ */
+export type RefusedCard = { nodeId: string; fields: string[]; node: CanvasNode; by: string | null; at?: number };
+function isRefused(value: unknown): value is RefusedCard[] {
+  return Array.isArray(value) && value.every((r) => !!r && typeof r === "object" && typeof r.nodeId === "string" && Array.isArray(r.fields) && !!r.node && typeof r.node === "object");
+}
 
 /** A held write as the route answers it: the card (or asset) as the canvas holds it comes with it. */
 type HeldAnswer = MasterHold & { node?: CanvasNode; asset?: Asset };
@@ -142,7 +153,7 @@ function roomOf(root: { get: <K extends keyof Storage>(key: K) => Storage[K]; se
   };
 }
 
-export function useTeamCanvas({ scope, productionId, current, fold, onSaved }: {
+export function useTeamCanvas({ scope, productionId, current, fold, onSaved, onRefused }: {
   scope: string;
   productionId: string | null;
   /** The draft as it is now (a ref read, never stale). */
@@ -151,6 +162,8 @@ export function useTeamCanvas({ scope, productionId, current, fold, onSaved }: {
   fold: (fn: (project: Project) => Project) => void;
   /** Another window in the room says it saved at this revision: read the saved board (a hint only). */
   onSaved?: (revision: number) => void;
+  /** With no live room, an edit of a card field a teammate changed since the edit began was not written over theirs: the window holds it and asks its person. */
+  onRefused?: (productionId: string, refused: RefusedCard[]) => void;
 }): TeamCanvasApi {
   /* Keyed by production, so switching projects shows nothing stale without resetting state in an effect. */
   const [joinedState, setJoinedState] = useState<{ pid: string; mode: "saved" | "live"; peers: Peer[] } | null>(null);
@@ -158,6 +171,8 @@ export function useTeamCanvas({ scope, productionId, current, fold, onSaved }: {
   const peers = useMemo(() => (productionId && joinedState?.pid === productionId ? joinedState.peers : []), [productionId, joinedState]);
   const savedHint = useRef(onSaved);
   useEffect(() => { savedHint.current = onSaved; }, [onSaved]);
+  const refusedHint = useRef(onRefused);
+  useEffect(() => { refusedHint.current = onRefused; }, [onRefused]);
   const announceSaved = useCallback((revision: number) => { try { room.current?.broadcastEvent({ type: "saved", revision }); } catch { /* the hint is best effort: the poll and the next save find it */ } }, []);
   const [epoch, setEpoch] = useState(0);
   const rejoin = useCallback(() => setEpoch((n) => n + 1), []);
@@ -171,6 +186,8 @@ export function useTeamCanvas({ scope, productionId, current, fold, onSaved }: {
   const catchUps = useRef(new Map<string, TeamPatch[]>());
   /* Edits on their way to the server now, by production: laid over a canvas read meanwhile, so the read never undoes them. */
   const inflight = useRef(new Map<string, TeamPatch[]>());
+  /* The newest send of each production, so a compare and set waits for the ones before it. */
+  const posting = useRef(new Map<string, Promise<unknown>>());
   /* The newest server change this window has folded in, by production. */
   const serverSeen = useRef<{ pid: string; seq: number } | null>(null);
   const shownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -217,22 +234,30 @@ export function useTeamCanvas({ scope, productionId, current, fold, onSaved }: {
     /* The workspace switch route has been asked (lib/shell/switch-workspace.ts): nothing more goes to this workspace;
        if the switch does not happen, what waits goes on the next try. */
     if (!sendsAllowed()) { if (outbox.size || catchUps.current.size) timer.current = setTimeout(() => retry.current(), RETRY_MS); return; }
-    const post = async (pid: string, patch: TeamPatch) => {
+    const postNow = async (pid: string, patch: TeamPatch) => {
+      /* A compare and set starts from what the canvas held when the edit began, so it goes after the sends before it: one that overtook them would find the canvas not yet as it began. */
+      if (patch.cas) await posting.current.get(pid)?.catch(() => {});
       const going = inflight.current.get(pid) ?? [];
       going.push(patch);
       inflight.current.set(pid, going);
       try {
-        const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, fields: patch.fields ?? {}, made: patch.made ?? [], removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order, ...(patch.expect ? { expect: patch.expect } : {}) });
+        const json = JSON.stringify({ productionId: pid, upsertNodes: patch.upsertNodes, fields: patch.fields ?? {}, made: patch.made ?? [], removeNodes: patch.removeNodes, upsertAssets: patch.upsertAssets, order: patch.order, ...(patch.expect ? { expect: patch.expect } : {}), ...(patch.cas ? { cas: true } : {}) });
         /* A small edit rides keepalive, so it survives the page closing or reloading mid-send
            (the save that runs as the page hides starts it; an ordinary request would be cancelled). */
         const request = json.length <= KEEPALIVE_MAX ? { headers: { "Content-Type": "application/json" }, body: json } : await draftBody(json);
-        const answer = await draftRequest<{ held?: unknown } | null>(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
+        const answer = await draftRequest<{ held?: unknown; refused?: unknown } | null>(API, scope, { method: "PATCH", headers: request.headers, body: request.body, keepalive: json.length <= KEEPALIVE_MAX });
         if (answer && Array.isArray(answer.held) && answer.held.length) handleHeld(pid, answer.held as HeldAnswer[]);
+        if (answer && isRefused(answer.refused) && answer.refused.length) refusedHint.current?.(pid, answer.refused);
       } finally {
         const left = (inflight.current.get(pid) ?? []).filter((p) => p !== patch);
         if (left.length) inflight.current.set(pid, left);
         else inflight.current.delete(pid);
       }
+    };
+    const post = (pid: string, patch: TeamPatch) => {
+      const run = postNow(pid, patch);
+      posting.current.set(pid, run);
+      return run;
     };
     const batch = outbox.take(), caught = [...catchUps.current.entries()];
     catchUps.current.clear();
@@ -279,6 +304,11 @@ export function useTeamCanvas({ scope, productionId, current, fold, onSaved }: {
     return run;
   }, [sendNow]);
   useEffect(() => { retry.current = () => void send(); }, [send]);
+  /* The draft save asks this before it writes: a send already out (a compare and set the canvas may yet refuse) ends first, so the save never goes over a refusal still on its way. */
+  const flush = useCallback(async (): Promise<void> => {
+    while (sending.current.size) await Promise.allSettled([...sending.current]);
+    await send();
+  }, [send]);
   /* The edit made while the canvas was loading that a drain already delivered (it stays, for the join to lay over the canvas). */
   const earlySent = useRef<TeamPatch | null>(null);
   const drain = useCallback(async (): Promise<boolean> => {
@@ -487,8 +517,18 @@ export function useTeamCanvas({ scope, productionId, current, fold, onSaved }: {
       return;
     }
     writeLive.current?.(patch);
-    queue(pid, patch);
+    /* No live room: this edit is a compare and set against the canvas it began from, so a teammate's newer value for the same field is not written over (the window is told). */
+    queue(pid, !room.current && joined.current === pid ? startedFrom(patch, before) : patch);
   }, [queue]);
+
+  const resend = useCallback((cards: { nodeId: string; fields: string[] }[]) => {
+    const draft = current();
+    const pid = draft?.productionProjectId;
+    if (!draft || !pid || joined.current !== pid || !cards.length) return;
+    const nodes = cards.flatMap((c) => { const node = draft.nodes.find((n) => n.id === c.nodeId); return node ? [{ node, fields: c.fields }] : []; });
+    if (!nodes.length) return;
+    queue(pid, { upsertNodes: nodes.map((n) => n.node), fields: Object.fromEntries(nodes.map((n) => [n.node.id, n.fields])), made: [], removeNodes: [], upsertAssets: [], order: null, at: Date.now() });
+  }, [current, queue]);
 
   const catchUp = useCallback((before: Project, after: Project) => {
     const pid = after.productionProjectId;
@@ -541,5 +581,5 @@ export function useTeamCanvas({ scope, productionId, current, fold, onSaved }: {
   }, [locksFor, setLocks]);
   const writeServer = useCallback((node: CanvasNode, fields: string[]) => { writeTrusted.current?.(node, fields); }, []);
 
-  return { mode, peers, server, publish, catchUp, presence, flush: send, drain, tidy, refresh, rejoin, announceSaved, locks, learnLock, writeServer };
+  return { mode, peers, server, publish, catchUp, presence, flush, drain, tidy, refresh, rejoin, resend, announceSaved, locks, learnLock, writeServer };
 }

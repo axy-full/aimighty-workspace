@@ -118,9 +118,27 @@ export const PATCH = withTenant(async (req: Request) => {
       ...(h.nodeId && saved.canvas.nodes[h.nodeId] ? { node: shownLock(shown!, saved.canvas.nodes[h.nodeId]) } : {}),
       ...(h.assetId && saved.canvas.assets[h.assetId] ? { asset: saved.canvas.assets[h.assetId] } : {}),
     }));
-    return Response.json({ revision: saved.revision, ...(held.length ? { held } : {}) }, { headers: NO_STORE });
+    /* A compare and set (an edit from a window with no live room): the fields a teammate changed since this edit began were not written. Each comes with the card as
+       the canvas holds it and who changed it, as this workspace may read the name (lib/platformOwnerPrivacy.ts). */
+    const refused = saved.refused.length ? await refusedAnswer(saved.refused, saved.canvas.nodes, who.userId!) : [];
+    return Response.json({ revision: saved.revision, ...(held.length ? { held } : {}), ...(refused.length ? { refused } : {}) }, { headers: NO_STORE });
   } catch (error) { return failure(error); }
 });
+
+/** Who changed a card, for the bar: null for the asker's own other window, "Atomik" for an agent's work, else the name this workspace may read ("A teammate" if unknown). */
+async function changedBy(author: string | undefined, viewer: string, shown: (value: string) => string): Promise<string | null> {
+  if (!author || author === viewer) return null;
+  if (author.startsWith("agent:")) return "Atomik";
+  const named = (await db().execute({ sql: "SELECT name FROM users WHERE id=?", args: [author] }).catch(() => ({ rows: [] as { name?: unknown }[] }))).rows[0];
+  return named?.name ? shown(String(named.name)) : "A teammate";
+}
+
+async function refusedAnswer(refused: { nodeId: string; fields: string[]; by?: string; at?: number }[], nodes: Record<string, CardShown & { id: string }>, viewer: string) {
+  const shown = await storedActorMaskHere();
+  return Promise.all(refused.flatMap((r) => (nodes[r.nodeId] ? [r] : [])).map(async (r) => ({
+    nodeId: r.nodeId, fields: r.fields, node: shownLock(shown, nodes[r.nodeId]), by: await changedBy(r.by, viewer, shown), ...(r.at ? { at: r.at } : {}),
+  })));
+}
 
 const ACTION_ID = /^[A-Za-z0-9_-]{8,100}$/;
 const PRODUCTION = z.string().max(100);
