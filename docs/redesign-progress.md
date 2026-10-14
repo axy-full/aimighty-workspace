@@ -396,3 +396,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - (b) recommends our own ~150-line loop over #553;
   - a ratchet guard lands first.
   9 owner decisions are in its body. **#706 CI GREEN 24/24** (base 890d559c); it merges after the release/1 run on 05e93d09 is green. Planner resumed on the #712/#714 updates.
+- **14 Oct 19:33 IST.** **Owner: backup done for deploy #3.** Restore point 2026-10-14T14:00:21Z. Copies platform-backup-20261014 and tenant-backup-20261014; PRAGMA integrity_check ok on both; row counts match live (platform workspaces 2/2; tenant uploads 4/4, generations 2/2). SQL dumps held privately by the owner. The owner is merging #703 and deploying in Coolify; the lead runs the read-only post-deploy checks.
