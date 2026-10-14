@@ -5,7 +5,7 @@
  *
  * Only three recipes are told by a fact the take already carries, its Setup's shot size: an establishing shot is Establishing wide, an over-the-shoulder shot is Over-the-shoulder, an
  * insert is Detail. Every other recipe (an emotional close-up, a pack shot, a product reveal, talking to camera ...) is the person's or the board's to name, so it comes only from a hint
- * on the request (`body.shotType`), checked: on the list, on a picture, and for those three, agreeing with the Setup. A take with neither is `null` ("not recorded"), never a guess.
+ * on the request (`body.shotType`), checked: on the list, on a picture, and for those three, not contradicting a size the Setup names. A take with neither is `null` ("not recorded"), never a guess.
  * A hint beats the Setup's shot size (an Aerial reveal can be an extreme wide); the Setup only fills in where nothing was said.
  */
 export const SHOT_TYPES = [
@@ -28,13 +28,14 @@ const BY_SHOT_SIZE: Record<string, ShotType> = { evs: "establishing_wide", ots: 
 
 export type ShotTypeFacts = { kind: "video" | "image" | "audio"; /** The Setup's shot size (`shotSpec.shot`). */ shot?: string | null };
 
-/** A request's hint: absent, a recipe that fits (a picture, and where the Setup decides it, agreeing with the Setup), or an error to answer with a 400. */
+/** A request's hint: absent, a recipe that fits (a picture, and where the Setup decides it, not contradicting a size the Setup names), or an error to answer with a 400. */
 export function shotTypeHint(value: unknown, facts: ShotTypeFacts): { hint: ShotType | null } | { error: string } {
   if (value === undefined || value === null) return { hint: null };
   if (!isShotType(value)) return { error: "Name the shot type from the list, or leave it out." };
   if (facts.kind === "audio") return { error: "A sound has no shot type." };
   const decided = Object.entries(BY_SHOT_SIZE).find(([, type]) => type === value)?.[0];
-  if (decided && facts.shot !== decided) return { error: `This take's shot size is not ${SHOT_TYPE_LABELS[value].toLowerCase()}: that comes from the Setup, not from a request.` };
+  /* Refused only where the Setup NAMES a different size; with the size unset (the Auto default) the hint is accepted. */
+  if (decided && facts.shot != null && facts.shot !== decided) return { error: `This take's shot size is not ${SHOT_TYPE_LABELS[value].toLowerCase()}: that comes from the Setup, not from a request.` };
   return { hint: value };
 }
 

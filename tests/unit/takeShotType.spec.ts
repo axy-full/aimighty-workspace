@@ -32,7 +32,9 @@ test("a hint is on the list and on a picture; the three the Setup decides must a
     for (const kind of ["video", "image"] as const) expect(shotTypeHint(code, { kind, shot: "ms" }), `${code} on ${kind}`).toEqual({ hint: code });
   for (const [code, shot] of [["establishing_wide", "evs"], ["over_the_shoulder", "ots"], ["detail", "insert"]] as const) {
     expect(shotTypeHint(code, { kind: "video", shot })).toEqual({ hint: code });
-    for (const wrong of ["ms", "cu", null, undefined]) expect(shotTypeHint(code, { kind: "video", shot: wrong }), `${code} with ${wrong}`).toHaveProperty("error");
+    for (const wrong of ["ms", "cu"]) expect(shotTypeHint(code, { kind: "video", shot: wrong }), `${code} with ${wrong}`).toHaveProperty("error");
+    /* With the Setup's size unset (the Auto default) the recipe can be named. */
+    for (const unset of [null, undefined]) expect(shotTypeHint(code, { kind: "video", shot: unset }), `${code} with the size ${unset}`).toEqual({ hint: code });
   }
   expect(shotTypeHint("custom", { kind: "audio" })).toHaveProperty("error");
   for (const bad of ["", "Custom", "movie", 4, ["custom"], {}, false]) expect(shotTypeHint(bad, { kind: "video" }), JSON.stringify(bad)).toHaveProperty("error");

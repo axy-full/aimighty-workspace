@@ -1058,11 +1058,14 @@ test("a take's shot type (lib/takeShotType.ts) is written by the server: from a 
   expect((await params(await press("gen", { ...still, shotType: "custom" }))).shotType).toBe("custom");
   expect((await params(await press("gen", { ...clip, shotType: "aerial_reveal", shotSpec: { shot: "evs" } }))).shotType).toBe("aerial_reveal");
   expect((await params(await press("gen", { ...clip, shotType: "detail", shotSpec: { shot: "insert" } }))).shotType).toBe("detail");
+  /* With the Setup's size unset (the Auto default) the three Setup-decided recipes can still be named. */
+  for (const type of ["establishing_wide", "over_the_shoulder", "detail"])
+    expect((await params(await press("gen", { ...clip, shotType: type }))).shotType, type).toBe(type);
   /* Nothing else writes it. */
   expect((await params(await press("gen", { ...still, params: { shotType: "custom" }, shotSpec: { shotType: "custom" } }))).shotType).toBeUndefined();
   /* Refused, for a quote and a press: off the list, not a word, one the Setup does not bear out, and any on a sound. */
   for (const [kind, body] of [["gen", { ...clip, shotType: "face_close_up" }], ["gen", { ...clip, shotType: "Pack shot" }], ["gen", { ...clip, shotType: 4 }], ["gen", { ...clip, shotType: "" }],
-    ["gen", { ...clip, shotType: "establishing_wide" }], ["gen", { ...clip, shotType: "over_the_shoulder", shotSpec: { shot: "cu" } }], ["gen", { ...still, shotType: "detail" }],
+    ["gen", { ...clip, shotType: "establishing_wide", shotSpec: { shot: "ms" } }], ["gen", { ...clip, shotType: "over_the_shoulder", shotSpec: { shot: "cu" } }], ["gen", { ...still, shotType: "detail", shotSpec: { shot: "ots" } }],
     ["audio", { ...sound, shotType: "custom" }]] as const) {
     const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
     expect(await prepare(body as never, actor), JSON.stringify(body)).toMatchObject({ ok: false, status: 400 });
