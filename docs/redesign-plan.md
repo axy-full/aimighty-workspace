@@ -590,3 +590,22 @@ Verbatim:
 - Rekognition: biometric consent wording; whether similarity scores must be erased on withdrawal (against never-delete); Particl's DPDP Act role for a customer's cast; transfers to US vendors (#714).
 - Voice data for Sarvam and sync.so (#714).
 - **Terms of use (owner, 14 Oct 21:00):** the customer is responsible for what they generate; a report/takedown process (India IT Rules), given Gemini's adjustable filters set to BLOCK_NONE.
+
+## Owner decisions (Akshay, 14 Oct, 21:55 IST)
+Verbatim:
+
+#715 (admin reach):
+- All three must-fixes approved: (1) every admin read on a member's private board (Atomik chat, export of selected takes, single take) goes through the audited check; (2) no admin live-room access at all until the board design is approved and built; (3) admins can't start any paid work on a member's private board (the two Atomik writing tools refuse admins), tests stricter.
+- Review Q1: admins may NOT create client review links on a member's private board. Only the owner can. Whoever creates a client link, the board's history says "Client link created by <name>", and the owner sees and can revoke active links.
+- Review Q2: API and MCP tokens never get admin reach, read-only or not. A token acts as a plain member whatever its creator's role. Admin reach needs a signed-in admin. Add a test.
+- Fresh Opus review again after the fixes; it stays in deploy #4 only if approved.
+
+Guard deadlines (resending my 21:05 answer, my direct word):
+- Fix the 20 server-side UI-names files on 15 Oct (real fixes). Don't delay deploy #4 prep.
+- Move the remaining 11 screen entries' expiry to 30 Nov 2026, on these conditions: no new entries without my word; each entry is removed in the PR that rebuilds its screen; before moving the 8 spend-button entries, Opus confirms each button still goes through quote + person approval (any that fail get fixed, not extended); the status page shows the remaining count until 0.
+- The guard-helper change: approved only if it loosens no assertion and adds no exception. In the PR, say in one line what it changes, and have Opus confirm. If it loosens anything, stop and ask me.
+
+Merges on green into release/1 (never main), each after a fresh Opus approval:
+- Step 0: #724, #726, #729, #732.
+- Migrations #728 and #731: only if additive (new tables/columns, nothing dropped or renamed, nothing repriced), with the rollback steps written in the PR, and run on staging first. They ship in deploy #4 after my fresh backup.
+- #725 and #727, after the guard-helper change lands, and only once: tests block all real network calls (my 20:50 condition) and #725's deadline is tied to the cutover.
