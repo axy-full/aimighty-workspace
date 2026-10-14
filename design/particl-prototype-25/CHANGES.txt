@@ -1,0 +1,67 @@
+Particl prototype v25 · fixes on v24 · written 2026-10-14
+
+1. Layout measured on mount, after fonts and on resize (ResizeObserver): grid columns 3 · 4 · 5 at 1280 · 1440 · 1920, scope pill and bottom bar centred from the first frame.
+2. Canvas bottom padding = bar height + 32 px.
+3. Agent: ✓ ✕ on hover of Ready cards, reasons as Director, Atomik replies with a priced plan.
+4. Hover marks on text cards sit in the card's title row, never over text.
+5. Selecting a card shows its step's settings when the step has no per-card settings (Brief, Script, …).
+6. Text-only page cards render a mini page (title row with brand tile + first lines); no large letter tile.
+7. Rail status wraps to two lines; right column tightens then scrolls with fades — all items visible at 1280 × 800.
+8. One shared top bar on every app screen (dot logo + wordmark, Home · Make, tabs with letter tiles, +, ⌘K bar, activity pill, avatar); "v20" badge removed.
+9. ⌘K bar on the right, fixed width (280 / 320 / 360), widens on focus — board and app alike.
+Not changed: everything else from v24.
+
+— v24 —
+Particl prototype v24 · on v23 · written 2026-10-14
+
+A · Look
+1. The board sits in the v19 app frame: top bar (dot logo + wordmark, Home · Make, open-project tabs with letter tile, status dot and ×, +, the ⌘K bar, the “2 need you · 4 running” pill, avatar) and a second row (breadcrumb Project › Step  status · Board · List · Rig with icons · Agent · Director · Atomik ⌘J · collaborator avatars · ⋯).
+2. Left rail: a floating stepper panel, vertically centred, hugging its steps and growing from the centre (200 ms); circles joined by a thin line, an icon per step, ✓ badge when done, blue ring + status line for the current step, muted when not started; tooltips carry the others’ status; spacing tightens before it scrolls, with fades; “Add step” at the end. All 10 Film steps fit at 1280 × 800.
+3. Rail and column both centred on the canvas area, 16 px from their edges; the bottom bar centred between them, 16 px from the bottom; pop-ups stay inside the window.
+4. Canvas: 4 cards per row at 1440, 5 at 1920, v19 gaps and radius, drag handle on hover, grid centred between rail and column.
+B · One card system
+5. Card = picture (or logo / letter tile) + title + one status line; Director chips only where the card differs from the step.
+6. Five statuses everywhere: Not started · Making… · Ready (· vN) · ✓ Approved · ✕ <reason>.
+7. ✓ / ✕ on hover; ✕ opens the step’s reason chips (always ending “Other”) + one optional line; option steps pick with ✓ and grey the rest.
+8. Preview adapts (picture / video / sound / pages / script tabs) with ✓ / ✕ for the shown version, Download, versions strip, Compare, ← / →.
+9. ⋯ and right-click are exactly Preview · Fix › · Duplicate · Remove (Replace for user-owned items). Removed: Versions, Move to…, Approve step, Redraw, Show 3 framings.
+10. Next → / Looks good, next / Go to … approve every Ready card that isn’t ✕. ✕ in Agent makes Atomik reply with a priced plan.
+11. User-owned items have no ✓ / ✕.
+C · Cards per step: reasons and Fix › items per the brief; Brief is one card with the spec in its status line (Spec card removed); Script is two cards (Script with Script · Beats · Breakdown tabs in its preview; Read-through); Cast shows “Consent on file” for MAYA.
+D · Rail names: Film and Pre-vis start with Treatment (12 pages: Director’s note … Key frames; settings Style, Look lock, References, Routes, Mood film, Output); Campaign starts with Pitch deck (10 pages: Cover … Credits). Scope words, hand-offs and buttons follow (“Working on the treatment”, “Treatment is ready. Next: Brief”, “Make the treatment · 6 cr”).
+E · Settings: Social narrated › Voice = Voice (library) · Language · Speed · Music bed (Warm/Bright/Calm removed); Captions + Language (translate to several); Pre-vis › Animatic + Scratch voice, Temp music; Social clips › Clips + Make in other languages.
+F · README says v24. The whole interface now ships as two offline files that link to each other: "Particl app v24.html" (Home, Make, Library, Settings, Workspace settings, Platform console, sign-in, plans) and "Particl board v24.html" (every board). Opening a board from Home, a tab or ⌘K goes to the board file; the board’s logo, Home · Make, project tabs, ⌘K bar and activity pill go back.
+Fixes after review: the rail fits all 10 Film steps at 1280 × 800 without scrolling (circles shrink to 26 px and spacing tightens first); the layout re-renders on window resize (grid columns, rail spacing, bar width); zero console errors on load (template images load lazily so the placeholder URL is never requested).
+
+— v23 —
+Particl prototype v23 · on v22 · written 2026-10-14
+
+1. Shots (Director): “Render 8 shots” / “Render Shot 4” no longer loop forever (Maximum call stack size exceeded). The bar keeps the original Shots handler and calls it once, then runs the step: Render → Making… · Cancel (outline) → Next: Edit → (filled). Film and Social narrated.
+2. Rail: 116 px wide (was 104) with −0.01 em letter-spacing on step names; names no longer truncate (“Storyboard” in full).
+Nothing else changed.
+
+— v22 —
+Particl prototype v22 · fix round on v21’s board · written 2026-10-14
+
+A · Flow
+1. Agent: after Approve the chat shows progress (with Cancel), then a hand-off “<Step> is ready. Next: <Step>” with one filled “Go to <Step>”; the last step ends with “Download all”.
+2. Director: the bar button becomes “Making… · Cancel” (outline) while working, then “Next: <Step> →” (filled) with an outline “Rewrite / Redo / Re-render … · price” beside it. If settings change after a step is done, the price returns as the filled button and Next drops to outline.
+3. “Approve step” in ⋯ and in the canvas right-click menu (Director); “Looks good, next” chip in Agent.
+4. “Or say it” focuses the reply box with the question as placeholder.
+5. A fresh walk (&fresh=1) starts at Pitch with nothing done; otherwise steps before the current one, and the current one when it is already approved, start done.
+B · Rail
+6. One line per step (name + status dot), status in the tooltip and under the current step, auto-scrolls the current step into view, fade at the bottom when more is below. 104 px wide.
+C · Layout
+7. The Open-full sheet sits inside the window: min(820 px, window − 48 px), 3 columns at ≥ 1200 px, 2 below, scrolls inside.
+8. Card pictures fill the card width at their ratio (9:16, 4:5, 1:1 no longer narrower and left-aligned).
+9. Column items show the setting name (12 px grey) and its value (12 px white) on separate lines, never cut mid-word; full text in the tooltip.
+10. Cast: character cards carry Look · Sheet · Wardrobe; the voice card carries Voice · Tone · Speed (two new Cast settings).
+11. Scope words: “the brief”, “every caption”, “the voice”, “all 6 clips”, “all 5 versions”, etc.
+12. Brief: Length, Formats and Frame rate update the Spec and Brief cards.
+13. Approved steps offer “Rewrite … · price” (outline) and “Next: … →” (filled).
+14. Agent Storyboard: frames show “Not drawn yet” until the step is done.
+15. Pitch: a “6 of 12 pages shown · Open deck ›” card opens the deck sheet.
+D · Logo
+16. Brand-kit logo (or the client’s letter tile) as the small icon on Brief and Script text cards, the large icon on other text-only cards, beside the project name in the header and as the tab favicon. Only Brief and Script cards show text.
+E · Model
+17. Auto never names its pick: “Auto · best for this shot · 43 cr”; “Why this?” answers in craft terms. Model names appear only in Pro pick (Business and admins); the column shows “Pro pick · <model>”. Kling 3.0 listed with first frame, last frame and references. Pro pick prices marked (placeholder).
