@@ -1,10 +1,20 @@
-# Step 0 data: job label, reject reasons, who picked and approved, billed credits on the take (plan, 14 Oct)
+# Step 0 data: job label, shot type, reject reasons, who picked and approved, billed credits on the take (plan, 14 Oct; owner answers added)
 
 The owner asked for this on 14 Oct (docs/redesign-plan.md on `redesign/integration`, "board design freeze"): server-side work that does not depend on the screens. This plan was read from release/1 at 890d559c. It changes no screen. Anything a screen will need is marked **waits for Claude Design / v18**.
 
-**What Step 0 is for (my reading; owner question 1 confirms it).** Each take should carry enough facts to learn from later: what job it was doing, which engine made it, what it cost, who picked or approved it, and why it was rejected. Later steps (automatic engine choice, SOW 4 Oct §5.1 "Automatic engine choice"; Atomik's review) can then read this. Step 0 only records the facts. It does not use them yet.
+**What Step 0 is for.** Each take should carry enough facts to learn from later: what job it was doing, which engine made it, what it cost, who picked or approved it, and why it was rejected. Later steps (automatic engine choice, SOW 4 Oct §5.1 "Automatic engine choice"; Atomik's review) can then read this. Step 0 only records the facts. It does not use them yet.
 
 **Rule 17 applies to every read of this data:** analytics read ids, codes and timings, never prompt text or a person's free-text reason.
+
+## Owner decisions (14 Oct, after the first draft)
+In the owner's words: "job label = A (purpose) AND add the shot type (the recipe: face close-up, pack shot, dialogue, motion transfer, product reveal, etc.) as a second label, e.g. params.shot — Particl Auto routes on it. Other recommendations accepted, including approving takes people-only." And: "pre-metering takes marked 'estimated', no repricing".
+
+- **DECIDED: the job label is the purpose** (item 1), stored in `params.job`.
+- **DECIDED: a second label, the shot type** (item 1b). This plan stores it as `params.shotType`, not `params.shot`. In the code, `shot` already means shot *size*: the composer's Shot chip (`lib/workspace/film-vocabulary.ts:6-9`, `:27`) and the Setup row `shot` (`lib/studio.ts:52`) both write it, and it is stored on every take as `params.shotSpec.shot`. A second `shot` key would mean two things. (If the owner prefers `params.shot` anyway, it is a one-word change; see owner question A.)
+- **DECIDED: approving a take is people-only.** An API token, an MCP client or an agent identity (`agent:*`) is refused. Picking and rejecting stay open to them. This is PR 2 below.
+- **DECIDED: a reject reason is optional on the server and required on the board.** The board side follows the v18 design.
+- **DECIDED: no backfill of ids by name matching. A quote snapshot goes on each take (`params.quote`).**
+- **DECIDED: takes from before metering are marked `estimated`, and they are never repriced.** Item 4 says exactly how. Today they *are* repriced whenever the margin table changes.
 
 ## Where a take lives today
 - **A take is a row in `generations`,** in each workspace's own database (`lib/db.ts:107-124`, plus columns added at `lib/db.ts:1040-1107`).
@@ -26,7 +36,7 @@ The owner asked for this on 14 Oct (docs/redesign-plan.md on `redesign/integrati
   - Where a take was made: #706 (open) adds `params.madeIn = "make"`, set by the server (`lib/madeIn.ts` on that branch).
 - **The CLAUDE.md "draft/hero split" is not in the code.** It is a product default for recipes, and recipe stage names are free text (`lib/db.ts:586-594`).
 
-### The meaning I propose (owner question 1)
+### The meaning (DECIDED: option A, the purpose)
 **The job label says what the take was for in the production.** It is a closed list. `kind` and `task` already say what the engine did, so the label adds only the missing fact: the purpose.
 
 | Code | Means | How the server knows |
@@ -78,6 +88,90 @@ The owner asked for this on 14 Oct (docs/redesign-plan.md on `redesign/integrati
 
 ---
 
+## 1b. Shot type per take (`params.shotType`), the label Auto routes on
+
+### Today: what the code already knows about a shot's type
+**No single field says what kind of shot a take is.** Five places carry pieces of it:
+- **Setup rows**, written on every take as `params.shotSpec` (videos: `lib/generationAdmission.ts:2175`, `:2217`; stills: `:1620`):
+  - shot size: extreme close, close-up, medium close, medium, medium wide, wide, establishing, over shoulder, POV, insert (`lib/studio.ts:52-66`);
+  - sound: ambient, music-led, dialogue-led, silent (`lib/studio.ts:273-281`).
+- **The cast a take cites,** stored as `params.cast` (`lib/generationAdmission.ts:1617`, `:2205`). Each cast member has a kind: character, location, prop or style (`lib/db.ts:200`; `lib/platformLayer.ts:34`).
+- **The task** (`lib/tasks.ts:25`). `motion` is "motion control" (`:102-105`). `genjutsu` is "Transform: transfer motion or swap subjects" (`:65`).
+- **Make's creative templates**, 18 in all (`lib/workbench/moleculr-creative.ts:44-61`). Examples:
+  - `studio-seamless` (Studio essential), `listing-clean`, `listing-detail` (Material close-up);
+  - `editorial-model` (With a model);
+  - `ugc-presenter` (Talking head), `ugc-faceless` (Faceless demonstration), `ugc-silent` (Silent unboxing);
+  - `motion-orbit` (Product orbit, whose first beat is "Reveal"), `motion-graphic`, `motion-mixed`;
+  - posters and banners.
+- **Campaign formats,** which point at those templates (`lib/v12/campaign.ts:95-102`): Product video ad, Talking review, Unboxing ("the product revealed"), Try-on, Tutorial, Photoshoot ("Packshot · lifestyle · banner · carousel"). "Product voice-over" ("Narrated pack shots") is listed but not built (`:100`).
+- **The words "recipe" and "pack shot".** "Recipe" already means two other things in the code: a take's whole settings for Recreate (`lib/shell/recipe.ts:6-15`), and the `recipes` table (`lib/db.ts:573`). So this plan says **shot type**. "Packshot" appears only as Product-stage photo candidates and the "End packshot" mandatory (`lib/v12/campaign.ts:49`, `:71`; `lib/v12/deliver.ts:104`), never as a kind of take.
+
+### The closed list (proposal; owner question B)
+| Code | Means | Where the code already has it | The server sets it when… |
+|---|---|---|---|
+| `face_close_up` | a close shot of a real or cast character's face | shot size `cu` or `ecu` (`lib/studio.ts:56-57`) **plus** a cited cast member of kind `character` | the Setup's shot is `cu` or `ecu` and the take cites a character |
+| `dialogue` | people speaking in the scene | Setup sound `dialogue` (`lib/studio.ts:279`) | Setup sound is `dialogue` |
+| `talking_head` | one presenter speaking to camera | template `ugc-presenter`; format "Talking review" | it comes from that template or format |
+| `pack_shot` | the product alone, clean, as a hero still or end frame | templates `studio-seamless` and `listing-clean`; "Packshot" in the Photoshoot format | it comes from those templates |
+| `product_reveal` | the product revealed or opened: an unboxing, or a light or orbit reveal | templates `ugc-silent` and `motion-orbit` ("Reveal" beat); format "Unboxing" | it comes from those templates |
+| `product_detail` | a macro or insert of a product detail | shot size `insert` (`lib/studio.ts:65`); templates `detail-ad` and `listing-detail` | the Setup's shot is `insert`, or it comes from those templates |
+| `on_model` | the product worn or held by a person | templates `editorial-model`, `lifestyle-moment` and `listing-context`; format "Try-on" | it comes from those templates |
+| `demonstration` | hands showing how the product is used | template `ugc-faceless`; format "Tutorial" | it comes from that template |
+| `motion_transfer` | another clip's movement given to a character, or a subject swapped | tasks `motion` and `genjutsu` (`lib/tasks.ts:65`, `:102`) | the task is `motion` or `genjutsu` |
+| `establishing` | a wide shot that sets the place | shot size `evs` (`lib/studio.ts:62`) | the Setup's shot is `evs` |
+| `graphic` | type, shapes or a poster, with no live action | templates `motion-graphic`, `type-poster`, `launch-poster`, `wide-poster`, `hero-ad`, `story-ad` | it comes from those templates |
+| `action` | a character moving through a scene (the default for a video that cites a character) | Setup `move` plus a character | a video cites a character and nothing above applies |
+| `other` | none of the above | — | the fallback; never guessed further |
+
+**Types the owner named that the code lacks:**
+- **"Face close-up"**: the code has the shot size (`cu`, `ecu`) but no notion of a *face*. The rule above is built from size plus a character. It cannot tell a close-up of a hand from one of a face when a character is cited.
+- **"Pack shot"**: no kind of take, only templates and Product-stage wording.
+- **"Product reveal"**: only a template beat ("Reveal") and a format's description.
+
+"Dialogue" and "motion transfer" exist (a Setup row and two tasks). The owner should confirm the list (owner question B).
+
+### Who sets it, and when
+- **The server, at admission,** in the same insert as the take row (`lib/generationAdmission.ts:2307-2330`), through one function, `shotTypeOf(request, actor)`, in `lib/takeJob.ts` beside `jobOf`.
+- **Order of evidence, first match wins:**
+  1. the task (`motion` or `genjutsu`);
+  2. the template or format id the request came from;
+  3. the Setup (`shotSpec.shot`, `shotSpec.sound`) and the cast it cites;
+  4. a hint from the request (the board's shot card, or an Atomik plan step), accepted only if it is on the list and fits the kind (a `pack_shot` hint on an audio take is a 400).
+- **The template id is not sent today.** Make's composer and the Campaign Formats stage would send it (`templateId`) the way #706 sends `madeIn`. That is a payload change with no visible change; it waits for v18, with the rest of the board wiring.
+- **Audio takes get no shot type** (`null`). A shot type describes a picture.
+- **Not part of the price, and left out of the quote's fingerprint,** like `job`.
+
+**Reads.** As for `job`: a `shotType` field and a `?shotType=` filter in `listGenerations`, an export column, and MCP `get_render` and `list_renders`. Showing it on the board waits for v18.
+
+### Backfill (only when certain)
+No rewrite of old rows. A read helper, `shotTypeOfRow(row)`, works it out at read time, only from facts the take stored:
+- `task` is `motion` or `genjutsu` → `motion_transfer`;
+- `params.shotSpec.shot` is `evs` → `establishing`;
+- `params.shotSpec.shot` is `insert` → `product_detail`;
+- `params.shotSpec.sound` is `dialogue` → `dialogue`;
+- `params.shotSpec.shot` is `cu` or `ecu` **and** `params.cast` names a cast member whose kind is `character` → `face_close_up`.
+
+**Everything else on old rows is `null` ("not recorded").** The template a take came from was never stored, so old takes cannot be told apart as `pack_shot`, `product_reveal`, `on_model`, `demonstration`, `talking_head` or `graphic`.
+
+### How Auto would route on it (described; not built here)
+Today "Auto" in Make picks by type alone ("Auto · Video, so <model>", `components/v12/make/Composer.tsx:141-143`; the default model is `lib/models.ts:573`). SOW 4 Oct §5.1 lists "Automatic engine choice: Particl rule table over the registry" (E2, U1) as not yet built. With the shot type, the rule table would be:
+
+- **A platform-layer table (rule 3), overridable per workspace:** `(shotType, job) → an ordered list of engines and settings`, each priced on the server. Examples of the *kind* of rule:
+  - `face_close_up` prefers engines that take identity or reference input, and adds the face check to Verify;
+  - `motion_transfer` goes only to motion-control engines;
+  - `dialogue` and `talking_head` prefer engines with native audio, or plan a lip-sync step after;
+  - `pack_shot` and `product_detail` prefer still engines that keep product references exact;
+  - `shot_draft` takes the cheap engine of the pair, and `shot_final` the hero engine (the draft/hero split in CLAUDE.md § Pricing).
+- **Step 0's data then tunes it.** Rejects by reason, per `(shotType, engine)`, and picks and approvals per `(shotType, engine)` show which engine wins for which shot type. That is a later step, reading codes and ids only (rule 17).
+- **Nothing about money changes:**
+  - Auto stays one line with a Change link (rule 13);
+  - the price comes from the server's price path;
+  - a person approves (rule 14).
+  
+  The routing only chooses which engine is quoted.
+
+---
+
 ## 2. Structured reject reasons
 
 ### Today
@@ -98,7 +192,7 @@ The owner asked for this on 14 Oct (docs/redesign-plan.md on `redesign/integrati
 | `motion` | Motion looks wrong |
 | `drift` | Look or face drifted |
 | `artifacts` | Artifacts |
-| `audio` | (new; owner question 2) Sound or lip-sync is wrong |
+| `audio` | (new; DECIDED) Sound or lip-sync is wrong |
 | `other` | used when only free text is given |
 
 - **Each existing chip maps one-to-one to a code.** Nothing is merged or renamed.
@@ -126,9 +220,9 @@ INDEX (gen_id, created_at)
 - **The person's words stay in `notes`,** so the team still sees one conversation. The event row links to the note by `note_id`. Free text is not copied into the event.
 - **The server accepts the reasons on the same request as the mark.** `PATCH /api/jobs/[id]` gains optional `reasons` (codes), `drift` and `reasonText`. In one transaction it writes the mark, the event and the note. So a reject can no longer land without its reason.
   - Unknown codes are a 400.
-  - Reasons are **optional on the server**. An MCP or API caller that sends only `reviewState: "changes"` keeps working (owner question 6).
+  - **DECIDED: reasons are optional on the server.** An MCP or API caller that sends only `reviewState: "changes"` keeps working. They are required on the board, as today, and again after v18.
   - The board already requires a reason of 3 to 500 characters (`take-model.ts:394-410`).
-- **The old two-call path keeps working** until the board is wired. That wiring is a payload change in `use-judge.ts`, with no visible change. It still waits for v18 or the owner's OK, because it touches the board's code (owner question 7).
+- **The old two-call path keeps working** until the board is wired. That wiring is a payload change in `use-judge.ts`, with no visible change. **DECIDED: it waits for v18.**
 - **The system clear** in the attributes route writes a `cleared` event with `via = system`, `cause = master_changed`, and the person who changed the attribute as `actor_id`.
 - **Client review links stay as they are.** Guests have no account, so they are not copied into this table. Step 0 reads `review_verdicts` beside it. Structured reasons for guests **wait for Claude Design / v18**.
 
@@ -166,11 +260,13 @@ INDEX (gen_id, created_at)
   - Unlike columns, events keep the whole history.
 - **The name columns stay** and are written exactly as today. Older screens and exports keep working.
 - **`via` records the channel:** a person in a browser, an API or MCP token, an agent (`agent:*`, `lib/security/people-only.ts:18`), or the system.
-  - Today a token can pick, approve or reject a take: the route accepts `got.token`. That is unchanged here, only recorded (owner question 4).
+  - **DECIDED: approving is people-only.** Today a token can pick, approve or reject a take: the route accepts `got.token` (`app/api/jobs/[id]/route.ts:94-99`). PR 2 refuses `reviewState: "approved"` unless `isPerson({ user, token })` holds (`lib/security/people-only.ts:22-29`). So an API token, an MCP client and an `agent:*` identity get 403 with `PEOPLE_ONLY` (`:16`), and nothing is written. Picking, rejecting and clearing a pick stay open to them, and `via` records who did it.
+  - **Clearing an approval** (`reviewState: ""` on an approved take) is also people-only, so a token cannot undo a person's sign-off. The system clear when a locked attribute changes (`app/api/rig/attributes/[id]/current/route.ts:120-127`) is not an approval and stays as it is.
+  - **Client review links** (`lib/security/review-link.ts`) are guests, recorded in their own table. They are untouched.
 
 ### Backfill
 - **None (recommended).** Matching old names to ids would guess wrong whenever a member was renamed or two members share a name.
-- Old takes keep their names. Their ids read `null`, meaning "not recorded" (owner question 3).
+- **DECIDED: no backfill.** Old takes keep their names. Their ids read `null`, meaning "not recorded".
 
 ### Reads, and what is never sent
 - **API replies and MCP** send the masked name (the `users` join, as `lib/jobs.ts:277` does for the take's maker), never a raw account id.
@@ -188,7 +284,7 @@ INDEX (gen_id, created_at)
 ## 4. Billed credits on the take
 
 ### Today: this mostly exists already
-- **The source of truth** is `meter_events.billed_credits` in the platform database (`lib/platform.ts:155-171`), written by `meter()` (`lib/meter.ts:150-245`).
+- **The source of truth** is `meter_events.billed_credits` in the platform database (`lib/platform.ts:155-171`), written by `meter()` (`lib/meter.ts:158-245`).
   - While a take runs, its row holds the reservation (the quote). At settle it holds what was charged.
   - A failure that cost nothing settles at 0. Work on a workspace's own keys is 0 credits (`lib/meter.ts:204-206`).
   - An overrun past a hold is absorbed by the platform and never changes `billed_credits` (`lib/meter.ts:26-36`).
@@ -212,13 +308,46 @@ INDEX (gen_id, created_at)
   
   Every reader uses this helper: Library, export, MCP and Step 0.
 
-### The two snapshots I do propose (owner question 5)
+### The two snapshots (DECIDED)
 - **`params.quote = { credits, maxCredits }`,** written once by the server at admission, in the same insert as the take:
   - `credits` is what the server price path quoted (`quotedCredits(estUsd, model) × band`);
   - `maxCredits` is the person's approved ceiling, or the plan approval's, when there is one.
   
   No migration. This is our price in credits, never a vendor dollar. On a workspace that uses its own keys, nothing is written, because there is no credit quote there.
-- **Pre-metering takes are labelled `estimated`** in the export and the API. Their number is not changed and nothing is written to the meter. Writing meter rows for old takes would debit balances.
+- **Pre-metering takes are labelled `estimated`** in the export and the API. Nothing is written to the meter: writing meter rows for old takes would debit balances.
+
+### DECIDED: "estimated", and never repriced. Exactly how
+**The problem.** Four places price a take that has no receipt, and all four use **today's** margin table (`margins()`, which `CREDIT_MARGINS` can change at any time):
+- `historicalCreditsExpr` in `lib/creditSql.ts:5-25`. This is the SQL every take, usage, project, shot and export read uses through `billedCreditsExpr` (`:28-31`).
+- The statement's fallback (`lib/statements.ts:214`).
+- The cap baseline before a new job is admitted (`lib/generationRequests.ts:502`).
+- The cap reader (`lib/caps.ts:89`).
+
+So a change to the margin table today silently reprices every take made before metering, on statements, usage and caps. The comment at `lib/creditSql.ts:3-4` says this must not happen.
+
+**The fix: freeze the figure once, then never compute it again.**
+1. **A new workspace table, `estimated_credits`** (M2 below):
+
+   ```
+   estimated_credits (gen_id TEXT PRIMARY KEY, credits INTEGER NOT NULL, frozen_at INTEGER NOT NULL)
+   ```
+   
+   It is additive. Nothing existing changes shape.
+2. **It is filled once per workspace,** the first time it is needed, guarded by a one-row marker table. This is the pattern the platform uses for its receipts copy (`meter_credit_receipt_migrations`, `lib/platform.ts:192-197`). The marker and the rows are written in one batch, so a fill either lands whole or not at all, and runs again on the next read. The fill is one `INSERT … SELECT` over `generations`, using **today's** `historicalCreditsExpr`, so every figure a customer sees today is kept exactly. It covers only takes that are certainly from before metering:
+   - the take has no row in `credit_receipts`, after a full `syncCreditReceipts()` first; **and**
+   - the take is older than this workspace's first meter event (`MIN(created_at)` in `meter_events WHERE workspace_id = ?`, read from the platform database before the fill). For a workspace with no meter events at all, that means all of its takes.
+   
+   A new take whose receipt has not synced yet can never be frozen by mistake, because it is newer than the first meter event.
+3. **All four readers read the frozen figure instead of computing one:**
+   - `billedCreditsExpr` becomes `COALESCE(receipt, (SELECT credits FROM estimated_credits WHERE gen_id = …), 0)`;
+   - the statement, the cap baseline and the cap reader use one helper, `estimatedCreditsFor(ids)`.
+   
+   `historicalCreditsExpr` is then used only by the one-time fill, and is renamed to say so (`freezeEstimatesSql`). No reader can reach today's margins for an old take any more.
+4. **`estimated: true`** means the take has a row in `estimated_credits`. The export gets an `estimated` column, the API an `estimated` field, and statements mark such lines "estimated" in words (the wording waits for v18 where it is on a screen).
+
+**Rollback.** The previous release ignores the table and goes back to computing at today's margins: the behaviour it already has. Rolling forward again reads the frozen rows, untouched. No balance, receipt or meter row is written.
+
+**A simpler option that was not chosen.** Read a frozen margin table from a new private setting (for example `HISTORICAL_CREDIT_MARGINS`) instead of `margins()`. It needs no table. But the frozen figure would then depend on a setting staying exactly right forever, and on the `0.10` written into `lib/creditSql.ts:22`. The table freezes the numbers themselves.
 
 ### Consistency on refunds and overruns
 - **A refund** (settle at 0) or a correction is a new receipt revision. The take shows it after the next sync. No new code is needed. A test proves it end to end for the helper.
@@ -228,7 +357,7 @@ INDEX (gen_id, created_at)
 ### Who reads it
 - **Library and jobs API:** `creditsBilled` as today, plus `final` and `estimated`.
 - **CSV export:** `credits`, plus `credits_quoted` and `estimated`.
-- **Statements:** unchanged. They read the meter, which is the source of truth.
+- **Statements:** they read the meter, which is the source of truth. Their fallback for pre-metering takes reads the frozen figure (above).
 - **MCP:** `get_render` and `wait_for_render` add the quote.
 - **Price wording follows rule 14:** `N cr`, `up to N cr`, or `free`. A vendor cost never reaches a customer. The new fields must pass `tests/unit/noVendorCostToCustomers.spec.ts`.
 
@@ -240,54 +369,73 @@ INDEX (gen_id, created_at)
 
 ## 5. Migrations
 
-There is **one** migration in this plan. It ships only after the owner's backup (docs/backup-restore.md), in a migration deploy, never mixed into an ordinary one.
+There are **two** migrations, both in each workspace's own database. They ship only after the owner's backup (docs/backup-restore.md), in a migration deploy, never mixed into an ordinary one.
 
-| # | What | Database | Additive? | Safe to roll back? |
-|---|---|---|---|---|
-| M1 | `CREATE TABLE IF NOT EXISTS take_review_events` and its index | each workspace database | Yes: a new table. No existing row or column is touched. No backfill. | Yes. The previous release never reads the table. Rolling back leaves it in place, unused. Events written before the rollback stay valid. Reviews made during a rollback have no event; they read as "not recorded", and their names are still in the old columns. |
+| # | What | Additive? | Safe to roll back? |
+|---|---|---|---|
+| M1 | `CREATE TABLE IF NOT EXISTS take_review_events` and its index `(gen_id, created_at)` | Yes: a new table. No existing row or column is touched. No backfill. | Yes. The previous release never reads it. Events written before a rollback stay valid. Reviews made during a rollback have no event; they read "not recorded", and their names are still in the old columns. |
+| M2 | `CREATE TABLE IF NOT EXISTS estimated_credits`, plus its one-row marker table, then the one-time fill of pre-metering takes at today's figures | Yes: new tables. Nothing existing is rewritten. No meter, receipt or balance row is written. | Yes. The previous release ignores both tables and computes at today's margins, as it does now. Rolling forward again reads the frozen rows, untouched. |
 
-- **Items 1 and 4 add no schema.** `params.job` and `params.quote` are server-written keys in existing JSON. A previous release ignores them. Rolling back is safe: new takes simply stop getting the keys.
-- **No migration touches the platform database.**
-- **The table is created in the workspace bootstrap** (`lib/db.ts:878` onwards), the same way `element_lock_events` is. Tests: `tests/unit/schemaInitialization.spec.ts` and `schemaColumnRace.spec.ts` gain a case. Nothing in them is changed or removed.
+- **Items 1, 1b and the quote add no schema.** `params.job`, `params.shotType` and `params.quote` are server-written keys in existing JSON. A previous release ignores them, and rolling back only stops new takes getting them.
+- **No migration touches the platform database.** M2's fill only reads it (the workspace's first meter event).
+- **Tests:** `tests/unit/schemaInitialization.spec.ts` and `schemaColumnRace.spec.ts` gain cases for both tables. Nothing in them is changed or removed.
 
-## 6. PRs (about 30 h of Sonnet lane time)
+## 6. PRs, re-cut after the owner's answers (about 47 h of Sonnet lane time)
+
+In order. "Opus" marks the PRs that need the Opus review (money or privacy) before merging.
 
 | # | PR | Size | Review | After |
 |---|---|---|---|---|
-| 1 | `lib/rejectReasons.ts` and `lib/takeJob.ts`: the two closed lists, labels and the chip map. Pure, no schema. | S, 2h | — | — |
-| 2 | Job label: `jobOf` at every take insert; `jobOfRow` for old takes; `?job=` filter; left out of the quote fingerprint | M, 6h | — | 1, #706 |
-| 3 | M1: `take_review_events`; `PATCH /api/jobs/[id]` writes the mark, the event and the note in one transaction; the system clear writes an event | M, 8h | **Opus (privacy)**, migration, NEEDS OWNER | 1 |
-| 4 | Reads: who picked and approved from events, masked; `via`; MCP `review` field | S, 4h | **Opus (privacy)** | 3 |
-| 5 | `takeCredits()` helper used by Library, export and MCP; `estimated` for takes before metering | S, 4h | **Opus (money)** | — |
-| 6 | `params.quote` snapshot at admission; export `credits_quoted` | S, 4h | **Opus (money)**, NEEDS OWNER | 5 |
-| 7 | CSV export columns: `job`, `picked_by`, `approved_by`, `reject_reasons`, `credits_quoted`, `estimated` | S, 2h | — | 2, 4, 6 |
-| 8 | Board wiring: the reject panel sends codes; the versions card shows them; the Library shows the job | — | **waits for Claude Design / v18** | 3, 4 |
+| 1 | `lib/rejectReasons.ts` and `lib/takeJob.ts`: the closed lists (reject reasons, job, shot type), their labels and the chip map. Pure, no schema. | S, 3h | — | — |
+| 2 | **Approving a take is people-only:** `PATCH /api/jobs/[id]` refuses `approved`, and clearing an approval, for a token, an MCP client or `agent:*` (403, `PEOPLE_ONLY`, nothing written); picking and rejecting unchanged. No schema. | S, 3h | **Opus (privacy)** | — |
+| 3 | **M2 + the freeze:** `estimated_credits`, the one-time fill, and all four readers (`lib/creditSql.ts`, `lib/statements.ts:214`, `lib/generationRequests.ts:502`, `lib/caps.ts:89`) read the frozen figure; `estimated` flag | M, 8h | **Opus (money)**, migration, NEEDS OWNER | backup |
+| 4 | Job label: `jobOf` at every take insert, `jobOfRow` for old takes, `?job=` filter, left out of the quote fingerprint | M, 6h | — | 1, #706 |
+| 5 | Shot type: `shotTypeOf` at every take insert, `shotTypeOfRow` for old takes (certain cases only), `?shotType=` filter, left out of the fingerprint | M, 6h | — | 4 |
+| 6 | **M1:** `take_review_events`; the PATCH writes the mark, the event (with `via`) and the note in one transaction; reasons optional on the server; the system clear writes an event | M, 8h | **Opus (privacy)**, migration, NEEDS OWNER | 1, 2, backup |
+| 7 | Reads: who picked and approved, from events, masked (`supportMemberId`); MCP `review` field | S, 4h | **Opus (privacy)** | 6 |
+| 8 | `takeCredits()` helper (receipt, frozen estimate, final) used by Library, export and MCP | S, 3h | **Opus (money)** | 3 |
+| 9 | `params.quote` snapshot at admission; MCP and export show the quote | S, 4h | **Opus (money)** | 8 |
+| 10 | CSV export columns: `job`, `shot_type`, `picked_by`, `approved_by`, `reject_reasons`, `credits_quoted`, `estimated` | S, 2h | — | 4, 5, 7, 9 |
+| 11 | Board and Make wiring: the reject panel sends codes; Make and Campaign Formats send `templateId`; the versions card and Library show job, shot type and reasons | — | **waits for Claude Design / v18** | 5, 6 |
+| 12 | Auto routing on `(shotType, job)`: the platform-layer rule table (described in item 1b) | — | later; a plan of its own, after Step 0 has data | 5, 10 |
+
+PRs 3 and 6 are the migration deploy: one backup covers both.
 
 **Guard tests: added to, never weakened.**
 - `tests/unit/platformOwnerPrivacy.spec.ts`: new cases. The owner's pick or approval reads "Particl support" in a client workspace and their name in the house workspace. No raw owner account id appears in any reply.
-- `tests/unit/noVendorCostToCustomers.spec.ts`: the new money fields pass the scanner.
-- `tests/unit/creditReceipts.spec.ts`: new case. `takeCredits` follows a refund and a restatement.
-- `tests/unit/neverDelete.spec.ts`: unchanged. Events are only ever added.
+- `tests/unit/noVendorCostToCustomers.spec.ts`: the new money fields (`quote`, `estimated`) pass the scanner.
+- `tests/unit/creditReceipts.spec.ts` and `creditSql.spec.ts`: new cases.
+  - `takeCredits` follows a refund and a restatement.
+  - **Changing `CREDIT_MARGINS` after the freeze changes no estimated figure** on takes, usage, statements or caps.
+  - A take newer than the first meter event is never frozen.
+- `tests/unit/workAccess.spec.ts`: unchanged. Its approvals are by people (`:150`, `:159`). The refusal tests for tokens and agents are new cases in a new spec. I found no existing spec that has a token approve a take; if the PR finds one, it stops and shows the lines to the owner.
+- `tests/unit/neverDelete.spec.ts`: unchanged. Events and estimates are only ever added.
 - `tests/helpers/uiStrings.ts`: the new labels use no retired word.
-- If a guard seems to be in the way, the PR stops and shows the exact lines to the owner.
 
 **Mocked tests that prove an agent can use it (rule 11):**
 - An MCP token rejects a take with codes, and the event records `via = token`.
-- An Atomik step's take carries its job label.
+- An MCP token's approval is refused, and nothing is written.
+- An Atomik step's take carries its job and shot type.
 - No engine is called anywhere in this plan.
 
-## 7. Owner questions (with recommendations)
-1. **What does "job label" mean?** Three options:
-   - **A. The purpose:** storyboard, keyframe, cast, element, shot draft, shot final, fix, voice and so on (item 1).
-   - **B. Where it was made:** Make, a board, an Atomik plan, a skill, MCP or the API. This would grow #706's `madeIn` into a full list.
-   - **C. The production's genre** (`projects.category`, for example "30s car spot"), copied onto each take.
+## 7. Owner questions
 
-   **Recommended: A,** stored as `params.job` with no migration. B is mostly there already (#706, plus `token_id`). C needs no copy, because a take already links to its production.
-2. **The reject list:**
-   - Keep the five chips one-to-one, and add `audio` and `other`? **Recommended: yes.**
-   - Split "Look or face drifted" into separate chips? **Recommended: no.** Keep one chip, with an optional detail (identity, wardrobe, environment, props) that matches Verify's checks.
-3. **Fill in ids for old picks and approvals by matching names?** **Recommended: no.** Old rows keep their names and read "not recorded" for the id.
-4. **Should an API or MCP token be able to approve a take?** Today it can. Approving a take is not spending, but it is a sign-off. **Recommended:** record the channel now (this plan). Then make approve people-only in a separate small PR, as with approving a post. Tokens may still pick and reject.
-5. **Keep the quote and the approved ceiling on each take** (`params.quote`)? **Recommended: yes.** It lets "quoted vs charged" be shown and checked.
-6. **Is a reject reason required on the server?** **Recommended: optional on the server, required on the board** (as today), so existing API callers keep working.
-7. **May PR 8's non-visual part (the reject panel sending codes) land before v18?** **Recommended: wait for v18**, as the freeze says.
+**Answered (14 Oct):**
+- Job label: A, the purpose, plus a shot type.
+- The reject list as proposed.
+- No id backfill.
+- Approving is people-only.
+- The quote snapshot.
+- Reasons optional on the server, required on the board.
+- The board wiring waits for v18.
+- Pre-metering takes are `estimated` and never repriced.
+
+**New:**
+- **A. The key's name.** `params.shotType` (recommended) or `params.shot`? In the code, `shot` already means shot size (`params.shotSpec.shot`; the composer's Shot chip). A second `shot` would mean two things.
+- **B. The shot-type list** (item 1b), 13 codes. Three types the owner named are not in the code today, so their rules are new:
+  - **face close-up:** shot size plus a cited character;
+  - **pack shot:** only templates;
+  - **product reveal:** only a template beat and a format.
+  
+  Confirm or edit the list. **Recommended:** accept it as is, and add types only with a rule that can set them.
+- **C. How to freeze pre-metering figures:** the `estimated_credits` table (recommended; it freezes the numbers), or a private setting that freezes the margin table instead (no migration, but the figures then depend on a setting staying right forever).
