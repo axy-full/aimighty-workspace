@@ -139,8 +139,9 @@ function tenantWrapper(store: TenantStore) {
   const fn = source.statements.find((statement) => ts.isFunctionDeclaration(statement) && statement.name?.text === "withTenant")!;
   const compiled = ts.transpileModule(fn.getText(source), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const exports = {} as Pick<typeof import("../../lib/auth"), "withTenant">;
-  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", "crossOriginProblem", compiled)(
+  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", "crossOriginProblem", "hideOwnerAccountId", compiled)(
     exports, async () => store, runWithStore, NoTenantError, MediaSourceError, workbenchScopeFor, (handler: unknown) => handler, crossOriginProblem,
+    async (res: Response) => res,
   );
   return exports.withTenant;
 }
