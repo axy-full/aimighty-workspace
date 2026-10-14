@@ -304,6 +304,11 @@ export function useTeamCanvas({ scope, productionId, current, fold, onSaved, onR
     return run;
   }, [sendNow]);
   useEffect(() => { retry.current = () => void send(); }, [send]);
+  /* The draft save asks this before it writes: a send already out (a compare and set the canvas may yet refuse) ends first, so the save never goes over a refusal still on its way. */
+  const flush = useCallback(async (): Promise<void> => {
+    while (sending.current.size) await Promise.allSettled([...sending.current]);
+    await send();
+  }, [send]);
   /* The edit made while the canvas was loading that a drain already delivered (it stays, for the join to lay over the canvas). */
   const earlySent = useRef<TeamPatch | null>(null);
   const drain = useCallback(async (): Promise<boolean> => {
@@ -576,5 +581,5 @@ export function useTeamCanvas({ scope, productionId, current, fold, onSaved, onR
   }, [locksFor, setLocks]);
   const writeServer = useCallback((node: CanvasNode, fields: string[]) => { writeTrusted.current?.(node, fields); }, []);
 
-  return { mode, peers, server, publish, catchUp, presence, flush: send, drain, tidy, refresh, rejoin, resend, announceSaved, locks, learnLock, writeServer };
+  return { mode, peers, server, publish, catchUp, presence, flush, drain, tidy, refresh, rejoin, resend, announceSaved, locks, learnLock, writeServer };
 }

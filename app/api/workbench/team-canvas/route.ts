@@ -126,17 +126,17 @@ export const PATCH = withTenant(async (req: Request) => {
 });
 
 /** Who changed a card, for the bar: null for the asker's own other window, "Atomik" for an agent's work, else the name this workspace may read ("A teammate" if unknown). */
-async function changedBy(author: string | undefined, viewer: string): Promise<string | null> {
+async function changedBy(author: string | undefined, viewer: string, shown: (value: string) => string): Promise<string | null> {
   if (!author || author === viewer) return null;
   if (author.startsWith("agent:")) return "Atomik";
   const named = (await db().execute({ sql: "SELECT name FROM users WHERE id=?", args: [author] }).catch(() => ({ rows: [] as { name?: unknown }[] }))).rows[0];
-  return named?.name ? (await storedActorMaskHere())(String(named.name)) : "A teammate";
+  return named?.name ? shown(String(named.name)) : "A teammate";
 }
 
 async function refusedAnswer(refused: { nodeId: string; fields: string[]; by?: string; at?: number }[], nodes: Record<string, CardShown & { id: string }>, viewer: string) {
   const shown = await storedActorMaskHere();
   return Promise.all(refused.flatMap((r) => (nodes[r.nodeId] ? [r] : [])).map(async (r) => ({
-    nodeId: r.nodeId, fields: r.fields, node: shownLock(shown, nodes[r.nodeId]), by: await changedBy(r.by, viewer), ...(r.at ? { at: r.at } : {}),
+    nodeId: r.nodeId, fields: r.fields, node: shownLock(shown, nodes[r.nodeId]), by: await changedBy(r.by, viewer, shown), ...(r.at ? { at: r.at } : {}),
   })));
 }
 

@@ -41,10 +41,13 @@ export function mergePatches(a: TeamPatch | null, b: TeamPatch): TeamPatch {
   for (const id of b.removeNodes) { removed.add(id); nodes.delete(id); fields.delete(id); made.delete(id); whole.delete(id); }
   const assets = new Map(a.upsertAssets.map((x) => [x.id, x]));
   for (const x of b.upsertAssets) assets.set(x.id, x);
-  /* A compare and set keeps what each node was when this window FIRST changed it (the earlier edit's), so edits between sends all compare against one starting point. */
+  /* A compare and set keeps what each node was when this window FIRST changed it (the earlier edit's), so edits between sends all compare against one starting point.
+     Only for a node still being written: a card taken off afterwards is taken off whole (a conditional removal would be skipped silently when a teammate touched it),
+     and a card the later edit writes with no compare (Keep my version) is written with none. */
   const expect: Record<string, CanvasNode | null> = {};
   for (const source of [b, a]) for (const [id, was] of Object.entries(source.expect ?? {})) {
-    if (!nodes.has(id) && !removed.has(id)) continue;
+    if (!nodes.has(id)) continue;
+    if (source === a && b.upsertNodes.some((n) => n.id === id) && !(b.expect && id in b.expect)) continue;
     const earlier = source === b && (a.upsertNodes.some((n) => n.id === id) || a.removeNodes.includes(id));
     if (!earlier) expect[id] = was;
   }

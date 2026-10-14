@@ -85,6 +85,34 @@ test("a waiting edit still shows as this window's own while it is sent (the comp
   expect(mergePatches(edit(start, "a", { text: "two" }, 5, false), edit(mid, "a", { text: "three" }, 6, false)).cas).toBeUndefined();
 });
 
+test("a compare-and-set edit followed by taking the card off is a plain removal, never a conditional one a teammate's touch would skip", () => {
+  const start = project([node("a", { text: "one" })]);
+  const merged = mergePatches(edit(start, "a", { text: "two" }, 5), { upsertNodes: [], fields: {}, made: [], removeNodes: ["a"], upsertAssets: [], order: null, at: 8 });
+  expect(merged.removeNodes).toEqual(["a"]);
+  expect(merged.expect, "nothing to compare for a card being removed").toBeUndefined();
+  expect(merged.cas).toBeUndefined();
+  /* On the canvas: a teammate touched the card meanwhile, and the removal still lands. */
+  let canvas = applyTeamPatch(emptyTeamCanvas(), { upsertNodes: start.nodes, removeNodes: [], upsertAssets: [], order: ["a"], at: 1 });
+  canvas = applyTeamPatch(canvas, edit(start, "a", { text: "Ana" }, 7, false));
+  expect(refusedWrites(canvas, merged)).toEqual([]);
+  expect(applyTeamPatch(canvas, merged).nodes.a).toBeUndefined();
+});
+
+test("Keep my version, written with no compare right after a compare-and-set edit of the same card, is not turned back into a compare", () => {
+  const start = project([node("a", { text: "one" })]);
+  const first = edit(start, "a", { text: "Bo" }, 5);
+  const mid = { ...start, nodes: [node("a", { text: "Bo" })] };
+  const kept: TeamPatch = { upsertNodes: mid.nodes, fields: { a: ["text"] }, made: [], removeNodes: [], upsertAssets: [], order: null, at: 6 };
+  const merged = mergePatches(first, kept);
+  expect(merged.expect).toBeUndefined();
+  expect(merged.cas).toBeUndefined();
+  /* A card the later edit does not write keeps its starting point. */
+  const startTwo = project([node("a", { text: "one" }), node("b", { text: "x" })]);
+  const both = mergePatches(edit(startTwo, "a", { text: "A2" }, 5), edit(startTwo, "b", { text: "B2" }, 6, false));
+  expect(Object.keys(both.expect ?? {})).toEqual(["a"]);
+  expect(both.cas).toBe(true);
+});
+
 /* ── the route: the server answers which fields it did not write, with who changed them ── */
 
 const workspace = (id: string) => ({ id, name: id, slug: id, legacy: false, dbUrl: `file:${path.join(dir, id + ".db")}`, dbToken: null, keys: {}, usesPlatformKeys: false }) as TenantWorkspace;

@@ -72,6 +72,32 @@ test("two windows write the same note: the second is held with the choice, the f
   await expect.poll(() => canvasText(page, production), { timeout: 30_000 }).toBe("Bo's line");
 });
 
+test("a slow answer to the canvas edit: the draft save waits for it, and the first window's note still stands", async ({ page, context }) => {
+  const { project } = await openBoard(page, "/suites?view=board&stage=storyboard", withNote());
+  await expect(noteText(page)).toContainText("Start from the harbour.", { timeout: 60_000 });
+  const other = await context.newPage();
+  await forbidPaidWork(other);
+  await mockMedia(other);
+  await other.goto("/suites?view=board&stage=storyboard");
+  await expect(noteText(other)).toContainText("Start from the harbour.", { timeout: 60_000 });
+  await writeNote(other, "Ana's line");
+  const production = (await (await page.request.get("/api/workbench/projects?id=" + project.id)).json() as { project: { productionProjectId: string } }).project.productionProjectId;
+  await expect.poll(() => canvasText(page, production), { timeout: 30_000 }).toBe("Ana's line");
+  /* The second window's canvas edit reaches the server at once but is answered 1.5 s late (the draft save is due at about 700 ms): the save must wait for the answer. */
+  await page.route("**/api/workbench/team-canvas", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    const answered = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return route.fulfill({ response: answered });
+  });
+  const secondAnswers = watchAnswers(page);
+  await writeNote(page, "Bo's line");
+  await expect.poll(() => secondAnswers.find((a) => a.refused)?.refused, { timeout: 30_000 }).toMatchObject([{ nodeId: NOTE, fields: ["text"] }]);
+  await expect(page.getByTestId("v12-changed-bar")).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(2500);
+  expect(await canvasText(page, production), "the draft save did not go over the first window's note").toBe("Ana's line");
+});
+
 test("Reload takes the first window's note", async ({ page, context }) => {
   const { project } = await openBoard(page, "/suites?view=board&stage=storyboard", withNote());
   await expect(noteText(page)).toContainText("Start from the harbour.", { timeout: 60_000 });
