@@ -2,11 +2,11 @@ import { chatIsMine } from "./atomikAccess";
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
 import { requireTenant } from "./tenant";
-import { contextProjectOr } from "./draftProject";
+import { admittedProjectOr, contextProjectOr } from "./draftProject";
 import { getSetting } from "./settings";
 import { MODELS } from "./models";
 import { mediaMutation } from "./mediaMutation";
-import { engines, estimateStepUsd, fitStepParams, getChat, stepForBrowser, type Engine, type Step } from "./atomik";
+import { VIEW_ONLY_LINE, engines, estimateStepUsd, fitStepParams, getChat, stepForBrowser, type Engine, type Step } from "./atomik";
 import { KEY_STEP_MODELS, keyStepLabel } from "./atomikKeySteps";
 import { PROJECT_ID } from "./atomikMemoryText";
 import {
@@ -565,6 +565,9 @@ export async function runSkill(id: unknown, input: {
     projectId = await contextProjectOr({ id: by }, input.projectId);
     if (projectId && !(await db().execute({ sql: "SELECT 1 FROM projects WHERE id = ? LIMIT 1", args: [projectId] })).rows.length) throw new SkillError("That project is not in this workspace.", 404);
   }
+
+  /* A board the person may only look at (a teammate's shared board) has no renders to set up: a skill is renders, so none is filed there (nothing is written). */
+  if (projectId && !(await admittedProjectOr({ id: by }, projectId))) throw new SkillError(VIEW_ONLY_LINE, 409);
 
   const said = describeValues(template.parameters, values);
   const swaps = steps.filter((s) => s.swapped).map((s) => `${s.title} on ${s.label}, as you chose`);

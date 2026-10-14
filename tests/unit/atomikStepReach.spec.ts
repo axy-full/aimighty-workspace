@@ -142,10 +142,10 @@ test("a chat made or patched with a project its person may not even read stores 
 test("a turn reads a board its person may READ (their own, a teammate's shared board) for context, and spends, files steps and writes memory only under a board they may FILE into: a view-only shared board gives context and no spend; someone else's private board, an unknown id and an admin on a member's private board give neither", async () => {
   const f = await fixture("turn");
   let who = as("u_member");
-  const seen: { context: unknown[]; memory: unknown[]; library: unknown[]; spend: unknown[] } = { context: [], memory: [], library: [], spend: [] };
+  const seen: { context: unknown[]; memory: unknown[]; library: unknown[]; spend: unknown[]; viewOnly: unknown[] } = { context: [], memory: [], library: [], spend: [], viewOnly: [] };
   const atomik = await import("../../lib/atomik"), memory = await import("../../lib/atomikMemory"), library = await import("../../lib/atomikLibrary");
   const turn = loadRoute<typeof import("../../app/api/atomik/[id]/route")>("app/api/atomik/[id]/route.ts", () => who, {
-    "@/lib/atomik": { ...atomik, projectContext: async (project: string | null) => { seen.context.push(project); return ""; }, runTurn: async (_id: string, opts: { projectId: string | null }) => { seen.spend.push(opts.projectId); } },
+    "@/lib/atomik": { ...atomik, projectContext: async (project: string | null) => { seen.context.push(project); return ""; }, runTurn: async (_id: string, opts: { projectId: string | null; viewOnly?: boolean }) => { seen.spend.push(opts.projectId); seen.viewOnly.push(opts.viewOnly); } },
     "@/lib/atomikMemory": { ...memory, plannerMemoryText: async (opts: { projectId: string | null }) => { seen.memory.push(opts.projectId); return ""; } },
     "@/lib/atomikLibrary": { ...library, plannerInputs: async (_person: string, project: string | null) => { seen.library.push(project); return await library.plannerInputs(_person, project); } },
   });
@@ -154,19 +154,49 @@ test("a turn reads a board its person may READ (their own, a teammate's shared b
     for (const key of Object.keys(seen) as (keyof typeof seen)[]) seen[key].length = 0;
     const res = await f.tenant.runInTenant(f.ws, () => turn.POST(new Request("https://particl.test/api/atomik/x", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `turn-${chat}-${run}` }, body: JSON.stringify({ text: "Plan it" }) }) as never, { params: Promise.resolve({ id: chat }) }), { user: who.user });
     expect(res.status, await res.clone().text()).toBe(200);
-    return { context: seen.context[0] ?? null, memory: seen.memory[0] ?? null, library: seen.library[0] ?? null, spend: seen.spend[0] ?? null, stored: await projectOf(chat) };
+    return { context: seen.context[0] ?? null, memory: seen.memory[0] ?? null, library: seen.library[0] ?? null, spend: seen.spend[0] ?? null, viewOnly: seen.viewOnly[0] === true, stored: await projectOf(chat) };
   };
   const own = f.boardOf("u_member"), shared = f.boardOf("u_sharer");
   /* Their own board: context, and spend, filing and memory under it. */
-  expect(await say("ach_own")).toEqual({ context: own, memory: own, library: own, spend: own, stored: own });
+  expect(await say("ach_own")).toEqual({ context: own, memory: own, library: own, spend: own, viewOnly: false, stored: own });
   /* A shared production that is not a private board: the same. */
-  expect(await say("ach_plain")).toEqual({ context: "proj_plain", memory: "proj_plain", library: "proj_plain", spend: "proj_plain", stored: "proj_plain" });
+  expect(await say("ach_plain")).toEqual({ context: "proj_plain", memory: "proj_plain", library: "proj_plain", spend: "proj_plain", viewOnly: false, stored: "proj_plain" });
   /* A teammate's shared, view-only board: context and memory READ it; nothing is spent, proposed for or written under it; the chat keeps it. */
-  expect(await say("ach_shared")).toEqual({ context: shared, memory: shared, library: null, spend: null, stored: shared });
+  expect(await say("ach_shared")).toEqual({ context: shared, memory: shared, library: null, spend: null, viewOnly: true, stored: shared });
   /* Someone else's private board, and an id that is none: neither, and the chat's project is cleared. */
-  expect(await say("ach_cross")).toEqual({ context: null, memory: null, library: null, spend: null, stored: null });
-  expect(await say("ach_ghost")).toEqual({ context: null, memory: null, library: null, spend: null, stored: null });
+  expect(await say("ach_cross")).toEqual({ context: null, memory: null, library: null, spend: null, viewOnly: false, stored: null });
+  expect(await say("ach_ghost")).toEqual({ context: null, memory: null, library: null, spend: null, viewOnly: false, stored: null });
   /* An admin's existing chat on a member's private board: neither here (an admin's audited read is a separate path). */
   who = as("u_admin", "admin");
-  expect(await say("ach_admin_cross")).toEqual({ context: null, memory: null, library: null, spend: null, stored: null });
+  expect(await say("ach_admin_cross")).toEqual({ context: null, memory: null, library: null, spend: null, viewOnly: false, stored: null });
+});
+
+test("on a view-only shared board the planner is told and proposes no render steps, and says why in one plain line; the board's context is still read; on the person's own board renders are proposed as before", async () => {
+  const f = await fixture("viewonly");
+  const who = as("u_member");
+  const contexts: string[] = [];
+  const atomik = await import("../../lib/atomik");
+  const turn = loadRoute<typeof import("../../app/api/atomik/[id]/route")>("app/api/atomik/[id]/route.ts", () => who, {
+    "@/lib/atomik": { ...atomik, runTurn: (chatId: string, opts: { context?: string }) => { contexts.push(opts.context ?? ""); return atomik.runTurn(chatId, opts as never); } },
+  });
+  const rowsOf = (sql: string, args: string[]) => f.tenant.runInTenant(f.ws, async () => (await f.database.db().execute({ sql, args })).rows, { user: who.user });
+  const say = async (chat: string) => {
+    contexts.length = 0;
+    const res = await f.tenant.runInTenant(f.ws, () => turn.POST(new Request("https://particl.test/api/atomik/x", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `viewonly-${chat}-${run}` }, body: JSON.stringify({ text: "A tree in the rain, one video" }) }) as never, { params: Promise.resolve({ id: chat }) }), { user: who.user });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const reply = (await rowsOf("SELECT id, text FROM atomik_messages WHERE chat_id=? AND role='assistant' AND id <> ? ORDER BY created_at DESC LIMIT 1", [chat, `m_${chat}`]))[0];
+    const steps = await rowsOf("SELECT id FROM atomik_steps WHERE chat_id=? AND message_id=?", [chat, String(reply.id)]);
+    return { text: String(reply.text), steps: steps.length, context: contexts[0] ?? "" };
+  };
+  const { VIEW_ONLY_LINE } = atomik;
+  const mine = await say("ach_own");
+  expect(mine.steps, "renders are proposed on their own board").toBeGreaterThan(0);
+  expect(mine.text).not.toContain(VIEW_ONLY_LINE);
+  expect(mine.context).not.toContain("view-only");
+  const looked = await say("ach_shared");
+  expect(looked.steps, "no render step on a view-only board").toBe(0);
+  expect(looked.text).toContain(VIEW_ONLY_LINE);
+  expect(VIEW_ONLY_LINE).not.toMatch(/gemini|google|claude|gpt|seedance|kling|nano/i);
+  /* The planner was told, and the board's own context is still in what it read. */
+  expect(looked.context).toContain("view-only");
 });

@@ -3,7 +3,7 @@ import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
-import { listChats, createChat, engines, requestEffort, runTurn, projectContext, type AgentMode } from "@/lib/atomik";
+import { listChats, createChat, engines, requestEffort, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, type AgentMode } from "@/lib/atomik";
 import { atomikEffortOptions } from "@/lib/atomik-reasoning";
 import { cleanAttachments } from "@/lib/attachments";
 import { effectiveRules } from "@/lib/rules";
@@ -87,15 +87,16 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure;
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
-    /* A project this person may not file into (a private board of someone else's; lib/draftProject.ts) is no project (null): nothing of it is read for the model. */
+    /* Two projects, asked of this person alone (lib/draftProject.ts): the one they may READ (their own board, a teammate's shared board) feeds the quote's context and memory reads; the one they may FILE into is what the turn spends against, so a quote prices it the same. Someone else's private board gives neither. */
     const asked = typeof body.projectId === "string" ? body.projectId : null;
     const readProject = await contextProjectOr(got.user, asked);
     const projectId = await admittedProjectOr(got.user, asked);
     /* The project's library and presets for library steps, read as the turn will read them. */
     const inputs = await plannerInputs(auth.user.id, projectId);
-    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,
+    const viewOnly = Boolean(readProject && !projectId);
+    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, viewOnly,
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
-      context: await projectContext(readProject), rules: writerRulesByScope(await effectiveRules()),
+      context: [viewOnly ? VIEW_ONLY_INSTRUCTION : "", await projectContext(readProject)].filter(Boolean).join("\n\n"), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
       memory: await plannerMemoryText({ projectId: readProject, query: text }).catch(() => ""),
       library: inputs.library, presets: inputs.presets,

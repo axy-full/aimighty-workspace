@@ -451,7 +451,7 @@ test("`/` in the composer: a command being typed lists its matches with the comm
   expect(t.commandIn("/wav", skills)).toBeNull();
 });
 
-test("running a skill keeps a project only if the person may read it: someone else's private board and an unknown board give the same none; their own board, a teammate's shared board and a shared project are kept; an old chat on a board they can no longer reach is cleared", async () => {
+test("running a skill keeps a project only if the person may read it: someone else's private board and an unknown board give the same none; their own board and a shared project are kept; a teammate's shared board is view-only, so no skill files renders there; an old chat on a board they can no longer reach is cleared", async () => {
   const s = await import("../../lib/atomikSkills");
   const draft = await import("../../lib/draftProject");
   const ws = workspace();
@@ -471,7 +471,11 @@ test("running a skill keeps a project only if the person may read it: someone el
     /* A new chat for u2 (a member): their own board and a shared project are kept; u1's private board, and one nobody owns, are none. */
     expect(await projectOf(await run("u2", boardOf("u2")))).toBe(boardOf("u2"));
     expect(await projectOf(await run("u2", "p1"))).toBe("p1");
-    expect(await projectOf(await run("u2", boardOf("u1"))), "a teammate's shared board is readable, so it is kept (filing into it is refused at admission)").toBe(boardOf("u1"));
+    /* A teammate's shared board is view-only: a skill is renders, so none is set up there, and nothing is written. */
+    const chats = async () => Number((await rows("SELECT COUNT(*) AS n FROM atomik_chats"))[0].n);
+    const before = await chats();
+    await expect(s.runSkill(skill.id, { projectId: boardOf("u1") }, "u2")).rejects.toMatchObject({ status: 409, message: "This board is view-only for you, so I won't set up renders on it." });
+    expect(await chats()).toBe(before);
     expect(await projectOf(await run("u2", draft.mappedId("prj_wb_", ws.id, "u_nobody", "d9")))).toBeNull();
     /* An admin does not file into a member's private board either. */
     expect(await projectOf(await run("u1", boardOf("u2")))).toBeNull();
@@ -483,7 +487,7 @@ test("running a skill keeps a project only if the person may read it: someone el
     const shared = await seedRun({ by: "u2", projectId: boardOf("u1") });
     await s.runSkill(skill.id, { chatId: stale }, "u1");
     await s.runSkill(skill.id, { chatId: own }, "u2");
-    await s.runSkill(skill.id, { chatId: shared }, "u2");
+    await expect(s.runSkill(skill.id, { chatId: shared }, "u2")).rejects.toMatchObject({ status: 409 });
     expect(await projectOf(stale)).toBeNull();
     expect(await projectOf(own)).toBe(boardOf("u2"));
     expect(await projectOf(shared)).toBe(boardOf("u1"));

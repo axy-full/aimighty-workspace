@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
-  getChat, patchChat, clearChatProject, deleteChat, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
+  getChat, patchChat, clearChatProject, deleteChat, VIEW_ONLY_INSTRUCTION, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
   type AgentMode,
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
@@ -116,19 +116,21 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const readProject = await contextProjectOr(got.user, loaded.chat.projectId);
     const projectId = await admittedProjectOr(got.user, loaded.chat.projectId);
     if (!quoteOnly && loaded.chat.projectId && !readProject) await clearChatProject(id, loaded.chat.projectId);
-    const context = await projectContext(readProject);
+    /* A board they may read but not file into (a teammate's shared board): the planner is told, and proposes no renders there (lib/atomik.ts). */
+    const viewOnly = Boolean(readProject && !projectId);
+    const context = [viewOnly ? VIEW_ONLY_INSTRUCTION : "", await projectContext(readProject)].filter(Boolean).join("\n\n");
     /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */
     const memory = await plannerMemoryText({ projectId: readProject, query: text }).catch(() => "");
     const rules = writerRulesByScope(await effectiveRules());
     /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
     const inputs = await plannerInputs(got.user.id, projectId);
-    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, context, memory, model: b.model, effort, rules,
+    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, viewOnly, context, memory, model: b.model, effort, rules,
       library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
     const maxCredits = requestMaxCredits(b.maxCredits, b.effort !== undefined);
     await addUserMessage(id, text, cleanAttachments(b.attachments));
     /* A library step is proposed only at a price: the admission quote, as this person, for its exact render. */
-    await runTurn(id, { projectId, context, memory, model: b.model, effort, maxCredits, rules,
+    await runTurn(id, { projectId, viewOnly, context, memory, model: b.model, effort, maxCredits, rules,
       library: inputs.library, presets: inputs.presets, workbenchProjectId: inputs.studioProjectId,
       priceKeyStep: (body) => priceKeyStep(body, got) });
   } catch (e) {
