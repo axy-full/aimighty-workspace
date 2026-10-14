@@ -27,7 +27,12 @@ export async function starterProductionId(): Promise<string | null> {
  * events and no billing-ledger rows, and the takes carry no spend (see
  * seedDemoTakes).
  */
-export async function seedStarterProduction(createdBy: string): Promise<{ projectId: string } | null> {
+export type Seeder = string | { id: string; name: string };
+/** Who seeds: the account id goes into `created_by`; the approved demo take records the display name, as every other writer does (`review_by` is a name). A bare id (tests, background) has no name to show, so it stands for itself. */
+const seederOf = (who: Seeder) => (typeof who === "string" ? { id: who, name: who } : who);
+
+export async function seedStarterProduction(seeder: Seeder): Promise<{ projectId: string } | null> {
+  const { id: createdBy, name: createdByName } = seederOf(seeder);
   await ready();
   if (await starterProductionId()) return null;
   /* Platform reads happen before the transaction: its callback may only use its own connection. */
@@ -56,7 +61,7 @@ export async function seedStarterProduction(createdBy: string): Promise<{ projec
     for (const [position, s] of shots.entries()) {
       byCode.set(s.code, await insertShot(tx, { projectId: pid, shot: s, position, createdBy, ts }));
     }
-    await seedDemoTakes(tx, pid, byCode, createdBy, ts, published);
+    await seedDemoTakes(tx, pid, byCode, createdBy, createdByName, ts, published);
     return true;
   });
   if (!made) return null;
@@ -104,7 +109,7 @@ async function insertShot(tx: Transaction, input: { projectId: string; shot: Sta
  * is therefore non-quotable: lib/mediaSource.server.ts refuses it with a reason
  * instead of measuring or persisting anything.
  */
-async function seedDemoTakes(tx: Transaction, projectId: string, byCode: Map<string, { id: string; setup: StarterShot["setup"] }>, createdBy: string, ts: number, published: ReadonlySet<string>): Promise<void> {
+async function seedDemoTakes(tx: Transaction, projectId: string, byCode: Map<string, { id: string; setup: StarterShot["setup"] }>, createdBy: string, createdByName: string, ts: number, published: ReadonlySet<string>): Promise<void> {
   let i = 0;
   for (const t of DEMO_TAKES) {
     const shot = byCode.get(t.shotCode); if (!shot) continue;
@@ -120,7 +125,7 @@ async function seedDemoTakes(tx: Transaction, projectId: string, byCode: Map<str
              created_at, updated_at, shot_id, version, provider, task, review_state, review_by, reviewed_at)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       args: [id("gen"), projectId, null, "video", t.model, t.prompt, JSON.stringify(params), "succeeded", null, demoMediaUrl(t.previewKey, published), 0, createdBy,
-             made, made, shot.id, t.version, "byteplus", "generate", t.approved ? "approved" : "", t.approved ? createdBy : null, t.approved ? made + 60_000 : null],
+             made, made, shot.id, t.version, "byteplus", "generate", t.approved ? "approved" : "", t.approved ? createdByName : null, t.approved ? made + 60_000 : null],
     });
   }
 }
