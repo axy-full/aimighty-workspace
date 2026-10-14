@@ -556,3 +556,20 @@ How the lead applies it:
 
 ## Owner amendment (Akshay, 14 Oct, 19:29 IST): #714 providers (replaces item 6 above)
 Verbatim: "6) #714: order accepted with one change — lip-sync goes DIRECT through sync.so (I'm buying the account; not via fal), including lipsync-2-pro and sync-3. Then Sarvam direct (I'm buying the account), then Rekognition, then Runway standby (house only until training-free terms). Voice cloning: not now. Counsel before any customer switch. Delete the vendor's copy once we've stored the output (sync.so DELETE, Sarvam retention 0). ADD to the plan: Recraft (raster, vector, vectorize, remove background), Black Forest Labs FLUX.2 (create + multi-reference edit), Google Cloud Vision text detection (GOOGLE_VISION_API_KEY is set), and a Topaz direct vs fal price comparison. Give me the exact Coolify setting NAMES per provider (names only; AWS names distinct from anything R2/S3 reads)."
+
+## Owner answers (Akshay, 14 Oct, 20:40 IST)
+Verbatim:
+1) Standing rule for import-pinning tests: YES — adding an entry is allowed when no assertion is loosened, the PR names the module, and Opus confirms it adds nothing the test is meant to catch; quote this rule in each PR. Removing an entry or loosening any assertion still needs my direct word. This unblocks #704, #708, #713, #715, #717, #718 (incl. Moleculr routes).
+2) #704: the two internal lookups (Can-edit board list, their room numbers) within the same workspace, returning nothing, meet "reads nothing new" — yes.
+3) #718: yes, a new owner may open the uploads that are ON the transferred board; not the previous owner's other uploads.
+4) Merge on green: #720 then #721; #722 including its operationalHealth.spec.ts edit (it makes the public response stricter); #723 with tokens blocked from un-approving — yes.
+5) #719 Vercel out — all yes: (1) our own small tool loop; (2) retire 'ai' entirely; (3) text prices from the checked-in list, sourced from each provider's published pricing page, refreshed by a script and reviewed by me monthly; (4) yes per PR for moved tests; (5) I'll revoke leftover gateway keys in Vercel — give me click steps; (6) 3D on our own workers only; (7) cutover after deploy #4 is stable, 7-day watch, Blob kept read-only 30 days after cutover, deletion only with my yes; (8) update the privacy page wording; (9) no more preview deployments — staging is the preview. FYI: Vercel project particlstudio has NO production deployment (checked in the dashboard), so no Vercel cron can run; Git is already disconnected; I'm deleting its old previews.
+6) #712: A) params.shotType — yes. B) the 13 types = exactly the shot recipes: Establishing wide, Emotional close-up, Product reveal, Pack shot, Talking to camera, Walk and talk, Action beat, Detail, Over-the-shoulder, Aerial reveal, Slow-motion moment, Match cut, Custom. C) freeze "estimated" figures in their own table — yes.
+7) #714: A) yes. B) FLUX.2 direct on the EU endpoint, training opt-out first — yes. C) sync.so: start on the plan I bought; tell me if Creator ($19) is needed for clip length. D) fixed rupee rate, reviewed monthly — yes. E) threshold 90, priced inside Verify, flags for a person, never blocks — yes. F) Sarvam for Indian-language transcripts; ElevenLabs speech-to-text (already wired) for the rest, Grok as backup unless you show Grok is clearly cheaper. G) yes. H) Topaz stays on fal — yes. I) leave sync-3's photo input out — yes.
+8) Signed-in checks for deploy #3: I'm skipping them for now; your read-only checks stand.
+9) Deploy #4: prepare from ~19:40 IST 15 Oct as proposed; I'll take a fresh backup first.
+10) Design: the board freeze now waits for v21 (Agent mode + Director mode), which supersedes v18. Accounts for sync.so and Sarvam are bought; I'll add the Coolify settings by the names in #714.
+
+How the lead applies it:
+- Every PR that adds an entry to an import-pinned test quotes rule 1 and names the module, with an Opus confirmation in the PR.
+- **The board design freeze now waits for v21.** Everywhere this plan says "v18", read "v21".
