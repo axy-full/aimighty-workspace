@@ -11,9 +11,19 @@ import { bumpEditRooms, closeRooms } from "@/lib/workbench/room-rotation";
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
-/** Their old connections are closed after the response, all at once, so the admin's request does not wait on Liveblocks. The rooms themselves moved on inside the membership change (below). */
+/** Their old connections are closed after the response, all at once, so the admin's request does not wait on Liveblocks. */
 function closeAfter(closed: string[]) {
   if (closed.length) after(async () => { await closeRooms(closed); });
+}
+/**
+ * The rooms move a second time once the change has committed. Between the first move (before the change, so that a failure stops it) and the commit, the member being switched
+ * off or removed is still a member: they can read the NEW room's name and be signed into it, and a Liveblocks connection outlives its token. The second move puts that room out of
+ * use too, and both sets of old rooms are closed. Best effort: the change has landed and the first move already ended every token issued before this request, so a failure here
+ * is logged, not answered.
+ */
+async function moveRoomsAgain(): Promise<string[]> {
+  try { return await bumpEditRooms(); }
+  catch { console.error(JSON.stringify({ event: "rooms_second_move_failed" })); return []; }
 }
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -89,7 +99,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     await tx.execute({sql:'INSERT INTO membership_mirrors(workspace_id,account_id,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id,account_id) DO UPDATE SET updated_at=excluded.updated_at',args:[ws.id,id,now()]});
   });}catch(error){return accountFailure(error);}
   await repairPendingMemberships(id).catch(()=>{});
-  closeAfter(closed);
+  closeAfter(body.disabled===true?[...closed,...await moveRoomsAgain()]:closed);
   return NextResponse.json({ ok: true });
 }, { requireRequestScope: true });
 
@@ -121,7 +131,7 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
     await tx.execute({sql:'DELETE FROM membership_mirrors WHERE workspace_id=? AND account_id=?',args:[ws.id,id]});
     await tx.execute(securityAuditStatement({workspaceId:ws.id,actorId:got.user.id,action:"member.removed",targetType:"member",targetId:id}));
   });}catch(error){return accountFailure(error);}
-  closeAfter(closed);
+  closeAfter([...closed,...await moveRoomsAgain()]);
   // Platform membership removal already revokes access even if this mirror is offline.
   const {db}=await import('@/lib/db');
   await db().batch([

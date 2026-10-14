@@ -28,7 +28,7 @@ type Who = { id: string; role: "admin" | "member"; name: string; email: string }
 const who = (id: string, role: "admin" | "member" = "member"): Who => ({ id, role, name: id, email: `${id}@example.test` });
 const asUser = (w: Who) => ({ user: { ...w, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
 
-async function fixture(name: string) {
+async function fixture(name: string, options: { between?: () => Promise<void> } = {}) {
   const ws = { id: `brm-${name}-${run}`, name: name, slug: name, legacy: false, dbUrl: `file:${path.join(dir, `brm-${name}-${run}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true } as TenantWorkspace;
   const tenant = await import("../../lib/tenant"), database = await import("../../lib/db"), records = await import("../../lib/workbench/records");
   const { newProject } = await import("../../lib/workbench/studio");
@@ -62,6 +62,8 @@ async function fixture(name: string) {
   const real = createRequire(path.resolve(file));
   const fakes: Record<string, unknown> = {
     "@/lib/auth": { withTenant: (h: unknown) => h, requireAdmin: async () => ({ user: admin }), isPlatformOwner: async () => false },
+    /* The membership change, with a hook that runs after its last statement and before its commit: the window in which the member is still a member. */
+    "@/lib/accountDb": (() => { const accounts = real(path.join(root, "lib/accountDb")); return { ...accounts, accountTransaction: (fn: (tx: unknown) => Promise<unknown>) => accounts.accountTransaction(async (tx: unknown) => { const out = await fn(tx); await options.between?.(); return out; }) }; })(),
     "next/server": { ...real("next/server"), after: (work: unknown) => { pending.push(typeof work === "function" ? (work as () => Promise<void>) : async () => { await work; }); } },
   };
   const compiled = ts.transpileModule(readFileSync(path.resolve(file), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
@@ -90,13 +92,14 @@ test("a draft linked to another production: removing a member moves THAT room (t
     const oldRoom = f.teamRoomFor(f.ws.id, "prod_linked", 0);
     const removed = await f.remove();
     expect(removed.status, JSON.stringify(await removed.clone().json())).toBe(200);
-    expect(await f.generation("prod_linked"), "the linked production's room moved").toBe(1);
-    expect(await f.generation(f.ids["d-default"]), "and the default one").toBe(1);
+    expect(await f.generation("prod_linked"), "the linked production's room moved, before the change and again after it").toBe(2);
+    expect(await f.generation(f.ids["d-default"]), "and the default one").toBe(2);
     /* One row per room that exists: the two real productions, none for a production id the linked draft never had. */
-    expect(await f.strays()).toEqual([`collab:room-generation:${f.ids["d-default"]}=1`, "collab:room-generation:prod_linked=1"].sort());
+    expect(await f.strays()).toEqual([`collab:room-generation:${f.ids["d-default"]}=2`, "collab:room-generation:prod_linked=2"].sort());
     while (f.pending.length) await f.pending.shift()!();
     expect(deletes, "the old room of the linked production is closed").toContain(oldRoom);
-    expect(deletes).toHaveLength(2);
+    expect(deletes, "and the room that was current between the two moves").toContain(f.teamRoomFor(f.ws.id, "prod_linked", 1));
+    expect(deletes).toHaveLength(4);
   } finally { globalThis.fetch = realFetch; }
 });
 
@@ -118,8 +121,58 @@ test("the rooms moving is part of the membership change and fails closed: if the
   await f.as(f.admin, () => f.database.db().execute("DROP TRIGGER brm_bump_down"));
   expect((await f.patch({ disabled: true })).status).toBe(200);
   expect(await f.membership()).toEqual([expect.objectContaining({ disabled: 1 })]);
-  expect(await f.generation("prod_linked")).toBe(1);
+  expect(await f.generation("prod_linked")).toBe(2);
   expect((await f.remove()).status).toBe(200);
   expect(await f.membership()).toHaveLength(0);
-  expect(await f.generation("prod_linked")).toBe(2);
+  expect(await f.generation("prod_linked")).toBe(4);
+});
+
+test("a room opened in the window between the first move and the commit is moved and closed too", async () => {
+  const deletes: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if ((init?.method ?? "GET") === "DELETE" && url.includes("/rooms/")) { deletes.push(decodeURIComponent(url.split("/rooms/")[1])); return new Response(null, { status: 204 }); }
+    throw new Error(`unexpected network call ${url}`);
+  }) as typeof fetch;
+  const issued: { room: string; status: number }[] = [];
+  let ask: (() => Promise<void>) | null = null;
+  try {
+    const f = await fixture("window", { between: async () => { await ask?.(); } });
+    /* The collab sign-in as the member being removed, with Liveblocks stubbed to hand out a token. */
+    class Liveblocks { prepareSession() { return { allow() {}, authorize: async () => ({ status: 200, body: JSON.stringify({ token: "stub" }) }) }; } }
+    const root = process.cwd();
+    const file = "app/api/collab/auth/route.ts";
+    const real = createRequire(path.resolve(file));
+    const fakes: Record<string, unknown> = {
+      "@liveblocks/node": { Liveblocks },
+      "@/lib/auth": { withTenant: (h: unknown) => h, requireSession: async () => ({ user: who("u_mate") }) },
+      "@/lib/workbench/request-scope": { workbenchScopeProblem: () => null },
+      "@/lib/requestOrigin": { crossOriginProblem: () => null },
+    };
+    const compiled = ts.transpileModule(readFileSync(path.resolve(file), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+    const mod = { exports: {} as { POST: (r: Request) => Promise<Response> } };
+    new Function("require", "module", "exports", compiled)((n: string) => (Object.hasOwn(fakes, n) ? fakes[n] : n.startsWith("@/") ? real(path.join(root, n.slice(2))) : real(n)), mod, mod.exports);
+    const tenant = await import("../../lib/tenant");
+    const signIn = async (room: string) => { const res = await tenant.runInTenant(f.ws, () => mod.exports.POST(new Request("https://particl.test/api/collab/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ room }) })), asUser(who("u_mate"))); issued.push({ room, status: res.status }); return res.status; };
+    const between = f.teamRoomFor(f.ws.id, "prod_linked", 1);
+    /* In the window, after the first move: the room the board is now edited in is open to the member, who is still a member. */
+    ask = async () => { ask = null; await signIn(between); };
+    const removed = await f.remove();
+    expect(removed.status, JSON.stringify(await removed.clone().json())).toBe(200);
+    expect(issued, "the member was signed into the new room in the window").toEqual([{ room: between, status: 200 }]);
+    /* After the commit it is moved again and closed with the rest; nobody can be signed into it now. */
+    expect(await f.generation("prod_linked")).toBe(2);
+    while (f.pending.length) await f.pending.shift()!();
+    expect(deletes).toContain(f.teamRoomFor(f.ws.id, "prod_linked", 0));
+    expect(deletes, "the room opened in the window is closed").toContain(between);
+    expect(await signIn(between)).toBe(403);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("a workspace database that was never set up has no board to move: the rooms move on nothing and a removal is not failed for want of a table", async () => {
+  const tenant = await import("../../lib/tenant");
+  const { bumpEditRooms } = await import("../../lib/workbench/room-rotation");
+  const fresh = { id: `brm-fresh-${run}`, name: "fresh", slug: "fresh", legacy: false, dbUrl: `file:${path.join(dir, `brm-fresh-${run}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true } as TenantWorkspace;
+  expect(await tenant.runInTenant(fresh, () => bumpEditRooms(), asUser(who("u_admin", "admin")))).toEqual([]);
 });
