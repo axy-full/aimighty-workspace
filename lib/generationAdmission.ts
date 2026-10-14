@@ -119,6 +119,7 @@ import { uploadSourceParams } from "@/lib/sourceClip";
 import { jobLineGate, shotCapGate } from "@/lib/shotCap";
 import { isAgentId } from "@/lib/security/people-only";
 import { madeInOf } from "@/lib/madeIn";
+import { jobHint, jobOf, type Job } from "@/lib/takeJob";
 import { approvedTakeOf } from "@/lib/shots";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
@@ -650,6 +651,12 @@ export async function executeGenerationAdmission(
       if (body.resolution != null && body.resolution !== DRAFT_RESOLUTION)
         return admissionReply({ error: `A draft renders at ${DRAFT_RESOLUTION}.` }, { status: 400 });
     }
+    /* The take's job (lib/takeJob.ts): a hint from the request must be on the closed list, fit the kind, and, for the jobs the take itself decides (fix, upscale, draft, final), agree
+       with it, or the request is refused here, for a quote as for a press, before anything is held. */
+    const jobFacts = { kind: (model.kind === "image" ? "image" : "video") as "image" | "video", task: model.kind === "image" ? model.stillTask ?? "generate" : task.id, draft, finalOf: final != null };
+    const hinted = jobHint(body.job, jobFacts);
+    if ("error" in hinted) return admissionReply({ error: hinted.error }, { status: 400 });
+    const jobHinted: Job | null = hinted.hint;
     const sourceGenId = body.sourceGenId ? String(body.sourceGenId) : null;
     /* An uploaded clip as the source of a locked task: the client sends it here, not among the references. */
     const sourceUploadId =
@@ -1585,6 +1592,8 @@ export async function executeGenerationAdmission(
       const stillParams = {
         /* Make's own results (lib/madeIn.ts): marked by the server, only for a person's own Make request. */
         madeIn: madeInOf(body.madeIn, got),
+        /* What the take is for (lib/takeJob.ts): written here, never taken from the request as it is. */
+        job: jobOf({ kind: "image", task: model.stillTask ?? "generate", useAs: ["first", "cast"].includes(String(body.useAs)) ? String(body.useAs) : null, hint: jobHinted }),
         ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
           soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
@@ -2185,6 +2194,7 @@ export async function executeGenerationAdmission(
     const storedParams: Record<string, unknown> = final ? {
       ...params,
       finalOf: final.draftId,
+      job: jobOf({ kind: "video", task: "generate", finalOf: true }),
       draftExpiresAt: final.expiresAt,
       hasVideoInput,
       inputSeconds: hasVideoInput ? inputSeconds : undefined,
@@ -2195,6 +2205,7 @@ export async function executeGenerationAdmission(
     } : {
       ...params,
       madeIn: madeInOf(body.madeIn, got),
+      job: jobOf({ kind: "video", task: task.id, draft, onShot: shotId != null, hint: jobHinted }),
       ...(genjutsu ? { workbenchProjectId: body.workbenchProjectId, quoteBasis: "live-provider-estimate" } : {}),
       references: references.map((r) =>
         r.fromGeneration

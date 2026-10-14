@@ -1,3 +1,4 @@
+import { isJob } from "@/lib/takeJob";
 import { NextResponse, after } from "next/server";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { hasActiveGenerations, listGenerations, syncActive } from "@/lib/jobs";
@@ -28,6 +29,9 @@ export const GET = withTenant(async function GET(req: Request) {
   /* Make's own results (lib/madeIn.ts): the one value there is; anything else is not a filter this route has. */
   const madeIn = url.searchParams.get("madeIn");
   if (madeIn !== null && (madeIn !== "make" || url.searchParams.getAll("madeIn").length > 1)) return NextResponse.json({ error: "Unknown madeIn." }, { status: 400 });
+  /* A take's job (lib/takeJob.ts): one value from the closed list. */
+  const job = url.searchParams.get("job");
+  if (job !== null && (!isJob(job) || url.searchParams.getAll("job").length > 1)) return NextResponse.json({ error: "Unknown job." }, { status: 400 });
   const stable = url.searchParams.get("pagination") === "stable";
   let page: ReturnType<typeof assetPageQuery> | null = null;
   try {
@@ -75,6 +79,7 @@ export const GET = withTenant(async function GET(req: Request) {
     castName: url.searchParams.get("castName") ?? undefined,
     unfiled: url.searchParams.get("unfiled") === "1",
     ...(madeIn === "make" ? { madeIn: "make" as const } : {}),
+    ...(job !== null && isJob(job) ? { job } : {}),
     search,
     before,
     cursor: page?.cursor,
