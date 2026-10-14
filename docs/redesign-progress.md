@@ -514,3 +514,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **14 Oct 22:51 IST.**
   - **#720 CI red** (run 38600158847): 56 tests in 12 route specs throw "hideOwnerAccountId is not defined" because their platformOwnerPrivacy mocks lack the new helper withTenant calls. Fix under the owner's standing rule: add a pass-through entry to each mock (lane B); then Opus confirms; then #721 merges forward.
   - **#739 Opus APPROVED at cefe1897.**
+- **14 Oct 22:52 IST.** Lead slip: a second #734 watcher was started while the first (begun before the script fix) was still running. The first was stopped (TaskStop); its stale-base run 38600935944 was cancelled; the remaining watcher (fixed script, output in the scratchpad ci734b.out) starts a fresh run on release/1 5a8aeb14.
