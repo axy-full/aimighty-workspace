@@ -364,3 +364,13 @@ export async function readableProjectOr(viewer: Viewer, projectId: string | null
   /* Takes under a board no draft holds (held or deleted) stay an admin's, as before; a board that exists is reached through the audited gate above. */
   return seesEveryBoard(viewer) && isDraftProject(projectId) && !(await boardDraftOf(projectId, ex)) ? projectId : null;
 }
+
+/**
+ * `projectId` when `viewer` may file work under that project as an ordinary person: its owner, anyone for a shared board or the sample, never an admin by that role alone
+ * (owner, 14 Oct: an admin cannot start paid work on a member's private board), else null. What a paid Atomik turn files its reservation, meter line, memory suggestions and
+ * steps under, apart from the audited read of the board's context (`readableProjectOr`), which an admin keeps.
+ */
+export async function spendableProjectOr(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
+  if (projectId == null) return null;
+  return (await mayReachProject(viewer, projectId, "read", ex, { admin: false })) ? projectId : null;
+}

@@ -1,4 +1,4 @@
-import { readableProjectOr } from "@/lib/draftProject";
+import { readableProjectOr, spendableProjectOr } from "@/lib/draftProject";
 import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
@@ -110,10 +110,13 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     if (b.model !== undefined && (typeof b.model !== "string" || !b.model || b.model.length > 120))
       return NextResponse.json({ error: "Choose an available Atomik model." }, { status: 400 });
     /* A project this person may not read (a private board; lib/draftProject.ts) is no project (null): nothing of its takes, titles or prompts is read for the model, before anything is reserved. */
-    const projectId = await readableProjectOr(got.user, loaded.chat.projectId);
-    const context = await projectContext(projectId);
+    const readableId = await readableProjectOr(got.user, loaded.chat.projectId);
+    const context = await projectContext(readableId);
+    /* An admin's audited read of a member's private board feeds the model's context and nothing else: the reservation, meter line, memory suggestions and steps are filed under the project this person may use as an ordinary person, else none (owner: no admin paid work there). */
+    /* A quote files nothing (no reservation, meter line, memory or step), so it reads as the turn's context does. */
+    const projectId = quoteOnly ? readableId : await spendableProjectOr(got.user, readableId);
     /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */
-    const memory = await plannerMemoryText({ projectId, query: text }).catch(() => "");
+    const memory = await plannerMemoryText({ projectId: readableId, query: text }).catch(() => "");
     const rules = writerRulesByScope(await effectiveRules());
     /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
     const inputs = await plannerInputs(got.user.id, projectId);
