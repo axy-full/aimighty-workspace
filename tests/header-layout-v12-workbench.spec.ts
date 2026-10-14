@@ -28,6 +28,7 @@ test.describe("desktop", () => {
       expect(avatar.x - activity.r, `${width}: the Activity pill is beside the avatar`).toBeLessThanOrEqual(17);
       /* The bar is directly left of the pill, after the tabs. */
       expect(activity.x - field.r, `${width}: the bar is directly left of the Activity pill`).toBeLessThanOrEqual(17);
+      expect(activity.x - field.r, `${width}: the bar ends before the Activity pill`).toBeGreaterThanOrEqual(-1);
       expect(field.x, `${width}: the bar is after the tabs`).toBeGreaterThanOrEqual(tabs.r);
       /* One row, inside the header. */
       for (const part of [tabs, field, activity, avatar]) { expect(part.y).toBeGreaterThanOrEqual(header.y); expect(part.b).toBeLessThanOrEqual(header.b + 1); }
@@ -54,6 +55,31 @@ test.describe("desktop", () => {
     expect(afterField.w).toBeCloseTo(beforeField.w, 0);
     expect(afterField.x).toBeCloseTo(beforeField.x, 0);
     await noOverflow(page);
+  });
+
+  test("with ten boards open at 1280, focusing the ⌘K bar widens it 160 px and the tabs give way: no overflow, nothing clipped mid-word, the bar clear of the tabs", async ({ page }) => {
+    test.setTimeout(240_000);
+    const names = Array.from({ length: 10 }, (_, i) => `Board ${i + 1} with a long working title`);
+    const { ids } = await redesignWithBoards(page, names);
+    await openAsTabs(page, ids);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect.poll(async () => (await rect(page, "v12-atomik-field")).w).toBeCloseTo(280, 0);
+    await page.getByTestId("v12-ask").focus();
+    await expect.poll(async () => (await rect(page, "v12-atomik-field")).w).toBeCloseTo(440, 0);
+    await noOverflow(page);
+    const [nav, field, activity] = await Promise.all(["v12-tabs", "v12-atomik-field", "v12-activity"].map((id) => rect(page, id)));
+    expect(nav.r, "the tabs end before the bar").toBeLessThanOrEqual(field.x + 1);
+    expect(field.r, "the bar ends before the Activity pill").toBeLessThanOrEqual(activity.x + 1);
+    /* Everything in the tab group is whole inside it: a tab may end in an ellipsis, but is never cut by the group's edge. */
+    const parts = await page.getByTestId("v12-tabs").evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return [...el.children].map((child) => { const r = child.getBoundingClientRect(); return { right: r.right - box.right, text: (child.textContent ?? "").trim().slice(0, 24), clipped: (child.querySelector(".v12-tab-label") as HTMLElement | null)?.scrollWidth ?? 0 } ; });
+    });
+    for (const part of parts) expect(part.right, `${part.text}: inside the group`).toBeLessThanOrEqual(1);
+    /* The + button is still there and clickable. */
+    await expect(page.getByTestId("v12-tab-plus")).toBeVisible();
+    await page.getByTestId("v12-ask").blur();
+    await expect.poll(async () => (await rect(page, "v12-atomik-field")).w).toBeCloseTo(280, 0);
   });
 
   test("each board's tab carries a letter tile, its name and a status dot", async ({ page }) => {

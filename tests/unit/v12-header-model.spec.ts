@@ -138,7 +138,7 @@ test("a take queued for a free slot holds nothing yet: its figure is the start's
 });
 
 test("a board's tab tile shows the first letter or digit of its name, upper-cased, and a dot for a name with none", () => {
-  expect(tabInitial("Maggi Atta · 30 s ad")).toBe("M");
+  expect(tabInitial("Harbour film · 30 s ad")).toBe("H");
   expect(tabInitial("  launch clips")).toBe("L");
   expect(tabInitial("“Quoted” film")).toBe("Q");
   expect(tabInitial("30 s ad")).toBe("3");

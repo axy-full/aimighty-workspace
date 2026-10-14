@@ -10,7 +10,7 @@ import { openAsTabs, redesignWithBoards } from "../helpers/v12Header";
 test.afterAll(closePrototypeServer);
 
 test("the v25 top bar, beside the prototype's Home", async ({ page }) => {
-  const { ids } = await redesignWithBoards(page, ["Maggi Atta · 30 s ad", "Maggi Atta · social cut"]);
+  const { ids } = await redesignWithBoards(page, ["Harbour film · 30 s ad", "Harbour film · social cut"]);
   await openAsTabs(page, ids);
   await expect(page.getByTestId("screen")).toHaveAttribute("data-screen", "home");
   await page.mouse.move(700, 600);
@@ -19,7 +19,7 @@ test("the v25 top bar, beside the prototype's Home", async ({ page }) => {
 });
 
 test("the v25 top bar with the ⌘K bar focused", async ({ page }) => {
-  const { ids } = await redesignWithBoards(page, ["Maggi Atta · 30 s ad", "Maggi Atta · social cut"]);
+  const { ids } = await redesignWithBoards(page, ["Harbour film · 30 s ad", "Harbour film · social cut"]);
   await openAsTabs(page, ids);
   await page.getByTestId("v12-ask").focus();
   await page.waitForTimeout(800);

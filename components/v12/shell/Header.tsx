@@ -167,7 +167,7 @@ export function V12Header({ account, project, projects, onPick }: {
   const ordinal = (i: number) => (i + 3 <= 9 ? keyOf(`tab-${i + 3}`) : undefined);
   return (
     <header ref={headerRef} className="v12-header" data-testid="v12-header" data-row="header">
-      <HeaderLogo onClick={goHome} testId="v12-logo" />
+      <HeaderLogo onClick={goHome} testId="v12-logo" shortcut={[keyOf("home-seq"), keyOf("home")]} />
 
       <nav className="v12-tabs" aria-label="Tabs" data-testid="v12-tabs">
         <div className="v12-tab" data-active={shell.screen === "home" && !shell.make ? "" : undefined} data-testid="v12-tab-home">

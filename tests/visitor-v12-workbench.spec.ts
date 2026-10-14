@@ -57,6 +57,11 @@ test("desktop: the visitor's Home is the same app — header, Particl's own show
   await expect(header.getByTestId("v12-visitor-tab-make")).toBeVisible();
   await expect(header.getByTestId("v12-visitor-tab-board")).toContainText("Sample · ");
   await expect(header.getByTestId("v12-visitor-field")).toContainText("Ask Atomik, search or go to");
+  /* The logo's tooltip names Home and advertises no keys: the visitor's app binds none (G H and ⌘1 are the signed-in header's). */
+  await header.getByTestId("v12-visitor-logo").hover();
+  await expect(page.getByTestId("v12-tooltip")).toContainText("Home");
+  await expect(page.getByTestId("v12-tooltip").locator("kbd")).toHaveCount(0);
+  await page.mouse.move(700, 600);
   await expect(header.getByTestId("v12-visitor-login")).toHaveText("Log in");
   await expect(header.getByTestId("v12-visitor-request")).toHaveText("Request access");
   /* No Activity, no avatar, no credits. */
