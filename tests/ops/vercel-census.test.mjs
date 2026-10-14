@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createClient } from "@libsql/client";
 import { census, main, parseArguments } from "../../scripts/ops/vercel-census.mjs";
+import net from "node:net";
+import tls from "node:tls";
+import { verifyMediaReferences } from "../../scripts/ops/backup-lib.mjs";
 import { parseArguments as parseCopyArguments, verifyR2Only } from "../../scripts/ops/blob-to-r2.mjs";
 import { BLOB_ORIGIN, ENV, W, bytes, fakeBlob, fakeR2, fast } from "./helpers/storage-fakes.mjs";
 
@@ -36,7 +39,7 @@ async function databases(root) {
       ('u_deriv','mp4','${W}uploads/u_deriv.mp4','video','${W}uploads/u_deriv-api.jpg'),
       ('u_deriv_lost','mp4','${W}uploads/u_deriv_lost.mp4','video','${W}uploads/u_deriv_lost-api.jpg');
     INSERT INTO consent_recordings VALUES('c_r2','m4a','${W}consents/c_r2.m4a'),('c_blob','webm','${W}consents/c_blob.webm');
-    INSERT INTO astra_render_jobs VALUES('j1',0,'{"engine":"vercel-sandbox"}'),('j2',0,'{}'),('j3',0,'{"engine":"selfhost-render"}'),('j4',1,'{}'),('j5',0,'not json');`);
+    INSERT INTO astra_render_jobs VALUES('j1',0,'{"engine":"vercel-sandbox"}'),('j2',0,'{}'),('j3',0,'{"engine":"selfhost-blender"}'),('j4',1,'{}'),('j5',0,'not json'),('j6',0,'{"engine":"selfhost-other"}');`);
   platform.close();
   tenant.close();
   return {
@@ -90,7 +93,7 @@ test("the census counts by table and kind, only counts on screen, and writes not
   assert.equal(result.blobObjects, 8);
   assert.deepEqual(result.blobOrphans, { objects: 2, bytes: bytes("orphan one").length + bytes("orphan two, a little longer").length });
   assert.equal(result.workspacesWithGatewayKey, 1);
-  assert.deepEqual(result.astraJobsNotSettled, { vercel: 2, selfhost: 1, unreadable: 1 });
+  assert.deepEqual(result.astraJobsNotSettled, { vercel: 3, selfhost: 1, unreadable: 1 }); // 'selfhost-other' is not the app's selfhost engine, so the app reads it as Vercel's
   // Read only: lists and nothing else on either store.
   assert.deepEqual([...new Set(r2.calls.map((c) => c.name))], ["ListObjectsV2Command"]);
   assert.deepEqual(blob.reads, []);
@@ -207,4 +210,41 @@ test("--open belongs to --verify only, and is not in the parsed options unless g
   assert.equal(parseCopyArguments(["--verify", "--private-dir", "/x", "--live", "--open"]).open, true);
   assert.equal("open" in parseCopyArguments(["--verify", "--private-dir", "/x", "--live"]), false);
   assert.throws(() => parseCopyArguments(["--copy", "--private-dir", "/x", "--open"]), /--open works only with --verify/);
+});
+
+test("backup, restore and the recovery report are unchanged: without { extended: true } the two added kinds are not checked, and they are when it is passed", async (t) => {
+  const root = await privateRoot(t);
+  const config = await databases(root);
+  const databaseList = config.databases.map((d) => ({ id: d.id, role: d.role, workspaceIds: d.workspaceIds ?? [], snapshot: new URL(d.url).pathname, inventory: { tables: [] } }));
+  const { createClient: client } = await import("@libsql/client");
+  for (const d of databaseList) {
+    const db = client({ url: pathToFileURL(d.snapshot).href });
+    d.inventory = { tables: (await db.execute("SELECT name FROM sqlite_master WHERE type='table'")).rows.map((r) => ({ name: String(r.name) })) };
+    db.close();
+  }
+  // Everything the old checks look at is there; the delivery copy and the recordings are not (nor is g_none, so give it a file).
+  const entries = [...new Map([...onR2(), ...onBlob()]).entries()].filter(([key]) => !key.includes("-api.jpg") && !key.includes("consents/")).map(([pathname, body]) => ({ store: "r2", pathname, size: body.length }));
+  entries.push({ store: "r2", pathname: `${W}generations/g_none.mp3`, size: 1 });
+  const seen = [];
+  const plain = await verifyMediaReferences(databaseList, entries, "r2", { onReference: (r) => seen.push(r.table) });
+  assert.equal(plain.references, 7, "the masters of generations and uploads only");
+  assert.ok(!seen.some((table) => table === "uploads.derivative_url" || table === "consent_recordings"));
+  // Extended, the same inventory is a failure that names the rows.
+  await assert.rejects(verifyMediaReferences(databaseList, entries, "r2", { extended: true }), /tenant\/uploads\.derivative_url\/u_deriv.*tenant\/consent_recordings\/c_r2/s);
+  // And for the local kind the extended checks are skipped either way (recordings live outside that layout).
+  const local = await verifyMediaReferences(databaseList, entries.map((e) => ({ ...e, store: "local", pathname: e.pathname.replace(W, "") })), "local", { extended: true }).catch((e) => e.message);
+  assert.ok(typeof local === "object" || !/consent_recordings|derivative/.test(local));
+});
+
+test("the network tripwire: no socket opens to anything but a local path, even for a library that bypasses a fetch stub", async () => {
+  assert.throws(() => net.connect({ host: "example.invalid", port: 443 }), /Network blocked/);
+  assert.throws(() => net.connect(80, "example.invalid"), /Network blocked/);
+  assert.throws(() => tls.connect({ host: "example.invalid", port: 443 }), /Network blocked/);
+  // A local (IPC) path is still allowed: the tripwire is for the network, not for a test's own pipes.
+  const server = net.createServer();
+  const path = join(await mkdtemp(join(tmpdir(), "particl-ipc-")), "s.sock");
+  await new Promise((resolve) => server.listen(path, resolve));
+  await new Promise((resolve, reject) => { const c = net.connect(path, resolve); c.on("error", reject); c.on("connect", () => c.destroy()); });
+  server.close();
+  assert.equal(ENV.R2_ENDPOINT, "https://127.0.0.1:9");
 });

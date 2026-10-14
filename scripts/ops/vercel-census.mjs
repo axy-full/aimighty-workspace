@@ -61,7 +61,7 @@ async function planCounts(databases) {
       }
       if (names.has("astra_render_jobs"))
         for (const row of (await db.execute("SELECT source_json FROM astra_render_jobs WHERE settled=0")).rows) {
-          // A job's backend is the one its recorded engine belongs to; rows from before the switch carry no engine and were Vercel's (lib/astra-blender/backend.ts).
+          // A job's backend is the one its recorded engine belongs to, exactly as the app reads it (lib/astra-blender/backend.ts astraBackendOfEngine): "selfhost-blender" is the self-hosted workers'; anything else, and rows from before the switch, were Vercel's.
           let engine;
           try {
             engine = JSON.parse(String(row.source_json))?.engine;
@@ -69,7 +69,7 @@ async function planCounts(databases) {
             out.astraJobsNotSettled.unreadable++;
             continue;
           }
-          out.astraJobsNotSettled[typeof engine === "string" && /selfhost/i.test(engine) ? "selfhost" : "vercel"]++;
+          out.astraJobsNotSettled[engine === "selfhost-blender" ? "selfhost" : "vercel"]++;
         }
     } finally {
       db.close();
@@ -98,6 +98,7 @@ export async function census({ privateDir, config, live = false, env = process.e
     const count = (name) => (byKind[name] ??= blank());
     // The app's own order with the token still set (dual): R2 first, then Blob at the same key or at the original URL.
     await verifyMediaReferences(databases, [...r2Entries, ...blobEntries], "dual", {
+      extended: true,
       onReference(reference) {
         const c = count(`${reference.table}/${reference.kind}`);
         c.referenced++;

@@ -1,5 +1,24 @@
+import net from "node:net";
+import tls from "node:tls";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
+
+/**
+ * A standing network tripwire for every test that imports these fakes: no socket may be opened to anything but a local (IPC) path, whatever library asks. A stub of
+ * globalThis.fetch is not enough (undici and the SDKs open sockets themselves), and one verify call without the fake Blob SDK once reached Vercel's real API with a fixture
+ * token. Here that call throws instead, before a byte leaves the process.
+ */
+const isLocalPath = (first) => (typeof first === "string" && Number.isNaN(Number(first))) || (first && typeof first === "object" && typeof first.path === "string" && first.port === undefined);
+const realConnect = net.Socket.prototype.connect;
+net.Socket.prototype.connect = function connect(...args) {
+  // net.connect hands connect() its normalized arguments: [options, callback] as one array.
+  const first = Array.isArray(args[0]) ? args[0][0] : args[0];
+  if (isLocalPath(first)) return realConnect.apply(this, args);
+  throw new Error("Network blocked: this test must not open a connection");
+};
+tls.connect = () => {
+  throw new Error("Network blocked: this test must not open a connection");
+};
 
 /**
  * In-process fakes for the Blob to R2 tools' tests: an S3-compatible bucket behind the real client's command classes (list, get with Range) and an in-memory Blob SDK.
@@ -13,6 +32,8 @@ export const ENV = {
   R2_ACCESS_KEY_ID: "fixture-access-key-id",
   R2_SECRET_ACCESS_KEY: "fixture-secret-access-key-value",
   R2_BUCKET: "fixture-bucket",
+  // Never a real endpoint: should a test ever reach for the network, it reaches nothing (and the tripwire above stops it first).
+  R2_ENDPOINT: "https://127.0.0.1:9",
 };
 export const fast = { sleep: async () => {} };
 export const bytes = (label, size) => (size ? Buffer.alloc(size, label) : Buffer.from(`private ${label} bytes`));

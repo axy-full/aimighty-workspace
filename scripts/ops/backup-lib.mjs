@@ -738,12 +738,13 @@ export function mediaResolver(entries, kind) {
  * resolved reference, for restore/report/prepare. With onMissing, each unresolved reference goes to it
  * (database, table, id and `kind`, never a key) and nothing is thrown: a census counts them instead of failing.
  *
- * Besides the masters, a cloud store's rows also point at two more kinds of object: an upload's delivery copy
+ * With `extended: true` (only the verify and census tools pass it; backup, restore and the recovery report do not, so their behaviour is unchanged), a cloud store's rows
+ * also point at two more kinds of object: an upload's delivery copy
  * (uploads.derivative_url, read by the engines that cannot take the master) and a consent recording
  * (consent_recordings.stored_url). A bare key, an absolute URL or the deterministic key, as for uploads. Local disk keeps
  * recordings in its own layout, outside the media inventory, so the local kind does not check them. Neither carries
  * `absolute`, so a restore never rewrites a column from them. */
-export async function verifyMediaReferences(databases, entries, kind, { onReference, onMissing } = {}) {
+export async function verifyMediaReferences(databases, entries, kind, { onReference, onMissing, extended = false } = {}) {
   const resolver = mediaResolver(entries, kind);
   const platform = databases.find((d) => d.role === "platform");
   const p = createClient({ url: pathToFileURL(platform.snapshot).href });
@@ -810,7 +811,7 @@ export async function verifyMediaReferences(databases, entries, kind, { onRefere
             found({ ...reference, key: stored }, resolver.key(stored));
           } else found({ ...reference, key: deterministic }, resolver.key(deterministic));
           // The delivery copy the engines are sent instead of a master they cannot take.
-          const derived = table === "uploads" && resolver.cloud && row.derivative_url != null && String(row.derivative_url) !== "" ? String(row.derivative_url) : null;
+          const derived = extended && table === "uploads" && resolver.cloud && row.derivative_url != null && String(row.derivative_url) !== "" ? String(row.derivative_url) : null;
           if (derived) {
             const copy = `uploads/${row.id}-api.jpg`;
             const base = { database: source.id, table: "uploads.derivative_url", id: String(row.id), localPath: copy, deterministic: prefix + copy, kind: "derivative" };
@@ -823,7 +824,7 @@ export async function verifyMediaReferences(databases, entries, kind, { onRefere
         }
       }
       // Consent recordings: kept apart from uploads, at consents/<id>.<ext> under the workspace prefix (lib/storage.ts consentRecordingPath).
-      if (resolver.cloud && names.has("consent_recordings"))
+      if (extended && resolver.cloud && names.has("consent_recordings"))
         for (const row of (await db.execute("SELECT id, ext, stored_url FROM consent_recordings")).rows) {
           const stored = row.stored_url == null ? "" : String(row.stored_url),
             file = `consents/${row.id}.${row.ext}`,

@@ -780,11 +780,11 @@ export async function verifyR2Only({ privateDir, config, live = false, open = fa
     const result = { mode: "verify", ok: true, ...(live ? { live: liveCounts } : {}), r2Objects: r2Entries.length };
     const opened = new Map(); // r2 entry -> the rows that point at it (ids only, for the private report)
     try {
-      Object.assign(result, await verifyMediaReferences(databases, r2Entries, "r2", open ? { onReference: (reference) => {
+      Object.assign(result, await verifyMediaReferences(databases, r2Entries, "r2", { extended: true, ...(open ? { onReference: (reference) => {
         const rows = opened.get(reference.entry.pathname) ?? { entry: reference.entry, rows: [] };
         rows.rows.push(`${reference.database}/${reference.table}/${reference.id}`);
         opened.set(reference.entry.pathname, rows);
-      } } : {}));
+      } } : {}) }));
     } catch (error) {
       if (!(error instanceof OpsError)) throw error;
       // backup-lib names missing rows as database/table/row id only.
