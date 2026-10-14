@@ -401,3 +401,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Read-only checks: health 200 (database ok, storage ok); readiness 401 anonymous; / /login /pricing /privacy 200; the Google start redirect 303 to Google with PKCE; anonymous /api/jobs /api/uploads /api/notes /api/chat /api/workbench/projects /api/team /api/workspaces/audit /api/me all 401; ?view=admin redirects anonymous visitors.
   - Page and chunk word counts are the same as the deploy #2 baseline.
   Waiting for the owner's signed-in checks. **Deploy #4 may be prepared after 24 h clean: from 15 Oct ~19:40 IST.**
+- **14 Oct 19:45 IST.** **#720 Opus APPROVED at 450eeb83** (a central mask in withTenant; no round-trip breaks; non-JSON, gzip and empty bodies pass untouched; 154 specs). PR body corrected: the export IS masked. Follow-ups:
+  - (a) the Liveblocks room signs sessions with the owner's raw id (collab/auth:35) and canvas-push writes row.author into room storage: a small PR;
+  - (b) a note on withTenant that any route taking a member id must call resolveMemberId;
+  - (c) /api/export re-serialisation cost on large workspaces: watch.
+  #720 CI after #717 and #701; merge waits for the owner's word.
