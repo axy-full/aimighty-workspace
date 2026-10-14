@@ -609,3 +609,18 @@ Merges on green into release/1 (never main), each after a fresh Opus approval:
 - Step 0: #724, #726, #729, #732.
 - Migrations #728 and #731: only if additive (new tables/columns, nothing dropped or renamed, nothing repriced), with the rollback steps written in the PR, and run on staging first. They ship in deploy #4 after my fresh backup.
 - #725 and #727, after the guard-helper change lands, and only once: tests block all real network calls (my 20:50 condition) and #725's deadline is tied to the cutover.
+
+## Owner addendum (Akshay, 14 Oct, 22:00 IST) to the 21:55 decisions
+Verbatim:
+Guard-helper (tests/helpers/ratchet.ts): YES to comparing against the PR's base branch and accepting a later date only with an `extended` record, on these conditions:
+- every `extended` record quotes my words with the date and time (e.g. "Owner, 14 Oct 21:55: …"); no record without my direct word in chat;
+- an `extended` record can only move a date; it can never add an entry or raise a count (test for it);
+- Opus checks every `extended` record in review.
+Counts unchanged: 20 server-side UI-names files fixed by 16 Oct; the 3 UI-names screen entries and 8 spend entries move to 30 Nov 2026 under my 21:55 conditions (spend entries confirmed going through quote + person approval first).
+
+#730 Gemini: don't patch the gateway path. Move those Gemini text calls (prompt enhance, Atomik jobs) to the direct Gemini client with the shared safety config, as part of Vercel-out. Removing GEMINI_IMAGE_MODEL: yes. After merge, send me a Droplet Console command that prints whether GEMINI_IMAGE_MODEL and GOOGLE_SAFETY_THRESHOLD exist in each Coolify app (names only), and I'll delete them.
+"Model names in Agent mode" now waits for v22 (v21 went back with fixes).
+
+#724 approved: merge on green. #729, #732: merge on green after their fixes and a fresh Opus approval.
+
+How the lead applies it: the board design freeze now waits for **v22** (v21 went back with fixes).
