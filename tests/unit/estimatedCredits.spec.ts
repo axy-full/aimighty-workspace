@@ -114,3 +114,26 @@ test("no reader of a take's credits can reach today's margins: the cap baseline,
   expect(requests).toMatch(/COALESCE\(e\.credits,0\) AS estimated/);
   expect(readFileSync("lib/creditSql.ts", "utf8")).not.toMatch(/function historicalCreditsExpr/);
 });
+
+test("a take that was frozen and is then metered reads its receipt and is not estimated: the flag is only for a take with no receipt", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformReady, platformDb } = await import("../../lib/platform");
+  const { db, ready } = await import("../../lib/db");
+  const { syncCreditReceipts } = await import("../../lib/creditReceipts");
+  const { getGeneration } = await import("../../lib/jobs");
+  await platformReady();
+  await runInTenant(workspace("ws_est_flag"), async () => {
+    await ready();
+    /* The workspace's first reservation: its take is written before its meter row, so the first fill sees both takes with no receipt and freezes them. */
+    await db().batch([take("old", 100, 1.0), take("first", 5_000, 1.0)], "write");
+    await syncCreditReceipts();
+    expect((await db().execute("SELECT gen_id FROM estimated_credits ORDER BY gen_id")).rows.map((r) => r.gen_id)).toEqual(["first", "old"]);
+    expect(await getGeneration("first")).toMatchObject({ estimated: true });
+    /* The meter row arrives and its receipt syncs: that take now reads its receipt and is not estimated; the other stays so. */
+    await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES('first','ws_est_flag','video','byteplus','dreamina-seedance-2-5-260628','succeeded',1,43,1,5001,5001)", args: [] });
+    await syncCreditReceipts();
+    expect(await getGeneration("first")).toMatchObject({ creditsBilled: 43, estimated: false });
+    expect(await getGeneration("old")).toMatchObject({ estimated: true });
+    expect((await db().execute("SELECT COUNT(*) AS n FROM estimated_credits")).rows[0].n).toBe(2);
+  });
+});
