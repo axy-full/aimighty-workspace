@@ -14,7 +14,7 @@ import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import { defaultSharing } from '@/lib/workbench/board-default';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { AMBIGUOUS_BOARD, boardKeyFor, maySetSharing, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, adminBoardOfProduction, listWorkspaceBoards, boardViews, readBoardAsAdmin, readBoardOfProductionAsAdmin, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { AMBIGUOUS_BOARD, boardKeyFor, maySetSharing, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, adminBoardOfProduction, listWorkspaceBoards, boardViews, clientLinks, readBoardAsAdmin, readBoardOfProductionAsAdmin, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -72,6 +72,8 @@ export const GET=withTenant(async(req:Request)=>{
     return all?Response.json({boards:all},{headers:noStore}):Response.json({error:'Not found'},{status:404,headers:noStore});
   }
   /* ?views=1[&id=<draft>]: who has looked at or changed the caller's own boards as an admin ("Viewed by <admin>, <date>"). Always the caller's own boards, whoever asks. */
+  /* ?links=1[&id=<draft>]: every client link of the caller's own boards, who made it and when ("Client link created by <name>"), live or not. Always the caller's own boards. */
+  if(new URL(req.url).searchParams.get('links')==='1')return Response.json({links:await clientLinks(requireTenant(),auth.user.id,id??undefined)},{headers:noStore});
   if(new URL(req.url).searchParams.get('views')==='1')return Response.json({views:await boardViews(requireTenant(),auth.user.id,id??undefined)},{headers:noStore});
   const team=new URL(req.url).searchParams.get('team')==='1'?await listTeamBoards(requireTenant(),auth.user.id,{kinds}):null;
   const [list,productions,draft]=await Promise.all([

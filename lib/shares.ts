@@ -58,6 +58,13 @@ export async function listShares(workspaceId: string, projectId: string): Promis
   return rs.rows.map(rowToShare);
 }
 
+/** The production a link of this workspace opens, or null when there is no such link here. */
+export async function shareProject(workspaceId: string, shareId: string): Promise<string | null> {
+  await platformReady();
+  const rs = await platformDb().execute({ sql: `SELECT project_id FROM p_shares WHERE workspace_id = ? AND id = ? LIMIT 1`, args: [workspaceId, shareId] });
+  return rs.rows[0] ? String(rs.rows[0].project_id) : null;
+}
+
 export async function revokeShare(workspaceId: string, shareId: string, actorId: string | null = null): Promise<boolean> {
   await platformReady();
   const [rs] = await platformDb().batch([{ sql: `UPDATE p_shares SET revoked_at = ? WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`, args: [now(), shareId, workspaceId] }, securityAuditStatement({workspaceId,actorId,action:"review_link.revoked",targetType:"review_link",targetId:shareId},true)], "write");

@@ -29,7 +29,9 @@ export type Person = { id: string; role?: string; owner?: boolean };
  * every query behind a request runs on this workspace's own database, so the reach never leaves it. An Atomik run or the server is never an admin (it acts as
  * the person who asked, who is asked again where it matters).
  */
-export const isWorkspaceAdmin = (person: Person | null | undefined): boolean => !!person && !isAgentId(person.id) && (person.role === "admin" || person.owner === true);
+export const isWorkspaceAdmin = (person: Person | null | undefined): boolean =>
+  /* A token (API or MCP, read-only or not) acts as a plain member whatever its creator's role (owner, 14 Oct): admin reach needs a signed-in admin. */
+  !!person && !isAgentId(person.id) && !currentTenant()?.token && (person.role === "admin" || person.owner === true);
 
 /**
  * Where a person's takes and identities go when they delete one of their private boards: a project of their own that nobody else can list or reach
@@ -303,7 +305,16 @@ export type Viewer = { id: string; role?: string } | null;
  * This is the one place that rule is written for takes. An admin's read of ONE board goes through `mayReachProject` (audited, failing closed: no history line, no read);
  * `seesEveryBoard` answers only for takes under a board no draft holds (a held or deleted board), and for the lists below, which are lists.
  */
-export const seesEveryBoard = (viewer: Viewer): boolean => viewer?.role === "admin";
+export const seesEveryBoard = (viewer: Viewer): boolean => viewer?.role === "admin" && !currentTenant()?.token;
+
+/**
+ * Whether `person` may make a client review link for `projectId`: for a production of the workspace, whoever may make links (the routes ask for an admin); for a private board,
+ * only its OWNER (owner, 14 Oct: "admins may NOT create client review links on a member's private board. Only the owner can"). A board that does not exist is no one's.
+ */
+export async function mayMakeClientLink(person: Person, projectId: string, ex: Exec = db()): Promise<boolean> {
+  if (!isDraftProject(projectId)) return true;
+  return ownsDraftProject(person.id, projectId, ex);
+}
 
 /** Whether `viewer` may see a take filed under `projectId`: one read for a private board, none for anything else. */
 export async function mayReadTake(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
