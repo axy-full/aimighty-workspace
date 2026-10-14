@@ -438,6 +438,8 @@ export async function executeAudioAdmission(
       text,
       JSON.stringify({
         ...params,
+        /* What it was quoted at and the ceiling approved, in our credits (lib/generationAdmission.ts quoteSnapshot); nothing on a workspace on its own keys. */
+        ...(creditsApply(requireTenant()) ? { quote: { credits: estimatedCredits, ...(Number.isInteger(body.maxCredits) && Number(body.maxCredits) >= 0 ? { maxCredits: Number(body.maxCredits) } : {}) } } : {}),
         estCredits,
         ...(estUsd != null ? { estUsd } : {}),
         ...(hold ? { held: hold } : {}),

@@ -220,6 +220,22 @@ function validateReferences(
   return null;
 }
 
+/**
+ * What a take was quoted at, kept on the take (owner, 14 Oct 2026; docs/plans/step-0-data.md item 4): `{ credits, ceilingCredits?, maxCredits? }`, written once at admission in the same
+ * insert, so "quoted 43, approved up to 60, charged 43" can be read afterwards. It matches the quote object the person was shown exactly: `credits` is our price in credits (the
+ * server's price path, `estimatedCredits`), `ceilingCredits` the most a take that holds a band can come to (Cinema Studio: "about N, up to 3N"), present only when the band is above 1,
+ * and `maxCredits` the ceiling the request carried (the person's, or the plan's approval's), when there is one. Never a vendor dollar; nothing for the house (it has no credit quote);
+ * never part of the quote's fingerprint.
+ */
+export function quoteSnapshot(credits: number, maxCredits: unknown, band = 1): { credits: number; ceilingCredits?: number; maxCredits?: number } | undefined {
+  if (!creditsApply(requireTenant()) || !Number.isFinite(credits) || credits < 0) return undefined;
+  return {
+    credits,
+    ...(band > 1 ? { ceilingCredits: credits * band } : {}),
+    ...(typeof maxCredits === "number" && Number.isInteger(maxCredits) && maxCredits >= 0 ? { maxCredits } : {}),
+  };
+}
+
 /** What a draft's final is made from: the draft's own row, never the request (lib/draftFinal.ts). */
 type FinalSource = {
   draftId: string;
@@ -1599,6 +1615,7 @@ export async function executeGenerationAdmission(
       const stillParams = {
         /* Make's own results (lib/madeIn.ts): marked by the server, only for a person's own Make request. */
         madeIn: madeInOf(body.madeIn, got),
+        quote: quoteSnapshot(quotedCredits(estStillUsd, modelId), body.maxCredits),
         /* What the take is for (lib/takeJob.ts): written here, never taken from the request as it is. */
         job: jobOf({ kind: "image", task: model.stillTask ?? "generate", useAs: ["first", "cast"].includes(String(body.useAs)) ? String(body.useAs) : null, hint: jobHinted }),
         ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
@@ -2202,6 +2219,7 @@ export async function executeGenerationAdmission(
     const storedParams: Record<string, unknown> = final ? {
       ...params,
       finalOf: final.draftId,
+      quote: quoteSnapshot(quotedCredits(estUsd, modelId), body.maxCredits, band),
       job: jobOf({ kind: "video", task: "generate", finalOf: true }),
       ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
       draftExpiresAt: final.expiresAt,
@@ -2214,6 +2232,7 @@ export async function executeGenerationAdmission(
     } : {
       ...params,
       madeIn: madeInOf(body.madeIn, got),
+      quote: quoteSnapshot(quotedCredits(estUsd, modelId), body.maxCredits, band),
       job: jobOf({ kind: "video", task: task.id, draft, onShot: shotId != null, hint: jobHinted }),
       ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
       ...(genjutsu ? { workbenchProjectId: body.workbenchProjectId, quoteBasis: "live-provider-estimate" } : {}),
