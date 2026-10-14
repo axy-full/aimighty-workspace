@@ -585,3 +585,8 @@ Verbatim:
 - Model id comes from the routing table, never hard-coded. No model names shown in Agent mode.
 - Add to the counsel list: Terms of use must say the customer is responsible for what they generate, plus a report/takedown process (India IT Rules).
 - Owner-approved. Open the PR, Opus reviews, merge into release/1 on green. Never main.
+
+### Counsel list (collected; before any customer switch or launch-wide terms change)
+- Rekognition: biometric consent wording; whether similarity scores must be erased on withdrawal (against never-delete); Particl's DPDP Act role for a customer's cast; transfers to US vendors (#714).
+- Voice data for Sarvam and sync.so (#714).
+- **Terms of use (owner, 14 Oct 21:00):** the customer is responsible for what they generate; a report/takedown process (India IT Rules), given Gemini's adjustable filters set to BLOCK_NONE.
