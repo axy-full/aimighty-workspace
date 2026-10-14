@@ -573,3 +573,6 @@ Verbatim:
 How the lead applies it:
 - Every PR that adds an entry to an import-pinned test quotes rule 1 and names the module, with an Opus confirmation in the PR.
 - **The board design freeze now waits for v21.** Everywhere this plan says "v18", read "v21".
+
+## Owner correction (Akshay, 14 Oct, 20:45 IST): #719 item 5
+Verbatim: "Correction to 5): I'm NOT deleting particlstudio's previews one by one. They stay until the Vercel cutover is done; then I delete the whole project in one step. Add "delete Vercel project particlstudio" as the last step of the #719 cutover checklist, after the Blob→R2 copy is verified and the 7-day watch passes."

@@ -453,3 +453,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#704** must-fixes (2406e2be: ready(), a second bump after commit, a regression test), forwarded: #708 60df87f6, #713 a390d914, #715 cfe68745, #718 23da368a;
   - **#727** C1 census and R2-only open check (c898d787).
   Slip, logged: one early C1 test made a real @vercel/blob list call with a fixture token (refused by Vercel; no credential; fixed). Opus is reviewing #725 and #727 (including whether the 27 Oct `until` would break CI before cutover). Lane D is now adding the pinned-import entries under the owner's standing rule (#704, #717, #718 incl. the Moleculr routes).
+- **14 Oct 20:45 IST.** Owner correction: particlstudio's previews stay until the cutover is done; deleting the whole project is the LAST step of the #719 checklist (after the R2 copy is verified and the 7-day watch passes). Added to the plan doc.
