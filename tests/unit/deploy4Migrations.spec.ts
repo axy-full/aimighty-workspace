@@ -91,7 +91,9 @@ test("each file leaves exactly the schema the app's own bootstrap creates (compa
   await runInTenant(ws, async () => {
     await ready();
     /* The lazy table, where the checkout has it: created the way the app does, on first use. */
-    try { const jobs = await import("../../lib/exports/jobs"); await jobs.exportJobsReady(); } catch { /* not on this checkout */ }
+    /* A variable path: the module is on #700's branch, not on every checkout, so the type check must not need it. */
+    const exportsModule = "../../lib/exports/jobs";
+    try { const jobs = (await import(exportsModule)) as { exportJobsReady(): Promise<void> }; await jobs.exportJobsReady(); } catch { /* not on this checkout */ }
     const app = db();
     for (const file of files) {
       const spec = EXPECT[file];
