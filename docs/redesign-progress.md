@@ -420,3 +420,6 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#722** (/api/health: anonymous and members get {ok, commit}, plus mock:true only on ENGINE_MOCK servers for the test gates; detail for the platform owner via isPlatformOwner; cron caller particl-scheduler/1 recorded as "scheduler"; operationalHealth.spec.ts moved to the new shape, not a listed guard, flagged to the owner);
   - **#721** (live room: the owner signed in as support_… in client workspaces; serverMade masked; a third leak from the owner's own window fixed).
   Both are in Opus review. Release/1 run green on 05e93d09, so **merged #706** (74794f5d). #701 fresh CI started; #717 CI running. Lane C now on Step 0 (people-only approval, then job label).
+- **14 Oct 20:06 IST.** **#717 CI red** (run 38574576834):
+  - (1) mediaBindings.spec.ts :153/:344 "Unexpected import @/lib/platformOwnerPrivacy": the spec pins the jobs/[id] route's imports, and the PATCH masking added one (the DELETE path under test never calls it). The honest fix is one stub line in the spec's map (like `@/lib/jobs: {}`): a guard edit, asked of the owner. A standing rule for import-pinned maps was proposed.
+  - (2) cinemaSound.spec.ts:502 UNIQUE workspaces.id: most likely #717's own new actorIdGuard spec leaving a row; lane D is fixing it in that spec.
