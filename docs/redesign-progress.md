@@ -479,3 +479,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#729 must-fix:** 3 recipes can't be named under Auto camera (an unset shot size is refused).
   - **#732 must-fix:** the Cinema quote snapshot stores N×band as "quoted"; it should be N with ceiling N×band.
   Both clean on money; the merged admissionCheckpoint must drop job, shotType and quote in one line. Queued for lane C (after UI-names and #730). Lane D on Vercel-out A1, A3, B1.
+- **14 Oct 21:47 IST.** **#726 Opus APPROVED** (fe510854). **#728 must-fix:** append-only isn't enforced; add no-update/no-delete triggers inside M1 (same pattern as security_audit). Everything else is OK: one write batch, no prompt or name stored, tenant DB only, nothing reads it yet, migration additive. Queued for lane C.
