@@ -3,7 +3,7 @@ import type { Asset, Project } from "../workbench/studio";
 import type { GenerationBodyInput, GenerationReference } from "../workbench/generation-request";
 import { mediaReferenceIdentity } from "../workbench/media-reference-input";
 import type { Look } from "./looks";
-import { getModel } from "../models";
+import { getModel, NANO_BANANA_2_ID, NANO_BANANA_PRO_ID } from "../models";
 import { moleculrAssetDependencies } from "../workbench/moleculr-bindings";
 
 /**
@@ -19,8 +19,8 @@ export const BOARD_STYLES: { id: BoardStyle; label: string; line: string; suffix
   { id: "bw-sketch", label: "Black & white sketch", line: "Graphite line and grey tone, no colour.", suffix: "Storyboard frame drawn as a black-and-white pencil sketch: clean graphite linework with grey tonal shading, no colour at all. No text, no captions, no panel borders." },
 ];
 export const BOARD_MODELS = [
-  { id: "gemini-3.1-flash-image", label: "Nano Banana 2" },
-  { id: "gemini-3-pro-image", label: "Nano Banana Pro" },
+  { id: NANO_BANANA_2_ID, label: "Nano Banana 2" },
+  { id: NANO_BANANA_PRO_ID, label: "Nano Banana Pro" },
   { id: "gpt-image-2", label: "GPT Image 2" },
   { id: "gpt-image-2.5-flare", label: "GPT Image 2.5" },
   { id: "grok-imagine-image-2.0", label: "Grok Imagine 2" },
@@ -62,7 +62,7 @@ export type BoardFrame = {
 export type Boards = { style: BoardStyle; model: BoardModel; frames: Record<string, BoardFrame>; promptsJobId?: string; looks?: Record<string, Look>; look?: string };
 
 export const FRAME_PROMPT_LIMIT = 8000;
-export const DEFAULT_BOARDS: Boards = { style: "live", model: "gemini-3.1-flash-image", frames: {} };
+export const DEFAULT_BOARDS: Boards = { style: "live", model: NANO_BANANA_2_ID, frames: {} };
 export const emptyFrame = (): BoardFrame => ({ prompt: "", takes: [] });
 
 export type NumberedShot = { id: string; number: string; scene: string; sceneSummary: string; shot: BeatShot; characters: string[]; locations: string[] };

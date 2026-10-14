@@ -31,6 +31,8 @@ import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt, se
 import { subscription, usdForCredits, ElevenLabsError } from "./elevenlabs";
 import { inspectAudioBuffer } from "./mediaSource.server";
 import { fundedOutcome, outcomeOfError } from "./providerFailure";
+import { SafetyBlockError } from "./gemini";
+import { safetyBlockLog } from "./geminiSafety";
 import { higgsfieldRequestOutcome, serializeOutcome, type ProviderOutcome } from "./providerOutcome";
 
 /**
@@ -383,10 +385,12 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     // Non-throwing: an id no longer in the registry must still reach failJob below, or its held credits stay held.
     const provider = job.kind === "audio" ? audioVendor(job.modelId) : providerOf(job.modelId);
     const said = await fundedOutcome(outcomeOfError(error, { provider, stage: "submit" }), job.genId, provider).catch(() => null);
+    /* Google's own fixed filter blocked it (lib/geminiSafety.ts): the reason and the take's id are logged, never the prompt or the output; it settles at nothing like a request that never left. */
+    if (error instanceof SafetyBlockError) console.warn(safetyBlockLog(error.reason, job.genId));
     await failJob(
       job.genId,
       (error as Error).message,
-      error instanceof FundingSourceChangedError || error instanceof PreflightError || falSubmissionRejected(error) ||
+      error instanceof FundingSourceChangedError || error instanceof SafetyBlockError || error instanceof PreflightError || falSubmissionRejected(error) ||
         higgsfieldSubmissionRejected(error) || (error instanceof ElevenLabsError && error.rejectedBeforeGeneration) ||
         xaiSubmissionRejected(error),
       said,

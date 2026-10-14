@@ -197,6 +197,10 @@ const XAI_IMAGE_MODELS: [string, string, string, string[], string][] = [
   ["grok-imagine-image", "Grok Imagine Image", "Grok", ["1K"], "Quick, cheap Grok stills."],
 ];
 
+/** The ids of Google's two still engines, named once here (the routing table) so nothing else spells a Gemini model id in a request path. */
+export const NANO_BANANA_PRO_ID = "gemini-3-pro-image" as const;
+export const NANO_BANANA_2_ID = "gemini-3.1-flash-image" as const;
+
 export const MODELS: ModelDef[] = [
   {
     id: "dreamina-seedance-2-5-260628",
@@ -421,7 +425,7 @@ export const MODELS: ModelDef[] = [
     // is always embedded; the model "thinks" before drawing (built in).
     // Retired once for Google's moderation locks; back by request, with
     // refusals surfaced in Google's own words and never charged.
-    id: "gemini-3-pro-image",
+    id: NANO_BANANA_PRO_ID,
     billing: "image",
     use: "Stills with legible text; up to 14 refs.",
     gatewayId: "google/gemini-3-pro-image",
@@ -445,7 +449,7 @@ export const MODELS: ModelDef[] = [
   {
     // Nano Banana 2 (Gemini 3.1 Flash Image): the fast, cheaper still engine.
     // Prices per image from the gateway catalogue, read 2026-09-03.
-    id: "gemini-3.1-flash-image",
+    id: NANO_BANANA_2_ID,
     billing: "image",
     use: "Quick stills at half the price.",
     gatewayId: "google/gemini-3.1-flash-image",
