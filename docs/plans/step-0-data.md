@@ -256,10 +256,10 @@ There is **one** migration in this plan. It ships only after the owner's backup 
 |---|---|---|---|---|
 | 1 | `lib/rejectReasons.ts` and `lib/takeJob.ts`: the two closed lists, labels and the chip map. Pure, no schema. | S, 2h | — | — |
 | 2 | Job label: `jobOf` at every take insert; `jobOfRow` for old takes; `?job=` filter; left out of the quote fingerprint | M, 6h | — | 1, #706 |
-| 3 | M1: `take_review_events`; `PATCH /api/jobs/[id]` writes the mark, the event and the note in one transaction; the system clear writes an event | M, 8h | **Opus (privacy)**, migration, NEEDS AKSHAY | 1 |
+| 3 | M1: `take_review_events`; `PATCH /api/jobs/[id]` writes the mark, the event and the note in one transaction; the system clear writes an event | M, 8h | **Opus (privacy)**, migration, NEEDS OWNER | 1 |
 | 4 | Reads: who picked and approved from events, masked; `via`; MCP `review` field | S, 4h | **Opus (privacy)** | 3 |
 | 5 | `takeCredits()` helper used by Library, export and MCP; `estimated` for takes before metering | S, 4h | **Opus (money)** | — |
-| 6 | `params.quote` snapshot at admission; export `credits_quoted` | S, 4h | **Opus (money)**, NEEDS AKSHAY | 5 |
+| 6 | `params.quote` snapshot at admission; export `credits_quoted` | S, 4h | **Opus (money)**, NEEDS OWNER | 5 |
 | 7 | CSV export columns: `job`, `picked_by`, `approved_by`, `reject_reasons`, `credits_quoted`, `estimated` | S, 2h | — | 2, 4, 6 |
 | 8 | Board wiring: the reject panel sends codes; the versions card shows them; the Library shows the job | — | **waits for Claude Design / v18** | 3, 4 |
 
