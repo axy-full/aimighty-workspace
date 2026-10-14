@@ -103,6 +103,16 @@ Tests on `ai/test`: `tests/unit/suiteAgentSdk.spec.ts:2`, `tests/unit/astraBlend
 - `api.vercel.com`: `lib/vercelKeys.ts:20`.
 - `.vercel-storage.com`: `lib/storage/backend.ts:96-97`, `lib/storage/blob.ts:25`, `scripts/ops/blob-to-r2.mjs:64`, `scripts/ops/backup-lib.mjs:697`. Old rows hold absolute Blob URLs, so the backend must keep recognising this host after Blob goes (to map them to R2 keys).
 - `vercel-cron` user agent: `app/api/cron/sync/route.ts:60-62`, stored as `lastCronBy` (`:175`) and shown by health (`app/api/health/route.ts:228`). A label only.
+  - **Owner's finding, 14 Oct, after deploy #3:** health showed the cron agent "vercel-cron/1.0".
+  - **That is a stale settings value (`lastCronAgent`), not a live caller.**
+    - No code has written `lastCronAgent` since 475fa895.
+    - Health still reads it (`app/api/health/route.ts:229`).
+    - Today's caller is our own scheduled task, `ops/selfhost/cron-sync.mjs`, which calls `http://127.0.0.1:3000/api/cron/sync` inside the container with `CRON_SECRET`. It sends Node's default user agent, so it is recorded as `by: "manual"`.
+  - **The rename goes in its own PR now** (the owner asked for it with the health change, ahead of A1):
+    - the scheduler sends `particl-scheduler/1` and is recorded as `scheduler`;
+    - the `vercel` branch is dropped;
+    - health stops returning the stale `agent`.
+  - **One thing to rule out (owner, O1):** that the old Vercel project's own cron, from `vercel.json`, is not still running a deployment that points at the production databases. Check that the project has no live production deployment, or that its crons are off, before the account closes.
 - `x-vercel-*` headers, `vercel.app` URLs, `waitUntil` from `@vercel/functions`, `@vercel/analytics`, `@vercel/speed-insights`: **none found.** Next's own `after()` is already used (`lib/workbench/rig-agent.ts`, `lib/held.ts`, others) and works under `next start` (`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/after.md`, "Platform Support"). `maxDuration` (61 route files) is Next's own route config, read by platforms; keep it.
 - OIDC: only `lib/gateway.ts:40-44` and the `'ai-gateway-auth-method': 'oidc'` headers (`lib/language-provider.ts:69`, `lib/vendorImages.ts:66`, `lib/workbench/development-server.ts:74`).
 - Cron config: only `vercel.json`.
@@ -120,7 +130,7 @@ Every PR: `npx tsc --noEmit`, `npm run lint`, the named unit specs, the full uni
 
 | PR | What | Proves nothing changed | Tests that mention the removed code | Size |
 |---|---|---|---|---|
-| **A1** Config | Delete `vercel.json` and `public/vercel.svg`. `ops/selfhost/cron-sync.mjs` sends a `particl-cron` user agent; the route labels it `scheduled` instead of `vercel` (`app/api/cron/sync/route.ts:60-62`). README hosting section rewritten. **Before:** owner step O2 (the cron heartbeat). | Build; cron route specs. | None. | S |
+| **A1** Config | Delete `vercel.json` and `public/vercel.svg`. (The cron user agent and label are renamed earlier, in the /api/health PR; see 1.4.) README hosting section rewritten. **Before:** owner step O2 (the cron heartbeat). | Build; cron route specs. | None. | S |
 | **A2** Gateway keys | Delete `lib/vercelKeys.ts`. `retireDeletedWorkspaces` and `purgeWorkspace` stop calling Vercel (`lib/purge.ts:13`, `:264`, `:454-478`); `gateway_key_id` stays as data. **Before:** owner step O3 (count, then revoke in Vercel if any). | `tests/unit/adminDeletedWorkspace.spec.ts`, `tests/unit/neverDelete.spec.ts`. | `adminDeletedWorkspace.spec.ts` if it injects a revoke. | S |
 | **A3** Split the live text helpers out of `lib/gateway.ts` (no behaviour change) | `GatewayReply` → `TextReply` in `lib/textDirect.ts`. The mock and OpenAI branches of `gatewayPost` move into `textPost`. `explainGatewayFailure`'s provider branch becomes `explainTextFailure`. `paidText.ts:282` and `atomik-server.ts:254` call `textPost`. `gatewayChat`, `chatBody` and the adapter's `chat` go (no callers). | `textDirect`, `openaiDirect`, `paidTextDirect`, `paidTextReconcile`, `workbenchAtomik`, `enhance*`, `engines` specs; byte-for-byte same request bodies and replies under mock. | `gatewayChat.spec.ts` (deleted: tests `chatBody` only); `openaiDirect.spec.ts:5`, `textDirect.spec.ts:3` (import path moves); `engines.spec.ts:24`, `:36`. | M |
 | **A4** Catalogue: snapshot only | `catalog()` always reads `lib/modelCatalog.json`; the live read (`lib/catalog.ts:117-140`) and `MODEL_CATALOG` go. **Owner decision D3 first:** if production reads the live list today, prices move to the 8 October snapshot. | `catalogStatic`, `catalogTextPricing`, `catalogDirectGate`, `atomikModelPolicy`, `atomikRailPricing` specs. | `catalogStatic.spec.ts:246-263` (tests the `gateway` source value). | S |
@@ -367,7 +377,7 @@ Roughly 14 PRs without B3–B7, 19 with them.
 ### 5.2 Owner steps
 
 - **O1. Settings check (names and yes/no only, no values).** Confirm unset: `AI_GATEWAY_API_KEY`, `VERCEL`, `VERCEL_OIDC_TOKEN`. Report: `MODEL_CATALOG` (is it `static`?), `ASTRA_RENDER_BACKEND` (is it `selfhost`?), whether `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, `ASTRA_BLENDER_SNAPSHOT_ID` are set, `TEXT_DIRECT`, `STORAGE_BACKEND`, and whether `BLOB_READ_WRITE_TOKEN` is set.
-- **O2. Cron heartbeat.** Signed in, `/api/health` shows the last cron run within 15 minutes (`app/api/health/route.ts:205-235`). Proves the scheduled task, not `vercel.json`, drives it.
+- **O2. Cron heartbeat.** Signed in as the platform owner (after the /api/health PR, the detail is the platform owner's only), `/api/health` shows the last cron run within 15 minutes, `by: "scheduler"` (`app/api/health/route.ts:205-235`). Proves the scheduled task, not `vercel.json`, drives it.
 - **O3. Census** (command in 3.8). Gives the Blob-only counts, the `gateway_key_id` count and the unsettled 3D jobs. If the key count is not 0: revoke those keys in Vercel before closing. If unsettled 3D jobs are not 0: wait for them to settle before A6.
 - **O4–O6. Copy and verify** (3.8).
 - **O7. Cutover** (3.5): remove `BLOB_READ_WRITE_TOKEN`, redeploy, watch 7 days, then say yes to C2.
