@@ -43,6 +43,7 @@ import type { Asset, Project } from "@/lib/workbench/studio";
 import type { MediaJob } from "@/lib/workbench/job-recovery";
 import styles from "./SoundGenerate.module.css";
 import { SaveFailedError } from '@/lib/workbench/save-then-continue';
+import { actingOwnerField } from "@/lib/workbench/acting-on";
 
 type Voice = { id: string; name: string; category?: string };
 
@@ -413,7 +414,7 @@ export function SoundGenerate({
       const mapping = await studioRequest("/api/workbench/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-        body: JSON.stringify({ action: "map-shot", projectId: project.id, nodeId: target.id }),
+        body: JSON.stringify({ action: "map-shot", projectId: project.id, nodeId: target.id, ...actingOwnerField(project.id) }),
       });
       if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
       /* The mapping is made after the save, so the draft does not hold it yet. Without it the
