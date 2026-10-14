@@ -107,7 +107,11 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   /* Approving a take is a person's alone (owner, 14 Oct; CLAUDE.md rules 11 and 14): an API token, an MCP client or an agent identity prepares, picks and sends back, and never signs off.
      Asked before the take is read, so a take that is there and one that is not answer alike. (Clearing a sign-off is asked below, once the take's state is known.) */
   const person = isPerson({ user: got.user, token: got.token });
-  if (body.reviewState === "approved" && !person) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
+  /* The review is read once, here: a word (null clears it), or the request is refused before any read. The gate below, the validation and the write all read this value and never the
+     raw body, so a value that is not a word (an array holding "approved", a number, an object) can neither pass the gate nor be written as something else. */
+  const reviewTo: string | undefined = body.reviewState === undefined ? undefined : body.reviewState === null ? "" : typeof body.reviewState === "string" ? body.reviewState : "bad";
+  if (reviewTo === "bad") return NextResponse.json({ error: "A review is picked, approved or changes, or empty to clear it." }, { status: 400 });
+  if (reviewTo === "approved" && !person) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   /* A project and a shot are each named by one id: a string, or null / "" for none. Anything else (an array, a number, an object) is refused here, before any
      read or write, so the id that is checked below is the very id that is written. Every check below reads these, never the raw body. */
   const idOf = (value: unknown): string | null | "bad" => (value === null || value === "" ? null : typeof value === "string" ? value : "bad");
@@ -151,15 +155,15 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
      and a mark only on a take that finished — a render in flight, held or
      failed has nothing to judge yet. Clearing is always allowed. */
   let reviewedFrom: string | null = null;
-  if (body.reviewState !== undefined) {
-    const wanted = String(body.reviewState ?? "");
+  if (reviewTo !== undefined) {
+    const wanted = reviewTo;
     if (!REVIEW_STATES.includes(wanted)) return NextResponse.json({ error: "A review is picked, approved or changes, or empty to clear it." }, { status: 400 });
     const row = (await db().execute({ sql: "SELECT status, review_state FROM generations WHERE id=? AND deleted=0", args: [id] })).rows[0];
     if (!row) return NextResponse.json({ error: "This take is no longer in the project." }, { status: 404 });
     if (wanted && String(row.status) !== "succeeded") return NextResponse.json({ error: "Only a finished take can be picked, approved or sent back." }, { status: 409 });
     reviewedFrom = String(row.review_state ?? "");
-    /* A sign-off is undone by a person alone, so a token cannot take back what a person approved. Picking and sending back stay open to it. */
-    if (!wanted && reviewedFrom === "approved" && !person) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
+    /* A sign-off is undone by a person alone: a token or an agent cannot clear, pick over or send back what a person approved (that would pull it off a client's review link too). */
+    if (reviewedFrom === "approved" && wanted !== "approved" && !person) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
     /* Why a take is sent back (lib/rejectReasons.ts): optional here (a caller that sends only the mark keeps working), checked when sent, and only with a send-back. The person's
        own words go in the take's notes, in the same write as the mark. */
     if (body.reasons !== undefined || body.drift !== undefined || body.reasonText !== undefined) {
@@ -237,10 +241,10 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   // Signing off on a shot, or asking for changes. The name is recorded so a
   // review is answerable to someone rather than appearing from nowhere.
   let review: Record<string, unknown> | null = null;
-  if (body.reviewState !== undefined) {
+  if (reviewTo !== undefined) {
     /* draft → picked → approved. An artist picks one take per shot; a
        director approves it or sends it back. (Checked above.) */
-    const state = String(body.reviewState ?? "");
+    const state = reviewTo;
     /* The trail keeps both marks: who picked and who approved, each with its
        own moment (brief 2.1). Clearing a state clears that mark alone, so a
        take sent back for changes still says who had picked it. */
