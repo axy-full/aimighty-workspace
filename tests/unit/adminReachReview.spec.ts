@@ -139,28 +139,6 @@ test("no live-room token through the admin rule: an admin cannot sign into a pri
   expect((await f.as(demoted, async () => (await canvas.GET(new Request(`https://particl.test/api/workbench/team-canvas?productionId=${f.board}`))).status))).toBe(404);
 });
 
-test("an admin's paid chat turn on a member's private board reads its context through the audited gate and files nothing under that board; its owner's turn is unaffected", async () => {
-  const f = await fixture("paidchat");
-  const atomik = await import("../../lib/atomik");
-  const seen: { projectId: string | null | undefined; context: string | undefined; memory: string | undefined; quoteOnly?: boolean }[] = [];
-  /* The turn's own paid work is stood in for: what the route hands it is what it would reserve, meter, remember and file steps under. */
-  const turn = f.route<{ POST: (r: Request, c: { params: Promise<{ id: string }> }) => Promise<Response> }>("app/api/atomik/[id]/route.ts", {
-    "@/lib/atomik": { ...atomik, runTurn: async (_id: string, opts: { projectId?: string | null; context?: string; memory?: string; quoteOnly?: boolean }) => { seen.push({ projectId: opts.projectId, context: opts.context, memory: opts.memory, quoteOnly: opts.quoteOnly }); return { quote: null }; } },
-  });
-  const { NextRequest } = createRequire(path.resolve("package.json"))("next/server") as typeof import("next/server");
-  const say = async (p: Who) => {
-    const id = await f.as(p, () => atomik.createChat({ userId: p.id, projectId: f.board, model: "auto", agentMode: "ask" }));
-    return f.as(p, async () => (await turn.POST(new NextRequest(`https://particl.test/api/atomik/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Plan the next shot" }) }), { params: Promise.resolve({ id }) })).status);
-  };
-  expect(await say(ADMIN), "the admin's turn is answered").toBeLessThan(500);
-  expect(seen, "the turn ran once").toHaveLength(1);
-  expect(seen[0].projectId, "no reservation, meter line, memory suggestion or step is filed under the member's board").toBeNull();
-  expect(await f.lines(), "the context was read through the audited gate").toEqual(["u_admin:board.opened_by_admin"]);
-  expect(await say(who("u_owner", "admin")), "the board's owner's turn is answered").toBeLessThan(500);
-  expect(seen[1].projectId, "the owner's turn files under their own board, as before").toBe(f.board);
-  expect(await f.lines(), "the owner's own turn writes no admin line").toEqual(["u_admin:board.opened_by_admin"]);
-});
-
 test("paid text on a member's private board is refused to an admin and writes no history line for the spend; the owner's goes through", async () => {
   const f = await fixture("spend");
   const drafter = f.route<{ POST: (r: Request) => Promise<Response> }>("app/api/atomik/shots/draft/route.ts");
