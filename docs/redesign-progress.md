@@ -416,3 +416,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - (2) /api/health: anonymous gets {ok, mock, dispatch.mode, database, storage, storageVerified, commit}; ANY signed-in member of any workspace gets the full briefing, including platform-wide dispatch ids (recentDispatches reads the platform dispatch_log). Lane C is building the minimal-answer PR, detail for the platform owner only.
   - (3) The cron "vercel-cron/1.0" is a stale `lastCronAgent` settings value (no writer since 475fa895). The live caller is the Coolify task ops/selfhost/cron-sync.mjs (recorded as "manual"). Renamed in the health PR; added to #719 (b55e08d7) with an owner check that the old Vercel project's cron is off.
   Read-only re-check: health d380ce7 ok 10/10; pages 200; Google 303; 10 private APIs 401.
+- **14 Oct 20:04 IST.** Lane C opened:
+  - **#722** (/api/health: anonymous and members get {ok, commit}, plus mock:true only on ENGINE_MOCK servers for the test gates; detail for the platform owner via isPlatformOwner; cron caller particl-scheduler/1 recorded as "scheduler"; operationalHealth.spec.ts moved to the new shape, not a listed guard, flagged to the owner);
+  - **#721** (live room: the owner signed in as support_… in client workspaces; serverMade masked; a third leak from the owner's own window fixed).
+  Both are in Opus review. Release/1 run green on 05e93d09, so **merged #706** (74794f5d). #701 fresh CI started; #717 CI running. Lane C now on Step 0 (people-only approval, then job label).
