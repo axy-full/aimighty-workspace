@@ -11,9 +11,8 @@ import { bumpEditRooms, closeRooms } from "@/lib/workbench/room-rotation";
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
-/** The rooms move on now (no old token is honoured from here); their old connections are closed after the response, all at once, so the admin's request does not wait on Liveblocks. */
-async function moveEditRooms() {
-  const closed = await bumpEditRooms().catch(() => [] as string[]);
+/** Their old connections are closed after the response, all at once, so the admin's request does not wait on Liveblocks. The rooms themselves moved on inside the membership change (below). */
+function closeAfter(closed: string[]) {
   if (closed.length) after(async () => { await closeRooms(closed); });
 }
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -65,6 +64,12 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   }
 
   const layer=await getPlatformLayer();
+  /* Someone switched off may hold a live-room token for any board shared with Can edit, and their own boards' Can edit lapses with them: those rooms move on FIRST, and this
+     fails closed. If they cannot move, nothing below runs: the member stays as they were and the answer is an error (the same answer a failed audit line gives), so no old token is
+     left honoured under a member who looks switched off. They cannot move inside the membership transaction (it is the platform's write lock, and a workspace write waits on
+     it), so the order is: the rooms, then the change. If the change then does not land, the rooms have moved for nothing, which costs nothing. */
+  let closed:string[]=[];
+  if(body.disabled===true){try{closed=await bumpEditRooms();}catch(error){return accountFailure(error);}}
   try{await accountTransaction(async tx=>{
     const fresh=(await tx.execute({sql:'SELECT role,disabled FROM memberships WHERE workspace_id=? AND account_id=?',args:[ws.id,id]})).rows[0];
     if(!fresh)throw new AccountError("No such member",404);
@@ -84,8 +89,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     await tx.execute({sql:'INSERT INTO membership_mirrors(workspace_id,account_id,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id,account_id) DO UPDATE SET updated_at=excluded.updated_at',args:[ws.id,id,now()]});
   });}catch(error){return accountFailure(error);}
   await repairPendingMemberships(id).catch(()=>{});
-  /* Someone switched off may hold a live-room token for any board shared with Can edit, and their own boards' Can edit lapses with them: those rooms move on now. */
-  if(body.disabled===true)await moveEditRooms();
+  closeAfter(closed);
   return NextResponse.json({ ok: true });
 }, { requireRequestScope: true });
 
@@ -104,6 +108,9 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
   const target = await member(ws.id, id);
   if (!target) return NextResponse.json({ error: "No such member" }, { status: 404 });
   if (target.role === "owner") return NextResponse.json(PROTECTED, { status: 400 });
+  /* A removed member's live-room tokens and their boards' Can edit end with them: every Can edit room moves on first, failing closed (see PATCH), then the removal. */
+  let closed:string[];
+  try{closed=await bumpEditRooms();}catch(error){return accountFailure(error);}
   try{await accountTransaction(async tx=>{
     const fresh=(await tx.execute({sql:"SELECT role FROM memberships WHERE workspace_id=? AND account_id=?",args:[ws.id,id]})).rows[0];
     if(!fresh)throw new AccountError("No such member",404);
@@ -114,8 +121,7 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
     await tx.execute({sql:'DELETE FROM membership_mirrors WHERE workspace_id=? AND account_id=?',args:[ws.id,id]});
     await tx.execute(securityAuditStatement({workspaceId:ws.id,actorId:got.user.id,action:"member.removed",targetType:"member",targetId:id}));
   });}catch(error){return accountFailure(error);}
-  /* A removed member's live-room tokens and their boards' Can edit end with them: every Can edit room moves on (lib/workbench/room-rotation.ts). */
-  await moveEditRooms();
+  closeAfter(closed);
   // Platform membership removal already revokes access even if this mirror is offline.
   const {db}=await import('@/lib/db');
   await db().batch([
