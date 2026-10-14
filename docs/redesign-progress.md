@@ -356,3 +356,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - credits-reachable :66 at desktop sizes.
   - **#706 red:** hf-gen-output-coverage:165 (voice list) at 1440 and 1920.
   Lane C started on both: exact 2-decimal expectations only where the owner's format decision makes them stale (not listed guards; no matcher loosened); anything else is fixed in code. #713 Opus CHANGES NEEDED (in-flight canvas send vs draft save; a skipped delete): lane D fixing.
+- **14 Oct 18:16 IST.** **#713 Opus APPROVED at bd639911** (flush waits for in-flight sends; the delete always lands; Keep no longer bounces; mask reused). It stacks on #708, #704 and #702 (migration), and is blocked with them by the guard-loader question. Follow-up (nit): a spec with two people's drafts linked to one production, to isolate the cross-draft case.
