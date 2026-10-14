@@ -208,7 +208,8 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
     /* The plan gate: one item, the plan at the server's total, approved once on its own screen (CLAUDE.md rule 14). */
     const quote = run.state === "needs_you" && view.plan?.quote && !view.plan.approval ? view.plan.quote : null;
     if (quote) {
-      const price = quote.approximate ? upTo(quote.total) : exact(quote.total);
+      /* Credits only where credits apply: the house pays at cost in dollars, and this queue holds no dollar figure (renderPrice, the held items), so it shows none. */
+      const price: QueuePrice = !ctx.inCredits ? null : quote.approximate ? upTo(quote.total) : exact(quote.total);
       items.push({
         id: `board-plan:${run.id}`,
         source: "board-plan",
@@ -221,7 +222,7 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
         canApprove: view.mine && enabled,
         why: !enabled ? RIG_AGENT_OFF : !view.mine ? BOARD_NOT_YOURS : null,
         shortBy: shortOf(ctx.balance, price),
-        note: `At most ${creditFigure(quote.ceiling)} cr with fixes`,
+        note: ctx.inCredits ? `At most ${creditFigure(quote.ceiling)} cr with fixes` : null,
         step: null,
         sample: false,
         approve: { kind: "board-approve", productionId: run.productionId, runId: run.id, fingerprint: quote.fingerprint, plan: true },
