@@ -1,7 +1,8 @@
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
 import { requireTenant } from "./tenant";
-import { mayReachProject } from "./draftProject";
+import { isSampleProject, mayReachProject, mayReadTake } from "./draftProject";
+import { uploadOpenableBy } from "./uploadAccess";
 import { archiveDeleteStatements, archiveStatement, archiveTransaction } from "./archive";
 import {
   CAST_REF, IMPORT_FROM, KEPT_FROM, LIBRARY_ASSET, MEMORY_ID, MEMORY_LIMITS, PROJECT_ID, SOUL_REF,
@@ -95,8 +96,9 @@ function scoped(projectId: string | null): { sql: string; args: string[] } {
 async function mayRead(by: string, projectId: string | null): Promise<boolean> {
   return !projectId || (await mayReachProject({ id: by }, projectId, "read"));
 }
+/** Also not the marked sample, which only its marker and the platform owner write (owner, 13 Oct, the rule the board itself follows: lib/demo/readonly.server.ts › sampleWriteRefusal); everyone else may read it. */
 async function mayWrite(by: string, projectId: string | null): Promise<boolean> {
-  return !projectId || (await mayReachProject({ id: by }, projectId, "admit"));
+  return !projectId || ((await mayReachProject({ id: by }, projectId, "admit")) && !(await isSampleProject(projectId, db(), { id: by })));
 }
 const NOT_THERE = "That project is not in this workspace. Keep it for the whole workspace instead.";
 
@@ -113,17 +115,22 @@ async function projectExists(projectId: string): Promise<boolean> {
 
 const mimeKind = (mime: string) => (/^image\//.test(mime) ? "image" : /^video\//.test(mime) ? "video" : /^audio\//.test(mime) ? "audio" : "file");
 
-/** A Library asset of this workspace's, by its Library id, with the name and kind it is shown by; null when it is not there. */
-async function libraryAsset(assetId: string): Promise<{ label: string; kind: string | null } | null> {
+/**
+ * A Library asset of this workspace's, by its Library id, with the name and kind it is shown by; null when it is not there OR `by` may not open it (a take on someone
+ * else's private board, an upload only its uploader may open): the same answer as an id that does not exist, so a reference never shows a private take's title or prompt
+ * and never confirms the id is there.
+ */
+async function libraryAsset(assetId: string, by: string): Promise<{ label: string; kind: string | null } | null> {
   const m = LIBRARY_ASSET.exec(assetId);
   if (!m) return null;
   if (m[1] === "generation") {
     const r = (await db().execute({ sql: "SELECT * FROM generations WHERE id = ? LIMIT 1", args: [m[2]] })).rows[0] as Row | undefined;
     if (!r || Number(r.deleted ?? 0) === 1) return null;
+    if (!(await mayReadTake({ id: by }, r.project_id == null ? null : String(r.project_id)))) return null;
     return { label: cleanMemoryText(String(r.title || r.prompt || "Untitled take"), 120), kind: r.kind ? String(r.kind) : null };
   }
   const r = (await db().execute({ sql: "SELECT * FROM uploads WHERE id = ? LIMIT 1", args: [m[2]] })).rows[0] as Row | undefined;
-  if (!r) return null;
+  if (!r || !(await uploadOpenableBy(m[2], { id: by }))) return null;
   return { label: cleanMemoryText(String(r.filename ?? "Upload"), 120), kind: r.kind ? String(r.kind) : mimeKind(String(r.mime ?? "")) };
 }
 
@@ -175,7 +182,7 @@ async function soulIdentity(identityId: string, by: string): Promise<{ label: st
  */
 async function element(assetId: string, by: string): Promise<{ label: string; kind: string | null }> {
   if (LIBRARY_ASSET.test(assetId)) {
-    const asset = await libraryAsset(assetId);
+    const asset = await libraryAsset(assetId, by);
     if (!asset) throw new MemoryError("That asset is not in this workspace's Library.", 404);
     return asset;
   }
@@ -511,12 +518,20 @@ function live<E extends Pick<MemoryEntry, "assetId" | "assetLabel" | "assetKind"
   return now?.label ? { ...e, assetLabel: now.label, assetKind: now.kind ?? e.assetKind } : e;
 }
 
-function toView(e: Named, viewer: string, present: Present): MemoryView {
+/** The projects among these entries' that `viewer` may NOT change entries under (a shared board they may only look at, the sample for anyone but its marker): one check per project. */
+async function lockedProjects(viewer: string, entries: readonly Pick<MemoryEntry, "projectId">[]): Promise<Set<string>> {
+  const locked = new Set<string>();
+  for (const id of new Set(entries.flatMap((e) => (e.projectId ? [e.projectId] : [])))) if (!(await mayWrite(viewer, id))) locked.add(id);
+  return locked;
+}
+
+function toView(e: Named, viewer: string, present: Present, locked: ReadonlySet<string>): MemoryView {
   const { createdBy, acceptedBy, byName, acceptedByName, ...rest } = live(e, present);
   return {
     ...rest, scope: e.projectId ? "project" : "workspace",
     byYou: createdBy === viewer, byName, acceptedByYou: acceptedBy === viewer, acceptedByName,
     available: !e.assetId || present.has(e.assetId),
+    readOnly: !!e.projectId && locked.has(e.projectId),
   };
 }
 
@@ -527,13 +542,14 @@ export async function listMemory(projectId: string | null, viewer: string): Prom
   const asked = projectOf(projectId);
   const entries = await scopedEntries(workspaceId, (await mayRead(viewer, asked)) ? asked : null);
   const present = await refsPresent(refsOf(entries));
-  return entries.map((e) => toView(e, viewer, present));
+  const locked = await lockedProjects(viewer, entries);
+  return entries.map((e) => toView(e, viewer, present, locked));
 }
 
 /** One entry as its view, for a route's reply. */
 export async function memoryView(entry: MemoryEntry, viewer: string): Promise<MemoryView> {
   const present = await refsPresent(refsOf([entry]));
-  return toView({ ...entry, byName: null, acceptedByName: null }, viewer, present);
+  return toView({ ...entry, byName: null, acceptedByName: null }, viewer, present, await lockedProjects(viewer, [entry]));
 }
 
 /**
@@ -552,7 +568,8 @@ export async function findForForget(said: unknown, projectId: unknown, viewer: s
   const matches = forgetMatches(subject, entries);
   const byId = new Map(entries.map((e) => [e.id, e]));
   const present = await refsPresent(refsOf(entries));
-  return { subject, matches: matches.map((m) => ({ ...toView(byId.get(m.id)!, viewer, present), selected: m.selected })) };
+  const locked = await lockedProjects(viewer, entries);
+  return { subject, matches: matches.map((m) => ({ ...toView(byId.get(m.id)!, viewer, present, locked), selected: m.selected })) };
 }
 
 /**

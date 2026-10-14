@@ -65,6 +65,8 @@ export type MemoryView = Omit<MemoryEntry, "createdBy" | "acceptedBy"> & {
   acceptedByYou: boolean; acceptedByName: string | null;
   /** False when its Library asset is no longer there: Atomik then leaves it out. */
   available: boolean;
+  /** True when this person may read the entry but not change or forget it: it sits under a shared board they only look at, or under the sample and they are not its marker or the platform owner. */
+  readOnly: boolean;
 };
 
 export const MEMORY_LIMITS = {
