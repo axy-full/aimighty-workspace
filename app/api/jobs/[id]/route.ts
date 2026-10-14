@@ -269,10 +269,11 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
                ts, id],
       },
       ...(noteId ? [{ sql: `INSERT INTO notes (id, gen_id, user_id, text, mentions, created_at) VALUES (?,?,?,?,?,?)`, args: [noteId, id, got.user.id, words, "[]", ts] }] : []),
-      reviewEventStatement({
+      /* Clearing a take that carries no mark changes nothing, so it writes no event. */
+      ...(state === "" && reviewedFrom === "" ? [] : [reviewEventStatement({
         genId: id, action, actorId: got.user.id, via: reviewViaOf({ user: got.user, token: got.token }), tokenId: got.token?.id ?? null,
         reasons: checked?.ok ? checked.value.reasons : undefined, drift: checked?.ok ? checked.value.drift : null, noteId, at: ts,
-      }),
+      })]),
     ], "write");
     /* The marks as recorded, for the grids to show at once (who picked, who approved, when). */
     const marks = (await db().execute({ sql: "SELECT review_state, review_by, picked_by, picked_at, approved_by, approved_at, updated_at FROM generations WHERE id=?", args: [id] })).rows[0];

@@ -524,6 +524,9 @@ const SCHEMA = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_take_review_events_gen ON take_review_events(gen_id, created_at)`,
+  /* Append-only is enforced, not promised: a row is never changed or removed, by anything (the pattern of SECURITY_AUDIT_SCHEMA). */
+  `CREATE TRIGGER IF NOT EXISTS take_review_events_no_update BEFORE UPDATE ON take_review_events BEGIN SELECT RAISE(ABORT,'Review history is append-only'); END`,
+  `CREATE TRIGGER IF NOT EXISTS take_review_events_no_delete BEFORE DELETE ON take_review_events BEGIN SELECT RAISE(ABORT,'Review history is append-only'); END`,
   /* What one shot points at. A wire lands on a slot, not on a node, so the
      slot and its ordinal are the address: a shot holding two characters has
      character 0 and character 1, and each is bound on its own.

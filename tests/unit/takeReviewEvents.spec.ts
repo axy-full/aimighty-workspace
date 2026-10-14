@@ -190,3 +190,23 @@ test("the table is in every workspace database, with its index; nothing about it
     expect((await api.database.db().execute("PRAGMA table_info(generations)")).rows.map((r) => String(r.name))).not.toContain("reasons");
   });
 });
+
+test("the history is append-only for real: an UPDATE or a DELETE of an event is refused by the database; clearing a take that has no mark writes no event", async () => {
+  const api = await setup();
+  await seed(api, ["e7", "e8"]);
+  api.as("person");
+  expect((await api.patch("e7", { reviewState: "picked" })).status).toBe(200);
+  const [event] = await events(api, "e7");
+  await api.tenant.runInTenant(WS, async () => {
+    await expect(api.database.db().execute({ sql: "UPDATE take_review_events SET actor_id='someone' WHERE id=?", args: [String(event.id)] })).rejects.toThrow(/append-only/);
+    await expect(api.database.db().execute({ sql: "DELETE FROM take_review_events WHERE id=?", args: [String(event.id)] })).rejects.toThrow(/append-only/);
+    await expect(api.database.db().execute("DELETE FROM take_review_events")).rejects.toThrow(/append-only/);
+  });
+  expect(await events(api, "e7")).toEqual([event]);
+  /* A clear on a take with no mark is no change and no event; on a take that has one it is an event. */
+  expect((await api.patch("e8", { reviewState: "" })).status).toBe(200);
+  expect(await events(api, "e8")).toEqual([]);
+  expect((await api.patch("e8", { reviewState: "picked" })).status).toBe(200);
+  expect((await api.patch("e8", { reviewState: "" })).status).toBe(200);
+  expect((await events(api, "e8")).map((r) => r.action)).toEqual(["picked", "cleared"]);
+});
