@@ -501,3 +501,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#730 code Opus-APPROVED (aa41da1d);** the lead corrected two PR-body sentences that claimed gateway Gemini text was covered.
   - **#731 Opus:** money OK; must-fix: the `estimated` flag must exclude metered takes; run the costed-take browser specs; rollback steps in the body (queued for lane C after #735).
   - The reviewer's stray full unit-suite run was stopped (by stopping its task).
+- **14 Oct 22:35 IST.** Lane C pushed #735 a971399a (the dodges replaced by a regex, comparisons and a lower-case tag; wording fixes) and #731 b57f4f7b (the estimated flag excludes metered takes; 5 browser specs passed with no fixture change; rollback steps in the body). Opus re-checks are running. Lane C is now on the Step 0 reads PR (stacked on #728).
