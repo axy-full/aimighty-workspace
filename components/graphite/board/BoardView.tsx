@@ -75,6 +75,8 @@ import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
 import { StageHeader } from "@/components/v12/board/StageHeader";
 import { StageEmpty } from "@/components/v12/board/StageEmpty";
+import { StageList } from "./stage-list/StageList";
+import { showsBeatTable } from "./stage-list/rows";
 import { cleanLanguages } from "@/lib/v12/deliver";
 import { isDubbingLanguage } from "@/lib/workbench/dubbing-options";
 import { deckFacts, deckMeta, deckSections, shotRows } from "@/lib/v12/ppm";
@@ -795,7 +797,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
             onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
           <StageColumn on={v12Frame}>
-          {list ? (stageIsEmpty ? null : <List ctx={ctx} cards={placed.cards} />) : (
+          {list ? (stageIsEmpty || (page && page !== "deliver") ? null : v12Frame && !showsBeatTable(stage?.id, flavor) ? <StageList ctx={ctx} cards={placed.cards} /> : <List ctx={ctx} cards={placed.cards} />) : (
             <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline || Boolean(viewing)} onMoveEnd={onMoveEnd}
               placing={tool === "note" || tool === "text"} onPlace={place}
               onOpen={(id) => {
@@ -809,7 +811,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             </BoardCanvas>
           )}
           {empty && !list && !page && board.Empty ? <board.Empty ctx={ctx} /> : empty && !list && !page && kind === "studio" ? <EmptyBoard ctx={ctx} /> : null}
-          {page && !list ? (
+          {page && (!list || page !== "deliver") ? (
             <div className="v12-stage-page gx-scroll" data-testid="v12-stage-page" data-page={page}>
               {page === "deliver" && cutNow && deliverCard
                 ? <DeliverStage cut={cutNow} cardId={deliverCard.id} ctx={ctx} languages={cleanLanguages(project.boardLanguages, isDubbingLanguage)} onLanguages={(next) => rig.apply((p) => ({ ...p, boardLanguages: next }))} />
