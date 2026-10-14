@@ -1,5 +1,6 @@
 import { renderFactsFromRow } from "./v12/renderFacts";
 import { MADE_IN_MAKE_SQL } from "./madeIn";
+import { NO_REVIEW, reviewReadsFor, type ReviewRead } from "./takeReviewReads";
 import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { syncCreditReceipts } from "./creditReceipts";
 import { billedCreditsExpr } from "./creditSql";
@@ -65,6 +66,8 @@ export type Generation = {
   prompt: string;
   /** The name the team gave it, if any — shown in place of the clip id. */
   title: string | null;
+  /** Who picked, approved or sent it back, and why, from the review history, by name and never by account id (lib/takeReviewReads.ts); `null` marks read "not recorded". */
+  review?: ReviewRead;
   params: Record<string, unknown>;
   status: string;
   sourceUrl: string | null;
@@ -395,7 +398,10 @@ export async function listGenerations(opts: {
   args.push(Math.min(Math.max(opts.limit ?? 60, 1), 500) + (opts.includeNext ? 1 : 0));
 
   const rs = await db().execute({ sql, args });
-  return rs.rows.map(rowToGeneration);
+  const generations = rs.rows.map(rowToGeneration);
+  const reviews = await reviewReadsFor(generations.map((g) => g.id));
+  for (const g of generations) g.review = reviews.get(g.id) ?? NO_REVIEW;
+  return generations;
 }
 
 export async function getGeneration(genId: string): Promise<Generation | null> {
@@ -405,7 +411,10 @@ export async function getGeneration(genId: string): Promise<Generation | null> {
     sql: `${SELECT} WHERE g.id = ? AND g.deleted = 0 LIMIT 1`,
     args: [genId],
   });
-  return rs.rows[0] ? rowToGeneration(rs.rows[0]) : null;
+  if (!rs.rows[0]) return null;
+  const generation = rowToGeneration(rs.rows[0]);
+  generation.review = (await reviewReadsFor([generation.id])).get(generation.id) ?? NO_REVIEW;
+  return generation;
 }
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
