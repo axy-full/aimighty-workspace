@@ -382,3 +382,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - (2) a bump failure is swallowed (fails open);
   - (3) it rotates every Can-edit board in the workspace, not only the member's.
   Fix (1)+(2) in #704 before merge.
+- **14 Oct 19:25 IST.** **#718 Opus NOT APPROVED** (transfer):
+  - (1) many paths still find "my board" by the caller's own storage key (Atomik, Blender renders, crew, project library, edit versions, identities and consent, export, rig-agent, genjutsu admission and others): the old owner keeps read, write and spend, and the new owner is locked out;
+  - (2) the canvas room isn't rotated on transfer or Undo;
+  - (3) concurrent Undo and transfer corrupt state and the audit (reads outside the transaction);
+  - (4) Undo skips the active-member check.
+  The guard-dodge verdict is "soft dodge": a re-export through team-boards plus inline SQL keeps `workbenchRequestScope.spec.ts` unedited. The honest fix is the owner's word to add stubs (additive), then delete the inline copies. Nit: no registry tool (rule 11). Queued for lane D after #715 and the #704 fixes.
