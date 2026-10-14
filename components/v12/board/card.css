@@ -5,16 +5,20 @@
 
 .v12 .v12-card {
   position: relative; display: block; min-width: 0; background: var(--gx-card); border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-pop);
-  outline: 2px solid transparent; outline-offset: 1px; cursor: pointer; user-select: none; text-align: left; color: var(--gx-text);
-  font-family: var(--gx-font); transition: opacity .15s, outline-color .15s;
+  outline: 2px solid transparent; outline-offset: 4px; cursor: pointer; user-select: none; text-align: left; color: var(--gx-text);
+  font-family: var(--gx-font); transition: opacity .15s, box-shadow .15s;
 }
-.v12 .v12-card[data-selected] { border-color: color-mix(in srgb, var(--gx-accent) 60%, transparent); outline-color: var(--gx-accent); }
-.v12 .v12-card[data-targeted] { outline-color: color-mix(in srgb, var(--gx-accent) 75%, transparent); }
-.v12 .v12-card[data-differs]:not([data-selected]):not([data-targeted]) { outline-color: var(--gx-waiting); }
+/* The state rings (selected, targeted, differs) are shadows, v25's 2 px ring 1 px off the card; the outline is left to keyboard focus, so focus is
+   always visible and always distinct (a white ring outside whatever state ring there is), whatever else the card is. */
+.v12 .v12-card[data-selected] { border-color: color-mix(in srgb, var(--gx-accent) 60%, transparent); box-shadow: 0 0 0 1px var(--gx-root), 0 0 0 3px var(--gx-accent); }
+.v12 .v12-card[data-targeted] { box-shadow: 0 0 0 1px var(--gx-root), 0 0 0 3px color-mix(in srgb, var(--gx-accent) 75%, transparent); }
+.v12 .v12-card[data-differs]:not([data-selected]):not([data-targeted]) { box-shadow: 0 0 0 1px var(--gx-root), 0 0 0 3px var(--gx-waiting); }
+.v12 .v12-card.v12-card:focus-visible { outline: 2px solid var(--gx-text); outline-offset: 4px; }
+/* A dimmed card (another card is the focus) fades whole, as v25 does: a temporary state. */
 .v12 .v12-card[data-dimmed] { opacity: .35; }
-.v12 .v12-card[data-none] { opacity: .55; }
+/* A card not started dims its picture only: its words keep their colours (they stay over the readable floor). */
+.v12 .v12-card[data-none] .v12-card-media { opacity: .55; }
 .v12 .v12-card[data-none] .v12-card-img { filter: grayscale(1) brightness(.8); }
-.v12 .v12-card:focus-visible { outline-color: var(--gx-accent); outline-offset: 2px; }
 
 /* The picture, the tile or the page */
 .v12 .v12-card-media { position: relative; width: 100%; border-radius: calc(var(--gx-r-pop) - 1px) calc(var(--gx-r-pop) - 1px) 0 0; overflow: hidden; background: var(--gx-sunken); }

@@ -15,6 +15,13 @@ test.beforeEach(async ({ page }) => {
 const shots = (page: Page) => page.getByTestId("v25-board-shots");
 const kinds = (page: Page) => page.getByTestId("v25-board-kinds");
 const card = (scope: ReturnType<typeof shots>, id: string) => scope.locator(`[data-card="${id}"]`);
+/* ✕ on a card, retried until the reasons show: the first press can land before the page has hydrated (a dev server compiling the page). */
+async function openReasons(scope: ReturnType<typeof shots>, id: string) {
+  await expect(async () => {
+    if (!(await card(scope, id).getByTestId("v12-card-reasons").count())) { await card(scope, id).hover(); await card(scope, id).getByRole("button", { name: /^Not right/ }).click(); }
+    await expect(card(scope, id).getByTestId("v12-card-reasons")).toBeVisible({ timeout: 1500 });
+  }).toPass({ timeout: 20_000 });
+}
 
 test("five statuses, each as one line under the title", async ({ page }) => {
   const k = kinds(page);
@@ -64,8 +71,7 @@ test("the keyboard reaches ✓ and ✕: focusing a card shows its marks", async 
 
 test("✕ opens the step's reasons ending in Other and one optional line; a reason sends; Enter sends the line; Esc closes", async ({ page }) => {
   const s = shots(page);
-  await card(s, "s4").hover();
-  await card(s, "s4").getByRole("button", { name: /^Not right/ }).click();
+  await openReasons(s, "s4");
   const reasons = card(s, "s4").getByTestId("v12-card-reasons");
   await expect(reasons.getByRole("button")).toHaveText(["Look", "Framing", "Motion", "Face", "Text", "Other"]);
   await expect(reasons.getByLabel("One line, optional")).toHaveAttribute("placeholder", "One line, optional · ⏎ to send");
@@ -75,8 +81,7 @@ test("✕ opens the step's reasons ending in Other and one optional line; a reas
   await expect(card(s, "s4").getByTestId("v12-card-status")).toHaveText("✕ Look · warmer");
   await expect(card(s, "s4").getByTestId("v12-card-reasons")).toHaveCount(0);
   /* Other, with a line, Enter sends it. */
-  await card(s, "s1").hover();
-  await card(s, "s1").getByRole("button", { name: /^Not right/ }).click();
+  await openReasons(s, "s1");
   const second = card(s, "s1").getByTestId("v12-card-reasons");
   await second.getByRole("button", { name: "Other" }).click();
   await expect(second.getByLabel("One line, optional")).toBeFocused();
@@ -84,8 +89,7 @@ test("✕ opens the step's reasons ending in Other and one optional line; a reas
   await page.keyboard.press("Enter");
   await expect(card(s, "s1").getByTestId("v12-card-status")).toHaveText("✕ the camp is wrong");
   /* Esc closes the reasons and keeps the status. */
-  await card(s, "s4").hover();
-  await card(s, "s4").getByRole("button", { name: /^Not right/ }).click();
+  await openReasons(s, "s4");
   await page.keyboard.press("Escape");
   await expect(card(s, "s4").getByTestId("v12-card-reasons")).toHaveCount(0);
   await expect(card(s, "s4").getByTestId("v12-card-status")).toHaveText("✕ Look · warmer");
@@ -95,7 +99,7 @@ test("a click selects with an outline, a double-click opens the preview, ⋯ and
   const s = shots(page);
   await card(s, "s2").click({ position: { x: 40, y: 30 } });
   await expect(card(s, "s2")).toHaveAttribute("data-selected", "");
-  await expect.poll(() => card(s, "s2").evaluate((el) => getComputedStyle(el).outlineColor)).toBe("rgb(10, 132, 255)");
+  await expect.poll(() => card(s, "s2").evaluate((el) => getComputedStyle(el).boxShadow)).toContain("rgb(10, 132, 255)");
   await card(s, "s2").dblclick({ position: { x: 40, y: 30 } });
   await expect(page.getByTestId("v25-said").first()).toHaveText("Preview Shot 2 · MAYA arrives");
   await card(s, "s2").getByRole("button", { name: /^More/ }).click();
@@ -138,4 +142,28 @@ test.describe("touch", () => {
     expect(box.height, String(name)).toBeGreaterThanOrEqual(44);
   }
 });
+});
+
+test("keyboard focus is a white ring in every state, distinct from the blue selected ring", async ({ page }, info) => {
+  test.skip(isCompact(info), "no keyboard on a phone");
+  const k = kinds(page);
+  const ring = (id: string) => card(k, id).evaluate((el) => { const c = getComputedStyle(el); return { color: c.outlineColor, style: c.outlineStyle, width: parseFloat(c.outlineWidth), shadow: c.boxShadow }; });
+  /* Every state a card can be in, focused from the keyboard. */
+  for (const id of ["k-ready", "k-none", "k-sel", "k-diff", "k-tgt", "k-dim", "k-grey", "k-ok", "k-no", "k-text", "k-tile"]) {
+    await card(k, id).scrollIntoViewIfNeeded();
+    /* A key press first, so the browser treats the focus as the keyboard's (:focus-visible). */
+    await page.keyboard.press("Shift");
+    await card(k, id).focus();
+    await expect(card(k, id)).toBeFocused();
+    const r = await ring(id);
+    expect(r.style, `${id}: focus ring`).toBe("solid");
+    expect(r.width, `${id}: focus ring width`).toBeGreaterThanOrEqual(2);
+    expect(r.color, `${id}: focus ring colour`).toBe("rgb(245, 245, 247)");
+  }
+  /* Selected keeps its own blue ring as well as the focus ring. */
+  expect((await ring("k-sel")).shadow).toContain("rgb(10, 132, 255)");
+  /* A card not started keeps its words at full colour: only its picture dims. */
+  await expect(card(k, "k-none").locator(".v12-card-title")).toHaveCSS("opacity", "1");
+  expect(await card(k, "k-none").evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  expect(await card(k, "k-none").locator(".v12-card-media").evaluate((el) => getComputedStyle(el).opacity)).toBe("0.55");
 });
