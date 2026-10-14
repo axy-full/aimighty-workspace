@@ -6,6 +6,8 @@ import type { TenantWorkspace } from "@/lib/tenant";
 import type { Transaction } from "@libsql/client";
 import { bumpRoomGeneration, closeRooms } from "./room-rotation";
 import { workbenchReady, workbenchTransaction } from "./records";
+import { starterProductionId } from "@/lib/starter";
+import { starterDraftId } from "./starter-draft";
 
 /**
  * Handing a board to someone else (board sharing, PR 4; owner, 13 Oct: "admins ... can transfer a board's ownership when a member leaves — the work belongs to the
@@ -65,6 +67,17 @@ async function moveRooms(tx: Tx, ws: Pick<TenantWorkspace, "id">, boards: Now[])
   return rooms;
 }
 
+/**
+ * A starter board is a person's own copy of the workspace's sample production (lib/workbench/starter-draft.ts): "Explore the starter production" opens it by an id made from
+ * their own key, so it stays theirs. It is not handed over: a hand-over would leave the sample's door (which finds it by that key) opening the new owner's work to the old owner.
+ */
+async function isStarterBoard(ws: Pick<TenantWorkspace, "id">, projectId: string): Promise<boolean> {
+  const stored = await boardDraftOf(projectId);
+  const starter = stored ? await starterProductionId() : null;
+  return !!stored && !!starter && stored.draftId === starterDraftId(ws.id, stored.owner, starter);
+}
+const STARTER = "A starter board is a sample to explore, and stays with whoever opened it.";
+
 const CHANGED_MEANWHILE = new TransferRefused("That board changed hands while this was being done. Look again.", 409);
 
 /** Hands each of these boards to `to`: all or none, one transaction, one audit line for each board that really changed hands. */
@@ -73,6 +86,7 @@ export async function transferBoards(ws: Pick<TenantWorkspace, "id">, admin: Per
   if (!projectIds.length || projectIds.length > 500) throw new TransferRefused("Choose the boards to move.", 400);
   const toId = await target(ws, to);
   await workbenchReady();
+  for (const id of new Set(projectIds)) if (isDraftProject(id) && (await isStarterBoard(ws, id))) throw new TransferRefused(STARTER, 409);
   const at = Date.now();
   const { moved, closed } = await workbenchTransaction(async (tx) => {
     const boards = await boardsNow(tx, projectIds);
@@ -103,9 +117,9 @@ export async function transferAllOf(ws: Pick<TenantWorkspace, "id">, admin: Pers
   await workbenchReady();
   const projectIds = (await ownedDrafts(fromId)).map((d) => d.projectId);
   if (!projectIds.length) return { moved: [] };
-  /* The marked sample is nobody's to hand over: left where it is. */
+  /* The marked sample and starter boards are nobody's to hand over: left where they are. */
   const handable: string[] = [];
-  for (const id of projectIds) if (!(await isMarkedSample(id))) handable.push(id);
+  for (const id of projectIds) if (!(await isMarkedSample(id)) && !(await isStarterBoard(ws, id))) handable.push(id);
   return handable.length ? transferBoards(ws, admin, handable, toId) : { moved: [] };
 }
 
@@ -114,7 +128,7 @@ export async function transferAllOf(ws: Pick<TenantWorkspace, "id">, admin: Pers
  * a board: move it to someone else). Audited, one line per board that really changed, in the same transaction; the room moves on with it; the row stays, so this can be
  * undone in turn.
  */
-export async function undoTransfers(ws: Pick<TenantWorkspace, "id">, admin: Person, projectIds: string[]): Promise<{ restored: Moved[] }> {
+export async function undoTransfers(ws: Pick<TenantWorkspace, "id">, admin: Person, projectIds: string[], seam: { beforeTransaction?: () => Promise<void> } = {}): Promise<{ restored: Moved[] }> {
   requireAdmin(admin);
   if (!projectIds.length || projectIds.length > 500) throw new TransferRefused("Choose the boards to give back.", 400);
   await workbenchReady();
@@ -125,12 +139,17 @@ export async function undoTransfers(ws: Pick<TenantWorkspace, "id">, admin: Pers
     if (!row || row.owner === row.previousOwner) throw new TransferRefused("That board has not been moved.", 409);
     await target(ws, row.previousOwner);
   }
+  /* For tests: runs between what was read above and the transaction, as another admin's request could. */
+  await seam.beforeTransaction?.();
   const at = Date.now();
   const { restored, closed } = await workbenchTransaction(async (tx) => {
     const boards = await boardsNow(tx, projectIds);
     const back: Now[] = [];
     for (const b of boards) {
       if (b.previous === null || b.owner === b.previous) throw new TransferRefused("That board has not been moved.", 409);
+      /* The member checked above is the one restored: only if the board is still exactly as it was read there. */
+      const seen = before.get(b.projectId);
+      if (!seen || b.owner !== seen.owner || b.previous !== seen.previousOwner) throw CHANGED_MEANWHILE;
       const changed = await tx.execute({ sql: "UPDATE workbench_board_owners SET owner=previous_owner, previous_owner=owner, transferred_by=?, at=? WHERE project_id=? AND owner=? AND previous_owner=?", args: [admin.id, at, b.projectId, b.owner, b.previous] });
       if (changed.rowsAffected !== 1) throw CHANGED_MEANWHILE;
       await tx.execute(securityAuditStatement({ workspaceId: ws.id, actorId: admin.id, action: "board.transfer_undone", targetType: "board", targetId: b.projectId, details: { from: b.owner, to: b.previous } }));

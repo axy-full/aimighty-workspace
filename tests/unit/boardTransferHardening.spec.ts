@@ -137,3 +137,17 @@ test("Undo goes only to a member who is still active: a board is not handed back
   expect((await f.undo([f.ids.d1])).ok).toBe(true);
   expect(await f.owner(f.ids.d1)).toBe("u_owner");
 });
+
+test("Undo restores the member it checked: if the board changed hands between that check and the transaction it is a 409 and nothing lands", async () => {
+  const f = await fixture("undo-race");
+  expect((await f.move([f.ids.d1], "u_new")).ok).toBe(true);
+  const transfer = await import("../../lib/workbench/board-transfer");
+  /* Between the read (who it goes back to: u_owner, an active member) and the transaction, another admin hands the board to Mia. */
+  const raced = await f.as(ADMIN, () => settle(transfer.undoTransfers(f.ws, ADMIN as never, [f.ids.d1], { beforeTransaction: async () => { await transfer.transferBoards(f.ws, ADMIN as never, [f.ids.d1], "u_mate"); } })));
+  expect(raced).toMatchObject({ ok: false, status: 409 });
+  expect(await f.owner(f.ids.d1), "Mia keeps it: the undo did not restore a member that was not the one checked").toBe("u_mate");
+  expect(await f.audit(), "no undo line").toEqual(["board.transferred", "board.transferred"]);
+  /* Undo with nothing in between lands. */
+  expect((await f.undo([f.ids.d1])).ok).toBe(true);
+  expect(await f.owner(f.ids.d1)).toBe("u_new");
+});

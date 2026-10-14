@@ -20,13 +20,18 @@ const who = (id: string, role: "admin" | "member" = "member"): Who => ({ id, rol
 const asUser = (w: Who) => ({ user: { ...w, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
 const OLD = who("u_old"), NEW = who("u_new"), ADMIN = who("u_admin", "admin");
 
-async function fixture(name: string) {
-  const ws = { id: `bts-${name}-${run}`, name, slug: name, legacy: false, dbUrl: `file:${path.join(dir, `bts-${name}-${run}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true } as TenantWorkspace;
+async function fixture(name: string, options: { platformRow?: boolean } = {}) {
+  let ws = { id: `bts-${name}-${run}`, name, slug: name, legacy: false, dbUrl: `file:${path.join(dir, `bts-${name}-${run}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true } as TenantWorkspace;
   const tenant = await import("../../lib/tenant"), database = await import("../../lib/db"), records = await import("../../lib/workbench/records");
   const { newProject } = await import("../../lib/workbench/studio");
   const platform = await import("../../lib/platform");
   const { transferBoards } = await import("../../lib/workbench/board-transfer");
   await platform.platformReady();
+  /* The starter production reads the workspace's plan, so its workspace is a real platform row. */
+  if (options.platformRow) {
+    await platform.platformDb().execute({ sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at) VALUES(?,?,?,?,1,'owner',0,0)", args: [ws.id, ws.id, ws.id, ws.dbUrl] });
+    ws = platform.rowToWorkspace((await platform.platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [ws.id] })).rows[0]);
+  }
   for (const [id, role] of [["u_old", "member"], ["u_new", "member"], ["u_admin", "admin"]] as const) {
     await platform.platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts(id,email,name,password_hash,created_at) VALUES(?,?,?,?,0)", args: [id, `${id}@example.test`, id, "x"] });
     await platform.platformDb().execute({ sql: "INSERT OR REPLACE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,?,0,0)", args: [ws.id, id, role] });
@@ -154,4 +159,28 @@ test("uploads: the new owner opens exactly the uploads ON the transferred board 
   expect([await opens(NEW, "upl_other_board"), await opens(NEW, "upl_loose")], "the previous owner's other uploads").toEqual([false, false]);
   for (const id of ["upl_on_draft", "upl_on_canvas", "upl_other_board", "upl_loose"]) expect(await opens(OLD, id), `the uploader keeps their own: ${id}`).toBe(true);
   expect(await opens(who("u_mate"), "upl_on_draft"), "nobody else gains anything").toBe(false);
+});
+
+test("a starter board is not handed over: transfer-all leaves it, an explicit hand-over is refused, and the starter's door still opens only its own person's copy", async () => {
+  const f = await fixture("starter", { platformRow: true });
+  const { openStarterDraft } = await import("../../lib/workbench/starter-draft");
+  const { transferAllOf, transferBoards } = await import("../../lib/workbench/board-transfer");
+  const { mappedId } = await import("../../lib/draftProject");
+  const opened = await f.as(OLD, () => openStarterDraft("u_old"));
+  const starterDraft = opened.project.id;
+  const starterBoard = mappedId("prj_wb_", f.ws.id, "u_old", starterDraft);
+  /* Saved once, so the old owner's copy holds their own work. */
+  await f.as(OLD, () => f.records.saveDraft("u_old", { ...opened.project, name: "Old owner's starter" } as never, opened.revision));
+  const all = await f.as(ADMIN, () => transferAllOf(f.ws, { ...ADMIN, owner: true } as never, "u_old", "u_new"));
+  expect(all.moved.map((m) => m.draftId), "the starter stays; the board made for the fixture moves").toEqual(["d1"]);
+  const refused = await f.as(ADMIN, () => settle(transferBoards(f.ws, { ...ADMIN, owner: true } as never, [starterBoard], "u_new")));
+  expect(refused).toMatchObject({ ok: false, status: 409 });
+  expect(await f.as(ADMIN, async () => (await (await import("../../lib/draftProject")).boardOwnerOf(starterBoard))?.owner)).toBe("u_old");
+  /* The new owner opens their own starter, never the old owner's; the old owner opens theirs again, whole, with their work. */
+  const theirs = await f.as(NEW, () => openStarterDraft("u_new"));
+  expect(theirs.project.id).not.toBe(starterDraft);
+  expect(theirs.project.name).not.toBe("Old owner's starter");
+  const again = await f.as(OLD, () => openStarterDraft("u_old"));
+  expect(again).toMatchObject({ created: false });
+  expect(again.project.name).toBe("Old owner's starter");
 });
