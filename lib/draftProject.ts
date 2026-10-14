@@ -90,10 +90,30 @@ export async function ownedDrafts(userId: string, ex: Exec = db()): Promise<{ ke
   return [...own, ...toMe];
 }
 
-/** The key the draft `draftId` the person owns is stored under: their own, or the first owner's when it was handed to them. `ambiguous` when more than one draft they own has that id. */
-export async function ownedKeyOf(userId: string, draftId: string, ex: Exec = db()): Promise<{ key: string } | { ambiguous: true } | null> {
-  const mine = (await ownedDrafts(userId, ex)).filter((d) => d.draftId === draftId);
-  return mine.length === 1 ? { key: mine[0].key } : mine.length > 1 ? { ambiguous: true } : null;
+/**
+ * THE resolver for "the storage key of the draft `draftId` that `userId` owns now": their own key, or the first owner's key when the board was handed to them. Null when they
+ * do not own a draft of that id: they handed it away (it is a teammate's now), or two boards handed to them share the id (nothing is guessed). Every place that reads or
+ * writes a person's own draft by their user id asks this, and uses the key it answers; a person who owns nothing of that id is answered as before (their own key, where
+ * there is no such draft either). Two small indexed reads of the hand-over table, none when it has no rows for the person.
+ */
+export async function ownKeyOf(userId: string, draftId: string, ex: Exec = db()): Promise<string | null> {
+  let toMe: Record<string, unknown>[], away: Record<string, unknown>[];
+  try {
+    toMe = (await ex.execute({ sql: "SELECT draft_owner FROM workbench_board_owners WHERE owner=? AND draft_id=? AND draft_owner<>owner", args: [userId, draftId] })).rows as Record<string, unknown>[];
+    if (toMe.length === 1) return String(toMe[0].draft_owner);
+    if (toMe.length > 1) return null;
+    away = (await ex.execute({ sql: "SELECT 1 AS found FROM workbench_board_owners WHERE draft_owner=? AND draft_id=? AND owner<>draft_owner LIMIT 1", args: [userId, draftId] })).rows as Record<string, unknown>[];
+  } catch (error) { if (noTable(error)) return userId; throw error; }
+  return away.length ? null : userId;
+}
+
+/**
+ * A SQL condition for "the drafts `userId` owns now" on `workbench_projects` (or an alias of it): stored under their key and not handed away, or handed to them. The same rule as
+ * `ownedDrafts`, for the queries that read a person's drafts in bulk. `args` follow the condition, in order.
+ */
+export function ownedDraftsSql(userId: string, alias = "workbench_projects"): { sql: string; args: string[] } {
+  const handed = (who: string) => `EXISTS (SELECT 1 FROM workbench_board_owners o WHERE o.draft_owner=${alias}.owner AND o.draft_id=${alias}.project_id AND ${who})`;
+  return { sql: `((${alias}.owner = ? AND NOT ${handed(`o.owner<>${alias}.owner`)}) OR ${handed("o.owner = ?")})`, args: [userId, userId] };
 }
 
 /** Whether the draft stored under `userId`'s own key for `draftId` has been handed to someone else. */

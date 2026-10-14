@@ -1,6 +1,6 @@
 import { requireRender, requireSession } from "../auth";
 import { requireTenant } from "../tenant";
-import { readDraft, workbenchReady } from "../workbench/records";
+import { readOwnDraft, workbenchReady } from "../workbench/records";
 import { workbenchScopeProblem } from "../workbench/request-scope";
 import type { Project } from "../workbench/studio";
 import { CONTEXT_LABELS, DEFAULT_CONTEXT, GOAL_MAX, type CrewContext } from "./room";
@@ -20,7 +20,7 @@ export async function crewCaller(req: Request, paid = false): Promise<{ userId: 
 export async function crewProject(userId: string, projectId: unknown): Promise<Project> {
   if (typeof projectId !== "string" || !/^[A-Za-z0-9._:-]{1,120}$/.test(projectId)) throw new CrewError("Open a project first.", 400);
   await workbenchReady();
-  const draft = await readDraft(userId, projectId);
+  const draft = await readOwnDraft(userId, projectId);
   if (!draft) throw new CrewError("Save your project first.", 404);
   return draft.project;
 }

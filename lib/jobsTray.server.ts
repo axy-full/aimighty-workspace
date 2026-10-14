@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { ownedDraftsSql } from "./draftProject";
 import { listGenerations, type Generation } from "./jobs";
 import { creditsApply } from "./credits";
 import { platformDb, platformReady } from "./platform";
@@ -116,11 +117,12 @@ async function draftsFor(userId: string, rows: Generation[]): Promise<Map<string
   const out = new Map<string, string>();
   if (!productions.length) return out;
   try {
+    const mine = ownedDraftsSql(userId);
     const rs = await db().execute({
       sql: `SELECT project_id, json_extract(body,'$.productionProjectId') AS production FROM workbench_projects
-        WHERE owner=? AND json_extract(body,'$.productionProjectId') IN (${productions.map(() => "?").join(",")})
+        WHERE ${mine.sql} AND json_extract(body,'$.productionProjectId') IN (${productions.map(() => "?").join(",")})
         ORDER BY updated_at DESC`,
-      args: [userId, ...productions],
+      args: [...mine.args, ...productions],
     });
     for (const row of rs.rows) {
       const production = String(row.production ?? "");

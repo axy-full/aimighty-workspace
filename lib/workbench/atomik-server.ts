@@ -1,3 +1,4 @@
+import { ownKeyOf } from '../draftProject';
 import { directTextCostUsd, isDirectText, textEngine, textKeyName } from '../openai-direct';
 import { languageAuth, languageReachable } from '../language-provider';
 import { ASTRA_BLENDER_MODEL, createAstraScene } from '../astra-blender/scene';
@@ -258,7 +259,9 @@ const withDependencies = (overrides?: Partial<AtomikDependencies>) => ({ ...depe
 
 export async function getAtomikProject(owner: string, projectId: string) {
   await atomikReady();
-  const row = (await db().execute({ sql: 'SELECT body FROM workbench_projects WHERE owner=? AND project_id=?', args: [owner, projectId] })).rows[0];
+  /* The draft this person owns now: under their key, or under the first owner's when the board was handed to them; none when they handed it away (lib/draftProject.ts › ownKeyOf). */
+  const key = await ownKeyOf(owner, projectId);
+  const row = key ? (await db().execute({ sql: 'SELECT body FROM workbench_projects WHERE owner=? AND project_id=?', args: [key, projectId] })).rows[0] : undefined;
   if (!row) throw new AtomikError('Save this project before asking Atomik to work on it.', 404);
   const parsed = projectSchema.safeParse(JSON.parse(String(row.body)));
   if (!parsed.success) throw new AtomikError('This saved project needs to be reopened and saved before Atomik can read it.', 409);

@@ -1,4 +1,5 @@
 import { openableAmong } from "./uploadAccess";
+import { ownedDraftsSql } from "./draftProject";
 import { db, ready } from "./db";
 import { takeOncePerWindow, windowTakenAt } from "./operationLease";
 import { requireTenant } from "./tenant";
@@ -50,11 +51,12 @@ const jsonOf = (raw: unknown): Record<string, unknown> => {
 export async function studioProjectFor(owner: string, productionId: string | null): Promise<string | null> {
   if (!owner || !productionId) return null;
   await workbenchReady();
+  const mine = ownedDraftsSql(owner);
   const row = (await db().execute({
-    sql: `SELECT project_id FROM workbench_projects WHERE owner=?
+    sql: `SELECT project_id FROM workbench_projects WHERE ${mine.sql}
             AND (CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END)=?
           ORDER BY updated_at DESC LIMIT 1`,
-    args: [owner, productionId],
+    args: [...mine.args, productionId],
   })).rows[0] as Row | undefined;
   return row ? String(row.project_id) : null;
 }

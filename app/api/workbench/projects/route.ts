@@ -59,7 +59,8 @@ export const GET=withTenant(async(req:Request)=>{
      project that files and bills there, not on whichever one Generate last had. */
   const production=new URL(req.url).searchParams.get('production');
   if(production){
-    const row=(await db().execute({sql:"SELECT project_id AS id FROM workbench_projects WHERE owner=? AND (CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END)=? ORDER BY updated_at DESC LIMIT 1",args:[auth.user.id,production]})).rows[0];
+    /* This person's own drafts: stored under their key and not handed away, or handed to them (lib/workbench/board-transfer.ts). */
+    const row=(await db().execute({sql:"SELECT p.project_id AS id FROM workbench_projects p WHERE ((p.owner=? AND NOT EXISTS (SELECT 1 FROM workbench_board_owners o WHERE o.draft_owner=p.owner AND o.draft_id=p.project_id AND o.owner<>p.owner)) OR EXISTS (SELECT 1 FROM workbench_board_owners o WHERE o.draft_owner=p.owner AND o.draft_id=p.project_id AND o.owner=?)) AND (CASE WHEN json_valid(p.body) THEN json_extract(p.body,'$.productionProjectId') END)=? ORDER BY p.updated_at DESC LIMIT 1",args:[auth.user.id,auth.user.id,production]})).rows[0];
     return Response.json({id:row?String(row.id):null},{headers:noStore});
   }
   /* `?kinds=1` (the new Home's boards): each board's kind, read the way lib/board/kind.ts boardKindOf reads it (an older

@@ -16,7 +16,8 @@ import { shotRequestInput } from "../workspace/rig-requests";
 import { isShotNode, rigShots } from "../workspace/shots";
 import { generationRequestBody, type GenerationReference } from "./generation-request";
 import { mediaReferenceIdentity } from "./media-reference-input";
-import { mapNodeShot, readDraft } from "./records";
+import { mapNodeShot, readOwnDraft } from "./records";
+import { ownKeyOf } from "@/lib/draftProject";
 import { approvalClosed, coverage, planApprovalOf } from "./plan-approval";
 import { effectiveJobCeiling, rigJobCeiling } from "./rig-agent-limits";
 import { creditFigure, type RigAgentState, type RigAgentStepState } from "./rig-agent-plan";
@@ -241,7 +242,7 @@ export async function priceRender(run: RunRow, step: StepRow, deps: PaidDeps = {
 
 async function priceRenderOnce(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Priced> {
   const fail = (reason: string, kind: PauseKind): Priced => ({ ok: false, reason, pause: kind });
-  const draft = await readDraft(run.owner, run.draftId);
+  const draft = await readOwnDraft(run.owner, run.draftId);
   if (!draft || draft.project.productionProjectId !== run.productionId) return fail("The project this run was asked from is no longer here.", "refused");
   const saved = await readTeamCanvas(run.productionId);
   const project = saved ? withTeamCanvas(draft.project, saved.canvas) : draft.project;
@@ -258,7 +259,8 @@ async function priceRenderOnce(run: RunRow, step: StepRow, deps: PaidDeps): Prom
     references.push({ ...identity, role: shotReferenceRole(node)(asset) });
   }
   let shotId: string;
-  try { shotId = await mapNodeShot(run.owner, project, node.id); }
+  /* The node's shot is the board's, whoever owns it now: mapped under the key the draft is stored under (lib/draftProject.ts › ownKeyOf), as a save by its owner maps it. */
+  try { shotId = await mapNodeShot((await ownKeyOf(run.owner, run.draftId)) ?? run.owner, project, node.id, run.owner); }
   catch (error) { return fail(error instanceof Error ? error.message : "This shot could not be saved to the production.", "refused"); }
   const input = shotRequestInput(project, node, shot, { shotId, productionProjectId: run.productionId }, references);
   if (!input) return fail(`${stepTitle(run, step)} has no prompt its engine can take. Shorten or condense it, then press Price again.`, "unpriced");

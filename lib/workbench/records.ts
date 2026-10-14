@@ -1,4 +1,4 @@
-import {currentPerson,isSampleIdentity,mappedId,mayReachProject} from '@/lib/draftProject';
+import {currentPerson,isSampleIdentity,mappedId,mayReachProject,ownKeyOf} from '@/lib/draftProject';
 import { db, ready, now } from '@/lib/db';
 import { requireTenant } from '@/lib/tenant';
 import { getPlatformLayer, planOf } from '@/lib/platform';
@@ -35,18 +35,19 @@ export async function workbenchReady() {
         owner TEXT NOT NULL, draft_id TEXT NOT NULL, writer TEXT NOT NULL,
         seq INTEGER NOT NULL, revision INTEGER, updated_at INTEGER NOT NULL,
         PRIMARY KEY(owner,draft_id,writer))`,
-      /* Who owns a board that has been handed over (board sharing, PR 4). Additive: a board's draft stays stored under its first owner's key and its project id stays the
-         hash it always was; this row says whose it is now. No row, no transfer. previous_owner is who it was just before, so Undo can give it back. Nothing is ever deleted from it. */
-      `CREATE TABLE IF NOT EXISTS workbench_board_owners (
-        project_id TEXT PRIMARY KEY, draft_owner TEXT NOT NULL, draft_id TEXT NOT NULL,
-        owner TEXT NOT NULL, previous_owner TEXT NOT NULL, transferred_by TEXT NOT NULL, at INTEGER NOT NULL)`,
-      `CREATE INDEX IF NOT EXISTS workbench_board_owners_owner ON workbench_board_owners(owner)`,
     ], 'write');
   })().catch(error=>{initialized.delete(client);throw error;}));
   await initialized.get(client);
 }
 
 export {mappedId};
+
+/** A person's OWN draft by their user id: the one stored under their key, or under the first owner's when the board was handed to them (lib/draftProject.ts › ownKeyOf); null when it is a teammate's now. */
+export async function readOwnDraft(userId: string, id: string): Promise<{project: Project; revision:number}|null> {
+  await workbenchReady();
+  const key=await ownKeyOf(userId,id);
+  return key?readDraft(key,id):null;
+}
 
 export async function readDraft(owner: string, id: string): Promise<{project: Project; revision:number}|null> {
   await workbenchReady();

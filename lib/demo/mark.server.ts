@@ -1,4 +1,5 @@
 import { db, ready, now } from "../db";
+import { ownedDraftsSql, ownKeyOf } from "../draftProject";
 import { archiveReady, archiveStatement } from "../archive";
 import { invalidateSettings } from "../settings";
 import { readDraft, workbenchReady, workbenchTransaction } from "../workbench/records";
@@ -73,14 +74,17 @@ export async function markSampleProduction(input: MarkInput, user: TenantUser): 
   let pickedDraft = draftId;
   if (!pickedDraft) {
     /* Only the caller's own drafts: nobody marks a teammate's private work. */
+    const mine = ownedDraftsSql(user.id);
     const row = (await db().execute({
-      sql: `SELECT project_id AS id FROM workbench_projects WHERE owner = ? AND (CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END) = ? ORDER BY updated_at DESC LIMIT 1`,
-      args: [user.id, projectId],
+      sql: `SELECT project_id AS id FROM workbench_projects WHERE ${mine.sql} AND (CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END) = ? ORDER BY updated_at DESC LIMIT 1`,
+      args: [...mine.args, projectId],
     })).rows[0];
     pickedDraft = row ? String(row.id) : null;
   }
   if (!pickedDraft || isSampleDraftId(pickedDraft)) throw new SampleError("That production was not found among your own projects.", 404);
-  const draft = await readDraft(user.id, pickedDraft);
+  /* The draft this person owns now, and the key it is stored under (lib/draftProject.ts › ownKeyOf). */
+  const key = await ownKeyOf(user.id, pickedDraft);
+  const draft = key ? await readDraft(key, pickedDraft) : null;
   if (!draft) throw new SampleError("That production was not found among your own projects.", 404);
   const production = draft.project.productionProjectId;
   if (!production || (projectId && production !== projectId)) throw new SampleError("Save the production first: it has no project in this workspace yet.", 409);
@@ -93,7 +97,7 @@ export async function markSampleProduction(input: MarkInput, user: TenantUser): 
   if (current) throw new SampleError("Another production is already the sample. Undo that first.", 409);
   const mark: SampleMark = {
     version: 1, projectId: production, name: String(found.name ?? draft.project.name ?? "").slice(0, 160),
-    draftOwner: user.id, draftId: pickedDraft, markedBy: user.id, markedAt: now(),
+    draftOwner: key ?? user.id, draftId: pickedDraft, markedBy: user.id, markedAt: now(),
   };
   await writeMark(mark, user.id, "sample marked again", stored != null);
   return mark;

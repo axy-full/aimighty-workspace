@@ -1,4 +1,5 @@
 import { notFound, permanentRedirect, redirect } from "next/navigation";
+import { ownedDraftsSql } from "../draftProject";
 import { currentContext, type Context } from "@/lib/auth";
 import { getBoard } from "@/lib/boards";
 import { getElement } from "@/lib/elements";
@@ -20,9 +21,10 @@ async function studioProjectFor(ctx: Context, productionProjectId: string): Prom
   if (!ctx.workspace || !productionProjectId) return null;
   return runInTenant(ctx.workspace, async () => {
     await workbenchReady();
+    const mine = ownedDraftsSql(ctx.user.id);
     const row = (await db().execute({
-      sql: "SELECT project_id AS id FROM workbench_projects WHERE owner=? AND (CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END)=? ORDER BY updated_at DESC LIMIT 1",
-      args: [ctx.user.id, productionProjectId],
+      sql: `SELECT project_id AS id FROM workbench_projects WHERE ${mine.sql} AND (CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END)=? ORDER BY updated_at DESC LIMIT 1`,
+      args: [...mine.args, productionProjectId],
     })).rows[0];
     return row ? String(row.id) : null;
   }, { user: ctx.user }).catch(() => null);

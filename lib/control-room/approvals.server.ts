@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { projectLister } from "@/lib/draftProject";
+import { ownedDraftsSql, projectLister } from "@/lib/draftProject";
 import { db, ready } from "@/lib/db";
 import { platformDb, platformReady } from "@/lib/platform";
 import { currentTenant } from "@/lib/tenant";
@@ -84,8 +84,8 @@ export async function projectsOf(viewer: string, productions: string[]): Promise
     /* As the jobs tray finds them (lib/jobsTray.server.ts): this person's newest draft open on that production. */
     db().execute({
       sql: `SELECT project_id, json_extract(body,'$.productionProjectId') AS production FROM workbench_projects
-            WHERE owner=? AND json_extract(body,'$.productionProjectId') IN (${marks}) ORDER BY updated_at DESC`,
-      args: [viewer, ...ids],
+            WHERE ${ownedDraftsSql(viewer).sql} AND json_extract(body,'$.productionProjectId') IN (${marks}) ORDER BY updated_at DESC`,
+      args: [...ownedDraftsSql(viewer).args, ...ids],
     }).catch(() => ({ rows: [] as Row[] })),
   ]);
   const name = new Map((names.rows as Row[]).map((r) => [String(r.id), String(r.name)]));

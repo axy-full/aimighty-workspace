@@ -7,6 +7,7 @@ import { openUploadStream, openMediaStream, storeUpload } from '../storage';
 import { findWorkbenchMedia } from '../workbench/media-records';
 import { originalAssetDownload } from '../workbench/original-asset';
 import { workbenchTransaction } from '../workbench/records';
+import { ownKeyOf } from '../draftProject';
 import type { Asset, Project } from '../workbench/studio';
 import { ASTRA_SANDBOX_INPUT_DIR, validateAstraGlb, type AstraRenderInput, type AstraRenderArtifacts } from './sandbox';
 import type { AstraNativeBindings } from './native-runtime';
@@ -107,7 +108,9 @@ export async function registerAstraArtifacts(jobId: string, owner: string, proje
     if (!artifacts.some(a => a.kind === 'blend') || !artifacts.some(a => a.kind === 'preview'))
         throw new Error('Native outputs are incomplete.');
     await workbenchTransaction(async (tx) => {
-        const row = (await tx.execute({ sql: 'SELECT body,revision FROM workbench_projects WHERE owner=? AND project_id=?', args: [owner, projectId] })).rows[0];
+        /* The draft the job's owner owns now (lib/draftProject.ts › ownKeyOf): a board handed over takes its outputs under the first owner's key, one handed away takes none. */
+        const key = await ownKeyOf(owner, projectId, tx);
+        const row = key ? (await tx.execute({ sql: 'SELECT body,revision FROM workbench_projects WHERE owner=? AND project_id=?', args: [key, projectId] })).rows[0] : undefined;
         const project = row ? JSON.parse(String(row.body)) as Project : null;
         const missing=project?artifacts.filter(item=>!project.assets.some(asset=>asset.id===item.assetId)).length:artifacts.length;
         const canAttach=!!project&&project.assets.length+missing<=PROJECT_LIMITS.assets;
@@ -116,7 +119,7 @@ export async function registerAstraArtifacts(jobId: string, owner: string, proje
             if (canAttach && project && !project.assets.some(asset => asset.id === item.assetId))
                 project.assets.push({ id: item.assetId, name: `3D render ${item.filename}`, kind: item.kind === 'preview' ? 'image' : 'document', category: '3D', url: item.url, mime: item.mime, uploadId: item.uploadId, description: 'Native 3D render output', prompt: '', status: 'Draft', locked: false, version: 1, refs: [] });
         }
-        if(canAttach)await tx.execute({ sql: 'UPDATE workbench_projects SET body=?,revision=revision+1,updated_at=? WHERE owner=? AND project_id=?', args: [JSON.stringify(project), Date.now(), owner, projectId] });
+        if(canAttach)await tx.execute({ sql: 'UPDATE workbench_projects SET body=?,revision=revision+1,updated_at=? WHERE owner=? AND project_id=?', args: [JSON.stringify(project), Date.now(), key, projectId] });
         await tx.execute({ sql: 'UPDATE astra_render_jobs SET outputs_registered=1,assets_registered=?,error=?,updated_at=? WHERE id=?', args: [canAttach?1:0,canAttach?null:project?`Outputs are saved in the Library and available below. This project has no room for them (${limitText(PROJECT_LIMITS.assets)} assets maximum).`:'Outputs are saved in the Library. The original project is no longer available.',Date.now(), jobId] });
         await tx.execute({ sql: 'DELETE FROM astra_render_storage WHERE job_id=?', args: [jobId] });
     });

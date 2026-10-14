@@ -3,6 +3,8 @@ import { boardDraftOf, boardOwnerRows, isActiveMember, isDraftProject, isMarkedS
 import { securityAuditStatement } from "@/lib/securityAudit";
 import { isAgentId } from "@/lib/security/people-only";
 import type { TenantWorkspace } from "@/lib/tenant";
+import type { Transaction } from "@libsql/client";
+import { bumpRoomGeneration, closeRooms } from "./room-rotation";
 import { workbenchReady, workbenchTransaction } from "./records";
 
 /**
@@ -37,44 +39,58 @@ async function target(ws: Pick<TenantWorkspace, "id">, to: unknown): Promise<str
   return id;
 }
 
-/** What each board is now, for the ones asked about: the draft that holds it, its name, and whose it is. Refused when a board is not this workspace's, or is the marked sample. */
-async function boardsNow(projectIds: string[]) {
-  await workbenchReady();
-  const handed = new Map((await boardOwnerRows()).map((h) => [h.projectId, h]));
-  const { db } = await import("@/lib/db");
-  const out: { projectId: string; draftOwner: string; draftId: string; name: string; owner: string }[] = [];
+type Tx = Pick<Transaction, "execute">;
+type Now = { projectId: string; draftOwner: string; draftId: string; name: string; production: string | null; owner: string; previous: string | null };
+
+/** What each board is now, READ INSIDE the transaction that changes it: the draft that holds it, its name and room, and whose it is. Refused when a board is not this workspace's, or is the marked sample. */
+async function boardsNow(tx: Tx, projectIds: string[]): Promise<Now[]> {
+  const out: Now[] = [];
   for (const projectId of [...new Set(projectIds)]) {
     if (!isDraftProject(projectId)) throw new TransferRefused(NO_BOARD, 404);
-    const stored = await boardDraftOf(projectId);
+    const stored = await boardDraftOf(projectId, tx);
     if (!stored) throw new TransferRefused(NO_BOARD, 404);
     /* The marked sample belongs to everyone and to its marker; it is not handed over. */
-    if (await isMarkedSample(projectId)) throw new TransferRefused("The sample board cannot be moved.", 409);
-    const row = (await db().execute({ sql: "SELECT name FROM workbench_projects WHERE key=?", args: [`${stored.owner}:${stored.draftId}`] })).rows[0];
-    out.push({ projectId, draftOwner: stored.owner, draftId: stored.draftId, name: String(row?.name ?? ""), owner: handed.get(projectId)?.owner ?? stored.owner });
+    if (await isMarkedSample(projectId, tx)) throw new TransferRefused("The sample board cannot be moved.", 409);
+    const draft = (await tx.execute({ sql: "SELECT name, CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END AS production FROM workbench_projects WHERE key=?", args: [`${stored.owner}:${stored.draftId}`] })).rows[0];
+    const row = (await tx.execute({ sql: "SELECT owner, previous_owner FROM workbench_board_owners WHERE project_id=?", args: [projectId] })).rows[0];
+    out.push({ projectId, draftOwner: stored.owner, draftId: stored.draftId, name: String(draft?.name ?? ""), production: typeof draft?.production === "string" && draft.production ? draft.production : null, owner: row ? String(row.owner) : stored.owner, previous: row ? String(row.previous_owner) : null });
   }
   return out;
 }
 
-/** Hands each of these boards to `to`: all or none, with one line each in the workspace's history. */
+/** The room each moved board is edited in moves on with the change (the one its draft is linked to, as setBoardSharing rotates it); the old rooms are closed after the commit. */
+async function moveRooms(tx: Tx, ws: Pick<TenantWorkspace, "id">, boards: Now[]): Promise<string[]> {
+  const rooms: string[] = [];
+  for (const production of new Set(boards.flatMap((b) => (b.production ? [b.production] : [])))) rooms.push((await bumpRoomGeneration(tx, ws.id, production)).from);
+  return rooms;
+}
+
+const CHANGED_MEANWHILE = new TransferRefused("That board changed hands while this was being done. Look again.", 409);
+
+/** Hands each of these boards to `to`: all or none, one transaction, one audit line for each board that really changed hands. */
 export async function transferBoards(ws: Pick<TenantWorkspace, "id">, admin: Person, projectIds: string[], to: unknown): Promise<{ moved: Moved[] }> {
   requireAdmin(admin);
   if (!projectIds.length || projectIds.length > 500) throw new TransferRefused("Choose the boards to move.", 400);
   const toId = await target(ws, to);
-  const boards = await boardsNow(projectIds);
-  if (boards.some((b) => b.owner === toId) && boards.length === 1) throw new TransferRefused("That board is already theirs.", 409);
-  const moving = boards.filter((b) => b.owner !== toId);
+  await workbenchReady();
   const at = Date.now();
-  await workbenchTransaction(async (tx) => {
+  const { moved, closed } = await workbenchTransaction(async (tx) => {
+    const boards = await boardsNow(tx, projectIds);
+    if (boards.length === 1 && boards[0].owner === toId) throw new TransferRefused("That board is already theirs.", 409);
+    const moving = boards.filter((b) => b.owner !== toId);
     for (const b of moving) {
-      await tx.execute({
-        sql: `INSERT INTO workbench_board_owners (project_id, draft_owner, draft_id, owner, previous_owner, transferred_by, at) VALUES (?,?,?,?,?,?,?)
-              ON CONFLICT(project_id) DO UPDATE SET owner=excluded.owner, previous_owner=workbench_board_owners.owner, transferred_by=excluded.transferred_by, at=excluded.at`,
-        args: [b.projectId, b.draftOwner, b.draftId, toId, b.owner, admin.id, at],
-      });
+      /* Written against what was just read: only if it is still that person's. */
+      const changed = b.previous === null
+        ? await tx.execute({ sql: "INSERT INTO workbench_board_owners (project_id, draft_owner, draft_id, owner, previous_owner, transferred_by, at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(project_id) DO NOTHING", args: [b.projectId, b.draftOwner, b.draftId, toId, b.owner, admin.id, at] })
+        : await tx.execute({ sql: "UPDATE workbench_board_owners SET owner=?, previous_owner=owner, transferred_by=?, at=? WHERE project_id=? AND owner=? AND previous_owner=?", args: [toId, admin.id, at, b.projectId, b.owner, b.previous] });
+      if (changed.rowsAffected !== 1) throw CHANGED_MEANWHILE;
       await tx.execute(securityAuditStatement({ workspaceId: ws.id, actorId: admin.id, action: "board.transferred", targetType: "board", targetId: b.projectId, details: { from: b.owner, to: toId } }));
     }
+    return { moved: moving.map((b) => ({ projectId: b.projectId, draftId: b.draftId, name: b.name, from: b.owner, to: toId })), closed: await moveRooms(tx, ws, moving) };
   });
-  return { moved: moving.map((b) => ({ projectId: b.projectId, draftId: b.draftId, name: b.name, from: b.owner, to: toId })) };
+  /* The old rooms' connections end now that the change is committed (never throws; the generation already keeps their tokens out). */
+  await closeRooms(closed);
+  return { moved };
 }
 
 /** Every board `from` owns now (a member who is leaving, or has left) handed to `to`. */
@@ -93,24 +109,35 @@ export async function transferAllOf(ws: Pick<TenantWorkspace, "id">, admin: Pers
   return handable.length ? transferBoards(ws, admin, handable, toId) : { moved: [] };
 }
 
-/** Gives each board back to who it was just before its latest handover. Audited; the row stays, so this can be undone in turn. */
+/**
+ * Gives each board back to who it was just before its latest handover, if that person is still an active member (a member who has left or was switched off cannot be handed
+ * a board: move it to someone else). Audited, one line per board that really changed, in the same transaction; the room moves on with it; the row stays, so this can be
+ * undone in turn.
+ */
 export async function undoTransfers(ws: Pick<TenantWorkspace, "id">, admin: Person, projectIds: string[]): Promise<{ restored: Moved[] }> {
   requireAdmin(admin);
   if (!projectIds.length || projectIds.length > 500) throw new TransferRefused("Choose the boards to give back.", 400);
   await workbenchReady();
-  const handed = new Map((await boardOwnerRows()).map((h) => [h.projectId, h]));
-  const names = new Map((await boardsNow(projectIds)).map((b) => [b.projectId, b.name]));
-  const rows = [...new Set(projectIds)].map((id) => {
-    const row = handed.get(id);
+  /* Who each would go back to, asked of the same rule as any handover (read once to name them; the transaction below reads again and writes only if nothing moved). */
+  const before = new Map((await boardOwnerRows()).map((h) => [h.projectId, h]));
+  for (const id of new Set(projectIds)) {
+    const row = before.get(id);
     if (!row || row.owner === row.previousOwner) throw new TransferRefused("That board has not been moved.", 409);
-    return row;
-  });
+    await target(ws, row.previousOwner);
+  }
   const at = Date.now();
-  await workbenchTransaction(async (tx) => {
-    for (const r of rows) {
-      await tx.execute({ sql: "UPDATE workbench_board_owners SET owner=previous_owner, previous_owner=owner, transferred_by=?, at=? WHERE project_id=?", args: [admin.id, at, r.projectId] });
-      await tx.execute(securityAuditStatement({ workspaceId: ws.id, actorId: admin.id, action: "board.transfer_undone", targetType: "board", targetId: r.projectId, details: { from: r.owner, to: r.previousOwner } }));
+  const { restored, closed } = await workbenchTransaction(async (tx) => {
+    const boards = await boardsNow(tx, projectIds);
+    const back: Now[] = [];
+    for (const b of boards) {
+      if (b.previous === null || b.owner === b.previous) throw new TransferRefused("That board has not been moved.", 409);
+      const changed = await tx.execute({ sql: "UPDATE workbench_board_owners SET owner=previous_owner, previous_owner=owner, transferred_by=?, at=? WHERE project_id=? AND owner=? AND previous_owner=?", args: [admin.id, at, b.projectId, b.owner, b.previous] });
+      if (changed.rowsAffected !== 1) throw CHANGED_MEANWHILE;
+      await tx.execute(securityAuditStatement({ workspaceId: ws.id, actorId: admin.id, action: "board.transfer_undone", targetType: "board", targetId: b.projectId, details: { from: b.owner, to: b.previous } }));
+      back.push(b);
     }
+    return { restored: back.map((b) => ({ projectId: b.projectId, draftId: b.draftId, name: b.name, from: b.owner, to: b.previous! })), closed: await moveRooms(tx, ws, back) };
   });
-  return { restored: rows.map((r) => ({ projectId: r.projectId, draftId: r.draftId, name: names.get(r.projectId) ?? "", from: r.owner, to: r.previousOwner })) };
+  await closeRooms(closed);
+  return { restored };
 }

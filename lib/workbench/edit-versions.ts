@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
+import { ownKeyOf } from "@/lib/draftProject";
 import {
   workbenchReady,
   workbenchTransaction,
@@ -93,12 +94,14 @@ export async function saveEditVersion(
         throw Error("This edit version failed its integrity check.");
       return metadata(prior);
     }
-    const draft = (
+    /* The draft this person owns now (lib/draftProject.ts › ownKeyOf): under their key, or the first owner's when the board was handed to them; none when handed away. */
+    const key = await ownKeyOf(owner, draftId, tx);
+    const draft = key ? (
       await tx.execute({
         sql: "SELECT body,revision FROM workbench_projects WHERE owner=? AND project_id=?",
-        args: [owner, draftId],
+        args: [key, draftId],
       })
-    ).rows[0];
+    ).rows[0] : undefined;
     if (!draft)
       throw Error("Save your project before saving an edit version.");
     if (Number(draft.revision) !== revision)

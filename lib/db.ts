@@ -56,6 +56,13 @@ const SCHEMA = [
      updated_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_workbench_owner ON workbench_projects(owner,updated_at)`,
+  /* Who owns a board that has been handed over (board sharing, PR 4; lib/workbench/board-transfer.ts). Additive: a board's draft stays stored under its first owner's key and its
+     project id stays what it was; a row here says whose it is now. No row, no hand-over. previous_owner is who it was just before, so Undo can give it back. Never deleted from. */
+  `CREATE TABLE IF NOT EXISTS workbench_board_owners (
+     project_id TEXT PRIMARY KEY, draft_owner TEXT NOT NULL, draft_id TEXT NOT NULL,
+     owner TEXT NOT NULL, previous_owner TEXT NOT NULL, transferred_by TEXT NOT NULL, at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS workbench_board_owners_owner ON workbench_board_owners(owner)`,
   `CREATE TABLE IF NOT EXISTS workbench_edit_versions (
      owner TEXT NOT NULL, draft_id TEXT NOT NULL, id TEXT NOT NULL,
      label TEXT NOT NULL, source_revision INTEGER NOT NULL, created_at INTEGER NOT NULL,

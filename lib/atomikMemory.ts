@@ -1,5 +1,6 @@
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
+import { ownedDraftsSql } from "./draftProject";
 import { requireTenant } from "./tenant";
 import { archiveDeleteStatements, archiveStatement, archiveTransaction } from "./archive";
 import {
@@ -137,8 +138,9 @@ function castEntries(body: unknown, productionId: string): { id: string; name: s
 async function draftsOf(productionId: string, owner?: string): Promise<Row[]> {
   /* Bodies are JSON as JSON.stringify writes it: the production id narrows the read before each is parsed. */
   const like = `%"productionProjectId":"${productionId}"%`;
-  return rowsOf(owner
-    ? { sql: "SELECT body FROM workbench_projects WHERE owner = ? AND body LIKE ?", args: [owner, like] }
+  const mine = owner ? ownedDraftsSql(owner) : null;
+  return rowsOf(mine
+    ? { sql: `SELECT body FROM workbench_projects WHERE ${mine.sql} AND body LIKE ?`, args: [...mine.args, like] }
     : { sql: "SELECT body FROM workbench_projects WHERE body LIKE ?", args: [like] });
 }
 
