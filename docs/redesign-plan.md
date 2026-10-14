@@ -624,3 +624,16 @@ Counts unchanged: 20 server-side UI-names files fixed by 16 Oct; the 3 UI-names 
 #724 approved: merge on green. #729, #732: merge on green after their fixes and a fresh Opus approval.
 
 How the lead applies it: the board design freeze now waits for **v22** (v21 went back with fixes).
+
+## Owner decisions (Akshay, 14 Oct, 22:50 IST)
+Verbatim:
+1) #715 guard: YES. ADMIN_TOKEN moves from "sees private boards" to "hidden from" in privateTakes.spec.ts. It's stricter and follows my token rule. Quote this in the PR.
+2) Client links: the board's OWNER can create a client link for their own private board, admin or not. Nobody else can make one on someone else's private board (admins included). History line "Client link created by <name>"; the owner sees and can revoke active links.
+3) Migrations #728 and #731: a local run on 127.0.0.1 alone does NOT count. Test on a throwaway copy of production instead:
+   - Tell me which database each migration touches (platform DB, tenant DBs, or both).
+   - Give me, as one Droplet-free list I run on my Mac with the turso CLI tomorrow after my fresh backup: (a) the command to create a throwaway copy, e.g. turso db create mig-test-20261015 --from-db <db> --group <group>; (b) the exact command to apply each migration to that copy only; (c) read-only check queries that print table/column names and row counts, no data; (d) the command to destroy the throwaway copy afterwards.
+   - Write the migration files into the repo (no secrets) so I can apply them by file.
+   - Only after that passes do they ship in deploy #4. Rollback stays as written in each PR.
+4) #738: YES to removing Gemini 2.5 Flash, 2.5 Flash-Lite, 2.5 Pro and 3.8 Flash from the menus, on condition that any saved setting or default pointing at them falls back to Auto with no error and no price change (add a test). The 8 moved tests: send me the list with one line each, and I'll give a yes per PR.
+5) Noted: the GEMINI_IMAGE_MODEL / GOOGLE_SAFETY_THRESHOLD check command comes after #730 merges.
+6) Deploy #4: prep from ~19:40 IST 15 Oct. I'll do the fresh backup first, then the migration test copy.
