@@ -65,6 +65,8 @@ export type Generation = {
   prompt: string;
   /** The name the team gave it, if any — shown in place of the clip id. */
   title: string | null;
+  /** A take made before metering: its figure is the one frozen for it (lib/estimatedCredits.ts), never repriced. */
+  estimated?: boolean;
   params: Record<string, unknown>;
   status: string;
   sourceUrl: string | null;
@@ -227,6 +229,7 @@ export function rowToGeneration(r: any): Generation {
     model: r.model,
     prompt: r.prompt,
     title: r.title ?? null,
+    estimated: r.estimated != null,
     params,
     status: r.status,
     sourceUrl: r.source_url ?? null,
@@ -271,7 +274,7 @@ export function rowToGeneration(r: any): Generation {
 }
 
 const SELECT = `
-  SELECT g.*, ${billedCreditsExpr("g")} AS receipt_credits, p.name AS project_name, u.name AS author_name,
+  SELECT g.*, ${billedCreditsExpr("g")} AS receipt_credits, (SELECT 1 FROM estimated_credits WHERE gen_id = g.id) AS estimated, p.name AS project_name, u.name AS author_name,
          s.code AS shot_code, s.scene AS shot_scene, s.title AS shot_title
   FROM generations g
   LEFT JOIN projects p ON p.id = g.project_id

@@ -7,8 +7,8 @@ import { freezeEstimatesSql } from "./creditSql";
  * Takes made before metering have no receipt, so their figure was once computed at read time from the cost and TODAY's margin table, and a change to the table repriced history
  * on statements, usage and caps. This freezes it (owner, 14 Oct 2026: "freeze estimated figures in their own table"; docs/plans/step-0-data.md item 4, M2):
  * once per workspace, one batch writes each such take's figure, at today's terms so every figure a customer sees now is kept exactly, into `estimated_credits`, plus the marker
- * that says it ran. It covers only takes that are certainly from before metering: no receipt (after a full receipt sync), and older than this workspace's first meter event (read
- * from the platform database before the fill). A take newer than that is never frozen, so a take whose receipt has not synced yet cannot be frozen by mistake. After the fill every
+ * that says it ran. It covers only takes that are certainly from before metering: no receipt (after a full receipt sync), and not newer than this workspace's first meter event (read
+ * from the platform database before the fill; a take with no receipt created in the very millisecond of the first meter event cannot be a metered one, since every receipt is in). A take newer than that is never frozen, so a take whose receipt has not synced yet cannot be frozen by mistake (and one that were would still read its receipt, which wins). After the fill every
  * reader reads the frozen figure: `billedCreditsExpr` (lib/creditSql.ts), and the statement, the cap baseline and the cap reader through `estimated_credits` directly. Nothing is
  * written to the meter, a receipt or a balance.
  *
@@ -27,7 +27,7 @@ export async function ensureEstimatedCredits(): Promise<void> {
     {
       sql: `INSERT OR IGNORE INTO estimated_credits(gen_id, credits, frozen_at)
             SELECT g.id, CAST(${freezeEstimatesSql("g")} AS INTEGER), ? FROM generations g
-            WHERE NOT EXISTS (SELECT 1 FROM credit_receipts r WHERE r.event_id = g.id) AND (? IS NULL OR g.created_at < ?)`,
+            WHERE NOT EXISTS (SELECT 1 FROM credit_receipts r WHERE r.event_id = g.id) AND (? IS NULL OR g.created_at <= ?)`,
       args: [at, firstMeterAt, firstMeterAt],
     },
     { sql: "INSERT OR IGNORE INTO estimated_credits_fill(id, filled_at, first_meter_at) VALUES(1, ?, ?)", args: [at, firstMeterAt] },
