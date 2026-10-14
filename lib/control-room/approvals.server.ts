@@ -9,6 +9,7 @@ import { cleanRule, cleanShotCap } from "@/lib/approvalRule";
 import { needsAdminTap, ownerIsAdmin, shotCap as chatShotCap, stepCredits } from "@/lib/atomikAccess";
 import { isAgentId } from "@/lib/security/people-only";
 import { FREE, exact, shortBy as shortOf, upTo } from "@/lib/shell/price-words";
+import { dollars } from "@/lib/format";
 import { listGenerations, type Generation } from "@/lib/jobs";
 import { heldNeeds, mayRelease } from "@/lib/workspace/release";
 import { nameFor, type LedgerViewer } from "@/lib/usageLedger";
@@ -208,8 +209,11 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
     /* The plan gate: one item, the plan at the server's total, approved once on its own screen (CLAUDE.md rule 14). */
     const quote = run.state === "needs_you" && view.plan?.quote && !view.plan.approval ? view.plan.quote : null;
     if (quote) {
-      /* Credits only where credits apply: the house pays at cost in dollars, and this queue holds no dollar figure (renderPrice, the held items), so it shows none. */
-      const price: QueuePrice = !ctx.inCredits ? null : quote.approximate ? upTo(quote.total) : exact(quote.total);
+      /* Credits where credits apply. The house pays at cost in dollars (owner, 13 Oct): its plan reads the covered renders' dollars (`totalUsd`, set only from a
+         house quote) so one screen holds one unit, and no figure at all when the quote has none. `inCredits` is false only for the house (lib/credits.ts creditsApply). */
+      const price: QueuePrice = ctx.inCredits ? (quote.approximate ? upTo(quote.total) : exact(quote.total))
+        : quote.totalUsd != null ? (quote.approximate ? upTo(quote.total, quote.totalUsd) : exact(quote.total, quote.totalUsd)) : null;
+      const note = ctx.inCredits ? `At most ${creditFigure(quote.ceiling)} cr with fixes` : quote.ceilingUsd != null ? `At most ${dollars(quote.ceilingUsd)} with fixes` : null;
       items.push({
         id: `board-plan:${run.id}`,
         source: "board-plan",
@@ -222,7 +226,7 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
         canApprove: view.mine && enabled,
         why: !enabled ? RIG_AGENT_OFF : !view.mine ? BOARD_NOT_YOURS : null,
         shortBy: shortOf(ctx.balance, price),
-        note: ctx.inCredits ? `At most ${creditFigure(quote.ceiling)} cr with fixes` : null,
+        note,
         step: null,
         sample: false,
         approve: { kind: "board-approve", productionId: run.productionId, runId: run.id, fingerprint: quote.fingerprint, plan: true },
