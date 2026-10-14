@@ -8,7 +8,7 @@ import ts from "typescript";
 /**
  * An account id is never shown as a reviewer's name. Rows written before the starter stored names hold a `usr_…` id in review_by, picked_by or approved_by.
  * Readers (the jobs API, a legacy client review link, the lock prompt) read an id through the workspace's own users row to the name, and the name through the owner
- * mask; an id that names no one reads as nothing. The platform owner reads "Particl support" in a client workspace and the real name in the house. The scrub also
+ * mask; an id that names no one reads as nothing. That holds for the response of a PATCH that marks a take (which re-reads its marks). The platform owner reads "Particl support" in a client workspace and the real name in the house. The scrub also
  * matches these columns by id. Real temporary databases; sign-in is a fake that masks the session user as the real sign-in does; nothing is sent or spent.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "actor-id-guard-"));
@@ -197,4 +197,38 @@ test("the starter seeded by the platform owner (a real name, a session masked as
   expect(approved.length).toBeGreaterThan(0);
   for (const x of approved) expect(x.reviewBy).toBe(SUPPORT);
   current = { ...member, role: "member" };
+});
+
+test("a PATCH that marks a take re-reads its marks: an old row's ids come back as names, never as ids", async () => {
+  const { client, root, member } = await fixture();
+  const { project } = await oldRows(client, "p", { member: member.id, root: root.id });
+  const admin = { ...member, role: "admin" };
+  const jobs = loadRoute<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts", () => client, () => admin);
+  const patch = (id: string, body: unknown) => inTenant(client, async () => {
+    const res = await jobs.PATCH(new Request(`https://particl.test/api/jobs/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), { params: Promise.resolve({ id }) } as never);
+    return { status: res.status, text: await res.text() };
+  }, { user: { ...admin, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
+  for (const [id, who] of [["g_p_member", MEMBER.name], ["g_p_root", SUPPORT], ["g_p_unknown", null]] as const) {
+    const sent = await patch(id, { reviewState: "changes" });
+    expect(sent.status, id).toBe(200);
+    expect(sent.text, id).not.toMatch(/usr_/);
+    const review = (JSON.parse(sent.text) as { review?: { pickedBy: string | null; approvedBy: string | null } }).review;
+    expect(review?.approvedBy, `${id} approvedBy`).toBe(who);
+    expect(review?.pickedBy, `${id} pickedBy`).toBe(who);
+  }
+  void project;
+});
+
+test("the owner's id is matched by id, with certainty: an unscrubbed users row that still holds the owner's real name, shared by another member, still reads Particl support", async () => {
+  const { client, root } = await fixture();
+  await sql(client, "UPDATE users SET name = ? WHERE id = ?", [ROOT.name, root.id]);
+  await sql(client, "INSERT OR REPLACE INTO users (id, email, name, password_hash, role, created_at) VALUES ('usr_namesake', 'namesake@example.test', ?, 'x', 'member', 0)", [ROOT.name]);
+  const at = Date.now();
+  await sql(client, "INSERT INTO generations (id, model, prompt, params, status, review_by, deleted, created_at, updated_at) VALUES ('g_certain', 'mock', 'p', '{}', 'succeeded', ?, 0, ?, ?)", [root.id, at, at]);
+  const { readableActors } = await import("../../lib/platformOwnerPrivacy");
+  const shown = await inTenant(client, () => readableActors([root.id, "usr_namesake"]));
+  expect(shown(root.id)).toBe(SUPPORT);
+  /* The namesake is a different person: their id reads their name, which is now ambiguous with the owner's, so the mask does not claim it. */
+  expect(shown("usr_namesake")).toBe(ROOT.name);
+  await sql(client, "DELETE FROM users WHERE id = 'usr_namesake'");
 });

@@ -274,7 +274,13 @@ export async function readableActors(values: Iterable<unknown>): Promise<(value:
   const shown = await storedActorMaskHere();
   return (value) => {
     if (typeof value !== "string" || value === "") return null;
-    if (isAccountId(value)) { const name = names.get(value); return name ? String(shown(name)) : null; }
+    if (isAccountId(value)) {
+      /* The owner's own ids are matched as ids first, with certainty; only then is the name looked up (and masked, for a name nobody else goes by). */
+      const byId = String(shown(value));
+      if (byId !== value) return byId;
+      const name = names.get(value);
+      return name ? String(shown(name)) : null;
+    }
     return String(shown(value));
   };
 }
