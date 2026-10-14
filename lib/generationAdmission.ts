@@ -120,6 +120,7 @@ import { jobLineGate, shotCapGate } from "@/lib/shotCap";
 import { isAgentId } from "@/lib/security/people-only";
 import { madeInOf } from "@/lib/madeIn";
 import { jobHint, jobOf, type Job } from "@/lib/takeJob";
+import { isShotType, shotTypeHint, shotTypeOf, type ShotType } from "@/lib/takeShotType";
 import { approvedTakeOf } from "@/lib/shots";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
@@ -233,7 +234,7 @@ type FinalSource = {
   hasVideoInput: boolean;
   /** The final the draft named when it was read ("" for none): the claim only lands if it still names it. */
   heldBy: string;
-  carried: { rawPrompt?: string; cast?: string[]; shotSpec?: Record<string, string> };
+  carried: { rawPrompt?: string; cast?: string[]; shotSpec?: Record<string, string>; shotType?: ShotType };
 };
 type FinalRefusal = { error: string; status: number; finalId?: string };
 /** The keys a final's request may carry. Everything else about it is its draft's; where it files
@@ -308,6 +309,7 @@ async function draftFinalSource(body: Record<string, unknown>): Promise<FinalSou
       ...(typeof params.rawPrompt === "string" ? { rawPrompt: params.rawPrompt } : {}),
       ...(Array.isArray(params.cast) ? { cast: params.cast.filter((c): c is string => typeof c === "string").slice(0, 20) } : {}),
       ...(shotSpec ? { shotSpec } : {}),
+      ...(isShotType(params.shotType) ? { shotType: params.shotType } : {}),
     },
   };
 }
@@ -657,6 +659,11 @@ export async function executeGenerationAdmission(
     const hinted = jobHint(body.job, jobFacts);
     if ("error" in hinted) return admissionReply({ error: hinted.error }, { status: 400 });
     const jobHinted: Job | null = hinted.hint;
+    /* The take's shot type (lib/takeShotType.ts), the same way: a hint is checked against the list and the Setup's shot size. A final carries its draft's. */
+    const shotSize = (final ? final.carried.shotSpec : shotSpecOf(body.shotSpec))?.shot ?? null;
+    const shotTyped = shotTypeHint(body.shotType, { kind: model.kind === "image" ? "image" : "video", shot: shotSize });
+    if ("error" in shotTyped) return admissionReply({ error: shotTyped.error }, { status: 400 });
+    const shotTypeStored: ShotType | null = final ? final.carried.shotType ?? shotTypeOf({ kind: "video", shot: shotSize }) : shotTypeOf({ kind: model.kind === "image" ? "image" : "video", shot: shotSize, hint: shotTyped.hint });
     const sourceGenId = body.sourceGenId ? String(body.sourceGenId) : null;
     /* An uploaded clip as the source of a locked task: the client sends it here, not among the references. */
     const sourceUploadId =
@@ -1594,6 +1601,7 @@ export async function executeGenerationAdmission(
         madeIn: madeInOf(body.madeIn, got),
         /* What the take is for (lib/takeJob.ts): written here, never taken from the request as it is. */
         job: jobOf({ kind: "image", task: model.stillTask ?? "generate", useAs: ["first", "cast"].includes(String(body.useAs)) ? String(body.useAs) : null, hint: jobHinted }),
+        ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
         ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
           soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
@@ -2195,6 +2203,7 @@ export async function executeGenerationAdmission(
       ...params,
       finalOf: final.draftId,
       job: jobOf({ kind: "video", task: "generate", finalOf: true }),
+      ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
       draftExpiresAt: final.expiresAt,
       hasVideoInput,
       inputSeconds: hasVideoInput ? inputSeconds : undefined,
@@ -2206,6 +2215,7 @@ export async function executeGenerationAdmission(
       ...params,
       madeIn: madeInOf(body.madeIn, got),
       job: jobOf({ kind: "video", task: task.id, draft, onShot: shotId != null, hint: jobHinted }),
+      ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
       ...(genjutsu ? { workbenchProjectId: body.workbenchProjectId, quoteBasis: "live-provider-estimate" } : {}),
       references: references.map((r) =>
         r.fromGeneration

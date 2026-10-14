@@ -85,8 +85,8 @@ export function admissionCheckpoint(
   if (!options.checkpoint) return;
   // Explicit source identities also let deletion guards protect quoted implicit cast references.
   const resolved = structuredClone(compiled);
-  /* The take's job label (lib/takeJob.ts) says what it is for, never what it costs or renders: it is not part of the quote, so a label cannot make a quote stale. */
-  if (resolved.params && typeof resolved.params === "object") delete (resolved.params as Record<string, unknown>).job;
+  /* The take's job label (lib/takeJob.ts) and its shot type (lib/takeShotType.ts) say what it is for, never what it costs or renders: they are not part of the quote, so a label cannot make a quote stale. */
+  if (resolved.params && typeof resolved.params === "object") { delete (resolved.params as Record<string, unknown>).job; delete (resolved.params as Record<string, unknown>).shotType; }
   const engine =
     kind === "audio"
       ? "elevenlabs"

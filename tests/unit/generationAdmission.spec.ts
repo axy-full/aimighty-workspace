@@ -1030,3 +1030,48 @@ test("a take's job (lib/takeJob.ts) is written by the server for a still, a clip
     expect(hinted.quote, String(job)).toEqual(plain.quote);
   }
 }));
+
+test("a take's shot type (lib/takeShotType.ts) is written by the server: from a checked hint, else from the Setup's shot size where that says it for certain; refused when it does not fit; never on a sound; never in the quote", async () => scope("shot-type", async (service) => {
+  const { db } = await import("../../lib/db");
+  const params = async (id: unknown) => JSON.parse(String((await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [id as string] })).rows[0].params));
+  const still = { model: "gemini-3.1-flash-image", prompt: "A tree", projectId: "project", ratio: "16:9", resolution: "1K" };
+  const clip = { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "720p", duration: 5 };
+  const sound = { task: "sound", text: "Soft rain", durationSeconds: 10, projectId: "project" };
+  let n = 0;
+  const press = async (kind: "gen" | "audio", body: Record<string, unknown>) => {
+    const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    const admit = kind === "audio" ? service.audio.admitAudio : service.gen.admitGeneration;
+    const prepared = value(await prepare(body as never, actor));
+    const reply = await admit(prepared, actor, { requestKey: `shot-type-${n++}-${kind}`, defer: noInline });
+    expect(reply.status, JSON.stringify(reply.body)).toBeLessThan(300);
+    return reply.body.id;
+  };
+  /* Nothing said and nothing the Setup tells: nothing stored. */
+  expect((await params(await press("gen", clip))).shotType).toBeUndefined();
+  expect((await params(await press("gen", { ...clip, shotSpec: { shot: "cu" } }))).shotType).toBeUndefined();
+  /* The Setup's shot size, where it says a recipe for certain. */
+  expect((await params(await press("gen", { ...clip, shotSpec: { shot: "evs" } }))).shotType).toBe("establishing_wide");
+  expect((await params(await press("gen", { ...still, shotSpec: { shot: "ots" } }))).shotType).toBe("over_the_shoulder");
+  expect((await params(await press("gen", { ...clip, shotSpec: { shot: "insert" } }))).shotType).toBe("detail");
+  /* A hint, which beats the Setup. */
+  expect((await params(await press("gen", { ...clip, shotType: "pack_shot" }))).shotType).toBe("pack_shot");
+  expect((await params(await press("gen", { ...still, shotType: "custom" }))).shotType).toBe("custom");
+  expect((await params(await press("gen", { ...clip, shotType: "aerial_reveal", shotSpec: { shot: "evs" } }))).shotType).toBe("aerial_reveal");
+  expect((await params(await press("gen", { ...clip, shotType: "detail", shotSpec: { shot: "insert" } }))).shotType).toBe("detail");
+  /* Nothing else writes it. */
+  expect((await params(await press("gen", { ...still, params: { shotType: "custom" }, shotSpec: { shotType: "custom" } }))).shotType).toBeUndefined();
+  /* Refused, for a quote and a press: off the list, not a word, one the Setup does not bear out, and any on a sound. */
+  for (const [kind, body] of [["gen", { ...clip, shotType: "face_close_up" }], ["gen", { ...clip, shotType: "Pack shot" }], ["gen", { ...clip, shotType: 4 }], ["gen", { ...clip, shotType: "" }],
+    ["gen", { ...clip, shotType: "establishing_wide" }], ["gen", { ...clip, shotType: "over_the_shoulder", shotSpec: { shot: "cu" } }], ["gen", { ...still, shotType: "detail" }],
+    ["audio", { ...sound, shotType: "custom" }]] as const) {
+    const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    expect(await prepare(body as never, actor), JSON.stringify(body)).toMatchObject({ ok: false, status: 400 });
+  }
+  expect((await params(await press("audio", sound))).shotType).toBeUndefined();
+  /* Not part of the quote: any hint or none, the same price and the same fingerprint. */
+  const plain = value(await service.gen.prepareGeneration(clip as never, actor));
+  for (const shotType of ["pack_shot", "custom", "talking_to_camera", undefined]) {
+    const hinted = value(await service.gen.prepareGeneration({ ...clip, shotType } as never, actor));
+    expect(hinted.quote, String(shotType)).toEqual(plain.quote);
+  }
+}));
