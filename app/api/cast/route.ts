@@ -14,8 +14,9 @@ export const GET = withTenant(async function GET(req: Request) {
   if (got.response) return got.response;
   const asked = new URL(req.url).searchParams.get("projectId");
   /* A private board's cast is its owner's alone, and a shared board's is for looking at (lib/draftProject.ts): a list of one reads as an unknown project's, and the list of every cast leaves them out. */
-  const listed = await projectLister(got.user);
   const named = asked && asked !== "all" && asked !== "unfiled" ? await reachableOr(got.user, asked, "read") : null;
+  /* An admin of this workspace who asks for one board's cast gets it (owner, 13 Oct), through the gate that writes the history line; the list of every cast is not widened. */
+  const listed = await projectLister(got.user, undefined, { only: named });
   const cast = (await listCast(named)).filter((c) => listed(c.projectId));
   return NextResponse.json({ cast });
 });
