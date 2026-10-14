@@ -71,3 +71,20 @@ test('no Gemini key: the call fails before sending and names the variable, even 
   expect(calls).toHaveLength(0);
   expect(textRouteWorks('google/gemini-3.5-flash-lite')).toBe(false);
 });
+
+test('a Gemini key alone does not make direct text reachable or switch the default writer to the router; listing google does', async () => {
+  const { directTextReachable, languageReachable } = await import('../../lib/language-provider');
+  const { refineProvider } = await import('../../lib/enhance');
+  delete process.env.AI_GATEWAY_API_KEY; delete process.env.REFINE_PROVIDER;
+  expect(directTextReachable(), 'the stills key is also this key').toBe(false);
+  expect(languageReachable()).toBe(false);
+  expect(refineProvider(), 'the default writer stays where it was').toBe('byteplus');
+  process.env.TEXT_DIRECT = 'google';
+  expect(directTextReachable()).toBe(true);
+  expect(refineProvider()).toBe('gateway');
+});
+
+test('the missing-key words for Gemini say it always goes direct and needs the key', async () => {
+  delete process.env.GEMINI_API_KEY;
+  await expect(languageAuth('google/gemini-3.5-flash-lite')).rejects.toThrow('Gemini text always goes direct to Google and needs GEMINI_API_KEY');
+});

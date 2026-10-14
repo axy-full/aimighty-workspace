@@ -157,7 +157,9 @@ export function directModelId(model: string): string {
 /** The key for a direct door, or an error that names the missing variable. */
 export function directKey(vendor: DirectVendor): string {
   const key = vendorKey(DIRECT_KEY[vendor]);
-  if (!key) throw new Error(`${vendorKeyEnv(DIRECT_KEY[vendor])} is not set. Direct ${vendor} text is switched on in TEXT_DIRECT and has no key; nothing was sent.`);
+  if (!key) throw new Error(vendor === "google"
+    ? `${vendorKeyEnv(DIRECT_KEY[vendor])} is not set. Gemini text always goes direct to Google and needs ${vendorKeyEnv(DIRECT_KEY[vendor])}; nothing was sent.`
+    : `${vendorKeyEnv(DIRECT_KEY[vendor])} is not set. Direct ${vendor} text is switched on in TEXT_DIRECT and has no key; nothing was sent.`);
   return key;
 }
 

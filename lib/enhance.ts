@@ -43,7 +43,7 @@ import { getPlatformLayer } from "./platform";
 import { prettyModel } from "./models";
 import { textModelFor } from "./platformLayer";
 import { currentTenant } from "./tenant";
-import { aliasModel } from "./modelAliases";
+import { aliasDropped, readsAsAuto } from "./modelAliases";
 import { textRouteWorks } from "./textRoute";
 export { TEXT_RATES, promptRichness, shouldRefine };
 export type { Richness };
@@ -108,15 +108,17 @@ export const PROMPT_MODELS = (): string[] =>
     "anthropic/claude-sonnet-5.5,anthropic/claude-sonnet-5"
   )
     .split(",")
-    .map((s) => aliasModel(s.trim()))
+    .map((s) => aliasDropped(s.trim()))
     .filter(Boolean);
 /**
  * The model the inline prompt writer runs for a routed choice: the choice itself when it has a price in the writer's own rate table and a
  * working route, else the first of the deployment's list that has a route. The one rule the writer runs by and the admin routing shows.
  */
 export function enhanceModelFor(routed: string): string {
-  const fallback = PROMPT_MODELS().find((id) => textRouteWorks(id)) ?? PROMPT_MODELS()[0];
-  return TEXT_RATES[routed] && textRouteWorks(routed) ? routed : fallback;
+  /* A Gemini id that left the menus reads as Auto (lib/modelAliases.ts): never the choice, and never the deployment's pick either. */
+  const list = PROMPT_MODELS().filter((id) => !readsAsAuto(id));
+  const fallback = list.find((id) => textRouteWorks(id)) ?? list[0] ?? PROMPT_MODELS()[0];
+  return TEXT_RATES[routed] && !readsAsAuto(routed) && textRouteWorks(routed) ? routed : fallback;
 }
 /** Whether the inline prompt writer can run this model as chosen (no fallback). */
 export const enhanceRunsModel = (id: string): boolean => Boolean(TEXT_RATES[id]);
@@ -452,7 +454,7 @@ async function refineThroughRouter(
 ): Promise<RefineResult & { cachedIn: number }> {
   const selected = currentTenant()?.workspace ? await activeWriter() : null;
   const model =
-    selected?.provider === "gateway" ? selected.model : PROMPT_MODELS()[0];
+    selected?.provider === "gateway" ? selected.model : (PROMPT_MODELS().find((id) => !readsAsAuto(id)) ?? PROMPT_MODELS()[0]);
   // Inline refinement has only legacy static writer pricing and is skipped
   // for subscribed workspaces. OpenAI planning belongs to the durable, quoted
   // Atomik path; a manual environment override must not create an unpriced call.

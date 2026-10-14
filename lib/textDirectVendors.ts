@@ -12,8 +12,9 @@ const KNOWN = new Set<string>(["anthropic", "google", "xai"]);
 const warned = new Set<string>();
 const ALWAYS_DIRECT: readonly TextDirectVendor[] = ["google"];
 
-export function textDirectVendors(): Set<TextDirectVendor> {
-  const out = new Set<TextDirectVendor>(ALWAYS_DIRECT);
+/** The vendors `TEXT_DIRECT` itself lists (not the always-direct ones): what switches a default on, as before. */
+export function listedTextDirectVendors(): Set<TextDirectVendor> {
+  const out = new Set<TextDirectVendor>();
   for (const part of (process.env.TEXT_DIRECT ?? "").split(",")) {
     const name = part.trim();
     if (!name) continue;
@@ -24,6 +25,11 @@ export function textDirectVendors(): Set<TextDirectVendor> {
     }
   }
   return out;
+}
+
+/** Every vendor whose text goes direct: the listed ones and the always-direct ones. */
+export function textDirectVendors(): Set<TextDirectVendor> {
+  return new Set<TextDirectVendor>([...ALWAYS_DIRECT, ...listedTextDirectVendors()]);
 }
 
 export function isTextDirect(vendor: string): boolean {
