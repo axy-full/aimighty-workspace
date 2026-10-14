@@ -367,3 +367,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **14 Oct 19:11 IST.** **#717 Opus APPROVED at 21704bdc**: the PATCH response is masked, and the owner is matched by id first; the new tests fail without their fixes (verified by the reviewer). Nit for later: the last test should restore its fixture in try/finally. #717 waits for #716 (stacked), then CI. Lane D (#718) and the #715 and #718 reviews are still running.
 - **14 Oct 19:12 IST.** **#716 CI GREEN 24/24** (run 38567538032, base 890d559c). It waits for the owner's merge word (privacy, NEEDS AKSHAY). #701 at 151795b7 (house note uses the enforced ceiling): Opus re-check running.
 - **14 Oct 19:15 IST.** **Owner answers received** (recorded verbatim in redesign-plan.md): #704 guard yes after an Opus check of room-rotation; #715 guard moves yes; #716 then #717 merge on green; deploy #4 defined (24 h after deploy #3 runs cleanly); #712 job label = purpose + shot type (`params.shot`); #714 additions (Recraft, FLUX.2, Google Vision, Topaz direct vs fal, Coolify setting names); older questions answered; three lenses Board · List · Rig and Cut → Edit (record only); **NEW PRIORITY: Vercel out** (plan PR first).
+- **14 Oct 19:16 IST.** **Merged #716** into release/1 (05e93d09), on the owner's "merge on green" (CI 24/24 at 890d559c). Then:
+  - #717 fresh CI started;
+  - **#701 Opus APPROVED at 151795b7** (house note = the enforced ceiling), CI next;
+  - Opus checking room-rotation against the owner's #704 condition;
+  - lane D: #715 guard moves (owner's word quoted), then hiding the owner's account id in client workspaces;
+  - Opus planner: **Vercel-out plan**.
+  - The #712/#714 plan updates (params.shot; Recraft, FLUX.2, Google Vision, Topaz comparison, Coolify names) start when lane A frees a slot.
