@@ -435,3 +435,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#704** fixes (51745682: rotation uses productionProjectId; a bump failure answers 503 before the membership change; a residual window between bump and commit is noted), merged forward: #708 61696f93, #713 b3804e71, #715 dfb2da67;
   - **#718** review fixes (41ab94cc: one resolver at every site, room moves in the transaction, conditional writes plus 409, Undo member check). The three Moleculr routes were left unchanged because their specs pin imports (owner decision).
   Opus re-reviews of #704 and #718 are running. Lane D is now on Vercel out: the guard ratchet first, then C1 (census and an R2-only open check).
+- **14 Oct 20:26 IST.** **#704 Opus re-review: 2 must-fixes.**
+  - (1) bumpEditRooms needs `await ready()`: without it an un-bootstrapped workspace 503s member removal, and securityAudit's 503 case passes for the wrong reason.
+  - (2) The window between the bump and the commit lets the member being removed get a token for the NEW room, and a Liveblocks connection outlives its token: a second bump after commit, closing both sets of rooms.
+  boardRooms.spec.ts is #704's own spec, so its counts may change. With the proposed import-list line plus (1), securityAudit, platformOwnerPrivacy and boardRooms pass 30/30 (reviewer-tested). Fix (1) of the earlier pair is correct, and the privacy verdict is unchanged. Queued for lane D after the Vercel guard PR.
