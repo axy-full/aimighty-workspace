@@ -439,6 +439,8 @@ export async function executeGenerationAdmission(
     /* An approval of another member's step (owner, 13 Oct): the render files into that step's own chat's project, resolved here from a step this caller claimed and has
        not sent, never named by the client, so its caps and the 200 cr line apply as on any render there and the approver never reads the board. */
     let stepFiled = false;
+    /* Who made the step's chat: the filing target is checked as THEIR board to file into, whoever approves (below). */
+    let stepCreator = "";
     if (body.atomikStepId !== undefined) {
       const filing = typeof body.atomikStepId === "string" ? await claimedStepFiling(body.atomikStepId, got.user) : null;
       if (!filing) return admissionReply({ error: "That step is gone." }, { status: 404 });
@@ -457,6 +459,7 @@ export async function executeGenerationAdmission(
       Object.assign(body, stepRender({ kind: filing.step.kind as never, title: filing.step.title, prompt: filing.step.prompt, model: filing.step.model, params: filing.step.params as never, refs: filing.step.refs as never }, filing.projectId).body, keep);
       if (body.projectId == null) delete body.projectId;
       stepFiled = true;
+      stepCreator = filing.createdBy;
     }
     if (body.projectId) {
       const project = await db().execute({
@@ -465,7 +468,9 @@ export async function executeGenerationAdmission(
       });
       /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): filing into either is refused as a missing project is,
          before anything is quoted, held or reserved, so the answer says nothing about whether it exists. An Atomik run (no person) is not asked. */
-      const reach = stepFiled || (await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "admit"));
+      /* A step's render is filed into its chat's project, which the chat's maker named: it is reachable if THEY may file there (their own board, or any shared project), never because an
+         approver claimed it (an admin approving a member's own step still files into the member's own board). A private board of someone else is refused as a missing project is. */
+      const reach = stepFiled ? await mayReachProject({ id: stepCreator }, String(body.projectId), "admit") : await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "admit");
       if (!project.rows.length || !reach)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
