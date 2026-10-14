@@ -41,13 +41,32 @@ type WS = import("../../lib/tenant").TenantWorkspace;
 type Acct = { id: string; email: string; name: string };
 
 let made: Promise<{ house: WS; client: WS; root: Acct; member: Acct }> | null = null;
+/* The platform database is shared by every spec file that runs in this worker, so every row this file adds is taken out again when it is done (the house row above all: another
+   spec inserts its own, and a second one is a UNIQUE failure there). */
+const added = { workspaces: [] as string[], accounts: [] as string[] };
+test.afterAll(async () => {
+  if (!made) return;
+  const { platformDb } = await import("../../lib/platform");
+  const marks = (list: string[]) => list.map(() => "?").join(",");
+  const client = await made.catch(() => null);
+  if (client) added.workspaces.push(client.client.id);
+  const db = platformDb();
+  if (added.workspaces.length) {
+    await db.execute({ sql: `DELETE FROM memberships WHERE workspace_id IN (${marks(added.workspaces)})`, args: added.workspaces }).catch(() => {});
+    await db.execute({ sql: `DELETE FROM workspace_provisioning WHERE workspace_id IN (${marks(added.workspaces)})`, args: added.workspaces }).catch(() => {});
+    await db.execute({ sql: `DELETE FROM workspaces WHERE id IN (${marks(added.workspaces)})`, args: added.workspaces }).catch(() => {});
+  }
+  if (added.accounts.length) await db.execute({ sql: `DELETE FROM accounts WHERE id IN (${marks(added.accounts)})`, args: added.accounts }).catch(() => {});
+});
 function fixture() {
   made ??= (async () => {
     const { hashPassword } = await import("../../lib/auth");
     const { createAccount, addMember, legacyWorkspace, platformDb } = await import("../../lib/platform");
     const { requestWorkspace, resumeWorkspace } = await import("../../lib/workspaceProvisioning");
     const root = await createAccount(ROOT.email, ROOT.name, hashPassword(password));
+    added.accounts.push(root.id);
     if (!(await legacyWorkspace())) {
+      added.workspaces.push("ws_legacy");
       await platformDb().execute({
         sql: `INSERT INTO workspaces (id, slug, name, db_url, db_token_enc, legacy, uses_platform_keys, owner_id, created_at, updated_at) VALUES ('ws_legacy', 'house', 'House', '(primary)', NULL, 1, 1, ?, ?, ?)`,
         args: [root.id, Date.now(), Date.now()],
@@ -56,8 +75,10 @@ function fixture() {
     const house = (await legacyWorkspace())!;
     await addMember(house, root, "admin");
     const clientOwner = await createAccount(`cleo-${run}@example.test`, "Cleo Client", hashPassword(password));
+    added.accounts.push(clientOwner.id);
     const client = (await resumeWorkspace(await requestWorkspace({ owner: clientOwner, name: "Client studio" }), clientOwner.id)).workspace!;
     const member = await createAccount(MEMBER.email, MEMBER.name, hashPassword(password));
+    added.accounts.push(member.id);
     await addMember(client, root, "admin");
     await addMember(client, member, "member");
     await addMember(house, member, "member");
@@ -221,14 +242,17 @@ test("a PATCH that marks a take re-reads its marks: an old row's ids come back a
 
 test("the owner's id is matched by id, with certainty: an unscrubbed users row that still holds the owner's real name, shared by another member, still reads Particl support", async () => {
   const { client, root } = await fixture();
-  await sql(client, "UPDATE users SET name = ? WHERE id = ?", [ROOT.name, root.id]);
-  await sql(client, "INSERT OR REPLACE INTO users (id, email, name, password_hash, role, created_at) VALUES ('usr_namesake', 'namesake@example.test', ?, 'x', 'member', 0)", [ROOT.name]);
-  const at = Date.now();
-  await sql(client, "INSERT INTO generations (id, model, prompt, params, status, review_by, deleted, created_at, updated_at) VALUES ('g_certain', 'mock', 'p', '{}', 'succeeded', ?, 0, ?, ?)", [root.id, at, at]);
-  const { readableActors } = await import("../../lib/platformOwnerPrivacy");
-  const shown = await inTenant(client, () => readableActors([root.id, "usr_namesake"]));
-  expect(shown(root.id)).toBe(SUPPORT);
-  /* The namesake is a different person: their id reads their name, which is now ambiguous with the owner's, so the mask does not claim it. */
-  expect(shown("usr_namesake")).toBe(ROOT.name);
-  await sql(client, "DELETE FROM users WHERE id = 'usr_namesake'");
+  const before = (await sql(client, "SELECT name FROM users WHERE id = ?", [root.id]))[0].name as string;
+  try {
+    await sql(client, "UPDATE users SET name = ? WHERE id = ?", [ROOT.name, root.id]);
+    await sql(client, "INSERT OR REPLACE INTO users (id, email, name, password_hash, role, created_at) VALUES ('usr_namesake', 'namesake@example.test', ?, 'x', 'member', 0)", [ROOT.name]);
+    const { readableActors } = await import("../../lib/platformOwnerPrivacy");
+    const shown = await inTenant(client, () => readableActors([root.id, "usr_namesake"]));
+    expect(shown(root.id)).toBe(SUPPORT);
+    /* The namesake is a different person: their id reads their name, which is now ambiguous with the owner's, so the mask does not claim it. */
+    expect(shown("usr_namesake")).toBe(ROOT.name);
+  } finally {
+    await sql(client, "DELETE FROM users WHERE id = 'usr_namesake'");
+    await sql(client, "UPDATE users SET name = ? WHERE id = ?", [before, root.id]);
+  }
 });
