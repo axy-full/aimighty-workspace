@@ -535,3 +535,21 @@ How the lead applies it:
 - **Continues (server only, no visible board change):** board sharing #702 #704 #705 #708, 8b (compare-and-set on save; uses #708's existing changed bar, no new UI), plan PRs 1, 2 and 4 server parts; Trash server #698; the Step 0 data plan; the provider adapter plans; deploy #3 backup steps.
 - **Not board UI, so not frozen:** #701 house units (price wording) and #706 Make's grid. Both were approved before the freeze.
 - Anything that would need a new or changed board element stops and is logged as waiting for v18.
+
+## Owner answers (Akshay, 14 Oct evening, recorded 19:15 IST)
+Verbatim:
+1) #704 guard: yes, on the condition that Opus confirms the newly allowed file only closes live rooms and reads nothing new. Quote this line in the PR.
+2) #715 guard move: yes (my 13 Oct rule). Keep other workspaces and plain members refused. Default confirmed: an admin can't start renders on a member's private board. #718: undo has no time limit — confirmed.
+3) #716 then #717: merge on green.
+4) Deploy #4 = board-sharing stack (#702, #704, #705, #708, #713, then #715, #718) + Trash #698 + Remotion #700 (switch off), one backup-backed deploy, prepared only after deploy #3 has run cleanly for 24 h.
+5) #712: job label = A (purpose) AND add the shot type (the recipe: face close-up, pack shot, dialogue, motion transfer, product reveal, etc.) as a second label, e.g. params.shot — Particl Auto routes on it. Other recommendations accepted, including approving takes people-only.
+6) #714: order accepted (lip-sync via fal → Sarvam → Rekognition → Runway standby, house only until training-free terms). Voice cloning: not now. Counsel before any customer switch. ADD to the plan: Recraft (raster, vector, vectorize, remove background), Black Forest Labs FLUX.2 (create + multi-reference edit), Google Cloud Vision text detection (GOOGLE_VISION_API_KEY is set), and a Topaz direct vs fal price comparison. Give me the exact Coolify setting NAMES per provider (names only; AWS names distinct from anything R2/S3 reads).
+7) Older questions: removing a frame removes its beat (into Trash); Make grid = mine by default with an "Everyone's" filter; Remotion worker network = relay (c); pre-metering takes marked "estimated", no repricing; hide my account id in client workspaces — yes.
+8) Design decisions to RECORD only (no building during the freeze): three lenses — Board, List and Rig (Rig stays for customers). Timeline is not a lens: it is the Edit stage. "Cut" is renamed "Edit" and the animatic is its first step (storyboard frames on the timeline, replaced by shots as they render). "Map" as a name is dropped; the node view keeps the name Rig.
+9) NEW PRIORITY — Vercel out, server-side, runs during the freeze: plan PR first, then small PRs. (a) Remove dead weight: @ai-sdk/gateway, unused @ai-sdk/* and type-only 'ai' imports, @vercel/oidc, @vercel/sandbox, vercel.json, lib/gateway.ts, lib/engines/vercel.ts, lib/vercelKeys.ts, public/vercel.svg (list every importer first). (b) Replace Atomik's ToolLoopAgent (lib/workbench/rig-agent-planner.ts) with our own tool loop on the provider SDKs already wired — or fold into the LangGraph.js plan (#553); tell me which is smaller and safer; Opus money review; mocked tests. (c) Vercel Blob: report what still lives only on Blob, copy to R2, verify every take/upload/identity opens from R2, then remove @vercel/blob — nothing deleted from Blob without my yes. Keep a guard that fails if Vercel ever comes back.
+Real PR numbers in the status page.
+
+How the lead applies it:
+- **Item 8 (record only):** the lenses become Board · List · Rig (three; "Canvas" in code and plans is "Board" in the UI; "Strip" and "Map" are dropped as lens names). The Edit stage (renamed from Cut) holds the timeline, and its first step is the animatic. Nothing is built until v18. When built, UI-copy changes follow the UI-names guard.
+- **Item 9 is the new top server priority**, after merging what's green.
+- **Production storage:** copying Blob to R2, and any inventory of production storage, needs production keys. The lead and lanes never hold them, so the plan gives the owner (or advisor) the exact, read-only and copy-only commands to run. Nothing is deleted from Blob without the owner's yes.
