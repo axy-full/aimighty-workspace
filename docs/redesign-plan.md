@@ -284,6 +284,9 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 - **Flake check: `dots-centred-workbench.spec.ts:45` at 1920x1080** ("board-header-cast: dots drawn": no bright pixels found). It failed in #691's CI run 38389815513 but passed in #703's run on the same release/1 commit. If it recurs, make the capture wait for the header icon to be painted (#695's own spec).
 - **Claude Design round: the docked Atomik panel shows two filled primaries** ("Show me looks · N cr" in QuestionsBlock.tsx, "Draw the storyboard · N cr" in DrawStoryboard.tsx) on a fresh board, against the "one filled primary per screen" rule. With the v15 "changed since" bar it can be three. v15 draws no such panel. This needs a design decision (which one is the next step), then a small PR; the spend-buttons guard applies to both.
 
+- **(14 Oct 17:34, from the Step 0 plan, #712) Possible raw account id:** `lib/jobs.ts:253` returns `createdBy` as a raw account id. Check whether that exposes the platform owner's account id inside a client workspace (it should go through `storedActorMaskHere`). Privacy: Opus review.
+- **(14 Oct 17:34, #712) Takes from before metering are repriced at read time:** `lib/creditSql.ts:5-25` prices takes that have no receipt with today's `margins()`, although its own comment says history must not be repriced. A margin change would change what old takes show. Money: needs the owner.
+
 ## Housekeeping rules (owner, 12 Oct)
 
 1. `design/` keeps only `particl-prototype-14` (the design) and `particl-prototype-12` (reference). Older prototype versions are deleted in a small design-files-only PR (#673 removes `design/particl-graphite`).
