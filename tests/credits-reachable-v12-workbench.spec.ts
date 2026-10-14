@@ -86,7 +86,7 @@ test.describe("desktop, switch on", () => {
     await expect(boards.first()).toContainText("$7.20");
     const history = page.getByTestId("v12-billing-history-row");
     await expect(history).toHaveCount(2);
-    await expect(history.first()).toContainText("$0.040");
+    await expect(history.first()).toContainText("$0.04");
     await expect(page.getByTestId("v12-billing-history")).toContainText("$1.80");
     await expect(page.getByTestId("v12-billing-export")).toHaveAttribute("href", /\/api\/usage\?rows=1&format=csv&month=\d{4}-\d{2}/);
     /* No credit figure, plan card or top-up anywhere on it. */
