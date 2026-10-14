@@ -517,3 +517,12 @@ Status by 09:00 IST: what merged (real PR numbers and commits), deploy #2's PR n
   - the worker's network is like Blender's;
   - limits: 3 CPU / 8 GB, 2 in parallel, 1 per workspace, 6 per hour;
   - #700's migration ships in a later deploy.
+
+## Owner decision (Akshay, 14 Oct 17:08 IST): board design freeze, v17 → v18
+Verbatim: "Design freeze on the board UI: I'm redesigning the board in Claude Design (v17 → v18: Atomik column removed, one right-hand context panel replacing the toolbar, centred bottom bar, per-stage settings). Until I approve the final prototype, do NOT build or change board UI: bottom bar, right toolbar/panel, Atomik column, lens switcher position, or stage options. Finish and park any in-flight UI PRs as-is (e.g. four-lenses PR 2) — no new UI work on them. Keep going on server-side work that doesn't depend on the screens: deploy #3 support (backup steps for me), board sharing server PRs, Trash server, Step 0 data plan (job label per take, structured reject reasons, user ids for pick/approve, billed credits on the take), and the provider adapter plans (Runway, Sarvam, sync.so, AWS Rekognition) as registry tools — plans first, no paid calls. Status with real PR numbers."
+
+How the lead applies it:
+- **Parked (as they are, no further UI work):** #709 four lenses PR 1; four lenses PR 2 (opened as a draft); #707 delete on the board (its record-to-Trash-first correctness fix is finished, then it parks); undo/redo (`feat/r1-undo`); the board-sharing screens (share submenu, card state icon, real initials, changed-bar polish, transfer and All boards); the Claude Design round items for the board.
+- **Continues (server only, no visible board change):** board sharing #702 #704 #705 #708, 8b (compare-and-set on save; uses #708's existing changed bar, no new UI), plan PRs 1, 2 and 4 server parts; Trash server #698; the Step 0 data plan; the provider adapter plans; deploy #3 backup steps.
+- **Not board UI, so not frozen:** #701 house units (price wording) and #706 Make's grid. Both were approved before the freeze.
+- Anything that would need a new or changed board element stops and is logged as waiting for v18.
