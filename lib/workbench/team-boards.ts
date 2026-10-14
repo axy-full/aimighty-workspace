@@ -12,7 +12,7 @@
  * The platform owner reads as "Particl support" with an opaque id outside the house (lib/platformOwnerPrivacy.ts), as on the Team page.
  */
 import { db } from "@/lib/db";
-import { DRAFT_PROJECT_PREFIX, mappedId, sampleMarkNow, TEAM_SHARED_SQL } from "@/lib/draftProject";
+import { DRAFT_PROJECT_PREFIX, mappedId, mayEditSample, mayReachProject, sampleMarkNow, TEAM_EDIT_SQL, TEAM_SHARED_SQL } from "@/lib/draftProject";
 import { platformDb, platformReady } from "@/lib/platform";
 import { ownerMaskFor, resolveMemberId, supportMemberId } from "@/lib/platformOwnerPrivacy";
 import type { TenantWorkspace } from "@/lib/tenant";
@@ -62,7 +62,7 @@ export async function listTeamBoards(ws: Pick<TenantWorkspace, "id">, me: string
 }
 
 /** A teammate's shared board, whole, to look at: null when that person is not an active member here, has no such board, or has not shared it. */
-export async function readTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string, ownerParam: string, id: string): Promise<{ project: NonNullable<Awaited<ReturnType<typeof readDraft>>>["project"]; revision: number; owner: BoardOwner } | null> {
+export async function readTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string, ownerParam: string, id: string): Promise<{ project: NonNullable<Awaited<ReturnType<typeof readDraft>>>["project"]; revision: number; owner: BoardOwner; key: string } | null> {
   const accountId = await resolveMemberId(ws, ownerParam);
   if (accountId === me) return null;
   const people = await activeMembers(ws);
@@ -72,7 +72,7 @@ export async function readTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string,
   await workbenchReady();
   if (!(await db().execute({ sql: `SELECT 1 FROM workbench_projects WHERE key=? AND ${SHARED}`, args: [`${accountId}:${id}`] })).rows.length) return null;
   const draft = await readDraft(accountId, id);
-  return draft && draft.project.teamShared === true ? { ...draft, owner } : null;
+  return draft && draft.project.teamShared === true ? { ...draft, owner, key: accountId } : null;
 }
 
 /**
@@ -94,7 +94,7 @@ export async function otherOwnersBoard(ws: Pick<TenantWorkspace, "id">, me: stri
  * A teammate's shared board asked for by its id alone (a board link): the one board with that id in this workspace that belongs to an active member
  * other than the caller and is shared. A private draft is null here, whoever asks.
  */
-export async function findTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string, id: string): Promise<{ project: NonNullable<Awaited<ReturnType<typeof readDraft>>>["project"]; revision: number; owner: BoardOwner } | null> {
+export async function findTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string, id: string): Promise<{ project: NonNullable<Awaited<ReturnType<typeof readDraft>>>["project"]; revision: number; owner: BoardOwner; key: string } | null> {
   await workbenchReady();
   const rows = (await db().execute({ sql: `SELECT owner FROM workbench_projects WHERE project_id=? AND owner<>? AND ${SHARED} ORDER BY updated_at DESC`, args: [id, me] })).rows;
   const people = await activeMembers(ws);
@@ -102,19 +102,19 @@ export async function findTeamBoard(ws: Pick<TenantWorkspace, "id">, me: string,
     const owner = await ownerOf(ws, people, String(row.owner));
     if (!owner) continue;
     const draft = await readDraft(String(row.owner), id);
-    if (draft && draft.project.teamShared === true) return { ...draft, owner };
+    if (draft && draft.project.teamShared === true) return { ...draft, owner, key: String(row.owner) };
   }
   return null;
 }
 
 /** The SHARED board whose own production project is `productionId` (lib/draftProject.ts): its draft id and its maker as a teammate sees them; null when that board is not shared or its maker is not an active member. */
-export async function sharedBoardOfProduction(ws: Pick<TenantWorkspace, "id">, productionId: string): Promise<{ draftId: string; owner: BoardOwner } | null> {
+export async function sharedBoardOfProduction(ws: Pick<TenantWorkspace, "id">, productionId: string): Promise<{ draftId: string; owner: BoardOwner; key: string } | null> {
   await workbenchReady();
   const rows = (await db().execute({ sql: `SELECT owner, project_id FROM workbench_projects WHERE ${SHARED}`, args: [] })).rows;
   const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, ws.id, String(row.owner), String(row.project_id)) === productionId);
   if (!hit) return null;
   const owner = await ownerOf(ws, await activeMembers(ws), String(hit.owner));
-  return owner ? { draftId: String(hit.project_id), owner } : null;
+  return owner ? { draftId: String(hit.project_id), owner, key: String(hit.owner) } : null;
 }
 
 /** The maker of the SHARED board whose own production project is `productionId`, as a teammate sees them. */
@@ -127,4 +127,81 @@ export async function sampleViewOnly(ws: Pick<TenantWorkspace, "id">): Promise<{
   const mark = await sampleMarkNow();
   const owner = mark?.markedBy ? await ownerOf(ws, await activeMembers(ws), mark.markedBy) : null;
   return { owner: owner ?? { id: "", name: "Sample" } };
+}
+
+/**
+ * Whether `actor` may write the board `draftId` stored under `owner`'s key, who is not the actor: an EXPLICIT grant, never `mayReachProject`'s default alone.
+ * That default answers yes for every production that is not a private board's own (the workspace's), and a draft can be linked to such a production (a
+ * starter draft, one opened from a production or a take link). So all of these hold, decided from identifiers before the draft is read:
+ *   1. the key is an active member of this workspace;
+ *   2. a grant names this board: the marked sample's editors, for the sample's own draft (#694); or the board is shared with "Can edit" (`teamEdit`, set only
+ *      by the team-share action); the admin rule adds its own line here;
+ *   3. the board is the draft's own private production (`mappedId(prj_wb_, workspace, owner, draftId)`), which the draft is linked to, and the actor may
+ *      write it (`mayReachProject`, asked after the grant, never instead of it).
+ */
+export async function mayWriteBoard(ws: Pick<TenantWorkspace, "id">, actor: { id: string; role?: string }, owner: string, draftId: string): Promise<boolean> {
+  if (!(await activeMembers(ws)).has(owner)) return false;
+  const board = mappedId(DRAFT_PROJECT_PREFIX, ws.id, owner, draftId);
+  /* One narrow read of the board's row (its production and whether it is shared for editing), not the board and not a scan of every shared board. */
+  await workbenchReady();
+  const row = (await db().execute({ sql: `SELECT CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END AS production, (${TEAM_EDIT_SQL}) AS edit FROM workbench_projects WHERE key=?`, args: [`${owner}:${draftId}`] })).rows[0];
+  if (!row || row.production !== board) return false;
+  const sampleGrant = async () => { const mark = await sampleMarkNow(); return !!mark && mark.draftOwner === owner && mark.draftId === draftId && mark.projectId === board && (await mayEditSample(actor.id)); };
+  if (Number(row.edit) !== 1 && !(await sampleGrant())) return false;
+  return mayReachProject(actor, board, "write");
+}
+
+/**
+ * Acting on a board stored under someone else's key. A board is stored under its author's key (`workbench_projects.owner`); a person with an explicit
+ * grant to write it (`mayWriteBoard`), who is not the author, saves, maps shots and publishes against that key, as themselves (the actor is recorded on
+ * the row and on what the save implies for the team canvas).
+ *
+ * `claimed` is the owner a request names (`owner` in the body); absent, or the person's own id, is their own board and nothing is asked. Otherwise the
+ * grant is asked, and anything else is `refused`: the caller answers it exactly as it answers a write to a board that is not theirs (`view-only` naming the
+ * maker when the board is shared and visible, otherwise not found), reading and writing nothing, so a refusal never says whether a private board, a starter
+ * draft or an opened production is there.
+ *
+ * Without `owner`, a person who has no draft of that id of their own and is asked to write exactly one board shared with "Can edit" under that id, which
+ * they may write (`mayWriteBoard`), acts on that one: every editor of the board, the page editors and the composer included, reaches it by its draft id
+ * alone. Their own draft of that id wins. Anything uncertain is refused as `ambiguous` (a clear 409), never settled by guessing and never by writing into
+ * someone else's board: two such boards under that id, or one the person may not write. A board that is simply new (no edit-shared board has that id) is the
+ * person's own.
+ */
+export async function boardKeyFor(
+  ws: Pick<TenantWorkspace, "id">,
+  actor: { id: string; role?: string },
+  claimed: string | undefined,
+  draftId: string,
+): Promise<{ owner: string } | { refused: true } | { ambiguous: true }> {
+  if (claimed && claimed !== actor.id) {
+    const owner = await resolveMemberId(ws, claimed);
+    if (owner === actor.id) return { owner: actor.id };
+    return (await mayWriteBoard(ws, actor, owner, draftId)) ? { owner } : { refused: true };
+  }
+  await workbenchReady();
+  if ((await db().execute({ sql: "SELECT 1 FROM workbench_projects WHERE key=?", args: [`${actor.id}:${draftId}`] })).rows.length) return { owner: actor.id };
+  const rows = (await db().execute({ sql: `SELECT owner FROM workbench_projects WHERE project_id=? AND owner<>? AND ${TEAM_EDIT_SQL}`, args: [draftId, actor.id] })).rows;
+  if (!rows.length) return { owner: actor.id };
+  if (rows.length > 1) return { ambiguous: true };
+  const owner = String(rows[0].owner);
+  return (await mayWriteBoard(ws, actor, owner, draftId)) ? { owner } : { ambiguous: true };
+}
+
+/** The refusal a request gets when its board id cannot be settled (see boardKeyFor): say what to do, write nothing. */
+export const AMBIGUOUS_BOARD = "That board id is in use by a board shared with the team. Open that board to edit it, or start a new board with its own id.";
+
+/**
+ * A shared board someone else made, opened by `actor`: to edit when it is shared with "Can edit" and they may write it (the answer then names whose board
+ * they act on, `actingOn`, and the screens save with that owner), to look at otherwise (`viewOnly`).
+ */
+export async function openingOf(ws: Pick<TenantWorkspace, "id">, actor: { id: string; role?: string }, seen: { project: { id: string }; owner: BoardOwner; key: string }): Promise<{ actingOn: { owner: BoardOwner } } | { viewOnly: { owner: BoardOwner } }> {
+  return (await mayWriteBoard(ws, actor, seen.key, seen.project.id)) ? { actingOn: { owner: seen.owner } } : { viewOnly: { owner: seen.owner } };
+}
+
+/**
+ * Who may change a board's sharing, its mode included (none, view, edit): its author (admins join with the admin rule, one line here). Not a teammate who
+ * may edit its cards, and not anyone through a save: the flags are the server's (lib/workbench/records.ts › setBoardSharing).
+ */
+export function maySetSharing(actor: { id: string; role?: string }, storageOwner: string): boolean {
+  return actor.id === storageOwner;
 }

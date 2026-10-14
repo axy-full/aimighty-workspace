@@ -5,11 +5,12 @@ import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { readProjectBody } from "@/lib/workbench/request-body";
 import { orderedIds } from "@/lib/workbench/team-canvas-model";
+import { currentRoom } from "@/lib/workbench/room-rotation";
 import { collabConfigured } from "@/lib/collab";
 import { db } from "@/lib/db";
 import { storedActorMaskHere } from "@/lib/platformOwnerPrivacy";
 import {
-  masterLocks, patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, teamRoomFor, TeamCanvasError,
+  masterLocks, patchTeamCanvas, readTeamCanvas, requireProduction, teamCanvasRevision, teamPatchSchema, TeamCanvasError,
 } from "@/lib/workbench/team-canvas";
 import { latestServerChange } from "@/lib/workbench/canvas-ops-log";
 import { boardHistory } from "@/lib/board/history.server";
@@ -87,7 +88,7 @@ export const GET = withTenant(async (req: Request) => {
     return Response.json({
       canvas: saved ? { nodes, assets: saved.canvas.assets, order: orderedIds(saved.canvas), removedIds: Object.keys(saved.canvas.removed), serverMade: saved.canvas.serverMade } : null,
       revision: saved?.revision ?? 0,
-      room: collabConfigured() ? teamRoomFor(requireTenant().id, productionId) : null,
+      room: collabConfigured() ? await currentRoom(requireTenant().id, productionId) : null,
       server,
       locks: saved ? [...(await masterLocks(db(), saved.canvas))] : [],
     }, { headers: NO_STORE });
