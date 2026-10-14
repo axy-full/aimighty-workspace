@@ -5,7 +5,7 @@ import { db, ready } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { originalKindOf } from "@/lib/originalMedia";
 import { reviewSet } from "@/lib/security/review-link";
-import { readableActors } from "@/lib/reviewerNames";
+import { readableActors } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
@@ -60,7 +60,7 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
       const k = String(n.gen_id);
       (byGen.get(k) ?? byGen.set(k, []).get(k)!).push({ text: String(n.text), author: String(n.author ?? "the studio"), guest: Number(n.guest) === 1, at: Number(n.created_at) });
     }
-    /* Who approved, as a guest may read it: an account id is read through the workspace's users to the name, never output, and the platform owner reads "Particl support" outside the house (lib/reviewerNames.ts). */
+    /* Who approved, as a guest may read it: an account id is read through the workspace's users to the name, never output, and the platform owner reads "Particl support" outside the house (lib/platformOwnerPrivacy.ts). */
     const shown = await readableActors(rows.map((r) => r.review_by));
     const logo = (await getSetting("brandLogoUploadId")) || null;
     const p = project.rows[0] as any;

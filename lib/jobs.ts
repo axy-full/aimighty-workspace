@@ -46,7 +46,7 @@ import type { AssetCursor } from "./assetPagination";
 import type { ProviderCreditQuote } from "./providerCreditQuote";
 import { fundedOutcome, outcomeOfPoll, outcomeProviderFor } from "./providerFailure";
 import { failureCopy } from "./errors";
-import { readableActors } from "./reviewerNames";
+import { readableActors } from "./platformOwnerPrivacy";
 import { noAnswerOutcome, parseOutcome, serializeOutcome, takeFailure, type TakeFailure } from "./providerOutcome";
 
 export type Generation = {
@@ -395,7 +395,7 @@ export async function listGenerations(opts: {
   return namedReviewers(rs.rows.map(rowToGeneration));
 }
 
-/** The takes with who marked them as a reader may be told (lib/reviewerNames.ts): an account id is never output. */
+/** The takes with who marked them as a reader may be told (lib/platformOwnerPrivacy.ts): an account id is never output. */
 async function namedReviewers(takes: Generation[]): Promise<Generation[]> {
   const shown = await readableActors(takes.flatMap((g) => [g.reviewBy, g.pickedBy, g.approvedBy]));
   return takes.map((g) => (g.reviewBy || g.pickedBy || g.approvedBy) ? { ...g, reviewBy: shown(g.reviewBy), pickedBy: shown(g.pickedBy), approvedBy: shown(g.approvedBy) } : g);
