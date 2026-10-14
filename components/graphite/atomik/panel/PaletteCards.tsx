@@ -29,7 +29,7 @@ export function PaletteAskCard({ intent, project, onClose, enterRef }: {
   /* The free quote of a new turn in this project's thread (the same route and body the panel's composer quotes). */
   const { quote, loading, error } = useAtomikQuote("/api/atomik", priced ? { text: intent.text, model: "auto", effort: "auto", projectId: production } : null);
   const credits = quote?.estimateCredits ?? null;
-  const button = askButton(intent, { credits, loading, error });
+  const button = askButton(intent, { credits, usd: quote?.estimateUsd ?? null, loading, error });
   const title = usePriceTitle(button.price);
   const press = () => { onClose(); places.ask(intent.text, { send: true, approved: intent.kind === "ask" ? credits : null }); };
   /* Enter answers a free line; a priced one goes to the panel unsent, where its button is pressed. */

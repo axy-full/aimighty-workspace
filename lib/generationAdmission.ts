@@ -119,6 +119,8 @@ import { uploadSourceParams } from "@/lib/sourceClip";
 import { jobLineGate, shotCapGate } from "@/lib/shotCap";
 import { isAgentId } from "@/lib/security/people-only";
 import { madeInOf } from "@/lib/madeIn";
+import { jobHint, jobOf, type Job } from "@/lib/takeJob";
+import { isShotType, shotTypeHint, shotTypeOf, type ShotType } from "@/lib/takeShotType";
 import { approvedTakeOf } from "@/lib/shots";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
@@ -248,7 +250,7 @@ type FinalSource = {
   hasVideoInput: boolean;
   /** The final the draft named when it was read ("" for none): the claim only lands if it still names it. */
   heldBy: string;
-  carried: { rawPrompt?: string; cast?: string[]; shotSpec?: Record<string, string> };
+  carried: { rawPrompt?: string; cast?: string[]; shotSpec?: Record<string, string>; shotType?: ShotType };
 };
 type FinalRefusal = { error: string; status: number; finalId?: string };
 /** The keys a final's request may carry. Everything else about it is its draft's; where it files
@@ -323,6 +325,7 @@ async function draftFinalSource(body: Record<string, unknown>): Promise<FinalSou
       ...(typeof params.rawPrompt === "string" ? { rawPrompt: params.rawPrompt } : {}),
       ...(Array.isArray(params.cast) ? { cast: params.cast.filter((c): c is string => typeof c === "string").slice(0, 20) } : {}),
       ...(shotSpec ? { shotSpec } : {}),
+      ...(isShotType(params.shotType) ? { shotType: params.shotType } : {}),
     },
   };
 }
@@ -666,6 +669,17 @@ export async function executeGenerationAdmission(
       if (body.resolution != null && body.resolution !== DRAFT_RESOLUTION)
         return admissionReply({ error: `A draft renders at ${DRAFT_RESOLUTION}.` }, { status: 400 });
     }
+    /* The take's job (lib/takeJob.ts): a hint from the request must be on the closed list, fit the kind, and, for the jobs the take itself decides (fix, upscale, draft, final), agree
+       with it, or the request is refused here, for a quote as for a press, before anything is held. */
+    const jobFacts = { kind: (model.kind === "image" ? "image" : "video") as "image" | "video", task: model.kind === "image" ? model.stillTask ?? "generate" : task.id, draft, finalOf: final != null };
+    const hinted = jobHint(body.job, jobFacts);
+    if ("error" in hinted) return admissionReply({ error: hinted.error }, { status: 400 });
+    const jobHinted: Job | null = hinted.hint;
+    /* The take's shot type (lib/takeShotType.ts), the same way: a hint is checked against the list and the Setup's shot size. A final carries its draft's. */
+    const shotSize = (final ? final.carried.shotSpec : shotSpecOf(body.shotSpec))?.shot ?? null;
+    const shotTyped = shotTypeHint(body.shotType, { kind: model.kind === "image" ? "image" : "video", shot: shotSize });
+    if ("error" in shotTyped) return admissionReply({ error: shotTyped.error }, { status: 400 });
+    const shotTypeStored: ShotType | null = final ? final.carried.shotType ?? shotTypeOf({ kind: "video", shot: shotSize }) : shotTypeOf({ kind: model.kind === "image" ? "image" : "video", shot: shotSize, hint: shotTyped.hint });
     const sourceGenId = body.sourceGenId ? String(body.sourceGenId) : null;
     /* An uploaded clip as the source of a locked task: the client sends it here, not among the references. */
     const sourceUploadId =
@@ -701,7 +715,7 @@ export async function executeGenerationAdmission(
     if (modelId === ASTRA_MODEL) {
       try { astra = astraSettings(body.astra); }
       catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
-      if (prompt) return admissionReply({error:"Astra uses its detail controls. Text-directed video edits use the Seedance 2.5 edit model."},{status:400});
+      if (prompt) return admissionReply({error:"Topaz Astra uses its detail controls. Text-directed video edits use the Seedance 2.5 edit model."},{status:400});
     }
     if (task.locked) {
       /* An engine that cannot do the task must say so here, not drop the
@@ -868,7 +882,7 @@ export async function executeGenerationAdmission(
           sourceRatio = `${astraSource.width}:${astraSource.height}`;
           sourceResolution = `${Math.min(astraSource.width,astraSource.height)}p`;
         } catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
-        notices.push("Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
+        notices.push("Topaz Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
       }
       if (genjutsu && sourceRef) {
         try { genjutsuSource = await inspectOriginalVideo(sourceRef, sourceBytes); }
@@ -1602,6 +1616,9 @@ export async function executeGenerationAdmission(
         /* Make's own results (lib/madeIn.ts): marked by the server, only for a person's own Make request. */
         madeIn: madeInOf(body.madeIn, got),
         quote: quoteSnapshot(quotedCredits(estStillUsd, modelId), body.maxCredits),
+        /* What the take is for (lib/takeJob.ts): written here, never taken from the request as it is. */
+        job: jobOf({ kind: "image", task: model.stillTask ?? "generate", useAs: ["first", "cast"].includes(String(body.useAs)) ? String(body.useAs) : null, hint: jobHinted }),
+        ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
         ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
           soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
@@ -2203,6 +2220,8 @@ export async function executeGenerationAdmission(
       ...params,
       finalOf: final.draftId,
       quote: quoteSnapshot(quotedCredits(estUsd, modelId), body.maxCredits, band),
+      job: jobOf({ kind: "video", task: "generate", finalOf: true }),
+      ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
       draftExpiresAt: final.expiresAt,
       hasVideoInput,
       inputSeconds: hasVideoInput ? inputSeconds : undefined,
@@ -2214,6 +2233,8 @@ export async function executeGenerationAdmission(
       ...params,
       madeIn: madeInOf(body.madeIn, got),
       quote: quoteSnapshot(quotedCredits(estUsd, modelId), body.maxCredits, band),
+      job: jobOf({ kind: "video", task: task.id, draft, onShot: shotId != null, hint: jobHinted }),
+      ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
       ...(genjutsu ? { workbenchProjectId: body.workbenchProjectId, quoteBasis: "live-provider-estimate" } : {}),
       references: references.map((r) =>
         r.fromGeneration

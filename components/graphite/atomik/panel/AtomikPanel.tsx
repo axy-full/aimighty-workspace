@@ -12,7 +12,7 @@ import {
 } from "@/lib/shell/atomik-panel";
 import { HOW_HINTS, howAnswer } from "@/lib/shell/atomik-how";
 import { CONTROL_PLACES } from "@/lib/shell/palette";
-import { exact, priceWords, upTo } from "@/lib/shell/price-words";
+import { priceWords, upTo } from "@/lib/shell/price-words";
 import type { Project } from "@/lib/workbench/studio";
 import type { Step } from "@/lib/atomik";
 import { Glyph } from "../../icons";
@@ -153,7 +153,7 @@ function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; 
     const now = a.quote.estimateCredits;
     setAutoSend(null);
     if (now <= autoSend) void a.send(text).then(() => setText(""));
-    else setNote(`This turn now costs ${priceWords(upTo(now)) ?? "more"}, not ${priceWords(upTo(autoSend))}. Press Ask to send it at the new price.`);
+    else setNote(`This turn now costs ${priceWords(upTo(now, a.quote.estimateUsd)) ?? "more"}, not ${priceWords(upTo(autoSend))}. Press Ask to send it at the new price.`);
   }, [a, asking, autoSend, text]);
 
   /* Words in the address (`&q=`): into the box once, then out of the address so a reload does not type them again. */
@@ -164,7 +164,7 @@ function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; 
     setScreenParams({ q: null }, "replace");
   }, [query, setScreenParams]);
 
-  const button = askButton(intent, { credits: a.quote?.estimateCredits ?? null, loading: a.quoting, error: a.quoteError });
+  const button = askButton(intent, { credits: a.quote?.estimateCredits ?? null, usd: a.quote?.estimateUsd ?? null, loading: a.quoting, error: a.quoteError });
   const blocked = intent.kind === "ask" && !ready ? "Opening this project’s Atomik…" : null;
   const title = usePriceTitle(button.price);
   const thread = ready && (a.messages.length > 0 || a.current.kind !== "idle");
@@ -292,7 +292,7 @@ function PlanStep({ step, checkpoint }: { step: Step; checkpoint: boolean }) {
       <span className="ak-step-meta">{a.engineLabel(step.model)} · {step.status === "proposed" ? (checkpoint ? "waiting for you" : "next") : step.status === "done" ? "done" : step.status === "running" ? "running" : step.status === "failed" ? "did not run" : step.status}</span>
       {/* A step not yet run shows its estimate as a ceiling ("up to N cr"): Continue caps the charge at its live quote.
           A step that ran shows what it was billed. */}
-      <span className="ak-step-price">{credits === null || approximate ? a.priceLabel(step) : <Price value={step.status === "done" ? exact(credits) : upTo(credits)} />}</span>
+      <span className="ak-step-price">{credits === null || approximate ? a.priceLabel(step) : <Price value={a.priceOf(step, step.status === "done" ? "exact" : "up-to")} />}</span>
     </li>
   );
 }
@@ -301,7 +301,7 @@ function ContinueButton({ step }: { step: Step }) {
   const a = useAtomik();
   const credits = a.credits(step);
   /* Continue sends its live quote as the ceiling, so the charge is at most this figure. */
-  const value = credits === null ? null : upTo(credits);
+  const value = credits === null ? null : a.priceOf(step, "up-to");
   const title = usePriceTitle(value);
   const words = a.approximate(step) ? a.priceLabel(step) : priceWords(value);
   return (

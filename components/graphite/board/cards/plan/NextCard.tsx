@@ -37,7 +37,7 @@ export function NextCard({ data, ctx }: CardProps<NextData>) {
       <span className="gx-next-name">{data.name}</span>
       <span className="gx-next-line">
         {data.line}
-        {data.id === "stills" && credits != null ? <> · <Price value={exact(credits)} /> each</> : null}
+        {data.id === "stills" && credits != null ? <> · <Price value={exact(credits, quotes.quotes.still?.usd)} /> each</> : null}
       </span>
     </button>
   );

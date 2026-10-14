@@ -5,7 +5,7 @@ import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { CheckAgain } from "../../CheckAgain";
 import { CHECK_LINE } from "@/lib/demo/sample";
 import { selectBatch, type QueueItem } from "@/lib/control-room/queue";
-import { priceWords } from "@/lib/shell/price-words";
+import { creditsText, priceWords } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
 import { useWorkspace } from "@/lib/workspace/state";
 import { Price, usePriceTitle } from "../../Price";
@@ -57,7 +57,7 @@ export function PaletteApproveCard({ under, onDone, enterRef }: { under: number;
   return (
     <div className="ak-pcard" data-testid="palette-approve-card">
       <span className="ak-eyebrow ak-accent">Atomik</span>
-      <strong className="ak-pcard-title">{empty ? `Nothing under ${under} cr is waiting` : `Approve everything under ${under} cr`}</strong>
+      <strong className="ak-pcard-title">{empty ? `Nothing under ${creditsText(under)} is waiting` : `Approve everything under ${creditsText(under)}`}</strong>
       {loading ? <p className="ak-pcard-line" role="status">Reading what is waiting…</p> : null}
       {approvals.status === "error" ? (
         <p className="ak-pcard-line" role="alert">{approvals.error} <button type="button" className="ak-link" onClick={() => void approvals.refresh()}>Try again</button></p>

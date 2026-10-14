@@ -4,9 +4,10 @@ import type { RigAgentPaidStepView, RigAgentRunView } from "@/lib/workbench/rig-
 import type { QueueItem } from "@/lib/control-room/queue";
 import type { ApprovalsState } from "@/lib/control-room/use-approvals";
 import { chargeSentence } from "@/lib/errors";
-import { isRunLimitAmount } from "@/lib/runLimit";
+import { limitBoxText, limitFromBox } from "@/lib/shell/run-limit-input";
+import { useSession } from "@/lib/session";
 import { buildLine, placedWords, planItemOf, raiseTarget, renderItemOf, renderPrice, RENDER_STATE, runOpen, AGENT_OFF } from "@/lib/shell/board-agent";
-import { creditsText, exact, FREE, priceWords, type PriceValue } from "@/lib/shell/price-words";
+import { creditsText, exact, FREE, modeOf, priceWords, type PriceValue } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
 import { Price, usePriceTitle } from "../../Price";
 import type { BoardAgent } from "./use-board-agent";
@@ -49,6 +50,8 @@ export function AgentLines({ agent, approvals, sample }: Props) {
   const [said, setSaid] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [raise, setRaise] = useState("");
+  /* The limit box reads the unit this screen reads: dollars in the house, credits elsewhere (lib/shell/run-limit-input.ts). */
+  const mode = modeOf(useSession().rates);
 
   /* One press at a time: the answer says why not, and the lines read again. */
   const press = async (what: string, work: () => Promise<string | null>) => {
@@ -111,21 +114,22 @@ export function AgentLines({ agent, approvals, sample }: Props) {
 
       {raiseTo ? (
         <Msg tone="needs" testId="agent-raise" actions={
-          <button type="button" className="ag-btn ag-btn-primary" disabled={!!busy || !isRunLimitAmount(Number(raise || raiseTo.to))} data-testid="agent-raise-button"
+          <button type="button" className="ag-btn ag-btn-primary" disabled={!!busy || limitFromBox(raise || limitBoxText(raiseTo.to, mode), mode) === null} data-testid="agent-raise-button"
             onClick={() => void press("raise", async () => {
-              const to = Number(raise || raiseTo.to);
+              const to = limitFromBox(raise || limitBoxText(raiseTo.to, mode), mode);
+              if (to === null) return "That is not an amount a limit can be.";
               const why = await act("agent.limit", { limit: to });
               if (!why) setRaise("");
               return why ?? null;
             })}>
-            {busy === "raise" ? "Raising…" : `Raise to ${creditsText(Number(raise) || raiseTo.to)}`}
+            {busy === "raise" ? "Raising…" : `Raise to ${creditsText(limitFromBox(raise, mode) ?? raiseTo.to)}`}
           </button>
         }>
           This run has used its limit. Raise it to carry on; you still approve each render at its own price.
           <label className="ag-field">
             <span>New limit</span>
-            <input className="ag-number" type="number" inputMode="decimal" min={raiseTo.to} step={0.1} value={raise || String(raiseTo.to)} onChange={(e) => setRaise(e.target.value)} aria-label="New limit for this run in credits" />
-            <span aria-hidden="true">cr</span>
+            <input className="ag-number" type="number" inputMode="decimal" min={limitBoxText(raiseTo.to, mode)} step={mode.on ? 0.01 : 0.1} value={raise || limitBoxText(raiseTo.to, mode)} onChange={(e) => setRaise(e.target.value)} aria-label={mode.on ? "New limit for this run in dollars" : "New limit for this run in credits"} />
+            <span aria-hidden="true">{mode.on ? "$" : "cr"}</span>
           </label>
         </Msg>
       ) : null}

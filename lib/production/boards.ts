@@ -152,7 +152,7 @@ export function deleteDrawing(project: Project, assetId: string): Project {
   const binding = moleculrAssetDependencies(project).find((b) => b.assetId === assetId);
   if (binding) throw new Error(`This drawing is used by ${binding.label}. Remove it there first.`);
   if (project.astraBlender?.objects.some((o) => o.assetId === assetId) || project.astraNative?.assetIds.includes(assetId) || project.astraNative?.baseBlendAssetId === assetId)
-    throw new Error("This drawing is used in an Astra scene. Remove it there first.");
+    throw new Error("This drawing is used in a 3D scene. Remove it there first.");
   const child = project.assets.find((a) => a.id !== assetId && (a.refs.includes(assetId) || a.parentId === assetId));
   if (child) throw new Error(`“${child.name}” was made from this drawing, so it stays.`);
   if (project.sharedAssetIds.includes(assetId)) throw new Error("This drawing is shared with the production bible, so it stays.");
