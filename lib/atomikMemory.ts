@@ -1,6 +1,7 @@
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
 import { requireTenant } from "./tenant";
+import { mayReachProject } from "./draftProject";
 import { archiveDeleteStatements, archiveStatement, archiveTransaction } from "./archive";
 import {
   CAST_REF, IMPORT_FROM, KEPT_FROM, LIBRARY_ASSET, MEMORY_ID, MEMORY_LIMITS, PROJECT_ID, SOUL_REF,
@@ -84,6 +85,20 @@ function toEntry(r: Row): MemoryEntry {
 function scoped(projectId: string | null): { sql: string; args: string[] } {
   return projectId ? { sql: "(project_id IS NULL OR project_id = ?)", args: [projectId] } : { sql: "project_id IS NULL", args: [] };
 }
+
+/**
+ * A board's memory belongs to the people who may use the board. READING a project's entries needs the right to read it (`mayReachProject`: their own board, a teammate's shared
+ * board, the sample, any project that is not a private board); WRITING under it (add, keep, import, edit, forget) needs the right to file into it ("admit"). An admin has no
+ * elevation here (an admin's audited read of another member's board is its own path). A project the person may not reach is answered exactly as an unknown project is, so nothing
+ * says whether a private board exists. Workspace-wide memory (no project) is unchanged.
+ */
+async function mayRead(by: string, projectId: string | null): Promise<boolean> {
+  return !projectId || (await mayReachProject({ id: by }, projectId, "read"));
+}
+async function mayWrite(by: string, projectId: string | null): Promise<boolean> {
+  return !projectId || (await mayReachProject({ id: by }, projectId, "admit"));
+}
+const NOT_THERE = "That project is not in this workspace. Keep it for the whole workspace instead.";
 
 function projectOf(value: unknown): string | null {
   if (value == null || value === "") return null;
@@ -237,7 +252,7 @@ async function checked(input: { kind: unknown; text: unknown; projectId: unknown
   const kind = input.kind;
   const words = cleanMemoryText(input.text);
   const projectId = projectOf(input.projectId);
-  if (projectId && !(await projectExists(projectId))) throw new MemoryError("That project is not in this workspace. Keep it for the whole workspace instead.", 404);
+  if (projectId && (!(await projectExists(projectId)) || !(await mayWrite(by, projectId)))) throw new MemoryError(NOT_THERE, 404);
   const assetId = input.assetId == null || input.assetId === "" ? null : String(input.assetId);
   if (kind === "reference" && !assetId) throw new MemoryError("A reference is an asset from the Library: open it there and choose Remember.");
   const source = refSource(assetId);
@@ -353,7 +368,9 @@ export async function importMemory(input: { text: unknown; projectId?: unknown; 
   if (raw.length > MEMORY_LIMITS.importChars) throw new MemoryError(`Paste at most ${MEMORY_LIMITS.importChars.toLocaleString("en-US")} characters at a time.`, 413);
   const from: ImportFrom = typeof input.from === "string" && Object.hasOwn(IMPORT_FROM, input.from) ? input.from as ImportFrom : "other";
   const parsed = parseImport(raw);
-  const made = await proposeMemory(parsed.entries, { source: "import", origin: IMPORT_FROM[from], projectId: projectOf(input.projectId), by });
+  const importedInto = projectOf(input.projectId);
+  if (importedInto && (!(await projectExists(importedInto)) || !(await mayWrite(by, importedInto)))) throw new MemoryError(NOT_THERE, 404);
+  const made = await proposeMemory(parsed.entries, { source: "import", origin: IMPORT_FROM[from], projectId: importedInto, by });
   return {
     entries: made.entries,
     skipped: { money: parsed.skipped.money, duplicates: parsed.skipped.duplicates + made.skipped.duplicates, beyondLimit: parsed.skipped.beyondLimit + made.skipped.beyondLimit, invalid: made.skipped.invalid },
@@ -384,7 +401,7 @@ export async function keepMemory(input: { items: unknown; projectId?: unknown; f
   const workspaceId = requireTenant().id;
   const projectId = projectOf(input.projectId);
   /* A project that is not this workspace's fails every pick alike: said once, before any is kept. */
-  if (projectId && !(await projectExists(projectId))) throw new MemoryError("That project is not in this workspace. Keep it for the whole workspace instead.", 404);
+  if (projectId && (!(await projectExists(projectId)) || !(await mayWrite(by, projectId)))) throw new MemoryError(NOT_THERE, 404);
   const source: MemorySource = from === "brand-kit" ? "person" : "import";
   const skipped = { money: 0, duplicates: 0, beyondLimit: 0, invalid: 0 };
   const kept: MemoryEntry[] = [];
@@ -424,7 +441,8 @@ export async function updateMemory(id: string, patch: { text?: unknown; kind?: u
   await memoryReady();
   const workspaceId = requireTenant().id;
   const current = await entryById(workspaceId, id);
-  if (!current) throw new MemoryError("That memory is gone.", 404);
+  /* An entry under a board its person may not file into is as gone as one that was never there. */
+  if (!current || !(await mayWrite(by, current.projectId))) throw new MemoryError("That memory is gone.", 404);
   if (patch.updatedAt !== undefined && Number(patch.updatedAt) !== current.updatedAt) throw new MemoryError("This memory changed since you opened it. Reload it and try again.", 409);
   const next = await checked({
     kind: patch.kind ?? current.kind,
@@ -460,8 +478,12 @@ export async function forgetMemory(ids: unknown, by: string, reason: "forgotten"
   if (!list.length || list.length > 200 || list.some((id) => !MEMORY_ID.test(id))) throw new MemoryError("Choose what to forget.");
   await memoryReady();
   const workspaceId = requireTenant().id;
+  /* Only entries the person may forget: under a board they may not file into, an entry is as absent as an unknown id (it is not counted, and nothing says it exists). */
+  const allowed: string[] = [];
+  for (const id of list) { const entry = await entryById(workspaceId, id); if (entry && (await mayWrite(by, entry.projectId))) allowed.push(id); }
+  if (!allowed.length) return 0;
   return archiveTransaction(async (tx) => {
-    const statements = await archiveDeleteStatements(tx, list.map((id) => ({ table: TABLE, where: "workspace_id = ? AND id = ?", args: [workspaceId, id], reason, by })));
+    const statements = await archiveDeleteStatements(tx, allowed.map((id) => ({ table: TABLE, where: "workspace_id = ? AND id = ?", args: [workspaceId, id], reason, by })));
     const results = await tx.batch(statements);
     return results.reduce((n, r, i) => n + (i % 2 === 1 ? Number(r.rowsAffected ?? 0) : 0), 0);
   });
@@ -502,7 +524,8 @@ function toView(e: Named, viewer: string, present: Present): MemoryView {
 export async function listMemory(projectId: string | null, viewer: string): Promise<MemoryView[]> {
   await memoryReady();
   const workspaceId = requireTenant().id;
-  const entries = await scopedEntries(workspaceId, projectOf(projectId));
+  const asked = projectOf(projectId);
+  const entries = await scopedEntries(workspaceId, (await mayRead(viewer, asked)) ? asked : null);
   const present = await refsPresent(refsOf(entries));
   return entries.map((e) => toView(e, viewer, present));
 }
@@ -524,7 +547,8 @@ export async function findForForget(said: unknown, projectId: unknown, viewer: s
   if (!subject) throw new MemoryError("Say what Atomik should forget.");
   await memoryReady();
   const workspaceId = requireTenant().id;
-  const entries = await scopedEntries(workspaceId, projectOf(projectId), "active");
+  const asked = projectOf(projectId);
+  const entries = await scopedEntries(workspaceId, (await mayRead(viewer, asked)) ? asked : null, "active");
   const matches = forgetMatches(subject, entries);
   const byId = new Map(entries.map((e) => [e.id, e]));
   const present = await refsPresent(refsOf(entries));

@@ -8,6 +8,7 @@ import { PaidTextError, paidTextFailure, paidTextQuoteResponse, paidTextQuoteSco
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import { textRunCost } from "@/lib/textRunCost";
 import { PROJECT_ID } from "@/lib/atomikMemoryText";
+import { mayReachProject } from "@/lib/draftProject";
 import { quoteMemoryRead, readText, runMemoryRead } from "@/lib/atomikMemoryRead";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +60,9 @@ export const POST = withTenant(async (req: Request) => {
       /* Never without the price the person approved: the read is reserved and refused against it. */
       if (body.maxCredits === undefined) throw new PaidTextError("Review the price before Atomik reads this.", 409);
       const maxCredits = requestMaxCredits(body.maxCredits)!;
-      const projectId = typeof body.projectId === "string" && PROJECT_ID.test(body.projectId) ? body.projectId : null;
+      /* A read is paid and billed against a project: only one the person may file into (their own board, any project that is not a private board); someone else's private board is none, the same as an unknown id. */
+      const asked = typeof body.projectId === "string" && PROJECT_ID.test(body.projectId) ? body.projectId : null;
+      const projectId = asked && (await mayReachProject(got.user, asked, "admit")) ? asked : null;
       const result = await runMemoryRead({ text, model, maxCredits, projectId, createdBy: got.user.id });
       /* Credits as billed for a workspace on credits; dollars only for one on its own keys. */
       return NextResponse.json({ id: result.id, model, entries: result.read.entries, skipped: result.read.skipped, ...(await textRunCost(result)) });
