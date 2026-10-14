@@ -356,7 +356,8 @@ export async function clientLinks(ws: Pick<TenantWorkspace, "id">, me: string, o
       const found = (await platformDb().execute({ sql: `SELECT id, email, name FROM accounts WHERE id IN (${actors.map(() => "?").join(",")})`, args: actors })).rows;
       for (const row of found) named.set(String(row.id), mask.hides({ id: row.id, email: row.email }) ? mask.name({ id: row.id, email: row.email, name: row.name }) : String(row.name));
     }
-    for (const line of lines) if (line.actor_id != null) revokers.set(String(line.target_id), named.get(String(line.actor_id)) ?? "An admin");
+    /* The first line wins: it is the one that withdrew the link (a later line for the same link, however it came, names no one). */
+    for (const line of lines) if (line.actor_id != null && !revokers.has(String(line.target_id))) revokers.set(String(line.target_id), named.get(String(line.actor_id)) ?? "An admin");
   }
   return rows.map((r) => ({
     boardId: byProject.get(String(r.project_id))!, linkId: String(r.id), kind: scopes.get(String(r.id)) === "review" ? "review" as const : "approved" as const,

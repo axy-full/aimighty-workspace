@@ -162,6 +162,70 @@ test("an admin's approvals queue shows a member's private-board take only throug
   expect(await f.lines()).toHaveLength(1);
 });
 
+test("an admin's approvals queue does not touch a board whose only held takes wait for a slot", async () => {
+  const f = await fixture("approvals-slot");
+  await f.as(who("u_owner", "admin"), async () => {
+    await f.database.db().execute({ sql: "INSERT INTO generations(id,project_id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,version,review_state,deleted) VALUES('h_slot',?,'video','mock','m','slot prompt',?,'held','u_owner',5,5,1,'draft',0)", args: [f.board, JSON.stringify({ held: { why: "slot" } })] });
+  });
+  const { readApprovals } = await import("../../lib/control-room/approvals.server");
+  const items = await f.as(ADMIN, async () => ((await readApprovals({ id: "u_admin", role: "admin", owner: false })) as { items: { id: string }[] }).items.map((i) => i.id).filter((id) => id.startsWith("held:")));
+  expect(items, "a slot-held take starts on its own and is not in the queue").toEqual([]);
+  expect(await f.lines(), "and no false 'Viewed by'").toEqual([]);
+});
+
+test("a statement masks another member's private-board lines, keeps every total, and opens a board only through the audited read; a token reads none", async () => {
+  const f = await fixture("statements");
+  await f.as(who("u_owner", "admin"), async () => {
+    await f.database.db().execute({ sql: "INSERT INTO generations(id,project_id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,version,review_state,deleted,cost_usd) VALUES('g_secret',?,'video','mock','m','SECRET-PRIVATE-NOTE','{}','succeeded','u_owner',5,5,1,'draft',0,1)", args: [f.board] });
+  });
+  const statements = f.route<{ GET: (r: Request) => Promise<Response> }>("app/api/statements/route.ts");
+  const get = (p: Who, query = "") => f.as(p, async () => { const res = await statements.GET(new Request(`https://particl.test/api/statements?month=1970-01${query}`)); return { status: res.status, text: await res.text() }; });
+  const OWNER = who("u_owner", "admin");
+  const mine = await get(OWNER);
+  expect(mine.text, "the board's owner reads their own lines").toContain("SECRET-PRIVATE-NOTE");
+  const seen = await get(ADMIN);
+  expect(seen.status).toBe(200);
+  expect(seen.text, "an admin reads no note of another's private board").not.toContain("SECRET-PRIVATE-NOTE");
+  expect(seen.text).toContain("A private board");
+  const totals = (r: { text: string }) => (JSON.parse(r.text) as Json).totals;
+  expect(totals(seen), "every total stays whole").toEqual(totals(mine));
+  expect(await f.lines(), "a statement is not an open").toEqual([]);
+  const board = await get(ADMIN, `&project=${f.board}`);
+  expect(board.text, "the admin opens the board: its lines, audited").toContain("SECRET-PRIVATE-NOTE");
+  expect(await f.lines()).toEqual(["u_admin:board.opened_by_admin"]);
+  const csv = await get(ADMIN, "&format=csv");
+  expect(csv.text).not.toContain("SECRET-PRIVATE-NOTE");
+  expect((await get({ ...ADMIN, token: true })).status, "an admin's token is a plain member's: no statement").toBe(403);
+  expect((await get({ ...ADMIN, token: true }, `&project=${f.board}`)).status).toBe(403);
+  expect((await get(who("u_mate"))).status).toBe(403);
+  expect(await f.lines(), "no line for a token or a member").toHaveLength(1);
+});
+
+test("the usage screen of a workspace not billed in credits masks another member's private-board takes and board name, for a member and an admin", async () => {
+  const f = await fixture("usage");
+  await f.as(who("u_owner", "admin"), async () => {
+    await f.database.db().execute({ sql: "INSERT INTO generations(id,project_id,kind,provider,model,title,prompt,params,status,created_by,created_at,updated_at,version,review_state,deleted,cost_usd) VALUES('g_secret',?,'video','mock','m','SECRET-TITLE','SECRET-PRIVATE-NOTE','{\"resolution\":\"720p\"}','succeeded','u_owner',5,5,1,'draft',0,1)", args: [f.board] });
+  });
+  const usage = f.route<{ GET: (r: Request) => Promise<Response> }>("app/api/usage/route.ts", {
+    "@/lib/credits": { ...(await import("../../lib/credits")), creditsApply: () => false },
+    /* The gateway's own credit read is a network call: stood in, nothing leaves the process. */
+    "@/lib/enhance": { ...(await import("../../lib/enhance")), gatewayCredits: async () => null },
+  });
+  const get = (p: Who) => f.as(p, async () => { const res = await usage.GET(new Request("https://particl.test/api/usage")); return { status: res.status, body: (await res.json()) as Json }; });
+  const mine = await get(who("u_owner", "admin"));
+  expect(mine.status).toBe(200);
+  expect(JSON.stringify(mine.body), "the owner reads their own take").toContain("SECRET-PRIVATE-NOTE");
+  for (const viewer of [ADMIN, who("u_mate")]) {
+    const got = await get(viewer);
+    expect(got.status, viewer.id).toBe(200);
+    expect(JSON.stringify(got.body), `${viewer.id}: no title, prompt or id of the take`).not.toMatch(/SECRET-TITLE|SECRET-PRIVATE-NOTE|g_secret/);
+    expect(got.body.recent.find((r: Json) => r.title === "A private board"), viewer.id).toMatchObject({ id: "", prompt: "", params: {}, costUsd: 1 });
+    expect(got.body.byProject.map((p: Json) => p.name), `${viewer.id}: the board's name`).toContain("A private board");
+    expect(got.body.byProject.map((p: Json) => p.name)).not.toContain("Board");
+    expect(got.body.totalSpend ?? got.body.spend ?? mine.body.totalSpend ?? mine.body.spend, "the totals stay whole").toBe(mine.body.totalSpend ?? mine.body.spend);
+  }
+});
+
 test("an admin's Atomik quote on a private board writes one history line, and the board's context is read only through it", async () => {
   const f = await fixture("atomik");
   const atomik = f.route<{ POST: (r: Request) => Promise<Response> }>("app/api/atomik/route.ts");
@@ -265,6 +329,18 @@ test("a link made by the platform owner reads Particl support in a client worksp
   const gone = await f.as(who("u_owner", "admin"), async () => (await (await projects.GET(new Request("https://particl.test/api/workbench/projects?links=1"))).json()) as Json);
   expect(gone.links[0].revokedBy).toBe("Particl support");
   expect(JSON.stringify(gone)).not.toContain("Rootname");
+  /* A second revoke of a link already withdrawn changes nothing and writes no line: the one who withdrew it stays the one named. */
+  expect(await f.as(who("u_owner", "admin"), () => revokeShare(f.ws.id, read.links[0].linkId, "u_owner"))).toBe(false);
+  expect(await f.as(who("u_owner", "admin"), () => revokeShare(f.ws.id, read.links[0].linkId, "u_admin"))).toBe(false);
+  const twice = await f.as(who("u_owner", "admin"), async () => (await (await projects.GET(new Request("https://particl.test/api/workbench/projects?links=1"))).json()) as Json);
+  expect(twice.links[0].revokedBy, "still the platform owner's, not the later attempts'").toBe("Particl support");
+  const revokeLines = await f.platform.platformDb().execute({ sql: "SELECT actor_id FROM security_audit WHERE action='review_link.revoked' AND target_id=?", args: [read.links[0].linkId] });
+  expect(revokeLines.rows.map((r) => r.actor_id), "one line").toEqual(["u_root"]);
+  /* And were a later line ever there, the first still wins. */
+  const { securityAuditStatement } = await import("../../lib/securityAudit");
+  await f.platform.platformDb().execute(securityAuditStatement({ workspaceId: f.ws.id, actorId: "u_admin", action: "review_link.revoked", targetType: "review_link", targetId: read.links[0].linkId }));
+  const later = await f.as(who("u_owner", "admin"), async () => (await (await projects.GET(new Request("https://particl.test/api/workbench/projects?links=1"))).json()) as Json);
+  expect(later.links[0].revokedBy).toBe("Particl support");
 });
 
 test("a token acts as a plain member whatever its creator's role: no admin reach, read-only or not", async () => {

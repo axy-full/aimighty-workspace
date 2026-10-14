@@ -17,6 +17,7 @@ import {requireTenant} from "@/lib/tenant";
 import { billCredits, marginKeyOf } from "@/lib/creditTerms";
 import { nameFor, spendByPerson, usageLedgerResponse, type LedgerViewer } from "@/lib/usageLedger";
 import { visibleUsageParams } from "@/lib/usageParams";
+import { currentPerson, projectLister, takeLister } from "@/lib/draftProject";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -71,7 +72,7 @@ export const GET = withTenant(async function GET(req: Request) {
       FROM generations
       GROUP BY model, provider HAVING spend > 0 OR n > 0 ORDER BY spend DESC`),
     db().execute(`
-      SELECT COALESCE(p.name,'Unfiled') AS name, SUM(g.status='succeeded') AS n,
+      SELECT g.project_id AS project_id, COALESCE(p.name,'Unfiled') AS name, SUM(g.status='succeeded') AS n,
              COALESCE(SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0)),0) AS spend,
              ${billedCreditsSum("g")} AS credits
       FROM generations g LEFT JOIN projects p ON p.id = g.project_id
@@ -90,7 +91,7 @@ export const GET = withTenant(async function GET(req: Request) {
       FROM generations
       GROUP BY month HAVING spend > 0 OR n > 0 ORDER BY month DESC LIMIT 12`),
     db().execute(`
-      SELECT id, model, provider, kind, title, prompt, cost_usd, refine_cost_usd, refine_model,
+      SELECT id, project_id, model, provider, kind, title, prompt, cost_usd, refine_cost_usd, refine_model,
              refine_in_tokens, refine_out_tokens, total_tokens, params, created_at
       FROM generations WHERE status='succeeded' AND cost_usd IS NOT NULL
       ORDER BY created_at DESC LIMIT 60`),
@@ -134,6 +135,9 @@ export const GET = withTenant(async function GET(req: Request) {
     atomikTextSpend(),
   ]);
   const atomikChats = atomikText.chats;
+  /* Which private boards' names and takes this person may read: their own, shared ones and the sample, never another member's, an admin's included (the admin opens the board). */
+  const projectsListed = await projectLister(currentPerson());
+  const takesListed = await takeLister(currentPerson());
 
   /* The only cost here that is rent rather than a purchase. */
   const storage = await storageLedger().catch(() => null);
@@ -303,13 +307,19 @@ export const GET = withTenant(async function GET(req: Request) {
       tokens: Number(r.tokens),
     })),
     byProject: byProject.rows.map((r: any) => ({
-      name: r.name, n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
+      /* A private board is its owner's alone (lib/draftProject.ts): its spend stays in the totals, its name does not show to anyone else, an admin included. */
+      name: r.project_id != null && !projectsListed(String(r.project_id)) ? "A private board" : r.name, n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
     })),
     byPerson: people,
     byMonth: byMonth.rows.map((r: any) => ({
       month: r.month, n: Number(r.n), spend: Number(r.spend), credits: Number(r.credits ?? 0),
     })),
-    recent: recent.rows.map((r: any) => ({
+    recent: recent.rows.map((r: any) => r.project_id != null && !takesListed(String(r.project_id))
+      /* A render in a private board this person may not see keeps its spend and its engine, and nothing that says what it was: no id, title, prompt or settings (as lib/creditUsage.ts does). */
+      ? { id: "", model: r.model, label: label(r.model), provider: r.provider ?? "byteplus", kind: r.kind ?? "video", title: "A private board", prompt: "",
+          costUsd: Number(r.cost_usd) + Number(r.refine_cost_usd ?? 0), credits: billCredits(Number(r.cost_usd) + Number(r.refine_cost_usd ?? 0), marginKeyOf(r.kind ?? "video", r.model)),
+          renderCostUsd: Number(r.cost_usd), refineCostUsd: null, refineModel: null, refineLabel: null, refineInTokens: null, refineOutTokens: null, totalTokens: 0, params: {}, createdAt: Number(r.created_at) }
+      : {
       id: r.id, model: r.model, label: label(r.model),
       provider: r.provider ?? "byteplus", kind: r.kind ?? "video", title: r.title ?? null,
       prompt: r.prompt,
@@ -324,7 +334,7 @@ export const GET = withTenant(async function GET(req: Request) {
       totalTokens: Number(r.total_tokens),
       params: visibleUsageParams(r.params),
       createdAt: Number(r.created_at),
-    })),
+    }),
     /* Median, not mean: a single render that waited on a dead cron would
        drag an average somewhere useless. Null where nothing recorded it. */
     timing: (() => {

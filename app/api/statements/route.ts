@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
+import { currentTenant } from "@/lib/tenant";
 import { statementFor, statementMonths, statementCsv, monthRange } from "@/lib/statements";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,8 @@ export const dynamic = "force-dynamic";
 export const GET = withTenant(async function GET(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
-  if (got.user.role !== "admin") return NextResponse.json({ error: "Statements are the owner's and admins' to read." }, { status: 403 });
+  /* A signed-in admin's: an API or MCP token acts as a plain member whatever its creator's role (owner, 14 Oct), so it reads none. */
+  if (got.user.role !== "admin" || currentTenant()?.token) return NextResponse.json({ error: "Statements are the owner's and admins' to read." }, { status: 403 });
   const url = new URL(req.url);
   const month = url.searchParams.get("month");
   if (!month) return NextResponse.json({ months: await statementMonths() });

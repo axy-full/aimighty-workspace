@@ -79,6 +79,7 @@ async function usageAs(ws: TenantWorkspace, user: TenantUser): Promise<{ body: B
       withTenant: (fn: Handler) => (req: Request) => runInTenant(ws, () => fn(req), { user }),
     },
     "@/lib/db": await import("../../lib/db"),
+    "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/jobs": { syncActive: async () => {} },
     "@/lib/models": await import("../../lib/models"),
     "@/lib/enhance": { hasFreeTier: () => false, gatewayCredits: async () => null },
