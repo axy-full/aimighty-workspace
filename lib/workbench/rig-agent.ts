@@ -29,7 +29,7 @@ import {
 } from "./rig-agent-plan";
 import {
   closePlanApproval, fixRoom, approvalClosed, insertPlanApproval, isPersonApprover, planApprovalOf, planQuote, recordFix,
-  MAX_FIXES_PER_SHOT, PEOPLE_ONLY, PLAN_CEILING_MULTIPLE, THIRD_FIX, type PlanApprovalRow, type QuoteInputStep,
+  MAX_FIXES_PER_SHOT, PEOPLE_ONLY, THIRD_FIX, type PlanApprovalRow, type QuoteInputStep,
 } from "./plan-approval";
 import {
   mockPlannerModel, plannerCeilingUsd, plannerCostUsd, PlannerError, runPlanner, selectPlannerModel,
@@ -155,7 +155,7 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
   const totalUsd = usds.length && usds.every((u): u is number => u != null) ? usds.reduce((a, b) => a + b, 0) : null;
   return {
     quote: { total: quote.total, ceiling: quote.ceiling, approximate: quote.approximate, fingerprint: quote.fingerprint, covered: quote.steps.map((s) => s.seq), asks: quote.asks.map((a) => a.seq),
-      ...(totalUsd != null ? { totalUsd, ceilingUsd: totalUsd * PLAN_CEILING_MULTIPLE } : {}) },
+      ...(totalUsd != null ? { totalUsd } : {}) },
     blocked: null, approval: null,
   };
 }

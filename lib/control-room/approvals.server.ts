@@ -10,6 +10,7 @@ import { needsAdminTap, ownerIsAdmin, shotCap as chatShotCap, stepCredits } from
 import { isAgentId } from "@/lib/security/people-only";
 import { FREE, exact, shortBy as shortOf, upTo } from "@/lib/shell/price-words";
 import { dollars } from "@/lib/format";
+import { creditUsd } from "@/lib/creditTerms";
 import { listGenerations, type Generation } from "@/lib/jobs";
 import { heldNeeds, mayRelease } from "@/lib/workspace/release";
 import { nameFor, type LedgerViewer } from "@/lib/usageLedger";
@@ -165,6 +166,21 @@ export function renderPrice(step: RigAgentPaidStepView, inCredits: boolean): Que
   return step.worst != null && step.worst > step.quote ? upTo(step.worst) : exact(step.quote);
 }
 
+/**
+ * The plan gate's price and note in the queue. Credits where credits apply. The house pays at cost in dollars (owner, 13 Oct), so its plan reads the covered renders'
+ * dollars (`totalUsd`, set only from a house quote), and its note words the ENFORCED ceiling (`quote.ceiling`, in credits, which the plan card words the same way)
+ * at the credit's price, rounded up: an "at most" never reads below what can be charged. `inCredits` is false only for the house (lib/credits.ts creditsApply).
+ * With no dollar figure to show, the house item has none.
+ */
+export function planGateFigures(
+  quote: { total: number; ceiling: number; approximate: boolean; totalUsd?: number | null },
+  inCredits: boolean,
+): { price: QueuePrice; note: string | null } {
+  if (inCredits) return { price: quote.approximate ? upTo(quote.total) : exact(quote.total), note: `At most ${creditFigure(quote.ceiling)} cr with fixes` };
+  const price = quote.totalUsd != null ? (quote.approximate ? upTo(quote.total, quote.totalUsd) : exact(quote.total, quote.totalUsd)) : null;
+  return { price, note: `At most ${dollars(quote.ceiling * creditUsd())} with fixes` };
+}
+
 async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: QueueItem[]; productions: string[] }> {
   if (!(await rigAgentExists())) return { items: [], productions: [] };
   const ids = (await db().execute({
@@ -209,11 +225,7 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
     /* The plan gate: one item, the plan at the server's total, approved once on its own screen (CLAUDE.md rule 14). */
     const quote = run.state === "needs_you" && view.plan?.quote && !view.plan.approval ? view.plan.quote : null;
     if (quote) {
-      /* Credits where credits apply. The house pays at cost in dollars (owner, 13 Oct): its plan reads the covered renders' dollars (`totalUsd`, set only from a
-         house quote) so one screen holds one unit, and no figure at all when the quote has none. `inCredits` is false only for the house (lib/credits.ts creditsApply). */
-      const price: QueuePrice = ctx.inCredits ? (quote.approximate ? upTo(quote.total) : exact(quote.total))
-        : quote.totalUsd != null ? (quote.approximate ? upTo(quote.total, quote.totalUsd) : exact(quote.total, quote.totalUsd)) : null;
-      const note = ctx.inCredits ? `At most ${creditFigure(quote.ceiling)} cr with fixes` : quote.ceilingUsd != null ? `At most ${dollars(quote.ceilingUsd)} with fixes` : null;
+      const { price, note } = planGateFigures(quote, ctx.inCredits);
       items.push({
         id: `board-plan:${run.id}`,
         source: "board-plan",

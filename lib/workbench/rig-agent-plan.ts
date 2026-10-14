@@ -461,7 +461,7 @@ export type RigAgentPaidStepView = {
  */
 export type RigAgentPlanView = {
   /** The server's quote while the plan waits for its approval; null once approved, or while a render has no price. */
-  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; asks: number[]; totalUsd?: number | null; ceilingUsd?: number | null } | null;
+  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; asks: number[]; totalUsd?: number | null } | null;
   /** Why the plan cannot be approved yet (a render not priced), when it cannot. */
   blocked: string | null;
   approval: {
