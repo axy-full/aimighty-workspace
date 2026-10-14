@@ -1,5 +1,5 @@
 import type { InStatement, ResultSet } from "@libsql/client";
-import { db, now } from "@/lib/db";
+import { db, now, ready } from "@/lib/db";
 import { TEAM_EDIT_SQL } from "@/lib/draftProject";
 import { requireTenant } from "@/lib/tenant";
 import { liveRooms, type RoomClient } from "./canvas-push";
@@ -69,10 +69,12 @@ export async function rotateRoom(productionId: string, rooms: Pick<RoomClient, "
  * old token is honoured from this moment); the rooms they replace are returned, to be closed afterwards with `closeRooms`, not inside the request.
  */
 export async function bumpEditRooms(): Promise<string[]> {
+  /* A workspace database that was never set up has no board table: set it up first, so a removal never fails for want of it (and a real failure below is a real one). */
+  await ready();
   const workspaceId = requireTenant().id;
   /* The production each board is edited in is the one its draft is linked to (`productionProjectId`), the same one setBoardSharing rotates: not a recomputed default, which would
      miss the real room of a draft linked to another production and leave a removed member's token for it honoured. */
-  const boards = (await db().execute({ sql: `SELECT CASE WHEN json_valid(body) THEN json_extract(body,'$.productionProjectId') END AS production FROM workbench_projects WHERE ${TEAM_EDIT_SQL}`, args: [] })).rows;
+  const boards = (await db().execute({ sql: `SELECT json_extract(body,'$.productionProjectId') AS production FROM workbench_projects WHERE ${TEAM_EDIT_SQL}`, args: [] })).rows;
   const productions = [...new Set(boards.flatMap((board) => (typeof board.production === "string" && board.production ? [board.production] : [])))];
   const closed: string[] = [];
   for (const production of productions) closed.push((await bumpRoomGeneration(db(), workspaceId, production)).from);
