@@ -534,3 +534,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#718** adff0024 (merged forward);
   - **#738** cf058a39 (body says 7 ids; wording; reachability narrowed; Auto fallback for the 4 approved ids, geminiAutoFallback.spec).
   Opus final reviews of #715/#718 and #738 running. Owner FYI: a plain-member owner of a SHARED board can also make links (the owner rule).
+- **14 Oct 23:35 IST.** **Owner decisions** (verbatim in the plan): #742+#743 ship in deploy #4; the #743 read/admit split; #738 removes all 7, the Auto fallback for 7, the 8 test moves YES; #715 admin revoke allowed with a history line, admin lists hide others' private takes (or an audited line per list view), held/deleted boards audited.

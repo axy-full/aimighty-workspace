@@ -637,3 +637,14 @@ Verbatim:
 4) #738: YES to removing Gemini 2.5 Flash, 2.5 Flash-Lite, 2.5 Pro and 3.8 Flash from the menus, on condition that any saved setting or default pointing at them falls back to Auto with no error and no price change (add a test). The 8 moved tests: send me the list with one line each, and I'll give a yes per PR.
 5) Noted: the GEMINI_IMAGE_MODEL / GOOGLE_SAFETY_THRESHOLD check command comes after #730 merges.
 6) Deploy #4: prep from ~19:40 IST 15 Oct. I'll do the fresh backup first, then the migration test copy.
+
+## Owner decisions (Akshay, 14 Oct, 23:35 IST)
+Verbatim:
+1) #742 + #743: ship in deploy #4 (no hotfix tonight; 2 workspaces, deploy #4 is <20 h away with a fresh backup). Fresh Opus review before merge.
+   #743: YES to the split you offered: a board the person may READ (incl. a teammate's shared board) feeds Atomik context; spending, step filing and memory writes need "admit" (may file there). Someone else's private board gives neither. Add a test for each.
+2) #738: remove all SEVEN from the menus for now. The extra three (3.1-flash-lite, 3.5-flash, 3.7-flash) leave because their price isn't confirmed on Google's page; we never charge on an unconfirmed price. Saved settings pointing at any of the seven read as Auto, same quote, no error (extend AUTO_MODEL_IDS + test). They return in a small PR when the price is confirmed. YES to the 8 test moves exactly as listed.
+3) #715:
+   a) Admins MAY revoke any client link in their workspace (never create one on someone else's private board). History line "Client link revoked by <name>", visible to the owner.
+   b) Admin list views must NOT show other members' private takes without an audit line. Preferred: lists hide them; the admin opens the board (audited). If hiding breaks the control room or another admin screen, name those screens first, then write one deduplicated audit line per list view (same 15-min rule).
+   c) Held or deleted boards: NO exception. An admin read is audited the same way.
+   Fresh Opus review of #715 after these, as before.
