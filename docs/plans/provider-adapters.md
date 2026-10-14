@@ -308,23 +308,23 @@ Each provider's adapter ships **behind its switch, off in production.** None nee
 |---|---|---|---|---|
 | Y1 | Lip-sync through fal: model rows `fal-ai/sync-lipsync/v2` and `/v2/pro`, a new task `lipsync`, `BASIS` lines, mocks | S, 4h | Opus (money) | — |
 | Y2 | `lip_sync` tool: consent gate (face, and voice if not a stock voice), source links, MCP | M, 6h | **Opus (privacy)** | Y1 |
-| Y3 | Lip-sync rate rows | S, 2h | **NEEDS AKSHAY (prices)** | Y1 |
-| Y4 | One paid qualification run in the house workspace (about $0.70: one 5 s run of each model) | — | **NEEDS AKSHAY (spend)** | Y2, Y3 |
+| Y3 | Lip-sync rate rows | S, 2h | **NEEDS OWNER (prices)** | Y1 |
+| Y4 | One paid qualification run in the house workspace (about $0.70: one 5 s run of each model) | — | **NEEDS OWNER (spend)** | Y2, Y3 |
 | S1 | Sarvam adapter: speech, short transcripts and translation (answered at once), batch transcription (polled), `SARVAM_ENABLED` off, rupee rates and the exchange-rate setting, mocks | M, 8h | **Opus (money)** | counsel on §10.5(d) |
 | S2 | `sarvam_speech` (stock voices) | S, 4h | — | S1 |
 | S3 | `sarvam_translate` | S, 3h | — | S1 |
 | S4 | `sarvam_transcribe`, with Auto choosing it by language | M, 6h | Opus (privacy) | S1 |
-| S5 | Sarvam rate rows; qualification run (about ₹4, inside the free ₹100) | S, 2h | **NEEDS AKSHAY** | S2-S4 |
+| S5 | Sarvam rate rows; qualification run (about ₹4, inside the free ₹100) | S, 2h | **NEEDS OWNER** | S2-S4 |
 | K1 | Rekognition adapter: SigV4, Mumbai, `FACE_CHECK_ENABLED` off, mocks | S, 4h | — | AWS account set up |
-| K2 | Consent gate for face checks (any new use word, after counsel); `record_face_consent` as a people-only tool | S, 4h | **Opus (privacy)**, NEEDS AKSHAY | counsel |
+| K2 | Consent gate for face checks (any new use word, after counsel); `record_face_consent` as a people-only tool | S, 4h | **Opus (privacy)**, NEEDS OWNER | counsel |
 | K3 | `face_check` inside Verify: priced into its quote, threshold setting, scores in `take_verifications` | M, 6h | **Opus (privacy, money)** | K1, K2 |
 | K4 | `face_detect` on references before training | S, 3h | Opus (privacy) | K2 |
-| K5 | Qualification run (about 10 calls, $0.0125, or inside AWS's free tier) | — | **NEEDS AKSHAY** | K3 |
+| K5 | Qualification run (about 10 calls, $0.0125, or inside AWS's free tier) | — | **NEEDS OWNER** | K3 |
 | R1 | Runway adapter: uploads, poll, settle at the reported cost, `THROTTLED`, `BASIS`, `RUNWAY_ENABLED` off, mocks | M, 8h | **Opus (money)** | training-free terms |
-| R2 | Model and rate rows `act_two`, `aleph2`, `gen4.5`, `gen4_turbo` | S, 3h | **NEEDS AKSHAY (prices)** | R1 |
+| R2 | Model and rate rows `act_two`, `aleph2`, `gen4.5`, `gen4_turbo` | S, 3h | **NEEDS OWNER (prices)** | R1 |
 | R3 | `runway_performance` (task `motion`), consent for both faces | M, 6h | **Opus (privacy)** | R2 |
 | R4 | `runway_edit` (`aleph2`, task `edit`) | S, 4h | — | R2 |
-| R5 | Qualification run (about $1.41: Act-Two 5 s, Aleph 2 at 2 s, Gen-4.5 5 s) | — | **NEEDS AKSHAY (spend)** | R3, R4 |
+| R5 | Qualification run (about $1.41: Act-Two 5 s, Aleph 2 at 2 s, Gen-4.5 5 s) | — | **NEEDS OWNER (spend)** | R3, R4 |
 
 **About 100 hours in total.** No PR here changes a migration-guarded table. The one schema change is in K2, and only if counsel asks for a new kind of consent record rather than a new use word. If so, it ships after the owner's backup.
 
