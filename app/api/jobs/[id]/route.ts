@@ -16,6 +16,7 @@ import { discardHeldJob } from "@/lib/held";
 import { withLedgerCharges } from "@/lib/usageLedger";
 import { NO_SUCH_PROJECT, mayReachProject, mayReadTake } from "@/lib/draftProject";
 import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 import type { Transaction } from "@libsql/client";
 
 const ACTIVE = "This generation is still active. Wait for it to finish before deleting it.";
@@ -101,6 +102,10 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const asked = (await params).id;
   const body = (await req.json().catch(() => null)) ?? {};
+  /* Approving a take is a person's alone (owner, 14 Oct; CLAUDE.md rules 11 and 14): an API token, an MCP client or an agent identity prepares, picks and sends back, and never signs off.
+     Asked before the take is read, so a take that is there and one that is not answer alike. (Clearing a sign-off is asked below, once the take's state is known.) */
+  const person = isPerson({ user: got.user, token: got.token });
+  if (body.reviewState === "approved" && !person) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   /* A project and a shot are each named by one id: a string, or null / "" for none. Anything else (an array, a number, an object) is refused here, before any
      read or write, so the id that is checked below is the very id that is written. Every check below reads these, never the raw body. */
   const idOf = (value: unknown): string | null | "bad" => (value === null || value === "" ? null : typeof value === "string" ? value : "bad");
@@ -151,6 +156,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     if (!row) return NextResponse.json({ error: "This take is no longer in the project." }, { status: 404 });
     if (wanted && String(row.status) !== "succeeded") return NextResponse.json({ error: "Only a finished take can be picked, approved or sent back." }, { status: 409 });
     reviewedFrom = String(row.review_state ?? "");
+    /* A sign-off is undone by a person alone, so a token cannot take back what a person approved. Picking and sending back stay open to it. */
+    if (!wanted && reviewedFrom === "approved" && !person) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   }
   /* Someone else's take is changed by its maker, the board's owner or an admin only: a rename, a move, a review, a trash or a restore alike.
      (After the checks above, which only read: a word the trail does not know, a take that is gone or not finished answer as they did.) */
