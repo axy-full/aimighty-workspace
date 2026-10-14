@@ -427,9 +427,10 @@ export function visibleTakesClause(visible: string[]): { sql: string; args: unkn
 }
 
 /** Which of the projects `viewer` may see the takes of, as a lookup: everything for nobody (background work), else `projectLister`'s (their own boards, shared ones, the sample, ordinary productions), an admin included. */
-export async function takeLister(viewer: Viewer, ex: Exec = db()): Promise<(projectId: string | null | undefined) => boolean> {
+export async function takeLister(viewer: Viewer, ex: Exec = db(), only?: string | null): Promise<(projectId: string | null | undefined) => boolean> {
   if (!viewer) return () => true;
-  return projectLister(viewer, ex);
+  /* `only`: the one board this view was asked for; for a signed-in admin it is added through the audited gate (a token is a plain member's). */
+  return projectLister(viewer, ex, { only });
 }
 
 /** `projectId` when `viewer` may READ that project (its owner, an admin of the workspace, anyone for a shared board or the sample), else null, no project: what a route that feeds a project's takes, titles or prompts to a model runs on, so nothing of a private board is read and no record (a meter line, a reservation, a memory) is ever written against it or against a placeholder id. */
