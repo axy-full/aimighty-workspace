@@ -8,10 +8,10 @@ import type { TenantWorkspace } from "../../lib/tenant";
 /**
  * Deploy #4's migration files (ops/migrations/deploy-4/NN-*.sql) must be exactly what the app creates. Each file is applied to a fresh in-memory SQLite and the schema it leaves is
  * compared, table by table, with what the app's own bootstrap creates on THIS checkout (a tenant database made by lib/db.ts ready(); the lazy export_jobs table by exportJobsReady()):
- * columns, indexes and triggers. A file whose table the checkout does not have yet (its PR is not merged here) is skipped and said so; the file's own rules still run (it applies,
+ * the table's columns and its DDL (CHECK, UNIQUE and their order), every index with its columns in order (the automatic ones too), and its triggers. A file whose table the checkout does not have yet (its PR is not merged here) is skipped and said so; the file's own rules still run (it applies,
  * twice, and creates what it names). After each PR merges into release/1 the same test then compares for real: re-run it with
  *   env -u CREDIT_USD ENGINE_MOCK=1 npx playwright test --project=unit tests/unit/deploy4Migrations.spec.ts
- * and check the "compared" annotation lists that PR's tables. Run on each PR's own branch (the files copied in) it compared every one of them on 15 Oct 2026.
+ * and check the "compared" annotation lists that PR's tables. Run on each PR's own branch (the files copied in) it compared every one of them on 14 Oct 2026.
  * Additive only is checked too: no file drops, renames or updates anything.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-deploy4-"));
@@ -33,12 +33,27 @@ const EXPECT: Record<string, { tables: string[]; column?: { table: string; name:
   "06-pr731-estimated_credits-tables.sql": { tables: ["estimated_credits", "estimated_credits_fill"] },
 };
 
-const squash = (sql: unknown) => String(sql ?? "").replace(/\s+/g, " ").replace(/\s*;\s*$/, "").trim();
+/** SQL as the comparison reads it: comments out (-- and a block comment), whitespace collapsed, no space around ( ) or a comma, no closing semicolon. */
+const squash = (sql: unknown) =>
+  String(sql ?? "")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--[^\n]*/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\s*([(),])\s*/g, "$1")
+    .replace(/\s*;\s*$/, "")
+    .trim();
+
+/** Everything about a table that a person or the app can tell apart: its columns, its own DDL (CHECK, UNIQUE and their order, defaults), every index with its columns in order (the automatic ones too), and its triggers. */
 async function shapeOf(c: Client, table: string) {
   const info = (await c.execute(`PRAGMA table_info("${table}")`)).rows.map((r) => [r.name, String(r.type).toUpperCase(), Number(r.notnull), r.dflt_value == null ? null : String(r.dflt_value), Number(r.pk)]);
   const lists = (await c.execute(`PRAGMA index_list("${table}")`)).rows.map((r) => [r.name, Number(r.unique), Number(r.partial)]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  const columns: Record<string, unknown[][]> = {};
+  for (const [name] of lists) {
+    columns[String(name)] = (await c.execute(`PRAGMA index_xinfo("${name}")`)).rows.map((r) => [Number(r.seqno), r.cid == null ? null : Number(r.cid), r.name == null ? null : String(r.name), Number(r.desc), String(r.coll), Number(r.key)]);
+  }
+  const ddl = (await c.execute({ sql: "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", args: [table] })).rows.map((r) => squash(r.sql));
   const named = (await c.execute({ sql: "SELECT type, name, sql FROM sqlite_master WHERE tbl_name=? AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY name", args: [table] })).rows.map((r) => [r.type, r.name, squash(r.sql)]);
-  return { info, lists, named };
+  return { info, ddl, lists, columns, named };
 }
 
 test("the migration folder is complete: one file per migration, in order, and the list in this test is the folder", () => {
@@ -113,4 +128,30 @@ test("each file leaves exactly the schema the app's own bootstrap creates (compa
   });
   test.info().annotations.push({ type: "compared", description: compared.join(", ") || "none on this checkout" }, { type: "skipped (the PR is not on this checkout)", description: skipped.join(", ") || "none" });
   console.log(`deploy-4 migrations compared with the app: ${compared.join(", ") || "none"}; skipped: ${skipped.join(", ") || "none"}`);
+});
+
+test("the comparison sees real differences and ignores only comments and spacing", async () => {
+  const baseDdl = readFileSync("lib/db.ts", "utf8").match(/`CREATE TABLE IF NOT EXISTS workbench_projects \([\s\S]*?\)`/)![0].slice(1, -1);
+  const shapes = async (file: string, edit: (sql: string) => string, table: string) => {
+    const c = createClient({ url: ":memory:" });
+    await c.execute(baseDdl);
+    await c.executeMultiple(edit(readFileSync(path.join(MIGRATIONS, file), "utf8")));
+    const shape = await shapeOf(c, table);
+    c.close();
+    return shape;
+  };
+  const same = (sql: string) => sql;
+  const CASES: { file: string; table: string; edit: (sql: string) => string; what: string }[] = [
+    { file: "06-pr731-estimated_credits-tables.sql", table: "estimated_credits_fill", what: "a CHECK that says id=2", edit: (sql) => sql.replace("CHECK(id=1)", "CHECK(id=2)") },
+    { file: "04-pr700-export_jobs.sql", table: "export_jobs", what: "a UNIQUE with its columns reordered", edit: (sql) => sql.replace("UNIQUE(workspace_id, owner, request_id)", "UNIQUE(owner, workspace_id, request_id)") },
+    { file: "04-pr700-export_jobs.sql", table: "export_jobs", what: "a UNIQUE with a column left out", edit: (sql) => sql.replace("UNIQUE(workspace_id, owner, request_id)", "UNIQUE(workspace_id, request_id)") },
+    { file: "02-pr698-board_trash.sql", table: "board_trash", what: "a partial index with another condition", edit: (sql) => sql.replace("WHERE restored_at IS NULL", "WHERE restored_at IS NOT NULL") },
+    { file: "02-pr698-board_trash.sql", table: "board_trash", what: "an index with its columns reordered", edit: (sql) => sql.replace("board_trash(project_id, removed_at)", "board_trash(removed_at, project_id)") },
+    { file: "05-pr728-take_review_events.sql", table: "take_review_events", what: "a trigger with another message", edit: (sql) => sql.replace("Review history is append-only", "Review history is read-only") },
+    { file: "03-pr718-workbench_board_owners.sql", table: "workbench_board_owners", what: "a column with another default", edit: (sql) => sql.replace("owner TEXT NOT NULL,", "owner TEXT NOT NULL DEFAULT '',") },
+  ];
+  for (const { file, table, edit, what } of CASES) expect(await shapes(file, edit, table), `${file}: ${what} must not compare equal`).not.toEqual(await shapes(file, same, table));
+  /* Comments and spacing alone are not a difference. */
+  const quiet = (sql: string) => `/* a note */\n${sql.split("\n").map((line) => (line.startsWith("--") ? line : line.replace(/\(/g, " ( ").replace(/,/g, " ,\n   "))).join("\n")}\n-- a trailing note\n`;
+  for (const { file, table } of CASES.filter((c, i, all) => all.findIndex((o) => o.table === c.table) === i)) expect(await shapes(file, quiet, table), `${file}: only comments and spacing differ`).toEqual(await shapes(file, same, table));
 });

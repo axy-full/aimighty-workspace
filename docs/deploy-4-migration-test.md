@@ -1,14 +1,18 @@
 # Deploy #4: the migrations, and a throwaway-copy test (for the owner, on the Mac, with the turso CLI)
 
 Owner, 14 Oct 2026: "a local run on 127.0.0.1 alone does NOT count. Test on a throwaway copy of production instead." This page is that test. Everything below is **additive**:
-new tables, one new nullable column, one index and two triggers. Nothing is dropped, renamed, repriced or rewritten, and no file here holds a secret or a name.
+six new tables, one new nullable column, five indexes and two triggers. Nothing is dropped, renamed, repriced or rewritten, and no file here holds a secret or a name.
 Rollback stays as written in each PR (redeploy the previous build; leave the tables: the previous build ignores them).
 
 ## 1. Which database each migration touches
 
-Every one of the six changes **tenant databases**: each client workspace's own database, and the house workspace's database. None creates anything in the **platform database**
-(the one holding the `workspaces` table). The platform/main database is also the one the house workspace's own tables live in (per the 11 Oct backup notes), so a copy of it is
-tested with the same files too. The app applies these itself, on a workspace's first request after the deploy; the files let you apply and check them by hand first.
+**Which database: both.** Every one of the six changes goes in the **tenant databases** (each client workspace's own database) **and** in the **platform database**, because the house
+workspace (`legacy=1`, the one `TURSO_DATABASE_URL` points at) keeps its own tables in the platform database. So the same files run on a copy of every kind of database.
+They **never touch the platform's own tables** (`workspaces` and the rest): each file only creates a new table or adds the one nullable column to `workbench_projects`.
+The app applies these itself, on a workspace's first request after the deploy; the files let you apply and check them by hand first.
+
+**Precheck before anything is copied (read-only, in step (a)):** the platform database must hold both the platform's `workspaces` table and the house workspace's `workbench_projects`.
+If `workbench_projects` is missing from it, **STOP**: the house workspace's database is a separate one and needs its own copy (and its own run of the list).
 
 | # | File | PR | Touches | What the app runs |
 |---|---|---|---|---|
@@ -40,7 +44,10 @@ Run from a checkout of this branch (the files are in `ops/migrations/deploy-4/`)
 turso db list
 #   platform/main = the database holding the workspaces table (group default); client workspace databases are in group particl-production-tenants.
 turso db shell <platform-db> "SELECT db_name FROM workspaces WHERE legacy=0 AND purged_at IS NULL LIMIT 3"
-turso db create mig-test-20261015-platform --from-db <platform-db> --group <platform-group>
+#   precheck, read-only: this must list BOTH names. If workbench_projects is missing, STOP: the house database is separate and needs its own copy.
+turso db shell <platform-db> "SELECT name FROM sqlite_master WHERE name IN ('workspaces','workbench_projects')"
+#   each copy stays in its source's group (the platform copy in the platform's, the tenant copy in the tenants'): Turso's docs do not say --from-db works across groups
+turso db create mig-test-20261015-platform --from-db <platform-db> --group <platform-group> --wait
 turso db create mig-test-20261015-tenant   --from-db <workspace-db> --group particl-production-tenants --wait
 
 # (c, before) read-only: which of the new names exist, and the row counts of tables that already exist (counts only, never data)
@@ -54,9 +61,11 @@ done
 # (b) apply each migration to the COPIES only (never the real databases), in order
 for DB in mig-test-20261015-platform mig-test-20261015-tenant; do
   for F in ops/migrations/deploy-4/0[1-6]-*.sql; do
+    case "$DB" in mig-test-*) ;; *) echo "refusing $DB"; exit 1;; esac
     echo "== $DB <- $F"; turso db shell $DB < "$F"
   done
 done
+#   Never run step (b) against a name that does not start with mig-test-.
 #   File 04 may be skipped if REMOTION_EXPORTS stays off. Re-running file 01 prints "duplicate column name: updated_by": expected, nothing changed.
 
 # (c, after) read-only checks: names, columns and counts, no data
@@ -70,25 +79,33 @@ for DB in mig-test-20261015-platform mig-test-20261015-tenant; do
   turso db shell $DB "SELECT (SELECT count(*) FROM generations) AS generations, (SELECT count(*) FROM workbench_projects) AS workbench_projects, (SELECT count(*) FROM notes) AS notes, (SELECT count(*) FROM credit_receipts) AS credit_receipts"
 done
 #   What passing looks like: every name above is listed; workbench_projects gains one column, updated_by (TEXT, nullable); the six new tables have 0 rows;
-#   the four counts of existing tables are identical before and after. The append-only triggers can be tried on the empty table only if you want to see them refuse:
+#   the four counts of existing tables are identical before and after.
+# (e, optional) NOT read-only: writes one row, to the copy only (never run on anything but a mig-test- copy). Shows the append-only triggers refusing, on the empty table:
 #   turso db shell mig-test-20261015-tenant "INSERT INTO take_review_events(id,gen_id,action,actor_id,via,created_at) VALUES('probe','x','picked','','person',1); UPDATE take_review_events SET via='x'"   -- must fail "Review history is append-only"
 
-# (d) destroy the copies when done
+# (d) destroy the copies when done (after (e), if you run it)
 turso db destroy mig-test-20261015-platform --yes
 turso db destroy mig-test-20261015-tenant --yes
 turso db list    # neither mig-test-… copy remains
 ```
 
 A table that does not exist on a copy makes its `count(*)` fail before the files are applied; that is the "before" proof and is expected. If a `turso db shell` of a file with a trigger
-misbehaves on the shell's statement splitting (files 05 holds two one-line triggers), apply the file's four statements one by one with `turso db shell <copy> "<statement>"`.
+misbehaves on the shell's statement splitting (file 05 holds two one-line triggers), apply the file's four statements one by one. Ready to paste (replace `<copy>` with a `mig-test-` name, never a real database):
+
+```sh
+turso db shell <copy> "CREATE TABLE IF NOT EXISTS take_review_events (id TEXT PRIMARY KEY, gen_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT NOT NULL, via TEXT NOT NULL, token_id TEXT, reasons TEXT, drift TEXT, note_id TEXT, cause TEXT, created_at INTEGER NOT NULL)"
+turso db shell <copy> "CREATE INDEX IF NOT EXISTS idx_take_review_events_gen ON take_review_events(gen_id, created_at)"
+turso db shell <copy> "CREATE TRIGGER IF NOT EXISTS take_review_events_no_update BEFORE UPDATE ON take_review_events BEGIN SELECT RAISE(ABORT,'Review history is append-only'); END"
+turso db shell <copy> "CREATE TRIGGER IF NOT EXISTS take_review_events_no_delete BEFORE DELETE ON take_review_events BEGIN SELECT RAISE(ABORT,'Review history is append-only'); END"
+```
 
 ## 3. The test that keeps the files honest
 
-`tests/unit/deploy4Migrations.spec.ts` applies each file to a fresh in-memory SQLite and compares the schema it leaves (columns, indexes, triggers) with what the app's own
+`tests/unit/deploy4Migrations.spec.ts` applies each file to a fresh in-memory SQLite and compares the schema it leaves (columns, each table's own DDL with comments and spacing ignored, every index with its columns in order, triggers) with what the app's own
 bootstrap creates on the same checkout (`lib/db.ts` for the tenant tables, `exportJobsReady()` for `export_jobs`). It also checks every file is additive (no DROP, RENAME, UPDATE,
 DELETE, INSERT), idempotent (a second run changes nothing; only the ALTER says "duplicate column"), writes no row, and holds no secret or name.
 None of the six PRs is merged into `release/1` yet, so on this branch the comparison with the app is skipped for each and the test says so. **Before this page was written** the
-test was run on each PR's own branch with the files copied in (#702, #698, #718, #700, #728, #731), and each compared green against that branch's bootstrap on 15 Oct 2026.
+test was run on each PR's own branch with the files copied in (#702, #698, #718, #700, #728, #731), and each compared green against that branch's bootstrap on 14 Oct 2026.
 After each PR merges, re-run on `release/1`:
 
 ```sh
