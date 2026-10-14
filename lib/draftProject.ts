@@ -159,6 +159,15 @@ export async function admittedProjectOr(person: { id: string } | null, projectId
   return (await mayReachProject(person, projectId, "admit", ex)) ? projectId : null;
 }
 
+/**
+ * `projectId` when `person` may READ it (their own board, the sample, a teammate's SHARED board, any project that is not a private board), else null. No admin elevation: an admin
+ * reads another member's private board through the audited admin read, not here. This feeds Atomik's CONTEXT only; spending, step filing and memory writes need `admittedProjectOr`.
+ */
+export async function contextProjectOr(person: { id: string } | null, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
+  if (projectId == null || projectId === "") return null;
+  return (await mayReachProject(person, projectId, "read", ex)) ? projectId : null;
+}
+
 /** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
 /**
  * The boards a teammate may look at, by the one definition: every draft its author has shared with the team (`teamShared`), and the marked sample

@@ -1,6 +1,6 @@
 import { NextResponse, after, type NextRequest } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
-import { admittedProjectOr, mayReachProject } from "@/lib/draftProject";
+import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { listChats, createChat, engines, requestEffort, runTurn, projectContext, type AgentMode } from "@/lib/atomik";
@@ -88,14 +88,16 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
     /* A project this person may not file into (a private board of someone else's; lib/draftProject.ts) is no project (null): nothing of it is read for the model. */
-    const projectId = await admittedProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null);
+    const asked = typeof body.projectId === "string" ? body.projectId : null;
+    const readProject = await contextProjectOr(got.user, asked);
+    const projectId = await admittedProjectOr(got.user, asked);
     /* The project's library and presets for library steps, read as the turn will read them. */
     const inputs = await plannerInputs(auth.user.id, projectId);
     return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
-      context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
+      context: await projectContext(readProject), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
-      memory: await plannerMemoryText({ projectId, query: text }).catch(() => ""),
+      memory: await plannerMemoryText({ projectId: readProject, query: text }).catch(() => ""),
       library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
   }
@@ -103,8 +105,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
   { const off = await sampleWorkspaceOff(); if (off) return off; }
   const id = await createChat({
     userId: got.user.id,
-    /* The project a chat files its steps into, as its maker may file there: a private board of someone else's, or an id that is none, is stored as no project (the same answer for both). */
-    projectId: typeof body.projectId === "string" && body.projectId && (await mayReachProject(got.user, body.projectId, "admit")) ? body.projectId : null,
+    /* The project a chat keeps: one its maker may READ (their own board, a teammate's shared board, any project that is not a private board); a private board of someone else's, or an id that is none, is stored as no project (the same answer for both). Spending, step filing and memory writes need more, and are decided separately (admission, and the turn). */
+    projectId: await contextProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null),
     model: typeof body.model === "string" && body.model ? body.model : "auto",
     effort: requestEffort(body.effort),
     agentMode: body.agentMode === "auto" ? "auto" : ("ask" as AgentMode),

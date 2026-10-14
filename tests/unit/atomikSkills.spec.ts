@@ -451,7 +451,7 @@ test("`/` in the composer: a command being typed lists its matches with the comm
   expect(t.commandIn("/wav", skills)).toBeNull();
 });
 
-test("running a skill files its plan into a project only if the person may file there: someone else's private board and an unknown board give the same none; their own board and a shared project are kept; an old chat on a board they can no longer reach is cleared", async () => {
+test("running a skill keeps a project only if the person may read it: someone else's private board and an unknown board give the same none; their own board, a teammate's shared board and a shared project are kept; an old chat on a board they can no longer reach is cleared", async () => {
   const s = await import("../../lib/atomikSkills");
   const draft = await import("../../lib/draftProject");
   const ws = workspace();
@@ -461,7 +461,8 @@ test("running a skill files its plan into a project only if the person may file 
     const boardOf = (owner: string) => draft.mappedId("prj_wb_", ws.id, owner, "d1");
     for (const owner of ["u1", "u2"]) {
       await db().execute({ sql: "INSERT INTO projects(id,name,created_at) VALUES(?,?,0)", args: [boardOf(owner), `${owner}'s board`] });
-      await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,'d1','d1','{}',1,0)", args: [`${owner}:d1`, owner] });
+      /* u1's board is shared with the team (view-only for everyone else). */
+      await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,'d1','d1',?,1,0)", args: [`${owner}:d1`, owner, owner === "u1" ? JSON.stringify({ teamShared: true }) : "{}"] });
     }
     await rows("INSERT INTO projects(id, name, created_at) VALUES ('p1', 'Launch', 0)");
     const skill = await saveSkill(await seedRun({ videoModel: KLING }), "u1");
@@ -470,18 +471,21 @@ test("running a skill files its plan into a project only if the person may file 
     /* A new chat for u2 (a member): their own board and a shared project are kept; u1's private board, and one nobody owns, are none. */
     expect(await projectOf(await run("u2", boardOf("u2")))).toBe(boardOf("u2"));
     expect(await projectOf(await run("u2", "p1"))).toBe("p1");
-    expect(await projectOf(await run("u2", boardOf("u1")))).toBeNull();
+    expect(await projectOf(await run("u2", boardOf("u1"))), "a teammate's shared board is readable, so it is kept (filing into it is refused at admission)").toBe(boardOf("u1"));
     expect(await projectOf(await run("u2", draft.mappedId("prj_wb_", ws.id, "u_nobody", "d9")))).toBeNull();
     /* An admin does not file into a member's private board either. */
     expect(await projectOf(await run("u1", boardOf("u2")))).toBeNull();
     /* A project that is not a private board must exist, as before. */
     await expect(s.runSkill(skill.id, { projectId: "p_missing" }, "u2")).rejects.toMatchObject({ status: 404 });
-    /* An old chat of u2's stored on u1's private board: running a skill in it clears the project; one on their own board keeps it. */
-    const stale = await seedRun({ by: "u2", projectId: boardOf("u1") });
+    /* An old chat of the admin's stored on a member's private board: running a skill in it clears the project; a chat on a board the person may read keeps it. */
+    const stale = await seedRun({ by: "u1", projectId: boardOf("u2") });
     const own = await seedRun({ by: "u2", projectId: boardOf("u2") });
-    await s.runSkill(skill.id, { chatId: stale }, "u2");
+    const shared = await seedRun({ by: "u2", projectId: boardOf("u1") });
+    await s.runSkill(skill.id, { chatId: stale }, "u1");
     await s.runSkill(skill.id, { chatId: own }, "u2");
+    await s.runSkill(skill.id, { chatId: shared }, "u2");
     expect(await projectOf(stale)).toBeNull();
     expect(await projectOf(own)).toBe(boardOf("u2"));
+    expect(await projectOf(shared)).toBe(boardOf("u1"));
   });
 });

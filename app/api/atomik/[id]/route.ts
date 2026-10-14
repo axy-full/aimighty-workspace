@@ -1,4 +1,4 @@
-import { admittedProjectOr, mayReachProject } from "@/lib/draftProject";
+import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
 import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
@@ -52,8 +52,8 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
     model: typeof b.model === "string" ? b.model : undefined,
     effort: requestEffort(b.effort),
     agentMode: b.agentMode === "ask" || b.agentMode === "auto" ? b.agentMode as AgentMode : undefined,
-    /* As at creation: only a project this person may file into is kept; anything else clears it. */
-    projectId: b.projectId === undefined ? undefined : (typeof b.projectId === "string" && b.projectId && (await mayReachProject(got.user, b.projectId, "admit")) ? b.projectId : null),
+    /* As at creation: only a project this person may read is kept; anything else clears it. */
+    projectId: b.projectId === undefined ? undefined : await contextProjectOr(got.user, typeof b.projectId === "string" ? b.projectId : null),
   });
   return NextResponse.json(await getChat(id));
   } catch (error) {
@@ -110,13 +110,15 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const effort = requestEffort(b.effort);
     if (b.model !== undefined && (typeof b.model !== "string" || !b.model || b.model.length > 120))
       return NextResponse.json({ error: "Choose an available Atomik model." }, { status: 400 });
-    /* A project this person may not file into (a private board of someone else's, even for an admin; lib/draftProject.ts) is no project (null): nothing of it is read for the model, spent against or filed into, before anything is reserved. */
+    /* Two questions, asked of this person alone (an admin is no exception here), before anything is reserved (lib/draftProject.ts): the project they may READ (their own board, a teammate's shared
+       board) feeds the model's CONTEXT only; the project they may FILE into (their own board, any project that is not a private board) is the one a turn spends against, proposes and prices steps
+       for, and writes memory under. Someone else's private board gives neither. The chat's own project is dropped only when it is not even readable. */
+    const readProject = await contextProjectOr(got.user, loaded.chat.projectId);
     const projectId = await admittedProjectOr(got.user, loaded.chat.projectId);
-    /* A project this person can no longer file into is dropped from the chat itself, so its steps stop being proposed for a board they cannot render into. */
-    if (!quoteOnly && loaded.chat.projectId && !projectId) await clearChatProject(id, loaded.chat.projectId!);
-    const context = await projectContext(projectId);
+    if (!quoteOnly && loaded.chat.projectId && !readProject) await clearChatProject(id, loaded.chat.projectId);
+    const context = await projectContext(readProject);
     /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */
-    const memory = await plannerMemoryText({ projectId, query: text }).catch(() => "");
+    const memory = await plannerMemoryText({ projectId: readProject, query: text }).catch(() => "");
     const rules = writerRulesByScope(await effectiveRules());
     /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
     const inputs = await plannerInputs(got.user.id, projectId);
