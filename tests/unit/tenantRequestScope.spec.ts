@@ -46,6 +46,7 @@ function wrapper() {
     "console",
     "recoveryRoute",
     "crossOriginProblem",
+    "hideOwnerAccountId",
     compiled,
   )(
     exports,
@@ -60,6 +61,7 @@ function wrapper() {
     { error: (line: string) => logs.push(line) },
     (handler: unknown) => handler,
     crossOriginProblem,
+    async (res: Response) => res,
   );
   return {
     withTenant: exports.withTenant,
