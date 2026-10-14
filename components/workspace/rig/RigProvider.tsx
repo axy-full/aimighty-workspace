@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { useProductionJobs } from "@/components/workbench/use-production-jobs";
 import { DraftChangedError, DraftRequestError, draftRequest, draftWriter, writeMergedDraft, type DraftWriter } from "@/lib/workbench/draft-request";
-import { conflictThings, takeTheirs } from "@/lib/workbench/draft-conflicts";
+import { conflictThings, setAt, takeTheirs, valueAt } from "@/lib/workbench/draft-conflicts";
 import type { MergeConflict } from "@/lib/workbench/merge";
 import { mergeDraft, rebaseProject } from "@/lib/workbench/draft-merge";
 import { noteTakenOut, recordMade, sameJson, type MadeRecords } from "@/lib/workbench/merge";
@@ -33,7 +33,7 @@ import { useShotEstimate, sharedShotEstimator } from "@/lib/workspace/use-shot-e
 import { useWorkspace } from "@/lib/workspace/state";
 import type { Generation, SelectableItem } from "@/lib/workspace/types";
 import { videoReferenceProblem } from "@/lib/generationReferences";
-import { useTeamCanvas, type TeamCanvasApi } from "./use-team-canvas";
+import { useTeamCanvas, type RefusedCard, type TeamCanvasApi } from "./use-team-canvas";
 import { useCutouts, type CutoutsApi } from "./use-cutouts";
 import { useBoardOpen } from "@/lib/board/active";
 import { SaveFailedError } from '@/lib/workbench/save-then-continue';
@@ -81,7 +81,16 @@ import { actingOwnerField, setActingOwner } from "@/lib/workbench/acting-on";
  */
 type Draft = { project: Project; revision: number; base: Project; writer: DraftWriter; ancestors: Map<string, CanvasNode>; made: MadeRecords; /** A teammate's board, to look at: it takes no edit and is never saved (lib/workbench/team-boards.ts). */ viewOnly?: ViewOnly; /** A teammate's board opened to edit ("Can edit"): whose it is; every save names that owner. */ actingOn?: ActingOn; /** Someone else's saved change touches a value this window also changed: held with the draft (base and revision stay at what this window opened, so any later save reports the conflict) until the person chooses Reload or Keep my version. */ held?: Held };
 /** The saved version that conflicts (`latest` at `revision`) and the places where it does. */
-type Held = { latest: Project; revision: number; conflicts: MergeConflict[]; at: number };
+type Held = {
+  latest: Project; revision: number; conflicts: MergeConflict[]; at: number;
+  /** With no live room, fields of cards a teammate changed since this window's edit began (the canvas refused to write over them): the card as the canvas holds it, and who changed it. */
+  canvas?: RefusedCard[];
+};
+/** The places a canvas refusal is about, as the merge names them (for the bar's words and for taking the saved value). */
+const canvasPaths = (cards: readonly RefusedCard[]): MergeConflict[] =>
+  cards.flatMap((c) => c.fields.map((field) => ({ path: ["nodes", `[id=${c.nodeId}]`, field], mine: null, theirs: null })));
+/** A held change that replaces another keeps the canvas refusals the other held (the saved-version conflicts and the canvas's are both asked at once). */
+const holdOf = (prev: Held | undefined, next: Omit<Held, "canvas">): Held => (prev?.canvas?.length ? { ...next, canvas: prev.canvas } : next);
 /**
  * A project the person left with edits not saved yet: they keep being saved until they are, or the project is back.
  * `inflight` is the attempt out now (what it saved, or null); coming back waits for it.
@@ -256,6 +265,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   /* What a merge brought in: onto the team canvas only where it still holds what the Rig had. */
   const catchUpRef = useRef<((before: Project, after: Project) => void) | null>(null);
   const announceRef = useRef<((revision: number) => void) | null>(null);
+  /* Set once the team canvas hook exists: sends the fields the person kept again, with no compare. */
+  const resendRef = useRef<((cards: { nodeId: string; fields: string[] }[]) => void) | null>(null);
   const retries = useRef(0);
   const flushRef = useRef<() => Promise<boolean>>(() => Promise.resolve(true));
   const flush = useCallback((options: { force?: boolean; keep?: boolean } = {}): Promise<boolean> => {
@@ -272,6 +283,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       /* Read after that wait, together: what is sent is exactly what counts as saved. */
       const current = draftRef.current;
       if (!current) return false;
+      /* The canvas edit that just went out may have been refused (a teammate changed that field): held now, nothing is sent over theirs. */
+      if (current.held && !options.keep) return false;
       dirty.current = false;
       setSaveState("saving");
       try {
@@ -298,7 +311,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
           const now = draftRef.current;
           if (now && now.project.id === current.project.id) {
             const project = rebaseProject(current.project, now.project, err.merged);
-            setDraft({ ...now, project, held: { latest: err.latest, revision: err.revision, conflicts: err.conflicts, at: Date.now() } });
+            setDraft({ ...now, project, held: holdOf(now.held, { latest: err.latest, revision: err.revision, conflicts: err.conflicts, at: Date.now() }) });
             dirty.current = true;
             setSaveState("held");
           }
@@ -483,7 +496,7 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
       /* A value changed in both windows: this window's stays on screen, nothing is saved over the other's until the person chooses, and the draft keeps the version it
          opened on (base, revision), so any later save of it, from anywhere, reports the same conflict. */
       if (conflicts.length) {
-        setDraft({ ...now, project, held: { latest: data.project, revision: data.revision, conflicts, at: Date.now() } });
+        setDraft({ ...now, project, held: holdOf(now.held, { latest: data.project, revision: data.revision, conflicts, at: Date.now() }) });
         dirty.current = true;
         setSaveState("held");
       } else setDraft({ ...now, project, base: data.project, revision: data.revision });
@@ -493,21 +506,23 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
   }, [scope, setDraft]);
 
   /* Who saved the change that is held (the name this workspace may read) is asked of the server; a failed ask still shows the bar, without a name. */
-  const heldLatest = draft?.held?.latest ?? null, heldOwner = draft?.actingOn?.owner.id ?? null, heldId = draft?.project.id ?? null;
+  const heldKnown = !!draft?.held?.canvas?.length, heldLatest = draft?.held?.latest ?? null, heldOwner = draft?.actingOn?.owner.id ?? null, heldId = draft?.project.id ?? null;
   useEffect(() => {
-    if (!heldLatest || !heldId) return;
+    if (!heldLatest || !heldId || heldKnown) return;
     let live = true;
     const ownerQuery = heldOwner ? `&owner=${encodeURIComponent(heldOwner)}` : "";
     void draftRequest<{ by: string | null; updatedAt: number; mine: boolean }>(`${API}/projects?id=${encodeURIComponent(heldId)}&head=1${ownerQuery}`, scope)
       .then((head) => { if (live) setHeldWho({ latest: heldLatest, by: head.mine ? null : head.by, at: head.updatedAt }); })
       .catch(() => {});
     return () => { live = false; };
-  }, [heldLatest, heldId, heldOwner, scope]);
+  }, [heldLatest, heldId, heldOwner, heldKnown, scope]);
   const changedSince = useMemo<RigContext["changedSince"]>(() => {
     const held = draft?.held;
     if (!held || !draft || draft.project.id !== projectId) return null;
-    const who = heldWho && heldWho.latest === held.latest ? heldWho : null;
-    return { by: who?.by ?? null, at: who?.at ?? held.at, things: conflictThings(draft.project, held.conflicts) };
+    /* A canvas refusal knows who changed the card and when; a saved-version conflict asks the server who saved it. */
+    const first = held.canvas?.[0];
+    const who = first ? { by: first.by, at: first.at } : heldWho && heldWho.latest === held.latest ? heldWho : null;
+    return { by: who?.by ?? null, at: who?.at ?? held.at, things: conflictThings(draft.project, [...held.conflicts, ...canvasPaths(held.canvas ?? [])]) };
   }, [draft, projectId, heldWho]);
 
   /* The person's choice: take the saved version at those places (the rest of this window's edits stay and are saved), or save this window's over it. */
@@ -517,11 +532,31 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
     if (!current || !held) return;
     const rest: Draft = { ...current };
     delete rest.held;
-    setDraft(choice === "reload" ? { ...rest, project: takeTheirs(current.project, held.latest, held.conflicts) } : rest);
+    /* Reload: the saved version at the places both changed, and the canvas's card at the fields it refused. Keep: this window's version is sent again, with no compare. */
+    const taken = (project: Project) => (held.canvas ?? []).reduce((out, card) => card.fields.reduce((at, field) => setAt(at, ["nodes", `[id=${card.nodeId}]`, field], (card.node as unknown as Record<string, unknown>)[field]), out), takeTheirs(project, held.latest, held.conflicts));
+    setDraft(choice === "reload" ? { ...rest, project: taken(current.project) } : rest);
+    if (choice === "keep" && held.canvas?.length) resendRef.current?.(held.canvas.map((c) => ({ nodeId: c.nodeId, fields: c.fields })));
     dirty.current = true;
     setSaveState("saving");
     void flush({ keep: choice === "keep" });
   }, [flush, setDraft]);
+
+  /* No live room: a card field a teammate changed since this window's edit began was not written over on the canvas. This window keeps its version on screen, sends nothing
+     over theirs, and asks (the same bar as a saved-version conflict). */
+  const onRefused = useCallback((pid: string, cards: RefusedCard[]) => {
+    const now = draftRef.current;
+    if (!now || now.viewOnly || now.project.productionProjectId !== pid) return;
+    /* Only what still differs here (a Reload since taken theirs has nothing to ask). */
+    const live = cards
+      .map((c) => ({ ...c, fields: c.fields.filter((f) => !sameJson(valueAt(now.project, ["nodes", `[id=${c.nodeId}]`, f]), (c.node as unknown as Record<string, unknown>)[f])) }))
+      .filter((c) => c.fields.length);
+    if (!live.length) return;
+    const prev = now.held;
+    const canvas = [...(prev?.canvas ?? []).filter((p) => !live.some((c) => c.nodeId === p.nodeId)), ...live];
+    setDraft({ ...now, held: { ...(prev ?? { latest: now.project, revision: now.revision, conflicts: [], at: Date.now() }), canvas } });
+    dirty.current = true;
+    setSaveState("held");
+  }, [setDraft]);
 
   /* Another window saved: the live room says so (a hint; the server's revision is what counts), and with no room the head is asked every few seconds. */
   const onSavedHint = useCallback((revision: number) => {
@@ -565,7 +600,8 @@ export function RigProvider({ scope, children }: { scope: string; children: Reac
 
   /* ── The production's team canvas (shared Rig nodes, live when Liveblocks is set up) ── */
   const readDraft = useCallback(() => draftRef.current?.project ?? null, []);
-  const team = useTeamCanvas({ scope, productionId: project?.productionProjectId ?? null, current: readDraft, fold, onSaved: onSavedHint });
+  const team = useTeamCanvas({ scope, productionId: project?.productionProjectId ?? null, current: readDraft, fold, onSaved: onSavedHint, onRefused });
+  useEffect(() => { resendRef.current = team.resend; }, [team.resend]);
   useEffect(() => { announceRef.current = team.announceSaved; }, [team.announceSaved]);
   useEffect(() => {
     if (!projectId || status !== "ready" || team.mode === "live") return;

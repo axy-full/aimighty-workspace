@@ -8,7 +8,7 @@ import { db, ready, now } from "@/lib/db";
 import { workbenchTransaction } from "./records";
 import { canvasAssetSchema, canvasNodeSchema } from "./studio-schema";
 import { PROJECT_JSON_BYTES, PROJECT_LIMITS } from "./project-limits";
-import { applyTeamPatch, emptyTeamCanvas, guardMasters, heldRemovals, parseTeamCanvas, referencedAssetIds, type MasterHold, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
+import { applyTeamPatch, emptyTeamCanvas, guardMasters, heldRemovals, parseTeamCanvas, referencedAssetIds, refusedWrites, type MasterHold, type RefusedWrite, type TeamCanvas, type TeamPatch } from "./team-canvas-model";
 import { canvasOpsReady, insertCanvasOp } from "./canvas-ops-log";
 import { collabConfigured } from "@/lib/collab";
 
@@ -57,6 +57,8 @@ export const teamPatchSchema = z.object({
   order: z.array(z.string().max(100)).max(PROJECT_LIMITS.nodes).nullable(),
   /* Per node, what the sending window had: the write lands only where the canvas still holds it (a catch-up after a merge). */
   expect: z.record(z.string().max(100), canvasNodeSchema.nullable()).optional(),
+  /* With `expect`: a compare and set from a window with no live room; a field a teammate changed since is refused and named in the answer. */
+  cas: z.boolean().optional(),
 });
 
 /** The room a production's canvas is edited in, scoped to its workspace. */
@@ -195,10 +197,12 @@ export async function applyTeamCanvasPatch(tx: Transaction, productionId: string
   const stamped = { ...patch, at: canvasClock(current), author: userId, implied: options.implied || undefined };
   const guarded = options.trusted ? { patch: stamped, held: [] as MasterHold[] } : guardMasters(current, stamped, { locks: await masterLocks(tx, current, stamped) });
   const held = heldRemovals(current, guarded.patch);
+  /* A compare and set: the fields a teammate changed since this window's edit began (they are not written, and the window is told). */
+  const refused: (RefusedWrite & { by?: string; at?: number })[] = refusedWrites(current, guarded.patch).map((r) => ({ ...r, ...(current.writers[r.nodeId] ? { by: current.writers[r.nodeId] } : {}), ...(current.stamps[`n:${r.nodeId}`] ? { at: current.stamps[`n:${r.nodeId}`] } : {}) }));
   const next = applyTeamPatch(current, guarded.patch, "trusted");
   const revision = await writeCanvasRow(tx, productionId, next, saved?.revision ?? 0, userId);
   if (held.length) await logReassert(tx, productionId, next, held, revision);
-  return { canvas: next, revision, held, masterHolds: guarded.held };
+  return { canvas: next, revision, held, masterHolds: guarded.held, refused };
 }
 
 /** Records that the server keeps these cards on the canvas: an outbox row the room takes like any server change. */
