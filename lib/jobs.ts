@@ -1,6 +1,7 @@
 import { renderFactsFromRow } from "./v12/renderFacts";
 import { MADE_IN_MAKE_SQL } from "./madeIn";
 import { JOB_SQL, jobOfRow, type Job } from "./takeJob";
+import { SHOT_TYPE_SQL, shotTypeOfRow, type ShotType } from "./takeShotType";
 import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { syncCreditReceipts } from "./creditReceipts";
 import { billedCreditsExpr } from "./creditSql";
@@ -68,6 +69,8 @@ export type Generation = {
   title: string | null;
   /** What the take was for (lib/takeJob.ts); null for a take made before the label, whose purpose cannot be told for certain. */
   job?: Job | null;
+  /** The kind of shot (lib/takeShotType.ts); null where it was not recorded and the Setup does not tell it for certain. */
+  shotType?: ShotType | null;
   params: Record<string, unknown>;
   status: string;
   sourceUrl: string | null;
@@ -231,6 +234,7 @@ export function rowToGeneration(r: any): Generation {
     prompt: r.prompt,
     title: r.title ?? null,
     job: jobOfRow({ kind: r.kind, task: r.task, params }),
+    shotType: shotTypeOfRow({ kind: r.kind, params }),
     params,
     status: r.status,
     sourceUrl: r.source_url ?? null,
@@ -314,6 +318,8 @@ export async function listGenerations(opts: {
   madeIn?: "make";
   /** Only takes with this job (lib/takeJob.ts): the stored label, or one of the certain cases for a take made before it. */
   job?: Job;
+  /** Only takes of this shot type (lib/takeShotType.ts): the stored one, or one of the certain cases from the Setup a take stored. */
+  shotType?: ShotType;
   /** Only takes filed against no project — Make's wall and the Library's Unfiled lens (§10, §11). */
   unfiled?: boolean;
   /** Whose view this is. Takes filed under a private board that this person may not see are left out (lib/draftProject.ts); omitted, the signed-in person of this request, and `null` is nobody (background work). */
@@ -345,6 +351,7 @@ export async function listGenerations(opts: {
   if (opts.unfiled) where.push("g.project_id IS NULL");
   if (opts.madeIn === "make") where.push(MADE_IN_MAKE_SQL);
   if (opts.job) { where.push(`${JOB_SQL} = ?`); args.push(opts.job); }
+  if (opts.shotType) { where.push(`${SHOT_TYPE_SQL} = ?`); args.push(opts.shotType); }
   if (opts.createdBy) {
     where.push("g.created_by = ?");
     args.push(opts.createdBy);
