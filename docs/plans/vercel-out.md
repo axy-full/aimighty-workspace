@@ -283,7 +283,7 @@ Cost: listing Blob uses Blob "advanced operations" on the Vercel bill (pennies).
 
 ### 3.6 Deletion from Blob
 
-**Never without the owner's yes.** It is a separate, later step. Closing the Vercel account deletes the Blob store, so **closing the account is the deletion** and needs that same yes. Suggested: a retention period after the cutover (the owner sets it; the account closing date limits it), with a private archive taken first by the backup tool with `dual` media (`docs/backup-restore.md`) if the owner wants a copy outside both stores. Nothing in this plan deletes anything on either store.
+**Never without the owner's yes.** It is a separate, later step. **Owner (14 Oct):** Blob is kept read-only for 30 days after the cutover, and the Vercel project `particlstudio` is deleted in one step as the very last step (O9). Closing the Vercel account deletes the Blob store, so **closing the account is the deletion** and needs that same yes. Suggested: a retention period after the cutover (the owner sets it; the account closing date limits it), with a private archive taken first by the backup tool with `dual` media (`docs/backup-restore.md`) if the owner wants a copy outside both stores. Nothing in this plan deletes anything on either store.
 
 ### 3.7 Rollback at each step
 
@@ -370,7 +370,8 @@ Blob first in time, because the account closes before 27 October. The code remov
 | 13 | **A7a–c** `VERCEL*` branches | lane | M ×3 | — |
 | 14 | **A8** docs, privacy copy (D8) | lane | S | C2 |
 | 15 | B3–B7 retire `ai` | lane | M ×4, S | D2 |
-| 16 | Blob deletion or account closure | owner | — | retention, the owner's yes |
+| 16 | Blob kept read-only for 30 days after the cutover (owner, 14 Oct); deleting the Blob store only with the owner's yes | owner | — | step 5 + 30 days, the owner's yes |
+| 17 | **Last step: delete the Vercel project `particlstudio` in one step** (owner, 14 Oct: its previews stay until then) | owner | — | step 4 verified **and** the 7-day watch in step 5 passed; see the caution in 3.6 |
 
 Roughly 14 PRs without B3–B7, 19 with them.
 
@@ -381,7 +382,11 @@ Roughly 14 PRs without B3–B7, 19 with them.
 - **O3. Census** (command in 3.8). Gives the Blob-only counts, the `gateway_key_id` count and the unsettled 3D jobs. If the key count is not 0: revoke those keys in Vercel before closing. If unsettled 3D jobs are not 0: wait for them to settle before A6.
 - **O4–O6. Copy and verify** (3.8).
 - **O7. Cutover** (3.5): remove `BLOB_READ_WRITE_TOKEN`, redeploy, watch 7 days, then say yes to C2.
-- **O8. Later:** the Blob deletion or account closure, with its own yes.
+- **O8. Blob retention:** Blob stays read-only for 30 days after the cutover (owner, 14 Oct). Deleting the store needs the owner's own yes.
+- **O9. Last step:** delete the Vercel project `particlstudio` in one step (owner, 14 Oct). Its preview deployments stay until then; they are not deleted one by one.
+  - **When:** only after the Blob→R2 copy is verified (O6) and the 7-day watch (O7) has passed.
+  - **Before clicking delete:** open the project's **Storage** tab and confirm the Blob store is a separate team resource that stays when the project goes.
+  - **If deleting the project would delete the Blob store:** wait until the 30 days in O8 end, or disconnect the store from the project first.
 - **Guard word:** for each PR, a yes to move or delete the tests it lists (1.5, 3.5).
 
 ### 5.3 Owner decisions
