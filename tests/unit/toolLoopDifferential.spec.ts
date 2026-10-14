@@ -103,9 +103,9 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 test('a planning turn: tools in call order, a bad call answered, the last step without tools, the same JSON out', async () => {
   const { a, b } = await both({ replies: [
-    { ...toolsStep(call('c1', 'inspect_board', ''), call('c2', 'add', { kind: 'still' }), call('c3', 'add', { kind: 'clip', n: 3, tags: ['x'], box: { x: 1 } }), call('c4', 'name', { name: 'ab' }), call('c5', 'nope', { a: 1 }), call('c6', 'boom', {}), call('c7', 'name', '{bad json')), usage: usage(120, 40, { cacheRead: 30, raw: { in: 120 } }) },
-    { ...toolsStep(call('d1', 'name', { name: 'abc' })), usage: usage(200, 20) },
-    { content: [said(JSON.stringify({ summary: 'Two shots.', count: 2 }))], usage: usage(260, 30, { reasoning: 5, raw: { final: 1 } }) },
+    { ...toolsStep(call('c1', 'inspect_board', ''), call('c2', 'add', { kind: 'still' }), call('c3', 'add', { kind: 'clip', n: 3, tags: ['x'], box: { x: 1 } }), call('c4', 'name', { name: 'ab' }), call('c5', 'nope', { a: 1 }), call('c6', 'boom', {}), call('c7', 'name', '{bad json')), usage: usage(120, 40, { cacheRead: 30, cacheWrite: 10, reasoning: 6, raw: { in: 120 } }) },
+    { ...toolsStep(call('d1', 'name', { name: 'abc' })), usage: usage(200, 20, { cacheRead: 50, cacheWrite: 5, reasoning: 3, raw: { mid: 1 } }) },
+    { content: [said(JSON.stringify({ summary: 'Two shots.', count: 2 }))], usage: usage(260, 30, { cacheRead: 70, cacheWrite: 2, reasoning: 5, raw: { final: 1 } }) },
   ] });
   expect(b.error).toBeNull(); expect(a.error).toBeNull();
   expect(b.asked).toHaveLength(3);
@@ -113,6 +113,9 @@ test('a planning turn: tools in call order, a bad call answered, the last step w
   expect(b.started).toEqual(a.started);
   expect(b.steps).toEqual(a.steps);
   expect(b.totalUsage).toEqual(a.totalUsage);
+  /* The total is the sum over all three steps, in every counted field (not the last step's). */
+  expect(b.totalUsage).toMatchObject({ inputTokens: 580, outputTokens: 90, totalTokens: 670,
+    inputTokenDetails: { cacheReadTokens: 150, cacheWriteTokens: 17, noCacheTokens: 413 }, outputTokenDetails: { reasoningTokens: 14, textTokens: 76 } });
   expect(b.output).toEqual({ summary: 'Two shots.', count: 2 });
   expect(b.output).toEqual(a.output);
   expect(b.finished).toEqual(a.finished);
@@ -165,6 +168,33 @@ test('an answer that is not the object asked for throws the same words, carrying
     expect(own.usage).toEqual((a.error as { usage: unknown }).usage);
     expect(own.text).toBe(text);
     expect(own.stepUsage).toHaveLength(1);
+  }
+});
+
+test('model JSON is refused exactly where ai\'s secure parse refuses it, and nowhere else', async () => {
+  const inputs = [
+    '{"__proto__":{"polluted":1},"kind":"still"}',
+    '{"constructor":{"prototype":{"polluted":1}},"kind":"still"}',
+    '{"kind":"still","n":4,"tags":["see __proto__ docs"]}',
+    '{"kind":"clip","tags":["constructor"],"box":{"x":1}}',
+  ];
+  const { a, b } = await both({ replies: [
+    { ...toolsStep(...inputs.map((input, i) => call(`p${i}`, 'add', input))) },
+    { content: [said(JSON.stringify({ summary: 'see __proto__ docs', count: 1 }))] },
+  ] });
+  expect(b.error).toBeNull(); expect(a.error).toBeNull();
+  expect(b.asked).toEqual(a.asked);
+  expect(b.started).toEqual(a.started);
+  expect(b.started).toEqual(['add:still:4', 'add:clip:1']);
+  expect(b.steps).toEqual(a.steps);
+  /* A mention inside a string is a valid answer, as `ai` takes it. */
+  expect(b.output).toEqual({ summary: 'see __proto__ docs', count: 1 });
+  expect(b.output).toEqual(a.output);
+  /* And a final answer with the key is refused by both, in the same words. */
+  for (const text of ['{"__proto__":{"x":1},"summary":"x","count":1}', '{"constructor":{"prototype":{}},"summary":"x","count":1}']) {
+    const r = await both({ replies: [{ content: [said(text)] }] });
+    expect(r.b.error).toBeInstanceOf(ToolLoopOutputError);
+    expect(message(r.b.error)).toBe(message(r.a.error));
   }
 });
 
@@ -286,14 +316,16 @@ test('Anthropic, two steps on the wire: the tool call, its result and the final 
     const prepare = ({ stepNumber }: { stepNumber: number }) => (stepNumber >= 1 ? finalToolStep(model) : {});
     if (which === 'ai') {
       const r = await new ToolLoopAgent({ model, instructions: 'You plan.', maxOutputTokens: 2000, maxRetries: 0, stopWhen: isStepCount(2), output: Output.object({ schema: Result }), tools: aiTools(defs) as never, prepareStep: prepare as never }).generate({ messages: MESSAGES as never });
-      return { sent, usage: r.steps.map((s) => s.usage), output: r.output };
+      return { sent, usage: r.steps.map((s) => s.usage), total: r.totalUsage, output: r.output };
     }
     const r = await runToolLoop({ model: v4Model(model), instructions: 'You plan.', maxOutputTokens: 2000, maxSteps: 2, output: Result, tools: ownTools(defs) as never, prepareStep: prepare, messages: MESSAGES });
-    return { sent, usage: r.steps.map((s) => s.usage), output: r.output };
+    return { sent, usage: r.steps.map((s) => s.usage), total: r.totalUsage, output: r.output };
   };
   const a = await wire('ai'), b = await wire('own');
   expect(b.sent).toHaveLength(2);
   expect(b.sent).toEqual(a.sent);
   expect(b.usage).toEqual(a.usage);
+  expect(b.total).toEqual(a.total);
+  expect(b.total).toMatchObject({ inputTokens: 120 + 200, outputTokens: 15 + 25, inputTokenDetails: { cacheReadTokens: 80, cacheWriteTokens: 50 } });
   expect(b.output).toEqual(a.output);
 });

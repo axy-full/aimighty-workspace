@@ -22,7 +22,7 @@ import type {
  *  6. When the last step ended with text and an output schema was given, parse it as JSON and validate it.
  *
  * Differences from `ai`, on purpose: no `user-agent: ai/<version>` header is added (the caller's `headers` go as given); an image given as a URL is refused (the callers
- * send data URLs or base64 only, so nothing is downloaded); JSON from the model is refused if it names `__proto__`.
+ * send data URLs or base64 only, so nothing is downloaded); JSON from the model is refused exactly where `ai`'s secure parse refuses it.
  */
 
 /* ── Types the callers use (structurally the same as `ai`'s, so a swap needs no change at the call site) ── */
@@ -203,11 +203,30 @@ export const toolJsonSchema = (schema: z.ZodType<unknown, unknown>) =>
 const errorText = (error: unknown): string => (error == null ? "unknown error" : typeof error === "string" ? error : error instanceof Error ? error.toString() : JSON.stringify(error));
 const jsonValue = (value: unknown): JSONValue => { if (value === undefined) return null; const text = JSON.stringify(value); return text === undefined ? null : (JSON.parse(text) as JSONValue); };
 
-/** Raw text that must be JSON without a `__proto__` key. The failure's words are the ones `ai` used, because the model is shown them (the differential test pins them). */
+/**
+ * Raw text that must be JSON, parsed as `ai` parses it (the `secureJsonParse` filter in @ai-sdk/provider-utils): parse first, then walk every object and refuse an own
+ * `__proto__` key, or an own `constructor` object that has an own `prototype`. A string that merely mentions `__proto__` is fine. The failure's words are the ones `ai` used,
+ * because the model is shown them (the differential test pins them).
+ */
+function forbiddenPrototypeKey(root: object): boolean {
+  let next: object[] = [root];
+  while (next.length) {
+    const nodes = next;
+    next = [];
+    for (const node of nodes) {
+      if (Object.prototype.hasOwnProperty.call(node, "__proto__")) return true;
+      const ctor = (node as { constructor?: unknown }).constructor;
+      if (Object.prototype.hasOwnProperty.call(node, "constructor") && ctor !== null && typeof ctor === "object" && Object.prototype.hasOwnProperty.call(ctor, "prototype")) return true;
+      for (const key in node) { const value = (node as Record<string, unknown>)[key]; if (value && typeof value === "object") next.push(value as object); }
+    }
+  }
+  return false;
+}
 function parseJson(text: string): { ok: true; value: unknown } | { ok: false; error: string } {
   try {
-    if (text.includes("__proto__")) throw new SyntaxError("Object contains forbidden prototype property");
-    return { ok: true, value: JSON.parse(text) };
+    const value: unknown = JSON.parse(text);
+    if (value !== null && typeof value === "object" && forbiddenPrototypeKey(value)) throw new SyntaxError("Object contains forbidden prototype property");
+    return { ok: true, value };
   } catch (cause) { return { ok: false, error: `AI_JSONParseError: JSON parsing failed: Text: ${text}.\nError message: ${errorText(cause)}` }; }
 }
 
