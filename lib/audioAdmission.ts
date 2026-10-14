@@ -1,4 +1,5 @@
 import { allowanceCheck } from "@/lib/allowance";
+import { madeInOf } from "./madeIn";
 import { db, ready, now, id as newId } from "@/lib/db";
 
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
@@ -334,6 +335,9 @@ export async function executeAudioAdmission(
     params.batchId = body.batchId;
     if (Number.isInteger(body.variation) && body.variation >= 1 && body.variation <= 8) params.variation = body.variation;
   }
+  /* Make's own results (lib/madeIn.ts): marked by the server, only for a person's own Make request. */
+  const madeIn = madeInOf(body.madeIn, got);
+  if (madeIn) params.madeIn = madeIn;
   const genId = newId("gen");
   const vendorUsd = estUsd ?? usdForCredits(estCredits, null);
   /* The terms the reservation and the settlement charge this job at: the quote, its ceiling, the credit wall

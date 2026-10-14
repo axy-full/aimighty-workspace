@@ -25,6 +25,9 @@ export const GET = withTenant(async function GET(req: Request) {
   const view = url.searchParams.get("view");
   if (view !== null && view !== "tray") return NextResponse.json({ error: "Unknown view." }, { status: 400 });
   const filter = statusFilter(url.searchParams.get("status"));
+  /* Make's own results (lib/madeIn.ts): the one value there is; anything else is not a filter this route has. */
+  const madeIn = url.searchParams.get("madeIn");
+  if (madeIn !== null && (madeIn !== "make" || url.searchParams.getAll("madeIn").length > 1)) return NextResponse.json({ error: "Unknown madeIn." }, { status: 400 });
   const stable = url.searchParams.get("pagination") === "stable";
   let page: ReturnType<typeof assetPageQuery> | null = null;
   try {
@@ -71,6 +74,7 @@ export const GET = withTenant(async function GET(req: Request) {
     identityId: url.searchParams.get("identityId") ?? undefined,
     castName: url.searchParams.get("castName") ?? undefined,
     unfiled: url.searchParams.get("unfiled") === "1",
+    ...(madeIn === "make" ? { madeIn: "make" as const } : {}),
     search,
     before,
     cursor: page?.cursor,

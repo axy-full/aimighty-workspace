@@ -1,4 +1,5 @@
 import { renderFactsFromRow } from "./v12/renderFacts";
+import { MADE_IN_MAKE_SQL } from "./madeIn";
 import { withAcceptedJobCredentials } from "./acceptedJobCredentials";
 import { syncCreditReceipts } from "./creditReceipts";
 import { billedCreditsExpr } from "./creditSql";
@@ -305,6 +306,8 @@ export async function listGenerations(opts: {
   cursor?: AssetCursor | null;
   /** Read one extra row so a stable page can report whether more rows exist. */
   includeNext?: boolean;
+  /** Only takes made in Make (lib/madeIn.ts): marked by the server when Make's composer sent them. A take with no mark, made before this, is not Make's. */
+  madeIn?: "make";
   /** Only takes filed against no project — Make's wall and the Library's Unfiled lens (§10, §11). */
   unfiled?: boolean;
   /** Whose view this is. Takes filed under a private board that this person may not see are left out (lib/draftProject.ts); omitted, the signed-in person of this request, and `null` is nobody (background work). */
@@ -334,6 +337,7 @@ export async function listGenerations(opts: {
     args.push(opts.projectId);
   }
   if (opts.unfiled) where.push("g.project_id IS NULL");
+  if (opts.madeIn === "make") where.push(MADE_IN_MAKE_SQL);
   if (opts.createdBy) {
     where.push("g.created_by = ?");
     args.push(opts.createdBy);

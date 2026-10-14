@@ -153,7 +153,9 @@ test("desktop: results in justified rows, the composer, prompt reuse, the viewer
   const sent = page.waitForRequest((r) => new URL(r.url()).pathname === "/api/generate" && r.method() === "POST");
   await go.click();
   const enhanceBody = (await enhanced).postDataJSON() as { maxCredits?: number };
-  const body = (await sent).postDataJSON() as { maxCredits?: number };
+  const body = (await sent).postDataJSON() as { maxCredits?: number; madeIn?: string };
+  /* Make's own press says where the take is made: the server marks it, and Make's results are the marked takes (lib/madeIn.ts). */
+  expect(body.madeIn, "Make marks its takes").toBe("make");
   expect((enhanceBody.maxCredits ?? 0) + (body.maxCredits ?? 0), "the approvals together are the figure on the button").toBe(shown);
   await expect(make).toBeVisible();
   await expect(page.getByTestId("v12-make-count")).toHaveText("7 results", { timeout: 90_000 });
@@ -354,5 +356,29 @@ test("phone sizes: the phone app is unchanged with the switch on", async ({ page
   await page.goto("/suites?view=make");
   await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId("v12-make")).toHaveCount(0);
+  await noOverflow(page);
+});
+
+test("desktop: Make's results are the takes made in Make: a take made elsewhere, with no mark, is not in the grid, and one Make filed onto a board is", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(300_000);
+  /* Two takes made as Make makes them (seedHome sends madeIn: "make", filed on a board's production), then one made elsewhere: the same request without the mark. */
+  const seeded = await seedHome(page, { takes: 2 });
+  const body = { prompt: "A take made on a board, not in Make", model: "gemini-3.1-flash-image", projectId: seeded.boards[0].productionId, shotId: "", ratio: "16:9", resolution: "1K", duration: 5, refine: false, references: [] };
+  const quote = await page.request.post("/api/generate/quote", { headers: seeded.headers, data: body }).then((r) => r.json());
+  const elsewhere = await page.request.post("/api/generate", { headers: { ...seeded.headers, "Idempotency-Key": `elsewhere-${Date.now().toString(36)}` }, data: { ...body, maxCredits: quote.estimatedCredits, quoteFingerprint: quote.fingerprint } });
+  expect(elsewhere.ok(), await elsewhere.text()).toBe(true);
+  const elsewhereId = String((await elsewhere.json()).id);
+  await expect.poll(async () => (await page.request.get(`/api/jobs/${elsewhereId}`, { headers: seeded.headers }).then((r) => r.json())).generation?.status, { timeout: 90_000 }).toBe("succeeded");
+  /* The server's list: unfiltered holds all three, the Make filter two. A spoofed mark on a param other than the request's own changes nothing. */
+  const all = await page.request.get("/api/jobs?limit=60&sync=0", { headers: seeded.headers }).then((r) => r.json());
+  const made = await page.request.get("/api/jobs?limit=60&sync=0&madeIn=make", { headers: seeded.headers }).then((r) => r.json());
+  expect(all.generations).toHaveLength(3);
+  expect(made.generations.map((g: { id: string }) => g.id).sort()).toEqual([...seeded.takes].sort());
+  expect(made.generations.every((g: { params: { madeIn?: string } }) => g.params.madeIn === "make")).toBe(true);
+  await page.goto("/suites?view=make");
+  await expect(page.getByTestId("v12-make")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByTestId("v12-make-count")).toHaveText("2 results", { timeout: 90_000 });
+  await expect(page.getByTestId("v12-make-tile")).toHaveCount(2);
   await noOverflow(page);
 });
