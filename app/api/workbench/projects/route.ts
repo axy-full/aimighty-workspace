@@ -1,5 +1,5 @@
 import { closeRoom } from '@/lib/workbench/room-rotation';
-import { type ShareMode, DRAFT_PROJECT_PREFIX, mappedId, isDraftProject, isMarkedSample, isSampleDraft, isSampleProject, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
+import { type ShareMode, DRAFT_PROJECT_PREFIX, mappedId, isDraftProject, isWorkspaceAdmin, isMarkedSample, isSampleDraft, isSampleProject, mayReachProject, ownsDraftProject, projectLister } from '@/lib/draftProject';
 import { crossOriginProblem } from '@/lib/requestOrigin';
 import { gzipSync } from 'node:zlib';
 import {readProjectBody} from '@/lib/workbench/request-body';
@@ -14,7 +14,7 @@ import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import { defaultSharing } from '@/lib/workbench/board-default';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { AMBIGUOUS_BOARD, boardKeyFor, maySetSharing, mayWriteBoard, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { AMBIGUOUS_BOARD, boardKeyFor, maySetSharing, openingOf, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, adminBoardOfProduction, listWorkspaceBoards, boardViews, readBoardAsAdmin, readBoardOfProductionAsAdmin, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
@@ -38,8 +38,11 @@ export const GET=withTenant(async(req:Request)=>{
   /* ?id=&head=1[&owner=]: where the saved board stands, without the board (a window with no live room asks this every few seconds, and when the room says someone saved):
      its revision, when and by whom (the name this workspace may read, never an id), for the person's own board or one they may write. Anything else is not found. */
   if(id&&new URL(req.url).searchParams.get('head')==='1'){
-    const key=await boardKeyFor(requireTenant(),auth.user,new URL(req.url).searchParams.get('owner')??undefined,id);
-    const stamp='owner' in key?await draftStamp(key.owner,id,auth.user.id):null;
+    const owner=new URL(req.url).searchParams.get('owner')??undefined;
+    /* Asking where a board stands is a look, not an edit: an admin's own rule is not applied here (reading it is, below, recorded as a look). */
+    const key=await boardKeyFor(requireTenant(),auth.user,owner,id,{admin:false});
+    let stamp='owner' in key?await draftStamp(key.owner,id,auth.user.id):null;
+    if(!stamp&&owner&&isWorkspaceAdmin(auth.user)){const seen=await readBoardAsAdmin(requireTenant(),auth.user,owner,id);stamp=seen?await draftStamp(seen.key,id,auth.user.id):null;}
     return stamp?Response.json(stamp,{headers:noStore}):Response.json({error:'Not found'},{status:404,headers:noStore});
   }
   /* ?production=<id>: this person's newest Studio project for that production,
@@ -57,11 +60,19 @@ export const GET=withTenant(async(req:Request)=>{
   /* ?id=&owner=: a teammate's board, to look at (view-only: nothing here writes to it). ?team=1: every member's boards, the caller's marked. */
   const ownerParam=new URL(req.url).searchParams.get('owner');
   if(id&&ownerParam&&ownerParam!==auth.user.id){
-    const seen=await readTeamBoard(requireTenant(),auth.user.id,ownerParam,id);
+    /* A board shared with the team, or, for an admin of this workspace, any board in it (a private one, or a member's who has left): the admin's look is written to the workspace's history. */
+    const seen=(await readTeamBoard(requireTenant(),auth.user.id,ownerParam,id))??(await readBoardAsAdmin(requireTenant(),auth.user,ownerParam,id));
     if(!seen)return Response.json({error:'Not found'},{status:404,headers:noStore});
-    /* To edit, when the board is shared with "Can edit" and this person may write it (`actingOn`: whose board, so saves go to the owner's key); otherwise to look at. */
-    return projectResponse(req,{projects:[],productions:[],project:seen.project,revision:seen.revision,shared:null,...(await openingOf(requireTenant(),auth.user,seen))});
+    /* To edit, when the board is shared with "Can edit" and this person may write it (`actingOn`: whose board, so saves go to the owner's key); otherwise to look at. An admin looks first and edits when they choose (`edit=1`). */
+    return projectResponse(req,{projects:[],productions:[],project:seen.project,revision:seen.revision,shared:null,...(await openingOf(requireTenant(),auth.user,seen,{edit:new URL(req.url).searchParams.get('edit')==='1'}))});
   }
+  /* ?all=1: every board in the workspace, for an admin (private ones and those of members who have left); anyone else is answered as for a route that is not there. */
+  if(new URL(req.url).searchParams.get('all')==='1'){
+    const all=await listWorkspaceBoards(requireTenant(),auth.user,{kinds});
+    return all?Response.json({boards:all},{headers:noStore}):Response.json({error:'Not found'},{status:404,headers:noStore});
+  }
+  /* ?views=1[&id=<draft>]: who has looked at or changed the caller's own boards as an admin ("Viewed by <admin>, <date>"). Always the caller's own boards, whoever asks. */
+  if(new URL(req.url).searchParams.get('views')==='1')return Response.json({views:await boardViews(requireTenant(),auth.user.id,id??undefined)},{headers:noStore});
   const team=new URL(req.url).searchParams.get('team')==='1'?await listTeamBoards(requireTenant(),auth.user.id,{kinds}):null;
   const [list,productions,draft]=await Promise.all([
     db().execute({sql:`SELECT project_id AS id,name,revision,updated_at AS updatedAt${kinds?`,${KIND}`:''} FROM workbench_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100`,args:[auth.user.id]}),
@@ -93,10 +104,14 @@ export const GET=withTenant(async(req:Request)=>{
 });
 
 /** Whether `user` may open the production `id`, and the shared draft that opens it: an ordinary production, their own board, the marked sample or a shared board are reachable; any other private board is not. */
-async function reachOf(user:{id:string;role?:string},id:string):Promise<{reachable:boolean;shared:{id:string;owner:{id:string;name:string;support?:true}}|null}>{
+async function reachOf(user:{id:string;role?:string;owner?:boolean},id:string):Promise<{reachable:boolean;shared:{id:string;owner:{id:string;name:string;support?:true}}|null}>{
   if(!isDraftProject(id)||await ownsDraftProject(user.id,id)||await isMarkedSample(id))return{reachable:true,shared:null};
   const shared=await sharedBoardOfProduction(requireTenant(),id);
-  return shared?{reachable:true,shared:{id:shared.draftId,owner:shared.owner}}:{reachable:false,shared:null};
+  if(shared)return{reachable:true,shared:{id:shared.draftId,owner:shared.owner}};
+  /* An admin of this workspace reaches any board in it; opening it is what writes the history line, not asking whether it can be opened. */
+  const board=await adminBoardOfProduction(requireTenant(),user,id);
+  if(board)return{reachable:true,shared:{id:board.draftId,owner:board.owner}};
+  return{reachable:false,shared:null};
 }
 
 /** A feature film's project (and its shared copy) can pass Vercel's 4.5 MB response limit, so a large answer leaves gzipped; browsers unpack it. */
@@ -159,16 +174,25 @@ export const POST=withTenant(async(req:Request)=>{
     const row=(await db().execute({sql:'SELECT id,name,description FROM projects WHERE id=?',args:[body.projectId]})).rows[0];
     /* A private board is its owner's alone: to anyone else it is as absent as an unknown id (lib/draftProject.ts). */
     if(!row||!(await mayReachProject(auth.user,body.projectId,'read')))return Response.json({error:'Project not found'},{status:404});
-    /* A board shared with "Can edit" opens as the board itself, to edit: its owner's draft, whose saves the server keys to the owner (`actingOn`), not a copy of the production under this person's name. */
+    /* A board shared with "Can edit" opens as the board itself, to edit: its owner's draft, whose saves the server keys to the owner (`actingOn`), not a copy of the production under this person's name.
+       An admin of this workspace opens any board in it as the board itself too: to look at, and to edit when they choose (`edit: true`); the look is written to the workspace's history. */
+    let sharedOwner:{id:string;name:string;support?:true}|null=null;
     if(!(await ownsDraftProject(auth.user.id,body.projectId))){
       const board=await sharedBoardOfProduction(requireTenant(),body.projectId);
-      if(board&&await mayWriteBoard(requireTenant(),auth.user,board.key,board.draftId)){
-        const theirs=await readDraft(board.key,board.draftId);
-        if(theirs)return projectResponse(req,{project:theirs.project,revision:theirs.revision,actingOn:{owner:board.owner}});
+      if(board){
+        if(isWorkspaceAdmin(auth.user))sharedOwner=board.owner;
+        const opening=await openingOf(requireTenant(),auth.user,{project:{id:board.draftId},owner:board.owner,key:board.key},{edit:body.edit===true});
+        if('actingOn' in opening){
+          const theirs=await readDraft(board.key,board.draftId);
+          if(theirs)return projectResponse(req,{project:theirs.project,revision:theirs.revision,actingOn:{owner:board.owner}});
+        }
+      }else if(isWorkspaceAdmin(auth.user)){
+        const seen=await readBoardOfProductionAsAdmin(requireTenant(),auth.user,body.projectId);
+        if(seen)return projectResponse(req,{project:seen.project,revision:seen.revision,...(await openingOf(requireTenant(),auth.user,seen,{edit:body.edit===true}))});
       }
     }
     /* A teammate's SHARED board is theirs to look at, not to save: it opens view-only (no draft of their own is made or saved against it), as a board link does. */
-    const viewOnly=(await mayReachProject(auth.user,body.projectId,'write'))?null:(await sharedBoardOwnerOf(requireTenant(),body.projectId))??((await isSampleProject(body.projectId))?(await sampleViewOnly(requireTenant())).owner:{id:'',name:'A teammate'});
+    const viewOnly=sharedOwner?sharedOwner:(await mayReachProject(auth.user,body.projectId,'write'))?null:(await sharedBoardOwnerOf(requireTenant(),body.projectId))??((await isSampleProject(body.projectId))?(await sampleViewOnly(requireTenant())).owner:{id:'',name:'A teammate'});
     const latest=(await db().execute({sql:'SELECT body,version FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[body.projectId]})).rows[0];
     const shared=latest?JSON.parse(String(latest.body)):null;
     const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,scriptFormat:shared.scriptFormat==='adfilm'?'adfilm':'screenplay',scriptSource:shared.scriptSource,scriptReviews:shared.scriptReviews,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};

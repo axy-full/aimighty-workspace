@@ -23,7 +23,7 @@ export const GET = withTenant(async function GET(req: Request) {
   const projectId = scope(new URL(req.url).searchParams.get("projectId"));
   /* A private board's shots (their titles, their node text) are its owner's alone, and a shared board's are for looking at (lib/draftProject.ts): a list of every
      shot leaves out the ones of boards this person cannot reach, and a list of one board they cannot reach is as empty as an unknown project's. */
-  const reachable = await projectLister(got.user);
+  const reachable = await projectLister(got.user, undefined, { only: projectId });
   const shots = (await listShots(projectId)).filter((s) => reachable(s.projectId));
 
   /* Counts per shot in one pass — the shot list doubles as the revision
