@@ -274,7 +274,7 @@ export function rowToGeneration(r: any): Generation {
 }
 
 const SELECT = `
-  SELECT g.*, ${billedCreditsExpr("g")} AS receipt_credits, (SELECT 1 FROM estimated_credits WHERE gen_id = g.id) AS estimated, p.name AS project_name, u.name AS author_name,
+  SELECT g.*, ${billedCreditsExpr("g")} AS receipt_credits, (SELECT 1 FROM estimated_credits e WHERE e.gen_id = g.id AND NOT EXISTS (SELECT 1 FROM credit_receipts r WHERE r.event_id = g.id)) AS estimated, p.name AS project_name, u.name AS author_name,
          s.code AS shot_code, s.scene AS shot_scene, s.title AS shot_title
   FROM generations g
   LEFT JOIN projects p ON p.id = g.project_id
