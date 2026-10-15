@@ -1,0 +1,9 @@
+{
+  "name": "v25-card",
+  "app": "/v25-board-parts",
+  "prototype": "mode=director&step=shots",
+  "size": {
+    "width": 2560,
+    "height": 1440
+  }
+}
