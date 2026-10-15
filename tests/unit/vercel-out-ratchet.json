@@ -118,11 +118,6 @@
       "until": "2026-12-15",
       "by": "A7 (the VERCEL* branches out)"
     },
-    "lib/astra-blender/agent.ts": {
-      "count": 1,
-      "until": "2026-12-15",
-      "by": "A3-A5 (the gateway door out)"
-    },
     "lib/astra-blender/sandbox.ts": {
       "count": 5,
       "until": "2026-12-15",
@@ -180,11 +175,6 @@
     },
     "lib/language-provider.ts": {
       "count": 2,
-      "until": "2026-12-15",
-      "by": "A3-A5 (the gateway door out)"
-    },
-    "lib/openai-direct.ts": {
-      "count": 1,
       "until": "2026-12-15",
       "by": "A3-A5 (the gateway door out)"
     },
@@ -259,11 +249,6 @@
       "by": "A2 (gateway keys)"
     },
     "lib/workbench/atomik-server.ts": {
-      "count": 1,
-      "until": "2026-12-15",
-      "by": "A3-A5 (the gateway door out)"
-    },
-    "lib/workbench/suite-agent.ts": {
       "count": 1,
       "until": "2026-12-15",
       "by": "A3-A5 (the gateway door out)"

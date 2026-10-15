@@ -1,8 +1,9 @@
 import { recoveryFetch as fetch } from "./recovery";
 import { vendorKey, deploymentIdentityAllowed } from "./vendorKeys";
 import { productionIntended } from "./vercelGuard";
-import { engineMock, mockCompletion, mockDelay } from "./mock";
-import { assertTextProvider, openaiDirectPost, TEXT_PROVIDER_HEADER, textVendor } from './openai-direct';
+import { engineMock } from "./mock";
+import { explainTextFailure, mockTextReply, withoutProviderHeader, type MockKind, type TextReply } from "./textReply";
+import { assertTextProvider, openaiDirectPost, textVendor } from './openai-direct';
 import { isDirectRoute, textRoute } from './textRoute';
 /**
  * Vercel AI Gateway — the one door this deployment can always open.
@@ -52,10 +53,9 @@ export async function gatewayAuth(): Promise<Record<string, string>> {
 
 /** What a gateway error should say to a person, by status. */
 export function explainGatewayFailure(status: number, text: string): string | null {
-  try {
-    const reply = JSON.parse(text);
-    if (['openai', 'anthropic', 'google', 'xai'].includes(reply.provider)) return status === 401 ? 'The language account rejected the connected API key. Check the language account.' : status === 429 ? 'The language account reached its rate or usage limit. Check the connected language account.' : `The language account could not complete this request (${status}). ${typeof reply.error?.message === 'string' ? reply.error.message.slice(0, 400) : ''}`;
-  } catch { /* Other gateway responses retain their existing explanation. */ }
+  /* A direct provider's own error is explained by the text paths (lib/textReply.ts); the rest is the gateway's. */
+  const provider = explainTextFailure(status, text);
+  if (provider) return provider;
   if (status === 403 && /free tier|RestrictedModels/i.test(text)) {
     return "The model gateway is on its free tier, which does not include this model. " +
            "Add credits under the gateway's billing settings and it will work from then on.";
@@ -98,7 +98,8 @@ export async function gatewayCredits(): Promise<{ balanceUsd: number; usedUsd: n
   }
 }
 
-export type GatewayReply = { ok: boolean; status: number; text: string };
+/** The reply type the text paths share; it lives in lib/textReply.ts (kept here under its old name until the gateway goes). */
+export type GatewayReply = TextReply;
 
 /**
  * One POST to the gateway's chat endpoint, the body already serialised.
@@ -106,9 +107,10 @@ export type GatewayReply = { ok: boolean; status: number; text: string };
  */
 export async function gatewayPost(
   body: string,
-  opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" } = {},
+  opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: MockKind } = {},
 ): Promise<GatewayReply> {
-  if (engineMock()) { await mockDelay(body); return mockCompletion(opts.mock ?? "prompt", body); }
+  const mocked = await mockTextReply(body, opts.mock);
+  if (mocked) return mocked;
   const input = JSON.parse(body) as Record<string, unknown>;
   if (typeof input.model !== 'string') throw new Error('Choose a language model before submitting.');
   assertTextProvider(input.model, opts.auth);
@@ -116,7 +118,7 @@ export async function gatewayPost(
   // A vendor switched on in TEXT_DIRECT never reaches the gateway, so its key
   // cannot either. Its calls go through textPost (lib/textDirect.ts).
   if (isDirectRoute(textRoute(input.model))) throw new Error('This model is routed to its provider directly. Send it through the direct text path.');
-  const auth = { ...(opts.auth ?? await gatewayAuth()) }; delete auth[TEXT_PROVIDER_HEADER];
+  const auth = withoutProviderHeader(opts.auth ?? await gatewayAuth());
   const res = await fetch(GATEWAY_URL(), {
     method: "POST",
     headers: { ...auth, "Content-Type": "application/json" },
