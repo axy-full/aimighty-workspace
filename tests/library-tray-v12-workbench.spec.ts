@@ -172,6 +172,8 @@ test.describe("desktop, switch on", () => {
     await expect(view.getByRole("radio", { name: "List" })).not.toBeChecked();
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("v12-library")).toHaveCount(0);
+    /* The tray has given focus back by the time it is gone (here, to the Library button: the pane held no focusable control). */
+    await expect(button).toBeFocused();
     /* Opened with L from a focused control in the header: closing gives focus back to that control, not the Library button. */
     const from = page.getByTestId("v12-head").locator("button:visible").first();
     await from.focus();
