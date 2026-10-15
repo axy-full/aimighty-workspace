@@ -75,7 +75,9 @@ test("the timeline: lines in frames, clipped to the end of the cut; a line that 
   if (!late.ok) throw new Error(late.errors.join());
   expect(() => toTimeline("final", late.value)).toThrow(/voiceover\[0\]: starts at 6 s, after the end of the cut \(6\.0 s\)/);
   expect(checkSpec({ version: 1, composition: "final", props: props({ voiceover: [line({ startSeconds: 6 })] }) })).toMatchObject({ ok: false, code: "spec_invalid" });
-  const none = toTimeline("final", (validateProps("final", props()) as { value: never }).value);
+  const plain = validateProps("final", props());
+  if (!plain.ok) throw new Error(plain.errors.join());
+  const none = toTimeline("final", plain.value);
   expect(none.voiceover).toEqual([]);
   expect(none.duck).toBe(0.3);
 });
