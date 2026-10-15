@@ -14,6 +14,8 @@ export const SILENCE_MIN_SECONDS = 0.6;
 export const SPEECH_PAD_SECONDS = 0.15;
 /** A spoken stretch shorter than this is a click or a cough, not speech. */
 export const SPEECH_MIN_SECONDS = 0.3;
+/** A kept stretch shorter than this makes a cut that jumps about, so shorter speech is not chosen (unless it is all there is). */
+export const MIN_SEGMENT_SECONDS = 1.0;
 /** A cutdown's `keep` holds at most this many ranges (src/lib/validate.ts): the longest spoken stretches are used. */
 export const MAX_KEEP_RANGES = 12;
 
@@ -57,22 +59,60 @@ export function speechRanges(silences: Range[], durationSeconds: number, options
     if (last && r.startSeconds <= last.endSeconds) last.endSeconds = Math.max(last.endSeconds, r.endSeconds);
     else merged.push({ ...r });
   }
-  if (merged.length <= max) return merged.map(round);
+  const round = rounder(durationSeconds);
+  const rounded = (list: Range[]) => list.map(round).filter((r) => r.endSeconds > r.startSeconds);
+  if (merged.length <= max) return rounded(merged);
   const longest = [...merged].sort((a, b) => b.endSeconds - b.startSeconds - (a.endSeconds - a.startSeconds)).slice(0, max);
-  return longest.sort((a, b) => a.startSeconds - b.startSeconds).map(round);
+  return rounded(longest.sort((a, b) => a.startSeconds - b.startSeconds));
 }
 
-const round = (r: Range): Range => ({ startSeconds: Math.round(r.startSeconds * 1000) / 1000, endSeconds: Math.round(r.endSeconds * 1000) / 1000 });
+/** Rounded to the millisecond and kept inside [0, duration]: rounding never pushes a range past the end of the file. */
+const rounder = (durationSeconds: number) => (r: Range): Range => ({ startSeconds: Math.max(0, Math.min(durationSeconds, Math.round(r.startSeconds * 1000) / 1000)), endSeconds: Math.min(durationSeconds, Math.round(r.endSeconds * 1000) / 1000) });
 
-/** Explicit `keep` ranges and detected speech together, merged, still at most MAX_KEEP_RANGES (the longest). */
-export function mergeKeep(explicit: Range[], speech: Range[], max = MAX_KEEP_RANGES): Range[] {
-  const sorted = [...explicit, ...speech].sort((a, b) => a.startSeconds - b.startSeconds);
+const length = (r: Range) => r.endSeconds - r.startSeconds;
+const byTime = (a: Range, b: Range) => a.startSeconds - b.startSeconds;
+
+function union(ranges: Range[]): Range[] {
   const merged: Range[] = [];
-  for (const r of sorted) {
+  for (const r of [...ranges].sort(byTime)) {
     const last = merged[merged.length - 1];
     if (last && r.startSeconds <= last.endSeconds) last.endSeconds = Math.max(last.endSeconds, r.endSeconds);
     else merged.push({ ...r });
   }
-  if (merged.length <= max) return merged;
-  return [...merged].sort((a, b) => b.endSeconds - b.startSeconds - (a.endSeconds - a.startSeconds)).slice(0, max).sort((a, b) => a.startSeconds - b.startSeconds);
+  return merged;
+}
+
+/**
+ * Which spoken stretches go into a cut of `budgetSeconds`: WHOLE stretches, longest first, until the budget is used, never one under
+ * `minSegment` (unless nothing is longer), returned in time order. Nothing is shrunk here: a cut that is not full is grown by the
+ * planner, and when even the longest stretch is over the budget the planner trims that one from its tail. This replaces handing every
+ * stretch to the planner, which would shrink them all from their tails.
+ */
+export function chooseSpeech(speech: Range[], budgetSeconds: number, minSegment = MIN_SEGMENT_SECONDS): Range[] {
+  if (!speech.length || budgetSeconds <= 0) return [];
+  const long = speech.filter((r) => length(r) >= minSegment);
+  const pool = long.length ? long : [[...speech].sort((a, b) => length(b) - length(a))[0]];
+  if (pool.reduce((sum, r) => sum + length(r), 0) <= budgetSeconds) return [...pool].sort(byTime);
+  const chosen: Range[] = [];
+  let used = 0;
+  for (const r of [...pool].sort((a, b) => length(b) - length(a))) {
+    if (used + length(r) <= budgetSeconds) { chosen.push(r); used += length(r); }
+  }
+  /* Nothing whole fits: take the longest, which the planner trims from its tail. */
+  if (!chosen.length) chosen.push([...pool].sort((a, b) => length(b) - length(a))[0]);
+  return chosen.sort(byTime);
+}
+
+/**
+ * Explicit `keep` ranges and detected speech together. The explicit ranges always survive: they are merged first and the speech is
+ * added to them longest first, each only while the whole stays within `max` ranges (a speech range that touches an explicit one is
+ * absorbed into it and costs nothing); the speech that does not fit is dropped.
+ */
+export function mergeKeep(explicit: Range[], speech: Range[], max = MAX_KEEP_RANGES): Range[] {
+  let result = union(explicit);
+  for (const candidate of [...speech].sort((a, b) => length(b) - length(a))) {
+    const next = union([...result, candidate]);
+    if (next.length <= Math.max(max, result.length)) result = next;
+  }
+  return result;
 }

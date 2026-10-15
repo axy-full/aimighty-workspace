@@ -4,22 +4,22 @@
  * call runExport with a fake one.
  *
  * Contract (version 1):
- *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"], "conform": "auto" } }
+ *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"], "conform": "off" } }
  *   input/      the files the props name, as plain relative paths
  *   output/     export.mp4 (H.264) or export.mov (ProRes) when output.video is not false, still-<frame>.png for each still,
  *               subtitles.srt / subtitles.vtt when asked (from the same cues as the captions; no render), result.json
  */
-import { copyFile, link, lstat, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_LIMITS, type ExportLimits } from "../src/lib/limits";
+import { DEFAULT_LIMITS, PRORES_MAX_FRAMES, type ExportLimits } from "../src/lib/limits";
 import { toTimeline, ExportTooLong } from "../src/lib/timeline";
 import { FORMAT_FILE, H265_NAMES, SUBTITLE_FILE, SUBTITLE_FORMATS, VIDEO_FORMATS, isProRes, type CompositionId, type SubtitleFormat, type Timeline, type VideoFormat } from "../src/lib/types";
 import { subtitleCuesOf, subtitleText } from "../src/lib/subtitles";
 import { isCompositionId, validateProps } from "../src/lib/validate";
-import { CONFORM_MODES, filesToConform, reportInputs, type ConformMode, type Conformer, type InputReport } from "./conform";
+import { CONFORM_BUDGET_MS, CONFORM_FILE_MS, CONFORM_MODES, CONFORM_PAD_SECONDS, DEFAULT_CONFORM, filesToConform, reportInputs, type ConformMode, type ConformWindow, type Conformer, type InputReport } from "./conform";
 import type { MediaFacts, Prober } from "./probe";
 import type { SilenceDetector } from "./silence";
-import { mergeKeep, speechRanges } from "../src/lib/silence";
+import { chooseSpeech, mergeKeep, speechRanges } from "../src/lib/silence";
 import type { CutdownProps, Range } from "../src/lib/types";
 
 export type ExportSpec = {
@@ -39,7 +39,7 @@ export type Renderer = {
   renderStill(args: { serveUrl: string; composition: CompositionInfo; inputProps: Record<string, unknown>; frame: number; outputLocation: string }): Promise<void>;
 };
 
-export type ExportFailure = { ok: false; code: "spec_invalid" | "too_long" | "input_missing" | "input_mismatch" | "render_failed"; errors: string[] };
+export type ExportFailure = { ok: false; code: "spec_invalid" | "too_long" | "input_missing" | "input_mismatch" | "silence_failed" | "render_failed"; errors: string[] };
 export type ExportSuccess = {
   ok: true;
   composition: CompositionId;
@@ -51,7 +51,7 @@ export type ExportSuccess = {
   /** One line per picture input: its rate, and whether the render read a constant-rate copy (node/conform.ts). Absent when nothing was rendered. */
   inputs?: InputReport[];
   /** A silence-aware cutdown: what was found in the source's sound and the ranges the cut was planned to keep. */
-  silence?: { file: string; silentSeconds: number; speech: Range[]; kept: Range[] };
+  silence?: { file: string; silentSeconds: number; speech: Range[]; chosen: Range[]; kept: Range[]; fallback?: "no_silence_found" | "all_silent" };
   files: { name: string; kind: "video" | "still" | "subtitle"; bytes: number; frame?: number; format?: VideoFormat | SubtitleFormat; mime?: string }[];
 };
 export type ExportResult = ExportSuccess | ExportFailure;
@@ -68,6 +68,10 @@ export type RunExportArgs = {
   conformer?: Conformer;
   /** Finds the quiet stretches of a source's sound (node/silence.ts), for a cutdown with `silence: keep-speech`. Absent: such a request is refused. */
   silenceDetector?: SilenceDetector;
+  /** The most the conform pre-pass may take in all (default CONFORM_BUDGET_MS); a test shortens it. */
+  conformBudgetMs?: number;
+  /** The clock the pre-pass budget is read from (default Date.now); only a test replaces it. */
+  conformClock?: () => number;
   /** Scratch folder; created, and removed at the end. */
   workDir: string;
   renderer: Renderer;
@@ -84,18 +88,39 @@ const fail = (code: ExportFailure["code"], errors: string[]): ExportFailure => (
 export type Declared = { file: string; kind: "video" | "audio"; durationSeconds: number; width?: number; height?: number; hasAudio?: boolean };
 
 export function declaredOf(id: CompositionId, props: Record<string, unknown>): Declared[] {
+  /* Keyed by what is declared as well as the file, so one file named by the music and by a voice line (or twice with two lengths) has each claim checked. */
   const out = new Map<string, Declared>();
+  const audio = (file: string, durationSeconds: number) => out.set(`audio:${file}:${durationSeconds}`, { file, kind: "audio", durationSeconds });
   const video = (s: { file: string; durationSeconds: number; width: number; height: number; hasAudio: boolean }) =>
-    out.set(s.file, { file: s.file, kind: "video", durationSeconds: s.durationSeconds, width: s.width, height: s.height, hasAudio: s.hasAudio });
+    out.set(`video:${s.file}:${s.durationSeconds}:${s.width}x${s.height}:${s.hasAudio}`, { file: s.file, kind: "video", durationSeconds: s.durationSeconds, width: s.width, height: s.height, hasAudio: s.hasAudio });
   const p = props as never as { clip?: { source: Parameters<typeof video>[0] }; source?: Parameters<typeof video>[0]; clips?: { source: Parameters<typeof video>[0] }[]; music?: { file: string; durationSeconds: number } | null; voiceover?: { file: string; durationSeconds: number }[] };
   if (id === "captions" || id === "reframe") video(p.clip!.source);
   if (id === "cutdown") video(p.source!);
   if (id === "final") {
     for (const clip of p.clips ?? []) video(clip.source);
-    if (p.music) out.set(p.music.file, { file: p.music.file, kind: "audio", durationSeconds: p.music.durationSeconds });
-    for (const line of p.voiceover ?? []) out.set(line.file, { file: line.file, kind: "audio", durationSeconds: line.durationSeconds });
+    if (p.music) audio(p.music.file, p.music.durationSeconds);
+    for (const line of p.voiceover ?? []) audio(line.file, line.durationSeconds);
   }
   return [...out.values()];
+}
+
+/**
+ * The stretch of `file` the timeline plays, in source seconds, with a little padding and never past the file: every clip that uses
+ * it counts, so a file used twice is covered from its earliest point to its latest.
+ */
+export function usedWindow(timeline: Timeline, file: string, fileSeconds?: number): ConformWindow | undefined {
+  let start = Infinity;
+  let end = 0;
+  for (const item of timeline.items) {
+    if (item.kind !== "clip" || item.file !== file) continue;
+    start = Math.min(start, item.trimBefore / timeline.fps);
+    end = Math.max(end, (item.trimBefore + item.durationInFrames) / timeline.fps);
+  }
+  if (!Number.isFinite(start)) return undefined;
+  const ceiling = fileSeconds ?? Infinity;
+  const startSeconds = Math.max(0, Math.round((start - CONFORM_PAD_SECONDS) * 1000) / 1000);
+  const endSeconds = Math.min(ceiling, Math.round((end + CONFORM_PAD_SECONDS) * 1000) / 1000);
+  return { startSeconds, endSeconds };
 }
 
 /** Longest a declared length may differ from the file's. */
@@ -152,7 +177,7 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   let format: VideoFormat = "h264";
   let stills: number[] = [];
   let subtitles: SubtitleFormat[] = [];
-  let conform: ConformMode = "auto";
+  let conform: ConformMode = DEFAULT_CONFORM;
   if (rec.output !== undefined) {
     const out = rec.output as Record<string, unknown> | null;
     if (typeof out !== "object" || out === null || Array.isArray(out)) errors.push("spec.output: must be an object");
@@ -195,8 +220,9 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   } catch (error) {
     return fail(error instanceof ExportTooLong ? "too_long" : "spec_invalid", [(error as Error).message]);
   }
-  if (video && isProRes(format) && timeline.durationInFrames > limits.maxProResSeconds * timeline.fps) {
-    return fail("too_long", [`A ProRes export can be at most ${limits.maxProResSeconds} s; this one is ${(timeline.durationInFrames / timeline.fps).toFixed(1)} s. Use H.264 for a longer one.`]);
+  if (video && isProRes(format) && timeline.durationInFrames > PRORES_MAX_FRAMES) {
+    const seconds = timeline.durationInFrames / timeline.fps;
+    return fail("too_long", [`A ProRes export can be at most ${PRORES_MAX_FRAMES} frames (60 s at 30 fps, 30 s at 60 fps); this one is ${timeline.durationInFrames} frames (${seconds.toFixed(1)} s at ${timeline.fps} fps). Use H.264 for a longer one.`]);
   }
   if (subtitles.length && subtitleCuesOf(timeline).length === 0) {
     return fail("spec_invalid", ["spec.output.subtitles: the export has no caption text (no cues) to write"]);
@@ -296,14 +322,20 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
     try {
       silences = await args.silenceDetector.detect(path.join(args.inputDir, p.source.file), p.source.durationSeconds);
     } catch (error) {
-      return fail("input_mismatch", [`input/${p.source.file}: ${(error as Error).message}`]);
+      /* Its own code (not "an input is wrong"): the file is fine as far as the request says, the detector could not read its sound. */
+      return fail("silence_failed", [`input/${p.source.file}: ${(error as Error).message}`]);
     }
     const speech = speechRanges(silences, p.source.durationSeconds);
-    const kept = mergeKeep(p.keep, speech);
+    /* Two fallbacks, both reported: no quiet stretch at all means "speech" would be the whole file, which marks nothing; all quiet means no speech. Either way nothing is added and the cut is planned from the explicit ranges or the even spread. */
+    const fallback: "no_silence_found" | "all_silent" | undefined = silences.length === 0 ? "no_silence_found" : speech.length === 0 ? "all_silent" : undefined;
+    const explicit = mergeKeep(p.keep, []);
+    const room = Math.max(0, p.targetSeconds - explicit.reduce((sum, r) => sum + (r.endSeconds - r.startSeconds), 0));
+    const chosen = fallback ? [] : chooseSpeech(speech, room);
+    const kept = mergeKeep(p.keep, chosen);
     const next = checkSpec({ ...(args.spec as object), props: { ...checked.props, keep: kept, silence: "off" } }, limits);
     if (!next.ok) return next;
     checked = next;
-    silenceReport = { file: p.source.file, silentSeconds: Math.round(silences.reduce((sum, r) => sum + (r.endSeconds - r.startSeconds), 0) * 1000) / 1000, speech, kept };
+    silenceReport = { file: p.source.file, silentSeconds: Math.round(silences.reduce((sum, r) => sum + (r.endSeconds - r.startSeconds), 0) * 1000) / 1000, speech: fallback ? [] : speech, chosen, kept, ...(fallback ? { fallback } : {}) };
   }
 
   await mkdir(args.outputDir, { recursive: true });
@@ -317,17 +349,28 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
     const failed = new Set<string>();
     if (args.conformer) {
       let n = 0;
+      const budget = Math.min(args.conformBudgetMs ?? CONFORM_BUDGET_MS, CONFORM_BUDGET_MS);
+      const clock = args.conformClock ?? Date.now;
+      const began = clock();
       for (const file of filesToConform(videoInputs, checked.conform)) {
+        const left = budget - (clock() - began);
+        /* Out of time: the render reads the original (it resamples by time, as it always has) and result.json says so. */
+        if (left < 5_000) { failed.add(file); continue; }
         const copy = path.join(args.workDir, "conformed", `${n++}.mp4`);
         try {
           await mkdir(path.dirname(copy), { recursive: true });
-          await args.conformer.conform(path.join(args.inputDir, file), copy, checked.timeline.fps);
+          await args.conformer.conform(path.join(args.inputDir, file), copy, checked.timeline.fps, {
+            window: usedWindow(checked.timeline, file, probed.get(file)?.durationSeconds),
+            timeoutMs: Math.min(CONFORM_FILE_MS, left),
+          });
+          /* The copy is moved into the served folder, not copied: it is large, and it is the only copy. */
           const target = path.join(serveDir, "public", "input", file);
           await rm(target, { force: true });
-          await copyFile(copy, target);
+          await rename(copy, target);
           conformed.add(file);
         } catch {
           failed.add(file);
+          await rm(copy, { force: true }).catch(() => {});
         }
       }
     }
@@ -351,7 +394,7 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
       files.push({ name, kind: "still", frame, bytes: (await stat(outputLocation)).size });
     }
     await writeSubtitles(t, checked.subtitles, args.outputDir, files);
-    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, inputs: reportInputs(videoInputs, t.fps, conformed, failed), ...(silenceReport ? { silence: silenceReport } : {}), files };
+    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, inputs: reportInputs(videoInputs, t.fps, conformed, failed, checked.conform), ...(silenceReport ? { silence: silenceReport } : {}), files };
     await writeFile(path.join(args.outputDir, "result.json"), JSON.stringify(success, null, 2));
     return success;
   } catch (error) {
