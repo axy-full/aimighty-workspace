@@ -111,6 +111,12 @@ export type ModelDef = {
    *  (the identity-still families are offered again through Cast, owner's
    *  decision of 4 October 2026); the mechanism stays for the next retirement. */
   retired?: true;
+  /**
+   * The engine's own kill switch (an environment switch read through lib/engineGate.ts: exactly "1", AND the workspace is the house or is on the engine list). A model with a
+   * gate lives in GATED_MODELS, not MODELS: every past take and every price still resolves, but no list that walks MODELS offers it, and admission refuses it
+   * (lib/modelGate.ts) until its switch is open for the workspace; the composer's lists add it when it is.
+   */
+  gate?: string;
   /** Requires a tenant-owned, completed Soul identity resolved by admission. */
   soulIdentity?: boolean;
   /** Uses live Higgsfield Marketing Studio quotes and preset discovery. */
@@ -574,18 +580,56 @@ export const MODELS: ModelDef[] = [
   },
 ];
 
+/**
+ * Models with their own kill switch (`gate`): resolvable (`getModel`, `findModel`, the display names, the prices), so every take made with one reads as it should, but NOT in `MODELS`,
+ * so no list that walks the registry (the static lists, Atomik, pipelines, the rate card, the admin pickers) can offer one by accident. A workspace's composer lists add the ones
+ * whose switch is open for it (lib/modelGate.ts `openGatedModels`), and admission refuses one whose switch is closed (`modelGateClosed`).
+ */
+export const GATED_MODELS: ModelDef[] = [
+  /* ── Kling 4.0, on fal.ai ─────────────────────────────────────────────
+   * Kuaishou's next engine, reached the way Kling 3.0 is: on fal, the platform's FAL_KEY, billed per second of output, the same task shape (text-to-video, a first
+   * frame makes it image-to-video). **The plan (docs/plans/provider-adapters.md, L1) says "Kling 4.0 on fal the day it is live (3.0 Pro until then)" and holds no
+   * endpoint, no rate and no schema for it: the endpoint below, its rates (lib/vendorRates.ts) and the assumption that it takes Kling 3.0's request fields are all TO
+   * CONFIRM against fal's own listing before KLING4_ENABLED is set.** Off by default and for every customer workspace: it is in no offer list and admission
+   * refuses it until the switch is open (`gate`).
+   * ------------------------------------------------------------------ */
+  {
+    id: "fal-ai/kling-video/v4/pro",
+    billing: "second",
+    use: "Kling's newest: motion, faces and physics, for finals.",
+    label: "Kling 4.0",
+    short: "KLING 4",
+    family: "kling-3",
+    provider: "fal",
+    kind: "video",
+    supportsTasks: ["generate"],
+    falEndpoint: "fal-ai/kling-video/v4/pro",
+    gate: "KLING4_ENABLED",
+    paramStyle: "fields",
+    resolutions: ["1080p"],
+    ratios: ["16:9", "9:16", "1:1"],
+    durations: seconds(3, 15),
+    supportsAudio: true,
+    supportsCameraFixed: false,
+    maxReferenceImages: 2,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    note: "Kling 4.0 on fal — native audio, 3–15s, priced per second. A first-frame image turns it into image-to-video.",
+  }
+];
+
 export const DEFAULT_MODEL_ID = MODELS[0].id;
 
 /** Resolves every registered id, RETIRED ones included: history must keep reading them. Throws on an unknown id. */
 export function getModel(id: string): ModelDef {
-  const m = MODELS.find((x) => x.id === id);
+  const m = MODELS.find((x) => x.id === id) ?? GATED_MODELS.find((x) => x.id === id);
   if (!m) throw new Error(`Unknown model: ${id}`);
   return m;
 }
 
 /** `getModel` that answers null instead of throwing, for paths that must not fail on an id no longer registered. */
 export function findModel(id: string | null | undefined): ModelDef | null {
-  return MODELS.find((x) => x.id === id) ?? null;
+  return MODELS.find((x) => x.id === id) ?? GATED_MODELS.find((x) => x.id === id) ?? null;
 }
 
 /** The provider serving a model, or null for an id not in the registry. Never throws (failure paths rely on it). */
@@ -753,7 +797,7 @@ const DIRECT_FAMILIES: [RegExp, string][] = [
  */
 export function displayModelName(modelId: string): string {
   const known = WORKFLOW_LABELS[modelId]?.label
-    ?? MODELS.find((m) => m.id === modelId)?.label
+    ?? findModel(modelId)?.label
     ?? AUDIO_LABELS[modelId]?.label
     ?? retiredLabel(modelId)?.label;
   if (known) return known;

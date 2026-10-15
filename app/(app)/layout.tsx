@@ -11,6 +11,7 @@ import { effectiveModels } from "@/lib/defaultModels";
 import { runInTenant } from "@/lib/tenant";
 import { getPlatformLayer } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
+import { openGatedModelIds } from "@/lib/modelGate";
 import { creditsApply } from "@/lib/credits";
 import { accountScopeFor, workbenchScopeFor } from "@/lib/workbench/request-scope";
 import UploadRecovery from "@/components/UploadRecovery";
@@ -58,7 +59,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
          fell back to dollars — which is how the platform's vendor cost came to
          be printed on a public page. A visitor is quoted credits at the
          platform's own margin, like the customer they might become. */
-      rates: buildRateTable(!ctx?.workspace || creditsApply(ctx.workspace) ? "cr" : "usd"),
+      rates: buildRateTable(!ctx?.workspace || creditsApply(ctx.workspace) ? "cr" : "usd", await openGatedModelIds(ctx?.workspace ?? null)),
     }}>
     <ProjectProvider>
       {/* The production studio's shared navigation and account controls. */}

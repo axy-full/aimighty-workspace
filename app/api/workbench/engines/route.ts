@@ -1,6 +1,6 @@
 import { withTenant, requireUser } from '@/lib/auth';
 import { modelConfigured } from '@/lib/providers';
-import { MediaQuoteError, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia, quoteWorkbenchMediaAtCost, rendersSound, workbenchRate, workbenchUse, workbenchAudioRates, NO_REFERENCES, type RateAt, type ReferencePrices } from '@/lib/workbench/media-quote';
+import { MediaQuoteError, openGatedModels, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia, quoteWorkbenchMediaAtCost, rendersSound, workbenchRate, workbenchUse, workbenchAudioRates, NO_REFERENCES, type RateAt, type ReferencePrices } from '@/lib/workbench/media-quote';
 import { requireReadySoulIdentity } from '@/lib/soulIdentities';
 import { requireTenant } from '@/lib/tenant';
 import { cinemaSoundOffered } from '@/lib/cinemaSoundPricing';
@@ -10,7 +10,8 @@ export const GET = withTenant(async (req: Request) => {
   const got = await requireUser();
   if (got.response) return got.response;
   const q = new URL(req.url).searchParams;
-  const configured = workbenchGenerationModels().filter(model => modelConfigured(model));
+  /* A model with its own kill switch (Kling 4.0) is listed only where the switch is open for this workspace (lib/modelGate.ts). */
+  const configured = workbenchGenerationModels(undefined, await openGatedModels()).filter(model => modelConfigured(model));
   /* Cinema Studio's Sound switch: offered once its sound is priced, and in the house workspace (lib/cinemaSoundPricing.ts). */
   const soundHere = cinemaSoundOffered(requireTenant());
   /* The house workspace is never billed in credits and sees every price at the engine's cost (lib/houseWorkspace.ts): its figures also carry the engine's dollars, the ones admission reserves. Credit workspaces never receive them. */

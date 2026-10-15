@@ -234,8 +234,26 @@ export const MARKETING_IMAGE_25_TOKEN_USD = {
   imageOut: 30e-6,
 } as const;
 
+/**
+ * The rates of the models that carry their own kill switch (lib/models.ts GATED_MODELS), kept apart from `VENDOR_RATES` (whose keys are the catalogue's, and a test holds it so)
+ * and handed to the browser's rate table only while the switch is open for the workspace (lib/rateTable.server.ts). Every price path reads them through `ratesFor`.
+ */
+export const GATED_VENDOR_RATES: Record<string, VendorRates> = {
+  /* Kling 4.0 on fal. **TO CONFIRM, and a PLACEHOLDER: the plan (docs/plans/provider-adapters.md, L1) holds no Kling 4.0 price.** These are Kling 3.0 Pro's figures
+     (in VENDOR_RATES), put here only so the row can be quoted in tests; the lead checks fal's own listing for the real per-second rates before KLING4_ENABLED is set, and this entry
+     changes then. The model is off for every workspace until that switch is open (lib/models.ts gate). */
+  "fal-ai/kling-video/v4/pro": {
+    tiers: [],
+    secondRates: [{
+      resolutions: ["1080p"],
+      withoutAudio: 0.112,
+      withAudio: 0.168
+    }]
+  },
+};
+
 export function ratesFor(modelId: string): VendorRates | null {
-  return VENDOR_RATES[modelId] ?? null;
+  return VENDOR_RATES[modelId] ?? GATED_VENDOR_RATES[modelId] ?? null;
 }
 
 /**
