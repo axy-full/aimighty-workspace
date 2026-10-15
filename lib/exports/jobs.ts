@@ -27,6 +27,7 @@ import {
 import { bindMedia, createMediaResolver, loadMedia, mediaStillReachable, type BoundMedia, type ExportViewer, type MediaLoader, type MediaResolver } from "./inputs";
 import { exportLimits, exportWorkerSlots, type ExportLimits } from "./limits";
 import { exportsOnHere } from "./access";
+import { exportsEnabled } from "./switch";
 import {
   ExportWorkerBusyError,
   ExportWorkerRefusedError,
@@ -538,9 +539,17 @@ async function saveSmallFile(row: Row, bytes: Buffer, suffix: string, ext: strin
 /** Past this from its claim a run is over, whatever it was doing: the run call's own limit and time to save. */
 export const exportRunCeilingMs = (limits: ExportLimits) => limits.runTimeoutMs + 150_000;
 
+/**
+ * The jobs recovery looks at. It depends on the GLOBAL switch only, not on the per-workspace list: taking a workspace off the list
+ * must still end its stuck runs and stop their worker sessions. A workspace that is not allowed and never made the table is left
+ * alone (no table is made for it).
+ */
 export async function pendingExports(limit = 4, deps: ExportDeps = {}) {
-  if (!(await (deps.enabled ?? exportsOnHere)())) return [];
-  await exportJobsReady();
+  if (!(deps.enabled ? await deps.enabled() : exportsEnabled())) return [];
+  if (!deps.enabled && !(await exportsOnHere())) {
+    const made = (await db().execute("SELECT name FROM sqlite_master WHERE type='table' AND name='export_jobs'")).rows.length > 0;
+    if (!made) return [];
+  } else await exportJobsReady();
   return (
     await db().execute({
       sql: "SELECT id,status,claimed_at,error,updated_at,runtime_id,created_at FROM export_jobs WHERE workspace_id=? AND status IN ('queued','rendering','saving') ORDER BY created_at LIMIT ?",
@@ -560,12 +569,19 @@ export async function recoverExports(
   const clock = deps.clock ?? Date.now;
   const limits = (deps.limits ?? exportLimits)();
   const jobs = await pendingExports(options.limit ?? 4, deps);
+  const allowed = deps.enabled ? await deps.enabled() : await exportsOnHere();
   const deadlineAt = options.deadlineAt ?? clock() + 250_000;
   let attempted = 0, failed = 0, deferred = 0;
   for (const job of jobs) {
     if (clock() >= deadlineAt) { deferred++; continue; }
     attempted++;
     try {
+      if (job.status === "queued" && !allowed) {
+        /* The workspace was taken off the list while this waited: it does not start now, and it says why instead of waiting for ever. */
+        const row = await record(job.id);
+        if (row) await end(row, "failed", failure("Exports are not switched on for this workspace any more."), clock);
+        continue;
+      }
       if (job.status === "queued") {
         if (job.error === BUSY_MESSAGE && clock() - Number(job.updated_at) < EXPORT_BUSY_BACKOFF_MS) continue;
         const enqueue = deps.enqueue ?? (async (id: string) => (await import("./dispatch")).enqueueExport(id));

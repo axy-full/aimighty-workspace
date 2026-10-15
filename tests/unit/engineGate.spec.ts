@@ -118,10 +118,52 @@ test("the MCP tools follow it: the export tools are listed to the house and to a
   expect(names(await toolsOfferedFor({ id: "ws_cust" }))).toContain("export_video");
   expect(await toolsOfferedFor({ id: "ws_other" })).toBe(TOOLS);
   expect(await toolsOfferedFor(null)).toBe(TOOLS);
-  const { exportToolAvailabilityFor } = await import("../../lib/exports/tool");
-  const full = { REMOTION_EXPORTS: "1", REMOTION_WORKER_URLS: "http://remotion-1:8790", REMOTION_WORKER_SECRETS: "s".repeat(40) };
-  expect(await exportToolAvailabilityFor({ id: "ws_other" }, full)).toEqual({ available: false, reason: "Exports are not switched on for this workspace." });
-  expect(await exportToolAvailabilityFor({ id: "ws_cust" }, full)).toEqual({ available: true, reason: null });
+  /* A call for a workspace that is not allowed is "Unknown tool", whatever the global switch says: the route says whether exports are on for it. */
+  const { runTool } = await import("../../lib/mcp");
+  const calls: string[] = [];
+  const call = (async (pathname: string) => { calls.push(pathname); return { job: { id: "export_" + "b".repeat(32), status: "queued", queueLine: null, error: null, outputs: [] } }; }) as never;
+  for (const tool of ["export_video", "get_export", "cancel_export"]) {
+    await expect(runTool(tool, { composition: "title-card", props: {} as never, id: "x" }, call, "https://app.test", { exports: false })).rejects.toThrow("Unknown tool");
+  }
+  expect(calls).toEqual([]);
+  await runTool("export_video", { composition: "title-card", props: {} as never }, call, "https://app.test", { exports: true });
+  expect(calls).toEqual(["/api/exports"]);
   delete process.env.REMOTION_EXPORTS;
   expect(await toolsOfferedFor({ id: "ws_legacy" })).toBe(TOOLS);
+});
+
+test("recovery follows the GLOBAL switch only: a workspace taken off the list still has its stuck run ended and its worker session stopped, and a queued job says why it will not start", async () => {
+  process.env.REMOTION_EXPORTS = "1";
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const jobs = await import("../../lib/exports/jobs");
+  const { exportWorkerPool } = await import("./remotionWorkerFake");
+  const resolver = { async video(handle: { take?: string; upload?: string }) { return { origin: "take" as const, id: handle.take ?? "x", ext: "mp4", storedUrl: "stored/x", bytes: 1000, durationSeconds: 10, width: 1920, height: 1080 }; }, async image() { throw new Error("no"); }, async audio() { throw new Error("no"); } };
+  const pool = exportWorkerPool();
+  const limits = { maxRunningPerWorkspace: 1, maxPerHourPerWorkspace: 20, runTimeoutMs: 200_000, queueExpiryMs: 30 * 60_000 };
+  const base = { limits: () => limits, resolver: () => resolver, reach: async () => true, worker: { config: pool.config, fetch: pool.fetch } };
+  const request = (id: string) => ({ requestId: id, composition: "captions" as const, props: { aspect: "9:16", scale: 0.25, captionStyle: "bold", clip: { source: { take: "t1", hasAudio: true }, cues: [{ startMs: 500, endMs: 2500, text: "hi" }] } } });
+  await listSite(["ws_recover"]);
+  await runInTenant(workspace("recover"), async () => {
+    await ready();
+    /* While listed: one job that is rendering and stuck, one that is queued. */
+    const stuck = await jobs.createExport(request("request-recover-01"), { id: "u_test" }, base);
+    const waiting = await jobs.createExport(request("request-recover-02"), { id: "u_test" }, base);
+    const name = "remotion-export-" + "0123456789abcdef0123456789abcdef".replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
+    await db().execute({ sql: "UPDATE export_jobs SET status='rendering', runtime_id=?, claimed_at=? WHERE id=?", args: [name, 1_000, stuck.job.id] });
+    await listSite([]);
+    const before = pool.calls.length;
+    const outcome = await jobs.recoverExports({ deadlineAt: Date.now() + 100_000 }, { ...base, clock: () => 10 * 60 * 60_000, enqueue: async () => true });
+    expect(outcome.attempted).toBe(2);
+    expect((await db().execute({ sql: "SELECT status, error FROM export_jobs WHERE id=?", args: [stuck.job.id] })).rows[0]).toMatchObject({ status: "failed", error: expect.stringContaining("did not finish") });
+    expect(pool.calls.slice(before).some((c) => c.method === "DELETE" && c.path.endsWith(name))).toBe(true);
+    expect((await db().execute({ sql: "SELECT status, error FROM export_jobs WHERE id=?", args: [waiting.job.id] })).rows[0]).toMatchObject({ status: "failed", error: expect.stringContaining("not switched on for this workspace any more") });
+    /* New work is still refused for it. */
+    await expect(jobs.createExport(request("request-recover-03"), { id: "u_test" }, { ...base })).rejects.toBeTruthy();
+  });
+  /* The global switch off ends recovery for everyone. */
+  delete process.env.REMOTION_EXPORTS;
+  await runInTenant(workspace("recover"), async () => {
+    expect(await jobs.pendingExports()).toEqual([]);
+  });
 });
