@@ -320,6 +320,25 @@ export const BFL_RATES = {
 } as const;
 export type BflModel = keyof typeof BFL_RATES.models;
 
+/**
+ * Runway, direct (lib/runway.ts, lib/runwayTools.ts), in the vendor's own unit: CREDITS PER SECOND (Runway sells credits at $0.01 each), as docs/plans/provider-adapters.md
+ * § 7 records them (Runway's pricing page, read 14 Oct 2026). **TO CONFIRM** against Runway's own page and the first invoice: this table is the plan's, not verified here.
+ * Aleph 2 has a 56-credit minimum. Seconds are rounded UP to whole seconds (the billing unit is not stated), so a quote is never under. `minSeconds`/`maxSeconds` are the
+ * input lengths the plan records (Act-Two's performance video 3 to 30 s; Aleph 2's input 2 to 30 s; Gen-4.5 2 to 10 s; Gen-4 Turbo's are not stated, so Gen-4.5's are used, TO CONFIRM).
+ * Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const RUNWAY_RATES = {
+  creditUsd: 0.01,
+  models: {
+    act_two: { creditsPerSecond: 5, minCredits: 0, minSeconds: 3, maxSeconds: 30 },
+    aleph2: { creditsPerSecond: 28, minCredits: 56, minSeconds: 2, maxSeconds: 30 },
+    "gen4.5": { creditsPerSecond: 12, minCredits: 0, minSeconds: 2, maxSeconds: 10 },
+    gen4_turbo: { creditsPerSecond: 5, minCredits: 0, minSeconds: 2, maxSeconds: 10 },
+  },
+  defaultVideoModel: "gen4.5",
+} as const;
+export type RunwayModel = keyof typeof RUNWAY_RATES.models;
+
 /** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
 export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;
