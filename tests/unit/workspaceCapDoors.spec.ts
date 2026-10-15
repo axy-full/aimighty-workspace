@@ -384,6 +384,8 @@ const RESERVERS: Record<string, Reserver> = {
   "lib/workbench/development-server.ts": { reserve: "await deps.reserve(", count: 1, vendor: ["await deps.call("], bound: "reserve: reserveGenerationSpend" },
   "lib/workbench/rig-agent.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["?? defaultPlan)("] },
   "lib/crew/round.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await askGrok("] },
+  /* The consent face check (lib/consentMatch.ts): reserves its one provider call's cost before making it, and settles that row at the provider's price or at nothing. */
+  "lib/consentMatch.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await compareFaces("] },
   /* An Atomik turn is paid text: its reservation is runPaidText's (lib/paidText.ts); the meter() after it re-settles that row. */
   "lib/atomik.ts": { reserve: "await runPaidText(", count: 1, vendor: ["await meter({ id: messageId"] },
 };
