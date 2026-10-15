@@ -14,12 +14,6 @@ import { securityAuditStatement } from "./securityAudit";
  */
 export { AGE_CONFIRM_LABEL, AGE_CONFIRM_REFUSAL } from "./ageConfirmText";
 
-/**
- * The moment the tick shipped (15 Oct 2026, 16:35 UTC). An email sign-up registration is only a row until its link is opened, and a row made before this moment was begun without the tick, so it
- * is never resent or verified into an account: its owner starts sign-up again (lib/signupRegistration.ts). Every begin since sets the row's creation time to its own, so it is at or after this. Moving
- * it later is safe only up to the moment of the deploy: a begin made before the constant but after the deploy would have to start again.
- */
-export const AGE_CONFIRM_SINCE = Date.UTC(2026, 9, 15, 16, 35, 0);
 
 /** The history line for a new account: its id and the moment, written in the transaction that creates the account. */
 export function ageConfirmedStatement(accountId: string): InStatement {

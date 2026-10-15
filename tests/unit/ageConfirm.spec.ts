@@ -206,30 +206,40 @@ test("every place that makes an account is on an exact list: the sign-up sites w
   expect(readFileSync("lib/auth.ts", "utf8"), "the tick-less helper is gone").not.toMatch(/export async function createUser/);
 });
 
-test("a registration begun before the tick shipped is neither resent nor verified: no account and no line; a fresh begin then works", async () => {
+test("a registration an older server wrote (a bare hash, begun without the tick) is neither resent nor verified: no account and no line; a begin with the tick then works; a verified one still resumes", async () => {
   const { beginSignup, resendSignup, verifySignup } = await import("../../lib/signupRegistration");
-  const { AGE_CONFIRM_SINCE } = await import("../../lib/ageConfirm");
   const { platformDb } = await import("../../lib/platform");
   const { createHash } = await import("node:crypto");
   const email = mail("oldreg");
   const token = "o".repeat(43);
-  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const bare = createHash("sha256").update(token).digest("hex");
   const db = platformDb();
-  /* The row an older server wrote: no tick was asked, its link has not expired, and it was begun before the constant. */
+  const clear = () => db.execute("DELETE FROM account_action_limits WHERE key LIKE 'signup-email-%'");
+  /* The row an older server wrote: no tick was asked, its link has not expired, and it was begun just now (so a time cut-off would not catch it). */
   await db.execute({
     sql: "INSERT INTO signup_registrations(email,name,password_hash,workspace_name,plan_id,cadence,token_hash,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-    args: [email, "Old", "x", "Old house", "explore", "monthly", tokenHash, Date.now() + 3_600_000, AGE_CONFIRM_SINCE - 86_400_000, AGE_CONFIRM_SINCE - 86_400_000],
+    args: [email, "Old", "x", "Old house", "explore", "monthly", bare, Date.now() + 3_600_000, Date.now(), Date.now()],
   });
-  await db.execute("DELETE FROM account_action_limits WHERE key LIKE 'signup-email-%'");
+  await clear();
   await expect(resendSignup(email, "old-source")).rejects.toMatchObject({ status: 410 });
   await expect(verifySignup(token)).rejects.toMatchObject({ status: 410 });
   expect(await accountOf(email), "no account").toBeNull();
   expect((await db.execute({ sql: "SELECT 1 FROM security_audit WHERE action='account.age_confirmed' AND actor_id IN (SELECT id FROM accounts WHERE email=?)", args: [email] })).rows).toHaveLength(0);
-  expect(Number((await db.execute({ sql: "SELECT created_at FROM signup_registrations WHERE email=?", args: [email] })).rows[0].created_at), "the resend did not refresh it").toBeLessThan(AGE_CONFIRM_SINCE);
-  /* A fresh begin (which needs the tick) resets the row, and then verifying works and writes the line. */
-  await db.execute("DELETE FROM account_action_limits WHERE key LIKE 'signup-email-%'");
+  expect(String((await db.execute({ sql: "SELECT token_hash FROM signup_registrations WHERE email=?", args: [email] })).rows[0].token_hash), "the resend did not rewrite it").toBe(bare);
+  /* A begin with the tick marks the row, and then verifying works and writes exactly one line. */
+  await clear();
   const started = await beginSignup({ name: "Old", email, workspace: "Old house", password, ageConfirmed: true }, "old-source-2");
-  expect(Number((await db.execute({ sql: "SELECT created_at FROM signup_registrations WHERE email=?", args: [email] })).rows[0].created_at)).toBeGreaterThanOrEqual(AGE_CONFIRM_SINCE);
-  const verified = await verifySignup(started.token);
+  expect(String((await db.execute({ sql: "SELECT token_hash FROM signup_registrations WHERE email=?", args: [email] })).rows[0].token_hash)).toMatch(/^a1:[0-9a-f]{64}$/);
+  await clear();
+  const resent = await resendSignup(email, "old-source-3");
+  expect(String((await db.execute({ sql: "SELECT token_hash FROM signup_registrations WHERE email=?", args: [email] })).rows[0].token_hash), "a resend keeps the mark").toMatch(/^a1:/);
+  expect(resent?.token).not.toBe(started.token);
+  const verified = await verifySignup(resent!.token);
   expect(await lines(verified.owner.id)).toHaveLength(1);
+  /* An already-verified row of either form still resumes for its own signed-in account (the bare form is the older server's). */
+  await db.execute({ sql: "UPDATE signup_registrations SET token_hash=? WHERE email=?", args: [bare, email] });
+  const { createPlatformSession } = await import("../../lib/platform");
+  const resumed = await verifySignup(token, verified.owner.id, await createPlatformSession(verified.owner.id, null));
+  expect(resumed.owner.id).toBe(verified.owner.id);
+  expect(await lines(verified.owner.id), "resuming added no line").toHaveLength(1);
 });

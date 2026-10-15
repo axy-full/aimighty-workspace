@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
-import { AGE_CONFIRM_REFUSAL, AGE_CONFIRM_SINCE, ageConfirmedStatement } from "./ageConfirm";
+import { AGE_CONFIRM_REFUSAL, ageConfirmedStatement } from "./ageConfirm";
 import { assertInvitationSession } from "./accountInvitationSession";
 import {
   accountDbReady,
@@ -48,6 +48,14 @@ type Registration = {
 };
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
+/**
+ * A registration begun with the tick keeps its link's hash behind this marker (no column is added: only this file reads or writes `token_hash`). A bare hash is a registration an older server
+ * wrote, begun without the tick: it is never resent or verified into an account, so no account is made and no 18+ line written without the tick (lib/ageConfirm.ts). Already-verified rows of
+ * either form still resume.
+ */
+const TICKED = "a1:";
+const tickedHash = (value: string) => TICKED + hash(value);
+const wasTicked = (row: unknown) => String((row as { token_hash?: unknown }).token_hash ?? "").startsWith(TICKED);
 const cleanChoice = (plan?: string, cadence?: string): SignupChoice => ({
   planId: chosenPlanFrom(plan) as PaidPlan,
   /* Yearly is hidden (lib/plans.ts YEARLY_SHOWN): a carried "annual" is kept as monthly until it returns. */
@@ -141,7 +149,7 @@ export async function beginSignup(input: SignupInput, source: string) {
         data.workspace,
         data.planId,
         data.cadence,
-        hash(token),
+        tickedHash(token),
         expiresAt,
         now(),
         now(),
@@ -166,11 +174,11 @@ export async function resendSignup(emailInput: string, source: string) {
       })
     ).rows[0];
     if (!row) return null;
-    /* A registration begun before the tick shipped was begun without it: it is not refreshed, and its owner starts again (lib/ageConfirm.ts AGE_CONFIRM_SINCE). */
-    if (Number(row.created_at) < AGE_CONFIRM_SINCE) throw new AccountError("That sign-up is out of date. Start sign-up again.", 410);
+    /* A registration begun without the tick (an older server's) is not refreshed: its owner starts again. */
+    if (!wasTicked(row)) throw new AccountError("That sign-up is out of date. Start sign-up again.", 410);
     await tx.execute({
       sql: "UPDATE signup_registrations SET token_hash=?,expires_at=?,updated_at=? WHERE email=? AND verified_at IS NULL",
-      args: [hash(token), expiresAt, now(), email],
+      args: [tickedHash(token), expiresAt, now(), email],
     });
     return { email, name: String(row.name), token, expiresAt };
   });
@@ -210,12 +218,11 @@ export async function verifySignup(
   return accountTransaction(async (tx) => {
     const r = (
       await tx.execute({
-        sql: "SELECT * FROM signup_registrations WHERE token_hash=?",
-        args: [hash(token)],
+        sql: "SELECT * FROM signup_registrations WHERE token_hash IN (?,?)",
+        args: [tickedHash(token), hash(token)],
       })
     ).rows[0] as unknown as Registration | undefined;
-    /* A registration begun before the tick shipped is expired for good (lib/ageConfirm.ts AGE_CONFIRM_SINCE): no account and no 18+ line without a tick. */
-    if (!r || r.expires_at < now() || r.created_at < AGE_CONFIRM_SINCE)
+    if (!r || r.expires_at < now())
       throw new AccountError(
         "This verification link has expired or is not valid. Request another email.",
         410,
@@ -234,6 +241,12 @@ export async function verifySignup(
         cadence: r.cadence,
       };
     }
+    /* Not yet verified: only a registration begun with the tick may become an account (an older server's row has a bare hash). */
+    if (!wasTicked(r))
+      throw new AccountError(
+        "This verification link has expired or is not valid. Request another email.",
+        410,
+      );
     const existing = (
       await tx.execute({
         sql: "SELECT id FROM accounts WHERE email=?",
