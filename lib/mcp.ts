@@ -313,7 +313,7 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
  * spend is reported in credits and the engine's dollars are never named.
  */
 export async function runTool(
-  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
+  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}, offered: { pdf?: boolean } = {}
 ): Promise<string> {
   switch (name) {
     case "prepare_shot": {
@@ -475,7 +475,8 @@ export async function runTool(
     }
 
     case "make_deck_pdf": {
-      /* The route decides whether this workspace has deck PDFs: where it does not, it answers 404 and the tool is unknown here too. */
+      /* Where this workspace has no deck PDFs the tool is not offered, and it is unknown here too (as get_export is when exports are off). */
+      if (!offered.pdf) throw new Error(`Unknown tool: ${name}`);
       const out = (await call("/api/pdf", { method: "POST", body: args })) as { deck: { url: string; filename: string; pages: number; bytes: number } };
       return `${out.deck.filename} · ${out.deck.pages} pages · ${Math.round(out.deck.bytes / 1024)} KB\n\n${origin}${out.deck.url}\n(That link needs the same token — it is not public.)\nprice: Free (0 cr)`;
     }

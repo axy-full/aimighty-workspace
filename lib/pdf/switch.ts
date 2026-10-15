@@ -1,22 +1,18 @@
 import { exportWorkerConfig } from "../exports/limits";
-import { newInterfaceFor } from "../newInterface.server";
+import { engineEnabled, engineSwitchOn } from "../engineGate";
 
 /**
- * The switch for deck PDFs (owner, 15 Oct 2026): `PDF_EXPORTS`, read at run time, its own, apart from `REMOTION_EXPORTS`. Unset or anything
- * but 1/on/true/yes is OFF, which is the production default. On, it is on for the house workspace and the workspaces the owner lists in the
- * site setting (`newInterfaceWorkspaces`, lib/newInterface.ts), and off for every customer workspace until launch. Off, the route answers 404, the
- * tool is not offered over MCP, and nothing is read, written or sent to a worker.
+ * The gate for deck PDFs is the shared engine gate (lib/engineGate.ts, the owner's standing rule of 15 Oct 2026): `PDF_EXPORTS` is this engine's own kill
+ * switch, on only when it is exactly "1" (unset or anything else is off for everyone), and then it is on for the house workspace and the workspaces the owner
+ * lists in the site setting `enginesOnWorkspaces`, and off for every customer workspace until launch. Off: the route answers 404 before the session, the body or
+ * anything else is touched, the MCP tool is not offered and answers "Unknown tool", and nothing is sent to a worker.
  */
-export function pdfExportsEnabled(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
-  const value = (env.PDF_EXPORTS ?? "").trim().toLowerCase();
-  return value === "1" || value === "on" || value === "true" || value === "yes";
-}
+export const PDF_SWITCH = "PDF_EXPORTS";
+export const pdfExportsEnabled = (): boolean => engineSwitchOn(PDF_SWITCH);
 
-/** Whether this workspace has deck PDFs: the switch is on and the workspace is the house workspace or listed. */
-export async function pdfAllowedFor(workspace: { id: string } | null | undefined, env: Readonly<Record<string, string | undefined>> = process.env): Promise<boolean> {
-  if (!pdfExportsEnabled(env) || !workspace) return false;
-  return newInterfaceFor(workspace);
-}
+/** Whether this workspace (default: the one in scope) has deck PDFs. */
+export const pdfAllowedFor = (workspace?: { id: string } | null): Promise<boolean> =>
+  workspace === undefined ? engineEnabled(PDF_SWITCH) : engineEnabled(PDF_SWITCH, workspace);
 
 /** Whether the tool can run now in an allowed workspace, and when it cannot, why (naming the missing setting, never its value). */
 export function pdfWorkersReady(env: Readonly<Record<string, string | undefined>> = process.env): { ready: boolean; reason: string | null } {

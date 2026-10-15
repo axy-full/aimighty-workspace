@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { PDF_CSP, PDF_LIMITS, checkDeckHtml, isPdfSpec, mediaMatches, mediaMm, pdfFacts, validatePdfSpec } from "../../remotion/src/lib/pdf";
+import { PDF_CSP, PDF_HEAD, PDF_LIMITS, checkDeckHtml, isPdfSpec, mediaMatches, mediaMm, pdfFacts, validatePdfSpec } from "../../remotion/src/lib/pdf";
 import { DeckTooLong, ppmDoc, pitchDoc, treatmentDoc } from "../../lib/pdf/builders";
 import { MAX_PAGES, PAGE_SIZES, paginateRows, paginateText, textBudget } from "../../lib/pdf/deck";
 import { deckHtml, esc } from "../../lib/pdf/html";
@@ -57,6 +57,7 @@ test("every word is escaped: hostile content becomes text and the page passes th
     expect(html).not.toMatch(/<(script|iframe|link|form|base|a|object|embed|svg)[\s>/]/i);
     expect(html).not.toMatch(/<[a-z][^>]* on[a-z]+=/i);
     expect(html).not.toMatch(/(src|href)="(https?:|\/\/|data:)/i);
+    expect(html.startsWith(PDF_HEAD)).toBe(true);
     expect(html).toContain(PDF_CSP);
     expect(html).toContain("&lt;script&gt;");
     expect(html.match(/<section class="page/g)?.length).toBe(doc.pages.length);
@@ -83,6 +84,9 @@ test("the worker's page check refuses everything that loads, runs or links", () 
     ["a second policy", good.replace("<head>", `<head><meta http-equiv="Content-Security-Policy" content="default-src *">`)],
     ["no policy", good.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, "")],
     ["a weaker policy", good.replace(PDF_CSP, "default-src *")],
+    ["the policy moved after other head content", good.replace(PDF_HEAD, '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>x</title><meta http-equiv="Content-Security-Policy" content="' + PDF_CSP + '">')],
+    ["another language", good.replace('<html lang="en">', '<html lang="fr">')],
+    ["something before the doctype", " " + good],
     ["comment", good.replace("<main>", "<main><!-- x -->")],
     ["style attribute", good.replace("<main>", '<main><p style="background:url(http://x)">a</p>')],
     ["css import", good.replace("</style>", "@import url(x.css);</style>")],

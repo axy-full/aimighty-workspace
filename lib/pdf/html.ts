@@ -1,4 +1,4 @@
-import { PDF_CSP, PDF_FONT_FAMILY } from "../../remotion/src/lib/pdf";
+import { PDF_FONT_FAMILY, PDF_HEAD } from "../../remotion/src/lib/pdf";
 import { KIND_LABEL, PAGE_SIZES, mediaOf, type DeckDoc, type DeckPage } from "./deck";
 
 /**
@@ -86,5 +86,5 @@ function pageHtml(page: DeckPage, index: number, total: number, doc: DeckDoc): s
 
 export function deckHtml(doc: DeckDoc): string {
   const body = doc.pages.map((page, i) => pageHtml(page, i, doc.pages.length, doc)).join("");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${PDF_CSP}"><title>${esc(doc.title)}</title><style>${css(doc)}</style></head><body><main>${body}</main></body></html>`;
+  return `${PDF_HEAD}<title>${esc(doc.title)}</title><style>${css(doc)}</style></head><body><main>${body}</main></body></html>`;
 }

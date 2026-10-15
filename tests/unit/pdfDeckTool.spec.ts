@@ -23,29 +23,38 @@ test.afterAll(() => { for (const [key, value] of [["PDF_EXPORTS", saved.pdf], ["
 const workspace = (name: string, extra: Partial<TenantWorkspace> = {}): TenantWorkspace => ({ id: `ws_${name}`, slug: name, name, legacy: false, dbUrl: `file:${path.join(directory, `${name}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true, allowanceUsd: null, gatewayKeyId: null, ownerId: "u_owner", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: null, rendersPerHour: null, storageQuotaBytes: null, deletedAt: null, ...extra });
 const OWNER = { id: "u_owner", role: "member" }, MATE = { id: "u_mate", role: "member" };
 
-test("the switch is on only for 1, on, true or yes, and then only for the house workspace and the workspaces the owner lists", async () => {
+test("the gate is the shared engine gate: PDF_EXPORTS exactly 1, and then only the house workspace and the workspaces the owner lists in enginesOnWorkspaces", async () => {
   const { pdfExportsEnabled, pdfAllowedFor } = await import("../../lib/pdf/switch");
-  expect([undefined, "", "0", "off", "false", "no", "2", "enabled", " "].map((value) => pdfExportsEnabled({ PDF_EXPORTS: value }))).toEqual(Array(9).fill(false));
-  expect(["1", "on", "ON", "true", "True", " yes "].map((value) => pdfExportsEnabled({ PDF_EXPORTS: value }))).toEqual(Array(6).fill(true));
+  for (const value of [undefined, "", "0", "off", "false", "no", "2", "on", "true", "yes", "enabled", " ", " 1"]) {
+    if (value === undefined) delete process.env.PDF_EXPORTS; else process.env.PDF_EXPORTS = value;
+    expect(pdfExportsEnabled(), String(value)).toBe(false);
+  }
+  process.env.PDF_EXPORTS = "1";
+  expect(pdfExportsEnabled()).toBe(true);
   const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
   const { platformReady, platformDb } = await import("../../lib/platform");
-  const { writeSite } = await import("../../lib/site/settings.server");
   await platformReady();
-  const make = (id: string) => platformDb().execute({ sql: `INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,plan_id) VALUES(?,?,?,?,1,'owner',0,0,NULL)`, args: [id, id, id, `file:${path.join(directory, id + ".db")}`] });
-  await make("ws_customer"); await make("ws_listed");
-  const on = { PDF_EXPORTS: "1" };
+  const list = (ids: string[]) => platformDb().execute({
+    sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, ?, 'test') ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+    args: [JSON.stringify({ openSignup: false, guestHome: false, visitorPages: false, guestWorkspace: null, newInterfaceWorkspaces: ["ws_customer"], enginesOnWorkspaces: ids }), Date.now()],
+  });
+  await list([]);
   // Off: nobody, not even the house workspace.
-  expect(await pdfAllowedFor({ id: HOUSE_WORKSPACE_ID }, {})).toBe(false);
-  expect(await pdfAllowedFor({ id: HOUSE_WORKSPACE_ID }, { PDF_EXPORTS: "off" })).toBe(false);
-  // On: the house workspace; a customer workspace is off until the owner lists it.
-  expect(await pdfAllowedFor({ id: HOUSE_WORKSPACE_ID }, on)).toBe(true);
-  expect(await pdfAllowedFor({ id: "ws_customer" }, on)).toBe(false);
-  expect(await pdfAllowedFor(null, on)).toBe(false);
-  await writeSite({ newInterfaceWorkspaces: ["ws_listed"] }, null);
-  expect(await pdfAllowedFor({ id: "ws_listed" }, on)).toBe(true);
-  expect(await pdfAllowedFor({ id: "ws_customer" }, on)).toBe(false);
+  delete process.env.PDF_EXPORTS;
+  expect(await pdfAllowedFor({ id: HOUSE_WORKSPACE_ID })).toBe(false);
+  process.env.PDF_EXPORTS = "on";
+  expect(await pdfAllowedFor({ id: HOUSE_WORKSPACE_ID })).toBe(false);
+  // On: the house workspace; a customer workspace is off until the owner lists it for engines (the new-interface list does not count).
+  process.env.PDF_EXPORTS = "1";
+  expect(await pdfAllowedFor({ id: HOUSE_WORKSPACE_ID })).toBe(true);
+  expect(await pdfAllowedFor({ id: "ws_customer" })).toBe(false);
+  expect(await pdfAllowedFor(null)).toBe(false);
+  await list(["ws_listed"]);
+  expect(await pdfAllowedFor({ id: "ws_listed" })).toBe(true);
+  expect(await pdfAllowedFor({ id: "ws_customer" })).toBe(false);
   // Listed but the switch off: still nothing.
-  expect(await pdfAllowedFor({ id: "ws_listed" }, {})).toBe(false);
+  delete process.env.PDF_EXPORTS;
+  expect(await pdfAllowedFor({ id: "ws_listed" })).toBe(false);
 });
 
 test("the tool declares what rule 11 asks: id, who may call, key, switch, a price of 0, and names the missing key", async () => {
@@ -54,6 +63,7 @@ test("the tool declares what rule 11 asks: id, who may call, key, switch, a pric
   expect(PDF_TOOL.price()).toEqual({ credits: 0, label: "Free" });
   expect(PDF_TOOL.mock).toBe("tests/unit/remotionWorkerFake.ts");
   expect(pdfToolAvailability({})).toEqual({ available: false, reason: "Deck PDFs are not switched on for this deployment." });
+  expect(pdfToolAvailability({ PDF_EXPORTS: "on" }).available).toBe(false);
   const missing = pdfToolAvailability({ PDF_EXPORTS: "1" });
   expect(missing.available).toBe(false);
   expect(missing.reason).toContain("REMOTION_WORKER_URLS");
@@ -74,7 +84,11 @@ test("an outside agent over MCP: the tool is not offered unless the workspace ha
     return { deck: { url: "/api/uploads/pdf_abc", filename: "deck_pitch.pdf", pages: 3, bytes: 20480 } };
   }) as never;
   const args = { kind: "pitch", pitch: { sections: [{ heading: "Idea", paragraphs: ["Words."] }] } };
-  const text = await runTool("make_deck_pdf", args as never, call, "https://app.test");
+  // Where the workspace has no deck PDFs the tool is unknown, as get_export is when exports are off, and nothing is called.
+  await expect(runTool("make_deck_pdf", args as never, call, "https://app.test")).rejects.toThrow("Unknown tool: make_deck_pdf");
+  await expect(runTool("make_deck_pdf", args as never, call, "https://app.test", {}, { pdf: false })).rejects.toThrow("Unknown tool: make_deck_pdf");
+  expect(calls).toEqual([]);
+  const text = await runTool("make_deck_pdf", args as never, call, "https://app.test", {}, { pdf: true });
   expect(calls).toEqual([{ path: "/api/pdf", init: { method: "POST", body: args } }]);
   expect(text).toContain("deck_pitch.pdf · 3 pages");
   expect(text).toContain("https://app.test/api/uploads/pdf_abc");

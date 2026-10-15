@@ -1,6 +1,6 @@
 import { PDF_PRICE } from "./contract";
 import { DECK_KINDS } from "./deck";
-import { pdfExportsEnabled, pdfWorkersReady } from "./switch";
+import { PDF_SWITCH, pdfWorkersReady } from "./switch";
 
 /**
  * The deck PDF tool, declared once (rule 11, the registry's shape: id, kind, inputs, provider, key, price, mock, who may call). The
@@ -14,7 +14,7 @@ export const PDF_TOOL = Object.freeze({
   callers: "render" as const,
   provider: "Chromium on our own export worker (our own templates only)",
   keys: ["REMOTION_WORKER_URLS", "REMOTION_WORKER_SECRETS"] as const,
-  switch: "PDF_EXPORTS",
+  switch: PDF_SWITCH,
   route: "/api/pdf",
   kinds: DECK_KINDS,
   price: (): typeof PDF_PRICE => PDF_PRICE,
@@ -24,7 +24,7 @@ export const PDF_TOOL = Object.freeze({
 });
 
 export function pdfToolAvailability(env: Readonly<Record<string, string | undefined>> = process.env): { available: boolean; reason: string | null } {
-  if (!pdfExportsEnabled(env)) return { available: false, reason: "Deck PDFs are not switched on for this deployment." };
+  if (env[PDF_SWITCH] !== "1") return { available: false, reason: "Deck PDFs are not switched on for this deployment." };
   const workers = pdfWorkersReady(env);
   return { available: workers.ready, reason: workers.reason };
 }

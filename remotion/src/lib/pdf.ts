@@ -30,8 +30,14 @@ export const PDF_LIMITS = Object.freeze({
 export const PDF_FONTS = Object.freeze(["outfit-latin-wght-normal.woff2", "outfit-latin-ext-wght-normal.woff2"]);
 export const PDF_FONT_FAMILY = "ParticlDeck";
 
-/** What the browser is allowed to load, enforced by the browser: nothing but files that sit beside the page. No script, no network. */
+/**
+ * What the browser is allowed to load, enforced by the browser: no script, no network, no frame. `img-src file:` and `font-src file:` allow ANY file: URL, not only
+ * the files beside the page: what confines the browser to the session's own files is that the worker runs one session per container (its filesystem holds only
+ * that session and the image) and that the page checker below refuses every address that is not `assets/<declared file>` or `fonts/<our typeface>`.
+ */
 export const PDF_CSP = "default-src 'none'; img-src file:; font-src file:; style-src 'unsafe-inline'";
+/** The first bytes of every deck page, character for character: the doctype, the language, the charset and the policy. Nothing may come between. */
+export const PDF_HEAD = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${PDF_CSP}">`;
 
 export type PdfSpec = {
   version: 1;
@@ -111,6 +117,7 @@ export function checkDeckHtml(html: unknown, images: readonly string[]): string[
   const errors: string[] = [];
   if (html.length === 0 || html.length > PDF_LIMITS.htmlBytes) return [`deck.html must be from 1 byte to ${PDF_LIMITS.htmlBytes} bytes.`];
   if (/[\u0000]/.test(html)) return ["deck.html holds a NUL character."];
+  if (!html.startsWith(PDF_HEAD)) return ["The page must open with the fixed head: the doctype, the language, UTF-8 and the content security policy, in that order."];
   if (html.includes("<!--")) errors.push("deck.html must not hold comments.");
   const allowedImages = new Set(images.map((name) => `assets/${name}`));
   const allowedFonts = new Set(PDF_FONTS.map((name) => `fonts/${name}`));
