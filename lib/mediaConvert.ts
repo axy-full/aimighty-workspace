@@ -37,24 +37,46 @@ const TRANSFER_TIMEOUT_MS = 300_000;
 /** The output file's name modifier: MediaConvert names an output `<input name><modifier>.<container>`. */
 const NAME_MODIFIER = "_reframed";
 
-/**
- * MediaConvert's price, in the vendor's own unit: dollars per OUTPUT minute for the one job shape this file builds (H.264, one pass, one output). **The plan records no
- * MediaConvert figure (section 9 and M1 name none), and none was looked up for this file, so both are unset (`null`) and `mediaConvertUsd` refuses to quote until the lead
- * supplies them from AWS's pricing page for ap-south-1: TO CONFIRM.** Until then the adapter cannot be put on a door. Server-only like every rate here.
- */
-export const MEDIACONVERT_RATES: { usdPerOutputMinute: number | null; minimumBilledSeconds: number | null } = { usdPerOutputMinute: null, minimumBilledSeconds: null };
-
 /** A failure of the adapter. `rejectedBeforeWork`: AWS answered with a clear 4xx before it created anything (a refusal, a throttle), so the reservation can come back whole. */
 export class MediaConvertError extends Error {
   constructor(message: string, readonly kind: "config" | "refused" | "provider" | "failed", readonly status: number | null = null, readonly rejectedBeforeWork = false) { super(message); this.name = "MediaConvertError"; }
 }
 
-/** What one job costs for `outputSeconds` of output: whole seconds (rounded up, never under) at the per-minute rate, to the micro-dollar rounded up, at least the minimum. Refuses while no rate is set. */
-export function mediaConvertUsd(outputSeconds: number, rates: { usdPerOutputMinute: number | null; minimumBilledSeconds: number | null } = MEDIACONVERT_RATES): number {
-  if (rates.usdPerOutputMinute == null || rates.minimumBilledSeconds == null) throw new MediaConvertError("MediaConvert has no price set yet, so a job cannot be priced.", "config");
+/**
+ * MediaConvert's price, in the vendor's own unit: dollars per OUTPUT minute, Mumbai (`ap-south-1`), **Basic tier, AVC/H.264 single pass** (the one job shape this file builds), at the
+ * FIRST volume tier (never the cheaper later tiers: a quote is never under). **Verified against AWS's price list API for ap-south-1, 16 Oct 2026; confirm against the first invoice.**
+ * The rate depends on the output's resolution class and frame-rate band. Billing is per second, converted to fractional minutes, with a 10-second minimum per output
+ * (aws.amazon.com/mediaconvert/pricing). The resolution-class boundaries below are AWS's classes read by pixel count and are TO CONFIRM against its definition: SD is up to 720x576, HD
+ * up to 1920x1080 (a 1080x1920 portrait is HD: the same pixels), anything larger is 4K. Server-only like every rate here.
+ */
+export const MEDIACONVERT_RATES = {
+  tier: "basic",
+  usdPerOutputMinute: {
+    sd: { le30: 0.0075, le60: 0.0094, gt60: 0.0113 },
+    hd: { le30: 0.015, le60: 0.0188, gt60: 0.0225 },
+    uhd: { le30: 0.03, le60: 0.0375, gt60: 0.045 },
+  },
+  minimumBilledSeconds: 10,
+  /** Pixel counts at which a class ends (inclusive). */
+  sdMaxPixels: 720 * 576,
+  hdMaxPixels: 1920 * 1080,
+} as const;
+export type MediaConvertRates = typeof MEDIACONVERT_RATES;
+
+/** The resolution class and frame-rate band of an output, by AWS's classes. */
+export function mediaConvertBand(shape: { width: number; height: number; fps: number }, rates: MediaConvertRates = MEDIACONVERT_RATES): { size: "sd" | "hd" | "uhd"; rate: "le30" | "le60" | "gt60" } {
+  const { width, height, fps } = shape;
+  if (![width, height, fps].every((n) => Number.isFinite(n) && n > 0)) throw new MediaConvertError("A job is priced from its size and frame rate.", "config");
+  const pixels = width * height;
+  return { size: pixels <= rates.sdMaxPixels ? "sd" : pixels <= rates.hdMaxPixels ? "hd" : "uhd", rate: fps <= 30 ? "le30" : fps <= 60 ? "le60" : "gt60" };
+}
+
+/** What one job costs for `outputSeconds` of output at this size and frame rate: whole seconds (rounded up, never under), at least the minimum, at the per-minute rate, to the micro-dollar rounded up. */
+export function mediaConvertUsd(outputSeconds: number, shape: { width: number; height: number; fps: number }, rates: MediaConvertRates = MEDIACONVERT_RATES): number {
   if (!Number.isFinite(outputSeconds) || outputSeconds <= 0) throw new MediaConvertError("A job needs a length to be priced.", "config");
+  const band = mediaConvertBand(shape, rates);
   const billed = Math.max(rates.minimumBilledSeconds, Math.ceil(outputSeconds - 1e-9));
-  return Math.ceil((billed / 60) * rates.usdPerOutputMinute * 1e6 - 1e-6) / 1e6;
+  return Math.ceil((billed / 60) * rates.usdPerOutputMinute[band.size][band.rate] * 1e6 - 1e-6) / 1e6;
 }
 
 /* ── Settings ───────────────────────────────────────────────────────────────── */

@@ -32,17 +32,36 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 const deps = (f: typeof fetch, env = ENV) => ({ fetch: f, now: () => NOW, env });
 const INPUT = { workspaceId: "ws_sample", jobId: "job_sample_1", width: 1080, height: 1920 };
 
-test("the price: refused while no rate is set (the plan records none); with a rate, whole seconds round up, at least the minimum, to the micro-dollar rounded up", async () => {
+test("the price: the Basic-tier first-tier Mumbai rates (verified 16 Oct 2026), by resolution class and frame-rate band; per second rounded up to fractional minutes, at least 10 seconds, to the micro-dollar rounded up", async () => {
   const mc = await import("../../lib/mediaConvert");
-  expect(mc.MEDIACONVERT_RATES).toEqual({ usdPerOutputMinute: null, minimumBilledSeconds: null });
-  expect(() => mc.mediaConvertUsd(5)).toThrow(/no price set yet/);
-  const rates = { usdPerOutputMinute: 0.015, minimumBilledSeconds: 10 };
-  expect(mc.mediaConvertUsd(5, rates)).toBeCloseTo(0.0025, 9);
-  expect(mc.mediaConvertUsd(61, rates)).toBeCloseTo(0.01525, 9);
-  expect(mc.mediaConvertUsd(60.2, rates)).toBeCloseTo(0.01525, 9);
-  for (const seconds of [3.3, 10, 61, 123.4]) expect(mc.mediaConvertUsd(seconds, rates)).toBeGreaterThanOrEqual((Math.max(10, seconds) / 60) * 0.015 - 1e-12);
-  for (const bad of [0, -1, Number.NaN]) expect(() => mc.mediaConvertUsd(bad, rates)).toThrow(/length/);
-  expect(readFileSync("lib/mediaConvert.ts", "utf8")).toMatch(/TO CONFIRM[\s\S]{0,300}export const MEDIACONVERT_RATES|export const MEDIACONVERT_RATES[\s\S]{0,200}null/);
+  expect(mc.MEDIACONVERT_RATES.tier).toBe("basic");
+  expect(mc.MEDIACONVERT_RATES.usdPerOutputMinute).toEqual({
+    sd: { le30: 0.0075, le60: 0.0094, gt60: 0.0113 }, hd: { le30: 0.015, le60: 0.0188, gt60: 0.0225 }, uhd: { le30: 0.03, le60: 0.0375, gt60: 0.045 },
+  });
+  expect(mc.MEDIACONVERT_RATES.minimumBilledSeconds).toBe(10);
+  expect(readFileSync("lib/mediaConvert.ts", "utf8")).toMatch(/Verified against AWS's price list API for ap-south-1, 16 Oct 2026; confirm against the first invoice[\s\S]{0,1400}export const MEDIACONVERT_RATES/);
+  const hd = { width: 1080, height: 1920, fps: 30 };
+  /* A portrait 1080x1920 is HD (the same pixels as 1920x1080). */
+  expect(mc.mediaConvertBand(hd)).toEqual({ size: "hd", rate: "le30" });
+  expect(mc.mediaConvertBand({ width: 720, height: 576, fps: 25 })).toEqual({ size: "sd", rate: "le30" });
+  expect(mc.mediaConvertBand({ width: 722, height: 576, fps: 25 })).toEqual({ size: "hd", rate: "le30" });
+  expect(mc.mediaConvertBand({ width: 3840, height: 2160, fps: 60 })).toEqual({ size: "uhd", rate: "le60" });
+  expect(mc.mediaConvertBand({ ...hd, fps: 30.01 }).rate).toBe("le60");
+  expect(mc.mediaConvertBand({ ...hd, fps: 60.5 }).rate).toBe("gt60");
+  /* 5 s is billed as the 10 s minimum; 61 s is 61 seconds as fractional minutes. */
+  expect(mc.mediaConvertUsd(5, hd)).toBeCloseTo((10 / 60) * 0.015, 9);
+  expect(mc.mediaConvertUsd(10, hd)).toBeCloseTo((10 / 60) * 0.015, 9);
+  expect(mc.mediaConvertUsd(61, hd)).toBeCloseTo((61 / 60) * 0.015, 9);
+  expect(mc.mediaConvertUsd(60.2, hd)).toBeCloseTo((61 / 60) * 0.015, 9);
+  expect(mc.mediaConvertUsd(60, { ...hd, fps: 60 })).toBeCloseTo(0.0188, 9);
+  expect(mc.mediaConvertUsd(60, { width: 3840, height: 2160, fps: 24 })).toBeCloseTo(0.03, 9);
+  expect(mc.mediaConvertUsd(60, { width: 3840, height: 2160, fps: 120 })).toBeCloseTo(0.045, 9);
+  expect(mc.mediaConvertUsd(60, { width: 640, height: 480, fps: 25 })).toBeCloseTo(0.0075, 9);
+  /* Never under, and never the cheaper later volume tiers ($0.0053 and below). */
+  for (const seconds of [3.3, 10, 61, 123.4]) expect(mc.mediaConvertUsd(seconds, hd)).toBeGreaterThanOrEqual((Math.max(10, seconds) / 60) * 0.015 - 1e-12);
+  expect(JSON.stringify(mc.MEDIACONVERT_RATES)).not.toMatch(/0\.0053|0\.0038|0\.0019/);
+  for (const bad of [0, -1, Number.NaN]) expect(() => mc.mediaConvertUsd(bad, hd)).toThrow(/length/);
+  for (const bad of [{ ...hd, fps: 0 }, { ...hd, width: Number.NaN }]) expect(() => mc.mediaConvertUsd(10, bad)).toThrow(/size and frame rate/);
 });
 
 test("the settings: every name is the plan's, none can be an R2 or S3 key, Mumbai only, and each address is checked before any request", async () => {
