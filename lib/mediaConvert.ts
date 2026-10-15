@@ -87,8 +87,8 @@ type Config = { accessKeyId: string; secretAccessKey: string; region: string; ro
 const ROLE_ARN = /^arn:aws:iam::\d{12}:role\/[\w+=,.@/-]{1,512}$/;
 const QUEUE_ARN = /^arn:aws:mediaconvert:ap-south-1:\d{12}:queues\/[\w-]{1,128}$/;
 const BUCKET = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
-/** The account's own MediaConvert address: https, a label of letters and digits on mediaconvert.ap-south-1.amazonaws.com, no port, credentials, path or query. */
-const ENDPOINT_HOST = /^[a-z0-9]{6,32}\.mediaconvert\.ap-south-1\.amazonaws\.com$/;
+/** The account's own MediaConvert address: https, `<label>.mediaconvert.ap-south-1.amazonaws.com` or (newer accounts) the plain `mediaconvert.ap-south-1.amazonaws.com`, no port, credentials, path or query. */
+const ENDPOINT_HOST = /^(?:[a-z0-9]{6,32}\.)?mediaconvert\.ap-south-1\.amazonaws\.com$/;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** True when `raw` is exactly an https MediaConvert endpoint for this account's region and nothing more. */

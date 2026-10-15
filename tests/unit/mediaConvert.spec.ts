@@ -93,6 +93,16 @@ test("the settings: every name is the plan's, none can be an R2 or S3 key, Mumba
   expect(seen).toEqual([]);
   expect(mc.mediaConvertEndpoint("https://abcd1234.mediaconvert.ap-south-1.amazonaws.com")?.origin).toBe("https://abcd1234.mediaconvert.ap-south-1.amazonaws.com");
   expect(mc.mediaConvertEndpoint("https://abcd1234.mediaconvert.ap-south-1.amazonaws.com/")?.origin).toBe("https://abcd1234.mediaconvert.ap-south-1.amazonaws.com");
+  /* Newer accounts are answered with the plain regional address: accepted (https, ap-south-1 only), and nothing near it. */
+  expect(mc.mediaConvertEndpoint("https://mediaconvert.ap-south-1.amazonaws.com")?.origin).toBe("https://mediaconvert.ap-south-1.amazonaws.com");
+  for (const bad of ["http://mediaconvert.ap-south-1.amazonaws.com", "https://mediaconvert.us-east-1.amazonaws.com", "https://mediaconvert.ap-south-1.amazonaws.com.evil.com", "https://evilmediaconvert.ap-south-1.amazonaws.com", "https://x.y.mediaconvert.ap-south-1.amazonaws.com", "https://mediaconvert.ap-south-1.amazonaws.com:8443", "https://mediaconvert.ap-south-1.amazonaws.com/x"])
+    expect(mc.mediaConvertEndpoint(bad), bad).toBeNull();
+  {
+    const plain = fake(json(200, { Endpoints: [{ Url: "https://mediaconvert.ap-south-1.amazonaws.com" }] }), json(200, { Job: { Id: "job-plain-1" } }));
+    const made = await mc.createReframeJob(INPUT, deps(plain.f, { ...ENV, MEDIACONVERT_ENDPOINT: undefined, MEDIACONVERT_ACCESS_KEY_ID: "AKIAPLAINHOST" }));
+    expect(made.id).toBe("job-plain-1");
+    expect(plain.seen.map((s) => s.url)).toEqual(["https://mediaconvert.ap-south-1.amazonaws.com/2017-08-29/endpoints", "https://mediaconvert.ap-south-1.amazonaws.com/2017-08-29/jobs"]);
+  }
 });
 
 test("object keys have one shape, `<workspace>/<job>/...`, and nothing free-form reaches the bucket", async () => {
