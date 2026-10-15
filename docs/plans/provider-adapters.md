@@ -1,5 +1,7 @@
 # Provider adapters as registry tools: sync.so, Sarvam, AWS Rekognition, Google Cloud Vision, Recraft, Black Forest Labs, Runway, and Topaz (plan, 14 Oct; owner answers added)
 
+> **15 Oct 2026, 22:15 IST:** section 9 (the setting-name table) is updated to the owner's FINAL ENGINE STACK: every provider with its key name, address, switch and extras, what the old table was missing, the site setting for "engines on" and the house-cap finding. The rest of this plan is as of 14 Oct and is not rewritten here.
+
 The owner asked for this on 14 Oct: plans first, no paid calls. This plan was read from release/1 at 890d559c. The providers' public pages were read on 14 Oct 2026; the links are at the end.
 
 **No provider API was called while writing this,** not even a free one, and no key was used. **Every price below is a sample / proposal.** The owner approves every rate-card row. Screens are not specified here: anything a person will see **waits for Claude Design / v18**.
@@ -521,24 +523,108 @@ Both sides double at 60 fps: fal by its rule, Topaz because it bills by frame. T
 
 ## 9. Coolify setting names, per provider (names only)
 
+**Updated 15 Oct 2026, 22:15 IST for the owner's FINAL ENGINE STACK** (`docs/redesign-plan.md` on `redesign/integration`). Names only: no value, key or secret is written here. The owner sets each in Coolify (production, runtime only, locked); lanes never touch env. Names marked **set** were reported as set by the owner (19:30 name check; 22:15 for Recraft); names marked **new (proposed)** are proposals for the owner to confirm before any PR uses them.
+
 **How the names were chosen:**
-- Names already in the code or the scope are reused: `FAL_KEY` (`lib/providers.ts:139`), `RUNWAY_API_KEY` and `RECRAFT_API_KEY` (SOW 4 Oct §5.1), and `GOOGLE_VISION_API_KEY` (already set; no code reads it yet).
-- New ones follow the code's pattern: `<VENDOR>_API_KEY` for the key, and `<VENDOR>_BASE_URL` for the address, as in `FAL_BASE_URL` and `ELEVENLABS_BASE_URL` (`lib/providers.ts:116`, `:140`; read at `:327`). The base URL is optional; it exists so a local echo server can stand in during tests.
-- Every new provider gets an on/off switch, `<VENDOR>_ENABLED=1`. Unset means off.
-- I found no `TOPAZ_*` or `BFL_*` setting in the code. (`TOPAZ_IMAGE_MODEL` and `TOPAZ_IMAGE_PRESETS` are code constants in `lib/topaz.ts`, not settings.)
+- Names already in the code or the scope are reused. They were read from `release/1` at 663fb243 (`lib/providers.ts`, `lib/gemini.ts`, `lib/textRoute.ts`, `lib/engines/*`): `ARK_*`, `GEMINI_*`, `OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `HF_*`, `FAL_*`, `ELEVENLABS_*`. Names the scope or the owner already used: `RUNWAY_API_KEY`, `RECRAFT_API_KEY`, `BFL_API_KEY`, `TOPAZ_API_KEY`, `SYNC_API_KEY`, `SARVAM_API_KEY`, `SARVAM_USD_PER_INR`, the three `REKOGNITION_*` and `GOOGLE_VISION_API_KEY`.
+- New ones follow the code's pattern: `<VENDOR>_API_KEY` for the key, and `<VENDOR>_BASE_URL` for the address, as in `FAL_BASE_URL` and `ELEVENLABS_BASE_URL` (`lib/providers.ts:116`, `:140`). The base URL is optional; it exists so a local echo server can stand in during tests, and a default is in code.
+- Every new engine gets its own kill switch, `<VENDOR>_ENABLED=1` (owner's rule 15 Oct: "its own kill switch"). Unset means off. Which workspaces see an engine that is switched on is a site setting, not an env name (see "The site setting" below).
+- I found no `TOPAZ_*` or `BFL_*` setting in the code on `release/1`; no adapter for sync.so, Sarvam, BFL, Runway, Recraft, Vision, Rekognition, MediaConvert, Veo, the Remotion worker or trends is merged yet, so every name for them is read from this plan and the owner's notes, not from code.
+
+### A. In use today (names in the code on `release/1`)
 
 | Provider | Key (secret) | Address (optional) | Switch | Other |
 |---|---|---|---|---|
-| sync.so | `SYNC_API_KEY` | `SYNC_BASE_URL` | `SYNC_ENABLED` | `SYNC_WEBHOOK_SECRET` (only when webhooks are turned on, Y4) |
-| Sarvam | `SARVAM_API_KEY` | `SARVAM_BASE_URL` | `SARVAM_ENABLED` | `SARVAM_USD_PER_INR` (the rupee rate the owner sets) |
-| AWS Rekognition | `REKOGNITION_ACCESS_KEY_ID`, `REKOGNITION_SECRET_ACCESS_KEY` | `REKOGNITION_REGION` (`ap-south-1`) | `REKOGNITION_ENABLED` | — |
-| Google Cloud Vision | `GOOGLE_VISION_API_KEY` (already set) | `GOOGLE_VISION_BASE_URL` | `GOOGLE_VISION_ENABLED` | — |
-| Recraft | `RECRAFT_API_KEY` | `RECRAFT_BASE_URL` | `RECRAFT_ENABLED` | — |
-| Black Forest Labs | `BFL_API_KEY` | `BFL_BASE_URL` (unset: B1 defaults to `https://api.eu.bfl.ai`; if set, an `https://` `*.bfl.ai` host) | `BFL_ENABLED` | — |
-| Runway (standby) | `RUNWAY_API_KEY` | `RUNWAY_BASE_URL` | `RUNWAY_ENABLED` (house workspace only) | — |
-| Topaz | `TOPAZ_API_KEY` (set: production only, locked, not in previews) | `TOPAZ_BASE_URL` | `TOPAZ_ENABLED` | — (`FAL_KEY` stays for Kling, Bria and Luma reframe) |
+| BytePlus (Seedance 2.5 / 2.0, ModelArk text) | `ARK_API_KEY` | `ARK_BASE_URL` | none today (the engine is live) | `ARK_TEXT_MODEL` |
+| Google Gemini API (Nano Banana Pro and 2, Gemini text) | `GEMINI_API_KEY` | `GEMINI_BASE_URL` | none today | `GEMINI_IMAGE_MODEL`, `GOOGLE_SAFETY_THRESHOLD` (named only in `tests/unit/geminiSafety.spec.ts`; no file under `lib/` reads either on `release/1` at 663fb243; the owner reports neither is set in Coolify; nothing to set) |
+| OpenAI (GPT Image) | `OPENAI_API_KEY` | `OPENAI_BASE_URL` | none today | |
+| Anthropic (Claude text) | `ANTHROPIC_API_KEY` | none (fixed origin, `lib/textRoute.ts`) | `TEXT_DIRECT` (a list of vendors that go direct; Google always does) | `ANTHROPIC_PROMPT_MODEL`, `ANTHROPIC_PROMPT_EFFORT` |
+| xAI (Grok text, Grok Imagine, voice) | `XAI_API_KEY` | `XAI_BASE_URL` | `TEXT_DIRECT` for text | `XAI_MODEL`, `XAI_RATE_USD_PER_MTOK` |
+| ElevenLabs | `ELEVENLABS_API_KEY` | `ELEVENLABS_BASE_URL` | none today | `ELEVENLABS_RATES`, `ELEVENLABS_SOURCE_LIMIT_BYTES`, `ELEVENLABS_OUTPUT_LIMIT_BYTES`, `ELEVEN_SFX_CREDITS`, `ELEVEN_MUSIC_CREDITS_PER_MINUTE` |
+| Higgsfield (API key only, rule 10/16) | `HF_API_KEY_ID` and `HF_API_KEY_SECRET`, or `HF_CREDENTIALS` | `HF_BASE_URL` (default `https://api.higgsfield.ai`) | none for the API key (the `HF_*_ENABLED` names in the code belong to the sign-in features, which are off) | |
+| fal (Kling 3.0 now, Kling 4.0 on fal when live; identity training; Topaz and Bria until each goes direct) | `FAL_KEY` | `FAL_BASE_URL` | none today; **Kling 4.0:** `KLING4_ENABLED` (new, proposed; 3.0 Pro until then) | `FAL_TRAINER`, `FAL_TRAIN_STEPS`, `FAL_TRAIN_USD_PER_STEP`, `FAL_RENDER_USD_PER_MP` |
+| Stripe (planned) | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | | `PAYMENT_PROVIDER` | |
+| Resend, Liveblocks, R2, Turso | `RESEND_API_KEY`; `LIVEBLOCKS_SECRET_KEY`; `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` (+ `R2_ACCOUNT_ID`, `R2_BUCKET`); `TURSO_AUTH_TOKEN` | `RESEND_BASE_URL`; `TURSO_DATABASE_URL` | | unchanged by the new stack |
 
-**Why the AWS names cannot collide.** None of the Rekognition names starts with `AWS_`, `R2_`, `S3_`, `STORAGE_` or `BLOB_`.
+### B. Keys the owner has already set; the adapter is wired now
+
+| Provider | Key (secret) | Address (optional) | Switch | Other |
+|---|---|---|---|---|
+| sync.so (lipsync-2-pro; sync-3 for hero and 4K) | `SYNC_API_KEY` (**set**) | `SYNC_BASE_URL` (default `https://api.sync.so`) | `SYNC_ENABLED` | `SYNC_WEBHOOK_SECRET` (only when webhooks are turned on, Y4) |
+| Sarvam (Bulbul, Saaras, dubbing) | `SARVAM_API_KEY` (**set**) | `SARVAM_BASE_URL` (default `https://api.sarvam.ai`) | `SARVAM_ENABLED` | `SARVAM_USD_PER_INR` (**set**; the rupee rate the owner sets, reviewed monthly) |
+| Black Forest Labs (FLUX 3, FLUX.2 identity; replaces fal flux-lora) | `BFL_API_KEY` (**set**) | `BFL_BASE_URL` (unset: B1 defaults to `https://api.eu.bfl.ai`; if set, an `https://` `*.bfl.ai` host) | `BFL_ENABLED` | |
+| Runway (Act-Two, Aleph 2, Gen-4.5) | `RUNWAY_API_KEY` (named in SOW 4 Oct §5.1; owner 22:15: keys set, name to confirm in the name-only check) | `RUNWAY_BASE_URL` (default `https://api.dev.runwayml.com/v1`) | `RUNWAY_ENABLED` (house workspace only until training-free terms) | |
+| Topaz, direct (T0 to T3) | `TOPAZ_API_KEY` (**set**: production only, locked, not in previews) | `TOPAZ_BASE_URL` | `TOPAZ_ENABLED` | `FAL_KEY` stays for Kling and, until each goes direct, Bria |
+| AWS Rekognition (Mumbai) | `REKOGNITION_ACCESS_KEY_ID`, `REKOGNITION_SECRET_ACCESS_KEY` (**set**) | `REKOGNITION_REGION` (**set**; `ap-south-1`) | `REKOGNITION_ENABLED` | The IAM user is limited to `CompareFaces` and `DetectFaces` (see "AWS MediaConvert" below) |
+| Google Cloud Vision | `GOOGLE_VISION_API_KEY` (**set**; no code reads it yet) | `GOOGLE_VISION_BASE_URL` | `GOOGLE_VISION_ENABLED` | |
+| Recraft (V4.1 and V3) | `RECRAFT_API_KEY` (**set** 15 Oct 22:15) | `RECRAFT_BASE_URL` (default `https://external.api.recraft.ai/v1`) | `RECRAFT_ENABLED` | |
+
+### C. New engines: names proposed (owner confirms; keys not yet needed unless marked)
+
+| Provider | Key (secret) | Address (optional) | Switch | Other |
+|---|---|---|---|---|
+| Bria, direct (replaces Bria on fal) | `BRIA_API_KEY` (**new, proposed**; the owner holds no Bria direct key yet, so one is needed) | `BRIA_BASE_URL` | `BRIA_ENABLED` | |
+| Google Veo 3.1 | **No new key.** Veo is served by the Gemini API, the host `lib/gemini.ts:36` already reads, so the adapter is expected to use the existing `GEMINI_API_KEY` and `GEMINI_BASE_URL`. This is not yet in code (there is no Veo row in `lib/models.ts` or `lib/vendorRates.ts`) and is **to be confirmed against Google's own page in the Veo PR** | existing `GEMINI_BASE_URL` | `VEO_ENABLED` (new, proposed) | |
+| Google Nano Banana 2.1 and Gemini 3.x (moments, cutdown planning, vision judge) | existing `GEMINI_API_KEY` | existing `GEMINI_BASE_URL` | `NANOBANANA21_ENABLED` and `GEMINI3_ENABLED` (new, proposed; one per engine PR) | model names live in config and the model rows, never in the design |
+| AWS Elemental MediaConvert, Smart Crop reframe (replaces Luma reframe) | see "AWS MediaConvert" below | `MEDIACONVERT_ENDPOINT` | `MEDIACONVERT_ENABLED` | `MEDIACONVERT_REGION`, `MEDIACONVERT_ROLE_ARN`, `MEDIACONVERT_BUCKET` |
+| Pro pick menu (Seedance 2.5, Veo 3.1, Kling 4.0, Runway Gen-4.5) | none | none | none | names live in config, never in the design |
+
+#### AWS MediaConvert: what it needs that Rekognition does not
+Rekognition is one stateless call with a key pair. MediaConvert is a job service that reads and writes S3. It needs, in AWS Mumbai (`ap-south-1`):
+- **An IAM role that MediaConvert assumes** to read the input and write the output. Its ARN is `MEDIACONVERT_ROLE_ARN` (not a secret, but treated as one).
+- **An S3 bucket in `ap-south-1`** for the job's input and output: `MEDIACONVERT_BUCKET`. Private, no public access, an expiry rule on its objects (owner action) so AWS keeps nothing longer than needed. Our code copies the finished clip into it, then copies the cropped result back under the workspace's own R2 prefix, so every Blob path stays prefixed by the workspace (ground rule 2).
+- **The account's MediaConvert endpoint:** a per-account address (found with `DescribeEndpoints`). Either the adapter discovers it once, or the owner sets it as `MEDIACONVERT_ENDPOINT`. `MEDIACONVERT_REGION` is `ap-south-1`.
+- **A queue ARN, only if the default queue is not used:** `MEDIACONVERT_QUEUE_ARN` (optional).
+- **Keys.** The Rekognition key pair is limited to `CompareFaces` and `DetectFaces`, so it cannot create a job. Either grant that IAM user MediaConvert (`CreateJob`, `GetJob`, `DescribeEndpoints`), `iam:PassRole` on the role above, and S3 `PutObject`/`GetObject` on the bucket, or, **recommended (least privilege), use a separate key pair**: `MEDIACONVERT_ACCESS_KEY_ID` and `MEDIACONVERT_SECRET_ACCESS_KEY`. The recommendation is the separate pair, so a Rekognition key can never write to S3.
+- None of these names starts with `AWS_` (see the collision note below).
+
+### D. Our own server
+
+| What | Key or secret | Address | Switch | Other |
+|---|---|---|---|---|
+| Remotion + ffmpeg worker (`docs/plans/remotion.md` on `redesign/integration`) | `REMOTION_WORKER_SECRETS` on the app, and `REMOTION_WORKER_SECRET` on the worker's own stack (the same value; one secret per worker) | `REMOTION_WORKER_URLS` (the worker's internal address) | `REMOTION_EXPORTS` | limits are in `compose.yaml` (3 CPU, 8 GB), not env |
+| Chromium PDF (treatment, pitch, PPM decks) | none if it runs on the same Remotion worker (it already has Chromium); if it gets its own worker, `PDF_WORKER_URLS` and `PDF_WORKER_SECRETS` (new, proposed, mirroring Remotion) | | `PDF_EXPORTS` (new, proposed) | |
+| Blender relay (#757, already merged) | existing `ASTRA_*` names (`ASTRA_WORKER_URLS` and the rest; see `ops/render-worker/README.md`) | | | unchanged |
+
+### E. Slice 5: viral trend panel (`docs/plans/viral-trends.md`)
+
+One provider per platform, each optional, behind one `TRENDS_ENABLED` switch (the plan's own names, section 4):
+
+| Source | Key (secret) | Other |
+|---|---|---|
+| YouTube Data API (mostPopular, region IN) | `YOUTUBE_API_KEY` | |
+| Google Trends via SerpApi | `SERPAPI_API_KEY` | |
+| TikTok signals via Zyla (hashtags, sounds, formats; never videos) | `TRENDS_TIKTOK_API_KEY` | `TRENDS_TIKTOK_PROVIDER=zyla` |
+| Instagram hashtag search via Meta (after app review) | `META_IG_ACCESS_TOKEN` (new, proposed) | `META_IG_BUSINESS_ACCOUNT_ID` (new, proposed) |
+| The feature | | `TRENDS_ENABLED`; optional `TRENDS_DAILY_CALL_BUDGET` (default 50), `TRENDS_CACHE_TTL_HOURS` (default 6), `TRENDS_REGIONS` (default `IN,US,GB,global`) |
+
+The plan's single `TRENDS_PROVIDER` and `TRENDS_API_KEY` are replaced by the per-platform names above (its 15 Oct note); `ZYLA_API_KEY` would read more plainly than `TRENDS_TIKTOK_API_KEY`, which is the owner's call. None of these is needed until Slice 3 is done.
+
+### The site setting (a platform setting, not an env name)
+
+"On for the house workspace (ws_legacy) and any workspace I list in the site setting; OFF for customer workspaces until launch" (owner, 15 Oct 22:15). The site settings are one row in the platform database (`platform_layer`, key `site`; `lib/site/settings.ts`), changed only by the platform owner from /admin, with no migration and no env. **Proposed name: `enginesOnWorkspaces`**, a list of workspace ids (well-formed, distinct, at most 50), empty by default, the same shape as `newInterfaceWorkspaces`. An engine is offered to a workspace only when **its `<VENDOR>_ENABLED` switch is on** (the global kill switch) **and** the workspace is the house workspace or is listed in `enginesOnWorkspaces`. Adding the field is a small change to `SiteSettings`, `cleanSite` and `sitePatch` and a control in /admin; the row already exists. One list covers every engine in the stack; a per-engine list is not proposed. At launch the owner opens engines to all by a platform-layer default, not by listing everyone.
+
+### The house cap (no env name; a code finding)
+
+The owner's cap is $500 a month on the house workspace, warning at 80%. **Neither needs a migration.** The per-workspace cap already exists as the column `workspaces.allowance_usd`, set from /admin (`lib/allowanceDesk.ts`), and `PLATFORM_ALLOWANCE_USD` is only the default for customer workspaces. **But `allowanceUsd()` returns no cap at all for the house workspace** (`lib/allowance.ts`: "The house workspace has none (`lib/houseWorkspace.ts`)"), so setting the column on the house row would change nothing today. The cap therefore needs a small code change (the house workspace reads its own `allowance_usd` when one is stored, and none otherwise), plus the 80% warning, which is not in the code on `release/1`. No new env name and no migration. A new env name such as `HOUSE_ALLOWANCE_USD` is not recommended: the column is already the one place the desk reads and writes.
+
+### What was missing from the old table
+
+The table in this section before 15 Oct 22:15 had eight rows (sync.so, Sarvam, Rekognition, Vision, Recraft, BFL, Runway, Topaz). Each of the following is new:
+1. **Providers in use that had no row**, with names read from the code: BytePlus (`ARK_API_KEY`, `ARK_BASE_URL`, `ARK_TEXT_MODEL`), Google Gemini API (`GEMINI_API_KEY`, `GEMINI_BASE_URL`; the two option names are not read by the code), OpenAI (`OPENAI_API_KEY`, `OPENAI_BASE_URL`), Anthropic (`ANTHROPIC_API_KEY`, `TEXT_DIRECT`), xAI (`XAI_API_KEY`, `XAI_BASE_URL`), ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`), Higgsfield (`HF_API_KEY_ID` + `HF_API_KEY_SECRET` or `HF_CREDENTIALS`, `HF_BASE_URL`), fal (`FAL_KEY`, `FAL_BASE_URL`).
+2. **Bria, direct:** `BRIA_API_KEY`, `BRIA_BASE_URL`, `BRIA_ENABLED`. Needs a new key; Bria runs on fal today.
+3. **Google Veo 3.1:** no new key (the Gemini key and host), `VEO_ENABLED`, to be confirmed.
+4. **Google Nano Banana 2.1 and Gemini 3.x:** the Gemini key, `NANOBANANA21_ENABLED`, `GEMINI3_ENABLED`.
+5. **Kling 4.0 on fal:** `FAL_KEY` (existing), `KLING4_ENABLED`.
+6. **AWS MediaConvert:** `MEDIACONVERT_ROLE_ARN`, `MEDIACONVERT_BUCKET`, `MEDIACONVERT_REGION`, `MEDIACONVERT_ENDPOINT`, `MEDIACONVERT_QUEUE_ARN`, `MEDIACONVERT_ENABLED`, and a key pair (recommended separate: `MEDIACONVERT_ACCESS_KEY_ID`, `MEDIACONVERT_SECRET_ACCESS_KEY`), because the Rekognition user is limited to two calls and the job needs an IAM role, an S3 bucket in Mumbai and the account's endpoint.
+7. **The Remotion worker:** `REMOTION_EXPORTS`, `REMOTION_WORKER_URLS`, `REMOTION_WORKER_SECRETS`, and the worker stack's `REMOTION_WORKER_SECRET`.
+8. **Chromium PDF decks:** `PDF_EXPORTS` (and `PDF_WORKER_URLS`, `PDF_WORKER_SECRETS` only if it gets its own worker).
+9. **Slice 5 trend sources:** `YOUTUBE_API_KEY`, `SERPAPI_API_KEY`, `TRENDS_TIKTOK_API_KEY` + `TRENDS_TIKTOK_PROVIDER`, `META_IG_ACCESS_TOKEN`, `META_IG_BUSINESS_ACCOUNT_ID`, `TRENDS_ENABLED`, and the three optional tuning names.
+10. **The site setting `enginesOnWorkspaces`** (not an env name).
+11. **The house cap:** no env name, but a code gap (the house workspace has no cap today).
+12. **Names that were marked "set" or confirmed since the old table:** `SYNC_API_KEY`, `SARVAM_API_KEY`, `SARVAM_USD_PER_INR`, `BFL_API_KEY`, `TOPAZ_API_KEY`, the three `REKOGNITION_*` and `GOOGLE_VISION_API_KEY` (owner, 15 Oct 19:30), and `RECRAFT_API_KEY` (22:15). The old table's `BFL_ENABLED`, `REKOGNITION_ENABLED`, `PROMPT_MODELS` and `GATEWAY_PROMPT_MODELS` were reported missing from the production container on 15 Oct 19:30; the two `*_PROMPT_MODELS` names are not in this table (gateway text is being retired; see `TEXT_DIRECT`).
+
+**Why the AWS names cannot collide.** None of the Rekognition or MediaConvert names starts with `AWS_`, `R2_`, `S3_`, `STORAGE_` or `BLOB_`.
 - **What the storage code reads:**
   - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT`, `STORAGE_BACKEND` and `BLOB_READ_WRITE_TOKEN` (`lib/storage/*.ts`);
   - the same R2 names in the backup and copy scripts (`scripts/ops/blob-to-r2.mjs:51-56`, `scripts/ops/backup-lib.mjs:392`).
@@ -554,7 +640,7 @@ Both sides double at 60 fps: fal by its rule, Topaz because it bills by frame. T
   - checksums and compression: `AWS_REQUEST_CHECKSUM_CALCULATION`, `AWS_RESPONSE_CHECKSUM_VALIDATION`, `AWS_DISABLE_REQUEST_COMPRESSION`, `AWS_REQUEST_MIN_COMPRESSION_SIZE_BYTES`;
   - S3: `AWS_S3_USE_ARN_REGION`, `AWS_S3_DISABLE_MULTIREGION_ACCESS_POINTS`, `AWS_S3_DISABLE_EXPRESS_SESSION_AUTH`;
   - the rest: `AWS_ACCOUNT_ID`, `AWS_ACCOUNT_ID_ENDPOINT_MODE`, `AWS_AUTH_SCHEME_PREFERENCE`, `AWS_SIGV4A_SIGNING_REGION_SET`, `AWS_CA_BUNDLE`, `AWS_DISABLE_HOST_PREFIX_INJECTION`, `AWS_ENABLE_ENDPOINT_DISCOVERY`, `AWS_SDK_UA_APP_ID`, `AWS_STS_REGIONAL_ENDPOINTS`.
-- **No `AWS_*` setting should be added to Coolify for this work.** The Rekognition adapter signs with `signRequest` (`lib/storage/r2.ts:115-116`) and reads only the `REKOGNITION_*` names. So neither the storage client nor any AWS SDK default can pick the Rekognition keys up, and the Rekognition code can never pick up the R2 keys.
+- **No `AWS_*` setting should be added to Coolify for this work.** The Rekognition and MediaConvert adapters sign with `signRequest` (`lib/storage/r2.ts:115-116`) and read only the `REKOGNITION_*` and `MEDIACONVERT_*` names. So neither the storage client nor any AWS SDK default can pick those keys up, and the AWS adapters can never pick up the R2 keys.
 
 ## 10. Order and PRs
 
