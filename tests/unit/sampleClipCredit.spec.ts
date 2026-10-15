@@ -74,6 +74,17 @@ async function publishPreviews(ws: TenantWorkspace) {
   await inTenant(ws, async () => { const { db } = await import("../../lib/db"); await db().execute("UPDATE generations SET stored_url = '/api/platform/previews/move-pan'"); });
 }
 
+test("the client-safe constant is the URL the starter's seed writes, and the credit's client files import nothing that reaches the vendor rate tables", async () => {
+  const { SAMPLE_CLIP_URL } = await import("../../lib/sampleClip");
+  const { DEMO_FIXTURE_CLIP_URL } = await import("../../lib/demoProduction");
+  expect(SAMPLE_CLIP_URL).toBe(DEMO_FIXTURE_CLIP_URL);
+  const { readFileSync } = await import("node:fs");
+  for (const file of ["lib/sampleClip.ts", "lib/useSampleClip.ts", "components/ui/SampleClipCredit.tsx"]) {
+    const imports = [...readFileSync(file, "utf8").matchAll(/^import[^"']*["']([^"']+)["']/gm)].map((m) => m[1]);
+    expect(imports.filter((i) => /demoProduction|vendorRates|vendorPricing|credit(s|Terms)|models|platformLayer|starter$/.test(i)), `${file} imports`).toEqual([]);
+  }
+});
+
 test("only the fallback clip carries the credit: the URL the seed writes decides, and a published platform preview has none", async () => {
   const { demoMediaUrl } = await import("../../lib/demoProduction");
   const { isSampleClipUrl, SAMPLE_CLIP_CREDIT, SAMPLE_CLIP_CREDIT_TEXT, sampleClipNotice } = await import("../../lib/sampleClip");

@@ -1,12 +1,11 @@
-import { DEMO_FIXTURE_CLIP_URL } from "./demoProduction";
-
 /**
  * The credit the starter production's sample clip carries (owner, 15 Oct 22:00: "add the Big Buck Bunny credit (CC BY 3.0, Blender Foundation) to the starter
  * production"). `public/fixtures/clip.mp4` is Big Buck Bunny, (c) 2008 Blender Foundation, CC BY 3.0 (public/fixtures/README.md). It reaches a workspace only as the starter
  * production's fallback picture, when the platform's neutral previews are not published (lib/starter.ts › demoMediaUrl). Wherever that clip shows or leaves in a file, the
  * credit goes with it: one short line, the title linking to the source and "CC BY 3.0" to the licence.
  */
-export const SAMPLE_CLIP_URL = DEMO_FIXTURE_CLIP_URL;
+/* A constant of its own: this file is read by the browser, and lib/demoProduction.ts (where the seed names the same URL, DEMO_FIXTURE_CLIP_URL) reaches the vendor rate tables, which no client chunk may hold (tests/unit/bundle.spec.ts). tests/unit/sampleClipCredit.spec.ts holds the two equal. */
+export const SAMPLE_CLIP_URL = "/fixtures/clip.mp4";
 export const SAMPLE_CLIP_CREDIT = {
   title: "Big Buck Bunny",
   line: "Big Buck Bunny © Blender Foundation, CC BY 3.0",
