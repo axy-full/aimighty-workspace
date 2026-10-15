@@ -934,3 +934,15 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Price verified on cloud.google.com/vision/pricing: $1.50 per 1,000 after 1,000 free per month; the PR ignores the free tier.
   - Opus review started.
   - Lane D next: Kling 4.0 plus the Pro-pick config.
+- **16 Oct 03:16 IST.** Lane B:
+  - #782 a86cc188 (MediaConvert Mumbai rates; plain endpoint accepted).
+  - New #784 Nano Banana 2.1 (6c51205d, base #771, NEEDS AKSHAY): model row gemini-nano-banana-2.1, NANOBANANA21_ENABLED, $0.0336 / $0.0504 / $0.1134 per 1K / 2K / 4K.
+  - Gemini 3.x NOT built; owner decision needed:
+    - Text prices come from lib/modelCatalog.json, which has no dated steps, so 3.8 Flash's 1 Jan 2027 doubling can't be encoded. Choose: a dated step in the price path, a snapshot refresh on 1 Jan, or accept the under-quote.
+    - Direct routing for gemini-3.8-flash is pinned off by guard tests (textDirectRequests, geminiAutoFallback) because the key didn't list it on 11 Oct. Owner: does the key list it now?
+    - Moments, cutdown planning and the vision judge as registry tools wait for A1.
+  - Gap found in the 22:15 stack: "BFL (FLUX 3 and FLUX.2 identity, replacing fal flux-lora)". #778 only has FLUX.2 create/edit. Lane B is now on FLUX 3 Image (+ Klein) and FLUX.2 identity, behind its own switch.
+    - FLUX 3 prices from BFL's data, per image: 768 4.1 cr, 1k 4.8, 1.5k 7, 2k 10, 4k 60.7; Klein 0.8-3.6.
+    - FLUX 3 Video also exists; not building it now.
+  - Also from the 22:15 note: Slice 4 ("later") items are built only "on a client need or a bake-off win", so none start without the owner.
+  - The rule reads "No separate paid qualification run; the team's first real use is the test." Every "TO CONFIRM in the first qualification run" note therefore means the first house use.
