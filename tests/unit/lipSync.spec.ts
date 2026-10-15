@@ -430,9 +430,9 @@ test("the fixture end to end (ENGINE_MOCK): the default adapter submits, polls, 
 test("the adapter: the requests it makes, the statuses it reads, the base address it accepts, and what it refuses", async () => {
   const sync = await import("../../lib/syncso");
   delete process.env.ENGINE_MOCK;
-  const calls: { url: string; method: string; headers: Record<string, string>; body: string }[] = [];
+  const calls: { url: string; method: string; headers: Record<string, string>; body: string; redirect?: string }[] = [];
   const reply = (status: number, json: unknown) => (async (url: unknown, init?: RequestInit) => {
-    calls.push({ url: String(url), method: String(init?.method), headers: (init?.headers ?? {}) as Record<string, string>, body: typeof init?.body === "string" ? init.body : "" });
+    calls.push({ url: String(url), method: String(init?.method), headers: (init?.headers ?? {}) as Record<string, string>, body: typeof init?.body === "string" ? init.body : "", redirect: init?.redirect });
     return new Response(status === 204 ? null : typeof json === "string" ? json : JSON.stringify(json), { status });
   }) as never;
   const before = { key: process.env.SYNC_API_KEY, base: process.env.SYNC_BASE_URL };
@@ -446,8 +446,8 @@ test("the adapter: the requests it makes, the statuses it reads, the base addres
     expect(JSON.parse(calls[0].body)).toEqual({ model: "lipsync-2-pro", input: [{ type: "video", assetId: "va" }, { type: "audio", assetId: "aa" }], options: { sync_mode: "loop" } });
     /* Statuses: the vendor's words, upper case; REJECTED is a failure; a word we do not know is "processing", never a verdict. */
     for (const [word, want] of [["PENDING", "pending"], ["PROCESSING", "processing"], ["COMPLETED", "completed"], ["FAILED", "failed"], ["REJECTED", "failed"], ["SOMETHING_NEW", "processing"]] as const)
-      expect((await sync.generationStatus("job_9", { fetch: reply(200, { status: word, outputUrl: "https://cdn.example.invalid/o.mp4", outputDuration: 4.5 }) })).status, word).toBe(want);
-    expect(await sync.generationStatus("job_9", { fetch: reply(200, { status: "COMPLETED", outputUrl: "https://cdn.example.invalid/o.mp4", outputDuration: 4.5 }) })).toEqual({ id: "job_9", status: "completed", outputUrl: "https://cdn.example.invalid/o.mp4", outputDuration: 4.5 });
+      expect((await sync.generationStatus("job_9", { fetch: reply(200, { status: word, outputUrl: "https://cdn.sync.so/o.mp4", outputDuration: 4.5 }) })).status, word).toBe(want);
+    expect(await sync.generationStatus("job_9", { fetch: reply(200, { status: "COMPLETED", outputUrl: "https://cdn.sync.so/o.mp4", outputDuration: 4.5 }) })).toEqual({ id: "job_9", status: "completed", outputUrl: "https://cdn.sync.so/o.mp4", outputDuration: 4.5 });
     /* A refusal before work is a 4xx (not 408/429); a 5xx, a timeout and a throttle are not. */
     for (const [status, early] of [[400, true], [422, true], [402, true], [408, false], [429, false], [500, false], [503, false]] as const) {
       const failed = await sync.submitLipSync({ model: "lipsync-2", videoAssetId: "va", audioAssetId: "aa", syncMode: "bounce" }, { fetch: reply(status, { message: "nope" }) }).then(() => null, (e) => e);
@@ -461,8 +461,29 @@ test("the adapter: the requests it makes, the statuses it reads, the base addres
     expect(await sync.deleteGeneration("job_9", { fetch: reply(409, { message: "still processing" }) }).then(() => null, (e) => e)).toBeInstanceOf(sync.SyncError);
     expect(calls.at(-1)!.url).toBe("https://api.sync.so/v2/generations/job_9");
     /* The output is fetched from an https address only. */
-    expect(await sync.downloadOutput({ id: "x", url: "http://cdn.example.invalid/o.mp4" }, { fetch: reply(200, "bytes") }).then(() => null, (e) => e)).toBeInstanceOf(sync.SyncError);
-    expect((await sync.downloadOutput({ id: "x", url: "https://cdn.example.invalid/o.mp4" }, { fetch: reply(200, "bytes") })).toString()).toBe("bytes");
+    /* The output is fetched only from an https host on sync.so, no port or credentials, and never past a redirect. */
+    const fetched = calls.length;
+    for (const bad of ["http://cdn.sync.so/o.mp4", "https://cdn.example.invalid/o.mp4", "https://cdn.sync.so.evil.com/o.mp4", "https://evilsync.so/o.mp4", "https://user@cdn.sync.so/o.mp4", "https://cdn.sync.so:8443/o.mp4"])
+      expect(await sync.downloadOutput({ id: "x", url: bad }, { fetch: reply(200, "bytes") }).then(() => null, (e) => e), bad).toBeInstanceOf(sync.SyncError);
+    expect(calls.length).toBe(fetched);
+    expect((await sync.downloadOutput({ id: "x", url: "https://cdn.sync.so/o.mp4" }, { fetch: reply(200, "bytes") })).toString()).toBe("bytes");
+    expect((await sync.downloadOutput({ id: "x", url: "https://sync.so/o.mp4" }, { fetch: reply(200, "bytes") })).toString()).toBe("bytes");
+    /* The upload: the address sync.so names must be on sync.so; both requests refuse redirects. */
+    const up = async (host: string) => sync.uploadAsset({ bytes: Buffer.from("b"), filename: "a.mp4", mime: "video/mp4" }, { fetch: (async (url: unknown, init?: RequestInit) => {
+      calls.push({ url: String(url), method: String(init?.method), headers: (init?.headers ?? {}) as Record<string, string>, body: "", redirect: init?.redirect });
+      return String(url).endsWith("/v2/assets/upload") ? new Response(JSON.stringify({ uploadUrl: host, assetId: "asset_9" }), { status: 200 }) : new Response(null, { status: 200 });
+    }) as never });
+    const beforeUp = calls.length;
+    for (const bad of ["https://uploads.example.invalid/put", "http://uploads.sync.so/put", "https://uploads.sync.so.evil.com/put"]) expect(await up(bad).then(() => null, (e) => e), bad).toBeInstanceOf(sync.SyncError);
+    expect(calls.length).toBe(beforeUp + 3);
+    expect(await up("https://uploads.sync.so/put")).toBe("asset_9");
+    expect(calls.at(-1)).toMatchObject({ method: "PUT", url: "https://uploads.sync.so/put", redirect: "error" });
+    /* No request of this adapter follows a redirect: each is sent with redirect "error", and a redirecting server's answer is a failure, never followed. */
+    expect(calls.every((c) => c.redirect === "error")).toBe(true);
+    const redirecting = (async (_url: unknown, init?: RequestInit) => { if (init?.redirect === "error") throw new TypeError("fetch failed: unexpected redirect"); return new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data" } }); }) as never;
+    expect(await sync.generationStatus("job_9", { fetch: redirecting }).then(() => null, (e) => e)).toBeInstanceOf(sync.SyncError);
+    expect(await sync.deleteGeneration("job_9", { fetch: redirecting }).then(() => null, (e) => e)).toBeInstanceOf(sync.SyncError);
+    expect(await sync.downloadOutput({ id: "x", url: "https://cdn.sync.so/o.mp4" }, { fetch: redirecting }).then(() => null, (e) => e)).toBeInstanceOf(sync.SyncError);
     /* The base address: https, or a local stand-in for a test; anything else is refused before a request. */
     process.env.SYNC_BASE_URL = "http://127.0.0.1:9999";
     await sync.generationStatus("job_9", { fetch: reply(200, { status: "PENDING" }) });

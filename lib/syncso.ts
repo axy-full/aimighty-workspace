@@ -22,6 +22,19 @@ const TIMEOUT_MS = 30_000;
 const POLL_TIMEOUT_MS = 20_000;
 export const SYNC_OUTPUT_LIMIT_BYTES = 1024 * 1024 * 1024;
 
+/**
+ * An address sync.so gave us (an upload address, an output address), accepted only as an https host on sync.so or under it (TO CONFIRM against the hosts it really uses), with no
+ * port and no credentials. Nothing else is ever fetched. Every request here also refuses redirects (`redirect: "error"`): a redirect would carry our key, or our bytes, to a host
+ * this list never saw.
+ */
+export function syncHostUrl(raw: unknown): URL | null {
+  if (typeof raw !== "string" || raw.length > 4096) return null;
+  let url: URL;
+  try { url = new URL(raw); } catch { return null; }
+  if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
+  return url.hostname === "sync.so" || url.hostname.endsWith(".sync.so") ? url : null;
+}
+
 export const syncConfigured = (): boolean => Boolean(process.env.SYNC_API_KEY) || engineMock();
 
 export const isSyncModel = (value: unknown): value is SyncModel => typeof value === "string" && Object.hasOwn(SYNC_RATES.models, value);
@@ -57,6 +70,7 @@ async function call(method: string, path: string, init: { json?: unknown; deps?:
       method,
       headers: { "x-api-key": key(), ...(init.json !== undefined ? { "content-type": "application/json" } : {}) },
       ...(init.json !== undefined ? { body: JSON.stringify(init.json) } : {}),
+      redirect: "error",
       signal: AbortSignal.timeout(init.timeout ?? TIMEOUT_MS),
     });
   } catch (error) {
@@ -83,10 +97,11 @@ export async function uploadAsset(input: { bytes: Buffer; filename: string; mime
   if (engineMock()) return `mock_asset_${++mockSeq}`;
   const made = await call("POST", "/v2/assets/upload", { json: { fileName: input.filename.slice(0, 200), contentType: input.mime }, deps });
   const uploadUrl = made.json.uploadUrl ?? made.json.url, assetId = made.json.assetId ?? made.json.id;
-  if (typeof uploadUrl !== "string" || typeof assetId !== "string" || !/^https:\/\//.test(uploadUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(uploadUrl)) throw new SyncError("sync.so's upload reply was not what was expected.", made.status, null, false);
+  const target = syncHostUrl(uploadUrl);
+  if (!target || typeof assetId !== "string") throw new SyncError("sync.so's upload reply was not what was expected.", made.status, null, false);
   let put: Response;
   try {
-    put = await (deps.fetch ?? recoveryFetch)(uploadUrl, { method: "PUT", headers: { "content-type": input.mime }, body: new Uint8Array(input.bytes), signal: AbortSignal.timeout(120_000) });
+    put = await (deps.fetch ?? recoveryFetch)(target.href, { method: "PUT", headers: { "content-type": input.mime }, body: new Uint8Array(input.bytes), redirect: "error", signal: AbortSignal.timeout(120_000) });
   } catch { throw new SyncError("sync.so did not take the upload."); }
   if (!put.ok) throw new SyncError(`sync.so did not take the upload (${put.status}).`, put.status, null, put.status >= 400 && put.status < 500);
   return assetId;
@@ -128,10 +143,10 @@ export async function generationStatus(id: string, deps: Deps = {}): Promise<Syn
 /** The finished clip. From the output address the vendor named (https only), capped; nothing is stored here. */
 export async function downloadOutput(output: { id: string; url?: string }, deps: Deps = {}): Promise<Buffer> {
   if (engineMock()) return Buffer.from(MOCK_OUTPUT);
-  const url = output.url;
-  if (!url || !/^https:\/\/[^\s]+$/.test(url)) throw new SyncError("sync.so named no output to download.");
+  const url = syncHostUrl(output.url);
+  if (!url) throw new SyncError("sync.so named no output we can download.");
   let res: Response;
-  try { res = await (deps.fetch ?? recoveryFetch)(url, { method: "GET", signal: AbortSignal.timeout(300_000) }); }
+  try { res = await (deps.fetch ?? recoveryFetch)(url.href, { method: "GET", redirect: "error", signal: AbortSignal.timeout(300_000) }); }
   catch { throw new SyncError("The lip-synced clip could not be downloaded."); }
   if (!res.ok) throw new SyncError(`The lip-synced clip could not be downloaded (${res.status}).`, res.status);
   const declared = Number(res.headers.get("content-length") ?? 0);
