@@ -545,7 +545,7 @@ Both sides double at 60 fps: fal by its rule, Topaz because it bills by frame. T
 
 ## 9. Coolify setting names, per provider (names only)
 
-**Updated 15 Oct 2026, 22:15 IST for the owner's FINAL ENGINE STACK** (`docs/redesign-plan.md` on `redesign/integration`). Names only: no value, key or secret is written here. The owner sets each in Coolify (production, runtime only, locked); lanes never touch env. Names marked **set** were reported as set by the owner (19:30 name check; 22:15 for Recraft); names marked **new (proposed)** are proposals for the owner to confirm before any PR uses them.
+**Corrected 16 Oct 2026 against tonight's PRs: see "The names each PR reads" below, which replaces any name in A to E that differs (Vision and Topaz switches, no Vision or Topaz base-address setting, the `REMOTION_EXPORT_*` tuning names, `BFL_IDENTITY_ENABLED`).** **Updated 15 Oct 2026, 22:15 IST for the owner's FINAL ENGINE STACK** (`docs/redesign-plan.md` on `redesign/integration`). Names only: no value, key or secret is written here. The owner sets each in Coolify (production, runtime only, locked); lanes never touch env. Names marked **set** were reported as set by the owner (19:30 name check; 22:15 for Recraft); names marked **new (proposed)** are proposals for the owner to confirm before any PR uses them.
 
 **How the names were chosen:**
 - Names already in the code or the scope are reused. They were read from `release/1` at 663fb243 (`lib/providers.ts`, `lib/gemini.ts`, `lib/textRoute.ts`, `lib/engines/*`): `ARK_*`, `GEMINI_*`, `OPENAI_*`, `ANTHROPIC_*`, `XAI_*`, `HF_*`, `FAL_*`, `ELEVENLABS_*`. Names the scope or the owner already used: `RUNWAY_API_KEY`, `RECRAFT_API_KEY`, `BFL_API_KEY`, `TOPAZ_API_KEY`, `SYNC_API_KEY`, `SARVAM_API_KEY`, `SARVAM_USD_PER_INR`, the three `REKOGNITION_*` and `GOOGLE_VISION_API_KEY`.
@@ -576,9 +576,9 @@ Both sides double at 60 fps: fal by its rule, Topaz because it bills by frame. T
 | Sarvam (Bulbul, Saaras, dubbing) | `SARVAM_API_KEY` (**set**) | `SARVAM_BASE_URL` (default `https://api.sarvam.ai`) | `SARVAM_ENABLED` | `SARVAM_USD_PER_INR` (**set**; the rupee rate the owner sets, reviewed monthly) |
 | Black Forest Labs (FLUX 3, FLUX.2 identity; replaces fal flux-lora) | `BFL_API_KEY` (**set**) | `BFL_BASE_URL` (unset: B1 defaults to `https://api.eu.bfl.ai`; if set, an `https://` `*.bfl.ai` host) | `BFL_ENABLED` | |
 | Runway (Act-Two, Aleph 2, Gen-4.5) | `RUNWAY_API_KEY` (named in SOW 4 Oct §5.1; owner 22:15: keys set, name to confirm in the name-only check) | `RUNWAY_BASE_URL` (default `https://api.dev.runwayml.com/v1`) | `RUNWAY_ENABLED` (house workspace only until training-free terms) | |
-| Topaz, direct (T0 to T3) | `TOPAZ_API_KEY` (**set**: production only, locked, not in previews) | `TOPAZ_BASE_URL` | `TOPAZ_ENABLED` | `FAL_KEY` stays for Kling and, until each goes direct, Bria |
+| Topaz, direct (T0 to T3) | `TOPAZ_API_KEY` (**set**: production only, locked, not in previews) | none: #781 fixes `api.topazlabs.com`, so `TOPAZ_BASE_URL` is **not read** (16 Oct) | `TOPAZ_DIRECT_ENABLED` (**corrected 16 Oct**; not `TOPAZ_ENABLED`) | `FAL_KEY` stays for Kling and, until each goes direct, Bria |
 | AWS Rekognition (Mumbai) | `REKOGNITION_ACCESS_KEY_ID`, `REKOGNITION_SECRET_ACCESS_KEY` (**set**) | `REKOGNITION_REGION` (**set**; `ap-south-1`) | `REKOGNITION_ENABLED` | The IAM user is limited to `CompareFaces` and `DetectFaces` (see "AWS MediaConvert" below) |
-| Google Cloud Vision | `GOOGLE_VISION_API_KEY` (**set**; no code reads it yet) | `GOOGLE_VISION_BASE_URL` | `GOOGLE_VISION_ENABLED` | |
+| Google Cloud Vision | `GOOGLE_VISION_API_KEY` (**set**; read by #783) | none: #783 fixes the address, so `GOOGLE_VISION_BASE_URL` is **not read** (16 Oct) | `VISION_LABEL_CHECK_ENABLED` (**corrected 16 Oct**; not `GOOGLE_VISION_ENABLED`) | |
 | Recraft (V4.1 and V3) | `RECRAFT_API_KEY` (**set** 15 Oct 22:15) | `RECRAFT_BASE_URL` (default `https://external.api.recraft.ai/v1`) | `RECRAFT_ENABLED` | |
 
 ### C. New engines: names proposed (owner confirms; keys not yet needed unless marked)
@@ -663,6 +663,36 @@ The table in this section before 15 Oct 22:15 had eight rows (sync.so, Sarvam, R
   - S3: `AWS_S3_USE_ARN_REGION`, `AWS_S3_DISABLE_MULTIREGION_ACCESS_POINTS`, `AWS_S3_DISABLE_EXPRESS_SESSION_AUTH`;
   - the rest: `AWS_ACCOUNT_ID`, `AWS_ACCOUNT_ID_ENDPOINT_MODE`, `AWS_AUTH_SCHEME_PREFERENCE`, `AWS_SIGV4A_SIGNING_REGION_SET`, `AWS_CA_BUNDLE`, `AWS_DISABLE_HOST_PREFIX_INJECTION`, `AWS_ENABLE_ENDPOINT_DISCOVERY`, `AWS_SDK_UA_APP_ID`, `AWS_STS_REGIONAL_ENDPOINTS`.
 - **No `AWS_*` setting should be added to Coolify for this work.** The Rekognition and MediaConvert adapters sign with `signRequest` (`lib/storage/r2.ts:115-116`) and read only the `REKOGNITION_*` and `MEDIACONVERT_*` names. So neither the storage client nor any AWS SDK default can pick those keys up, and the AWS adapters can never pick up the R2 keys.
+
+### The names each PR reads (checked 16 Oct 2026 against the PR branches)
+
+"Set?" is only what this plan or the owner's notes record: **set** = the owner reported it set in Coolify (19:30 name check on 15 Oct; Recraft at 22:15); **not recorded** = no note says it is set. No value was seen and no env was read. "Reads" means the name appears in the PR's code. Every switch is exactly `1` for on, goes through the shared engine gate (`lib/engineGate.ts`: the switch on **and** the house workspace or a workspace in the site setting `enginesOnWorkspaces`, from #766 and #771), and is off for customer workspaces until launch.
+
+| Provider | Names the PR reads | Set? | PR | Kill switch |
+|---|---|---|---|---|
+| Remotion worker (its own stack) | `REMOTION_WORKER_SECRET` (one per worker); `REMOTION_WORKER_CONTAINER`, `REMOTION_WORKER_TEST_ROOT` (ignored inside the container), `REMOTION_RUNTIME_DIR`, `REMOTION_BUNDLE_DIR`, `REMOTION_BROWSER_EXECUTABLE`, `REMOTION_FONTS_DIR` (#767), `REMOTION_CONCURRENCY` (Dockerfile default 2), `REMOTION_MAX_SECONDS` (Dockerfile default 120) | none set: the worker is not deployed. Only `REMOTION_WORKER_SECRET` is the owner's; the rest are image or compose constants, tuned in `compose.yaml` from the measurement, never by hand | #699 (and #767 for the fonts) | none on the worker; the app's `REMOTION_EXPORTS` |
+| Remotion exports (app) | `REMOTION_EXPORTS`; `REMOTION_WORKER_URLS`; `REMOTION_WORKER_SECRETS`; optional tuning `REMOTION_EXPORT_MAX_RUNNING` (default 1), `REMOTION_EXPORT_MAX_PER_HOUR` (6), `REMOTION_EXPORT_RUN_TIMEOUT_MS` (200000), each bounded in code | not recorded | #700 (the `export_jobs` migration needs the owner's word); #766 for the gate | `REMOTION_EXPORTS` |
+| Chromium PDF decks | `PDF_EXPORTS`; and, to reach a worker, `REMOTION_WORKER_URLS` and `REMOTION_WORKER_SECRETS` | not recorded | #767 | `PDF_EXPORTS` |
+| AWS Rekognition (consent face match) | `REKOGNITION_ACCESS_KEY_ID`, `REKOGNITION_SECRET_ACCESS_KEY`, `REKOGNITION_REGION` (unset or exactly `ap-south-1`), `REKOGNITION_ENABLED` | three keys **set** (owner, 15 Oct 19:30); `REKOGNITION_ENABLED` was reported **missing** then. #771's body says all four are set: check | #771 | `REKOGNITION_ENABLED` |
+| sync.so | `SYNC_API_KEY`, `SYNC_BASE_URL` (optional), `SYNC_ENABLED` | key **set** (19:30); switch not recorded | #776 | `SYNC_ENABLED` |
+| Sarvam | `SARVAM_API_KEY`, `SARVAM_USD_PER_INR` (no rate means no price, so the engine is unavailable), `SARVAM_BASE_URL` (optional), `SARVAM_ENABLED` | key and `SARVAM_USD_PER_INR` **set** (19:30; the value was not seen); switch not recorded | #777 | `SARVAM_ENABLED` |
+| Black Forest Labs | `BFL_API_KEY`, `BFL_BASE_URL` (optional; default the EU endpoint; if set an `https://` `*.bfl.ai` host), `BFL_ENABLED`; FLUX 3 and FLUX.2 identity add `BFL_IDENTITY_ENABLED` (needs `BFL_ENABLED` too) | key **set** (13:45, 15 Oct); `BFL_ENABLED` reported **missing** at 19:30 | #778; #785 for the identity switch | `BFL_ENABLED`; `BFL_IDENTITY_ENABLED` |
+| Runway | `RUNWAY_API_KEY`, `RUNWAY_BASE_URL` (optional; an `https://` `*.runwayml.com` host ending `/v1`), `RUNWAY_ENABLED` | owner (22:15): keys set; the name was not in the 19:30 check | #780 | `RUNWAY_ENABLED` |
+| Veo 3.1 | `VEO_ENABLED`; **the existing** `GEMINI_API_KEY` and `GEMINI_BASE_URL` (confirmed: no new key) | Gemini key live; `VEO_ENABLED` not recorded | #779 | `VEO_ENABLED` |
+| Topaz, direct | `TOPAZ_API_KEY`, `TOPAZ_DIRECT_ENABLED`. No base-address setting (the address is fixed) | key **set** (production only, locked); switch not recorded | #781 | `TOPAZ_DIRECT_ENABLED` |
+| AWS MediaConvert | `MEDIACONVERT_ACCESS_KEY_ID`, `MEDIACONVERT_SECRET_ACCESS_KEY` (its own pair), `MEDIACONVERT_ROLE_ARN`, `MEDIACONVERT_BUCKET`, `MEDIACONVERT_REGION` (unset or exactly `ap-south-1`), `MEDIACONVERT_ENDPOINT` (optional; discovered once if unset), `MEDIACONVERT_QUEUE_ARN` (optional), `MEDIACONVERT_ENABLED` (eight names) | not recorded (the role, the bucket and the key pair are owner actions) | #782 | `MEDIACONVERT_ENABLED` |
+| Cloud Vision label check | `GOOGLE_VISION_API_KEY`, `VISION_LABEL_CHECK_ENABLED`. No base-address setting | key **set** (plan, 14 Oct); switch not recorded | #783 | `VISION_LABEL_CHECK_ENABLED` |
+| Nano Banana 2.1 | `NANOBANANA21_ENABLED`; the existing `GEMINI_API_KEY` and `GEMINI_BASE_URL`. (`NANO_BANANA_21_ID` is a code constant, not a setting) | Gemini key live; switch not recorded | #784 | `NANOBANANA21_ENABLED` |
+| Recraft | `RECRAFT_API_KEY`, `RECRAFT_BASE_URL` (optional), `RECRAFT_ENABLED` | key **set** (owner, 15 Oct 22:15) | #786 | `RECRAFT_ENABLED` |
+| Where engines are ON | the site setting `enginesOnWorkspaces` (not env), read by the shared gate | nothing writes it yet; empty means the house workspace only | #766, #771 | n/a |
+
+### What is still missing, 16 Oct 2026
+- **Names this plan proposed that no PR reads:** `GOOGLE_VISION_BASE_URL` and `GOOGLE_VISION_ENABLED` (replaced by `VISION_LABEL_CHECK_ENABLED`, no address setting); `TOPAZ_BASE_URL` and `TOPAZ_ENABLED` (replaced by `TOPAZ_DIRECT_ENABLED`); `SYNC_WEBHOOK_SECRET` (named in #776's body; no code reads it; webhooks are the later Y4); `PDF_WORKER_URLS` and `PDF_WORKER_SECRETS` (not needed: #767 uses the Remotion worker's two names).
+- **Names a PR reads that this plan's table did not have:** `REMOTION_EXPORT_MAX_RUNNING`, `REMOTION_EXPORT_MAX_PER_HOUR`, `REMOTION_EXPORT_RUN_TIMEOUT_MS`, `REMOTION_FONTS_DIR`, `REMOTION_CONCURRENCY`, `REMOTION_MAX_SECONDS`, `REMOTION_BUNDLE_DIR`, `REMOTION_BROWSER_EXECUTABLE`, `REMOTION_RUNTIME_DIR`, `REMOTION_WORKER_CONTAINER`, `REMOTION_WORKER_TEST_ROOT`, `BFL_IDENTITY_ENABLED`, `TOPAZ_DIRECT_ENABLED`, `VISION_LABEL_CHECK_ENABLED`. (Constants named in PR bodies, such as `REKOGNITION_USD_PER_IMAGE`, are in code, not settings.)
+- **Engines in the stack with no PR yet and so no names read:** Gemini 3.x (moments, cutdown planning, the vision judge: `GEMINI3_ENABLED` is only a proposal), Kling 4.0 (`KLING4_ENABLED`, on `FAL_KEY`), Bria direct (`BRIA_API_KEY`, `BRIA_BASE_URL`, `BRIA_ENABLED`), the Pro pick config, DNxHR.
+- **Slice 5 trends (`docs/plans/viral-trends.md`):** no PR. `YOUTUBE_API_KEY`, `SERPAPI_API_KEY`, `TRENDS_TIKTOK_API_KEY`, `TRENDS_TIKTOK_PROVIDER`, `META_IG_ACCESS_TOKEN`, `META_IG_BUSINESS_ACCOUNT_ID`, `TRENDS_ENABLED`, `TRENDS_DAILY_CALL_BUDGET`, `TRENDS_CACHE_TTL_HOURS`, `TRENDS_REGIONS` are proposals; none is read anywhere.
+- **No `AWS_*`, `R2_*`, `S3_*`, `STORAGE_*` or `BLOB_*` name** appears among the new names (the collision rule below holds).
+- **To check, owner:** that `REKOGNITION_ENABLED` is set (it was missing at 19:30); that `BFL_ENABLED` and the other switches are unset until the owner turns each on; that no unused name (`TOPAZ_ENABLED`, `GOOGLE_VISION_ENABLED`, `SYNC_WEBHOOK_SECRET`) is added to Coolify by mistake.
 
 ## 10. Order and PRs
 
@@ -781,6 +811,25 @@ Every adapter lands **behind its own kill switch** (`<VENDOR>_ENABLED`, off unle
 - **G. Vision's uses.** The Verify text check and reading on-screen text for translation now; the mandatories check once mandatories are stored? **Recommended: yes.**
 - **H. Topaz.** DECIDED (owner, 15 Oct 14:05): direct, on Topaz's own API with `TOPAZ_API_KEY`; the first recommendation here (stay on fal) is replaced. See §8.
 - **I. sync-3's photo input** (a talking person from a still). Leave it out of v1? **Recommended: yes**, video only, until the consent design for it exists.
+
+## Verified prices, 16 Oct 2026
+
+Prices were checked against each provider's own page on the night of 15 to 16 Oct 2026 by the build lanes and recorded in `docs/redesign-progress.md`. **Dollars and rupees are the vendor's, not ours:** customer credits come through the margin path, which is private to the owner, and vendor costs never reach customers. Every figure is as published that night; check again before relying. Each PR says "TO CONFIRM on the first invoice" where the unit or field is not certain; the first house use settles those.
+
+| Provider (PR) | Source | Figures recorded |
+|---|---|---|
+| sync.so (#776) | https://sync.so/docs/models | Per output second at 25 fps: lipsync-2 $0.04 to $0.05; lipsync-2-pro $0.067 to $0.083; sync-3 $0.107 to $0.133. The PR uses the top (standard) rate of each, with exact 5 s and 60 s rates |
+| Sarvam (#777) | https://docs.sarvam.ai (pricing) and https://www.sarvam.ai/api-pricing | Bulbul v3 ₹30 per 10,000 characters; Bulbul v4 Flash ₹20; translate ₹20 per 10,000 characters; speech to text ₹30 an hour in the docs table but ₹0.49 a minute (₹29.4 an hour) on the pricing page, and the PR uses the lower reading. In rupees, converted at `SARVAM_USD_PER_INR`. Neither page states retention or training use |
+| Black Forest Labs (#778, #785) | BFL's published pricing data (the source behind https://docs.bfl.ai/quick_start/pricing); 1 BFL credit = $0.01 | FLUX.2 pro 3 / 1.5 / 1.5 credits (first megapixel / further megapixel / input megapixel); flex 5 / 5 / 5; max 7 / 3 / 3. FLUX 3 per image: 768 px 4.1 credits, 1k 4.8, 1.5k 7, 2k 10, 4k 60.7; Klein 0.8 to 3.6. Up to 4 MP and 8 references; result URLs valid 10 minutes. The megapixel definition (1,000,000 or 1,048,576 pixels) is to be confirmed by the first call |
+| Runway (#780) | https://docs.dev.runwayml.com (pricing) | $0.01 a credit. act_two 5 credits a second; aleph2 28 credits a second with a 56-credit minimum; gen4.5 12 credits a second; gen4_turbo 5. All matched |
+| Veo 3.1 (#779) and Nano Banana 2.1 (#784) | https://ai.google.dev/gemini-api/docs/pricing (updated 15 Oct) | Veo 3.1 per second with audio: Standard $0.40 at 720p and 1080p, $0.60 at 4k; Fast $0.10 at 720p, $0.12 at 1080p, $0.30 at 4k. Nano Banana 2.1 per image: $0.0336 at 1K, $0.0504 at 2K, $0.1134 at 4K |
+| AWS MediaConvert (#782) | AWS price list API, ap-south-1 (Mumbai) | Basic tier, AVC single pass, per output minute: HD up to 30 fps $0.015, up to 60 fps $0.0188; 4K $0.03 / $0.0375; SD $0.0075 / $0.0094. Billed per second, 10 s minimum per output |
+| AWS Rekognition (#771) | AWS Mumbai price list (plan section 3) | About $0.00125 an image (a constant in code, to confirm on the first bill) |
+| Topaz direct (#781) | https://www.topazlabs.com/api and the developer docs; table in `docs/plans/topaz-direct-prices.md` | $0.10 a credit on Developer, $0.08 on Scale. Image up to 24 MP 1 credit, 48 MP 3 credits on the API page (the docs say linear). Astra 2: 3 credits a second at 1080p30 and 5 at 4K30, scaling with frame rate. Pages contradict each other; the PR prices the dearer reading at $0.10 until the owner confirms the plan |
+| Cloud Vision (#783) | https://cloud.google.com/vision/pricing | $1.50 per 1,000 images after the first 1,000 a month free; the PR ignores the free tier |
+| Recraft (#786) | https://www.recraft.ai (pricing and Developer Terms) | V4.1 $0.035 raster and $0.08 vector; V4.1 Pro $0.21 raster and $0.30 vector; V3 $0.04 and $0.08; vectorize and remove background $0.01; style $0.005 a request. Developer Terms section 6.3: no training on API outputs |
+
+Notes: the older sample prices in sections 1 to 8 of this plan were set on 14 Oct and are samples; where they differ from the table above, this table is later. Text prices (Gemini 3.x) come from `lib/modelCatalog.json`, which has no dated steps, so a scheduled change such as 3.8 Flash's price change on 1 Jan 2027 cannot be encoded yet (owner question in the progress log).
 
 ## Sources (all read 14 Oct 2026)
 - Runway:
