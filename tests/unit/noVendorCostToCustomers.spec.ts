@@ -133,7 +133,7 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
           v: 1, verdict: "mismatch", flagged: true, mode: "whole", rules: { unicode: "nfc", case: "exact", whitespace: "exact" }, expected: "ACME COLA", detected: "ACME COIA", distance: 2,
           ops: [{ op: "equal", text: "ACME CO" }, { op: "remove", text: "L" }, { op: "add", text: "I" }, { op: "equal", text: "A" }], words: [{ text: "ACME", box: [1, 2, 3, 4] }], checkedAt: at,
           source: { kind: "upload", id: "up_frame_private" }, reservedUsd: cost.still, meterId: "vlc_vendor_secret_1" } }),
-        "u_member", at + 9, at + 9, "google", cost.still, null, null, null, "/api/media/g_label", null] },
+        "u_member", at + 9, at + 9, "google", 0, null, null, null, "/api/media/g_label", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
