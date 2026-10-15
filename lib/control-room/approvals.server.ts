@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { projectLister } from "@/lib/draftProject";
+import { isDraftProject, mayReachProject, projectLister } from "@/lib/draftProject";
 import { db, ready } from "@/lib/db";
 import { platformDb, platformReady } from "@/lib/platform";
 import { currentTenant } from "@/lib/tenant";
@@ -113,9 +113,23 @@ function capGate(credits: number | null, cap: number | null, admin: boolean): { 
 /* ── Held takes (lib/held.ts) ──────────────────────────────────────────── */
 
 async function heldItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: QueueItem[]; productions: string[] }> {
-  const rows = await listGenerations({ status: "held", limit: SOURCE_LIMIT });
-  /* Held for a slot is a place in the line and starts on its own; held for credits waits for a person. */
-  const waiting = rows.filter((g) => (g.params?.held as { why?: unknown } | undefined)?.why === "credits");
+  /* Held for a slot is a place in the line and starts on its own; held for credits waits for a person. Only the credit-held takes are asked about, and the limit counts them: the
+     takes are read newest first in pages until the queue's worth of credit-held ones is found (or there are no more), so slot-held takes neither fill the limit nor touch any board. */
+  const credits = (g: Generation) => (g.params?.held as { why?: unknown } | undefined)?.why === "credits";
+  const asked: Generation[] = [];
+  for (let cursor: { createdAt: number; id: string } | null = null, pages = 0; asked.length < SOURCE_LIMIT && pages < 20; pages++) {
+    const page: Generation[] = await listGenerations({ status: "held", limit: SOURCE_LIMIT, includeNext: true, cursor, viewer: null });
+    asked.push(...page.slice(0, SOURCE_LIMIT).filter(credits));
+    const last = page[Math.min(page.length, SOURCE_LIMIT) - 1];
+    if (page.length <= SOURCE_LIMIT || !last) break;
+    cursor = { createdAt: last.createdAt, id: last.id };
+  }
+  /* This screen is the one list that needs another person's private-board takes: an admin cannot approve what the queue does not show. Every private board a credit-held take sits on goes
+     through the audited gate (`mayReachProject`: one line per board, the 15-minute rule; no line, no row), the viewer's own boards and shared ones need none, and a member sees only what they could see. */
+  const person = { id: viewer.id, role: viewer.role === "admin" ? "admin" : "member", owner: viewer.owner };
+  const reach = new Map<string, boolean>();
+  for (const id of new Set(asked.map((g) => g.projectId).filter((id): id is string => isDraftProject(id)))) reach.set(id, await mayReachProject(person, id, "read"));
+  const waiting = asked.filter((g) => !isDraftProject(g.projectId) || reach.get(g.projectId!) === true).slice(0, SOURCE_LIMIT);
   const items = waiting.map((g): QueueItem => {
     const needs = ctx.inCredits ? heldNeeds(g.params) : null;
     /* No figure where the workspace is not billed in credits, or none was kept. */

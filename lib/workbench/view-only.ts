@@ -3,6 +3,11 @@
  * The server answers a read of such a board with `viewOnly: { owner }`; the board then refuses every edit and never saves.
  */
 export type ViewOnly = { owner: { id: string; name: string; support?: true } };
+/**
+ * A teammate's board opened to EDIT (it is shared with "Can edit" and this person may write it): whose board it is. Its saves go to that person's key (`owner`
+ * on the save), as this person; the board is otherwise like their own. Sharing settings, rename and delete stay the owner's.
+ */
+export type ActingOn = ViewOnly;
 /** What the stage header says. */
 export const viewOnlyLine = (ownerName: string) => `${ownerName}’s board · view only`;
 /** What an edit, or a save the server refuses, says. */

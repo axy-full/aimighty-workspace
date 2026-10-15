@@ -51,6 +51,9 @@ export const labels: Record<string, string> = {
   "review_link.revoked": "Revoked review link",
   "identity_consent.recorded": "Recorded identity consent",
   "identity_consent.withdrawn": "Withdrew identity consent",
+  "board.opened_by_admin": "Opened a private board",
+  "board.edited_by_admin": "Edited a private board",
+  "board.exported_by_admin": "Exported a private board",
 };
 const targetLabels: Record<string, string> = {
   account: "Account",
@@ -60,6 +63,7 @@ const targetLabels: Record<string, string> = {
   api_token: "API token",
   review_link: "Review link",
   identity_consent: "Identity consent",
+  board: "Board",
 };
 const empty: AuditPage = { events: [], nextCursor: null, actors: {} };
 

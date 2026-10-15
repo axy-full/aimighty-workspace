@@ -32,6 +32,7 @@ import { SaveFailedError, saveMessage } from '@/lib/workbench/save-then-continue
 import { cinemaPriceDollars, cinemaPriceWords, heldCredits } from "@/lib/cinemaHold";
 import { useSession } from "@/lib/session";
 import { PRODUCT_IMAGE_NAME } from '@/lib/uiNames';
+import { actingOwnerField } from "@/lib/workbench/acting-on";
 
 type Model = {
   id: string;
@@ -278,7 +279,7 @@ function TakeDialog({
       if (!active) return;
       const value = await studioRequest<{ shotId: string; productionProjectId: string }>("/api/workbench/projects", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-        body: JSON.stringify({ action: "map-shot", projectId: project.id, nodeId: target.node.id }),
+        body: JSON.stringify({ action: "map-shot", projectId: project.id, nodeId: target.node.id, ...actingOwnerField(project.id) }),
       });
       if (!validMapping(value)) throw new Error("The project mapping could not be verified. Refresh the quote before generating.");
       if (active) setMapped(value);
@@ -360,6 +361,7 @@ function TakeDialog({
           action: "map-shot",
           projectId: project.id,
           nodeId: target.node.id,
+          ...actingOwnerField(project.id),
         }),
       });
       if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");

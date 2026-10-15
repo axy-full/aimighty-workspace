@@ -916,6 +916,9 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
 
       // Lightweight migrations for columns added after first deploy.
       await addColumn("generations", `deleted INTEGER NOT NULL DEFAULT 0`);
+      /* Who made the last save of a board (lib/workbench/records.ts › saveDraft): the person acting, which is not the board's owner when a teammate or an
+         admin saves a board stored under the owner's key. Recorded so each person's undo can cover only their own changes. NULL on older rows. */
+      await addColumn("workbench_projects", `updated_by TEXT`);
       await addColumn("uploads", `kind TEXT NOT NULL DEFAULT 'image'`);
       await addColumn("uploads", `duration_s REAL`);
       /* Who uploaded it (lib/uploadAccess.ts): a member opens an upload only if they uploaded it or shared work uses it. Rows from before this column are

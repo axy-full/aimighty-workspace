@@ -55,6 +55,7 @@ import { addShotNode, generationPhase, neutralCopy, referenceRole } from "./rig"
 import { shotPatch } from "./shots";
 import { useWorkspace } from "./state";
 import type { Generation } from "./types";
+import { actingOwnerField } from "@/lib/workbench/acting-on";
 
 /**
  * The composer's live wiring. It owns nothing the shell owns: the project it
@@ -602,7 +603,7 @@ export function useComposer(options: {
           setCreated(filed.project);
           const mapping = reuse && reuse.node.id === node.id ? reuse.mapping : await studioRequest<unknown>(`${API}/projects`, {
             method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-            body: JSON.stringify({ action: "map-shot", projectId: filed.project.id, nodeId: node.id }),
+            body: JSON.stringify({ action: "map-shot", projectId: filed.project.id, nodeId: node.id, ...actingOwnerField(filed.project.id) }),
           });
           if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
           const shotNow = { key: now.quoteKey, projectId: filed.project.id, node, mapping };
@@ -710,7 +711,7 @@ export function useComposer(options: {
         setCreated(filed.project);
         const mapping = await studioRequest<unknown>(`${API}/projects`, {
           method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
-          body: JSON.stringify({ action: "map-shot", projectId: filed.project.id, nodeId: shot.id }),
+          body: JSON.stringify({ action: "map-shot", projectId: filed.project.id, nodeId: shot.id, ...actingOwnerField(filed.project.id) }),
         });
         if (!validMapping(mapping)) throw new Error("The project mapping could not be verified. Nothing was submitted.");
         const references = composer.references.map((reference) => {

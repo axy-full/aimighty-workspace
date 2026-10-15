@@ -52,7 +52,9 @@ async function signedIn(who: Who): Promise<{ status: number; userId: string; inf
   const fakes: Record<string, unknown> = {
     "@/lib/auth": auth,
     "@liveblocks/node": { Liveblocks: class { prepareSession(userId: string, options: { userInfo: { name?: string; color?: string } }) { signed.push({ userId, info: options.userInfo }); return { allow() {}, authorize: async () => ({ status: 200, body: "{}" }) }; } } },
-    "@/lib/workbench/team-canvas": { productionOfRoom: () => "prod_x", requireProduction: async () => ({}), TeamCanvasError: class extends Error {} },
+    "@/lib/workbench/team-canvas": { productionOfRoom: () => "prod_x", roomParts: () => ({ productionId: "prod_x", generation: 0 }), requireProduction: async () => ({}), TeamCanvasError: class extends Error {} },
+    /* The route closes a room whose generation moved (lib/workbench/room-rotation.ts): this room has never moved. */
+    "@/lib/workbench/room-rotation": { roomGeneration: async () => 0 },
   };
   const real = createRequire(path.resolve("app/api/collab/auth/route.ts"));
   const compiled = ts.transpileModule(readFileSync(path.resolve("app/api/collab/auth/route.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;

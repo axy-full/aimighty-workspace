@@ -1,5 +1,5 @@
 import { mergeDraft } from "./draft-merge";
-import type { MergeOptions } from "./merge";
+import type { MergeConflict, MergeOptions } from "./merge";
 import { PROJECT_ENCODING_HEADER, PROJECT_GZIP_FROM } from "./project-limits";
 import type { Project } from "./studio";
 import { projectSchema } from "./studio-schema";
@@ -22,7 +22,8 @@ export type DraftReceipt = {
   productionProjectId?: string;
   shotMappings?: Record<string, string>;
 };
-export type DraftWrite = { project: Project; revision: number };
+/** `owner`: the key the board is stored under, when the editor is not its author (a teammate with write reach); absent, the editor's own board. */
+export type DraftWrite = { project: Project; revision: number; owner?: string };
 
 /** A bounded request; browser/network failures remain distinct from a rejected save. */
 export async function draftRequest<T>(
@@ -244,13 +245,13 @@ export type CheckedWrite = { landed: number | null; project: Project | null; rev
  * land, so the answer never changes. Throws when it cannot be asked: the
  * outcome is still unknown then.
  */
-export async function checkDraftWrite(base: string, scope: string, projectId: string, tag: DraftWriteTag): Promise<CheckedWrite> {
+export async function checkDraftWrite(base: string, scope: string, projectId: string, tag: DraftWriteTag, owner?: string): Promise<CheckedWrite> {
   let data: unknown;
   try {
     data = await draftRequest<unknown>(base + "/projects", scope, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "check-write", projectId, write: tag }),
+      body: JSON.stringify({ action: "check-write", projectId, write: tag, ...(owner ? { owner } : {}) }),
     });
   } catch (error) {
     if (!(error instanceof DraftRequestError)) throw incompleteWrite();
@@ -274,9 +275,9 @@ export async function checkDraftWrite(base: string, scope: string, projectId: st
  * case the saved version read next holds it. Throws when the server cannot be
  * asked: the saved version is not safe to show yet.
  */
-export async function setAsideDraftWriter(base: string, scope: string, projectId: string, writer: DraftWriter): Promise<void> {
+export async function setAsideDraftWriter(base: string, scope: string, projectId: string, writer: DraftWriter, owner?: string): Promise<void> {
   writer.setAside = true;
-  if (writer.seq > 0) await checkDraftWrite(base, scope, projectId, { writer: writer.id, seq: writer.seq });
+  if (writer.seq > 0) await checkDraftWrite(base, scope, projectId, { writer: writer.id, seq: writer.seq }, owner);
 }
 
 export async function writeDraft(
@@ -298,7 +299,7 @@ export async function writeDraft(
       throw error;
     }
     /* Throws (still unknown) when the server cannot be asked; the caller's own retry reads and writes again. */
-    const checked = await checkDraftWrite(base, scope, write.project.id, tag);
+    const checked = await checkDraftWrite(base, scope, write.project.id, tag, write.owner);
     if (checked.landed === null || !checked.project)
       throw new DraftRequestError("Connection interrupted before the save arrived. Nothing was saved; your edits are still here.", true, false);
     const result = receipt({ revision: checked.landed, productionProjectId: checked.project.productionProjectId, shotMappings: checked.project.shotMappings }, checked.landed);
@@ -317,6 +318,19 @@ export const MERGE_TRIES = 3;
 const UNKNOWN_PAUSE_MS = 250;
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/**
+ * A newer save changed a value this window has also changed, to something else (`conflicts`, from the merge). With `conflicts: "ask"` the save is NOT sent:
+ * this window's version (`merged`, the saved version's other changes folded in, this side's kept at the conflicts) and the saved one (`latest`, at `revision`) are
+ * handed back, for the person to choose. Nothing of the other window's is overwritten in silence.
+ */
+export class DraftChangedError extends Error {
+  readonly code = "changed_since";
+  constructor(readonly latest: Project, readonly revision: number, readonly merged: Project, readonly conflicts: MergeConflict[]) {
+    super("Someone saved a change to the same thing. Your change is kept here until you choose.");
+    this.name = "DraftChangedError";
+  }
+}
+
 export type MergedWrite = {
   /** The draft exactly as the server held it at `revision` (last read or saved): what `mine` was edited from. */
   base: Project;
@@ -332,6 +346,13 @@ export type MergedWrite = {
   ancestors?: MergeOptions["ancestors"];
   /** What this editor made from a source both windows share, as made (recordMade; merge3's `made`). */
   made?: MergeOptions["made"];
+  /** The key the board is stored under, when the editor is not its author (see DraftWrite). */
+  owner?: string;
+  /**
+   * What to do when the newer save and this one changed the same value to different values: "keep" (the default, as before) saves this side's; "ask"
+   * throws a DraftChangedError instead and sends nothing.
+   */
+  conflicts?: "keep" | "ask";
 };
 
 /** What a merged save holds, and what of this editor's did not fit it (a full list another window filled first), said plainly. */
@@ -371,14 +392,17 @@ export async function writeMergedDraft(
   const mine = write.mine, notes: string[] = [];
   let from = write.base, body = mine, revision = write.revision;
   /* The notes of the merge that is sent, not of one a later merge replaced. */
-  const merge = (latest: Project) => {
+  const merge = (latest: Project, revisionOf: number) => {
     notes.length = 0;
-    return mergeDraft(from, mine, latest, { ancestors: write.ancestors, made: write.made, notes });
+    const found: MergeConflict[] = [];
+    const merged = mergeDraft(from, mine, latest, { ancestors: write.ancestors, made: write.made, notes, ...(write.conflicts === "ask" ? { conflicts: found } : {}) });
+    if (found.length) throw new DraftChangedError(latest, revisionOf, merged, found);
+    return merged;
   };
 
   const settle = async (tag: DraftWriteTag, carried: Project, edited: Project) => {
     writer.unconfirmed = { projectId: mine.id, seq: tag.seq, mine: carried, base: edited };
-    const checked = await checkDraftWrite(base, scope, mine.id, tag);
+    const checked = await checkDraftWrite(base, scope, mine.id, tag, write.owner);
     writer.unconfirmed = null;
     return checked;
   };
@@ -392,7 +416,7 @@ export async function writeMergedDraft(
     const checked = await settle({ writer: writer.id, seq: pending.seq }, pending.mine, pending.base);
     if (checked.project) {
       from = checked.landed !== null ? pending.mine : pending.base;
-      const merged = merge(checked.project);
+      const merged = merge(checked.project, checked.revision);
       if (sameDraftContent(merged, checked.project)) return { project: checked.project, revision: checked.revision, notes };
       body = merged;
       revision = checked.revision;
@@ -403,7 +427,7 @@ export async function writeMergedDraft(
     if (writer.setAside) throw setAside();
     const tag = { writer: writer.id, seq: ++writer.seq };
     try {
-      const receipt = await putDraft(base, scope, { project: body, revision }, tag);
+      const receipt = await putDraft(base, scope, { project: body, revision, ...(write.owner ? { owner: write.owner } : {}) }, tag);
       return { project: { ...body, productionProjectId: receipt.productionProjectId, shotMappings: receipt.shotMappings }, revision: receipt.revision, notes };
     } catch (error) {
       const conflict = isDraftConflict(error);
@@ -429,7 +453,7 @@ export async function writeMergedDraft(
         }
       }
       if (!latest.project || latest.project.id !== mine.id || !Number.isSafeInteger(latest.revision)) throw error;
-      const merged = merge(latest.project);
+      const merged = merge(latest.project, latest.revision);
       /* Everything this save carries is already there (another window made the same edits). */
       if (sameDraftContent(merged, latest.project)) return { project: latest.project, revision: latest.revision, notes };
       body = merged;

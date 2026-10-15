@@ -7,7 +7,8 @@ import { currentTenant, requireTenant, runInTenant } from "@/lib/tenant";
 import { canvasOpsExist, rowOf, type CanvasOpRow } from "./canvas-ops-log";
 import { focusPoint, roomPatchFor } from "./canvas-ops-model";
 import { orderedIds, writeRoom, type RoomStorage } from "./team-canvas-model";
-import { readTeamCanvas, teamRoomFor } from "./team-canvas";
+import { readTeamCanvas } from "./team-canvas";
+import { currentRoom } from "./room-rotation";
 import { workbenchTransaction } from "./records";
 
 /*
@@ -33,6 +34,8 @@ import { workbenchTransaction } from "./records";
 /** What the push uses of Liveblocks' server client; a test passes a stand-in. */
 export type RoomClient = {
   mutateStorage(roomId: string, callback: (context: { root: LiveRoot }) => void | Promise<void>, options?: { signal?: AbortSignal }): Promise<void>;
+  /** Closes a room and every connection to it (Liveblocks REST: DELETE /rooms/{id}). */
+  deleteRoom?(roomId: string): Promise<void>;
   setPresence(roomId: string, params: { userId: string; data: Record<string, unknown>; userInfo?: Record<string, unknown>; ttl?: number }, options?: { signal?: AbortSignal }): Promise<void>;
 };
 export type LiveRoot = { get(key: string): unknown; set(key: string, value: unknown): void };
@@ -120,7 +123,7 @@ async function drainProduction(productionId: string, rooms: RoomClient): Promise
   });
   const waiting = async () => Number((await db().execute({ sql: "SELECT COUNT(*) AS n FROM rig_canvas_ops WHERE production_id=? AND push='pending'", args: [productionId] })).rows[0].n);
   if (!rows.length) return { sent: 0, waiting: await waiting() };
-  const room = teamRoomFor(requireTenant().id, productionId);
+  const room = await currentRoom(requireTenant().id, productionId);
   /* What the room learns of who made a card is read by every member in it: in a client workspace the platform owner's account id is the opaque support id there (owner, 14 Oct). */
   const hideAuthor = await storedAccountIdMaskHere();
   try {

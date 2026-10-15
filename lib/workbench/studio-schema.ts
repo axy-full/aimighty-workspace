@@ -360,6 +360,8 @@ export const projectSchema = z.object({
   boardKind: z.enum(["studio", "ads", "social"]).optional(),
   /* Shared with the workspace's team (lib/workbench/team-boards.ts): the author's choice, off unless set, so every existing board is private. Additive and optional, draft JSON only. */
   teamShared: z.boolean().optional(),
+  /* With teamShared: teammates may edit the board, not only look (the server's flag too: only the team-share action sets it). Additive and optional, draft JSON only. */
+  teamEdit: z.boolean().optional(),
   /* The board's kind in the new interface (lib/v12/board/kinds.ts): Film, Pre-vis, Campaign, Social narrated or clips. Additive and optional, draft JSON only. */
   boardFlavor: z.enum(["film", "previs", "campaign", "narrated", "clips"]).optional(),
   /* The Pre-vis shot list's cells a person wrote (lib/v12/ppm.ts), by the beat sheet's shot id; and the Deliver stage's languages (lib/v12/deliver.ts). Additive and optional, draft JSON only. */
@@ -445,6 +447,8 @@ export const saveSchema = z
     project: projectSchema,
     revision: z.number().int().min(0),
     write: draftWriteTagSchema.optional(),
+    /* The key the board is stored under, when the saver is not its author (a teammate with write reach, an admin). Absent: the saver's own board. */
+    owner: z.string().regex(/^[A-Za-z0-9_.:-]{1,120}$/).optional(),
   })
   .superRefine(({ project }, context) => {
     try { if (project.astraNative) validateAstraNativeBindings(project.astraNative, [...project.assets, ...(project.sharedAssets ?? [])]); } catch(error) {context.addIssue({code:"custom",path:["project","astraNative"],message:(error as Error).message});}

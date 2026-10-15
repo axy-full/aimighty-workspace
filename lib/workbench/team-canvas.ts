@@ -60,13 +60,21 @@ export const teamPatchSchema = z.object({
 });
 
 /** The room a production's canvas is edited in, scoped to its workspace. */
-export const teamRoomFor = (workspaceId: string, productionId: string) => `particl:${workspaceId}:${productionId}`;
+export const teamRoomFor = (workspaceId: string, productionId: string, generation = 0) => `particl:${workspaceId}:${productionId}${generation > 0 ? `:${generation}` : ""}`;
 
 export function productionOfRoom(room: string, workspaceId: string): string | null {
+  return roomParts(room, workspaceId)?.productionId ?? null;
+}
+
+/** A room's production and its generation (0 for the first; each rotation, lib/workbench/room-rotation.ts, makes the next). */
+export function roomParts(room: string, workspaceId: string): { productionId: string; generation: number } | null {
   const prefix = `particl:${workspaceId}:`;
   if (!room.startsWith(prefix)) return null;
-  const id = room.slice(prefix.length);
-  return ID.test(id) ? id : null;
+  const rest = room.slice(prefix.length);
+  const [id, generation, ...extra] = rest.split(":");
+  if (extra.length || !ID.test(id)) return null;
+  if (generation === undefined) return { productionId: id, generation: 0 };
+  return /^[1-9][0-9]{0,8}$/.test(generation) ? { productionId: id, generation: Number(generation) } : null;
 }
 
 /**
@@ -75,13 +83,13 @@ export function productionOfRoom(room: string, workspaceId: string): string | nu
  * `actor` is the person asking; omitted, the signed-in person of this request. `access` is "write" by default: a board the author has shared (`teamShared`) is a
  * teammate's to READ only, and the marked sample is everyone's (lib/draftProject.ts). Background work and Atomik runs (no person) are not asked.
  */
-export async function requireProduction(productionId: string, actor?: string | null, access: "read" | "write" = "write") {
+export async function requireProduction(productionId: string, actor?: string | null, access: "read" | "write" = "write", options: { admin?: boolean } = {}) {
   if (!ID.test(productionId)) throw new TeamCanvasError("Open a saved project first.", 400);
   await ready();
   const row = (await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [productionId] })).rows[0];
   if (!row) throw new TeamCanvasError("That project is not in this workspace.", 404);
   const person = actor === undefined ? currentPerson() : actor && !isAgentId(actor) ? { id: actor } : null;
-  if (!(await mayReachProject(person, productionId, access))) throw new TeamCanvasError("That project is not in this workspace.", 404);
+  if (!(await mayReachProject(person, productionId, access, undefined, options))) throw new TeamCanvasError("That project is not in this workspace.", 404);
 }
 
 export async function readTeamCanvas(productionId: string): Promise<{ canvas: TeamCanvas; revision: number } | null> {

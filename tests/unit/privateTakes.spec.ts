@@ -80,8 +80,8 @@ async function fixture(ws: TenantWorkspace) {
 const prompts = (body: { generations: { prompt: string }[] }) => body.generations.map((g) => g.prompt);
 const OWNER = as("u_owner"), MATE = as("u_mate"), MATE_TOKEN = as("u_mate", "member", true);
 const ADMIN = as("u_admin", "admin"), ADMIN_TOKEN = as("u_admin", "admin", true), WS_OWNER = as("u_wsowner", "admin", false, true);
-const SEES_PRIVATE = [OWNER, ADMIN, ADMIN_TOKEN, WS_OWNER];
-const HIDDEN_FROM = [MATE, MATE_TOKEN];
+const SEES_PRIVATE = [OWNER, ADMIN, WS_OWNER];
+const HIDDEN_FROM = [MATE, MATE_TOKEN, ADMIN_TOKEN];
 
 test("GET /api/jobs: a private board's takes are its owner's and the workspace's admins'; shared and sample boards are for everyone; pages and cursors hold only what is seen", async () => {
   const ws = workspace(`pt-a-${run}`);
@@ -93,7 +93,8 @@ test("GET /api/jobs: a private board's takes are its owner's and the workspace's
     return tenant.runInTenant(within, async () => (await route.GET(new Request(`https://particl.test/api/jobs${query}`), undefined as never)).json(), { user: actor.user, token: actor.token as never });
   };
   const everyone = [`${SHARED}-one`, `${SAMPLE}-one`, `${OPEN}-one`, `${FREE}-one`];
-  for (const actor of SEES_PRIVATE) expect(prompts(await list(actor)), actor.user.id).toEqual([`${PRIV}-two`, `${PRIV}-one`, ...everyone]);
+  expect(prompts(await list(OWNER))).toEqual([`${PRIV}-two`, `${PRIV}-one`, ...everyone]);
+  for (const actor of [ADMIN, WS_OWNER]) expect(prompts(await list(actor)), actor.user.id).toEqual(everyone);
   for (const actor of HIDDEN_FROM) {
     const body = await list(actor);
     expect(prompts(body), actor.user.id).toEqual(everyone);
@@ -180,7 +181,7 @@ test("MCP list_renders and get_render: a hidden take is not listed and get_rende
     expect(text, actor.user.id).toContain(`${SAMPLE}-one`);
     expect(await message(actor, `t_priv1_${run}`), actor.user.id).toBe(unknown);
   }
-  for (const actor of [ADMIN_TOKEN, OWNER]) {
+  for (const actor of [OWNER]) {
     expect(await tool(actor, "list_renders", { limit: 60 }), actor.user.id).toContain(`${PRIV}-one`);
     expect(await message(actor, `t_priv1_${run}`), actor.user.id).toContain(`${PRIV}-one`);
   }
@@ -247,10 +248,19 @@ test("GET /api/usage: a private board's render stays in the spend and loses its 
     expect(JSON.stringify(body), actor.user.id).not.toContain(PRIV);
     expect(body.recent.find((r: { credits: number }) => r.credits === 5), actor.user.id).toMatchObject({ id: `t_shared_${run}`, prompt: `${SHARED}-one` });
   }
-  for (const actor of SEES_PRIVATE) {
-    const recent = (await usage(actor)).recent;
-    expect(recent.find((r: { credits: number }) => r.credits === 12)!, actor.user.id).toMatchObject({ id: `t_priv1_${run}`, prompt: `${PRIV}-one` });
-    expect(recent.find((r: { credits: number }) => r.credits === 7)!, actor.user.id).toMatchObject({ id: `t_priv2_${run}`, prompt: `${PRIV}-two` });
+  {
+    const recent = (await usage(OWNER)).recent;
+    expect(recent.find((r: { credits: number }) => r.credits === 12)!).toMatchObject({ id: `t_priv1_${run}`, prompt: `${PRIV}-one` });
+    expect(recent.find((r: { credits: number }) => r.credits === 7)!).toMatchObject({ id: `t_priv2_${run}`, prompt: `${PRIV}-two` });
+  }
+  for (const actor of [ADMIN, WS_OWNER]) {
+    const body = await usage(actor);
+    expect(total(body), actor.user.id).toBe(27);
+    for (const credits of [12, 7]) expect(body.recent.find((r: { credits: number }) => r.credits === credits)!, `${actor.user.id} ${credits}`).toMatchObject({ id: "", title: "A private board", prompt: "", params: {}, status: "succeeded" });
+    expect(JSON.stringify(body), actor.user.id).not.toContain(`t_priv1_${run}`);
+    expect(JSON.stringify(body), actor.user.id).not.toContain(`t_priv2_${run}`);
+    expect(JSON.stringify(body), actor.user.id).not.toContain(PRIV);
+    expect(body.recent.find((r: { credits: number }) => r.credits === 5), actor.user.id).toMatchObject({ id: `t_shared_${run}`, prompt: `${SHARED}-one` });
   }
   /* Another workspace: its ledger has none of these. */
   const other = workspace(`pt-e2-${run}`);
@@ -333,7 +343,7 @@ test("Atomik: a project the caller may not read is no project for the model, bef
   /* Shared and the sample: readable (view), as for anyone. */
   expect((await ask(MATE, projects.shared)).map((s) => s.projectId)).toEqual([projects.shared, projects.shared]);
   expect((await ask(MATE, projects.sample)).map((s) => s.projectId)).toEqual([projects.sample, projects.sample]);
-  for (const actor of [OWNER, ADMIN, ADMIN_TOKEN, WS_OWNER]) {
+  for (const actor of [OWNER, ADMIN, WS_OWNER]) {
     const got = await ask(actor, projects.private);
     expect(got.map((s) => s.projectId), actor.user.id).toEqual([projects.private, projects.private]);
     expect(got[0].context, actor.user.id).toContain("SecretCast");

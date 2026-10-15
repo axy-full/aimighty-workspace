@@ -68,14 +68,19 @@ test("GET /api/shots: the list of every shot, and of one board, leaves out a pri
   expect(all(owner)).toContain(`shot_priv_${run}`);
   expect(all(owner)).toContain(`shot_open_${run}`);
   expect(JSON.stringify(await seen(as("u_owner"), `?projectId=${privateProject}`))).toContain("Secret title");
-  /* A teammate, an admin, a teammate's token: the ordinary production only; nothing of the private board, not its title, its text or its id. */
-  for (const actor of [as("u_mate"), as("u_admin", "admin"), as("u_mate", "member", true)]) {
+  /* A teammate and a teammate's token: the ordinary production only; nothing of the private board, not its title, its text or its id. */
+  for (const actor of [as("u_mate"), as("u_mate", "member", true)]) {
     const all_ = await seen(actor);
     expect(all(all_), actor.user.id).toContain(`shot_open_${run}`);
     expect(JSON.stringify(all_), actor.user.id).not.toMatch(/Secret|prj_wb_/);
     /* A list of the private board itself is exactly as empty as an unknown project's. */
     expect(await seen(actor, `?projectId=${privateProject}`), actor.user.id).toEqual(await seen(actor, "?projectId=prj_wb_doesnotexist0000000000"));
   }
+  /* An admin of this workspace (owner, 13 Oct: any board in the workspace is theirs to open): the list of every shot is the same as a teammate's, the list of the board itself is the board's. */
+  const admin = await seen(as("u_admin", "admin"));
+  expect(all(admin), "an admin's list of every shot").toContain(`shot_open_${run}`);
+  expect(JSON.stringify(admin), "an admin's list of every shot is not widened").not.toMatch(/Secret|prj_wb_/);
+  expect(JSON.stringify(await seen(as("u_admin", "admin"), `?projectId=${privateProject}`)), "an admin opens the board's own list").toContain("Secret title");
   /* Shared by its author: a teammate looks at it. */
   await tenant.runInTenant(ws, () => database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.teamShared',json('true')) WHERE owner='u_owner'", args: [] }), { user: user("u_owner") });
   expect(JSON.stringify(await seen(as("u_mate"), `?projectId=${privateProject}`))).toContain("Secret title");
@@ -85,6 +90,10 @@ test("GET /api/shots: the list of every shot, and of one board, leaves out a pri
   await tenant.runInTenant(other, async () => { await database.ready(); }, { user: user("u_owner") });
   who = as("u_owner");
   expect(JSON.stringify(await tenant.runInTenant(other, () => list(), { user: user("u_owner") }))).not.toMatch(/Secret|prj_wb_|shot_priv/);
+  /* An admin of another workspace sees none of it either, by the list of every shot or by the board's id. */
+  who = as("u_admin", "admin");
+  expect(JSON.stringify(await tenant.runInTenant(other, () => list(), { user: user("u_admin", "admin") }))).not.toMatch(/Secret|prj_wb_|shot_priv/);
+  expect(JSON.stringify(await tenant.runInTenant(other, () => list(`?projectId=${privateProject}`), { user: user("u_admin", "admin") }))).not.toMatch(/Secret|prj_wb_|shot_priv/);
 });
 
 test("POST /api/shots: written only into a project its writer may write; anyone else's answer is the unknown project's", async () => {
@@ -104,17 +113,21 @@ test("POST /api/shots: written only into a project its writer may write; anyone 
   expect(unknown[0]).toBe(404);
   expect((await make(as("u_owner"), privateProject))[0], "the owner writes their own board").toBe(200);
   expect((await make(as("u_mate"), "prod_open"))[0], "an ordinary production is the workspace's").toBe(200);
-  for (const actor of [as("u_mate"), as("u_admin", "admin"), as("u_mate", "member", true)]) {
+  for (const actor of [as("u_mate"), as("u_mate", "member", true)]) {
     expect(await make(actor, privateProject), `${actor.user.id} on a private board`).toEqual(unknown);
   }
-  /* Shared, it is view-only for everyone but its owner. */
+  /* An admin of this workspace writes into any board in it (owner, 13 Oct). */
+  expect((await make(as("u_admin", "admin"), privateProject))[0], "an admin on a member's private board").toBe(200);
+  /* Shared, it is view-only for everyone but its owner (and an admin). */
   await tenant.runInTenant(ws, () => database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.teamShared',json('true')) WHERE owner='u_owner'", args: [] }), { user: user("u_owner") });
-  for (const actor of [as("u_mate"), as("u_admin", "admin"), as("u_mate", "member", true)]) expect(await make(actor, privateProject), `${actor.user.id} on a shared board`).toEqual(unknown);
+  for (const actor of [as("u_mate"), as("u_mate", "member", true)]) expect(await make(actor, privateProject), `${actor.user.id} on a shared board`).toEqual(unknown);
+  expect((await make(as("u_admin", "admin"), privateProject))[0], "an admin on a shared board").toBe(200);
   expect((await make(as("u_owner"), privateProject))[0]).toBe(200);
-  /* Another workspace: the same id is no project there. */
+  /* Another workspace: the same id is no project there, for its members and for its admins alike. */
   expect(await make(as("u_owner"), privateProject, workspace(`ps-b2-${run}`))).toEqual(unknown);
+  expect(await make(as("u_admin", "admin"), privateProject, workspace(`ps-b3-${run}`))).toEqual(unknown);
   const writers = await tenant.runInTenant(ws, async () => (await database.db().execute({ sql: "SELECT created_by FROM shots WHERE project_id=? AND title='New'", args: [privateProject] })).rows.map((r) => r.created_by), { user: user("u_owner") });
-  expect(writers, "only the owner's two shots (before and after sharing) were written").toEqual(["u_owner", "u_owner"]);
+  expect([...writers].sort(), "only the owner's two shots (before and after sharing) and the admin's two were written").toEqual(["u_admin", "u_admin", "u_owner", "u_owner"]);
 });
 
 test("a render or a quote is filed only into a project its writer may write: no hold, quote or spend for anyone else, answered as an unknown project (or shot)", async () => {
@@ -182,7 +195,7 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
   const asking = async (actor: ReturnType<typeof as>, fn: () => Promise<Response>) => { who = actor; return tenant.runInTenant(ws, async () => { try { return answer(await fn()); } catch (e) { return Promise.resolve(["threw", String((e as Error).message)] as const); } }, { user: actor.user, token: actor.token as never }); };
   const unknownId = "prj_wb_doesnotexist0000000000";
   const before = await tenant.runInTenant(ws, moneyRows, { user: user("u_owner") });
-  const readers = [as("u_mate"), as("u_admin", "admin"), as("u_mate", "member", true)];
+  const readers = [as("u_mate"), as("u_mate", "member", true)];
   for (const id of [privateProject]) {
     /* The treatment (read) and the cast list: as for an unknown project. */
     const unknownTreatment = await asking(as("u_mate"), () => treatment.GET(url(`/api/atomik/treatment?projectId=${unknownId}`), undefined as never));
@@ -202,7 +215,9 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
         await asking(actor, () => treatment.PUT(json("PUT", { projectId: unknownId, title: "Hijack", scenes: [], notes: [] }), undefined as never)));
       expect(await asking(actor, () => cast.POST(json("POST", { projectId: id, name: "Hijack" }), undefined as never)), `${actor.user.id}: cast POST`).toEqual(
         await asking(actor, () => cast.POST(json("POST", { projectId: unknownId, name: "Hijack" }), undefined as never)));
-      expect((await asking({ ...actor, user: { ...actor.user, role: "admin" } }, () => reviewLinks.POST(json("POST", { projectId: id }), undefined as never)))[0], `${actor.user.id}: a client link`).toBe(404);
+      /* A private board's client link is its owner's alone (owner, 14 Oct, 22:50): a member, or a member's token, is answered as for a production that is not saved (and none is made). */
+      expect(await asking(actor, () => reviewLinks.POST(json("POST", { projectId: id }), undefined as never)), `${actor.user.id}: a client link`).toEqual(
+        await asking(actor, () => reviewLinks.POST(json("POST", { projectId: unknownId }), undefined as never)));
       for (const [route, body] of [[drafter, { projectId: id, scene: 1 }], [scene, { projectId: id, n: 1 }]] as const) {
         const refused = await asking(actor, () => route.POST(json("POST", body), undefined as never));
         const unknown = await asking(actor, () => route.POST(json("POST", { ...body, projectId: unknownId }), undefined as never));
@@ -211,6 +226,8 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
     }
   }
   expect(await tenant.runInTenant(ws, moneyRows, { user: user("u_owner") }), "nothing was reserved or metered").toBe(before);
+  const madeLinks = await asking(as("u_owner"), () => reviewLinks.GET(url(`/api/review-links?projectId=${privateProject}`), undefined as never));
+  expect((madeLinks[1] as { links: unknown[] }).links, "no client link was made by a member").toHaveLength(0);
   /* An unreachable board and an unknown id are refused outright, before any insert: the same explicit 404, and nothing under the sentinel id. */
   for (const actor of readers) {
     for (const target of [privateProject, unknownId]) {
@@ -225,12 +242,44 @@ test("client links, the treatment, the scene drafter and the cast: a private boa
   expect(sentinel, "nothing was written under the sentinel or the unknown id").toEqual([0, 0, 0]);
   const titles = await tenant.runInTenant(ws, async () => (await database.db().execute({ sql: "SELECT title FROM treatments WHERE project_id=?", args: [privateProject] })).rows.map((r) => r.title), { user: user("u_owner") });
   expect(titles).not.toContain("Hijack");
+  /* An admin of this workspace reaches the board (owner, 13 Oct): reads, writes and makes a client link. Paid generation there is NOT theirs (owner, 14 Oct: an admin cannot start work that spends on a member's private board): the drafter and the scene rewrite still answer as for an unknown project, and nothing is metered or reserved. */
+  const admin = as("u_admin", "admin");
+  expect(JSON.stringify(await asking(admin, () => treatment.GET(url(`/api/atomik/treatment?projectId=${privateProject}`), undefined as never))), "an admin reads the treatment").toContain("Secret logline");
+  expect(JSON.stringify(await asking(admin, () => cast.GET(url(`/api/cast?projectId=${privateProject}`), undefined as never))), "an admin reads the cast").toContain("SecretCast");
+  expect((await asking(admin, () => reviewLinks.GET(url(`/api/review-links?projectId=${privateProject}`), undefined as never)))[0], "an admin reads the client links").toBe(200);
+  for (const [route, body, label] of [[drafter, { projectId: privateProject, scene: 1 }, "drafter"], [scene, { projectId: privateProject, n: 1 }, "scene"]] as const) {
+    const reached = await asking(admin, () => route.POST(json("POST", body), undefined as never));
+    const unknown = await asking(admin, () => route.POST(json("POST", { ...body, projectId: unknownId }), undefined as never));
+    expect(reached, `an admin: ${label} is refused as an unknown project is`).toEqual(unknown);
+  }
+  expect(await tenant.runInTenant(ws, moneyRows, { user: user("u_owner") }), "an admin's paid text on the board reserved and metered nothing").toBe(before);
+  expect((await asking(admin, () => treatment.PUT(json("PUT", { projectId: privateProject, title: "Admin edit", logline: "Secret logline", scenes: [], notes: [], expectedUpdatedAt: 1 }), undefined as never)))[0], "an admin writes the treatment").toBe(200);
+  expect((await asking(admin, () => cast.POST(json("POST", { projectId: privateProject, name: "AdminCast" }), undefined as never)))[0], "an admin adds cast").toBe(200);
+  /* A client link on a private board is its OWNER's alone (owner, 14 Oct): an admin is answered as for a production that is not saved, and no link is made. */
+  expect(await asking(admin, () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)), "an admin makes no client link on a member's board").toEqual(await asking(admin, () => reviewLinks.POST(json("POST", { projectId: unknownId }), undefined as never)));
+  /* The same admin in ANOTHER workspace finds no such board for any of it. */
+  const elsewhere = workspace(`ps-d2-${run}`);
+  await tenant.runInTenant(elsewhere, async () => { await database.ready(); }, { user: user("u_admin", "admin") });
+  who = admin;
+  for (const [label, call] of [
+    ["treatment", () => treatment.GET(url(`/api/atomik/treatment?projectId=${privateProject}`), undefined as never)],
+    ["client link", () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)],
+    ["cast write", () => cast.POST(json("POST", { projectId: privateProject, name: "Hijack" }), undefined as never)],
+  ] as const) {
+    const refused = await tenant.runInTenant(elsewhere, async () => { try { return answer(await call()); } catch (e) { return ["threw", String((e as Error).message)] as const; } }, { user: user("u_admin", "admin") });
+    expect(JSON.stringify(refused), `another workspace's admin: ${label}`).not.toMatch(/Secret|AdminCast|"url"/);
+    expect([404, 200]).toContain(refused[0]);
+  }
   /* Shared: view-only, so reads open to a teammate and every write still does not. */
   await tenant.runInTenant(ws, () => database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.teamShared',json('true')) WHERE owner='u_owner'", args: [] }), { user: user("u_owner") });
   expect(JSON.stringify(await asking(as("u_mate"), () => cast.GET(url(`/api/cast?projectId=${privateProject}`), undefined as never)))).toContain("SecretCast");
   expect(JSON.stringify(await asking(as("u_mate"), () => treatment.GET(url(`/api/atomik/treatment?projectId=${privateProject}`), undefined as never)))).toContain("Secret logline");
   expect((await asking(as("u_mate"), () => cast.POST(json("POST", { projectId: privateProject, name: "Hijack" }), undefined as never)))[0]).not.toBe(200);
-  expect((await asking(as("u_admin", "admin"), () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0]).toBe(404);
+  /* A shared board is not private: it keeps today's rule (owner, 14 Oct, 22:50), an admin makes its client link and a member does not; the same-answer rule is for a private board and is asserted above. */
+  expect((await asking(as("u_admin", "admin"), () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0], "an admin makes a shared board's client link").toBe(201);
+  expect((await asking(as("u_mate"), () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0], "a member does not").toBe(403);
+  /* The owner (an admin of the workspace who owns the board) makes it. */
+  expect((await asking({ ...as("u_owner"), user: { ...as("u_owner").user, role: "admin" } }, () => reviewLinks.POST(json("POST", { projectId: privateProject }), undefined as never)))[0], "the owner makes their board's client link").toBe(201);
 });
 
 test("a render admitted with a claim on a private board writes no hold, claim row or reservation, and answers as for an unknown project", async () => {
@@ -292,7 +341,7 @@ test("the routes that gate who may change work ask reach first: a private board'
   const answer = async (res: Response) => { const body = await res.json().catch(() => null) as Record<string, unknown> | null; if (body) delete body.at; return [res.status, body] as const; };
   const asking = (actor: ReturnType<typeof as>, fn: () => Promise<Response>) => { who = actor; return tenant.runInTenant(ws, async () => { try { return answer(await fn()); } catch (e) { return ["threw", String((e as Error).message)] as const; } }, { user: actor.user, token: actor.token as never }); };
   const rows = (sql: string, args: unknown[] = []) => tenant.runInTenant(ws, async () => (await database.db().execute({ sql, args: args as never })).rows, { user: user("u_owner") });
-  const people = [as("u_mate"), as("u_admin", "admin"), as("u_mate", "member", true)];
+  const people = [as("u_mate"), as("u_mate", "member", true)];
   const priv = { shot: `shot_priv_${run}`, take: `gen_priv_${run}` }, mine = { shot: `shot_mine_${run}`, take: `gen_mine_${run}` }, theirs = { shot: `shot_theirs_${run}`, take: `gen_theirs_${run}` };
 
   for (const actor of people) {
@@ -348,7 +397,28 @@ test("the routes that gate who may change work ask reach first: a private board'
   expect((await asking(as("u_mate"), () => jobs.PATCH(req("PATCH", { title: "Mine" }), ctx(mine.take))))[0], "their own take, in a project they can reach").toBe(200);
   expect((await asking(as("u_mate"), () => productions.PATCH(req("PATCH", { name: "Hijack" }), ctx("prod_plain"))))[0], "a production of no one's board is an admin's").toBe(403);
   expect((await asking(as("u_admin", "admin"), () => productions.PATCH(req("PATCH", { name: "Renamed" }), ctx("prod_plain"))))[0]).toBe(200);
-  /* Shared, the board is to look at: still not to change. */
+  /* An admin of this workspace reaches the board (owner, 13 Oct: any board in the workspace is theirs to open): change, move, review, trash, production. */
+  const admin = as("u_admin", "admin");
+  const adminDone = async (label: string, call: () => Promise<Response>) => expect((await asking(admin, call))[0], `u_admin: ${label}`).toBe(200);
+  await adminDone("shot PATCH", () => shotRoute.PATCH(req("PATCH", { title: "Admin retitle" }), ctx(priv.shot)));
+  await adminDone("shot moved into the board", () => shotRoute.PATCH(req("PATCH", { projectId: privateProject }), ctx(mine.shot)));
+  await adminDone("reorder", () => reorder.POST(req("POST", { projectId: privateProject, ids: [priv.shot] }), ctx("")));
+  await adminDone("sync", () => sync.POST(req("POST", { projectId: privateProject }), ctx("")));
+  await adminDone("take PATCH approve", () => jobs.PATCH(req("PATCH", { reviewState: "approved" }), ctx(priv.take)));
+  await adminDone("take PATCH trash", () => jobs.PATCH(req("PATCH", { trashed: true }), ctx(priv.take)));
+  await adminDone("take moved into the board", () => jobs.PATCH(req("PATCH", { projectId: privateProject }), ctx(mine.take)));
+  await adminDone("production PATCH", () => productions.PATCH(req("PATCH", { name: "Admin rename" }), ctx("prod_priv")));
+  expect((await rows("SELECT title FROM shots WHERE id=?", [priv.shot]))[0].title, "the admin's change landed").toBe("Admin retitle");
+  /* Another workspace's admin finds none of it: the same ids are no shot, take or production there. */
+  const elsewhere = workspace(`ps-f2-${run}`);
+  await tenant.runInTenant(elsewhere, async () => { await database.ready(); }, { user: user("u_admin", "admin") });
+  who = admin;
+  const askingElsewhere = (fn: () => Promise<Response>) => tenant.runInTenant(elsewhere, async () => { try { return answer(await fn()); } catch (e) { return ["threw", String((e as Error).message)] as const; } }, { user: admin.user });
+  expect(await askingElsewhere(() => shotRoute.PATCH(req("PATCH", { title: "Hijack" }), ctx(priv.shot))), "another workspace's admin: shot PATCH").toEqual([404, { error: "No such shot." }]);
+  expect(await askingElsewhere(() => productions.PATCH(req("PATCH", { name: "Hijack" }), ctx("prod_priv"))), "another workspace's admin: production PATCH").toEqual([404, { error: "No such production." }]);
+  expect((await rows("SELECT title FROM shots WHERE id=?", [priv.shot]))[0].title).toBe("Admin retitle");
+  /* Shared, the board is to look at: not to change by a teammate; an admin still may. */
   await tenant.runInTenant(ws, () => database.db().execute({ sql: "UPDATE workbench_projects SET body=json_set(body,'$.teamShared',json('true')) WHERE owner='u_owner'", args: [] }), { user: user("u_owner") });
-  expect(await asking(as("u_admin", "admin"), () => shotRoute.PATCH(req("PATCH", { title: "Hijack" }), ctx(priv.shot)))).toEqual([404, { error: "No such shot." }]);
+  expect(await asking(as("u_mate"), () => shotRoute.PATCH(req("PATCH", { title: "Hijack" }), ctx(priv.shot))), "a member on a shared board").toEqual([404, { error: "No such shot." }]);
+  await adminDone("shot PATCH on a shared board", () => shotRoute.PATCH(req("PATCH", { title: "Admin again" }), ctx(priv.shot)));
 });

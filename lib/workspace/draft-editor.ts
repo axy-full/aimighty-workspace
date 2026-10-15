@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { UploadedFile } from "../uploadClient";
-import { DraftRequestError, draftWriter, writeMergedDraft, type DraftWriter } from "../workbench/draft-request";
+import { DraftChangedError, DraftRequestError, draftWriter, writeMergedDraft, type DraftWriter } from "../workbench/draft-request";
 import { rebaseProject } from "../workbench/draft-merge";
-import { noteTakenOut, recordMade, sameJson, type MadeRecords } from "../workbench/merge";
+import { conflictThings, takeTheirs } from "../workbench/draft-conflicts";
+import { noteTakenOut, recordMade, sameJson, type MadeRecords, type MergeConflict } from "../workbench/merge";
 import type { Asset, Project } from "../workbench/studio";
 import { uploadWorkbench } from "../workbench/upload";
 import { useOptionalToast } from "./state";
@@ -37,13 +38,17 @@ export type DraftState = {
   error: string | null;
   /** What of this page's edits a merge could not fit (a full list another window filled first), or null. */
   notice: string | null;
+  /** Someone saved a change to a value this page also changed: nothing is saved over it until the person chooses (`resolveChanged`). */
+  changed: { by: string | null; at: number; things: string[] } | null;
 };
 
-const EMPTY: DraftState = { status: "idle", project: null, revision: 0, dirty: false, saving: false, error: null, notice: null };
+const EMPTY: DraftState = { status: "idle", project: null, revision: 0, dirty: false, saving: false, error: null, notice: null, changed: null };
 type Entry = {
   state: DraftState;
   /** The draft exactly as the server holds it at `state.revision`: what the edits are merged from. */
   base: Project | null;
+  /** The saved change being held; the draft stays at the version it opened on (`base`, `state.revision`), so any later save reports the conflict again. */
+  held: { latest: Project; conflicts: MergeConflict[] } | null;
   /** Set by a refusal that saving again would not fix. */
   stopped: boolean;
   /** This store's saves of the draft: a save whose reply was lost is checked on the server. */
@@ -67,7 +72,7 @@ const RETRY_MAX_MS = 60_000;
 function entry(key: string): Entry {
   let found = entries.get(key);
   if (!found) {
-    found = { state: EMPTY, base: null, stopped: false, writer: draftWriter(), made: new Map(), retries: 0, stamp: 0, listeners: new Set(), chain: Promise.resolve(true), timer: null };
+    found = { state: EMPTY, base: null, held: null, stopped: false, writer: draftWriter(), made: new Map(), retries: 0, stamp: 0, listeners: new Set(), chain: Promise.resolve(true), timer: null };
     entries.set(key, found);
   }
   return found;
@@ -100,7 +105,7 @@ async function load(scope: string, projectId: string) {
   }
 }
 
-function save(scope: string, projectId: string): Promise<boolean> {
+function save(scope: string, projectId: string, keep = false): Promise<boolean> {
   const key = keyOf(scope, projectId);
   const e = entry(key);
   if (e.timer) { clearTimeout(e.timer); e.timer = null; }
@@ -116,15 +121,22 @@ function save(scope: string, projectId: string): Promise<boolean> {
     const from = e.base ?? project;
     set(key, { saving: true, dirty: false });
     try {
-      const saved = await writeMergedDraft("/api/workbench", scope, { base: from, mine: project, revision, writer: e.writer, made: e.made });
+      const saved = await writeMergedDraft("/api/workbench", scope, { base: from, mine: project, revision, writer: e.writer, made: e.made, conflicts: keep ? "keep" : "ask" });
       e.base = saved.project;
+      e.held = null;
       e.retries = 0;
       e.stamp++;
       /* The page shows what was saved — another window's edits included — with any edits made meanwhile laid over it. */
       const next = rebaseProject(project, e.state.project ?? project, saved.project);
-      set(key, { saving: false, revision: saved.revision, project: next, dirty: e.state.dirty || !sameJson(next, saved.project), error: null, notice: saved.notes.length ? saved.notes.join(" ") : null });
+      set(key, { saving: false, revision: saved.revision, project: next, dirty: e.state.dirty || !sameJson(next, saved.project), error: null, changed: null, notice: saved.notes.length ? saved.notes.join(" ") : null });
       return true;
     } catch (cause) {
+      if (cause instanceof DraftChangedError) {
+        /* Nothing was sent: the page's version stays, the draft stays at the version it opened on, and the person chooses. */
+        e.held = { latest: cause.latest, conflicts: cause.conflicts };
+        set(key, { saving: false, dirty: true, error: null, changed: { by: null, at: Date.now(), things: conflictThings(project, cause.conflicts) } });
+        return false;
+      }
       const message = cause instanceof Error ? cause.message : "This project could not be saved.";
       if (cause instanceof DraftRequestError && (cause.uncertain || cause.retryable)) {
         /* Unknown or temporary: the edits stay, and the save is tried again once the server can say whether it landed. */
@@ -142,10 +154,10 @@ function save(scope: string, projectId: string): Promise<boolean> {
 }
 
 /** Saves until the server holds every edit made so far (edits made during a write go out with the next). */
-async function saveAll(scope: string, projectId: string): Promise<boolean> {
+async function saveAll(scope: string, projectId: string, keep = false): Promise<boolean> {
   const e = entry(keyOf(scope, projectId));
   for (let pass = 0; pass < 3; pass++) {
-    if (!(await save(scope, projectId))) return false;
+    if (!(await save(scope, projectId, keep && pass === 0))) return false;
     if (!e.state.dirty) return true;
   }
   return !e.state.dirty;
@@ -233,6 +245,15 @@ export function useDraftEditor(scope: string, projectId: string | null) {
     /* Re-read when a page opens, unless edits are still on their way. */
     if (!s.dirty && !s.saving) void load(scope, projectId);
   }, [scope, projectId]);
+  const resolveChanged = useCallback((choice: "reload" | "keep") => {
+    if (!projectId) return;
+    const key = keyOf(scope, projectId), e = entry(key);
+    const held = e.held;
+    if (!held || !e.state.project) return;
+    e.held = null;
+    set(key, { changed: null, dirty: true, ...(choice === "reload" ? { project: takeTheirs(e.state.project, held.latest, held.conflicts) } : {}) });
+    void saveAll(scope, projectId, choice === "keep");
+  }, [scope, projectId]);
   const onChange = useCallback((fn: (p: Project) => Project) => { if (projectId) change(scope, projectId, fn); }, [scope, projectId]);
   const ensureSaved = useCallback(() => (projectId ? saveAll(scope, projectId) : Promise.resolve(false)), [scope, projectId]);
   /** Upload originals into the draft as assets of `category`, then save. */
@@ -250,5 +271,5 @@ export function useDraftEditor(scope: string, projectId: string | null) {
     }
     return received;
   }, [scope, projectId]);
-  return { state, project: state.project, onChange, ensureSaved, uploadAssets, reload: useCallback(() => (projectId ? load(scope, projectId) : Promise.resolve()), [scope, projectId]) };
+  return { state, project: state.project, onChange, ensureSaved, resolveChanged, uploadAssets, reload: useCallback(() => (projectId ? load(scope, projectId) : Promise.resolve()), [scope, projectId]) };
 }

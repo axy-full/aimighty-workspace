@@ -332,7 +332,9 @@ export async function listGenerations(opts: {
   const args: any[] = [];
 
   /* A private board's takes are left out in the query, so pages, cursors and counts never hold a take the viewer may not see. */
-  const visible = await visibleBoardsOfTakes(opts.viewer === undefined ? currentPerson() : opts.viewer);
+  /* A list asked for one board (its library, or a project filter) names it, so an admin opening a member's board is the audited read (lib/draftProject.ts). */
+  const asked = opts.projectLibrary?.productionProjectId ?? (typeof opts.projectId === "string" ? opts.projectId : null);
+  const visible = await visibleBoardsOfTakes(opts.viewer === undefined ? currentPerson() : opts.viewer, undefined, asked);
   if (visible) { const clause = visibleTakesClause(visible); where.push(clause.sql); args.push(...clause.args); }
 
   if (opts.projectLibrary) {

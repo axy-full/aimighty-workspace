@@ -9,6 +9,10 @@ import { modelLabel } from "./models";
 import { creditFundingFor } from "./billingLedger";
 import { GROK_STT_MODEL } from "./xaiVoice";
 import { isAstraComputeEngine } from "./astra-blender/backend";
+import { currentPerson, takeLister } from "./draftProject";
+
+/** What another member's private board reads as on a statement (as on the usage screen); all such lines are one group, so no board is told from another. */
+const PRIVATE_BOARD = "A private board", PRIVATE_BOARD_ID = "private-board";
 
 /**
  * Statements: what a workspace was billed, itemised by production, shot
@@ -274,6 +278,14 @@ export async function statementFor(month: string, projectId: string | null): Pro
       line.funding = split;
       for (const key of Object.keys(split) as (keyof StatementFunding)[]) funding[key] += split[key];
     }
+  }
+  /* A private board is its owner's alone (lib/draftProject.ts): its spend stays in every total, and its words (the note, the board's and shot's names) do not show to anyone
+     else, an admin included, as on the usage screen. A statement asked for one board (`projectId`) goes through the audited gate for a signed-in admin; a token is a plain member's. */
+  const person = currentPerson();
+  const listed = await takeLister(person, db(), projectId);
+  for (const line of raw) {
+    if (line.projectId == null || listed(line.projectId)) continue;
+    Object.assign(line, { id: "", note: "", projectId: PRIVATE_BOARD_ID, projectName: PRIVATE_BOARD, shotId: null, shotCode: "", shotTitle: "" });
   }
   const projects = groupLines(raw);
   let packs = { count: 0, credits: 0, bonus: 0, usd: 0 };

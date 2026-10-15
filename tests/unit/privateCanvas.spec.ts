@@ -70,8 +70,10 @@ test("a teammate cannot reach a private board's canvas, and is answered as for a
   expect(await message(privateProject, person("agent:run_1")), "an Atomik run").toBe("ok");
   expect(await message(privateProject, person("u_mate"), "agent:run_1"), "an Atomik run named as the actor").toBe("ok");
   expect(await message("prod_shared", person("u_mate")), "an ordinary production is the workspace's").toBe("ok");
-  /* An admin is not the owner either. */
-  expect(await tenant.runInTenant(ws, () => requireProduction(privateProject).then(() => "ok", () => "refused"), { user: { ...person("u_admin").user, role: "admin" } })).toBe("refused");
+  /* An admin of this workspace reaches it (owner, 13 Oct: admins open any board in their own workspace); an admin of another workspace, and a plain member, do not. */
+  expect(await tenant.runInTenant(ws, () => requireProduction(privateProject).then(() => "ok", () => "refused"), { user: { ...person("u_admin").user, role: "admin" } })).toBe("ok");
+  expect(await tenant.runInTenant(workspace(`pc-a2-${run}`), () => requireProduction(privateProject).then(() => "ok", () => "refused"), { user: { ...person("u_admin").user, role: "admin" } }), "an admin of another workspace").toBe("refused");
+  expect(await tenant.runInTenant(ws, () => requireProduction(privateProject).then(() => "ok", () => "refused"), { user: { ...person("u_mate").user, role: "member" } }), "a plain member").toBe("refused");
 });
 
 test("the routes that serve the canvas: a teammate reads and writes nothing; the owner still does; the Rig's state and ops follow", async () => {
@@ -225,6 +227,62 @@ test("a shared board (teamShared, set the way the author sets it) is a teammate'
     expect((await read()).status).toBe(404);
   }, person("u_mate"));
   void database;
+});
+
+test("a board shared with \"Can edit\" (teamEdit, set the way the author sets it) is a teammate's to write too: the canvas route reads and writes; view or not shared takes it back", async () => {
+  const ws = workspace(`pc-e-${run}`);
+  const { tenant, privateProject } = await boards(ws);
+  const { requireProduction } = await import("../../lib/workbench/team-canvas");
+  let who = { id: "u_mate", role: "member" };
+  const route = loadRoute<typeof import("../../app/api/workbench/team-canvas/route")>("app/api/workbench/team-canvas/route.ts", () => who);
+  const studio = loadRoute<typeof import("../../app/api/workbench/projects/route")>("app/api/workbench/projects/route.ts", () => who);
+  const read = () => route.GET(new Request(`https://particl.test/api/workbench/team-canvas?productionId=${privateProject}`), undefined as never);
+  const write = () => route.PATCH(new Request("https://particl.test/api/workbench/team-canvas", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productionId: privateProject, upsertNodes: [], removeNodes: [], upsertAssets: [], order: null }) }), undefined as never);
+  const mode = (value: unknown, as = "u_owner") => { who = { id: as, role: "member" }; return studio.POST(new Request("https://particl.test/x", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "team-share", projectId: "d1", mode: value }) }), undefined as never); };
+  const asMate = (fn: () => Promise<void>) => tenant.runInTenant(ws, async () => { who = { id: "u_mate", role: "member" }; await fn(); }, person("u_mate"));
+  const asOwner = (fn: () => Promise<Response>) => tenant.runInTenant(ws, fn, person("u_owner"));
+  /* The maker is an active member of the workspace (Can edit lapses with its maker). */
+  const platform = await import("../../lib/platform");
+  await platform.platformReady();
+  await platform.platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts(id,email,name,password_hash,created_at) VALUES('u_owner','u_owner@example.test','u_owner','x',0)", args: [] });
+  await platform.platformDb().execute({ sql: "INSERT OR REPLACE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,'u_owner','member',0,0)", args: [ws.id] });
+  /* Can edit: a teammate reads and writes the canvas, and may be asked to write it. */
+  expect((await asOwner(() => mode("edit"))).status).toBe(200);
+  await asMate(async () => {
+    await expect(requireProduction(privateProject, undefined, "write")).resolves.toBeUndefined();
+    expect((await read()).status).toBe(200);
+    expect((await write()).status, "an editor writes").toBe(200);
+    /* Sharing itself is not the editor's: the share action refuses, and the board keeps its mode. */
+    const refused = await mode("none", "u_mate");
+    expect([403, 404]).toContain(refused.status);
+  });
+  /* The maker is switched off: Can edit lapses (reads stay, writes are refused), and comes back with them. */
+  await platform.platformDb().execute({ sql: "UPDATE memberships SET disabled=1 WHERE workspace_id=? AND account_id='u_owner'", args: [ws.id] });
+  await asMate(async () => {
+    await expect(requireProduction(privateProject, undefined, "read")).resolves.toBeUndefined();
+    await expect(requireProduction(privateProject, undefined, "write")).rejects.toThrow(/not in this workspace/);
+    expect((await read()).status, "a teammate still reads").toBe(200);
+    expect((await write()).status, "no write while the maker is off").toBe(404);
+  });
+  await platform.platformDb().execute({ sql: "UPDATE memberships SET disabled=0 WHERE workspace_id=? AND account_id='u_owner'", args: [ws.id] });
+  await asMate(async () => { expect((await write()).status).toBe(200); });
+  /* Can view: back to read only. */
+  expect((await asOwner(() => mode("view"))).status).toBe(200);
+  await asMate(async () => {
+    await expect(requireProduction(privateProject, undefined, "read")).resolves.toBeUndefined();
+    await expect(requireProduction(privateProject, undefined, "write")).rejects.toThrow(/not in this workspace/);
+    expect((await write()).status).toBe(404);
+  });
+  /* Edit again, then stopped: not found for both. */
+  expect((await asOwner(() => mode("edit"))).status).toBe(200);
+  expect((await asOwner(() => mode("none"))).status).toBe(200);
+  await asMate(async () => {
+    expect((await read()).status).toBe(404);
+    expect((await write()).status).toBe(404);
+  });
+  /* A mode that is not one is refused and changes nothing. */
+  expect((await asOwner(() => mode("admin"))).status).toBe(400);
+  await asMate(async () => { expect((await read()).status).toBe(404); });
 });
 
 test("the project's own page, its deletion and edit, opening it, linking a draft to it, its budget and its runs are the owner's alone", async () => {

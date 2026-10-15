@@ -4,7 +4,7 @@ import { currentTenant, requireTenant } from "./tenant";
 import { MediaSourceError, referencedMedia } from "./mediaBindings";
 import { writeGenerationOf } from "./recoveryDatabaseClient";
 import { isAgentId } from "./security/people-only";
-import { sharedBoards } from "./draftProject";
+import { boardDraftOf, sharedBoards } from "./draftProject";
 
 /**
  * Who may open an upload (its bytes, a thumbnail, its metadata, its place in a list). The tenant database already keeps every workspace to itself; inside
@@ -97,11 +97,12 @@ async function usedBySharedWork(ex: Exec, id: string): Promise<boolean> {
 const FEW = 6;
 
 /** The ids among `ids` that shared work uses: one pass per source for the whole set (a list, or a save that adds several). */
-async function sharedAmong(ex: Exec, ids: readonly string[]): Promise<Set<string>> {
+async function sharedAmong(ex: Exec, ids: readonly string[], extra?: { projects: string[]; drafts: { owner: string; draftId: string }[] }): Promise<Set<string>> {
   const used = new Set<string>();
   if (!ids.length) return used;
-  /* Which draft boards are shared is asked once for the whole pass. */
-  const boards = await sharedBoards(ex).catch((error: unknown) => { if (missingTable(error)) return { projects: [] as string[], drafts: [] as { owner: string; draftId: string }[] }; throw error; });
+  /* Which draft boards are shared is asked once for the whole pass (an export adds the private boards it is taking out: `extra`). */
+  const shown = await sharedBoards(ex).catch((error: unknown) => { if (missingTable(error)) return { projects: [] as string[], drafts: [] as { owner: string; draftId: string }[] }; throw error; });
+  const boards = { projects: [...shown.projects, ...(extra?.projects ?? [])], drafts: [...shown.drafts, ...(extra?.drafts ?? [])] };
   const shared: Shared = {
     list: boards.projects.length ? boards.projects.map(literal).join(",") : "''",
     drafts: boards.drafts.length ? `(${boards.drafts.map((d) => `(t.owner=${literal(d.owner)} AND t.project_id=${literal(d.draftId)})`).join(" OR ")})` : "0",
@@ -186,6 +187,20 @@ export async function openableAmong(ids: readonly string[], viewer: Viewer, ex: 
     }
     for (const id of toScan) if (!found.has(id)) remember(`${workspace}:${viewer.id}:${id}`, generation);
   }
+  return ok;
+}
+
+/**
+ * Which of `ids` an EXPORT by `viewer` may carry: those they may open (the rule above), and those used by one of `boardIds`, the private boards the export is taking out (each has
+ * been audited, or is theirs to read): an upload used only by a board whose line was not written, or by a draft that never became a board, is not in the export.
+ */
+export async function exportableUploads(ids: readonly string[], viewer: Viewer, boardIds: readonly string[], ex: Exec = db()): Promise<Set<string>> {
+  const ok = await openableAmong(ids, viewer, ex);
+  const rest = ids.filter((id) => !ok.has(id));
+  if (!rest.length || !boardIds.length) return ok;
+  const drafts: { owner: string; draftId: string }[] = [];
+  for (const id of boardIds) { const draft = await boardDraftOf(id, ex); if (draft) drafts.push(draft); }
+  for (const id of await sharedAmong(ex, rest, { projects: [...boardIds], drafts })) ok.add(id);
   return ok;
 }
 

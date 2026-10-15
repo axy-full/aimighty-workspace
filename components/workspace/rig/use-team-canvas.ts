@@ -68,6 +68,10 @@ export type TeamCanvasApi = {
   tidy: () => Promise<TidyOutcome>;
   /** Folds in what the server just changed (Atomik's build), now rather than at the next check. A live room brings it by itself. */
   refresh: () => Promise<void>;
+  /** Tells the others in the live room that a save landed at this revision (a hint to go and read it; the server's revision is the truth). */
+  announceSaved: (revision: number) => void;
+  /** Leaves the live room and joins the production's current one: after the room was closed (Can edit taken away or sharing stopped), the owner's window starts from the saved canvas in the new room. */
+  rejoin: () => void;
   /** The locked elements this window knows of (the masters): from the canvas's read, a lock or unlock here, and edits the server held. */
   locks: ReadonlySet<string>;
   /** A lock or unlock this window made (or learned of). */
@@ -138,18 +142,25 @@ function roomOf(root: { get: <K extends keyof Storage>(key: K) => Storage[K]; se
   };
 }
 
-export function useTeamCanvas({ scope, productionId, current, fold }: {
+export function useTeamCanvas({ scope, productionId, current, fold, onSaved }: {
   scope: string;
   productionId: string | null;
   /** The draft as it is now (a ref read, never stale). */
   current: () => Project | null;
   /** Applies a teammate's change to the draft without sending it back out. */
   fold: (fn: (project: Project) => Project) => void;
+  /** Another window in the room says it saved at this revision: read the saved board (a hint only). */
+  onSaved?: (revision: number) => void;
 }): TeamCanvasApi {
   /* Keyed by production, so switching projects shows nothing stale without resetting state in an effect. */
   const [joinedState, setJoinedState] = useState<{ pid: string; mode: "saved" | "live"; peers: Peer[] } | null>(null);
   const mode: TeamCanvasApi["mode"] = productionId && joinedState?.pid === productionId ? joinedState.mode : "off";
   const peers = useMemo(() => (productionId && joinedState?.pid === productionId ? joinedState.peers : []), [productionId, joinedState]);
+  const savedHint = useRef(onSaved);
+  useEffect(() => { savedHint.current = onSaved; }, [onSaved]);
+  const announceSaved = useCallback((revision: number) => { try { room.current?.broadcastEvent({ type: "saved", revision }); } catch { /* the hint is best effort: the poll and the next save find it */ } }, []);
+  const [epoch, setEpoch] = useState(0);
+  const rejoin = useCallback(() => setEpoch((n) => n + 1), []);
   const [shown, setShown] = useState<{ pid: string; change: ServerChange } | null>(null);
   const server = productionId && shown?.pid === productionId ? shown.change : null;
   const { toast } = useWorkspace();
@@ -424,6 +435,10 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
       }
 
       unsubs.push(live.subscribe(root, () => fold((p) => withTeamCanvas(p, readStorage(root))), { isDeep: true }));
+      unsubs.push(live.subscribe("event", ({ event }) => {
+        const hint = event as { type?: unknown; revision?: unknown } | null;
+        if (hint && hint.type === "saved" && typeof hint.revision === "number" && Number.isSafeInteger(hint.revision)) savedHint.current?.(hint.revision);
+      }));
       unsubs.push(live.subscribe("others", (others) => {
         setJoinedState({ pid: productionId, mode: "live", peers: others.map((o) => roomPeer(o)) });
       }));
@@ -441,7 +456,7 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
     };
     /* current/fold are ref-stable readers; re-joining on their identity would re-open the room on every render. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productionId, scope]);
+  }, [productionId, scope, epoch]);
 
   /* No live room: check every few seconds whether the server changed the canvas (a Tidy, Atomik's work), and fold it in
      when it did. A light read (the revision and the newest server change); the canvas itself only when it moved. */
@@ -526,5 +541,5 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
   }, [locksFor, setLocks]);
   const writeServer = useCallback((node: CanvasNode, fields: string[]) => { writeTrusted.current?.(node, fields); }, []);
 
-  return { mode, peers, server, publish, catchUp, presence, flush: send, drain, tidy, refresh, locks, learnLock, writeServer };
+  return { mode, peers, server, publish, catchUp, presence, flush: send, drain, tidy, refresh, rejoin, announceSaved, locks, learnLock, writeServer };
 }

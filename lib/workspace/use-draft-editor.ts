@@ -2,8 +2,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Project } from "@/lib/workbench/studio";
 import { mergeDraft, rebaseProject } from "@/lib/workbench/draft-merge";
+import { conflictThings, takeTheirs } from "@/lib/workbench/draft-conflicts";
+import type { MergeConflict } from "@/lib/workbench/merge";
 import { noteTakenOut, recordMade, sameJson, type MadeRecords } from "@/lib/workbench/merge";
 import {
+  DraftChangedError,
   DraftRequestError,
   draftRequest,
   draftWriter,
@@ -56,6 +59,10 @@ export type DraftEditor = {
   refresh: () => Promise<Project | null>;
   /** Drop local edits and read the saved version. */
   reload: () => void;
+  /** Someone saved a change to a value this page also changed: nothing is saved over it until the person chooses (`resolveChanged`); null when not. */
+  changed: { by: string | null; at: number; things: string[] } | null;
+  /** Reload: take the saved version at those places (the rest of the edits stay and are saved). Keep: save this page's version over it. */
+  resolveChanged: (choice: "reload" | "keep") => void;
 };
 
 const API = "/api/workbench";
@@ -65,6 +72,8 @@ const RETRY_MS = 4000;
 const RETRY_MAX_MS = 60_000;
 
 type Loaded = { project: Project | null; revision: number };
+/** A saved change that conflicts with this page's edits, kept until the person chooses. */
+type Held = { latest: Project; revision: number; conflicts: MergeConflict[]; at: number };
 
 /** True when the edited draft is exactly what the server holds (and no save of it is left unconfirmed). */
 const settled = (edited: Project | null, saved: Project | null, unconfirmed = false) => !edited || (!unconfirmed && sameJson(edited, saved));
@@ -107,7 +116,7 @@ function park(scope: string, entry: Omit<Parked, "stop" | "wake" | "saved">) {
         continue;
       }
       const snapshot = held.current;
-      const step = writeMergedDraft(API, scope, { base: held.base, mine: snapshot, revision: held.revision, writer: held.writer, made: held.made })
+      const step = writeMergedDraft(API, scope, { base: held.base, mine: snapshot, revision: held.revision, writer: held.writer, made: held.made, conflicts: "ask" })
         .then((saved) => {
           held.base = saved.project;
           held.revision = saved.revision;
@@ -143,7 +152,7 @@ async function drainParked(): Promise<boolean> {
     if (held.stop) {
       const [scope] = JSON.parse(key) as [string, string];
       const snapshot = held.current;
-      const saved = await writeMergedDraft(API, scope, { base: held.base, mine: snapshot, revision: held.revision, writer: held.writer, made: held.made }).catch(() => null);
+      const saved = await writeMergedDraft(API, scope, { base: held.base, mine: snapshot, revision: held.revision, writer: held.writer, made: held.made, conflicts: "ask" }).catch(() => null);
       if (saved) {
         held.base = saved.project;
         held.revision = saved.revision;
@@ -169,6 +178,9 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
   const [saveState, setSaveState] = useState("Loading");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [changed, setChanged] = useState<DraftEditor["changed"]>(null);
+  /** The saved change being held, with the page's draft left at the version it opened on (base, revision): any later save reports the conflict again. */
+  const heldChange = useRef<Held | null>(null);
   const [epoch, setEpoch] = useState(0);
 
   /** The edited draft. */
@@ -294,7 +306,7 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
   }, [scope, projectId, read, epoch, leave]);
 
   /** Saves the edited draft; true once the write succeeded (edits made meanwhile are saved by the next flush). */
-  const flush = useCallback((): Promise<boolean> => {
+  const flush = useCallback((keep = false): Promise<boolean> => {
     if (timer.current) {
       clearTimeout(timer.current);
       timer.current = null;
@@ -312,7 +324,7 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
       }
       if (alive.current) setSaveState("Saving");
       try {
-        const saved = await writeMergedDraft(API, scope, { base: from, mine: snapshot, revision: revision.current, writer: by, made: made.current });
+        const saved = await writeMergedDraft(API, scope, { base: from, mine: snapshot, revision: revision.current, writer: by, made: made.current, conflicts: keep ? "keep" : "ask" });
         /* Set aside for the saved version while it was out: the page shows what it read, not this. */
         if (by.setAside) return false;
         /* The page left this draft while the save was out, and its edits went on saving on their own (park): from what
@@ -327,6 +339,7 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
         /* Another project opened meanwhile: its own draft stands. */
         if (current.current?.id !== snapshot.id) return true;
         retries.current = 0;
+        heldChange.current = null;
         revision.current = saved.revision;
         base.current = saved.project;
         /* The page shows what was saved — another window's edits included — with any edits made meanwhile laid over it. */
@@ -337,11 +350,19 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
           setSaveState(settled(next, saved.project) ? "Saved" : "Saving");
           setError("");
           setNotice(saved.notes.join(" "));
+          setChanged(null);
         }
         return true;
       } catch (problem) {
         /* Another project opened meanwhile: this draft's edits went on saving on their own (leave). Set aside: nothing to say. */
         if (current.current?.id !== snapshot.id || by.setAside) return false;
+        if (problem instanceof DraftChangedError) {
+          /* Nothing was sent: this page's version stays on screen, the draft stays at the version it opened on, and the person chooses. */
+          const at = Date.now();
+          heldChange.current = { latest: problem.latest, revision: problem.revision, conflicts: problem.conflicts, at };
+          if (alive.current) { setSaveState("Changed elsewhere"); setChanged({ by: null, at, things: conflictThings(snapshot, problem.conflicts) }); }
+          return false;
+        }
         const message = problem instanceof Error ? problem.message : "Save failed. Your current work is preserved.";
         if (problem instanceof DraftRequestError && (problem.uncertain || problem.retryable)) {
           /* Unknown or temporary: the edits stay, and the save is tried again once the server can say whether it landed. */
@@ -364,6 +385,19 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
     return chain.current;
   }, [scope]);
   useEffect(() => { retry.current = () => void flush(); }, [flush]);
+  const resolveChanged = useCallback((choice: "reload" | "keep") => {
+    const held = heldChange.current, edited = current.current;
+    if (!held || !edited) return;
+    heldChange.current = null;
+    setChanged(null);
+    if (choice === "reload") {
+      const next = takeTheirs(edited, held.latest, held.conflicts);
+      current.current = next;
+      setProject(next);
+    }
+    setSaveState("Saving");
+    void flush(choice === "keep");
+  }, [flush]);
 
   /* Changes that came while a workspace switch ran (the app's own; the page under the veil takes none): run, in order, on
      the draft as it is once the switch did not happen (lib/shell/switch-workspace.ts). */
@@ -460,5 +494,7 @@ export function useDraftEditor(scope: string | null, projectId: string | null): 
     ensureSaved,
     refresh,
     reload,
+    changed,
+    resolveChanged,
   };
 }

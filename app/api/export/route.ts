@@ -11,9 +11,11 @@ export const maxDuration = 300;
 /**
  * Full workspace export — the "your data is yours" escape hatch.
  *
- * Shared records and the owner's private work; media bytes use a separate
- * authorized manifest. Credentials and collaborators' private drafts are
- * excluded.
+ * The workspace's records and the owner's own drafts, and another member's
+ * private board's records and takes too, counted in its maker's history
+ * (lib/draftProject.ts › exportableBoards); their drafts and soul identities
+ * stay theirs. Media bytes use a separate authorized manifest. Credentials
+ * are excluded.
  */
 export const GET = withTenant(async function GET(req: Request) {
   const url = new URL(req.url);
@@ -21,7 +23,7 @@ export const GET = withTenant(async function GET(req: Request) {
   if (format === "csv" || format === "manifest") {
     const got = await requireOwner();
     if (got.response) return got.response;
-    const { rows, unit } = await exportRows();
+    const { rows, unit } = await exportRows({ id: got.user.id, role: got.user.role, owner: got.user.owner });
     if (format === "csv") {
       return new Response(takesCsv(rows, unit), {
         headers: {
@@ -51,7 +53,7 @@ export const GET = withTenant(async function GET(req: Request) {
   // Owner-scoped export with shared data and customer billing records.
   const got = await requireOwner();
   if (got.response) return got.response;
-  const payload = await workspaceExport(got.user.id, got.user.email);
+  const payload = await workspaceExport(got.user.id, got.user.email, { id: got.user.id, role: got.user.role, owner: got.user.owner });
 
   const stamp = new Date(now()).toISOString().slice(0, 10);
   return new Response(JSON.stringify(payload, null, 2), {

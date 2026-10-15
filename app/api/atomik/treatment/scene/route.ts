@@ -50,7 +50,9 @@ export const POST = withTenant(async function POST(req: Request) {
   const n = Number(body.n);
   if (!projectId || !Number.isInteger(n) || n < 1) return NextResponse.json({ error: "Which scene?" }, { status: 400 });
   /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): asked always, before the gateway or any reservation, and refused as a scene that is not there is. */
-  const reach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, projectId, "write");
+  /* Paid text is billed in credits to this workspace: only someone who may START work on the board (its owner, or an editor), not an admin who may look at and edit it. "admit" first: an admin refused there writes no history line for a spend. */
+  const person = isAgentId(got.user.id) ? null : got.user;
+  const reach = (await mayReachProject(person, projectId, "admit")) && (await mayReachProject(person, projectId, "write"));
   const t = await getTreatment(projectId);
   const scene = t?.scenes.find((s) => s.n === n);
   if (!t || !scene || !reach) return NextResponse.json({ error: "No such scene." }, { status: 404 });

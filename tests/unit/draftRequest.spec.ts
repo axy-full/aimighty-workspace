@@ -10,6 +10,7 @@ import {
   draftRequest,
   MERGE_TRIES,
   draftWriter,
+  DraftChangedError,
 } from "../../lib/workbench/draft-request";
 import type { Project } from "../../lib/workbench/studio";
 const nativeFetch = globalThis.fetch;
@@ -378,4 +379,49 @@ test("nothing is sent when the newer version already holds every edit", async ()
   const saved = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 8 });
   expect(state.calls).toEqual(["PUT", "GET"]);
   expect(saved).toMatchObject({ revision: 9, project: { brief: "Both tabs typed this" } });
+});
+
+test("the same value changed in two windows: asked, the save is not sent and says what both changed; kept (the default), this side's is saved as before", async () => {
+  const base = { ...newProject("Same value"), nodes: [{ ...node("n1"), text: "Original" }] };
+  const theirs = { ...base, nodes: [{ ...base.nodes[0], text: "Their line" }] };
+  const mine = { ...base, nodes: [{ ...base.nodes[0], text: "My line" }, node("m1")] };
+  const asked = server({ project: theirs, revision: 5 });
+  const error = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 4, conflicts: "ask" }).catch((e) => e);
+  expect(error).toBeInstanceOf(DraftChangedError);
+  expect(asked.calls).toEqual(["PUT", "GET"]);
+  expect((error as DraftChangedError).revision).toBe(5);
+  expect((error as DraftChangedError).latest.nodes[0].text).toBe("Their line");
+  expect((error as DraftChangedError).merged.nodes[0].text).toBe("My line");
+  expect((error as DraftChangedError).conflicts).toMatchObject([{ path: ["nodes", "[id=n1]", "text"], mine: "My line", theirs: "Their line" }]);
+  expect(asked.project.nodes[0].text, "nothing was written over theirs").toBe("Their line");
+  const kept = server({ project: theirs, revision: 5 });
+  const saved = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 4 });
+  expect(kept.calls).toEqual(["PUT", "GET", "PUT"]);
+  expect(saved.project.nodes[0].text).toBe("My line");
+  // Asked, but nothing in common: saved as ever.
+  const apart = { ...base, nodes: [{ ...base.nodes[0], title: "Renamed by them" }] };
+  const fine = server({ project: apart, revision: 5 });
+  const done = await writeMergedDraft("/api/workbench", "scope", { base, mine: { ...base, nodes: [{ ...base.nodes[0], text: "Mine" }] }, revision: 4, conflicts: "ask" });
+  expect(fine.calls).toEqual(["PUT", "GET", "PUT"]);
+  expect(done.project.nodes[0]).toMatchObject({ title: "Renamed by them", text: "Mine" });
+});
+
+test("a held draft, left at the version it opened on, reports the conflict again on every later save (a parked or drained one never fast-forwards over theirs)", async () => {
+  const base = { ...newProject("Held"), nodes: [{ ...node("n1"), text: "Original" }, { ...node("n2"), text: "Two" }] };
+  const theirs = { ...base, nodes: [{ ...base.nodes[0], text: "Their line" }, { ...base.nodes[1], text: "Their two" }] };
+  const mine = { ...base, nodes: [{ ...base.nodes[0], text: "My line" }, base.nodes[1]] };
+  const first = server({ project: theirs, revision: 5 });
+  const error = await writeMergedDraft("/api/workbench", "scope", { base, mine, revision: 4, conflicts: "ask" }).catch((e) => e) as DraftChangedError;
+  expect(error).toBeInstanceOf(DraftChangedError);
+  // What the Rig keeps while held: the merged project on screen, the base and revision it opened on.
+  const held = error.merged;
+  expect(held.nodes.map((n) => n.text)).toEqual(["My line", "Their two"]);
+  for (let round = 0; round < 2; round++) {
+    const again = server({ project: theirs, revision: 5 });
+    const next = await writeMergedDraft("/api/workbench", "scope", { base, mine: held, revision: 4, conflicts: "ask" }).catch((e) => e);
+    expect(next).toBeInstanceOf(DraftChangedError);
+    expect((next as DraftChangedError).conflicts).toMatchObject([{ path: ["nodes", "[id=n1]", "text"], mine: "My line", theirs: "Their line" }]);
+    expect(again.project.nodes[0].text, "theirs survives").toBe("Their line");
+  }
+  expect(first.project.nodes[0].text).toBe("Their line");
 });

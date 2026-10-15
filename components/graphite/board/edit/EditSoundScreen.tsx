@@ -17,6 +17,7 @@ import type { SoundJobTask } from "@/lib/workbench/sound-generate";
 import type { Project } from "@/lib/workbench/studio";
 import { setShotSeconds } from "@/lib/production/sequence";
 import { useDraftEditor } from "@/lib/workspace/draft-editor";
+import { CHANGED_WORDS, changedLine } from "@/lib/workbench/changed-since";
 import { useProjectLibrary } from "@/lib/workspace/library";
 import { shotAt, mmss } from "@/lib/workspace/stems";
 import { cutOf } from "../cards/cut/cut-model";
@@ -60,6 +61,7 @@ type Draft = ReturnType<typeof useDraftEditor>;
 
 function EditBody({ project, ctx, draft, onClose }: { project: Project; ctx: BoardCtx; draft: Draft; onClose: () => void }) {
   const scope = ctx.scope;
+  const [now] = useState(() => Date.now());
   const [problem, setProblem] = useState<string | null>(null);
   const [landed, setLanded] = useState<string | null>(null);
   const [frame, setFrame] = useState(0);
@@ -184,6 +186,12 @@ function EditBody({ project, ctx, draft, onClose }: { project: Project; ctx: Boa
           ) : null}
           {out.error ? <p className="gx-es-note" data-tone="bad" role="alert" data-testid="es-export-error">{out.error} <button type="button" className="gx-es-link" onClick={() => void out.start()}>Try again</button></p> : null}
           {problem || draft.state.error ? <p className="gx-es-note" data-tone="bad" role="alert">{problem ?? draft.state.error}</p> : null}
+          {draft.state.changed ? (
+            <p className="gx-es-note" role="status" data-testid="es-changed">{changedLine(draft.state.changed, Math.max(now, draft.state.changed.at))}{" "}
+              <button type="button" className="gx-es-btn" onClick={() => draft.resolveChanged("reload")} data-testid="es-changed-reload">{CHANGED_WORDS.reload}</button>{" "}
+              <button type="button" className="gx-es-btn" onClick={() => draft.resolveChanged("keep")} data-testid="es-changed-keep">{CHANGED_WORDS.keep}</button>
+            </p>
+          ) : null}
           {landed && !problem ? <p className="gx-es-note" role="status">{landed}</p> : null}
 
           <div className="gx-es-tools" role="group" aria-label="More editing">

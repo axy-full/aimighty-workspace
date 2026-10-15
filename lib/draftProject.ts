@@ -4,6 +4,7 @@ import { db } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
 import { isAgentId } from "./security/people-only";
 import { parseSampleMark, SAMPLE_SETTING_KEY } from "./demo/sample";
+import { securityAuditStatement } from "./securityAudit";
 
 type Exec = { execute(statement: InStatement): Promise<ResultSet> };
 
@@ -18,6 +19,19 @@ export function mappedId(prefix: string, ...parts: string[]) {
  */
 export const DRAFT_PROJECT_PREFIX = "prj_wb_";
 export const isDraftProject = (projectId: string | null | undefined): boolean => typeof projectId === "string" && projectId.startsWith(DRAFT_PROJECT_PREFIX);
+
+/** Whoever is asking: their id and their role in THIS workspace (`owner` is the workspace's owner, who is an admin too). Without a role a person is a member. */
+export type Person = { id: string; role?: string; owner?: boolean };
+
+/**
+ * Whether `person` is an admin of the workspace in scope (owner, 13 Oct: "admins CAN open any board in their own workspace ... the work belongs to the workspace.
+ * Members still can't see each other's private boards. Never across workspaces."). The role is the one the request's membership carries in this workspace, and
+ * every query behind a request runs on this workspace's own database, so the reach never leaves it. An Atomik run or the server is never an admin (it acts as
+ * the person who asked, who is asked again where it matters).
+ */
+export const isWorkspaceAdmin = (person: Person | null | undefined): boolean =>
+  /* A token (API or MCP, read-only or not) acts as a plain member whatever its creator's role (owner, 14 Oct): admin reach needs a signed-in admin. */
+  !!person && !isAgentId(person.id) && !currentTenant()?.token && (person.role === "admin" || person.owner === true);
 
 /**
  * Where a person's takes and identities go when they delete one of their private boards: a project of their own that nobody else can list or reach
@@ -98,11 +112,11 @@ export async function isSampleProject(projectId: string | null | undefined, ex: 
   const who = person === undefined ? currentPerson() : person;
   return !(await mayEditSample(who?.id, ex));
 }
-/** Whether saving this draft would write the sample against `owner`: a copy someone opened of it (`sample-…`), the marker's own board it was marked from, or any draft linked to it, unless `owner` may edit the sample. */
-export async function isSampleDraft(owner: string, draftId: string, productionId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
+/** Whether saving this draft would write the sample against `owner` (the key it is stored under; `actor` is the person saving, `owner` unless acting on another's board): a copy someone opened of it (`sample-…`), the marker's own board it was marked from, or any draft linked to it, unless `owner` may edit the sample. */
+export async function isSampleDraft(owner: string, draftId: string, productionId: string | null | undefined, ex: Exec = db(), actor: string = owner): Promise<boolean> {
   const mark = await sampleMarkNow(ex);
   if (!mark) return false;
-  if (await mayEditSample(owner, ex)) return false;
+  if (await mayEditSample(actor, ex)) return false;
   return draftId.startsWith("sample-") || (mark.draftOwner === owner && mark.draftId === draftId) || (!!productionId && productionId === mark.projectId);
 }
 
@@ -111,43 +125,116 @@ const SHARED_FLAG = '"teamShared":true';
 /**
  * What makes a draft shared with the team: the author's flag in its own saved JSON (a draft whose JSON can't be read is private). The one definition:
  * lib/workbench/team-boards.ts lists and reads shared boards with it, and this file's gate and project lists ask the same question with it.
+ * A shared board is either view-only for teammates or editable (`teamEdit`, which only counts together with `teamShared`): none, view, edit.
  */
 export const TEAM_SHARED_SQL = "json_valid(body) AND json_extract(body,'$.teamShared') = 1";
-const SHARED_BOARDS = `SELECT owner, project_id FROM workbench_projects WHERE instr(body, '${SHARED_FLAG}')>0 AND ${TEAM_SHARED_SQL}`;
+/** Shared AND editable by teammates (the share mode "Can edit"). */
+export const TEAM_EDIT_SQL = `${TEAM_SHARED_SQL} AND json_extract(body,'$.teamEdit') = 1`;
+const SHARED_BOARDS = `SELECT owner, project_id, json_extract(body,'$.teamEdit') AS edit FROM workbench_projects WHERE instr(body, '${SHARED_FLAG}')>0 AND ${TEAM_SHARED_SQL}`;
+
+/** How a board is shared with the team: not at all, to look at, or to edit. */
+export type ShareMode = "none" | "view" | "edit";
 
 /**
- * Whether the author has shared this draft's board with the team: `teamShared: true` in the draft's saved body (set by the author, #667's `lib/workbench/team-boards.ts`). Nothing
- * writes the flag on release/1, so this answers false for every board until it exists; it is the one place the gate learns about sharing. A shared board is
- * for teammates to READ (view-only); writes stay the owner's.
+ * How the author has shared this draft's board: `teamShared: true` in the draft's saved body (set only by the `team-share` action, lib/workbench/records.ts ›
+ * setBoardSharing), plus `teamEdit: true` for "Can edit". Anything but a shared board answers "none". Teammates READ a "view" board; they also WRITE an
+ * "edit" board (mayReachProject).
  */
-export async function draftIsTeamShared(projectId: string, ex: Exec = db()): Promise<boolean> {
-  if (!isDraftProject(projectId)) return false;
+export async function draftShareMode(projectId: string, ex: Exec = db()): Promise<ShareMode> {
+  return (await draftShare(projectId, ex)).mode;
+}
+
+/** The share mode and the key the shared board is stored under (null when it is not shared). */
+export async function draftShare(projectId: string, ex: Exec = db()): Promise<{ mode: ShareMode; owner: string | null }> {
+  if (!isDraftProject(projectId)) return { mode: "none", owner: null };
   const workspace = requireTenant().id;
   const rows = (await ex.execute({ sql: SHARED_BOARDS, args: [] })).rows;
-  return rows.some((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)) === projectId);
+  const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)) === projectId);
+  return !hit ? { mode: "none", owner: null } : { mode: Number(hit.edit) === 1 ? "edit" : "view", owner: String(hit.owner) };
+}
+
+/**
+ * Whether `accountId` is an active member of this workspace: the membership and the account are not disabled, the account is not deleted. A board whose maker
+ * is not one is read-only to everyone else (its "Can edit" mode lapses with its maker), and is not acted on.
+ */
+export async function isActiveMember(accountId: string): Promise<boolean> {
+  const { platformDb, platformReady } = await import("./platform");
+  await platformReady();
+  const rows = (await platformDb().execute({
+    sql: `SELECT 1 FROM memberships m JOIN accounts a ON a.id = m.account_id WHERE m.workspace_id = ? AND m.account_id = ? AND m.disabled = 0 AND a.disabled = 0 AND a.deleted_at IS NULL LIMIT 1`,
+    args: [requireTenant().id, accountId],
+  })).rows;
+  return rows.length > 0;
+}
+
+/** Whether the author has shared this draft's board with the team (to look at, or to edit). */
+export async function draftIsTeamShared(projectId: string, ex: Exec = db()): Promise<boolean> {
+  return (await draftShareMode(projectId, ex)) !== "none";
 }
 
 /**
  * The person making this request: the signed-in user of the workspace in scope (a token too), or nobody. Background work has no person, and an Atomik
  * run (`agent:…`) acts through the run's owner, who was asked when the run was started: neither is asked again here.
  */
-export function currentPerson(): { id: string; role?: string } | null {
+export function currentPerson(): Person | null {
   const user = currentTenant()?.user;
-  return user && !isAgentId(user.id) ? { id: user.id, role: user.role } : null;
+  return user && !isAgentId(user.id) ? { id: user.id, role: user.role, owner: user.owner } : null;
 }
 
 /**
  * Whether `person` may reach the draft project `projectId`: its owner, for reading and writing; the marked sample, for everyone, as before; a board the
- * author has shared (`teamShared`), for READING only. Any other project is the workspace's.
+ * author has shared (`teamShared`), for READING, or for writing too when shared with "Can edit" (`teamEdit`). Any other project is the workspace's.
  */
-export async function mayReachProject(person: { id: string } | null, projectId: string | null | undefined, access: "read" | "write" | "admit" = "write", ex: Exec = db()): Promise<boolean> {
+export async function mayReachProject(person: Person | null, projectId: string | null | undefined, access: "read" | "write" | "admit" = "write", ex: Exec = db(), options: { admin?: boolean } = {}): Promise<boolean> {
   if (!person) return true;
   /* The sample is nobody's to write: not its marker's, not the workspace owner's or an admin's. */
   if (access === "write" && (await isSampleProject(projectId, ex, person))) return false;
   if (!isDraftProject(projectId)) return true;
   if (await ownsDraftProject(person.id, projectId!, ex)) return true;
   if (await isMarkedSample(projectId!, ex)) return true;
-  return access === "read" && (await draftIsTeamShared(projectId!, ex));
+  /* A shared board is the team's to read; one shared with "Can edit" is also theirs to write and to render on. Sharing settings, rename and delete are not
+     this rule's: they stay the owner's or an admin's (lib/workAccess.ts, lib/workbench/team-boards.ts › maySetSharing). */
+  const { mode, owner } = await draftShare(projectId!, ex);
+  if (access === "read" && mode !== "none") return true;
+  /* Can edit lapses with its maker: a disabled or removed owner's board refuses writes everywhere (the canvas, its rooms, a render's admission), and stays readable. */
+  if (access !== "read" && mode === "edit" && !!owner && (await isActiveMember(owner))) return true;
+  /* An admin of this workspace reaches any board in it, to look at and to write (not to render on: a render's admission is the board's owner's or an editor's, as
+     before). Each such reach of a board that is not shared that way is written to the workspace's history first, and without that line there is no reach. */
+  if (access === "admit" || options.admin === false || !isWorkspaceAdmin(person)) return false;
+  return recordAdminReach(person.id, projectId!, access, ex);
+}
+
+/** The draft that holds the board whose own production project is `projectId`, by the one hash that names it: its owner's key and its draft id. Null when no draft of this workspace maps to it. */
+export async function boardDraftOf(projectId: string, ex: Exec = db()): Promise<{ owner: string; draftId: string } | null> {
+  if (!isDraftProject(projectId)) return null;
+  const workspace = requireTenant().id;
+  const rows = (await ex.execute({ sql: "SELECT owner, project_id FROM workbench_projects", args: [] })).rows;
+  const hit = rows.find((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, String(row.owner), String(row.project_id)) === projectId);
+  return hit ? { owner: String(hit.owner), draftId: String(hit.project_id) } : null;
+}
+
+/** An admin looks at (`board.opened_by_admin`) or changes (`board.edited_by_admin`) a member's private board: one line in the workspace's security history, the board's owner reads it as "Viewed by". */
+const ADMIN_REACH_ACTIONS = { read: "board.opened_by_admin", write: "board.edited_by_admin" } as const;
+/** An admin working on a board is one line for a while, not one for every save or request. */
+export const ADMIN_REACH_LINE_MS = 15 * 60_000;
+
+async function recordAdminReach(adminId: string, projectId: string, access: "read" | "write", ex: Exec): Promise<boolean> {
+  /* Only a board that exists in this workspace: an id no draft maps to is nobody's. A READ of a board whose draft is gone (held or deleted: its takes remain) is audited the same way,
+     against the board's id (owner, 14 Oct, 23:35: no exception); an id with neither a draft nor takes is nobody's. A write needs the draft. */
+  const board = await boardDraftOf(projectId, ex);
+  if (!board && (access !== "read" || !(await ex.execute({ sql: "SELECT 1 FROM generations WHERE project_id=? LIMIT 1", args: [projectId] })).rows.length)) return false;
+  try {
+    const action = ADMIN_REACH_ACTIONS[access], at = Date.now();
+    const recent = (await ex.execute({
+      sql: "SELECT 1 FROM security_audit WHERE workspace_id=? AND actor_id=? AND action=? AND target_id=? AND created_at>? LIMIT 1",
+      args: [requireTenant().id, adminId, action, projectId, at - ADMIN_REACH_LINE_MS],
+    })).rows.length > 0;
+    if (!recent) await ex.execute(securityAuditStatement({ workspaceId: requireTenant().id, actorId: adminId, action, targetType: "board", targetId: projectId }));
+    return true;
+  } catch (error) {
+    console.error(JSON.stringify({ level: "error", event: "board.admin_reach_unrecorded", message: error instanceof Error ? error.message : "unknown" }));
+    return false;
+  }
 }
 
 /** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
@@ -167,20 +254,23 @@ export async function sharedBoards(ex: Exec = db()): Promise<{ projects: string[
   return { projects, drafts };
 }
 
-export async function projectLister(person: { id: string } | null, ex: Exec = db()): Promise<(projectId: string | null | undefined) => boolean> {
+export async function projectLister(person: Person | null, ex: Exec = db(), opts: { only?: string | null } = {}): Promise<(projectId: string | null | undefined) => boolean> {
   if (!person) return () => true;
   const workspace = requireTenant().id;
   const own = new Set((await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [person.id] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, person.id, String(row.project_id))));
   own.add(heldBoardsProjectId(workspace, person.id));
   const boards = await sharedBoards(ex);
   const shared = new Set(boards.projects);
-  return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!);
+  /* A list is the person's boards and the team's shared ones, an admin's too: it is a list, and a board's contents are not read board by board. When an admin asks for ONE board
+     (`only`), that board is added through the gate that writes the workspace's history line (mayReachProject), so opening a member's private board is never unrecorded. */
+  const everyone = isWorkspaceAdmin(person) && opts.only && isDraftProject(opts.only) && !own.has(opts.only) && !shared.has(opts.only) && (await mayReachProject(person, opts.only, "read", ex)) ? opts.only : null;
+  return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!) || (!!everyone && projectId === everyone);
 }
 
 /** An id that names no project: a route that must answer a private board exactly as it answers an unknown id runs on this in the board's place. */
 export const NO_SUCH_PROJECT = "\u0000unknown";
 /** `projectId` when `person` may reach it for `access`, else the id of no project: the one question, always asked, so the reads that follow are the same either way. */
-export async function reachableOr(person: { id: string } | null, projectId: string, access: "read" | "write" = "write", ex: Exec = db()): Promise<string> {
+export async function reachableOr(person: Person | null, projectId: string, access: "read" | "write" = "write", ex: Exec = db()): Promise<string> {
   return (await mayReachProject(person, projectId, access, ex)) ? projectId : NO_SUCH_PROJECT;
 }
 
@@ -195,7 +285,7 @@ export async function projectExists(projectId: string, ex: Exec = db()): Promise
  * (a production with no project of its own, or with any project they may read, is the workspace's). Asked before the rules about who may CHANGE a production
  * (lib/workAccess.ts), so a refusal never confirms that a private board's production exists.
  */
-export async function productionReachable(person: { id: string } | null, productionId: string, ex: Exec = db()): Promise<boolean> {
+export async function productionReachable(person: Person | null, productionId: string, ex: Exec = db()): Promise<boolean> {
   if (!person) return true;
   const rows = (await ex.execute({ sql: "SELECT id FROM projects WHERE production_id = ?", args: [productionId] })).rows;
   if (!rows.length) return true;
@@ -210,17 +300,31 @@ export type Viewer = { id: string; role?: string } | null;
 
 /**
  * Who may see the TAKES filed under a private board (a `prj_wb_…` project, lib/draftProject.ts). Owner decision: the board's owner always, a teammate
- * only once it is shared (to look at) or if it is the marked sample, and a workspace admin (the owner included) of the SAME workspace, whose queries
- * these are, for the work belongs to the workspace. Another workspace's people never reach these queries at all.
- *
- * This is the one place that rule is written for takes. The wider change, where admins read and write every board in their workspace
- * (`mayReachProject`), replaces `seesEveryBoard` here and nothing else.
+ * only once it is shared (to look at) or if it is the marked sample. A workspace admin sees none of another's private takes in a list (the Library, the jobs list, a board's
+ * library, the usage screen's recent takes): the lists hide them, and the admin opens the board, which goes through `mayReachProject` (audited, failing closed: no history
+ * line, no read). The one screen that needs them in a list, the approvals queue, asks that gate for each board it shows (lib/control-room/approvals.server.ts). A board whose
+ * draft is gone (held or deleted) is no exception (owner, 14 Oct, 23:35): the same lists hide it, and a read of it is the same audited gate. Another workspace's people never reach these queries at all.
  */
-export const seesEveryBoard = (viewer: Viewer): boolean => viewer?.role === "admin";
+
+/**
+ * Who may make a client review link for `projectId` (owner, 14 Oct, 22:50: "the board's OWNER can create a client link for their own private board, admin or not. Nobody
+ * else can make one on someone else's private board (admins included)"):
+ *  - "owner": the person owns the board, whatever their role;
+ *  - "none": a private board (a draft board that is not shared and not the marked sample) that is not theirs: the routes answer as for a production that is not saved;
+ *  - "admin": anything else (an ordinary production, a shared board, the sample): today's rule, the routes ask for an admin.
+ * A board that does not exist is not asked here: the routes check that first and answer the same.
+ */
+export type ClientLinkVerdict = "owner" | "admin" | "none";
+export async function clientLinkVerdict(person: Person, projectId: string, ex: Exec = db()): Promise<ClientLinkVerdict> {
+  if (!isDraftProject(projectId)) return "admin";
+  if (await ownsDraftProject(person.id, projectId, ex)) return "owner";
+  const isPrivate = !(await isMarkedSample(projectId, ex)) && (await draftShare(projectId, ex)).mode === "none";
+  return isPrivate ? "none" : "admin";
+}
 
 /** Whether `viewer` may see a take filed under `projectId`: one read for a private board, none for anything else. */
 export async function mayReadTake(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
-  if (!viewer || seesEveryBoard(viewer) || !isDraftProject(projectId)) return true;
+  if (!viewer || !isDraftProject(projectId)) return true;
   return mayReachProject(viewer, projectId, "read", ex);
 }
 
@@ -229,11 +333,12 @@ export async function mayReadTake(viewer: Viewer, projectId: string | null | und
  * under a private board). A list of takes keeps those takes of ordinary projects and of unfiled work, and of these boards only: counts, pages and
  * cursors are then the viewer's own, because the rows are left out in the query, not after it.
  */
-export async function visibleBoardsOfTakes(viewer: Viewer, ex: Exec = db()): Promise<string[] | null> {
-  if (!viewer || seesEveryBoard(viewer)) return null;
+export async function visibleBoardsOfTakes(viewer: Viewer, ex: Exec = db(), only?: string | null): Promise<string[] | null> {
+  if (!viewer) return null;
   const held = (await ex.execute({ sql: "SELECT DISTINCT project_id FROM generations WHERE project_id GLOB 'prj_wb_*'", args: [] })).rows.map((row) => String(row.project_id));
   if (!held.length) return null;
-  const listed = await projectLister(viewer, ex);
+  /* `only`: the one board this list was asked for (a board's own library): for an admin it is added through the audited gate, so opening it is never unrecorded. */
+  const listed = await projectLister(viewer, ex, { only });
   return held.filter((id) => listed(id));
 }
 
@@ -245,14 +350,57 @@ export function visibleTakesClause(visible: string[]): { sql: string; args: unkn
   };
 }
 
-/** Which of the projects `viewer` may see the takes of, as a lookup: everything for an admin or for nobody (background work), else `projectLister`'s (their own boards, shared ones, the sample, ordinary productions). */
-export async function takeLister(viewer: Viewer, ex: Exec = db()): Promise<(projectId: string | null | undefined) => boolean> {
-  if (!viewer || seesEveryBoard(viewer)) return () => true;
-  return projectLister(viewer, ex);
+/** Which of the projects `viewer` may see the takes of, as a lookup: everything for nobody (background work), else `projectLister`'s (their own boards, shared ones, the sample, ordinary productions), an admin included. */
+export async function takeLister(viewer: Viewer, ex: Exec = db(), only?: string | null): Promise<(projectId: string | null | undefined) => boolean> {
+  if (!viewer) return () => true;
+  /* `only`: the one board this view was asked for; for a signed-in admin it is added through the audited gate (a token is a plain member's). */
+  return projectLister(viewer, ex, { only });
 }
 
 /** `projectId` when `viewer` may READ that project (its owner, an admin of the workspace, anyone for a shared board or the sample), else null, no project: what a route that feeds a project's takes, titles or prompts to a model runs on, so nothing of a private board is read and no record (a meter line, a reservation, a memory) is ever written against it or against a placeholder id. */
 export async function readableProjectOr(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
   if (projectId == null) return null;
-  return seesEveryBoard(viewer) || (await mayReachProject(viewer, projectId, "read", ex)) ? projectId : null;
+  /* The audited gate, for every board an admin did not make, a held or deleted one too (owner, 14 Oct, 23:35). */
+  return (await mayReachProject(viewer, projectId, "read", ex)) ? projectId : null;
+}
+
+/**
+ * An admin takes a member's private board out in an export: one history line, `board.exported_by_admin` (ids and action only), EVERY time, for every private board the export
+ * includes (owner, 15 Oct 2026: "one audit line per private board per export"). It is its own action, not the 15-minute "opened" line: an export is a copy leaving the
+ * workspace, so it is counted each time, and the board's owner reads "Exported by <admin>" apart from "Viewed by". No line, no export of that board.
+ */
+async function recordAdminExport(adminId: string, projectId: string, ex: Exec): Promise<boolean> {
+  /* Only a board that exists in this workspace: one with a draft, a project row, or takes that remain (held or deleted); an id with none is nobody's. */
+  const known = (await boardDraftOf(projectId, ex))
+    || (await ex.execute({ sql: "SELECT 1 FROM projects WHERE id=? LIMIT 1", args: [projectId] })).rows.length > 0
+    || (await ex.execute({ sql: "SELECT 1 FROM generations WHERE project_id=? LIMIT 1", args: [projectId] })).rows.length > 0;
+  if (!known) return false;
+  try {
+    await ex.execute(securityAuditStatement({ workspaceId: requireTenant().id, actorId: adminId, action: "board.exported_by_admin", targetType: "board", targetId: projectId }));
+    return true;
+  } catch (error) {
+    console.error(JSON.stringify({ level: "error", event: "board.admin_export_unrecorded", message: error instanceof Error ? error.message : "unknown" }));
+    return false;
+  }
+}
+
+/**
+ * The private boards `person` may take the takes of into an EXPORT, as a set, or null when nothing needs hiding (nobody, background work, or no take is filed under a private board).
+ * An export is the one place an admin takes every member's work out of the workspace at once, so it is complete, and counted: for each private board that holds a take and is
+ * another member's (not the admin's own, not shared, not the sample), an admin writes one `board.exported_by_admin` line, every export (`recordAdminExport`), and a board whose line
+ * cannot be written is left out (no line, no export). The person's own boards, shared ones and the sample need no line; a member gets only what they could see.
+ */
+export async function exportableBoards(person: Person | null, ex: Exec = db()): Promise<Set<string> | null> {
+  if (!person) return null;
+  /* Every private board the export could carry a row of: one with a project row (its name, shots, canvas, notes live there) or a take that is not deleted, so a board with a shot and no
+     take is counted too. An empty set (not null) when there is none: the person is asked about, and nothing is hidden because nothing is there. */
+  const held = new Set<string>();
+  for (const sql of ["SELECT id AS project_id FROM projects WHERE id GLOB 'prj_wb_*'", "SELECT DISTINCT project_id FROM generations WHERE deleted = 0 AND project_id GLOB 'prj_wb_*'"])
+    for (const row of (await ex.execute({ sql, args: [] })).rows) held.add(String(row.project_id));
+  const readable = new Set<string>();
+  for (const id of held) {
+    const othersPrivate = isWorkspaceAdmin(person) && !(await ownsDraftProject(person.id, id, ex)) && !(await isMarkedSample(id, ex)) && (await draftShare(id, ex)).mode === "none";
+    if (othersPrivate ? await recordAdminExport(person.id, id, ex) : await mayReachProject(person, id, "read", ex)) readable.add(id);
+  }
+  return readable;
 }
