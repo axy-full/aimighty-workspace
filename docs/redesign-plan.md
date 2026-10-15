@@ -689,3 +689,22 @@ How the lead applies it:
   - house style;
   - #740 (stacked on migration #728, so it can't merge without it).
 - **Migrations in deploy #4 (#702, #698, #718, #700):** CI is run, but they are not merged until the owner's throwaway-copy test passes ("Only after that passes do they ship in deploy #4").
+
+## Owner answers to the 15 Oct overnight report (15 Oct 2026, 10:45 IST, verbatim)
+1) Deploy #4 = option A: release/1 as it is, no migrations, no new env. The migration set is deploy #5, after my copy test.
+2) #746: YES to (a): exempt design/particl-prototype-25/ in demo-clean-slate-one-design.spec.ts the same way v15 is. Don't change the pattern. Then merge on green.
+3) #743: YES to 1 (stricter). 2: no Atomik context for admins on a member's private board (admins read only through #715's audited path). 3: the sample rule ("editable only by its marker and the platform owner") in a follow-up PR.
+4) #715: YES to (a), both stricter lines. (b) Admin exports include private boards, with one audit line per private board per export.
+5) #738: YES to the flip at textDirectRequests ~:184 (Gemini true; Grok stays false).
+6) #725/#727: YES to option A: remove the dead @vercel/blob mock entry at healthMinimal.spec.ts:47. The per-phase dates are fine.
+7) #731: (a) freeze the figure the first time it's read, then never again; it never reads 0. Fresh Opus money review; cap tests unchanged.
+8) #744, #745: merge on green after #742/#743, with Opus's two notes added to #745.
+9) House style: YES, fix it so only boards the person can read (same workspace) are used, with an Opus privacy review. It goes in deploy #4 only if it's merged and green by 18:00 IST; otherwise deploy #5.
+10) v25 foundation: Atomik button on app screens inside the ⌘K bar, none on the board (⌘J there). Accept the tab width with "+N". Dim only the picture, never the words. Then #748–#750 may merge on green after a fresh screenshot check.
+11) Build plan #747: approved. First slice = Shots in both modes, inside the new frame, card and rail. Close #709 and #711 as superseded. I'll read the 14 questions and answer them separately.
+12) The Coolify env check: I'll run it after deploy #4 is healthy.
+13) I'll kill the stray server (pid 610521).
+#728: add the @/lib/takeReview entry under my standing rule (module named, Opus check). It stays unmerged until my copy test.
+Deploy #4: open deploy/2026-10-15-4 when release/1 is final (by 18:30), with the full PR list. I'll start the backup at ~19:00.
+
+**Lead's note on these answers.** #715's branch carries the board-sharing stack, including the `workbench_projects.updated_by` migration (`addColumn`), and it conflicts with release/1. So under answer 1 it can't ride deploy #4: its two stricter lines (4a) and the export audit (4b) are built now, and #715 ships in deploy #5 with #718. Everything else cleared above has no migration and no new env, so it rides deploy #4 if green on release/1 before 18:30.
