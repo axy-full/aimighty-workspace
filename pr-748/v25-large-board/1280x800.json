@@ -1,6 +1,6 @@
 {
   "name": "v25-large-board",
-  "app": "/suites?project=starter-b8c2e62c3ad6e8eaba17c5d4&suite=particl&page=brief&view=board&stage=shots",
+  "app": "/suites?project=project-9f033b8c&suite=particl&page=brief&view=board&stage=shots",
   "prototype": "mode=director&step=shots",
   "size": {
     "width": 1280,
