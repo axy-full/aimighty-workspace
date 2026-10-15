@@ -2,6 +2,8 @@
 export type ExportLimits = {
   /** Longest finished video. */
   maxSeconds: number;
+  /** Longest finished ProRes video: a mezzanine is about 16 to 24 MB per second, so it is held to a shorter length. */
+  maxProResSeconds: number;
   maxClips: number;
   maxCues: number;
   maxWordsPerCue: number;
@@ -15,6 +17,7 @@ export type ExportLimits = {
 
 export const DEFAULT_LIMITS: ExportLimits = {
   maxSeconds: 120,
+  maxProResSeconds: 60,
   maxClips: 24,
   maxCues: 600,
   maxWordsPerCue: 24,

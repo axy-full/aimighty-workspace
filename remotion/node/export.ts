@@ -4,15 +4,15 @@
  * call runExport with a fake one.
  *
  * Contract (version 1):
- *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "stills": [0, 45] } }
+ *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45] } }
  *   input/      the files the props name, as plain relative paths
- *   output/     export.mp4 (when output.video is not false), still-<frame>.png for each still, result.json
+ *   output/     export.mp4 (H.264) or export.mov (ProRes) when output.video is not false, still-<frame>.png for each still, result.json
  */
 import { copyFile, link, lstat, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_LIMITS, type ExportLimits } from "../src/lib/limits";
 import { toTimeline, ExportTooLong } from "../src/lib/timeline";
-import type { CompositionId, Timeline } from "../src/lib/types";
+import { FORMAT_FILE, H265_NAMES, VIDEO_FORMATS, isProRes, type CompositionId, type Timeline, type VideoFormat } from "../src/lib/types";
 import { isCompositionId, validateProps } from "../src/lib/validate";
 import type { Prober } from "./probe";
 
@@ -20,7 +20,7 @@ export type ExportSpec = {
   version: 1;
   composition: CompositionId;
   props: unknown;
-  output?: { video?: boolean; stills?: number[] };
+  output?: { video?: boolean; format?: string; stills?: number[] };
 };
 
 export type CompositionInfo = { id: string; width: number; height: number; fps: number; durationInFrames: number; props: Record<string, unknown> };
@@ -29,7 +29,7 @@ export type CompositionInfo = { id: string; width: number; height: number; fps: 
 export type Renderer = {
   prepare(): Promise<void>;
   selectComposition(args: { serveUrl: string; id: string; inputProps: Record<string, unknown> }): Promise<CompositionInfo>;
-  renderVideo(args: { serveUrl: string; composition: CompositionInfo; inputProps: Record<string, unknown>; outputLocation: string; concurrency: number; onProgress?: (done: number, total: number) => void }): Promise<void>;
+  renderVideo(args: { serveUrl: string; composition: CompositionInfo; inputProps: Record<string, unknown>; outputLocation: string; format: VideoFormat; concurrency: number; onProgress?: (done: number, total: number) => void }): Promise<void>;
   renderStill(args: { serveUrl: string; composition: CompositionInfo; inputProps: Record<string, unknown>; frame: number; outputLocation: string }): Promise<void>;
 };
 
@@ -42,7 +42,7 @@ export type ExportSuccess = {
   fps: number;
   durationInFrames: number;
   seconds: number;
-  files: { name: string; kind: "video" | "still"; bytes: number; frame?: number }[];
+  files: { name: string; kind: "video" | "still"; bytes: number; frame?: number; format?: VideoFormat; mime?: string }[];
 };
 export type ExportResult = ExportSuccess | ExportFailure;
 
@@ -123,7 +123,7 @@ export function inputFilesOf(timeline: Timeline): string[] {
 }
 
 export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
-  | { ok: true; id: CompositionId; props: Record<string, unknown>; timeline: Timeline; video: boolean; stills: number[] }
+  | { ok: true; id: CompositionId; props: Record<string, unknown>; timeline: Timeline; video: boolean; format: VideoFormat; stills: number[] }
   | ExportFailure {
   if (typeof spec !== "object" || spec === null || Array.isArray(spec)) return fail("spec_invalid", ["spec: must be an object"]);
   const rec = spec as Record<string, unknown>;
@@ -132,12 +132,20 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   if (rec.version !== 1) errors.push("spec.version: must be 1");
   if (!isCompositionId(rec.composition)) errors.push("spec.composition: unknown composition");
   let video = true;
+  let format: VideoFormat = "h264";
   let stills: number[] = [];
   if (rec.output !== undefined) {
     const out = rec.output as Record<string, unknown> | null;
     if (typeof out !== "object" || out === null || Array.isArray(out)) errors.push("spec.output: must be an object");
     else {
-      for (const key of Object.keys(out)) if (!["video", "stills"].includes(key)) errors.push(`spec.output.${key}: is not allowed`);
+      for (const key of Object.keys(out)) if (!["video", "format", "stills"].includes(key)) errors.push(`spec.output.${key}: is not allowed`);
+      if (out.format !== undefined) {
+        const asked = typeof out.format === "string" ? out.format.trim().toLowerCase() : "";
+        if (H265_NAMES.includes(asked)) errors.push("spec.output.format: H.265 is not available.");
+        else if (!(VIDEO_FORMATS as readonly string[]).includes(asked)) errors.push(`spec.output.format: must be one of ${VIDEO_FORMATS.join(", ")}`);
+        else format = asked as VideoFormat;
+        if (out.video === false) errors.push("spec.output.format: needs the video (output.video is false)");
+      }
       if (out.video !== undefined && typeof out.video !== "boolean") errors.push("spec.output.video: must be true or false");
       if (out.video === false) video = false;
       if (out.stills !== undefined) {
@@ -158,9 +166,12 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   } catch (error) {
     return fail(error instanceof ExportTooLong ? "too_long" : "spec_invalid", [(error as Error).message]);
   }
+  if (video && isProRes(format) && timeline.durationInFrames > limits.maxProResSeconds * timeline.fps) {
+    return fail("too_long", [`A ProRes export can be at most ${limits.maxProResSeconds} s; this one is ${(timeline.durationInFrames / timeline.fps).toFixed(1)} s. Use H.264 for a longer one.`]);
+  }
   const outOfRange = stills.filter((frame) => frame >= timeline.durationInFrames);
   if (outOfRange.length) return fail("spec_invalid", [`spec.output.stills: frame ${outOfRange[0]} is past the end (${timeline.durationInFrames} frames)`]);
-  return { ok: true, id, props: checked.value as unknown as Record<string, unknown>, timeline, video, stills };
+  return { ok: true, id, props: checked.value as unknown as Record<string, unknown>, timeline, video, format, stills };
 }
 
 /** True when `child` is `parent` or inside it, by real path (a symlink cannot lead out). */
@@ -233,9 +244,10 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
     }
     const files: ExportSuccess["files"] = [];
     if (checked.video) {
-      const outputLocation = path.join(args.outputDir, "export.mp4");
-      await args.renderer.renderVideo({ serveUrl: serveDir, composition, inputProps: checked.props, outputLocation, concurrency: args.concurrency ?? 2, onProgress: args.onProgress });
-      files.push({ name: "export.mp4", kind: "video", bytes: (await stat(outputLocation)).size });
+      const file = FORMAT_FILE[checked.format];
+      const outputLocation = path.join(args.outputDir, file.name);
+      await args.renderer.renderVideo({ serveUrl: serveDir, composition, inputProps: checked.props, outputLocation, format: checked.format, concurrency: args.concurrency ?? 2, onProgress: args.onProgress });
+      files.push({ name: file.name, kind: "video", bytes: (await stat(outputLocation)).size, format: checked.format, mime: file.mime });
     }
     for (const frame of checked.stills) {
       const name = `still-${frame}.png`;

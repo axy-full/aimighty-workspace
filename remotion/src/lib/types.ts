@@ -160,3 +160,19 @@ export type Timeline = {
 };
 
 export type Box = { x: number; y: number; width: number; height: number };
+
+/**
+ * The finished video's format (spec.output.format). H.264 is the default delivery file; ProRes 422 and ProRes 422 HQ
+ * are mezzanine files for editing. H.265 is refused (owner, 15 Oct 2026: "H.265 stays off until my lawyer answers").
+ */
+export const VIDEO_FORMATS = ["h264", "prores-422", "prores-422-hq"] as const;
+export type VideoFormat = (typeof VIDEO_FORMATS)[number];
+export const isProRes = (format: VideoFormat): boolean => format !== "h264";
+/** The file a format is written to, and its media type. */
+export const FORMAT_FILE: Record<VideoFormat, { name: string; mime: string }> = {
+  h264: { name: "export.mp4", mime: "video/mp4" },
+  "prores-422": { name: "export.mov", mime: "video/quicktime" },
+  "prores-422-hq": { name: "export.mov", mime: "video/quicktime" },
+};
+/** Names a person or an agent might ask for that mean H.265. Refused with a plain reason, never guessed at. */
+export const H265_NAMES: readonly string[] = ["h265", "h.265", "hevc", "h265-mp4", "x265"];
