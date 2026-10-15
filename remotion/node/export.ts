@@ -10,7 +10,7 @@
  */
 import { copyFile, link, lstat, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_LIMITS, type ExportLimits } from "../src/lib/limits";
+import { DEFAULT_LIMITS, PRORES_MAX_FRAMES, type ExportLimits } from "../src/lib/limits";
 import { toTimeline, ExportTooLong } from "../src/lib/timeline";
 import { FORMAT_FILE, H265_NAMES, VIDEO_FORMATS, isProRes, type CompositionId, type Timeline, type VideoFormat } from "../src/lib/types";
 import { isCompositionId, validateProps } from "../src/lib/validate";
@@ -166,8 +166,9 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   } catch (error) {
     return fail(error instanceof ExportTooLong ? "too_long" : "spec_invalid", [(error as Error).message]);
   }
-  if (video && isProRes(format) && timeline.durationInFrames > limits.maxProResSeconds * timeline.fps) {
-    return fail("too_long", [`A ProRes export can be at most ${limits.maxProResSeconds} s; this one is ${(timeline.durationInFrames / timeline.fps).toFixed(1)} s. Use H.264 for a longer one.`]);
+  if (video && isProRes(format) && timeline.durationInFrames > PRORES_MAX_FRAMES) {
+    const seconds = timeline.durationInFrames / timeline.fps;
+    return fail("too_long", [`A ProRes export can be at most ${PRORES_MAX_FRAMES} frames (60 s at 30 fps, 30 s at 60 fps); this one is ${timeline.durationInFrames} frames (${seconds.toFixed(1)} s at ${timeline.fps} fps). Use H.264 for a longer one.`]);
   }
   const outOfRange = stills.filter((frame) => frame >= timeline.durationInFrames);
   if (outOfRange.length) return fail("spec_invalid", [`spec.output.stills: frame ${outOfRange[0]} is past the end (${timeline.durationInFrames} frames)`]);

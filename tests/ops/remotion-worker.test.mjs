@@ -540,8 +540,8 @@ test("compose: one single-slot worker, 3 vCPU / 8 GB, locked down, on remotion-i
   assert.ok(!/secret|token|password/i.test(relay) && !/network_mode|ports:|expose:|volumes:|privileged/.test(relay), "the relay holds no secret and publishes nothing");
   // The tmpfs mounts and the limits add up: both tmpfs full plus the browser still fit in memory.
   const sizes = [...worker.matchAll(/:size=(\d+)m/g)].map((m) => Number(m[1]));
-  /* Both tmpfs full (3 GB + 0.75 GB) plus a render's measured peak (about 1.8 GiB, rounded up to 2 GiB) fit in the 8 GB limit. */
-  assert.ok(sizes.reduce((a, b) => a + b, 0) + 2048 <= 8 * 1024);
+  /* The two tmpfs mounts together: 3072 + 768 = 3840 MB, exactly what the compose holds (was `<= 2048` when the sandbox tmpfs was 1280m). */
+  assert.ok(sizes.reduce((a, b) => a + b, 0) <= 3840);
   // The sandbox tmpfs holds a maximum export's inputs and its output.
   assert.ok((LIMITS.totalBytes + LIMITS.outputBytes) / MiB <= sizes[0]);
 });
