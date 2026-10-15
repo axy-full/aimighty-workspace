@@ -730,3 +730,7 @@ Topaz goes DIRECT (replaces #714 item H "Topaz stays on fal").
 Queue it after B1 (BFL); not part of deploy #4.
 
 **Lead's queue note.** Provider order is now: sync.so, Sarvam, Rekognition (+ Vision text), Recraft, B1 BFL (EU endpoint), then Topaz direct (T0 price table and data terms, docs only; T1 adapter behind a switch, mocks; T2 the owner-approved house run; T3 the switch and removal of fal's Topaz endpoints). #714's §8 Topaz section and §9 Topaz row ("none: stays on fal") are now wrong and get updated in #714 (docs) when that PR is next touched. Customer prices come from the rate card and the server's price path only; any change to what customers see changes CLAUDE.md § Pricing too and needs the owner's yes.
+
+## Owner, 15 Oct 2026, 14:05 IST (verbatim): bibles, presets, #731
+1) Private boards' bibles and board-tied presets: NARROW them, as you recommend. They're readable only by people who can read that board (same rule as private takes and #745). Workspace-level presets not tied to a board stay readable by all members. In deploy #4 if Opus-approved and green by 18:30, otherwise deploy #5. Tests for owner, teammate without access, admin (audited path only).
+2) #731: no metering date needed. Particl hasn't launched (no paying customers), so #731 is PARKED until after launch; launch day is the line.
