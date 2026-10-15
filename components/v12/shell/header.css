@@ -11,11 +11,9 @@
 :where(.v12 .v12-header) :where(button) { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; }
 
 /* Logo */
-.v12 .v12-logo { display: flex; align-items: center; gap: var(--gx-sp-8); flex: none; color: var(--gx-text); }
-.v12 .v12-logo-name { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
-/* The v25 mark: a ring with the accent dot in it. */
-.v12 .v12-logo-ring { flex: none; width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; border: 2px solid currentColor; display: grid; place-items: center; }
-.v12 .v12-logo-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gx-accent); }
+.v12 .v12-logo { display: flex; align-items: center; flex: none; color: var(--gx-text); }
+/* The brand's lockup (public/brand), at the bar's height: 40 px in the 56 px bar. */
+.v12 .v12-logo-img { display: block; width: auto; height: 40px; }
 
 /* Tabs that hug */
 .v12 .v12-tabs {
