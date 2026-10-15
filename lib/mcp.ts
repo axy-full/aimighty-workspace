@@ -12,6 +12,7 @@
 import { displayModelName, getModel } from "./models";
 import { EXPORT_COMPOSITIONS } from "./exports/contract";
 import { exportsEnabled } from "./exports/switch";
+import { DECK_KINDS } from "./pdf/deck";
 
 /**
  * The longest wait_for_render may hold its request open. No request stays
@@ -184,9 +185,42 @@ export const EXPORT_TOOLS: ToolDef[] = [
   },
 ];
 
-/** The tools this deployment offers: the workspace tools, plus the export tools while REMOTION_EXPORTS is on. */
-export function toolsOffered(env: Readonly<Record<string, string | undefined>> = process.env): ToolDef[] {
-  return exportsEnabled(env) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
+/**
+ * The deck PDF tool (lib/pdf/tool.ts): offered only where deck PDFs are on, which the route works out for the workspace (PDF_EXPORTS, and the
+ * house workspace or a listed one). Free: a PDF of a treatment, a board or a pitch the caller writes, made with Particl's own templates.
+ */
+export const PDF_TOOLS: ToolDef[] = [
+  {
+    name: "make_deck_pdf",
+    description:
+      "Make a PDF deck with Particl's own templates. Free: it costs no credits. " +
+      `Kinds: ${DECK_KINDS.join(", ")}. 'treatment' prints a production's saved treatment (projectId); 'ppm' prints a board's pre-production deck with its shot list (board = the board's id); ` +
+      "'pitch' prints the words you write (pitch: {logline, audience, sections:[{heading, paragraphs[], bullets[]}]}). " +
+      'Pictures go in by handle, never by URL: images:[{"upload":"<id>"} or {"take":"<still take id>"}, caption?] (PNG, JPEG or WebP, at most 24), and logo:{"upload":"<id>"} for the cover. ' +
+      "Pages are a 16:9 slide (treatment and pitch) or A4 landscape (ppm) unless page is 'slide', 'a4' or 'letter'; bleedMm is 0 or 3. " +
+      "It answers with the PDF's link, page count and name. Nothing is spent, and a failed deck says nothing was billed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: [...DECK_KINDS], description: "Which deck." },
+        title: { type: "string", description: "The deck's title (optional for treatment and ppm)." },
+        projectId: { type: "string", description: "treatment: the production." },
+        board: { type: "string", description: "ppm: the board." },
+        pitch: { type: "object", description: "pitch: logline, audience and sections." },
+        images: { type: "array", items: { type: "object" }, description: "Pictures by handle." },
+        logo: { type: "object", description: 'The cover logo: {"upload":"<id>"}.' },
+        page: { type: "string", enum: ["slide", "a4", "letter"] },
+        bleedMm: { type: "number", enum: [0, 3] },
+      },
+      required: ["kind"],
+    },
+  },
+];
+
+/** The tools this deployment offers: the workspace tools, plus the export tools while REMOTION_EXPORTS is on, plus the deck tool where `pdf` says so. */
+export function toolsOffered(env: Readonly<Record<string, string | undefined>> = process.env, options: { pdf?: boolean } = {}): ToolDef[] {
+  const more = [...(exportsEnabled(env) ? EXPORT_TOOLS : []), ...(options.pdf ? PDF_TOOLS : [])];
+  return more.length ? [...TOOLS, ...more] : TOOLS;
 }
 
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
@@ -438,6 +472,12 @@ export async function runTool(
       const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
       const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props } })) as { job: ExportSummary };
       return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
+    }
+
+    case "make_deck_pdf": {
+      /* The route decides whether this workspace has deck PDFs: where it does not, it answers 404 and the tool is unknown here too. */
+      const out = (await call("/api/pdf", { method: "POST", body: args })) as { deck: { url: string; filename: string; pages: number; bytes: number } };
+      return `${out.deck.filename} · ${out.deck.pages} pages · ${Math.round(out.deck.bytes / 1024)} KB\n\n${origin}${out.deck.url}\n(That link needs the same token — it is not public.)\nprice: Free (0 cr)`;
     }
 
     case "get_export": {

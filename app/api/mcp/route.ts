@@ -4,6 +4,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
 import { toolsOffered, runTool, makeCaller } from "@/lib/mcp";
 import { currentTenant } from "@/lib/tenant";
+import { pdfAllowedFor } from "@/lib/pdf/switch";
 import { linkOrigin } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +58,7 @@ const workspacePost = withTenant(async function POST(req: Request) {
   if (id === undefined || id === null) return new Response(null, { status: 202 });
 
   if (method === "ping") return ok(id, {});
-  if (method === "tools/list") return ok(id, { tools: toolsOffered() });
+  if (method === "tools/list") return ok(id, { tools: toolsOffered(process.env, { pdf: await pdfAllowedFor(currentTenant()?.workspace) }) });
 
   if (method === "tools/call") {
     const name = String(params?.name ?? "");
@@ -87,7 +88,7 @@ export const GET = withTenant(async function GET() {
     name: "particl",
     transport: "mcp/streamable-http",
     usage: "POST JSON-RPC here with an 'Authorization: Bearer aw_…' header.",
-    tools: toolsOffered().map((t) => t.name),
+    tools: toolsOffered(process.env, { pdf: await pdfAllowedFor(currentTenant()?.workspace) }).map((t) => t.name),
   });
 });
 

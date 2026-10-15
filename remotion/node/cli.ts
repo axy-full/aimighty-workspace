@@ -24,6 +24,8 @@ import { runExport } from "./export";
 import { bundledFfprobe } from "./ffprobe-path";
 import { createFfprobe } from "./probe";
 import { createRealRenderer } from "./renderer";
+import { findChromeHeadlessShell, runPdf } from "./pdf";
+import { isPdfSpec } from "../src/lib/pdf";
 
 const EXIT = { spec_invalid: 2, too_long: 2, input_missing: 3, input_mismatch: 3, render_failed: 4 } as const;
 
@@ -47,6 +49,27 @@ async function main(): Promise<number> {
     await writeFile(path.join(outputDir, "result.json"), JSON.stringify(result, null, 2));
     console.error(JSON.stringify(result));
     return 2;
+  }
+  /* A deck page to print: the same fixed command, the PDF half (remotion/node/pdf.ts). The spec only says which; the browser and its flags are this file's. */
+  if (isPdfSpec(spec)) {
+    const runtimeDir = process.env.REMOTION_RUNTIME_DIR || path.dirname(fileURLToPath(import.meta.url));
+    const printed = await runPdf({
+      spec,
+      inputDir: path.join(session, "input"),
+      outputDir,
+      workDir: path.join(session, "work"),
+      fontsDir: process.env.REMOTION_FONTS_DIR || path.join(runtimeDir, "fonts"),
+      chrome: process.env.REMOTION_BROWSER_EXECUTABLE || (await findChromeHeadlessShell(runtimeDir)),
+      timeoutMs: intEnv("REMOTION_PDF_TIMEOUT_MS", 120_000, 5_000, 600_000),
+    });
+    if (printed.ok) {
+      await writeFile(path.join(outputDir, "result.json"), JSON.stringify(printed, null, 2));
+      console.log(`done ${printed.pages} pages, ${printed.files.map((f) => f.name).join(", ")}`);
+      return 0;
+    }
+    await writeFile(path.join(outputDir, "result.json"), JSON.stringify(printed, null, 2));
+    console.error(JSON.stringify(printed));
+    return EXIT[printed.code];
   }
   const here = path.dirname(fileURLToPath(import.meta.url));
   const limits = { ...DEFAULT_LIMITS, maxSeconds: Math.min(DEFAULT_LIMITS.maxSeconds, intEnv("REMOTION_MAX_SECONDS", DEFAULT_LIMITS.maxSeconds, 1, 3600)) };

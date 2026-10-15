@@ -29,6 +29,19 @@ Tests: `node --test tests/ops/remotion-worker.test.mjs` (a stand-in for the expo
 
 Tuning of the export command (`REMOTION_CONCURRENCY`, `REMOTION_MAX_SECONDS`) is set in `compose.yaml`, from the measurement below, and never comes from a request.
 
+## Deck PDFs (treatment, pitch deck, PPM deck)
+
+The same fixed command also prints a deck page to PDF with the Chrome Headless Shell the image already carries: the one worker, the one command (`node /opt/remotion/cli.mjs`), no new port, no new secret. A spec with `"composition": "pdf"` (remotion/src/lib/pdf.ts) takes `input/deck.html` (our own page, written by the app from its templates, `lib/pdf/`) and the pictures it names (`i1.png`, `i2.jpg` …, PNG, JPEG or WebP, checked by their bytes) and writes `output/deck.pdf`.
+
+- **No way out.** The page may hold only an allow-list of tags and attributes, no script, no link, no address, one `<style>` block, and exactly one Content-Security-Policy that lets the browser load nothing but files beside the page. Anything else is refused (exit 2) before the browser starts. The browser's flags are fixed in `remotion/node/pdf.ts` (`--host-resolver-rules=MAP * ~NOTFOUND`, no remote control, no flags from the spec); the spec chooses nothing about the browser.
+- **Fonts and pictures are files.** The typeface (Outfit, SIL OFL) is copied from `REMOTION_FONTS_DIR` (`/opt/remotion/fonts`, set by the Dockerfile); pictures come in over the session's file API. The worker has no network to fetch anything else.
+- **Checked on the way out.** The PDF must be a PDF with exactly the page count and the page size (trim plus 2 x bleed) the spec promised, or the run fails (exit 4) and nothing is kept.
+- **Page size and bleed.** 16:9 slide (338.667 x 190.5 mm), A4 or US Letter, landscape; bleed 0 or 3 mm each side (the page grows and the artwork runs to the new edge; no trim box or marks are written).
+- **Limits.** 60 pages, 40 pictures, 20 MB each, 120 MB together, 3 MB of page, `REMOTION_PDF_TIMEOUT_MS` (default 120 s) for the print.
+- **Build check.** The Dockerfile prints a two-page A4 page (`remotion/test/pdf-check/`) as the runtime user at image build; a missing library or font fails the build.
+
+The app side is `POST /api/pdf` and the MCP tool `make_deck_pdf` (`lib/pdf/`): free (0 cr), off unless `PDF_EXPORTS` is on, and then on only for the house workspace and the workspaces listed in the site setting `newInterfaceWorkspaces`. It reuses `REMOTION_WORKER_URLS` and `REMOTION_WORKER_SECRETS`; `PDF_EXPORTS` is its own switch, apart from `REMOTION_EXPORTS`. Leave `PDF_EXPORTS` unset until the owner says.
+
 ## Networking: owner decision
 
 Use the same option as the Astra render workers; the reasoning, the trade-offs and the Verify step that proves it are in `ops/render-worker/README.md`, "Networking: owner decision". `compose.yaml` as shipped (`remotion-internal` only) is the common starting point. **The egress check below is a hard gate: no real export until it passes, and again after every change to the stack or the firewall.** What changes per option:
