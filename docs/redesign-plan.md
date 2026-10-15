@@ -796,3 +796,14 @@ git clean: STAYS BANNED. My earlier line was wrong. Lanes never clean folders; e
 HOUSEKEEPING: at 18:55 the server ran only the production app container plus Coolify's own (no staging app). Name the container that held those three next-server processes at 16:04; don't guess.
 
 **Lead's notes.** Feature report restored to its earlier wording (rev 13 → 16). #752 changes one product file (LibraryTray focus timing) plus one test line, so it gets an Opus review. The three next-server processes started at 11:19:53 UTC = 16:49:53 IST (the deploy #4 minute), not 16:04 (the lead misread their age): container id 0429db0f433c…; the lead cannot run docker, so the name needs `docker inspect --format '{{.Name}} {{.Config.Image}}' 0429db0f433c` from the owner. Vercel cleanup list to prepare for the switch-over step.
+
+## Owner, 15 Oct 2026, 19:55 IST (verbatim)
+1) Server load: no limits. The site is being built here and there are no customers, so lanes use whatever they need. Revisit before the Stripe review and the first customers; at that point it's quiet hours or the separate dev box (~$84/month), my call then. Cap simultaneous heavy runs only if that makes CI faster, not to protect the site.
+2) videosAtRisk: I'll read /api/admin/console/failed-saves and tell you which take it is. No "Retry save" without my word. Yes to the deploy #5 fix:
+   - the counter and the rescuer use the same 72-hour window;
+   - older unsaved takes are listed as "lost (older than 3 days)" instead of "at risk" forever;
+   - the cron logs a reason for every kind it can't save.
+3) #757 (relay): fold the secret-leak fix in with fail-closed (a worker refuses to start if its own egress check fails) and one worker with hard limits (cpus 2, memory 4g). Tell me when Opus approves. Merging it is not server setup; I'll do setup with my advisor after approval.
+4) Deploy #4b (#753 + #752): waiting on your "ready". I take the backup first as usual.
+
+**Lead's notes.** (3) already done: #757 Opus-approved at 542be277; CI running; merge into release/1 waits for the owner's explicit yes. (2) lane B builds the fix (deploy #5) with an Opus review. Revisit (1) before the Stripe review.
