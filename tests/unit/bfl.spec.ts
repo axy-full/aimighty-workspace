@@ -589,7 +589,7 @@ test("over MCP: flux2_image is listed only where the engine is on, flux2_edit on
   const spend = async (value: string | null) => { if (value === null) await db().execute("DELETE FROM settings WHERE key='spendWithoutAsking'"); else await setSetting("spendWithoutAsking", value, "admin"); invalidateSettings(); };
   let credits = 1;
   const calls: Record<string, unknown>[] = [];
-  const call = async (_p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; calls.push(body); return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 100, unit: "usd" } : { id: "gen_f1" }; };
+  const call = async (_p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; calls.push(body); if (_p === "/api/prepared-jobs") return { job: { id: "prep_f1" } }; return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 100, unit: "usd" } : { id: "gen_f1" }; };
   await asTenant(house(), async () => {
     await ready();
     delete process.env.BFL_ENABLED;
@@ -603,11 +603,21 @@ test("over MCP: flux2_image is listed only where the engine is on, flux2_edit on
       for (const mode of [null, "ask", "AUTO"]) {
         await spend(mode); calls.length = 0;
         const text = await runDirectEngineTool("flux2_image", { prompt: "a tree", width: 512, height: 512 }, call);
-        expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.01\nprepared: flux-2-pro still, 512 by 512\n\nThis needs a person's approval: nothing was started or spent/);
-        expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null])).toEqual([[true, null]]);
+        expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.01\nprepared: flux-2-pro still, 512 by 512\nprepared job: prep_f1\n\nThis needs a person's approval: nothing was started or spent/);
+        /* Filed for a person through the prepared-jobs door, and its id returned. */
+        expect(text, String(mode)).toContain("prepared job: prep_f1");
+        expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null])).toEqual([[true, null], [false, null]]);
+        expect(calls[1]).toMatchObject({ engine: "flux2_image", args: { tool: "image", width: 512, height: 512 } });
+        expect(JSON.stringify(calls[1])).not.toMatch(/maxCredits|quoteOnly/i);
       }
       /* Auto: at or under the line it starts at the server's price; above it (guardrail 4) it asks a person. */
       await spend("auto");
+      /* Auto runs only a draft (flux-2-pro); flex and max are full quality and always ask. */
+      for (const model of ["flux-2-flex", "flux-2-max"]) {
+        credits = 1; calls.length = 0;
+        expect(await runDirectEngineTool("flux2_image", { prompt: "a tree", model }, call), model).toMatch(/not started[\s\S]*prepared job: prep_f1[\s\S]*needs a person's approval/);
+        expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
+      }
       for (const c of [1, line]) {
         credits = c; calls.length = 0;
         expect(await runDirectEngineTool("flux2_image", { prompt: "a tree", width: 512, height: 512 }, call), String(c)).toMatch(/^Image started\.\n\nid: gen_f1/);
@@ -616,7 +626,7 @@ test("over MCP: flux2_image is listed only where the engine is on, flux2_edit on
       for (const c of [line + 1, 900]) {
         credits = c; calls.length = 0;
         expect(await runDirectEngineTool("flux2_image", { prompt: "a tree" }, call), String(c)).toMatch(/not started[\s\S]*needs a person's approval/);
-        expect(calls).toHaveLength(1);
+        expect(calls).toHaveLength(2);
       }
       credits = 1;
       for (const mode of ["ask", "auto"]) {
