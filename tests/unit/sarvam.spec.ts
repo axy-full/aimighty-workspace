@@ -255,6 +255,57 @@ test("speech: an audio take, stored under the workspace, at the real cost on its
 });
 const chars = (s: string) => [...s].length;
 
+test("the shot cap is judged at the quote and the press for speech (the one tool that makes a take), before any row is written: a member past it is refused 403 (needs an admin) with no take left; a translation or transcript is not judged against a shot", async () => {
+  const { admitSarvam } = await import("../../lib/sarvamTools");
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  const { runInTenant } = await import("../../lib/tenant");
+  process.env.SARVAM_ENABLED = "1";
+  const MEMBER: AdmissionActor = { user: { ...OWNER.user, id: "member_1", role: "member", owner: false } as AdmissionActor["user"] };
+  await runInTenant(house(), async () => {
+    await ready();
+    const setRule = async (rule: string | null, cap?: number) => {
+      for (const [key, value] of [["approvalRule", rule], ["shotCapCredits", cap == null ? null : String(cap)]] as const) {
+        if (value === null) await db().execute({ sql: "DELETE FROM settings WHERE key=?", args: [key] }); else await setSetting(key, value, "admin");
+      }
+      invalidateSettings();
+    };
+    const shotId = uid("shot");
+    await db().execute({ sql: "INSERT INTO shots (id, project_id, code, title, created_at, updated_at) VALUES (?,NULL,?,?,0,0)", args: [shotId, "S01", "A shot"] });
+    /* The shot already holds a take (a dollar of an image, ten credits), so even a one-credit line takes it past a cap of one. */
+    await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,shot_id,cost_usd,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,0,0)", args: [uid("gen_prior"), "image", "gemini-3.1-flash-image", "A prior still", "{}", "succeeded", shotId, 1] });
+    const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    let spoken = 0;
+    const seams = { speak: async () => { spoken++; return Buffer.from("audio"); } };
+    const speech = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitSarvam({ tool: "speech", text: "Namaste", language: "hi-IN", shotId, maxCredits: 100000, ...extra }, actor, options(), seams);
+    try {
+      await setRule("cap", 1);
+      const before = { rows: await rows(), meter: (await meterRows()).length };
+      for (const extra of [{ quoteOnly: true }, {}]) {
+        const refused = await speech(MEMBER, extra);
+        expect(refused, JSON.stringify(extra)).toMatchObject({ status: 403, body: { needsAdmin: true } });
+        expect(String(refused.body.error)).toMatch(/S01/);
+      }
+      expect(spoken).toBe(0);
+      expect(await rows()).toBe(before.rows);
+      expect((await meterRows()).length).toBe(before.meter);
+      /* A translation makes no take: the shot is not asked about it. */
+      expect((await admitSarvam({ tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", shotId, quoteOnly: true }, MEMBER, options(), {})).status).toBe(200);
+      /* An admin, no shot, any rule but "cap", and a shot under its cap go through. */
+      await runInTenant(house(), async () => { expect((await speech(OWNER, { quoteOnly: true })).status).toBe(200); }, OWNER as never);
+      expect((await speech(MEMBER, { quoteOnly: true, shotId: undefined })).status).toBe(200);
+      await setRule("ask");
+      expect((await speech(MEMBER, { quoteOnly: true })).status).toBe(200);
+      await setRule("cap", 100000);
+      expect((await speech(MEMBER, { quoteOnly: true })).status).toBe(200);
+      const made = await speech(MEMBER);
+      expect(made.status, JSON.stringify(made.body)).toBe(200);
+      expect(spoken).toBe(1);
+      expect(await rows()).toBe(before.rows + 1);
+    } finally { await setRule(null); }
+  }, MEMBER as never);
+});
+
 test("a customer workspace on the list pays in credits at the margin path, exactly the quote, once; the house pays none", async () => {
   const { platformReady, platformDb, grantCredits } = await import("../../lib/platform");
   const { creditState } = await import("../../lib/credits");
