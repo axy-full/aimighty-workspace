@@ -1,0 +1,379 @@
+{
+  "//": "Vercel out (docs/plans/vercel-out.md, section 4): a count per file that only goes down. { count, until, by }: the date it must be at zero and the plan's PR that gets it there (A1-A2 by 15 Nov 2026; A3-A7 and C2 by 15 Dec 2026, which leaves room after the cutover: the owner keeps Blob read-only for 30 days; B7, retiring `ai`, by 28 Feb 2027). Lower it with UPDATE_VERCEL_OUT_RATCHET=1; never raise it; a date never moves later. A file not listed has an allowance of zero.",
+  "permanent": {
+    "lib/vercelGuard.ts": {
+      "reason": "The runtime guard names VERCEL, VERCEL_OIDC_TOKEN, AI_GATEWAY_API_KEY and VERCEL_ENV on purpose, to fail /api/health if any of them appears in production."
+    }
+  },
+  "tracked": {
+    "public/vercel.svg": {
+      "count": 1,
+      "until": "2026-11-15",
+      "by": "A1 (config)"
+    },
+    "vercel.json": {
+      "count": 1,
+      "until": "2026-11-15",
+      "by": "A1 (config)"
+    }
+  },
+  "manifest": {
+    "dependencies:@ai-sdk/gateway": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A5 (the gateway door out)"
+    },
+    "dependencies:@vercel/blob": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "dependencies:@vercel/oidc": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A5 (the gateway door out)"
+    },
+    "dependencies:@vercel/sandbox": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A6 (Sandbox out)"
+    }
+  },
+  "lockfile": {
+    "node_modules/@ai-sdk/gateway": {
+      "count": 1,
+      "until": "2027-02-28",
+      "by": "B7 (ai retired; owner decision)",
+      "via": [
+        "ai"
+      ]
+    },
+    "node_modules/@ai-sdk/gateway/node_modules/@vercel/oidc": {
+      "count": 1,
+      "until": "2027-02-28",
+      "by": "B7 (ai retired; owner decision)",
+      "via": [
+        "@ai-sdk/gateway",
+        "@vercel/blob",
+        "@vercel/sandbox"
+      ]
+    },
+    "node_modules/@vercel/blob": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)",
+      "via": []
+    },
+    "node_modules/@vercel/cli-config": {
+      "count": 1,
+      "until": "2027-02-28",
+      "by": "B7 (ai retired; owner decision)",
+      "via": [
+        "@vercel/oidc"
+      ]
+    },
+    "node_modules/@vercel/cli-exec": {
+      "count": 1,
+      "until": "2027-02-28",
+      "by": "B7 (ai retired; owner decision)",
+      "via": [
+        "@vercel/oidc"
+      ]
+    },
+    "node_modules/@vercel/oidc": {
+      "count": 1,
+      "until": "2027-02-28",
+      "by": "B7 (ai retired; owner decision)",
+      "via": [
+        "@ai-sdk/gateway",
+        "@vercel/blob",
+        "@vercel/sandbox"
+      ]
+    },
+    "node_modules/@vercel/sandbox": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A6 (Sandbox out)",
+      "via": []
+    },
+    "node_modules/@vercel/sandbox/node_modules/@vercel/oidc": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A6 (Sandbox out)",
+      "via": [
+        "@ai-sdk/gateway",
+        "@vercel/blob",
+        "@vercel/sandbox"
+      ]
+    }
+  },
+  "source": {
+    "app/api/health/route.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "app/api/platform/route.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "lib/astra-blender/sandbox.ts": {
+      "count": 5,
+      "until": "2026-12-15",
+      "by": "A6 (Sandbox out)"
+    },
+    "lib/atomik.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/catalog.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/clientIp.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "lib/deployment.ts": {
+      "count": 6,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "lib/dispatch.ts": {
+      "count": 2,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "lib/engines/index.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/engines/vercel.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/enhance.ts": {
+      "count": 2,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/gateway.ts": {
+      "count": 7,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/gemini.ts": {
+      "count": 2,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/language-provider.ts": {
+      "count": 2,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/platformOwnerScrub.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "lib/previewSeed.ts": {
+      "count": 9,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "lib/providers.ts": {
+      "count": 5,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/purge.ts": {
+      "count": 1,
+      "until": "2026-11-15",
+      "by": "A2 (gateway keys)"
+    },
+    "lib/recovery.ts": {
+      "count": 2,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "lib/requestOrigin.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "lib/site.ts": {
+      "count": 3,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "lib/storage/backend.ts": {
+      "count": 3,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "lib/storage/blob.ts": {
+      "count": 3,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "lib/textDirect.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/textRoute.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/vendorImages.ts": {
+      "count": 2,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/vendorKeys.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/vercelKeys.ts": {
+      "count": 7,
+      "until": "2026-11-15",
+      "by": "A2 (gateway keys)"
+    },
+    "lib/workbench/atomik-server.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "lib/workerProbe.ts": {
+      "count": 2,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "scripts/account-http-rehearsal.mjs": {
+      "count": 2,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "scripts/astra-blender-snapshot.mjs": {
+      "count": 4,
+      "until": "2026-12-15",
+      "by": "A6 (Sandbox out)"
+    },
+    "scripts/dev-session.mjs": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "scripts/ops/backup-lib.mjs": {
+      "count": 3,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "scripts/ops/blob-to-r2.mjs": {
+      "count": 3,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "scripts/ops/load-rehearsal.mjs": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    },
+    "scripts/ops/migrate-media-r2.mjs": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "scripts/ops/snapshot-catalog.mjs": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "scripts/ops/staging-rehearsal.mjs": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    }
+  },
+  "tests": {
+    "tests/unit/astraBlenderSandbox.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A6 (Sandbox out)"
+    },
+    "tests/unit/enhanceStableKey.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "tests/unit/enhanceTimeout.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "tests/unit/gatewayChat.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "tests/unit/mediaRange.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "tests/unit/moneyRoutes.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "tests/unit/openaiDirect.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "tests/unit/operationalHealth.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "tests/unit/privateUploadStream.spec.ts": {
+      "count": 2,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "tests/unit/reviewLinks.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "tests/unit/selects.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "tests/unit/storageChunks.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "C2 (Blob code out)"
+    },
+    "tests/unit/textDirect.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A3-A5 (the gateway door out)"
+    },
+    "tests/unit/vercelGuard.spec.ts": {
+      "count": 1,
+      "until": "2026-12-15",
+      "by": "A7 (the VERCEL* branches out)"
+    }
+  }
+}
