@@ -293,6 +293,20 @@ test("the shot cap is judged at the quote and the press for speech (the one tool
       expect((await admitSarvam({ tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", shotId, quoteOnly: true }, MEMBER, options(), {})).status).toBe(200);
       /* An admin, no shot, any rule but "cap", and a shot under its cap go through. */
       await runInTenant(house(), async () => { expect((await speech(OWNER, { quoteOnly: true })).status).toBe(200); }, OWNER as never);
+      /* An admin who is not a person at the press (a token, an agent, a step Atomik's Auto approved) never skips the cap. */
+      const TOKEN = { id: "tok_admin", name: "Assistant", scope: "render" as const, capUsd: null };
+      const ADMIN_TOKEN: AdmissionActor = { ...OWNER, token: TOKEN };
+      const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1" } as AdmissionActor["user"] };
+      await runInTenant(house(), async () => {
+        for (const extra of [{ quoteOnly: true }, {}]) expect(await speech(ADMIN_TOKEN, extra), `token ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, { user: ADMIN_TOKEN.user, token: TOKEN } as never);
+      await runInTenant(house(), async () => {
+        for (const extra of [{ quoteOnly: true }, {}]) expect(await speech(AGENT, extra), `agent ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, AGENT as never);
+      await runInTenant(house(), async () => {
+        for (const quoteOnly of [true, undefined]) expect(await admitSarvam({ tool: "speech", text: "Namaste", language: "hi-IN", shotId, maxCredits: 100000, quoteOnly }, OWNER, { ...options(), run: { auto: true } as never }, seams), `auto ${String(quoteOnly)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, OWNER as never);
+      expect(spoken).toBe(0);
       expect((await speech(MEMBER, { quoteOnly: true, shotId: undefined })).status).toBe(200);
       await setRule("ask");
       expect((await speech(MEMBER, { quoteOnly: true })).status).toBe(200);
