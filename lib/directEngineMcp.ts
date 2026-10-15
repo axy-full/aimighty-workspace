@@ -34,10 +34,16 @@ type DirectTool = {
   describe: (out: Record<string, unknown>, quote: { estimatedCredits: number; price: number; unit: string }) => string;
   /** One line saying what was prepared, for the "needs a person" answer. */
   prepared?: (body: Record<string, unknown>) => string;
+  /**
+   * Is this call a DRAFT (the engine's cheap, quick model, or a step that renders nothing)? Auto may start only a draft at or under the line (rule 14: "a draft priced at or under the
+   * per-job line runs without a tap"); a hero or full-quality model always asks. Absent means never a draft: it always asks.
+   */
+  draft?: (body: Record<string, unknown>) => boolean;
 };
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 
+/** lipsync-2 is the engine's draft model; lipsync-2-pro (the default) and sync-3 are full quality and always ask. */
 const LIP_SYNC: DirectTool = {
   def: {
     name: "lip_sync",
@@ -71,6 +77,7 @@ const LIP_SYNC: DirectTool = {
       model: str(a.model), syncMode: str(a.sync_mode), castMemberId: str(a.cast_member_id), faceFrameUploadId: str(a.face_frame_upload_id), projectId: str(a.project_id), use: str(a.use),
     },
   }),
+  draft: (b) => b.model === "lipsync-2",
   prepared: (b) => `prepared: lip-sync (${String(b.model ?? "lipsync-2-pro")}) of ${String(b.clipUploadId ?? b.clipGenId ?? "a clip")} with ${String(b.audioUploadId ?? b.audioGenId ?? "a voice track")} for production ${String(b.projectId)}`,
   describe: (out, quote) => `Lip-sync started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
@@ -93,6 +100,20 @@ async function spendsWithoutAsking(): Promise<boolean> {
   try { return (await allSettings()).spendWithoutAsking === "auto"; } catch { return false; }
 }
 
+/**
+ * Files the prepared job for a person through the existing prepared-jobs door (POST /api/prepared-jobs), as an outside agent's prepared render is filed. It prices, holds and sends nothing.
+ * Only a token made to prepare may file one (a render token is refused there by design, and its call then answers in words only), and the door refuses an approval or a price in the arguments.
+ * Returns the job's id, or null when the door would not take it.
+ */
+async function fileForPerson(name: string, clean: Record<string, unknown>, line: string, call: Call): Promise<string | null> {
+  try {
+    const { quoteOnly: _q, ...args } = clean;
+    void _q;
+    const out = (await call("/api/prepared-jobs", { method: "POST", body: { engine: name, args, prompt: line, project: typeof clean.projectId === "string" ? clean.projectId : undefined } })) as { job?: { id?: unknown } };
+    return typeof out.job?.id === "string" ? out.job.id : null;
+  } catch { return null; }
+}
+
 /** Runs one of them, or returns null when the name is none of these (the caller then tries its own tools). */
 export async function runDirectEngineTool(name: string, args: Args, call: Call): Promise<string | null> {
   const tool = REGISTRY.find((t) => t.def.name === name);
@@ -104,13 +125,25 @@ export async function runDirectEngineTool(name: string, args: Args, call: Call):
     throw new Error("request_id must be 1–120 letters, digits, dots, colons, dashes or underscores.");
   const { path, body } = tool.request(args);
   const clean = Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined));
-  const quote = (await call(path, { method: "POST", body: { ...clean, quoteOnly: true } })) as { estimatedCredits?: unknown; price?: unknown; unit?: unknown };
+  /* A token made to prepare jobs cannot ask the paid door anything (not even for a price): its call is filed for a person, unpriced; a person sees the price when approving. */
+  let quote: { estimatedCredits?: unknown; price?: unknown; unit?: unknown };
+  try { quote = (await call(path, { method: "POST", body: { ...clean, quoteOnly: true } })) as typeof quote; }
+  catch (error) {
+    if (!(error instanceof Error) || !/This token prepares jobs/.test(error.message)) throw error;
+    const line = tool.prepared ? tool.prepared(clean) : name;
+    const filed = await fileForPerson(name, clean, line, call);
+    if (!filed) throw error;
+    return `Prepared, not started.\n\n${line}\nprepared job: ${filed}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections, where its price is shown.`;
+  }
   if (typeof quote.estimatedCredits !== "number" || !Number.isInteger(quote.estimatedCredits) || quote.estimatedCredits < 0 || typeof quote.price !== "number" || !Number.isFinite(quote.price))
     throw new Error("This could not be priced, so nothing was started.");
   const priceText = quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`;
-  /* Ask (the default), or Auto over the line: priced and prepared, not started. */
-  if (!(await spendsWithoutAsking()) || quote.estimatedCredits > (await autoLineCredits()))
-    return `Priced and prepared, not started.\n\nprice: ${priceText}\n${tool.prepared ? `${tool.prepared(clean)}\n` : ""}\nThis needs a person's approval: nothing was started or spent. A person approves it in Particl.`;
+  /* Ask (the default), Auto over the line, or Auto on anything but a draft: priced and prepared, not started. */
+  if (!(await spendsWithoutAsking()) || !(tool.draft?.(clean) ?? false) || quote.estimatedCredits > (await autoLineCredits())) {
+    const line = tool.prepared ? tool.prepared(clean) : name;
+    const filed = await fileForPerson(name, clean, line, call);
+    return `Priced and prepared, not started.\n\nprice: ${priceText}\n${line}\n${filed ? `prepared job: ${filed}\n` : ""}\nThis needs a person's approval: nothing was started or spent. ${filed ? "It waits in Particl › Settings › Connections for a person." : "A person approves it in Particl."}`;
+  }
   /* Auto, at or under the line: the workspace's own standing setting approves it, at the price the server just gave. */
   const out = await call(path, { method: "POST", body: { ...clean, maxCredits: quote.estimatedCredits }, headers: requestId ? { "Idempotency-Key": `mcp-${name}:${requestId}` } : undefined });
   return tool.describe(out, { estimatedCredits: quote.estimatedCredits, price: quote.price, unit: String(quote.unit ?? "cr") });

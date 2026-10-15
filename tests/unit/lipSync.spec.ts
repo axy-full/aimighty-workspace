@@ -96,14 +96,14 @@ async function world(seconds = { clip: 4, voice: 5 }, voiceConsent = true): Prom
 }
 
 /** The adapter seams: a job that completes on the second poll, recording every call. */
-function fakeVendor(over: { completeAt?: number; outputDuration?: number; failWith?: string; reportedCostUsd?: number; submitError?: Error; uploadError?: Error; storeError?: Error; deleteJobError?: boolean } = {}) {
+function fakeVendor(over: { completeAt?: number; outputDuration?: number; failWith?: string; reportedCostUsd?: number; submitError?: Error; uploadError?: Error; storeError?: Error; deleteJobError?: boolean; downloadError?: Error } = {}) {
   const calls: string[] = [];
   let polls = 0, assetSeq = 0;
   const deps = {
     upload: async () => { if (over.uploadError) throw over.uploadError; calls.push("upload"); return `asset_${++assetSeq}`; },
     submit: async (input: { model: string; syncMode: string; videoAssetId: string; audioAssetId: string }) => { calls.push(`submit:${input.model}:${input.syncMode}`); if (over.submitError) throw over.submitError; return { id: "job_1" }; },
     status: async () => { polls++; calls.push("status"); if (over.failWith) return { id: "job_1", status: "failed" as const, error: over.failWith, ...(over.reportedCostUsd != null ? { reportedCostUsd: over.reportedCostUsd } : {}) }; return polls < (over.completeAt ?? 2) ? { id: "job_1", status: "processing" as const } : { id: "job_1", status: "completed" as const, outputUrl: "https://example.invalid/out.mp4", outputDuration: over.outputDuration }; },
-    download: async () => { calls.push("download"); return Buffer.from("lip-synced-clip"); },
+    download: async () => { calls.push("download"); if (over.downloadError) throw over.downloadError; return Buffer.from("lip-synced-clip"); },
     store: async (genId: string, bytes: Buffer) => { if (over.storeError) { const e = over.storeError; over.storeError = undefined; throw e; } calls.push("store"); return { url: `stored/${genId}.mp4`, bytes: bytes.length }; },
     deleteJob: async (id: string) => { calls.push(`deleteJob:${id}`); if (over.deleteJobError) throw new Error("409 still processing"); return true; },
     deleteAsset: async (id: string) => { calls.push(`deleteAsset:${id}`); return true; },
@@ -520,6 +520,41 @@ test("a failure sync.so charged for: its figure is the ledger line's cost, nobod
     expect(Number(row.engine_cost_usd)).toBeCloseTo(0.07, 6);
     expect(Number(row.billed_credits ?? 0)).toBe(0);
     expect(take.lip).toMatchObject({ reconcile: 0 });
+  });
+});
+
+test("an output address we will not fetch, after the job completed: settled once as a charged failure (the take reads 'Nothing billed', the ledger line records the cost unbilled and marked to reconcile), never retried, the vendor's copy deleted", async () => {
+  const { SyncOutputRefused } = await import("../../lib/syncso");
+  const { lipSyncUsd } = await import("../../lib/lipSync");
+  process.env.SYNC_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const w = await world();
+    const before = (await meterRows()).length;
+    const genId = String((await admit(w, { maxCredits: 100 })).body.id);
+    const vendor = fakeVendor({ outputDuration: 4, downloadError: new SyncOutputRefused("sync.so named no output we can download.") });
+    const lip = await run(genId, vendor.deps, 3);
+    expect(lip).toMatchObject({ status: "failed", settled: 1, reconcile: 1 });
+    const take = await gen(genId);
+    expect(take.status).toBe("failed");
+    expect(String(take.error)).toMatch(/could not be fetched safely\. Nothing was billed/);
+    expect(String(take.error)).not.toMatch(/\$|\d+ ?cr|credit/i);
+    expect(Number(take.cost_usd)).toBeCloseTo(lipSyncUsd(4, "lipsync-2-pro"), 6);
+    const line = (await meterRows()).slice(before).find((r) => r.id === genId)!;
+    expect(line).toMatchObject({ status: "failed" });
+    expect(Number(line.engine_cost_usd)).toBeCloseTo(lipSyncUsd(4, "lipsync-2-pro"), 6);
+    expect(Number(line.billed_credits ?? 0)).toBe(0);
+    /* One download attempt only: the next passes do nothing, and the vendor's copy is gone. */
+    expect(vendor.calls.filter((c) => c === "download")).toHaveLength(1);
+    expect(vendor.calls).toEqual(expect.arrayContaining(["deleteJob:job_1"]));
+    const again = fakeVendor();
+    await run(genId, again.deps, 2);
+    expect(again.calls).toEqual([]);
+    /* A transient failure is still retried (the job is not settled by it). */
+    const w2 = await world();
+    const id2 = String((await admit(w2, { maxCredits: 100 })).body.id);
+    const flaky = fakeVendor({ downloadError: new Error("socket hang up") });
+    await expect(run(id2, flaky.deps, 3)).rejects.toThrow();
+    expect((await gen(id2)).status).toBe("running");
   });
 });
 
