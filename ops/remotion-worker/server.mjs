@@ -443,6 +443,8 @@ export function createRemotionWorker(options) {
 
   async function putFile(req, res, session, url) {
     requireRunning(session);
+    /* Inputs are written before the run starts, never while it is going: a file changing under a running render is refused. */
+    if (session.run) throw new HttpError(409, { error: "run_in_progress" });
     const protocolPath = onlyPath(url);
     const segments = protocolSegments(protocolPath, `${REMOTION_DIR}/`);
     if (!segments) throw refused();
@@ -654,36 +656,70 @@ export function exportEnv(env) {
   return out;
 }
 
-async function main() {
+/** After a failed start-up egress check the process waits this long before it exits, so a restart policy cannot spin on it. */
+export const EGRESS_RETRY_DELAY_MS = 30_000;
+
+async function defaultGate() {
+  const { startupGate } = await import("./check-egress.mjs");
+  return startupGate({ own: "REMOTION_WORKER_SECRET" });
+}
+
+/**
+ * Starts the worker. Fail-closed, as the Astra worker is (ops/render-worker/server.mjs): before it listens, the worker runs
+ * its own egress check (check-egress.mjs, option c) in its own network and environment; anything but a pass logs the failing
+ * lines (names, never values), waits, exits non-zero and never binds. `gate`, `realGate`, `exit`, `sleep`, `log`, `error` and
+ * `signals` are injectable for tests.
+ */
+export async function main({ env = process.env, gate, exit = (code) => process.exit(code), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), log = console.log, error = console.error, signals = true, retryDelayMs = EGRESS_RETRY_DELAY_MS, realGate = defaultGate } = {}) {
   // The Dockerfile sets REMOTION_WORKER_CONTAINER=1. REMOTION_WORKER_TEST_ROOT is for
   // tests only: it maps /vercel/sandbox onto a scratch directory and turns off
-  // the /tmp wipe and the stray-process sweep.
-  const testRoot = process.env.REMOTION_WORKER_TEST_ROOT;
-  const secret = process.env.REMOTION_WORKER_SECRET;
-  const tuning = (() => { try { return exportEnv(process.env); } catch (error) { console.error(error.message); process.exit(1); } })();
+  // the /tmp wipe, the stray-process sweep and the start-up egress check. Inside
+  // the image (REMOTION_WORKER_CONTAINER=1) it is ignored, so none of that, and in
+  // particular the check's skip, can ever apply there.
+  const inContainer = env.REMOTION_WORKER_CONTAINER === "1";
+  const testRoot = inContainer ? undefined : env.REMOTION_WORKER_TEST_ROOT;
+  const secret = env.REMOTION_WORKER_SECRET;
+  let tuning;
+  try { tuning = exportEnv(env); } catch (failure) { error(failure.message); exit(1); return null; }
   // Only keeps the secret out of process.env for later code in this process. It
   // does NOT clear /proc/<pid>/environ (the kernel's copy of the start-up
   // environment): any process of the worker user can still read it there.
-  delete process.env.REMOTION_WORKER_SECRET;
+  delete env.REMOTION_WORKER_SECRET;
   let worker;
   try {
     worker = createRemotionWorker({
       secret,
       root: testRoot || SANDBOX_ROOT,
       scratchDirs: testRoot ? [] : ["/tmp"],
-      sweepStrays: !testRoot && process.env.REMOTION_WORKER_CONTAINER === "1",
+      sweepStrays: inContainer,
       childEnv: tuning,
     });
-  } catch (error) {
-    console.error(error.message);
-    process.exit(1);
+  } catch (failure) {
+    error(failure.message);
+    exit(1);
+    return null;
+  }
+  const runGate = gate ?? (testRoot ? null : realGate);
+  if (runGate) {
+    let verdict;
+    try { verdict = await runGate(); } catch (failure) { verdict = { ok: false, failures: [`the egress check could not run: ${String(failure?.message ?? failure).slice(0, 80)}`] }; }
+    if (!verdict?.ok) {
+      error(`remotion worker not started: its egress check failed (${(verdict?.failures ?? ["no verdict"]).join("; ")}). Retrying in ${Math.round(retryDelayMs / 1000)} s.`);
+      await sleep(retryDelayMs);
+      exit(1);
+      return null;
+    }
   }
   await worker.ready();
-  const port = Number(process.env.PORT ?? 8790);
-  worker.server.listen(port, "0.0.0.0", () => console.log(`remotion worker listening on ${worker.server.address().port}`));
-  const shutdown = () => { worker.close().finally(() => process.exit(0)); };
-  process.once("SIGTERM", shutdown);
-  process.once("SIGINT", shutdown);
+  const port = Number(env.PORT ?? 8790);
+  /* Tests (a test root) bind loopback only; the container binds every address of its own network. */
+  worker.server.listen(port, testRoot ? "127.0.0.1" : "0.0.0.0", () => log(`remotion worker listening on ${worker.server.address().port}`));
+  if (signals) {
+    const shutdown = () => { worker.close().finally(() => process.exit(0)); };
+    process.once("SIGTERM", shutdown);
+    process.once("SIGINT", shutdown);
+  }
+  return worker;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -213,3 +213,22 @@ test("probe() is bounded: a lookup, a fetch and a connect that never answer are 
   assert.deepEqual(lines.slice(0, 4), ["blocked dns ETIMEOUT", "blocked https://example.com ETIMEOUT", "blocked http://1.1.1.1 ETIMEOUT", "blocked host.docker.internal ETIMEOUT"]);
   assert.ok(Date.now() - started < 1500, "the total is the slowest probe, not the sum");
 });
+
+test("the Remotion worker: its own REMOTION_WORKER_SECRET alone is clean; the Astra secret, numbered or plural names and the other kind's secret are a LEAK, names only (Opus review of #699)", async () => {
+  assert.deepEqual(foreignSecretNames({ PATH: "/x", REMOTION_WORKER_SECRET: "own" }, "REMOTION_WORKER_SECRET"), []);
+  assert.deepEqual(foreignSecretNames({ REMOTION_WORKER_SECRET: "own", ASTRA_WORKER_SECRET: "v", REMOTION_WORKER_SECRETS: "v", REMOTION_WORKER_SECRET_2: "v" }, "REMOTION_WORKER_SECRET"), ["ASTRA_WORKER_SECRET", "REMOTION_WORKER_SECRETS", "REMOTION_WORKER_SECRET_2"]);
+  /* The Astra worker keeps its own rule, and now also refuses the Remotion worker's secret. */
+  assert.deepEqual(foreignSecretNames({ ASTRA_WORKER_SECRET: "own", REMOTION_WORKER_SECRET: "v" }), ["REMOTION_WORKER_SECRET"]);
+  const net = { lookup: async () => { throw Object.assign(new Error("x"), { code: "ENOTFOUND" }); }, fetcher: async () => { throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ENETUNREACH" } }); }, interfaces: { eth0: [{ family: "IPv4", address: "172.20.0.5", netmask: "255.255.0.0", internal: false }] }, tcp: async (ip, port) => `blocked host:${ip}:${port} ETIMEDOUT` };
+  const own = { PATH: "/x", REMOTION_WORKER_SECRET: "own-secret-value" };
+  assert.deepEqual(await startupGate({ own: "REMOTION_WORKER_SECRET", run: () => probe({ own: "REMOTION_WORKER_SECRET", app: null, ...net, env: own }) }), { ok: true, failures: [] }, "a correct Remotion deploy passes with only its own secret present");
+  const leaky = await startupGate({ own: "REMOTION_WORKER_SECRET", run: () => probe({ own: "REMOTION_WORKER_SECRET", app: null, ...net, env: { ...own, ASTRA_WORKER_SECRET: "other-secret-value" } }) });
+  assert.equal(leaky.ok, false);
+  assert.match(leaky.failures.join(";"), /LEAK env ASTRA_WORKER_SECRET/);
+  assert.doesNotMatch(JSON.stringify(leaky), /own-secret-value|other-secret-value/);
+  /* The command line: --own names the worker's own secret; an unknown name is refused. */
+  const ok = run(["--option", "c", "--own", "REMOTION_WORKER_SECRET", "--from-stdin"], GOOD.join("\n"));
+  assert.equal(ok.status, 0);
+  const bad = run(["--option", "c", "--own", "SOMETHING_ELSE", "--from-stdin"], GOOD.join("\n"));
+  assert.equal(bad.status, 1); assert.match(bad.stdout, /--own is ASTRA_WORKER_SECRET or REMOTION_WORKER_SECRET/);
+});
