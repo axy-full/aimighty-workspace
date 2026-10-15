@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useId } from "react";
-import { AGE_CONFIRM_LABEL } from "@/lib/ageConfirm";
+import { AGE_CONFIRM_LABEL } from "@/lib/ageConfirmText";
 import "./age-confirm.css";
 
 /**

@@ -11,8 +11,7 @@ import { securityAuditStatement } from "./securityAudit";
  *
  * Not sign-ups, so not asked: the one-time import of an older install's users (lib/platform.ts), and the preview seed's placeholder accounts that nobody can sign in to (lib/previewSeed.ts).
  */
-export const AGE_CONFIRM_LABEL = "I'm 18 or older and agree to the Terms";
-export const AGE_CONFIRM_REFUSAL = "Tick the box to confirm you're 18 or older and agree to the Terms.";
+export { AGE_CONFIRM_LABEL, AGE_CONFIRM_REFUSAL } from "./ageConfirmText";
 
 /** The history line for a new account: its id and the moment, written in the transaction that creates the account. */
 export function ageConfirmedStatement(accountId: string): InStatement {

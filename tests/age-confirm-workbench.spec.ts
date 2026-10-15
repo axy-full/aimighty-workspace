@@ -12,7 +12,7 @@ const shots = process.env.AGE_SHOTS_DIR;
 
 const SCREENS: { name: string; path: string; ready: (page: Page) => Promise<void>; box: (page: Page) => ReturnType<Page["getByRole"]> }[] = [
   { name: "signup", path: "/signup", ready: async (page) => { await page.route("**/api/auth/signup", (r) => r.request().method() === "GET" ? r.fulfill({ json: { mode: "self-serve", open: true, verificationRequired: true } }) : r.continue()); }, box: (p) => p.getByTestId("signup-terms") },
-  { name: "signup-invited", path: "/signup?code=age-test-code", ready: async (page) => { await page.route("**/api/auth/signup?code=*", (r) => r.fulfill({ json: { mode: "self-serve", open: true, verificationRequired: false, email: "invited@example.test", name: "Invited" } })); }, box: (p) => p.getByTestId("signup-terms") },
+  { name: "signup-invited", path: "/signup?code=age-test-code", ready: async (page) => { await page.route(/\/api\/auth\/signup(\?.*)?$/, (r) => r.request().method() === "GET" ? r.fulfill({ json: { mode: "self-serve", open: true, verificationRequired: false, email: "invited@example.test", name: "Invited" } }) : r.continue()); }, box: (p) => p.getByTestId("signup-terms") },
   { name: "team-invite", path: "/invite/age-test-code", ready: async (page) => { await page.route("**/api/auth/accept?code=*", (r) => r.fulfill({ json: { workspace: "A studio", email: "new@example.test", name: "New", role: "member", hasAccount: false, signedInAsInvitee: false } })); }, box: (p) => p.getByTestId("invite-terms") },
   { name: "setup", path: "/setup", ready: async () => {}, box: (p) => p.getByTestId("setup-terms") },
   { name: "join-google", path: "/v12-join?join=start&google=1", ready: async () => {}, box: (p) => p.getByTestId("v12-join-age") },
@@ -37,6 +37,7 @@ for (const screen of SCREENS) {
     await expect(terms).toHaveAttribute("target", "_blank");
     /* Untouched, the form would not submit: the browser holds it. */
     expect(await named.evaluate((el) => (el as HTMLInputElement).validity.valueMissing)).toBe(true);
+    await page.waitForTimeout(700); /* a sheet that opens with a small scale is measured at rest */
     const size = await row.boundingBox();
     expect(size?.height ?? 0).toBeGreaterThanOrEqual(44);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
