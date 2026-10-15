@@ -11,7 +11,7 @@
 | `licence-register.md` | Fonts and assets rendered into customer outputs, with licences; UI-only fonts apart |
 | `unknown-assets.md` | Every font and asset marked UNKNOWN: where it is used (file and line), which outputs it can reach, how to clear or replace it |
 | `where-your-data-goes.md` | One page, one table: every provider, what is sent, how long it keeps it, what it does about training, and whether training is switched off on our account. Source for the public page on the site |
-| `vendor-requests.md` | Drafts of the emails asking BytePlus, Google, OpenAI, ElevenLabs, Topaz, Bria and Runway for written data terms. Optional information requests, not a condition of wiring a vendor (owner, 15 Oct 22:15). Nothing is sent |
+| `vendor-requests.md` | Drafts of the emails asking BytePlus, Google, OpenAI, ElevenLabs, Topaz, Bria and Runway for written data terms, plus a BFL "Training Opt Out" and a Sync Labs request (sections 8 and 9), and an owner action for Sarvam. Optional information requests, not a condition of wiring a vendor (owner, 15 Oct 22:15). Nothing is sent |
 
 ## How to read the tags
 
@@ -72,9 +72,10 @@ Owner, 15 Oct 22:15: switch off training or "improve the models" on every accoun
 
 - [ ] **ElevenLabs: now.** Switch off training / "improve the models" on the account. Not recorded as done.
 - [ ] **AWS (Rekognition, and check MediaConvert):** set the AWS Organizations AI-services opt-out policy before any customer use of Rekognition (`docs/plans/provider-adapters.md` section 3). Not recorded as done. Check whether any AWS opt-out also applies to MediaConvert.
-- [x] **Black Forest Labs:** training opt-out done in its dashboard (15 Oct 13:45). Record it in the table (done there).
-- [x] **sync.so:** written confirmation of no training (15 Oct 14:25), kept with company records.
-- [x] **Sarvam:** retention 0 days (15 Oct 14:25). Check whether its training consent setting also needs declining ("subject to your consent"; no decision recorded).
+- [x] **Black Forest Labs:** training opt-out done in its dashboard (15 Oct 13:45). Its published route is an email to privacy@blackforestlabs.ai, subject "Training Opt Out" (`vendor-requests.md` section 8): optional, to keep a written copy. Recorded in the table.
+- [x] **sync.so:** written confirmation of no training (15 Oct 14:25), kept with company records. Its published terms say otherwise and show no opt-out: see OD-W1 and L-W2 in `where-your-data-goes.md`, and the optional email in `vendor-requests.md` section 8.
+- [x] **Sarvam, retention:** 0 days is recorded (15 Oct 14:25); re-check it still holds (its published default is 30 days after last access).
+- [ ] **Sarvam, training: owner action now.** Its published privacy policy (29 Jul 2026) trains on content unless you opt out in account settings or in writing. Switch training off in Sarvam's account settings, set content retention to the shortest allowed, and record the date and who in `where-your-data-goes.md`.
 - [ ] **Runway:** the record says its terms allow training and states no API opt-out. Nothing to switch; customer use stays off until written terms exclude training (house workspace only).
 - [ ] **Check, nothing recorded either way** (the repo has no record of whether the account offers such a setting): OpenAI, Anthropic, Google (Gemini API), xAI, BytePlus, fal, Higgsfield, Topaz, Bria, Recraft, Google Cloud Vision (its page says it does not train on content sent; check for a setting anyway). Open each account's data or privacy settings; if one offers a training or "improve the models" switch, turn it off and record the date and who.
 - [ ] **Add the provider links:** replace each `[LINK: ...]` in `where-your-data-goes.md` and each `[link to ... privacy policy]` in `privacy-policy.md` with that provider's own policy page.

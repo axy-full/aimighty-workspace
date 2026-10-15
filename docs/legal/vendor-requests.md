@@ -6,7 +6,7 @@
 
 Placeholders to fill: `[Your name]`, `[Company legal name]`, `[Account/organisation id]`, `[link to their current policy]`, `[address]`. No real id, key or address is in this file. Each email stands alone. Under each is a note outside the quote with what the record says and the code references (endpoints and models are from `release/1` at 663fb243, current on 15 Oct). The answers feed `privacy-policy.md` (sections 5 to 7), `licence-register.md` (A6) and `unknown-assets.md` (item 9).
 
-Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync.so and Sarvam. The record already has: sync.so confirmed no training in writing (with company records); Sarvam retention set to 0 days; BFL training opt-out done (docs/redesign-plan.md, 15 Oct 13:45 and 14:25).
+Not drafted in sections 1 to 7: fal (Kling, Luma, Flux), xAI, Anthropic, Higgsfield, Sarvam. BFL and sync.so are in sections 8 and 9, added 16 Oct after reading their own pages; Sarvam has an owner action instead (no email: a setting). The record already has: sync.so confirmed no training in writing (with company records); Sarvam retention set to 0 days; BFL training opt-out done (docs/redesign-plan.md, 15 Oct 13:45 and 14:25).
 
 ⚖ LAWYER L-V1: whether the requests should come from the company's legal contact, and where the replies are filed (DPDP Act processor terms, cross-border transfer notice, `privacy-policy.md` section 6).
 
@@ -287,3 +287,65 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 > Thank you,
 > [Your name]
 > [Company legal name]
+
+## 8. Black Forest Labs: "Training Opt Out" (nothing sent)
+
+**As published 16 Oct 2026, check before relying.** Source: BFL's API terms, https://bfl.ai/legal/flux-api-service-terms (rev. 4 Aug 2026): "the Company may use Inputs and Outputs to train and improve its artificial intelligence models"; the opt-out is by email to privacy@blackforestlabs.ai with the subject "Training Opt Out". Its privacy policy, https://bfl.ai/legal/privacy-policy: retention "as long as is reasonably necessary"; transfers outside the collection country under standard contractual clauses; controller BFL GmbH (Germany) for the EEA, UK and Switzerland. Result URLs are valid for 10 minutes.
+
+**What the record already says:** the owner did the training opt-out in BFL's dashboard (15 Oct 13:45). This email is optional: it puts the opt-out in writing in the form the terms name. FLUX.2 images run on the EU endpoint `api.eu.bfl.ai` (PR #778). Prompts and up to 8 reference images are sent, which can include a real person's face (the consent gate applies, #771 and #714 section 6). ⚖ LAWYER L-W3.
+
+**Send to:** privacy@blackforestlabs.ai (from the owner's own address).
+
+**Draft email**
+
+> Subject: Training Opt Out
+>
+> Hello,
+>
+> I am the owner of [Company legal name], which runs Particl, a production tool for film teams. Our API account or organisation id is [Account/organisation id]. We use the FLUX.2 image API on your EU endpoint, `api.eu.bfl.ai`.
+>
+> Please record a **Training Opt Out** for this account: our inputs (prompts and reference images) and the outputs we receive are not to be used to train or improve your models. Please confirm in writing that this applies to all inputs and outputs under the account, from now on and for what has already been sent.
+>
+> Please also tell us how long you keep inputs, outputs and logs for an API account, whether a shorter period or zero retention is available, and the list of sub-processors that may see our data.
+>
+> A short written reply is enough. We will keep it with our records.
+>
+> Thank you,
+> [Your name]
+> [Company legal name]
+> [Account/organisation id]
+
+## 9. Sync Labs (sync.so): training opt-out, zero retention, deletion (nothing sent)
+
+**As published 16 Oct 2026, check before relying.** Sources: https://sync.so/privacy (effective 27 May 2024): retention "as long as is necessary", data used for "developing, training, and fine-tuning the AI models", data provided to it in the United States. https://sync.so/terms: a "perpetual, and irrevocable license". No training opt-out and no zero-retention option on its pages. Its terms contain bracketed, draft-like text on face and voice tools. API: `DELETE /v2/generations/{id}` (a finished job only) and `DELETE /v2/assets/{id}`; our adapter deletes the vendor copy after we store the output (PR #776).
+
+**What the record already says:** the owner holds a written confirmation of no training on our data (15 Oct 14:25), kept with company records, not in the repo. It conflicts with the published text. **sync.so receives faces and voices**, so this touches face and voice data: [OWNER DECISION OD-W1] and ⚖ LAWYER L-W2 (which text governs; the bracketed text on face and voice tools; what to tell customers).
+
+**Send to:** Sync Labs support or sales [address]. The owner sends it, from his own address.
+
+**Draft email**
+
+> Subject: Training opt-out, zero retention and deletion for our API account ([Account/organisation id])
+>
+> Hello,
+>
+> I am the owner of [Company legal name], which runs Particl, a production tool for film teams. Our API account or organisation id is [Account/organisation id]. We send you video clips and audio, which can contain people's faces and voices, to lip-sync through your API (`POST /v2/generate`, models lipsync-2-pro and sync-3).
+>
+> Your privacy policy (effective 27 May 2024) says data may be used for "developing, training, and fine-tuning the AI models", and your terms grant a "perpetual, and irrevocable license". We hold your earlier written confirmation that you do not train on our data [reference or date]. Please confirm, for this account:
+>
+> 1. **Training opt-out.** That the confirmation applies to all inputs and outputs under this account, and that an opt-out is available to API customers. If it is an account setting, please tell us where.
+> 2. **Zero retention.** Whether an API account can have zero or minimal retention of inputs, outputs and logs, and what period applies today.
+> 3. **Deletion.** That `DELETE /v2/generations/{id}` and `DELETE /v2/assets/{id}` remove the stored media permanently, including backups and any derived data, and how long that takes.
+> 4. **The licence.** How the "perpetual, and irrevocable license" in your terms applies to content under an API account that has the training opt-out, and what your terms intend by the bracketed text on face and voice tools.
+> 5. **Location and sub-processors.** Where the data is processed and stored, the sub-processors that may see it, and a data processing agreement we can sign.
+>
+> A short written reply, or a link to the signed terms that apply to us, is enough. We will keep it with our records.
+>
+> Thank you,
+> [Your name]
+> [Company legal name]
+> [Account/organisation id]
+
+## Owner action: Sarvam (no email)
+
+Sarvam's own privacy policy (https://www.sarvam.ai/privacy-policy, 29 Jul 2026; as published 16 Oct 2026, check before relying) says it trains on content unless you opt out in account settings or in writing, and keeps inputs and outputs "User-configurable (default: 30 days after last access)". **OWNER ACTION:** switch training off in Sarvam's account settings and set content retention to the shortest allowed (0 days is already recorded, 15 Oct 14:25: re-check it). Record the date and who in `where-your-data-goes.md`. The house line stays: Particl does not train; providers may.

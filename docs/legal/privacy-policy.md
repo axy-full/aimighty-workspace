@@ -80,9 +80,9 @@ What the record says, from our own account settings and written confirmations (n
 
 | Vendor | Recorded |
 |---|---|
-| Black Forest Labs | Training opt-out set in its dashboard (15 Oct 13:45) |
-| sync.so | No training on our data, confirmed in writing; the letter is with company records, not in the repo (15 Oct 14:25) |
-| Sarvam | Retention set to 0 days (15 Oct 14:25) |
+| Black Forest Labs | Training opt-out set in its dashboard (15 Oct 13:45). Published (16 Oct, check before relying): its API terms let it train on inputs and outputs, with an email opt-out; retention "as long as is reasonably necessary"; controller BFL GmbH (`where-your-data-goes.md`) |
+| sync.so | No training on our data, confirmed in writing; the letter is with company records, not in the repo (15 Oct 14:25). Published (16 Oct, check before relying): training use and a perpetual, irrevocable licence, with no published opt-out. It receives faces and voices: OD-W1, L-W2 |
+| Sarvam | Retention set to 0 days (15 Oct 14:25). Published (16 Oct, check before relying): trains on content unless you opt out in account settings; default retention 30 days. Training off is an owner action, not yet recorded as done: OD-W2 |
 | ElevenLabs | Account has a training setting; to be switched off (owner action; not yet recorded as done) |
 | AWS (Rekognition) | An AWS Organizations AI-services opt-out is to be set before any customer use (owner action; not yet recorded as done) |
 | Runway | Its terms allow training on inputs and outputs; house workspace only until written terms say otherwise |
