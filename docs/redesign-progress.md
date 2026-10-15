@@ -926,3 +926,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - NB 2.1 found on Google's pages: id `gemini-nano-banana-2.1` (New Stable); $0.0336 / $0.0504 / $0.113 per 1K / 2K / 4K image, cheaper than NB 2; no published per-image input count, so 1120 tokens is used conservatively.
   - gemini-3.8-flash: $0.75 / $3.75 per 1M until 31 Dec 2026, then $1.50 / $7.50; lane B is told not to under-quote on 1 Jan.
   - #782 at 659ef0cf carries the Mumbai rates.
+- **16 Oct 03:13 IST.** Lane D:
+  - #779 f38ea780: a 0 s reading bills the quote.
+  - New #783 Vision label check (5b397f7f, base #779, NEEDS AKSHAY).
+    - Env names: GOOGLE_VISION_API_KEY (existing) and VISION_LABEL_CHECK_ENABLED (new).
+    - A strict character diff with explicit normalisation (NFC by default); a mismatch flags the take and never blocks it; MCP label_check is a draft.
+  - Price verified on cloud.google.com/vision/pricing: $1.50 per 1,000 after 1,000 free per month; the PR ignores the free tier.
+  - Opus review started.
+  - Lane D next: Kling 4.0 plus the Pro-pick config.
