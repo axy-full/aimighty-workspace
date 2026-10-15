@@ -16,7 +16,7 @@ import { writeGenerationOutcome, deliverGenerationSettlement } from "./generatio
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow, shotCapGate } from "./shotCap";
+import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { SYNC_RATES, type SyncMode, type SyncModel } from "./vendorRates";
@@ -209,7 +209,7 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. Refused here, on the quote and the press, before any row is written, so no failed take is left in the Library. */
   if (shotId && shotCode) {
-    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: got.user.role === "admin" });
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
   if (quoteOnly)
