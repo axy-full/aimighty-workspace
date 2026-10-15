@@ -604,6 +604,31 @@ test("over MCP: veo_video is listed only where the engine is on; Ask files a pre
       expect(calls[0]).toMatchObject({ tool: "video", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }], projectId: "p", use: "production", quoteOnly: true });
       await runDirectEngineTool("veo_video", { prompt: "go", first_frame_upload_id: "u3", first_frame_cast_member_id: "c3", project_id: "p", use: "ads" }, call);
       expect(calls.find((x) => x.firstFrame)).toMatchObject({ firstFrame: { uploadId: "u3", castMemberId: "c3" } });
+      /* Ask with images files a prepared job with the ids only: the door takes nested lists and groups of ids (lib/security/prepared-jobs.ts). */
+      const { cleanEngineJob } = await import("../../lib/security/prepared-jobs");
+      for (const [args, label] of [
+        [{ prompt: "swap", model: FAST, reference_upload_ids: "u1, u2", cast_member_ids: "c1,c2", project_id: "p", use: "production" }, "references"],
+        [{ prompt: "go", first_frame_upload_id: "u3", first_frame_cast_member_id: "c3", project_id: "p", use: "ads" }, "first frame"],
+      ] as const) {
+        await spend("ask"); calls.length = 0; paths.length = 0; credits = 32;
+        const text = await runDirectEngineTool("veo_video", args, call);
+        expect(text, label).toMatch(/^Priced and prepared, not started\.[\s\S]*prepared job: prep_v1[\s\S]*It waits in Particl/);
+        expect(text, label).not.toContain("Nothing was filed");
+        expect(paths, label).toEqual(["/api/veo", "/api/prepared-jobs"]);
+        const filed = calls[1] as { engine: string; args: Record<string, unknown>; prompt: string };
+        expect(filed.engine, label).toBe("veo_video");
+        if (label === "references") expect(filed.args).toMatchObject({ tool: "video", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }] });
+        else expect(filed.args).toMatchObject({ tool: "video", firstFrame: { uploadId: "u3", castMemberId: "c3" } });
+        expect(JSON.stringify(filed), label).not.toMatch(/maxCredits|quoteOnly|base64/i);
+        /* What was filed is exactly what the real door accepts: ids and settings only, nothing priced or approved. */
+        const door = cleanEngineJob({ engine: filed.engine, args: filed.args, prompt: filed.prompt, project: "p" });
+        expect(door.args, label).toEqual(filed.args);
+      }
+      /* When the door will not take it, the answer says plainly that nothing was filed. */
+      const refusing = async (p: string, init: { body?: unknown } = {}) => { if (p === "/api/prepared-jobs") throw new Error("Inside a list or group an argument is an id, not text or a file."); return (await call(p, init)) as Record<string, unknown>; };
+      const unfiled = await runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1", cast_member_ids: "c1", project_id: "p", use: "production" }, refusing);
+      expect(unfiled).toMatch(/^Priced, not started\.[\s\S]*Nothing was filed: Inside a list or group an argument is an id[\s\S]*A person can make this themselves in Particl/);
+      expect(unfiled).not.toMatch(/prepared job:|waits in Particl|Priced and prepared/);
       await expect(runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1,u2", cast_member_ids: "c1" }, call)).rejects.toThrow(/one cast member for each reference/);
       await expect(runDirectEngineTool("veo_video", { prompt: "go", first_frame_upload_id: "u3" }, call)).rejects.toThrow(/which cast member the first frame shows/);
     } finally { await spend(null); }
