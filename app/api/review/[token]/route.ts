@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { SAMPLE_CLIP_CREDIT, isSampleClipUrl } from "@/lib/sampleClip";
 import { runInTenant } from "@/lib/tenant";
 import { resolveShare } from "@/lib/shares";
 import { db, ready } from "@/lib/db";
@@ -35,7 +36,7 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
     const project = await db().execute({ sql: `SELECT id, name, description FROM projects WHERE id = ? LIMIT 1`, args: [share.projectId] });
     if (!project.rows.length) return null;
     const takes = await db().execute({
-      sql: `SELECT g.id, g.kind, g.version, g.created_at, g.prompt, g.params,
+      sql: `SELECT g.id, g.kind, g.version, g.created_at, g.prompt, g.params, g.stored_url,
                    s.code AS shot_code, s.title AS shot_title, s.position AS shot_pos,
                    g.review_by
             FROM generations g LEFT JOIN shots s ON s.id = g.shot_id
@@ -77,6 +78,8 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
           approvedBy: shown(r.review_by),
           media: `/api/review/${token}/media/${r.id}`,
           notes: byGen.get(String(r.id)) ?? [],
+          /* The starter's sample clip (Big Buck Bunny, CC BY 3.0) carries its credit onto the review link (lib/sampleClip.ts). */
+          ...(isSampleClipUrl(String(r.stored_url ?? "")) ? { credit: SAMPLE_CLIP_CREDIT } : {}),
         };
       }),
       expiresAt: share.expiresAt,

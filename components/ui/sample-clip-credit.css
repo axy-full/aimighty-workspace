@@ -1,0 +1,9 @@
+/* The sample clip's credit line (components/ui/SampleClipCredit.tsx): 12 px, at least 55% white, links the accent text colour. Tokens only. */
+.sample-credit { margin: 0; font-size: var(--gx-fs-label, 12px); line-height: 1.4; color: var(--gx-text-2); overflow-wrap: anywhere; }
+.sample-credit a { color: var(--gx-accent-text); text-decoration: underline; text-underline-offset: 2px; }
+.sample-credit a:hover { color: var(--gx-text); }
+/* Over a picture: the bottom of its box, on a dark chip, two lines at most. */
+.sample-credit--over { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; padding: 4px 8px; border-radius: 6px; background: rgba(0, 0, 0, .72); color: rgba(245, 245, 247, .85); pointer-events: auto; }
+/* Phone: the line stands beside the card or the review picture, and each link is a 44 px target. */
+.ph-project-credit, .ph-review-credit { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; padding: 0 4px; }
+.ph-project-credit a, .ph-review-credit a { display: inline-flex; align-items: center; min-height: 44px; }

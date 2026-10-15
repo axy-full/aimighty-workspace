@@ -22,6 +22,7 @@
 .pv-step:hover, .pv-step:focus-visible { background: var(--gx-input-hover); outline: none; }
 .pv-step--prev { left: 8px; }
 .pv-step--next { right: 8px; }
+.pv-credit { flex: none; padding: 8px 12px 0; text-align: center; }
 /* A viewer bound to the shell (lib/shell/preview-bridge): the take's own commands, under the picture. */
 .pv-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--gx-hair); min-width: 0; }
 .pv-btn:disabled { opacity: .5; cursor: default; }

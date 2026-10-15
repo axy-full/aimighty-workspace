@@ -1,4 +1,5 @@
 "use client";
+import { SampleClipCredit } from "@/components/ui/SampleClipCredit";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import type { ProjectSummary } from "@/lib/workspace/data";
@@ -27,6 +28,7 @@ function Cover({ scope, id, name, children }: { scope: string; id: string | null
   return (
     <span className="gx-hm-cover" ref={box} style={cover ? undefined : ({ "--hm-from": swatch.from, "--hm-to": swatch.to } as CSSProperties)} data-cover={cover ? cover.kind : "swatch"}>
       {cover ? <LazyMedia url={cover.url} kind={cover.kind} alt="" name={cover.name} className="gx-lazy" /> : <span className="gx-hm-initials" aria-hidden="true">{initials(name)}</span>}
+      {cover ? <SampleClipCredit take={cover.url} over /> : null}
       {children}
     </span>
   );

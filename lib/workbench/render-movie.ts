@@ -1,5 +1,6 @@
 "use client";
 
+import { movieComment } from "../sampleClip";
 import {
   ALL_FORMATS,
   AudioBufferSource,
@@ -288,7 +289,7 @@ export async function renderMovie(
     if (audioSource) output.addAudioTrack(audioSource);
     output.setMetadataTags({
       title: project.name,
-      comment: "Particl timeline export; SDR canvas render; straight cuts.",
+      comment: movieComment(plan.clips),
     });
     await output.start();
     if (audioSource && mixed) {
