@@ -12,9 +12,10 @@ export const maxDuration = 300;
  * Full workspace export — the "your data is yours" escape hatch.
  *
  * The workspace's records and the owner's own drafts, and another member's
- * private board too, counted in its maker's history (lib/draftProject.ts ›
- * exportableBoards). Media bytes use a separate authorized manifest.
- * Credentials are excluded.
+ * private board's records and takes too, counted in its maker's history
+ * (lib/draftProject.ts › exportableBoards); their drafts and soul identities
+ * stay theirs. Media bytes use a separate authorized manifest. Credentials
+ * are excluded.
  */
 export const GET = withTenant(async function GET(req: Request) {
   const url = new URL(req.url);
