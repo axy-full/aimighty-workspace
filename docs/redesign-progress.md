@@ -996,3 +996,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - Lane D is making #787 draft and inert (placeholders, refused while unconfirmed).
   - The Pro pick isn't built. Proposal for the owner: lib/proPick.ts config list (Kling 4.0 → 3.0 Pro fallback) with a site-setting override; the composer marks Pro entries. Note the composer has no Pro row today, and Veo and Runway are tools, not model rows.
   - Opus checks queued.
+- **16 Oct 04:07 IST.** Lane B: shotCapGate in every door (#776 67d7b83e, #777 0df03408 speech only, #778 25e11c20, #780 1a216631, #785 de3902a1). Before any face check or row; one test per door; 188 specs pass. Opus delta queued. The engines stacked on #778 (#779 Veo, #781 Topaz, #786 Recraft, #787 Kling) will need #778's new head merged in before they retarget.
