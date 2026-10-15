@@ -7,3 +7,10 @@ export function bundledFfprobe(): string {
   const pkg = require.resolve("@remotion/compositor-linux-x64-gnu/package.json");
   return path.join(path.dirname(pkg), "ffprobe");
 }
+
+/** The ffmpeg beside it, for the constant-frame-rate pre-pass (node/conform.ts). */
+export function bundledFfmpeg(): string {
+  const require = createRequire(import.meta.url);
+  const pkg = require.resolve("@remotion/compositor-linux-x64-gnu/package.json");
+  return path.join(path.dirname(pkg), "ffmpeg");
+}

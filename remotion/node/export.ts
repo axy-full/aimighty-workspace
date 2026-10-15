@@ -4,7 +4,7 @@
  * call runExport with a fake one.
  *
  * Contract (version 1):
- *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"] } }
+ *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"], "conform": "auto" } }
  *   input/      the files the props name, as plain relative paths
  *   output/     export.mp4 (H.264) or export.mov (ProRes) when output.video is not false, still-<frame>.png for each still,
  *               subtitles.srt / subtitles.vtt when asked (from the same cues as the captions; no render), result.json
@@ -16,13 +16,14 @@ import { toTimeline, ExportTooLong } from "../src/lib/timeline";
 import { FORMAT_FILE, H265_NAMES, SUBTITLE_FILE, SUBTITLE_FORMATS, VIDEO_FORMATS, isProRes, type CompositionId, type SubtitleFormat, type Timeline, type VideoFormat } from "../src/lib/types";
 import { subtitleCuesOf, subtitleText } from "../src/lib/subtitles";
 import { isCompositionId, validateProps } from "../src/lib/validate";
-import type { Prober } from "./probe";
+import { CONFORM_MODES, filesToConform, reportInputs, type ConformMode, type Conformer, type InputReport } from "./conform";
+import type { MediaFacts, Prober } from "./probe";
 
 export type ExportSpec = {
   version: 1;
   composition: CompositionId;
   props: unknown;
-  output?: { video?: boolean; format?: string; stills?: number[]; subtitles?: string[] };
+  output?: { video?: boolean; format?: string; stills?: number[]; subtitles?: string[]; conform?: string };
 };
 
 export type CompositionInfo = { id: string; width: number; height: number; fps: number; durationInFrames: number; props: Record<string, unknown> };
@@ -44,6 +45,8 @@ export type ExportSuccess = {
   fps: number;
   durationInFrames: number;
   seconds: number;
+  /** One line per picture input: its rate, and whether the render read a constant-rate copy (node/conform.ts). Absent when nothing was rendered. */
+  inputs?: InputReport[];
   files: { name: string; kind: "video" | "still" | "subtitle"; bytes: number; frame?: number; format?: VideoFormat | SubtitleFormat; mime?: string }[];
 };
 export type ExportResult = ExportSuccess | ExportFailure;
@@ -56,6 +59,8 @@ export type RunExportArgs = {
   outputDir: string;
   /** The built bundle (index.html, bundle.js, public/fonts). Never modified. */
   bundleDir: string;
+  /** Makes the constant-frame-rate copies of variable-rate pictures (node/conform.ts). Absent: nothing is conformed, and the inputs are only reported. */
+  conformer?: Conformer;
   /** Scratch folder; created, and removed at the end. */
   workDir: string;
   renderer: Renderer;
@@ -89,7 +94,7 @@ export function declaredOf(id: CompositionId, props: Record<string, unknown>): D
 export const DURATION_TOLERANCE_SECONDS = 0.1;
 
 /** Compare every declared fact with the file. Returns one plain reason per contradiction. */
-export async function contradictions(declared: Declared[], inputDir: string, prober: Prober): Promise<string[]> {
+export async function contradictions(declared: Declared[], inputDir: string, prober: Prober, collect?: Map<string, MediaFacts>): Promise<string[]> {
   const reasons: string[] = [];
   for (const d of declared) {
     let facts;
@@ -99,6 +104,7 @@ export async function contradictions(declared: Declared[], inputDir: string, pro
       reasons.push(`input/${d.file}: ${(error as Error).message}`);
       continue;
     }
+    collect?.set(d.file, facts);
     if (d.kind === "video") {
       if (!facts.hasVideo) reasons.push(`input/${d.file}: has no picture`);
       else if (facts.width !== d.width || facts.height !== d.height) reasons.push(`input/${d.file}: is ${facts.width}x${facts.height}, the request says ${d.width}x${d.height}`);
@@ -125,7 +131,7 @@ export function inputFilesOf(timeline: Timeline): string[] {
 }
 
 export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
-  | { ok: true; id: CompositionId; props: Record<string, unknown>; timeline: Timeline; video: boolean; format: VideoFormat; stills: number[]; subtitles: SubtitleFormat[] }
+  | { ok: true; id: CompositionId; props: Record<string, unknown>; timeline: Timeline; video: boolean; format: VideoFormat; stills: number[]; subtitles: SubtitleFormat[]; conform: ConformMode }
   | ExportFailure {
   if (typeof spec !== "object" || spec === null || Array.isArray(spec)) return fail("spec_invalid", ["spec: must be an object"]);
   const rec = spec as Record<string, unknown>;
@@ -137,11 +143,12 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   let format: VideoFormat = "h264";
   let stills: number[] = [];
   let subtitles: SubtitleFormat[] = [];
+  let conform: ConformMode = "auto";
   if (rec.output !== undefined) {
     const out = rec.output as Record<string, unknown> | null;
     if (typeof out !== "object" || out === null || Array.isArray(out)) errors.push("spec.output: must be an object");
     else {
-      for (const key of Object.keys(out)) if (!["video", "format", "stills", "subtitles"].includes(key)) errors.push(`spec.output.${key}: is not allowed`);
+      for (const key of Object.keys(out)) if (!["video", "format", "stills", "subtitles", "conform"].includes(key)) errors.push(`spec.output.${key}: is not allowed`);
       if (out.format !== undefined) {
         const asked = typeof out.format === "string" ? out.format.trim().toLowerCase() : "";
         if (H265_NAMES.includes(asked)) errors.push("spec.output.format: H.265 is not available.");
@@ -151,6 +158,10 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
       }
       if (out.video !== undefined && typeof out.video !== "boolean") errors.push("spec.output.video: must be true or false");
       if (out.video === false) video = false;
+      if (out.conform !== undefined) {
+        if (typeof out.conform !== "string" || !(CONFORM_MODES as readonly string[]).includes(out.conform.trim().toLowerCase())) errors.push(`spec.output.conform: must be ${CONFORM_MODES.join(" or ")}`);
+        else conform = out.conform.trim().toLowerCase() as ConformMode;
+      }
       if (out.subtitles !== undefined) {
         const asked = Array.isArray(out.subtitles) && out.subtitles.length <= 8 ? [...new Set(out.subtitles.map((f) => (typeof f === "string" ? f.trim().toLowerCase() : "")))] : null;
         if (!asked || asked.length === 0 || asked.some((f) => !(SUBTITLE_FORMATS as readonly string[]).includes(f))) {
@@ -183,7 +194,7 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   }
   const outOfRange = stills.filter((frame) => frame >= timeline.durationInFrames);
   if (outOfRange.length) return fail("spec_invalid", [`spec.output.stills: frame ${outOfRange[0]} is past the end (${timeline.durationInFrames} frames)`]);
-  return { ok: true, id, props: checked.value as unknown as Record<string, unknown>, timeline, video, format, stills, subtitles };
+  return { ok: true, id, props: checked.value as unknown as Record<string, unknown>, timeline, video, format, stills, subtitles, conform };
 }
 
 /** True when `child` is `parent` or inside it, by real path (a symlink cannot lead out). */
@@ -261,7 +272,8 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
   const missing = await missingInputs(args.inputDir, inputFilesOf(checked.timeline));
   if (missing.length) return fail("input_missing", missing.map((file) => `input/${file}: not found`));
   // A declared length or size the file contradicts is refused, never rendered from.
-  const wrong = await contradictions(declaredOf(checked.id, checked.props), args.inputDir, args.prober);
+  const probed = new Map<string, MediaFacts>();
+  const wrong = await contradictions(declaredOf(checked.id, checked.props), args.inputDir, args.prober, probed);
   if (wrong.length) return fail("input_mismatch", wrong);
 
   await mkdir(args.outputDir, { recursive: true });
@@ -269,6 +281,26 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
   const serveDir = path.join(args.workDir, "serve");
   try {
     await prepareServeDir(args.bundleDir, args.inputDir, serveDir);
+    /* The constant-frame-rate pre-pass: only variable-rate pictures, once each, into the work folder; the render reads the copy and the original in input/ is never changed. */
+    const videoInputs = [...probed.entries()].filter(([, facts]) => facts.hasVideo).map(([file, facts]) => ({ file, facts }));
+    const conformed = new Set<string>();
+    const failed = new Set<string>();
+    if (args.conformer) {
+      let n = 0;
+      for (const file of filesToConform(videoInputs, checked.conform)) {
+        const copy = path.join(args.workDir, "conformed", `${n++}.mp4`);
+        try {
+          await mkdir(path.dirname(copy), { recursive: true });
+          await args.conformer.conform(path.join(args.inputDir, file), copy, checked.timeline.fps);
+          const target = path.join(serveDir, "public", "input", file);
+          await rm(target, { force: true });
+          await copyFile(copy, target);
+          conformed.add(file);
+        } catch {
+          failed.add(file);
+        }
+      }
+    }
     await args.renderer.prepare();
     const composition = await args.renderer.selectComposition({ serveUrl: serveDir, id: checked.id, inputProps: checked.props });
     const t = checked.timeline;
@@ -289,7 +321,7 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
       files.push({ name, kind: "still", frame, bytes: (await stat(outputLocation)).size });
     }
     await writeSubtitles(t, checked.subtitles, args.outputDir, files);
-    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, files };
+    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, inputs: reportInputs(videoInputs, t.fps, conformed, failed), files };
     await writeFile(path.join(args.outputDir, "result.json"), JSON.stringify(success, null, 2));
     return success;
   } catch (error) {

@@ -8,6 +8,10 @@ export type MediaFacts = {
   height: number;
   hasVideo: boolean;
   hasAudio: boolean;
+  /** Frames per second of the picture (its average rate), when the file says; absent for audio or an unreadable rate. */
+  fps?: number;
+  /** True when the file's nominal rate and its average rate disagree by more than 2%: frames are not evenly spaced. */
+  variableFrameRate?: boolean;
 };
 
 export type Prober = { probe(absoluteFile: string): Promise<MediaFacts> };
@@ -17,9 +21,31 @@ type FfprobeStream = {
   width?: number;
   height?: number;
   duration?: string;
+  r_frame_rate?: string;
+  avg_frame_rate?: string;
   tags?: { rotate?: string };
   side_data_list?: { rotation?: number }[];
 };
+
+/** "30000/1001" to 29.97; "0/0", "" or anything else to null. */
+export function parseRate(value: string | undefined): number | null {
+  const m = /^(\d{1,9})\/(\d{1,9})$/.exec(value ?? "");
+  if (!m || Number(m[2]) === 0) return null;
+  const rate = Number(m[1]) / Number(m[2]);
+  return rate > 0 && rate <= 1000 ? rate : null;
+}
+
+/** The rates differ by more than this share of the average: the file is variable frame rate. */
+export const VFR_TOLERANCE = 0.02;
+
+function videoRate(video: FfprobeStream | undefined): { fps?: number; variableFrameRate?: boolean } {
+  if (!video) return {};
+  const average = parseRate(video.avg_frame_rate);
+  const nominal = parseRate(video.r_frame_rate);
+  const fps = average ?? nominal;
+  if (fps === null) return {};
+  return { fps: Math.round(fps * 1000) / 1000, variableFrameRate: average !== null && nominal !== null && Math.abs(nominal - average) / average > VFR_TOLERANCE };
+}
 
 export function factsFromFfprobe(json: { format?: { duration?: string }; streams?: FfprobeStream[] }): MediaFacts {
   const streams = json.streams ?? [];
@@ -34,6 +60,7 @@ export function factsFromFfprobe(json: { format?: { duration?: string }; streams
     height: swap ? (video?.width ?? 0) : (video?.height ?? 0),
     hasVideo: Boolean(video),
     hasAudio: Boolean(audio),
+    ...videoRate(video),
   };
 }
 
