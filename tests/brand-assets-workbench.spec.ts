@@ -42,12 +42,12 @@ test("the new interface's header draws the brand's mark and wordmark (no studio 
   await openAsTabs(page, ids);
   const logo = page.getByTestId("v12-logo");
   await expect(logo).toHaveAccessibleName("particl, Home");
-  const mark = await logoIsBrand(page, logo.locator(".v12-logo-mark img"), "the header's mark");
-  const word = await logoIsBrand(page, logo.locator(".v12-logo-word img"), "the header's wordmark");
+  const mark = await logoIsBrand(page, logo.locator(".brand-logo-mark img"), "the header's mark");
+  const word = await logoIsBrand(page, logo.locator(".brand-logo-word img"), "the header's wordmark");
   expect(mark).toBe("/brand/particl-mark-on-dark.svg");
   expect(word).toBe("/brand/particl-wordmark-on-dark@4x.png");
   /* The wordmark file has a "studio" line under the word: the box clips it away. */
-  const clipped = await logo.locator(".v12-logo-word").evaluate((box) => { const img = box.querySelector("img")!.getBoundingClientRect(), b = box.getBoundingClientRect(); return { boxH: b.height, imgH: img.height }; });
+  const clipped = await logo.locator(".brand-logo-word").evaluate((box) => { const img = box.querySelector("img")!.getBoundingClientRect(), b = box.getBoundingClientRect(); return { boxH: b.height, imgH: img.height }; });
   expect(clipped.boxH, "the studio line is clipped").toBeLessThan(clipped.imgH * 0.7);
   await expect(page.getByTestId("v12-header").locator(".v12-logo-ring, .v12-logo-dot, .v12-logo-name, img[src*='lockup']")).toHaveCount(0);
   await expect(page.getByTestId("v12-header").locator("button.v12-logo svg")).toHaveCount(0);
