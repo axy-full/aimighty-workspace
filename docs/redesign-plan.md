@@ -778,3 +778,21 @@ Owner, 15 Oct 2026, 16:05 IST (verbatim): "Viral mode, research only, docs only,
 4) Update the feature report wording: 3D blocking's scene editing and export work; cloud renders are "moving to our own server" until this ships.
 
 **Lead's notes.** (4) done in the "Particl: Feature Report" doc. (3) droplet 8 vCPU / 31 GiB; the compose pins cpusets 12-17, which don't exist here (fixed in the relay PR). (c) is a same-host design; a separate droplet would need a different network design. Relay PR built by lane D with one worker by default (cores 6,7). (1) Opus tracing read-only.
+
+## Owner, 15 Oct 2026, 19:30 IST (verbatim; his 16:52, 19:05 and 19:10 notes in one)
+DEPLOY #4: done on my side.
+- Env: GEMINI_IMAGE_MODEL and GOOGLE_SAFETY_THRESHOLD were never in Coolify. Name check on the production container (qrudklxi8zfj7cskinu3wnty, image 9df26db4): both Gemini names missing; BFL_API_KEY, REKOGNITION x3, TOPAZ_API_KEY, SYNC_API_KEY, SARVAM_API_KEY, SARVAM_USD_PER_INR set; BFL_ENABLED, REKOGNITION_ENABLED, PROMPT_MODELS, GATEWAY_PROMPT_MODELS missing.
+- /api/health: signed out = ok + commit only; signed in as me = full detail. Signed-in checks continuing.
+ASTRA 3D (your 19:2x trace, answered):
+- Production container: VERCEL_TOKEN, VERCEL_TEAM_ID, VERCEL_PROJECT_ID, ASTRA_BLENDER_SNAPSHOT_ID and ASTRA_BLENDER_RATE_CARD all set; ASTRA_RENDER_BACKEND, ASTRA_WORKER_URLS and VERCEL missing. So renders are LIVE on Vercel Sandbox.
+- astra_render_jobs: tenant particl-mu1abv3589752p has none; aimighty-workspace has succeeded = 5. Nothing uncertain, nothing held.
+- Decision: keep renders on Vercel until the relay is live and verified. Then, in one owner step, I delete the three VERCEL_* names and ASTRA_BLENDER_SNAPSHOT_ID, and you list what to remove on Vercel (project, snapshot) with any ongoing cost.
+- Relay: I choose option (c) for ops/render-worker. Build it as a NEEDS AKSHAY PR, Opus-reviewed, with the egress gate as a hard test. First tell me the droplet's vCPU/RAM and today's peak use; if 3 workers × 2 vCPU/4 GB would squeeze production, propose 1 worker or a separate small droplet (monthly cost, estimate only).
+- Feature report stays as written ("3D scenes: runs on Vercel Sandbox today").
+STILL OPEN from /api/health (read-only answer): videosAtRisk = 1, cron rescued 0. Which take, why not rescued, is its provider URL about to expire?
+LOGO: yes, one small deploy #5 PR switches the error page, no-workspace page, guest header and phone top bar to the shared logo; add the phone bar to the brand guard. #748 and #756: good work on the JS.
+DEPLOY #4b: #753 plus #752 (the library-tray flake fix, test-only), together, once both are green and Opus-approved. Tell me "ready" and I'll back up first as usual.
+git clean: STAYS BANNED. My earlier line was wrong. Lanes never clean folders; every run writes to a new dated folder; old scratch output is left for me. No recursive deletes, no forced worktree removal.
+HOUSEKEEPING: at 18:55 the server ran only the production app container plus Coolify's own (no staging app). Name the container that held those three next-server processes at 16:04; don't guess.
+
+**Lead's notes.** Feature report restored to its earlier wording (rev 13 → 16). #752 changes one product file (LibraryTray focus timing) plus one test line, so it gets an Opus review. The three next-server processes started at 11:19:53 UTC = 16:49:53 IST (the deploy #4 minute), not 16:04 (the lead misread their age): container id 0429db0f433c…; the lead cannot run docker, so the name needs `docker inspect --format '{{.Name}} {{.Config.Image}}' 0429db0f433c` from the owner. Vercel cleanup list to prepare for the switch-over step.
