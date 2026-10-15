@@ -40,7 +40,7 @@ import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type Consen
  * BEFORE anything is quoted for work, written or reserved, and the tools that would make one are listed as unavailable. Lifting it needs: a strict allow-list sanitiser (no script, no event
  * handler, no external reference, no foreignObject), SVG as a stored original with a download-only serve (or `default-src 'none'`), and tests of each. Nothing here stores or serves an SVG.
  *
- * MONEY. Quote: the model's per-image rate, or the tool's per-call rate (RECRAFT_RATES, lib/vendorRates.ts: the plan's figures, TO CONFIRM), through the margin table keyed by the model/tool id (`quotedCredits`);
+ * MONEY. Quote: the model's per-image rate, or the tool's per-call rate (RECRAFT_RATES, lib/vendorRates.ts: verified against Recraft's pricing page, 16 Oct 2026), through the margin table keyed by the model/tool id (`quotedCredits`);
  * reserved at the quote; settled at the units the reply states (its `credits`, $1 = 1,000 units) when it states them, else at the quote (marked `reconcile`: the figure is ours), and NEVER billed above the quote (a
  * stated figure above it settles at the quote, the excess is the meter's `overrun_usd`, marked `reconcile`). A failure Recraft's pages say nothing about is settled at nothing ("Nothing billed"); an image lost after
  * Recraft answered is always charged (stated cost, else the quote, marked `reconcile`), recorded unbilled. A person approves: `maxCredits` must cover the quote. One image a job: ask again for more.

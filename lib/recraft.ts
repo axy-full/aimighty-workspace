@@ -10,7 +10,7 @@ import { RECRAFT_RATES, type RecraftModel } from "./vendorRates";
  * RECRAFT_ENABLED (the kill switch, lib/engineGate.ts). Under ENGINE_MOCK=1 nothing is called: a fixture answers in process.
  *
  * What is called (docs/plans/provider-adapters.md § 5), with `Authorization: Bearer`: `POST /images/generations`, `POST /images/vectorize`, `POST /images/removeBackground`. **The request and reply field
- * names, the Pro model ids and the size list follow Recraft's public API as the plan records them and are TO CONFIRM in the first qualification run** (a paid run needs the owner's yes; none is made
+ * names and the size list follow Recraft's public API as the plan records them and are TO CONFIRM in the first qualification run (the model ids and prices were verified on Recraft's pages, 16 Oct 2026)** (a paid run needs the owner's yes; none is made
  * here). Every reply is read defensively; nothing is billed on a failure we can see. Every request refuses redirects (`redirect: "error"`): the key is a header and a redirect would carry it to a host
  * this module never named. No call is ever repeated: a failed or unanswered request throws once, and the caller (which holds the reservation and the take's row) decides.
  */

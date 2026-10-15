@@ -99,10 +99,11 @@ async function run(genId: string, deps: ReturnType<typeof fakeRecraft>["deps"] &
   return last;
 }
 
-test("the prices are the plan's, marked TO CONFIRM; the quote is the model's or the tool's rate, to the micro-dollar, and goes through the margin table", async () => {
+test("the prices are Recraft's published ones, verified 16 Oct 2026; the quote is the model's or the tool's rate, to the micro-dollar, and goes through the margin table", async () => {
   const { RECRAFT_RATES } = await import("../../lib/vendorRates");
   const { recraftQuoteUsd, recraftModelOf } = await import("../../lib/recraftImage");
-  expect(RECRAFT_RATES.confirmed).toBe(false);
+  expect(RECRAFT_RATES.confirmed).toBe(true);
+  expect(RECRAFT_RATES.styleCreationUsd).toBe(0.005);
   expect(RECRAFT_RATES.unitUsd).toBe(0.001);
   expect(recraftQuoteUsd("image", "recraftv4_1")).toBeCloseTo(0.035, 6);
   expect(recraftQuoteUsd("image", "recraftv4_1_pro")).toBeCloseTo(0.21, 6);
@@ -112,7 +113,7 @@ test("the prices are the plan's, marked TO CONFIRM; the quote is the model's or 
   expect(recraftQuoteUsd("remove_background", "recraftv4_1")).toBeCloseTo(0.01, 6);
   expect(recraftModelOf("image", "recraftv4_1_pro")).toBe("recraftv4_1_pro");
   expect(recraftModelOf("remove_background", "recraftv4_1")).toBe("recraft_remove_background");
-  expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/TO CONFIRM[\s\S]{0,2000}export const RECRAFT_RATES|export const RECRAFT_RATES[\s\S]{0,2000}TO CONFIRM/);
+  expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/Verified against Recraft's pricing\s+\* page, 16 Oct 2026[\s\S]{0,1400}export const RECRAFT_RATES/);
 });
 
 test("the adapter: Recraft's own host by default; a base address must be an https recraft.ai host; the key goes only in the header; no redirect is followed; a failure is one request, never repeated", async () => {
