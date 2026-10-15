@@ -156,7 +156,7 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
   });
 
   for (const [format, profile] of [["prores-422", "2"], ["prores-422-hq", "3"]]) {
-    test(`${format}: a real .mov of the right codec, profile ${profile}, 10-bit 4:2:2, and H.265 is refused before anything renders`, () => {
+    test(`${format}: a real .mov of the right codec, profile ${profile}, 10-bit 4:2:2`, () => {
       const card = { title: "Mezzanine", theme: { background: "#102030", foreground: "#f0e0d0", accent: "#ff6b35" }, durationSeconds: 1 };
       const { dir, status, stderr, result } = run(`mezzanine-${format}`, { version: 1, composition: "title-card", props: { aspect: "16:9", scale: 0.25, card }, output: { video: true, format } });
       assert.equal(status, 0, stderr);
@@ -167,11 +167,15 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
       assert.equal(String(stream.profile), profile, info);
       assert.equal(stream.pix_fmt, "yuv422p10le");
       assert.deepEqual([stream.width, stream.height], [480, 270]);
-      const refused = run(`h265-${format}`, { version: 1, composition: "title-card", props: { aspect: "16:9", scale: 0.25, card }, output: { video: true, format: "h265" } });
-      assert.equal(refused.status, 2);
-      assert.deepEqual(refused.result.errors, ["spec.output.format: H.265 is not available."]);
     });
   }
+
+  test("H.265 is refused before anything renders, whatever it is called", () => {
+    const card = { title: "Mezzanine", theme: { background: "#102030", foreground: "#f0e0d0", accent: "#ff6b35" }, durationSeconds: 1 };
+    const refused = run("h265-refused", { version: 1, composition: "title-card", props: { aspect: "16:9", scale: 0.25, card }, output: { video: true, format: "h265" } });
+    assert.equal(refused.status, 2);
+    assert.deepEqual(refused.result.errors, ["spec.output.format: H.265 is not available."]);
+  });
 
   test("refusals: a bad spec exits 2, a missing file 3, and a path that climbs out is refused before anything runs", () => {
     const bad = run("bad", { version: 1, composition: "title-card", props: { aspect: "4:3", card: {} } });
