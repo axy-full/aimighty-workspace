@@ -822,3 +822,11 @@ Answers:
 Lanes B and D are free. Start the Stripe-readiness work, no money or migrations without my word:
 - Lane B: an 18+ confirmation at sign-up (a required tick: "I'm 18 or older and agree to the Terms"), stored with the date, on every sign-up path. NEEDS AKSHAY (sign-in flow).
 - Lane D: drafts in docs/legal/ for my lawyer: Terms, Privacy Policy, Refund Policy (7 days if no credits used) and an Acceptable Use Policy, built on my recorded decisions (18+, no AI tag, no sexual content, consent for real faces, customer handles disclosure, no training on user content, Indian law with arbitration in Mumbai). Mark every clause my lawyer must check. Plus a font and asset licence register (every font and asset rendered into outputs, with its licence).
+
+## Owner, 15 Oct 2026, 22:00 IST (verbatim)
+#759 merged as a merge commit; Coolify deploy finished. Run your read-only checks and say "checks passed".
+- `kill 610521`: I don't run commands on your side. Confirm what the process is, then stop it yourself.
+- #761: I'll answer the 52 owner decisions after my advisor groups them. Meanwhile: list every font and asset marked UNKNOWN with where it is used; request written no-training / no-retention terms from BytePlus, Google, OpenAI, ElevenLabs, Topaz, Bria and Runway (drafts of the email for me to send; don't send anything yourself); and add the Big Buck Bunny credit (CC BY 3.0, Blender Foundation) to the starter production.
+- Deploy #5 order noted: #748 → #756 → #762, then #758, on green and Opus review, with my yes per PR.
+
+**Lead's notes.** Checks passed (709497a). pid 610521 = python3 http.server on 127.0.0.1:4799 serving ~/wt/v25-import/design/particl-prototype-25, user agent, orphaned, started 15 Oct 00:38 IST; the lead's `kill` was denied by the session's permission settings (not worked around): needs an allow rule (`/permissions`) or it ends at the next reboot. Lane D: UNKNOWN list + vendor email drafts (nothing sent). Lane C: the Big Buck Bunny credit PR.
