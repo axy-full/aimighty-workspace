@@ -184,6 +184,19 @@ export const VENDOR_RATES: Record<string, VendorRates> = {
     },
     imageRefInUsd: 0.0003
   },
+  /* Nano Banana 2.1 (Gemini API, ai.google.dev/gemini-api/docs/pricing, 16 Oct 2026). Output: 1K $0.0336 (1120 tokens), 2K $0.0504 (1680), 4K $0.113 (3780), at $30 per 1M image
+     tokens (the table rounds 4K to $0.113; 3780 x $30/M is $0.1134, used here so a quote is never under): verified against Google's pricing page, 16 Oct 2026; confirm against the first invoice. No 512 price is listed (not offered; the image page reportedly says 0.5K is
+     not supported on 2.1: TO CONFIRM). A reference image in costs $1.50 per 1M input tokens; Google publishes NO per-image token count for 2.1 (Pro's is 560, $0.0011), so
+     1120 tokens ($0.00168) is used, the conservative figure: TO CONFIRM against the first invoice. */
+  "gemini-nano-banana-2.1": {
+    tiers: [],
+    imagePricing: {
+      "1K": 0.0336,
+      "2K": 0.0504,
+      "4K": 0.1134
+    },
+    imageRefInUsd: 0.00168
+  },
   /* GPT Image bills by tokens. These are ceilings for the quote, per quality
      at about 1.5 megapixels (OpenAI's image-token table, half again for the
      2.x models, plus a cent of prompt); the settled charge is what OpenAI or
