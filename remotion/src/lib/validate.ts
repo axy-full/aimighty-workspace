@@ -61,6 +61,8 @@ export function isSafeInputPath(value: unknown, extensions: string[]): value is 
 
 class Issues {
   readonly list: string[] = [];
+  /** True only for the props the export builds for the renderer (they may carry `offsetSeconds`); never for a request. */
+  constructor(readonly trusted = false) {}
   add(path: string, message: string) {
     if (this.list.length < 25) this.list.push(`${path}: ${message}`);
   }
@@ -170,7 +172,8 @@ function source(value: unknown, path: string, issues: Issues, limits: ExportLimi
   const hasAudio = rec.hasAudio === undefined ? true : rec.hasAudio;
   if (typeof hasAudio !== "boolean") issues.add(`${path}.hasAudio`, "must be true or false");
   const durationSeconds = num(rec.durationSeconds, `${path}.durationSeconds`, issues, 0.1, limits.maxSourceSeconds);
-  const offsetSeconds = rec.offsetSeconds === undefined ? 0 : num(rec.offsetSeconds, `${path}.offsetSeconds`, issues, 0, durationSeconds);
+  if (rec.offsetSeconds !== undefined && !issues.trusted) issues.add(`${path}.offsetSeconds`, "is set by the export itself and cannot be sent");
+  const offsetSeconds = rec.offsetSeconds === undefined || !issues.trusted ? 0 : num(rec.offsetSeconds, `${path}.offsetSeconds`, issues, 0, durationSeconds);
   return {
     file: typeof rec.file === "string" ? rec.file : blank.file,
     durationSeconds,
@@ -405,8 +408,9 @@ export function isCompositionId(value: unknown): value is CompositionId {
 }
 
 /** Validate and normalise the props of one composition. Unknown keys are refused. */
-export function validateProps<K extends CompositionId>(id: K, props: unknown, limits: ExportLimits = DEFAULT_LIMITS): Result<PropsById[K]> {
-  const issues = new Issues();
+/** `trusted` is for the renderer's own props only (the export sets `offsetSeconds` on them); a request is never trusted. */
+export function validateProps<K extends CompositionId>(id: K, props: unknown, limits: ExportLimits = DEFAULT_LIMITS, trusted = false): Result<PropsById[K]> {
+  const issues = new Issues(trusted);
   const value = (validators[id] as Validator<PropsById[K]>)(props, issues, limits);
   return issues.list.length ? { ok: false, errors: issues.list } : { ok: true, value };
 }
