@@ -142,7 +142,7 @@ export async function loadJob(genId: string): Promise<Job | null> {
 
   if (row.kind === "audio") {
     // A dubbing project is not a render: its own workflow (lib/dubbing.ts) owns the row.
-    if (params.task === "dub") return null;
+    if (params.task === "dub" || params.task === "sarvam_speech") return null;
     const task = ["speech", "sound", "music", "dialogue", "voiceChange"].includes(
       String(params.task),
     )
@@ -890,8 +890,8 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
           FROM generations WHERE id=? AND deleted=0 AND status NOT IN ('succeeded','failed','cancelled')`,
     args: [genId],
   })).rows[0];
-  // Nothing left to end (already over, hidden, or a dubbing project its own workflow owns).
-  if (!row || (row.kind === "audio" && row.task === "dub")) {
+  // Nothing left to end (already over, hidden, or a dubbing project or lip-sync job its own workflow owns).
+  if (!row || (row.kind === "audio" && row.task === "dub") || (row.kind === "video" && row.task === "lipsync") || (row.kind === "audio" && row.task === "sarvam_speech") || (row.kind === "image" && row.task === "bfl_image")) {
     await deliverGenerationSettlement(genId);
     return;
   }
