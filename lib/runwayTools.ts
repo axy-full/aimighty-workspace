@@ -16,7 +16,7 @@ import { writeGenerationOutcome, deliverGenerationSettlement } from "./generatio
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, type StoredSource } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow, shotCapGate } from "./shotCap";
+import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { isHouseWorkspace } from "./houseWorkspace";
@@ -263,7 +263,7 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. Refused on the quote and the press, before any face is checked and any row is written, so no failed take is left in the Library. */
   if (shotId && shotCode) {
-    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: got.user.role === "admin" });
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, seconds, ...(faces.length ? { needs: ["projectId", "use"] } : {}) });
