@@ -22,6 +22,9 @@ function ids(force = false): Promise<Set<string>> {
   return read.ids;
 }
 
+/** The takes of this workspace that hold the clip, read fresh (an export is asked for once and must be right): the movie export and the package credit them. A failed read is an empty set. */
+export const sampleClipTakeIds = (): Promise<Set<string>> => ids(true);
+
 /** The generation id behind a Library id (`generation:<id>`), a media URL (`/api/media/<id>`) or a bare id; null for anything else. */
 export function takeIdOf(value: string | null | undefined): string | null {
   const text = String(value ?? "");

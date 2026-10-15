@@ -18,7 +18,8 @@ import { copyBoardLink, menuItems, useMenuAt } from "../menus/menu-items";
 import { FitText } from "./FitText";
 
 /** A card's picture: its board's newest take once it nears the screen (today's cover read), else a swatch. */
-function Cover({ scope, id, name }: { scope: string; id: string; name: string }) {
+/* `onCover` tells the card which picture it drew, so the sample clip's credit can stand beside the card (a link cannot sit inside its button). */
+function Cover({ scope, id, name, onCover }: { scope: string; id: string; name: string; onCover?: (url: string | null) => void }) {
   const box = useRef<HTMLSpanElement>(null);
   const [near, setNear] = useState(false);
   useEffect(() => {
@@ -30,26 +31,29 @@ function Cover({ scope, id, name }: { scope: string; id: string; name: string })
     return () => seen.disconnect();
   }, []);
   const cover = useProjectCover(scope, id, near);
+  const coverUrl = cover?.url ?? null;
+  useEffect(() => { onCover?.(coverUrl); }, [coverUrl, onCover]);
   const swatch = posterOf(name);
   return (
     <span className="v12-hm-board-cover" ref={box} data-cover={cover ? cover.kind : "swatch"}
       style={cover ? undefined : ({ "--v12-from": swatch.from, "--v12-to": swatch.to } as CSSProperties)}>
       {cover ? <LazyMedia url={cover.url} kind={cover.kind} alt="" name={cover.name} className="v12-hm-board-media" /> : null}
-      {cover ? <SampleClipCredit take={cover.url} over /> : null}
     </span>
   );
 }
 
 function BoardCard({ scope, card, disabled, onOpen, onMenu }: { scope: string; card: ProjectCardModel; disabled: boolean; onOpen: (id: string) => void; onMenu: (event: MouseEvent, id: string) => void }) {
   const line = card.line ?? (card.meta ? { text: card.meta, tone: "quiet" as const } : null);
+  const [pic, setPic] = useState<string | null>(null);
   return (
     <li>
       <button type="button" className="v12-hm-board" disabled={disabled} onClick={() => onOpen(card.id)} title={`Open ${card.name}`} aria-label={line ? `${card.name} · ${line.text}` : card.name} data-testid="v12-home-board" data-board={card.id}
         onContextMenu={(e) => onMenu(e, card.id)}>
-        <Cover scope={scope} id={card.id} name={card.name} />
+        <Cover scope={scope} id={card.id} name={card.name} onCover={setPic} />
         <FitText className="v12-hm-board-name" text={card.name} />
         {line ? <span className="v12-hm-board-state" data-tone={line.tone}><span className="v12-hm-dot" data-tone={line.tone} aria-hidden="true" />{line.text}</span> : null}
       </button>
+      {pic ? <SampleClipCredit take={pic} className="v12-hm-credit" /> : null}
     </li>
   );
 }

@@ -6,6 +6,8 @@ import {moleculrAssetDependencies,validateMoleculrBindings} from './moleculr-bin
 import {originalAssetDownload} from './original-asset';
 import {resolveReferenceAd} from './reference-ad';
 import {withExportNames} from './export-names';
+import {SAMPLE_CLIP_CREDITS_FILE,isSampleClipAsset} from '../sampleClip';
+import {sampleClipTakeIds} from '../useSampleClip';
 
 export type EditSettings={exposure:number;contrast:number;saturation:number;ratio:string;flip:boolean};
 export const defaultEdits:EditSettings={exposure:100,contrast:100,saturation:100,ratio:'Original',flip:false};
@@ -44,7 +46,7 @@ const EXPORT_LIMIT=200*1024*1024;
 const mediaTypes=new Set(['image/png','image/jpeg','image/webp','image/avif','image/gif','video/mp4','video/webm','video/quicktime','audio/mpeg','audio/wav','audio/x-wav','audio/mp4','audio/ogg','application/pdf','text/plain']);
 
 /** Build separately from download so source recovery and package integrity can be tested with mocks. */
-export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Promise<Response>=(url)=>fetch(url)){
+export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Promise<Response>=(url)=>fetch(url),options:{sampleTakes?:ReadonlySet<string>|null}={}){
  const sources=collectExportAssets(p);
  const referenceVideoUrls=new Map(moleculrAssetDependencies(p).filter(binding=>binding.kind==='video').map(binding=>[binding.assetId,resolveReferenceAd(p,{assetId:binding.assetId})!.original.url]));
  const files:Record<string,Uint8Array>={};
@@ -52,6 +54,7 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
  const exportAssets=new Map(p.assets.map(asset=>[asset.id,asset]));
  const links:{assetId:string;name:string;url:string}[]=[];
  let bytes=0;
+ let sampleClip=false;
  // Over 999 shots there is no EDL to send instead, so the advice names the XML formats.
  const tooLarge='This browser package is limited to 200 MB. Export '+(p.shots.length>EDL_EVENTS?'FCPXML or Premiere XML':'the EDL')+' and collect large sources separately.';
  for(const original of sources){
@@ -60,6 +63,7 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
   if(!response.ok)throw new Error('Cannot export '+original.name+'. Try opening the asset first.');
   const length=Number(response.headers.get('content-length')||0);
   if(length>EXPORT_LIMIT-bytes)throw new Error(tooLarge);
+  if(isSampleClipAsset(original,options.sampleTakes))sampleClip=true;
   const blob=await response.blob();bytes+=blob.size;
   if(bytes>EXPORT_LIMIT)throw new Error(tooLarge);
   const mime=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
@@ -86,6 +90,8 @@ export async function buildExportPackage(p:Project,fetchAsset:(url:string)=>Prom
  });
  files['shotlist.csv']=strToU8(['event,shot,filename,source_in,source_out,record_in,record_out,duration_frames,fps,direction',...rows].join('\r\n'));
  files['production.json']=strToU8(JSON.stringify({format:'particl.editorial.v1',exportedAt:new Date().toISOString(),project,files:sourceFiles,links},null,2));
+ /* The starter's sample clip (Big Buck Bunny, CC BY 3.0) is in media/: the package says whose it is and under what licence. */
+ if(sampleClip)files['CREDITS.txt']=strToU8(SAMPLE_CLIP_CREDITS_FILE);
  if(links.length)files['reference-links.json']=strToU8(JSON.stringify(links,null,2));
  files['README.txt']=strToU8(`PARTICL / EDITORIAL HANDOFF
 
@@ -98,6 +104,7 @@ sequence.xml: Final Cut Pro 7 XML (XMEML v4) for Premiere Pro — the same cut a
 shotlist.csv: inclusive in / exclusive out timecodes and creative notes.
 production.json: project snapshot, production record mappings, reference bindings, take lineage and crew plans.
 media/: original bytes of assets used in the sequence, scratch audio, saved product profiles, brand logo, poster image layers (including hidden layers), current and prepared campaign reference videos, and their bound source/reference lineage.
+CREDITS.txt (when present): the credit and licence of the sample clip in media/.
 reference-links.json (when present): saved website references. Web pages are not downloaded as media.
 
 Import the EDL at the stated frame rate and relink using FROM CLIP NAME comments. Image sources are still-frame holds, not rendered video; configure still duration manually if your editor does not conform them. Some editors need WebP/GIF stills converted to PNG before relinking. Export a PNG from the Particl asset editor if needed. Video must already match the sequence frame rate and have zero-based source timecode; embedded timecodes and source frame rates have not been probed.
@@ -109,6 +116,6 @@ The manifest preserves take lineage and saved versions. It is not an audit log o
  return files;
 }
 export async function exportPackage(p:Project){
- const files=await buildExportPackage(await withExportNames(p));
+ const files=await buildExportPackage(await withExportNames(p),undefined,{sampleTakes:await sampleClipTakeIds()});
  downloadFile(new Blob([zipSync(files,{level:0}) as BlobPart],{type:'application/zip'}),safeName(p.name)+'_editorial.zip');
 }

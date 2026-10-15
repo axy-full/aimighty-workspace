@@ -203,3 +203,46 @@ test("a review link carries the credit for a take that is the sample clip, and n
     expect((await reviewSet("tok", "share-1", starter.projectId))!.takes.some((t) => t.credit)).toBe(false);
   });
 });
+
+test("the Download package carries CREDITS.txt when a collected asset is the sample clip: by its flag, or by the server's list of takes (a starter made before the flag)", async () => {
+  const { seedProject } = await import("../../lib/workbench/studio");
+  const { buildExportPackage } = await import("../../lib/workbench/studio-export");
+  const { SAMPLE_CLIP_CREDITS_FILE, isSampleClipAsset } = await import("../../lib/sampleClip");
+  const { strFromU8 } = await import("fflate");
+  const bytes = new Uint8Array([82, 73, 70, 70, 1, 2, 3, 4]);
+  const fetchAsset = async () => new Response(bytes, { headers: { "Content-Type": "image/webp" } });
+  const credited = async (mutate: (p: ReturnType<typeof seedProject>) => void, sampleTakes?: ReadonlySet<string>) => {
+    const project = seedProject();
+    mutate(project);
+    const files = await buildExportPackage(project, fetchAsset, { sampleTakes });
+    return files["CREDITS.txt"] ? strFromU8(files["CREDITS.txt"]) : null;
+  };
+  // Nothing is the clip: no file, and the package is as it was.
+  expect(await credited(() => {})).toBeNull();
+  expect(await credited(() => {}, new Set(["gen_other"]))).toBeNull();
+  // The draft says so.
+  expect(await credited((p) => { p.assets[0].sampleClip = true; })).toBe(SAMPLE_CLIP_CREDITS_FILE);
+  // The draft is older than the flag: the server's list of takes holding the clip decides.
+  expect(await credited((p) => { p.assets[0].generationId = "gen_clip"; }, new Set(["gen_clip"]))).toBe(SAMPLE_CLIP_CREDITS_FILE);
+  expect(await credited((p) => { p.assets[0].generationId = "gen_clip"; }, new Set(["gen_other"]))).toBeNull();
+  expect(isSampleClipAsset({ generationId: "gen_clip" }, new Set(["gen_clip"]))).toBe(true);
+  expect(isSampleClipAsset({ generationId: "gen_clip" }, null)).toBe(false);
+  expect(isSampleClipAsset({}, new Set(["gen_clip"]))).toBe(false);
+});
+
+test("the movie comment credits a clip the server lists, with or without the draft's flag", async () => {
+  const { movieComment, MOVIE_COMMENT, SAMPLE_CLIP_CREDIT_TEXT } = await import("../../lib/sampleClip");
+  const clips = [{ asset: { generationId: "gen_clip" } }, { asset: { generationId: "gen_x" } }];
+  expect(movieComment(clips)).toBe(MOVIE_COMMENT);
+  expect(movieComment(clips, new Set(["gen_other"]))).toBe(MOVIE_COMMENT);
+  expect(movieComment(clips, new Set(["gen_clip"]))).toBe(`${MOVIE_COMMENT} ${SAMPLE_CLIP_CREDIT_TEXT}`);
+  expect(movieComment([{ asset: { sampleClip: true as const } }])).toContain(SAMPLE_CLIP_CREDIT_TEXT);
+});
+
+test("the credit's style is tokens only, and each of its links is a 44 px target on a phone", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync("components/ui/sample-clip-credit.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|hsl\(|oklch\(|accent/i);
+  const phone = /@media \(max-width: 899px\), \(pointer: coarse\)\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
+  expect(phone).toMatch(/\.sample-credit a \{[^}]*min-height: 44px/);
+});

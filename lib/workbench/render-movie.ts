@@ -1,6 +1,7 @@
 "use client";
 
 import { movieComment } from "../sampleClip";
+import { sampleClipTakeIds } from "../useSampleClip";
 import {
   ALL_FORMATS,
   AudioBufferSource,
@@ -287,9 +288,11 @@ export async function renderMovie(
           })
         : undefined;
     if (audioSource) output.addAudioTrack(audioSource);
+    /* The takes the server knows hold the sample clip, so a starter made before its draft said so is credited too. */
+    const sampleTakes = await sampleClipTakeIds();
     output.setMetadataTags({
       title: project.name,
-      comment: movieComment(plan.clips),
+      comment: movieComment(plan.clips, sampleTakes),
     });
     await output.start();
     if (audioSource && mixed) {

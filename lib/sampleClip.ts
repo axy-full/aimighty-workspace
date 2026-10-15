@@ -29,8 +29,15 @@ export function sampleClipNotice(takeIds: readonly string[]) {
 /** The text of a CREDITS.txt for a package: one line and the two links. */
 export const SAMPLE_CLIP_CREDITS_FILE = `${SAMPLE_CLIP_CREDIT.line}\r\nLicence: ${SAMPLE_CLIP_CREDIT.licenceUrl}\r\nSource: ${SAMPLE_CLIP_CREDIT.sourceUrl}\r\n`;
 
+/**
+ * Whether an asset is the sample clip: its draft says so (a starter made since the credit shipped), or the server's list of takes that hold the clip does
+ * (`sampleTakes`, from GET /api/sample-clip), which also credits a starter draft made before it did.
+ */
+export const isSampleClipAsset = (asset: { sampleClip?: true; generationId?: string | null }, sampleTakes?: ReadonlySet<string> | null): boolean =>
+  Boolean(asset.sampleClip) || Boolean(asset.generationId && sampleTakes?.has(asset.generationId));
+
 /** A movie export's own metadata comment: its fixed words, and the credit when a clip in the cut is the starter's sample clip. */
 export const MOVIE_COMMENT = "Particl timeline export; SDR canvas render; straight cuts.";
-export function movieComment(clips: readonly { asset: { sampleClip?: true } }[]): string {
-  return clips.some((clip) => clip.asset.sampleClip) ? `${MOVIE_COMMENT} ${SAMPLE_CLIP_CREDIT_TEXT}` : MOVIE_COMMENT;
+export function movieComment(clips: readonly { asset: { sampleClip?: true; generationId?: string | null } }[], sampleTakes?: ReadonlySet<string> | null): string {
+  return clips.some((clip) => isSampleClipAsset(clip.asset, sampleTakes)) ? `${MOVIE_COMMENT} ${SAMPLE_CLIP_CREDIT_TEXT}` : MOVIE_COMMENT;
 }
