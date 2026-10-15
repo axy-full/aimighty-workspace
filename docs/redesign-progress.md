@@ -1013,3 +1013,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 04:27 IST.** Opus APPROVED the isAdmin fix across all ten engine PRs, and #787 Kling 4.0 at b7902f86 (inert until confirmed; the ratesFor change can't move any non-gated price; settling a take never depends on the gate).
   - Every engine PR now has a current Opus approval with no open must-fix. All are NEEDS AKSHAY.
   - Open notes for later: unify the two gating mechanisms (#784 vs #787); lanes C and D switch to the shared shotCapAdmin once #776 merges.
+- **16 Oct 04:30 IST.** #749 (v25 card) re-run CI green 24/24 (run 38816325995) at c021c3d3, so the earlier suites-business failure was a flake. Not merged under the standing yes: tonight's Opus reviews of #749 were scoped to the large-screen deltas, not a full review of the PR, and the last head (a test-comment reword) wasn't re-reviewed. Listed as ready for the owner's yes.
