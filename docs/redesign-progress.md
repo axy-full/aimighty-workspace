@@ -997,3 +997,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - The Pro pick isn't built. Proposal for the owner: lib/proPick.ts config list (Kling 4.0 → 3.0 Pro fallback) with a site-setting override; the composer marks Pro entries. Note the composer has no Pro row today, and Veo and Runway are tools, not model rows.
   - Opus checks queued.
 - **16 Oct 04:07 IST.** Lane B: shotCapGate in every door (#776 67d7b83e, #777 0df03408 speech only, #778 25e11c20, #780 1a216631, #785 de3902a1). Before any face check or row; one test per door; 188 specs pass. Opus delta queued. The engines stacked on #778 (#779 Veo, #781 Topaz, #786 Recraft, #787 Kling) will need #778's new head merged in before they retarget.
+- **16 Oct 04:07 IST.** Opus:
+  - #779 cad0a2ed APPROVED.
+  - #783 9fca09be APPROVED: the access must-fix is closed; nits on the agent's admin role and a reconcile mark on the sweep.
+  - #787 Kling 4.0 NOT APPROVED until the inert change lands. Its price is a placeholder, and quote helpers could show it to a customer workspace naming the id (should-fix). Two gating mechanisms now exist (#784 vs #787); unify later.
+  - Follow-ups sent to lane D.
