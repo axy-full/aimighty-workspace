@@ -144,6 +144,8 @@ const FLUX2_IMAGE: DirectTool = {
     inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to make." }, ...SIZE, seed: { type: "number" }, ...BFL_COMMON }, required: ["prompt"] },
   },
   present: bflPresent("flux2_image"),
+  /* flux-2-pro (the default, the cheapest) is the draft; flux-2-flex and flux-2-max are full quality and always ask. */
+  draft: (b) => (b.model ?? "flux-2-pro") === "flux-2-pro",
   prepared: (b) => `prepared: ${String(b.model ?? "flux-2-pro")} still, ${String(b.width ?? 1024)} by ${String(b.height ?? 1024)}`,
   request: (a) => ({ path: "/api/bfl", body: { tool: "image", prompt: str(a.prompt), model: str(a.model), width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id) } }),
   describe: (out, quote) => `Image started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
@@ -157,6 +159,7 @@ const FLUX2_EDIT: DirectTool = {
     inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to change." }, reference_upload_ids: { type: "string", description: "Comma-separated upload ids, one to eight." }, cast_member_ids: { type: "string", description: "Comma-separated cast member ids, one per reference, in the same order." }, ...SIZE, use: { type: "string", description: "production, ads or social." }, seed: { type: "number" }, ...BFL_COMMON }, required: ["prompt", "reference_upload_ids", "cast_member_ids", "project_id", "use"] },
   },
   present: bflPresent("flux2_edit"),
+  draft: (b) => (b.model ?? "flux-2-pro") === "flux-2-pro",
   prepared: (b) => `prepared: ${String(b.model ?? "flux-2-pro")} edit of ${Array.isArray(b.references) ? b.references.length : 0} reference(s) for production ${String(b.projectId)}`,
   request: (a) => {
     const uploads = list(a.reference_upload_ids), cast = list(a.cast_member_ids);
