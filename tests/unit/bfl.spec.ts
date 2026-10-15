@@ -380,6 +380,64 @@ test("a failure bills nothing: an Error or a moderated job, a refusal before wor
   });
 });
 
+test("the shot cap is judged at the quote and the press, before any face is checked or row written: a member past it is refused 403 (needs an admin) with no take left, for a still and for an edit; an admin, no shot and a rule that is not 'cap' go through", async () => {
+  const { admitBfl } = await import("../../lib/bflImage");
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  const { runInTenant } = await import("../../lib/tenant");
+  process.env.BFL_ENABLED = "1";
+  process.env.REKOGNITION_ENABLED = "1";
+  const MEMBER: AdmissionActor = { user: { ...OWNER.user, id: "member_1", role: "member", owner: false } as AdmissionActor["user"] };
+  await runInTenant(house(), async () => {
+    await ready();
+    const setRule = async (rule: string | null, cap?: number) => {
+      for (const [key, value] of [["approvalRule", rule], ["shotCapCredits", cap == null ? null : String(cap)]] as const) {
+        if (value === null) await db().execute({ sql: "DELETE FROM settings WHERE key=?", args: [key] }); else await setSetting(key, value, "admin");
+      }
+      invalidateSettings();
+    };
+    const projectId = uid("prod"), cast = uid("cast"), shotId = uid("shot");
+    await project(projectId);
+    const consentId = await consent(projectId, cast);
+    await db().execute({ sql: "INSERT INTO shots (id, project_id, code, title, created_at, updated_at) VALUES (?,?,?,?,0,0)", args: [shotId, projectId, "S01", "A shot"] });
+    /* The shot already holds a take (a dollar of an image, ten credits), so even a one-credit line takes it past a cap of one. */
+    await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,shot_id,cost_usd,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,0,0)", args: [uid("gen_prior"), "image", "gemini-3.1-flash-image", "A prior still", "{}", "succeeded", shotId, 1] });
+    const ref = await image("cap_ref");
+    let faceCalls = 0;
+    const seams = { consent: async (...x: Parameters<ReturnType<typeof passing>>) => { faceCalls++; return passing(consentId)(...x); } };
+    const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    const still = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitBfl({ tool: "image", prompt: "a crane", shotId, ...approved, ...extra }, actor, options(), seams);
+    const edit = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitBfl({ tool: "edit", prompt: "swap", references: [{ uploadId: ref.id, castMemberId: cast }], projectId, use: "production", shotId, ...approved, ...extra }, actor, options(), seams);
+    try {
+      await setRule("cap", 1);
+      const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
+      for (const go of [still, edit]) for (const extra of [{ quoteOnly: true }, {}]) {
+        const refused = await go(MEMBER, extra);
+        expect(refused, `${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+        expect(String(refused.body.error)).toMatch(/S01/);
+      }
+      expect(faceCalls).toBe(0);
+      expect(await rows()).toBe(before.rows);
+      expect((await meterRows()).length).toBe(before.meter);
+      expect(deferred.length).toBe(before.handed);
+      await runInTenant(house(), async () => { expect((await still(OWNER, { quoteOnly: true })).status).toBe(200); }, OWNER as never);
+      expect((await still(MEMBER, { quoteOnly: true, shotId: undefined })).status).toBe(200);
+      await setRule("ask");
+      expect((await still(MEMBER, { quoteOnly: true })).status).toBe(200);
+      await setRule("cap", 100000);
+      expect((await still(MEMBER, { quoteOnly: true })).status).toBe(200);
+      const made = await still(MEMBER);
+      expect(made.status, JSON.stringify(made.body)).toBe(200);
+      const madeEdit = await edit(MEMBER);
+      expect(madeEdit.status, JSON.stringify(madeEdit.body)).toBe(200);
+      expect(faceCalls).toBe(1);
+      expect(await rows()).toBe(before.rows + 2);
+      /* (Both jobs are run to the end, so the cron in a later test finds nothing of ours waiting.) */
+      for (const id of [made.body.id, madeEdit.body.id]) await run(String(id), fakeBfl().deps, 4);
+    } finally { await setRule(null); }
+  }, MEMBER as never);
+});
+
 test("a lost acknowledgement is never sent again, and a job that never got to its submit settles at nothing", async () => {
   const { BflError } = await import("../../lib/bfl");
   const { recoverBflJobs, advanceBflJobWith } = await import("../../lib/bflImage");
