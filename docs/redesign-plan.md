@@ -7,7 +7,7 @@ Written 10 Oct 2026 by the lead, at the owner's request ("write the plan into th
 
 ## The brief (owner, 10 Oct)
 
-- **The design:** design/particl-prototype-15 is the design (owner, 13 Oct 2026: v15 contains all of v14; design/particl-prototype-12 is kept as the one reference). It replaces design/particl-graphite, and each screen PR deletes the graphite design file(s) it replaces.
+- **The design:** design/particl-prototype-25 is THE design (owner, 15 Oct 2026: "Prototype v25 is approved and replaces v15 as THE design ... update the one-design guard to name v25 ... v15 stays as reference until its screens are rebuilt"). design/particl-prototype-15 and design/particl-prototype-12 are kept as references; v15 goes when its screens are rebuilt. It replaces design/particl-graphite, and each screen PR deletes the graphite design file(s) it replaces. (Superseded: v15 as the design, 13 Oct 2026.)
 - **Switch:** everything is built on release/1 behind the per-workspace switch. It is off for every customer workspace and on only for the internal house workspace.
 - **Work order:**
   - P1 Shell
