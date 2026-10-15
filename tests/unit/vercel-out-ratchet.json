@@ -279,7 +279,7 @@
       "by": "C2 (Blob code out)"
     },
     "scripts/ops/blob-to-r2.mjs": {
-      "count": 3,
+      "count": 2,
       "until": "2026-12-15",
       "by": "C2 (Blob code out)"
     },
