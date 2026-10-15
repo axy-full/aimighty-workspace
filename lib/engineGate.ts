@@ -1,45 +1,40 @@
-import { isHouseWorkspace } from "./houseWorkspace";
+import { currentTenant } from "./tenant";
+import { HOUSE_WORKSPACE_ID } from "./houseWorkspace";
+import { platformDb, platformReady } from "./platform";
 
 /**
- * Who may use an engine (owner, 15 Oct 2026, 22:15): "ON for the house workspace (ws_legacy) and any workspace I list
- * in the site setting; OFF for customer workspaces until launch."
+ * The gate every new engine passes (the owner's standing rule, 15 Oct 2026: engines ON for the house workspace and for the workspaces
+ * listed in a site setting, OFF for customers, each with its own kill switch):
  *
- * An engine is offered to a workspace only when BOTH are true:
- *  1. the engine's own switch is on (the global kill switch, an environment setting read at run time), and
- *  2. the workspace is the house workspace (lib/houseWorkspace.ts) or is listed in the site setting
- *     `enginesOnWorkspaces` (lib/site/settings.ts), one list for every engine.
- * Pure: no database, no environment read, safe on the client. The server half is lib/engineGate.server.ts.
+ *   engineEnabled(SWITCH)  =  the engine's own environment switch is exactly "1"   (the kill switch: unset or anything else is off for everyone)
+ *                             AND ( the workspace is the house  OR  its id is in the site setting `enginesOnWorkspaces` ).
+ *
+ * The list is the `enginesOnWorkspaces` field of the site row (platform_layer, key `site`, lib/site/settings.server.ts): a list of
+ * workspace ids, empty by default. This reader is tolerant of a row that does not carry it yet and fails closed on any read error.
+ * With no workspace in scope the answer is off.
  */
+const WORKSPACE_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
 
-/** Each engine's own switch. Exports are the first; the provider engines of docs/plans/provider-adapters.md follow. */
-export const ENGINE_SWITCH = Object.freeze({
-  remotion: "REMOTION_EXPORTS",
-} as const);
-export type EngineName = keyof typeof ENGINE_SWITCH;
+/** The engine's own switch, read when asked (never at import): on only for exactly "1". */
+export const engineSwitchOn = (envName: string): boolean => process.env[envName] === "1";
 
-/** A switch value that means on: exactly 1, on, true or yes (any case, spaces ignored). Anything else, or nothing, is off. */
-export function switchOn(value: string | undefined | null): boolean {
-  const v = (value ?? "").trim().toLowerCase();
-  return v === "1" || v === "on" || v === "true" || v === "yes";
+/** The workspaces besides the house that the engines are on for, as the platform owner listed them. Fails closed. */
+export async function enginesOnWorkspaces(): Promise<string[]> {
+  try {
+    await platformReady();
+    const rs = await platformDb().execute({ sql: "SELECT value FROM platform_layer WHERE key = ?", args: ["site"] });
+    const raw = (rs.rows[0] as { value?: unknown } | undefined)?.value;
+    if (typeof raw !== "string") return [];
+    const list = (JSON.parse(raw) as { enginesOnWorkspaces?: unknown }).enginesOnWorkspaces;
+    return Array.isArray(list) ? [...new Set(list.filter((id): id is string => typeof id === "string" && WORKSPACE_ID.test(id)))].slice(0, 50) : [];
+  } catch {
+    return [];
+  }
 }
 
-/** The engine's own switch, read from the given environment. */
-export function engineSwitchOn(engine: EngineName, env: Readonly<Record<string, string | undefined>>): boolean {
-  return switchOn(env[ENGINE_SWITCH[engine]]);
-}
-
-/** Whether the workspace is allowed an engine whose switch is on: the house workspace, or one the platform owner listed. */
-export function workspaceMayUseEngines(workspace: { id: string } | null | undefined, listed: readonly string[] = []): boolean {
-  if (!workspace) return false;
-  return isHouseWorkspace(workspace) || listed.includes(workspace.id);
-}
-
-/** The whole rule: the engine's switch is on AND the workspace is the house or listed. */
-export function engineEnabled(
-  engine: EngineName,
-  workspace: { id: string } | null | undefined,
-  listed: readonly string[],
-  env: Readonly<Record<string, string | undefined>>,
-): boolean {
-  return engineSwitchOn(engine, env) && workspaceMayUseEngines(workspace, listed);
+/** Is this engine on for this workspace (default: the one in scope)? */
+export async function engineEnabled(envName: string, workspace: { id: string } | null | undefined = currentTenant()?.workspace): Promise<boolean> {
+  if (!engineSwitchOn(envName) || !workspace) return false;
+  if (workspace.id === HOUSE_WORKSPACE_ID) return true;
+  return (await enginesOnWorkspaces()).includes(workspace.id);
 }

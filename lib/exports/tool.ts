@@ -46,7 +46,7 @@ export async function exportToolAvailabilityFor(
 ): Promise<{ available: boolean; reason: string | null }> {
   const base = exportToolAvailability(env);
   if (!base.available) return base;
-  const { engineEnabledFor } = await import("../engineGate.server");
-  if (!(await engineEnabledFor("remotion", workspace, env))) return { available: false, reason: "Exports are not switched on for this workspace." };
+  const { engineEnabled } = await import("../engineGate");
+  if (!(await engineEnabled("REMOTION_EXPORTS", workspace))) return { available: false, reason: "Exports are not switched on for this workspace." };
   return base;
 }

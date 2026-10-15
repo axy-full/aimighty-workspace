@@ -5,7 +5,6 @@ import path from "node:path";
 import * as zod from "zod";
 import type { TenantWorkspace } from "../../lib/tenant";
 import { DEFAULT_SITE, cleanSite, sitePatch } from "../../lib/site/settings";
-import { engineEnabled, engineSwitchOn, switchOn, workspaceMayUseEngines } from "../../lib/engineGate";
 
 /* Owner, 15 Oct 2026, 22:15: "ON for the house workspace (ws_legacy) and any workspace I list in the site setting;
    OFF for customer workspaces until launch." An engine is offered only when its own switch is on AND the workspace is
@@ -28,31 +27,14 @@ const listSite = async (ids: string[]) => {
   await platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, 'x') ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify({ enginesOnWorkspaces: ids })] });
 };
 
-test("the switch value: only 1, on, true or yes (any case) is on", () => {
-  expect([undefined, null, "", "0", "off", "false", "no", "2", "enabled", " "].map(switchOn)).toEqual(Array(10).fill(false));
-  expect(["1", "on", "ON", "true", "True", " yes "].map(switchOn)).toEqual(Array(6).fill(true));
-  expect(engineSwitchOn("remotion", {})).toBe(false);
-  expect(engineSwitchOn("remotion", { REMOTION_EXPORTS: "1" })).toBe(true);
-});
-
-test("who may use engines: the house workspace and a listed one; a customer workspace and no workspace may not", () => {
-  expect(workspaceMayUseEngines({ id: "ws_legacy" })).toBe(true);
-  expect(workspaceMayUseEngines({ id: "ws_customer" })).toBe(false);
-  expect(workspaceMayUseEngines({ id: "ws_customer" }, ["ws_other"])).toBe(false);
-  expect(workspaceMayUseEngines({ id: "ws_customer" }, ["ws_other", "ws_customer"])).toBe(true);
-  expect(workspaceMayUseEngines(null, ["ws_customer"])).toBe(false);
-  expect(workspaceMayUseEngines(undefined)).toBe(false);
-});
-
-test("the whole rule is both halves: the engine's switch AND the house or a listed workspace", () => {
-  const on = { REMOTION_EXPORTS: "1" };
-  const off = {};
-  expect(engineEnabled("remotion", { id: "ws_legacy" }, [], on)).toBe(true);
-  expect(engineEnabled("remotion", { id: "ws_customer" }, ["ws_customer"], on)).toBe(true);
-  expect(engineEnabled("remotion", { id: "ws_customer" }, [], on)).toBe(false);
-  /* The global switch is a kill switch for everyone, the house and listed workspaces included. */
-  expect(engineEnabled("remotion", { id: "ws_legacy" }, ["ws_legacy"], off)).toBe(false);
-  expect(engineEnabled("remotion", { id: "ws_customer" }, ["ws_customer"], off)).toBe(false);
+test("the engine's own switch is on only for exactly 1, read when asked", async () => {
+  const { engineSwitchOn } = await import("../../lib/engineGate");
+  for (const value of [undefined, "", "0", "off", "false", "no", "2", "on", "true", "yes", " 1", "1 "]) {
+    if (value === undefined) delete process.env.REMOTION_EXPORTS; else process.env.REMOTION_EXPORTS = value;
+    expect(engineSwitchOn("REMOTION_EXPORTS"), String(value)).toBe(false);
+  }
+  process.env.REMOTION_EXPORTS = "1";
+  expect(engineSwitchOn("REMOTION_EXPORTS")).toBe(true);
 });
 
 test("the site setting enginesOnWorkspaces: empty by default, junk dropped, at most 50 well-formed distinct ids, refused with the reason otherwise", () => {
@@ -71,22 +53,28 @@ test("the site setting enginesOnWorkspaces: empty by default, junk dropped, at m
 });
 
 test("read from the platform database: off for a customer, on for the house and a listed workspace, off for all when the switch is off", async () => {
-  const { engineEnabledFor } = await import("../../lib/engineGate.server");
-  const on = { REMOTION_EXPORTS: "1" };
+  const { engineEnabled } = await import("../../lib/engineGate");
+  process.env.REMOTION_EXPORTS = "1";
   await listSite([]);
-  expect(await engineEnabledFor("remotion", { id: "ws_legacy" }, on)).toBe(true);
-  expect(await engineEnabledFor("remotion", { id: "ws_customer" }, on)).toBe(false);
+  expect(await engineEnabled("REMOTION_EXPORTS", { id: "ws_legacy" })).toBe(true);
+  expect(await engineEnabled("REMOTION_EXPORTS", { id: "ws_customer" })).toBe(false);
   await listSite(["ws_customer"]);
-  expect(await engineEnabledFor("remotion", { id: "ws_customer" }, on)).toBe(true);
-  expect(await engineEnabledFor("remotion", { id: "ws_other" }, on)).toBe(false);
-  expect(await engineEnabledFor("remotion", { id: "ws_customer" }, {})).toBe(false);
-  expect(await engineEnabledFor("remotion", { id: "ws_legacy" }, {})).toBe(false);
-  expect(await engineEnabledFor("remotion", null, on)).toBe(false);
+  expect(await engineEnabled("REMOTION_EXPORTS", { id: "ws_customer" })).toBe(true);
+  expect(await engineEnabled("REMOTION_EXPORTS", { id: "ws_other" })).toBe(false);
+  expect(await engineEnabled("REMOTION_EXPORTS", null)).toBe(false);
+  /* The global switch is a kill switch for everyone, the house and listed workspaces included. */
+  delete process.env.REMOTION_EXPORTS;
+  expect(await engineEnabled("REMOTION_EXPORTS", { id: "ws_customer" })).toBe(false);
+  expect(await engineEnabled("REMOTION_EXPORTS", { id: "ws_legacy" })).toBe(false);
   /* A row that can't be read means off for every customer workspace (the house still follows its own rule). */
+  process.env.REMOTION_EXPORTS = "1";
   const { platformDb } = await import("../../lib/platform");
   await platformDb().execute({ sql: `UPDATE platform_layer SET value='{not json' WHERE key='site'`, args: [] });
-  expect(await engineEnabledFor("remotion", { id: "ws_customer" }, on)).toBe(false);
-  expect(await engineEnabledFor("remotion", { id: "ws_legacy" }, on)).toBe(true);
+  expect(await engineEnabled("REMOTION_EXPORTS", { id: "ws_customer" })).toBe(false);
+  expect(await engineEnabled("REMOTION_EXPORTS", { id: "ws_legacy" })).toBe(true);
+  /* A row from before the list existed reads as an empty list. */
+  await platformDb().execute({ sql: `UPDATE platform_layer SET value='{"openSignup":false}' WHERE key='site'`, args: [] });
+  expect(await engineEnabled("REMOTION_EXPORTS", { id: "ws_customer" })).toBe(false);
 });
 
 test("exports follow it: the job functions refuse an unlisted customer workspace with a 404 and make no table; the house and a listed workspace pass the gate", async () => {
@@ -124,15 +112,16 @@ test("exports follow it: the job functions refuse an unlisted customer workspace
 test("the MCP tools follow it: the export tools are listed to the house and to a listed workspace, and to no one while the switch is off", async () => {
   const { TOOLS, toolsOfferedFor } = await import("../../lib/mcp");
   const names = (list: { name: string }[]) => list.map((tool) => tool.name);
-  const on = { REMOTION_EXPORTS: "1" };
+  process.env.REMOTION_EXPORTS = "1";
   await listSite(["ws_cust"]);
-  expect(names(await toolsOfferedFor({ id: "ws_legacy" }, on))).toEqual([...names(TOOLS), "export_video", "get_export", "cancel_export"]);
-  expect(names(await toolsOfferedFor({ id: "ws_cust" }, on))).toContain("export_video");
-  expect(await toolsOfferedFor({ id: "ws_other" }, on)).toBe(TOOLS);
-  expect(await toolsOfferedFor({ id: "ws_legacy" }, {})).toBe(TOOLS);
-  expect(await toolsOfferedFor(null, on)).toBe(TOOLS);
+  expect(names(await toolsOfferedFor({ id: "ws_legacy" }))).toEqual([...names(TOOLS), "export_video", "get_export", "cancel_export"]);
+  expect(names(await toolsOfferedFor({ id: "ws_cust" }))).toContain("export_video");
+  expect(await toolsOfferedFor({ id: "ws_other" })).toBe(TOOLS);
+  expect(await toolsOfferedFor(null)).toBe(TOOLS);
   const { exportToolAvailabilityFor } = await import("../../lib/exports/tool");
-  const full = { ...on, REMOTION_WORKER_URLS: "http://remotion-1:8790", REMOTION_WORKER_SECRETS: "s".repeat(40) };
+  const full = { REMOTION_EXPORTS: "1", REMOTION_WORKER_URLS: "http://remotion-1:8790", REMOTION_WORKER_SECRETS: "s".repeat(40) };
   expect(await exportToolAvailabilityFor({ id: "ws_other" }, full)).toEqual({ available: false, reason: "Exports are not switched on for this workspace." });
   expect(await exportToolAvailabilityFor({ id: "ws_cust" }, full)).toEqual({ available: true, reason: null });
+  delete process.env.REMOTION_EXPORTS;
+  expect(await toolsOfferedFor({ id: "ws_legacy" })).toBe(TOOLS);
 });
