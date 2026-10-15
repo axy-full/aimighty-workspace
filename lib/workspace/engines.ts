@@ -33,6 +33,7 @@ const FIXED: Record<string, EngineLabel> = {
   "fal-ai/bria/background/remove": { short: "Cutout", long: "Bria Cutout" },
   "gemini-3-pro-image": { short: "NB Pro", long: "Nano Banana Pro" },
   "gemini-3.1-flash-image": { short: "NB 2", long: "Nano Banana 2" },
+  "gemini-nano-banana-2.1": { short: "NB 2.1", long: "Nano Banana 2.1" },
   /* Connected-account surfaces keep neutral names (rule 2 in lib/vendorNames.ts). */
   "higgsfield-genjutsu-motion-transfer": { short: "Transfer", long: "Motion transfer" },
   "higgsfield-genjutsu-object-swap": { short: "Swap", long: "Object swap" },

@@ -5,12 +5,14 @@ import { requireReadySoulIdentity } from '@/lib/soulIdentities';
 import { requireTenant } from '@/lib/tenant';
 import { cinemaSoundOffered } from '@/lib/cinemaSoundPricing';
 import { creditsApply, quotedCredits } from '@/lib/credits';
+import { gatedModelsHere } from '@/lib/engineModels';
 
 export const GET = withTenant(async (req: Request) => {
   const got = await requireUser();
   if (got.response) return got.response;
   const q = new URL(req.url).searchParams;
-  const configured = workbenchGenerationModels().filter(model => modelConfigured(model));
+  /* An engine behind a switch of its own (Nano Banana 2.1) is listed only where it is on for this workspace. */
+  const configured = [...workbenchGenerationModels(), ...(await gatedModelsHere())].filter(model => modelConfigured(model));
   /* Cinema Studio's Sound switch: offered once its sound is priced, and in the house workspace (lib/cinemaSoundPricing.ts). */
   const soundHere = cinemaSoundOffered(requireTenant());
   /* The house workspace is never billed in credits and sees every price at the engine's cost (lib/houseWorkspace.ts): its figures also carry the engine's dollars, the ones admission reserves. Credit workspaces never receive them. */

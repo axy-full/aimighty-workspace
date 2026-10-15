@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { offeredModels } from "@/lib/models";
+import { gatedModelsHere } from "@/lib/engineModels";
 import { requireUser, withTenant } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
 import { getSetting, invalidateSettings } from "@/lib/settings";
@@ -27,6 +28,8 @@ export const GET = withTenant(async function GET() {
   const writer = await activeWriter();
   const creditWorkspace = creditsApply(requireTenant());
   const credits = !creditWorkspace && writer.provider === "gateway" ? await gatewayCredits() : null;
+  /* Engines behind a switch of their own (Nano Banana 2.1): listed only where the switch is on and the workspace is the house or on the site list. */
+  const gated = await gatedModelsHere();
   return NextResponse.json({
     /* What is left on the gateway, when the writer runs through it. */
     gatewayCredits: credits,
@@ -48,7 +51,9 @@ export const GET = withTenant(async function GET() {
       via: providerVia(p),
       /* Retired models are not offered (lib/models.ts › retired); past jobs still resolve them. */
       models: offeredModels().filter((m) => m.provider === p.id && (!m.soulIdentity || soulCharacterGenerationEnabled()) && (!m.cinemaStudio || cinemaStudioEnabled()))
-        .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),
+        .map((m) => ({ id: m.id, label: m.label, kind: m.kind }))
+        /* …and the engines behind a switch of their own, where it is on for this workspace. */
+        .concat(gated.filter((m) => m.provider === p.id).map((m) => ({ id: m.id, label: m.label, kind: m.kind }))),
     })),
   });
 });
