@@ -84,10 +84,11 @@ const SARVAM_PROJECT = { project_id: { type: "string", description: "Optional: t
 const SARVAM_SPEECH: DirectTool = {
   def: {
     name: "sarvam_speech",
-    description: "Speak a line in an Indian language or English (Sarvam Bulbul, a stock voice: no cloning). Priced first; the job is sent at that price as its ceiling. Returns an audio take id; collect it with get_render.",
+    description: "Speak a line in an Indian language or English (Sarvam Bulbul, a stock voice: no cloning). Priced first; a person approves it in Particl (or the workspace lets small jobs run). Returns an audio take id; collect it with get_render.",
     inputSchema: { type: "object", properties: { text: { type: "string", description: "Up to 2,500 characters." }, language: { type: "string", description: "A code such as hi-IN or en-IN." }, model: { type: "string", description: "bulbul:v3 (default) or bulbul:v4-flash." }, voice: { type: "string", description: "A stock voice's name. Optional." }, pace: { type: "number", description: "0.5 to 2. Optional." }, ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." } }, required: ["text", "language"] },
   },
   present: sarvamPresent("sarvam_speech"),
+  prepared: (b) => `prepared: speech (${String(b.model ?? "bulbul:v3")}, ${String(b.language)}), ${[...String(b.text ?? "")].length} characters`,
   request: (a) => ({ path: "/api/sarvam", body: { tool: "speech", text: str(a.text), language: str(a.language), model: str(a.model), voice: str(a.voice), pace: num(a.pace), projectId: str(a.project_id) } }),
   describe: (out, quote) => `Speech made.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
@@ -98,6 +99,7 @@ const SARVAM_TRANSCRIBE: DirectTool = {
     inputSchema: { type: "object", properties: { source_upload_id: { type: "string", description: "An audio upload of this workspace (or source_take_id)." }, source_take_id: { type: "string" }, language: { type: "string", description: "A code such as hi-IN, or leave it to be detected." }, request_id: { type: "string" } }, required: [] },
   },
   present: sarvamPresent("sarvam_transcribe"),
+  prepared: (b) => `prepared: transcript of ${String(b.sourceUploadId ?? b.sourceGenId ?? "an audio clip")}`,
   request: (a) => ({ path: "/api/sarvam", body: { tool: "transcribe", sourceUploadId: str(a.source_upload_id), sourceGenId: str(a.source_take_id), language: str(a.language) } }),
   describe: (out) => out.kept === false ? String(out.note) : `Transcript (${String(out.language ?? "language detected")}, ${String(out.seconds)} s):\n\n${String(out.transcript)}`,
 };
@@ -108,6 +110,7 @@ const SARVAM_TRANSLATE: DirectTool = {
     inputSchema: { type: "object", properties: { text: { type: "string", description: "Up to 2,000 characters (1,000 on mayura:v1)." }, source: { type: "string", description: "A code such as en-IN." }, target: { type: "string", description: "A code such as ta-IN." }, model: { type: "string", description: "sarvam-translate:v1 (default) or mayura:v1." }, request_id: { type: "string" } }, required: ["text", "source", "target"] },
   },
   present: sarvamPresent("sarvam_translate"),
+  prepared: (b) => `prepared: translation ${String(b.source)} to ${String(b.target)}, ${[...String(b.text ?? "")].length} characters`,
   request: (a) => ({ path: "/api/sarvam", body: { tool: "translate", text: str(a.text), source: str(a.source), target: str(a.target), model: str(a.model) } }),
   describe: (out) => (out.kept === false ? String(out.note) : String(out.text)),
 };
