@@ -32,6 +32,8 @@ function clipItem(args: {
   sourceWidth: number;
   sourceHeight: number;
   srcStartFrame: number;
+  /** Where in the source the file starts (ClipSource.offsetSeconds): the picture is read that much earlier in the file. */
+  offsetSeconds?: number;
   durationInFrames: number;
   cues: Cue[];
   reframe: ReframeSpec;
@@ -48,7 +50,7 @@ function clipItem(args: {
     from: args.from,
     durationInFrames: args.durationInFrames,
     file: args.file,
-    trimBefore: args.srcStartFrame,
+    trimBefore: Math.max(0, args.srcStartFrame - Math.round((args.offsetSeconds ?? 0) * args.fps)),
     sourceWidth: args.sourceWidth,
     sourceHeight: args.sourceHeight,
     hasAudio: args.hasAudio,
@@ -107,6 +109,7 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
         fps: p.fps,
         file: p.clip.source.file,
         hasAudio: p.clip.source.hasAudio,
+        offsetSeconds: p.clip.source.offsetSeconds,
         sourceWidth: p.clip.source.width,
         sourceHeight: p.clip.source.height,
         ...f,
@@ -125,6 +128,7 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
           fps: p.fps,
           file: p.source.file,
           hasAudio: p.source.hasAudio,
+          offsetSeconds: p.source.offsetSeconds,
           sourceWidth: p.source.width,
           sourceHeight: p.source.height,
           srcStartFrame: segment.srcStartFrame,
@@ -148,6 +152,7 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
             fps: p.fps,
             file: clip.source.file,
             hasAudio: clip.source.hasAudio,
+            offsetSeconds: clip.source.offsetSeconds,
             sourceWidth: clip.source.width,
             sourceHeight: clip.source.height,
             ...clipFrames(clip, p.fps),

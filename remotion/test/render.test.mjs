@@ -177,25 +177,25 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
     assert.deepEqual(refused.result.errors, ["spec.output.format: H.265 is not available."]);
   });
 
-  test("a windowed constant-rate copy keeps the source's clock: the same source second renders the same picture from the copy as from the original, and a frame 0.3 s away does not", async () => {
+  test("a windowed constant-rate copy plus offsetSeconds: the same source second renders the same picture from the copy as from the original, and a frame 0.3 s away does not", async () => {
     const copy = path.join(base, "windowed.mp4");
-    /* The conform pre-pass's own ffmpeg flags (node/conform.ts): only 1.75 s to 5.25 s of the source, on the source's clock. */
-    execFileSync(path.join(compositor, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-format_whitelist", "mov,mp4,m4a,matroska,webm", "-ss", "1.75", "-t", "3.5", "-i", path.join(sampleDir, "sample.mp4"), "-map", "0:v:0", "-output_ts_offset", "1.75", "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", "-movflags", "+faststart", copy]);
+    /* The conform pre-pass's own ffmpeg flags (node/conform.ts): only 1.75 s to 5.25 s of the source, starting at zero (the export tells the renderer where with `offsetSeconds`). */
+    execFileSync(path.join(compositor, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-format_whitelist", "mov,mp4,m4a,matroska,webm", "-ss", "1.75", "-t", "3.5", "-i", path.join(sampleDir, "sample.mp4"), "-map", "0:v:0", "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", "-movflags", "+faststart", copy]);
     const { selectComposition, renderStill } = await import(path.join(root, "node_modules", "@remotion", "renderer", "dist", "index.js"));
     const common = { browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE || undefined, chromeMode: "headless-shell", chromiumOptions: { gl: "swangle" }, logLevel: "error" };
-    const still = async (name, file, startSeconds) => {
+    const still = async (name, file, startSeconds, offsetSeconds = 0) => {
       const serve = path.join(base, `serve-${name}`);
       cpSync(path.join(root, "build", "bundle"), serve, { recursive: true });
       mkdirSync(path.join(serve, "public", "input"), { recursive: true });
       cpSync(file, path.join(serve, "public", "input", "sample.mp4"));
-      const props = { aspect: "16:9", fps: 30, scale: 0.25, title: null, end: null, music: null, captionStyle: null, clips: [{ source: { ...SOURCE, hasAudio: false }, trim: { startSeconds, endSeconds: startSeconds + 1.5 }, cues: [], reframe: { mode: "fill", focusX: 0.5, focusY: 0.5 } }] };
+      const props = { aspect: "16:9", fps: 30, scale: 0.25, title: null, end: null, music: null, captionStyle: null, clips: [{ source: { ...SOURCE, hasAudio: false, ...(offsetSeconds ? { offsetSeconds } : {}) }, trim: { startSeconds, endSeconds: startSeconds + 1.5 }, cues: [], reframe: { mode: "fill", focusX: 0.5, focusY: 0.5 } }] };
       const comp = await selectComposition({ serveUrl: serve, id: "final", inputProps: props, ...common });
       const output = path.join(base, `${name}.png`);
       await renderStill({ serveUrl: serve, composition: comp, inputProps: props, frame: 15, output, imageFormat: "png", overwrite: true, ...common });
       return decodePng(readFileSync(output));
     };
     const original = await still("orig", path.join(sampleDir, "sample.mp4"), 2.5);
-    const windowed = await still("win", copy, 2.5);
+    const windowed = await still("win", copy, 2.5, 1.75);
     const earlier = await still("early", path.join(sampleDir, "sample.mp4"), 2.2);
     const whole = { x0: 0, y0: 0, x1: original.width, y1: original.height };
     const aligned = regionDiff(original, windowed, whole);
@@ -203,6 +203,56 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
     /* The copy is a re-encode (CRF 14), so it is not bit-identical; a frame 0.3 s away differs about four times as much (measured: 4.7 against 19.2). */
     assert.ok(aligned < 8, `the copy renders the same second (mean difference ${aligned})`);
     assert.ok(misaligned > aligned * 3, `and a frame 0.3 s away differs far more (${misaligned} against ${aligned})`);
+  });
+
+  test("sound stays in sync through the windowed copy: a tone that changes at a known second changes at the same moment of the render from the original and from the copy", async () => {
+    const C = (name) => path.join(compositor, name);
+    /* Our own source: the sample picture with a 440 Hz tone until 4.0 s and an 880 Hz tone after it, as 16-bit mono WAV bytes. */
+    const rate = 8000, seconds = 8;
+    const pcm = Buffer.alloc(rate * seconds * 2);
+    for (let i = 0; i < rate * seconds; i++) pcm.writeInt16LE(Math.round(0.5 * 32767 * Math.sin((2 * Math.PI * (i / rate < 4 ? 440 : 880) * i) / rate)), i * 2);
+    const header = Buffer.alloc(44);
+    header.write("RIFF", 0); header.writeUInt32LE(36 + pcm.length, 4); header.write("WAVEfmt ", 8); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
+    header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 2, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34); header.write("data", 36); header.writeUInt32LE(pcm.length, 40);
+    const wav = path.join(base, "tones.wav");
+    writeFileSync(wav, Buffer.concat([header, pcm]));
+    const source = path.join(base, "tone-source.mp4");
+    execFileSync(C("ffmpeg"), ["-hide_banner", "-loglevel", "error", "-y", "-i", path.join(sampleDir, "sample.mp4"), "-i", wav, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest", source]);
+    /* The conform pre-pass's own flags: only 3 s to 6 s, starting at zero (Remotion renders no sound from a copy that keeps the source's clock). */
+    const windowed = path.join(base, "tone-windowed.mp4");
+    execFileSync(C("ffmpeg"), ["-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-format_whitelist", "mov,mp4,m4a,matroska,webm", "-ss", "3", "-t", "3", "-i", source, "-map", "0:v:0", "-map", "0:a?", "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", windowed]);
+    const { selectComposition, renderMedia } = await import(path.join(root, "node_modules", "@remotion", "renderer", "dist", "index.js"));
+    const common = { browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE || undefined, chromeMode: "headless-shell", chromiumOptions: { gl: "swangle" }, logLevel: "error" };
+    /* Source seconds 3.5 to 5.5 of the clip, with its sound: the tone changes 0.5 s in. */
+    const render = async (name, file, offsetSeconds = 0) => {
+      const serve = path.join(base, `serve-${name}`);
+      cpSync(path.join(root, "build", "bundle"), serve, { recursive: true });
+      mkdirSync(path.join(serve, "public", "input"), { recursive: true });
+      cpSync(file, path.join(serve, "public", "input", "sample.mp4"));
+      const props = { aspect: "16:9", fps: 30, scale: 0.25, title: null, end: null, music: null, captionStyle: null, clips: [{ source: { ...SOURCE, hasAudio: true, ...(offsetSeconds ? { offsetSeconds } : {}) }, trim: { startSeconds: 3.5, endSeconds: 5.5 }, cues: [], reframe: { mode: "fill", focusX: 0.5, focusY: 0.5 } }] };
+      const comp = await selectComposition({ serveUrl: serve, id: "final", inputProps: props, ...common });
+      const output = path.join(base, `${name}.mp4`);
+      await renderMedia({ serveUrl: serve, composition: comp, inputProps: props, outputLocation: output, codec: "h264", audioCodec: "aac", overwrite: true, concurrency: 1, ...common });
+      const out = execFileSync(C("ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", output, "-vn", "-ac", "1", "-ar", "8000", "-c:a", "pcm_s16le", "-f", "wav", "-"], { maxBuffer: 1 << 26 });
+      const at = out.indexOf("data") + 8;
+      return new Int16Array(out.buffer.slice(out.byteOffset + at, out.byteOffset + at + Math.floor((out.length - at) / 2) * 2));
+    };
+    const tone = (samples, freq, from, to) => {
+      const part = samples.subarray(Math.round(from * 8000), Math.round(to * 8000));
+      const w = (2 * Math.PI * freq) / 8000;
+      let s1 = 0, s2 = 0;
+      for (const x of part) { const s0 = x + 2 * Math.cos(w) * s1 - s2; s2 = s1; s1 = s0; }
+      return Math.sqrt(s1 * s1 + s2 * s2 - 2 * Math.cos(w) * s1 * s2) / part.length;
+    };
+    /* When the tone changes: the first 50 ms step in which 880 Hz is stronger than 440 Hz. */
+    const changeAt = (samples) => { for (let t = 0.1; t < 1.8; t += 0.05) if (tone(samples, 880, t, t + 0.05) > tone(samples, 440, t, t + 0.05)) return t; return null; };
+    const original = await render("tone-orig", source);
+    const copy = await render("tone-win", windowed, 3);
+    const a = changeAt(original), b = changeAt(copy);
+    assert.ok(a !== null && Math.abs(a - 0.5) < 0.12, `the tone changes about 0.5 s in, from the original (${a})`);
+    assert.ok(b !== null && Math.abs(b - 0.5) < 0.12, `and from the windowed copy (${b})`);
+    assert.ok(Math.abs(a - b) < 0.1, `within 0.1 s of each other: ${a} against ${b}`);
+    assert.ok(tone(copy, 440, 0.1, 0.4) > 3 * tone(copy, 880, 0.1, 0.4) && tone(copy, 880, 0.7, 1.0) > 3 * tone(copy, 440, 0.7, 1.0), "the right tone before and after");
   });
 
   test("refusals: a bad spec exits 2, a missing file 3, and a path that climbs out is refused before anything runs", () => {

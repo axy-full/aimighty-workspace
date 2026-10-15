@@ -81,8 +81,9 @@ export type Conformer = { conform(input: string, output: string, fps: number, op
 
 /**
  * ffmpeg from Remotion's compositor package: only the used stretch of the picture, at a constant `fps` (x264 CRF 14, 4:2:0, a
- * high-quality intermediate the render then reads), the sound re-encoded as AAC. The copy keeps the SOURCE's own clock
- * (`-output_ts_offset`: it starts at its window's start, not at zero), so the render's trim points and the cues stay valid unchanged.
+ * high-quality intermediate the render then reads), the sound re-encoded as AAC. The copy starts at zero, like any file; the export
+ * tells the render where in the source it starts (`ClipSource.offsetSeconds`), so trims and cues stay in source time. (A copy that
+ * kept the source's clock with `-output_ts_offset` rendered without its sound, so it is not used.)
  * Only mov, mp4, m4a, matroska and webm are read, from a local file; no network. A copy that fails is removed.
  */
 type Run = (file: string, args: string[], options: { timeout: number; maxBuffer: number; env: NodeJS.ProcessEnv }, done: (error: Error | null) => void) => unknown;
@@ -94,11 +95,10 @@ export function createFfmpegConformer(binary: string, defaultTimeoutMs = CONFORM
     conform(input, output, fps, options = {}) {
       const window = options.window;
       const clock = window ? ["-ss", String(window.startSeconds), "-t", String(Math.max(0.1, window.endSeconds - window.startSeconds))] : [];
-      const offset = window ? ["-output_ts_offset", String(window.startSeconds)] : [];
       return new Promise((resolve, reject) => {
         run(
           binary,
-          ["-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-format_whitelist", CONFORM_FORMATS, ...clock, "-i", input, "-map", "0:v:0", "-map", "0:a?", ...offset, "-r", String(fps), "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output],
+          ["-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-format_whitelist", CONFORM_FORMATS, ...clock, "-i", input, "-map", "0:v:0", "-map", "0:a?", "-r", String(fps), "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output],
           { timeout: options.timeoutMs ?? defaultTimeoutMs, maxBuffer: 1024 * 1024, env: {} as NodeJS.ProcessEnv },
           (error: Error | null) => {
             if (!error) return resolve();
