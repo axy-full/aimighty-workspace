@@ -1,7 +1,7 @@
 import type { GenerationBodyInput, GenerationReference } from "../workbench/generation-request";
 import { mediaReferenceIdentity } from "../workbench/media-reference-input";
 import type { Asset, Project } from "../workbench/studio";
-import { getModel } from "../models";
+import { getModel, NANO_BANANA_PRO_ID } from "../models";
 import { stillShape } from "./boards";
 
 /*
@@ -19,7 +19,7 @@ export type Look = { name: string; prompt: string; takes: LookTake[]; selected?:
 
 export const LOOK_LIMITS = { looks: 8, name: 80, prompt: 8000, takes: 20, pending: 4 } as const;
 /** The still engine looks are made on: Nano Banana Pro at 1K (README § 4: "card: Nano Banana Pro … × 4"). */
-export const LOOK_MODEL = "gemini-3-pro-image";
+export const LOOK_MODEL = NANO_BANANA_PRO_ID;
 
 export type LookPreset = { id: string; name: string; words: string };
 export const LOOK_PRESETS: readonly LookPreset[] = [
