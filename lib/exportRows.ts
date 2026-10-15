@@ -10,6 +10,7 @@ import { buildFilename } from "./naming";
 import { presignedReadUrl, usingBlob, videoPath, imagePath, audioPath, modelPath } from "./storage";
 import { originalMediaOf } from "./originalMedia";
 import { isDemoMediaUrl } from "./demoProduction";
+import { exportableBoards, isDraftProject, type Person } from "./draftProject";
 
 /**
  * The workspace's takes as rows a spreadsheet can read, each with the
@@ -37,14 +38,16 @@ export function takesCsv(rows: ExportRow[], unit: "cr" | "$"): string {
 /** Presigns in flight at once: seconds for a few thousand takes, never a flood on the store. */
 const PRESIGN_CONCURRENCY = 16;
 
-export async function exportRows(): Promise<{ rows: ExportRow[]; unit: "cr" | "$" }> {
+export async function exportRows(person: Person | null = null): Promise<{ rows: ExportRow[]; unit: "cr" | "$" }> {
   await ready();
+  /* Private boards: the person's own and shared ones as they are; another member's goes through the audited read, once per board (lib/draftProject.ts › exportableBoards). */
+  const boards = await exportableBoards(person);
   await syncCreditReceipts();
   const ws = requireTenant();
   const unit: "cr" | "$" = creditsApply(ws) ? "cr" : "$";
   const template = await getSetting("namingTemplate");
   const rs = await db().execute(`
-    SELECT ${billedCreditsExpr("g")} AS receipt_credits, g.id, g.created_at, g.kind, g.model, g.status, g.version, g.prompt, g.params, g.cost_usd, g.refine_cost_usd, g.bytes, g.stored_url,
+    SELECT ${billedCreditsExpr("g")} AS receipt_credits, g.project_id, g.id, g.created_at, g.kind, g.model, g.status, g.version, g.prompt, g.params, g.cost_usd, g.refine_cost_usd, g.bytes, g.stored_url,
            p.name AS project_name, p.code AS project_code, s.scene AS scene, s.code AS shot_code, s.title AS shot_title, u.name AS user_name
     FROM generations g
     LEFT JOIN projects p ON p.id = g.project_id
@@ -55,6 +58,7 @@ export async function exportRows(): Promise<{ rows: ExportRow[]; unit: "cr" | "$
   const rows: ExportRow[] = [];
   const masters: { row: ExportRow; pathname: string }[] = [];
   for (const r of rs.rows as unknown as Record<string, unknown>[]) {
+    if (boards && isDraftProject(r.project_id as string | null) && !boards.has(String(r.project_id))) continue;
     const { kind, ext } = originalMediaOf({ kind: r.kind, params: r.params });
     const model = String(r.model);
     let short = model; try { short = getModel(model).short; } catch { /* a retired id keeps its name */ }

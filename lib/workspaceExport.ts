@@ -6,6 +6,7 @@ import { withoutVendorDollars } from "./analyticsRedact";
 import { PipelineStore } from "./pipeline/store";
 import { publicRun } from "./pipeline/public";
 import type { CompiledPipeline } from "./pipeline/schema";
+import { exportableBoards, isDraftProject, type Person } from "./draftProject";
 
 // An allowlist keeps new credential/session tables out of customer exports.
 const SHARED_TABLES = [
@@ -73,8 +74,10 @@ function generation(row: Row, creditWorkspace: boolean) {
 }
 
 /** Tenant data plus the requesting owner's private work; never collaborators' private drafts. */
-export async function workspaceExport(ownerId: string, ownerEmail: string) {
+export async function workspaceExport(ownerId: string, ownerEmail: string, person: Person | null = null) {
   await ready();
+  /* Private boards: another member's go through the audited read, once per board, before the read transaction opens (lib/draftProject.ts › exportableBoards). */
+  const boards = await exportableBoards(person);
   await platformReady();
   const workspace = requireTenant();
   const creditWorkspace = creditsApply(workspace);
@@ -100,7 +103,7 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     ).rows.map((row) => ({ ...row }));
     contents.generations = (
       await tx.execute("SELECT * FROM generations ORDER BY created_at")
-    ).rows.map((row) => generation(row, creditWorkspace));
+    ).rows.filter((row) => !boards || !isDraftProject(row.project_id as string | null) || boards.has(String(row.project_id))).map((row) => generation(row, creditWorkspace));
     // Export reusable local bindings and source history, never provider handles
     // or account fingerprints. Respect the same private project boundary as the API.
     contents.soul_identities = tables.has("soul_identities") ? (await tx.execute({

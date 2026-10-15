@@ -363,3 +363,19 @@ export async function readableProjectOr(viewer: Viewer, projectId: string | null
   /* The audited gate, for every board an admin did not make, a held or deleted one too (owner, 14 Oct, 23:35). */
   return (await mayReachProject(viewer, projectId, "read", ex)) ? projectId : null;
 }
+
+/**
+ * The private boards `person` may take the takes of into an EXPORT, as a set, or null when nothing needs hiding (nobody, background work, or no take is filed under a private board).
+ * An export is the one place an admin takes every member's work out of the workspace at once, so it is complete, with its audit (owner, 15 Oct 2026: "Admin exports include
+ * private boards, with one audit line per private board per export"): each private board that holds a take goes through the audited read once, `mayReachProject(..., "read")`, which
+ * writes one history line for it (ids and action only) under the 15-minute rule, and a board whose line cannot be written is left out (no line, no read). The person's own boards and
+ * shared ones need no line; a member gets only what they could see.
+ */
+export async function exportableBoards(person: Person | null, ex: Exec = db()): Promise<Set<string> | null> {
+  if (!person) return null;
+  const held = (await ex.execute({ sql: "SELECT DISTINCT project_id FROM generations WHERE project_id GLOB 'prj_wb_*'", args: [] })).rows.map((row) => String(row.project_id));
+  if (!held.length) return null;
+  const readable = new Set<string>();
+  for (const id of held) if (await mayReachProject(person, id, "read", ex)) readable.add(id);
+  return readable;
+}

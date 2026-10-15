@@ -21,7 +21,7 @@ export const GET = withTenant(async function GET(req: Request) {
   if (format === "csv" || format === "manifest") {
     const got = await requireOwner();
     if (got.response) return got.response;
-    const { rows, unit } = await exportRows();
+    const { rows, unit } = await exportRows({ id: got.user.id, role: got.user.role, owner: got.user.owner });
     if (format === "csv") {
       return new Response(takesCsv(rows, unit), {
         headers: {
@@ -51,7 +51,7 @@ export const GET = withTenant(async function GET(req: Request) {
   // Owner-scoped export with shared data and customer billing records.
   const got = await requireOwner();
   if (got.response) return got.response;
-  const payload = await workspaceExport(got.user.id, got.user.email);
+  const payload = await workspaceExport(got.user.id, got.user.email, { id: got.user.id, role: got.user.role, owner: got.user.owner });
 
   const stamp = new Date(now()).toISOString().slice(0, 10);
   return new Response(JSON.stringify(payload, null, 2), {

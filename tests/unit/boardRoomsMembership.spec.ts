@@ -156,6 +156,8 @@ test("a room opened in the window between the first move and the commit is moved
     const tenant = await import("../../lib/tenant");
     const signIn = async (room: string) => { const res = await tenant.runInTenant(f.ws, () => mod.exports.POST(new Request("https://particl.test/api/collab/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ room }) })), asUser(who("u_mate"))); issued.push({ room, status: res.status }); return res.status; };
     const between = f.teamRoomFor(f.ws.id, "prod_linked", 1);
+    /* The sign-in names the room user through the platform owner's identity (lib/collab.ts › roomUserId, owner 14 Oct), a platform read; it is cached ahead so the sign-in inside the window below does not wait on the platform transaction the membership change holds open. */
+    await (await import("../../lib/platformOwnerPrivacy")).platformOwnerIdentity();
     /* In the window, after the first move: the room the board is now edited in is open to the member, who is still a member. */
     ask = async () => { ask = null; await signIn(between); };
     const removed = await f.remove();
