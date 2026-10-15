@@ -131,7 +131,9 @@ function cleanTextModels(v: unknown): TextModels {
 /** The model a text job runs on, from the layer's pair — never empty. */
 export function textModelFor(models: { text?: Partial<TextModels> } | null | undefined, job: TextJob): string {
   const id = models?.text?.[job];
-  return typeof id === "string" && id ? aliasModel(id) : DEFAULT_TEXT_MODELS[job];
+  /* A saved id that reads as Auto (lib/modelAliases.ts) is the job's own default. */
+  const model = typeof id === "string" && id ? aliasModel(id) : null;
+  return model && model !== "auto" ? model : DEFAULT_TEXT_MODELS[job];
 }
 
 /** A real, visible engine of the kind — or nothing. */
