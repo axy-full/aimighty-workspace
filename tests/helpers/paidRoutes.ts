@@ -14,6 +14,7 @@ export const PAID_ROUTES: PaidRoute[] = [
   { dir: "audio", spends: "speech, sound effects and music" },
   { dir: "audio/dub", spends: "dubbing" },
   { dir: "bfl", spends: "FLUX.2 stills and edits (BFL; off unless the engine is on for the workspace)" },
+  { dir: "recraft", spends: "Recraft stills and background removal (off unless the engine is on for the workspace; SVG output refused)" },
   { dir: "sarvam", spends: "Sarvam speech, transcription and translation (off unless the engine is on for the workspace)" },
   { dir: "lipsync", spends: "lip-sync (sync.so; off unless the engine is on for the workspace)" },
   { dir: "audio/transcribe", spends: "transcription" },

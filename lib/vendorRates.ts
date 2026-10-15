@@ -325,3 +325,30 @@ export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;
 /** The modes the app submits: v2 has no verified request field, so it is priced but not offered. */
 export const OFFERED_DUBBING_MODES: readonly DubbingMode[] = ["v1", "v1-watermark"];
+
+/**
+ * Recraft, direct (lib/recraft.ts, lib/recraftImage.ts), in the vendor's own unit: dollars per image or call (API units: $1 = 1,000 units, bought in advance). **TO CONFIRM: every figure below is
+ * read from docs/plans/provider-adapters.md § 5 (Recraft's pricing page as the plan records it, 14 Oct 2026) and was NOT re-read for this build; check each against Recraft's page and the
+ * first invoice. The two Pro model ids are the plan's names for its "V4.1 Pro (2K)" rows and are not confirmed.** A quote uses these; the reply's stated units settle it, never above the quote.
+ * Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const RECRAFT_RATES = {
+  /** Dollars an API unit costs ($1 = 1,000 units). */
+  unitUsd: 0.001,
+  confirmed: false,
+  note: "TO CONFIRM against Recraft's pricing page and the first invoice",
+  /** Per image. `vector`: the reply is an SVG (refused until the sanitiser exists: lib/recraftImage.ts). */
+  models: {
+    recraftv4_1: { usd: 0.035, vector: false },
+    recraftv4_1_pro: { usd: 0.21, vector: false },
+    recraftv4_1_vector: { usd: 0.08, vector: true },
+    recraftv4_1_pro_vector: { usd: 0.30, vector: true },
+  },
+  /** Per call, on a still of this workspace. */
+  tools: { vectorize: 0.01, remove_background: 0.01 },
+  /** Added to a request for each style reference (not offered yet). */
+  styleReferenceUsd: 0.005,
+  defaultModel: "recraftv4_1",
+} as const;
+export type RecraftModel = keyof typeof RECRAFT_RATES.models;
+

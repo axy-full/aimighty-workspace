@@ -59,11 +59,11 @@ export type BillingBasis = keyof typeof BASIS;
 export type ProviderBilling = { state: BillingState; amount?: number; unit?: BillingUnit; basis: BillingBasis };
 
 /** Who answered. `higgsfield_account` is the person's own connected account; `higgsfield` the API on a key. */
-export const OUTCOME_PROVIDERS = ["higgsfield", "higgsfield_account", "byteplus", "google", "gateway", "openai", "xai", "fal", "elevenlabs", "syncso", "sarvam", "bfl"] as const;
+export const OUTCOME_PROVIDERS = ["higgsfield", "higgsfield_account", "byteplus", "google", "gateway", "openai", "xai", "fal", "elevenlabs", "syncso", "sarvam", "bfl", "recraft"] as const;
 export type OutcomeProvider = (typeof OUTCOME_PROVIDERS)[number];
 export const PROVIDER_NAME: Record<OutcomeProvider, string> = {
   higgsfield: "The engine", higgsfield_account: "The connected account", byteplus: "BytePlus", google: "Google",
-  gateway: "The AI Gateway", openai: "OpenAI", xai: "xAI", fal: "fal", elevenlabs: "ElevenLabs", syncso: "sync.so", sarvam: "Sarvam", bfl: "Black Forest Labs",
+  gateway: "The AI Gateway", openai: "OpenAI", xai: "xAI", fal: "fal", elevenlabs: "ElevenLabs", syncso: "sync.so", sarvam: "Sarvam", bfl: "Black Forest Labs", recraft: "Recraft",
 };
 
 export const FAILURE_KINDS = [
@@ -407,7 +407,7 @@ export function elevenLabsErrorOutcome(status: number, body: unknown): ProviderO
  * A direct engine's HTTP refusal (sync.so, Sarvam, Black Forest Labs): its status and its own words, billing unknown. Neither provider's published billing page says
  * whether a refused or failed job is charged (docs/plans/provider-adapters.md §§ 1, 2), so no claim is made: "the provider didn't say".
  */
-export function directErrorOutcome(provider: "syncso" | "sarvam" | "bfl", status: number, message: unknown, stage: ProviderOutcome["stage"] = "submit"): ProviderOutcome {
+export function directErrorOutcome(provider: "syncso" | "sarvam" | "bfl" | "recraft", status: number, message: unknown, stage: ProviderOutcome["stage"] = "submit"): ProviderOutcome {
   return outcome(provider, stage, httpCode(status), providerText(message), unknown(), { status });
 }
 
