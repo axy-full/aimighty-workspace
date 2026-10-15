@@ -1,7 +1,7 @@
 # Deploy #4: the migrations, and a throwaway-copy test (for the owner, on the Mac, with the turso CLI)
 
 Owner, 14 Oct 2026: "a local run on 127.0.0.1 alone does NOT count. Test on a throwaway copy of production instead." This page is that test. Everything below is **additive**:
-six new tables, one new nullable column, five indexes and two triggers. Nothing is dropped, renamed, repriced or rewritten, and no file here holds a secret or a name.
+five new tables, one new nullable column, five indexes and two triggers. Nothing is dropped, renamed, repriced or rewritten, and no file here holds a secret or a name.
 Rollback stays as written in each PR (redeploy the previous build; leave the tables: the previous build ignores them).
 
 ## 1. Which database each migration touches
@@ -79,7 +79,7 @@ for DB in mig-test-20261015-platform mig-test-20261015-tenant; do
   turso db shell $DB "SELECT (SELECT count(*) FROM board_trash) AS board_trash, (SELECT count(*) FROM workbench_board_owners) AS workbench_board_owners, (SELECT count(*) FROM export_jobs) AS export_jobs, (SELECT count(*) FROM take_review_events) AS take_review_events, (SELECT count(*) FROM estimated_credits) AS estimated_credits"
   turso db shell $DB "SELECT (SELECT count(*) FROM generations) AS generations, (SELECT count(*) FROM workbench_projects) AS workbench_projects, (SELECT count(*) FROM notes) AS notes, (SELECT count(*) FROM credit_receipts) AS credit_receipts"
 done
-#   What passing looks like: every name above is listed; workbench_projects gains one column, updated_by (TEXT, nullable); the six new tables have 0 rows;
+#   What passing looks like: every name above is listed; workbench_projects gains one column, updated_by (TEXT, nullable); the five new tables have 0 rows;
 #   the four counts of existing tables are identical before and after.
 # (e, optional) NOT read-only: writes one row, to the copy only (never run on anything but a mig-test- copy). Shows the append-only triggers refusing, on the empty table:
 #   turso db shell mig-test-20261015-tenant "INSERT INTO take_review_events(id,gen_id,action,actor_id,via,created_at) VALUES('probe','x','picked','','person',1); UPDATE take_review_events SET via='x'"   -- must fail "Review history is append-only"
