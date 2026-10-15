@@ -4,6 +4,10 @@
 
 Read on 15 Oct 2026. No keys, no sign-ups, no calls made. Everything below comes from public pages (URLs in section 6). "Unverified" means I could not confirm it from the vendor's own page.
 
+## Owner decisions (15 Oct 2026, 16:40)
+- The trend panel shows two sources side by side: **"rising globally (TikTok)"** and **"rising in India (YouTube, Google Trends)"**, because TikTok is banned in India.
+- The platform-level cache (an exception to ground rule 2) and the customer price wait until after launch.
+
 ## 1. Short version
 
 - **Trial first, in this order:** (a) YouTube `videos.list chart=mostPopular&regionCode=IN` (free, official, works for India); (b) SerpApi Google Trends "Trending Now" `geo=IN` on its free plan (250 searches a month); (c) Zyla "TikTok Trend Tracker" for TikTok hashtags with growth (3 free test requests shown on the listing); (d) Tokchart only if sounds matter (the one source that lists sounds with growth).
