@@ -1,0 +1,9 @@
+{
+  "name": "v25-large-home",
+  "app": "/suites?project=project-af646e3f&suite=particl&page=brief&view=home",
+  "prototype": "",
+  "size": {
+    "width": 1920,
+    "height": 1080
+  }
+}
