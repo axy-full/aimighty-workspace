@@ -12,6 +12,7 @@ import { openMediaStream } from "@/lib/storage";
 import { zipStream, zipName, uniqueNames } from "@/lib/zip";
 import { selectsCsv, type Select } from "@/lib/selects";
 import { originalKindOf, originalMediaOf } from "@/lib/originalMedia";
+import { SAMPLE_CLIP_CREDIT_TEXT, SAMPLE_CLIP_CREDITS_FILE, isSampleClipUrl } from "@/lib/sampleClip";
 
 export const dynamic = "force-dynamic";
 /* A package of every approved master streams for as long as the producer's
@@ -25,7 +26,7 @@ async function approvedSelects(projectId: string): Promise<{ rows: Select[]; pro
   const production = p.rows.length ? String((p.rows[0] as any).name ?? "") : "";
   const template = await getSetting("namingTemplate");
   const rs = await db().execute({
-    sql: `SELECT g.id, g.kind, g.model, g.version, g.created_at, g.prompt, g.params, g.cost_usd, g.refine_cost_usd, g.status,
+    sql: `SELECT g.id, g.kind, g.model, g.version, g.created_at, g.prompt, g.params, g.cost_usd, g.refine_cost_usd, g.status, g.stored_url,
                  s.code AS shot_code, s.title AS shot_title, s.scene AS scene, s.position AS shot_pos,
                  p.name AS project_name, p.code AS project_code, u.name AS user_name
           FROM generations g
@@ -48,6 +49,7 @@ async function approvedSelects(projectId: string): Promise<{ rows: Select[]; pro
       engine: short, credits: billCredits(usd, String(r.model ?? "")), usd,
       seconds: Number((params.duration as number | undefined) ?? 0),
       prompt: String((params.rawPrompt as string | undefined) ?? r.prompt ?? "").split(/\n\s*\n/)[0],
+      ...(isSampleClipUrl(String(r.stored_url ?? "")) ? { credit: SAMPLE_CLIP_CREDIT_TEXT } : {}),
       filename: buildFilename(template, {
         project: r.project_name, projectCode: r.project_code, scene: r.scene, shot: r.shot_code,
         shotTitle: r.shot_title, model: short, version: r.version == null ? null : Number(r.version),
@@ -88,7 +90,10 @@ export const GET = withTenant(async function GET(req: Request) {
      handover. There used to be an EDL in here as well; it is gone. */
   const names = uniqueNames(rows.map((r, i) => zipName(r.filename, `take_${i + 1}.${r.filename.split(".").pop() || "mp4"}`)));
   const enc = new TextEncoder();
+  /* The starter's sample clip (Big Buck Bunny, CC BY 3.0) is among these takes: a CREDITS.txt goes first, so the package carries the credit whatever else it holds. */
+  const credits = rows.some((r) => r.credit) ? [{ name: "CREDITS.txt", body: async () => enc.encode(SAMPLE_CLIP_CREDITS_FILE) }] : [];
   const entries = [
+    ...credits,
     ...rows.map((r, i) => ({
       name: names[i],
       body: async () => openMediaStream(r.id, originalKindOf(r.kind)),

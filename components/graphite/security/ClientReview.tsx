@@ -1,4 +1,5 @@
 "use client";
+import { SampleClipCreditLine } from "@/components/ui/SampleClipCredit";
 import { useMemo, useState } from "react";
 import { posterSrc } from "@/lib/format";
 import { dateWords } from "@/lib/security/consent-words";
@@ -16,6 +17,8 @@ export type ClientNote = { text: string; author: string; guest: boolean; at: num
 export type ClientTake = {
   id: string; kind: string; shot: string | null; title: string | null; version: number; state: "approved" | "review";
   verdict: { verdict: "approved" | "changes"; guest: string; at: number } | null; media: string; notes: ClientNote[];
+  /** The starter's sample clip (Big Buck Bunny, CC BY 3.0): its credit shows under the picture. */
+  credit?: true;
 };
 export type ClientReviewData = { kind: "review"; workspace: { name: string; logo: string | null }; production: { name: string }; takes: ClientTake[]; expiresAt: number };
 
@@ -91,6 +94,7 @@ export function ClientReview({ token, data, onChanged }: { token: string; data: 
           </nav>
           <section className="gcl-stage" aria-label={takeName(take)}>
             <div className="gcl-player"><Media take={take} /></div>
+            {take.credit ? <SampleClipCreditLine className="gcl-credit" /> : null}
             <div className="gcl-meta"><strong data-testid="client-take-name">{takeName(take)}</strong>{take.title && take.shot ? <span>{take.title}</span> : null}</div>
           </section>
           <section className="gcl-side" aria-label="Comments">

@@ -1,4 +1,5 @@
 "use client";
+import { SampleClipCredit } from "@/components/ui/SampleClipCredit";
 import { spendAttrsOf } from "@/lib/spend";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { countsByDraft, sortQueue, viaPlan, type QueueItem } from "@/lib/control-room/queue";
@@ -192,6 +193,7 @@ function ProjectCard({ scope, card, open, onOpen }: { scope: string; card: Proje
   }, [visible]);
   const cover = useProjectCover(scope, card.id, visible);
   return (
+    <>
     <button ref={ref} type="button" className="ph-project" aria-current={open || undefined} onClick={onOpen} data-testid="phone-project">
       <span className="ph-project-pic" aria-hidden="true">
         {cover?.kind === "image" ? <img src={cover.url} alt="" loading="lazy" /> : cover?.kind === "video" ? <video src={cover.url} muted playsInline preload="metadata" /> : null}
@@ -204,5 +206,8 @@ function ProjectCard({ scope, card, open, onOpen }: { scope: string; card: Proje
         <span className="ph-chev" aria-hidden="true">›</span>
       </span>
     </button>
+    {/* The starter's sample clip is this card's cover: its credit stands beside the card, not inside the button (a link cannot be). */}
+    {cover ? <SampleClipCredit take={cover.url} className="ph-project-credit" /> : null}
+    </>
   );
 }
