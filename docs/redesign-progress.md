@@ -823,3 +823,13 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Merges: none. No PR meets every standing-yes criterion.
   - Lanes: B on the #776/#777/#778 fixes (redirects, MCP approval, BFL settlement), Runway paused. C on the #748 must-fix (8-shot re-shoot) and should-fixes. D now on Veo 3.1 (file-only adapter first, then based on #778). Docs E on the Slice 3 test script plus slice-2 updates.
   - No paid generation; spend $0.
+- **16 Oct 02:00 IST.**
+  - Large-screen: Opus delta check APPROVED #748 f4a6e5d1, #749 9e2b0104, #750 bd738204, #756 b6cdb4b1 and #762 db531071. With the 8-shot board, empty space below the cards is 20-25% at every size. At 1920/2560 the bottom bar is centred when the dock is folded. The resize no longer resets a moved view. shots-v12 is exact again and stricter at ≤1440.
+    - #748 needs the owner's word on the shots-v12 change (1920 dock-open: 3 across, 312 px card, 28.8 px gap).
+    - Not merged: the large-screen review was scoped to the deltas, not a full review, and #748/#756/#762 are in deploy #5 with the owner's yes each.
+  - Docs lane E: slice-3.md plus slice-2.md updates (6ef7614b).
+  - Topaz direct, the owner's "price table before building":
+    - Published figures fetched: $0.10/credit Developer, $0.08 Scale. Image ≤24 MP 1 credit (~= fal's $0.08); 48 MP 3 credits ($0.24-0.30, dearer than fal's $0.16). Astra 2 is 3 cr/s at 1080p30 and 5 cr/s at 4K30 (~= fal), scaling with fps.
+    - Topaz's own pages contradict each other.
+    - No training statement found; video files auto-delete after 7 days.
+    - Lane E is writing docs/plans/topaz-direct-prices.md. Lane C is starting a file-only Topaz adapter, priced at Developer $0.10/credit until the owner confirms the plan.
