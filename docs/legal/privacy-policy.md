@@ -53,7 +53,8 @@ Each vendor gets only what it needs to do its job, and goes straight to that ven
 | fal | Video, identity training and renders, upscales (Topaz until direct), reframe through Luma | Prompts, reference images, clips, identity photos | Live | live Privacy page |
 | Luma, through fal | Re-cutting a finished clip to another shape | A finished clip | Live | live Privacy page |
 | Higgsfield (API key only) | Identities and stills | Prompts and photos | Live | live Privacy page; CLAUDE.md rule 10 |
-| ElevenLabs | Speech, sound effects, music, dubbing; speech to text | Scripts and audio | Live | live Privacy page; docs/redesign-plan.md › "Owner answers (14 Oct, 20:40 IST)" item 7F |
+| ElevenLabs | Speech, sound effects, music, dubbing | Scripts and audio | Live | live Privacy page |
+| ElevenLabs speech to text | Transcripts outside Indian languages | Audio | Planned (chosen by the owner, 14 Oct 20:40, item 7F; no call in `release/1`) | docs/redesign-plan.md › "Owner answers (14 Oct, 20:40 IST)" item 7F |
 | sync.so | Lip-sync, direct | A clip and audio | Planned (account bought; keys set) | docs/redesign-plan.md › "Owner amendment (14 Oct, 19:29 IST)" and "20:40 IST" |
 | Sarvam | Transcripts in Indian languages | Audio | Planned (account bought; key set; retention 0 days) | same; "15 Oct, 14:20 and 14:25 IST" |
 | Black Forest Labs (FLUX.2) | Stills, EU endpoint | Prompts and reference images | Planned (off; training opt-out done) | docs/redesign-plan.md › "Owner, 15 Oct 2026, 13:45 IST" |

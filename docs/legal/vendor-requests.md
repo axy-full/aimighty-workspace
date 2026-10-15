@@ -2,7 +2,7 @@
 
 **Nothing here has been sent.** These are drafts for the owner to send from his own address; nobody else sends them. Draft 0.1, 15 Oct 2026. Owner request (15 Oct 22:00): request written no-training and no-retention terms from BytePlus, Google, OpenAI, ElevenLabs, Topaz, Bria and Runway.
 
-Placeholders to fill: `[Your name]`, `[Company legal name]`, `[Account/organisation id]`, `[link to their current policy]`, `[address]`. No real id, key or address is in this file. Each email stands alone. Under each is a note outside the quote with what the record says and the code references (endpoints and models are from `release/1`, ce7b9e77). The answers feed `privacy-policy.md` (sections 5 to 7), `licence-register.md` (A6) and `unknown-assets.md` (item 9).
+Placeholders to fill: `[Your name]`, `[Company legal name]`, `[Account/organisation id]`, `[link to their current policy]`, `[address]`. No real id, key or address is in this file. Each email stands alone. Under each is a note outside the quote with what the record says and the code references (endpoints and models are from `release/1` at 663fb243, current on 15 Oct). The answers feed `privacy-policy.md` (sections 5 to 7), `licence-register.md` (A6) and `unknown-assets.md` (item 9).
 
 Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync.so and Sarvam. The record already has: sync.so confirmed no training in writing (with company records); Sarvam retention set to 0 days; BFL training opt-out done (docs/redesign-plan.md, 15 Oct 13:45 and 14:25).
 
@@ -14,7 +14,7 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 
 **What the record already says:** BytePlus is on the live Privacy page as receiving prompts, reference images and clips for video. Nothing is recorded about training or retention. One retention fact is in the code: a Seedance 2.5 draft's task id can make its final for 7 days from when the vendor took it.
 
-**Code and repo references (not for the email):** `lib/ark.ts` (host default `ark.ap-southeast.bytepluses.com`, tasks URL), `lib/models.ts:206, 230`, `lib/draftFinal.ts:28`, docs/seedance-draft-final.md. Links already in the repo: the draft workflow https://docs.byteplus.com/en/docs/ModelArk/2607688 and the task API https://docs.byteplus.com/en/docs/ModelArk/1520757 (API docs, not a privacy policy).
+**Code and repo references (not for the email):** `lib/ark.ts` (host default `ark.ap-southeast.bytepluses.com`, tasks URL), `lib/models.ts:206, 230`, `lib/enhance.ts:59-66, 571-574` (prompt enhancement), `lib/draftFinal.ts:28`, docs/seedance-draft-final.md. Links already in the repo: the draft workflow https://docs.byteplus.com/en/docs/ModelArk/2607688 and the task API https://docs.byteplus.com/en/docs/ModelArk/1520757 (API docs, not a privacy policy).
 
 **Draft email**
 
@@ -24,7 +24,7 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 >
 > I am the owner of [Company legal name], which runs Particl, a production tool for film teams. Our account or organisation id is [Account/organisation id]. Our customers' prompts, images and media pass through your service, so we need your data terms in writing before we offer it more widely.
 >
-> **What we use:** Seedance 2.5 (`dreamina-seedance-2-5-260628`) and Seedance 2.0 (`dreamina-seedance-2-0-260128`) video generation, including draft mode, through the ModelArk API on the Asia-Pacific (Singapore) endpoint: `POST /api/v3/contents/generations/tasks` and `GET /api/v3/contents/generations/tasks/{id}`. Our inputs are prompts, reference images, reference clips and audio; outputs are video files.
+> **What we use:** Seedance 2.5 (`dreamina-seedance-2-5-260628`) and Seedance 2.0 (`dreamina-seedance-2-0-260128`) video generation, including draft mode, through the ModelArk API on the ap-southeast endpoint: `POST /api/v3/contents/generations/tasks` and `GET /api/v3/contents/generations/tasks/{id}`. Our inputs are prompts, reference images, reference clips and audio; outputs are video files. We also use ModelArk text for prompt enhancement: `POST /api/v3/chat/completions` with `dola-seed-2-1-turbo-260628` and `seed-2-0-pro-260328`, where the input is a customer's prompt and the output is a rewritten prompt.
 >
 > Please confirm in writing, for this account and these endpoints:
 > 
@@ -144,7 +144,7 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 >
 > I am the owner of [Company legal name], which runs Particl, a production tool for film teams. Our account or organisation id is [Account/organisation id]. Our customers' prompts, images and media pass through your service, so we need your data terms in writing before we offer it more widely.
 >
-> **What we use:** The ElevenLabs API (`api.elevenlabs.io`): `/v1/text-to-speech`, `/v1/text-to-dialogue`, `/v1/sound-generation`, `/v1/music`, `/v1/speech-to-speech`, `/v1/dubbing` and `/v1/voices`, with the models `eleven_v3`, `eleven_multilingual_v2`, `eleven_flash_v2_5`, `eleven_turbo_v2_5`, `eleven_text_to_sound_v2` and `eleven_multilingual_sts_v2`. Our inputs are scripts and our customers' audio and video; outputs are audio.
+> **What we use:** The ElevenLabs API (`api.elevenlabs.io`): `/v1/text-to-speech`, `/v1/text-to-dialogue`, `/v1/sound-generation`, `/v1/music`, `/v1/speech-to-speech`, `/v1/dubbing` and `/v1/voices`, with the models `eleven_v3`, `eleven_music`, `eleven_sfx`, `eleven_multilingual_v2`, `eleven_flash_v2_5`, `eleven_turbo_v2_5`, `eleven_text_to_sound_v2` and `eleven_multilingual_sts_v2`. Our inputs are scripts and our customers' audio and video; outputs are audio.
 >
 > Please confirm in writing, for this account and these endpoints:
 > 
@@ -157,7 +157,7 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 >
 > The policy pages we are reading are [link to their current policy]. If a different agreement applies to us, please send it.
 >
-> Please also tell us which plan or agreement we need for commercial use of generated audio in our customers' work, whether zero-retention mode is available on the API and on which endpoints (dubbing in particular), and how voice data is treated if we later add voice cloning with consent records.
+> Please also tell us which plan or agreement we need for commercial use of generated audio in our customers' work, whether zero-retention mode is available on the API and on which endpoints (dubbing in particular). [OWNER: drop the next sentence? Voice cloning is "not now"; it is only a hypothetical.] If we ever add voice cloning with consent records, how would voice data be treated?
 >
 > Please also confirm, for the same account, that our customers may use what is generated commercially, who owns the output, and any plan or agreement that depends on.
 >
@@ -184,7 +184,7 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 >
 > I am the owner of [Company legal name], which runs Particl, a production tool for film teams. Our account or organisation id is [Account/organisation id]. Our customers' prompts, images and media pass through your service, so we need your data terms in writing before we offer it more widely.
 >
-> **What we use:** Image upscaling (presets Standard V2, High Fidelity V2, Low Resolution V2, CGI and Text Refine) and creative video upscaling, today through fal's hosted endpoints `fal-ai/topaz/upscale/image` and `topaz/upscale/video/creative`. We plan to call your own API directly for both.
+> **What we use:** Image upscaling (presets Standard V2, High Fidelity V2, Low Resolution V2, CGI and Text Refine) and creative video upscaling, today through fal's hosted endpoints `fal-ai/topaz/upscale/image` and `topaz/upscale/video/creative`. We are evaluating calling your own API directly for both.
 >
 > Please confirm in writing, for this account and these endpoints:
 > 
@@ -197,7 +197,7 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 >
 > The policy pages we are reading are [link to their current policy]. If a different agreement applies to us, please send it.
 >
-> Please also tell us whether the answers are the same when the work is routed through fal as when we call your API directly, and whether you delete files after the output is delivered (we delete our side after storing the result).
+> Please also tell us whether the answers are the same when the work is routed through fal as when we call your API directly, and whether you delete your copy of our inputs and outputs once the output has been delivered and stored on our side (our rule for every vendor).
 >
 > Please also confirm, for the same account, that our customers may use what is generated commercially, who owns the output, and any plan or agreement that depends on.
 >
@@ -218,15 +218,15 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 
 **Draft email**
 
-> Subject: Written data terms for our use of Bria's models ([Account/organisation id])
+> Subject: Written data and output terms for your models used through fal
 >
 > Hello,
 >
-> I am the owner of [Company legal name], which runs Particl, a production tool for film teams. Our account or organisation id is [Account/organisation id]. Our customers' prompts, images and media pass through your service, so we need your data terms in writing before we offer it more widely.
+> I am the owner of [Company legal name], which runs Particl, a production tool for film teams. We use two of your models through fal, which hosts them; we have no account with you directly. Our customers' still images go through those models, so we need your data and output terms in writing before we offer them more widely.
 >
 > **What we use:** Background removal `fal-ai/bria/background/remove` (our "Cut out") and expand `fal-ai/bria/expand` (our "Outpaint"), called through fal. Our inputs are our customers' still images; outputs are images (a transparent PNG; an extended canvas).
 >
-> Please confirm in writing, for this account and these endpoints:
+> Please confirm in writing, for our use of these models through fal and for a direct account if we opened one:
 > 
 > 1. **No training.** Our inputs and the outputs we get back are not used to train or improve your models, and are not shared for that purpose.
 > 2. **Retention.** How long you keep inputs, outputs and logs, and whether a zero-retention option exists for our account.
@@ -246,7 +246,6 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 > Thank you,
 > [Your name]
 > [Company legal name]
-> [Account/organisation id]
 
 ## 7. Runway
 
@@ -258,15 +257,15 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 
 **Draft email**
 
-> Subject: Written data terms for our use of Runway's API ([Account/organisation id])
+> Subject: Written data terms before we evaluate Runway's API
 >
 > Hello,
 >
-> I am the owner of [Company legal name], which runs Particl, a production tool for film teams. Our account or organisation id is [Account/organisation id]. Our customers' prompts, images and media pass through your service, so we need your data terms in writing before we offer it more widely.
+> I am the owner of [Company legal name], which runs Particl, a production tool for film teams. We are evaluating your API as a possible video engine. We have not integrated it and have sent you no data. Before we do, we need your data terms in writing.
 >
 > **What we use:** Your API for video generation, as a standby engine; we have not integrated it. [Name the model or endpoint we would use, for example the current generation model and any video-to-video or lip-sync endpoint.] Our inputs would be prompts, reference images and clips; outputs would be video.
 >
-> Please confirm in writing, for this account and these endpoints:
+> Please confirm in writing, for an API account like the one we would open:
 > 
 > 1. **No training.** Our inputs and the outputs we get back are not used to train or improve your models, and are not shared for that purpose.
 > 2. **Retention.** How long you keep inputs, outputs and logs, and whether a zero-retention option exists for our account.
@@ -286,4 +285,3 @@ Not drafted here: fal (Kling, Luma, Flux), BFL, xAI, Anthropic, Higgsfield, sync
 > Thank you,
 > [Your name]
 > [Company legal name]
-> [Account/organisation id]
