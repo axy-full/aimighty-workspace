@@ -1,8 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openShotsBoard } from "./helpers/shotsV12";
 import { openBoard, filmBoard } from "./helpers/boardV12";
-import { screenScale } from "../lib/v12/board/screen-scale";
-import { gridColumns } from "../lib/v12/board/grid";
 
 /**
  * The Shots stage grid and the board's bar in the new interface (redesign P2-b; docs/redesign/inventory.md § 6.6, § 5.8,
@@ -21,13 +19,14 @@ const overlap = (a: { x: number; y: number; width: number; height: number }, b: 
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
 /*
- * Large screens (owner, 15 Oct 2026, 22:30): above 1440 px wide the canvas is drawn `k` times larger (lib/v12/board/screen-scale.ts), so a 260 px card is 260 x k on the
- * screen, the 24 px gap 24 x k, and the groups across are counted in the canvas's own units (its width divided by k). At 1440 and below k is 1 and every figure below is
- * exactly what it always was.
+ * Large screens (owner, 15 Oct 2026, 22:30): above 1440 px wide the canvas is drawn larger (lib/v12/board/screen-scale.ts: 1 at 1440, 1.2 at 1920), so a 260 px card is 260 x k on the
+ * screen and the 24 px gap 24 x k. The figures per size are written out here on purpose, not computed from the production rule, so a regression in it fails these tests: at 1440 the grid
+ * is 4 across with the dock closed and 3 with it open; at 1920 the canvas is wider but drawn 1.2 times larger, and it is also 4 closed and 3 open. At k = 1 every figure is exactly what it
+ * always was; at k > 1 the pixel positions may round by 1.5 px (a card 312.0 wide at 311.9994).
  */
-const scaleOf = (page: Page) => screenScale(page.viewportSize()!.width, page.viewportSize()!.height);
-/** How many columns the canvas holds now: the production rule, applied to the canvas as drawn. */
-const acrossOf = async (page: Page) => gridColumns((await page.locator(".v12-stage-canvas").evaluate((el) => el.clientWidth)) / scaleOf(page));
+const SIZE: Record<string, { k: number; closed: number; open: number }> = { "workbench-1440x900": { k: 1, closed: 4, open: 3 }, "workbench-1920x1080": { k: 1.2, closed: 4, open: 3 } };
+const scaleOf = () => SIZE[test.info().project.name].k;
+const acrossOf = (dock: "closed" | "open") => SIZE[test.info().project.name][dock];
 const sameAs = (got: number, want: number, k: number, what: string) => expect(Math.abs(got - want), `${what}: ${got} vs ${want}`).toBeLessThanOrEqual(k === 1 ? 0 : 1.5);
 
 /** Atomik's docked panel closed, as the prototype's Shots view is drawn; the grid follows the canvas's new width. */
@@ -50,12 +49,12 @@ test.describe("desktop, switch on", () => {
     const { errors } = await openShotsBoard(page);
     await expect(shots(page)).toHaveCount(8, { timeout: 90_000 });
     await closeDock(page);
-    await expect.poll(async () => new Set((await boxes(page)).map((b) => b.x)).size).toBe(await acrossOf(page));
+    await expect.poll(async () => new Set((await boxes(page)).map((b) => b.x)).size).toBe(acrossOf("closed"));
     const b = await boxes(page);
     /* Mixed states on the same rows. */
     const states = await shots(page).evaluateAll((els) => els.map((el) => el.querySelector("[data-status]")?.getAttribute("data-status")));
     expect(new Set(states)).toEqual(new Set(["review", "rendering", "empty"]));
-    const k = scaleOf(page);
+    const k = scaleOf();
     /* One size. */
     expect(new Set(b.map((x) => x.w))).toEqual(new Set([Math.round(260 * k)]));
     expect(new Set(b.map((x) => x.h)).size).toBe(1);
@@ -63,7 +62,7 @@ test.describe("desktop, switch on", () => {
     const xs = [...new Set(b.map((x) => x.x))].sort((p, q) => p - q);
     for (let i = 1; i < xs.length; i++) sameAs(xs[i] - xs[i - 1] - Math.round(260 * k), 24 * k, k, "column gap");
     const ys = [...new Set(b.map((x) => x.y))].sort((p, q) => p - q);
-    expect(ys).toHaveLength(Math.ceil(8 / (await acrossOf(page))));
+    expect(ys).toHaveLength(Math.ceil(8 / acrossOf("closed")));
     sameAs(ys[1] - ys[0] - b[0].h, 24 * k, k, "row gap");
     expect(await noSideways(page)).toBe(true);
     expect(errors).toEqual([]);
@@ -78,11 +77,12 @@ test.describe("desktop, switch on", () => {
       return page.getByTestId("board-agent-panel").isVisible().catch(() => false);
     }, { timeout: 20_000 }).toBe(true);
     await page.waitForTimeout(500);
-    /* The canvas is narrower with the dock open: 4 across at 1920 before the canvas was scaled, 3 now (each card is 1.2 times larger); the rule is the production one, applied to the canvas as it is. */
-    await expect.poll(async () => new Set((await boxes(page)).map((b) => b.x)).size).toBe(await acrossOf(page));
-    const k = scaleOf(page);
+    /* The canvas is narrower with the dock open: 3 across at 1440, and 3 at 1920 (it was 4 before the canvas was drawn 1.2 times larger there). */
+    await expect.poll(async () => new Set((await boxes(page)).map((b) => b.x)).size).toBe(acrossOf("open"));
+    const k = scaleOf();
     const b = await boxes(page);
     const ys = [...new Set(b.map((x) => x.y))].sort((p, q) => p - q);
+    expect(ys).toHaveLength(Math.ceil(8 / acrossOf("open")));
     for (let i = 1; i < ys.length; i++) sameAs(ys[i] - ys[i - 1] - b[0].h, 24 * k, k, "row gap");
   });
 
@@ -198,15 +198,15 @@ test.describe("desktop, switch on", () => {
     const { errors } = await openBoard(page, "/suites?view=board&stage=storyboard");
     await expect(frames(page)).toHaveCount(8, { timeout: 90_000 });
     await closeDock(page);
-    await expect.poll(async () => new Set((await frames(page).evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().x))))).size).toBe(await acrossOf(page));
-    const k = scaleOf(page);
+    await expect.poll(async () => new Set((await frames(page).evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().x))))).size).toBe(acrossOf("closed"));
+    const k = scaleOf();
     const b = await frames(page).evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }));
     expect(new Set(b.map((x) => x.w))).toEqual(new Set([Math.round(260 * k)]));
     expect(new Set(b.map((x) => x.h)).size).toBe(1);
     const xs = [...new Set(b.map((x) => x.x))].sort((p, q) => p - q);
     for (let i = 1; i < xs.length; i++) sameAs(xs[i] - xs[i - 1] - Math.round(260 * k), 24 * k, k, "column gap");
     const ys = [...new Set(b.map((x) => x.y))].sort((p, q) => p - q);
-    expect(ys).toHaveLength(Math.ceil(8 / (await acrossOf(page))));
+    expect(ys).toHaveLength(Math.ceil(8 / acrossOf("closed")));
     sameAs(ys[1] - ys[0] - b[0].h, 24 * k, k, "row gap");
     /* The group has no frame and no title: the stage header says them. */
     await expect(page.getByTestId("board-group").first()).toHaveAttribute("data-grid", "true");
@@ -235,15 +235,15 @@ test.describe("desktop, switch on", () => {
     await expect(cards).toHaveCount(9, { timeout: 90_000 });
     await closeDock(page);
     const read = () => cards.evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }));
-    await expect.poll(async () => new Set((await read()).map((b) => b.x)).size).toBe(await acrossOf(page));
-    const k = scaleOf(page);
+    await expect.poll(async () => new Set((await read()).map((b) => b.x)).size).toBe(acrossOf("closed"));
+    const k = scaleOf();
     const b = await read();
     expect(new Set(b.map((x) => x.w))).toEqual(new Set([Math.round(260 * k)]));
     expect(new Set(b.map((x) => x.h)).size).toBe(1);
     const xs = [...new Set(b.map((x) => x.x))].sort((p, q) => p - q);
     for (let i = 1; i < xs.length; i++) sameAs(xs[i] - xs[i - 1] - Math.round(260 * k), 24 * k, k, "column gap");
     const ys = [...new Set(b.map((x) => x.y))].sort((p, q) => p - q);
-    expect(ys).toHaveLength(Math.ceil(9 / (await acrossOf(page))));
+    expect(ys).toHaveLength(Math.ceil(9 / acrossOf("closed")));
     for (let i = 1; i < ys.length; i++) sameAs(ys[i] - ys[i - 1] - b[0].h, 24 * k, k, "row gap");
     /* Scrolled to the end, the last row sits above the bar and the bottom-left controls, with 24 px clear. */
     await page.mouse.move(600, 400);

@@ -307,18 +307,28 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     const first = box ? viewportFor(box, scale, true) : saved ?? viewportFor(target ?? placed.arranged ?? placed.bounds, scale);
     void flow.setViewport(first).then(() => { measureInView(first); if (linkedTake) select(linkedTake.id); });
   }, [board.rail, flow, frame, kind, measureInView, placed.arranged, placed.bounds, placed.boxes, placed.cards, placed.regions, placed.slots, projectId, ready, region, scale, scope, select, shell.params.card, status, v12Frame, viewportFor]);
-  /* The new interface: each stage opens on its own cards, at 100 %, from their top-left. */
+  /* The new interface: each stage opens on its own cards, at 100 %, from their top-left. `scale` is the large-screen zoom (lib/v12/board/screen-scale.ts); a grid stage starts 60 px in
+     from the stage column's top-left as the prototype's cards do (L556), and that margin scales with the cards. */
   const shownStage = useRef<string | null>(null);
+  const opening = useRef<{ scale: number; view: Viewport } | null>(null);
   useEffect(() => {
     if (!v12Frame || !ready || !projectId || !stage) return;
-    const key = `${projectId}:${stage.id}:${scale}`;
-    if (shownStage.current === key) return;
-    shownStage.current = key;
-    const box = placed.arranged ?? placed.bounds;
-    const from = box ? viewportFor(box, scale) : { x: INSET, y: INSET, zoom: scale };
-    /* A grid stage starts 60 px in from the stage column's top-left, as the prototype's cards do (L556). */
-    const next = onGrid(stage.id) ? { ...from, x: from.x + GRID_ORIGIN - INSET, y: from.y + GRID_ORIGIN - INSET } : from;
-    void flow.setViewport(next).then(() => measureInView(next));
+    const key = `${projectId}:${stage.id}`;
+    const open = () => {
+      const box = placed.arranged ?? placed.bounds;
+      const from = box ? viewportFor(box, scale) : { x: INSET, y: INSET, zoom: scale };
+      const shift = (GRID_ORIGIN - INSET) * scale;
+      const next = onGrid(stage.id) ? { ...from, x: from.x + shift, y: from.y + shift } : from;
+      opening.current = { scale, view: next };
+      void flow.setViewport(next).then(() => measureInView(next));
+    };
+    if (shownStage.current !== key) { shownStage.current = key; open(); return; }
+    /* Only the window's scale changed (a resize): open again at the new scale when the person has not moved or zoomed the view since it opened; otherwise leave their view. */
+    const was = opening.current;
+    if (!was || was.scale === scale) return;
+    const now = flow.getViewport();
+    const untouched = Math.abs(now.x - was.view.x) < 1.5 && Math.abs(now.y - was.view.y) < 1.5 && Math.abs(now.zoom - was.view.zoom) < 0.005;
+    if (untouched) open(); else opening.current = { ...was, scale };
   }, [flow, measureInView, placed.arranged, placed.bounds, projectId, ready, scale, stage, v12Frame, viewportFor]);
   const onMoveEnd = useCallback((viewport: Viewport) => {
     /* A grid stage scrolls no further than its last row clear of the bar and the bottom-left controls (never above where the stage opens). */
@@ -327,7 +337,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       const { height } = store.getState();
       const floor = height - bottomClear();
       const bottom = (box.y + box.h) * viewport.zoom + viewport.y;
-      const top = GRID_ORIGIN - box.y * viewport.zoom;
+      const top = INSET + (GRID_ORIGIN - INSET) * scale - box.y * viewport.zoom;
       const y = Math.min(viewport.y + (floor - bottom), top);
       if (bottom < floor - 1 && y > viewport.y + 1) {
         const next = { ...viewport, y };
@@ -337,7 +347,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     }
     if (projectId) saveBoardView(scope, projectId, viewport);
     measureInView(viewport);
-  }, [flow, gridAcross, measureInView, placed.arranged, placed.bounds, projectId, scope, store]);
+  }, [flow, gridAcross, measureInView, placed.arranged, placed.bounds, projectId, scale, scope, store]);
 
   /* ── Edits a person makes on the board: each one draft edit, free, with ⌘Z ── */
   const undoable = useCallback((label: string, undo: () => void, say?: string) => {

@@ -254,7 +254,8 @@ export default function LazyMedia({
     const want = posterTier(holder.current?.getBoundingClientRect().width ?? 0, window.devicePixelRatio);
     if (poster && (posterWidths.get(url) ?? 480) >= want) return;
     let alive = true;
-    capturePoster(url, want).then((p) => { if (alive) setPoster({ url, value: p }); });
+    /* A failed upgrade keeps the poster the picture already has (never a live video in its place); only a first capture may end as "fail". */
+    capturePoster(url, want).then((p) => { if (alive && !(p === "fail" && poster)) setPoster({ url, value: p }); });
     return () => { alive = false; };
   }, [show, kind, url, poster]);
 
