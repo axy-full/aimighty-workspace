@@ -21,7 +21,7 @@ If `workbench_projects` is missing from it, **STOP**: the house workspace's data
 | 3 | `03-pr718-workbench_board_owners.sql` | #718 | every tenant DB (+ house) | `CREATE TABLE IF NOT EXISTS workbench_board_owners`, `workbench_board_owners_owner` |
 | 4 | `04-pr700-export_jobs.sql` | #700 | the tenant DB of a workspace that uses an export (`db()`), created lazily; **only if `REMOTION_EXPORTS` is on** | `CREATE TABLE IF NOT EXISTS export_jobs`, `export_jobs_queue` |
 | 5 | `05-pr728-take_review_events.sql` | #728 | every tenant DB (+ house) | `CREATE TABLE IF NOT EXISTS take_review_events`, `idx_take_review_events_gen`, two triggers that refuse UPDATE and DELETE |
-| 6 | `06-pr731-estimated_credits-tables.sql` | #731 | every tenant DB (+ house); the fill reads the platform DB's `meter_events` but writes only the tenant DB | `CREATE TABLE IF NOT EXISTS estimated_credits`, `estimated_credits_fill` (two empty tables) |
+| 6 | `06-pr731-estimated_credits-tables.sql` | #731 | every tenant DB (+ house); the freeze writes only the tenant DB | `CREATE TABLE IF NOT EXISTS estimated_credits` (one empty table) |
 
 Notes, so nothing is a surprise:
 - **#698's repair path.** `lib/db.ts` also carries a one-off for a database that ran an earlier, never-shipped shape of `board_trash` (a table with no `holder` column and an index
@@ -30,9 +30,10 @@ Notes, so nothing is a surprise:
   earlier shape of this same new table (it was only ever made on a development database), not to any existing table. It is written as a comment in file 02 and is **not run** by it.
 - **#700 is off unless the switch is on.** `export_jobs` is created only when a workspace first uses an export, and exports answer 404 and write nothing unless `REMOTION_EXPORTS` is
   1/on/true/yes (off is the production default). If it stays off at deploy #4, skip file 04 (running it on the copy is still a fine check).
-- **#731's one-time fill is not in the repo, on purpose.** After the two tables exist, the app fills `estimated_credits` once per workspace (one `INSERT … SELECT`, then a marker row) on
-  its first read of a take's credits, from the private margin table, which is not kept in this repository. So file 06 creates the **two empty tables only**; the fill is covered by
-  `tests/unit/estimatedCredits.spec.ts`, and runs in production only when the app first reads a workspace's credits after the deploy.
+- **#731's freeze is not in the repo, on purpose.** After the table exists, the app freezes a take's figure into `estimated_credits` the first time anything reads it: one idempotent
+  `INSERT OR IGNORE … SELECT` over the takes that have a cost and no receipt, keyed by the take's id, run on every read of a take's credits, from the private margin table, which is not kept
+  in this repository. So file 06 creates the **one empty table only**; the freeze is covered by `tests/unit/estimatedCredits.spec.ts`, and runs in production only when the app first reads a
+  workspace's credits after the deploy. (An earlier shape of #731 had a second table, `estimated_credits_fill`, and a once-per-workspace fill; it no longer exists, so do not expect it.)
 - #702 and #718 add the **same** column (#718 is stacked on #702): file 1 covers both.
 
 ## 2. The list to run (after your fresh backup)
@@ -53,7 +54,7 @@ turso db create mig-test-20261015-tenant   --from-db <workspace-db> --group part
 # (c, before) read-only: which of the new names exist, and the row counts of tables that already exist (counts only, never data)
 for DB in mig-test-20261015-platform mig-test-20261015-tenant; do
   echo "== $DB before"
-  turso db shell $DB "SELECT type,name FROM sqlite_master WHERE name IN ('board_trash','idx_board_trash_project','idx_board_trash_open_v2','workbench_board_owners','workbench_board_owners_owner','export_jobs','export_jobs_queue','take_review_events','idx_take_review_events_gen','take_review_events_no_update','take_review_events_no_delete','estimated_credits','estimated_credits_fill') ORDER BY name"
+  turso db shell $DB "SELECT type,name FROM sqlite_master WHERE name IN ('board_trash','idx_board_trash_project','idx_board_trash_open_v2','workbench_board_owners','workbench_board_owners_owner','export_jobs','export_jobs_queue','take_review_events','idx_take_review_events_gen','take_review_events_no_update','take_review_events_no_delete','estimated_credits') ORDER BY name"
   turso db shell $DB "SELECT (SELECT count(*) FROM generations) AS generations, (SELECT count(*) FROM workbench_projects) AS workbench_projects, (SELECT count(*) FROM notes) AS notes, (SELECT count(*) FROM credit_receipts) AS credit_receipts"
   turso db shell $DB "SELECT name FROM pragma_table_info('workbench_projects') ORDER BY cid"
 done
@@ -71,11 +72,11 @@ done
 # (c, after) read-only checks: names, columns and counts, no data
 for DB in mig-test-20261015-platform mig-test-20261015-tenant; do
   echo "== $DB after"
-  turso db shell $DB "SELECT type,name FROM sqlite_master WHERE name IN ('board_trash','idx_board_trash_project','idx_board_trash_open_v2','workbench_board_owners','workbench_board_owners_owner','export_jobs','export_jobs_queue','take_review_events','idx_take_review_events_gen','take_review_events_no_update','take_review_events_no_delete','estimated_credits','estimated_credits_fill') ORDER BY name"
-  for T in workbench_projects board_trash workbench_board_owners export_jobs take_review_events estimated_credits estimated_credits_fill; do
+  turso db shell $DB "SELECT type,name FROM sqlite_master WHERE name IN ('board_trash','idx_board_trash_project','idx_board_trash_open_v2','workbench_board_owners','workbench_board_owners_owner','export_jobs','export_jobs_queue','take_review_events','idx_take_review_events_gen','take_review_events_no_update','take_review_events_no_delete','estimated_credits') ORDER BY name"
+  for T in workbench_projects board_trash workbench_board_owners export_jobs take_review_events estimated_credits; do
     echo "-- $T"; turso db shell $DB "SELECT cid,name,type,\"notnull\",dflt_value,pk FROM pragma_table_info('$T')"
   done
-  turso db shell $DB "SELECT (SELECT count(*) FROM board_trash) AS board_trash, (SELECT count(*) FROM workbench_board_owners) AS workbench_board_owners, (SELECT count(*) FROM export_jobs) AS export_jobs, (SELECT count(*) FROM take_review_events) AS take_review_events, (SELECT count(*) FROM estimated_credits) AS estimated_credits, (SELECT count(*) FROM estimated_credits_fill) AS estimated_credits_fill"
+  turso db shell $DB "SELECT (SELECT count(*) FROM board_trash) AS board_trash, (SELECT count(*) FROM workbench_board_owners) AS workbench_board_owners, (SELECT count(*) FROM export_jobs) AS export_jobs, (SELECT count(*) FROM take_review_events) AS take_review_events, (SELECT count(*) FROM estimated_credits) AS estimated_credits"
   turso db shell $DB "SELECT (SELECT count(*) FROM generations) AS generations, (SELECT count(*) FROM workbench_projects) AS workbench_projects, (SELECT count(*) FROM notes) AS notes, (SELECT count(*) FROM credit_receipts) AS credit_receipts"
 done
 #   What passing looks like: every name above is listed; workbench_projects gains one column, updated_by (TEXT, nullable); the six new tables have 0 rows;

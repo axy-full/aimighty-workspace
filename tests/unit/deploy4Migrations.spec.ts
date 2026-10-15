@@ -30,7 +30,7 @@ const EXPECT: Record<string, { tables: string[]; column?: { table: string; name:
   "03-pr718-workbench_board_owners.sql": { tables: ["workbench_board_owners"] },
   "04-pr700-export_jobs.sql": { tables: ["export_jobs"] },
   "05-pr728-take_review_events.sql": { tables: ["take_review_events"] },
-  "06-pr731-estimated_credits-tables.sql": { tables: ["estimated_credits", "estimated_credits_fill"] },
+  "06-pr731-estimated_credits-tables.sql": { tables: ["estimated_credits"] },
 };
 
 /** SQL as the comparison reads it: comments out (-- and a block comment), whitespace collapsed, no space around ( ) or a comma, no closing semicolon. */
@@ -142,7 +142,7 @@ test("the comparison sees real differences and ignores only comments and spacing
   };
   const same = (sql: string) => sql;
   const CASES: { file: string; table: string; edit: (sql: string) => string; what: string }[] = [
-    { file: "06-pr731-estimated_credits-tables.sql", table: "estimated_credits_fill", what: "a CHECK that says id=2", edit: (sql) => sql.replace("CHECK(id=1)", "CHECK(id=2)") },
+    { file: "06-pr731-estimated_credits-tables.sql", table: "estimated_credits", what: "a primary key left off", edit: (sql) => sql.replace("gen_id TEXT PRIMARY KEY", "gen_id TEXT") },
     { file: "04-pr700-export_jobs.sql", table: "export_jobs", what: "a UNIQUE with its columns reordered", edit: (sql) => sql.replace("UNIQUE(workspace_id, owner, request_id)", "UNIQUE(owner, workspace_id, request_id)") },
     { file: "04-pr700-export_jobs.sql", table: "export_jobs", what: "a UNIQUE with a column left out", edit: (sql) => sql.replace("UNIQUE(workspace_id, owner, request_id)", "UNIQUE(workspace_id, request_id)") },
     { file: "02-pr698-board_trash.sql", table: "board_trash", what: "a partial index with another condition", edit: (sql) => sql.replace("WHERE restored_at IS NULL", "WHERE restored_at IS NOT NULL") },
