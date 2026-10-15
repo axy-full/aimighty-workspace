@@ -829,6 +829,11 @@ export async function syncPending(
   results.attempted += dubs.attempted;
   results.failed += dubs.failed;
   results.deferred += dubs.deferred;
+  // Lip-sync jobs (sync.so): ask after the running, and delete the vendor's copy of the finished. Never resubmit.
+  const lips = await (await import("./lipSync")).recoverLipSyncJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += lips.attempted;
+  results.failed += lips.failed;
+  results.deferred += lips.deferred;
   const horizon = now() - 3 * 86400_000;
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
@@ -855,6 +860,8 @@ export async function syncPending(
           const params = JSON.parse(String(row.params || "{}"));
           // A dubbing project's row is advanced by its own workflow above; it is neither a render nor an orphan.
           if (gen.kind === "audio" && params.task === "dub") return;
+          // A lip-sync job's row is advanced by its own workflow above (lib/lipSync.ts); it is neither a render nor an orphan.
+          if (gen.kind === "video" && params.task === "lipsync") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome

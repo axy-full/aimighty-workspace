@@ -266,6 +266,21 @@ export const ELEVENLABS_RATES = {
     defaultMode: "v1",
   },
 } as const;
+/**
+ * sync.so lip-sync, direct (lib/syncso.ts, lib/lipSync.ts), in the vendor's own units: dollars per OUTPUT second, the Hobbyist and Creator plans'
+ * public prices as recorded in docs/plans/provider-adapters.md § 1 (the vendor's pricing page, read 14 Oct 2026). **TO CONFIRM** against the plan the
+ * owner buys: the Scale plan's rates are lower ($0.04, $0.067 and $0.107 a second), and a quote at these is the more cautious. Billing is on output
+ * frames, quoted per second at 25 fps. Server-only like every rate here; a customer's price is these through the margin table (lib/creditTerms.ts).
+ */
+export const SYNC_RATES = {
+  models: { "lipsync-2": 0.05, "lipsync-2-pro": 0.083, "sync-3": 0.133 },
+  defaultModel: "lipsync-2-pro",
+  syncModes: ["bounce", "loop", "cut_off", "silence", "remap"],
+  defaultSyncMode: "bounce",
+} as const;
+export type SyncModel = keyof typeof SYNC_RATES.models;
+export type SyncMode = (typeof SYNC_RATES.syncModes)[number];
+
 /** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
 export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;

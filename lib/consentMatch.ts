@@ -19,6 +19,9 @@ import {
 export { ConsentMatchError, CONSENT_MATCH_THRESHOLD, ENGINE_OFF, NO_LIVE_CONSENT, NO_MATCH, NO_REFERENCE, NOT_DONE, SEVERAL_FACES } from "./consentMatchCore";
 export type { ConsentMatch, ConsentMatchCode, ConsentScope } from "./consentMatchCore";
 
+/** Is the face check on here (the engine's switch and list, and the house workspace only)? For a tool that cannot run without it. Takes no seams. */
+export const faceCheckAvailable = (workspace?: { id: string } | null): Promise<boolean> => faceCheckOnHere({}, workspace === undefined ? currentTenant()?.workspace : workspace);
+
 export const requireConsentMatch = (castMemberId: string, faceImage: Buffer, scope: ConsentScope): Promise<ConsentMatch> => matchConsentFace(castMemberId, faceImage, scope);
 
 /* ── The registry tool ─────────────────────────────────────────────────────────────────────────────────────────────────────────── */
