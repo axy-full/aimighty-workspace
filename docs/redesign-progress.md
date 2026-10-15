@@ -1003,3 +1003,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #787 Kling 4.0 NOT APPROVED until the inert change lands. Its price is a placeholder, and quote helpers could show it to a customer workspace naming the id (should-fix). Two gating mechanisms now exist (#784 vs #787); unify later.
   - Follow-ups sent to lane D.
 - **16 Oct 04:10 IST.** Opus APPROVED lane B's shot-cap batch; the #785 merge resolution is correct (identity scope → shot cap → consent gate). Should-fix across every engine door: isAdmin must exclude machines (an admin token or Atomik Auto run would skip the press-time cap). Sent to lanes B, C and D.
+- **16 Oct 04:15 IST.** Lane C: the isAdmin machine fix is in #781 c49dc865 and #786 8dde8995 (admin token, agent:, Auto run → 403; tests pass). One batched Opus check will follow once lanes B and D push the same fix. Lane C is done for tonight.
