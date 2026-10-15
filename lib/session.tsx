@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { EMPTY_TABLE, type RateTable } from "./rateTable";
 import { signInHrefFor } from "./signIn";
+import { setDollarDisplay } from "./shell/price-words";
 
 /**
  * Who is looking, and what that means for the rest of the app.
@@ -116,6 +117,8 @@ export function SessionProvider({ value, children }: {
      them reach a logout handler. */
   const { signedIn } = value;
   useEffect(() => { if (!signedIn) clearPrivateLocal(); }, [signedIn]);
+  /* The house pays at cost in dollars, so its prices read in dollars on every screen (lib/shell/price-words.ts setDollarDisplay): set here, before any child words a price. */
+  setDollarDisplay(value.rates.unit === "usd", value.rates.creditUsd);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

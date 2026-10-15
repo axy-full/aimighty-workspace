@@ -57,9 +57,8 @@ export async function GET(req: Request) {
     );
   return recoveryRoute(async () => {
     const startedAt = Date.now();
-    const by = /vercel-cron/i.test(req.headers.get("user-agent") ?? "")
-      ? "vercel"
-      : "manual";
+    /* Our own server's scheduled task (ops/selfhost/cron-sync.mjs) names itself in its user-agent; anything else holding the secret is manual. Recorded, never trusted: the bearer secret is what lets a caller in. */
+    const by = req.headers.get("user-agent")?.trim() === "particl-scheduler/1" ? "scheduler" : "manual";
     try {
       await platformReady();
       const result = await reconcileWorkspaces({

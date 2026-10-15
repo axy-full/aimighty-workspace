@@ -225,7 +225,7 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
         attachAccept="image/*,video/*"
         mentions={make.takesReferences ? mentionList : undefined}
         mentionsTitle="From your results"
-        onMention={(m) => void make.addReference(`generation:${m.id}`)}
+        onMention={make.takesReferences ? (m) => void make.addReference(/^(upload|generation):/.test(m.id) ? m.id : `generation:${m.id}`) : undefined}
         note={note}
         send={{
           label: ops ? "Pick what to do" : composer.buttonParts.action || "Make",

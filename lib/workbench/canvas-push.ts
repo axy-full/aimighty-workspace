@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { Liveblocks } from "@liveblocks/node";
 import { db, now } from "@/lib/db";
 import { collabConfigured } from "@/lib/collab";
+import { storedAccountIdMaskHere } from "@/lib/platformOwnerPrivacy";
 import { currentTenant, requireTenant, runInTenant } from "@/lib/tenant";
 import { canvasOpsExist, rowOf, type CanvasOpRow } from "./canvas-ops-log";
 import { focusPoint, roomPatchFor } from "./canvas-ops-model";
@@ -123,12 +124,14 @@ async function drainProduction(productionId: string, rooms: RoomClient): Promise
   const waiting = async () => Number((await db().execute({ sql: "SELECT COUNT(*) AS n FROM rig_canvas_ops WHERE production_id=? AND push='pending'", args: [productionId] })).rows[0].n);
   if (!rows.length) return { sent: 0, waiting: await waiting() };
   const room = await currentRoom(requireTenant().id, productionId);
+  /* What the room learns of who made a card is read by every member in it: in a client workspace the platform owner's account id is the opaque support id there (owner, 14 Oct). */
+  const hideAuthor = await storedAccountIdMaskHere();
   try {
     await rooms.mutateStorage(room, ({ root }) => {
       const storage = roomStorage(root);
       /* A room with no canvas yet: the first window to open it brings the saved one, this change included. */
       if (!storage) return;
-      for (const row of rows) pushRow(storage, row);
+      for (const row of rows) pushRow(storage, { ...row, author: hideAuthor(row.author) });
     }, { signal: AbortSignal.timeout(PUSH_TIMEOUT_MS) });
   } catch (error) {
     const status = statusOf(error);

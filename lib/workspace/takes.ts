@@ -36,7 +36,7 @@ export type Take = {
   id: string;
   /** The generation or upload id. */
   sourceId: string;
-  kind: "GEN" | "UPLOAD";
+  kind: "generation" | "upload";
   name: string;
   /** "v2". */
   version: string;
@@ -86,7 +86,7 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
       const u = asset.value;
       const parts = [u.width && u.height ? `${u.width}×${u.height}` : "", extension(u.filename, u.mime),
         u.durationS != null && u.durationS > 0 ? seconds(u.durationS) : ""].filter(Boolean);
-      return { id: libraryId(asset), sourceId: u.id, kind: "UPLOAD", name: libraryName(asset), version: "v1", meta: parts.join(" · "),
+      return { id: libraryId(asset), sourceId: u.id, kind: "upload", name: libraryName(asset), version: "v1", meta: parts.join(" · "),
         credits: null, usd: null, status: "uploaded", sha256: SHA.test(u.sha256) ? u.sha256 : null, createdAt: u.createdAt };
     }
     const g = asset.value;
@@ -115,7 +115,7 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
     const of = finalOf(g.params);
     const pair = isDraft(g.params) ? { role: "draft" as const } : of ? { role: "final" as const, of } : null;
     return {
-      id: libraryId(asset), sourceId: g.id, kind: "GEN", name: libraryName(asset), version: `v${g.version}`,
+      id: libraryId(asset), sourceId: g.id, kind: "generation", name: libraryName(asset), version: `v${g.version}`,
       meta: [label, detail, pair ? `${pair.role} ${pair.role === "draft" ? DRAFT_RESOLUTION : FINAL_RESOLUTION}` : ""].filter(Boolean).join(" · "),
       credits: !settled ? null : unbilled ? 0 : charged ?? billedCredits ?? null,
       /* A workspace on its own keys: a failed take's recorded zero is Particl's metering, not its provider's word, so

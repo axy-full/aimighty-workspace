@@ -10,6 +10,7 @@ import { recoveryFetch } from './recovery';
 import { assertTextProvider, directOpenAIKey, OPENAI_BASE, openAIFetch, openAIModelId, TEXT_PROVIDER_HEADER, usesOpenAIResponses } from './openai-direct';
 import { ANTHROPIC_NO_TOOL_HEADER, DIRECT_BASE_URL, DIRECT_KEY, directFetch, directKey, directModelId, isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
 import { textDirectVendors } from './textDirectVendors';
+import { geminiSafetyProviderOptions } from './geminiSafety';
 /** A direct door (TEXT_DIRECT) with its key: text that needs neither the gateway nor OpenAI. */
 export function directTextReachable() {
   return [...textDirectVendors()].some(vendor => !!vendorKey(DIRECT_KEY[vendor]));
@@ -33,6 +34,11 @@ export async function languageAuth(model: string): Promise<Record<string, string
   const key = directOpenAIKey(model);
   return key ? { Authorization: `Bearer ${key}`, [TEXT_PROVIDER_HEADER]: 'openai' } : { ...await gatewayAuth(), [TEXT_PROVIDER_HEADER]: 'gateway' };
 }
+/** The one Gemini safety configuration (lib/geminiSafety.ts) on a language request, over whatever else its Google options hold. */
+function withGeminiSafety<P extends { providerOptions?: Record<string, Record<string, unknown>> }>(params: P): P {
+  const safety = geminiSafetyProviderOptions();
+  return { ...params, providerOptions: { ...params.providerOptions, google: { ...params.providerOptions?.google, ...safety.google }, vertex: { ...params.providerOptions?.vertex, ...safety.vertex } } } as P;
+}
 /** One provider's own SDK, on its own key, own origin and the exact mapped id.
  * The key is read here, never taken from the caller's headers. */
 function directLanguageModel(vendor: DirectVendor, model: string, fetcher: typeof fetch): LanguageModel {
@@ -45,7 +51,8 @@ function directLanguageModel(vendor: DirectVendor, model: string, fetcher: typeo
   return wrapLanguageModel({ model: native, middleware: {
     // Anthropic: keep the tools on a no-tool step (see ANTHROPIC_NO_TOOL_HEADER); the fetch guard sets tool_choice none.
     transformParams: async ({ params }) => vendor === 'anthropic' && params.toolChoice?.type === 'none' && params.tools?.length
-      ? { ...params, toolChoice: { type: 'auto' }, headers: { ...params.headers, [ANTHROPIC_NO_TOOL_HEADER]: '1' } } : params,
+      ? { ...params, toolChoice: { type: 'auto' }, headers: { ...params.headers, [ANTHROPIC_NO_TOOL_HEADER]: '1' } }
+      : vendor === 'google' ? withGeminiSafety(params) : params,
     wrapGenerate: async ({ doGenerate }) => { try { return await doGenerate(); } catch (error) { throw redactProviderError(error); } },
     wrapStream: async ({ doStream }) => { try { return await doStream(); } catch (error) { throw redactProviderError(error); } },
   } });
@@ -67,5 +74,6 @@ export function languageModel(model: string, options: { auth: Record<string, str
   const token = auth.Authorization?.replace(/^Bearer\s+/i, '');
   if (!token) throw new Error('The selected language provider is not connected for this workspace.');
   const gateway = createGateway({ apiKey: token, headers: { ...auth, 'ai-gateway-auth-method': auth['ai-gateway-auth-method'] ?? (vendorKey('gateway') ? 'api-key' : 'oidc') }, baseURL: new URL('/v4/ai', GATEWAY_BASE()).href, fetch: fetcher });
-  return gateway(model);
+  /* A Gemini model the gateway serves carries the same safety settings as one called directly (lib/geminiSafety.ts). */
+  return model.startsWith('google/') ? wrapLanguageModel({ model: gateway(model), middleware: { transformParams: async ({ params }) => withGeminiSafety(params) } }) : gateway(model);
 }

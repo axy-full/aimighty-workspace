@@ -55,7 +55,7 @@ export function atomikIntent(raw: string): AtomikIntent {
 export const isFreeIntent = (intent: AtomikIntent) => intent.kind !== "ask";
 
 /** A request's quote as the composer holds it: the figure the server quoted, or why there is none. */
-export type AskQuote = { credits: number | null; loading: boolean; error: string | null };
+export type AskQuote = { credits: number | null; /** The same in the engines' dollars, where the server gave it (the house pays in them). */ usd?: number | null; loading: boolean; error: string | null };
 
 /**
  * The Ask button: "Ask · free" for a free line (or an empty box), "Ask · up to N cr" for a request with
@@ -63,7 +63,7 @@ export type AskQuote = { credits: number | null; loading: boolean; error: string
  */
 export function askButton(intent: AtomikIntent, quote: AskQuote): { label: string; price: PriceValue | null; disabled: boolean; reason: string | null } {
   if (intent.kind !== "ask") return { label: "Ask · free", price: FREE, disabled: false, reason: null };
-  const price = upTo(quote.credits);
+  const price = upTo(quote.credits, quote.usd);
   const words = priceWords(price);
   if (price && words) return { label: `Ask · ${words}`, price, disabled: false, reason: null };
   if (quote.loading) return { label: "Ask", price: null, disabled: true, reason: "Pricing Atomik's thinking…" };

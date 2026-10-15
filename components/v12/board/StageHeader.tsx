@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState, type ReactNode } from "react";
-import { Menu, Tooltip, type MenuItem } from "@/components/v12/ui";
+import { Menu, MoreDots, Tooltip, type MenuItem } from "@/components/v12/ui";
 
 /**
  * The stage header (docs/redesign/inventory.md § 6.4; prototype L270–L272): 44 px; breadcrumbs board › stage ›
@@ -44,7 +44,7 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, badg
       <span className="v12-stagehead-right">
         {primary ? <button type="button" className={quietPrimary ? "v12-primary v12-primary-outline" : "v12-primary"} onClick={primary.run} data-testid="v12-stage-primary">{primary.label}</button> : null}
         {menu ? <><Tooltip name="Board menu">
-          <button ref={anchor} type="button" className="v12-stagehead-menu" aria-label="Board menu" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="v12-board-menu">⋯</button>
+          <button ref={anchor} type="button" className="v12-stagehead-menu" aria-label="Board menu" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="v12-board-menu"><MoreDots /></button>
         </Tooltip>
         <Menu open={open} onClose={() => setOpen(false)} anchor={anchor} label="Board menu" items={menu} align="start" width={240} /></> : null}
       </span>

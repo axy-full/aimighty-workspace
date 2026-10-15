@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import type { RegionStatus } from "@/lib/board/regions";
 import { STAGE_PRESETS, type Stage, type StageEdit } from "@/lib/v12/board/stages";
-import { Menu, Tooltip, type MenuItem } from "@/components/v12/ui";
+import { Menu, MoreDots, Tooltip, type MenuItem } from "@/components/v12/ui";
 
 /**
  * The board's stage rail (docs/redesign/inventory.md § 6.2; prototype L254–L266): 88 px, the board kind at the top, one
@@ -104,7 +104,7 @@ export function StageRail({ kindLabel, onKind, dim, stages, current, status, rea
                   </Tooltip>
                   <Tooltip name="Skip or remove">
                     <button type="button" className="v12-rail-act" aria-label={`${stage.label} menu`} aria-haspopup="menu" aria-expanded={menuFor === stage.id}
-                      onClick={(e) => { menuAnchor.current = e.currentTarget; setMenuFor(stage.id); }} data-testid="v12-stage-menu">⋯</button>
+                      onClick={(e) => { menuAnchor.current = e.currentTarget; setMenuFor(stage.id); }} data-testid="v12-stage-menu"><MoreDots size={12} /></button>
                   </Tooltip>
                 </span>
               )}

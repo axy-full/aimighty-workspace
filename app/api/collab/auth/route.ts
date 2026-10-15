@@ -3,7 +3,7 @@ import { Liveblocks } from "@liveblocks/node";
 import { withTenant, requireSession } from "@/lib/auth";
 import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
-import { collabColor, collabConfigured } from "@/lib/collab";
+import { collabColor, collabConfigured, roomUserId } from "@/lib/collab";
 import { requireProduction, roomParts, TeamCanvasError } from "@/lib/workbench/team-canvas";
 import { roomGeneration } from "@/lib/workbench/room-rotation";
 
@@ -37,7 +37,7 @@ export const POST = withTenant(async (req: Request) => {
     throw error;
   }
   const liveblocks = new Liveblocks({ secret: process.env.LIVEBLOCKS_SECRET_KEY! });
-  const session = liveblocks.prepareSession(`${tenant.id}:${auth.user.id}`, {
+  const session = liveblocks.prepareSession(`${tenant.id}:${await roomUserId(tenant, auth.user.id)}`, {
     userInfo: { name: auth.user.name, color: collabColor(auth.user.id) },
   });
   session.allow(room, ["*:write"]);

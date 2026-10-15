@@ -1,4 +1,4 @@
-<!-- Particl · v14 screens · written 2026-10-11 -->
+<!-- Particl · v15 screens · written 2026-10-13 -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -19,8 +19,8 @@ a{color:#6EB4FF;text-decoration:none}a:hover{color:#8FC4FF}
 </helmet>
 <div style="padding:28px 32px 48px;display:flex;flex-direction:column;gap:28px;font-size:13px;line-height:1.45">
   <div style="display:flex;flex-direction:column;gap:6px">
-    <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-0.02em">Particl prototype v14 · screens (v14 first, then earlier rounds)</h1>
-    <p style="margin:0;font-size:13px;color:rgba(235,235,245,0.6)">Live frames · workspace settings · simpler left column · signed out · fixes. Pick a frame size:</p>
+    <h1 style="margin:0;font-size:22px;font-weight:600;letter-spacing:-0.02em">Particl prototype v15 · screens (v15 first, then earlier rounds)</h1>
+    <p style="margin:0;font-size:13px;color:rgba(235,235,245,0.6)">Live frames · board sharing · who’s editing · ownership · admin view. Pick a frame size:</p>
     <div style="display:inline-flex;padding:3px;background:#0D0D10;border-radius:8px;gap:2px;align-self:flex-start"><sc-for list="{{ sizes }}" as="o" hint-placeholder-count="3"><button onClick="{{ o.onClick }}" style="height:30px;border:0;padding:0 12px;border-radius:6px;font-size:13px;font-weight:500;background:{{ o.bg }};color:{{ o.color }}">{{ o.label }}</button></sc-for></div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax({{ w }}px,1fr));gap:20px">
@@ -45,6 +45,21 @@ class Component extends DCLogic {
     const sizes = ['1280x800', '1440x900', '1920x1080'].map(id => ({ label: id.replace('x', ' × '), bg: this.state.size === id ? '#1C1C20' : 'transparent', color: this.state.size === id ? '#F5F5F7' : 'rgba(235,235,245,0.65)', onClick: () => this.setState({ size: id }) }));
     const M = 'Particl%20prototype.dc.html';
     const frames = [
+      ['V15·1', "Share submenu · owner", "Not shared · Can view · Can edit, ticked", M + '?view=board&share=menu'],
+      ['V15·2', "Share submenu · member", "Disabled, with the tooltip", M + '?view=board&share=menu&role=member'],
+      ['V15·3', "Cards · share state", "Lock · eye · two-person", M + '?view=home&cards=sharestate'],
+      ['V15·4', "“Viewed by” history line", "Quiet grey, no badge", M + '?view=board&history=viewed'],
+      ['V15·5', "Who’s editing", "3 + N avatar stack", M + '?view=board&editors=3'],
+      ['V15·6', "Card someone is editing", "Their colour, their initials", M + '?view=board&editing=card'],
+      ['V15·7', "Changed since you opened it", "Reload · Keep my version", M + '?view=board&changed=1'],
+      ['V15·8', "Move this board to…", "People picker · Move · Cancel", M + '?view=board&transfer=1'],
+      ['V15·9', "Moved · Undo", "Toast for 10 s", M + '?view=board&transfer=done'],
+      ['V15·10', "All boards · admin", "Owner line · Private tag", M + '?view=home&boards=all'],
+      ['V15·11', "Home · member", "No All boards chip", M + '?view=home&role=member'],
+      ['V15·12', "Admin view bar", "Viewing Noor’s private board", M + '?view=board&adminview=1'],
+      ['V15·13', "Admin · Edit anyway", "Editing · history line", M + '?view=board&adminview=editing'],
+      ['V15·14', "Make · ⓘ no jump", "Price width reserved", M + '?view=make'],
+      ['V15·15', "People · Remove", "Move their boards first", M + '?view=settings&section=people&remove=1'],
       ['V14·1', "Workspace settings · Overview", "Tiles · low-credit note · recent activity", M + '?view=settings'],
       ['V14·2', "Settings · People", "Invite · roles · ⋯ Remove · pending · seats", M + '?view=settings&section=people'],
       ['V14·3', "Settings · Credits & billing", "Current plan · Change plan · Top up · history · Export CSV", M + '?view=settings&section=billing'],
