@@ -9,6 +9,7 @@ import { withMediaSources } from "./mediaMutation";
  * read.
  */
 import { db, ready, now, id } from "@/lib/db";
+import { readableActors } from "@/lib/platformOwnerPrivacy";
 
 export type Shot = {
   id: string;
@@ -166,5 +167,7 @@ export async function approvedTakeOf(shotId: string): Promise<{ id: string; vers
   });
   if (!rs.rows.length) return null;
   const r = rs.rows[0] as unknown as Record<string, unknown>;
-  return { id: String(r.id), version: Number(r.version ?? 1), by: (r.approved_by ?? r.review_by ?? null) as string | null };
+  /* Who approved it, as a reader may be told: an account id is never output (lib/platformOwnerPrivacy.ts). */
+  const by = (await readableActors([r.approved_by, r.review_by]))(r.approved_by ?? r.review_by ?? null);
+  return { id: String(r.id), version: Number(r.version ?? 1), by };
 }

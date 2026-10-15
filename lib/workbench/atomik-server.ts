@@ -16,7 +16,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, ready, now } from '../db';
 import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
-import { engineFor } from '../engines';
+import { textRun } from '../textDirect';
 import { explainGatewayFailure } from '../gateway';
 import { allowanceCheck } from '../allowance';
 import { checkLimits, limitVerdict } from '../limits';
@@ -241,7 +241,7 @@ export type AtomikDependencies = {
   reserve: typeof reserveGenerationSpend;
   meter: typeof meter;
   auth: typeof languageAuth;
-  run: NonNullable<ReturnType<typeof engineFor>['run']>;
+  run: typeof textRun;
   runSuite: typeof runSuiteAgent;
   runAstra: typeof runAstraAgent;
   assertFunding: typeof assertMeterFunding;
@@ -251,7 +251,7 @@ const dependencies = (): AtomikDependencies => ({
   reserve: reserveGenerationSpend, meter, auth: languageAuth,
   run: request => engineMock() && JSON.parse(request.body).response_format?.json_schema?.name === 'reference_ad_analysis'
     ? Promise.resolve({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Mock visual analysis; no provider was called.', beats: [{ sampleIndex: 0, observation: 'Mock opening sample.', adaptation: 'Introduce the supplied product with clear framing.' }], camera: 'Mock composition review.', pacing: 'Mock comparison between sampled stills; cut timing is unknown.', colors: ['Mock neutral palette'], direction: 'Create an original product introduction using the reviewed brand and product facts.', uncertainties: ['Mock result. No real reference analysis was performed.'] }) } }], usage: { cost: 0, prompt_tokens: 0, completion_tokens: 0 } }) })
-    : engineFor('vercel').run!(request),
+    : textRun(request),
   runSuite: runSuiteAgent, runAstra: runAstraAgent, assertFunding: assertMeterFunding,
 });
 const withDependencies = (overrides?: Partial<AtomikDependencies>) => ({ ...dependencies(), ...overrides });
