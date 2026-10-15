@@ -494,6 +494,76 @@ test("a listed customer workspace pays exactly the quote in credits, once, and a
   }
 });
 
+test("over MCP: veo_video is listed only where the engine is on; Ask files a prepared job and starts nothing; Auto starts only the Fast draft at or under the per-job line and Standard always asks; the caller cannot approve", async () => {
+  const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  const { jobApprovalLineCredits } = await import("../../lib/approvalRule");
+  const { creditUsd } = await import("../../lib/creditTerms");
+  const line = jobApprovalLineCredits(creditUsd());
+  const spend = async (value: string | null) => { if (value === null) await db().execute("DELETE FROM settings WHERE key='spendWithoutAsking'"); else await setSetting("spendWithoutAsking", value, "admin"); invalidateSettings(); };
+  let credits = 1;
+  const calls: Record<string, unknown>[] = [];
+  const paths: string[] = [];
+  const call = async (p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; paths.push(p); calls.push(body); if (p === "/api/prepared-jobs") return { job: { id: "prep_v1" } }; return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 10, unit: "usd" } : { id: "gen_v1" }; };
+  const FAST = "veo-3.1-fast-generate-preview";
+  await asTenant(house(), async () => {
+    await ready();
+    delete process.env.VEO_ENABLED;
+    expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("veo_video");
+    await expect(runDirectEngineTool("veo_video", { prompt: "a tree" }, call)).rejects.toThrow("There is no such tool here.");
+    process.env.VEO_ENABLED = "1";
+    expect((await directEngineMcpTools()).map((t) => t.name)).toContain("veo_video");
+    try {
+      /* Ask (the default, and anything but an exact "auto"): priced, filed for a person, nothing sent, for either model. */
+      for (const mode of [null, "ask", "AUTO"]) {
+        for (const model of [undefined, FAST]) {
+          await spend(mode); calls.length = 0; paths.length = 0; credits = 32;
+          const text = await runDirectEngineTool("veo_video", { prompt: "a tree", ...(model ? { model } : {}) }, call);
+          expect(text, `${mode} ${model}`).toMatch(new RegExp(`^Priced and prepared, not started\\.\\n\\nprice: \\$3\\.20\\nprepared: ${model ?? "veo-3.1-generate-preview"} clip, 8 s, 720p\\nprepared job: prep_v1\\n\\nThis needs a person's approval: nothing was started or spent`));
+          expect(paths).toEqual(["/api/veo", "/api/prepared-jobs"]);
+          expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null])).toEqual([[true, null], [false, null]]);
+          expect(calls[1]).toMatchObject({ engine: "veo_video", args: { tool: "video", prompt: "a tree" } });
+          expect(JSON.stringify(calls[1])).not.toMatch(/maxCredits|quoteOnly/i);
+        }
+      }
+      /* Auto: Standard is the hero and always asks, at any price. */
+      await spend("auto");
+      for (const c of [1, line]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("veo_video", { prompt: "a tree" }, call), `standard ${c}`).toMatch(/not started[\s\S]*prepared job: prep_v1[\s\S]*needs a person's approval/);
+        expect(calls.some((x) => x.maxCredits !== undefined)).toBe(false);
+      }
+      /* Auto: the Fast draft starts at or under the line, at the server's price; above the line (guardrail 4) it asks. */
+      for (const c of [1, line]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("veo_video", { prompt: "a tree", model: FAST }, call), `fast ${c}`).toMatch(/^Clip started\.\n\nid: gen_v1/);
+        expect(calls.map((x) => [x.quoteOnly === true, x.maxCredits ?? null, x.tool, x.model])).toEqual([[true, null, "video", FAST], [false, c, "video", FAST]]);
+      }
+      for (const c of [line + 1, 900]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("veo_video", { prompt: "a tree", model: FAST }, call), `fast ${c}`).toMatch(/not started[\s\S]*needs a person's approval/);
+        expect(calls.some((x) => x.maxCredits !== undefined)).toBe(false);
+      }
+      /* The caller cannot approve: a price in the arguments is refused, and nothing is called. */
+      credits = 1;
+      for (const mode of ["ask", "auto"]) {
+        await spend(mode); calls.length = 0;
+        for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) await expect(runDirectEngineTool("veo_video", { prompt: "a tree", model: FAST, ...bad }, call)).rejects.toThrow(/only a person approves/);
+        expect(calls).toEqual([]);
+      }
+      /* The images ride as the route's own shape; one cast member for each reference, and one for the first frame. */
+      await spend(null); calls.length = 0;
+      await runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1, u2", cast_member_ids: "c1,c2", project_id: "p", use: "production" }, call);
+      expect(calls[0]).toMatchObject({ tool: "video", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }], projectId: "p", use: "production", quoteOnly: true });
+      await runDirectEngineTool("veo_video", { prompt: "go", first_frame_upload_id: "u3", first_frame_cast_member_id: "c3", project_id: "p", use: "ads" }, call);
+      expect(calls.find((x) => x.firstFrame)).toMatchObject({ firstFrame: { uploadId: "u3", castMemberId: "c3" } });
+      await expect(runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1,u2", cast_member_ids: "c1" }, call)).rejects.toThrow(/one cast member for each reference/);
+      await expect(runDirectEngineTool("veo_video", { prompt: "go", first_frame_upload_id: "u3" }, call)).rejects.toThrow(/which cast member the first frame shows/);
+    } finally { await spend(null); }
+  });
+});
+
 test("the fixture end to end (ENGINE_MOCK): the default adapter submits, polls and fetches in process, with the network forbidden", async () => {
   const { driveVeo } = await import("../../lib/veoVideo");
   process.env.VEO_ENABLED = "1";
