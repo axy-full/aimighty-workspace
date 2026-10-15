@@ -1,6 +1,7 @@
 import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
+import { bflTools } from "./bflImage";
 
 /**
  * The direct engines' tools (sync.so, and in the stack above it Sarvam and BFL) as an outside agent over MCP sees them (rule 11: the button, Make, a board
@@ -102,7 +103,39 @@ const SARVAM_TRANSLATE: DirectTool = {
   describe: (out) => (out.kept === false ? String(out.note) : String(out.text)),
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE];
+const bflPresent = (id: string) => async () => (await bflTools()).some((t) => t.id === id);
+const list = (v: unknown): string[] => (typeof v === "string" ? v.split(",").map((x) => x.trim()).filter(Boolean) : []);
+const BFL_COMMON = { model: { type: "string", description: "flux-2-pro (default), flux-2-flex or flux-2-max (flex and max: one megapixel, no references)." }, ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." } };
+const SIZE = { width: { type: "number", description: "A multiple of 16, default 1024." }, height: { type: "number", description: "A multiple of 16, default 1024." } };
+
+const FLUX2_IMAGE: DirectTool = {
+  def: {
+    name: "flux2_image",
+    description: "Make a still from words (FLUX.2, Black Forest Labs). Priced first; the job is sent at that price as its ceiling. Returns an image take id; collect it with get_render.",
+    inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to make." }, ...SIZE, seed: { type: "number" }, ...BFL_COMMON }, required: ["prompt"] },
+  },
+  present: bflPresent("flux2_image"),
+  request: (a) => ({ path: "/api/bfl", body: { tool: "image", prompt: str(a.prompt), model: str(a.model), width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id) } }),
+  describe: (out, quote) => `Image started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
+};
+const FLUX2_EDIT: DirectTool = {
+  def: {
+    name: "flux2_edit",
+    description:
+      "Edit from one to eight reference images of this workspace (FLUX.2, Black Forest Labs). Priced first. Every reference passes the consent gate first: it needs the cast member each one shows, the production " +
+      "and what it is for. Returns an image take id; collect it with get_render.",
+    inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to change." }, reference_upload_ids: { type: "string", description: "Comma-separated upload ids, one to eight." }, cast_member_ids: { type: "string", description: "Comma-separated cast member ids, one per reference, in the same order." }, ...SIZE, use: { type: "string", description: "production, ads or social." }, seed: { type: "number" }, ...BFL_COMMON }, required: ["prompt", "reference_upload_ids", "cast_member_ids", "project_id", "use"] },
+  },
+  present: bflPresent("flux2_edit"),
+  request: (a) => {
+    const uploads = list(a.reference_upload_ids), cast = list(a.cast_member_ids);
+    if (uploads.length !== cast.length) throw new Error("Give one cast member for each reference, in the same order.");
+    return { path: "/api/bfl", body: { tool: "edit", prompt: str(a.prompt), model: str(a.model), width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id), use: str(a.use), references: uploads.map((uploadId, i) => ({ uploadId, castMemberId: cast[i] })) } };
+  },
+  describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
+};
+
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

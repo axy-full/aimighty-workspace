@@ -64,8 +64,8 @@ export type BflParams = {
   status: BflState; tool: "image" | "edit"; model: BflModel; width: number; height: number; seed: number | null;
   references: { uploadId: string; castMemberId: string; consentId: string; faceSha256: string; megapixels: number }[];
   outputMegapixels: number; reservedUsd: number; estimateCredits: number; use: string | null;
-  funded: number; claimedAt: number | null; bflId: string | null; pollingUrl: string | null; statedCredits: number | null;
-  submittedAt: number | null; readyAt: number | null; lastPolledAt: number | null; pollUntil: number | null; settled: number;
+  funded: number; claimedAt: number | null; bflId: string | null; pollingUrl: string | null; statedUsd: number | null;
+  submittedAt: number | null; sendingAt: number | null; readyAt: number | null; lastPolledAt: number | null; pollUntil: number | null; settled: number;
 };
 type Row = { id: string; project_id: string | null; shot_id: string | null; created_by: string | null; status: string; created_at: number; params: string; prompt: string };
 type Job = { row: Row; bfl: BflParams };
@@ -115,7 +115,8 @@ export function bflQuote(model: BflModel, outputMp: number, referenceMps: number
   let usd = r.firstMp;
   if (outputMp > 1) { if (r.extraMp == null) return { error: `${model} is priced for one megapixel here.` }; usd += (outputMp - 1) * r.extraMp; }
   if (referenceMps.length) { if (r.refMp == null) return { error: `${model} takes no references here.` }; usd += referenceMps.reduce((n, mp) => n + mp, 0) * r.refMp; }
-  return { usd: Math.round(usd * 1e6) / 1e6 };
+  /* Rounded UP to the micro-dollar, so a quote is never under. */
+  return { usd: Math.ceil(usd * 1e6 - 1e-6) / 1e6 };
 }
 
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -200,7 +201,7 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   if (!lim.allow) return admissionReply({ error: lim.error }, { status: lim.why === "rate" ? 429 : 409 });
   const quota = await checkQuota(8 * 1024 * 1024);
   if (!quota.allow) return admissionReply({ error: quota.error }, { status: 507 });
-  const stopped = admissionCheckpoint(options, body, got, "image", usd, model, { task: BFL_TASK, tool, model, width, height, seed, references: refs.map((r) => r.uploadId), projectId, shotId });
+  const stopped = admissionCheckpoint(options, body, got, "image", usd, model, { task: BFL_TASK, tool, model, width, height, seed, references: refs.map((r) => r.uploadId), projectId, shotId }, { engine: "bfl" });
   if (stopped) return stopped;
 
   /* ── The consent gate (an edit): every reference, BEFORE a row is written or a cent reserved. ── */
@@ -224,7 +225,7 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   const genId = newId("gen"), ts = now();
   const bfl: BflParams = {
     status: "queued", tool, model, width, height, seed, references: matched, outputMegapixels: outputMp, reservedUsd: usd, estimateCredits: estimatedCredits, use,
-    funded: 0, claimedAt: null, bflId: null, pollingUrl: null, statedCredits: null, submittedAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0,
+    funded: 0, claimedAt: null, bflId: null, pollingUrl: null, statedUsd: null, submittedAt: null, sendingAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0,
   };
   const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
   const g = gcd(width, height);
@@ -309,7 +310,11 @@ export async function advanceBflJobWith(genId: string, deps: BflDeps): Promise<B
       if (!claimed) {
         // Someone holds the claim. A young claim is a submission in flight; an old one with no job id is a lost acknowledgement.
         const held = (await load(genId))?.bfl;
-        if (held && held.status === "queued" && held.claimedAt && clock() - Number(held.claimedAt) > SUBMIT_GRACE_MS) await patch(genId, { status: "uncertain" });
+        if (held && held.status === "queued" && held.claimedAt && clock() - Number(held.claimedAt) > SUBMIT_GRACE_MS) {
+          /* `sendingAt` is written the instant before the one request goes out. A claim that never reached it never sent anything: settled at nothing. Only one that did, and has no job id, is a lost acknowledgement. */
+          if (!held.sendingAt) await settleBfl(genId, "failed", { message: "Nothing was submitted: the job stopped before it was sent. Nothing was billed.", costUsd: 0 });
+          else await patch(genId, { status: "uncertain" });
+        }
         return (await load(genId))?.bfl ?? null;
       }
       job = (await load(genId))!;
@@ -333,8 +338,9 @@ export async function advanceBflJobWith(genId: string, deps: BflDeps): Promise<B
         return (await load(genId, { any: true }))?.bfl ?? null;
       }
       try {
+        await patch(genId, { sendingAt: clock() });
         const sent = await (deps.submit ?? submitImage)({ model: bfl.model, prompt: row.prompt, width: bfl.width, height: bfl.height, ...(bfl.seed != null ? { seed: bfl.seed } : {}), references });
-        await patch(genId, { status: "submitted", bflId: sent.id, pollingUrl: sent.pollingUrl, statedCredits: sent.statedCredits, submittedAt: clock() });
+        await patch(genId, { status: "submitted", bflId: sent.id, pollingUrl: sent.pollingUrl, statedUsd: sent.statedUsd, submittedAt: clock() });
       } catch (error) {
         if (error instanceof BflError && error.rejectedBeforeGeneration) {
           // Refused before work: the whole reservation comes back.
@@ -372,9 +378,8 @@ export async function advanceBflJobWith(genId: string, deps: BflDeps): Promise<B
       /* The moment it is Ready: fetched and stored, before anything else. Never fetched with our key, only from the bfl.ai address in the poll. */
       const bytes = await (deps.fetchImage ?? fetchResult)(state.resultUrl);
       const { value: stored } = await withRetry(() => (deps.store ?? storeImageBytes)(genId, bytes), { max: 3 });
-      /* BFL's own figure when it states one (credits at $0.01), else the quote; never above the quote (settleBfl caps it). */
-      const stated = bfl.statedCredits != null ? bfl.statedCredits * BFL_RATES.creditUsd : null;
-      await settleBfl(genId, "done", { costUsd: stated ?? bfl.reservedUsd, storedUrl: stored.url, bytes: stored.bytes });
+      /* BFL's own figure when it states one, else the quote; never above the quote (settleBfl caps it). */
+      await settleBfl(genId, "done", { costUsd: bfl.statedUsd ?? bfl.reservedUsd, storedUrl: stored.url, bytes: stored.bytes });
       return (await load(genId, { any: true }))?.bfl ?? null;
     } catch (error) {
       // Transport or storage: keep the id and the reservation; the next pass asks again (the ten minutes still run). Nothing is resubmitted.

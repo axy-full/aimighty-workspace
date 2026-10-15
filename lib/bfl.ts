@@ -87,7 +87,8 @@ let mockSeq = 0;
 const MOCK_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
 export type BflRequest = { model: BflModel; prompt: string; width: number; height: number; seed?: number; references: Buffer[] };
-export type BflSubmitted = { id: string; pollingUrl: string; statedCredits: number | null };
+/** `statedUsd`: what BFL says the job cost, in dollars (its credits at $0.01), when its reply says (the field is TO CONFIRM); null when it does not. */
+export type BflSubmitted = { id: string; pollingUrl: string; statedUsd: number | null };
 
 /** Starts one job. The caller holds the reservation; this is the one paid request, and it is never repeated for the same job. */
 export async function submitImage(input: BflRequest, deps: Deps = {}): Promise<BflSubmitted> {
@@ -95,7 +96,7 @@ export async function submitImage(input: BflRequest, deps: Deps = {}): Promise<B
     if (input.prompt.startsWith("[[mock-refuse]]")) throw new BflError("BFL refused the request: mock refusal.", 422, true);
     const id = `mock_bfl_${++mockSeq}`;
     mockJobs.set(id, { polls: 0 });
-    return { id, pollingUrl: `${BFL_DEFAULT_BASE}/v1/get_result?id=${id}`, statedCredits: null };
+    return { id, pollingUrl: `${BFL_DEFAULT_BASE}/v1/get_result?id=${id}`, statedUsd: null };
   }
   const body: Record<string, unknown> = { prompt: input.prompt, width: input.width, height: input.height, output_format: "png", ...(input.seed != null ? { seed: input.seed } : {}) };
   input.references.forEach((bytes, i) => { body[i === 0 ? "input_image" : `input_image_${i + 1}`] = bytes.toString("base64"); });
@@ -103,7 +104,7 @@ export async function submitImage(input: BflRequest, deps: Deps = {}): Promise<B
   const pollingUrl = bflHostUrl(json.polling_url);
   if (typeof json.id !== "string" || !json.id || !pollingUrl) throw new BflError("BFL's reply named no job to poll.", status);
   const cost = Number(json.cost);
-  return { id: json.id, pollingUrl: pollingUrl.href, statedCredits: Number.isFinite(cost) && cost >= 0 ? cost : null };
+  return { id: json.id, pollingUrl: pollingUrl.href, statedUsd: json.cost != null && Number.isFinite(cost) && cost >= 0 ? Math.round(cost * BFL_RATES.creditUsd * 1e6) / 1e6 : null };
 }
 
 export type BflState = { status: "pending" | "ready" | "failed"; resultUrl?: string; failure?: string };
