@@ -2,6 +2,8 @@
 
 Written 15 Oct 2026, for the owner's review in the morning. It is a plan only. It changes no code and no screen. Nothing in it is built, and no v25 screen PR merges until the owner approves it (owner, 15 Oct 00:15).
 
+**Updated 15 Oct 2026, late evening:** section 4 now says which engines the owner's final engine stack provides (22:15), and section 3 carries the owner's large-screen rules (22:30) as a rule for every screen PR. The rest is as written.
+
 Read from `origin/release/1` at 6ee02198, the v25 prototype (`particl-prototype-25`: README, CHANGES, the app file and the board file with their sources), CLAUDE.md (rules 7, 11, 13, 14, 15) and the owner's decisions in `docs/redesign-plan.md` on `redesign/integration`. Code claims cite `file:line` on release/1. Prices in the prototype are placeholders; every price in this plan is a sample (CLAUDE.md § Pricing).
 
 How to read sizes: **S** is up to a day for one lane, **M** two to three days, **L** four to six days.
@@ -16,7 +18,7 @@ How to read **NEEDS AKSHAY**: money (a button that spends, a new priced tool), s
 3. **Then:** the steps before Shots (Brief, Script, Cast, Locations, Elements, Storyboard), then Edit and Deliver on one shared assembly engine (Remotion, #700, off today), then Social narrated on the same engine, then Treatment, Campaign, Clips and Pre-vis.
 4. **Social narrated next: yes.** It shares Brief, Script, Cast and Shots with Film. Its only new engines are Hook, Captions and the final assembly, and the assembly is the same one Film's Edit needs.
 5. **No migration is needed for the first slice.** Settings, modes and marks fit in the board's draft JSON, as `boardStages` and `boardRounds` already do (`lib/workbench/studio.ts:48`).
-6. **About 40 v25 elements have no server or provider behind them today.** They are listed in section 4. The biggest: the animatic and timeline, captions, smart reframe, clips and moments, Runway and Veo, lip-sync, voice cloning, the label check.
+6. **About 40 v25 elements have no server or provider behind them today.** They are listed in section 4. **Since the owner's final engine stack (15 Oct 22:15), many of them have an engine planned**: section 4 says which and in which slice. None of it is live. The biggest: the animatic and timeline, captions, smart reframe, clips and moments, Runway and Veo, lip-sync, voice cloning, the label check.
 7. **The carry-ins** (Brief card tile shown twice; Home counts and tabs matching the board) have homes: the card PR and the frame PR (section 5).
 8. **Lane C's three foundation PRs are PR 1 to PR 3** of this plan (section 6).
 9. **Fourteen questions for the owner**, each with a recommendation, are in section 7.
@@ -118,6 +120,11 @@ Treatment is first on the Film rail but built late. Until then the rail marks it
 ## 3. The PR list, in order
 
 Rules for every PR:
+- **Large-screen rules for every v25 screen PR, from #748 on** (owner, 15 Oct 22:30 IST, replaces his earlier screen-size note; verbatim in `docs/redesign-plan.md`):
+  1. **Sizes.** Test and screenshot at five viewports: 1280×800, 1440×900, 1728×1117 (16-inch MacBook Pro), 1920×1080 and 2560×1440 (27-inch monitors and scaled 4K). Attach all five to every screen PR.
+  2. **Scaling.** Above 1440 px wide the board canvas scales up to fill the space (bigger cards, same layout, text and chips scaling with the cards, like Figma zoom-to-fit). The rail, top bar, bottom bar and buttons stay at normal size and stay centred. The bug to fix: at 2560×1440 the cards sit in the top half and the bottom third is empty. CSS in the screen PRs, no new design round.
+  3. **Sharpness.** Text, icons, buttons and the logo are vector (SVG) at every size, never bitmaps. Every picture on the board (thumbnails, frames, stills, previews) is served at the size the screen needs, with 2× versions for Retina and large monitors (srcset and sizes), and never upscaled past its real pixels. A soft or pixelated image in the 1728 or 2560 screenshots is a must-fix. (The wordmark exists only as PNG in `public/brand/` today: an SVG from the owner's brand files is needed, and until then the PNG at 4× is flagged as a must-fix in each PR.)
+  4. **Checks at 2560×1440.** No stranded cards, no text under 12 px, no dead space below the cards, the three bars centred, no horizontal scroll. Report anything that looks wrong; do not redesign to fix it.
 - **One concern.** Screen PRs and server PRs are separate unless the screen cannot work without the server piece.
 - **Behind the new-interface switch** (`lib/newInterface.ts:11`, house workspace only). No customer sees anything until the owner flips it.
 - **Server PRs** put the feature in as a tool first, with a mocked test proving an agent can run it (rule 11). The registry the rule names does not exist as code yet; each PR logs its gap, as the "/" skills do (`lib/v12/skills.ts:1-10`).
@@ -150,12 +157,12 @@ Rules for every PR:
 |---|---|---|---|---|---|---|
 | 11 | **Brief and Script cards** (text steps), Script's three-tab preview, Story, Plan, Brand kit settings | screen | the Brief and Script stage contents | M | no | PR 2, 4 |
 | 12 | **✓ and ✕ on text cards:** Brief, Script, Treatment pages, in the draft | screen + small server | none today | S | no (draft JSON); an audit trail would be a migration, see question 4 | PR 11 |
-| 13 | **Read-through:** a timed voice read of the script with the cast voice | server (tool) then screen | none | M | **money** (priced per character) | PR 11 |
+| 13 | **Read-through:** a timed voice read of the script with the cast voice | server (tool) then screen | none | M | **money** (priced per character) | PR 11; **engine: ElevenLabs, Sarvam** |
 | 14 | **Cast:** character cards, Look, Wardrobe, Sheet; the voice card; "Consent on file" | screen | `components/graphite/production/CastIdentities.tsx` (ratchet entry) | L | **privacy** (faces, voices), **money** (identity training) | PR 7 |
-| 15 | **Character sheet tool:** 8 angles as one priced recipe | server (tool) | none | M | **money** | PR 14 |
+| 15 | **Character sheet tool:** 8 angles as one priced recipe | server (tool) | none | M | **money** | PR 14; **engine: BFL FLUX.2, Nano Banana; consent #771** |
 | 16 | **Locations:** the new step, Live location photos, coverage | screen + small server | the environment half of Elements | M | no | PR 4, 7 |
 | 17 | **Elements:** product, props, set and graphics; the exact-pack lock | screen | the Elements half of the Cast stage | M | no | PR 16 |
-| 18 | **Storyboard:** styles, panels per shot, board sheet, import | screen + small server | the Storyboard stage and `DrawStoryboard.tsx` | L | **money** (draws are spend buttons) | PR 7 |
+| 18 | **Storyboard:** styles, panels per shot, board sheet, import | screen + small server | the Storyboard stage and `DrawStoryboard.tsx` | L | **money** (draws are spend buttons) | PR 7; **engine: Recraft, GPT Image, Nano Banana, Chromium PDF** |
 | 19 | **Agent mode on steps 2 to 7:** the step questions and plan cards | screen + server | none | M | **money** | PR 8, 11 to 18 |
 
 ### Phase 3: slice 3, Edit and Deliver (Film)
@@ -163,9 +170,9 @@ Rules for every PR:
 | # | PR | Kind | Replaces | Size | NEEDS AKSHAY | Depends on |
 |---|---|---|---|---|---|---|
 | 20 | **Timeline lens:** frames timed from the script, replaced by shots as they render; no engine needed to draw it | screen | the disabled "Strip" (`components/v12/board/BoardTools.tsx:72`) | M | no | PR 6, 13 |
-| 21 | **Assembly engine:** one tool that cuts a timeline of frames, shots, voice, music and captions into an MP4, on the Remotion worker | server | the browser export as the only path (`lib/workbench/render-movie.ts`) | L | **env** (worker, switch), **money** (voice, music) | #700 (deploy #4, off); 4.x pin |
+| 21 | **Assembly engine:** one tool that cuts a timeline of frames, shots, voice, music and captions into an MP4, on the Remotion worker | server | the browser export as the only path (`lib/workbench/render-movie.ts`) | L | **env** (worker, switch), **money** (voice, music) | #700 (deploy #4, off); 4.x pin; **the Remotion worker is Slice 1: #697, #699, #700, #768 to #773** |
 | 22 | **Edit step:** cut, voice, music, titles, subtitles, grade; the animatic first | screen + server | cut cards, `components/workbench/MovieExport.tsx` (ratchet entry) | L | **money** | PR 20, 21 |
-| 23 | **Deliver step:** versions grid, cutdowns, 4K, fps, dubs, Download all (zip) | screen + server | `components/v12/board/DeliverStage.tsx` | L | **money**, **env** | PR 21 |
+| 23 | **Deliver step:** versions grid, cutdowns, 4K, fps, dubs, Download all (zip) | screen + server | `components/v12/board/DeliverStage.tsx` | L | **money**, **env** | PR 21; **engine: Remotion cutdowns, ProRes, conform, zip; MediaConvert Smart Crop** |
 
 ### Phase 4: slice 4, Social narrated
 
@@ -173,17 +180,17 @@ Rules for every PR:
 |---|---|---|---|---|---|---|
 | 24 | **Hook:** options as cards, ✓ picks one | screen + server (priced text tool) | the Hook stage | M | **money** | PR 12 |
 | 25 | **Voice step** (narrator, language, speed, music bed) on the new card | screen | `components/v12/board/social/VoiceStage.tsx`, `components/workbench/SoundGenerate.tsx` (ratchet entry) | M | no | PR 2 |
-| 26 | **Captions:** word-by-word, line, karaoke, position, languages | server (tool on the assembly engine), then screen | none | L | **money**, **env** | PR 21 |
+| 26 | **Captions:** word-by-word, line, karaoke, position, languages | server (tool on the assembly engine), then screen | none | L | **money**, **env** | PR 21; **engine: Remotion karaoke captions, #769** |
 | 27 | **Social narrated Deliver** | screen | the Social Deliver stage | S | no | PR 23, 26 |
 
 ### Phase 5: the rest of v25
 
 | # | PR | Kind | Replaces | Size | NEEDS AKSHAY | Depends on |
 |---|---|---|---|---|---|---|
-| 28 | **Treatment deck:** 12 pages, Routes, key frames, then the Mood film | server (tools) then screen | the empty Treatment step | L | **money** | PR 12, 21 |
+| 28 | **Treatment deck:** 12 pages, Routes, key frames, then the Mood film | server (tools) then screen | the empty Treatment step | L | **money** | PR 12, 21; **engine: Chromium PDF, #767** |
 | 29 | **Campaign:** Pitch deck, Look, Formats, Variants | screen + server | `components/graphite/business/FormatTool.tsx` (ratchet entry), the Campaign stages in `components/v12/board/campaign/` | L | **money**, **privacy** (talent swaps) | PR 28 |
-| 30 | **Social clips:** Source, Moments, Clips, languages | server (tools) then screen | the Clips stage | L | **privacy** (third-party media), **money**, **env** | PR 21, 26 |
-| 31 | **Pre-vis:** Animatic and the PPM deck | screen + server | `components/v12/board/PpmStage.tsx` | M | **money** | PR 21, 28 |
+| 30 | **Social clips:** Source, Moments, Clips, languages | server (tools) then screen | the Clips stage | L | **privacy** (third-party media), **money**, **env** | PR 21, 26; **engine: Gemini 3.x moments, Remotion silence cuts** |
+| 31 | **Pre-vis:** Animatic and the PPM deck | screen + server | `components/v12/board/PpmStage.tsx` | M | **money** | PR 21, 28; **engine: Remotion animatic, Chromium PDF** |
 
 ### Phase 6: the app screens around the board
 
@@ -215,7 +222,7 @@ PR 36 holds six entries, which is the risk in question 2.
 ### Tests and Playwright widths
 
 **Standard for a screen PR:**
-- Desktop specs at **1280×800, 1440×900 and 1920×1080**. No horizontal overflow; the primary action reachable without panning; no whitespace stranded above 1600 px (rule 7).
+- Desktop specs at the **five viewports of the owner's 22:30 rule: 1280×800, 1440×900, 1728×1117, 1920×1080 and 2560×1440** (the earlier three-width standard is replaced). No horizontal overflow; the primary action reachable without panning; no whitespace stranded above 1600 px, and at 2560×1440 the canvas scales up with no dead space below the cards (rule 7).
 - Phone specs at **360×640, 390×844 and 844×390** prove the phone app is unchanged with the switch on. The new frame is desktop only (`docs/redesign-plan.md`, "Out of scope: signed-in phone screens"); rule 7 asks for more, see question 8.
 - Guards that must stay green: spend-buttons (every spend button carries `data-spend` and shows its price), UI names, one-design, tooltip audit (every icon has a tooltip), text at 12 px and above and at least 55% white (rule 15), focus rings, touch targets.
 - One filled button per screen (rule 13; the README says the same).
@@ -237,6 +244,25 @@ PR 36 holds six entries, which is the risk in question 2.
 
 Each row is a v25 element I could not find a working server path or provider for on release/1. "Needs" is the smallest honest thing that would make it real.
 
+### Update, 15 Oct 2026, 22:15: what the final engine stack now provides
+
+The owner approved a FINAL ENGINE STACK and its order (`docs/redesign-plan.md`; `docs/plans/provider-adapters.md`, "Where this stands"). Each engine is its own PR, NEEDS AKSHAY, behind its own switch, on for the house workspace and listed workspaces only. **Nothing here is live and no paid run happens before the team tests with the owner.** The rows below keep their 15 Oct text; each now ends with a "Final stack" note where the stack gives it an engine.
+
+| v25 need | Engine in the stack | Slice |
+|---|---|---|
+| Lip-sync | sync.so (lipsync-2-pro; sync-3), behind the Rekognition consent match (#771) | 2 |
+| Voices, dubbing | ElevenLabs (live); Sarvam Bulbul, Saaras and dubbing | 2 |
+| Captions, animatic, timeline, titles, subtitles, narrated assembly, cutdowns, silence cuts, fps conform, ProRes, stems, Download all | The Remotion + ffmpeg worker (#697, #699, #700, #768 to #773) | 1 |
+| Decks: treatment, pitch, PPM | Chromium PDF on the same worker (#767) | 1 |
+| Storyboards and brand assets | Recraft V4.1 and V3, GPT Image 2.5, Nano Banana Pro and 2.1 | 3 |
+| Reframe | AWS MediaConvert Smart Crop (replaces Luma reframe) | 2 |
+| Label check and text lock-up check | Google Cloud Vision with an exact text diff | 3 |
+| Moments, cutdown planning, the vision judge | Gemini 3.x | 3 |
+| Identity | Black Forest Labs FLUX 3 and FLUX.2 (replacing fal flux-lora); the consent match first | 2 |
+| Pro pick | Seedance 2.5, Veo 3.1, Kling 4.0, Runway Gen-4.5 (names in config) | 2 and 3 |
+
+Still with no provider: voice cloning (not now), speaker tracking for clips, an automatic cutter beyond the planned cutdowns, and any face swap (left out by decision). The consent match refuses every face until the owner picks the reference source (#771), so lip-sync and Act-Two cannot run on real faces yet.
+
 ### Board-wide
 
 | v25 element | What exists | What is missing | Needs |
@@ -245,8 +271,8 @@ Each row is a v25 element I could not find a working server path or provider for
 | ✓ and ✕ on text cards (Brief, Script, Treatment pages) | ✓ and ✕ for takes (`take-model.ts:399`; Step 0's events table is keyed by take, #728) | A subject other than a take | Draft marks in v1 (PR 12); a migration only if an audit trail is wanted (question 4). |
 | Reason lists per step (about 25 lists) | One list of five chips for takes (`take-model.ts:399`); Step 0 closes that list (#726) | The lists for every other card kind | Extend the closed list with a kind (server, small). |
 | Auto never names its pick, "Why this?" | Recipe defaults: draft to cheap engines, hero to dear ones (CLAUDE.md § Pricing). Step 0 labels the take (#724, #729) | A router that picks by shot type | v1: Auto is the recipe default, quoted by the server, "Why this?" is a fixed craft sentence per recipe. A real router is later. |
-| Pro pick: Runway Gen-4 and Veo 3 | Kling 3.0 and Seedance 2.0 and 2.5 are in `lib/models.ts` | Runway is not in the product at all (a standby for the house only, #714). Veo is only a retired alias (`lib/models.ts:647`) | Show only engines with a key and a rate-card row. Hide Runway and Veo. |
-| "Powered by Runway" on a take | none | the provider | Drop it. |
+| Pro pick: Runway Gen-4 and Veo 3 | Kling 3.0 and Seedance 2.0 and 2.5 are in `lib/models.ts` | Runway is not in the product at all (a standby for the house only, #714). Veo is only a retired alias (`lib/models.ts:647`) | Show only engines with a key and a rate-card row. Hide Runway and Veo. **Final stack, 15 Oct 22:15:** the Pro pick menu is Seedance 2.5, Veo 3.1, Kling 4.0 and Runway Gen-4.5, names in config and never in the design; an engine shows only when it has a key, a rate-card row and is on for the workspace (house and listed workspaces until launch). Hide any engine that is not yet wired. |
+| "Powered by Runway" on a take | none | the provider | Drop it. **Final stack, 15 Oct 22:15:** Runway is now in the stack (Act-Two, Aleph 2, Gen-4.5). Its terms ask for the line (#714, section 7); the owner decides before Runway is shown to anyone but the house. |
 | Pro pick visible only to Business and admins | Plan names are display config; checkout is closed | A plan check on the server | Gate by role (admin) in v1; Business gating waits for checkout (question 6). |
 | "Help me write it", "Write it for me" | Enhance (`lib/enhance.ts`) and the shot drafter (`app/api/atomik/shots/draft`) | A priced call wired to each field | One priced text tool; the fields fill visibly before anything is pressed (rule 11). |
 | Fix › for text and product elements | Fixes for shots, two per shot in a plan (`plan-approval.ts:28`) | Fix tools for other card kinds | One tool per kind, inside the plan's allowance. |
@@ -255,58 +281,58 @@ Each row is a v25 element I could not find a working server path or provider for
 
 | v25 element | What exists | What is missing | Needs |
 |---|---|---|---|
-| Treatment deck: 12 pages with pictures | A text treatment with versions (`lib/atomikDocs.ts:23`) | Picture pages, **Routes** (two or three directions), **Mood film**, PDF or share output | PR 28. No PDF writer exists (`components/v12/board/PpmStage.tsx:17-18`); a share link can stand in. |
-| Read-through (timed voice read) | Speech from ElevenLabs, priced per character (`lib/elevenlabs.ts:117`) | Per-line timing over the whole script | PR 13. |
+| Treatment deck: 12 pages with pictures | A text treatment with versions (`lib/atomikDocs.ts:23`) | Picture pages, **Routes** (two or three directions), **Mood film**, PDF or share output | PR 28. No PDF writer exists (`components/v12/board/PpmStage.tsx:17-18`); a share link can stand in. **Final stack, 15 Oct 22:15:** Chromium PDF on the export worker makes the treatment, pitch and PPM decks (#767, `PDF_EXPORTS`, free; Slice 1). Pictures come from the image engines (Recraft, GPT Image, Nano Banana). |
+| Read-through (timed voice read) | Speech from ElevenLabs, priced per character (`lib/elevenlabs.ts:117`) | Per-line timing over the whole script | PR 13. **Final stack, 15 Oct 22:15:** voices: ElevenLabs, and Sarvam (Bulbul) for Indian languages (Slice 2). |
 | Cast voice: **Clone (consent)** | Voice library | A cloning provider | Not now (owner, 14 Oct 19:29, #714). Leave the option out. |
-| Cast **Character sheet** (8 angles), **Wardrobe** looks, expressions | Identity training with consent (people only) | A recipe that makes N angles | PR 15. |
-| **Lip-sync** "automatic on dialogue" | none | A provider. sync.so is bought but not built (#714). The old sign-in lip-sync is retired (rule 10). | A provider PR first; out of v1. |
+| Cast **Character sheet** (8 angles), **Wardrobe** looks, expressions | Identity training with consent (people only) | A recipe that makes N angles | PR 15. **Final stack, 15 Oct 22:15:** Black Forest Labs FLUX.2 multi-reference identity (replacing fal flux-lora) and Nano Banana (Slice 2 and 3); every real face passes the Rekognition consent match first (#771). |
+| **Lip-sync** "automatic on dialogue" | none | A provider. sync.so is bought but not built (#714). The old sign-in lip-sync is retired (rule 10). | A provider PR first; out of v1. **Final stack, 15 Oct 22:15:** sync.so direct (lipsync-2-pro; sync-3 for hero and 4K), Slice 2, behind the consent check (#771), which refuses every face until the owner picks the reference source. Still out of v1 for real faces. |
 | Locations: **Clean up photos**, coverage angles | Outpaint (`lib/stillTools.ts:10`) | Clean-up; reverse and detail plates | Recipes on image engines. |
-| Elements: **Label check** runs by itself | none | A reader that checks a label's text | Google Cloud Vision text detection is in the provider plan (#714; the key is set). Out of v1. |
-| Storyboard **styles** (Sketch, Ink and wash, Comic, Previs 3D) | Image engines; 3D blocking on our own worker | A style table of prompts | A small table. Board sheet PDF waits for a PDF writer. |
-| **Animatic** and the **Timeline** | A browser export, 720p by default, 180 s at most (`lib/workbench/movie.ts:3`) | A server render; the Timeline lens (`BoardTools.tsx:72`, "Not built yet") | PRs 20 and 21. |
+| Elements: **Label check** runs by itself | none | A reader that checks a label's text | Google Cloud Vision text detection is in the provider plan (#714; the key is set). Out of v1. **Final stack, 15 Oct 22:15:** Cloud Vision text detection with an exact text diff, never an AI model alone (Slice 3). |
+| Storyboard **styles** (Sketch, Ink and wash, Comic, Previs 3D) | Image engines; 3D blocking on our own worker | A style table of prompts | A small table. Board sheet PDF waits for a PDF writer. **Final stack, 15 Oct 22:15:** Recraft V4.1 and V3 draw the sketch, ink and comic styles; GPT Image 2.5 and Nano Banana Pro and 2.1 for the rest (Slice 3; bake-off (a) decides defaults). The board sheet PDF is the Chromium PDF (#767). |
+| **Animatic** and the **Timeline** | A browser export, 720p by default, 180 s at most (`lib/workbench/movie.ts:3`) | A server render; the Timeline lens (`BoardTools.tsx:72`, "Not built yet") | PRs 20 and 21. **Final stack, 15 Oct 22:15:** the Remotion worker (animatic, timeline; #697, #699, #700; Slice 1). |
 | Edit: auto **Cut** (Tight, Natural, Slow), speed ramps, transitions | Grade (`lib/workbench/color.ts`), loudness | An automatic cutter | Out of v1. Keep a manual timeline. |
-| Edit: **Titles**, **Subtitles** burned in | Word timing and SRT from transcripts (`lib/transcription.ts:96`) | Rendering them | Remotion (PR 21). |
-| Deliver: **smart reframe** (keep faces and product) | Luma reframe paints the edges of a clip (`lib/models.ts:330`) | Face and product tracking | Out of v1. Offer Centre and Extend. |
-| Deliver: **cutdowns** (15 s, 6 s) | none | An automatic cutter | A person picks shots; the assembly engine cuts. |
-| Deliver: **25 and 30 fps** conversion, **ProRes**, **H.265**, **Stems** | none | A transcoder | On the Remotion worker's ffmpeg, if the owner wants them (question 12). |
-| Deliver: **on-screen text translation** | Dubbing (`lib/dubbing.ts:58`) | Translating burned-in text | Out of v1. |
-| Deliver: **Download all** | A free editorial package (XML, EDL) | A zip of every master | PR 23. |
+| Edit: **Titles**, **Subtitles** burned in | Word timing and SRT from transcripts (`lib/transcription.ts:96`) | Rendering them | Remotion (PR 21). **Final stack, 15 Oct 22:15:** Remotion: titles, karaoke captions, sidecar SRT and VTT (#769). |
+| Deliver: **smart reframe** (keep faces and product) | Luma reframe paints the edges of a clip (`lib/models.ts:330`) | Face and product tracking | Out of v1. Offer Centre and Extend. **Final stack, 15 Oct 22:15:** AWS MediaConvert Smart Crop replaces Luma reframe (Slice 2; no PR yet). |
+| Deliver: **cutdowns** (15 s, 6 s) | none | An automatic cutter | A person picks shots; the assembly engine cuts. **Final stack, 15 Oct 22:15:** Remotion cutdowns, silence-aware (#773), planned by Gemini 3.x (Slice 3). |
+| Deliver: **25 and 30 fps** conversion, **ProRes**, **H.265**, **Stems** | none | A transcoder | On the Remotion worker's ffmpeg, if the owner wants them (question 12). **Final stack, 15 Oct 22:15:** #770 fps conform, #768 H.264 and ProRes 422 (and HQ); DNxHR is a follow-up; stems come from our timeline; H.265 stays off until the owner's lawyer answers. |
+| Deliver: **on-screen text translation** | Dubbing (`lib/dubbing.ts:58`) | Translating burned-in text | Out of v1. **Final stack, 15 Oct 22:15:** Cloud Vision reads the text and Sarvam translates it (Slice 2 and 3). Still out of v1. |
+| Deliver: **Download all** | A free editorial package (XML, EDL) | A zip of every master | PR 23. **Final stack, 15 Oct 22:15:** the Remotion worker's Download all zip (Slice 1). |
 | Deliver: **Send for approval** | Client review links and rounds (`lib/v12/rounds.ts`) | none | Reuse. |
 
 ### Campaign
 
 | v25 element | What exists | What is missing | Needs |
 |---|---|---|---|
-| Pitch deck (10 pages) | none | As the Treatment deck | PR 28. |
-| Look: key visual, style frames, type lock-up | Look and brand kit (`LookStage.tsx`) | Type lock-up with exact text | A text-in-image recipe and a check. |
+| Pitch deck (10 pages) | none | As the Treatment deck | PR 28. **Final stack, 15 Oct 22:15:** Chromium PDF (#767) with Recraft for brand assets (Slice 1 and 3). |
+| Look: key visual, style frames, type lock-up | Look and brand kit (`LookStage.tsx`) | Type lock-up with exact text | A text-in-image recipe and a check. **Final stack, 15 Oct 22:15:** Recraft for the type lock-up, then the Cloud Vision exact text diff (Slice 3). |
 | Formats with Fit (Extend or Crop), Banner sizes | Eight format briefs (`lib/v12/campaign.ts`) | Banner sizes; Crop and Extend as one choice | Recipes. |
 | Variants: audiences × headlines × languages × count | none | The matrix tool (placeholder 24 cr) | One priced tool with a ceiling. |
-| Variants: **Talent swaps (consent)** | Consent records (`lib/security/consent.ts`) | A swap tool | Out of v1; privacy review first. |
+| Variants: **Talent swaps (consent)** | Consent records (`lib/security/consent.ts`) | A swap tool | Out of v1; privacy review first. **Final stack, 15 Oct 22:15:** any face swap built on InsightFace is left out by the owner's decision; a swap would also need the consent match (#771). |
 
 ### Social, narrated
 
 | v25 element | What exists | What is missing | Needs |
 |---|---|---|---|
-| Narrated video from a script | "Not in Particl yet" (`components/graphite/board/social/index.ts:13`) | The assembly | PR 21. |
+| Narrated video from a script | "Not in Particl yet" (`components/graphite/board/social/index.ts:13`) | The assembly | PR 21. **Final stack, 15 Oct 22:15:** Remotion narrated assembly (voice lines and ducked music, #772; Slice 1). |
 | Hook options (question, bold claim, visual surprise) | Atomik text | A priced hook tool | PR 24. |
-| Voice: language, speed, music bed | Speech and music (`lib/elevenlabs.ts:80`) | none beyond the card | PR 25. |
-| Captions: word-by-word, karaoke, emoji, languages | Word timing (`lib/transcription.ts:96`) | Style and burn-in | PR 26. |
-| Thumbnails | none | A still recipe | Small. |
+| Voice: language, speed, music bed | Speech and music (`lib/elevenlabs.ts:80`) | none beyond the card | PR 25. **Final stack, 15 Oct 22:15:** ElevenLabs and Sarvam (Slice 2). |
+| Captions: word-by-word, karaoke, emoji, languages | Word timing (`lib/transcription.ts:96`) | Style and burn-in | PR 26. **Final stack, 15 Oct 22:15:** Remotion karaoke captions (Slice 1). |
+| Thumbnails | none | A still recipe | Small. **Final stack, 15 Oct 22:15:** Recraft or Nano Banana stills (Slice 3). |
 
 ### Social, clips
 
 | v25 element | What exists | What is missing | Needs |
 |---|---|---|---|
 | Source from a **link** | Upload; transcription (`app/api/audio/transcribe`) | A fetch of third-party media from a URL | Needs a legal and safety look first (question 11). |
-| **Moments** (rank by hook, emotion, topic) | Transcripts | A tool that reads the transcript | One priced Atomik text tool. |
-| **Clips**: keep the speaker in frame, cut silences, b-roll, intro and outro | none | Speaker tracking and a cutter | A provider or the Remotion worker; the speaker tracking has no provider today. |
-| **Make in other languages** | Dubbing | The step wiring | Reuse. |
+| **Moments** (rank by hook, emotion, topic) | Transcripts | A tool that reads the transcript | One priced Atomik text tool. **Final stack, 15 Oct 22:15:** Gemini 3.x reads the transcript for moments (Slice 3). |
+| **Clips**: keep the speaker in frame, cut silences, b-roll, intro and outro | none | Speaker tracking and a cutter | A provider or the Remotion worker; the speaker tracking has no provider today. **Final stack, 15 Oct 22:15:** silence cuts on the Remotion worker (#773); speaker tracking still has no provider. |
+| **Make in other languages** | Dubbing | The step wiring | Reuse. **Final stack, 15 Oct 22:15:** Sarvam dubbing (Indian languages) and ElevenLabs dubbing (Slice 2). |
 
 ### Pre-vis
 
 | v25 element | What exists | What is missing | Needs |
 |---|---|---|---|
-| Animatic MP4, PPM deck PDF | The deck and shot list on screen, CSV (`lib/v12/ppm.ts`) | The MP4 and the PDF (`PpmStage.tsx:17-18`) | PR 21 for the MP4; a PDF writer for the deck. |
+| Animatic MP4, PPM deck PDF | The deck and shot list on screen, CSV (`lib/v12/ppm.ts`) | The MP4 and the PDF (`PpmStage.tsx:17-18`) | PR 21 for the MP4; a PDF writer for the deck. **Final stack, 15 Oct 22:15:** the MP4 from the Remotion worker (Slice 1) and the PDF from the Chromium PDF (#767). |
 
 ---
 
