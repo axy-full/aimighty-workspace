@@ -2,6 +2,7 @@ import { db, ready, now } from "./db";
 import { currentTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { syncCreditReceipts } from "./creditReceipts";
+import { billedCreditsExpr } from "./creditSql";
 import { creditsFor, type EstimateTerms } from "./billingTerms";
 import { getSetting, invalidateSettings } from "./settings";
 import { workspaceAdmins, platformDb, platformReady } from "./platform";
@@ -77,19 +78,19 @@ export async function spentBy(column: "project_id" | "shot_id", keys: string[]):
   const out = new Map<string, Spent>(keys.map((k) => [k, { usd: 0, credits: 0 }]));
   if (!keys.length) return out;
   await ready();
-  /* The takes made before metering have their figure frozen (lib/estimatedCredits.ts); a platform that cannot answer leaves such a take counting 0, and the meter's rows below still count. */
+  /* The receipts are copied and the takes with a cost and no receipt have their figure frozen (lib/estimatedCredits.ts); a take reads its receipt first, so a platform that cannot answer does not leave a metered take at 0. */
   await syncCreditReceipts().catch(() => {});
   const rows = new Map<string, { key: string | null; usd: number; credits: number }>();
   const takes = async (where: string, args: string[]) => {
     for (const part of chunks(args)) {
       const rs = await db().execute({
-        sql: `SELECT g.id, g.${column} AS k, COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0) AS cost, COALESCE(e.credits,0) AS estimated
-              FROM generations g LEFT JOIN estimated_credits e ON e.gen_id = g.id WHERE g.${where} IN (${marks(part)})`,
+        sql: `SELECT g.id, g.${column} AS k, COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0) AS cost, ${billedCreditsExpr("g")} AS estimated
+              FROM generations g WHERE g.${where} IN (${marks(part)})`,
         args: part,
       });
       for (const r of rs.rows as unknown as { id: string; k: string | null; cost: number; estimated: number }[]) {
         const cost = Number(r.cost ?? 0);
-        /* The figure frozen for a take made before metering (lib/estimatedCredits.ts), never one worked out now at today's margins. */
+        /* The take's receipt, else the figure frozen for it (lib/estimatedCredits.ts), else 0: never one worked out now at today's margins, and a metered take reads its receipt even when the platform's meter rows below cannot be read. */
         rows.set(String(r.id), { key: r.k == null ? null : String(r.k), usd: cost, credits: Number(r.estimated) });
       }
     }

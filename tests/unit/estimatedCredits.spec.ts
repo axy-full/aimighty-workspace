@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
 
 /**
  * A take with a cost and no receipt keeps the figure frozen for it (lib/estimatedCredits.ts; owner, 14 Oct 2026: "pre-metering takes marked estimated, no repricing" and "freeze
@@ -178,7 +179,13 @@ test("no reader of a take's credits can reach today's margins: the cap baseline,
   const requests = readFileSync("lib/generationRequests.ts", "utf8");
   expect(requests).not.toMatch(/marginFor|marginKeyOf/);
   /* billCreditsWith in generationRequests prices a NEW job at its own terms (the quote), never a finished take: the baseline row reads the frozen figure. */
-  expect(requests).toMatch(/COALESCE\(e\.credits,0\) AS estimated/);
+  expect(requests).toMatch(/billedCreditsExpr\("g"\)\} AS estimated/);
+  /* None of the three readers takes a take's credits from the frozen table alone: each reads receipt, then frozen, then 0 (billedCreditsExpr), so a metered take reads its receipt when the platform's meter rows cannot be read. */
+  for (const file of ["lib/caps.ts", "lib/statements.ts", "lib/generationRequests.ts"]) {
+    const source = readFileSync(file, "utf8");
+    expect(source, file).toMatch(/billedCreditsExpr\("g"\)/);
+    expect(source, file).not.toMatch(/LEFT JOIN estimated_credits|\be\.credits\b/);
+  }
   expect(readFileSync("lib/creditSql.ts", "utf8")).not.toMatch(/function historicalCreditsExpr/);
 });
 
@@ -202,5 +209,98 @@ test("a take that was frozen and is then metered reads its receipt and is not es
     expect(await getGeneration("first")).toMatchObject({ creditsBilled: 43, estimated: false });
     expect(await getGeneration("old")).toMatchObject({ estimated: true });
     expect((await db().execute("SELECT COUNT(*) AS n FROM estimated_credits")).rows[0].n).toBe(2);
+  });
+});
+
+/* ── A metered take reads its receipt even when the platform's meter rows are not there to override (owner-approved fix, Opus review of 384e2f70) ── */
+const SEEDANCE = "dreamina-seedance-2-5-260628";
+const receipt = (id: string, credits: number) => ({ sql: "INSERT OR REPLACE INTO credit_receipts(event_id,credits,revision) VALUES(?,?,?)", args: [id, credits, 1_000_000] });
+
+test("with no meter row to override, a metered take reads its receipt in the cap reader, the gate's baseline and the statement; never 0", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformReady, platformDb } = await import("../../lib/platform");
+  const { db, ready } = await import("../../lib/db");
+  const { spentBy } = await import("../../lib/caps");
+  const { statementFor } = await import("../../lib/statements");
+  const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
+  await platformReady();
+  await alignLedgerUnit();
+  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,kind,created_at) VALUES('grant_rcpt','ws_est_rcpt',500,'manual',0)", args: [] });
+  await runInTenant(workspace("ws_est_rcpt"), async () => {
+    await ready();
+    const at = Date.now() - 2 * 3_600_000;
+    await db().batch([
+      { sql: "INSERT OR IGNORE INTO projects(id,name,created_at,cap_credits) VALUES('pr','Board',0,30)", args: [] },
+      { sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,cost_usd,project_id) VALUES('metered','video',?,'','{}','succeeded',?,?,1.0,'pr')", args: [SEEDANCE, at, at] },
+      receipt("metered", 25),
+    ], "write");
+    /* The take has a receipt here and no meter row on the platform, and no frozen row (a receipt is never frozen over). */
+    expect((await spentBy("project_id", ["pr"])).get("pr")!.credits, "the cap reader").toBe(25);
+    expect((await db().execute("SELECT COUNT(*) AS n FROM estimated_credits WHERE gen_id='metered'")).rows[0].n).toBe(0);
+    const gate = await reserveGenerationSpend({ id: "next", kind: "video", engine: "byteplus", model: SEEDANCE, status: "running", engineCostUsd: 0.5, projectId: "pr", createdBy: "owner" })
+      .then(() => null, (error: unknown) => error);
+    expect(gate, "the gate counts the 25 cr already spent against the 30 cr cap").toBeInstanceOf(SpendReservationError);
+    expect((gate as Error).message).toContain("25 cr spent");
+    const statement = await statementFor(new Date(at).toISOString().slice(0, 7), null);
+    const lines = statement!.projects.flatMap((p) => [...p.shots.flatMap((s) => s.lines), ...p.loose]);
+    expect(lines.find((l) => l.id === "metered")?.credits, "the statement").toBe(25);
+  });
+});
+
+test("a refine-only figure frozen early is shadowed by the take's receipt in all three readers", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformReady, platformDb } = await import("../../lib/platform");
+  const { db, ready } = await import("../../lib/db");
+  const { spentBy } = await import("../../lib/caps");
+  const { statementFor } = await import("../../lib/statements");
+  const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
+  await platformReady();
+  await alignLedgerUnit();
+  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,kind,created_at) VALUES('grant_shadow','ws_est_shadow',500,'manual',0)", args: [] });
+  await runInTenant(workspace("ws_est_shadow"), async () => {
+    await ready();
+    const { syncCreditReceipts } = await import("../../lib/creditReceipts");
+    const at = Date.now() - 2 * 3_600_000;
+    await db().batch([
+      { sql: "INSERT OR IGNORE INTO projects(id,name,created_at,cap_credits) VALUES('ps','Board',0,30)", args: [] },
+      /* Held, with only the prompt writer's cost so far. */
+      { sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,refine_cost_usd,project_id) VALUES('shadow','video',?,'','{}','held',?,?,0.05,'ps')", args: [SEEDANCE, at, at] },
+    ], "write");
+    await syncCreditReceipts();
+    const early = Number((await db().execute("SELECT credits FROM estimated_credits WHERE gen_id='shadow'")).rows[0].credits);
+    expect(early, "frozen early, at the partial figure").toBeLessThan(25);
+    expect((await spentBy("project_id", ["ps"])).get("ps")!.credits).toBe(early);
+    /* The receipt arrives: it shadows the frozen row everywhere. */
+    await db().execute(receipt("shadow", 25));
+    expect((await spentBy("project_id", ["ps"])).get("ps")!.credits, "the cap reader").toBe(25);
+    const gate = await reserveGenerationSpend({ id: "next2", kind: "video", engine: "byteplus", model: SEEDANCE, status: "running", engineCostUsd: 0.5, projectId: "ps", createdBy: "owner" })
+      .then(() => null, (error: unknown) => error);
+    expect((gate as Error).message, "the gate").toContain("25 cr spent");
+    expect(gate).toBeInstanceOf(SpendReservationError);
+    const lines = (await statementFor(new Date(at).toISOString().slice(0, 7), null))!.projects.flatMap((p) => [...p.shots.flatMap((s) => s.lines), ...p.loose]);
+    expect(lines.find((l) => l.id === "shadow")?.credits, "the statement").toBe(25);
+    expect((await db().execute("SELECT credits FROM estimated_credits WHERE gen_id='shadow'")).rows[0].credits, "the frozen row itself is never changed").toBe(early);
+  });
+});
+
+test("a take held in one month and released in the next is on exactly one statement, at its billed figure", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformReady, platformDb } = await import("../../lib/platform");
+  const { db, ready } = await import("../../lib/db");
+  const { statementFor } = await import("../../lib/statements");
+  await platformReady();
+  const made = Date.UTC(2026, 8, 30, 23, 59), reserved = Date.UTC(2026, 9, 1, 0, 5);
+  /* The meter row is stamped when the job is reserved (after midnight), the take when it was made. */
+  await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES('edge','ws_est_edge','video','byteplus',?,'succeeded',1.0,25,1,?,?)", args: [SEEDANCE, reserved, reserved] });
+  await runInTenant(workspace("ws_est_edge"), async () => {
+    await ready();
+    await db().batch([
+      { sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,cost_usd) VALUES('edge','video',?,'','{}','succeeded',?,?,1.0)", args: [SEEDANCE, made, made] },
+      receipt("edge", 25),
+    ], "write");
+    const linesOf = async (month: string) => (await statementFor(month, null))!.projects.flatMap((p) => [...p.shots.flatMap((s) => s.lines), ...p.loose]).filter((l) => l.id === "edge");
+    const september = await linesOf("2026-09"), october = await linesOf("2026-10");
+    expect(september.map((l) => l.credits), "September lists it at its billed figure").toEqual([25]);
+    expect(october, "October does not list it again").toEqual([]);
   });
 });

@@ -11,6 +11,7 @@ import { allowanceUsd, allowanceUsdOfStored } from "./allowance";
 import { cycleBounds } from "./cycle";
 import { billCreditsWith, creditUsd } from "./creditTerms";
 import { syncCreditReceipts } from "./creditReceipts";
+import { billedCreditsExpr } from "./creditSql";
 import { creditsApply } from "./credits";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { batchTally, takesToCome, type BatchRef } from "./batchLine";
@@ -495,10 +496,10 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const since = cycleBounds(1, now()).start;
   const monthlyRecords = monthlyCap == null ? new Map<string, number>() : await platformSpendRecordsSince(since);
   // Preserve historical charges predating the meter; merge ledger estimates by id.
-  /* A take made before metering counts at the figure frozen for it (lib/estimatedCredits.ts), never one worked out now at today's margins. */
-  await syncCreditReceipts().catch(() => { /* the meter's rows below still count; a take with no frozen figure counts 0 */ });
+  /* A take counts at its receipt, else the figure frozen for it (lib/estimatedCredits.ts), else 0 (billedCreditsExpr): never one worked out now at today's margins. */
+  await syncCreditReceipts().catch(() => { /* the meter's rows below still count; a take reads the receipts and frozen figures already local */ });
   const rows = await db().execute(`SELECT g.id,g.project_id,g.shot_id,g.token_id,g.kind,g.model,g.created_at,g.status,g.deleted,
-    COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0) AS cost, COALESCE(e.credits,0) AS estimated FROM generations g LEFT JOIN estimated_credits e ON e.gen_id = g.id`);
+    COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0) AS cost, ${billedCreditsExpr("g")} AS estimated FROM generations g`);
   const baseline = new Map<string, Baseline>(rows.rows.map((r) => [String(r.id), {
     id: String(r.id), projectId: r.project_id == null ? null : String(r.project_id), shotId: r.shot_id == null ? null : String(r.shot_id),
     tokenId: r.token_id == null ? null : String(r.token_id), cost: Number(r.cost),
