@@ -883,3 +883,6 @@ If anything looks wrong on production (health commit, errors, latency), stop mer
 REPORT at 10:30 on the status page: what merged (PR, head, Opus verdict), what is NEEDS AKSHAY and why, what is blocked on me, spend (should be $0), and anything that broke. I'll check at 11:00.
 
 **Lead's reading.** Most engine PRs add env names and prices, so they will be NEEDS AKSHAY, not auto-merged. The standing yes covers PRs with none of the listed changes (e.g. worker internals without a new env name, compositions, docs). The Remotion measurement is CPU-only on our own sample media (no engine call, no credits).
+
+## Owner, 15 Oct 2026 (late evening, verbatim): screen sizes
+Screen sizes: add 2560×1440 (27-inch monitors and scaled 4K) and 1728×1117 (16-inch MacBook Pro) to the screenshot and walk checks, alongside 1440×900, 1280×800 and 1920×1080. For every v25 screen PR from #748 on, attach all five. At 2560×1440 check the opposite of overflow: no stranded cards, no unreadable small text, the three bars still centred, the canvas scaling up rather than leaving dead space. Report anything that looks wrong; don't redesign to fix it.
