@@ -720,3 +720,13 @@ The queue and the 18:30 cut-off are as planned. I'll start the backup at ~19:00.
 BFL_API_KEY is set in Coolify (production only, locked, runtime only; training opt-out done in BFL's dashboard). B1 can use it when built; check the base URL/region matches the EU endpoint. After deploy #4, include BFL_API_KEY in the name-only check.
 
 **Lead's note for B1 (BFL adapter, docs/plans/provider-adapters.md §9 on #714).** `BFL_BASE_URL` is not set, so B1 defaults to `https://api.eu.bfl.ai` in code (never the global `api.bfl.ai`), with a test pinning the default. If `BFL_BASE_URL` is ever set, it must be an `https://` `*.bfl.ai` host. Any polling or result URL BFL returns is followed only when its host is a `bfl.ai` subdomain (no SSRF), and the adapter says in a test which region served the call. `BFL_ENABLED` stays unset until the owner turns it on. No paid call without the owner's yes.
+
+## Owner, 15 Oct 2026, 14:05 IST (verbatim): Topaz goes direct
+Topaz goes DIRECT (replaces #714 item H "Topaz stays on fal").
+1) New adapter for Topaz Labs' own API, image and video upscale, using TOPAZ_API_KEY (already in Coolify). Same presets and controls as today (lib/topaz.ts), mocks only, Opus money review, NEEDS AKSHAY.
+2) Before building: a price table from Topaz's published API rates vs our current fal rates (vendorRates.ts), per image and per second at 720p/1080p/4K, for each model we offer (incl. the Starlight-equivalent). If direct is dearer, show the new customer prices; nothing priced below cost.
+3) Data terms: confirm Topaz doesn't train on our uploads and how long it keeps files; delete the vendor's copy after we store the output (same rule as Runway/sync.so).
+4) Once qualified on the house workspace (I approve the small paid run), switch and remove the fal Topaz endpoints. fal then keeps only Kling, Bria and Luma reframe.
+Queue it after B1 (BFL); not part of deploy #4.
+
+**Lead's queue note.** Provider order is now: sync.so, Sarvam, Rekognition (+ Vision text), Recraft, B1 BFL (EU endpoint), then Topaz direct (T0 price table and data terms, docs only; T1 adapter behind a switch, mocks; T2 the owner-approved house run; T3 the switch and removal of fal's Topaz endpoints). #714's §8 Topaz section and §9 Topaz row ("none: stays on fal") are now wrong and get updated in #714 (docs) when that PR is next touched. Customer prices come from the rate card and the server's price path only; any change to what customers see changes CLAUDE.md § Pricing too and needs the owner's yes.
