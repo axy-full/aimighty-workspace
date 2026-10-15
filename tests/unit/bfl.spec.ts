@@ -110,14 +110,14 @@ async function run(genId: string, deps: ReturnType<typeof fakeBfl>["deps"] & { c
   return last;
 }
 
-test("the prices are the plan's recorded figures, marked to confirm: [pro] by the megapixel with references counted; [flex] and [max] at their 'from' price, one megapixel and no reference, never guessed", async () => {
+test("the prices are BFL's published ones, verified 16 Oct 2026, all three models by the megapixel with references counted; megapixels round up; nothing past 4 MP or 8 references", async () => {
   const { BFL_RATES } = await import("../../lib/vendorRates");
   const { bflQuote, megapixels } = await import("../../lib/bflImage");
   expect(BFL_RATES.creditUsd).toBe(0.01);
   expect(BFL_RATES.models["flux-2-pro"]).toEqual({ firstMp: 0.03, extraMp: 0.015, refMp: 0.015, maxMp: 4, maxRefs: 8 });
-  expect(BFL_RATES.models["flux-2-flex"]).toMatchObject({ firstMp: 0.05, extraMp: null, refMp: null, maxMp: 1, maxRefs: 0 });
-  expect(BFL_RATES.models["flux-2-max"]).toMatchObject({ firstMp: 0.07, extraMp: null, refMp: null, maxMp: 1, maxRefs: 0 });
-  expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/TO CONFIRM[\s\S]{0,1400}export const BFL_RATES/);
+  expect(BFL_RATES.models["flux-2-flex"]).toEqual({ firstMp: 0.05, extraMp: 0.05, refMp: 0.05, maxMp: 4, maxRefs: 8 });
+  expect(BFL_RATES.models["flux-2-max"]).toEqual({ firstMp: 0.07, extraMp: 0.03, refMp: 0.03, maxMp: 4, maxRefs: 8 });
+  expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/Verified against BFL's published\s+\* pricing data, 16 Oct 2026; confirm against the first invoice[\s\S]{0,1400}export const BFL_RATES/);
   /* The plan's rows (docs/plans/provider-adapters.md § 6). */
   const usd = (model: "flux-2-pro" | "flux-2-flex" | "flux-2-max", out: number, refs: number[] = []) => { const q = bflQuote(model, out, refs); return "usd" in q ? q.usd : q.error; };
   expect(usd("flux-2-pro", 1)).toBeCloseTo(0.03, 6);
@@ -126,12 +126,18 @@ test("the prices are the plan's recorded figures, marked to confirm: [pro] by th
   expect(usd("flux-2-pro", 1, [1, 1, 1, 1])).toBeCloseTo(0.09, 6);
   expect(usd("flux-2-pro", 1, [1, 1, 1, 1, 1, 1, 1, 1])).toBeCloseTo(0.15, 6);
   expect(usd("flux-2-flex", 1)).toBeCloseTo(0.05, 6);
+  expect(usd("flux-2-flex", 4)).toBeCloseTo(0.05 + 3 * 0.05, 6);
+  expect(usd("flux-2-flex", 1, [1])).toBeCloseTo(0.1, 6);
+  expect(usd("flux-2-flex", 1, Array(8).fill(1))).toBeCloseTo(0.05 + 8 * 0.05, 6);
   expect(usd("flux-2-max", 1)).toBeCloseTo(0.07, 6);
-  /* What the plan records no rule for is refused in words. */
-  expect(String(usd("flux-2-flex", 2))).toMatch(/one megapixel|up to 1/);
-  expect(String(usd("flux-2-max", 1, [1]))).toMatch(/no references/);
-  expect(String(usd("flux-2-pro", 5))).toMatch(/up to 4/);
-  expect(String(usd("flux-2-pro", 1, Array(9).fill(1)))).toMatch(/up to 8/);
+  expect(usd("flux-2-max", 4)).toBeCloseTo(0.07 + 3 * 0.03, 6);
+  expect(usd("flux-2-max", 2, [2, 1])).toBeCloseTo(0.07 + 0.03 + 3 * 0.03, 6);
+  expect(usd("flux-2-max", 1, Array(8).fill(1))).toBeCloseTo(0.07 + 8 * 0.03, 6);
+  /* Past the limits, every model refuses in words. */
+  for (const model of ["flux-2-pro", "flux-2-flex", "flux-2-max"] as const) {
+    expect(String(usd(model, 5)), model).toMatch(/up to 4/);
+    expect(String(usd(model, 1, Array(9).fill(1))), model).toMatch(/up to 8/);
+  }
   /* Megapixels round up, and a sub-megapixel is one. */
   expect([megapixels(1024, 1024), megapixels(1024, 960), megapixels(2048, 2048), megapixels(64, 64)]).toEqual([2, 1, 5, 1]);
 });
@@ -174,8 +180,10 @@ test("the endpoint is the EU one by default, never the global address; a base ad
     const results = calls.length;
     expect((await bfl.fetchResult("https://delivery-eu.bfl.ai/o.png", { fetch: reply(200, "png-bytes") })).toString()).toBe("png-bytes");
     expect(calls.at(-1)!.headers["x-key"]).toBeUndefined();
-    expect(await bfl.fetchResult("https://evil.example.com/o.png", { fetch: reply(200, "x") }).then(() => null, (e) => e)).toBeInstanceOf(bfl.BflError);
-    expect(calls.length).toBe(results + 1);
+    expect((await bfl.fetchResult("https://delivery-eu1.bfl.ai/o.png", { fetch: reply(200, "png-bytes") })).toString()).toBe("png-bytes");
+    for (const bad of ["https://evil.example.com/o.png", "https://delivery-eu.bfl.ai.evil.com/o.png", "https://bfl.ai.evil.com/o.png", "http://delivery-eu.bfl.ai/o.png", "https://user@delivery-eu.bfl.ai/o.png"])
+      expect(await bfl.fetchResult(bad, { fetch: reply(200, "x") }).then(() => null, (e) => e), bad).toBeInstanceOf(bfl.BflError);
+    expect(calls.length).toBe(results + 2);
     /* A refusal is a clear 4xx (a throttle included); a 408 and a 5xx may have taken the job. */
     for (const [status, early] of [[400, true], [402, true], [422, true], [429, true], [408, false], [500, false], [503, false]] as const) {
       const failed = await bfl.submitImage({ model: "flux-2-pro", prompt: "x", width: 64, height: 64, references: [] }, { fetch: reply(status, { detail: "nope" }) }).then(() => null, (e) => e);
@@ -226,7 +234,12 @@ test("the quote, and every input refused in words before anything is reserved; a
     /* 1024 x 1024 is 1.05 MP: two megapixels at the whole-megapixel rule, $0.045 for [pro]. */
     expect(Number(q.body.price)).toBeCloseTo(0.045, 6);
     expect(await admit({ tool: "image", prompt: "a tree", width: 1024, height: 960, quoteOnly: true })).toMatchObject({ status: 200, body: { megapixels: 1 } });
-    expect(await admit({ tool: "image", prompt: "a tree", model: "flux-2-max", width: 960, height: 1024, quoteOnly: true })).toMatchObject({ status: 200 });
+    /* [flex] and [max] go to 4 MP like [pro]. */
+    const max = await admit({ tool: "image", prompt: "a tree", model: "flux-2-max", width: 2000, height: 2000, quoteOnly: true });
+    expect(max).toMatchObject({ status: 200, body: { megapixels: 4 } });
+    expect(Number(max.body.price)).toBeCloseTo(0.07 + 3 * 0.03, 6);
+    const flex = await admit({ tool: "image", prompt: "a tree", model: "flux-2-flex", width: 1024, height: 1024, quoteOnly: true });
+    expect(Number(flex.body.price)).toBeCloseTo(0.05 + 0.05, 6);
     const refused: [Record<string, unknown>, RegExp][] = [
       [{ tool: "video" }, /Pick image or edit/],
       [{ tool: "image", prompt: "" }, /Write what to make/],
@@ -235,7 +248,8 @@ test("the quote, and every input refused in words before anything is reserved; a
       [{ tool: "image", prompt: "a", width: 1000, height: 1024 }, /steps of 16/],
       [{ tool: "image", prompt: "a", width: 32, height: 1024 }, /from 64/],
       [{ tool: "image", prompt: "a", width: 2560, height: 2560 }, /up to 4 megapixels/],
-      [{ tool: "image", prompt: "a", model: "flux-2-flex", width: 2048, height: 1024 }, /up to 1 megapixels/],
+      [{ tool: "image", prompt: "a", model: "flux-2-flex", width: 2560, height: 2560 }, /up to 4 megapixels/],
+      [{ tool: "edit", prompt: "a", model: "flux-2-max", references: Array.from({ length: 9 }, (_, i) => ({ uploadId: `u${i}`, castMemberId: "c" })) }, /up to 8/],
       [{ tool: "image", prompt: "a", seed: -1 }, /seed/],
       [{ tool: "image", prompt: "a", references: [{ uploadId: "x", castMemberId: "c" }] }, /takes no references/],
       [{ tool: "edit", prompt: "a" }, /one to eight reference/],

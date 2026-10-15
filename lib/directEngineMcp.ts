@@ -105,7 +105,7 @@ const SARVAM_TRANSLATE: DirectTool = {
 
 const bflPresent = (id: string) => async () => (await bflTools()).some((t) => t.id === id);
 const list = (v: unknown): string[] => (typeof v === "string" ? v.split(",").map((x) => x.trim()).filter(Boolean) : []);
-const BFL_COMMON = { model: { type: "string", description: "flux-2-pro (default), flux-2-flex or flux-2-max (flex and max: one megapixel, no references)." }, ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." } };
+const BFL_COMMON = { model: { type: "string", description: "flux-2-pro (default), flux-2-flex or flux-2-max." }, ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." } };
 const SIZE = { width: { type: "number", description: "A multiple of 16, default 1024." }, height: { type: "number", description: "A multiple of 16, default 1024." } };
 
 const FLUX2_IMAGE: DirectTool = {

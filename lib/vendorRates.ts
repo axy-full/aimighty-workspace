@@ -303,19 +303,18 @@ export type SarvamSpeechModel = keyof typeof SARVAM_RATES.speechInrPer10kChars;
 export type SarvamTranslateModel = keyof typeof SARVAM_RATES.translateInrPer10kChars;
 
 /**
- * Black Forest Labs FLUX.2, direct (lib/bfl.ts, lib/bflImage.ts), in the vendor's own unit: dollars (BFL credits are $0.01). **TO CONFIRM** against BFL's
- * pricing calculator and the first bill: these are the figures docs/plans/provider-adapters.md § 6 records (BFL's pricing page gives "from" prices; the per-
- * megapixel rule for [pro] is the plan's reported one). Only what the plan records is priced: [pro] by the megapixel with its references counted; [flex] and
- * [max] at their "from" price for one megapixel and no reference, because the plan records no per-megapixel rule for them (a larger or referenced request is
- * refused, never guessed). Server-only like every rate here; a customer's price is these through the margin table.
+ * Black Forest Labs FLUX.2, direct (lib/bfl.ts, lib/bflImage.ts), in the vendor's own unit: dollars (BFL credits are $0.01). **Verified against BFL's published
+ * pricing data, 16 Oct 2026; confirm against the first invoice.** Per model, in credits (x $0.01): flux-2-pro 3 for the first output megapixel, 1.5 for each further one
+ * and 1.5 for each megapixel of reference; flux-2-flex 5, 5 and 5; flux-2-max 7, 3 and 3. Output megapixels are rounded UP (BFL's own calculator does), so a quote is
+ * never under. Output up to 4 MP and up to 8 references for all three. Server-only like every rate here; a customer's price is these through the margin table.
  */
 export const BFL_RATES = {
   creditUsd: 0.01,
   models: {
-    /** firstMp: the first output megapixel; extraMp: each further one; refMp: each megapixel of reference sent. null: the plan records no rule. */
+    /** firstMp: the first output megapixel; extraMp: each further one; refMp: each megapixel of reference sent. */
     "flux-2-pro": { firstMp: 0.03, extraMp: 0.015, refMp: 0.015, maxMp: 4, maxRefs: 8 },
-    "flux-2-flex": { firstMp: 0.05, extraMp: null, refMp: null, maxMp: 1, maxRefs: 0 },
-    "flux-2-max": { firstMp: 0.07, extraMp: null, refMp: null, maxMp: 1, maxRefs: 0 },
+    "flux-2-flex": { firstMp: 0.05, extraMp: 0.05, refMp: 0.05, maxMp: 4, maxRefs: 8 },
+    "flux-2-max": { firstMp: 0.07, extraMp: 0.03, refMp: 0.03, maxMp: 4, maxRefs: 8 },
   },
   defaultModel: "flux-2-pro",
 } as const;

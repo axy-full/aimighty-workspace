@@ -41,10 +41,9 @@ import { consentLive } from "./security/consent-words";
  * reserved. Today that gate refuses every check (no consent record holds a face reference yet) and runs for the house workspace only, so **an edit is refused today**; there is
  * no "this shows nobody" exemption (it would be an honour system until a face-detection check exists). A still from words alone has no reference and no gate.
  *
- * MONEY. Quote: the output megapixels (rounded up) and each reference's megapixels (rounded up) at BFL_RATES (lib/vendorRates.ts, the plan's recorded figures, TO
- * CONFIRM), through the margin table (`quotedCredits`, keyed by the model); reserved at the quote on the meter; settled at the cost BFL states when it states one,
- * else at the quote, and NEVER above the quote; at nothing on any failure. A person approves: `maxCredits` must cover the quote. Only [pro] has a per-megapixel
- * rule on record; [flex] and [max] are quoted at their "from" price for one megapixel and no reference, and anything else is refused, not guessed.
+ * MONEY. Quote: the output megapixels (rounded up) and each reference's megapixels (rounded up) at BFL_RATES (lib/vendorRates.ts, verified against BFL's published
+ * pricing data, 16 Oct 2026; confirm against the first invoice), through the margin table (`quotedCredits`, keyed by the model); reserved at the quote on the meter; settled at the cost BFL states when it states one,
+ * else at the quote, and NEVER above the quote; at nothing on any failure. A person approves: `maxCredits` must cover the quote.
  *
  * PRIVACY. References are read from this workspace (the same open-by-person rule as every source) and sent as data, never as a link of ours. BFL's privacy
  * policy allows training on inputs and outputs unless the account has opted out (the owner has done the opt-out in BFL's dashboard; counsel before any customer switch).
@@ -110,11 +109,11 @@ export const megapixels = (width: number, height: number): number => Math.max(1,
 /** The price in dollars, or a refusal in words: only what the plan records is priced. */
 export function bflQuote(model: BflModel, outputMp: number, referenceMps: number[]): { usd: number } | { error: string } {
   const r = BFL_RATES.models[model];
-  if (outputMp > r.maxMp) return { error: model === "flux-2-pro" ? `${model} makes up to ${r.maxMp} megapixels.` : `${model} is priced for one megapixel here; pick a smaller size or flux-2-pro.` };
-  if (referenceMps.length > r.maxRefs) return { error: r.maxRefs === 0 ? `${model} takes no references here; use flux-2-pro.` : `${model} takes up to ${r.maxRefs} references.` };
+  if (outputMp > r.maxMp) return { error: `${model} makes up to ${r.maxMp} megapixels.` };
+  if (referenceMps.length > r.maxRefs) return { error: `${model} takes up to ${r.maxRefs} references.` };
   let usd = r.firstMp;
-  if (outputMp > 1) { if (r.extraMp == null) return { error: `${model} is priced for one megapixel here.` }; usd += (outputMp - 1) * r.extraMp; }
-  if (referenceMps.length) { if (r.refMp == null) return { error: `${model} takes no references here.` }; usd += referenceMps.reduce((n, mp) => n + mp, 0) * r.refMp; }
+  if (outputMp > 1) usd += (outputMp - 1) * r.extraMp;
+  if (referenceMps.length) usd += referenceMps.reduce((n, mp) => n + mp, 0) * r.refMp;
   /* Rounded UP to the micro-dollar, so a quote is never under. */
   return { usd: Math.ceil(usd * 1e6 - 1e-6) / 1e6 };
 }
@@ -156,7 +155,7 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   else {
     const list = Array.isArray(body.references) ? body.references : [];
     if (!list.length) return admissionReply({ error: "Add one to eight reference images." }, { status: 400 });
-    if (list.length > BFL_RATES.models["flux-2-pro"].maxRefs) return admissionReply({ error: `An edit takes up to ${BFL_RATES.models["flux-2-pro"].maxRefs} references.` }, { status: 400 });
+    if (list.length > BFL_RATES.models[model].maxRefs) return admissionReply({ error: `${model} takes up to ${BFL_RATES.models[model].maxRefs} references.` }, { status: 400 });
     const viewer = currentViewer();
     for (const entry of list) {
       const uploadId = entry && typeof entry === "object" ? (entry as { uploadId?: unknown }).uploadId : undefined;
