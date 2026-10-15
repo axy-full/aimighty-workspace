@@ -2,6 +2,7 @@ import { test, expect, type Browser, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { signInToRedesign } from "./helpers/newInterface";
+import { openShotsBoard } from "./helpers/shotsV12";
 import { screenScale } from "../lib/v12/board/screen-scale";
 
 /**
@@ -31,6 +32,21 @@ async function openShots(page: Page) {
   await expect(page.locator('[data-testid="take-card"] img').first()).toBeVisible({ timeout: 60_000 });
 }
 
+/** The prototype's Shots board: eight shots in mixed states (three finished, two rendering, three with nothing yet), Atomik's dock folded as the prototype draws it. */
+async function openFixture(page: Page) {
+  await openShotsBoard(page, "/suites?view=board&stage=shots");
+  await expect(page.locator('.bd-node[data-card-kind="take"]')).toHaveCount(8, { timeout: 90_000 });
+  const collapse = page.getByTestId("agent-collapse");
+  await collapse.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
+  let quiet = 0;
+  await expect.poll(async () => {
+    if (await collapse.isVisible().catch(() => false)) { await collapse.click({ timeout: 2_000 }).catch(() => {}); quiet = 0; return false; }
+    quiet = (await page.getByTestId("board-agent-panel").count()) === 0 ? quiet + 1 : 0;
+    return quiet >= 8;
+  }, { timeout: 30_000, intervals: [250] }).toBe(true);
+  await expect(page.locator('.bd-node[data-card-kind="take"] img, .bd-node[data-card-kind="take"] video').first()).toBeVisible({ timeout: 60_000 });
+}
+
 async function measure(page: Page) {
   return page.evaluate(() => {
     const box = (el: Element | null) => { const r = el?.getBoundingClientRect(); return r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height } : null; };
@@ -47,7 +63,7 @@ async function measure(page: Page) {
       const size = parseFloat(getComputedStyle(el).fontSize) * drawn;
       if (size < smallest) { smallest = size; smallestOf = `${el.tagName.toLowerCase()} "${(el.textContent ?? "").trim().slice(0, 30)}"`; }
     }
-    const cards = Array.from(document.querySelectorAll('[data-testid="take-card"]')).map((c) => ({ card: box(c), pic: box(c.querySelector("img, video")) }));
+    const cards = Array.from(document.querySelectorAll('.bd-node[data-card-kind="take"]')).map((c) => ({ card: box(c), pic: box(c.querySelector("img, video")) }));
     return {
       vw: window.innerWidth, vh: window.innerHeight, overflow: document.documentElement.scrollWidth - window.innerWidth,
       header: box(document.querySelector('[data-testid="v12-header"]')), rail: box(document.querySelector('[data-testid="v12-stage-rail"]')),
@@ -63,18 +79,20 @@ test("at the five sizes the canvas is scaled up, the bars keep their size and pl
   test.skip(info.project.name !== "workbench-1440x900", "one project walks all five sizes");
   test.setTimeout(420_000);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openShots(page);
+  await openFixture(page);
   const seen: Record<string, Awaited<ReturnType<typeof measure>>> = {};
   for (const [w, h] of SIZES) {
     await page.setViewportSize({ width: w, height: h });
     await page.waitForTimeout(1500);
-    await expect(page.locator('[data-testid="take-card"] img').first()).toBeVisible();
+    await expect(page.locator('.bd-node[data-card-kind="take"] img, .bd-node[data-card-kind="take"] video').first()).toBeVisible();
     const m = await measure(page);
     seen[`${w}`] = m;
+    const lowest = Math.max(...m.cards.map((c) => c.card!.bottom)), rightmost = Math.max(...m.cards.map((c) => c.card!.right));
+    console.log(`${w}x${h}: empty below the cards ${(100 * (m.canvas!.bottom - lowest) / m.canvas!.height).toFixed(1)}% of the canvas, empty right of them ${(100 * (m.canvas!.right - rightmost) / m.canvas!.width).toFixed(1)}% (canvas ${Math.round(m.canvas!.width)}x${Math.round(m.canvas!.height)})`);
     console.log(`${w}x${h}: scale ${screenScale(w, h)}, smallest word ${m.smallest.toFixed(1)} px (${m.smallestOf}), picture ${Math.round(m.cards[0].pic!.width)} px wide`);
     if (shotsDir) { await mkdir(shotsDir, { recursive: true }); await page.screenshot({ path: path.join(shotsDir, `board-${w}x${h}.png`) }); }
     expect(m.overflow, `${w}x${h}: no sideways scroll`).toBeLessThanOrEqual(0);
-    expect(m.cards.length, `${w}x${h}: the shot cards`).toBeGreaterThanOrEqual(3);
+    expect(m.cards.length, `${w}x${h}: the shot cards`).toBe(8);
   }
   const base = seen["1440"];
   for (const [w, h] of SIZES) {
@@ -102,7 +120,8 @@ test("at the five sizes the canvas is scaled up, the bars keep their size and pl
     for (const c of m.cards) {
       expect(c.card!.left, `${label} a card inside the canvas`).toBeGreaterThanOrEqual(m.canvas!.left - 1);
       expect(c.card!.right, `${label} a card inside the canvas`).toBeLessThanOrEqual(m.canvas!.right + 1);
-      expect(c.card!.bottom, `${label} a card inside the canvas`).toBeLessThanOrEqual(m.canvas!.bottom + 1);
+      /* At 1280 x 800 the eight shots are three rows and the stage scrolls (as it always has); from 1440 up they are all in view. */
+      if (w > 1280) expect(c.card!.bottom, `${label} a card inside the canvas`).toBeLessThanOrEqual(m.canvas!.bottom + 1);
     }
     /* Nothing is left behind: the cards reach down the canvas the scale further than at 1440 (what is left below them is the stage's own content, as at 1440). */
     const reach = (x: typeof m) => Math.max(...x.cards.map((c) => c.card!.bottom)) - x.canvas!.top;
@@ -144,4 +163,26 @@ test("pictures are sharp at 1728 x 1117 and 2560 x 1440, at a pixel ratio of 1 a
   test.skip(info.project.name !== "workbench-1440x900", "one project");
   test.setTimeout(420_000);
   for (const [w, h] of [[1728, 1117], [2560, 1440]] as const) for (const ratio of [1, 2]) await sharp(browser, w, h, ratio);
+});
+
+test("a resize above 1440 opens the view again at the new scale only while the person has not moved it", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one project");
+  test.setTimeout(300_000);
+  await page.setViewportSize({ width: 1728, height: 1117 });
+  await openFixture(page);
+  const first = () => page.evaluate(() => { const r = document.querySelector('.bd-node[data-card-kind="take"]')!.getBoundingClientRect(); return { w: r.width, top: r.top }; });
+  const start = await first();
+  /* Untouched: the view follows the window (scale 1.2 -> 1.6). */
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  await expect.poll(async () => (await first()).w / start.w, { timeout: 10_000 }).toBeCloseTo(1.6 / 1.2, 1);
+  /* Moved: the person pans the board, and a further resize leaves their view as it is. */
+  await page.mouse.move(900, 700);
+  await page.mouse.wheel(0, 240);
+  await expect.poll(async () => Math.abs((await first()).top - start.top * (1.6 / 1.2)), { timeout: 10_000 }).toBeGreaterThan(20);
+  const moved = await first();
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.waitForTimeout(1500);
+  const after = await first();
+  expect(after.w, "the zoom the person has is kept").toBeCloseTo(moved.w, 0);
+  expect(after.top, "their pan is kept (the board is not put back at its opening place)").toBeLessThan(start.top - 20);
 });
