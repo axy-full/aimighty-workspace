@@ -57,7 +57,8 @@ test("frozen the first time it is read, at that day's figure, for every take wit
     const { getGeneration } = await import("../../lib/jobs");
     expect((await getGeneration("old_a"))).toMatchObject({ creditsBilled: expectedOldA + 100, estimated: true });
     expect((await getGeneration("metered"))).toMatchObject({ creditsBilled: 13, estimated: false });
-    expect((await getGeneration("newer"))).toMatchObject({ creditsBilled: expectedNewer, estimated: true });
+    /* "newer" was made after metering began here (the metered take at 1000 has a receipt): its frozen figure shows, unlabelled (owner, 15 Oct 12:20). */
+    expect((await getGeneration("newer"))).toMatchObject({ creditsBilled: expectedNewer, estimated: false });
     expect((await getGeneration("late"))).toMatchObject({ estimated: true });
     expect((await getGeneration("late"))?.creditsBilled ?? 0).toBeGreaterThan(0);
     expect((await getGeneration("old_zero"))).toMatchObject({ creditsBilled: 0, estimated: false });
@@ -202,8 +203,10 @@ test("a take that was frozen and is then metered reads its receipt and is not es
     await db().batch([take("old", 100, 1.0), take("first", 5_000, 1.0)], "write");
     await syncCreditReceipts();
     expect((await db().execute("SELECT gen_id FROM estimated_credits ORDER BY gen_id")).rows.map((r) => r.gen_id)).toEqual(["first", "old"]);
-    expect(await getGeneration("first")).toMatchObject({ estimated: true });
-    /* The meter row arrives and its receipt syncs: that take now reads its receipt and is not estimated; the other stays so. */
+    /* No receipt yet in this workspace: metering has not begun here as far as it can tell, so nothing is "before" it, and the first reservation's frozen figure shows unlabelled. */
+    expect(await getGeneration("first")).toMatchObject({ estimated: false });
+    expect(await getGeneration("old")).toMatchObject({ estimated: false });
+    /* The meter row arrives and its receipt syncs: that take now reads its receipt and is not estimated; the older one is now before metering, and is. */
     await platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES('first','ws_est_flag','video','byteplus','dreamina-seedance-2-5-260628','succeeded',1,43,1,5001,5001)", args: [] });
     await syncCreditReceipts();
     expect(await getGeneration("first")).toMatchObject({ creditsBilled: 43, estimated: false });
@@ -302,5 +305,87 @@ test("a take held in one month and released in the next is on exactly one statem
     const september = await linesOf("2026-09"), october = await linesOf("2026-10");
     expect(september.map((l) => l.credits), "September lists it at its billed figure").toEqual([25]);
     expect(october, "October does not list it again").toEqual([]);
+  });
+});
+
+/* ── Owner, 15 Oct 12:20: "estimated" marks ONLY takes from before metering; a refine-only cost after metering shows unlabelled and keeps counting ── */
+
+test("estimated marks only a take made before metering began here: a held, discarded or refused take with only a refine cost after it shows that cost, unlabelled", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { syncCreditReceipts } = await import("../../lib/creditReceipts");
+  const { getGeneration } = await import("../../lib/jobs");
+  await runInTenant(workspace("ws_est_policy"), async () => {
+    await ready();
+    const refineOnly = (id: string, status: string, at: number) => ({
+      sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,refine_cost_usd) VALUES(?,'video',?,'','{}',?,?,?,0.05)", args: [id, SEEDANCE, status, at, at],
+    });
+    await db().batch([
+      take("before", 100, 1.0),                         // made before metering: no receipt, a cost
+      take("metered", 1_000, 1.0), receipt("metered", 25), // the first take with a receipt: metering began here at 1000
+      refineOnly("held", "held", 2_000), refineOnly("discarded", "discarded", 3_000), refineOnly("refused", "failed", 4_000),
+    ], "write");
+    await syncCreditReceipts();
+    const frozen = Object.fromEntries((await db().execute("SELECT gen_id, credits FROM estimated_credits")).rows.map((r) => [String(r.gen_id), Number(r.credits)]));
+    expect(Object.keys(frozen).sort(), "the freeze itself is unchanged: every costed take with no receipt").toEqual(["before", "discarded", "held", "refused"]);
+    expect(await getGeneration("before"), "before metering: marked, with its frozen figure").toMatchObject({ estimated: true, creditsBilled: frozen.before });
+    for (const id of ["held", "discarded", "refused"]) {
+      expect(frozen[id], `${id}: a figure`).toBeGreaterThan(0);
+      expect(await getGeneration(id), `${id}: its metered refine cost, unlabelled`).toMatchObject({ estimated: false, creditsBilled: frozen[id] });
+    }
+    expect(await getGeneration("metered"), "a metered take with a receipt").toMatchObject({ estimated: false, creditsBilled: 25 });
+  });
+});
+
+test("a workspace with no receipt yet has no take before metering: nothing is marked, every figure still shows", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { syncCreditReceipts } = await import("../../lib/creditReceipts");
+  const { getGeneration } = await import("../../lib/jobs");
+  await runInTenant(workspace("ws_est_none"), async () => {
+    await ready();
+    await db().batch([take("a", 100, 1.0), take("b", 5_000, 1.0)], "write");
+    await syncCreditReceipts();
+    for (const id of ["a", "b"]) {
+      const g = await getGeneration(id);
+      expect(g?.estimated, id).toBe(false);
+      expect(g?.creditsBilled ?? 0, id).toBeGreaterThan(0);
+    }
+  });
+});
+
+test("a refine-only cost on a failed reservation keeps counting against caps, as on release/1: the cap reader and the gate's baseline read its figure", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { platformReady, platformDb } = await import("../../lib/platform");
+  const { db, ready } = await import("../../lib/db");
+  const { spentBy } = await import("../../lib/caps");
+  const { statementFor } = await import("../../lib/statements");
+  const { syncCreditReceipts } = await import("../../lib/creditReceipts");
+  const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
+  await platformReady();
+  await alignLedgerUnit();
+  await platformDb().execute({ sql: "INSERT INTO credit_grants(id,workspace_id,credits,kind,created_at) VALUES('grant_failres','ws_est_failres',500,'manual',0)", args: [] });
+  await runInTenant(workspace("ws_est_failres"), async () => {
+    await ready();
+    const at = Date.now() - 2 * 3_600_000;
+    await db().batch([
+      { sql: "INSERT OR IGNORE INTO projects(id,name,created_at,cap_credits) VALUES('pf','Board',0,30)", args: [] },
+      /* A metered take elsewhere, so metering has begun here; the failed reservation's take is after it and carries only the prompt writer's cost. */
+      { sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,cost_usd) VALUES('first','video',?,'','{}','succeeded',?,?,1.0)", args: [SEEDANCE, at - 1000, at - 1000] },
+      receipt("first", 25),
+      { sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,refine_cost_usd,project_id) VALUES('failres','video',?,'','{}','failed',?,?,0.12,'pf')", args: [SEEDANCE, at, at] },
+    ], "write");
+    await syncCreditReceipts();
+    const figure = Number((await db().execute("SELECT credits FROM estimated_credits WHERE gen_id='failres'")).rows[0].credits);
+    expect(figure).toBeGreaterThan(0);
+    expect(figure, "a figure below the cap, so the gate can quote it").toBeLessThan(30);
+    expect((await spentBy("project_id", ["pf"])).get("pf")!.credits, "the cap reader counts it").toBe(figure);
+    await db().execute({ sql: "UPDATE projects SET cap_credits=? WHERE id='pf'", args: [figure + 1] });
+    const gate = await reserveGenerationSpend({ id: "next3", kind: "video", engine: "byteplus", model: SEEDANCE, status: "running", engineCostUsd: 0.5, projectId: "pf", createdBy: "owner" })
+      .then(() => null, (error: unknown) => error);
+    expect(gate, "the gate's baseline counts it").toBeInstanceOf(SpendReservationError);
+    expect((gate as Error).message).toContain(`${figure} cr spent`);
+    const lines = (await statementFor(new Date(at).toISOString().slice(0, 7), null))!.projects.flatMap((p) => [...p.shots.flatMap((s) => s.lines), ...p.loose]);
+    expect(lines.find((l) => l.id === "failres")?.credits, "and the statement").toBe(figure);
   });
 });

@@ -68,7 +68,7 @@ export type Generation = {
   prompt: string;
   /** The name the team gave it, if any — shown in place of the clip id. */
   title: string | null;
-  /** A take made before metering: its figure is the one frozen for it (lib/estimatedCredits.ts), never repriced. */
+  /** A take made before metering began for this workspace (METERING_BEGAN_SQL below), with its figure frozen (lib/estimatedCredits.ts), never repriced. A later take with only a refine cost shows that cost unlabelled. */
   estimated?: boolean;
   /** What the take was for (lib/takeJob.ts); null for a take made before the label, whose purpose cannot be told for certain. */
   job?: Job | null;
@@ -282,8 +282,14 @@ export function rowToGeneration(r: any): Generation {
   };
 }
 
+/**
+ * When metering began for this workspace, as this workspace's own database can say: the creation time of its earliest take that has a receipt. Receipts are only ever written for metered
+ * takes, so a take made before that one was made before metering. A workspace with no receipt yet has no such moment: it has no take "before metering" (NULL, so the comparison below is
+ * not true), and a held, discarded or refused take there that carries only a refine cost shows its figure unlabelled (owner, 15 Oct 12:20). Needs no platform database at read time.
+ */
+const METERING_BEGAN_SQL = `(SELECT MIN(g0.created_at) FROM credit_receipts r0 JOIN generations g0 ON g0.id = r0.event_id)`;
 const SELECT = `
-  SELECT g.*, ${billedCreditsExpr("g")} AS receipt_credits, (SELECT 1 FROM estimated_credits e WHERE e.gen_id = g.id AND NOT EXISTS (SELECT 1 FROM credit_receipts r WHERE r.event_id = g.id)) AS estimated, p.name AS project_name, u.name AS author_name,
+  SELECT g.*, ${billedCreditsExpr("g")} AS receipt_credits, (SELECT 1 FROM estimated_credits e WHERE e.gen_id = g.id AND NOT EXISTS (SELECT 1 FROM credit_receipts r WHERE r.event_id = g.id) AND g.created_at < ${METERING_BEGAN_SQL}) AS estimated, p.name AS project_name, u.name AS author_name,
          s.code AS shot_code, s.scene AS shot_scene, s.title AS shot_title
   FROM generations g
   LEFT JOIN projects p ON p.id = g.project_id
