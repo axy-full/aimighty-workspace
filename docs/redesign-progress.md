@@ -987,3 +987,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - A missing-names list: proposed but unread names, SYNC_WEBHOOK_SECRET unread, no PR yet for Gemini 3.x / Kling 4.0 / Bria direct / Pro pick / DNxHR, and Slice 5 names still proposals.
   - Owner check: REKOGNITION_ENABLED was reported missing at 19:30.
   - Rekognition price verified from AWS's price list (Mumbai): $0.00125/image for the first 1M, matching #771.
+- **16 Oct 04:02 IST.** #786 Recraft APPROVED at 3e4bd8d1: bounded reply reads; an unusable 200 becomes a charged failure, never uncertain. #714 at fadac5da carries the Rekognition and NB 2.1 sources.
