@@ -107,7 +107,7 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
      (a listed workspace at its own $0 cap is refused 429 in the cap's words, nothing held, written, reserved or sent). */
   /* FLUX.2 is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/bfl.spec.ts. */
   { dir: "bfl", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
-  /* Recraft is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/recraftImage.spec.ts. */
+  /* Recraft is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/recraft.spec.ts. */
   { dir: "recraft", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
   { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", castMemberId: "cast_1", faceFrameUploadId: "up_face", projectId: "film", use: "production", maxCredits: 100000 } },

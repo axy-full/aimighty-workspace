@@ -173,6 +173,43 @@ test("the adapter: Recraft's own host by default; a base address must be an http
     const dropped = await rc.generateImage({ model: "recraftv4_1", prompt: "a", size: "1024x1024" }, { fetch: (async () => { throw new TypeError("redirect mode is set to error"); }) as never }).catch((e) => e);
     expect(dropped).toBeInstanceOf(rc.RecraftError);
     expect(dropped.rejectedBeforeGeneration).toBe(false);
+    /* A reply is bounded before it is decoded. The longest base64 text is 64 MB of image times 4/3; a declared length over the reply cap is refused without reading a byte. */
+    expect(rc.RECRAFT_B64_LIMIT).toBe(Math.ceil((64 * 1024 * 1024 * 4) / 3));
+    const asked = { model: "recraftv4_1" as const, prompt: "a", size: "1024x1024" };
+    let pulls = 0, cancelled = false;
+    const streamed = (headers: Record<string, string>, chunks: number) => (async () => new Response(new ReadableStream<Uint8Array>({
+      pull(c) { if (pulls++ >= chunks) c.close(); else c.enqueue(new Uint8Array(16 * 1024 * 1024)); },
+      cancel() { cancelled = true; },
+    }), { status: 200, headers })) as never;
+    const declared = await rc.generateImage(asked, { fetch: streamed({ "content-length": String(rc.RECRAFT_B64_LIMIT + 64 * 1024 + 1) }, 100) }).catch((e) => e);
+    expect(declared).toBeInstanceOf(rc.RecraftError);
+    expect(declared.unusableReply).toBe(true);
+    expect(declared.rejectedBeforeGeneration).toBe(false);
+    expect(pulls).toBeLessThanOrEqual(1);
+    expect(cancelled).toBe(true);
+    /* No declared length: the stream is counted and cancelled the moment it passes the cap, not read to its end. */
+    pulls = 0; cancelled = false;
+    const counted = await rc.generateImage(asked, { fetch: streamed({}, 100) }).catch((e) => e);
+    expect(counted.unusableReply).toBe(true);
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThan(10);
+    /* A base64 text longer than the limit is refused before it is decoded. */
+    const spy = Buffer.from.bind(Buffer);
+    let decoded = 0;
+    (Buffer as unknown as { from: unknown }).from = (...a: unknown[]) => { if (a[1] === "base64") decoded++; return (spy as (...x: unknown[]) => Buffer)(...a); };
+    try {
+      const huge = JSON.stringify({ data: [{ b64_json: "A".repeat(rc.RECRAFT_B64_LIMIT + 1) }] });
+      const big = await rc.generateImage(asked, { fetch: (async () => new Response(huge, { status: 200 })) as never }).catch((e) => e);
+      expect(big.unusableReply).toBe(true);
+      expect(String(big.message)).toMatch(/too large/);
+      expect(decoded).toBe(0);
+    } finally { (Buffer as unknown as { from: unknown }).from = spy; }
+    /* A 200 with no image, an empty one or text that is not JSON is the same: unusable, never uncertain. An error status stays what it was. */
+    for (const body of ["{}", '{"data":[{"b64_json":""}]}', "<html>oops</html>"]) {
+      const bad = await rc.generateImage(asked, { fetch: reply(200, body) }).catch((e) => e);
+      expect(bad.unusableReply, body).toBe(true);
+    }
+    for (const status of [422, 500]) expect((await rc.generateImage(asked, { fetch: reply(status, "{}") }).catch((e) => e)).unusableReply, String(status)).toBe(false);
     delete process.env.RECRAFT_API_KEY;
     await expect(rc.generateImage({ model: "recraftv4_1", prompt: "a", size: "1024x1024" }, { fetch: reply(200, {}) })).rejects.toThrow(/RECRAFT_API_KEY/);
   } finally { if (before === undefined) delete process.env.RECRAFT_API_KEY; else process.env.RECRAFT_API_KEY = before; }
@@ -334,6 +371,18 @@ test("a failure bills nothing: a refusal before work says 'Nothing billed'; an i
     expect(svg.vendor.calls).toEqual(["generate"]);
     expect(Number(svg.take.cost_usd)).toBeCloseTo(0.035, 6);
     expect(svg.take.recraft.reconcile).toBe(1);
+    /* A 200 whose reply held no image we can keep (none, too large, unreadable) is the same, not "uncertain": the answer came, so it is charged, recorded at the quote, billed to nobody, marked to reconcile, and never sent again. */
+    const noImage = await failedBy({ error: Object.assign(new RecraftError("Recraft's reply held no image.", 200, false, true)) });
+    expect(noImage.take.status).toBe("failed");
+    expect(noImage.take.recraft.status).toBe("failed");
+    expect(String(noImage.take.error)).toMatch(/Nothing was billed/);
+    expect(noImage.take.recraft.reconcile).toBe(1);
+    expect(Number(noImage.take.cost_usd)).toBeCloseTo(0.035, 6);
+    const noImageLine = (await meterRows()).find((r) => r.id === noImage.id)!;
+    expect(noImageLine).toMatchObject({ status: "failed" });
+    expect(Number(noImageLine.engine_cost_usd)).toBeCloseTo(0.035, 6);
+    expect(Number(noImageLine.billed_credits ?? 0)).toBe(0);
+    expect(noImage.vendor.calls).toEqual(["generate"]);
     /* A store that keeps failing after Recraft answered: the same, at the stated figure when there is one. */
     const lost = await failedBy({ storeError: new Error("storage is busy"), stated: 0.03 });
     expect(lost.take.status).toBe("failed");

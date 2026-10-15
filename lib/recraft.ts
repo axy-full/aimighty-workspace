@@ -31,7 +31,32 @@ export const isVectorModel = (model: RecraftModel): boolean => RECRAFT_RATES.mod
 
 /** A refusal or failure from Recraft (or from reaching it). `rejectedBeforeGeneration`: it answered a clear refusal (4xx other than 408) before doing the work. */
 export class RecraftError extends Error {
-  constructor(message: string, readonly status: number | null = null, readonly rejectedBeforeGeneration = false) { super(message); this.name = "RecraftError"; }
+  /** `unusableReply`: Recraft answered 200 (so it did the work and charged for it) but its reply held no image we can keep (none, too large, unreadable). Never "uncertain": the job was done. */
+  constructor(message: string, readonly status: number | null = null, readonly rejectedBeforeGeneration = false, readonly unusableReply = false) { super(message); this.name = "RecraftError"; }
+}
+const unusable = (message: string) => new RecraftError(message, 200, false, true);
+/** The longest base64 text an image of the output limit can be. */
+export const RECRAFT_B64_LIMIT = Math.ceil((RECRAFT_OUTPUT_LIMIT_BYTES * 4) / 3);
+/** A whole reply is its image plus a little JSON. */
+const REPLY_LIMIT_BYTES = RECRAFT_B64_LIMIT + 64 * 1024;
+const ERROR_LIMIT_BYTES = 64 * 1024;
+
+/** Reads a reply's body up to a byte cap: the declared length is checked first, then the stream is counted and cancelled the moment it passes the cap. Null when it is over. */
+async function readCapped(res: Response, limit: number): Promise<string | null> {
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > limit) { await res.body?.cancel().catch(() => {}); return null; }
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) { await reader.cancel().catch(() => {}); return null; }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 /** An address on Recraft's own domain, https, no port, no credentials. */
@@ -72,7 +97,13 @@ async function call(path: string, init: { json?: unknown; form?: FormData }, dep
     if (error instanceof RecraftError) throw error;
     throw new RecraftError("Recraft did not answer.");
   }
-  const text = await res.text().catch(() => "");
+  /* A reply is read to a cap, never whole: an error's text is short, an image's base64 is at most the output limit's worth. */
+  let text: string | null;
+  try { text = await readCapped(res, res.ok ? REPLY_LIMIT_BYTES : ERROR_LIMIT_BYTES); } catch { if (res.ok) throw unusable("Recraft's reply could not be read."); text = ""; }
+  if (text === null) {
+    if (res.ok) throw unusable("Recraft's reply was too large to keep.");
+    text = "";
+  }
   let json: Record<string, unknown> = {};
   try { const parsed = JSON.parse(text); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) json = parsed as Record<string, unknown>; } catch { /* not JSON */ }
   if (!res.ok) {
@@ -89,9 +120,11 @@ function image(json: Record<string, unknown>): RecraftReply {
   const data = Array.isArray(json.data) ? (json.data[0] as { b64_json?: unknown } | undefined) : undefined;
   const nested = json.image && typeof json.image === "object" ? (json.image as { b64_json?: unknown }) : undefined;
   const b64 = data?.b64_json ?? nested?.b64_json;
-  if (typeof b64 !== "string" || !b64) throw new RecraftError("Recraft's reply held no image.");
+  if (typeof b64 !== "string" || !b64) throw unusable("Recraft's reply held no image.");
+  /* Refused before it is decoded: the text of an image over the limit is never turned into bytes. */
+  if (b64.length > RECRAFT_B64_LIMIT) throw unusable("The image came back too large to keep.");
   const bytes = Buffer.from(b64, "base64");
-  if (!bytes.length || bytes.length > RECRAFT_OUTPUT_LIMIT_BYTES) throw new RecraftError("The image came back empty or too large.");
+  if (!bytes.length || bytes.length > RECRAFT_OUTPUT_LIMIT_BYTES) throw unusable("The image came back empty or too large.");
   const units = json.credits == null ? NaN : Number(json.credits);
   const ok = Number.isFinite(units) && units >= 0;
   return { bytes, units: ok ? units : null, statedUsd: ok ? Math.round(units * RECRAFT_RATES.unitUsd * 1e6) / 1e6 : null };

@@ -371,6 +371,11 @@ export async function advanceRecraftJobWith(genId: string, deps: RecraftDeps): P
         await settleRecraft(genId, "failed", { message: `${error.message} Nothing was billed.`, costUsd: 0, said: directErrorOutcome("recraft", error.status ?? 400, error.message) });
         return (await load(genId, { any: true }))?.r ?? null;
       }
+      if (error instanceof RecraftError && error.unusableReply) {
+        // Recraft answered 200, so it did the work and charged for it, but the reply held no image we can keep (none, too large, unreadable): a charged failure (the quote, marked to reconcile), billed to nobody. Not "uncertain": the answer came.
+        await settleRecraft(genId, "failed", { message: "Recraft's reply was not a picture Particl keeps. Nothing was billed.", costUsd: r.reservedUsd, reconcile: true, said: silentOutcome("recraft", "run", "not_kept", error.message) });
+        return (await load(genId, { any: true }))?.r ?? null;
+      }
       // A timeout, a dropped connection or a 5xx: Recraft may have done the work. Held for review, never sent again.
       await patch(genId, { status: "uncertain" });
       await db().execute({ sql: "UPDATE generations SET error=?, updated_at=? WHERE id=? AND status='running'", args: [`${messageOf(error, "The request did not complete.")} The reservation is held for review; this request will not be sent again.`, now(), genId] });
