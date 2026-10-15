@@ -7,9 +7,11 @@ import { ensureEstimatedCredits } from "./estimatedCredits";
  * Revisions are allocated by the database, not a server clock. A missed write is
  * replayed on the next read; an older replica cannot overwrite a newer receipt. */
 export async function syncCreditReceipts(): Promise<void> {
-  await copyReceipts();
-  /* Every receipt is in: the takes made before metering have their figure frozen, once (lib/estimatedCredits.ts). */
-  await ensureEstimatedCredits();
+  /* The takes with a cost and no receipt have their figure frozen once, whether or not the platform answered (lib/estimatedCredits.ts): a cap never reads 0 for a costed take. */
+  let failure: unknown = null;
+  try { await copyReceipts(); } catch (error) { failure = error; }
+  try { await ensureEstimatedCredits(); } catch (error) { failure ??= error; }
+  if (failure) throw failure;
 }
 
 async function copyReceipts(): Promise<void> {

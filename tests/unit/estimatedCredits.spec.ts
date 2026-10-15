@@ -5,9 +5,9 @@ import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
 
 /**
- * Takes made before metering keep the figure frozen for them (lib/estimatedCredits.ts; owner, 14 Oct 2026: "pre-metering takes marked estimated, no repricing" and "freeze
- * 'estimated' figures in their own table"; docs/plans/step-0-data.md item 4, MIGRATION M2): filled once per workspace at today's terms, only for takes with no receipt that are not
- * newer than the workspace's first meter event, and read by every reader of a take's credits instead of computing it. Nothing is written to the meter, a receipt or a balance.
+ * A take with a cost and no receipt keeps the figure frozen for it (lib/estimatedCredits.ts; owner, 14 Oct 2026: "pre-metering takes marked estimated, no repricing" and "freeze
+ * 'estimated' figures in their own table"; 15 Oct: "freeze the figure the first time it's read, then never again; it never reads 0"; docs/plans/step-0-data.md item 4, MIGRATION M2):
+ * written the first time anything reads it, at that day's terms, and read by every reader of a take's credits instead of computing it. Nothing is written to the meter, a receipt or a balance.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-estimated-credits-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -24,7 +24,7 @@ const take = (id: string, at: number, cost: number, kind = "video", model = "dre
   sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,cost_usd) VALUES(?,?,?,'','{}','succeeded',?,?,?)", args: [id, kind, model, at, at, cost],
 });
 
-test("filled once, at today's figures, only for takes with no receipt that are not newer than the first meter event; a take made later is never frozen", async () => {
+test("frozen the first time it is read, at that day's figure, for every take with a cost and no receipt; a receipt, or no cost, is left alone; read again, never changed", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { platformReady, platformDb } = await import("../../lib/platform");
   const { db, ready } = await import("../../lib/db");
@@ -33,36 +33,40 @@ test("filled once, at today's figures, only for takes with no receipt that are n
   await platformReady();
   /* The workspace's first meter event is at 1000; one take has a receipt. */
   await platformDb().batch([
-    { sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES('metered','ws_est','video','byteplus','dreamina-seedance-2-5-260628','succeeded',1,13,1,1000,1000)", args: [] },
-    { sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES('other','ws_other','video','byteplus','x','succeeded',1,99,1,10,10)", args: [] },
+    { sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES('metered','ws_est','video','byteplus','dreamina-seedance-2-5-260628','succeeded',1.0,13,1,1000,1000)", args: [] },
+    { sql: "INSERT INTO meter_events(id,workspace_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_at,updated_at) VALUES('other','ws_other','video','byteplus','x','succeeded',1,1,1,1,1)", args: [] },
   ], "write");
   await runInTenant(workspace("ws_est"), async () => {
     await ready();
     await db().batch([take("old_a", 100, 1.0), take("old_b", 200, 0.134, "image", "gemini-3-pro-image"), take("old_zero", 300, 0), take("metered", 1000, 1.0), take("newer", 2000, 1.0)], "write");
-    const expectedOldA = Number((await db().execute(`SELECT CAST(${freezeEstimatesSql("g")} AS INTEGER) AS c FROM generations g WHERE g.id='old_a'`)).rows[0].c);
+    const figure = async (id: string) => Number((await db().execute(`SELECT CAST(${freezeEstimatesSql("g")} AS INTEGER) AS c FROM generations g WHERE g.id='${id}'`)).rows[0].c);
+    const [expectedOldA, expectedNewer] = [await figure("old_a"), await figure("newer")];
     expect(expectedOldA).toBeGreaterThan(0);
     await syncCreditReceipts();
     const frozen = Object.fromEntries((await db().execute("SELECT gen_id, credits FROM estimated_credits ORDER BY gen_id")).rows.map((r) => [String(r.gen_id), Number(r.credits)]));
-    expect(Object.keys(frozen)).toEqual(["old_a", "old_b", "old_zero"]);
+    /* No receipt and a cost: frozen, a take newer than the first meter event too. A receipt, or no cost: not. */
+    expect(Object.keys(frozen)).toEqual(["newer", "old_a", "old_b"]);
     expect(frozen.old_a).toBe(expectedOldA);
-    expect(frozen.old_zero).toBe(0);
-    expect((await db().execute("SELECT first_meter_at FROM estimated_credits_fill WHERE id=1")).rows[0].first_meter_at).toBe(1000);
-    /* A take made after the fill (no receipt yet) is never frozen, and the fill does not run again. */
+    expect(frozen.newer).toBe(expectedNewer);
+    /* A take made after the first read, with no receipt yet, is frozen by the next read; the ones already frozen are not touched. */
     await db().execute(take("late", 50, 5));
+    await db().execute("UPDATE estimated_credits SET credits = credits + 100 WHERE gen_id='old_a'");
     await syncCreditReceipts();
-    expect((await db().execute("SELECT COUNT(*) AS n FROM estimated_credits")).rows[0].n).toBe(3);
+    expect((await db().execute("SELECT COUNT(*) AS n FROM estimated_credits")).rows[0].n).toBe(4);
     const { getGeneration } = await import("../../lib/jobs");
-    expect((await getGeneration("old_a"))).toMatchObject({ creditsBilled: expectedOldA, estimated: true });
+    expect((await getGeneration("old_a"))).toMatchObject({ creditsBilled: expectedOldA + 100, estimated: true });
     expect((await getGeneration("metered"))).toMatchObject({ creditsBilled: 13, estimated: false });
-    expect((await getGeneration("newer"))).toMatchObject({ creditsBilled: 0, estimated: false });
-    expect((await getGeneration("late"))).toMatchObject({ creditsBilled: 0, estimated: false });
+    expect((await getGeneration("newer"))).toMatchObject({ creditsBilled: expectedNewer, estimated: true });
+    expect((await getGeneration("late"))).toMatchObject({ estimated: true });
+    expect((await getGeneration("late"))?.creditsBilled ?? 0).toBeGreaterThan(0);
+    expect((await getGeneration("old_zero"))).toMatchObject({ creditsBilled: 0, estimated: false });
     /* The meter, the receipts and every balance are untouched. */
     expect(Number((await platformDb().execute("SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id='ws_est'")).rows[0].n)).toBe(1);
     expect((await db().execute("SELECT event_id FROM credit_receipts")).rows.map((r) => r.event_id)).toEqual(["metered"]);
   });
 });
 
-test("a workspace with no meter event at all freezes every take it has, once", async () => {
+test("a workspace with no meter event at all freezes every costed take it has", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   const { syncCreditReceipts } = await import("../../lib/creditReceipts");
@@ -71,7 +75,70 @@ test("a workspace with no meter event at all freezes every take it has, once", a
     await db().batch([take("a", 100, 1), take("b", 5_000_000_000_000, 1)], "write");
     await syncCreditReceipts();
     expect((await db().execute("SELECT gen_id FROM estimated_credits ORDER BY gen_id")).rows.map((r) => r.gen_id)).toEqual(["a", "b"]);
-    expect((await db().execute("SELECT first_meter_at FROM estimated_credits_fill")).rows[0].first_meter_at).toBeNull();
+  });
+});
+
+test("a costed take with no receipt and no frozen row is frozen by the first read of any reader and counts that figure; a later change to CREDIT_MARGINS does not change it; two first reads freeze once; no cost reads 0", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { spentBy } = await import("../../lib/caps");
+  const { billedCreditsExpr } = await import("../../lib/creditSql");
+  const { syncCreditReceipts } = await import("../../lib/creditReceipts");
+  const before = process.env.CREDIT_MARGINS;
+  try {
+    await runInTenant(workspace("ws_est_first"), async () => {
+      await ready();
+      await db().batch([
+        { sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('pf','Board',0)", args: [] },
+        { sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,cost_usd,project_id) VALUES('costed','video','dreamina-seedance-2-5-260628','','{}','succeeded',5,5,1.0,'pf')", args: [] },
+        { sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,cost_usd,project_id) VALUES('free','video','dreamina-seedance-2-5-260628','','{}','succeeded',6,6,0,'pf')", args: [] },
+      ], "write");
+      expect((await db().execute("SELECT COUNT(*) AS n FROM estimated_credits")).rows[0].n, "nothing is frozen until something reads").toBe(0);
+      /* The cap reader is the first reader: it freezes the take, and counts the frozen figure (never 0). */
+      const first = (await spentBy("project_id", ["pf"])).get("pf")!.credits;
+      expect(first).toBeGreaterThan(0);
+      const row = (await db().execute("SELECT credits FROM estimated_credits WHERE gen_id='costed'")).rows;
+      expect(row.length).toBe(1);
+      expect(Number(row[0].credits)).toBe(first);
+      expect((await db().execute("SELECT 1 FROM estimated_credits WHERE gen_id='free'")).rows.length, "no cost: nothing to freeze").toBe(0);
+      expect(Number((await db().execute(`SELECT ${billedCreditsExpr("g")} AS c FROM generations g WHERE g.id='free'`)).rows[0].c)).toBe(0);
+      /* The margin table changes: the frozen figure does not, for the cap reader or the SQL every other reader uses. */
+      process.env.CREDIT_MARGINS = JSON.stringify({ "*": 9, video: 9 });
+      expect((await spentBy("project_id", ["pf"])).get("pf")!.credits).toBe(first);
+      await syncCreditReceipts();
+      expect(Number((await db().execute(`SELECT ${billedCreditsExpr("g")} AS c FROM generations g WHERE g.id='costed'`)).rows[0].c)).toBe(first);
+      expect(Number((await db().execute("SELECT credits FROM estimated_credits WHERE gen_id='costed'")).rows[0].credits)).toBe(first);
+    });
+    /* Two first reads together freeze once, at one figure. */
+    await runInTenant(workspace("ws_est_race"), async () => {
+      await ready();
+      await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,cost_usd) VALUES('race','video','dreamina-seedance-2-5-260628','','{}','succeeded',5,5,1.0)", args: [] });
+      await Promise.all([syncCreditReceipts(), syncCreditReceipts(), syncCreditReceipts()]);
+      const rows = (await db().execute("SELECT credits FROM estimated_credits WHERE gen_id='race'")).rows;
+      expect(rows.length).toBe(1);
+      expect(Number(rows[0].credits)).toBeGreaterThan(0);
+    });
+  } finally { if (before === undefined) delete process.env.CREDIT_MARGINS; else process.env.CREDIT_MARGINS = before; }
+});
+
+test("if the platform cannot answer, the take with a cost is still frozen and counted by the cap, and the failure still reaches the caller", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { spentBy } = await import("../../lib/caps");
+  const receipts = await import("../../lib/creditReceipts");
+  await runInTenant(workspace("ws_est_down"), async () => {
+    await ready();
+    await db().batch([
+      { sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('pd','Board',0)", args: [] },
+      { sql: "INSERT INTO generations(id,kind,model,prompt,params,status,created_at,updated_at,cost_usd,project_id) VALUES('down','video','dreamina-seedance-2-5-260628','','{}','succeeded',5,5,1.0,'pd')", args: [] },
+    ], "write");
+    /* The receipt copy fails (as it does when the platform cannot answer): here its cursor table, in this test's own database, is out of reach for a moment. */
+    await db().execute("ALTER TABLE credit_receipt_cursor RENAME TO credit_receipt_cursor_off");
+    try {
+      await expect(receipts.syncCreditReceipts()).rejects.toThrow();
+      expect((await spentBy("project_id", ["pd"])).get("pd")!.credits, "counted at its estimate, never 0").toBeGreaterThan(0);
+      expect((await db().execute("SELECT COUNT(*) AS n FROM estimated_credits WHERE gen_id='down'")).rows[0].n).toBe(1);
+    } finally { await db().execute("ALTER TABLE credit_receipt_cursor_off RENAME TO credit_receipt_cursor"); }
   });
 });
 
@@ -124,7 +191,7 @@ test("a take that was frozen and is then metered reads its receipt and is not es
   await platformReady();
   await runInTenant(workspace("ws_est_flag"), async () => {
     await ready();
-    /* The workspace's first reservation: its take is written before its meter row, so the first fill sees both takes with no receipt and freezes them. */
+    /* The workspace's first reservation: its take is written before its meter row, so the first read sees both takes with no receipt and freezes them. */
     await db().batch([take("old", 100, 1.0), take("first", 5_000, 1.0)], "write");
     await syncCreditReceipts();
     expect((await db().execute("SELECT gen_id FROM estimated_credits ORDER BY gen_id")).rows.map((r) => r.gen_id)).toEqual(["first", "old"]);

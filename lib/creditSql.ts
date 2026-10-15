@@ -1,7 +1,7 @@
 import { margins } from "./creditTerms";
 
 /**
- * The figure of a take made before metering, at TODAY's margin table: used once per workspace, to freeze each such take's figure into `estimated_credits`
+ * The figure of a take made before metering, at TODAY's margin table: used to freeze a take's figure into `estimated_credits` the first time it is read
  * (lib/estimatedCredits.ts), and by nothing else. No reader may call this: a take with no receipt reads its frozen figure, so a change to the margin
  * table (CREDIT_MARGINS) can never reprice history (owner, 14 Oct 2026: "pre-metering takes marked estimated, no repricing").
  */
