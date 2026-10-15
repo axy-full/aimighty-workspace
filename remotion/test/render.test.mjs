@@ -211,8 +211,8 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
 
   test("a windowed constant-rate copy plus offsetSeconds: the same source second renders the same picture from the copy as from the original, and a frame 0.3 s away does not", async () => {
     const copy = path.join(base, "windowed.mp4");
-    /* The conform pre-pass's own ffmpeg flags (node/conform.ts): only 1.75 s to 5.25 s of the source, starting at zero (the export tells the renderer where with `offsetSeconds`). */
-    execFileSync(path.join(compositor, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-format_whitelist", "mov,mp4,m4a,matroska,webm", "-ss", "1.75", "-t", "3.5", "-i", path.join(sampleDir, "sample.mp4"), "-map", "0:v:0", "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", "-movflags", "+faststart", copy]);
+    /* The conform pre-pass's own ffmpeg flags (node/conform.ts): only 1.7 s to 5.2 s of the source, starting at zero (the export tells the renderer where with `offsetSeconds`). */
+    execFileSync(path.join(compositor, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-format_whitelist", "mov,mp4,m4a,matroska,webm", "-ss", "1.7", "-t", "3.5", "-i", path.join(sampleDir, "sample.mp4"), "-map", "0:v:0", "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", "-movflags", "+faststart", copy]);
     const { selectComposition, renderStill } = await import(path.join(root, "node_modules", "@remotion", "renderer", "dist", "index.js"));
     const common = { browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE || undefined, chromeMode: "headless-shell", chromiumOptions: { gl: "swangle" }, logLevel: "error" };
     const still = async (name, file, startSeconds, offsetSeconds = 0) => {
@@ -227,7 +227,7 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
       return decodePng(readFileSync(output));
     };
     const original = await still("orig", path.join(sampleDir, "sample.mp4"), 2.5);
-    const windowed = await still("win", copy, 2.5, 1.75);
+    const windowed = await still("win", copy, 2.5, 1.7);
     const earlier = await still("early", path.join(sampleDir, "sample.mp4"), 2.2);
     const whole = { x0: 0, y0: 0, x1: original.width, y1: original.height };
     const aligned = regionDiff(original, windowed, whole);

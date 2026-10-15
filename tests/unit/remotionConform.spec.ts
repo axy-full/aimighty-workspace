@@ -7,6 +7,7 @@ import { checkSpec, runExport, usedWindow, type CompositionInfo, type Renderer }
 import { createFfmpegConformer, filesToConform, highQualitySource, reportInputs, type Conformer } from "../../remotion/node/conform";
 import { factsFromFfprobe, parseRate, type MediaFacts, type Prober } from "../../remotion/node/probe";
 import { toTimeline, type CompositionId } from "../../remotion/src/lib";
+import { validateProps } from "../../remotion/src/lib/validate";
 
 /* The constant-frame-rate pre-pass: probe the rate, conform only variable-rate pictures, report every picture input. */
 
@@ -176,36 +177,67 @@ test.describe("the export command with a conformer", () => {
     const watching: Renderer = { ...renderer, selectComposition: async (a) => { got.props = a.inputProps as Props; return { id: a.id, width: laterPlan.timeline.width, height: laterPlan.timeline.height, fps: laterPlan.timeline.fps, durationInFrames: laterPlan.timeline.durationInFrames, props: a.inputProps }; } };
     const result = await runExport({ ...args({}, fakeConformer()), spec: later, renderer: watching });
     expect(result).toMatchObject({ ok: true });
-    expect(conformerLog[0].window).toEqual({ startSeconds: 1.75, endSeconds: 7.25 });
-    expect(got.props?.clips.map((c) => [c.source.file, c.source.offsetSeconds])).toEqual([["vfr.mp4", 1.75], ["cfr.mp4", undefined], ["vfr.mp4", 1.75]]);
+    expect(conformerLog[0].window).toEqual({ startSeconds: 52 / 30, endSeconds: 7.25 });
+    expect(got.props?.clips.map((c) => [c.source.file, c.source.offsetSeconds])).toEqual([["vfr.mp4", 52 / 30], ["cfr.mp4", undefined], ["vfr.mp4", 52 / 30]]);
     /* Nothing conformed, nothing marked. */
     got.props = undefined;
     await runExport({ ...args({}, fakeConformer(true)), spec: later, renderer: watching });
     expect((got as { props?: Props }).props?.clips.map((c) => c.source.offsetSeconds)).toEqual([undefined, undefined, undefined]);
   });
 
-  test("offsetSeconds: checked against the file, left out when zero, and it moves the picture's start in the file earlier by that much, never before the start", () => {
-    const src = (extra: Record<string, unknown>) => ({ version: 1, composition: "final", props: { aspect: "16:9", scale: 0.25, title: null, clips: [{ ...clip("a.mp4"), source: { file: "a.mp4", durationSeconds: 10, width: 1920, height: 1080, hasAudio: true, ...extra }, trim: { startSeconds: 3, endSeconds: 5 } }], captionStyle: null, end: null, music: null } });
-    expect(checkSpec(src({ offsetSeconds: 11 }))).toMatchObject({ ok: false });
-    expect(checkSpec(src({ offsetSeconds: -1 }))).toMatchObject({ ok: false });
-    const plain = checkSpec(src({ offsetSeconds: 0 }));
-    if (!plain.ok) throw new Error(JSON.stringify(plain));
-    expect((plain.props as { clips: { source: object }[] }).clips[0].source).not.toHaveProperty("offsetSeconds");
-    const shifted = checkSpec(src({ offsetSeconds: 2.5 }));
-    if (!shifted.ok) throw new Error(JSON.stringify(shifted));
-    const first = (t: typeof plain.timeline) => t.items.find((i) => i.kind === "clip") as { trimBefore: number } | undefined;
-    expect(first(plain.timeline)?.trimBefore).toBe(90);
-    expect(first(shifted.timeline)?.trimBefore).toBe(15);
-    const late = checkSpec(src({ offsetSeconds: 4 }));
-    if (!late.ok) throw new Error(JSON.stringify(late));
-    expect(first(late.timeline)?.trimBefore).toBe(0);
+  test("a request cannot carry offsetSeconds: only the props the export builds for the renderer may", () => {
+    const withOffset = (extra: Record<string, unknown>) => ({ version: 1, composition: "final", props: { aspect: "16:9", scale: 0.25, title: null, clips: [{ ...clip("a.mp4"), source: { file: "a.mp4", durationSeconds: 10, width: 1920, height: 1080, hasAudio: true, ...extra } }], captionStyle: null, end: null, music: null } });
+    for (const value of [0, 2.5, 11, -1, "x"]) {
+      const refused = checkSpec(withOffset({ offsetSeconds: value }));
+      expect(refused, String(value)).toMatchObject({ ok: false, code: "spec_invalid" });
+      expect((refused as { errors: string[] }).errors).toContain("props.clips[0].source.offsetSeconds: is set by the export itself and cannot be sent");
+    }
+    expect(checkSpec(withOffset({}))).toMatchObject({ ok: true });
+    /* The same, in a cutdown and in captions. */
+    const cut = checkSpec({ version: 1, composition: "cutdown", props: { aspect: "9:16", scale: 0.25, source: { file: "a.mp4", durationSeconds: 10, width: 1920, height: 1080, hasAudio: true, offsetSeconds: 1 }, targetSeconds: 6, keep: [], cues: [], captionStyle: null, reframe: { mode: "fill", focusX: 0.5, focusY: 0.5 } } });
+    expect(cut).toMatchObject({ ok: false });
+  });
+
+  test("offsetSeconds, in the renderer's own props: checked against the file, left out when zero, and it moves the picture's start in the file earlier by that much, never before the start", () => {
+    const props = (offsetSeconds: number) => ({ aspect: "16:9", scale: 0.25, title: null, clips: [{ ...clip("a.mp4"), source: { file: "a.mp4", durationSeconds: 10, width: 1920, height: 1080, hasAudio: true, offsetSeconds }, trim: { startSeconds: 3, endSeconds: 5 } }], captionStyle: null, end: null, music: null });
+    const trusted = (offsetSeconds: number) => validateProps("final", props(offsetSeconds), undefined, true);
+    expect(trusted(11).ok).toBe(false);
+    expect(trusted(-1).ok).toBe(false);
+    expect(validateProps("final", props(2.5)).ok).toBe(false);
+    const run = (offsetSeconds: number) => { const v = trusted(offsetSeconds); if (!v.ok) throw new Error(JSON.stringify(v)); return v; };
+    const first = (offsetSeconds: number) => (toTimeline("final", run(offsetSeconds).value).items.find((i) => i.kind === "clip") as { trimBefore: number }).trimBefore;
+    expect((run(0).value.clips[0].source as object)).not.toHaveProperty("offsetSeconds");
+    expect(first(0)).toBe(90);
+    expect(first(2.5)).toBe(15);
+    expect(first(4)).toBe(0);
+  });
+
+  test("the window starts on a whole frame, so the offset times the rate is a whole number of frames; checked at a boundary at 24, 25, 30 and 60 fps", () => {
+    for (const fps of [24, 25, 30, 60]) {
+      for (const trim of [1, 2, 3.5, 7.3333]) {
+        const plan = checkSpec({ version: 1, composition: "final", props: { aspect: "16:9", fps, scale: 0.25, title: null, clips: [{ ...clip("a.mp4"), trim: { startSeconds: trim, endSeconds: trim + 1 } }], captionStyle: null, end: null, music: null } });
+        if (!plan.ok) throw new Error(JSON.stringify(plan));
+        const window = usedWindow(plan.timeline, "a.mp4", 20);
+        const frames = window!.startSeconds * fps;
+        expect(Math.abs(frames - Math.round(frames)), `${fps} fps, trim ${trim}`).toBeLessThan(1e-9);
+        /* Never later than the padded start, and never more than a frame earlier; the first frame the clip needs sits (pad .. pad + 1 frame) after the copy's start. */
+        const wanted = (plan.timeline.items.find((i) => i.kind === "clip") as { trimBefore: number }).trimBefore;
+        const local = wanted - Math.round(window!.startSeconds * fps);
+        expect(local).toBeGreaterThanOrEqual(Math.round(0.25 * fps));
+        expect(local).toBeLessThanOrEqual(Math.ceil(0.25 * fps) + 1);
+      }
+    }
+    /* The exact frames at a boundary: 2 s at 24 fps is frame 48, the pad is 6 frames, so the copy starts at frame 42 (1.75 s); at 30 fps 1 s is frame 30, the pad is 7.5 frames, so the copy starts at frame 22. */
+    const at = (fps: number, trim: number) => { const p = checkSpec({ version: 1, composition: "final", props: { aspect: "16:9", fps, scale: 0.25, title: null, clips: [{ ...clip("a.mp4"), trim: { startSeconds: trim, endSeconds: trim + 1 } }], captionStyle: null, end: null, music: null } }); if (!p.ok) throw new Error(JSON.stringify(p)); return usedWindow(p.timeline, "a.mp4", 20)!.startSeconds; };
+    expect(at(24, 2)).toBe(42 / 24);
+    expect(at(30, 1)).toBe(22 / 30);
   });
 
   test("a file used twice is covered from its earliest point to its latest, and a stretch is clamped to the file", () => {
     const twice = checkSpec({ version: 1, composition: "final", props: { aspect: "16:9", scale: 0.25, title: null, clips: [{ ...clip("vfr.mp4"), trim: { startSeconds: 1, endSeconds: 2 } }, { ...clip("vfr.mp4"), trim: { startSeconds: 7, endSeconds: 9.9 } }], captionStyle: null, end: null, music: null } });
     if (!twice.ok) throw new Error(JSON.stringify(twice));
-    expect(usedWindow(twice.timeline, "vfr.mp4", 10)).toEqual({ startSeconds: 0.75, endSeconds: 10 });
-    expect(usedWindow(twice.timeline, "vfr.mp4")).toEqual({ startSeconds: 0.75, endSeconds: 10.15 });
+    expect(usedWindow(twice.timeline, "vfr.mp4", 10)).toEqual({ startSeconds: 22 / 30, endSeconds: 10 });
+    expect(usedWindow(twice.timeline, "vfr.mp4")).toEqual({ startSeconds: 22 / 30, endSeconds: 10.15 });
     expect(usedWindow(twice.timeline, "other.mp4", 10)).toBeUndefined();
   });
 
