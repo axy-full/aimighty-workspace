@@ -918,3 +918,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #780 Runway delta APPROVED.
   - #782 MediaConvert APPROVED (file-only; SigV4 correct; nit: accept the plain endpoint host).
   - Every engine PR is NEEDS AKSHAY.
+- **16 Oct 03:03 IST.**
+  - Readiness CI failed:
+    - #748 f4a6e5d1 (run 38805363582): render-v12-workbench.spec.ts:59 at 1920. The render line's height is measured in screen px under the 1.2 canvas scale against the unscaled line-height, so a large-screen regression in either the test or the code.
+    - #749 c021c3d3 (run 38805406687): suites-business-workbench.spec.ts:220 at 1440 timed out on the image-ad Aspect button; flake or regression to be determined.
+    - Both sent to lane C after the #781 fixes. Neither merges.
+  - NB 2.1 found on Google's pages: id `gemini-nano-banana-2.1` (New Stable); $0.0336 / $0.0504 / $0.113 per 1K / 2K / 4K image, cheaper than NB 2; no published per-image input count, so 1120 tokens is used conservatively.
+  - gemini-3.8-flash: $0.75 / $3.75 per 1M until 31 Dec 2026, then $1.50 / $7.50; lane B is told not to under-quote on 1 Jan.
+  - #782 at 659ef0cf carries the Mumbai rates.
