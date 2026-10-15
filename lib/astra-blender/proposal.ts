@@ -38,7 +38,7 @@ export function validateAstraProposal(value: AstraAgentResult, source: AstraScen
   const scene = parseAstraScene(JSON.parse(value.sceneJson));
   validateAstraBindings(scene, assets);
   for (const object of source.objects.filter(item => item.locked)) {
-    if (JSON.stringify(scene.objects.find(item => item.id === object.id)) !== JSON.stringify(object)) throw new Error(`Astra changed the locked object ${object.name}. Unlock it before requesting changes.`);
+    if (JSON.stringify(scene.objects.find(item => item.id === object.id)) !== JSON.stringify(object)) throw new Error(`The 3D scene changed the locked object ${object.name}. Unlock it before requesting changes.`);
   }
   return scene;
 }

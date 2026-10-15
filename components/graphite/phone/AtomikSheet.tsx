@@ -116,7 +116,7 @@ function Sheet({ productionId, query, online, places, onClose }: { productionId:
   const { setScreenParams } = shell;
   useEffect(() => { if (query) setScreenParams({ q: null }, "replace"); }, [query, setScreenParams]);
 
-  const button = askButton(intent, { credits: a.quote?.estimateCredits ?? null, loading: a.quoting, error: a.quoteError });
+  const button = askButton(intent, { credits: a.quote?.estimateCredits ?? null, usd: a.quote?.estimateUsd ?? null, loading: a.quoting, error: a.quoteError });
   const hints = spendOff ? HOW_HINTS.filter((hint) => atomikIntent(hint).kind === "how") : HOW_HINTS;
   const blocked = intent.kind === "ask" && !online ? "Needs a connection" : intent.kind === "ask" && !ready ? "Opening this project’s Atomik…" : null;
   const title = usePriceTitle(button.price);

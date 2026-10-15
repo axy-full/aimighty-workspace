@@ -146,4 +146,4 @@ export function planLineKey(primary: PlanPrimary | null | undefined, money: { sp
 }
 
 /** The figure a quote gives a move: the server's credits, exact. */
-export const movePrice = (credits: number | null | undefined): PriceValue | null => exact(credits);
+export const movePrice = (credits: number | null | undefined, usd?: number | null): PriceValue | null => exact(credits, usd);

@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 /** One quote to read. `transcription` is only meaningful to the reader that knows the transcription route. */
 export type QuoteRequest = { body: Record<string, unknown>; transcription?: boolean };
 /** `approximate`: the server quoted it from published rates; the charge may settle above it (lib/runLimit.ts jobBand). */
-type Quote = { key: string; credits?: number; approximate?: true; error?: string };
+type Quote = { key: string; credits?: number; /** The same in the engines' dollars, when the route answered in them (the house pays at cost). */ usd?: number; approximate?: true; error?: string };
 /** How one request is priced: a side-effect-free POST that reserves nothing. */
-export type QuoteReader = (request: QuoteRequest, scope: string, signal: AbortSignal) => Promise<{ estimatedCredits: number; approximate?: boolean }>;
+export type QuoteReader = (request: QuoteRequest, scope: string, signal: AbortSignal) => Promise<{ estimatedCredits: number; approximate?: boolean; price?: number; unit?: string }>;
 
 /**
  * The quote-reading hook behind useStageQuotes (every stage's price reads) and useGenerateQuotes (the Rig's): the reader says
@@ -32,7 +32,7 @@ export function useQuoteReads(scope: string, requests: Record<string, QuoteReque
             const reply = await read(request, scope, controller.signal);
             if (controller.signal.aborted) return;
             if (!Number.isFinite(reply.estimatedCredits) || reply.estimatedCredits < 0) throw new Error("The price could not be read. Try again.");
-            setQuotes((all) => ({ ...all, [id]: { key, credits: reply.estimatedCredits, ...(reply.approximate ? { approximate: true as const } : {}) } }));
+            setQuotes((all) => ({ ...all, [id]: { key, credits: reply.estimatedCredits, ...(reply.unit === "usd" && Number.isFinite(reply.price) ? { usd: reply.price } : {}), ...(reply.approximate ? { approximate: true as const } : {}) } }));
           } catch (cause) {
             if (controller.signal.aborted) return;
             setQuotes((all) => ({ ...all, [id]: { key, error: cause instanceof Error ? cause.message : "The price could not be read. Try again." } }));

@@ -3,6 +3,19 @@ export function usd(n: number | null | undefined, dp = 3): string {
   return `$${n.toFixed(dp)}`;
 }
 
+/**
+ * A dollar amount as Particl shows one (owner, 13 Oct): always two decimals, always rounded UP (Math.ceil) to the next cent, so a price never reads below what it can charge, and a negative figure (a refund) rounds toward zero, so it is never overstated:
+ * $0.743 -> $0.75, $1.001 -> $1.01, $2.00 stays $2.00. The one formatter for a job's dollars (the house workspace's prices, holds and bills); display only, it never
+ * changes what is billed or held. A rate (dollars per second or per credit) is not a price and keeps its own decimals. Anything that is not a finite number is "—".
+ */
+export function dollars(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  /* Math.ceil on the signed figure: a price rounds up, and a refund (negative) rounds toward zero, so it is never overstated: -$0.743 reads -$0.74. */
+  const cents = Math.ceil(n * 100 - 1e-7);
+  const text = (Math.abs(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${cents < 0 ? "-" : ""}$${text}`;
+}
+
 export function compactTokens(n: number | null | undefined): string {
   if (n == null) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;

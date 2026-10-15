@@ -432,6 +432,9 @@ export type RigAgentPaidStepView = {
   quote: number | null;
   /** The most it may settle at (its price times its band): what the run's limit keeps room for. */
   worst: number | null;
+  /** The same two in the engines' dollars, for the house workspace only (it pays at cost, in dollars). Display only: nothing is quoted, held or billed from it. */
+  quoteUsd?: number | null;
+  worstUsd?: number | null;
   /** Why it paused, when it did: the limit, the balance, an admin, a refusal, a price it has not got, or its record. */
   pause: "limit" | "credits" | "admin" | "refused" | "unpriced" | "record" | null;
   /** What it was charged, once the ledger has settled it. */
@@ -458,7 +461,7 @@ export type RigAgentPaidStepView = {
  */
 export type RigAgentPlanView = {
   /** The server's quote while the plan waits for its approval; null once approved, or while a render has no price. */
-  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; asks: number[] } | null;
+  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; asks: number[]; totalUsd?: number | null } | null;
   /** Why the plan cannot be approved yet (a render not priced), when it cannot. */
   blocked: string | null;
   approval: {

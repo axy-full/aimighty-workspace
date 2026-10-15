@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { compare, expired, growth, lowered, onMain, readJson, shapeProblems, type Section } from "../helpers/ratchet";
+import { baseRef, compare, expired, growth, lowered, onMain, readJson, shapeProblems, type Section } from "../helpers/ratchet";
 import { lockfileHits, manifestHits, scanManifestScripts, scanRepository, scanScript, scanText, trackedForbidden, type Counts, type Hit } from "../helpers/vercelScan";
 
 /**
@@ -143,11 +143,13 @@ test("the allowance file: every entry has a count, a date and who removes it; th
   }
 });
 
-test("the ratchet only goes down: against main, no entry is added, raised or moved later (and in CI there is a main to compare with)", () => {
-  /* The CI job fetches the whole history (verify.yml, unit), so origin/main is there; without it this comparison would pass for no reason. */
-  const hasMain = spawnSync("git", ["rev-parse", "--verify", "--quiet", "origin/main"]).status === 0;
-  if (process.env.CI) expect(hasMain, "no origin/main to compare with: the unit job must fetch it (fetch-depth: 0)").toBe(true);
-  const then = hasMain ? onMain<Allowance>(RATCHET) : null;
+test("the ratchet only goes down: against the base branch, no entry is added, raised or moved later (and in CI there is a base to compare with)", () => {
+  /* The base is tests/helpers/ratchet.ts baseRef(): RATCHET_BASE (the unit job sets it: the pull request's base, or the previous tip on a push), else origin/main.
+     The unit job fetches it (verify.yml); in CI a base that cannot be resolved fails here, because the comparison would otherwise pass for no reason. */
+  const ref = baseRef();
+  const hasBase = spawnSync("git", ["rev-parse", "--verify", "--quiet", ref]).status === 0;
+  if (process.env.CI) expect(hasBase, `no ${ref} to compare with: the unit job must fetch the base (verify.yml sets RATCHET_BASE and fetches it)`).toBe(true);
+  const then = hasBase ? onMain<Allowance>(RATCHET) : null;
   /* Until this file reaches main there is nothing on main to compare with; once it has, the comparison runs. */
   if (!then) return;
   for (const section of SECTIONS) expect(growth(allowance()[section], then[section]), `${section}: entries added, counts raised or dates moved later`).toEqual({ added: [], raised: [], later: [] });

@@ -54,7 +54,7 @@ export function Recent({ scope, project, items, library, projects, make }: {
   };
 
   const card = (entry: LibraryEntry) => {
-    const generated = entry.take.kind === "GEN";
+    const generated = entry.take.kind === "generation";
     const settled = entry.take.credits;
     const referable = entry.media === "image" || entry.media === "video";
     return (
