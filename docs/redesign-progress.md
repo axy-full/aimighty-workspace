@@ -888,3 +888,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Veo should-fixes sent to lane D: number of videos = 1; settle at min(quote, measured length × rate); narrow the download hosts (*.google.com is too broad); env note.
   - Shared cron edits skip only `veo_video` rows.
 - **16 Oct 02:45 IST.** #779 Veo APPROVED at 55b5d36e. The mp4 header parser is safe on hostile input and the bill can't exceed the quote; downloads are limited to generativelanguage.googleapis.com and *.googleusercontent.com; sampleCount is 1. Small should-fix sent: round measured seconds up. Still waiting on lane B's next #778 head (prepared-job gap) and #780 Runway fixes.
+- **16 Oct 02:48 IST.** Opus APPROVED lane B's prepared-job fix: #776 3a6f3c76, #777 9f21ad44, #778 84245fe2. 76 specs pass, including the token and prepared-job specs.
+  - render_shot's filing path is unchanged.
+  - Nested args are ids only, with size bounds enforced server-side before the write.
+  - Only a session can decide on a prepared job.
+  - No false "filed" claims.
+  - Top-level args can hold prompt text, as render_shot already does in prepared_jobs.prompt. Owner question: keep prompt text in prepared jobs at all?
