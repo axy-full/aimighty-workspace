@@ -838,3 +838,12 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Astra 2: equal to fal at Developer, or 20% cheaper at Scale, under the Astra 2 page; but 33% dearer at Developer under the family table. Six contradictions are listed.
   - Lead call for lane C's TOPAZ_RATES: the dearer reading everywhere, at $0.10/credit, until the owner confirms the plan and the first invoice settles the reading.
   - Owner questions: which plan; a dearer 48 MP (or cap at 24 MP, or keep images on fal); the Starlight tier; Astra vs Astra 2; 720p, Iris, Rhea.
+- **16 Oct 02:07 IST.** Lane C:
+  - #749 nit done (c021c3d3).
+  - Topaz direct adapter, file-only: branch feat/r1-topaz-direct 5923a9e6, no PR yet, touches no shared module.
+    - Env names: TOPAZ_API_KEY and TOPAZ_DIRECT_ENABLED.
+    - Fetching: redirect "error", host allow-list, never retried.
+    - Vendor copies: video copy deleted after storing; Topaz names no image delete endpoint.
+    - TOPAZ_RATES uses the dearer reading at $0.10 per credit.
+    - Field names TO CONFIRM.
+    - Wiring waits for lane B's #778 head. For the Opus review: the allow-list's "S3 presigned storage" entry.
