@@ -16,21 +16,35 @@ Particl's own templates for exports: captions on a cut, title and end cards, 16:
 | `end-card` | headline, call-to-action pill, line, optional logo | `card` |
 | `captions` | one clip with burned-in captions (`bold`, `clean`, `karaoke`) | `clip`, `captionStyle` |
 | `reframe` | one clip as 16:9 or 9:16: `fill` (crop on a focus point) or `fit` (whole picture, blurred backdrop) | `clip` |
-| `cutdown` | 6, 15 or 30 s from one source: marked moments or an even spread; frame-exact | `source`, `targetSeconds`, `keep`, `cues` |
-| `final` | title, clips (trimmed, reframed, captioned), end card, music | `title`, `clips`, `end`, `music` |
+| `cutdown` | 6, 15 or 30 s from one source: marked moments (by hand or from the speech) or an even spread; frame-exact | `source`, `targetSeconds`, `keep`, `silence`, `cues` |
+| `final` | title, clips (trimmed, reframed, captioned), end card, music, and spoken lines (a narrated assembly) | `title`, `clips`, `end`, `music`, `voiceover`, `duck` |
 | `fixture-clip` | our own sample picture, for tests and timing | `durationSeconds`, `label` |
 
 All take `aspect` (`16:9` or `9:16`), `fps` (24, 25, 30, 60; default 30) and `scale` (0.1 to 1; default 1 = 1920x1080 or 1080x1920; smaller is for previews and tests). Props are checked by `src/lib/validate.ts`: unknown keys, URLs, absolute paths, `..`, over-long text, too many clips or cues are refused. A source needs its `durationSeconds`, `width` and `height` (the app knows them); a declared length longer than the file would fail a render, so the worker's export command can probe and correct it.
+
+### Silence-aware cutdowns (`cutdown`: `silence`)
+
+`silence` is `off` (the default) or `keep-speech`. With `keep-speech` the export first finds the quiet stretches of the source's sound with the bundled ffmpeg's `silencedetect` (quieter than -35 dB for at least 0.6 s), keeps everything else, padded by 0.15 s each side so no word is clipped, drops blips shorter than 0.3 s, uses at most the 12 longest spoken stretches, adds them to any `keep` ranges you gave, and plans the 6, 15 or 30 s cut from that (`src/lib/silence.ts`, `node/silence.ts`). The render gets the final `keep` ranges and `silence: "off"`. `result.json` has `silence`: the file, the seconds of silence found, the spoken stretches and the ranges the cut was planned to keep. A source with no sound, or a worker with no detector, refuses it; a source that is all quiet adds nothing and the cut is the even spread.
+
+### Narrated assembly (`final`: `voiceover`, `duck`)
+
+`voiceover` is a list of up to 24 spoken lines, each `{ file, durationSeconds, startSeconds, volume }` (an audio file in `input/`, its length, where it starts on the finished video's clock in seconds, 0 to 1; start defaults to 0, volume to 1). A line may not start after the end of the cut; one that runs past it is cut at the end. **While any line plays, the music and the clips' own sound drop to `duck` of their level** (0 to 1, default 0.3; 1 = no ducking), with a straight 0.2 s ramp down before the voice starts and back up after it stops (`src/lib/ducking.ts`, pure frame maths). The voice files are checked like the music: they must exist, have sound and be as long as the request says. Measured on a real render: the music and the clip sound sit at 0.3 of their level during a line and are back to above 0.85 after it, and the voice is heard only where it is placed.
 
 ## The export command (what the worker runs)
 
 `node build/cli.mjs`, working directory = the session folder. No arguments.
 
 ```
-spec.json  { "version": 1, "composition": "final", "props": {...}, "output": { "video": true, "stills": [0, 45] } }
+spec.json  { "version": 1, "composition": "final", "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"], "conform": "auto" } }
 input/     the files the props name
-output/    export.mp4, still-<frame>.png, result.json
+output/    export.mp4 (or export.mov for ProRes), still-<frame>.png, subtitles.srt / subtitles.vtt, result.json
 ```
+
+`output.format` is `h264` (the default: `export.mp4`, CRF 20, AAC), `prores-422` or `prores-422-hq` (`export.mov`, 10-bit 4:2:2 with 16-bit PCM sound; at most 60 s by default, `REMOTION_PRORES_MAX_SECONDS` can only shorten that). H.265 is refused ("H.265 is not available."): owner, 15 Oct 2026, until his lawyer answers. A ProRes 30 s 1080p file is about 485 MB (422) or 716 MB (422 HQ); `result.json` names each file with its `format` and `mime`.
+
+`output.subtitles` (`srt` and/or `vtt`) writes sidecar subtitle files from the same cues the captions are burned in from, on the finished video's own clock (a trim moves them, a cut-away caption is not in the file, a cutdown's source-time cues land in the cut). It is plain text: with `output.video: false` and no stills it needs no input file and no renderer. An export with no caption text refuses it (`spec.output.subtitles: the export has no caption text (no cues) to write`). `result.json` lists each file with kind `subtitle`, its format and mime (`application/x-subrip`, `text/vtt`).
+
+`output.conform` is `auto` (the default) or `off`. Every picture input is probed for its frame rate; with `auto`, a **variable-frame-rate** file (its nominal and average rates differ by more than 2%, as phone clips and screen recordings often do) is re-encoded once, before the render, to a **constant rate equal to the export's own** (x264 CRF 14, sound re-encoded as AAC, length unchanged) with the bundled ffmpeg, and the render reads that copy; the original in `input/` is never changed. A file already at a constant rate is never touched, even at another rate (the render resamples it by time, as before); it is only reported. `result.json` has `inputs`: one line per picture with `fps`, `variableFrameRate`, `targetFps`, `conformed`, `resampled` and, if the pre-pass failed and the render read the original, `conformFailed`.
 
 Exit codes: 0 done, 2 spec invalid or too long, 3 an input is missing or is not what the spec says it is (ffprobe reads every clip and music file: a different length by more than 0.1 s, a different size, or sound the request says is there but is not, is refused), 4 the render failed (`output/result.json` says why). Tuning comes only from the worker's environment: `REMOTION_RUNTIME_DIR` (where Remotion's Chrome download lives; the command moves there after reading its session paths, because Remotion looks for Chrome under the working directory's nearest package.json), `REMOTION_CONCURRENCY` (default 2), `REMOTION_MAX_SECONDS` (default 120, cannot be raised above it), `REMOTION_BROWSER_EXECUTABLE`, `REMOTION_BUNDLE_DIR`. No licence key is passed, ever (owner decision, 14 Oct 2026): with none, the renderer sends nothing to Remotion. A test fails if one appears.
 

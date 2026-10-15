@@ -1,5 +1,7 @@
 import {
   ASPECTS,
+  SILENCE_MODES,
+  type SilenceMode,
   CAPTION_STYLES,
   COMPOSITION_IDS,
   CUTDOWN_TARGETS,
@@ -22,6 +24,7 @@ import {
   type FinalProps,
   type FixtureClipProps,
   type MusicSpec,
+  type VoiceLine,
   type PropsById,
   type Range,
   type ReframeMode,
@@ -294,6 +297,27 @@ function music(value: unknown, path: string, issues: Issues): MusicSpec | null {
   };
 }
 
+const MAX_VOICE_LINES = 24;
+
+function voiceover(value: unknown, path: string, issues: Issues, limits: ExportLimits): VoiceLine[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MAX_VOICE_LINES) {
+    issues.add(path, `must be a list of at most ${MAX_VOICE_LINES} voice lines`);
+    return [];
+  }
+  return value.map((item, index) => {
+    const at = `${path}[${index}]`;
+    const rec = record(item, at, issues, ["file", "durationSeconds", "startSeconds", "volume"]) ?? {};
+    if (!isSafeInputPath(rec.file, AUDIO_EXT)) issues.add(`${at}.file`, "must be a plain relative path to an audio file in the input folder");
+    return {
+      file: typeof rec.file === "string" ? rec.file : "x.mp3",
+      durationSeconds: num(rec.durationSeconds, `${at}.durationSeconds`, issues, 0.1, limits.maxSeconds),
+      startSeconds: num(rec.startSeconds, `${at}.startSeconds`, issues, 0, limits.maxSeconds, 0),
+      volume: num(rec.volume, `${at}.volume`, issues, 0, 1, 1),
+    };
+  });
+}
+
 function captionStyle(value: unknown, path: string, issues: Issues, fallback: CaptionStyle): CaptionStyle;
 function captionStyle(value: unknown, path: string, issues: Issues, fallback: null): CaptionStyle | null;
 function captionStyle(value: unknown, path: string, issues: Issues, fallback: CaptionStyle | null): CaptionStyle | null {
@@ -326,7 +350,7 @@ const validators: { [K in CompositionId]: Validator<PropsById[K]> } = {
     return { ...common(rec, issues, limits), clip: clip(rec.clip, "props.clip", issues, limits) } satisfies ReframeProps;
   },
   cutdown: (value, issues, limits) => {
-    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "source", "targetSeconds", "keep", "cues", "captionStyle", "reframe"]) ?? {};
+    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "source", "targetSeconds", "keep", "silence", "cues", "captionStyle", "reframe"]) ?? {};
     const src = source(rec.source, "props.source", issues, limits);
     let keep: Range[] = [];
     if (rec.keep !== undefined && rec.keep !== null) {
@@ -338,13 +362,14 @@ const validators: { [K in CompositionId]: Validator<PropsById[K]> } = {
       source: src,
       targetSeconds: oneOf<CutdownTarget>(rec.targetSeconds, "props.targetSeconds", issues, CUTDOWN_TARGETS),
       keep,
+      silence: rec.silence === undefined || rec.silence === null ? "off" : oneOf<SilenceMode>(rec.silence, "props.silence", issues, SILENCE_MODES),
       cues: cues(rec.cues, "props.cues", issues, limits),
       captionStyle: captionStyle(rec.captionStyle, "props.captionStyle", issues, null),
       reframe: reframe(rec.reframe, "props.reframe", issues),
     } satisfies CutdownProps;
   },
   final: (value, issues, limits) => {
-    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "title", "clips", "captionStyle", "end", "music"]) ?? {};
+    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "title", "clips", "captionStyle", "end", "music", "voiceover", "duck"]) ?? {};
     let clips: ClipItem[] = [];
     if (!Array.isArray(rec.clips) || rec.clips.length === 0 || rec.clips.length > limits.maxClips) {
       issues.add("props.clips", `must be a list of 1 to ${limits.maxClips} clips`);
@@ -358,6 +383,8 @@ const validators: { [K in CompositionId]: Validator<PropsById[K]> } = {
       captionStyle: captionStyle(rec.captionStyle, "props.captionStyle", issues, null),
       end: rec.end ? endCard(rec.end, "props.end", issues, limits) : null,
       music: music(rec.music, "props.music", issues),
+      voiceover: voiceover(rec.voiceover, "props.voiceover", issues, limits),
+      duck: num(rec.duck, "props.duck", issues, 0, 1, 0.3),
     } satisfies FinalProps;
   },
   "fixture-clip": (value, issues, limits) => {

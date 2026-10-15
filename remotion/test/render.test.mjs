@@ -155,6 +155,56 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
     assert.ok(streams.some((s) => s.codec_type === "audio"));
   });
 
+  for (const [format, profile] of [["prores-422", "2"], ["prores-422-hq", "3"]]) {
+    test(`${format}: a real .mov of the right codec, profile ${profile}, 10-bit 4:2:2, and H.265 is refused before anything renders`, () => {
+      const card = { title: "Mezzanine", theme: { background: "#102030", foreground: "#f0e0d0", accent: "#ff6b35" }, durationSeconds: 1 };
+      const { dir, status, stderr, result } = run(`mezzanine-${format}`, { version: 1, composition: "title-card", props: { aspect: "16:9", scale: 0.25, card }, output: { video: true, format } });
+      assert.equal(status, 0, stderr);
+      assert.deepEqual(result.files.map((f) => [f.name, f.format, f.mime]), [["export.mov", format, "video/quicktime"]]);
+      const info = execFileSync(path.join(compositor, "ffprobe"), ["-hide_banner", "-loglevel", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,profile,pix_fmt,width,height", "-of", "json", path.join(dir, "output", "export.mov")], { encoding: "utf8" });
+      const stream = JSON.parse(info).streams[0];
+      assert.equal(stream.codec_name, "prores");
+      assert.equal(String(stream.profile), profile, info);
+      assert.equal(stream.pix_fmt, "yuv422p10le");
+      assert.deepEqual([stream.width, stream.height], [480, 270]);
+      const refused = run(`h265-${format}`, { version: 1, composition: "title-card", props: { aspect: "16:9", scale: 0.25, card }, output: { video: true, format: "h265" } });
+      assert.equal(refused.status, 2);
+      assert.deepEqual(refused.result.errors, ["spec.output.format: H.265 is not available."]);
+    });
+  }
+
+  test("narrated assembly: while a voice line plays, the music and the clip's own sound drop to the duck share, and come back after", () => {
+    const sine = (freq, seconds) => execFileSync(path.join(compositor, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `sine=frequency=${freq}:duration=${seconds}`, "-f", "mp3", "-"], { maxBuffer: 1 << 24 });
+    const clip = { source: SOURCE, trim: { startSeconds: 0, endSeconds: 6 }, cues: [], reframe: { mode: "fill", focusX: 0.5, focusY: 0.5 } };
+    const { dir, status, stderr, result } = run(
+      "narrated",
+      { version: 1, composition: "final", props: { aspect: "16:9", fps: 30, scale: 0.25, title: null, end: null, clips: [clip], captionStyle: null, music: { file: "bed.mp3", durationSeconds: 9, volume: 0.5 }, voiceover: [{ file: "voice.mp3", durationSeconds: 2, startSeconds: 2.5, volume: 1 }], duck: 0.3 } },
+      { files: { "bed.mp3": sine(220, 9), "voice.mp3": sine(880, 2) } },
+    );
+    assert.equal(status, 0, stderr);
+    assert.equal(result.durationInFrames, 180);
+    const pcm = execFileSync(path.join(compositor, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-i", path.join(dir, "output", "export.mp4"), "-vn", "-ac", "1", "-ar", "8000", "-c:a", "pcm_s16le", "-f", "wav", "-"], { maxBuffer: 1 << 26 });
+    /* A WAV: skip to the "data" chunk, then 16-bit little-endian samples. */
+    const dataAt = pcm.indexOf("data") + 8;
+    const samples = new Int16Array(pcm.buffer.slice(pcm.byteOffset + dataAt, pcm.byteOffset + dataAt + Math.floor((pcm.length - dataAt) / 2) * 2));
+    /* The amplitude of one tone in a window of the finished audio (Goertzel). */
+    const level = (freq, fromSeconds, toSeconds) => {
+      const part = samples.subarray(Math.round(fromSeconds * 8000), Math.round(toSeconds * 8000));
+      const w = (2 * Math.PI * freq) / 8000;
+      let s1 = 0, s2 = 0;
+      for (const x of part) { const s0 = x + 2 * Math.cos(w) * s1 - s2; s2 = s1; s1 = s0; }
+      return Math.sqrt(s1 * s1 + s2 * s2 - 2 * Math.cos(w) * s1 * s2) / part.length;
+    };
+    const musicBefore = level(220, 0.3, 1.6), musicDuring = level(220, 2.9, 4.0), musicAfter = level(220, 4.9, 5.4);
+    const clipBefore = level(440, 0.3, 1.6), clipDuring = level(440, 2.9, 4.0);
+    assert.ok(musicBefore > 50, `the music is there before the voice (${musicBefore})`);
+    assert.ok(Math.abs(musicDuring / musicBefore - 0.3) < 0.08, `music during the voice is about 0.3 of before: ${musicDuring / musicBefore}`);
+    assert.ok(clipBefore > 50 && Math.abs(clipDuring / clipBefore - 0.3) < 0.08, `the clip's sound ducks too: ${clipDuring / clipBefore}`);
+    assert.ok(level(880, 2.9, 4.0) > 100, "the voice is heard, undimmed");
+    assert.ok(level(880, 0.3, 1.6) < 20 && level(880, 5.0, 5.8) < 20, "and only where it is placed");
+    assert.ok(musicAfter / musicBefore > 0.85, `the music is back after the voice: ${musicAfter / musicBefore}`);
+  });
+
   test("refusals: a bad spec exits 2, a missing file 3, and a path that climbs out is refused before anything runs", () => {
     const bad = run("bad", { version: 1, composition: "title-card", props: { aspect: "4:3", card: {} } });
     assert.equal(bad.status, 2);

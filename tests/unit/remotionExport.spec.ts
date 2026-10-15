@@ -3,8 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import os from "node:os";
 import path from "node:path";
 import { checkSpec, contradictions, declaredOf, inputFilesOf, runExport, type CompositionInfo, type Renderer } from "../../remotion/node/export";
+import { encodingFor } from "../../remotion/node/renderer";
 import { factsFromFfprobe, type MediaFacts, type Prober } from "../../remotion/node/probe";
 import { toTimeline, validateProps, type CompositionId } from "../../remotion/src/lib";
+import { DEFAULT_LIMITS } from "../../remotion/src/lib/limits";
 
 /** A renderer that renders nothing: it measures with the same timeline code and writes small stand-in files. */
 function fakeRenderer(opts: { failOn?: "prepare" | "select" | "video" | "still"; lie?: boolean } = {}) {
@@ -87,6 +89,66 @@ const finalSpec = (output?: unknown) => ({
   ...(output ? { output } : {}),
 });
 
+test.describe("output formats: H.264 by default, ProRes 422 and 422 HQ, never H.265", () => {
+  test("H.264 is the default: export.mp4, video/mp4, and the renderer is told h264", async () => {
+    const { renderer, calls } = fakeRenderer();
+    const result = await runExport(args(finalSpec(), renderer));
+    expect(result).toMatchObject({ ok: true });
+    expect(calls.find((c) => c.name === "video")!.args.format).toBe("h264");
+    const explicit = fakeRenderer();
+    expect(await runExport(args(finalSpec({ video: true, format: "h264" }), explicit.renderer))).toMatchObject({ ok: true, files: [{ name: "export.mp4", format: "h264", mime: "video/mp4" }] });
+  });
+
+  for (const [format, profile] of [["prores-422", "standard"], ["prores-422-hq", "hq"]] as const) {
+    test(`${format}: export.mov, video/quicktime, the renderer is told ${format}, and Remotion's profile name is ${profile}`, async () => {
+      const { renderer, calls } = fakeRenderer();
+      const result = await runExport(args(finalSpec({ format }), renderer));
+      expect(result).toMatchObject({ ok: true, files: [{ name: "export.mov", kind: "video", format, mime: "video/quicktime" }] });
+      expect(existsSync(path.join(base, "output", "export.mov"))).toBe(true);
+      expect(existsSync(path.join(base, "output", "export.mp4"))).toBe(false);
+      expect(calls.find((c) => c.name === "video")!.args.format).toBe(format);
+      expect(encodingFor(format)).toEqual({ codec: "prores", proResProfile: profile, audioCodec: "pcm-16", pixelFormat: "yuv422p10le" });
+    });
+  }
+
+  test("the encodings: H.264 is CRF 20 with AAC in 4:2:0; ProRes is 10-bit 4:2:2 with 16-bit PCM", () => {
+    expect(encodingFor("h264")).toEqual({ codec: "h264", audioCodec: "aac", pixelFormat: "yuv420p", crf: 20, x264Preset: "medium" });
+  });
+
+  test("H.265 is refused with a plain reason, whatever it is called; so is any other name; none of them reaches the renderer", async () => {
+    for (const name of ["h265", "H.265", "hevc", " HEVC ", "x265", "h265-mp4"]) {
+      const { renderer, calls } = fakeRenderer();
+      const result = await runExport(args(finalSpec({ format: name }), renderer));
+      expect(result).toEqual({ ok: false, code: "spec_invalid", errors: ["spec.output.format: H.265 is not available."] });
+      expect(calls).toEqual([]);
+    }
+    for (const name of ["vp9", "gif", "prores", "prores-4444", "", 5, null, "h264 "]) {
+      const { renderer, calls } = fakeRenderer();
+      const result = await runExport(args(finalSpec({ format: name }), renderer));
+      if (name === "h264 ") { expect(result).toMatchObject({ ok: true }); continue; }
+      expect(result).toMatchObject({ ok: false, code: "spec_invalid" });
+      expect((result as { errors: string[] }).errors[0]).toMatch(/spec\.output\.format: must be one of h264, prores-422, prores-422-hq/);
+      expect(calls).toEqual([]);
+    }
+  });
+
+  test("a format needs the video: output.video false with a format is refused", async () => {
+    const result = await runExport(args(finalSpec({ video: false, stills: [0], format: "prores-422" }), fakeRenderer().renderer));
+    expect(result).toEqual({ ok: false, code: "spec_invalid", errors: ["spec.output.format: needs the video (output.video is false)"] });
+  });
+
+  test("ProRes is held to a shorter length (60 s by default), H.264 is not; the limit is the worker's and can only be tightened", () => {
+    const long = (seconds: number) => ({ version: 1, composition: "final", props: { aspect: "16:9", scale: 0.25, title: null, clips: [{ source: { ...SOURCE, durationSeconds: seconds }, trim: { startSeconds: 0, endSeconds: seconds } }], end: null, music: null }, output: { format: "prores-422" } });
+    expect(DEFAULT_LIMITS.maxProResSeconds).toBe(60);
+    const sixty = checkSpec(long(60));
+    expect(sixty).toMatchObject({ ok: true, format: "prores-422" });
+    const seventy = checkSpec(long(70));
+    expect(seventy).toEqual({ ok: false, code: "too_long", errors: ["A ProRes export can be at most 60 s; this one is 70.0 s. Use H.264 for a longer one."] });
+    expect(checkSpec({ ...long(70), output: { format: "h264" } })).toMatchObject({ ok: true, format: "h264" });
+    expect(checkSpec(long(40), { ...DEFAULT_LIMITS, maxProResSeconds: 30 })).toMatchObject({ ok: false, code: "too_long" });
+  });
+});
+
 test.describe("the export command with a fake renderer", () => {
   test("renders a video, hands the renderer the validated props, and writes result.json", async () => {
     const { renderer, calls, seenFiles } = fakeRenderer();
@@ -94,7 +156,7 @@ test.describe("the export command with a fake renderer", () => {
     const result = await runExport(args(finalSpec(), renderer, { concurrency: 3, onProgress: (done: number) => progress.push(done) }));
     expect(result).toMatchObject({ ok: true, composition: "final", width: 270, height: 480, fps: 30, durationInFrames: 120, seconds: 4 });
     if (!result.ok) return;
-    expect(result.files).toEqual([{ name: "export.mp4", kind: "video", bytes: 3 }]);
+    expect(result.files).toEqual([{ name: "export.mp4", kind: "video", bytes: 3, format: "h264", mime: "video/mp4" }]);
     expect(JSON.parse(readFileSync(path.join(base, "output", "result.json"), "utf8")).durationInFrames).toBe(120);
     const select = calls.find((c) => c.name === "select")!;
     expect((select.args.inputProps as { fps: number }).fps).toBe(30); // the default was filled in
