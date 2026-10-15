@@ -49,6 +49,7 @@ import type { AssetCursor } from "./assetPagination";
 import type { ProviderCreditQuote } from "./providerCreditQuote";
 import { fundedOutcome, outcomeOfPoll, outcomeProviderFor } from "./providerFailure";
 import { failureCopy } from "./errors";
+import { readableActors } from "./platformOwnerPrivacy";
 import { noAnswerOutcome, parseOutcome, serializeOutcome, takeFailure, type TakeFailure } from "./providerOutcome";
 
 export type Generation = {
@@ -409,7 +410,13 @@ export async function listGenerations(opts: {
   args.push(Math.min(Math.max(opts.limit ?? 60, 1), 500) + (opts.includeNext ? 1 : 0));
 
   const rs = await db().execute({ sql, args });
-  return rs.rows.map(rowToGeneration);
+  return namedReviewers(rs.rows.map(rowToGeneration));
+}
+
+/** The takes with who marked them as a reader may be told (lib/platformOwnerPrivacy.ts): an account id is never output. */
+async function namedReviewers(takes: Generation[]): Promise<Generation[]> {
+  const shown = await readableActors(takes.flatMap((g) => [g.reviewBy, g.pickedBy, g.approvedBy]));
+  return takes.map((g) => (g.reviewBy || g.pickedBy || g.approvedBy) ? { ...g, reviewBy: shown(g.reviewBy), pickedBy: shown(g.pickedBy), approvedBy: shown(g.approvedBy) } : g);
 }
 
 export async function getGeneration(genId: string): Promise<Generation | null> {
@@ -419,7 +426,7 @@ export async function getGeneration(genId: string): Promise<Generation | null> {
     sql: `${SELECT} WHERE g.id = ? AND g.deleted = 0 LIMIT 1`,
     args: [genId],
   });
-  return rs.rows[0] ? rowToGeneration(rs.rows[0]) : null;
+  return rs.rows[0] ? (await namedReviewers([rowToGeneration(rs.rows[0])]))[0] : null;
 }
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
