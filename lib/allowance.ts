@@ -5,6 +5,7 @@ import type { VendorKeyName } from "./vendorKeys";
 import type { EstimateTerms } from "./billingTerms";
 import { cycleBounds } from "./cycle";
 import { isHouseWorkspace } from "./houseWorkspace";
+import { houseCapCheck } from "./houseCap";
 
 export { paidByPlatform, platformSpendSince } from "./platformSpend";
 
@@ -28,7 +29,7 @@ export function defaultAllowanceUsd(): number | null {
 
 export { vendorKeyNameFor, renderKeyNameFor } from "./platformSpend";
 
-/** The workspace's monthly cap on the platform's keys, or null when none applies. The house workspace has none (lib/houseWorkspace.ts). */
+/** The workspace's monthly cap on the platform's keys, or null when none applies. The house workspace has none here: its own cap is lib/houseCap.ts. */
 export function allowanceUsd(): number | null {
   const ws = currentTenant()?.workspace;
   if (!ws || isHouseWorkspace(ws)) return null;
@@ -76,6 +77,8 @@ export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?:
   /* `band`: a take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) needs the balance to cover its hold. */
   const credit = await creditCheck(vendor, estUsd, engine, band);
   if (!credit.ok) return credit;
+  /* The house pays no credits and none of its jobs are the customer allowance's; its own monthly cap stands instead (lib/houseCap.ts). */
+  if (isHouseWorkspace(currentTenant()?.workspace)) return houseCapCheck(estUsd, band);
   if (!paidByPlatform(vendor)) return { ok: true };
   const cap = allowanceUsd();
   if (cap == null) return { ok: true };
