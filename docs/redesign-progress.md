@@ -833,3 +833,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - Topaz's own pages contradict each other.
     - No training statement found; video files auto-delete after 7 days.
     - Lane E is writing docs/plans/topaz-direct-prices.md. Lane C is starting a file-only Topaz adapter, priced at Developer $0.10/credit until the owner confirms the plan.
+- **16 Oct 02:01 IST.** Docs lane E: docs/plans/topaz-direct-prices.md (b4c9a0e8).
+  - Images: direct is dearer than fal at Developer under every reading. At Scale it ties at 24 MP or is dearer at 48 MP, depending on which published rule holds.
+  - Astra 2: equal to fal at Developer, or 20% cheaper at Scale, under the Astra 2 page; but 33% dearer at Developer under the family table. Six contradictions are listed.
+  - Lead call for lane C's TOPAZ_RATES: the dearer reading everywhere, at $0.10/credit, until the owner confirms the plan and the first invoice settles the reading.
+  - Owner questions: which plan; a dearer 48 MP (or cap at 24 MP, or keep images on fal); the Starlight tier; Astra vs Astra 2; 720p, Iris, Rhea.
