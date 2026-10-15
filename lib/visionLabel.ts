@@ -13,7 +13,8 @@ import { meter, type MeterKind } from "./meter";
 import { platformDb, platformReady } from "./platform";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
+import { jobLineNow, shotCapGate } from "./shotCap";
+import { getShot } from "./shots";
 import { uploadOpenableBy } from "./uploadAccess";
 import { mayReachProject, mayReadTake } from "./draftProject";
 import { NOT_YOURS, mayChangeWork } from "./workAccess";
@@ -130,6 +131,13 @@ export async function admitLabelCheck(input: Record<string, unknown>, got: Admis
   const shotId = take.shot_id ? String(take.shot_id) : null;
   const over = jobLineNow({ credits: estimatedCredits, usd, key: "vision", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
+  /* The cost approval rule (brief 2.2). A check creates no take, but its ledger line is charged to the take's shot and counts toward that shot's cap: with a cap per shot, a member's
+     check past it needs an admin, refused before anything is read, reserved or written. A shot that is gone is no shot's to cap. */
+  const shot = shotId ? await getShot(shotId) : null;
+  if (shotId && shot) {
+    const stop = await shotCapGate({ shotId, code: shot.code, takeUsd: usd, modelId: marginKey, isAdmin: got.user.role === "admin" });
+    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
+  }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", mode, rules, images: 1 });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });

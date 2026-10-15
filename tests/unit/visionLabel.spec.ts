@@ -89,10 +89,10 @@ async function admit(input: Record<string, unknown>, seams: import("../../lib/vi
   return admitLabelCheck(input, OWNER, options(), seams);
 }
 /** The same request made by another person: the admission asks that the request's own scope names its actor, so it runs in a scope of its own. */
-async function admitAs(actor: AdmissionActor, input: Record<string, unknown>, seams: import("../../lib/visionLabel").LabelCheckSeams = {}) {
+async function admitAs(actor: AdmissionActor, input: Record<string, unknown>, seams: import("../../lib/visionLabel").LabelCheckSeams = {}, ws: TenantWorkspace = house()) {
   const { admitLabelCheck } = await import("../../lib/visionLabel");
   const { runInTenant } = await import("../../lib/tenant");
-  return runInTenant(house(), () => admitLabelCheck(input, actor, options(), seams), actor as never);
+  return runInTenant(ws, () => admitLabelCheck(input, actor, options(), seams), actor as never);
 }
 const person = (id: string, role: "admin" | "member" = "member", owner = false): AdmissionActor => ({ user: { id, email: `${id}@example.invalid`, name: id, role, owner, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] });
 const approved = { maxCredits: 100000 };
@@ -327,6 +327,65 @@ test("who may check a take: a private board's take is as absent as an unknown on
   });
 });
 
+test("the cost approval rule: with a cap per shot, a member's check on a take of a full shot is refused (403, needs an admin) for a quote and a press, nothing read, held or written; an admin, a shot with room and a take on no shot go through", async () => {
+  const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
+  const { invalidateSettings } = await import("../../lib/settings");
+  const { db } = await import("../../lib/db");
+  await platformReady();
+  const id = "ws_vision_shotcap";
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour) VALUES(?,?,?,?,1,'owner',0,0,20,200)", args: [id, id, id, `file:${path.join(dir, id + ".db")}`] });
+  await grantCredits(id, 500, "Test", "owner", "manual");
+  const site = (await platformDb().execute("SELECT value FROM platform_layer WHERE key='site'")).rows[0]?.value;
+  const member = person("u_member");
+  try {
+    await platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify({ enginesOnWorkspaces: [id] })] });
+    process.env.VISION_LABEL_CHECK_ENABLED = "1";
+    const ws = (await getWorkspace(id))!;
+    await asTenant(ws, async () => {
+      const setting = async (rule: string, cap: number) => {
+        await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES('approvalRule',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [rule] });
+        await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES('shotCapCredits',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [String(cap)] });
+        invalidateSettings();
+      };
+      const prod = uid("prod"), tight = uid("shot_tight"), roomy = uid("shot_roomy");
+      await project(prod);
+      for (const [shot, code] of [[tight, "S2"], [roomy, "S3"]] as const) await db().execute({ sql: "INSERT INTO shots(id,project_id,code,title,description,setup,created_at,updated_at) VALUES(?,?,?,?,?,?,1,1)", args: [shot, prod, code, "t", "", "{}"] });
+      const onShot = async (label: string, shot: string | null) => { const t = await take(label, "image", "ACME", prod, "u_member"); await db().execute({ sql: "UPDATE generations SET shot_id=? WHERE id=?", args: [shot, t] }); return t; };
+      const stuck = await onShot("t_tight", tight), free = await onShot("t_roomy", roomy), loose = await onShot("t_loose", null);
+      const calls: string[] = [];
+      const spy = { detect: async () => { calls.push("detect"); return { text: "ACME", words: [] }; } };
+      try {
+        /* The check is 1 cr; a cap of 1 cr a shot holds the first and nothing after it. */
+        await setting("cap", 1);
+        const before = (await meterRows()).filter((r) => r.workspace_id === id).length;
+        expect((await admitAs(member, { takeId: stuck, expected: "ACME", ...approved }, spy, ws)).status).toBe(200);
+        const after = (await meterRows()).filter((r) => r.workspace_id === id).length;
+        expect(after).toBe(before + 1);
+        for (const extra of [{ quoteOnly: true }, approved]) {
+          const reply = await admitAs(member, { takeId: stuck, expected: "ACME", ...extra }, spy, ws);
+          expect(reply, JSON.stringify(extra)).toMatchObject({ status: 403, body: { needsAdmin: true, error: expect.stringContaining("S2") } });
+          expect(String(reply.body.error)).toMatch(/An admin has to press this one/);
+        }
+        expect(calls).toEqual(["detect"]);
+        expect((await meterRows()).filter((r) => r.workspace_id === id).length).toBe(after);
+        /* An admin goes through; a take on a shot with room, or on no shot, is not held. */
+        expect((await admitAs(person("u_admin", "admin", true), { takeId: stuck, expected: "ACME", ...approved }, spy, ws)).status).toBe(200);
+        expect((await admitAs(member, { takeId: free, expected: "ACME", ...approved }, spy, ws)).status).toBe(200);
+        expect((await admitAs(member, { takeId: loose, expected: "ACME", ...approved }, spy, ws)).status).toBe(200);
+        await setting("cap", 10_000);
+        expect((await admitAs(member, { takeId: stuck, expected: "ACME", quoteOnly: true }, spy, ws)).status).toBe(200);
+        await setting("off", 1);
+        expect((await admitAs(member, { takeId: stuck, expected: "ACME", quoteOnly: true }, spy, ws)).status).toBe(200);
+      } finally {
+        await db().execute("DELETE FROM settings WHERE key IN ('approvalRule','shotCapCredits')");
+        invalidateSettings();
+      }
+    });
+  } finally {
+    if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
+  }
+});
+
 test("a reservation the process never settled is settled at nothing by the cron stage, which frees its hold and sends nothing; young ones and other engines' are left alone", async () => {
   process.env.VISION_LABEL_CHECK_ENABLED = "1";
   await asTenant(house(), async () => {
@@ -539,6 +598,9 @@ test("structure: no AI model is in the verdict, the seams stay internal, the rou
   expect(code("lib/labelDiff.ts")).not.toMatch(/\bimport\b/);
   const at = (needle: string) => flow.indexOf(needle);
   expect(flow).toContain("admitLabelCheck(input, got, options, {})");
+  expect(at("await shotCapGate({")).toBeGreaterThan(0);
+  expect(at("await shotCapGate({")).toBeLessThan(at("if (quoteOnly)"));
+  expect(at("await shotCapGate({")).toBeLessThan(at("await reserveGenerationSpend("));
   expect(at("Approve the price first")).toBeLessThan(at("await reserveGenerationSpend("));
   expect(at("await reserveGenerationSpend(")).toBeLessThan(at("await (seams.detect ?? detectText)("));
   expect(at("await (seams.detect ?? detectText)(")).toBeLessThan(at("labelDiff(expected"));
