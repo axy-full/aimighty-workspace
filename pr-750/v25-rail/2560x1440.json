@@ -1,0 +1,9 @@
+{
+  "name": "v25-rail",
+  "app": "/v25-rail-parts",
+  "prototype": "mode=director&step=shots",
+  "size": {
+    "width": 2560,
+    "height": 1440
+  }
+}
