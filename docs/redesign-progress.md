@@ -803,3 +803,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - OD-W2: Sarvam trains unless you opt out.
   - L-W2, L-W3, L-W4: lawyer items.
   - vendor-requests.md §8 (BFL opt-out email) and §9 (Sync Labs opt-out and deletion email), plus a Sarvam re-check action.
+- **16 Oct 01:44 IST.** Opus money re-check: #776 (sync.so) at 4f8a0cce APPROVED, pending the owner's acceptance of the face-still gap; #777 (Sarvam) at 2c9c2d10 APPROVED; #778 (BFL) at 78e6fe6a NOT APPROVED. 201 + 55 targeted specs pass.
+  - #778 must-fixes:
+    - Fetch follows redirects, which defeats the bfl.ai host check; the x-key would travel to the new host, and the result fetch could reach internal addresses.
+    - Settlement falls back to the quote, which over-counts MP. Recommended MP definition for the owner: 1,048,576 px (BFL's own unit), adopted only after one paid qualification call confirms it; keep 1,000,000 plus `reconcile` until then.
+    - Charged failures record no cost.
+  - Lead finding (from Opus question 1): directEngineMcp sends the route's quote as maxCredits for MCP callers. A render token would then spend up to 200 cr with no person's tap, against rule 14. Lane B is making the new engines' MCP path follow the workspace's Ask/Auto setting (Ask = prepared, not spent). `render_shot` already behaves this way: owner question.
+  - Redirect hardening is going into all three adapters.
