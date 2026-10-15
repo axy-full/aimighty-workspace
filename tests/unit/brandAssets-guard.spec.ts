@@ -78,27 +78,48 @@ test("(b) every icon the app declares is one of those files, and nothing in app/
   expect(override, "files in app/ that would replace the real icons").toEqual([]);
 });
 
-test("(c) the header's logo is a file of public/brand, drawn as a picture of it: the new header, the visitor's and the older shell's", () => {
+test("(c) the header's logo is the brand's mark and wordmark from public/brand, drawn as pictures of them: the new header, the visitor's and the older shell's", () => {
   const logo = read("components/v12/shell/Logo.tsx");
-  const src = /export const HEADER_LOGO = "([^"]+)"/.exec(logo)?.[1] ?? "";
-  expect(src.startsWith("/brand/"), `HEADER_LOGO ${src} is in public/brand`).toBe(true);
-  expect(existsSync(`${PUBLIC}${src}`), `${src} exists`).toBe(true);
-  expect(logo).toMatch(/<Image\b[^>]*src=\{HEADER_LOGO\}/);
-  /* No drawing and no typed name inside it. */
+  const mark = /export const HEADER_MARK = "([^"]+)"/.exec(logo)?.[1] ?? "";
+  const word = /export const HEADER_WORDMARK = "([^"]+)"/.exec(logo)?.[1] ?? "";
+  expect(mark, "the mark").toMatch(/^\/brand\/particl-mark-on-(?:dark|light)\.svg$/);
+  expect(word, "the wordmark").toMatch(/^\/brand\/particl-wordmark-on-(?:dark|light)@4x\.png$/);
+  for (const file of [mark, word]) expect(existsSync(`${PUBLIC}${file}`), `${file} exists`).toBe(true);
+  expect(logo).toMatch(/<Image\b[^>]*src=\{HEADER_MARK\}/);
+  expect(logo).toMatch(/<Image\b[^>]*src=\{HEADER_WORDMARK\}/);
+  /* No drawing and no typed name inside it, and not the full lockup: it has a "studio" line, and renders large only (sign-in, marketing, documents). */
   const body = logo.slice(logo.indexOf("export function HeaderLogo"));
   expect(body, "no inline drawing").not.toMatch(/<svg|<circle|TRAIL/);
   expect(body, "no typed wordmark").not.toMatch(/>\s*particl\s*</i);
+  expect(logo.replace(/\/\*[\s\S]*?\*\//g, ""), "the header uses no lockup").not.toMatch(/particl-lockup/);
   /* Both v12 headers draw it through HeaderLogo, and neither makes a logo of its own. */
   for (const file of ["components/v12/shell/Header.tsx", "components/v12/visitor/VisitorHeader.tsx"]) {
     const text = read(file);
     expect(text, `${file} draws HeaderLogo`).toMatch(/<HeaderLogo\b/);
-    expect(text, `${file} draws no logo of its own`).not.toMatch(/TRAIL|className="v12-logo|Mark"/);
+    expect(text, `${file} draws no logo of its own`).not.toMatch(/TRAIL|className="v12-logo|Mark"|particl-lockup/);
   }
   /* The older shell's header (components/shell/Header.tsx): its logo picture is a brand file. */
   const today = read("components/shell/Header.tsx");
   const todays = [...today.matchAll(/<Image[\s\S]*?\bsrc="([^"]+)"/g)].map((m) => m[1]);
   expect(todays.length, "today's header draws its logo as an Image").toBeGreaterThan(0);
   for (const url of todays) expect(url.startsWith("/brand/") && existsSync(`${PUBLIC}${url}`), `the shell header's logo ${url}`).toBe(true);
+});
+
+/**
+ * The full lockup (mark, wordmark and its "studio" line) is for where it renders large (owner, 15 Oct: "sign-in, marketing, documents"). These are the only surfaces that
+ * may name a lockup file; a header, a bar or a tab strip may not. Add a surface here only on the owner's word.
+ */
+export const LOCKUP_SURFACES = [
+  "lib/mail.ts", /* documents: the emails' header */
+  "components/WelcomeSignIn.tsx", "components/AuthCard.tsx", /* sign-in */
+  "components/marketing/", /* marketing */
+];
+test("(c) the full lockup is named only on sign-in, marketing and document surfaces", () => {
+  const files = [...walk("components", (f) => /\.(tsx?|css)$/.test(f)), ...walk("app", (f) => /\.(tsx?|css)$/.test(f)), ...walk("lib", (f) => /\.tsx?$/.test(f))];
+  const using = files.filter((file) => /particl-lockup/.test(read(file)));
+  const stray = using.filter((file) => !LOCKUP_SURFACES.some((surface) => file === surface || (surface.endsWith("/") && file.startsWith(surface))));
+  expect(stray, "files that use the full lockup outside sign-in, marketing and documents").toEqual([]);
+  expect(using.length, "the lockup is used somewhere (documents), so this check is looking at something").toBeGreaterThan(0);
 });
 
 /**
