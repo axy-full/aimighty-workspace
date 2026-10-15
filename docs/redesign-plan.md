@@ -715,3 +715,8 @@ Deploy #4: open deploy/2026-10-15-4 when release/1 is final (by 18:30), with the
 #748: ⌘J opening the board's Atomik panel in the new interface is fine.
 Reviewer git fetch: noted. Remind reviewers: no network, read-only means no fetch either.
 The queue and the 18:30 cut-off are as planned. I'll start the backup at ~19:00.
+
+## Owner, 15 Oct 2026, 13:45 IST (verbatim)
+BFL_API_KEY is set in Coolify (production only, locked, runtime only; training opt-out done in BFL's dashboard). B1 can use it when built; check the base URL/region matches the EU endpoint. After deploy #4, include BFL_API_KEY in the name-only check.
+
+**Lead's note for B1 (BFL adapter, docs/plans/provider-adapters.md §9 on #714).** `BFL_BASE_URL` is not set, so B1 defaults to `https://api.eu.bfl.ai` in code (never the global `api.bfl.ai`), with a test pinning the default. If `BFL_BASE_URL` is ever set, it must be an `https://` `*.bfl.ai` host. Any polling or result URL BFL returns is followed only when its host is a `bfl.ai` subdomain (no SSRF), and the adapter says in a test which region served the call. `BFL_ENABLED` stays unset until the owner turns it on. No paid call without the owner's yes.
