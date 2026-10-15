@@ -959,3 +959,13 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 03:37 IST.** Opus APPROVED #785 bd9e0b7e, #782 156f3251 and #784 1aab803f.
   - #785 should-fixes sent to lane B: FLUX 3 tier = dearer of longest-side and decimal-MP (else 1024² under-quotes $0.048 vs $0.07); identity checks its production and the person's reach; cover photo first; Klein a draft only ≤2k.
   - Owner question: FLUX 3 tier definition.
+- **16 Oct 03:49 IST.**
+  - #785 delta APPROVED (0be30392).
+  - Lane C:
+    - #781 Topaz 818a62fd: shot cap at press; 30-min grace then charged failure; image max(tier, linear); real MIME.
+    - #748 989600d8: render-v12 line and gap checks scaled by k per size; a second "test assertion changed — owner's word".
+    - #749: the failure looks like a CI flake (passes locally on release/1 and the head; same test passed at 1920 in the same run). Re-running CI.
+    - New #786 Recraft (8bb74eb5, NEEDS AKSHAY): env RECRAFT_API_KEY (set), RECRAFT_BASE_URL (optional), RECRAFT_ENABLED; raster and remove-background only; SVG refused because no sanitiser exists (owner: build one or stay raster-only).
+  - Recraft prices verified on recraft.ai: V4.1 $0.035 raster, $0.08 vector, Pro $0.21 / $0.30; V3 $0.04 / $0.08; vectorize and remove-bg $0.01; style $0.005 per request. Developer Terms §6.3: no training on API outputs.
+  - Shot-cap gap found by lane C: the BFL, Sarvam, sync.so, Runway, Veo and Vision doors don't call shotCapGate before writing the row. Sent to lanes B and D.
+  - Opus checks running: #781 delta, #786, #748 delta.
