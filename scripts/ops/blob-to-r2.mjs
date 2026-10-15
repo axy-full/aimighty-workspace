@@ -20,6 +20,8 @@
  *               BLOB_READ_WRITE_TOKEN set, also every Blob object is on R2.
  *               With --live instead of --config, the database list is read
  *               from the platform database itself (liveSourceInventory).
+ *               Add --open to read every referenced object straight from R2
+ *               (one byte, size checked), not through the app, no Blob fallback.
  *
  * Credentials come from the app's own variable names: BLOB_READ_WRITE_TOKEN,
  * R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET and
@@ -38,6 +40,7 @@ import {
   blobInventory,
   connection,
   defaultR2Client,
+  nodeStream,
   openKeyring,
   r2Inventory,
   r2Settings,
@@ -55,6 +58,8 @@ export const R2_ENV_NAMES = {
   bucketEnv: "R2_BUCKET",
 };
 export const BLOB_TOKEN_ENV = "BLOB_READ_WRITE_TOKEN";
+/** The Blob SDK, loaded only when a listing is needed (the tools take a fake in tests). */
+export const loadBlobSdk = () => import("@vercel/blob");
 export const PROGRESS_FILE = "blob-to-r2-progress.jsonl";
 const LOCK_FILE = "blob-to-r2.lock";
 /** Objects up to one part go up as a single PUT; larger ones as multipart in
@@ -140,8 +145,8 @@ export async function loadProgress(dir) {
 
 /** Writes the run's report under a name of its own: the time, and a counter when another report already has it (two runs in
  * the same millisecond). The open stays exclusive, so no report is ever overwritten. */
-export async function writeReport(dir, mode, body) {
-  const stem = `blob-to-r2-${mode}-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+export async function writeReport(dir, mode, body, tool = "blob-to-r2") {
+  const stem = `${tool}-${mode}-${new Date().toISOString().replace(/[:.]/g, "-")}`;
   for (let n = 1; ; n += 1) {
     const name = n === 1 ? `${stem}.json` : `${stem}-${n}.json`;
     try {
@@ -367,7 +372,7 @@ function errorCode(error) {
 async function openStores({ env, blobSdk, r2Client }) {
   const token = requireEnv(env, BLOB_TOKEN_ENV);
   const settings = r2Settings(r2Spec(env), env);
-  const sdk = blobSdk ?? (await import("@vercel/blob"));
+  const sdk = blobSdk ?? (await loadBlobSdk());
   const client = await (r2Client ?? defaultR2Client)(settings);
   return {
     blob: { token, sdk, open: (entry) => openBlob(sdk, token, entry) },
@@ -566,7 +571,7 @@ export async function copyBlobToR2({
 /** Every live workspace has a database in the config, so no media rows are
  * skipped. The workspace part of backup-lib verifyPlatformCoverage, without
  * opening sealed values (no KEYRING_SECRET needed). */
-async function checkWorkspaceSources(databases) {
+export async function checkWorkspaceSources(databases) {
   const platform = databases.find((d) => d.role === "platform");
   const db = createClient({ url: pathToFileURL(platform.snapshot).href, intMode: "bigint" });
   try {
@@ -684,11 +689,85 @@ const validInventory = (config) =>
   new Set(config.databases.map((d) => d.id)).size === config.databases.length &&
   !config.databases.some((d) => !/^[a-zA-Z0-9_-]{1,80}$/.test(d.id ?? ""));
 
-export async function verifyR2Only({ privateDir, config, live = false, env = process.env, r2Client, blobSdk, retryOptions }) {
+/**
+ * One read-only snapshot of every database the live system holds (the platform database, then each workspace's), in `scratch`, as the checks below read them. With `live`
+ * the list comes from the platform database itself; with `config` from a version 1 source inventory. Returns { databases, liveCounts }.
+ */
+export async function snapshotSources({ live, config, env, scratch }) {
+  const platformSpec = live ? livePlatformSpec(env) : undefined;
+  const databases = [];
+  let liveCounts;
+  if (live) {
+    // One read-only snapshot of the platform database serves both the
+    // inventory and the checks below, so they see the same rows.
+    const source = connection(platformSpec, env),
+      snapshot = join(scratch, "platform.db");
+    const inventory = await snapshotDatabase(source, snapshot, scratch);
+    const built = await liveSourceInventory(snapshot, platformSpec, env);
+    if (!validInventory(built.config)) fail("The live source inventory is not valid.");
+    ({ config, env } = built);
+    liveCounts = built.counts;
+    databases.push({ id: "platform", role: "platform", workspaceIds: config.databases[0].workspaceIds, sourceUrl: source.url, snapshot, inventory });
+  }
+  for (const spec of live ? config.databases.slice(1) : config.databases) {
+    const source = connection(spec, env),
+      snapshot = join(scratch, `${spec.id}.db`);
+    databases.push({
+      id: spec.id,
+      role: spec.role,
+      workspaceIds: spec.workspaceIds ?? [],
+      sourceUrl: source.url,
+      snapshot,
+      inventory: await snapshotDatabase(source, snapshot, scratch),
+    });
+  }
+  await checkWorkspaceSources(databases);
+  return { databases, liveCounts };
+}
+
+/** Whether a source inventory is usable: one platform database, unique simple ids. */
+export const usableInventory = validInventory;
+
+/**
+ * Open every referenced object straight from R2 with the S3 client, not through the app and with no Blob fallback: a ranged read of its first byte, and its size as
+ * the server reports it (Content-Range) must be the size the listing gave. `entries` are the R2 listing entries the references resolved to (each once). Returns the
+ * entries that did not open or whose size differs, as { pathname, reason } (never printed: they go to the private report).
+ */
+export async function openFromR2(client, bucket, entries, retry = retrying(), concurrency = 8) {
+  const { GetObjectCommand } = await s3sdk();
+  const failures = [];
+  let next = 0;
+  const one = async (entry) => {
+    try {
+      const reply = await retry(() => client.send(new GetObjectCommand({ Bucket: bucket, Key: entry.pathname, ...(entry.size > 0 ? { Range: "bytes=0-0" } : {}) })));
+      let total = Number(String(reply?.ContentRange ?? "").split("/")[1]);
+      if (!Number.isSafeInteger(total)) total = Number(reply?.ContentLength);
+      // Read the one byte (or none) and let the connection go.
+      const body = reply?.Body ? nodeStream(reply.Body) : null;
+      if (body) {
+        let read = 0;
+        for await (const chunk of body) {
+          read += chunk.length;
+          if (read >= 1) break;
+        }
+        body.destroy?.();
+        if (entry.size > 0 && read < 1) return failures.push({ pathname: entry.pathname, reason: "empty-read" });
+      }
+      if (total !== entry.size) failures.push({ pathname: entry.pathname, reason: "size" });
+    } catch (error) {
+      failures.push({ pathname: entry.pathname, reason: httpStatus(error) === 404 ? "missing" : "unreadable" });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, async () => {
+    while (next < entries.length) await one(entries[next++]);
+  }));
+  return failures.sort((a, b) => (a.pathname < b.pathname ? -1 : 1));
+}
+
+export async function verifyR2Only({ privateDir, config, live = false, open = false, env = process.env, r2Client, blobSdk, retryOptions }) {
   if (live && config) fail("Use either --live or --config, not both.");
   if (!live && !validInventory(config))
     fail("--config must be a version 1 source inventory (docs/backup-restore.md) with one platform database and unique simple ids.");
-  const platformSpec = live ? livePlatformSpec(env) : undefined;
   const dir = await privateDirectory(privateDir);
   const retry = retrying(retryOptions);
   const settings = r2Settings(r2Spec(env), env);
@@ -696,46 +775,35 @@ export async function verifyR2Only({ privateDir, config, live = false, env = pro
   const scratch = await mkdtemp(join(dir, "verify-"));
   await chmod(scratch, 0o700);
   try {
-    const databases = [];
-    let liveCounts;
-    if (live) {
-      // One read-only snapshot of the platform database serves both the
-      // inventory and the checks below, so they see the same rows.
-      const source = connection(platformSpec, env),
-        snapshot = join(scratch, "platform.db");
-      const inventory = await snapshotDatabase(source, snapshot, scratch);
-      const built = await liveSourceInventory(snapshot, platformSpec, env);
-      if (!validInventory(built.config)) fail("The live source inventory is not valid.");
-      ({ config, env } = built);
-      liveCounts = built.counts;
-      databases.push({ id: "platform", role: "platform", workspaceIds: config.databases[0].workspaceIds, sourceUrl: source.url, snapshot, inventory });
-    }
-    for (const spec of live ? config.databases.slice(1) : config.databases) {
-      const source = connection(spec, env),
-        snapshot = join(scratch, `${spec.id}.db`);
-      databases.push({
-        id: spec.id,
-        role: spec.role,
-        workspaceIds: spec.workspaceIds ?? [],
-        sourceUrl: source.url,
-        snapshot,
-        inventory: await snapshotDatabase(source, snapshot, scratch),
-      });
-    }
-    await checkWorkspaceSources(databases);
+    const { databases, liveCounts } = await snapshotSources({ live, config, env, scratch });
     const r2Entries = await r2Inventory(client, settings.bucket, retry);
     const result = { mode: "verify", ok: true, ...(live ? { live: liveCounts } : {}), r2Objects: r2Entries.length };
+    const opened = new Map(); // r2 entry -> the rows that point at it (ids only, for the private report)
     try {
-      Object.assign(result, await verifyMediaReferences(databases, r2Entries, "r2"));
+      Object.assign(result, await verifyMediaReferences(databases, r2Entries, "r2", { extended: true, ...(open ? { onReference: (reference) => {
+        const rows = opened.get(reference.entry.pathname) ?? { entry: reference.entry, rows: [] };
+        rows.rows.push(`${reference.database}/${reference.table}/${reference.id}`);
+        opened.set(reference.entry.pathname, rows);
+      } } : {}) }));
     } catch (error) {
       if (!(error instanceof OpsError)) throw error;
       // backup-lib names missing rows as database/table/row id only.
       result.ok = false;
       result.missingReferences = error.message;
     }
+    if (open) {
+      // Every referenced object is read from R2 itself, one byte, and its size must be the listing's: R2 alone, whatever Blob holds.
+      const failures = await openFromR2(client, settings.bucket, [...opened.values()].map((o) => o.entry), retry);
+      result.opened = opened.size;
+      result.openFailures = failures.length;
+      if (failures.length) {
+        result.ok = false;
+        result.openReport = await writeReport(dir, "open", { at: new Date().toISOString(), failures: failures.map((f) => ({ reason: f.reason, rows: opened.get(f.pathname).rows, pathname: f.pathname })) });
+      }
+    }
     if (env[BLOB_TOKEN_ENV]) {
       const onR2 = new Map(r2Entries.map((e) => [e.pathname, e]));
-      const listed = await blobInventory(env[BLOB_TOKEN_ENV], blobSdk ?? (await import("@vercel/blob")));
+      const listed = await blobInventory(env[BLOB_TOKEN_ENV], blobSdk ?? (await loadBlobSdk()));
       const missing = [];
       for (const entry of listed) {
         let keys;
@@ -766,7 +834,8 @@ const USAGE = `Usage (run with the production variable names in the environment)
   node scripts/ops/blob-to-r2.mjs --dry-run --private-dir DIR [--probe-mib 64] [--limit N]
   node scripts/ops/blob-to-r2.mjs --copy    --private-dir DIR [--transfers 4] [--deep] [--readback] [--limit N]
   node scripts/ops/blob-to-r2.mjs --verify  --private-dir DIR --config SOURCE-INVENTORY.json
-  node scripts/ops/blob-to-r2.mjs --verify  --private-dir DIR --live   (databases read from the platform database; needs PLATFORM_DATABASE_URL, PLATFORM_AUTH_TOKEN, KEYRING_SECRET)`;
+  node scripts/ops/blob-to-r2.mjs --verify  --private-dir DIR --live   (databases read from the platform database; needs PLATFORM_DATABASE_URL, PLATFORM_AUTH_TOKEN, KEYRING_SECRET)
+  add --open to --verify to also read every referenced object straight from R2 (one byte, size checked), with no Blob fallback`;
 
 export function parseArguments(argv) {
   const options = { flags: new Set() };
@@ -776,12 +845,13 @@ export function parseArguments(argv) {
     if (valued.has(arg)) {
       if (argv[i + 1] === undefined) fail(`${arg} needs a value.`);
       options[arg.slice(2)] = argv[++i];
-    } else if (["--dry-run", "--copy", "--verify", "--deep", "--readback", "--live"].includes(arg)) options.flags.add(arg);
+    } else if (["--dry-run", "--copy", "--verify", "--deep", "--readback", "--live", "--open"].includes(arg)) options.flags.add(arg);
     else fail(`Unknown argument ${arg.startsWith("--") ? arg : "(value)"}.`);
   }
   const modes = ["--dry-run", "--copy", "--verify"].filter((m) => options.flags.has(m));
   if (modes.length !== 1) fail("Choose exactly one of --dry-run, --copy or --verify.");
   if (options.flags.has("--live") && !options.flags.has("--verify")) fail("--live works only with --verify.");
+  if (options.flags.has("--open") && !options.flags.has("--verify")) fail("--open works only with --verify.");
   if (options.flags.has("--live") && options.config !== undefined) fail("Use either --live or --config, not both.");
   const number = (name) => (options[name] === undefined ? undefined : Number(options[name]));
   return {
@@ -794,6 +864,7 @@ export function parseArguments(argv) {
     deep: options.flags.has("--deep"),
     readback: options.flags.has("--readback"),
     live: options.flags.has("--live"),
+    ...(options.flags.has("--open") ? { open: true } : {}),
   };
 }
 
@@ -805,7 +876,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       if (!options.config && !options.live)
         fail("--verify needs --live (databases from the platform database) or --config (the backup source inventory, docs/backup-restore.md).");
       const config = options.live ? undefined : JSON.parse(await readFile(options.config, "utf8"));
-      const result = await verifyR2Only({ privateDir: options.privateDir, config, live: options.live, env });
+      const result = await verifyR2Only({ privateDir: options.privateDir, config, live: options.live, open: options.open, env });
       print(result);
       return result.ok ? 0 : 1;
     }
@@ -815,7 +886,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   } catch (error) {
     if (error instanceof OpsError) console.error(error.message);
     else console.error(`Blob to R2 stopped (${errorCode(error)}). Nothing was deleted or overwritten; rerun to resume.`);
-    if (error instanceof OpsError && /exactly one of|Unknown argument|needs a value|--live/.test(error.message)) console.error(USAGE);
+    if (error instanceof OpsError && /exactly one of|Unknown argument|needs a value|--live|--open/.test(error.message)) console.error(USAGE);
     return 1;
   }
 }
