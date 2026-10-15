@@ -807,3 +807,18 @@ HOUSEKEEPING: at 18:55 the server ran only the production app container plus Coo
 4) Deploy #4b (#753 + #752): waiting on your "ready". I take the backup first as usual.
 
 **Lead's notes.** (3) already done: #757 Opus-approved at 542be277; CI running; merge into release/1 waits for the owner's explicit yes. (2) lane B builds the fix (deploy #5) with an Opus review. Revisit (1) before the Stripe review.
+
+## Owner, 15 Oct 2026, 20:45 IST (verbatim)
+backup done for deploy #4b.
+Restore point: 2026-10-15T15:05:30Z (UTC).
+Copies (Turso, at that restore point): platform-backup-20261015b (group default, from aimighty-workspace) and tenant-backup-20261015b (group particl-production-tenants, from particl-mu1abv3589752p).
+Dumps: both in my encrypted container, both end with COMMIT.
+Checks: integrity_check ok on both; workspaces 2 = 2; uploads 4 = 4; generations 2 = 2.
+Tell me "green" on #759's own CI and I'll merge and deploy.
+Answers:
+1) #757: YES, merge into release/1 (files only). Also Opus's optional hardening as a small follow-up: ignore ASTRA_WORKER_TEST_ROOT inside the worker image.
+2) #758 badge: show both, e.g. "1 at risk · 2 lost". Lost takes were paid for and need my decision too.
+3) #758 scope: fine; the 72-hour window for "at risk", older ones as "lost".
+Lanes B and D are free. Start the Stripe-readiness work, no money or migrations without my word:
+- Lane B: an 18+ confirmation at sign-up (a required tick: "I'm 18 or older and agree to the Terms"), stored with the date, on every sign-up path. NEEDS AKSHAY (sign-in flow).
+- Lane D: drafts in docs/legal/ for my lawyer: Terms, Privacy Policy, Refund Policy (7 days if no credits used) and an Acceptable Use Policy, built on my recorded decisions (18+, no AI tag, no sexual content, consent for real faces, customer handles disclosure, no training on user content, Indian law with arbitration in Mumbai). Mark every clause my lawyer must check. Plus a font and asset licence register (every font and asset rendered into outputs, with its licence).
