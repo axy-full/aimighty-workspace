@@ -974,3 +974,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #786 should-fixes sent: bound the reply before decoding; an answered-but-unreadable reply becomes charged-unkeepable, not uncertain; fix a comment pointer.
   - Owner question: remove-background consent is an honour system (checked only when a cast member is named).
   - Merging #781 and #786 together conflicts on one REGISTRY line in directEngineMcp; keep both.
+- **16 Oct 03:56 IST. Check-in.**
+  - Production: health ok at 709497a; watcher quiet; df 15%.
+  - CI: #748 (989600d8) and #749 (c021c3d3, the flake re-run) running.
+  - Merges: none qualify under the standing yes (every candidate changes a guard/test assertion, an env name, money, or needs the owner's yes).
+  - Lanes: B on shotCapGate across its doors; C on the #786 should-fixes; D on the #783 must-fix plus shotCapGate on Veo/Vision; docs E on the #714 env table and verified-price section.
+  - No paid generation; spend $0.
