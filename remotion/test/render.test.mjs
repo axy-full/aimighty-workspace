@@ -3,7 +3,7 @@
 // They need `npm ci` and `npm run bundle` inside remotion/ first, and skip with a message when those are missing.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -175,6 +175,34 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
     const refused = run("h265-refused", { version: 1, composition: "title-card", props: { aspect: "16:9", scale: 0.25, card }, output: { video: true, format: "h265" } });
     assert.equal(refused.status, 2);
     assert.deepEqual(refused.result.errors, ["spec.output.format: H.265 is not available."]);
+  });
+
+  test("a windowed constant-rate copy keeps the source's clock: the same source second renders the same picture from the copy as from the original, and a frame 0.3 s away does not", async () => {
+    const copy = path.join(base, "windowed.mp4");
+    /* The conform pre-pass's own ffmpeg flags (node/conform.ts): only 1.75 s to 5.25 s of the source, on the source's clock. */
+    execFileSync(path.join(compositor, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-format_whitelist", "mov,mp4,m4a,matroska,webm", "-ss", "1.75", "-t", "3.5", "-i", path.join(sampleDir, "sample.mp4"), "-map", "0:v:0", "-output_ts_offset", "1.75", "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", "-movflags", "+faststart", copy]);
+    const { selectComposition, renderStill } = await import(path.join(root, "node_modules", "@remotion", "renderer", "dist", "index.js"));
+    const common = { browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE || undefined, chromeMode: "headless-shell", chromiumOptions: { gl: "swangle" }, logLevel: "error" };
+    const still = async (name, file, startSeconds) => {
+      const serve = path.join(base, `serve-${name}`);
+      cpSync(path.join(root, "build", "bundle"), serve, { recursive: true });
+      mkdirSync(path.join(serve, "public", "input"), { recursive: true });
+      cpSync(file, path.join(serve, "public", "input", "sample.mp4"));
+      const props = { aspect: "16:9", fps: 30, scale: 0.25, title: null, end: null, music: null, captionStyle: null, clips: [{ source: { ...SOURCE, hasAudio: false }, trim: { startSeconds, endSeconds: startSeconds + 1.5 }, cues: [], reframe: { mode: "fill", focusX: 0.5, focusY: 0.5 } }] };
+      const comp = await selectComposition({ serveUrl: serve, id: "final", inputProps: props, ...common });
+      const output = path.join(base, `${name}.png`);
+      await renderStill({ serveUrl: serve, composition: comp, inputProps: props, frame: 15, output, imageFormat: "png", overwrite: true, ...common });
+      return decodePng(readFileSync(output));
+    };
+    const original = await still("orig", path.join(sampleDir, "sample.mp4"), 2.5);
+    const windowed = await still("win", copy, 2.5);
+    const earlier = await still("early", path.join(sampleDir, "sample.mp4"), 2.2);
+    const whole = { x0: 0, y0: 0, x1: original.width, y1: original.height };
+    const aligned = regionDiff(original, windowed, whole);
+    const misaligned = regionDiff(original, earlier, whole);
+    /* The copy is a re-encode (CRF 14), so it is not bit-identical; a frame 0.3 s away differs about four times as much (measured: 4.7 against 19.2). */
+    assert.ok(aligned < 8, `the copy renders the same second (mean difference ${aligned})`);
+    assert.ok(misaligned > aligned * 3, `and a frame 0.3 s away differs far more (${misaligned} against ${aligned})`);
   });
 
   test("refusals: a bad spec exits 2, a missing file 3, and a path that climbs out is refused before anything runs", () => {

@@ -12,6 +12,9 @@ export type MediaFacts = {
   fps?: number;
   /** True when the file's nominal rate and its average rate disagree by more than 2%: frames are not evenly spaced. */
   variableFrameRate?: boolean;
+  /** The picture's codec and pixel format, when the file has a picture (the pre-pass leaves high-quality sources alone). */
+  videoCodec?: string;
+  pixFmt?: string;
 };
 
 export type Prober = { probe(absoluteFile: string): Promise<MediaFacts> };
@@ -23,6 +26,10 @@ type FfprobeStream = {
   duration?: string;
   r_frame_rate?: string;
   avg_frame_rate?: string;
+  codec_name?: string;
+  pix_fmt?: string;
+  /** `attached_pic` is cover art in an audio file: a picture stream that is not a video. */
+  disposition?: { attached_pic?: number };
   tags?: { rotate?: string };
   side_data_list?: { rotation?: number }[];
 };
@@ -49,7 +56,7 @@ function videoRate(video: FfprobeStream | undefined): { fps?: number; variableFr
 
 export function factsFromFfprobe(json: { format?: { duration?: string }; streams?: FfprobeStream[] }): MediaFacts {
   const streams = json.streams ?? [];
-  const video = streams.find((s) => s.codec_type === "video" && (s.width ?? 0) > 0);
+  const video = streams.find((s) => s.codec_type === "video" && (s.width ?? 0) > 0 && s.disposition?.attached_pic !== 1);
   const audio = streams.find((s) => s.codec_type === "audio");
   const rotation = Math.abs(Number(video?.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ?? video?.tags?.rotate ?? 0)) % 360;
   const swap = rotation === 90 || rotation === 270;
@@ -61,6 +68,8 @@ export function factsFromFfprobe(json: { format?: { duration?: string }; streams
     hasVideo: Boolean(video),
     hasAudio: Boolean(audio),
     ...videoRate(video),
+    ...(video?.codec_name ? { videoCodec: video.codec_name } : {}),
+    ...(video?.pix_fmt ? { pixFmt: video.pix_fmt } : {}),
   };
 }
 

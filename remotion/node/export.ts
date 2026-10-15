@@ -4,19 +4,19 @@
  * call runExport with a fake one.
  *
  * Contract (version 1):
- *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"], "conform": "auto" } }
+ *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"], "conform": "off" } }
  *   input/      the files the props name, as plain relative paths
  *   output/     export.mp4 (H.264) or export.mov (ProRes) when output.video is not false, still-<frame>.png for each still,
  *               subtitles.srt / subtitles.vtt when asked (from the same cues as the captions; no render), result.json
  */
-import { copyFile, link, lstat, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_LIMITS, PRORES_MAX_FRAMES, type ExportLimits } from "../src/lib/limits";
 import { toTimeline, ExportTooLong } from "../src/lib/timeline";
 import { FORMAT_FILE, H265_NAMES, SUBTITLE_FILE, SUBTITLE_FORMATS, VIDEO_FORMATS, isProRes, type CompositionId, type SubtitleFormat, type Timeline, type VideoFormat } from "../src/lib/types";
 import { subtitleCuesOf, subtitleText } from "../src/lib/subtitles";
 import { isCompositionId, validateProps } from "../src/lib/validate";
-import { CONFORM_MODES, filesToConform, reportInputs, type ConformMode, type Conformer, type InputReport } from "./conform";
+import { CONFORM_BUDGET_MS, CONFORM_FILE_MS, CONFORM_MODES, CONFORM_PAD_SECONDS, DEFAULT_CONFORM, filesToConform, reportInputs, type ConformMode, type ConformWindow, type Conformer, type InputReport } from "./conform";
 import type { MediaFacts, Prober } from "./probe";
 
 export type ExportSpec = {
@@ -61,6 +61,10 @@ export type RunExportArgs = {
   bundleDir: string;
   /** Makes the constant-frame-rate copies of variable-rate pictures (node/conform.ts). Absent: nothing is conformed, and the inputs are only reported. */
   conformer?: Conformer;
+  /** The most the conform pre-pass may take in all (default CONFORM_BUDGET_MS); a test shortens it. */
+  conformBudgetMs?: number;
+  /** The clock the pre-pass budget is read from (default Date.now); only a test replaces it. */
+  conformClock?: () => number;
   /** Scratch folder; created, and removed at the end. */
   workDir: string;
   renderer: Renderer;
@@ -88,6 +92,25 @@ export function declaredOf(id: CompositionId, props: Record<string, unknown>): D
     if (p.music) out.set(p.music.file, { file: p.music.file, kind: "audio", durationSeconds: p.music.durationSeconds });
   }
   return [...out.values()];
+}
+
+/**
+ * The stretch of `file` the timeline plays, in source seconds, with a little padding and never past the file: every clip that uses
+ * it counts, so a file used twice is covered from its earliest point to its latest.
+ */
+export function usedWindow(timeline: Timeline, file: string, fileSeconds?: number): ConformWindow | undefined {
+  let start = Infinity;
+  let end = 0;
+  for (const item of timeline.items) {
+    if (item.kind !== "clip" || item.file !== file) continue;
+    start = Math.min(start, item.trimBefore / timeline.fps);
+    end = Math.max(end, (item.trimBefore + item.durationInFrames) / timeline.fps);
+  }
+  if (!Number.isFinite(start)) return undefined;
+  const ceiling = fileSeconds ?? Infinity;
+  const startSeconds = Math.max(0, Math.round((start - CONFORM_PAD_SECONDS) * 1000) / 1000);
+  const endSeconds = Math.min(ceiling, Math.round((end + CONFORM_PAD_SECONDS) * 1000) / 1000);
+  return { startSeconds, endSeconds };
 }
 
 /** Longest a declared length may differ from the file's. */
@@ -143,7 +166,7 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   let format: VideoFormat = "h264";
   let stills: number[] = [];
   let subtitles: SubtitleFormat[] = [];
-  let conform: ConformMode = "auto";
+  let conform: ConformMode = DEFAULT_CONFORM;
   if (rec.output !== undefined) {
     const out = rec.output as Record<string, unknown> | null;
     if (typeof out !== "object" || out === null || Array.isArray(out)) errors.push("spec.output: must be an object");
@@ -288,17 +311,28 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
     const failed = new Set<string>();
     if (args.conformer) {
       let n = 0;
+      const budget = Math.min(args.conformBudgetMs ?? CONFORM_BUDGET_MS, CONFORM_BUDGET_MS);
+      const clock = args.conformClock ?? Date.now;
+      const began = clock();
       for (const file of filesToConform(videoInputs, checked.conform)) {
+        const left = budget - (clock() - began);
+        /* Out of time: the render reads the original (it resamples by time, as it always has) and result.json says so. */
+        if (left < 5_000) { failed.add(file); continue; }
         const copy = path.join(args.workDir, "conformed", `${n++}.mp4`);
         try {
           await mkdir(path.dirname(copy), { recursive: true });
-          await args.conformer.conform(path.join(args.inputDir, file), copy, checked.timeline.fps);
+          await args.conformer.conform(path.join(args.inputDir, file), copy, checked.timeline.fps, {
+            window: usedWindow(checked.timeline, file, probed.get(file)?.durationSeconds),
+            timeoutMs: Math.min(CONFORM_FILE_MS, left),
+          });
+          /* The copy is moved into the served folder, not copied: it is large, and it is the only copy. */
           const target = path.join(serveDir, "public", "input", file);
           await rm(target, { force: true });
-          await copyFile(copy, target);
+          await rename(copy, target);
           conformed.add(file);
         } catch {
           failed.add(file);
+          await rm(copy, { force: true }).catch(() => {});
         }
       }
     }
@@ -322,7 +356,7 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
       files.push({ name, kind: "still", frame, bytes: (await stat(outputLocation)).size });
     }
     await writeSubtitles(t, checked.subtitles, args.outputDir, files);
-    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, inputs: reportInputs(videoInputs, t.fps, conformed, failed), files };
+    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, inputs: reportInputs(videoInputs, t.fps, conformed, failed, checked.conform), files };
     await writeFile(path.join(args.outputDir, "result.json"), JSON.stringify(success, null, 2));
     return success;
   } catch (error) {
