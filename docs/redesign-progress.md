@@ -970,3 +970,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Shot-cap gap found by lane C: the BFL, Sarvam, sync.so, Runway, Veo and Vision doors don't call shotCapGate before writing the row. Sent to lanes B and D.
   - Opus checks running: #781 delta, #786, #748 delta.
 - **16 Oct 03:49 IST.** #748 delta APPROVED at 989600d8: k is written out per size; a second line still fails; nothing looser at ≤1440. The money-wording and switch-off tests in the same file are unchanged; owner's word needed on both assertion changes. CI re-run started (#749 re-run also running).
+- **16 Oct 03:55 IST.** Opus APPROVED #781 Topaz at 818a62fd (shot cap; grace window closes the retry-forever gap) and #786 Recraft at c7922ba5.
+  - #786 should-fixes sent: bound the reply before decoding; an answered-but-unreadable reply becomes charged-unkeepable, not uncertain; fix a comment pointer.
+  - Owner question: remove-background consent is an honour system (checked only when a cast member is named).
+  - Merging #781 and #786 together conflicts on one REGISTRY line in directEngineMcp; keep both.
