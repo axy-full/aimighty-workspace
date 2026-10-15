@@ -180,7 +180,7 @@ test("the quote: the credits of the output size or the output frames at Develope
       [{ tool: "image", sourceUploadId: src }, 400, /supported Topaz model/],
       [{ tool: "image", sourceUploadId: src, topaz: { ...SETTINGS, factor: 3 } }, 400, /supported Topaz model/],
       [{ tool: "image", sourceUploadId: await still("big", 6000, 4000), topaz: SETTINGS }, 400, /48 megapixels|smaller scale/],
-      [{ tool: "video", sourceUploadId: video }, 400, /Astra output settings/],
+      [{ tool: "video", sourceUploadId: video }, 400, /30 or 60 fps/],
       [{ tool: "video", sourceUploadId: video, astra: { ...ASTRA, fps: 24 } }, 400, /30 or 60 fps/],
       [{ tool: "video", sourceUploadId: src, astra: ASTRA }, 404, /not in this workspace/],
       [{ tool: "video", sourceUploadId: video, sourceGenId: "g1", astra: ASTRA }, 400, /one clip/],
@@ -497,11 +497,23 @@ test("what a person may read of a Topaz take is the take's own words; the workfl
   expect(publicDirectParams({ task: "topaz_upscale" })).not.toHaveProperty("topaz");
 });
 
-test("the declarations: both tools are hero (an upscale is a finishing step and always asks a person), follow the engine gate, and send the panel's own defaults", async () => {
+test("the declarations: both tools are declared with no draft (an upscale is a finishing step and always asks a person), follow the engine gate, send the panel's own defaults as flat arguments a prepared job can carry, and the door reads them", async () => {
   const { TOPAZ_DIRECT_TOOLS, TOPAZ_UPSCALE_IMAGE, TOPAZ_UPSCALE_VIDEO } = await import("../../lib/topazMcp");
-  expect(TOPAZ_DIRECT_TOOLS.map((t) => [t.def.name, t.tier])).toEqual([["topaz_upscale_image", "hero"], ["topaz_upscale_video", "hero"]]);
-  expect(TOPAZ_UPSCALE_IMAGE.request({ source_take_id: "g_1" })).toEqual({ path: "/api/topaz", body: { tool: "image", sourceUploadId: undefined, sourceGenId: "g_1", projectId: undefined, topaz: { model: "High Fidelity V2", factor: 2, faceEnhancement: false, faceStrength: 0.5 } } });
-  expect(TOPAZ_UPSCALE_VIDEO.request({ source_upload_id: "up_1", fps: 60, creativity: 0.2 }).body).toMatchObject({ tool: "video", sourceUploadId: "up_1", astra: { creativity: 0.2, realism: 0.5, sharpness: 0.5, fps: 60 } });
+  expect(TOPAZ_DIRECT_TOOLS.map((t) => t.def.name)).toEqual(["topaz_upscale_image", "topaz_upscale_video"]);
+  expect(TOPAZ_DIRECT_TOOLS.every((t) => !("draft" in t))).toBe(true);
+  expect(TOPAZ_UPSCALE_IMAGE.request({ source_take_id: "g_1" })).toEqual({ path: "/api/topaz", body: { tool: "image", sourceUploadId: undefined, sourceGenId: "g_1", projectId: undefined, preset: "High Fidelity V2", factor: 2, faceEnhancement: false, faceStrength: 0.5 } });
+  expect(TOPAZ_UPSCALE_VIDEO.request({ source_upload_id: "up_1", fps: 60, creativity: 0.2 }).body).toMatchObject({ tool: "video", sourceUploadId: "up_1", creativity: 0.2, realism: 0.5, sharpness: 0.5, fps: 60 });
+  /* Flat, so the prepared-jobs door takes them (its arguments are words, numbers and yes/no); the door reads them as the nested settings. */
+  const { cleanEngineJob } = await import("../../lib/security/prepared-jobs");
+  for (const tool of TOPAZ_DIRECT_TOOLS) { const { body } = tool.request({ source_take_id: "g_1" }); expect(() => cleanEngineJob({ engine: tool.def.name, args: Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)), prompt: tool.prepared(body) })).not.toThrow(); }
+  await asTenant(house(), async () => {
+    process.env.TOPAZ_DIRECT_ENABLED = "1";
+    const src = await still("flat");
+    const q = await admit({ ...TOPAZ_UPSCALE_IMAGE.request({ source_upload_id: src }).body, quoteOnly: true });
+    expect(q.status, JSON.stringify(q.body)).toBe(200);
+    expect(q.body).toMatchObject({ tool: "image", outputWidth: 4000, outputHeight: 2000 });
+    delete process.env.TOPAZ_DIRECT_ENABLED;
+  });
   expect(JSON.stringify(TOPAZ_DIRECT_TOOLS.map((t) => t.def))).not.toMatch(/maxCredits|max_credits/);
   await asTenant(house(), async () => {
     delete process.env.TOPAZ_DIRECT_ENABLED;

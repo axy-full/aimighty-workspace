@@ -174,7 +174,7 @@ export async function admitTopaz(input: Record<string, unknown>, got: AdmissionA
   let measured: { inputWidth: number; inputHeight: number; outputWidth: number; outputHeight: number; outputMegapixels: number; seconds: number; fps: number; sourceFps: number; container: "mp4" | "mov" };
   let credits: number;
   if (tool === "image") {
-    try { settings = topazImageSettings(body.topaz); } catch (error) { return admissionReply({ error: (error as Error).message }, { status: 400 }); }
+    try { settings = topazImageSettings(body.topaz ?? { model: body.preset, factor: body.factor, faceEnhancement: body.faceEnhancement, faceStrength: body.faceStrength }); } catch (error) { return admissionReply({ error: (error as Error).message }, { status: 400 }); }
     const found = await resolveImage(body.sourceUploadId, body.sourceGenId);
     if ("error" in found) return admissionReply({ error: found.error }, { status: found.status });
     if (!(found.bytes > 0) || found.bytes > IMAGE_SOURCE_LIMIT) return admissionReply({ error: "Use an original image up to 30 MB for Topaz." }, { status: 400 });
@@ -185,7 +185,7 @@ export async function admitTopaz(input: Record<string, unknown>, got: AdmissionA
     try { credits = topazImageCredits(measured.outputMegapixels); } catch (error) { return admissionReply({ error: (error as Error).message }, { status: 400 }); }
     source = { kind: found.kind, id: found.id, name: found.name, bytes: found.bytes };
   } else {
-    try { settings = astraSettings(body.astra); } catch (error) { return admissionReply({ error: (error as Error).message }, { status: 400 }); }
+    try { settings = astraSettings(body.astra ?? { creativity: body.creativity, realism: body.realism, sharpness: body.sharpness, fps: body.fps }); } catch (error) { return admissionReply({ error: (error as Error).message }, { status: 400 }); }
     const up = body.sourceUploadId ? String(body.sourceUploadId) : "", gen = body.sourceGenId ? String(body.sourceGenId) : "";
     if ((!up && !gen) || (up && gen)) return admissionReply({ error: "Pick one clip to upscale." }, { status: 400 });
     if ((up && !SOURCE_ID.test(up)) || (gen && !SOURCE_ID.test(gen))) return admissionReply({ error: "That source is not valid." }, { status: 400 });
@@ -526,8 +526,8 @@ export async function recoverTopazJobs(options: { limit?: number; deadlineAt?: n
 const COMMON = { provider: "topaz", kind: "engine" as const, route: "/api/topaz", needs: ["TOPAZ_API_KEY", "TOPAZ_DIRECT_ENABLED"], who: "prepare: anyone; approve: a person" as const };
 /** The two tools, declared beside their handler (docs/particl-sow-2026-10-04.md § 4.3). One route, one price path, one approval for every consumer; an upscale is a finishing step, so it is always asked, never run on its own. */
 export const TOPAZ_TOOLS = [
-  { ...COMMON, id: "topaz_upscale_image", tool: "image" as const, models: [TOPAZ_IMAGE_MODEL], inputs: { sourceUploadId: "an image of this workspace (or sourceGenId: one of its takes)", topaz: "model (a preset), factor 1, 2 or 4, faceEnhancement, faceStrength", projectId: "optional", maxCredits: "the approved price" }, output: "an image take, linked to its original" },
-  { ...COMMON, id: "topaz_upscale_video", tool: "video" as const, models: [ASTRA_MODEL], inputs: { sourceUploadId: "a clip of this workspace (or sourceGenId: one of its takes)", astra: "creativity, realism, sharpness (0 to 1) and fps 30 or 60", projectId: "optional", maxCredits: "the approved price" }, output: "a video take, linked to its original" },
+  { ...COMMON, id: "topaz_upscale_image", tool: "image" as const, models: [TOPAZ_IMAGE_MODEL], inputs: { sourceUploadId: "an image of this workspace (or sourceGenId: one of its takes)", topaz: "model (a preset), factor 1, 2 or 4, faceEnhancement, faceStrength (or the same four flat: preset, factor, faceEnhancement, faceStrength)", projectId: "optional", maxCredits: "the approved price" }, output: "an image take, linked to its original" },
+  { ...COMMON, id: "topaz_upscale_video", tool: "video" as const, models: [ASTRA_MODEL], inputs: { sourceUploadId: "a clip of this workspace (or sourceGenId: one of its takes)", astra: "creativity, realism, sharpness (0 to 1) and fps 30 or 60 (or the same four flat)", projectId: "optional", maxCredits: "the approved price" }, output: "a video take, linked to its original" },
 ];
 
 /** The tools present for a workspace: none unless the engine is on for it. */
