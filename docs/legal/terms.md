@@ -60,12 +60,12 @@ Refunds are in the Refund Policy (`refund-policy.md`).
 
 ## 5. Your work
 
-What you make is yours. We claim no rights in your prompts, references or takes, and we do not train on them [D5]. You give us only the licence we need to run the service: to store, process, copy and send your content to the engines you choose, show it to your team and to the people you share it with, and keep backups.
+What you make is yours. We claim no rights in your prompts, references or takes. Particl does not train on customer content. Providers may, under their own policies, which our Privacy Policy links [D5]. You give us only the licence we need to run the service: to store, process, copy and send your content to the engines you choose, show it to your team and to the people you share it with, and keep backups.
 What an engine's own terms say about its output applies to that output.
 You promise you have the rights to what you upload, and that your use of it does not break anyone else's rights.
 
 ⚖ LAWYER L-T8: ownership and copyright of generated output under Indian law (a work with no human author may not be protected); wording that "yours" does not over-promise; the licence grant; third-party engine terms that limit commercial use (see `licence-register.md`, engine outputs).
-⚖ LAWYER L-T8b: "we do not train" is our promise. Some vendors keep or train under their own terms unless set otherwise (see `privacy-policy.md`, section 6 and L-P6). Check how to word it so it is true.
+⚖ LAWYER L-T8b: the promise is "Particl does not train on customer content; providers may, under their own policies" (owner, 15 Oct 22:15). There is no promise on a provider's behalf, and no no-training gate on wiring a provider. Check the wording, that it is true for each provider in `where-your-data-goes.md`, and that the Privacy Policy section 6 says the same (L-P6, L-W1).
 
 ## 6. Real people: faces and voices
 

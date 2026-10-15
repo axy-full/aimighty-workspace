@@ -10,7 +10,8 @@
 | `acceptable-use-policy.md` | Acceptable Use Policy |
 | `licence-register.md` | Fonts and assets rendered into customer outputs, with licences; UI-only fonts apart |
 | `unknown-assets.md` | Every font and asset marked UNKNOWN: where it is used (file and line), which outputs it can reach, how to clear or replace it |
-| `vendor-requests.md` | Drafts of the emails asking BytePlus, Google, OpenAI, ElevenLabs, Topaz, Bria and Runway for written data terms. Nothing is sent |
+| `where-your-data-goes.md` | One page, one table: every provider, what is sent, how long it keeps it, what it does about training, and whether training is switched off on our account. Source for the public page on the site |
+| `vendor-requests.md` | Drafts of the emails asking BytePlus, Google, OpenAI, ElevenLabs, Topaz, Bria and Runway for written data terms. Optional information requests, not a condition of wiring a vendor (owner, 15 Oct 22:15). Nothing is sent |
 
 ## How to read the tags
 
@@ -43,12 +44,13 @@ Files are on `redesign/integration` (docs/redesign-plan.md reaches `release/1` w
 | D15 | Admin reach into a member's private board is audited; admins cannot make client links on it; API and MCP tokens never get admin reach. | docs/redesign-plan.md › "Owner decisions (Akshay, 14 Oct, 21:55 IST)" |
 | D16 | Remotion: Free License confirmed in writing 13 Oct 2026; no licence key, nothing sent to Remotion; at 4 people the Company License must be bought first. | CLAUDE.md:45 (on `release/1`); docs/plans/remotion.md (on `redesign/integration`) |
 | D17 | Written content policy at signup; report path on review links; platform-side suspend for abuse; terms, privacy and retention visible from Settings › Account. | docs/particl-sow-v1.md › §7 › "1.0 Tenancy, billing, onboarding" › "Policy" |
+| D18 | Data terms (owner, 15 Oct 22:15): "Particl's Terms promise PARTICL does not train on customer content; providers may, under their own policies. No no-training gate on wiring. The Privacy Policy names every provider with a link to its policy. Switch off training/'improve the models' on every account that offers it (ElevenLabs now) and record it. Keep a one-page 'where your data goes' table ... in docs/legal and on the site." | docs/redesign-plan.md › "FINAL ENGINE STACK: owner, 15 Oct 2026, 22:15 IST" |
 
 ## Mismatches found while drafting (all flagged in the files)
 
 1. **"No sexual content" (owner's list) is broader than the live content policy** (minors, and real people without consent). OD-A1.
 2. **"Nothing is erased" (live Privacy page, rule 13) against the SOW's "deletion with purge"** and the DPDP erasure right. OD-T3, OD-P7, L-P4.
-3. **"No training on user content" is a promise by Particl; the vendors train or retain under their own terms** unless confirmed. Confirmed in the record: BFL, sync.so, Sarvam. Not recorded: OpenAI, Anthropic, Google, xAI, BytePlus, fal, ElevenLabs, Higgsfield, Luma, Topaz, AWS. L-P6.
+3. **"No training on user content" is a promise by Particl only (D18); the vendors train or retain under their own policies.** The live pages still say "Nothing here is used to train a model" and "does not train on them" without that qualification; they must change to the D18 wording when these drafts go live (L-T8b, L-P6, L-W1). Confirmed in the record: BFL, sync.so, Sarvam. Not recorded: OpenAI, Anthropic, Google, xAI, BytePlus, fal, ElevenLabs, Higgsfield, Luma, Topaz, AWS. L-P6.
 4. **The 7-day refund is not in CLAUDE.md § Pricing.** CLAUDE.md says a change to what customers see changes that section too. OD-R1.
 5. **Plan tables differ**: CLAUDE.md § Pricing (Invite, Studio $49, Agency $199, Production $999) against prototype v15's placeholders (Explore, Create, Master; Business 100, 250, 500). The drafts follow CLAUDE.md. OD-T4.
 6. **The welcome grant (250 cr, one time) has no recorded expiry**; the code gives it none, packs and bonus credits get 12 months off-plan. OD-T6.
@@ -62,3 +64,18 @@ Files are on `redesign/integration` (docs/redesign-plan.md reaches `release/1` w
 - **[OWNER DECISION OD-G1: the legal entity.]** Name, registered address, contact and grievance email. The record names a company only in the Remotion decision ("SensAI is 3 people in total"); no draft assumes it. Options: put the name here once; or use the trading name Particl with the entity beneath it.
 - **[OWNER DECISION OD-G2: the public domain and the contact addresses]** (`particl.app` in CLAUDE.md; `particl.si` in docs/handover-2026-10-05.md).
 - **[OWNER DECISION OD-G3: the payment processor and currency.]** Stripe is planned ("Stripe-readiness work", 15 Oct 20:45) and its code paths exist; it is not live. Billing currency and GST invoicing (SOW: "the only open item is whether invoicing ships now or later") are not decided.
+
+
+## Owner actions: training and "improve the models" settings (D18)
+
+Owner, 15 Oct 22:15: switch off training or "improve the models" on every account that offers it, and record it. These are the owner's, in each provider's own console (not code, and not done by a lane). Record the date and who in `where-your-data-goes.md`, "Record of switches".
+
+- [ ] **ElevenLabs: now.** Switch off training / "improve the models" on the account. Not recorded as done.
+- [ ] **AWS (Rekognition, and check MediaConvert):** set the AWS Organizations AI-services opt-out policy before any customer use of Rekognition (`docs/plans/provider-adapters.md` section 3). Not recorded as done. Check whether any AWS opt-out also applies to MediaConvert.
+- [x] **Black Forest Labs:** training opt-out done in its dashboard (15 Oct 13:45). Record it in the table (done there).
+- [x] **sync.so:** written confirmation of no training (15 Oct 14:25), kept with company records.
+- [x] **Sarvam:** retention 0 days (15 Oct 14:25). Check whether its training consent setting also needs declining ("subject to your consent"; no decision recorded).
+- [ ] **Runway:** the record says its terms allow training and states no API opt-out. Nothing to switch; customer use stays off until written terms exclude training (house workspace only).
+- [ ] **Check, nothing recorded either way** (the repo has no record of whether the account offers such a setting): OpenAI, Anthropic, Google (Gemini API), xAI, BytePlus, fal, Higgsfield, Topaz, Bria, Recraft, Google Cloud Vision (its page says it does not train on content sent; check for a setting anyway). Open each account's data or privacy settings; if one offers a training or "improve the models" switch, turn it off and record the date and who.
+- [ ] **Add the provider links:** replace each `[LINK: ...]` in `where-your-data-goes.md` and each `[link to ... privacy policy]` in `privacy-policy.md` with that provider's own policy page.
+- [ ] **The optional emails** (`vendor-requests.md`) are information requests: send any you want answers from; nothing waits on them.

@@ -1,5 +1,7 @@
 # Requests to engine vendors for written data terms: DRAFTS, nothing sent
 
+> **Update, owner, 15 Oct 2026, 22:15 IST:** there is **no no-training gate on wiring an engine**. Particl's Terms promise that PARTICL does not train on customer content; providers may, under their own policies (`terms.md` section 5, `privacy-policy.md` section 6). So these emails are now **optional information requests**: send one when you want a provider's terms in writing, not because a provider must answer before it is switched on. The first paragraph's owner request (22:00) is superseded on that point. What we know about every provider's data handling, and where an account setting turns training off, is in `where-your-data-goes.md`; the settings to switch off are in `README.md` ("Owner actions").
+
 **Nothing here has been sent.** These are drafts for the owner to send from his own address; nobody else sends them. Draft 0.1, 15 Oct 2026. Owner request (15 Oct 22:00): request written no-training and no-retention terms from BytePlus, Google, OpenAI, ElevenLabs, Topaz, Bria and Runway.
 
 Placeholders to fill: `[Your name]`, `[Company legal name]`, `[Account/organisation id]`, `[link to their current policy]`, `[address]`. No real id, key or address is in this file. Each email stands alone. Under each is a note outside the quote with what the record says and the code references (endpoints and models are from `release/1` at 663fb243, current on 15 Oct). The answers feed `privacy-policy.md` (sections 5 to 7), `licence-register.md` (A6) and `unknown-assets.md` (item 9).

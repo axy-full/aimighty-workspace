@@ -21,7 +21,7 @@ Draft 0.1, 15 Oct 2026. Not live. The live page is `app/(app)/privacy/page.tsx` 
 
 ## 3. Why
 
-To run the service you asked for; to bill; to keep it safe; to answer reports; to follow the law. We do not sell data. We do not use your work to train a model [D5].
+To run the service you asked for; to bill; to keep it safe; to answer reports; to follow the law. We do not sell data. Particl does not train on your content; the providers that receive it may, under their own policies (sections 5 and 6) [D5].
 ⚖ LAWYER L-P2: the lawful purposes and the notice and consent text the DPDP Act needs for each; "legitimate uses" we may rely on; a consent manager; withdrawal.
 
 ## 4. Faces, voices and other special data
@@ -32,56 +32,65 @@ Training an identity uses photos of a real person; the person in them must have 
 
 ## 5. Who receives data (vendors)
 
-Each vendor gets only what it needs to do its job, and goes straight to that vendor (no AI gateway or relay in between) [D11; live Privacy page]. "Live" means named on the live Privacy page or in production use in the record; "Planned" means decided in the record and not yet in use.
+Each vendor gets only what it needs to do its job, and goes straight to that vendor (no AI gateway or relay in between) [D11; live Privacy page]. Every provider below is named with a link to its own privacy policy; the links are placeholders for the owner to fill from each provider's own page. "Live" means named on the live Privacy page or in production use in the record; "Planned" means decided in the record (owner, 15 Oct 22:15, the final engine stack) and not yet merged or switched on. A one-page table of what each receives, how long it keeps it and what it does about training is in `where-your-data-goes.md`.
 
-| Vendor | What it does for us | What it receives | Status | Where recorded |
+| Vendor | What it does for us | What it receives | Status | Its privacy policy |
 |---|---|---|---|---|
-| Turso | Databases: one per workspace and one platform database | All workspace records except files; account and billing records | Live | live Privacy page; docs/handover-2026-10-05.md (Mumbai, aws-ap-south-1) |
-| Cloudflare R2 | Private file storage (masters, uploads, identity photos) under each workspace's own prefix, reached by short-lived signed links | Your files | Live | live Privacy page |
-| Cloudflare | DNS | Domain lookups | Live | live Privacy page |
-| DigitalOcean | The server we run Particl on (droplet in Bangalore, BLR1) | Everything the app handles, in transit and at rest | Live | docs/scale-out-runbook.md |
-| Vercel | Older files still in Vercel Blob (to be moved; read-only for 30 days after the cutover, then deleted only with the owner's yes); 3D (Astra) renders run on Vercel Sandbox until our own workers are live | Older stored files; the scene and assets of a 3D render | Live, leaving | live Privacy page; docs/redesign-plan.md › "Owner, 15 Oct 2026, 19:30 IST" |
-| Resend | Email | Your email address, for sign-in and invites | Live | live Privacy page |
-| Inngest | Background jobs | Identifiers of work to run, not prompts | Live | live Privacy page |
-| Liveblocks | Live team editing on a shared board | Board content shared in a live session | Live | live Privacy page |
-| Google (sign-in) | Sign in with Google | Your Google account identifier and email | Live, but still in Google's Testing mode until the owner publishes it | docs/redesign-plan.md › "Owner decision (Akshay, 12 Oct evening)" |
-| Anthropic | Atomik's writing and planning | Your words to Atomik and files attached | Live | live Privacy page |
-| OpenAI | Stills; some of Atomik's writing | Prompts and reference images | Live | live Privacy page |
-| Google (Gemini) | Stills; some of Atomik's writing | Prompts and reference images | Live | live Privacy page |
-| xAI | Stills, video, voice; some of Atomik's writing | Prompts and reference images | Live | live Privacy page |
-| BytePlus | Video | Prompts, reference images and clips | Live | live Privacy page |
-| fal | Video, identity training and renders, upscales (Topaz until direct), reframe through Luma | Prompts, reference images, clips, identity photos | Live | live Privacy page |
-| Luma, through fal | Re-cutting a finished clip to another shape | A finished clip | Live | live Privacy page |
-| Higgsfield (API key only) | Identities and stills | Prompts and photos | Live | live Privacy page; CLAUDE.md rule 10 |
-| ElevenLabs | Speech, sound effects, music, dubbing | Scripts and audio | Live | live Privacy page |
-| ElevenLabs speech to text | Transcripts outside Indian languages | Audio | Planned (chosen by the owner, 14 Oct 20:40, item 7F; no call in `release/1`) | docs/redesign-plan.md › "Owner answers (14 Oct, 20:40 IST)" item 7F |
-| sync.so | Lip-sync, direct | A clip and audio | Planned (account bought; keys set) | docs/redesign-plan.md › "Owner amendment (14 Oct, 19:29 IST)" and "20:40 IST" |
-| Sarvam | Transcripts in Indian languages | Audio | Planned (account bought; key set; retention 0 days) | same; "15 Oct, 14:20 and 14:25 IST" |
-| Black Forest Labs (FLUX.2) | Stills, EU endpoint | Prompts and reference images | Planned (off; training opt-out done) | docs/redesign-plan.md › "Owner, 15 Oct 2026, 13:45 IST" |
-| Topaz Labs (direct) | Upscaling | Images and clips | Planned (replaces the fal route) | docs/redesign-plan.md › "14:05 IST: Topaz goes direct" |
-| AWS Rekognition | Face matching to check a take against a cast member | Face images | Planned (off) | docs/redesign-plan.md › "20:40 IST" item 7E; "Counsel list" |
-| Google Cloud Vision | Reading text in images | Images | Planned (key set) | docs/redesign-plan.md › "14 Oct evening, recorded 19:15 IST" item 6 |
-| Stripe | Card payments | Billing details; card data goes to Stripe | Planned (not live) | docs/redesign-plan.md › "Owner, 15 Oct 2026, 20:45 IST" |
-| Runway | Standby engine | Not in use; house workspace only until training-free terms | Not in use | docs/redesign-plan.md › "14 Oct evening, recorded 19:15 IST" item 6 |
+| Turso | Databases: one per workspace and one platform database | All workspace records except files; account and billing records | Live | [link to Turso privacy policy] |
+| Cloudflare R2 | Private file storage (masters, uploads, identity photos) under each workspace's own prefix, reached by short-lived signed links | Your files | Live | [link to Cloudflare privacy policy] |
+| Cloudflare | DNS | Domain lookups | Live | [link to Cloudflare privacy policy] |
+| DigitalOcean | The server we run Particl on (droplet in Bangalore, BLR1) | Everything the app handles, in transit and at rest | Live | [link to DigitalOcean privacy policy] |
+| Vercel | Older files still in Vercel Blob (to be moved; read-only for 30 days after the cutover, then deleted only with the owner's yes); 3D (Astra) renders run on Vercel Sandbox until our own workers are live | Older stored files; the scene and assets of a 3D render | Live, leaving | [link to Vercel privacy policy] |
+| Resend | Email | Your email address, for sign-in and invites | Live | [link to Resend privacy policy] |
+| Inngest | Background jobs | Identifiers of work to run, not prompts | Live | [link to Inngest privacy policy] |
+| Liveblocks | Live team editing on a shared board | Board content shared in a live session | Live | [link to Liveblocks privacy policy] |
+| Google (sign-in) | Sign in with Google | Your Google account identifier and email | Live, but still in Google's Testing mode until the owner publishes it | [link to Google privacy policy] |
+| Stripe | Card payments | Billing details; card data goes to Stripe | Planned (not live) | [link to Stripe privacy policy] |
+| Anthropic | Atomik's writing and planning | Your words to Atomik and files attached | Live | [link to Anthropic privacy policy] |
+| OpenAI | Stills (GPT Image); some of Atomik's writing | Prompts and reference images | Live | [link to OpenAI privacy policy] |
+| Google (Gemini API) | Stills (Nano Banana Pro, and 2.1 when live); some of Atomik's writing; Gemini for moments, cutdown planning and the vision judge | Prompts and reference images; frames for the vision judge | Live (2.1 and the judge: Planned) | [link to Google Gemini API privacy policy] |
+| Google (Veo) | Video | Prompts, reference images and frames | Planned | [link to Google Gemini API privacy policy] |
+| Google (Cloud Vision) | Reading text in images, with an exact text check | Images and review frames | Planned (key set) | [link to Google Cloud privacy policy] |
+| xAI | Stills, video, voice; some of Atomik's writing | Prompts, reference images, audio | Live | [link to xAI privacy policy] |
+| BytePlus | Video (Seedance) and prompt enhancement | Prompts, reference images and clips | Live | [link to BytePlus privacy policy] |
+| fal | Video (Kling), identity training and renders; upscales and stills tools until each goes direct | Prompts, reference images, clips, identity photos | Live | [link to fal privacy policy] |
+| Luma, through fal | Re-cutting a finished clip to another shape (replaced by AWS MediaConvert) | A finished clip | Live, leaving | [link to Luma privacy policy] |
+| Higgsfield (API key only) | Identities and stills | Prompts and photos | Live | [link to Higgsfield privacy policy] |
+| ElevenLabs | Speech, sound effects, music, dubbing, and transcripts outside Indian languages | Scripts and audio | Live (speech to text: Planned) | [link to ElevenLabs privacy policy] |
+| Topaz Labs (direct) | Upscaling | Images and clips | Planned (live today through fal) | [link to Topaz Labs privacy policy] |
+| Bria (direct) | Extending and cutting out stills | A still | Planned (live today through fal) | [link to Bria privacy policy] |
+| Runway | Face and video performance, video edits, video | A face video and a driving video, a video, or a prompt and image | Planned (house workspace only until written terms exclude training) | [link to Runway privacy policy] |
+| sync.so | Lip-sync, direct | A clip and audio | Planned | [link to sync.so privacy policy] |
+| Sarvam | Speech, transcripts and translation in Indian languages | Text and audio | Planned | [link to Sarvam privacy policy] |
+| Black Forest Labs | Stills (FLUX 3, FLUX.2), EU endpoint | Prompts and reference images | Planned | [link to Black Forest Labs privacy policy] |
+| Recraft | Decks, brand assets, vector and storyboard styles | Prompts; an image for vectorize or background removal | Planned | [link to Recraft privacy policy] |
+| AWS Rekognition (Mumbai) | Face matching to check a take against a cast member | Face images | Planned (off until counsel) | [link to AWS privacy notice] |
+| AWS MediaConvert (Mumbai) | Smart Crop reframe of a finished clip | The clip, held in a storage bucket in Mumbai | Planned | [link to AWS privacy notice] |
 
-Not used, by decision: an AI gateway [D11]; Recraft [D11].
-[OWNER DECISION OD-P4a: the final vendor list at launch. The table is drawn from the record on 15 Oct; the owner confirms which "Planned" vendors are live on the day and removes the rest.]
+Not used, by decision: an AI gateway [D11]; MiniMax/Hailuo, Suno, Udio, Sora, PlayHT, face-swap engines built on InsightFace, Wav2Lip and self-hosted MMAudio (owner, 15 Oct 22:15). Recraft was "not used" in the 11 Oct record and is now in the stack (owner, 15 Oct 22:15).
+[OWNER DECISION OD-P4a: the final vendor list at launch. The table is drawn from the record on 15 Oct (22:15 stack); the owner confirms which "Planned" vendors are live on the day and removes the rest.]
 ⚖ LAWYER L-P3b: whether each vendor needs a data processing agreement, and whether the list must be in the notice or can sit in a linked page.
+⚖ LAWYER L-P3c: that the notice names every vendor above with its policy link, that the links are kept current, and how a vendor added later is announced.
 
 ## 6. Training and retention at vendors
 
-Our promise: we do not train on your work [D5]. The engines receive prompts and references to render under their own terms. What the record confirms:
+**Our promise: Particl does not train on customer content. Providers may, under their own policies** (owner, 15 Oct 22:15) [D5]. Particl does not require a provider to promise no training before we use it, so we do not promise it on their behalf. Each provider's own policy, linked in section 5, governs what it does with what it receives. Where we have an account setting that turns training or "improve the models" off, we switch it off and record the date and who (`where-your-data-goes.md`, "Record of switches").
+
+What the record says, from our own account settings and written confirmations (nothing else is claimed):
 
 | Vendor | Recorded |
 |---|---|
 | Black Forest Labs | Training opt-out set in its dashboard (15 Oct 13:45) |
 | sync.so | No training on our data, confirmed in writing; the letter is with company records, not in the repo (15 Oct 14:25) |
 | Sarvam | Retention set to 0 days (15 Oct 14:25) |
-| Topaz | Asked: no training on our uploads, how long it keeps files, delete its copy after we store the output. Not recorded as answered |
-| Runway | Standby; house only "until training-free terms" |
-| OpenAI, Anthropic, Google, xAI, BytePlus, fal, Luma, ElevenLabs, Higgsfield, AWS, Google Vision | Nothing recorded about training or retention. [OWNER DECISION OD-P5: confirm each (settings or written terms) before the sentence "we do not train on your work" is shown without a qualifier. Options: confirm all; qualify the sentence to name the vendors confirmed; remove a vendor.] |
+| ElevenLabs | Account has a training setting; to be switched off (owner action; not yet recorded as done) |
+| AWS (Rekognition) | An AWS Organizations AI-services opt-out is to be set before any customer use (owner action; not yet recorded as done) |
+| Runway | Its terms allow training on inputs and outputs; house workspace only until written terms say otherwise |
+| Topaz | Asked, optional: no training on our uploads, how long it keeps files. Not recorded as answered |
+| Every other vendor | Nothing recorded about training or retention; the vendor's own policy applies. [OWNER DECISION OD-P5: how the page states this. Options: the "providers may, under their own policies" sentence alone; also the table in `where-your-data-goes.md` on the site.] |
 
-⚖ LAWYER L-P6: how to word the promise so it is true when vendors retain or train under their own terms; whether to publish the table.
+The written requests to vendors (`vendor-requests.md`) are optional information requests, not a condition of using a vendor.
+⚖ LAWYER L-P6: how to word the promise so it is true when providers retain or train under their own terms; whether to publish the table; whether "we do not train" needs to say we do not train any model of our own on customer content and do not sell it for training.
 
 ## 7. Where your data is
 

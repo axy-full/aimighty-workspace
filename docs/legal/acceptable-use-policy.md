@@ -32,7 +32,7 @@ Every engine has rules of its own and refuses some prompts, sometimes ones that 
 - Anyone can report at /report, with no account: a link or a take id, what is wrong, and an email if they want an answer.
 - The platform's desk reads every report. A workspace can be flagged for review.
 - For abuse we suspend the workspace: rendering stops, everything already made stays readable, and the workspace is told why. Repeated or serious abuse ends the workspace [live policy; D17].
-- We do not train anything on a workspace's work. The engines receive prompts and references to render under their own terms [D5].
+- Particl does not train on a workspace's work. The providers that receive prompts and references to render may, under their own policies [D5].
 
 [OWNER DECISION OD-A5: appeal. Not recorded. Options: none; one written appeal to the desk within a stated time.]
 [OWNER DECISION OD-A6: reports of content that is unlawful (for example child sexual abuse material): keep, preserve and report to authorities. Not recorded as a process. See L-A2.]
