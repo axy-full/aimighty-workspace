@@ -969,3 +969,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Recraft prices verified on recraft.ai: V4.1 $0.035 raster, $0.08 vector, Pro $0.21 / $0.30; V3 $0.04 / $0.08; vectorize and remove-bg $0.01; style $0.005 per request. Developer Terms §6.3: no training on API outputs.
   - Shot-cap gap found by lane C: the BFL, Sarvam, sync.so, Runway, Veo and Vision doors don't call shotCapGate before writing the row. Sent to lanes B and D.
   - Opus checks running: #781 delta, #786, #748 delta.
+- **16 Oct 03:49 IST.** #748 delta APPROVED at 989600d8: k is written out per size; a second line still fails; nothing looser at ≤1440. The money-wording and switch-off tests in the same file are unchanged; owner's word needed on both assertion changes. CI re-run started (#749 re-run also running).
