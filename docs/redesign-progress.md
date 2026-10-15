@@ -1015,3 +1015,6 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Open notes for later: unify the two gating mechanisms (#784 vs #787); lanes C and D switch to the shared shotCapAdmin once #776 merges.
 - **16 Oct 04:30 IST.** #749 (v25 card) re-run CI green 24/24 (run 38816325995) at c021c3d3, so the earlier suites-business failure was a flake. Not merged under the standing yes: tonight's Opus reviews of #749 were scoped to the large-screen deltas, not a full review of the PR, and the last head (a test-comment reword) wasn't re-reviewed. Listed as ready for the owner's yes.
 - **16 Oct 04:36 IST.** #748 (v25 top bar and board frame) CI green 24/24 (run 38816384718) at 989600d8, the Opus-approved head. NEEDS AKSHAY: two test-assertion changes (shots-v12, render-v12) need the owner's word, and deploy #5 needs his yes per PR. Not merged. CI slots are free.
+- **16 Oct 05:21 IST.**
+  - #750 (v25 rail) CI green 24/24 (run 38821582430) at bd738204.
+  - #758 (at-risk badge) CI FAILED (run 38821617668): generationSettlement.spec.ts:296. syncPending now returns an extra `atRiskTried` field and breaks the exact shape. The test is not touched; lane C is fixing the code to keep syncPending's shape.
