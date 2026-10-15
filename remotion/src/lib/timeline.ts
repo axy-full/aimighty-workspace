@@ -167,6 +167,15 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
         }
         timeline.voiceover.push({ file: line.file, from, durationInFrames: Math.max(1, Math.min(frames(line.durationSeconds, p.fps), timeline.durationInFrames - from)), volume: line.volume });
       });
+      /* Two voice lines cannot play at once: a line that starts before the one before it has ended is refused, not mixed. */
+      const placed = timeline.voiceover.map((line, index) => ({ line, index })).sort((a, b) => a.line.from - b.line.from || a.index - b.index);
+      for (let k = 1; k < placed.length; k += 1) {
+        const before = placed[k - 1];
+        const line = placed[k];
+        if (line.line.from < before.line.from + before.line.durationInFrames) {
+          throw new RangeError(`props.voiceover[${line.index}] overlaps props.voiceover[${before.index}]: two voice lines cannot play at once (one starts at ${(line.line.from / p.fps).toFixed(2)} s, the other runs until ${((before.line.from + before.line.durationInFrames) / p.fps).toFixed(2)} s)`);
+        }
+      }
       if (p.music) {
         timeline.music = {
           file: p.music.file,
