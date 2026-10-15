@@ -9,6 +9,8 @@
 | `refund-policy.md` | Refund Policy |
 | `acceptable-use-policy.md` | Acceptable Use Policy |
 | `licence-register.md` | Fonts and assets rendered into customer outputs, with licences; UI-only fonts apart |
+| `unknown-assets.md` | Every font and asset marked UNKNOWN: where it is used (file and line), which outputs it can reach, how to clear or replace it |
+| `vendor-requests.md` | Drafts of the emails asking BytePlus, Google, OpenAI, ElevenLabs, Topaz, Bria and Runway for written data terms. Nothing is sent |
 
 ## How to read the tags
 

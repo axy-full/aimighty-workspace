@@ -2,6 +2,8 @@
 
 Draft 0.1, 15 Oct 2026. Built from `release/1` (55a9ef49) and, where marked, the open branches `remotion/3-app` (PR #700: Remotion exports, switch off) and `redesign/integration`. Owner request: "every font and asset rendered into outputs, with its licence" (docs/redesign-plan.md › "Owner, 15 Oct 2026, 20:45 IST").
 
+The items marked UNKNOWN are listed with where each is used (file and line), which outputs it can reach, and how to clear or replace it in [`unknown-assets.md`](unknown-assets.md). Written requests to the engine vendors are drafted in [`vendor-requests.md`](vendor-requests.md); nothing has been sent.
+
 How to read it. **Allowed** says whether the licence lets us put the item into a customer's output for commercial use. **UNKNOWN: must clear before launch** means no licence is recorded in the repo or the record; it is not a finding that the licence is bad. Licence names are from the files named in the "Source" column; licence URLs are the licensor's, not fetched for this draft. ⚖ marks what the lawyer checks.
 
 ## A. Rendered into customer outputs
