@@ -761,3 +761,12 @@ Owner, 15 Oct 2026, 16:05 IST (verbatim): "Viral mode, research only, docs only,
 4) Park it under "Viral phase 2 (after Stripe launch)" in the plan; don't let it take lanes from deploy #4/#5 or the v25 first slice."
 
 **Lead's notes.** Research runs in a separate research agent (not a build lane), output `docs/plans/viral-trends.md` on redesign/integration. No code, no keys, no sign-ups, no paid calls. Nothing is built until after the Stripe launch and the owner's go.
+
+## Owner, 15 Oct 2026, 16:40 IST (verbatim)
+1) Logo: header uses the mark + wordmark (no "STUDIO" line) at small sizes; the full lockup only where it renders large (sign-in, marketing, documents). Yes to the small customer-visible PR for today's header in deploy #5 (real assets, brand guard covers it).
+2) #748 JS +93 KB: tell me what it is, and whether it can be lazy-loaded or split. The speed rule is "not slower"; justify or cut it before merge.
+3) Viral doc: noted. TikTok is banned in India, so the trend panel shows "rising globally (TikTok)" and "rising in India (YouTube, Google Trends)" as two sources. The cache exception and price wait until after launch.
+4) rm -rf: report the exact command and path lane C tried. Standing rule for every lane: no rm -rf or recursive deletes on the droplet. Use a scratch folder under the lane's own worktree and git clean, or ask me. Add it to CLAUDE.md in the next docs PR.
+5) Deploy #4: waiting on your "green" for #755.
+
+**Lead's note on 4.** `git clean` is on the owner's banned git-command list (checkout, restore, reset, clean, bare stash, force-push), so the two rules conflict; asked the owner which wins. Until then lanes keep scratch files inside their own worktree and dispose of the whole worktree with `git worktree remove` (non-forced; refuses a dirty tree); no `rm -rf`, no recursive delete, no `git clean`.
