@@ -871,3 +871,15 @@ Start with Slice 1 now.
 RECRAFT_API_KEY is set in Coolify (production only, locked, runtime only). Nothing else to buy; all stack keys are in place.
 
 Slice 5 (Viral trend panel, after Slice 3): the trend-signal adapter from docs/plans/viral-trends.md. Sources: YouTube mostPopular (IN), Google Trends via SerpApi, TikTok signals via Zyla (hashtags, sounds, formats only; never videos), Instagram hashtag search via Meta once our app is approved. One list with a source badge and a "crossing to India" flag. Tell me the env names; I'll set the keys when you're ready for them.
+
+## Owner, 15 Oct 2026, 22:20 IST (verbatim): standing yes for tonight
+I'm off until 11:00. Work through the night on the engine stack (my 22:15 note, Slice 1 first, then Slice 2).
+
+STANDING YES FOR TONIGHT, into release/1 only: a PR may merge without waiting for me if ALL of these hold: CI green 24/24 on the final head; a fresh Opus review approved it with no open must-fix; it changes no migration, no env name, no money behaviour (prices, quotes, approvals, ledger), no sign-in, no guard test, no DNS/Coolify/Cloudflare; and it is on the approved stack. Anything outside that: open it as NEEDS AKSHAY and move on. Never main. Never deploy. Never touch Coolify or env.
+Engines may ship ON for the house workspace, but NO paid generation runs tonight: no bake-off, no qualification render, no "quick check" with real credits. Mock tests only until the team starts testing with me.
+Rules in force: no rm -rf / recursive deletes / forced worktree removal; git clean banned; each run writes to a new dated folder; no secrets in code, PRs or chat; guard tests never weakened; Pro-pick names in config.
+Also tonight: the "where your data goes" table and Privacy Policy provider list into #761 (docs only); the daily-report format; the test script for Slice 1; the Aimighty invite links drafted; the #714 env-name table updated.
+If anything looks wrong on production (health commit, errors, latency), stop merging, don't fix production, and put it at the top of the report.
+REPORT at 10:30 on the status page: what merged (PR, head, Opus verdict), what is NEEDS AKSHAY and why, what is blocked on me, spend (should be $0), and anything that broke. I'll check at 11:00.
+
+**Lead's reading.** Most engine PRs add env names and prices, so they will be NEEDS AKSHAY, not auto-merged. The standing yes covers PRs with none of the listed changes (e.g. worker internals without a new env name, compositions, docs). The Remotion measurement is CPU-only on our own sample media (no engine call, no credits).
