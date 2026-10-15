@@ -14,11 +14,13 @@
 .v12 .v12-card[data-targeted] { box-shadow: 0 0 0 1px var(--gx-root), 0 0 0 3px color-mix(in srgb, var(--gx-accent) 75%, transparent); }
 .v12 .v12-card[data-differs]:not([data-selected]):not([data-targeted]) { box-shadow: 0 0 0 1px var(--gx-root), 0 0 0 3px var(--gx-waiting); }
 .v12 .v12-card.v12-card:focus-visible { outline: 2px solid var(--gx-text); outline-offset: 4px; }
-/* A dimmed card (another card is the focus) fades whole, as v25 does: a temporary state. */
-.v12 .v12-card[data-dimmed] { opacity: .35; }
-/* A card not started dims its picture only: its words keep their colours (they stay over the readable floor). */
-.v12 .v12-card[data-none] .v12-card-media { opacity: .55; }
-.v12 .v12-card[data-none] .v12-card-img { filter: grayscale(1) brightness(.8); }
+/* Dimming is for the picture only (owner, 15 Oct: "dim only the picture, never the words"): v25 fades the whole card, which puts its words under the readable
+   floor, so here the card's title, status, chips and any page of text keep their colours and only the picture fades (and the picture box's fill, so a card with
+   no picture still reads as set back). A card another card has the focus over is dimmed; a card not started is half-dimmed and greyed. */
+.v12 .v12-card[data-dimmed] .v12-card-img { opacity: .35; }
+.v12 .v12-card[data-dimmed] .v12-card-media { background: color-mix(in srgb, var(--gx-sunken) 40%, transparent); }
+.v12 .v12-card[data-dimmed] { border-color: var(--gx-hair); }
+.v12 .v12-card[data-none] .v12-card-img { opacity: .55; filter: grayscale(1) brightness(.8); }
 
 /* The picture, the tile or the page */
 .v12 .v12-card-media { position: relative; width: 100%; border-radius: calc(var(--gx-r-pop) - 1px) calc(var(--gx-r-pop) - 1px) 0 0; overflow: hidden; background: var(--gx-sunken); }

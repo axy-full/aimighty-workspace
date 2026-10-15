@@ -38,7 +38,8 @@ const KINDS: Mock[] = [
   { id: "k-tile", title: "Brand kit", status: "ready", own: "Brand kit · 3 files", tile: { letter: "M" } },
   { id: "k-sel", title: "Selected", status: "ready", picture: { src: still(210) }, selected: true },
   { id: "k-grey", title: "Greyed option", status: "ready", picture: { src: still(32) }, greyed: true },
-  { id: "k-dim", title: "Dimmed", status: "ready", picture: { src: still(28) }, dimmed: true },
+  { id: "k-dim", title: "Dimmed", status: "ready", picture: { src: still(28) }, dimmed: true, chips: [{ id: "len", label: "6 s" }] },
+  { id: "k-dim-text", title: "Dimmed page", status: "ready", text: "A camp at the edge of a dry lake. One cold bottle, one warm light.", tile: { letter: "M" }, dimmed: true },
   { id: "k-tgt", title: "Targeted", status: "ready", picture: { src: still(200) }, targeted: true },
   { id: "k-diff", title: "Differs from the step", status: "ready", picture: { src: still(36) }, differs: true, chips: [{ id: "look", label: "Firelight" }] },
 ];

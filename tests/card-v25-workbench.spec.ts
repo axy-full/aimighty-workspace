@@ -162,8 +162,24 @@ test("keyboard focus is a white ring in every state, distinct from the blue sele
   }
   /* Selected keeps its own blue ring as well as the focus ring. */
   expect((await ring("k-sel")).shadow).toContain("rgb(10, 132, 255)");
-  /* A card not started keeps its words at full colour: only its picture dims. */
-  await expect(card(k, "k-none").locator(".v12-card-title")).toHaveCSS("opacity", "1");
-  expect(await card(k, "k-none").evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
-  expect(await card(k, "k-none").locator(".v12-card-media").evaluate((el) => getComputedStyle(el).opacity)).toBe("0.55");
+});
+
+/** The opacity a word is drawn at: its own times every ancestor's. */
+const drawnAt = (loc: ReturnType<typeof card>) => loc.evaluate((el) => { let o = 1; for (let n: Element | null = el; n; n = n.parentElement) o *= parseFloat(getComputedStyle(n).opacity); return o; });
+
+test("dimming touches the picture only: a card not started, a dimmed card and a dimmed page of text keep every word at full opacity", async ({ page }) => {
+  const k = kinds(page);
+  /* Not started: the picture is half-dimmed; the card, its title and its status are not. */
+  expect(await card(k, "k-none").locator(".v12-card-img").evaluate((el) => getComputedStyle(el).opacity)).toBe("0.55");
+  expect(await drawnAt(card(k, "k-none"))).toBe(1);
+  expect(await drawnAt(card(k, "k-none").locator(".v12-card-title"))).toBe(1);
+  expect(await drawnAt(card(k, "k-none").getByTestId("v12-card-status"))).toBe(1);
+  /* Dimmed: the picture fades to 35%; the title, the status and the chips are drawn at full opacity. */
+  expect(await card(k, "k-dim").locator(".v12-card-img").evaluate((el) => getComputedStyle(el).opacity)).toBe("0.35");
+  expect(await drawnAt(card(k, "k-dim"))).toBe(1);
+  for (const words of [card(k, "k-dim").locator(".v12-card-title"), card(k, "k-dim").getByTestId("v12-card-status"), card(k, "k-dim").locator(".v12-card-chip")]) expect(await drawnAt(words)).toBe(1);
+  /* A dimmed page of text: its title row and its lines are words, and stay full. */
+  for (const words of [card(k, "k-dim-text").locator(".v12-card-page-title"), card(k, "k-dim-text").locator(".v12-card-page-text"), card(k, "k-dim-text").locator(".v12-card-title")]) expect(await drawnAt(words)).toBe(1);
+  /* And a card is never dimmed whole. */
+  for (const id of ["k-dim", "k-dim-text", "k-none"]) expect(await card(k, id).evaluate((el) => getComputedStyle(el).opacity), id).toBe("1");
 });
