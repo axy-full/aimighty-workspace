@@ -205,6 +205,51 @@ test("approval: a price that is not approved, or is above the approved amount, r
   });
 });
 
+test("the cost approval rule: with a cap per shot, a member's clip past the cap is refused (403, needs an admin) for a quote and a press before any take is written; an admin and a shot with room go through", async () => {
+  const { db } = await import("../../lib/db");
+  const { invalidateSettings } = await import("../../lib/settings");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { admitVeo } = await import("../../lib/veoVideo");
+  const { platformDb } = await import("../../lib/platform");
+  process.env.VEO_ENABLED = "1";
+  const member: AdmissionActor = { user: { id: "u_member", email: "m@example.invalid", name: "m", role: "member", owner: false, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] };
+  const asMember = (input: Record<string, unknown>) => runInTenant(house(), () => admitVeo(input, member, options(), {}), member as never);
+  const setting = async (rule: string, cap: number) => {
+    await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES('approvalRule',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [rule] });
+    await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES('shotCapCredits',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [String(cap)] });
+    invalidateSettings();
+  };
+  await asTenant(house(), async () => {
+    const prod = uid("prod"), roomy = uid("shot_roomy"), tight = uid("shot_tight");
+    await project(prod);
+    for (const [id, code] of [[roomy, "S1"], [tight, "S2"]] as const) await db().execute({ sql: "INSERT INTO shots(id,project_id,code,title,description,setup,created_at,updated_at) VALUES(?,?,?,?,?,?,1,1)", args: [id, prod, code, "t", "", "{}"] });
+    const gens = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    const meters = async () => Number((await platformDb().execute("SELECT COUNT(*) AS n FROM meter_events WHERE engine='veo'")).rows[0].n);
+    try {
+      /* The clip is 32 cr at the house's cost; a cap of 1 cr per shot cannot hold it. */
+      await setting("cap", 1);
+      const before = [await gens(), await meters()];
+      for (const extra of [{ quoteOnly: true }, approved]) {
+        const reply = await asMember({ tool: "video", prompt: "a tree", shotId: tight, ...extra });
+        expect(reply, JSON.stringify(extra)).toMatchObject({ status: 403, body: { needsAdmin: true, error: expect.stringContaining("S2") } });
+        expect(String(reply.body.error)).toMatch(/An admin has to press this one/);
+      }
+      expect([await gens(), await meters()]).toEqual(before);
+      /* An admin goes through; a clip filed on no shot is not a shot's to cap. */
+      expect((await admit({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true })).status).toBe(200);
+      expect((await asMember({ tool: "video", prompt: "a tree", quoteOnly: true })).status).toBe(200);
+      /* A cap with room, or the rule off, lets the member's through. */
+      await setting("cap", 10_000);
+      expect((await asMember({ tool: "video", prompt: "a tree", shotId: roomy, quoteOnly: true })).status).toBe(200);
+      await setting("off", 1);
+      expect((await asMember({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true })).status).toBe(200);
+    } finally {
+      await db().execute("DELETE FROM settings WHERE key IN ('approvalRule','shotCapCredits')");
+      invalidateSettings();
+    }
+  });
+});
+
 test("a clip from words: submit, poll, fetch the moment it is done, store under the workspace, settle at the quote and mark it to reconcile; never above the quote", async () => {
   process.env.VEO_ENABLED = "1";
   await asTenant(house(), async () => {
@@ -686,6 +731,9 @@ test("structure: the seams stay internal, the route is the one door, consent and
   expect(at("(seams.consent ?? requireConsentMatch)(")).toBeGreaterThan(0);
   expect(at("(seams.consent ?? requireConsentMatch)(")).toBeLessThan(at("INSERT INTO generations"));
   expect(at("Approve the price first")).toBeLessThan(at("(seams.consent ?? requireConsentMatch)("));
+  expect(at("await shotCapGate({")).toBeGreaterThan(0);
+  expect(at("await shotCapGate({")).toBeLessThan(at("if (quoteOnly)"));
+  expect(at("await shotCapGate({")).toBeLessThan(at("INSERT INTO generations"));
   expect(at("INSERT INTO generations")).toBeLessThan(at("await reserveGenerationSpend("));
   expect(at("await reserveGenerationSpend(")).toBeLessThan(at("await (deps.submit ?? submitVideo)("));
   /* The clip is fetched, stored and settled in that order; settled never above the quote. */
