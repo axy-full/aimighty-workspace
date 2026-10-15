@@ -817,3 +817,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Opus delta checks running.
 - **16 Oct 01:50 IST.** Opus delta check APPROVED #770 at 4c8381a9 (`trusted` is reachable only from Root.tsx; moved assertions are recomputed whole-frame values), and #772 7623f406 and #773 d27f9c91 with it. The whole worker stack #768-#773 is now approved at its current heads. Still NEEDS AKSHAY: #699's env names, #700's migration, and #768's compose pin.
 - **16 Oct 01:51 IST.** Opus delta check: #766 8229e0f9, #774 e41f523c and #775 1e1e9aa8 still APPROVED. 71/71 specs pass, including mcpTools.spec (unchanged vs release/1); merges are clean; the money guard is unchanged; no migrations or new env names on the app side. The Remotion export stack #699, #766, #768-#775 is now fully Opus-approved at its current heads. All NEEDS AKSHAY.
+- **16 Oct 01:57 IST. Check-in.**
+  - Production: health ok, commit 709497a; watcher quiet. df 14%.
+  - CI: #764 and #771 running. A third run (v25/a-top-bar, started by a lane C push) was cancelled.
+  - Merges: none. No PR meets every standing-yes criterion.
+  - Lanes: B on the #776/#777/#778 fixes (redirects, MCP approval, BFL settlement), Runway paused. C on the #748 must-fix (8-shot re-shoot) and should-fixes. D now on Veo 3.1 (file-only adapter first, then based on #778). Docs E on the Slice 3 test script plus slice-2 updates.
+  - No paid generation; spend $0.
