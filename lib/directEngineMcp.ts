@@ -36,10 +36,18 @@ type DirectTool = {
   describe: (out: Record<string, unknown>, quote: { estimatedCredits: number; price: number; unit: string }) => string;
   /** One line saying what was prepared, for the "needs a person" answer. */
   prepared?: (body: Record<string, unknown>) => string;
+  /**
+   * Is this call a DRAFT (the engine's cheap, quick model, or a step that renders nothing)? Auto may start only a draft at or under the line (rule 14: "a draft priced at or under the
+   * per-job line runs without a tap"); a hero or full-quality model always asks. Absent means never a draft: it always asks.
+   */
+  draft?: (body: Record<string, unknown>) => boolean;
+  /** False when the call's own arguments must not be kept anywhere (Sarvam's translation text: "kept nowhere"): it is then answered in words only, never filed as a prepared job. */
+  file?: false;
 };
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 
+/** lipsync-2 is the engine's draft model; lipsync-2-pro (the default) and sync-3 are full quality and always ask. */
 const LIP_SYNC: DirectTool = {
   def: {
     name: "lip_sync",
@@ -73,6 +81,7 @@ const LIP_SYNC: DirectTool = {
       model: str(a.model), syncMode: str(a.sync_mode), castMemberId: str(a.cast_member_id), faceFrameUploadId: str(a.face_frame_upload_id), projectId: str(a.project_id), use: str(a.use),
     },
   }),
+  draft: (b) => b.model === "lipsync-2",
   prepared: (b) => `prepared: lip-sync (${String(b.model ?? "lipsync-2-pro")}) of ${String(b.clipUploadId ?? b.clipGenId ?? "a clip")} with ${String(b.audioUploadId ?? b.audioGenId ?? "a voice track")} for production ${String(b.projectId)}`,
   describe: (out, quote) => `Lip-sync started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
@@ -89,6 +98,8 @@ const SARVAM_SPEECH: DirectTool = {
     inputSchema: { type: "object", properties: { text: { type: "string", description: "Up to 2,500 characters." }, language: { type: "string", description: "A code such as hi-IN or en-IN." }, model: { type: "string", description: "bulbul:v3 (default) or bulbul:v4-flash." }, voice: { type: "string", description: "A stock voice's name. Optional." }, pace: { type: "number", description: "0.5 to 2. Optional." }, ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." } }, required: ["text", "language"] },
   },
   present: sarvamPresent("sarvam_speech"),
+  /* The flash model is the draft; bulbul:v3 (the default) is full quality and always asks. */
+  draft: (b) => b.model === "bulbul:v4-flash",
   prepared: (b) => `prepared: speech (${String(b.model ?? "bulbul:v3")}, ${String(b.language)}), ${[...String(b.text ?? "")].length} characters`,
   request: (a) => ({ path: "/api/sarvam", body: { tool: "speech", text: str(a.text), language: str(a.language), model: str(a.model), voice: str(a.voice), pace: num(a.pace), projectId: str(a.project_id) } }),
   describe: (out, quote) => `Speech made.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
@@ -100,6 +111,8 @@ const SARVAM_TRANSCRIBE: DirectTool = {
     inputSchema: { type: "object", properties: { source_upload_id: { type: "string", description: "An audio upload of this workspace (or source_take_id)." }, source_take_id: { type: "string" }, language: { type: "string", description: "A code such as hi-IN, or leave it to be detected." }, request_id: { type: "string" } }, required: [] },
   },
   present: sarvamPresent("sarvam_transcribe"),
+  /* Not a render: a short transcript is a working step, so it is a draft at any setting. */
+  draft: () => true,
   prepared: (b) => `prepared: transcript of ${String(b.sourceUploadId ?? b.sourceGenId ?? "an audio clip")}`,
   request: (a) => ({ path: "/api/sarvam", body: { tool: "transcribe", sourceUploadId: str(a.source_upload_id), sourceGenId: str(a.source_take_id), language: str(a.language) } }),
   describe: (out) => out.kept === false ? String(out.note) : `Transcript (${String(out.language ?? "language detected")}, ${String(out.seconds)} s):\n\n${String(out.transcript)}`,
@@ -111,6 +124,9 @@ const SARVAM_TRANSLATE: DirectTool = {
     inputSchema: { type: "object", properties: { text: { type: "string", description: "Up to 2,000 characters (1,000 on mayura:v1)." }, source: { type: "string", description: "A code such as en-IN." }, target: { type: "string", description: "A code such as ta-IN." }, model: { type: "string", description: "sarvam-translate:v1 (default) or mayura:v1." }, request_id: { type: "string" } }, required: ["text", "source", "target"] },
   },
   present: sarvamPresent("sarvam_translate"),
+  /* Not a render (a draft at any setting), and its text is kept nowhere, so it is never filed as a prepared job. */
+  draft: () => true,
+  file: false,
   prepared: (b) => `prepared: translation ${String(b.source)} to ${String(b.target)}, ${[...String(b.text ?? "")].length} characters`,
   request: (a) => ({ path: "/api/sarvam", body: { tool: "translate", text: str(a.text), source: str(a.source), target: str(a.target), model: str(a.model) } }),
   describe: (out) => (out.kept === false ? String(out.note) : String(out.text)),
@@ -128,6 +144,8 @@ const FLUX2_IMAGE: DirectTool = {
     inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to make." }, ...SIZE, seed: { type: "number" }, ...BFL_COMMON }, required: ["prompt"] },
   },
   present: bflPresent("flux2_image"),
+  /* flux-2-pro (the default, the cheapest) is the draft; flux-2-flex and flux-2-max are full quality and always ask. */
+  draft: (b) => (b.model ?? "flux-2-pro") === "flux-2-pro",
   prepared: (b) => `prepared: ${String(b.model ?? "flux-2-pro")} still, ${String(b.width ?? 1024)} by ${String(b.height ?? 1024)}`,
   request: (a) => ({ path: "/api/bfl", body: { tool: "image", prompt: str(a.prompt), model: str(a.model), width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id) } }),
   describe: (out, quote) => `Image started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
@@ -141,6 +159,7 @@ const FLUX2_EDIT: DirectTool = {
     inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to change." }, reference_upload_ids: { type: "string", description: "Comma-separated upload ids, one to eight." }, cast_member_ids: { type: "string", description: "Comma-separated cast member ids, one per reference, in the same order." }, ...SIZE, use: { type: "string", description: "production, ads or social." }, seed: { type: "number" }, ...BFL_COMMON }, required: ["prompt", "reference_upload_ids", "cast_member_ids", "project_id", "use"] },
   },
   present: bflPresent("flux2_edit"),
+  draft: (b) => (b.model ?? "flux-2-pro") === "flux-2-pro",
   prepared: (b) => `prepared: ${String(b.model ?? "flux-2-pro")} edit of ${Array.isArray(b.references) ? b.references.length : 0} reference(s) for production ${String(b.projectId)}`,
   request: (a) => {
     const uploads = list(a.reference_upload_ids), cast = list(a.cast_member_ids);
@@ -168,6 +187,20 @@ async function spendsWithoutAsking(): Promise<boolean> {
   try { return (await allSettings()).spendWithoutAsking === "auto"; } catch { return false; }
 }
 
+/**
+ * Files the prepared job for a person through the existing prepared-jobs door (POST /api/prepared-jobs), as an outside agent's prepared render is filed. It prices, holds and sends nothing.
+ * Only a token made to prepare may file one (a render token is refused there by design, and its call then answers in words only), and the door refuses an approval or a price in the arguments.
+ * Returns the job's id, or null when the door would not take it.
+ */
+async function fileForPerson(name: string, clean: Record<string, unknown>, line: string, call: Call): Promise<string | null> {
+  try {
+    const { quoteOnly: _q, ...args } = clean;
+    void _q;
+    const out = (await call("/api/prepared-jobs", { method: "POST", body: { engine: name, args, prompt: line, project: typeof clean.projectId === "string" ? clean.projectId : undefined } })) as { job?: { id?: unknown } };
+    return typeof out.job?.id === "string" ? out.job.id : null;
+  } catch { return null; }
+}
+
 /** Runs one of them, or returns null when the name is none of these (the caller then tries its own tools). */
 export async function runDirectEngineTool(name: string, args: Args, call: Call): Promise<string | null> {
   const tool = REGISTRY.find((t) => t.def.name === name);
@@ -179,13 +212,25 @@ export async function runDirectEngineTool(name: string, args: Args, call: Call):
     throw new Error("request_id must be 1–120 letters, digits, dots, colons, dashes or underscores.");
   const { path, body } = tool.request(args);
   const clean = Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined));
-  const quote = (await call(path, { method: "POST", body: { ...clean, quoteOnly: true } })) as { estimatedCredits?: unknown; price?: unknown; unit?: unknown };
+  /* A token made to prepare jobs cannot ask the paid door anything (not even for a price): its call is filed for a person, unpriced; a person sees the price when approving. */
+  let quote: { estimatedCredits?: unknown; price?: unknown; unit?: unknown };
+  try { quote = (await call(path, { method: "POST", body: { ...clean, quoteOnly: true } })) as typeof quote; }
+  catch (error) {
+    if (!(error instanceof Error) || !/This token prepares jobs/.test(error.message)) throw error;
+    const line = tool.prepared ? tool.prepared(clean) : name;
+    const filed = tool.file === false ? null : await fileForPerson(name, clean, line, call);
+    if (!filed) throw error;
+    return `Prepared, not started.\n\n${line}\nprepared job: ${filed}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections, where its price is shown.`;
+  }
   if (typeof quote.estimatedCredits !== "number" || !Number.isInteger(quote.estimatedCredits) || quote.estimatedCredits < 0 || typeof quote.price !== "number" || !Number.isFinite(quote.price))
     throw new Error("This could not be priced, so nothing was started.");
   const priceText = quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`;
-  /* Ask (the default), or Auto over the line: priced and prepared, not started. */
-  if (!(await spendsWithoutAsking()) || quote.estimatedCredits > (await autoLineCredits()))
-    return `Priced and prepared, not started.\n\nprice: ${priceText}\n${tool.prepared ? `${tool.prepared(clean)}\n` : ""}\nThis needs a person's approval: nothing was started or spent. A person approves it in Particl.`;
+  /* Ask (the default), Auto over the line, or Auto on anything but a draft: priced and prepared, not started. */
+  if (!(await spendsWithoutAsking()) || !(tool.draft?.(clean) ?? false) || quote.estimatedCredits > (await autoLineCredits())) {
+    const line = tool.prepared ? tool.prepared(clean) : name;
+    const filed = tool.file === false ? null : await fileForPerson(name, clean, line, call);
+    return `Priced and prepared, not started.\n\nprice: ${priceText}\n${line}\n${filed ? `prepared job: ${filed}\n` : ""}\nThis needs a person's approval: nothing was started or spent. ${filed ? "It waits in Particl › Settings › Connections for a person." : "A person approves it in Particl."}`;
+  }
   /* Auto, at or under the line: the workspace's own standing setting approves it, at the price the server just gave. */
   const out = await call(path, { method: "POST", body: { ...clean, maxCredits: quote.estimatedCredits }, headers: requestId ? { "Idempotency-Key": `mcp-${name}:${requestId}` } : undefined });
   return tool.describe(out, { estimatedCredits: quote.estimatedCredits, price: quote.price, unit: String(quote.unit ?? "cr") });
