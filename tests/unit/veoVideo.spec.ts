@@ -284,6 +284,15 @@ test("the clip is settled at what it measures: a clip shorter than asked costs i
       expect(Number(r.take.cost_usd), String(length)).toBeCloseTo(Math.min(PRICE, billed * 0.4), 6);
       expect(r.secs, String(length)).toBeCloseTo(length, 3);
     }
+    /* A header that bills as nothing is not a length: the quote stands, and the take keeps the length asked for. */
+    for (const length of [0.001, 0.03, 0.05]) {
+      const r = await make(clipOf(length));
+      expect(r.take.status, String(length)).toBe("succeeded");
+      expect(Number(r.take.cost_usd), String(length)).toBeCloseTo(PRICE, 6);
+      expect(Number(r.line.engine_cost_usd), String(length)).toBeCloseTo(PRICE, 6);
+      expect(r.take.veo.reconcile, String(length)).toBe(1);
+      expect(r.secs, String(length)).toBe(8);
+    }
     /* The Fast model at 1080p is measured at its own rate: 5 s x 0.12 of an asked 8 s. */
     const fast = await make(clipOf(5), { model: "veo-3.1-fast-generate-preview", resolution: "1080p" });
     expect(Number(fast.take.cost_usd)).toBeCloseTo(0.6, 6);

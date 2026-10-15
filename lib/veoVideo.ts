@@ -390,11 +390,13 @@ export async function advanceVeoJobWith(genId: string, deps: VeoDeps): Promise<V
       const { value: stored } = await withRetry(() => (deps.store ?? storeVideoBytes)(genId, bytes), { max: 3 });
       /* Google states no cost. The clip's own length is read from its container: what Google bills is the seconds it made, so a clip shorter than asked settles at the
          seconds it has times the rate (never above the quote); one we cannot measure settles at the quote. Either way the figure is ours, marked to reconcile. */
-      const measured = mp4DurationSeconds(bytes);
+      const read = mp4DurationSeconds(bytes);
+      const billedSeconds = read != null ? billedWholeSeconds(read) : null;
+      /* A length that bills as nothing (a header under a twentieth of a second) is not a length: it is read as unreadable and the quote stands. */
+      const measured = billedSeconds != null && billedSeconds > 0 ? read : null;
       const rate = VEO_RATES.models[veo.model].usdPerSecond[veo.resolution];
       /* Google bills per second, so the measured length is rounded UP to whole seconds (lib/mp4Duration.ts: a 7.96 s clip is 8). */
-      const billedSeconds = measured != null ? billedWholeSeconds(measured) : null;
-      const measuredUsd = billedSeconds != null ? Math.ceil(billedSeconds * rate * 1e6 - 1e-6) / 1e6 : null;
+      const measuredUsd = measured != null && billedSeconds != null ? Math.ceil(billedSeconds * rate * 1e6 - 1e-6) / 1e6 : null;
       await settleVeo(genId, "done", { costUsd: measuredUsd != null ? Math.min(veo.reservedUsd, measuredUsd) : veo.reservedUsd, seconds: measured, reconcile: true, storedUrl: stored.url, bytes: stored.bytes });
       return (await load(genId, { any: true }))?.veo ?? null;
     } catch (error) {
