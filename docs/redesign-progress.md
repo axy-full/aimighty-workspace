@@ -872,3 +872,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - Runway: failure text says "Nothing billed" (no vendor credits shown); overrun recorded on failures; Gen-4.5/Turbo start images pass the consent gate (owner can relax).
   - BFL: settlement uses BFL's cost only if `cost` comes back. One paid qualification call (owner's yes) would settle both that and the MP unit.
 - **16 Oct 02:21 IST.** #771 (Rekognition consent gate) readiness CI green 24/24 (run 38799490414, base release/1 663fb243) on the Opus-approved head 71a87a44. Ready, but NEEDS AKSHAY: it is an engine, its RESERVERS entry is a guard-list edit, and it has 8 owner questions, above all the reference source. Not merged. CI slots are free.
+- **16 Oct 02:30 IST.** Lane D: Veo #779 wired on #778 (5cfd641f, base feat/r1-bfl, NEEDS AKSHAY).
+  - Wired: route, workflow in params.veo, consent gate on any image, VEO_RATES in vendorRates, add-only guard entries.
+  - Settlement: at the quote + reconcile, because Google states no cost; blocked → 0.
+  - MCP tool not wired yet; it waits for lane B's directEngineMcp change.
+  - 13 + 9 specs pass, plus 110 and 299 neighbour runs.
+  - Opus money review started.
