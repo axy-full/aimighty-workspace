@@ -288,7 +288,7 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
  * spend is reported in credits and the engine's dollars are never named.
  */
 export async function runTool(
-  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
+  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean; /** Exports are on for this workspace (the route says; absent: only the global switch is asked). */ exports?: boolean } = {}
 ): Promise<string> {
   switch (name) {
     case "prepare_shot": {
@@ -443,20 +443,20 @@ export async function runTool(
     }
 
     case "export_video": {
-      if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
       const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
       const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props } })) as { job: ExportSummary };
       return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
     }
 
     case "get_export": {
-      if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
       const { job } = (await call(`/api/exports/${encodeURIComponent(String(args.id))}`)) as { job: ExportSummary };
       return exportDescribe(job, origin);
     }
 
     case "cancel_export": {
-      if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
       const { job } = (await call(`/api/exports/${encodeURIComponent(String(args.id))}`, { method: "PATCH", body: { action: "cancel" } })) as { job: ExportSummary };
       return exportLine(job);
     }
