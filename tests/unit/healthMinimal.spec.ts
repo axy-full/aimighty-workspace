@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
+import * as atRiskWindow from "../../lib/atRiskWindow";
 
 /**
  * /api/health, owner's decision of 14 Oct 2026: "make the anonymous response minimal (ok + commit only) and keep the detail for the platform owner when signed in".
@@ -42,6 +43,7 @@ async function health(who: "anonymous" | "member" | "owner", options: { database
     "@/lib/mail": { mailConfigured: () => true, mailFrom: () => "Studio <hello@example.test>" },
     "@/lib/mock": { engineMock: () => Boolean(options.mock) },
     "@/lib/dispatch": { dispatchMode: () => "native" },
+    "@/lib/atRiskWindow": atRiskWindow,
     "@/lib/deployment": { deployedCommit: () => "0123456789abcdef0123456789abcdef01234567" },
     "@/lib/dispatch-log": { recentDispatches: async () => [{ id: "r1", eventId: "render-other-workspace-gen_1", phase: "send", outcome: "sent", status: 202, workspaceId: "ws_other", createdAt: 1 }] },
   };

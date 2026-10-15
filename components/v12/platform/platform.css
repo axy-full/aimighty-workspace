@@ -100,7 +100,7 @@
 .v12 .v12-pc-invcols { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 90px minmax(0, 1.4fr) 70px 40px; }
 .v12 .v12-pc-wscols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.1fr) 56px minmax(0, 0.9fr) minmax(0, 1fr) 70px 90px; }
 .v12 .v12-pc-rulecols { grid-template-columns: 32px 150px 200px minmax(0, 1fr) 44px 32px; }
-.v12 .v12-pc-riskcols { grid-template-columns: minmax(0, 1.2fr) 90px minmax(0, 1fr) 90px minmax(0, 1.6fr) 110px; }
+.v12 .v12-pc-riskcols { grid-template-columns: minmax(0, 1.2fr) 90px minmax(0, 1fr) 90px 190px minmax(0, 1.4fr) 110px; }
 .v12 .v12-pc-rowbtn { cursor: pointer; text-align: left; }
 .v12 .v12-pc-rowbtn:hover, .v12 .v12-pc-rowbtn[data-active] { background: var(--gx-tint-06); }
 .v12 .v12-pc-tr[data-over] { box-shadow: inset 0 2px 0 var(--gx-accent); }

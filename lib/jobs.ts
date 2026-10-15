@@ -44,6 +44,7 @@ import { billedTo, getProvider } from "./providers";
 import { engineFor } from "./engines";
 import { notify } from "./push";
 import { hasRetainedConsumerOriginal, RETAINED_CONSUMER_ORIGINAL_SQL } from "./higgsfield-consumer/video-original";
+import { IN_WINDOW_SQL, atRiskHorizon } from "./atRisk";
 import { uploadReservationsReady } from "./uploadReservations";
 import type { AssetCursor } from "./assetPagination";
 import type { ProviderCreditQuote } from "./providerCreditQuote";
@@ -798,7 +799,7 @@ export function heartbeatSaveDeadline(deadlineAt: number): number {
 export async function syncPending(
   limit = 30,
   options: { deadlineAt?: number } = {},
-): Promise<ReconcileResult & { deferred: number }> {
+): Promise<ReconcileResult & { deferred: number; /** Of the takes chosen, how many were at risk (lib/atRisk.ts): succeeded, no stored copy, inside the window. */ atRiskTried: number }> {
   await ready();
   await syncCreditReceipts();
   await uploadReservationsReady();
@@ -806,6 +807,7 @@ export async function syncPending(
   const results = {
     ...(await flushGenerationSettlements(bounded)),
     deferred: 0,
+    atRiskTried: 0,
   };
   const legacy = await repairLegacyGenerationSettlements(bounded);
   results.attempted += legacy.attempted;
@@ -829,14 +831,16 @@ export async function syncPending(
   results.attempted += dubs.attempted;
   results.failed += dubs.failed;
   results.deferred += dubs.deferred;
-  const horizon = now() - 3 * 86400_000;
+  /* The window is lib/atRisk.ts's: the same 72 hours the health counter and the console count a take at risk in. */
+  const horizon = atRiskHorizon(now());
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
-      OR (g.status='succeeded' AND g.deleted=0 AND g.created_at > ?
+      OR (g.status='succeeded' AND g.deleted=0 AND ${IN_WINDOW_SQL("g")}
         AND (g.stored_url IS NULL OR g.cost_usd IS NULL) AND NOT (${RETAINED_CONSUMER_ORIGINAL_SQL}))
       ORDER BY g.updated_at,g.created_at,g.id LIMIT ?`,
     args: [horizon, bounded],
   });
+  results.atRiskTried = rows(rs).filter((row) => row.status === "succeeded" && row.stored_url == null).length;
   // Oldest checked first, with a persisted check time: failures cannot starve later jobs.
   for (let i = 0; i < rs.rows.length; i += 4) {
     if (options.deadlineAt != null && now() >= options.deadlineAt) {

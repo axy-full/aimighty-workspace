@@ -10,6 +10,7 @@ import {
 import { NextResponse, after as afterResponse } from "next/server";
 import { db, ready } from "@/lib/db";
 import { syncPending } from "@/lib/jobs";
+import { atRiskCounts, atRiskHorizon, listAtRisk, logUnsavable, storedAmong, whyNotSaved } from "@/lib/atRisk";
 import { syncTrainingIdentities } from "@/lib/identities";
 import { syncSoulIdentities } from "@/lib/soulIdentities";
 import { backfillSizes } from "@/lib/storageCost";
@@ -94,9 +95,14 @@ export async function GET(req: Request) {
                 );
               }
             };
-            const before = await counts();
+            /* One window for the whole visit (lib/atRisk.ts), so a take that ages out between the two counts is not counted as rescued. */
+            const horizon = atRiskHorizon();
+            const before = await counts(horizon);
+            const unsavedBefore = await listAtRisk(horizon, AT_RISK_LISTED).catch(() => []);
+            let atRiskTried = 0;
             await stage("generations", async () => {
               const report = await syncPending(8, { deadlineAt });
+              atRiskTried = report.atRiskTried ?? 0;
               if (report.failed) throw new Error("RECONCILIATION_FAILED");
               deferred ||= report.deferred > 0;
             });
@@ -166,7 +172,12 @@ export async function GET(req: Request) {
             await stage("held_jobs", () =>
               releaseHeldJobs({ defer: (fn) => afterResponse(fn) }),
             );
-            const after = await counts();
+            const after = await counts(horizon);
+            /* The takes the heartbeat has no way to save get one line each a day, with a reason (lib/atRisk.ts); the others it tries again next visit. Reads only. */
+            const unsavedAfter = await listAtRisk(horizon, AT_RISK_LISTED).catch(() => []);
+            const unsavable = unsavedAfter.flatMap((row) => { const reason = whyNotSaved(row); return reason ? [{ ...row, reason }] : []; });
+            await logUnsavable(unsavable).catch(() => 0);
+            const stored = await storedAmong(unsavedBefore.map((row) => row.id)).catch(() => new Set<string>());
             const completed = Math.max(0, before.pending - after.pending);
             // Record attempts separately; only fully successful visits advance
             // lastCronAt, which existing workspace health clients consume.
@@ -184,7 +195,14 @@ export async function GET(req: Request) {
                 deferred,
                 pending: after.pending,
                 atRisk: after.atRisk,
+                /* Takes unsaved for more than 72 hours: nothing tries any more (lib/atRisk.ts). */
+                lost: after.lost,
+                /* A net figure, as before: what was at risk at the start minus what is now. */
                 rescued: Math.max(0, before.atRisk - after.atRisk),
+                /* The at-risk takes the visit chose to save, those it did save (by take), and those it has no way to save, each with a logged reason. */
+                tried: atRiskTried,
+                saved: stored.size,
+                unsavable: unsavable.length,
                 completed,
               }),
               "cron",
@@ -227,14 +245,19 @@ export async function GET(req: Request) {
   })();
 }
 
-async function counts() {
+/** The most at-risk takes read per visit for the reasons and the saved count; a workspace with more is counted in full, and these are its newest. */
+const AT_RISK_LISTED = 200;
+
+async function counts(horizon: number) {
   const rs = await db().execute(`
-    SELECT SUM(CASE WHEN status NOT IN ('succeeded','failed','cancelled') AND deleted=0 THEN 1 ELSE 0 END) AS pending,
-           SUM(CASE WHEN status='succeeded' AND stored_url IS NULL AND deleted=0 THEN 1 ELSE 0 END) AS atrisk
+    SELECT SUM(CASE WHEN status NOT IN ('succeeded','failed','cancelled') AND deleted=0 THEN 1 ELSE 0 END) AS pending
     FROM generations`);
   const row = rs.rows[0];
+  /* At risk and lost are lib/atRisk.ts's definition, the same one the health counter and the console use. All kinds of take, not only videos. */
+  const risk = await atRiskCounts(horizon);
   return {
     pending: Number(row?.pending ?? 0),
-    atRisk: Number(row?.atrisk ?? 0),
+    atRisk: risk.atRisk,
+    lost: risk.lost,
   };
 }

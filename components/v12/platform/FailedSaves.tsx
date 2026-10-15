@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { FailedSaves as Read } from "@/lib/platformFailedSaves";
 import { timeAgo } from "@/lib/format";
+import { LOST_LABEL } from "@/lib/atRiskWindow";
 import { useToast } from "../ui";
 import { adminSend, useAdminRead } from "./api";
 import { Head } from "./parts";
@@ -24,17 +25,18 @@ export function FailedSaves({ onChanged }: { onChanged: () => void }) {
   }
   return (
     <>
-      <Head title="Failed saves" line="Renders that finished but have no stored copy. The heartbeat tries again every few minutes; Retry save tries now." />
+      <Head title="Failed saves" line="Renders that finished but have no stored copy. The heartbeat tries again every few minutes for three days; after that they are listed as lost. Retry save tries now." />
       <div className="v12-pc-table" role="table" aria-label="Failed saves" data-testid="pc-risk">
         <div className="v12-pc-tr v12-pc-th v12-pc-riskcols" role="row">
-          <span role="columnheader">Workspace</span><span role="columnheader">Take</span><span role="columnheader">Engine</span><span role="columnheader">Since</span><span role="columnheader">Last error</span><span role="columnheader" aria-label="Retry" />
+          <span role="columnheader">Workspace</span><span role="columnheader">Take</span><span role="columnheader">Engine</span><span role="columnheader">Since</span><span role="columnheader">State</span><span role="columnheader">Last error</span><span role="columnheader" aria-label="Retry" />
         </div>
         {(data?.items ?? []).map((r) => (
           <div key={`${r.workspaceId}:${r.id}`} className="v12-pc-tr v12-pc-riskcols" role="row" data-testid="pc-risk-row">
             <span role="cell" className="v12-pc-strong v12-pc-clip">{r.workspaceName}</span>
             <span role="cell" className="v12-pc-mono v12-pc-meta" title={r.id}>{r.id.slice(-8)}</span>
             <span role="cell" className="v12-pc-clip">{r.engine}</span>
-            <span role="cell" className="v12-pc-mono" data-tone={overAnHour(r.since) ? "bad" : undefined}>{timeAgo(r.since)}</span>
+            <span role="cell" className="v12-pc-mono" data-tone={r.lost ? undefined : overAnHour(r.since) ? "bad" : undefined}>{timeAgo(r.since)}</span>
+            <span role="cell" className="v12-pc-clip" title={r.lost ? LOST_LABEL : "at risk"} data-testid="pc-risk-state">{r.lost ? LOST_LABEL : "at risk"}</span>
             <span role="cell" className="v12-pc-clip v12-pc-meta">{r.lastError ?? "—"}</span>
             <span role="cell" className="v12-pc-end"><button type="button" className="v12-pc-btn" disabled={busy === r.id} onClick={() => void retry(r.workspaceId, r.id)} data-testid="pc-risk-retry">Retry save</button></span>
           </div>

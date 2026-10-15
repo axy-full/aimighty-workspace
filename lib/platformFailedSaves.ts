@@ -3,6 +3,7 @@ import { platformAuditStatement } from "@/lib/platformAudit";
 import { runInTenant } from "@/lib/tenant";
 import { db, ready } from "@/lib/db";
 import { findModel } from "@/lib/models";
+import { UNSAVED_SQL, isLostAge } from "@/lib/atRiskWindow";
 
 /**
  * Failed saves: renders that finished at the engine but whose file never reached our storage (a `succeeded` generation with no
@@ -13,7 +14,8 @@ import { findModel } from "@/lib/models";
  * (lib/jobs.ts › syncGeneration): it polls the engine for the finished file and stores it. It starts no generation and spends
  * nothing the render had not already been charged; a take that was never charged stays as it was.
  */
-export type FailedSave = { workspaceId: string; workspaceName: string; id: string; engine: string; since: number; lastError: string | null };
+/** `lost`: made more than 72 hours ago (lib/atRisk.ts), so nothing tries to save it any more; the console says "lost (older than 3 days)" instead of "at risk". */
+export type FailedSave = { workspaceId: string; workspaceName: string; id: string; engine: string; since: number; lastError: string | null; lost: boolean };
 export type FailedSaves = { items: FailedSave[]; /** Workspaces whose database could not be read just now. */ unreadable: number };
 
 const PER_WORKSPACE = 50;
@@ -34,7 +36,7 @@ export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
       const rows = await runInTenant(ws, async () => {
         await ready();
         const rs = await db().execute({
-          sql: `SELECT id, model, error, created_at FROM generations WHERE status = 'succeeded' AND stored_url IS NULL AND deleted = 0 ORDER BY created_at DESC LIMIT ?`,
+          sql: `SELECT g.id, g.model, g.error, g.created_at FROM generations g WHERE ${UNSAVED_SQL()} ORDER BY g.created_at DESC LIMIT ?`,
           args: [PER_WORKSPACE],
         });
         return rs.rows as unknown as Record<string, unknown>[];
@@ -42,7 +44,7 @@ export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
       for (const r of rows) {
         items.push({
           workspaceId: ws.id, workspaceName: ws.name, id: String(r.id), engine: findModel(String(r.model))?.label ?? String(r.model),
-          since: Number(r.created_at), lastError: r.error ? String(r.error).slice(0, 300) : null,
+          since: Number(r.created_at), lastError: r.error ? String(r.error).slice(0, 300) : null, lost: isLostAge(Number(r.created_at), now),
         });
       }
     } catch { unreadable++; }
@@ -53,10 +55,10 @@ export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
   return value;
 }
 
-/** How many there are, for the console's badge and its Overview tile; null when no workspace could be read. */
+/** How many are at risk, for the console's badge and its Overview tile (the lost ones are listed, but no longer alarm: nothing can be done by waiting); null when no workspace could be read. */
 export async function failedSavesCount(): Promise<number | null> {
   const { items, unreadable } = await listFailedSaves();
-  return unreadable > 0 && items.length === 0 ? null : items.length;
+  return unreadable > 0 && items.length === 0 ? null : items.filter((item) => !item.lost).length;
 }
 
 export class RetryRefused extends Error { constructor(message: string, readonly status: number) { super(message); } }
