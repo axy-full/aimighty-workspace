@@ -128,19 +128,28 @@ test("(c) the full lockup is named only on sign-in, marketing and document surfa
 });
 
 /**
- * Three customer surfaces outside the app header still type the name beside the mark: the error page, the no-workspace page and the guest header. The owner's 15 Oct rule
- * calls that a placeholder; changing them is its own customer-visible change, so they are recorded here, and this list may only shrink (a fourth fails; so does fixing one
- * without deleting its entry).
+ * Every screen that carries the logo draws it through BrandLogo (components/ui/BrandLogo.tsx): the app headers, the visitor's and the guest header, the error page, the
+ * no-workspace page and the phone's top bar (owner, 15 Oct 19:30: "one small deploy #5 PR switches the error page, no-workspace page, guest header and phone top bar to the
+ * shared logo; add the phone bar to the brand guard"). The list is of files, so a new logo surface is added here with its file.
  */
-export const TYPED_NAME_ELSEWHERE = ["components/graphite/FaultPage.tsx", "components/graphite/NoWorkspace.tsx", "components/graphite/guest/GuestHeader.tsx"];
-test("(c) nothing else types the name beside the mark either, except the three surfaces recorded above", () => {
-  const files = walk("components", (f) => /\.tsx$/.test(f));
-  const typed = files.filter((file) => /className="[^"]*\bgx-brand-name\b[^"]*"[^>]*>\s*particl\s*</.test(read(file)));
-  expect(typed, "surfaces that type the name; draw BrandLogo instead, or add one here only on the owner's word").toEqual(TYPED_NAME_ELSEWHERE);
+export const LOGO_SURFACES = [
+  "components/graphite/Header.tsx", "components/graphite/FaultPage.tsx", "components/graphite/NoWorkspace.tsx", "components/graphite/guest/GuestHeader.tsx",
+  "components/graphite/phone/PhoneChrome.tsx", "components/v12/shell/Logo.tsx",
+];
+test("(c) every logo surface draws BrandLogo: the app and guest headers, the error and no-workspace pages and the phone's top bar", () => {
+  for (const file of LOGO_SURFACES) {
+    const text = read(file);
+    expect(text, `${file} draws BrandLogo`).toMatch(/<BrandLogo\b/);
+    expect(text, `${file} draws no logo of its own`).not.toMatch(/TRAIL|<circle|gx-brand-name|particl-lockup/);
+  }
+  /* The phone's top bar: the logo stands for the Home title, which stays as the screen reader's heading. */
+  expect(read("components/graphite/phone/PhoneChrome.tsx")).toMatch(/logo \? <><BrandLogo \/><span className="ph-sr">\{title\}<\/span><\/> : title/);
 });
 
-test("(c) no header types its name as the logo", () => {
-  const headers = ["components/graphite/Header.tsx", "components/shell/Header.tsx", "components/v12/shell/Header.tsx", "components/v12/shell/Logo.tsx", "components/ui/BrandLogo.tsx", "components/v12/visitor/VisitorHeader.tsx"];
+test("(c) no typed-name logo anywhere in components/: no gx-brand-name element, and no header types its name", () => {
+  const files = walk("components", (f) => /\.(tsx|css)$/.test(f));
+  expect(files.filter((file) => /\bgx-brand-name\b/.test(read(file))), "files that still have the typed-name logo class (the list of known typed names is gone; draw BrandLogo)").toEqual([]);
+  const headers = ["components/shell/Header.tsx", "components/ui/BrandLogo.tsx", "components/v12/visitor/VisitorHeader.tsx", ...LOGO_SURFACES];
   const typed = headers.filter((file) => /className="[^"]*(?:brand-name|logo-name|wordmark-text)[^"]*"[^>]*>\s*particl\s*</i.test(read(file)));
   expect(typed, "headers that type their name; draw the brand's mark and wordmark (BrandLogo) instead").toEqual([]);
 });
@@ -148,7 +157,7 @@ test("(c) no header types its name as the logo", () => {
 /** The placeholder, as source: the ring and dot of the v25 prototype's logo, or a logo that is only the typed word. */
 export const PLACEHOLDER = [
   { name: "the ring-and-dot mark", re: /\bv12-logo-(?:ring|dot)\b/i },
-  { name: "the typed-text logo", re: /\bv12-logo-name\b/i },
+  { name: "the typed-text logo", re: /\b(?:v12-logo-name|gx-brand-name)\b/i },
   { name: "a logo element holding only the word particl", re: /className=["'][^"']*\blogo[^"']*["'][^>]*>\s*(?:<[^>]+>\s*)*particl\s*</i },
 ];
 const placeholdersIn = (text: string) => PLACEHOLDER.filter((p) => p.re.test(text)).map((p) => p.name);
@@ -164,6 +173,7 @@ test("(d) the matcher sees the placeholder and leaves ordinary words alone", () 
   const ring = `<span className="v12-logo-ring"><span className="v12-logo-dot" /></span>`;
   expect(placeholdersIn(ring)).toEqual(["the ring-and-dot mark"]);
   expect(placeholdersIn(`<span className="brand-tool-logo-name">Your logo</span>`)).toEqual([]);
+  expect(placeholdersIn(`<span className="gx-brand-name">particl</span>`)).toEqual(["the typed-text logo"]);
   expect(placeholdersIn(`<span className="v12-logo-name">particl</span>`)).toContain("the typed-text logo");
   expect(placeholdersIn(`<a className="brand-logo" href="/"><b>particl</b></a>`)).toEqual(["a logo element holding only the word particl"]);
   expect(placeholdersIn(`<button className="v12-logo"><Image src={HEADER_LOGO} alt="" /></button>`)).toEqual([]);
