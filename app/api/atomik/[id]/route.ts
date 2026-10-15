@@ -120,7 +120,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const viewOnly = Boolean(readProject && !projectId);
     const context = [viewOnly ? VIEW_ONLY_INSTRUCTION : "", await projectContext(readProject)].filter(Boolean).join("\n\n");
     /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */
-    const memory = await plannerMemoryText({ projectId: readProject, query: text }).catch(() => "");
+    const memory = await plannerMemoryText({ projectId: readProject, query: text, viewer: got.user.id }).catch(() => "");
     const rules = writerRulesByScope(await effectiveRules());
     /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
     const inputs = await plannerInputs(got.user.id, projectId);
