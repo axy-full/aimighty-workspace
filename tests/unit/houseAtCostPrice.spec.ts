@@ -117,7 +117,7 @@ test("the engines route: the house gets the engine's dollars (one take, and on t
 test("a take in flight says on its Make tile, under its held figure, that it is charged only when it's ready (or what the engine reports); a cancel on its way drops the promise", async () => {
   const { tileTail } = await import("../../lib/v12/make");
   const running = renderState(at({ price: { amount: 0.045, unit: "usd" } }), 70_000);
-  expect(running.tile).toBe("Rendering · 1:10 so far · $0.045 held");
+  expect(running.tile).toBe("Rendering · 1:10 so far · $0.05 held");
   expect(tileTail(running)).toBe("Charged only when it’s ready");
   expect(tileTail(renderState(at({ price: { amount: 1, unit: "cr" } }), 70_000))).toBe("Charged only when it’s ready");
   /* Slow, preparing, failed and waiting takes carry their own words, not this. */
@@ -135,22 +135,22 @@ test("the house is never shown the customer price in dollars: with no engine dol
   expect(none).toMatchObject({ text: "—", title: NO_AT_COST_PRICE, state: "error" });
   expect(none.text).not.toMatch(/\d/);
   /* An estimate (sound) keeps its "up to", in dollars. */
-  expect(priceDisplay(makeQuote({ kind: "up-to", credits: 2 } as never, { dollars: true, creditUsd: creditUsd() }, 0.1234), undefined, env)!.text).toBe("up to $0.123");
+  expect(priceDisplay(makeQuote({ kind: "up-to", credits: 2 } as never, { dollars: true, creditUsd: creditUsd() }, 0.1234), undefined, env)!.text).toBe("up to $0.13");
   /* The hover says so. */
   const dollars = priceDisplay(makeQuote(exact(1), { dollars: true, creditUsd: creditUsd() }, 0.045), undefined, env)!;
-  expect([dollars.text, dollars.title]).toEqual(["$0.045", PAYS_AT_COST]);
+  expect([dollars.text, dollars.title]).toEqual(["$0.05", PAYS_AT_COST]);
   expect(PAYS_AT_COST).toBe("Pays at cost");
 });
 
 test("Cinema Studio for the house: about and at most, in the engine's dollars; the customer's words stay credits", async () => {
   const { houseAbout } = await import("../../lib/v12/make");
-  expect(houseAbout(0.42)).toBe("about $0.420, at most $1.26");
+  expect(houseAbout(0.42)).toBe("about $0.42, at most $1.26");
 });
 
 test("a cancel on its way: the money line keeps its figure and says it settles when the engine confirms; otherwise it keeps both", () => {
   const state = renderState(at({ price: { amount: 0.045, unit: "usd" } }), 70_000);
-  expect(moneyLine(state.money!)).toEqual({ head: "$0.045 held", tail: " · charged only when it’s ready" });
-  expect(moneyLine(state.money!, true)).toEqual({ head: "$0.045 held", tail: " · settles when the engine confirms" });
+  expect(moneyLine(state.money!)).toEqual({ head: "$0.05 held", tail: " · charged only when it’s ready" });
+  expect(moneyLine(state.money!, true)).toEqual({ head: "$0.05 held", tail: " · settles when the engine confirms" });
   expect(moneyLine(state.money!, true).head + moneyLine(state.money!, true).tail).not.toMatch(/charged only when/);
 });
 
@@ -165,7 +165,7 @@ test("Atomik's thinking (Home Start, the new-board bar, the board bar): the hous
   const credits = priceDisplay(planningQuote({ kind: "up-to", credits: 4 }, 0.373, false), undefined, env)!;
   expect(credits.text).toBe("up to 4 cr");
   const house = priceDisplay(planningQuote({ kind: "up-to", credits: 4 }, 0.373, true), undefined, env)!;
-  expect([house.text, house.title]).toEqual(["up to $0.373", PAYS_AT_COST]);
+  expect([house.text, house.title]).toEqual(["up to $0.38", PAYS_AT_COST]);
   expect(priceDisplay(planningQuote({ kind: "up-to", credits: 4 }, null, true), undefined, env)).toMatchObject({ text: "—", title: NO_AT_COST_PRICE });
   /* The press still approves the credits: the dollars change what is shown, not the limit. */
   expect(thinkingFrom(body)).toMatchObject({ credits: 4 });

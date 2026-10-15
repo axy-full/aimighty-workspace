@@ -506,7 +506,7 @@ test("an approximate plan keeps 'up to' after its approval (review L3)", async (
     await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
     const after = await view();
     expect(after.plan!.approval!.approximate).toBe(true);
-    expect(planModel({ run: after, enabled: true, balance: 1000, rule: null, readOnly: null })!.total).toEqual({ kind: "up-to", credits: run.plan!.quote!.total });
+    expect(planModel({ run: after, enabled: true, balance: 1000, rule: null, readOnly: null })!.total).toEqual({ kind: "up-to", credits: run.plan!.quote!.total, capped: true });
   });
 });
 

@@ -54,13 +54,24 @@ jobs:
       matrix:
         shard: [1, 2, 3]
     steps:
+      # Two commits of history: a pull request's merge commit has the base's tip as its first parent, and a push has the previous
+      # tip. The ratchet specs compare against RATCHET_BASE (tests/helpers/ratchet.ts); with a one-commit clone they skipped.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Fetch the ratchet's base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: git fetch --no-tags --depth=1 origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - name: Unit shard
+        env:
+          RATCHET_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD^1' }}
         run: npm run test:unit -- --shard=${{ matrix.shard }}/3
       - uses: actions/upload-artifact@v7
         if: failure()

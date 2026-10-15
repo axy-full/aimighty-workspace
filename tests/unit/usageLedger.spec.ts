@@ -88,7 +88,7 @@ test("the Inspector's Settled fact never shows a dollar unless the route answere
   expect(settledFact(null, null, true)).toBe("Could not be read");
   expect(settledFact({ unit: "credits", rows: [credit("charged", 12)] }, "75 connected cr (quoted)")).toBe("75 connected cr (quoted)");
   expect(ledgerAmount(credit("running", 0))).toBe("—");
-  expect(ledgerAmount({ ...dollars, usd: 0.0421 })).toBe("$0.042");
+  expect(ledgerAmount({ ...dollars, usd: 0.0421 })).toBe("$0.05");
 });
 
 test("the query is validated and the page marker round-trips", async () => {

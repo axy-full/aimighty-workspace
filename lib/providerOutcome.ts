@@ -43,6 +43,8 @@ export const BASIS = {
   "ark-success-only": "ModelArk pricing: only successfully generated videos are charged; a failed generation is not.",
   /* ai.google.dev/gemini-api/docs/billing */
   "google-errors": "Gemini API billing: a request that fails with a 400 or 500 error is not charged.",
+  /* Owner, 14 Oct 2026: a take Google's fixed safety filter blocked is never charged to the workspace. */
+  "safety-block": "Particl does not charge for a take that Google's own safety filter blocked.",
   /* The AI Gateway's reply (`usage.cost`). */
   "gateway-cost": "The gateway's reply states its cost.",
   /* docs.x.ai/developers/cost-tracking */
@@ -299,6 +301,11 @@ export function googleErrorOutcome(status: number, body: unknown): ProviderOutco
 export function googleRefusalOutcome(_usage: unknown, text: unknown, finishReason?: unknown): ProviderOutcome {
   const code = outcomeCode(finishReason) ?? "no_image";
   return outcome("google", "run", code, providerText(text), unknown());
+}
+
+/** Google's own fixed safety filter blocked the answer: settled at nothing. The reason is Google's own code (SAFETY, PROHIBITED_CONTENT ...), never the prompt or the output. */
+export function safetyBlockOutcome(provider: "google" | "gateway", reason: string): ProviderOutcome {
+  return outcome(provider, "run", outcomeCode(reason) ?? "blocked", null, said("safety-block", "not_charged"), { kind: "content_filter" });
 }
 
 /* ── The AI Gateway ──────────────────────────────────────────────────── */

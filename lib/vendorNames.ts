@@ -28,7 +28,7 @@ import { IDENTITY_RENDER_NAME } from "./uiNames";
  *    surface, and "Nano Banana 2" against "Image 2". That is intended: what
  *    we integrate ourselves we name; what the connected account serves we do
  *    not advertise for it.
- * 3. NEVER NAMED ANYWHERE, on either surface: the names in `VENDOR_NAMES`
+ * 3. NEVER NAMED ANYWHERE, on either surface: the names in `VENDOR_NAME_PATTERN`
  *    below — the connected account itself and its brands, and the provider
  *    companies that are not part of any model's real name. The connected
  *    account stays "the connected account" and its credits "connected
@@ -40,23 +40,10 @@ import { IDENTITY_RENDER_NAME } from "./uiNames";
  * This is the single list the UI guard (tests/unit/noVendorNamesInUi.spec.ts)
  * shares with the display-name functions.
  */
-export const VENDOR_NAMES = [
-  // The connected account, its own product lines and its brand words.
-  "Higgsfield", "Supercomputer", "Genjutsu", "Soul ID", "Soul Character",
-  // Provider and platform companies that are not part of a model's real name.
-  "BytePlus", "ByteDance", "ModelArk", "Dreamina", "fal.ai", "fal", "Vercel",
-] as const;
-
-/** Case-insensitive, whole-word: "fal" does not match "falling", and
- *  "Soul ID" also catches "Soul-ID". Model names are NOT in this list — a
- *  direct model's real name is required copy (rule 1 above), and the
- *  connected catalogue's families are handled by `neutralModelText`. */
-export const VENDOR_NAME_PATTERN = new RegExp(
-  String.raw`\b(?:${VENDOR_NAMES
-    .map(name => name.replace(/[.]/g, String.raw`\.`).replace(/ /g, String.raw`[\s-]+`))
-    .join("|")})\b`,
-  "i",
-);
+/** Case-insensitive, whole-word: "fal" does not match "falling", and "Soul ID" also catches "Soul-ID". The connected account, its own product lines and its brand words,
+ *  then the provider and platform companies that are not part of a model's real name. Model names are NOT in this pattern — a direct model's real name is required copy
+ *  (rule 1 above), and the connected catalogue's families are handled by `neutralModelText`. */
+export const VENDOR_NAME_PATTERN = /\b(?:Higgsfield|Supercomputer|Genjutsu|Soul[\s-]+ID|Soul[\s-]+Character|BytePlus|ByteDance|ModelArk|Dreamina|fal\.ai|fal|Vercel)\b/i;
 
 export function hasVendorName(text: string): boolean {
   return VENDOR_NAME_PATTERN.test(text);
@@ -106,7 +93,7 @@ const FAMILY_RENAMES: [RegExp, string][] = [
   [/\bNano\s+Banana\b/gi, "Image"],
   [/\bGPT[-\s]?Image\b/gi, "Forge Image"],
   [/\bChatGPT\b/gi, "your assistant"],
-  [/\bGPT-6\s+Astra\b/gi, "Astra"],
+  [/\bGPT-6\s+Astra\b/gi, "Forge"],
   [/\bGPT\b/gi, "Forge"],
   [/\bOpenAI\b/gi, "Forge"],
   [/\bClaude\b/gi, "Sage"],

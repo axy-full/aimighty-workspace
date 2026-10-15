@@ -69,10 +69,12 @@ export type BoardAgent = {
   /** Ask Atomik to plan this board, at the limit the person pressed (the planning figure on the button), with the files attached (`upload:<id>`). */
   plan: (words: string, limit: number, extra?: { aspect?: string | null; seconds?: number | null }, attachments?: readonly string[]) => Promise<string | null>;
   /** Planning's figure for this board with these files attached, read now from the server (nothing is reserved); or why not. */
-  quote: (attachments: readonly string[]) => Promise<{ planning: number | null } | { error: string }>;
+  quote: (attachments: readonly string[]) => Promise<{ planning: number | null; planningUsd?: number | null } | { error: string }>;
   ready: boolean;
   /** The planning figure as the last read holds it, for a press that must not outrun a price that moved. */
   latestPlanning: () => number | null;
+  /** The same in the engines' dollars (the house), or null. */
+  latestPlanningUsd: () => number | null;
 };
 
 export function useAgentRun(): BoardAgent {
@@ -123,7 +125,7 @@ export function useAgentRun(): BoardAgent {
   }, [call, draft]);
   const quote = useCallback(async (attachments: readonly string[]) => {
     if (!production) return { error: "This project has no board yet." };
-    try { return { planning: (await readAgent(scope, production, draft, attachments)).ask?.planning ?? null }; }
+    try { const ask = (await readAgent(scope, production, draft, attachments)).ask; return { planning: ask?.planning ?? null, planningUsd: ask?.planningUsd ?? null }; }
     catch (error) { return { error: readProblem(error) }; }
   }, [scope, production, draft]);
 
@@ -134,5 +136,6 @@ export function useAgentRun(): BoardAgent {
     refresh, call, plan, quote,
     ready: !!snapshot?.answer,
     latestPlanning: () => (key ? entries.get(key)?.terms?.planning ?? null : null),
+    latestPlanningUsd: () => (key ? entries.get(key)?.terms?.planningUsd ?? null : null),
   }), [snapshot, refresh, call, plan, quote, key]);
 }

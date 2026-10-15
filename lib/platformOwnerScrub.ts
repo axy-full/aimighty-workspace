@@ -154,7 +154,7 @@ export async function platformOwnerScrub(opts: {
   });
   // Names written at the time of an action.
   for (const col of ["review_by", "picked_by", "approved_by"]) {
-    await column({ table: "generations", column: col, match: or([addressIn(col, identity), namesIn(col, unique)]), ambiguous: namesIn(col, shared) });
+    await column({ table: "generations", column: col, match: or([addressIn(col, identity), idIn(col, identity), namesIn(col, unique)]), ambiguous: namesIn(col, shared) });
   }
   await column({ table: "treatments", column: "updated_by", match: or([addressIn("updated_by", identity), namesIn("updated_by", unique)]), ambiguous: namesIn("updated_by", shared) });
   // A treatment's kept drafts carry who wrote each ("by" is a keyword, so quoted).
