@@ -24,6 +24,7 @@ import { sendClaimedGeneration } from "@/lib/workspace/generate-submit";
 import type { HoldOverrunRow, ProviderFailureRow, ProviderFailureSummary } from "@/lib/meter";
 import { billingAmount, failureCopy } from "@/lib/errors";
 import { SharedKeyCard } from "@/components/SharedKeyCard";
+import { RendersAtRiskCard } from "@/components/RendersAtRiskCard";
 import { SiteSettingsCard } from "@/components/SiteSettingsCard";
 import { capLabel, capView, parseCapUsd } from "@/lib/allowanceDesk";
 
@@ -159,6 +160,7 @@ export default function AdminPage() {
             <HoldOverrunsCard />
             <ConcurrencyCard c={data.concurrency} />
             <SharedKeyCard />
+            <RendersAtRiskCard />
 
             <PlatformLayerCard />
 

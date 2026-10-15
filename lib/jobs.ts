@@ -10,6 +10,7 @@ import { isConsumerVideoModel, isConsumerOriginalParams } from "./higgsfield-con
 import { reconcileGenjutsuVideo } from "./genjutsuVideo";
 import {requireTenant} from './tenant';
 import { withRecoveryJob } from './recovery';
+import { noteStoreFailure } from './storeFailure';
 import { db, ready, now } from "./db";
 import { currentPerson, visibleBoardsOfTakes, visibleTakesClause, type Viewer } from "./draftProject";
 import { PROVIDER_VIDEO_TIMEOUT_MS, REQUEST_PATH_QUEUE_WAIT_MS, storeVideo, type StoreVideoOptions } from "./storage";
@@ -571,6 +572,8 @@ return await withRecoveryJob(requireTenant().id, gen.id, async () => {
           // Keep the (expiring) Ark URL as a fallback rather than losing the render.
           // Loud in the logs: a silent failure here cost us two near-lost videos.
           console.error(`storeVideo failed for ${gen.id}:`, (e as Error).message);
+          // When saving first failed and what the last attempt said, for the at-risk alert (lib/rendersAtRisk.ts).
+          await noteStoreFailure(gen.id, e);
           storedUrl = null;
           storageFailed = true;
         }

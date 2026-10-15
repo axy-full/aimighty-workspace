@@ -124,6 +124,8 @@ async function cron(failing: string | null, signInOff = true) {
     "@/lib/workbench/rig-agent": { drainRigAgentWakeups: step("rig_agents") },
     "@/lib/genjutsuVideo": { expireUnansweredCinemaTakes: step("cinema_unanswered", { expired: [] }) },
     "@/lib/paidText": { reconcilePaidTextJobs: step("paid_text", { refunded: 0, released: 0, failed: 0 }) },
+    /* Renders at risk: recorded per visit and alerted after the visits; never a stage (tests/unit/rendersAtRisk.spec.ts). */
+    "@/lib/rendersAtRisk": { recordRendersAtRisk: async () => ({ open: 0 }), alertRendersAtRisk: async () => ({ open: 0, sent: null }) },
   });
   const reply = await route.GET(new Request("http://localhost/api/cron/sync"));
   return { ran, settings, status: reply.status };
