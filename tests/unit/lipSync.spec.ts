@@ -558,6 +558,55 @@ test("an output address we will not fetch, after the job completed: settled once
   });
 });
 
+test("the shot cap is judged at the quote and the press, before any row is written: a member past it is refused 403 (needs an admin) with no take left; an admin, a shot under its cap, no shot, and a rule that is not 'cap' go through", async () => {
+  const { admitLipSync } = await import("../../lib/lipSync");
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  process.env.SYNC_ENABLED = "1";
+  const MEMBER: AdmissionActor = { user: { ...OWNER.user, id: "member_1", role: "member", owner: false } as AdmissionActor["user"] };
+  const { runInTenant } = await import("../../lib/tenant");
+  /* The admission judges the actor against the request's own signed-in person, so the member's presses run as the member and the admin's as the admin. */
+  await runInTenant(house(), async () => {
+    await ready();
+    const setRule = async (rule: string | null, cap?: number) => {
+      for (const [key, value] of [["approvalRule", rule], ["shotCapCredits", cap == null ? null : String(cap)]] as const) {
+        if (value === null) await db().execute({ sql: "DELETE FROM settings WHERE key=?", args: [key] }); else await setSetting(key, value, "admin");
+      }
+      invalidateSettings();
+    };
+    const w = await world();
+    const shotId = uid("shot");
+    await db().execute({ sql: "INSERT INTO shots (id, project_id, code, title, created_at, updated_at) VALUES (?,?,?,?,0,0)", args: [shotId, w.projectId, "S01", "A shot"] });
+    const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    let faceCalls = 0;
+    const seams = { consent: async (...a: Parameters<ReturnType<typeof passing>>) => { faceCalls++; return passing(w.consentId)(...a); } };
+    const press = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitLipSync({ ...w.body, shotId, maxCredits: 100000, ...extra }, actor, options(), seams);
+    try {
+      await setRule("cap", 1);
+      const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
+      for (const extra of [{ quoteOnly: true }, {}]) {
+        const refused = await press(MEMBER, extra);
+        expect(refused, JSON.stringify(extra)).toMatchObject({ status: 403, body: { needsAdmin: true } });
+        expect(String(refused.body.error)).toMatch(/S01/);
+      }
+      expect(faceCalls).toBe(0);
+      expect(await rows()).toBe(before.rows);
+      expect((await meterRows()).length).toBe(before.meter);
+      expect(deferred.length).toBe(before.handed);
+      /* An admin's goes through; so does a member's take on a shot with no code to speak of, a request with no shot, and any rule but "cap". */
+      await runInTenant(house(), async () => { expect((await press(OWNER, { quoteOnly: true })).status).toBe(200); }, OWNER as never);
+      expect((await press(MEMBER, { quoteOnly: true, shotId: undefined })).status).toBe(200);
+      await setRule("ask");
+      expect((await press(MEMBER, { quoteOnly: true })).status).toBe(200);
+      await setRule("cap", 100000);
+      expect((await press(MEMBER, { quoteOnly: true })).status).toBe(200);
+      const made = await press(MEMBER);
+      expect(made.status, JSON.stringify(made.body)).toBe(200);
+      expect(await rows()).toBe(before.rows + 1);
+    } finally { await setRule(null); }
+  }, MEMBER as never);
+});
+
 test("a claim that never got both inputs up never reached the submit and settles at nothing; one with both inputs and no job id is a lost acknowledgement, held", async () => {
   const { advanceLipSyncJobWith } = await import("../../lib/lipSync");
   const { db } = await import("../../lib/db");
