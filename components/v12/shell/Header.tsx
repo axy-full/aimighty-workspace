@@ -21,6 +21,7 @@ import { useTabFit } from "./use-tab-fit";
 import { useBoardTabs } from "./use-board-tabs";
 import { copyBoardLink } from "../menus/menu-items";
 import { keyOf } from "@/lib/v12/keymap";
+import { toggleAtomikDock } from "@/lib/v12/atomik-dock";
 import "./header.css";
 import "../render/render.css";
 
@@ -95,7 +96,10 @@ export function V12Header({ account, project, projects, onPick }: {
     else goHome();
   };
   const atomikOpen = shell.atomik !== null;
+  /* A board on screen has its own Atomik dock (the rail at its right edge), and ⌘J opens that; the bar's button is for the app's other screens (v25: none on the board). */
+  const boardShown = activeBoard !== null;
   const toggleAtomik = () => {
+    if (boardShown) { toggleAtomikDock(); return; }
     if (!isLanded("atomik")) { shell.goSuite("atomik"); return; }
     if (atomikOpen) shell.closeAtomik(); else shell.openAtomik();
   };
@@ -236,8 +240,8 @@ export function V12Header({ account, project, projects, onPick }: {
       </nav>
 
       <span className="v12-spacer" aria-hidden="true" />
-      {/* The ⌘K bar: on the right, directly left of the Activity pill, a fixed width that widens on focus (v25). As v25's app screens draw it, the panel's button is inside it; the board's own bar (no icon) comes with the board screen, where Atomik's button is in its second row. */}
-      <div className="v12-field" data-open={atomikOpen ? "" : undefined} data-testid="v12-atomik-field">
+      {/* The ⌘K bar: on the right, directly left of the Activity pill, a fixed width that widens on focus (v25). On app screens the Atomik panel's button is inside it; on a board there is none (owner, 15 Oct), the board's own dock rail is the visible control and ⌘J opens it. */}
+      <div className="v12-field" data-open={atomikOpen ? "" : undefined} data-panel={boardShown ? undefined : ""} data-testid="v12-atomik-field">
         <Tooltip name="Ask Atomik, search or go to" line="Ask a question, find a board, stage, card or library item, or run an action." shortcut={keyOf("palette")}>
           <button type="button" className="v12-field-ask" onClick={() => shell.setPalette(true)} aria-keyshortcuts="Meta+K" data-testid="v12-ask">
             <span className="v12-field-mark" aria-hidden="true">◆</span>
@@ -245,10 +249,10 @@ export function V12Header({ account, project, projects, onPick }: {
             <span className="v12-field-key" aria-hidden="true">{keyOf("palette")}</span>
           </button>
         </Tooltip>
-        <IconButton className="v12-field-panel" pressed={atomikOpen} onClick={toggleAtomik} aria-keyshortcuts="Meta+J" data-testid="v12-atomik-panel"
+        {boardShown ? null : <IconButton className="v12-field-panel" pressed={atomikOpen} onClick={toggleAtomik} aria-keyshortcuts="Meta+J" data-testid="v12-atomik-panel"
           tooltip={{ name: "Atomik panel", line: atomikOpen ? "Close the conversation panel." : "Open the conversation: plans, questions and approvals.", shortcut: keyOf("atomik-panel") }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" /><path d="M10 3v10" /></svg>
-        </IconButton>
+        </IconButton>}
       </div>
 
       {/* The right group is pinned to the edge at every width: nothing in the header pushes it. */}

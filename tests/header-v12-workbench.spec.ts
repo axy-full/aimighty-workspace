@@ -75,6 +75,27 @@ test.describe("desktop", () => {
     await expect(page.getByTestId("atomik-palette")).toHaveCount(0);
   });
 
+  test("on a board the ⌘K bar has no Atomik panel button, the board's own Atomik rail is there, and ⌘J opens and closes its dock; on Home the button is in the bar", async ({ page }) => {
+    const { ids } = await redesignWithBoards(page, ["Mirror film"]);
+    await openAsTabs(page, ids, `/suites?view=board&project=${encodeURIComponent(ids[0])}`);
+    await expect(boardTab(page, ids[0])).toHaveAttribute("data-active", "");
+    await expect(page.getByTestId("v12-atomik-panel")).toHaveCount(0);
+    await expect(page.getByTestId("v12-ask")).toBeVisible();
+    /* Rule 11: Atomik is still one visible control away on a board. */
+    const dock = page.getByTestId("board-agent-dock");
+    await expect(page.getByTestId("agent-rail")).toBeVisible();
+    await expect(dock).toHaveAttribute("data-open", "false");
+    await page.locator("body").click({ position: { x: 700, y: 700 } });
+    await page.keyboard.press("ControlOrMeta+j");
+    await expect(dock).toHaveAttribute("data-open", "true");
+    await expect(page.getByTestId("agent-input")).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+j");
+    await expect(dock).toHaveAttribute("data-open", "false");
+    /* Home: the button is back inside the bar. */
+    await page.getByTestId("v12-tab-home").getByRole("button", { name: "Home" }).click();
+    await expect(page.getByTestId("v12-atomik-panel")).toBeVisible();
+  });
+
   test("closing a tab keeps the board: Undo brings the tab back; the tab menu closes others; boards that do not fit go under +N", async ({ page }) => {
     /* Ten boards with long names: more than any desktop width shows, so some go under +N ▾ (how many is the next test's). */
     const names = Array.from({ length: 10 }, (_, i) => `Board ${i + 1} with a long working title`);

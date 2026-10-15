@@ -23,6 +23,7 @@ import { withUndoHint } from "@/lib/shell/undo";
 import { useShell } from "@/lib/shell/state";
 import { useCompact } from "@/lib/shell/use-compact";
 import { useNewInterface } from "@/lib/session";
+import { ATOMIK_DOCK_TOGGLE } from "@/lib/v12/atomik-dock";
 import { findProjectTake, libraryEntries, projectLibraryState, uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { uid, type Asset, type Project } from "@/lib/workbench/studio";
@@ -572,6 +573,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* ── The seams other streams provide (review mode: 5; Atomik's panel: 7) ── */
   const [seams] = useState(() => new BoardSeams());
   const [dockOpen, setDockOpen] = useState(false);
+  /* The new interface's ⌘J (its header has no Atomik button on a board): open or close the dock this board holds. */
+  useEffect(() => {
+    if (!v12Frame) return;
+    const toggle = () => setDockOpen((open) => !open);
+    window.addEventListener(ATOMIK_DOCK_TOGGLE, toggle);
+    return () => window.removeEventListener(ATOMIK_DOCK_TOGGLE, toggle);
+  }, [v12Frame]);
   /* The new interface: selecting a card does not open the Inspector (it would cover the bar); a card's ⓘ Details does (redesign P2-b). */
   const [details, setDetails] = useState<string | null>(null);
   const ctx = useMemo<BoardCtx | null>(() => (project ? {

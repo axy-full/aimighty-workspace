@@ -66,6 +66,8 @@
 .v12 .v12-header:not(.v12-vheader) .v12-field { flex: none; width: var(--v12-kbar); min-width: var(--v12-kbar); max-width: none; box-sizing: border-box; transition: width var(--gx-t-menu) var(--gx-ease), border-color var(--gx-t-menu) var(--gx-ease); }
 .v12 .v12-header:not(.v12-vheader) .v12-field:focus-within { width: calc(var(--v12-kbar) + 160px); border-color: var(--gx-accent); }
 .v12 .v12-header:not(.v12-vheader) .v12-field-ask { color: var(--gx-text-sec); overflow: hidden; }
+/* On a board there is no panel button (v25: ⌘J opens the board's Atomik dock): the bar is only the ask field. */
+.v12 .v12-header:not(.v12-vheader) .v12-field:not([data-panel]) .v12-field-ask { border-radius: var(--gx-r-btn); }
 .v12 .v12-header:not(.v12-vheader) .v12-field-key { margin-left: auto; flex: none; font-family: var(--gx-mono); font-size: var(--gx-fs-label); }
 
 /* The merged Atomik field (the visitor's header keeps it) */
