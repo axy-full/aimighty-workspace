@@ -27,7 +27,8 @@ const DEFAULTS: PropsById = {
 
 function metadata<K extends CompositionId>(id: K): CalculateMetadataFunction<PropsById[K]> {
   return ({ props }) => {
-    const checked = validateProps(id, props);
+    /* These props come from the export itself (it sets offsetSeconds on a windowed copy), never from a request. */
+    const checked = validateProps(id, props, undefined, true);
     if (!checked.ok) throw new Error(`Invalid props for ${id}: ${checked.errors.join("; ")}`);
     const timeline = toTimeline(id, checked.value);
     return { durationInFrames: timeline.durationInFrames, fps: timeline.fps, width: timeline.width, height: timeline.height, props: checked.value };

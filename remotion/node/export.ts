@@ -108,7 +108,8 @@ export function usedWindow(timeline: Timeline, file: string, fileSeconds?: numbe
   }
   if (!Number.isFinite(start)) return undefined;
   const ceiling = fileSeconds ?? Infinity;
-  const startSeconds = Math.max(0, Math.round((start - CONFORM_PAD_SECONDS) * 1000) / 1000);
+  /* A whole number of frames, so the offset the renderer is given times the frame rate is a whole number of frames (24 fps included). */
+  const startSeconds = Math.max(0, Math.floor(Math.round((start - CONFORM_PAD_SECONDS) * timeline.fps * 1e6) / 1e6) / timeline.fps);
   const endSeconds = Math.min(ceiling, Math.round((end + CONFORM_PAD_SECONDS) * 1000) / 1000);
   return { startSeconds, endSeconds };
 }
