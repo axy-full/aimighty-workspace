@@ -14,7 +14,7 @@ import path from "node:path";
 import { DEFAULT_LIMITS, PRORES_MAX_FRAMES, type ExportLimits } from "../src/lib/limits";
 import { toTimeline, ExportTooLong } from "../src/lib/timeline";
 import { FORMAT_FILE, H265_NAMES, SUBTITLE_FILE, SUBTITLE_FORMATS, VIDEO_FORMATS, isProRes, type CompositionId, type SubtitleFormat, type Timeline, type VideoFormat } from "../src/lib/types";
-import { subtitleCuesOf, subtitleText } from "../src/lib/subtitles";
+import { speakableCues, subtitleCuesOf, subtitleText } from "../src/lib/subtitles";
 import { isCompositionId, validateProps } from "../src/lib/validate";
 import { CONFORM_BUDGET_MS, CONFORM_FILE_MS, CONFORM_MODES, CONFORM_PAD_SECONDS, DEFAULT_CONFORM, filesToConform, reportInputs, type ConformMode, type ConformWindow, type Conformer, type InputReport } from "./conform";
 import type { MediaFacts, Prober } from "./probe";
@@ -215,6 +215,9 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   }
   if (subtitles.length && subtitleCuesOf(timeline).length === 0) {
     return fail("spec_invalid", ["spec.output.subtitles: the export has no caption text (no cues) to write"]);
+  }
+  if (subtitles.length && speakableCues(timeline).length === 0) {
+    return fail("spec_invalid", ["spec.output.subtitles: every caption in this export is only styling, so there is no text to write"]);
   }
   const outOfRange = stills.filter((frame) => frame >= timeline.durationInFrames);
   if (outOfRange.length) return fail("spec_invalid", [`spec.output.stills: frame ${outOfRange[0]} is past the end (${timeline.durationInFrames} frames)`]);
