@@ -32,17 +32,13 @@ const open = (host, port, ms = 2000) => new Promise((resolve) => {
 });
 
 async function main() {
-  const count = Number(process.env.RELAY_WORKERS || 1);
-  const workers = [];
-  for (let n = 1; n <= count; n++) {
-    let status = null;
-    try { status = (await fetch(`http://127.0.0.1:${8080 + n}/v1/sessions`, { signal: AbortSignal.timeout(5000) })).status; } catch { /* unreachable */ }
-    workers.push({ n, status });
-  }
+  /* One worker: relay port 8081. */
+  let status = null;
+  try { status = (await fetch("http://127.0.0.1:8081/v1/sessions", { signal: AbortSignal.timeout(5000) })).status; } catch { /* unreachable */ }
+  const workers = [{ n: 1, status }];
   const closed = [];
-  /* Not the worker port, not the base port, not a relay port of a worker that does not exist, nothing else. */
-  const unused = [1, 2, 3].filter((n) => n > count).map((n) => 8080 + n);
-  for (const port of [8790, 8080, 8084, 80, 22, ...unused]) closed.push({ port, open: await open("127.0.0.1", port) });
+  /* Not the worker port, not the base port, not the ports of workers that do not exist, nothing else. */
+  for (const port of [8790, 8080, 8082, 8083, 80, 22]) closed.push({ port, open: await open("127.0.0.1", port) });
   const verdict = judge({ secretNames: secretNames(process.env), workers, closed });
   for (const worker of workers) console.log(`worker ${worker.n}: ${worker.status ?? "unreachable"}`);
   for (const port of closed) console.log(`port ${port.port}: ${port.open ? "OPEN" : "closed"}`);

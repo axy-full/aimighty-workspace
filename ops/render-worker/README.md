@@ -1,13 +1,13 @@
 # Astra render worker
 
-CPU Blender 5.2.2 on our own server, in place of the Vercel Sandbox VM for Astra 3D renders. **One** single-slot container (`render-1`, 2 vCPU / 4 GB) by default, up to three, on an internal Docker network with no public port and no internet, behind a small relay that holds no secret. The app talks to a worker the way it talks to a Sandbox VM today: create, write files, run the fixed launcher, read the outputs, stop.
+CPU Blender 5.2.2 on our own server, in place of the Vercel Sandbox VM for Astra 3D renders. **One** single-slot container (`render-1`, 2 vCPU / 4 GB hard) on this server, no second and no third, on an internal Docker network with no public port and no internet, behind a small relay that holds no secret. The app talks to a worker the way it talks to a Sandbox VM today: create, write files, run the fixed launcher, read the outputs, stop.
 
 | File | What |
 |---|---|
 | `Dockerfile` | Node 22 (Debian bookworm slim, pinned by digest), Blender 5.2.2 from the official archive (SHA256 checked at build), `python3`, non-root user `render` (uid 10001), healthcheck. A tiny offline Cycles render runs at build time. The relay and the two checks run from this same image. |
-| `server.mjs` | The worker API on port 8790 (plain Node, no dependencies). Not 8080: the host firewall drops 8080 in DOCKER-USER, which can also catch container-to-container traffic. |
-| `relay.mjs` | The relay: a TCP forwarder with no secret. Listens on 8081, 8082, 8083 (one per worker that exists) and forwards each to its worker's 8790, passing the bytes unread. Nothing else. |
-| `compose.yaml` | The workers, the relay and the `render-internal` network. |
+| `server.mjs` | The worker API on port 8790 (plain Node, no dependencies). **Fail-closed start:** before it listens it runs the egress check below in its own network and environment, and if that is not a pass it logs the failing lines, waits 30 s, exits non-zero and never binds. Not 8080: the host firewall drops 8080 in DOCKER-USER, which can also catch container-to-container traffic. |
+| `relay.mjs` | The relay: a TCP forwarder with no secret. Listens on 8081 and forwards it to `render-1`'s 8790, passing the bytes unread. Nothing else. |
+| `compose.yaml` | The worker, the relay and the `render-internal` network. |
 | `check-egress.mjs` | The egress gate (Verify, step 1). Exits non-zero on anything that gets out. |
 | `check-relay.mjs` | The relay check (Verify, step 1b). |
 | `smoke.mjs` | The no-cost smoke render (same text as in "Verify", step 3). |
@@ -19,11 +19,10 @@ Tests: `node --test tests/ops/render-worker.test.mjs tests/ops/render-relay.test
 
 | Variable | Where | Value |
 |---|---|---|
-| `ASTRA_WORKER_SECRET_1` (and `_2`, `_3` only for workers you turn on) | the worker stack | A random value of at least 32 characters per worker, all different (`openssl rand -hex 32` on your own machine). `render-N` reads `ASTRA_WORKER_SECRET_N` as its `ASTRA_WORKER_SECRET`. One secret per worker means code that escapes Blender and reads its own worker's environment cannot drive another. Runtime only: never a build variable, never in git or chat. The relay never sees one. |
-| `ASTRA_WORKER_URLS` | the production app only | The relay's address, one port per worker: for one worker `http://<relay name>:8081`; for three `http://<relay name>:8081,http://<relay name>:8082,http://<relay name>:8083`. |
+| `ASTRA_WORKER_SECRET_1` | the worker stack | A random value of at least 32 characters (`openssl rand -hex 32` on your own machine). `render-1` reads it as its `ASTRA_WORKER_SECRET`. Runtime only: never a build variable, never in git or chat. The relay never sees one. |
+| `ASTRA_WORKER_URLS` | the production app only | The relay's address: `http://<relay name>:8081`. |
 | `ASTRA_WORKER_SECRETS` | the production app only | Comma list of the secrets **in the same order** as `ASTRA_WORKER_URLS`. Runtime only. |
-| `ASTRA_WORKER_COUNT`, `COMPOSE_PROFILES` | the worker stack | Unset = one worker. Two: `ASTRA_WORKER_COUNT=2`, `COMPOSE_PROFILES=workers-2`. Three: `3` and `workers-3`. Set both together (see "How many workers"). |
-| `RENDER_CPUSET_1`, `_2`, `_3` | the worker stack | The cores each worker is pinned to. Defaults `6,7`, `4,5`, `2,3` (see "How many workers" before changing or using the last two). |
+| `RENDER_CPUSET_1` | the worker stack | The cores `render-1` is pinned to. Default `6,7` (see "How many workers" before changing it). |
 
 ## Networking: option (c), the relay (owner's choice)
 
@@ -32,32 +31,32 @@ Tests: `node --test tests/ops/render-worker.test.mjs tests/ops/render-relay.test
 Why a relay: Coolify adds its own network, which has a gateway, to every compose service without `network_mode`, so `internal: true` alone does not stop a worker reaching the internet; and a Dockerfile app cannot be given a second network. A service with `network_mode` is left alone.
 
 - `render-internal` is declared `internal: true` in `compose.yaml`, so Compose creates it with no gateway.
-- Every worker is on it through `network_mode: render-internal` and on nothing else: no internet, no other network, no published port.
-- `render-relay` (same image, `node /app/relay.mjs`) is on `render-internal` and, with **Connect To Predefined Network** on, on the app's network. It forwards 8081, 8082, 8083 to each worker's 8790 and nothing else. It holds no secret, never reads a connection's bytes (the worker's own `Authorization: Bearer` check still guards every request), connects only to the fixed names `render-1`, `render-2`, `render-3` on 8790, and resolves nothing else. A worker that is down gets a clean close for that caller.
+- The worker is on it through `network_mode: render-internal` and on nothing else: no internet, no other network, no published port.
+- `render-relay` (same image, `node /app/relay.mjs`) is on `render-internal` and, with **Connect To Predefined Network** on, on the app's network. It forwards 8081 to the worker's 8790 and nothing else. It holds no secret, never reads a connection's bytes (the worker's own `Authorization: Bearer` check still guards every request), connects only to the fixed name `render-1` (with the platform's suffix if it adds one) on 8790, refuses any address that is not private, and resolves nothing else. A worker that is down gets a clean close for that caller.
 - The app is **not** on `render-internal`. A worker cannot reach it, the relay is the only way in, and nothing needs redoing after an app redeploy.
-- **Not verified until deployed:** that Compose creates `render-internal` (the relay's network) before it starts the `network_mode` workers (`depends_on` asks for it), that Coolify keeps `container_name`, `profiles` and `depends_on` as written, and that it reads `COMPOSE_PROFILES` from the stack's variables. If it adds a suffix to the container names, set `RELAY_TARGET_1..3` on the relay to the real names. **Whatever happens, Verify step 1 (egress) is a hard gate: no real render until it passes, and again after every change to the stack, a firewall change, a Docker Engine upgrade or a reboot.**
+- **Not verified until deployed:** that Compose creates `render-internal` (the relay's network) before it starts the `network_mode` workers (`depends_on` asks for it), and that Coolify keeps `container_name` and `depends_on` as written. If it adds a suffix to the container name, set `RELAY_TARGET_1` on the relay to the real name. **Whatever happens, Verify step 1 (egress) is a hard gate: no real render until it passes, and again after every change to the stack, a firewall change, a Docker Engine upgrade or a reboot.**
 - Options (a) (an internal network the advisor creates and attaches the app to after each deploy) and (b) (Coolify's network plus a host firewall rule; weaker against hostile code, DNS can still leave) were considered and are not used; `check-egress.mjs --option a|b` still judges them.
 
 ## How many workers, and which cores
 
-One worker is the default: the server has 8 vCPU (cores 0 to 7) and shares them with production. `render-1` is pinned to cores **6,7**, leaving 0 to 5 to production and the OS. Every worker is 2 vCPU, 4 GB, 256 CPU shares (low weight, so production wins under load), 256 processes.
+**One worker on this 8-core server; no third worker** (owner, 15 Oct 2026, 19:40). The server has 8 vCPU (cores 0 to 7) and shares them with production. `render-1` is pinned to cores **6,7**, leaving 0 to 5 to production and the OS. It is 2 vCPU (`cpus: 2`), 4 GB hard (`mem_limit` and `memswap_limit` both 4g, so no swap), 256 CPU shares (low weight, so production wins under load), 256 processes.
 
-**Choosing cores from `nproc`:** run `nproc` on the server; it prints the core count N (cores `0` to `N-1`). Give worker 1 the last two cores, `N-2,N-1`; worker 2 the two before them, `N-4,N-3`; worker 3 `N-6,N-5`; leave at least half the cores to production. On 8 cores that is `6,7` for one worker; two workers would take `4,5` too and leave production four cores, which is the owner's call, not a default. Set them as `RENDER_CPUSET_1`, `RENDER_CPUSET_2`, `RENDER_CPUSET_3` in the stack's variables (the defaults `4,5` and `2,3` only suit a larger machine's idea of "spare"; do not rely on them on 8 cores). A core number that does not exist stops the container from starting.
+**Choosing cores from `nproc`:** run `nproc` on the server; it prints the core count N (cores `0` to `N-1`). Give the worker the last two cores, `N-2,N-1`, and leave at least half the cores to production. On 8 cores that is `6,7`, the default. Set another pair as `RENDER_CPUSET_1` in the stack's variables. A core number that does not exist stops the container from starting.
 
-**Three workers are not supported on this 8-core server** (they would leave production two cores). The third worker, its profile and its default cores exist for a larger machine only.
+**Adding a second worker later** (a larger server, the owner's call; there is no `render-2` in `compose.yaml` today): copy the `render-1` block as `render-2` with its own `ASTRA_WORKER_SECRET_2`, its own cores, and a relay port 8082 (a second route in `relay.mjs`, `MAX_WORKERS` raised, tests extended); add `http://<relay name>:8082` and its secret to the app's `ASTRA_WORKER_URLS` and `ASTRA_WORKER_SECRETS`, same order; run Verify for it.
 
-**Going to two or three workers later:** (1) choose the cores (above) and set `RENDER_CPUSET_2` (and `_3`); (2) add `ASTRA_WORKER_SECRET_2` (and `_3`); (3) set `ASTRA_WORKER_COUNT=2` and `COMPOSE_PROFILES=workers-2` (three: `3` and `workers-3`); (4) redeploy the stack; (5) add `http://<relay name>:8082` (and `:8083`) and the matching secret to the app's `ASTRA_WORKER_URLS` and `ASTRA_WORKER_SECRETS`, same order; (6) run Verify again for the new worker. The relay forwards only to workers that exist: the ports of a worker that is not turned on are closed.
+**What merging this is not:** merging this PR is not server setup. No render stack exists in Coolify today (no render containers were running on 15 Oct 2026, 18:55); the owner sets it up with the advisor after approval.
 
 ## Setup click list (owner and advisor)
 
 Nothing here costs money. **Nothing is set up until the owner approves.**
 
-1. **Make the secret (owner).** On your own machine, `openssl rand -hex 32`. Keep it in your password manager as worker 1 (a second and third only if you turn those workers on).
+1. **Make the secret (owner).** On your own machine, `openssl rand -hex 32`. Keep it in your password manager as worker 1.
 2. **Create the stack (owner, in Coolify).** Project of the production app, **+ New**, **Docker Compose** (from the GitHub repository), branch `release/1` (or `main` once merged).
    - **Base Directory:** `/ops/render-worker`. **Docker Compose Location:** `/compose.yaml`.
    - **Domains:** none on any service. No ports are published.
    - **Connect To Predefined Network:** **on** (it puts the relay on the app's network).
-3. **Variables on the stack (owner).** `ASTRA_WORKER_SECRET_1`. Runtime only: leave **Build Variable** ("Available at Buildtime") unticked. Leave the rest unset for one worker on cores 6,7; set `RENDER_CPUSET_1` only if the cores differ (see "How many workers").
+3. **Variables on the stack (owner).** `ASTRA_WORKER_SECRET_1`. Runtime only: leave **Build Variable** ("Available at Buildtime") unticked. Leave the rest unset for the worker on cores 6,7; set `RENDER_CPUSET_1` only if the cores differ (see "How many workers").
 4. **Deploy (owner).** The first build downloads Blender (about 370 MB) and renders a 32 px test image; a few minutes. Wait until the relay and `render-1` show **healthy**.
 5. **Run Verify step 1 and 1b (owner).** Stop here if either fails.
 6. **Production app (owner).** Set `ASTRA_WORKER_URLS` (`http://<relay name>:8081`) and `ASTRA_WORKER_SECRETS` (the secret), both runtime only. Read the relay's container name on the stack's page (Coolify may add a suffix to `render-relay`). Redeploy the app.
@@ -65,17 +64,17 @@ Nothing here costs money. **Nothing is set up until the owner approves.**
 
 ## Verify
 
-1. **Egress gate (owner, Coolify terminal of `render-1`, then of each other worker you turned on).** **No real render until it passes.** Run while no render is running (a finished render ends every other process in the worker, including a terminal):
+1. **Egress gate (owner, Coolify terminal of `render-1`).** **No real render until it passes.** Run while no render is running (a finished render ends every other process in the worker, including a terminal):
    ```sh
    node /app/check-egress.mjs --option c --app <production app container name>:3000
    ```
-   It prints one line per probe and ends with `EGRESS GATE: PASS` (exit 0) or `EGRESS GATE: FAIL (...)` (exit 1). Each line exactly once, and all must be `blocked` (or `clean env`): the DNS line (`blocked dns ...`), the two internet lines (`https://example.com`, `http://1.1.1.1`), `host.docker.internal`, **the host itself** (`host:IP:PORT`, eight ports 22, 80, 443, 3000, 8000, 6001, 6002, 8080 on the gateway of every network the worker is on, derived from its own interfaces; a refused connection counts as `REACHED`, because the host answered), the environment (`clean env`: no `ASTRA_WORKER_SECRET_<N>` name beyond what the server clears; names only are printed), and, for option (c), the app line `blocked ...` too: only the relay is on both networks, so a worker must not reach the app at all (option (a) expects `REACHED` there; nothing else may be reached in any option). Any `REACHED`, `RESOLVED` or `LEAK` where it should say `blocked`/`clean`, an extra, repeated, missing or unrecognised line, or no output is a **FAIL**: stop, no renders, tell the advisor (a name that resolves is a way out, even with no route). **Run it again after every change to the stack, a firewall change, a Docker Engine upgrade or a reboot.** The script holds no secret and reads none; `tests/ops/render-egress.test.mjs` pins its logic against canned outputs (`--from-stdin` only judges pasted lines and prints `JUDGED (not probed)`, never a pass of the gate). Not used: `com.docker.network.bridge.inhibit_ipv4` on `render-internal` (Docker Engine 28 and later only, and an older Engine would refuse the stack); the host probe is the check instead, and if the server's Engine is 28 or later the advisor may add it as a second layer.
-1b. **The relay (owner, Coolify terminal of `render-relay`):** `node /app/check-relay.mjs`. It checks that the relay's environment holds no secret-looking variable, that each worker it forwards to answers its own port with `401` (reachable and locked), and that ports 8790, 8080, 80, 22 and the relay ports of workers that do not exist are closed. It ends with `RELAY CHECK: PASS` or `FAIL`. Then, from the production app's terminal, that the relay listens on nothing else:
+   It prints one line per probe and ends with `EGRESS GATE: PASS` (exit 0) or `EGRESS GATE: FAIL (...)` (exit 1). Each line exactly once, and all must be `blocked` (or `clean env`): the DNS line (`blocked dns ...`), the two internet lines (`https://example.com`, `http://1.1.1.1`), `host.docker.internal`, **the host itself** (`host:IP:PORT`, eight ports 22, 80, 443, 3000, 8000, 6001, 6002, 8080 on the gateway of every network the worker is on, derived from its own interfaces; a refused connection counts as `REACHED`, because the host answered), the environment (`clean env`: no secret name beyond the worker's own `ASTRA_WORKER_SECRET`, so no `ASTRA_WORKER_SECRET_<N>` and no `ASTRA_WORKER_SECRETS`; names only are printed), IPv6 (`clean ipv6`: no address but link-local, because `render-internal` has no IPv6 and the host's is not probed), and, for option (c), the app line `blocked ...` too: only the relay is on both networks, so a worker must not reach the app at all (option (a) expects `REACHED` there; nothing else may be reached in any option). Any `REACHED`, `RESOLVED` or `LEAK` where it should say `blocked`/`clean`, an extra, repeated, missing or unrecognised line, or no output is a **FAIL**: stop, no renders, tell the advisor (a name that resolves is a way out, even with no route). **Run it again after every change to the stack, a firewall change, a Docker Engine upgrade or a reboot.** The script holds no secret and reads none; The worker runs this same check itself, without the app line, before it listens (see `server.mjs` above): a worker that cannot pass it does not start, and its log names the failing lines. `tests/ops/render-egress.test.mjs` pins its logic against canned outputs (`--from-stdin` only judges pasted lines and prints `JUDGED (not probed)`, never a pass of the gate). Not used: `com.docker.network.bridge.inhibit_ipv4` on `render-internal` (Docker Engine 28 and later only, and an older Engine would refuse the stack); the host probe is the check instead, and if the server's Engine is 28 or later the advisor may add it as a second layer.
+1b. **The relay (owner, Coolify terminal of `render-relay`):** `node /app/check-relay.mjs`. It checks that the relay's environment holds no secret-looking variable, that the worker it forwards to answers port 8081 with `401` (reachable and locked), and that ports 8790, 8080, 8082, 8083, 80 and 22 are closed. It ends with `RELAY CHECK: PASS` or `FAIL`. Then, from the production app's terminal, that the relay listens on nothing else:
    ```sh
    node -e "for (const p of [8790, 8080, 80, 22]) require('net').connect({host: process.argv[1], port: p, timeout: 3000}).on('connect', function () { console.log(p, 'OPEN'); this.destroy() }).on('error', e => console.log(p, 'closed', e.code)).on('timeout', function () { console.log(p, 'closed (no answer)'); this.destroy() })" <relay name>
    ```
    Every line must say `closed`.
-2. **The app reaches every worker through the relay and the secret is required (owner, production app terminal):**
+2. **The app reaches the worker through the relay and the secret is required (owner, production app terminal):**
    ```sh
    node -e "for (const u of process.env.ASTRA_WORKER_URLS.split(',')) fetch(u.trim() + '/v1/sessions').then(r => console.log(u, r.status), e => console.log(u, 'unreachable', e.cause?.code ?? e.name))"
    ```
@@ -182,11 +181,11 @@ EOF
 node /tmp/render-smoke.mjs
    ```
    Expect one `OK` line per worker (with seconds and output sizes) and a `usage:` line each with `"status":"stopped"`. Read a `FAIL` with Claude; the line never contains the secret.
-4. **Limits (advisor, on the server), for each worker container (and the relay, with its own limits below):**
+4. **Limits (advisor, on the server), for the worker container (and the relay, with its own limits below):**
    ```sh
    docker inspect <worker> --format 'cpus={{.HostConfig.NanoCpus}} cpuset={{.HostConfig.CpusetCpus}} shares={{.HostConfig.CpuShares}} mem={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}} pids={{.HostConfig.PidsLimit}} ro={{.HostConfig.ReadonlyRootfs}} capdrop={{.HostConfig.CapDrop}} secopt={{.HostConfig.SecurityOpt}} ports={{json .HostConfig.PortBindings}} user={{.Config.User}} netmode={{.HostConfig.NetworkMode}} nets={{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
    ```
-   Expect `cpus=2000000000`, cpuset `6,7` for `render-1` (the cores you set for the others), `shares=256`, `mem=4294967296`, `swap=4294967296`, `pids=256`, `ro=true`, `capdrop=[ALL]`, `secopt=[no-new-privileges:true]`, `ports={}` (or `null`), `user=10001:10001`; netmode `render-internal` and no networks listed beyond it. For `render-relay`: `cpus=250000000`, `mem=134217728`, `pids=64`, `ro=true`, `capdrop=[ALL]`, `ports={}`, networks `render-internal` plus the app's network and the stack's own. In the worker's own terminal, `cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/pids.max` prints `200000 100000`, `4294967296`, `256`; `id -u` prints `10001`; `touch /x` fails (read-only). During the smoke render, `docker stats --no-stream` shows each worker at most 200% CPU and 4 GiB.
+   Expect `cpus=2000000000`, cpuset `6,7` for `render-1` (or the cores you set), `shares=256`, `mem=4294967296`, `swap=4294967296`, `pids=256`, `ro=true`, `capdrop=[ALL]`, `secopt=[no-new-privileges:true]`, `ports={}` (or `null`), `user=10001:10001`; netmode `render-internal` and no networks listed beyond it. For `render-relay`: `cpus=250000000`, `mem=134217728`, `pids=64`, `ro=true`, `capdrop=[ALL]`, `ports={}`, networks `render-internal` plus the app's network and the stack's own. In the worker's own terminal, `cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/pids.max` prints `200000 100000`, `4294967296`, `256`; `id -u` prints `10001`; `touch /x` fails (read-only). During the smoke render, `docker stats --no-stream` shows the worker at most 200% CPU and 4 GiB.
 
 ## Protocol (as implemented in `server.mjs`)
 

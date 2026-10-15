@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { judge, probe, gatewaysOf, HOST_PORTS, OPTIONS } from "../../ops/render-worker/check-egress.mjs";
+import { judge, probe, gatewaysOf, ipv6Of, foreignSecretNames, startupGate, HOST_PORTS, OPTIONS } from "../../ops/render-worker/check-egress.mjs";
 import { judge as judgeRelay, secretNames } from "../../ops/render-worker/check-relay.mjs";
 
 // The egress gate (ops/render-worker/README.md, Verify step 1) as a hard test: the script the owner runs in a worker's terminal
@@ -15,8 +15,9 @@ const README = readFileSync(fileURLToPath(new URL("../../ops/render-worker/READM
 const APP = "app-container:3000";
 const GATEWAY = "172.20.0.1";
 const hostLines = (ip = GATEWAY, state = "blocked") => HOST_PORTS.map((port) => `${state} host:${ip}:${port} ETIMEDOUT`);
-const GOOD = ["blocked dns ENOTFOUND", "blocked https://example.com ENOTFOUND", "blocked http://1.1.1.1 ENETUNREACH", `blocked http://${APP} ENOTFOUND`, "blocked host.docker.internal ENOTFOUND", ...hostLines(), "clean env"];
-const APP_AT = 3, HOSTNAME_AT = 4, HOST_AT = 5, ENV_AT = GOOD.length - 1;
+const GOOD = ["blocked dns ENOTFOUND", "blocked https://example.com ENOTFOUND", "blocked http://1.1.1.1 ENETUNREACH", `blocked http://${APP} ENOTFOUND`, "blocked host.docker.internal ENOTFOUND", ...hostLines(), "clean env", "clean ipv6"];
+const TAIL = ["clean env", "clean ipv6"];
+const APP_AT = 3, HOSTNAME_AT = 4, HOST_AT = 5, ENV_AT = GOOD.length - 2, IPV6_AT = GOOD.length - 1;
 const withLine = (lines, index, line) => lines.map((l, i) => (i === index ? line : l));
 const run = (args, stdin) => spawnSync(process.execPath, [SCRIPT, ...args], { input: stdin, encoding: "utf8", env: { PATH: process.env.PATH } });
 const code = (c) => Object.assign(new TypeError("fetch failed"), { cause: { code: c } });
@@ -68,20 +69,20 @@ test("the HOST is probed: a reached gateway port is a failure, and so is a REFUS
 });
 
 test("the host probe cannot be skipped: no gateway line, a missing port, a repeated port or an unexpected port is a failure; two networks means two gateways, all blocked", () => {
-  const withoutHost = GOOD.filter((_, i) => i < HOST_AT || i === ENV_AT);
+  const withoutHost = GOOD.filter((_, i) => i < HOST_AT || i >= ENV_AT);
   assert.match(failures(withoutHost), /no host \(gateway\) probe/);
   assert.match(failures(GOOD.filter((_, i) => i !== HOST_AT + 2)), /port 80 was not probed|port 443 was not probed|was not probed/);
-  assert.match(failures([...GOOD.slice(0, ENV_AT), GOOD[HOST_AT], "clean env"]), /is repeated/);
-  assert.match(failures([...GOOD.slice(0, ENV_AT), `blocked host:${GATEWAY}:9999 ETIMEDOUT`, "clean env"]), /unexpected port 9999/);
-  assert.equal(judge([...GOOD.slice(0, ENV_AT), ...hostLines("172.21.0.1"), "clean env"], "c", APP).ok, true);
-  assert.match(failures([...GOOD.slice(0, ENV_AT), ...hostLines("172.21.0.1", "REACHED"), "clean env"]), /host: REACHED host:172\.21\.0\.1/);
+  assert.match(failures([...GOOD.slice(0, ENV_AT), GOOD[HOST_AT], ...TAIL]), /is repeated/);
+  assert.match(failures([...GOOD.slice(0, ENV_AT), `blocked host:${GATEWAY}:9999 ETIMEDOUT`, ...TAIL]), /unexpected port 9999/);
+  assert.equal(judge([...GOOD.slice(0, ENV_AT), ...hostLines("172.21.0.1"), ...TAIL], "c", APP).ok, true);
+  assert.match(failures([...GOOD.slice(0, ENV_AT), ...hostLines("172.21.0.1", "REACHED"), ...TAIL]), /host: REACHED host:172\.21\.0\.1/);
 });
 
 test("the line set is EXACT: any extra REACHED or RESOLVED line (evil.com, an extra URL) fails options b and c, and a allows REACHED only on the app line", () => {
   for (const extra of ["REACHED evil.com 200", "RESOLVED evil.com 6.6.6.6", "REACHED https://evil.com 200", "blocked https://evil.com ENOTFOUND", "REACHED http://evil.com:8080 200", "RESOLVED example.com 1.2.3.4", "LEAK env X"]) {
     for (const option of ["a", "b", "c"]) {
       const base = option === "a" ? withLine(GOOD, APP_AT, `REACHED http://${APP} 200`) : GOOD;
-      const verdict = judge([...base.slice(0, ENV_AT), extra, "clean env"], option, APP);
+      const verdict = judge([...base.slice(0, ENV_AT), extra, ...TAIL], option, APP);
       assert.equal(verdict.ok, false, `${option} ${extra}`);
     }
   }
@@ -89,12 +90,23 @@ test("the line set is EXACT: any extra REACHED or RESOLVED line (evil.com, an ex
   assert.equal(judge([...withLine(GOOD, APP_AT, `REACHED http://${APP} 200`), `REACHED http://other:3000 200`], "a", APP).ok, false, "a second app line is not allowed in a");
 });
 
-test("a worker whose own environment holds an ASTRA_WORKER_SECRET_<N> name fails; the line prints the NAME only, and the probe reads names, never values", async () => {
-  assert.match(failures(withLine(GOOD, ENV_AT, "LEAK env ASTRA_WORKER_SECRET_2")), /environment: LEAK env ASTRA_WORKER_SECRET_2/);
-  assert.equal(judge(GOOD.slice(0, ENV_AT), "c", APP).ok, false, "a missing env line");
-  const lines = await probe({ app: APP, lookup: async () => { throw Object.assign(new Error("x"), { code: "ENOTFOUND" }); }, fetcher: async () => { throw code("ENETUNREACH"); }, interfaces: {}, tcp: async () => "x", env: { PATH: "/x", ASTRA_WORKER_SECRET_2: "super-secret-value", ASTRA_WORKER_SECRET: "another-value" } });
-  assert.deepEqual(lines.slice(-2), ["LEAK env ASTRA_WORKER_SECRET_2", "LEAK env ASTRA_WORKER_SECRET"]);
-  assert.doesNotMatch(lines.join("\n"), /super-secret-value|another-value/);
+test("the environment: the worker's OWN ASTRA_WORKER_SECRET alone is clean; ASTRA_WORKER_SECRET_<N> or the app's ASTRA_WORKER_SECRETS is a LEAK; names only, never values", async () => {
+  assert.match(failures(withLine(GOOD, ENV_AT, "LEAK env ASTRA_WORKER_SECRET_2")), /environment: LEAK env ASTRA_WORKER_SECRET_2 \(a worker holds only its own ASTRA_WORKER_SECRET/);
+  assert.equal(judge(GOOD.filter((_, i) => i !== ENV_AT), "c", APP).ok, false, "a missing env line");
+  assert.deepEqual(foreignSecretNames({ PATH: "/x", ASTRA_WORKER_SECRET: "own" }), []);
+  assert.deepEqual(foreignSecretNames({ ASTRA_WORKER_SECRET: "own", ASTRA_WORKER_SECRET_2: "v", ASTRA_WORKER_SECRETS: "v", astra_worker_secret_3: "v" }), ["ASTRA_WORKER_SECRET_2", "ASTRA_WORKER_SECRETS", "astra_worker_secret_3"]);
+  const blockedNet = { lookup: async () => { throw Object.assign(new Error("x"), { code: "ENOTFOUND" }); }, fetcher: async () => { throw code("ENETUNREACH"); }, interfaces: {}, tcp: async () => "x" };
+  const own = await probe({ app: APP, ...blockedNet, env: { PATH: "/x", ASTRA_WORKER_SECRET: "own-secret-value" } });
+  assert.equal(own.at(-2), "clean env");
+  const lines = await probe({ app: APP, ...blockedNet, env: { PATH: "/x", ASTRA_WORKER_SECRET: "own-secret-value", ASTRA_WORKER_SECRET_2: "super-secret-value", ASTRA_WORKER_SECRETS: "another-value" } });
+  assert.deepEqual(lines.slice(-3), ["LEAK env ASTRA_WORKER_SECRET_2", "LEAK env ASTRA_WORKER_SECRETS", "clean ipv6"]);
+  assert.doesNotMatch(lines.join("\n"), /super-secret-value|another-value|own-secret-value/);
+});
+
+test("IPv6: render-internal has no IPv6, so the host's is not probed; any address but link-local fails", () => {
+  assert.deepEqual(ipv6Of({ eth0: [{ family: "IPv6", address: "fe80::1", netmask: "ffff:ffff:ffff:ffff::", internal: false }, { family: "IPv6", address: "2001:db8::5", netmask: "ffff:ffff:ffff:ffff::", internal: false }, { family: "IPv4", address: "172.20.0.5", netmask: "255.255.0.0", internal: false }], lo: [{ family: "IPv6", address: "::1", internal: true }] }), ["2001:db8::5"]);
+  assert.match(failures(withLine(GOOD, IPV6_AT, "LEAK ipv6 2001:db8::5")), /IPv6: LEAK ipv6 2001:db8::5/);
+  assert.equal(judge(GOOD.filter((_, i) => i !== IPV6_AT), "c", APP).ok, false, "a missing IPv6 line");
 });
 
 test("a missing, repeated, unknown or unreadable line is a failure, never a pass; so is an unknown option or no output", () => {
@@ -131,7 +143,7 @@ test("probe() prints the lines the README names, from injected lookups, fetches 
   const interfaces = { eth0: [{ family: "IPv4", address: "172.20.0.5", netmask: "255.255.0.0", internal: false }] };
   const tcpBlocked = async (ip, port) => `blocked host:${ip}:${port} ETIMEDOUT`;
   const blocked = await probe({ app: APP, interfaces, tcp: tcpBlocked, env: { PATH: "/x" }, lookup: async () => { throw Object.assign(new Error("x"), { code: "ENOTFOUND" }); }, fetcher: async () => { throw code("ENETUNREACH"); } });
-  assert.deepEqual(blocked, ["blocked dns ENOTFOUND", "blocked https://example.com ENETUNREACH", "blocked http://1.1.1.1 ENETUNREACH", `blocked http://${APP} ENETUNREACH`, "blocked host.docker.internal ENOTFOUND", ...hostLines().map((l) => l.replace("ETIMEDOUT", "ETIMEDOUT")), "clean env"]);
+  assert.deepEqual(blocked, ["blocked dns ENOTFOUND", "blocked https://example.com ENETUNREACH", "blocked http://1.1.1.1 ENETUNREACH", `blocked http://${APP} ENETUNREACH`, "blocked host.docker.internal ENOTFOUND", ...hostLines(), "clean env", "clean ipv6"]);
   assert.equal(judge(blocked, "c", APP).ok, true);
   const leaky = await probe({ app: APP, interfaces, env: {}, tcp: async (ip, port) => `REACHED host:${ip}:${port} ECONNREFUSED`, lookup: async () => ({ address: "93.184.216.34" }), fetcher: async (url) => (url.includes("example.com") ? { status: 200 } : (() => { throw code("ECONNREFUSED"); })()) });
   assert.deepEqual(leaky.slice(0, 2), ["RESOLVED example.com 93.184.216.34", "REACHED https://example.com 200"]);
@@ -153,7 +165,51 @@ test("the README makes the gate hard: no real render until it passes, the comman
   assert.match(README, /No real render until it passes/i);
   assert.match(README, /EGRESS GATE: PASS/);
   assert.match(README, /after every change to the stack, a firewall change, a Docker Engine upgrade or a reboot/i);
-  assert.match(README, /three workers are not supported on this 8-core server/i);
+  assert.match(README, /One worker on this 8-core server; no third worker/);
+  assert.match(README, /merging this PR is not server setup/i);
+  assert.match(README, /fail-closed start/i);
+  assert.match(README, /no secret name beyond the worker's own `ASTRA_WORKER_SECRET`/);
   assert.match(README, /host:IP:PORT/);
   assert.match(README, /node \/app\/check-relay\.mjs/);
+});
+
+test("startupGate: the worker's own check is the same probe and judge, option c, no app line; a pass with only its own secret in the environment, a fail on anything else, never a throw", async () => {
+  const interfaces = { eth0: [{ family: "IPv4", address: "172.20.0.5", netmask: "255.255.0.0", internal: false }] };
+  const net = (over = {}) => ({ lookup: async () => { throw Object.assign(new Error("x"), { code: "ENOTFOUND" }); }, fetcher: async () => { throw code("ENETUNREACH"); }, interfaces, tcp: async (ip, port) => `blocked host:${ip}:${port} ETIMEDOUT`, env: { PATH: "/x", ASTRA_WORKER_SECRET: "own-secret-value" }, ...over });
+  const gate = (over) => startupGate({ run: () => probe({ app: null, ...net(over) }) });
+  const lines = await probe({ app: null, ...net() });
+  assert.ok(lines.every((line) => !/^blocked http:\/\/[^1]/.test(line)), "no app line is probed");
+  assert.equal(lines.length, 1 + 2 + 1 + HOST_PORTS.length + 2);
+  assert.deepEqual(await gate(), { ok: true, failures: [] }, "a correct deploy: its own secret is present, and it passes");
+  /* Each way out fails it. */
+  const bad = [
+    ["resolved", { lookup: async () => ({ address: "93.184.216.34" }) }, /DNS: RESOLVED/],
+    ["internet", { fetcher: async () => ({ status: 200 }) }, /internet: REACHED/],
+    ["host", { tcp: async (ip, port) => `REACHED host:${ip}:${port} ECONNREFUSED` }, /host: REACHED/],
+    ["secret _2", { env: { ASTRA_WORKER_SECRET: "x", ASTRA_WORKER_SECRET_2: "v" } }, /LEAK env ASTRA_WORKER_SECRET_2/],
+    ["secrets", { env: { ASTRA_WORKER_SECRETS: "v" } }, /LEAK env ASTRA_WORKER_SECRETS/],
+    ["ipv6", { interfaces: { ...interfaces, eth1: [{ family: "IPv6", address: "2001:db8::5", internal: false }] } }, /LEAK ipv6/],
+    ["no gateway", { interfaces: {} }, /no host \(gateway\) probe/],
+  ];
+  for (const [label, over, pattern] of bad) {
+    const verdict = await gate(over);
+    assert.equal(verdict.ok, false, label); assert.match(verdict.failures.join(";"), pattern, label);
+    assert.doesNotMatch(JSON.stringify(verdict), /own-secret-value|"v"/, `${label}: names, never values`);
+  }
+  /* Missing lines, an app line where none is asked for, a probe that throws or never finishes: all a failure, none a throw. */
+  assert.equal((await startupGate({ run: async () => GOOD })).ok, false, "an app line where none was asked for");
+  assert.equal((await startupGate({ run: async () => GOOD.filter((_, i) => i !== APP_AT) })).ok, true, "the same lines without the app line pass");
+  assert.equal((await startupGate({ run: async () => [] })).ok, false);
+  assert.match((await startupGate({ run: async () => { throw new Error("boom"); } })).failures[0], /probe failed: boom/);
+  const started = Date.now();
+  const slow = await startupGate({ run: () => new Promise(() => {}), deadlineMs: 50 });
+  assert.equal(slow.ok, false); assert.match(slow.failures[0], /did not finish in 50 ms/); assert.ok(Date.now() - started < 1000);
+});
+
+test("probe() is bounded: a lookup, a fetch and a connect that never answer are all `blocked` within the probe's timeout, run at the same time", async () => {
+  const never = () => new Promise(() => {});
+  const started = Date.now();
+  const lines = await probe({ app: null, timeoutMs: 100, lookup: never, fetcher: never, interfaces: {}, tcp: async () => "x", env: {} });
+  assert.deepEqual(lines.slice(0, 4), ["blocked dns ETIMEOUT", "blocked https://example.com ETIMEOUT", "blocked http://1.1.1.1 ETIMEOUT", "blocked host.docker.internal ETIMEOUT"]);
+  assert.ok(Date.now() - started < 1500, "the total is the slowest probe, not the sum");
 });

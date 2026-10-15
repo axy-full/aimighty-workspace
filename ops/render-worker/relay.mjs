@@ -1,13 +1,13 @@
-// Astra render relay: a TCP forwarder with no secret and no brains.
+// Astra render relay: a TCP forwarder with no secret and no brains. One worker (render-1) on this server.
 //
 // The render workers sit on an internal Docker network with no route out (compose.yaml). The production app lives
-// on the platform's network, which does have one. The relay is the only service on both: it listens on one port per
-// worker and passes each connection's bytes, unread, to that worker's port 8790 on the internal network, and back.
+// on the platform's network, which does have one. The relay is the only service on both: it listens on one port (8081)
+// and passes each connection's bytes, unread, to that worker's port 8790 on the internal network, and back.
 //
 // What it does NOT do, by construction (tests/ops/render-relay.test.mjs pins each line):
-//  - it holds no secret and reads no environment variable other than RELAY_WORKERS and RELAY_TARGET_1..3 (host names);
+//  - it holds no secret and reads no environment variable other than RELAY_TARGET_1 (a host name);
 //  - it never looks inside a connection, so the workers' own `Authorization: Bearer` check still guards every request;
-//  - it listens on exactly 8081..8080+N and connects to exactly the N fixed worker names, always on port 8790; no
+//  - it listens on exactly 8081 and connects to exactly the one fixed worker name, always on port 8790; no
 //    other port, no other destination; a name that is asked for is never taken from a connection, only from the fixed list;
 //  - it resolves nothing but those fixed names (the `lookup` function is called with no other name), and refuses to connect
 //    to any address that is not private (RFC 1918, loopback): a missing worker looked up upstream is never connected to;
@@ -18,13 +18,13 @@ import net from "node:net";
 import { pathToFileURL } from "node:url";
 
 export const WORKER_PORT = 8790;
-export const BASE_PORT = 8080; // relay port for worker N is BASE_PORT + N: 8081, 8082, 8083
-export const MAX_WORKERS = 3;
+export const BASE_PORT = 8080; // the relay port for worker 1 is BASE_PORT + 1: 8081
+export const MAX_WORKERS = 1; // one worker on this 8-core server (README.md, "How many workers")
 export const DEFAULT_WORKERS = 1;
-export const DEFAULT_TARGETS = ["render-1", "render-2", "render-3"];
+export const DEFAULT_TARGETS = ["render-1"];
 export const LIMITS = { connectMs: 5_000, idleMs: 200_000, perPort: 16 };
-/* A worker is called render-1, render-2 or render-3, optionally with the platform's own suffix (render-1-abc123). Nothing else: not a number (16843009 and 0x1010101 are 1.1.1.1), not a dotted name. */
-const NAME = /^render-[1-3](?:-[a-z0-9]+)?$/;
+/* The worker is called render-1, optionally with the platform's own suffix (render-1-abc123). Nothing else: not a number (16843009 and 0x1010101 are 1.1.1.1), not a dotted name. */
+const NAME = /^render-1(?:-[a-z0-9]+)?$/;
 
 /** Only private (RFC 1918, loopback, IPv6 unique-local) addresses are ever connected to: a name that resolves anywhere else (a missing worker looked up upstream) is refused. */
 export function privateAddress(address) {
@@ -47,12 +47,12 @@ export const guardedLookup = (inner) => (hostname, options, callback) => {
   });
 };
 
-/** The routes for `workers` workers (1 to 3) and the fixed names to forward to. Throws on anything else. */
+/** The route for the one worker and the fixed name to forward to. Throws on anything else. */
 export function routesFor({ workers = DEFAULT_WORKERS, targets = DEFAULT_TARGETS } = {}) {
-  if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS) throw new Error(`RELAY_WORKERS must be a whole number from 1 to ${MAX_WORKERS}.`);
+  if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS) throw new Error("The relay serves one worker.");
   if (!Array.isArray(targets) || targets.length < workers) throw new Error("A target name is needed for every worker.");
   return targets.slice(0, workers).map((host, index) => {
-    if (typeof host !== "string" || !NAME.test(host)) throw new Error(`Target ${index + 1} is not a worker container name (render-1 to render-3, with the platform's suffix if it adds one).`);
+    if (typeof host !== "string" || !NAME.test(host)) throw new Error(`Target ${index + 1} is not a worker container name (render-1, with the platform's suffix if it adds one).`);
     return { listenPort: BASE_PORT + index + 1, host, port: WORKER_PORT };
   });
 }
@@ -62,7 +62,7 @@ export function routesFor({ workers = DEFAULT_WORKERS, targets = DEFAULT_TARGETS
  * `lookup` is Node's `net` lookup hook: only the fixed names go through it. Returns the bound ports and a `close`.
  */
 export async function createRelay({ routes, listenHost = "0.0.0.0", listenPorts, lookup, log = () => {}, limits = LIMITS } = {}) {
-  if (!Array.isArray(routes) || !routes.length || routes.length > MAX_WORKERS) throw new Error("The relay needs 1 to 3 routes.");
+  if (!Array.isArray(routes) || routes.length !== MAX_WORKERS) throw new Error("The relay needs exactly 1 route.");
   const servers = [];
   const sockets = new Set();
   for (const [index, route] of routes.entries()) {
@@ -103,11 +103,9 @@ export async function createRelay({ routes, listenHost = "0.0.0.0", listenPorts,
   };
 }
 
-/** What the container reads: the worker count and, optionally, the names of the workers (never a secret). */
+/** What the container reads: optionally the worker's container name (never a secret). */
 export function configFromEnv(env = process.env) {
-  const workers = env.RELAY_WORKERS === undefined || env.RELAY_WORKERS === "" ? DEFAULT_WORKERS : Number(env.RELAY_WORKERS);
-  const targets = [1, 2, 3].map((n) => env[`RELAY_TARGET_${n}`] || DEFAULT_TARGETS[n - 1]);
-  return routesFor({ workers, targets });
+  return routesFor({ workers: 1, targets: [env.RELAY_TARGET_1 || DEFAULT_TARGETS[0]] });
 }
 
 async function main() {

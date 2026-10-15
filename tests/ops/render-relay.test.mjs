@@ -51,35 +51,34 @@ function recordingLookup(map = ADDRESS) {
   return { lookup, asked };
 }
 
-test("one worker is the default: relay port 8081 to render-1:8790; two or three workers add 8082 and 8083; nothing else", () => {
+test("one worker, and only one: relay port 8081 to render-1:8790; a second or third is refused, not configurable", () => {
   assert.deepEqual(routesFor(), [{ listenPort: 8081, host: "render-1", port: 8790 }]);
   assert.deepEqual(configFromEnv({}), [{ listenPort: 8081, host: "render-1", port: 8790 }]);
-  assert.deepEqual(configFromEnv({ RELAY_WORKERS: "3" }).map((r) => [r.listenPort, r.host, r.port]), [[8081, "render-1", 8790], [8082, "render-2", 8790], [8083, "render-3", 8790]]);
   assert.equal(BASE_PORT, 8080);
-  for (const bad of [0, 4, -1, 1.5, "2x", NaN]) assert.throws(() => routesFor({ workers: bad }), /1 to 3/, String(bad));
-  for (const host of ["../x", "a.b", "1.1.1.1", "a_b", "", "UPPER", "x".repeat(64), "-a", "a b", "16843009", "0x1010101", "render-4", "render-0", "render-1.evil", "render-1-", "Render-1", "render-1_x"]) assert.throws(() => routesFor({ workers: 1, targets: [host, "render-2", "render-3"] }), /worker container name/, JSON.stringify(host));
-  /* Environment other than RELAY_* is not read: a secret in it changes nothing. */
-  assert.deepEqual(configFromEnv({ ASTRA_WORKER_SECRET_1: "s".repeat(40), RELAY_WORKERS: "2", ASTRA_WORKER_COUNT: "3" }).map((r) => r.listenPort), [8081, 8082]);
+  for (const bad of [0, 2, 3, 4, -1, 1.5, "2x", NaN]) assert.throws(() => routesFor({ workers: bad }), /one worker/, String(bad));
+  /* RELAY_WORKERS is no longer read: asking for three changes nothing. */
+  assert.deepEqual(configFromEnv({ RELAY_WORKERS: "3", ASTRA_WORKER_COUNT: "3" }).map((r) => r.listenPort), [8081]);
+  for (const host of ["../x", "a.b", "1.1.1.1", "a_b", "", "UPPER", "x".repeat(64), "-a", "a b", "16843009", "0x1010101", "render-2", "render-3", "render-4", "render-0", "render-1.evil", "render-1-", "Render-1", "render-1_x"]) assert.throws(() => routesFor({ workers: 1, targets: [host] }), /worker container name/, JSON.stringify(host));
+  /* Environment other than RELAY_TARGET_1 is not read: a secret in it changes nothing. */
+  assert.deepEqual(configFromEnv({ ASTRA_WORKER_SECRET_1: "s".repeat(40), RELAY_TARGET_2: "render-2" }), [{ listenPort: 8081, host: "render-1", port: 8790 }]);
 });
 
-test("each relay port reaches only its own worker, and the bytes pass untouched both ways (the workers' bearer check still decides)", async () => {
-  const workers = [await fakeWorker(1, "127.0.0.2"), await fakeWorker(2, "127.0.0.3"), await fakeWorker(3, "127.0.0.4")];
+test("the relay port reaches the worker, and the bytes pass untouched both ways (the worker's bearer check still decides)", async () => {
+  const worker = await fakeWorker(1, "127.0.0.2");
   const { lookup, asked } = recordingLookup();
-  const relay = await createRelay({ routes: routesFor({ workers: 3 }), listenHost: "127.0.0.1", listenPorts: [0, 0, 0], lookup });
+  const relay = await createRelay({ routes: routesFor({ workers: 1 }), listenHost: "127.0.0.1", listenPorts: [0], lookup });
   try {
     const request = "GET /v1/sessions HTTP/1.1\r\nAuthorization: Bearer not-a-real-secret\r\n\r\n";
-    for (const [index, port] of relay.ports.entries()) {
-      const { got } = await talk(port, request);
-      assert.ok(got.startsWith(`worker-${index + 1}:`), `port ${index + 1} answered ${JSON.stringify(got.slice(0, 20))}`);
-      assert.ok(got.endsWith(request), "the request came back byte for byte");
-    }
-    assert.deepEqual(workers.map((w) => w.seen.connections), [1, 1, 1], "each worker was reached once, by its own port");
-    assert.deepEqual(workers.map((w) => w.seen.received.join("")), [request, request, request]);
-    assert.deepEqual([...new Set(asked)].sort(), ["render-1", "render-2", "render-3"], "only the fixed worker names were resolved");
-  } finally { await relay.close(); for (const worker of workers) await worker.close(); }
+    const { got } = await talk(relay.ports[0], request);
+    assert.ok(got.startsWith("worker-1:"), JSON.stringify(got.slice(0, 20)));
+    assert.ok(got.endsWith(request), "the request came back byte for byte");
+    assert.equal(worker.seen.connections, 1);
+    assert.deepEqual(worker.seen.received, [request]);
+    assert.deepEqual([...new Set(asked)], ["render-1"], "only the fixed worker name was resolved");
+  } finally { await relay.close(); await worker.close(); }
 });
 
-test("with one worker the relay listens on one port and forwards to nothing else; a request that names another place goes to the worker as plain bytes", async () => {
+test("the relay listens on one port and forwards to nothing else; a request that names another place goes to the worker as plain bytes", async () => {
   const worker = await fakeWorker(1, "127.0.0.2");
   const evil = net.createServer((socket) => { evilHits++; socket.destroy(); });
   let evilHits = 0;
@@ -100,17 +99,17 @@ test("with one worker the relay listens on one port and forwards to nothing else
   } finally { await relay.close(); await worker.close(); await new Promise((resolve) => evil.close(resolve)); }
 });
 
-test("a route may only go to a plain worker name on port 8790; the relay needs one to three", async () => {
+test("a route may only go to a plain worker name on port 8790; the relay needs exactly one", async () => {
   await assert.rejects(createRelay({ routes: [{ listenPort: 8081, host: "render-1", port: 22 }], listenHost: "127.0.0.1", listenPorts: [0] }), /fixed worker name on port 8790/);
   await assert.rejects(createRelay({ routes: [{ listenPort: 8081, host: "example.com", port: 8790 }], listenHost: "127.0.0.1", listenPorts: [0] }), /fixed worker name on port 8790/);
-  await assert.rejects(createRelay({ routes: [], listenHost: "127.0.0.1" }), /1 to 3 routes/);
-  await assert.rejects(createRelay({ routes: [1, 2, 3, 4].map((n) => ({ listenPort: 8080 + n, host: `render-${n}`, port: 8790 })), listenHost: "127.0.0.1" }), /1 to 3 routes/);
+  await assert.rejects(createRelay({ routes: [], listenHost: "127.0.0.1" }), /exactly 1 route/);
+  await assert.rejects(createRelay({ routes: [1, 2].map((n) => ({ listenPort: 8080 + n, host: `render-${n}`, port: 8790 })), listenHost: "127.0.0.1" }), /exactly 1 route/);
 });
 
 test("a worker that is down is a clean close for that caller; the relay keeps serving and picks the worker up when it returns", async () => {
   const { lookup } = recordingLookup();
   const lines = [];
-  const relay = await createRelay({ routes: routesFor({ workers: 2 }), listenHost: "127.0.0.1", listenPorts: [0, 0], lookup, log: (line) => lines.push(line) });
+  const relay = await createRelay({ routes: routesFor({ workers: 1 }), listenHost: "127.0.0.1", listenPorts: [0], lookup, log: (line) => lines.push(line) });
   try {
     const down = await talk(relay.ports[0], "hello");
     assert.equal(down.got, "", "nothing came back");
@@ -119,9 +118,6 @@ test("a worker that is down is a clean close for that caller; the relay keeps se
     assert.ok(lines.every((line) => !/hello|127\.0\.0|render-/.test(line)), "the log names a worker by number only");
     const worker = await fakeWorker(1, "127.0.0.2");
     try { assert.ok((await talk(relay.ports[0], "again")).got.startsWith("worker-1:")); } finally { await worker.close(); }
-    /* The other port never depended on this worker. */
-    const second = await fakeWorker(2, "127.0.0.3");
-    try { assert.ok((await talk(relay.ports[1], "two")).got.startsWith("worker-2:")); } finally { await second.close(); }
   } finally { await relay.close(); }
 });
 
@@ -137,15 +133,17 @@ test("a port cannot be flooded: past the limit new connections are closed at onc
   } finally { for (const s of held) s.destroy(); await relay.close(); await worker.close(); }
 });
 
-test("the relay holds no secret and reads none: its code names no secret, token or bearer, reads no environment but its own two settings, and never opens a socket from data it was sent", () => {
+test("the relay holds no secret and reads none: its code names no secret, token or bearer, reads no environment but its one setting, and never opens a socket from data it was sent", () => {
   const code = stripComments(read("relay.mjs"));
   assert.doesNotMatch(code, /secret|token|bearer|authorization|password/i);
   assert.deepEqual([...code.matchAll(/process\.env\b[^\n]*/g)].map((m) => m[0].trim().slice(0, 40)), ["process.env) {"], "process.env appears once, as configFromEnv's default argument");
-  assert.deepEqual([...new Set([...code.matchAll(/env\.([A-Za-z_]+)|env\[`([A-Za-z_{}$]+)`\]/g)].map((m) => m[1] ?? m[2]))].sort(), ["RELAY_TARGET_${n}", "RELAY_WORKERS"].sort());
+  assert.deepEqual([...new Set([...code.matchAll(/env\.([A-Za-z_0-9]+)|env\[`([A-Za-z_{}$]+)`\]/g)].map((m) => m[1] ?? m[2]))].sort(), ["RELAY_TARGET_1"]);
   assert.doesNotMatch(code, /\.on\(\s*["']data["']/, "it never reads a connection's bytes");
   assert.doesNotMatch(code, /dns\.|resolve4|resolve6|\.lookup\(/, "it does no lookups of its own");
   assert.equal([...code.matchAll(/net\.connect\(/g)].length, 1, "one place connects, to the fixed route");
   assert.match(code, /net\.connect\(\{ host: route\.host, port: route\.port/);
+  assert.deepEqual([...code.matchAll(/systemLookup/g)].length, 2, "the system lookup is named once to import and once, inside guardedLookup(lookup ?? systemLookup)");
+  assert.match(code, /guardedLookup\(lookup \?\? systemLookup\)/);
 });
 
 /* ── compose.yaml and the Dockerfile, read as structure ─────────────────────────────────────────────────────────────────────────── */
@@ -198,13 +196,13 @@ function parseYaml(text) {
 }
 
 const compose = parseYaml(read("compose.yaml"));
-const workers = ["render-1", "render-2", "render-3"].map((name) => [name, compose.services[name]]);
+const workers = ["render-1"].map((name) => [name, compose.services[name]]);
 const relay = compose.services["render-relay"];
 const defaultOf = (expression) => /\$\{[A-Z0-9_]+:-([^}]*)\}/.exec(expression)?.[1];
 
-test("compose.yaml: exactly the three workers and the relay, one network declared, internal, with no gateway", () => {
+test("compose.yaml: exactly the one worker and the relay (no render-2, no render-3), one network declared, internal, with no gateway", () => {
   assert.deepEqual(Object.keys(compose).sort(), ["networks", "services"], "no anchors, no volumes, nothing else at the top");
-  assert.deepEqual(Object.keys(compose.services).sort(), ["render-1", "render-2", "render-3", "render-relay"]);
+  assert.deepEqual(Object.keys(compose.services).sort(), ["render-1", "render-relay"]);
   assert.deepEqual(compose.networks, { "render-internal": { name: "render-internal", internal: true } });
 });
 
@@ -222,35 +220,32 @@ test("compose.yaml: workers are on render-internal only (network_mode), publish 
     assert.deepEqual(worker.depends_on, ["render-relay"], `${name}: the relay's network creates render-internal first`);
     assert.deepEqual(Object.keys(worker.environment), ["ASTRA_WORKER_SECRET"], `${name}: one variable, its own secret`);
   }
-  /* render-1 cannot start without its secret; each worker reads its own variable. */
+  /* render-1 cannot start without its secret. */
   assert.match(compose.services["render-1"].environment.ASTRA_WORKER_SECRET, /^\$\{ASTRA_WORKER_SECRET_1:\?/);
-  assert.match(compose.services["render-2"].environment.ASTRA_WORKER_SECRET, /^\$\{ASTRA_WORKER_SECRET_2:-\}$/);
-  assert.match(compose.services["render-3"].environment.ASTRA_WORKER_SECRET, /^\$\{ASTRA_WORKER_SECRET_3:-\}$/);
+  /* Fail-closed start retries by itself (README, compose header): a restart policy that does not give up, and the exit delay lives in server.mjs. */
+  assert.equal(compose.services["render-1"].restart, "unless-stopped");
 });
 
-test("compose.yaml: one worker by default; two and three start only under their profiles", () => {
+test("compose.yaml: one worker, no profiles, no worker-count setting anywhere; hard limits cpus 2, mem 4g, memswap = mem", () => {
+  const text = read("compose.yaml");
   assert.equal(compose.services["render-1"].profiles, undefined);
-  assert.deepEqual(compose.services["render-2"].profiles, ["workers-2", "workers-3"]);
-  assert.deepEqual(compose.services["render-3"].profiles, ["workers-3"]);
-  assert.equal(defaultOf(relay.environment.RELAY_WORKERS), "1", "the relay forwards to one worker unless told otherwise");
+  assert.doesNotMatch(text.replace(/^\s*#.*$/gm, ""), /profiles|COMPOSE_PROFILES|ASTRA_WORKER_COUNT|RELAY_WORKERS|render-[23]|ASTRA_WORKER_SECRET_[23]|RELAY_TARGET_[23]|808[23]|RENDER_CPUSET_[23]/);
+  const worker = compose.services["render-1"];
+  assert.equal(worker.cpus, 2); assert.equal(worker.mem_limit, "4g"); assert.equal(worker.memswap_limit, worker.mem_limit);
 });
 
-test("compose.yaml: the default worker is pinned to cores 6,7 of the 8-core server; every default core exists there; the cpusets are settings", () => {
-  const cpusets = workers.map(([, worker]) => worker.cpuset);
-  assert.deepEqual(cpusets.map((c) => /^\$\{(RENDER_CPUSET_[123]):-/.exec(c)?.[1]), ["RENDER_CPUSET_1", "RENDER_CPUSET_2", "RENDER_CPUSET_3"]);
-  assert.equal(defaultOf(cpusets[0]), "6,7");
-  const cores = cpusets.flatMap((c) => defaultOf(c).split(",").map(Number));
-  assert.ok(cores.every((core) => core >= 0 && core <= 7), `every default core is on an 8-core machine: ${cores}`);
-  assert.equal(new Set(cores).size, cores.length, "no two workers share a core");
-  assert.ok(![0, 1, 2, 3, 4, 5].some((core) => defaultOf(cpusets[0]).split(",").map(Number).includes(core)), "the default worker leaves cores 0-5 to production");
+test("compose.yaml: the worker is pinned to cores 6,7 of the 8-core server by default, leaving 0-5 to production; the cpuset is a setting", () => {
+  const cpuset = workers[0][1].cpuset;
+  assert.equal(/^\$\{(RENDER_CPUSET_1):-/.exec(cpuset)?.[1], "RENDER_CPUSET_1");
+  assert.deepEqual(defaultOf(cpuset).split(",").map(Number), [6, 7]);
 });
 
 test("compose.yaml: the relay is on render-internal only here (the app's network comes from Connect To Predefined Network), publishes nothing, holds no secret, and is locked down", () => {
   assert.deepEqual(relay.networks, ["render-internal"]);
   for (const key of ["network_mode", "ports", "expose", "volumes", "extra_hosts", "dns", "privileged", "cap_add", "devices", "user"]) assert.equal(relay[key], undefined, `the relay has no ${key}`);
   assert.deepEqual(relay.command, ["node", "/app/relay.mjs"]);
-  assert.deepEqual(Object.keys(relay.environment).sort(), ["RELAY_TARGET_1", "RELAY_TARGET_2", "RELAY_TARGET_3", "RELAY_WORKERS"]);
-  assert.deepEqual([1, 2, 3].map((n) => relay.environment[`RELAY_TARGET_${n}`]), [1, 2, 3].map((n) => `\${RELAY_TARGET_${n}:-render-${n}}`), "each target is overridable, defaulting to the fixed name");
+  assert.deepEqual(Object.keys(relay.environment), ["RELAY_TARGET_1"]);
+  assert.equal(relay.environment.RELAY_TARGET_1, "${RELAY_TARGET_1:-render-1}", "the target is overridable, defaulting to the fixed name");
   assert.ok(Object.keys(relay.environment).every((name) => !/secret|token|key|password|auth/i.test(name)));
   assert.ok(Object.values(relay.environment).every((value) => !/\$\{ASTRA_WORKER_SECRET/.test(String(value))));
   assert.equal(relay.read_only, true); assert.deepEqual(relay.cap_drop, ["ALL"]); assert.deepEqual(relay.security_opt, ["no-new-privileges:true"]);
@@ -267,7 +262,7 @@ test("the Dockerfile: the relay runs from the worker's image as the same non-roo
 });
 
 test("a worker name may carry the platform's suffix (render-1-abc123) and nothing else; numeric hosts are never accepted (16843009 and 0x1010101 are 1.1.1.1)", () => {
-  assert.deepEqual(routesFor({ workers: 2, targets: ["render-1-abc123", "render-2-x9", "render-3"] }).map((r) => r.host), ["render-1-abc123", "render-2-x9"]);
+  assert.deepEqual(routesFor({ workers: 1, targets: ["render-1-abc123"] }).map((r) => r.host), ["render-1-abc123"]);
   assert.deepEqual(configFromEnv({ RELAY_WORKERS: "1", RELAY_TARGET_1: "render-1-abc123" }).map((r) => r.host), ["render-1-abc123"]);
   for (const host of ["16843009", "0x1010101", "0x01010101", "1.1.1.1", "[::1]", "render-1:80", "render-1@evil.com"]) assert.throws(() => configFromEnv({ RELAY_WORKERS: "1", RELAY_TARGET_1: host }), /worker container name/, host);
 });
