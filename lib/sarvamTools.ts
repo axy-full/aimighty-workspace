@@ -18,7 +18,7 @@ import { meter, type MeterKind } from "./meter";
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, inspectAudioBuffer } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
+import { jobLineNow, shotCapGate } from "./shotCap";
 import { engineEnabled } from "./engineGate";
 import { SARVAM_RATES, type SarvamSpeechModel, type SarvamTranslateModel } from "./vendorRates";
 import {
@@ -170,15 +170,22 @@ export async function admitSarvam(input: Record<string, unknown>, got: Admission
   const inCredits = creditsApply(requireTenant());
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
+  let shotCode: string | null = null;
   if (tool === "speech" && shotId) {
     const shot = await getShot(shotId);
     if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
+    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
     projectId ??= shot.projectId;
   }
   if (projectId && !(await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [projectId] })).rows.length) return admissionReply({ error: "That production is not in this workspace." }, { status: 404 });
   const over = jobLineNow({ credits: estimatedCredits, usd, key: "sarvam", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
+  /* The cost approval rule (brief 2.2), for the one tool that makes a take (speech): with a cap per shot, a member's take past it needs an admin. Refused on the quote and the press, before any row is written, so no failed take is left in the Library. A translation or a transcript makes no take and is not judged against a shot. */
+  if (tool === "speech" && shotId && shotCode) {
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: marginKey, isAdmin: got.user.role === "admin" });
+    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
+  }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, ...units });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });
