@@ -784,3 +784,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - New #778 BFL FLUX.2 (24a24523, NEEDS AKSHAY): BFL_API_KEY, BFL_BASE_URL (default api.eu.bfl.ai), BFL_ENABLED; edit references pass the consent gate.
   - BFL prices verified from BFL's published pricing data (the source behind docs.bfl.ai/quick_start/pricing; 1 cr = $0.01): pro 3 / 1.5 / 1.5 cr (first MP / further MP / input MP), which matches; flex 5 / 5 / 5; max 7 / 3 / 3. Lane B is adding the flex and max rules. Result URLs are valid 10 min; up to 4 MP and 8 references.
   - Opus checks running: #771 delta, the #776/#777 re-check and the #778 money review. Retention and training terms for Sarvam and BFL still need reading (their legal pages).
+- **16 Oct 01:37 IST.** Opus large-screen review: #749, #750, #756 and #762 APPROVED; #748 NOT APPROVED.
+  - "CSS only": JS is the correct place. The scale must be React Flow's own viewport zoom, because a CSS transform or zoom would break drag, drop and selection. Layout, bars and pictures stay CSS.
+  - #748 must-fix: the 2560 evidence still shows ~55-60% of the canvas empty under the 3-shot starter. Re-shoot with an 8-shot fixture; window-ratio vs fit-to-content goes to the owner.
+  - #748 should-fixes: a resize resets the person's pan and zoom; a failed poster upgrade drops a good poster; shots-v12 must keep literal counts.
+  - Also found: no srcset (JS tier selection instead); posters cost more egress on retina screens; the 640 px sample clip is upscaled 1.3× at 2560@2×; at 1728/1920 the bottom bar is offset by the prototype's 420 px rule; Home and customer Home at 2560 strand whitespace (outside these PRs; fails rule 7).
+  - Sent to lane C.
