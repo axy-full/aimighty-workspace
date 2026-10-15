@@ -17,6 +17,7 @@ import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admis
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
 import { jobLineNow } from "./shotCap";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { mayReachProject } from "./draftProject";
 import { engineEnabled } from "./engineGate";
 import { BFL_RATES, type BflModel, type Flux2Model, type Flux3Model } from "./vendorRates";
 import { BFL_IDENTITY_SWITCH, BFL_RESULT_LIFETIME_MS, BFL_REFERENCE_LIMIT_BYTES, BFL_SWITCH, BflError, bflConfigured, fetchResult, isBflModel, isFlux3Model, pollImage, submitImage } from "./bfl";
@@ -126,14 +127,23 @@ export function bflQuote(model: Flux2Model, outputMp: number, referenceMps: numb
 }
 
 /**
- * FLUX 3 Image and Klein: one price per image by size tier. A size is read by its longest side and rounded UP to the next tier (which size a tier covers is TO CONFIRM, so a
- * quote is never under); a side past the largest tier is refused. Dollars, to the micro-dollar rounded up.
+ * FLUX 3 Image and Klein: one price per image by size tier. A size is read two ways, by its longest side and by decimal megapixels, each rounded UP to the next tier, and the DEARER is
+ * used (which size a tier covers is TO CONFIRM, so a quote is never under); a side past the largest tier is refused. Dollars, to the micro-dollar rounded up.
  */
+/** The size tier of an output (0 = 768 ... 4 = 4k): the DEARER of the longest-side reading and the decimal-megapixel reading; -1 past the largest. 1024 x 1024 is 1.05 MP, so it is tier 2 (1.5k) until a first use settles it. */
+export function flux3TierOf(width: number, height: number): number {
+  const tiers = BFL_RATES.tiered["flux-3-image"].tiers;
+  const longest = Math.max(width, height), mp = (width * height) / 1_000_000;
+  const bySide = tiers.findIndex((t) => longest <= t.upTo);
+  if (bySide < 0) return -1;
+  const byMp = tiers.findIndex((t) => mp <= t.upToMp + 1e-9);
+  return Math.max(bySide, byMp < 0 ? tiers.length - 1 : byMp);
+}
 export function flux3Quote(model: Flux3Model, width: number, height: number): { usd: number } | { error: string } {
-  const longest = Math.max(width, height);
-  const tier = BFL_RATES.tiered[model].tiers.find((t) => longest <= t.upTo);
-  if (!tier) return { error: `${model} makes up to ${BFL_RATES.tiered[model].tiers.at(-1)!.upTo} pixels on a side.` };
-  return { usd: Math.ceil(tier.usd * 1e6 - 1e-6) / 1e6 };
+  const tiers = BFL_RATES.tiered[model].tiers;
+  const at = flux3TierOf(width, height);
+  if (at < 0) return { error: `${model} makes up to ${tiers.at(-1)!.upTo} pixels on a side.` };
+  return { usd: Math.ceil(tiers[at].usd * 1e6 - 1e-6) / 1e6 };
 }
 
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -173,6 +183,16 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   let seed: number | null = null;
   if (body.seed != null) { if (!Number.isInteger(body.seed) || (body.seed as number) < 0 || (body.seed as number) > 2 ** 31) return admissionReply({ error: "A seed is a whole number." }, { status: 400 }); seed = body.seed as number; }
 
+  /* The production (and the shot it comes from), resolved before the references: an identity is read only inside the production it belongs to. */
+  let projectId = body.projectId ? String(body.projectId) : null;
+  const shotId = body.shotId ? String(body.shotId) : null;
+  if (shotId) {
+    const shot = await getShot(shotId);
+    if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
+    if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
+    projectId ??= shot.projectId;
+  }
+  if (projectId && !(await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [projectId] })).rows.length) return admissionReply({ error: "That production is not in this workspace." }, { status: 404 });
   /* The references of an edit: each of this workspace, openable by this person, an image of a measured size, naming the cast member it shows. */
   type Ref = { uploadId: string; castMemberId: string; mp: number; ext: string; stored: string };
   const refs: Ref[] = [];
@@ -188,10 +208,19 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
       const castMemberId = typeof body.castMemberId === "string" && ENTITY_ID.test(body.castMemberId) ? body.castMemberId : null;
       if (!identityId) return admissionReply({ error: "Name the identity to render.", code: "bad-input" }, { status: 400 });
       if (!castMemberId) return admissionReply({ error: "Say which cast member this identity is: every face needs the person's consent on record.", code: "bad-input" }, { status: 400 });
-      const found = (await db().execute({ sql: "SELECT photos FROM identities WHERE id=? LIMIT 1", args: [identityId] })).rows[0];
+      if (!projectId) return admissionReply({ error: "Name the production and what it is for (production, ads or social): an identity of a person needs their consent on record.", code: "bad-input" }, { status: 400 });
+      /* Before its photos are read: the identity must belong to THIS production (or be unfiled), and the person must be able to reach that production (a private board of someone else's is not theirs to spend on). Both refusals read as "no such identity". */
+      const owner = (await db().execute({ sql: "SELECT project_id FROM identities WHERE id=? LIMIT 1", args: [identityId] })).rows[0];
+      const ownerProject = owner?.project_id == null ? null : String(owner.project_id);
+      if (!owner || (ownerProject !== null && ownerProject !== projectId) || !(await mayReachProject(got.user, projectId, "admit")))
+        return admissionReply({ error: "That identity is not in this workspace, or has no photos." }, { status: 404 });
+      const found = (await db().execute({ sql: "SELECT photos, cover_upload_id FROM identities WHERE id=? LIMIT 1", args: [identityId] })).rows[0];
       let photos: unknown = [];
       try { photos = found ? JSON.parse(String(found.photos)) : []; } catch { /* unreadable */ }
-      const ids = Array.isArray(photos) ? photos.filter((p): p is string => typeof p === "string" && UPLOAD_ID.test(p)).slice(0, BFL_RATES.models[model as Flux2Model].maxRefs) : [];
+      const valid = Array.isArray(photos) ? photos.filter((p): p is string => typeof p === "string" && UPLOAD_ID.test(p)) : [];
+      /* The cover first (as the comment says), then the rest in the identity's order, at most eight. */
+      const cover = found && typeof found.cover_upload_id === "string" && valid.includes(found.cover_upload_id) ? found.cover_upload_id : null;
+      const ids = (cover ? [cover, ...valid.filter((p) => p !== cover)] : valid).slice(0, BFL_RATES.models[model as Flux2Model].maxRefs);
       if (!found || !ids.length) return admissionReply({ error: "That identity is not in this workspace, or has no photos." }, { status: 404 });
       list = ids.map((uploadId) => ({ uploadId, castMemberId }));
       identityUsed = identityId;
@@ -217,15 +246,6 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   if ("error" in priced) return admissionReply({ error: priced.error }, { status: 400 });
   const usd = priced.usd;
 
-  let projectId = body.projectId ? String(body.projectId) : null;
-  const shotId = body.shotId ? String(body.shotId) : null;
-  if (shotId) {
-    const shot = await getShot(shotId);
-    if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
-    if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
-    projectId ??= shot.projectId;
-  }
-  if (projectId && !(await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [projectId] })).rows.length) return admissionReply({ error: "That production is not in this workspace." }, { status: 404 });
   /* The approval unit, through the margin table keyed by the model (as the reservation keys an image job). No number of ours here. */
   const estimatedCredits = quotedCredits(usd, model);
   const inCredits = creditsApply(requireTenant());

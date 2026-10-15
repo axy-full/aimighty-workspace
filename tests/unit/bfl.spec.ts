@@ -670,12 +670,29 @@ test("FLUX 3 Image and Klein: priced per image by size tier (BFL's table, verifi
   expect(rows("flux-3-image-klein")).toEqual([[768, 0.008], [1024, 0.009], [1536, 0.011], [2048, 0.014], [4096, 0.036]]);
   expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/erified against\s+\* BFL's published pricing data \(docs\.bfl\.ai\/quick_start\/pricing\), 16 Oct 2026; confirm against the first invoice[\s\S]{0,1800}tiered:/);
   const usd = (m: "flux-3-image" | "flux-3-image-klein", w: number, h: number) => { const q = flux3Quote(m, w, h); return "usd" in q ? q.usd : q.error; };
-  /* The longest side decides, rounded UP to the next tier: one pixel over a tier is the next tier's price. */
+  /* The DEARER of the longest-side tier and the decimal-megapixel tier (1k up to 1.0 MP, 1.5k up to 1.5, 2k up to 2.0, 4k above). A thin shape is decided by its side; one pixel over a side tier is the next price. */
   for (const [side, tier] of [[64, 0], [768, 0], [769, 1], [1024, 1], [1025, 2], [1536, 2], [1537, 3], [2048, 3], [2049, 4], [4096, 4]] as const) {
     expect(usd("flux-3-image", side, 64), `${side}`).toBeCloseTo(BFL_RATES.tiered["flux-3-image"].tiers[tier].usd, 9);
     expect(usd("flux-3-image-klein", 64, side), `${side}`).toBeCloseTo(BFL_RATES.tiered["flux-3-image-klein"].tiers[tier].usd, 9);
   }
-  expect(usd("flux-3-image", 1920, 1080)).toBeCloseTo(0.1, 9);
+  /* 1024 x 1024 is 1.05 decimal MP: the 1.5k tier until a first use settles it. 1000 x 1000 is exactly 1.0 MP: 1k. */
+  expect(usd("flux-3-image", 1024, 1024)).toBeCloseTo(0.07, 9);
+  expect(usd("flux-3-image-klein", 1024, 1024)).toBeCloseTo(0.011, 9);
+  expect(usd("flux-3-image", 1000, 1000)).toBeCloseTo(0.048, 9);
+  expect(usd("flux-3-image", 768, 768)).toBeCloseTo(0.041, 9);
+  expect(usd("flux-3-image", 1536, 1024)).toBeCloseTo(0.1, 9);
+  expect(usd("flux-3-image-klein", 1536, 1024)).toBeCloseTo(0.014, 9);
+  expect(usd("flux-3-image", 1536, 1536)).toBeCloseTo(0.607, 9);
+  expect(usd("flux-3-image", 1408, 1408)).toBeCloseTo(0.1, 9);
+  expect(usd("flux-3-image", 2048, 2048)).toBeCloseTo(0.607, 9);
+  expect(usd("flux-3-image-klein", 2048, 2048)).toBeCloseTo(0.036, 9);
+  expect(usd("flux-3-image", 1920, 1080)).toBeCloseTo(0.607, 9);
+  /* Never cheaper than either reading, over a spread of shapes. */
+  for (const [w, h] of [[64, 4096], [1024, 1024], [1536, 1024], [2000, 1000], [1280, 720], [4096, 4096], [3000, 600], [800, 800]] as const) {
+    const t = BFL_RATES.tiered["flux-3-image"].tiers;
+    const side = t.findIndex((x) => Math.max(w, h) <= x.upTo), mp = t.findIndex((x) => (w * h) / 1e6 <= x.upToMp + 1e-9);
+    expect(usd("flux-3-image", w, h), `${w}x${h}`).toBeCloseTo(t[Math.max(side, mp)].usd, 9);
+  }
   expect(String(usd("flux-3-image", 4112, 1024))).toMatch(/up to 4096 pixels on a side/);
   expect(usd("flux-3-image-klein", 1024, 1024)).toBeLessThan(usd("flux-3-image", 1024, 1024) as number);
   process.env.BFL_ENABLED = "1";
@@ -683,9 +700,10 @@ test("FLUX 3 Image and Klein: priced per image by size tier (BFL's table, verifi
     const before = (await meterRows()).length;
     const q = await admit({ tool: "image", prompt: "a tree", model: "flux-3-image", width: 1024, height: 1024, quoteOnly: true });
     expect(q).toMatchObject({ status: 200, body: { tool: "image", model: "flux-3-image", unit: "usd", references: 0 } });
-    expect(Number(q.body.price)).toBeCloseTo(0.048, 9);
-    const klein = await admit({ tool: "image", prompt: "a tree", model: "flux-3-image-klein", width: 2048, height: 1152, quoteOnly: true });
+    expect(Number(q.body.price)).toBeCloseTo(0.07, 9);
+    const klein = await admit({ tool: "image", prompt: "a tree", model: "flux-3-image-klein", width: 1536, height: 1024, quoteOnly: true });
     expect(Number(klein.body.price)).toBeCloseTo(0.014, 9);
+    expect(Number((await admit({ tool: "image", prompt: "a tree", model: "flux-3-image-klein", width: 2048, height: 1152, quoteOnly: true })).body.price)).toBeCloseTo(0.036, 9);
     expect(Number((await admit({ tool: "image", prompt: "a tree", model: "flux-3-image", width: 4096, height: 2304, quoteOnly: true })).body.price)).toBeCloseTo(0.607, 9);
     /* No megapixel rule for FLUX 3 (the size is the tier), and nothing past 4096 a side. */
     for (const [input, words] of [
@@ -703,11 +721,11 @@ test("FLUX 3 Image and Klein: priced per image by size tier (BFL's table, verifi
     const reply = await admit({ tool: "image", prompt: "a crane at dawn", model: "flux-3-image-klein", width: 1024, height: 1024, ...approved });
     expect(reply.status, JSON.stringify(reply.body)).toBe(200);
     const held = (await meterRows()).slice(before);
-    expect(Number(held[0].engine_cost_usd)).toBeCloseTo(0.009, 9);
+    expect(Number(held[0].engine_cost_usd)).toBeCloseTo(0.011, 9);
     const vendor = fakeBfl();
     await run(String(reply.body.id), vendor.deps, 4);
     expect(vendor.calls[0]).toBe("submit:flux-3-image-klein");
-    expect(Number((await gen(String(reply.body.id))).cost_usd)).toBeCloseTo(0.009, 9);
+    expect(Number((await gen(String(reply.body.id))).cost_usd)).toBeCloseTo(0.011, 9);
   });
   /* The path: the adapter posts to /v1/<model>. */
   const bfl = await import("../../lib/bfl");
@@ -723,13 +741,13 @@ test("FLUX 3 Image and Klein: priced per image by size tier (BFL's table, verifi
 });
 
 /** An identity of this workspace: a row with its photos (uploads of known size), as the legacy identity trainer keeps them. */
-async function identityWith(photoCount: number, over: { noPhotos?: boolean } = {}) {
+async function identityWith(photoCount: number, over: { noPhotos?: boolean; projectId?: string | null; cover?: number } = {}) {
   const { db, ready } = await import("../../lib/db");
   await ready();
   const photos: { id: string; bytes: Buffer }[] = [];
   for (let i = 0; i < photoCount; i++) photos.push(await image(`photo_${i}`));
   const id = uid("idn");
-  await db().execute({ sql: "INSERT INTO identities (id, name, photos, status, provider, created_by, created_at, updated_at) VALUES (?,?,?,'draft','fal','u_test',?,?)", args: [id, `Sample ${id}`, JSON.stringify(over.noPhotos ? [] : photos.map((p) => p.id)), Date.now(), Date.now()] });
+  await db().execute({ sql: "INSERT INTO identities (id, project_id, name, photos, status, provider, cover_upload_id, created_by, created_at, updated_at) VALUES (?,?,?,?,'draft','fal',?,'u_test',?,?)", args: [id, over.projectId ?? null, `Sample ${id}`, JSON.stringify(over.noPhotos ? [] : photos.map((p) => p.id)), over.cover != null ? photos[over.cover]?.id ?? null : null, Date.now(), Date.now()] });
   return { id, photos };
 }
 
@@ -804,6 +822,39 @@ test("FLUX.2 identity: an identity's own photos are the references, every one th
     const v2 = fakeBfl();
     await run(String(eight.body.id), v2.deps, 4);
     expect(v2.sent[0].references.map((r) => r.toString())).toEqual(big.photos.slice(0, 8).map((p) => p.bytes.toString()));
+    /* The cover first, as its comment says, then the rest in order. */
+    const covered = await identityWith(4, { cover: 2 });
+    const cv = fakeBfl();
+    const coveredReply = await admit({ ...input, identityId: covered.id }, seams);
+    expect(coveredReply.status, JSON.stringify(coveredReply.body)).toBe(200);
+    await run(String(coveredReply.body.id), cv.deps, 4);
+    expect(cv.sent[0].references.map((r) => r.toString())).toEqual([2, 0, 1, 3].map((i) => covered.photos[i].bytes.toString()));
+    /* The identity must belong to THIS production (or be unfiled), and the person must be able to reach that production: checked before its photos are read. */
+    const { mappedId, DRAFT_PROJECT_PREFIX } = await import("../../lib/draftProject");
+    const other = uid("prod");
+    await project(other);
+    const reads: string[] = [];
+    const watching = { consent: async (c: string, face: Buffer) => { reads.push(c); return passing(consentId)(c, face); } };
+    const mine = await identityWith(2, { projectId });
+    expect((await admit({ ...input, identityId: mine.id }, watching)).status).toBe(200);
+    const elsewhere = await identityWith(2, { projectId: other });
+    reads.length = 0;
+    expect(await admit({ ...input, identityId: elsewhere.id }, watching)).toMatchObject({ status: 404 });
+    expect(reads).toEqual([]);
+    const unfiled = await identityWith(2, { projectId: null });
+    expect((await admit({ ...input, identityId: unfiled.id }, watching)).status).toBe(200);
+    /* A private board of someone else's is refused, an identity of theirs too; the answer is the same as for an identity that is none. */
+    const theirs = mappedId(DRAFT_PROJECT_PREFIX, "ws_legacy", "someone_else", "d1");
+    await project(theirs);
+    const theirIdentity = await identityWith(2, { projectId: theirs });
+    reads.length = 0;
+    const boardInput = { ...input, projectId: theirs };
+    const notMine = await admit({ ...boardInput, identityId: theirIdentity.id }, watching);
+    expect(notMine).toMatchObject({ status: 404, body: { error: "That identity is not in this workspace, or has no photos." } });
+    expect(await admit({ ...boardInput, identityId: unfiled.id }, watching)).toMatchObject({ status: 404, body: { error: notMine.body.error } });
+    expect(await admit({ ...input, identityId: "idn_none" }, watching)).toMatchObject({ status: 404, body: { error: notMine.body.error } });
+    expect(reads).toEqual([]);
+    expect((await meterRows()).length).toBeGreaterThan(0);
     /* A photo the gate refuses stops everything: no row, no reservation. */
     const { ConsentMatchError } = await import("../../lib/consentMatch");
     const rowsNow = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
@@ -817,7 +868,9 @@ test("FLUX.2 identity: an identity's own photos are the references, every one th
   /* The fal LoRA identity path is untouched: this PR adds no reference to it. */
   const flow = readFileSync("lib/bflImage.ts", "utf8");
   expect(flow).not.toMatch(/from "\.\/identities"|from "\.\/fal"|flux-lora|loraUrl/);
-  expect(flow).toContain('"SELECT photos FROM identities WHERE id=? LIMIT 1"');
+  expect(flow).toContain('"SELECT photos, cover_upload_id FROM identities WHERE id=? LIMIT 1"');
+  expect(flow.indexOf('SELECT project_id FROM identities')).toBeLessThan(flow.indexOf('SELECT photos, cover_upload_id FROM identities'));
+  expect(flow.indexOf('mayReachProject(got.user, projectId')).toBeLessThan(flow.indexOf('SELECT photos, cover_upload_id FROM identities'));
 });
 
 test("over MCP: flux3_image (Klein is the draft, flux-3-image always asks) and flux2_identity (listed only on its own switch, with the face gate)", async () => {
@@ -846,6 +899,13 @@ test("over MCP: flux3_image (Klein is the draft, flux-3-image always asks) and f
       calls.length = 0;
       expect(await runDirectEngineTool("flux3_image", { prompt: "a tree", model: "flux-3-image-klein" }, call)).toMatch(/^Image started/);
       expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null, c.tool, c.model])).toEqual([[true, null, "image", "flux-3-image-klein"], [false, 1, "image", "flux-3-image-klein"]]);
+      /* Klein is a draft only up to the 2k tier: the 4k tier (a side past 2048, or over 2.0 MP) always asks. */
+      for (const [width, height, starts] of [[1536, 1024, true], [2048, 2048, false], [2048, 1152, false], [4096, 4096, false], [1024, 1024, true]] as const) {
+        calls.length = 0;
+        const text = await runDirectEngineTool("flux3_image", { prompt: "a tree", model: "flux-3-image-klein", width, height }, call);
+        expect(String(text).startsWith("Image started"), `${width}x${height}`).toBe(starts);
+        expect(calls.some((c) => c.maxCredits !== undefined), `${width}x${height}`).toBe(starts);
+      }
       calls.length = 0;
       expect(await runDirectEngineTool("flux3_image", { prompt: "a tree" }, call)).toMatch(/not started/);
       expect(calls[0]).toMatchObject({ model: "flux-3-image" });

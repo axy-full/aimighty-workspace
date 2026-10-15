@@ -1,7 +1,7 @@
 import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
-import { bflTools } from "./bflImage";
+import { bflTools, flux3TierOf } from "./bflImage";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "./approvalRule";
@@ -157,8 +157,8 @@ const FLUX3_IMAGE: DirectTool = {
     inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to make." }, ...SIZE, seed: { type: "number" }, model: { type: "string", description: "flux-3-image (default) or flux-3-image-klein (the quick, cheap one)." }, ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." } }, required: ["prompt"] },
   },
   present: bflPresent("flux3_image"),
-  /* The Klein model is the draft; flux-3-image is full quality and always asks. */
-  draft: (b) => b.model === "flux-3-image-klein",
+  /* The Klein model is the draft, up to the 2k tier only (4k always asks); flux-3-image is full quality and always asks. */
+  draft: (b) => b.model === "flux-3-image-klein" && flux3TierOf(Number(b.width ?? 1024), Number(b.height ?? 1024)) >= 0 && flux3TierOf(Number(b.width ?? 1024), Number(b.height ?? 1024)) <= 3,
   prepared: (b) => `prepared: ${String(b.model ?? "flux-3-image")} still, ${String(b.width ?? 1024)} by ${String(b.height ?? 1024)}`,
   request: (a) => ({ path: "/api/bfl", body: { tool: "image", prompt: str(a.prompt), model: str(a.model) ?? "flux-3-image", width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id) } }),
   describe: (out, quote) => `Image started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,

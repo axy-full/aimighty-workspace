@@ -320,13 +320,13 @@ export const BFL_RATES = {
   /**
    * FLUX 3 Image (`/v1/flux-3-image`) and FLUX 3 Image Klein (`/v1/flux-3-image-klein`): priced PER IMAGE by size tier, not by megapixel. Credits at $0.01, **verified against
    * BFL's published pricing data (docs.bfl.ai/quick_start/pricing), 16 Oct 2026; confirm against the first invoice.** FLUX 3 Image: 768 4.1, 1k 4.8, 1.5k 7, 2k 10, 4k 60.7;
-   * Klein: 0.8, 0.9, 1.1, 1.4, 3.6. **Which size a tier covers is not stated: TO CONFIRM.** A size is read by its LONGEST side and rounded UP to the next tier
-   * (`upTo` is that side, inclusive), so a quote is never under; a side past the last tier is refused. No reference image is priced or sent for these (their docs
+   * Klein: 0.8, 0.9, 1.1, 1.4, 3.6. **Which size a tier covers is not stated: TO CONFIRM.** A size is read two ways, by its LONGEST side (`upTo`, inclusive) and by decimal megapixels
+   * (`upToMp`: 1k is up to 1.0 MP, 1.5k up to 1.5, 2k up to 2.0, 4k above; the 768 tier's 0.6 is a guess), each rounded UP to the next tier, and the DEARER is used, so a quote is never under (1024 x 1024 is 1.05 MP: the 1.5k tier); a side past the last tier is refused. No reference image is priced or sent for these (their docs
    * are not read for it). FLUX 3 Video exists (t2v 720/1080/1440/2160, v2v, a draft) with its unit unstated: not built here.
    */
   tiered: {
-    "flux-3-image": { tiers: [{ upTo: 768, usd: 0.041 }, { upTo: 1024, usd: 0.048 }, { upTo: 1536, usd: 0.07 }, { upTo: 2048, usd: 0.1 }, { upTo: 4096, usd: 0.607 }] },
-    "flux-3-image-klein": { tiers: [{ upTo: 768, usd: 0.008 }, { upTo: 1024, usd: 0.009 }, { upTo: 1536, usd: 0.011 }, { upTo: 2048, usd: 0.014 }, { upTo: 4096, usd: 0.036 }] },
+    "flux-3-image": { tiers: [{ upTo: 768, upToMp: 0.6, usd: 0.041 }, { upTo: 1024, upToMp: 1.0, usd: 0.048 }, { upTo: 1536, upToMp: 1.5, usd: 0.07 }, { upTo: 2048, upToMp: 2.0, usd: 0.1 }, { upTo: 4096, upToMp: Infinity, usd: 0.607 }] },
+    "flux-3-image-klein": { tiers: [{ upTo: 768, upToMp: 0.6, usd: 0.008 }, { upTo: 1024, upToMp: 1.0, usd: 0.009 }, { upTo: 1536, upToMp: 1.5, usd: 0.011 }, { upTo: 2048, upToMp: 2.0, usd: 0.014 }, { upTo: 4096, upToMp: Infinity, usd: 0.036 }] },
   },
   defaultFlux3Model: "flux-3-image",
 } as const;
