@@ -589,7 +589,7 @@ test("fail-closed start: server.mjs asks its gate before it can listen, the real
   assert.ok(mainAt > 0 && gateAt > mainAt && gateAt < readyAt && readyAt < listenAt, "gate, then ready, then listen");
   assert.equal(code.split(".listen(").length - 1, 1, "one place binds a port");
   assert.match(code, /import\("\.\/check-egress\.mjs"\)/);
-  assert.match(code, /testRoot \? null : defaultGate/, "only the test root (tests only) skips the real check");
+  assert.match(code, /testRoot \? null : realGate/, "only the test root (tests only, and never inside the image) skips the real check");
   assert.ok(EGRESS_RETRY_DELAY_MS >= 30_000, "the wait before exiting");
   const compose = readFileSync(new URL("../../ops/render-worker/compose.yaml", import.meta.url), "utf8").replace(/^\s*#.*$/gm, "");
   assert.match(compose, /^ {2}render-1:[\s\S]*?restart: unless-stopped/m);
@@ -597,4 +597,35 @@ test("fail-closed start: server.mjs asks its gate before it can listen, the real
   const dockerfile = readFileSync(new URL("../../ops/render-worker/Dockerfile", import.meta.url), "utf8");
   assert.match(dockerfile, /COPY check-egress\.mjs \/app\/check-egress\.mjs/, "the worker's image carries the check it imports");
   assert.ok(!/ASTRA_WORKER_TEST_ROOT/.test(dockerfile.replace(/^#.*$/gm, "")), "the image never sets the test root");
+});
+
+test("ASTRA_WORKER_TEST_ROOT is ignored inside the image (ASTRA_WORKER_CONTAINER=1): the real egress check runs and the worker uses the real root; outside it the test root still skips the check", async () => {
+  const root = await mkdtemp(join(tmpdir(), "render-worker-testroot-"));
+  try {
+    for (const container of ["1", undefined]) {
+      const label = container ? "in the image" : "outside it";
+      const events = [];
+      let asked = 0;
+      const env = { ASTRA_WORKER_SECRET: SECRET, ASTRA_WORKER_TEST_ROOT: root, PORT: "0", ...(container ? { ASTRA_WORKER_CONTAINER: container } : {}) };
+      const realGate = async () => { asked++; return { ok: false, failures: ["REACHED example.com"] }; };
+      const worker = await startWorker({ env, realGate, signals: false, exit: (code) => events.push(`exit ${code}`), sleep: async () => {}, log: (line) => events.push(`log ${line}`), error: (line) => events.push(`error ${line}`) });
+      if (container) {
+        assert.equal(asked, 1, `${label}: the real check ran although a test root was set`);
+        assert.equal(worker, null, label);
+        assert.ok(events.includes("exit 1") && !events.some((e) => /listening/.test(e)), `${label}: ${JSON.stringify(events)}`);
+      } else {
+        assert.equal(asked, 0, `${label}: the test root skips the check`);
+        assert.ok(worker, label);
+        try { assert.ok(await waitFor(() => worker.server.listening), label); } finally { await worker.close(); }
+        assert.ok(!events.some((e) => /^exit/.test(e)), label);
+      }
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("ASTRA_WORKER_TEST_ROOT: the code reads it only through `inContainer ? undefined : ...`, so the image can never use it", () => {
+  const code = readFileSync(new URL("../../ops/render-worker/server.mjs", import.meta.url), "utf8");
+  assert.deepEqual([...code.matchAll(/ASTRA_WORKER_TEST_ROOT/g)].length, 2, "one comment mention and one read");
+  assert.match(code, /const testRoot = inContainer \? undefined : env\.ASTRA_WORKER_TEST_ROOT;/);
+  assert.match(code, /sweepStrays: inContainer,/);
 });
