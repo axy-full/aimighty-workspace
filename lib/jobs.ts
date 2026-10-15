@@ -22,6 +22,7 @@ import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
 import { heldPriceNow } from "./creditTerms";
 import { withoutVendorDollars } from "./analyticsRedact";
+import { publicDirectParams } from "./directEnginePublic";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
@@ -196,6 +197,8 @@ export function rowToGeneration(r: any): Generation {
   delete params.genjutsuOriginal;
   delete params.storeUntil;
   delete params.settledBy;
+  /* A direct engine's working record (its job and asset ids, links, claims, consent ids, vendor figures) is the workflow's own: only what describes the take is read. */
+  params = publicDirectParams(params);
   if (params.held && typeof params.held === "object")
     params.held = heldForBrowser(params.held, inCredits, r.kind === "image" || r.kind === "audio" ? r.kind : "video", String(r.model ?? ""));
   /* A workspace on the platform's keys reads its params with no figure in the vendors' dollars

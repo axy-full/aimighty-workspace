@@ -52,6 +52,16 @@ async function platformCounts(): Promise<{ rows: number; cost: number }> {
   const r = (await platformDb().execute("SELECT COUNT(*) AS n, COALESCE(SUM(engine_cost_usd),0) AS c FROM meter_events WHERE engine='rekognition'")).rows[0];
   return { rows: Number(r.n), cost: Number(r.c) };
 }
+/** An Atomik run's own identity, and the person who started it (rig_agent_runs.owner). */
+async function agentRun(owner: string): Promise<string> {
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  const { db } = await import("../../lib/db");
+  await rigAgentReady();
+  const id = uid("run");
+  await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: [id, "prod_x", "draft_x", owner, uid("req"), "goal", "auto", "finished"] });
+  return id;
+}
+const agentUser = (runId: string) => ({ id: `agent:${runId}`, email: "agent@example.invalid", name: "Atomik", role: "member", owner: false, disabled: false, createdAt: 0, lastSeen: null });
 const stub = (face: string | null) => async () => (face ? png(`mock-face:${face}`) : null);
 const scope = (projectId: string, use: "production" | "ads" | "social" | "identity" = "production") => ({ projectId, use });
 
@@ -373,6 +383,7 @@ test("the tool: an agent can run consent.check on an image from this workspace; 
   process.env.REKOGNITION_ENABLED = "1";
   const made: string[] = [];
   try {
+    const run = await runInTenant(house(), async () => agentRun("person_me"));
     await runInTenant(house(), async () => {
       await ready();
       const projectId = uid("prod"), cast = uid("cast");
@@ -393,7 +404,7 @@ test("the tool: an agent can run consent.check on an image from this workspace; 
       expect(await runConsentCheckWith({ ...base, uploadId: "up_in_another_workspace" }, seams)).toMatchObject({ ok: false, code: "bad-input" });
       expect(await runConsentCheckWith({ ...base, uploadId: "../etc/passwd" }, seams)).toMatchObject({ ok: false, code: "bad-input" });
       expect(await runConsentCheckWith({ ...base, castMemberId: "", uploadId: same }, seams)).toMatchObject({ ok: false, code: "bad-input" });
-    });
+    }, { user: agentUser(run) } as never);
   } finally {
     for (const file of made) await unlink(file).catch(() => {});
   }
@@ -433,6 +444,53 @@ test("the tool reads only an upload the person may open: another person's privat
       expect(await runConsentCheckWith({ ...base, uploadId: mine }, seams)).toMatchObject({ ok: true, matched: true });
       expect(referenceReads).toBe(1);
     }, { user: member("person_me") } as never);
+  } finally {
+    for (const file of made) await unlink(file).catch(() => {});
+  }
+});
+
+test("an agent run acts for the person who started it: it cannot face-check another person's private upload, and with no acting person it refuses; nothing is read, called or billed", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { runConsentCheckWith } = await import("../../lib/consentMatch");
+  const { storeUpload } = await import("../../lib/storage");
+  const { db, ready } = await import("../../lib/db");
+  process.env.REKOGNITION_ENABLED = "1";
+  const made: string[] = [];
+  try {
+    const projectId = uid("prod"), cast = uid("cast");
+    const a = uid("upl_a"), b = uid("upl_b");
+    const runA = await runInTenant(house(), async () => agentRun("member_a"));
+    const runNoOwner = uid("run_missing");
+    const runOfAgent = await runInTenant(house(), async () => agentRun("agent:other_run"));
+    await runInTenant(house(), async () => {
+      await ready();
+      await consent(projectId, cast);
+      for (const [id, uploader] of [[a, "member_a"], [b, "member_b"]] as const) {
+        await storeUpload(id, "png", png("mock-face:alice"), "image/png");
+        made.push(path.join(process.cwd(), ".data", "uploads", `${id}.png`));
+        await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,uploader_id) VALUES(?,?,?,?,?,?,?,?,?)", args: [id, `${id}.png`, "image/png", "png", 15, "x", `uploads/${id}.png`, Date.now(), uploader] });
+      }
+    });
+    let referenceReads = 0;
+    const seams = { reference: async () => { referenceReads++; return png("mock-face:alice"); } };
+    const base = { castMemberId: cast, projectId, use: "production" };
+    const refused = { ok: false, code: "bad-input", message: "Pick an image from this workspace's uploads." };
+    const counts = await runInTenant(house(), async () => platformCounts());
+    /* A run started by member A reads A's upload, and not B's. */
+    await runInTenant(house(), async () => {
+      expect(await runConsentCheckWith({ ...base, uploadId: b }, seams)).toMatchObject(refused);
+      expect(referenceReads).toBe(0);
+      expect(await runConsentCheckWith({ ...base, uploadId: a }, seams)).toMatchObject({ ok: true, matched: true });
+      expect(referenceReads).toBe(1);
+    }, { user: agentUser(runA) } as never);
+    /* A run with no owner on record, one whose owner is itself an agent, a background caller named "server", and no one at all: no acting person, so it refuses even a public-looking upload. */
+    for (const user of [agentUser(runNoOwner), agentUser(runOfAgent), { ...agentUser("x"), id: "server" }, undefined]) {
+      await runInTenant(house(), async () => {
+        for (const uploadId of [a, b]) expect(await runConsentCheckWith({ ...base, uploadId }, seams), `${user?.id} ${uploadId}`).toMatchObject(refused);
+      }, (user ? { user } : undefined) as never);
+    }
+    expect(referenceReads).toBe(1);
+    expect(await runInTenant(house(), async () => platformCounts())).toEqual({ rows: counts.rows + 1, cost: expect.any(Number) });
   } finally {
     for (const file of made) await unlink(file).catch(() => {});
   }
@@ -502,8 +560,8 @@ test("structure: no bypass seam on the public door, nothing but the core reaches
   expect(adapter).not.toMatch(/@aws-sdk|from ["']aws-/);
   expect(adapter).toContain("signRequest");
   expect(adapter).not.toMatch(/console\.(log|error|info)/);
-  /* The exported compareFaces and the public gate take no switch, source, environment, fetch or actor. */
-  expect(adapter).toContain("export const compareFaces = (source: Buffer, target: Buffer): Promise<FaceComparison> =>");
+  /* The adapter exports one call, with its seams; the public gate takes no switch, source, environment, fetch or actor. */
+  expect([...adapter.matchAll(/export (?:async )?(?:function|const) (compareFaces\w*)/g)].map((m) => m[1])).toEqual(["compareFacesWith"]);
   const door = readFileSync("lib/consentMatch.ts", "utf8");
   expect(door).toContain("export const requireConsentMatch = (castMemberId: string, faceImage: Buffer, scope: ConsentScope): Promise<ConsentMatch> =>");
   expect(door).toContain("export const runConsentCheck = (input: ConsentCheckInput): Promise<ConsentCheckResult> =>");
