@@ -25,7 +25,7 @@ export function FailedSaves({ onChanged }: { onChanged: () => void }) {
   }
   return (
     <>
-      <Head title="Failed saves" line="Renders that finished but have no stored copy. The heartbeat tries again every few minutes for three days; after that they are listed as lost. Retry save tries now." />
+      <Head title="Failed saves" line="Renders that finished but have no stored copy. The heartbeat tries again every few minutes; Retry save tries now." />
       <div className="v12-pc-table" role="table" aria-label="Failed saves" data-testid="pc-risk">
         <div className="v12-pc-tr v12-pc-th v12-pc-riskcols" role="row">
           <span role="columnheader">Workspace</span><span role="columnheader">Take</span><span role="columnheader">Engine</span><span role="columnheader">Since</span><span role="columnheader">State</span><span role="columnheader">Last error</span><span role="columnheader" aria-label="Retry" />

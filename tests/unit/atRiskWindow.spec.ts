@@ -131,8 +131,8 @@ test("each kind the heartbeat cannot save has a reason code, and each kind it ca
   const facts = (over: Record<string, unknown>) => ({ kind: "video", provider: "byteplus", model: "dreamina-seedance-2-5-260628", arkTaskId: "ark_1", params: {}, ...over }) as Parameters<typeof whyNotSaved>[0];
   const cases: [string, Parameters<typeof whyNotSaved>[0], string | null][] = [
     ["a dubbing project's row", facts({ kind: "audio", provider: "elevenlabs", arkTaskId: null, params: { task: "dub" } }), "dub_row"],
-    ["a still with only a saved outcome", facts({ kind: "image", provider: "google", arkTaskId: null, params: { producedOutcome: { a: 1 } } }), "seal_queued_only"],
-    ["a sound with only a saved outcome", facts({ kind: "audio", provider: "elevenlabs", arkTaskId: null, params: { producedOutcome: { a: 1 } } }), "seal_queued_only"],
+    ["a still with only a saved outcome", facts({ kind: "image", provider: "google", arkTaskId: null, params: { producedOutcome: { a: 1 } } }), "still_or_sound_no_rescue"],
+    ["a sound with only a saved outcome", facts({ kind: "audio", provider: "elevenlabs", arkTaskId: null, params: { producedOutcome: { a: 1 } } }), "still_or_sound_no_rescue"],
     ["a connected-account still", facts({ kind: "image", provider: "higgsfield", arkTaskId: null }), "claims_queued_only"],
     ["a connected-account video", facts({ kind: "video", provider: "higgsfield", model: "higgsfield-cinema-studio-4.0", arkTaskId: null }), "claims_queued_only"],
     ["a Topaz still", facts({ kind: "image", provider: "fal", model: "fal-ai/topaz/upscale/image", arkTaskId: null, params: { falStillRequestId: "r" } }), "claims_queued_only"],
@@ -140,7 +140,6 @@ test("each kind the heartbeat cannot save has a reason code, and each kind it ca
     ["a fal video with no request id", facts({ kind: "video", provider: "fal", model: "fal-ai/kling-video/v3/standard", arkTaskId: null, params: {} }), "fal_no_request_ref"],
     ["a fal video with no endpoint", facts({ kind: "video", provider: "fal", model: "fal-ai/kling-video/v3/standard", arkTaskId: null, params: { falRequestId: "r" } }), "fal_no_request_ref"],
     ["a take with no task to poll", facts({ kind: "video", provider: "byteplus", arkTaskId: null }), "no_task_ref"],
-    ["a connected-account original kept elsewhere", facts({ kind: "video", provider: "higgsfield", retainedOriginal: true }), "retained_original"],
     ["an Ark video with its task", facts({}), null],
     ["a fal video with its request and endpoint", facts({ kind: "video", provider: "fal", model: "fal-ai/kling-video/v3/standard", arkTaskId: null, params: { falRequestId: "r", falModel: "m" } }), null],
     ["a fal still with its request", facts({ kind: "image", provider: "fal", model: "fal-ai/x", arkTaskId: null, params: { falRequestId: "r" } }), null],
@@ -181,7 +180,11 @@ test("a take the heartbeat cannot save is logged once a day, with an id, kind, p
       expect(lines.join("\n")).not.toContain("http");
       expect(lines.join("\n")).not.toContain("oldnotask");
       /* The next visit, and the one after: nothing again. A day later: once more. */
+      const stamp = async () => Number((await db().execute({ sql: "SELECT updated_at FROM settings WHERE key = 'atRiskUnsavableLogged'", args: [] })).rows[0].updated_at);
+      const wrote = await stamp();
+      await new Promise((resolve) => setTimeout(resolve, 25));
       expect(await logUnsavable(first, at + 10 * 60_000)).toBe(0);
+      expect(await stamp(), "nothing changed, so nothing was written").toBe(wrote);
       expect(await logUnsavable(first, at + 12 * HOUR)).toBe(0);
       expect(await logUnsavable(first, at + 25 * HOUR)).toBe(5);
       expect(lines).toHaveLength(10);
@@ -273,4 +276,31 @@ test("nothing in the at-risk code calls a provider, saves a take or retries a sa
   expect(failed).toMatch(/export async function retryFailedSave/);
   const read = failed.slice(0, failed.indexOf("export class RetryRefused")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   expect(read).not.toMatch(/syncGeneration|retryFailedSave\(/);
+});
+
+test("a member's GET /api/settings never carries the internal at-risk memory (take ids); the other settings still arrive", async () => {
+  const { INTERNAL_SETTING_KEYS, memberSettings } = await import("../../lib/settings");
+  expect(INTERNAL_SETTING_KEYS).toContain("atRiskUnsavableLogged");
+  const all = { atRiskUnsavableLogged: JSON.stringify({ gen_private_of_another_member: 1 }), namingTemplate: "{project}", capWarnPct: "80" };
+  expect(memberSettings(all)).toEqual({ namingTemplate: "{project}", capWarnPct: "80" });
+  const stub = (name: string) => new Proxy({}, { get: () => () => { throw new Error(`${name} is not used by GET`); } });
+  const source = ts.transpileModule(readFileSync("app/api/settings/route.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const overrides: Record<string, unknown> = {
+    "@/lib/shell/enhancer": { isEnhancerProvider: () => true },
+    "next/server": { NextResponse: { json: (body: unknown, init?: ResponseInit) => Response.json(body, init) } },
+    "@/lib/auth": { requireUser: async () => ({ user: { id: "member", role: "member" } }), requireAdmin: stub("requireAdmin"), withTenant: (fn: unknown) => fn },
+    "@/lib/settings": { allSettings: async () => all, setSetting: stub("setSetting"), memberSettings, DEFAULTS: { namingTemplate: "x" } },
+    "@/lib/platform": { getPlatformLayer: async () => ({ models: {} }) },
+    "@/lib/platformLayer": { resolveModels: () => ({}), modelOfKind: () => null },
+    "@/lib/settingValues": { settingProblem: () => null },
+    "@/lib/caps": { setWorkspaceBudget: stub("setWorkspaceBudget") },
+    "@/lib/credits": { creditsApply: () => false },
+    "@/lib/tenant": { requireTenant: stub("requireTenant") },
+    "@/lib/cache": { invalidate: () => {}, PROJECTS_KEY: "projects" },
+  };
+  const target: { exports: { GET?: () => Promise<Response> } } = { exports: {} };
+  new Function("require", "module", "exports", source)((name: string) => { if (name in overrides) return overrides[name]; throw new Error(`The settings test must mock ${name}`); }, target, target.exports);
+  const body = await (await target.exports.GET!()).json() as { settings: Record<string, string> };
+  expect(Object.keys(body.settings).sort()).toEqual(["capWarnPct", "namingTemplate"]);
+  expect(JSON.stringify(body)).not.toContain("gen_private_of_another_member");
 });

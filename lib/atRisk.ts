@@ -5,8 +5,6 @@ import { requireTenant } from "./tenant";
 import { ASTRA_MODEL } from "./astra";
 import { TOPAZ_IMAGE_MODEL } from "./topaz";
 import { isHiggsfieldVideoModel } from "./cinemaStudioTypes";
-import { RETAINED_CONSUMER_ORIGINAL_SQL } from "./higgsfield-consumer/video-original";
-import { uploadReservationsReady } from "./uploadReservations";
 
 export { AT_RISK_WINDOW_MS, AT_RISK_COUNTS_SQL, IN_WINDOW_SQL, LOST_LABEL, PAST_WINDOW_SQL, UNSAVED_SQL, atRiskCountsQuery, atRiskHorizon, isLostAge } from "./atRiskWindow";
 import { IN_WINDOW_SQL, UNSAVED_SQL, atRiskCountsQuery } from "./atRiskWindow";
@@ -26,30 +24,27 @@ export async function atRiskCounts(horizon: number): Promise<AtRiskCounts> {
 export type UnsavedFacts = {
   kind: string; provider: string | null; model: string; arkTaskId: string | null;
   params: Record<string, unknown>;
-  /** A connected-account original the heartbeat never selects (RETAINED_CONSUMER_ORIGINAL_SQL). */
-  retainedOriginal?: boolean;
 };
 
 /** One short code per reason, written as a log field: never free text from a provider. */
 export type UnsavableReason =
-  | "dub_row" | "seal_queued_only" | "claims_queued_only" | "astra_claim_queued_only" | "fal_no_request_ref" | "no_task_ref" | "retained_original";
+  | "dub_row" | "still_or_sound_no_rescue" | "claims_queued_only" | "astra_claim_queued_only" | "fal_no_request_ref" | "no_task_ref";
 
 /**
  * Why the heartbeat has no way to save this unsaved take, or null when it has one. It mirrors, in the order of the code, the paths a succeeded take with no stored copy takes
  * in lib/jobs.ts (syncPending, then syncGeneration) and lib/falVideo.ts (syncFalVideo), from the row alone; it reads and calls nothing:
  *  - dub_row: a dubbing project's row is advanced by its own workflow, never by the save.
- *  - seal_queued_only: a still or sound with a saved outcome only seals it, and the seal writes rows that are still queued or running, never a succeeded one.
+ *  - still_or_sound_no_rescue: a still or sound whose outcome was saved before it finished. The seal that would write it never runs for a succeeded row (lib/renderWork.ts loadJob returns null for
+ *    one), and every branch after it is a no-op for a still or sound: only videos get an Ark task id, and the other collectors claim only queued or running rows.
  *  - claims_queued_only: a connected-account still or video and a Topaz still are collected by claims that take only queued or running rows.
  *  - astra_claim_queued_only: the same for the fal 3D upscale (Astra) video.
  *  - fal_no_request_ref: a fal video with no request id or endpoint saved has nothing to ask fal about.
  *  - no_task_ref: no Ark task id and none of the above: there is nothing to poll.
- *  - retained_original: a connected-account original kept elsewhere is left out of the heartbeat's selection.
  */
 export function whyNotSaved(f: UnsavedFacts): UnsavableReason | null {
   const p = f.params;
-  if (f.retainedOriginal) return "retained_original";
   if (f.kind === "audio" && p.task === "dub") return "dub_row";
-  if ((f.kind === "image" || f.kind === "audio") && p.producedOutcome) return "seal_queued_only";
+  if ((f.kind === "image" || f.kind === "audio") && p.producedOutcome) return "still_or_sound_no_rescue";
   if (f.provider === "fal" && f.kind === "image" && p.falRequestId) return null;
   if (f.kind === "image" && f.provider === "higgsfield") return "claims_queued_only";
   if (f.kind === "video" && f.provider === "higgsfield" && isHiggsfieldVideoModel(f.model)) return "claims_queued_only";
@@ -67,10 +62,8 @@ export type AtRiskRow = UnsavedFacts & { id: string; createdAt: number };
 /** The at-risk takes of this workspace, newest first, as the facts the classifier reads. */
 export async function listAtRisk(horizon: number, limit: number): Promise<AtRiskRow[]> {
   await ready();
-  /* The connected-account originals table the selection reads below is made here, as syncPending makes it before its own read. */
-  await uploadReservationsReady();
   const rs = await db().execute({
-    sql: `SELECT g.id, g.kind, g.provider, g.model, g.ark_task_id, g.params, g.created_at, (${RETAINED_CONSUMER_ORIGINAL_SQL}) AS retained
+    sql: `SELECT g.id, g.kind, g.provider, g.model, g.ark_task_id, g.params, g.created_at
           FROM generations g WHERE ${UNSAVED_SQL()} AND ${IN_WINDOW_SQL()} ORDER BY g.created_at DESC, g.id LIMIT ?`,
     args: [horizon, limit],
   });
@@ -79,7 +72,7 @@ export async function listAtRisk(horizon: number, limit: number): Promise<AtRisk
     try { const parsed = JSON.parse(String(r.params ?? "{}")); if (parsed && typeof parsed === "object") params = parsed as Record<string, unknown>; } catch { /* an unreadable row classifies by its columns */ }
     return {
       id: String(r.id), kind: String(r.kind), provider: r.provider == null ? null : String(r.provider), model: String(r.model),
-      arkTaskId: r.ark_task_id == null ? null : String(r.ark_task_id), params, retainedOriginal: Number(r.retained ?? 0) === 1, createdAt: Number(r.created_at),
+      arkTaskId: r.ark_task_id == null ? null : String(r.ark_task_id), params, createdAt: Number(r.created_at),
     };
   });
 }
@@ -126,6 +119,8 @@ export async function logUnsavable(rows: readonly (AtRiskRow & { reason: Unsavab
     next[row.id] = at;
     written++;
   }
-  try { await setSetting(LOGGED_KEY, JSON.stringify(next), "cron"); } catch { /* the lines are out; the next run may repeat them */ }
+  /* Nothing to write when no line went out and nothing left the list: the memory is already as it should be. */
+  const unchanged = Object.keys(next).length === Object.keys(logged).length && Object.entries(next).every(([id, when]) => logged[id] === when);
+  if (!unchanged) { try { await setSetting(LOGGED_KEY, JSON.stringify(next), "cron"); } catch { /* the lines are out; the next run may repeat them */ } }
   return written;
 }

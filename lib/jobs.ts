@@ -44,7 +44,7 @@ import { billedTo, getProvider } from "./providers";
 import { engineFor } from "./engines";
 import { notify } from "./push";
 import { hasRetainedConsumerOriginal, RETAINED_CONSUMER_ORIGINAL_SQL } from "./higgsfield-consumer/video-original";
-import { IN_WINDOW_SQL, atRiskHorizon } from "./atRisk";
+import { IN_WINDOW_SQL, atRiskHorizon } from "./atRiskWindow";
 import { uploadReservationsReady } from "./uploadReservations";
 import type { AssetCursor } from "./assetPagination";
 import type { ProviderCreditQuote } from "./providerCreditQuote";
@@ -798,7 +798,8 @@ export function heartbeatSaveDeadline(deadlineAt: number): number {
  */
 export async function syncPending(
   limit = 30,
-  options: { deadlineAt?: number } = {},
+  /** `horizon`: the visit's own (lib/atRisk.ts), so the window the cron counted is the window this chooses by. */
+  options: { deadlineAt?: number; horizon?: number } = {},
 ): Promise<ReconcileResult & { deferred: number; /** Of the takes chosen, how many were at risk (lib/atRisk.ts): succeeded, no stored copy, inside the window. */ atRiskTried: number }> {
   await ready();
   await syncCreditReceipts();
@@ -832,7 +833,7 @@ export async function syncPending(
   results.failed += dubs.failed;
   results.deferred += dubs.deferred;
   /* The window is lib/atRisk.ts's: the same 72 hours the health counter and the console count a take at risk in. */
-  const horizon = atRiskHorizon(now());
+  const horizon = options.horizon ?? atRiskHorizon(now());
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
       OR (g.status='succeeded' AND g.deleted=0 AND ${IN_WINDOW_SQL("g")}
