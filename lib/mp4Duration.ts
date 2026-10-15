@@ -26,6 +26,12 @@ function boxes(buf: Buffer, from: number, to: number): { type: string; start: nu
   return out;
 }
 
+/**
+ * The whole seconds a vendor that bills per second charges for a clip of this measured length: rounded UP (7.96 s is 8), except that a container's own rounding of a
+ * whole-second clip, under about a frame past the second, is not a second more (4.02 s is 4).
+ */
+export const billedWholeSeconds = (measured: number): number => Math.ceil(measured - 0.05);
+
 export function mp4DurationSeconds(buf: Buffer): number | null {
   try {
     const moov = boxes(buf, 0, buf.length).find((b) => b.type === "moov");

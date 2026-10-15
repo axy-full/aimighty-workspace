@@ -278,6 +278,12 @@ test("the clip is settled at what it measures: a clip shorter than asked costs i
     expect(shorter.take.veo.reconcile).toBe(1);
     expect(shorter.secs).toBeCloseTo(4, 3);
     expect(shorter.line.overrun_usd ?? null).toBeNull();
+    /* Billed per second: rounded up to whole seconds (a container's rounding of a whole-second clip, under a frame past it, is not a second more). */
+    for (const [length, billed] of [[7.96, 8], [6.04, 6], [4.0003, 4], [4.2, 5], [3.5, 4], [7.5, 8]] as const) {
+      const r = await make(clipOf(length));
+      expect(Number(r.take.cost_usd), String(length)).toBeCloseTo(Math.min(PRICE, billed * 0.4), 6);
+      expect(r.secs, String(length)).toBeCloseTo(length, 3);
+    }
     /* The Fast model at 1080p is measured at its own rate: 5 s x 0.12 of an asked 8 s. */
     const fast = await make(clipOf(5), { model: "veo-3.1-fast-generate-preview", resolution: "1080p" });
     expect(Number(fast.take.cost_usd)).toBeCloseTo(0.6, 6);

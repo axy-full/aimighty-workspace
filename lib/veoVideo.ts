@@ -20,7 +20,7 @@ import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { VEO_RATES, type VeoAspect, type VeoModel, type VeoResolution } from "./vendorRates";
 import { VEO_REFERENCE_LIMIT_BYTES, VEO_MAX_REFERENCES, VEO_SWITCH, VeoError, fetchResult, isVeoModel, pollVideo, submitVideo, veoConfigured, veoQuoteUsd, veoSettingsError } from "./veo";
-import { mp4DurationSeconds } from "./mp4Duration";
+import { billedWholeSeconds, mp4DurationSeconds } from "./mp4Duration";
 import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type ConsentMatch, type ConsentScope } from "./consentMatch";
 import { getConsent } from "./security/consent";
 import { consentLive } from "./security/consent-words";
@@ -44,7 +44,7 @@ import { consentLive } from "./security/consent-words";
  *
  * MONEY. Quote: the seconds at VEO_RATES (lib/vendorRates.ts, verified against Google's pricing page, 16 Oct 2026; confirm against the first invoice), through the margin table
  * (`quotedCredits`, keyed by the model); reserved at the quote on the meter; Google states no cost, so a clip is settled at its own measured length (read from the stored
- * file's container header, lib/mp4Duration.ts) times the rate, or at the quote when its length cannot be read, and marked `reconcile` (the figure is ours), and
+ * file's container header, lib/mp4Duration.ts, rounded up to whole seconds as Google bills per second) times the rate, or at the quote when its length cannot be read, and marked `reconcile` (the figure is ours), and
  * NEVER billed above the quote. Google bills only on success ("You will only be charged if your video is successfully generated"; blocked videos are not charged), so a failure we can see
  * is settled at nothing. A clip Google made and we could not keep (its address lives two days) is recorded on the ledger line at the quote, billed to nobody, marked `reconcile`.
  * A person approves: `maxCredits` must cover the quote (over MCP only the workspace's own Ask/Auto setting does: lib/directEngineMcp.ts).
@@ -392,7 +392,9 @@ export async function advanceVeoJobWith(genId: string, deps: VeoDeps): Promise<V
          seconds it has times the rate (never above the quote); one we cannot measure settles at the quote. Either way the figure is ours, marked to reconcile. */
       const measured = mp4DurationSeconds(bytes);
       const rate = VEO_RATES.models[veo.model].usdPerSecond[veo.resolution];
-      const measuredUsd = measured != null ? Math.ceil(measured * rate * 1e6 - 1e-6) / 1e6 : null;
+      /* Google bills per second, so the measured length is rounded UP to whole seconds (lib/mp4Duration.ts: a 7.96 s clip is 8). */
+      const billedSeconds = measured != null ? billedWholeSeconds(measured) : null;
+      const measuredUsd = billedSeconds != null ? Math.ceil(billedSeconds * rate * 1e6 - 1e-6) / 1e6 : null;
       await settleVeo(genId, "done", { costUsd: measuredUsd != null ? Math.min(veo.reservedUsd, measuredUsd) : veo.reservedUsd, seconds: measured, reconcile: true, storedUrl: stored.url, bytes: stored.bytes });
       return (await load(genId, { any: true }))?.veo ?? null;
     } catch (error) {
