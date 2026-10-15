@@ -882,3 +882,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Veo #779 is complete at 0109ddd4: the veo_video MCP tool is in (Fast is a draft, Standard always asks); 214 specs pass.
   - Gap found by lane D: /api/prepared-jobs takes scalar args only, so Ask calls with images file nothing while the reply claims a person will approve. Lane B is fixing it: an honest reply, and nested args only if no migration is needed.
   - Opus delta checks are queued.
+- **16 Oct 02:37 IST.** Opus: #779 Veo APPROVED with should-fixes; lane B's MCP deltas (#776 cee05194, #777 d5f54180, #778 935aa141) APPROVED. 193 + 55 specs pass.
+  - Prepared jobs: same path as render_shot; only a session can decide; the caller can't set price or approval; the price is quoted when a person runs it.
+  - Gap: a filed engine job doesn't open as a one-tap approval yet (owner question; falls short of rule 14's one tap).
+  - Veo should-fixes sent to lane D: number of videos = 1; settle at min(quote, measured length × rate); narrow the download hosts (*.google.com is too broad); env note.
+  - Shared cron edits skip only `veo_video` rows.
