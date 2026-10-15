@@ -21,6 +21,7 @@ const person = (id: string, role: "owner" | "admin" | "member" = "member") => ({
  * uploadOpenableBy): for that person the entry reads as no longer there (`available: false`, no title), and the planner leaves it out. Nothing is migrated or rewritten.
  */
 const TITLE = "Secret take title";
+const DELETED_TITLE = "Deleted secret title";
 const mem = (n: string, values: Record<string, unknown>) => ({ id: `mem_${n.padEnd(20, "a")}`, kind: "reference", text: `Use this look ${n}.`, project_id: null, asset_kind: "image", status: "active", source: "person", created_at: 1, updated_at: 1, ...values });
 
 async function seedOld() {
@@ -43,10 +44,16 @@ async function seedOld() {
     await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`${owner.id}:d1`, owner.id, "d1", "Draft", body, 1] });
     const take = (id: string, project: string, title: string) => ins("generations", { id, model: "m", prompt: `Prompt of ${title}`, params: "{}", status: "succeeded", created_at: 1, updated_at: 1, kind: "image", title, project_id: project });
     await take("gen_private", board, TITLE); await take("gen_open", "prod_open", "Open take title");
+    /* Soft-deleted takes (restorable): one on the private board, one on an ordinary project. */
+    await take("gen_private_del", board, DELETED_TITLE); await take("gen_open_del", "prod_open", "Dropped open title");
+    await db().execute("UPDATE generations SET deleted=1 WHERE id IN ('gen_private_del','gen_open_del')");
     await ins("uploads", { id: "up_private", uploader_id: owner.id, filename: "secret-photo.png", kind: "image", mime: "image/png" });
     await ins("uploads", { id: "up_unowned", uploader_id: null, filename: "old-logo.png", kind: "image", mime: "image/png" });
     const keep = (n: string, assetId: string, label: string) => ins("atomik_memory", mem(n, { workspace_id: ws.id, asset_id: assetId, asset_label: label, created_by: owner.id }));
     await keep("priv", "generation:gen_private", TITLE); await keep("open", "generation:gen_open", "Open take title");
+    await keep("pdel", "generation:gen_private_del", DELETED_TITLE); await keep("odel", "generation:gen_open_del", "Dropped open title");
+    /* A private upload that was hard-deleted: no row is left to ask who could open it. */
+    await keep("urem", "upload:up_removed", "removed-photo.png");
     await keep("upriv", "upload:up_private", "secret-photo.png"); await keep("uopen", "upload:up_unowned", "old-logo.png");
   }, { user: owner });
   const as = <T,>(who: TenantUser, fn: () => Promise<T>) => runInTenant(ws, fn, { user: who });
@@ -110,5 +117,44 @@ test("a take on the marked sample is everyone's to read, the platform owner's in
     if (previous === undefined) delete process.env.SUPER_ADMIN_EMAIL;
     else process.env.SUPER_ADMIN_EMAIL = previous;
   }
+  void ws;
+});
+
+test("a DELETED private take and a REMOVED private upload read blank for a teammate: no title, and no tell between them and a private one", async () => {
+  const { mate, view } = await seedOld();
+  const seen = await view(mate);
+  const json = JSON.stringify(seen);
+  expect(json).not.toContain(DELETED_TITLE);
+  expect(json).not.toContain("removed-photo");
+  for (const n of ["priv", "pdel", "urem"]) expect(byId(seen.list, n), n).toMatchObject({ available: false, assetLabel: null });
+  /* A deleted take of an ordinary project is everyone's, as before: gone from the Library, its title kept. */
+  expect(byId(seen.list, "odel")).toMatchObject({ available: false, assetLabel: "Dropped open title" });
+  expect(seen.planner).not.toContain("Use this look pdel.");
+  expect(seen.planner).not.toContain("Use this look urem.");
+});
+
+test("the owner still sees their own deleted take's title (gone, title kept); a removed upload has no row to ask, so it reads blank for everyone", async () => {
+  const { owner, view } = await seedOld();
+  const seen = await view(owner);
+  expect(byId(seen.list, "pdel")).toMatchObject({ available: false, assetLabel: DELETED_TITLE });
+  expect(byId(seen.list, "urem")).toMatchObject({ available: false, assetLabel: null });
+  expect(seen.planner).not.toContain("Use this look pdel.");
+});
+
+test("an admin gets a blank title for a member's private take: an admin has no elevation here", async () => {
+  const { view } = await seedOld();
+  const admin = person("u_admin", "admin");
+  const seen = await view(admin);
+  expect(JSON.stringify(seen)).not.toContain(TITLE);
+  expect(byId(seen.list, "priv")).toMatchObject({ available: false, assetLabel: null });
+  expect(seen.planner).not.toContain("Use this look priv.");
+});
+
+test("an agent reading for a turn, with no viewer given, opens nothing private either (its id is not a person's)", async () => {
+  const { ws, m, as } = await seedOld();
+  const agent = person("agent:run1", "member");
+  const text = await as(agent, () => m.plannerMemoryText({ projectId: null, query: "look" }));
+  expect(text).not.toContain(TITLE);
+  expect(text).not.toContain("Use this look priv.");
   void ws;
 });

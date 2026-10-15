@@ -1,7 +1,7 @@
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
-import { requireTenant } from "./tenant";
-import { currentPerson, isSampleProject, mayReachProject, mayReadTake } from "./draftProject";
+import { currentTenant, requireTenant } from "./tenant";
+import { isSampleProject, mayReachProject, mayReadTake } from "./draftProject";
 import { uploadOpenableBy } from "./uploadAccess";
 import { archiveDeleteStatements, archiveStatement, archiveTransaction } from "./archive";
 import {
@@ -210,8 +210,8 @@ async function element(assetId: string, by: string): Promise<{ label: string; ki
  * only that it is still in the Library is read. Absent: gone, so a planner
  * leaves the entry out.
  *
- * Also absent, and listed in `hidden`, is a take or an upload `viewer` may not open (a take on someone else's private board, an upload only its uploader may open: the same
- * helpers the board uses, mayReadTake and uploadOpenableBy). An entry kept before the board gate holds that asset's title as it was kept, and must not serve it to them.
+ * Also absent, and listed in `hidden`, is a take or an upload `viewer` may not open (a take on someone else's private board, deleted or not, an upload only its uploader may open: the same
+ * helpers the board uses, mayReadTake and uploadOpenableBy), and a Library reference with no row left to check. An entry kept before the board gate holds that asset's title as it was kept, and must not serve it to them.
  * `viewer` null: nobody to hide it from (a system read).
  */
 type Found = { label: string | null; kind: string | null };
@@ -234,18 +234,23 @@ async function refsPresent(ids: string[], viewer: string | null): Promise<Presen
       const marks = chunk.map(() => "?").join(",");
       const rs = await db().execute({
         sql: origin === "generation"
-          ? `SELECT id, project_id FROM generations WHERE id IN (${marks}) AND COALESCE(deleted, 0) = 0`
+          ? `SELECT id, project_id, COALESCE(deleted, 0) AS deleted FROM generations WHERE id IN (${marks})`
           : `SELECT id FROM uploads WHERE id IN (${marks})`,
         args: chunk,
       });
+      const seen = new Set<string>();
       for (const r of rs.rows) {
         const key = `${origin}:${String(r.id)}`;
+        seen.add(String(r.id));
+        /* Asked of every row, a deleted take's too (restorable, so still its board's): a person who could not open it never gets its title. */
         const openable = !viewer || (origin === "generation"
           ? await mayReadTake({ id: viewer }, r.project_id == null ? null : String(r.project_id))
           : await uploadOpenableBy(String(r.id), { id: viewer }));
-        if (openable) present.set(key, { label: null, kind: null });
-        else present.hidden.add(key);
+        if (!openable) present.hidden.add(key);
+        else if (!Number(r.deleted ?? 0)) present.set(key, { label: null, kind: null });
       }
+      /* With a viewer, a reference with no row at all (a removed upload, an id that was never there) cannot be checked against who could open it, so its title is not served either: the same blank as a private one, with no tell. */
+      if (viewer) for (const id of chunk) if (!seen.has(id)) present.hidden.add(`${origin}:${id}`);
     }
   }
   for (let i = 0; i < souls.length; i += 200) {
@@ -592,12 +597,12 @@ export async function findForForget(said: unknown, projectId: unknown, viewer: s
  * proposals, other projects' entries, references whose asset has left the
  * Library and anything about money are never among them.
  */
-export async function plannerMemory(at: { projectId: string | null | undefined; query: string; /** Who the turn is for: a reference to what they may not open is left out (refsPresent). Absent: the person making this request; null: a system read. */ viewer?: string | null }): Promise<PlannerMemoryItem[]> {
+export async function plannerMemory(at: { projectId: string | null | undefined; query: string; /** Who the turn is for: a reference to what they may not open is left out (refsPresent). Absent: the signed-in user of this request, an agent's included (its id opens nothing private); null: a system read. */ viewer?: string | null }): Promise<PlannerMemoryItem[]> {
   await memoryReady();
   const workspaceId = requireTenant().id;
   const projectId = at.projectId && PROJECT_ID.test(at.projectId) ? at.projectId : null;
   const entries = await scopedEntries(workspaceId, projectId, "active");
-  const present = await refsPresent(refsOf(entries), at.viewer === undefined ? currentPerson()?.id ?? null : at.viewer);
+  const present = await refsPresent(refsOf(entries), at.viewer === undefined ? currentTenant()?.user?.id ?? null : at.viewer);
   /* An element that is gone is left out; one that is there is planned with by the name it has now. */
   return rankForPlanner(entries.filter((e) => !e.assetId || present.has(e.assetId)).map((e) => live(e, present)), { projectId, query: at.query });
 }
