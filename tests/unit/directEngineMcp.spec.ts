@@ -127,8 +127,9 @@ test("only a person approves spending: Ask (the default) returns the priced, pre
     await setSpend("ask");
     const refused = recorder({ estimatedCredits: 7, price: 0.7, unit: "usd" }, { prepare: "refused" });
     const wordsOnly = await runDirectEngineTool("lip_sync", ARGS, refused.call);
-    expect(wordsOnly).toMatch(/^Priced and prepared, not started\.[\s\S]*A person approves it in Particl\./);
-    expect(wordsOnly).not.toContain("prepared job:");
+    /* Never claims a job was filed when it was not: it says so plainly, gives the door's reason, and says what the person does instead. */
+    expect(wordsOnly).toMatch(/^Priced, not started\.[\s\S]*Nothing was filed: Only a token made to prepare jobs files one[\s\S]*nothing was started or spent\. A person can make this themselves in Particl, where its price is shown/);
+    expect(wordsOnly).not.toMatch(/prepared job:|waits in Particl|Priced and prepared/);
     const preparer = recorder({}, { prepare: "no-quote" });
     const unpriced = await runDirectEngineTool("lip_sync", ARGS, preparer.call);
     expect(unpriced).toMatch(/^Prepared, not started\.[\s\S]*prepared job: prep_1[\s\S]*nothing was started or spent/);
@@ -160,13 +161,29 @@ test("an engine job in the prepared-jobs door: filed by a token made to prepare,
     /* The arguments are kept for the person's approval, in the workspace's own database. */
     const row = (await db().execute({ sql: "SELECT settings_json FROM prepared_jobs WHERE id=?", args: [filed.id] })).rows[0];
     expect(JSON.parse(String(row.settings_json))).toEqual({ engine: "lip_sync", args: { model: "sync-3", clipUploadId: "up_clip", castMemberId: "cast_a" } });
+    /* Lists and groups of ids are kept (an image call names its uploads and people), with no migration: the arguments are JSON in the row that is already there. */
+    const nested = await jobs.prepareJob({ engine: "veo_video", prompt: "prepared: video", args: { prompt: "A crane at dawn, wide", references: [{ uploadId: "up_a", castMemberId: "c1" }, { uploadId: "up_b", castMemberId: "c2" }], firstFrame: { uploadId: "up_f" }, seconds: 8, audio: true } }, token);
+    const nestedRow = (await db().execute({ sql: "SELECT settings_json FROM prepared_jobs WHERE id=?", args: [nested.id] })).rows[0];
+    expect(JSON.parse(String(nestedRow.settings_json))).toEqual({ engine: "veo_video", args: { prompt: "A crane at dawn, wide", references: [{ uploadId: "up_a", castMemberId: "c1" }, { uploadId: "up_b", castMemberId: "c2" }], firstFrame: { uploadId: "up_f" }, seconds: 8, audio: true } });
+    expect(JSON.stringify(nested)).not.toMatch(/up_a|up_f|references|firstFrame/);
+    /* ...but bounded, ids only, and never an approval or file bytes: text or a data address inside a list, a price key at any depth, too deep, too many, too large. */
+    const refuse = (args: Record<string, unknown>) => jobs.prepareJob({ engine: "veo_video", prompt: "x", args }, token);
+    await expect(refuse({ references: [{ uploadId: "data:image/png;base64,AAAA" }] })).rejects.toThrow(/id, not text or a file/);
+    await expect(refuse({ references: ["a long sentence with spaces"] })).rejects.toThrow(/id, not text or a file/);
+    await expect(refuse({ references: [{ uploadId: "x".repeat(200) }] })).rejects.toThrow(/id, not text or a file/);
+    await expect(refuse({ references: [{ maxCredits: 1 }] })).rejects.toThrow(/only a person approves/);
+    await expect(refuse({ a: { b: { c: { d: "x" } } } })).rejects.toThrow(/too deep/);
+    await expect(refuse({ references: Array.from({ length: 17 }, (_, i) => `up_${i}`) })).rejects.toThrow(/too many items/);
+    await expect(refuse({ g: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`k${i}`, i])) })).rejects.toThrow(/too many entries/);
+    await expect(refuse(Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`k${i}`, "x".repeat(1900)])))).rejects.toThrow(/too large/);
+    await expect(refuse({ f: () => 1 })).rejects.toThrow(/word, a number or yes\/no/);
     /* A render token, a read token and no token do not file one (as for a render). */
     for (const scope of ["render", "read"]) await expect(jobs.prepareJob({ engine: "lip_sync", prompt: "x", args: {} }, { id: "tok_x", scope })).rejects.toThrow(/Only a token made to prepare/);
     await expect(jobs.prepareJob({ engine: "lip_sync", prompt: "x", args: {} }, undefined)).rejects.toThrow(/Only a token made to prepare/);
     /* A price, an approval or a quote flag in the arguments is refused, under any spelling. */
     for (const key of ["maxCredits", "max_credits", "quoteOnly", "quoteFingerprint", "approved", "price", "estimatedCredits"])
       await expect(jobs.prepareJob({ engine: "lip_sync", prompt: "x", args: { [key]: 1 } }, token), key).rejects.toThrow(/only a person approves/);
-    for (const bad of [{ engine: "Lip Sync", prompt: "x", args: {} }, { engine: "lip_sync", prompt: "", args: {} }, { engine: "lip_sync", prompt: "x", args: [] }, { engine: "lip_sync", prompt: "x", args: { a: { b: 1 } } }, { engine: "lip_sync", prompt: "x", args: { "bad key": 1 } }])
+    for (const bad of [{ engine: "Lip Sync", prompt: "x", args: {} }, { engine: "lip_sync", prompt: "", args: {} }, { engine: "lip_sync", prompt: "x", args: [] }, { engine: "lip_sync", prompt: "x", args: { a: { b: "has spaces" } } }, { engine: "lip_sync", prompt: "x", args: { "bad key": 1 } }])
       await expect(jobs.prepareJob(bad, token), JSON.stringify(bad)).rejects.toThrow();
     /* A person decides it (marked, never erased); a Seedance job is unchanged. */
     expect(await jobs.decidePrepared(filed.id, "dismissed", "u_person")).toBe(true);
