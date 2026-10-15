@@ -170,8 +170,28 @@ test("admission: refused as an unknown id where it is off (nothing priced, held 
   });
 });
 
+test("a gated model later marked retired is listed nowhere and refused: gatedModelsHere filters on isOffered, and both engine lists filter again", async () => {
+  const { gatedModelsHere, gatedModelRefusal } = await import("../../lib/engineModels");
+  const models = await import("../../lib/models");
+  const row = models.getModel(ID) as { retired?: true };
+  process.env.NANOBANANA21_ENABLED = "1";
+  await inWorkspace("ws_legacy", async () => {
+    expect((await gatedModelsHere()).map((m) => m.id)).toEqual([ID]);
+    row.retired = true;
+    try {
+      expect(await gatedModelsHere()).toEqual([]);
+      /* Admission already refuses a retired id for new work (retiredReason), before the gate is asked. */
+      expect(models.retiredReason(ID)).toBe(models.RETIRED_REASON);
+      expect(await gatedModelRefusal(ID)).toBeNull();
+    } finally { delete row.retired; }
+    expect((await gatedModelsHere()).map((m) => m.id)).toEqual([ID]);
+  });
+  expect(readFileSync("app/api/engines/route.ts", "utf8")).toContain("gated.filter((m) => isOffered(m) && m.provider === p.id)");
+  expect(readFileSync("app/api/workbench/engines/route.ts", "utf8")).toContain("(await gatedModelsHere()).filter(isOffered)");
+});
+
 test("structure: both engine lists add the gated models, admission asks the gate before it prices anything, and the switch is the plan's name", () => {
-  expect(readFileSync("app/api/engines/route.ts", "utf8")).toContain(".concat(gated.filter((m) => m.provider === p.id)");
+  expect(readFileSync("app/api/engines/route.ts", "utf8")).toContain(".concat(gated.filter((m) => isOffered(m) && m.provider === p.id)");
   expect(readFileSync("app/api/workbench/engines/route.ts", "utf8")).toContain("...(await gatedModelsHere())");
   const admission = readFileSync("lib/generationAdmission.ts", "utf8");
   expect(admission.indexOf("gatedModelRefusal(modelId)")).toBeGreaterThan(0);

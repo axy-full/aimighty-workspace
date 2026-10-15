@@ -1,5 +1,5 @@
 import { engineEnabled } from "./engineGate";
-import { MODELS, findModel, type ModelDef } from "./models";
+import { MODELS, findModel, isOffered, type ModelDef } from "./models";
 
 /**
  * Models that sit behind an engine switch of their own (`ModelDef.engineSwitch`), where the owner's rule applies to a model row as it does to a tool
@@ -11,10 +11,10 @@ export async function gatedModelOn(model: Pick<ModelDef, "engineSwitch"> | undef
   return model?.engineSwitch ? engineEnabled(model.engineSwitch) : true;
 }
 
-/** The gated models this workspace may use right now (switch on, and the house or a listed workspace). */
+/** The gated models this workspace may use right now (switch on, and the house or a listed workspace), never one marked retired (every offer list filters on `isOffered`). */
 export async function gatedModelsHere(): Promise<ModelDef[]> {
   const out: ModelDef[] = [];
-  for (const model of MODELS) if (model.engineSwitch && (await gatedModelOn(model))) out.push(model);
+  for (const model of MODELS) if (model.engineSwitch && isOffered(model) && (await gatedModelOn(model))) out.push(model);
   return out;
 }
 

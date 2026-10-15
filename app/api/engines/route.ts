@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
-import { offeredModels } from "@/lib/models";
+import { isOffered, offeredModels } from "@/lib/models";
 import { gatedModelsHere } from "@/lib/engineModels";
 import { requireUser, withTenant } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
@@ -53,7 +53,7 @@ export const GET = withTenant(async function GET() {
       models: offeredModels().filter((m) => m.provider === p.id && (!m.soulIdentity || soulCharacterGenerationEnabled()) && (!m.cinemaStudio || cinemaStudioEnabled()))
         .map((m) => ({ id: m.id, label: m.label, kind: m.kind }))
         /* …and the engines behind a switch of their own, where it is on for this workspace. */
-        .concat(gated.filter((m) => m.provider === p.id).map((m) => ({ id: m.id, label: m.label, kind: m.kind }))),
+        .concat(gated.filter((m) => isOffered(m) && m.provider === p.id).map((m) => ({ id: m.id, label: m.label, kind: m.kind }))),
     })),
   });
 });
