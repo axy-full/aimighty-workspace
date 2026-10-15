@@ -842,6 +842,11 @@ export async function syncPending(
   results.attempted += sarvams.attempted;
   results.failed += sarvams.failed;
   results.deferred += sarvams.deferred;
+  // Label checks whose reservation was never settled (the process died between the two): settled at nothing, which frees the hold. Never sent again.
+  const labels = await (await import("./visionLabel")).recoverLabelChecks({ limit: 8, deadlineAt: options.deadlineAt });
+  results.attempted += labels.attempted;
+  results.failed += labels.failed;
+  results.deferred += labels.deferred;
   // FLUX.2 jobs (BFL): ask after the running; a Ready image is collected at once, inside its ten minutes. Never resubmit.
   const bfls = await (await import("./bflImage")).recoverBflJobs({ limit: 4, deadlineAt: options.deadlineAt });
   results.attempted += bfls.attempted;

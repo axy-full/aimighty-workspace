@@ -58,7 +58,7 @@ async function frame(label: string, text: string | null): Promise<{ id: string }
   return { id };
 }
 /** A take of this workspace: an image take with its stored picture, or a video take (no picture the server can read). */
-async function take(label: string, kind: "image" | "video", text: string | null = null, projectId: string | null = null): Promise<string> {
+async function take(label: string, kind: "image" | "video", text: string | null = null, projectId: string | null = null, createdBy = "u_test"): Promise<string> {
   const { db, ready } = await import("../../lib/db");
   const { storeImageBytes } = await import("../../lib/storage");
   await ready();
@@ -70,7 +70,7 @@ async function take(label: string, kind: "image" | "video", text: string | null 
   }
   await db().execute({
     sql: "INSERT INTO generations (id, project_id, kind, model, prompt, params, status, created_by, created_at, updated_at, provider, task, title, stored_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    args: [id, projectId, kind, kind === "image" ? "gemini-3.1-flash-image" : "seedance", "A can of cola", JSON.stringify({ job: "other" }), "succeeded", "u_test", Date.now(), Date.now(), "google", "generate", "A can", stored],
+    args: [id, projectId, kind, kind === "image" ? "gemini-3.1-flash-image" : "seedance", "A can of cola", JSON.stringify({ job: "other" }), "succeeded", createdBy, Date.now(), Date.now(), "google", "generate", "A can", stored],
   });
   return id;
 }
@@ -88,6 +88,13 @@ async function admit(input: Record<string, unknown>, seams: import("../../lib/vi
   const { admitLabelCheck } = await import("../../lib/visionLabel");
   return admitLabelCheck(input, OWNER, options(), seams);
 }
+/** The same request made by another person: the admission asks that the request's own scope names its actor, so it runs in a scope of its own. */
+async function admitAs(actor: AdmissionActor, input: Record<string, unknown>, seams: import("../../lib/visionLabel").LabelCheckSeams = {}) {
+  const { admitLabelCheck } = await import("../../lib/visionLabel");
+  const { runInTenant } = await import("../../lib/tenant");
+  return runInTenant(house(), () => admitLabelCheck(input, actor, options(), seams), actor as never);
+}
+const person = (id: string, role: "admin" | "member" = "member", owner = false): AdmissionActor => ({ user: { id, email: `${id}@example.invalid`, name: id, role, owner, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] });
 const approved = { maxCredits: 100000 };
 const PRICE = 0.0015;
 const reads = (text: string) => ({ detect: async () => ({ text, words: text ? [{ text: "ACME", box: [1, 2, 3, 4] as [number, number, number, number] }] : [] }) });
@@ -248,6 +255,102 @@ test("a video is checked on a frame: the frame's text is read, the result is kep
     expect((await admit({ takeId: v, frameUploadId: blank.id, expected: "ACME COLA", ...approved })).body).toMatchObject({ verdict: "missing", flagged: true });
     expect(Number((await meterRows()).slice(before)[0].engine_cost_usd)).toBeCloseTo(PRICE, 6);
   });
+});
+
+test("who may check a take: a private board's take is as absent as an unknown one; another member's take is readable but not changeable; its maker, an admin and a run for its maker may; nothing is read, held or written for anyone refused", async () => {
+  const { db } = await import("../../lib/db");
+  const draft = await import("../../lib/draftProject");
+  const { newProject } = await import("../../lib/workbench/studio");
+  const { workbenchReady } = await import("../../lib/workbench/records");
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  process.env.VISION_LABEL_CHECK_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const { requireTenant } = await import("../../lib/tenant");
+    await workbenchReady();
+    await rigAgentReady();
+
+    const draftId = uid("d");
+    const board = draft.mappedId("prj_wb_", requireTenant().id, "u_owner", draftId);
+    await db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES(?,?,0)", args: [board, "Private board"] });
+    await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)", args: [`u_owner:${draftId}`, "u_owner", draftId, draftId, JSON.stringify({ ...newProject(draftId), id: draftId, productionProjectId: board })] });
+
+    const open = uid("prod");
+    await project(open);
+    const secret = await take("t_priv", "image", "SECRET LABEL", board, "u_owner");
+    const theirs = await take("t_theirs", "image", "ACME", open, "u_owner");
+    const calls: string[] = [];
+    const spy = { detect: async () => { calls.push("detect"); return { text: "ACME", words: [] }; } };
+    const meters = async () => (await meterRows()).length;
+    const before = await meters();
+    const mate = person("u_mate"), maker = person("u_owner"), admin = person("u_admin", "admin", true);
+    /* A member, an admin and a quote: the private board's take is not there, whatever they ask. */
+    for (const [who, label] of [[mate, "member"], [admin, "admin"]] as const) {
+      for (const extra of [{ quoteOnly: true }, approved]) {
+        const reply = await admitAs(who, { takeId: secret, expected: "ACME", ...extra }, spy);
+        expect(reply, `${label} ${JSON.stringify(extra)}`).toMatchObject({ status: 404, body: { error: "That take is not in this workspace." } });
+      }
+      /* The same answer as a take that does not exist. */
+      expect((await admitAs(who, { takeId: "gen_not_here", expected: "ACME", ...approved }, spy)).body).toEqual((await admitAs(who, { takeId: secret, expected: "ACME", ...approved }, spy)).body);
+    }
+    expect(calls).toEqual([]);
+    expect(await meters()).toBe(before);
+    expect((await row(secret)).check).toBeNull();
+    /* Another member's take in an ordinary board: readable, not changeable: refused in the words every route uses, before anything is read or held. */
+    for (const extra of [{ quoteOnly: true }, approved]) {
+      expect(await admitAs(mate, { takeId: theirs, expected: "ACME", ...extra }, spy), JSON.stringify(extra)).toMatchObject({ status: 403, body: { error: expect.stringContaining("someone else's work") } });
+    }
+    expect(calls).toEqual([]);
+    expect(await meters()).toBe(before);
+    expect((await row(theirs)).check).toBeNull();
+    /* Its maker, and an admin, may; the result lands on the take. */
+    expect((await admitAs(maker, { takeId: theirs, expected: "ACME", ...approved }, spy)).status).toBe(200);
+    expect((await admitAs(admin, { takeId: theirs, expected: "ACME", ...approved }, spy)).status).toBe(200);
+    expect(calls).toEqual(["detect", "detect"]);
+    expect((await row(theirs)).check).toMatchObject({ verdict: "match" });
+    /* The board's owner checks a take of their own board. */
+    expect((await admitAs(maker, { takeId: secret, expected: "SECRET LABEL", ...approved }, { detect: async () => ({ text: "SECRET LABEL", words: [] }) })).status).toBe(200);
+    expect((await row(secret)).check).toMatchObject({ verdict: "match" });
+    /* A frame of another person's private upload is not openable either. */
+    /* An Atomik run acts as the person who started it, as a member; a run that names nobody, and the server's own pass, have no person and are refused. */
+    const run = async (owner: string) => { const id = uid("run"); await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: [id, "prod_x", "draft_x", owner, uid("req"), "goal", "auto", "finished"] }); return person(`agent:${id}`); };
+    const forMate = await run("u_mate"), forMaker = await run("u_owner");
+    calls.length = 0;
+    expect(await admitAs(forMate, { takeId: secret, expected: "ACME", ...approved }, spy)).toMatchObject({ status: 404 });
+    expect(await admitAs(forMate, { takeId: theirs, expected: "ACME", ...approved }, spy)).toMatchObject({ status: 403 });
+    expect(calls).toEqual([]);
+    expect((await admitAs(forMaker, { takeId: theirs, expected: "ACME", ...approved }, spy)).status).toBe(200);
+    expect(calls).toEqual(["detect"]);
+    for (const nobody of [person("agent:run_that_does_not_exist"), person("server")]) {
+      expect(await admitAs(nobody, { takeId: theirs, expected: "ACME", ...approved }, spy), nobody.user.id).toMatchObject({ status: 403, body: { error: "This check needs a person behind it." } });
+    }
+    expect(calls).toEqual(["detect"]);
+  });
+});
+
+test("a reservation the process never settled is settled at nothing by the cron stage, which frees its hold and sends nothing; young ones and other engines' are left alone", async () => {
+  process.env.VISION_LABEL_CHECK_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+    const { recoverLabelChecks, LABEL_CHECK_STALE_MS } = await import("../../lib/visionLabel");
+    const lost = uid("vlc_lost"), other = uid("sarvam_other");
+    await reserveGenerationSpend({ id: lost, kind: "image", engine: "vision", model: "vision-text-detection", status: "running", engineCostUsd: PRICE, createdBy: "owner" });
+    await reserveGenerationSpend({ id: other, kind: "text", engine: "sarvam", model: "sarvam-translate:v1", status: "running", engineCostUsd: 0.01, createdBy: "owner" });
+    expect((await meterRows()).find((r) => r.id === lost)).toMatchObject({ status: "running" });
+    expect((await recoverLabelChecks({ limit: 50 })).attempted).toBe(0);
+    const done = await recoverLabelChecks({ limit: 50 }, () => Date.now() + LABEL_CHECK_STALE_MS + 60_000);
+    expect(done).toMatchObject({ failed: 0 });
+    expect(done.attempted).toBeGreaterThanOrEqual(1);
+    const settled = (await meterRows()).find((r) => r.id === lost)!;
+    expect(settled).toMatchObject({ status: "failed" });
+    expect(Number(settled.engine_cost_usd)).toBe(0);
+    expect(Number(settled.billed_credits ?? 0)).toBe(0);
+    /* Another engine's reservation is not this stage's. */
+    const { platformDb } = await import("../../lib/platform");
+    expect((await platformDb().execute({ sql: "SELECT status FROM meter_events WHERE id=?", args: [other] })).rows[0].status).toBe("running");
+    /* A second pass has nothing left to do. */
+    expect((await recoverLabelChecks({ limit: 50 }, () => Date.now() + LABEL_CHECK_STALE_MS + 60_000)).attempted).toBe(0);
+  });
+  expect(readFileSync("lib/jobs.ts", "utf8")).toContain('(await import("./visionLabel")).recoverLabelChecks(');
 });
 
 test("a failure bills nothing and changes nothing: a refusal, a dropped connection and a bad picture say 'Nothing was billed', settle at 0, and leave the take with no result", async () => {

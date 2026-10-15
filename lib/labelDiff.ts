@@ -17,9 +17,12 @@
  * Nothing else is ever done: no accent stripping, no look-alike letters, no punctuation or digit tolerance. A caller wanting more asks for a rule here, in code, with a test.
  *
  * Text is compared by Unicode code point. Limits keep the work bounded: the required text is at most LABEL_EXPECTED_MAX characters, the text read at most LABEL_DETECTED_MAX.
+ * In `whole` mode a text read that runs more than WHOLE_SLACK characters past the required text can only be a mismatch, so the difference is worked out on its first
+ * (required length + WHOLE_SLACK) characters and the result says `truncated`: the edit script is then over that stretch, never over a 20,000-character table (about 80 MB).
  */
 export const LABEL_EXPECTED_MAX = 1000;
 export const LABEL_DETECTED_MAX = 20000;
+export const WHOLE_SLACK = 2000;
 
 export type LabelRules = { unicode: "nfc" | "none"; case: "exact" | "fold"; whitespace: "exact" | "collapse" };
 export const STRICT_RULES: LabelRules = { unicode: "nfc", case: "exact", whitespace: "exact" };
@@ -36,6 +39,8 @@ export type LabelDiff = {
   /** Characters removed plus characters added: 0 only for a match. */
   distance: number;
   ops: DiffOp[];
+  /** Present (true) only when `detected` was cut for the work (`whole` mode, far longer than the required text): the difference is over its first stretch. */
+  truncated?: true;
 };
 
 /** Reads a caller's rules: any field left out or not one of the known words is the strict value. Never throws. */
@@ -125,6 +130,10 @@ export function labelDiff(required: string, read: string, mode: LabelMode, rules
     /* Nothing in what was read lines up with the required text better than nothing does: show all of it. */
     detected = w.end > w.start ? hay.slice(w.start, w.end).join("") : detectedAll;
   }
+  let truncated = false;
+  const cap = points(expected).length + WHOLE_SLACK;
+  const readPoints = points(detected);
+  if (readPoints.length > cap) { detected = readPoints.slice(0, cap).join(""); truncated = true; }
   const { ops, distance } = diffOps(expected, detected);
-  return { verdict: distance === 0 ? "match" : "mismatch", expected, detected, distance, ops };
+  return { verdict: distance === 0 && !truncated ? "match" : "mismatch", expected, detected, distance, ops, ...(truncated ? { truncated: true as const } : {}) };
 }

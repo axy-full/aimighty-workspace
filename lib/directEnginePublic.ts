@@ -19,7 +19,7 @@ const KEEP: Record<string, { key: string; fields: string[] }> = {
  * The label check's result (`params.labelCheck`, lib/visionLabel.ts) sits on ANY take, whatever made it, so it is read by its key, not by the take's task. A person may read
  * the verdict, the flag, the rules used, the required text, the text read with its words and boxes, and the difference; not which picture was read.
  */
-const LABEL_CHECK_FIELDS = ["v", "verdict", "flagged", "mode", "rules", "expected", "detected", "distance", "ops", "words", "checkedAt"];
+const LABEL_CHECK_FIELDS = ["v", "verdict", "flagged", "mode", "rules", "expected", "detected", "distance", "ops", "words", "checkedAt", "truncated"];
 
 export function publicDirectParams<T extends Record<string, unknown>>(params: T): T {
   let next: Record<string, unknown> = params;

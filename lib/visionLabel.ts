@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { db, ready } from "./db";
+import { db, ready, now } from "./db";
 import { allowanceCheck } from "./allowance";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { creditsApply, quotedCredits } from "./credits";
@@ -9,11 +9,15 @@ import { checkCap } from "./caps";
 import { checkLimits } from "./limits";
 import { readImageBytes, readUploadBytes } from "./storage";
 import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
-import { meter } from "./meter";
+import { meter, type MeterKind } from "./meter";
+import { platformDb, platformReady } from "./platform";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
 import { jobLineNow } from "./shotCap";
-import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { uploadOpenableBy } from "./uploadAccess";
+import { mayReachProject, mayReadTake } from "./draftProject";
+import { NOT_YOURS, mayChangeWork } from "./workAccess";
+import { isAgentId } from "./security/people-only";
 import { engineEnabled } from "./engineGate";
 import { VISION_RATES } from "./vendorRates";
 import { VISION_IMAGE_LIMIT_BYTES, VISION_SWITCH, VisionError, detectText, visionConfigured, type VisionWord } from "./vision";
@@ -46,9 +50,25 @@ const MAX_OPS = 100, MAX_OP_TEXT = 400, MAX_DETECTED_KEPT = 4000;
 export type LabelCheckRecord = {
   v: 1; verdict: LabelVerdict; flagged: boolean; mode: LabelMode; rules: LabelRules;
   expected: string; detected: string; distance: number; ops: DiffOp[]; words: VisionWord[]; checkedAt: number;
+  /** True only when the text read was cut for the work (lib/labelDiff.ts WHOLE_SLACK). */
+  truncated?: true;
   source: { kind: "take" | "upload"; id: string };
 };
 export type LabelCheckSeams = { detect?: typeof detectText; clock?: () => number };
+
+/**
+ * The person a request acts for, or null (and the request is refused): the signed-in person or the token's owner (the request's user is that person, with their role), or, for
+ * an Atomik run's own identity (`agent:<runId>`), the person who started that run (`rig_agent_runs.owner`), as a member: an agent run never gains admin (lib/workAccess.ts).
+ * Anything else (the server's own pass, a run that names no one, a read error) has no person behind it and is refused: it could otherwise reach another person's private board.
+ */
+async function actingPerson(user: AdmissionActor["user"]): Promise<{ id: string; role: "admin" | "member"; owner?: boolean } | null> {
+  if (!isAgentId(user.id)) return { id: user.id, role: user.role === "admin" ? "admin" : "member", ...(user.owner ? { owner: true } : {}) };
+  if (!user.id.startsWith("agent:")) return null;
+  try {
+    const owner = (await db().execute({ sql: "SELECT owner FROM rig_agent_runs WHERE id = ? LIMIT 1", args: [user.id.slice("agent:".length)] })).rows[0]?.owner;
+    return typeof owner === "string" && owner && !isAgentId(owner) ? { id: owner, role: "member" } : null;
+  } catch { return null; }
+}
 
 export const executeLabelCheck = (input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> => admitLabelCheck(input, got, options, {});
 
@@ -62,7 +82,7 @@ export async function admitLabelCheck(input: Record<string, unknown>, got: Admis
   const quoteOnly = body.quoteOnly === true;
   await ready();
   if (!visionConfigured()) return admissionReply({ error: "This is not set up: GOOGLE_VISION_API_KEY is needed." }, { status: 400 });
-  const allowance = await allowanceCheck("gemini");
+  const allowance = await allowanceCheck("vision");
   if (!allowance.ok && allowance.status !== 402) return admissionReply({ error: allowance.error }, { status: allowance.status });
 
   /* ── What was asked, checked ── */
@@ -78,15 +98,21 @@ export async function admitLabelCheck(input: Record<string, unknown>, got: Admis
   const expected = body.expected;
   if (!normalise(expected, rules)) return admissionReply({ error: "Write the text the label must carry." }, { status: 400 });
 
-  const take = (await db().execute({ sql: "SELECT id, kind, status, project_id, shot_id, stored_url FROM generations WHERE id=? AND deleted=0 LIMIT 1", args: [takeId] })).rows[0];
+  const take = (await db().execute({ sql: "SELECT id, kind, status, project_id, shot_id, stored_url, created_by FROM generations WHERE id=? AND deleted=0 LIMIT 1", args: [takeId] })).rows[0];
   if (!take) return admissionReply({ error: "That take is not in this workspace." }, { status: 404 });
+  /* WHO may check it, before the picture is read, anything is reserved or anything is written (the rules /api/jobs/[id] applies): the person must have a person behind them; a take in a
+     private board they cannot open is as absent as an unknown id; and the result is written onto the take, so it must be one they may change (its maker, the board's owner or an admin). */
+  const person = await actingPerson(got.user);
+  if (!person) return admissionReply({ error: "This check needs a person behind it." }, { status: 403 });
+  const takeProject = take.project_id == null ? null : String(take.project_id);
+  if (!(await mayReadTake(person, takeProject)) || (takeProject && !(await mayReachProject(person, takeProject, "write")))) return admissionReply({ error: "That take is not in this workspace." }, { status: 404 });
+  if (!(await mayChangeWork(person, { createdBy: take.created_by == null ? null : String(take.created_by), projectId: takeProject }))) return admissionReply({ error: NOT_YOURS.take }, { status: 403 });
   const frameId = body.frameUploadId == null ? null : body.frameUploadId;
   let source: { kind: "take" | "upload"; id: string; ext?: string; stored?: string };
   if (frameId != null) {
     if (typeof frameId !== "string" || !UPLOAD_ID.test(frameId)) return admissionReply({ error: "That frame is not valid." }, { status: 400 });
-    const viewer = currentViewer();
     const row = (await db().execute({ sql: "SELECT ext, mime, stored_url, bytes FROM uploads WHERE id=? LIMIT 1", args: [frameId] })).rows[0];
-    const openable = !row || !viewer || (await uploadOpenableBy(frameId, viewer));
+    const openable = !row || (await uploadOpenableBy(frameId, person));
     if (!row || !openable || !IMAGE_MIMES.has(String(row.mime ?? "").toLowerCase())) return admissionReply({ error: "Pick a frame from this workspace's image uploads." }, { status: 404 });
     if (!(Number(row.bytes) > 0) || Number(row.bytes) > VISION_IMAGE_LIMIT_BYTES) return admissionReply({ error: "A frame is up to 10 MB." }, { status: 400 });
     source = { kind: "upload", id: frameId, ext: String(row.ext), stored: String(row.stored_url) };
@@ -102,12 +128,12 @@ export async function admitLabelCheck(input: Record<string, unknown>, got: Admis
   const inCredits = creditsApply(requireTenant());
   const projectId = take.project_id ? String(take.project_id) : null;
   const shotId = take.shot_id ? String(take.shot_id) : null;
-  const over = jobLineNow({ credits: estimatedCredits, usd, key: "gemini", actor: got, auto: options.run?.auto === true });
+  const over = jobLineNow({ credits: estimatedCredits, usd, key: "vision", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", mode, rules, images: 1 });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });
-  const wall = await allowanceCheck("gemini", usd, marginKey);
+  const wall = await allowanceCheck("vision", usd, marginKey);
   if (!wall.ok) return admissionReply({ error: wall.error }, { status: wall.status });
   const capV = await checkCap(projectId, usd, marginKey);
   if (!capV.allow) return admissionReply({ error: capV.error }, { status: 409 });
@@ -132,7 +158,7 @@ export async function admitLabelCheck(input: Record<string, unknown>, got: Admis
   /* Google read the picture (even one with no text in it): the check is billed at the quote. The diff is plain code and cannot fail the bill. */
   const diff = labelDiff(expected, read.text.slice(0, LABEL_DETECTED_MAX), mode, rules);
   const record: LabelCheckRecord = {
-    v: 1, verdict: diff.verdict, flagged: diff.verdict !== "match", mode, rules, expected: diff.expected, detected: diff.detected.slice(0, MAX_DETECTED_KEPT), distance: diff.distance,
+    v: 1, verdict: diff.verdict, flagged: diff.verdict !== "match", mode, rules, expected: diff.expected, detected: diff.detected.slice(0, MAX_DETECTED_KEPT), distance: diff.distance, ...(diff.truncated ? { truncated: true as const } : {}),
     ops: diff.ops.slice(0, MAX_OPS).map((o) => ({ op: o.op, text: o.text.slice(0, MAX_OP_TEXT) })), words: read.words, checkedAt: (seams.clock ?? Date.now)(),
     source: { kind: source.kind, id: source.id },
   };
@@ -143,6 +169,30 @@ export async function admitLabelCheck(input: Record<string, unknown>, got: Admis
   } catch { kept = false; }
   await meter({ ...event, status: "succeeded", engineCostUsd: usd }).catch(() => {});
   return admissionReply({ ok: true, takeId, estimatedCredits, kept, ...record });
+}
+
+/* ── The sweep ───────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+
+export const LABEL_CHECK_STALE_MS = 15 * 60_000;
+
+/**
+ * The cron's stage. A check is one request of ours, reserved before it is made and settled after; if the process dies between the two, its reservation stays running and holds
+ * the workspace's money. One still running after LABEL_CHECK_STALE_MS is one the process never finished: it is settled at nothing ("Nothing billed"; whether Google read the
+ * picture is unknown and the platform absorbs it), which frees the hold. Nothing is ever sent again, and no take is touched (no result was written).
+ */
+export async function recoverLabelChecks(options: { limit?: number; deadlineAt?: number } = {}, clock: () => number = now): Promise<{ attempted: number; failed: number; deferred: number }> {
+  await ready();
+  await platformReady();
+  const limit = Math.max(1, Math.min(50, options.limit ?? 8));
+  const deadlineAt = options.deadlineAt ?? clock() + 250_000;
+  const stale = (await platformDb().execute({ sql: "SELECT id, kind, model FROM meter_events WHERE workspace_id=? AND engine='vision' AND status='running' AND created_at<? ORDER BY created_at LIMIT ?", args: [requireTenant().id, clock() - LABEL_CHECK_STALE_MS, limit] })).rows;
+  let attempted = 0, failed = 0, deferred = 0;
+  for (const row of stale) {
+    if (clock() >= deadlineAt) { deferred++; continue; }
+    attempted++;
+    try { await meter({ id: String(row.id), kind: String(row.kind) as MeterKind, engine: "vision", model: String(row.model), status: "failed", engineCostUsd: 0 }); } catch { failed++; }
+  }
+  return { attempted, failed, deferred };
 }
 
 /* ── The registry tool ──────────────────────────────────────────────────────────────────────────────────────────────────────── */

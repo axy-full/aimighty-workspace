@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { LABEL_DETECTED_MAX, LABEL_EXPECTED_MAX, STRICT_RULES, diffOps, labelDiff, normalise, readRules, rulesProblem, type LabelRules } from "../../lib/labelDiff";
+import { LABEL_DETECTED_MAX, LABEL_EXPECTED_MAX, STRICT_RULES, WHOLE_SLACK, diffOps, labelDiff, normalise, readRules, rulesProblem, type LabelRules } from "../../lib/labelDiff";
 
 /**
  * The exact text diff of the label check (lib/labelDiff.ts): pure, no model, no network. Every normalisation rule is named here and tested both ways, and the strict
@@ -136,6 +136,33 @@ test("the difference is a true edit script: it rebuilds both texts, and its size
   /* Whole characters, not halves of them. */
   const emoji = String.fromCodePoint(0x1f600);
   expect(diffOps(`a${emoji}b`, `ab`).ops).toEqual([{ op: "equal", text: "a" }, { op: "remove", text: emoji }, { op: "equal", text: "b" }]);
+});
+
+test("a text read far longer than the required text is cut for the work: whole mode diffs its first stretch only, says so, and finishes at once; at the edge it is not cut", () => {
+  const required = "ACME ".repeat(200);
+  const trimmed = required.trim();
+  const started = Date.now();
+  const huge = labelDiff(required, trimmed + " x".repeat(LABEL_DETECTED_MAX), "whole");
+  expect(huge.verdict).toBe("mismatch");
+  expect(huge.truncated).toBe(true);
+  expect(Array.from(huge.detected).length).toBe(Array.from(trimmed).length + WHOLE_SLACK);
+  expect(huge.ops.some((o) => o.op === "add")).toBe(true);
+  expect(Date.now() - started).toBeLessThan(1500);
+  /* Exactly at the allowance it is not cut; one character more is. */
+  const atEdge = labelDiff(required, trimmed + "y".repeat(WHOLE_SLACK), "whole");
+  expect(atEdge.truncated).toBeUndefined();
+  expect(atEdge.distance).toBe(WHOLE_SLACK);
+  const past = labelDiff(required, trimmed + "y".repeat(WHOLE_SLACK + 1), "whole");
+  expect(past.truncated).toBe(true);
+  /* A match, and a short mismatch, are never marked. */
+  expect(labelDiff(required, required, "whole").truncated).toBeUndefined();
+  expect(labelDiff("ACME", "ACMX", "whole").truncated).toBeUndefined();
+  /* A cut text is never a match, whatever it begins with. */
+  expect(labelDiff("ACME", "ACME" + " z".repeat(5000), "whole")).toMatchObject({ verdict: "mismatch", truncated: true });
+  /* Contains mode searches the whole text for the required one: found far in, it is a match, and not cut. */
+  const far = labelDiff("ACME COLA", "z ".repeat(9000) + "ACME COLA", "contains");
+  expect(far).toMatchObject({ verdict: "match", distance: 0 });
+  expect(far.truncated).toBeUndefined();
 });
 
 test("the work is bounded: the longest required text against the longest text read finishes at once", () => {
