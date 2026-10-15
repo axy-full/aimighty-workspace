@@ -20,6 +20,7 @@ import type { Reference } from "./ark";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
 import { jobLineNow, shotCapGate } from "./shotCap";
+import { isAgentId } from "./security/people-only";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "./astra";
@@ -221,9 +222,9 @@ export async function admitTopaz(input: Record<string, unknown>, got: AdmissionA
   const inCredits = creditsApply(requireTenant());
   const over = jobLineNow({ credits: estimatedCredits, usd, key: "topaz", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
-  /* The cost approval rule (brief 2.2), as the fal path judges it: with a cap per shot, a member's take past it needs an admin. Refused here, before a row is written, so no failed take is left behind. */
+  /* The cost approval rule (brief 2.2), as the fal path judges it: with a cap per shot, a take past it needs an admin who is a person: a token, an agent identity or an Atomik Auto run is never one (the same test as jobLineNow's). Refused here, before a row is written, so no failed take is left behind. */
   if (shotId && shotCode) {
-    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: got.user.role === "admin" });
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: got.user.role === "admin" && got.token == null && !isAgentId(got.user.id) && options.run?.auto !== true });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, outputWidth: measured.outputWidth, outputHeight: measured.outputHeight, ...(tool === "video" ? { seconds: measured.seconds, fps: measured.fps } : { megapixels: Math.round(measured.outputMegapixels * 10) / 10 }) });

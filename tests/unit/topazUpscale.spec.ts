@@ -417,6 +417,22 @@ test("the shot cap is judged at the press, as the fal path judges it: a member p
       expect((await meterRows()).length).toBe(before);
       expect(deferred.length).toBe(handedOff);
       /* An admin's own take goes through. */
+      /* An admin is a PERSON here: an admin's token, an agent identity and an Atomik Auto run do not skip the cap (the same test as the job line's). */
+      const admin = OWNER.user;
+      const nonPeople: [string, AdmissionActor, AdmissionExecution][] = [
+        ["token", { user: admin, token: { id: "tok_cap", name: "cap", scope: "render", capUsd: null } }, options()],
+        ["agent", { user: { ...admin, id: "agent:atomik" } as AdmissionActor["user"] }, options()],
+        ["auto", OWNER, { ...options(), run: { auto: true } as never }],
+      ];
+      for (const [name, actor, opts] of nonPeople) {
+        await runInTenant(house(), async () => {
+          const refused = await admitTopaz(input, actor, opts);
+          expect(refused.status, `${name}: ${JSON.stringify(refused.body)}`).toBe(403);
+          expect(refused.body, name).toMatchObject({ needsAdmin: true });
+        }, actor as never);
+      }
+      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
+      expect((await meterRows()).length).toBe(before);
       expect((await admitTopaz(input, OWNER, options())).status).toBe(200);
       /* A member's take under the cap goes through. */
       await setSetting("shotCapCredits", "100000", "admin");
