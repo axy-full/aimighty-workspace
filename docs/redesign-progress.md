@@ -878,3 +878,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - MCP tool not wired yet; it waits for lane B's directEngineMcp change.
   - 13 + 9 specs pass, plus 110 and 299 neighbour runs.
   - Opus money review started.
+- **16 Oct 02:37 IST.** Lane B's directEngineMcp change: #776 cee05194, #777 d5f54180, #778 935aa141. Auto runs drafts only, at or under the line; Ask files a prepared job.
+  - Veo #779 is complete at 0109ddd4: the veo_video MCP tool is in (Fast is a draft, Standard always asks); 214 specs pass.
+  - Gap found by lane D: /api/prepared-jobs takes scalar args only, so Ask calls with images file nothing while the reply claims a person will approve. Lane B is fixing it: an honest reply, and nested args only if no migration is needed.
+  - Opus delta checks are queued.
