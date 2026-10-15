@@ -9,3 +9,4 @@ export * from "./text";
 export * from "./timeline";
 export * from "./ducking";
 export * from "./subtitles";
+export * from "./output";

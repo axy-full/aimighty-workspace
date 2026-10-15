@@ -3,13 +3,17 @@ import type { Client } from "@libsql/client";
 import { db } from "../db";
 import { requireTenant } from "../tenant";
 import { checkQuota } from "../limits";
-import { storeUpload } from "../storage";
+import { storeUpload, storeUploadStream } from "../storage";
 import { workbenchTransaction } from "../workbench/records";
 import { EVENTS } from "../dispatch";
 import { liveSlots } from "../worker-slots";
 import { toTimeline, ExportTooLong } from "../../remotion/src/lib/timeline";
 import { validateProps } from "../../remotion/src/lib/validate";
 import type { CompositionId } from "../../remotion/src/lib/types";
+import { FORMAT_FILE, SUBTITLE_FILE, isProRes } from "../../remotion/src/lib/types";
+import { DEFAULT_LIMITS as TEMPLATE_LIMITS } from "../../remotion/src/lib/limits";
+import { DEFAULT_OUTPUT, parseOutputOptions, type OutputOptions } from "../../remotion/src/lib/output";
+import { subtitleCuesOf } from "../../remotion/src/lib/subtitles";
 import {
   EXPORT_PRICE_LABEL,
   ExportError,
@@ -26,6 +30,7 @@ import { exportsOnHere } from "./access";
 import {
   ExportWorkerBusyError,
   ExportWorkerRefusedError,
+  OUTPUT_LIMIT,
   openExportSession,
   stopExportSession,
   type ExportSession,
@@ -129,7 +134,7 @@ type Row = {
   claimed_at: number | null;
 };
 
-type StoredSpec = { composition: CompositionId; props: Record<string, unknown>; media: BoundMedia[] };
+type StoredSpec = { composition: CompositionId; props: Record<string, unknown>; media: BoundMedia[]; /** What the finished files are; absent on a job stored before options existed (H.264 only). */ output?: OutputOptions };
 
 const workspaceId = () => requireTenant().id;
 
@@ -221,7 +226,10 @@ export async function createExport(
   const limits = (deps.limits ?? exportLimits)();
   const wsId = workspaceId();
   const owner = viewer.id;
-  const fingerprint = hash({ composition: input.composition, props: input.props });
+  const options = parseOutputOptions(input.output);
+  if (!options.ok) throw new ExportError(`The export request is not valid. ${options.errors.join(" ")}`.slice(0, 600), 400);
+  const output = options.value;
+  const fingerprint = hash({ composition: input.composition, props: input.props, output });
 
   const find = async () =>
     (await db().execute({ sql: "SELECT * FROM export_jobs WHERE workspace_id=? AND owner=? AND request_id=?", args: [wsId, owner, input.requestId] })).rows[0] as unknown as Row | undefined;
@@ -239,17 +247,25 @@ export async function createExport(
   const checked = validateProps(input.composition, bound.props);
   if (!checked.ok) throw new ExportError(`The export request is not valid. ${checked.errors.slice(0, 4).join(" ")}`.slice(0, 600), 400);
   let seconds: number;
+  let cueCount: number;
   try {
     const timeline = toTimeline(input.composition, checked.value as never);
     seconds = timeline.durationInFrames / timeline.fps;
+    cueCount = subtitleCuesOf(timeline).length;
   } catch (error) {
     if (error instanceof ExportTooLong) throw new ExportError(`${error.message} Make it shorter.`, 413);
     throw new ExportError(error instanceof Error ? error.message : "The export request is not valid.", 400);
   }
-  const spec: StoredSpec = { composition: input.composition, props: checked.value as unknown as Record<string, unknown>, media: bound.media };
+  /* A ProRes file is large (about 16 MB a second at 422, 24 at HQ), so it is held to a shorter length than H.264; the worker enforces the same limit. */
+  if (isProRes(output.format) && seconds > TEMPLATE_LIMITS.maxProResSeconds) {
+    throw new ExportError(`A ProRes export can be at most ${TEMPLATE_LIMITS.maxProResSeconds} s; this one is ${seconds.toFixed(1)} s. Use H.264 for a longer one.`, 413);
+  }
+  if (output.subtitles.length && cueCount === 0) throw new ExportError("The export request is not valid. output.subtitles: the export has no caption text (no cues) to write.", 400);
+  const spec: StoredSpec = { composition: input.composition, props: checked.value as unknown as Record<string, unknown>, media: bound.media, output };
 
-  // Storage: an export's file is about 1 to 3 MB a second at 1080p; ask for room for 4.
-  const room = await checkQuota(Math.ceil(Math.max(seconds, 5) * 4 * 1024 * 1024));
+  // Storage: an H.264 file is about 1 to 3 MB a second at 1080p (room for 4); ProRes 422 is about 16 MB a second and HQ 24 (room for 17 and 25), and each subtitle file is tiny.
+  const bytesPerSecond = output.format === "prores-422-hq" ? 25 : output.format === "prores-422" ? 17 : 4;
+  const room = await checkQuota(Math.ceil(Math.max(seconds, 5) * bytesPerSecond * 1024 * 1024));
   if (!room.allow) throw new ExportError(room.error ?? "This workspace has no room left for the export.", 507);
 
   const id = `export_${randomUUID().replaceAll("-", "")}`;
@@ -350,6 +366,7 @@ export function customerReason(raw: string): string {
     .replace(/input\/m\d+\.\w+/g, "A clip")
     .replace(/input\/logo\d+\.\w+/g, "The logo")
     .replace(/input\/music\d+\.\w+/g, "The music")
+    .replace(/input\/voice\d+\.\w+/g, "A voice line")
     .replace(/input\/[\w./-]+/g, "A file");
   return named.replace(/\s+/g, " ").trim().slice(0, 300);
 }
@@ -427,7 +444,8 @@ export async function runExport(id: string, deps: ExportDeps = {}): Promise<"bus
       }
       throw error;
     }
-    const outputSpec = { version: 1, composition: spec.composition, props: spec.props, output: { video: true } };
+    const options = spec.output ?? DEFAULT_OUTPUT;
+    const outputSpec = { version: 1, composition: spec.composition, props: spec.props, output: { video: true, format: options.format, ...(options.subtitles.length ? { subtitles: options.subtitles } : {}), conform: options.conform } };
     await session.putFile("spec.json", JSON.stringify(outputSpec));
     for (const media of spec.media) {
       if (await cancelled()) break;
@@ -450,15 +468,33 @@ export async function runExport(id: string, deps: ExportDeps = {}): Promise<"bus
     }
     // Saving: read the file off the worker and store it under this workspace's own prefix.
     await db().execute({ sql: "UPDATE export_jobs SET status='saving', updated_at=? WHERE id=? AND workspace_id=? AND status='rendering'", args: [clock(), id, row.workspace_id] });
-    const video = await session.readOutput("export.mp4");
-    if (!video || video.length < 16) {
+    /* The files this request asked for, by the names the worker's command gives them: the video (H.264 or ProRes), then each subtitle file. */
+    const outputs: ExportOutput[] = [];
+    const file = FORMAT_FILE[options.format];
+    const video = await session.streamOutput(file.name);
+    if (!video || (video.size !== null && video.size < 16)) {
+      await video?.stream.cancel().catch(() => {});
       await end((await record(id))!, "failed", failure("The export finished without a file."), clock);
       return undefined;
     }
-    const output = await saveOutput(row, video, clock);
+    const savedVideo = await saveVideo(row, video, options.format, file, clock);
+    if (savedVideo.bytes < 16) {
+      await end((await record(id))!, "failed", failure("The export finished without a file."), clock);
+      return undefined;
+    }
+    outputs.push(savedVideo);
+    for (const format of options.subtitles) {
+      const name = SUBTITLE_FILE[format];
+      const text = await session.readOutput(name.name);
+      if (!text || text.length === 0) {
+        await end((await record(id))!, "failed", failure("The export finished without its subtitle file."), clock);
+        return undefined;
+      }
+      outputs.push(await saveSmallFile(row, text, `subtitle_${format}`, format, name.mime, clock));
+    }
     await db().execute({
       sql: "UPDATE export_jobs SET status='ready', outputs_json=?, error=NULL, finished_at=?, updated_at=? WHERE id=? AND workspace_id=? AND status='saving'",
-      args: [JSON.stringify([output]), clock(), clock(), id, row.workspace_id],
+      args: [JSON.stringify(outputs), clock(), clock(), id, row.workspace_id],
     });
   } catch (error) {
     const current = await record(id);
@@ -472,15 +508,29 @@ export async function runExport(id: string, deps: ExportDeps = {}): Promise<"bus
   return undefined;
 }
 
-async function saveOutput(row: Row, video: Buffer, clock: () => number): Promise<ExportOutput> {
+/** The video, streamed from the worker into the workspace's own storage: a ProRes file can be over a gigabyte and is never held in memory. */
+async function saveVideo(row: Row, video: { stream: ReadableStream<Uint8Array>; size: number | null }, format: OutputOptions["format"], file: { name: string; mime: string }, clock: () => number): Promise<ExportOutput> {
+  const ext = file.name.slice(file.name.lastIndexOf(".") + 1);
   const uploadId = `${row.id}_video`;
-  const stored = await storeUpload(uploadId, "mp4", video, "video/mp4");
-  const filename = `export-${row.id.slice(7, 15)}.mp4`;
+  const stored = await storeUploadStream(uploadId, ext, video.stream, file.mime, video.size === null ? OUTPUT_LIMIT : Math.min(OUTPUT_LIMIT, video.size + 1024));
+  const filename = `export-${row.id.slice(7, 15)}${format === "h264" ? "" : format === "prores-422-hq" ? "-prores-hq" : "-prores"}.${ext}`;
   await db().execute({
     sql: `INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at,uploader_id) VALUES(?,?,?,?,?,?,NULL,NULL,?,?,NULL,?,?) ON CONFLICT(id) DO NOTHING`,
-    args: [uploadId, filename, "video/mp4", "mp4", video.length, stored.sha256, stored.url, "video", clock(), row.owner],
+    args: [uploadId, filename, file.mime, ext, stored.bytes, stored.sha256, stored.url, "video", clock(), row.owner],
   });
-  return { kind: "video", uploadId, url: `/api/uploads/${uploadId}`, filename, mime: "video/mp4", bytes: video.length };
+  return { kind: "video", format, uploadId, url: `/api/uploads/${uploadId}`, filename, mime: file.mime, bytes: stored.bytes };
+}
+
+/** A small text file (a subtitle track), stored beside the video under the same workspace prefix. */
+async function saveSmallFile(row: Row, bytes: Buffer, suffix: string, ext: string, mime: string, clock: () => number): Promise<ExportOutput> {
+  const uploadId = `${row.id}_${suffix}`;
+  const stored = await storeUpload(uploadId, ext, bytes, mime);
+  const filename = `export-${row.id.slice(7, 15)}.${ext}`;
+  await db().execute({
+    sql: `INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at,uploader_id) VALUES(?,?,?,?,?,?,NULL,NULL,?,?,NULL,?,?) ON CONFLICT(id) DO NOTHING`,
+    args: [uploadId, filename, mime, ext, bytes.length, stored.sha256, stored.url, "document", clock(), row.owner],
+  });
+  return { kind: "subtitle", format: ext, uploadId, url: `/api/uploads/${uploadId}`, filename, mime, bytes: bytes.length };
 }
 
 /* ---- recovery ---- */

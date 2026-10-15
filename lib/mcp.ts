@@ -161,12 +161,16 @@ export const EXPORT_TOOLS: ToolDef[] = [
       "(usually a minute or two), so use get_export to collect it. Name media by handle, never by URL: " +
       '{"take": "<take id>"} or {"upload": "<upload id>"}; a clip may add "hasAudio": true to keep its sound. ' +
       "For example, captions on a cut: composition 'captions', props {aspect:'9:16', clip:{source:{take:'…', hasAudio:true}, cues:[{startMs,endMs,text}]}, captionStyle:'bold'}. " +
-      "Cutdowns are 6, 15 or 30 s ('cutdown', props {aspect, source:{take:'…'}, targetSeconds:15}). Nothing is spent, and a failed export says nothing was billed.",
+      "Cutdowns are 6, 15 or 30 s ('cutdown', props {aspect, source:{take:'…'}, targetSeconds:15}; add silence:'keep-speech' to keep the spoken parts). " +
+      "A narrated cut ('final') takes voiceover:[{upload:'…', startSeconds:2}] and ducks the music and the clips' sound while a line plays. " +
+      "Optional output: {format:'h264' (default) | 'prores-422' | 'prores-422-hq' (at most 60 s; H.265 is not available), subtitles:['srt','vtt'] (written from the cues), conform:'auto'|'off'}. " +
+      "Nothing is spent, and a failed export says nothing was billed.",
     inputSchema: {
       type: "object",
       properties: {
         composition: { type: "string", enum: [...EXPORT_COMPOSITIONS], description: "Which template." },
         props: { type: "object", description: "The template's props, with media named by handle (see the description)." },
+        output: { type: "object", description: "Optional: the finished files. format: h264 (default), prores-422 or prores-422-hq. subtitles: a list of srt and/or vtt. conform: auto (default) or off." },
         request_id: { type: "string", description: "Optional: any string unique to this export (a UUID is ideal, 8–100 letters, digits, dashes or underscores). Retried with the same request_id, you get the export it started." },
       },
       required: ["composition", "props"],
@@ -445,7 +449,7 @@ export async function runTool(
     case "export_video": {
       if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
       const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
-      const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props } })) as { job: ExportSummary };
+      const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props, ...(args.output ? { output: args.output } : {}) } })) as { job: ExportSummary };
       return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
     }
 

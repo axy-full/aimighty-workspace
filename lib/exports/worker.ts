@@ -17,9 +17,14 @@ export const REMOTION_ROOT = "/vercel/sandbox/remotion";
 export const EXPORT_COMMAND = { cmd: "/usr/local/bin/node", args: ["/opt/remotion/cli.mjs"] } as const;
 export const SESSION_NAME = /^remotion-export-[0-9a-f-]{36}$/;
 export const FILE_CALL_TIMEOUT_MS = 180_000;
+/** Reading a large output end to end (a ProRes file of up to about 1.4 GB). */
+export const STREAM_CALL_TIMEOUT_MS = 600_000;
 const CONTROL_CALL_TIMEOUT_MS = 30_000;
 const REPLY_LIMIT = 16 * 1024 * 1024;
-const OUTPUT_LIMIT = 330 * 1024 * 1024;
+/** The largest output a worker may send: a 60 s ProRes 422 HQ file is about 1.4 GB (the worker's own cap is 2000 MiB). */
+export const OUTPUT_LIMIT = 2000 * 1024 * 1024;
+/** A small text output (result.json, subtitles) is read whole; anything bigger is streamed. */
+const SMALL_OUTPUT_LIMIT = 4 * 1024 * 1024;
 
 /** No worker could take the export now, and none started it: the job stays queued. */
 export class ExportWorkerBusyError extends Error {
@@ -47,8 +52,10 @@ export type ExportSession = {
   worker: number;
   putFile(relativePath: string, bytes: Uint8Array | string): Promise<void>;
   run(timeoutMs: number, signal?: AbortSignal): Promise<RunReply>;
-  /** null when the worker has no such output. */
+  /** A small output (result.json, a subtitle file) read whole; null when the worker has no such output. */
   readOutput(relativePath: string): Promise<Buffer | null>;
+  /** A large output (a video) as a stream and its length, so memory stays flat; the caller reads it to the end or cancels it. null when there is none. */
+  streamOutput(relativePath: string): Promise<{ stream: ReadableStream<Uint8Array>; size: number | null } | null>;
   stop(): Promise<void>;
 };
 
@@ -151,7 +158,17 @@ function sessionOn(config: ExportWorkerConfig, doFetch: Fetch, index: number, na
       const response = await call(config, doFetch, index, "GET", filePath(name, `${REMOTION_ROOT}/output/${relative(path)}`), { timeoutMs: FILE_CALL_TIMEOUT_MS });
       if (response.status === 404) { await discard(response); return null; }
       if (!response.ok) { await discard(response); throw new ExportWorkerError("An export worker did not return an output."); }
-      return readBytes(response, OUTPUT_LIMIT);
+      return readBytes(response, SMALL_OUTPUT_LIMIT);
+    },
+    async streamOutput(path) {
+      const response = await call(config, doFetch, index, "GET", filePath(name, `${REMOTION_ROOT}/output/${relative(path)}`), { timeoutMs: STREAM_CALL_TIMEOUT_MS });
+      if (response.status === 404) { await discard(response); return null; }
+      if (!response.ok || !response.body) { await discard(response); throw new ExportWorkerError("An export worker did not return an output."); }
+      /* The worker states the length; a reply without one is still capped at OUTPUT_LIMIT while it is read. */
+      const declared = response.headers.get("content-length");
+      const size = declared === null ? null : Number(declared);
+      if (size !== null && (!Number.isSafeInteger(size) || size < 0 || size > OUTPUT_LIMIT)) { await discard(response); throw new ExportWorkerError("An export worker sent an oversized reply."); }
+      return { stream: response.body, size };
     },
     async stop() {
       // 404 means already gone; the stop is idempotent.
