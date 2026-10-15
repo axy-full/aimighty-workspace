@@ -751,3 +751,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Key changes: ProRes limited to 1,800 frames (env name dropped); the compose pin is exact at `sum(tmpfs) <= 3840`, but it was `<= 2048` in #699, so it needs the owner's word; conform is windowed, bounded and default off; zip opens every file while the workspace is in scope; stored bytes are verified; recovery is global.
   - Both Opus reviewers are re-checking.
   - CI: #699 and #764 are running now.
+- **16 Oct 01:02 IST.** Opus re-check of the worker stack: #768 5ba53250, #769 42bf8e5d, #770 0c0550ad, #772 0b847bf6 and #773 26974395 are all APPROVED. Ops tests 28/0/1. Only #768 touches ops/ (tmpfs and output cap), and the egress, relay and Dockerfile are unchanged.
+  - #768 merges only with the owner's word on the compose pin (`<= 2048` → exactly `<= 3840`).
+  - #770 should-fix before `auto` is ever turned on: a sound-sync test through `-output_ts_offset`. Owner note: with `auto`, a cutdown can spend up to 480 s of the 900 s deadline before rendering.
+  - Nits: style-only cues give an empty SRT; worst-case mix just over 0 dBFS; the worker README's exit codes are missing 5.
+  - All NEEDS AKSHAY (stacked on #699's env names and #700's migration).
