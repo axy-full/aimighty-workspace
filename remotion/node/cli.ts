@@ -8,7 +8,6 @@
  *   REMOTION_BUNDLE_DIR          the built bundle (default: bundle/ next to this file)
  *   REMOTION_CONCURRENCY         frames rendered at once (default 2)
  *   REMOTION_MAX_SECONDS         longest export (default 120)
- *   REMOTION_PRORES_MAX_SECONDS  longest ProRes export (default 60)
  *   REMOTION_BROWSER_EXECUTABLE  a specific Chrome (default: the one downloaded at image build)
  *   REMOTION_RUNTIME_DIR         the folder holding package.json and node_modules/.remotion (the Chrome download).
  *                                Remotion looks for its Chrome under the working directory's nearest package.json,
@@ -54,7 +53,6 @@ async function main(): Promise<number> {
   const limits = {
     ...DEFAULT_LIMITS,
     maxSeconds: Math.min(DEFAULT_LIMITS.maxSeconds, intEnv("REMOTION_MAX_SECONDS", DEFAULT_LIMITS.maxSeconds, 1, 3600)),
-    maxProResSeconds: Math.min(DEFAULT_LIMITS.maxProResSeconds, intEnv("REMOTION_PRORES_MAX_SECONDS", DEFAULT_LIMITS.maxProResSeconds, 1, 3600)),
   };
   const result = await runExport({
     spec,

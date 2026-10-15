@@ -2,8 +2,6 @@
 export type ExportLimits = {
   /** Longest finished video. */
   maxSeconds: number;
-  /** Longest finished ProRes video: a mezzanine is about 16 to 24 MB per second, so it is held to a shorter length. */
-  maxProResSeconds: number;
   maxClips: number;
   maxCues: number;
   maxWordsPerCue: number;
@@ -17,7 +15,6 @@ export type ExportLimits = {
 
 export const DEFAULT_LIMITS: ExportLimits = {
   maxSeconds: 120,
-  maxProResSeconds: 60,
   maxClips: 24,
   maxCues: 600,
   maxWordsPerCue: 24,
@@ -29,3 +26,10 @@ export const DEFAULT_LIMITS: ExportLimits = {
 
 /** Even pixel sizes only: H.264 4:2:0 needs them. */
 export const evenPx = (value: number): number => Math.max(2, Math.round(value / 2) * 2);
+
+/**
+ * The longest ProRes export, in FRAMES (not seconds, so the size cannot be got round with a higher frame rate): 60 s at 30 fps is
+ * 1800 frames, and so is 30 s at 60 fps. A ProRes frame is about 0.5 to 0.8 MB at 1080p, so this keeps a file to about 1.4 GB, which
+ * the worker's session disk holds beside a maximum upload. A constant, not a setting: nothing can raise it.
+ */
+export const PRORES_MAX_FRAMES = 60 * 30;
