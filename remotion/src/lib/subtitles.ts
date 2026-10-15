@@ -33,6 +33,11 @@ export function neutralise(text: string, format: SubtitleFormat): string {
   return format === "srt" ? plain.replace(/</g, "\u2039").replace(/>/g, "\u203A") : plain;
 }
 
+/** The cues that have anything to say once styling is taken out: what a subtitle file would actually contain. */
+export function speakableCues(timeline: Timeline): Cue[] {
+  return subtitleCuesOf(timeline).filter((cue) => wrapLines(neutralise(cue.text, "vtt")).length > 0);
+}
+
 /** Lines of at most `width` characters, broken at spaces (a single long word stays whole). */
 export function wrapLines(text: string, width = 42): string[] {
   const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
