@@ -66,12 +66,12 @@ Final billing uses SDK CPU milliseconds, wall duration for 4 GB memory (one-minu
 
 ## Self-hosted render worker
 
-`ASTRA_RENDER_BACKEND` chooses where a native render runs: `vercel` (the default, the Vercel Sandbox above) or `selfhost` (the platform's own single-slot CPU workers in `ops/render-worker/`, whose README is the setup and protocol reference). Set on the app:
+`ASTRA_RENDER_BACKEND` chooses where a native render runs: `vercel` (the default, the Vercel Sandbox above) or `selfhost` (the platform's own single-slot CPU workers in `ops/render-worker/`, one by default and up to three, reached through a secret-free relay on ports 8081 to 8083; its README is the setup and protocol reference). Set on the app:
 
 ```text
 ASTRA_RENDER_BACKEND=selfhost
-ASTRA_WORKER_URLS=http://<worker 1>:8790,http://<worker 2>:8790,http://<worker 3>:8790
-ASTRA_WORKER_SECRETS=<secret 1>,<secret 2>,<secret 3>
+ASTRA_WORKER_URLS=http://<relay>:8081[,http://<relay>:8082,http://<relay>:8083]
+ASTRA_WORKER_SECRETS=<secret 1>[,<secret 2>,<secret 3>]
 ASTRA_WORKER_SECRET=<one secret for every worker, used only when ASTRA_WORKER_SECRETS is unset>
 ASTRA_BLENDER_RATE_CARD=<unchanged>
 ```

@@ -525,19 +525,20 @@ test("README's smoke script is smoke.mjs, byte for byte", async () => {
   assert.equal(`${block[1]}\n`, smoke);
 });
 
-test("compose: three identical workers but for their cores, locked down, internal network only", () => {
+test("compose: three identical workers but for their cores, secret and profile, locked down, internal network only (the relay and the cores are in render-relay.test.mjs)", () => {
   const compose = readFileSync(new URL("../../ops/render-worker/compose.yaml", import.meta.url), "utf8");
   const yaml = compose.replace(/^\s*#.*$/gm, "");
-  const blocks = yaml.split(/^ {2}(render-[123]):\n/m).slice(1);
-  const services = Object.fromEntries(Array.from({ length: blocks.length / 2 }, (_, index) => [blocks[index * 2], blocks[index * 2 + 1].split(/^\S/m)[0].replace(/ +#.*$/gm, "")]));
-  assert.deepEqual(Object.keys(services), ["render-1", "render-2", "render-3"]);
-  assert.deepEqual(Object.values(services).map((block) => /cpuset: "([\d,]+)"/.exec(block)?.[1]), ["12,13", "14,15", "16,17"]);
-  assert.deepEqual(Object.values(services).map((block) => /ASTRA_WORKER_SECRET: \$\{(ASTRA_WORKER_SECRET_\d):\?/.exec(block)?.[1]), ["ASTRA_WORKER_SECRET_1", "ASTRA_WORKER_SECRET_2", "ASTRA_WORKER_SECRET_3"]);
-  const [first, ...rest] = Object.values(services).map((block) => block.replace(/^ +cpuset: .*\n/m, "").replace(/ASTRA_WORKER_SECRET_\d/g, "ASTRA_WORKER_SECRET_N"));
+  const blocks = yaml.split(/^ {2}(render-[123]|render-relay):\n/m).slice(1);
+  const all = Object.fromEntries(Array.from({ length: blocks.length / 2 }, (_, index) => [blocks[index * 2], blocks[index * 2 + 1].split(/^\S/m)[0].replace(/ +#.*$/gm, "")]));
+  assert.deepEqual(Object.keys(all), ["render-1", "render-2", "render-3", "render-relay"]);
+  const services = Object.fromEntries(Object.entries(all).filter(([name]) => name !== "render-relay"));
+  assert.deepEqual(Object.values(services).map((block) => /cpuset: \$\{RENDER_CPUSET_\d:-([\d,]+)\}/.exec(block)?.[1]), ["6,7", "4,5", "2,3"], "defaults on the 8-core server's cores 0-7, worker 1 on 6,7");
+  assert.deepEqual(Object.values(services).map((block) => /ASTRA_WORKER_SECRET: \$\{(ASTRA_WORKER_SECRET_\d):[?-]/.exec(block)?.[1]), ["ASTRA_WORKER_SECRET_1", "ASTRA_WORKER_SECRET_2", "ASTRA_WORKER_SECRET_3"]);
+  const [first, ...rest] = Object.values(services).map((block) => block.replace(/^ +cpuset: .*\n/m, "").replace(/^ +profiles: .*\n/m, "").replace(/^ +container_name: .*\n/m, "").replace(/ASTRA_WORKER_SECRET_\d(:[?-][^}]*)?/g, "ASTRA_WORKER_SECRET_N"));
   for (const other of rest) assert.equal(other, first);
   for (const line of ["cpus: 2", "cpu_shares: 256", "mem_limit: 4g", "memswap_limit: 4g", "pids_limit: 256", "read_only: true", "cap_drop: [ALL]",
-    'security_opt: ["no-new-privileges:true"]', "networks: [render-internal]", "/vercel/sandbox:size=1g,uid=10001,gid=10001,mode=0700", "/tmp:size=256m",
-    "ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_N:?"]) {
+    'security_opt: ["no-new-privileges:true"]', "network_mode: render-internal", "/vercel/sandbox:size=1g,uid=10001,gid=10001,mode=0700", "/tmp:size=256m",
+    "ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_N"]) {
     assert.ok(first.includes(line), line);
   }
   assert.ok(!/^\s*ports:/m.test(yaml) && !/^\s*expose:/m.test(yaml));
