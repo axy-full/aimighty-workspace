@@ -708,3 +708,10 @@ How the lead applies it:
 Deploy #4: open deploy/2026-10-15-4 when release/1 is final (by 18:30), with the full PR list. I'll start the backup at ~19:00.
 
 **Lead's note on these answers.** #715's branch carries the board-sharing stack, including the `workbench_projects.updated_by` migration (`addColumn`), and it conflicts with release/1. So under answer 1 it can't ride deploy #4: its two stricter lines (4a) and the export audit (4b) are built now, and #715 ships in deploy #5 with #718. Everything else cleared above has no migration and no new env, so it rides deploy #4 if green on release/1 before 18:30.
+
+## Owner answers, 15 Oct 2026, 12:20 IST (verbatim)
+#731 policy: (1) "estimated" marks ONLY takes from before metering (no receipt, frozen figure). Held/discarded/refused takes with a metered refine cost show that cost, unlabelled. (2) A refine-only cost on a failed reservation keeps counting against caps, as release/1 does today. Tests for both; fresh Opus money check of the change.
+#745: noted. After #743 merges, confirm in the PR that both privacy rules (unreadable and deleted/removed items) still hold, with their tests.
+#748: ⌘J opening the board's Atomik panel in the new interface is fine.
+Reviewer git fetch: noted. Remind reviewers: no network, read-only means no fetch either.
+The queue and the 18:30 cut-off are as planned. I'll start the backup at ~19:00.
