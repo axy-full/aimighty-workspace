@@ -36,8 +36,9 @@ export async function writeSite(patch: Partial<SiteSettings>, by: string | null)
     /* Guests read a separate public-sample workspace ("Particl sample", lead decision 41), never the house workspace. */
     if (Number((rs.rows[0] as { legacy?: unknown }).legacy) === 1) throw new SiteSettingsError("Guests can't read the house workspace. Name the public sample workspace.");
   }
-  if (patch.newInterfaceWorkspaces?.length) {
-    const ids = patch.newInterfaceWorkspaces;
+  for (const key of ["newInterfaceWorkspaces", "enginesOnWorkspaces"] as const) {
+    const ids = patch[key];
+    if (!ids?.length) continue;
     const rs = await platformDb().execute({ sql: `SELECT id FROM workspaces WHERE deleted_at IS NULL AND id IN (${ids.map(() => "?").join(",")})`, args: ids });
     const known = new Set(rs.rows.map((r) => String((r as { id?: unknown }).id)));
     const missing = ids.filter((id) => !known.has(id));
@@ -55,6 +56,7 @@ export async function writeSite(patch: Partial<SiteSettings>, by: string | null)
     for (const key of ["openSignup", "visitorPages", "guestHome"] as const) if (key in patch) details[key] = next[key];
     if ("guestWorkspace" in patch) details.guestWorkspace = next.guestWorkspace ? "set" : "cleared";
     if ("newInterfaceWorkspaces" in patch) details.newInterfaceWorkspaces = next.newInterfaceWorkspaces.length;
+    if ("enginesOnWorkspaces" in patch) details.enginesOnWorkspaces = next.enginesOnWorkspaces.length;
     await platformDb().batch([upsert, platformAuditStatement({ actorId: by, action: "site.changed", targetType: "site", targetId: SITE_ROW, details: details })], "write");
   } else await platformDb().execute(upsert);
   return next;

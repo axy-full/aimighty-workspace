@@ -189,6 +189,15 @@ export function toolsOffered(env: Readonly<Record<string, string | undefined>> =
   return exportsEnabled(env) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
 }
 
+/**
+ * The tools offered to one workspace: the export tools only when exports are on for it (REMOTION_EXPORTS exactly "1" AND the
+ * house workspace or the site setting `enginesOnWorkspaces`, lib/engineGate.ts). The route still refuses with a 404 if one is called anyway.
+ */
+export async function toolsOfferedFor(workspace: { id: string } | null | undefined): Promise<ToolDef[]> {
+  const { engineEnabled } = await import("./engineGate");
+  return (await engineEnabled("REMOTION_EXPORTS", workspace)) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
+}
+
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
 const cr = (n: number | null | undefined) => `${Math.round(Number(n ?? 0)).toLocaleString("en-US")} cr`;
 

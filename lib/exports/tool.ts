@@ -38,3 +38,15 @@ export function exportToolAvailability(env: Readonly<Record<string, string | und
 export function planTotalCredits(paidStepCredits: readonly number[]): number {
   return paidStepCredits.reduce((sum, credits) => sum + credits, EXPORT_TOOL.price().credits);
 }
+
+/** The same for one workspace: the settings above, and the workspace must be the house or listed (lib/engineGate.ts). */
+export async function exportToolAvailabilityFor(
+  workspace: { id: string } | null | undefined,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<{ available: boolean; reason: string | null }> {
+  const base = exportToolAvailability(env);
+  if (!base.available) return base;
+  const { engineEnabled } = await import("../engineGate");
+  if (!(await engineEnabled("REMOTION_EXPORTS", workspace))) return { available: false, reason: "Exports are not switched on for this workspace." };
+  return base;
+}
