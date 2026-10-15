@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { posterSrc } from "@/lib/format";
+import { posterTier } from "@/lib/posterTier";
 import { assetIdFromUrl, previewAttrs } from "@/lib/preview";
 import { dragAttrs } from "@/lib/drop";
 
@@ -23,14 +24,18 @@ import { dragAttrs } from "@/lib/drop";
  */
 
 const posters = new Map<string, string | "fail">();
+/** The width each remembered poster was captured at (a tier of POSTER_TIERS). */
+const posterWidths = new Map<string, number>();
 const POSTERS_MAX = 150;
 /** Keep the map small: the oldest entry goes when the cap is reached. */
-function remember(url: string, frame: string) {
+function remember(url: string, frame: string, width: number) {
+  if ((posterWidths.get(url) ?? 0) > width) return;
   if (posters.size >= POSTERS_MAX) {
     const oldest = posters.keys().next().value;
-    if (oldest !== undefined) posters.delete(oldest);
+    if (oldest !== undefined) { posters.delete(oldest); posterWidths.delete(oldest); }
   }
   posters.set(url, frame);
+  posterWidths.set(url, width);
 }
 const inflight = new Map<string, Promise<string | "fail">>();
 const MAX_CAPTURES = 2;
@@ -56,15 +61,20 @@ const STORE_BUDGET = 1_500_000; // characters, well under every browser's ~5M
 function readIndex(): string[] {
   try { return JSON.parse(localStorage.getItem(STORE_INDEX) ?? "[]") as string[]; } catch { return []; }
 }
-function readStored(url: string): string | null {
-  try { return localStorage.getItem(STORE_PREFIX + url); } catch { return null; }
+/** A tier's key in the store: the 480 tier keeps the key it always had, so posters stored before tiers still read. */
+const storeKey = (url: string, width: number) => (width === 480 ? url : `${width}|${url}`);
+function readStored(url: string, width: number): string | null {
+  try { return localStorage.getItem(STORE_PREFIX + storeKey(url, width)); } catch { return null; }
 }
 function isQuota(e: unknown): boolean {
   const err = e as { name?: string; code?: number };
   return err?.name === "QuotaExceededError" || err?.name === "NS_ERROR_DOM_QUOTA_REACHED" || err?.code === 22 || err?.code === 1014;
 }
-function writeStored(url: string, dataUrl: string) {
+function writeStored(url: string, width: number, dataUrl: string) {
+  /* A large tier is for this view only: a third of the budget is the most one poster may take of the store. */
+  if (dataUrl.length > STORE_BUDGET / 3) return;
   try {
+    url = storeKey(url, width);
     let index = readIndex().filter((u) => u !== url);
     let total = index.reduce((a, u) => a + (localStorage.getItem(STORE_PREFIX + u)?.length ?? 0), 0);
     while (index.length && total + dataUrl.length > STORE_BUDGET) {
@@ -100,12 +110,13 @@ function parking(): HTMLElement {
   return el;
 }
 
-function capturePoster(url: string): Promise<string | "fail"> {
+function capturePoster(url: string, width = 480): Promise<string | "fail"> {
   const cached = posters.get(url);
-  if (cached) return Promise.resolve(cached);
-  const stored = readStored(url);
-  if (stored) { remember(url, stored); return Promise.resolve(stored); }
-  const running = inflight.get(url);
+  if (cached && (posterWidths.get(url) ?? 480) >= width) return Promise.resolve(cached);
+  const stored = readStored(url, width);
+  if (stored) { remember(url, stored, width); return Promise.resolve(stored); }
+  const key = `${url}|${width}`;
+  const running = inflight.get(key);
   if (running) return running;
 
   const job = (async (): Promise<string | "fail"> => {
@@ -131,10 +142,9 @@ function capturePoster(url: string): Promise<string | "fail"> {
           // was marked failed for the session.
           clearTimeout(timer);
           try {
-            // A thumbnail, not a still: 480 wide is sharper than any tile on
-            // the wall and a third the bytes of the 640 it started at.
+            // As wide as the picture is drawn (a tier of POSTER_TIERS), never wider than the video itself.
             const vw = v.videoWidth || 480, vh = v.videoHeight || 270;
-            const w = Math.min(vw, 480), h = Math.round((w * vh) / vw);
+            const w = Math.min(vw, width), h = Math.round((w * vh) / vw);
             const c = document.createElement("canvas");
             c.width = w; c.height = h;
             c.getContext("2d")!.drawImage(v, 0, 0, w, h);
@@ -145,8 +155,8 @@ function capturePoster(url: string): Promise<string | "fail"> {
         v.src = src;
         v.load();
       });
-      remember(url, frame);
-      writeStored(url, frame);
+      remember(url, frame, width);
+      writeStored(url, width, frame);
       return frame;
     } catch {
       // Not remembered: a capture that failed under load or in a background
@@ -155,11 +165,11 @@ function capturePoster(url: string): Promise<string | "fail"> {
     } finally {
       // Release the decoder and the connection whatever happened.
       try { v.removeAttribute("src"); v.load(); v.remove(); } catch { /* already gone */ }
-      inflight.delete(url);
+      inflight.delete(key);
       give();
     }
   })();
-  inflight.set(url, job);
+  inflight.set(key, job);
   return job;
 }
 
@@ -239,9 +249,12 @@ export default function LazyMedia({
   // Once in view, a video gets its poster; the result is shared by every
   // card that shows the same render, on this screen and the next.
   useEffect(() => {
-    if (!show || kind !== "video" || poster) return;
+    if (!show || kind !== "video" || poster === "fail") return;
+    /* As drawn: the box's width on screen (a scaled-up board included) times the pixel ratio. A poster already that sharp is kept. */
+    const want = posterTier(holder.current?.getBoundingClientRect().width ?? 0, window.devicePixelRatio);
+    if (poster && (posterWidths.get(url) ?? 480) >= want) return;
     let alive = true;
-    capturePoster(url).then((p) => { if (alive) setPoster({ url, value: p }); });
+    capturePoster(url, want).then((p) => { if (alive) setPoster({ url, value: p }); });
     return () => { alive = false; };
   }, [show, kind, url, poster]);
 
