@@ -952,3 +952,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #782 a86cc188 APPROVED (classify extreme shapes by long edge too).
   - #784 NB 2.1 APPROVED (should-fix: filter gated models through isOffered so a retired one is never listed).
   - Sent to lane B.
+- **16 Oct 03:34 IST.** Lane B: new #785 FLUX 3 Image (+ Klein) and FLUX.2 identity (bd9e0b7e, base #778, NEEDS AKSHAY).
+  - Identity = FLUX.2 multi-reference editing from the identity's own photos, with no training. Every photo passes the consent gate. Own switch BFL_IDENTITY_ENABLED. The LoRA path and the composer's @Name switch-over are untouched (owner step).
+  - #782 156f3251 (dearer size class); #784 1aab803f (retired gated models never listed).
+  - Opus review queued. Lane B idle (remaining work needs owner decisions).
