@@ -732,3 +732,17 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Opus money review of #776/#777 started.
   - Owner question from #777: dubbing is transcribe, then translate, then speak; no composite tool is built.
 - **16 Oct 00:45 IST.** #771 Opus re-check APPROVED at 4088b201: all 5 must-fixes and all should-fixes are in code, 112 targeted specs pass, the RESERVERS entry is still add-only and confirmed under the standing rule, and no new env names. One new should-fix, which I'm having lane B do now: agent and background callers have no person viewer, so they skip the private-upload check, and an Atomik run could face-check another member's private upload. Fix: check against the person the agent acts for, else refuse. Nit: an unused `compareFaces` export. #771 stays NEEDS AKSHAY. Its 8 owner questions are unchanged: no-match override, what "cloning" means, agents starting face checks, who pays in customer workspaces, scores against withdrawal, threshold 90, reference source, and the AWS opt-out.
+- **16 Oct 00:48 IST.** Opus money review: #776 (sync.so) and #777 (Sarvam) both NOT APPROVED. 169 targeted specs pass.
+  - #776 must-fixes:
+    - The vendor $/s rate and vendor ids reach GET /api/jobs for credit workspaces.
+    - speech, dialogue and dub skip voice consent even with cloned voices.
+    - The face image isn't tied to the clip (no server-side decoder). The claim will be reworded, and this is an owner decision.
+    - The cap DOORS entry proves nothing while the engine is off.
+  - #777 must-fixes:
+    - Transcripts and translations ARE stored, in generation_requests.response_json.
+    - STT is under-quoted (29.4 versus ₹30/h).
+    - Same cap-test gap as #776.
+  - Both: tools declared but not in MCP or Atomik (rule 11). #765's house cap is inherited, with an expected text conflict in lib/allowance.ts.
+  - Lead calls: use exact per-minute sync.so fractions (5/60, 8/60) so we never under-quote; no new CREDIT_MARGINS key (Sarvam rides the elevenlabs/text margins); no decoder build.
+  - Owner questions: failed-job vendor charges on the ledger; a face without proof it comes from the clip; keeping Sarvam text in the replay store; who resolves `uncertain` lip-sync holds; the SARVAM_USD_PER_INR review and buffer; whether MCP render tokens may approve these engines.
+  Fixes sent to lane B.
