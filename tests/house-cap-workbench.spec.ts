@@ -56,7 +56,7 @@ test.describe("the house's monthly cap on Credits & billing", () => {
         const row = page.getByTestId("v12-billing-house-cap");
         await expect(row).toBeVisible({ timeout: 60_000 });
         await expect(row).toHaveAttribute("data-state", state);
-        await expect(row.locator("span").last()).toHaveText(words);
+        await expect(page.getByTestId("v12-billing-house-cap-words")).toHaveText(words);
         await expect(row).toContainText("Monthly cap");
         /* In dollars only: the house has no credits, and the screen says nothing in them. */
         expect(await page.getByTestId("v12-billing").innerText()).not.toMatch(/\bcr\b/);

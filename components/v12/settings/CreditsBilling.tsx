@@ -98,7 +98,7 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
               {houseCap ? (
                 <div className="v12-bill-row" data-testid="v12-billing-house-cap" data-state={houseCap.stop ? "stop" : houseCap.warn ? "warn" : "ok"}>
                   <span>Monthly cap</span>
-                  <span className={houseCap.warn ? "v12-bill-low" : undefined}>
+                  <span className={houseCap.warn ? "v12-bill-low" : undefined} data-testid="v12-billing-house-cap-words">
                     {houseCap.warn ? <span className="v12-bill-dot" aria-hidden="true" /> : null}
                     {houseCap.stop ? `Reached · ${houseCapUsdText(houseCap.capUsd)} used` : houseCap.warn ? houseCapWarning(houseCap) : `${houseCapUsdText(houseCap.capUsd)} · ${houseCap.pct}% used`}
                   </span>
