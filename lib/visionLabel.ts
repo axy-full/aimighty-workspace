@@ -30,7 +30,7 @@ import { LABEL_DETECTED_MAX, LABEL_EXPECTED_MAX, labelDiff, normalise, readRules
  * sampled: the server has no decoder, lib/workbench/verify.ts). Where text is wanted the check reports it; it flags only a mismatch or a missing label. A take with no
  * required text is simply not checked here.
  *
- * MONEY. One image a request: VISION_RATES (lib/vendorRates.ts, TO CONFIRM) through the margin table; a person approves (`maxCredits`; over MCP only the workspace's own
+ * MONEY. One image a request: VISION_RATES (lib/vendorRates.ts, verified against Google's pricing page, 16 Oct 2026) through the margin table; a person approves (`maxCredits`; over MCP only the workspace's own
  * Ask/Auto setting does: lib/directEngineMcp.ts, where a check is a draft); reserved at the quote on the meter before the call, settled at the quote when Google read the
  * picture (including a picture with no text: Google analysed it) and at nothing ("Nothing was billed") when it refused or did not answer. Never above the quote.
  *
