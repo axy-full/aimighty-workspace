@@ -2,7 +2,8 @@ import { db, ready } from "./db";
 import { currentTenant } from "./tenant";
 import { REKOGNITION_MAX_BYTES } from "./rekognition";
 import { readUploadBytes } from "./storage";
-import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { currentViewer, uploadOpenableBy, type Viewer } from "./uploadAccess";
+import { isAgentId } from "./security/people-only";
 import {
   ConsentMatchError, NOT_DONE, checkedScope, faceCheckOnHere, matchConsentFace,
   type ConsentMatch, type ConsentMatchCode, type ConsentScope, type ConsentSeams,
@@ -41,6 +42,22 @@ export const CONSENT_CHECK_TOOL = {
   who: "anyone" as const,
 };
 
+/**
+ * The person a request acts for, or null (and the tool refuses): the signed-in person (or the token's owner), or, for an Atomik run's own identity
+ * (`agent:<runId>`), the person who started that run (`rig_agent_runs.owner`). A background caller with no person behind it, or a run that names none,
+ * has no viewer: it cannot face-check an upload, because it could otherwise reach another person's private one. Fails closed on any read error.
+ */
+async function actingViewer(): Promise<Viewer | null> {
+  const viewer = currentViewer();
+  if (viewer) return viewer;
+  const user = currentTenant()?.user;
+  if (!user || !user.id.startsWith("agent:") || !isAgentId(user.id)) return null;
+  try {
+    const owner = (await db().execute({ sql: "SELECT owner FROM rig_agent_runs WHERE id = ? LIMIT 1", args: [user.id.slice("agent:".length)] })).rows[0]?.owner;
+    return typeof owner === "string" && owner && !isAgentId(owner) ? { id: owner, role: "member" } : null;
+  } catch { return null; }
+}
+
 /** The tools present for a workspace: none when the check is off for it (the kill switch, or not the house workspace). */
 export async function consentTools(workspace: { id: string } | null | undefined = currentTenant()?.workspace): Promise<(typeof CONSENT_CHECK_TOOL)[]> {
   return (await faceCheckOnHere({}, workspace)) ? [CONSENT_CHECK_TOOL] : [];
@@ -64,8 +81,8 @@ export async function runConsentCheckWith(input: ConsentCheckInput, seams: Conse
   const uploadId = typeof input.uploadId === "string" ? input.uploadId : "";
   const row = /^[A-Za-z0-9_.:-]{1,160}$/.test(uploadId) ? (await db().execute({ sql: "SELECT ext, mime, stored_url FROM uploads WHERE id = ? LIMIT 1", args: [uploadId] })).rows[0] : undefined;
   /* A person's request reads only an upload they may open (lib/uploadAccess.ts): another person's private upload answers as one that is not there. */
-  const viewer = currentViewer();
-  const openable = !row || !viewer || (await uploadOpenableBy(uploadId, viewer));
+  const viewer = await actingViewer();
+  const openable = !row || (viewer !== null && (await uploadOpenableBy(uploadId, viewer)));
   if (!row || !openable || !String(row.mime ?? "").startsWith("image/")) return { ok: false, code: "bad-input", message: "Pick an image from this workspace's uploads." };
   try {
     const bytes = await readUploadBytes(uploadId, String(row.ext), String(row.stored_url), REKOGNITION_MAX_BYTES);
