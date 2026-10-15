@@ -274,8 +274,8 @@ export async function settleBfl(genId: string, status: "done" | "failed", outcom
   const ok = status === "done";
   /* A finished job is charged at most the quote, whatever BFL states: what it states past the quote is recorded as the overrun (the platform's, flagged to reconcile), never billed.
      A failure BFL charged for (costUsd above nothing) is recorded at that cost on the ledger line and billed to nobody. */
-  const cost = ok ? Math.min(outcome.costUsd, bfl.reservedUsd) : Math.max(0, outcome.costUsd);
-  const overrunUsd = ok && outcome.costUsd > bfl.reservedUsd + 1e-9 ? Math.round((outcome.costUsd - bfl.reservedUsd) * 1e6) / 1e6 : null;
+  const cost = Math.min(Math.max(0, outcome.costUsd), bfl.reservedUsd);
+  const overrunUsd = outcome.costUsd > bfl.reservedUsd + 1e-9 ? Math.round((outcome.costUsd - bfl.reservedUsd) * 1e6) / 1e6 : null;
   const reconcile = outcome.reconcile === true || overrunUsd !== null;  const write = ok
     ? {
         sql: `UPDATE generations SET status='succeeded', stored_url=?, bytes=?, cost_usd=?, error=NULL, duration_ms=?, params=json_set(params,'$.bfl.status','done','$.bfl.settled',1,'$.bfl.reconcile',?), updated_at=?
