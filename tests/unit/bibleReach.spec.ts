@@ -42,7 +42,7 @@ async function fixture(ws: TenantWorkspace) {
   await tenant.runInTenant(ws, async () => {
     await database.ready(); await workbenchReady();
     const db = database.db();
-    for (const u of ["u_a", "u_b", "u_admin", "u_marker"]) await db.execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,'x',?,0)", args: [u, `${u}@example.test`, u, u === "u_admin" ? "admin" : "member"] });
+    for (const u of ["u_a", "u_b", "u_admin", "u_marker", "u_root"]) await db.execute({ sql: "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,'x',?,0)", args: [u, `${u}@example.test`, u, u === "u_admin" ? "admin" : "member"] });
     for (const [id, name] of [[boards.priv, "A private board"], [boards.shared, "A shared board"], ["prod_open", "Open production"]]) await db.execute({ sql: "INSERT INTO projects(id,name,created_at) VALUES(?,?,0)", args: [id, name] });
     await db.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('u_a:d1','u_a','d1','d1',?,1,0)", args: [JSON.stringify({ productionProjectId: boards.priv })] });
     await db.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('u_a:d2','u_a','d2','d2',?,1,0)", args: [JSON.stringify({ productionProjectId: boards.shared, teamShared: true })] });
@@ -55,7 +55,8 @@ async function fixture(ws: TenantWorkspace) {
     /* The marked sample (another person's board, shown to everyone): its bible, a preset and an upload only they use. */
     const sample = draft_.mappedId("prj_wb_", ws.id, "u_marker", "d3");
     await db.execute({ sql: "INSERT INTO projects(id,name,created_at) VALUES(?,'Sample board',0)", args: [sample] });
-    await db.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('u_marker:d3','u_marker','d3','d3',?,1,0)", args: [JSON.stringify({ productionProjectId: sample })] });
+    await db.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('u_marker:d3','u_marker','d3','d3',?,1,0)", args: [JSON.stringify({ ...newProject("d3"), id: "d3", productionProjectId: sample })] });
+    await db.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES('u_root:dr','u_root','dr','dr',?,1,0)", args: [JSON.stringify({ ...newProject("dr"), id: "dr", productionProjectId: sample })] });
     await db.execute({ sql: "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('sampleProduction',?,'u_admin',0)", args: [JSON.stringify({ version: 1, projectId: sample, name: "Sample board", draftOwner: "u_marker", draftId: "d3", markedBy: "u_admin", markedAt: 0 })] });
     await db.execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,uploader_id) VALUES('up_sample','up_sample.png','image/png','png',1,'x','/x',0,'u_marker')", args: [] });
     await db.execute({ sql: "INSERT INTO workbench_bibles(project_id,version,owner,body,created_at) VALUES(?,1,'u_marker',?,0)", args: [sample, JSON.stringify({ brief: `SAMPLE-BRIEF-${run}`, assets: [{ id: "a1", name: "asset", kind: "image", uploadId: "up_sample" }, { url: "/api/workbench/media/wm_sample" }] })] });
@@ -155,17 +156,18 @@ test("a file from a private board someone cannot read says why, in one sentence 
   expect(await why("wm_priv", A), "the owner reads it").toBeNull();
   expect(await why("wm_shared", B), "a shared board's file opens").toBeNull();
   expect(await why("wm_missing", B), "no such file: still not found").toBeNull();
-  /* The media route: the text a person gets for the file, 404, names nothing. */
+  /* The media route says nothing more than for an unknown file (a refused item looks exactly like one that is not there). */
   const who = B;
   const media = loadRoute<{ GET: (r: Request, c: { params: Promise<{ id: string }> }) => Promise<Response> }>("app/api/workbench/media/[id]/route.ts", () => who);
   const get = (id: string) => tenant.runInTenant(ws, async () => { const res = await media.GET(new Request(`https://p.test/api/workbench/media/${id}`), { params: Promise.resolve({ id }) }); return { status: res.status, text: await res.text() }; }, { user: B });
   const refused = await get("wm_priv");
-  expect(refused).toEqual({ status: 404, text: PRIVATE_MEDIA });
-  for (const word of [boards.priv, "A private board", "u_a", "d1"]) expect(refused.text, word).not.toContain(word);
-  expect(await get("wm_missing")).toEqual({ status: 404, text: "Not found" });
-  /* The 3D render inputs say the same. */
+  expect(refused).toEqual({ status: 404, text: "Not found" });
+  expect(await get("wm_missing")).toEqual(refused);
+  /* The 3D render inputs, where the person's own project names the file, say why: one sentence, no board name, id or owner. */
   const { loadAstraRenderInputs } = await import("../../lib/astra-blender/render-storage");
   const asset = (id: string) => ({ id: "a1", name: "m", kind: "image", url: `/api/workbench/media/${id}` }) as never;
+  const thrown = await tenant.runInTenant(ws, () => loadAstraRenderInputs([asset("wm_priv")], "u_b"), { user: B }).then(() => "", (e: Error) => e.message);
+  for (const word of [boards.priv, "A private board", "u_a", "d1"]) expect(thrown, word).not.toContain(word);
   await expect(tenant.runInTenant(ws, () => loadAstraRenderInputs([asset("wm_priv")], "u_b"), { user: B })).rejects.toThrow(new RegExp(`^${PRIVATE_MEDIA.replace(/[.]/g, "\\.")}$`));
   await expect(tenant.runInTenant(ws, () => loadAstraRenderInputs([asset("wm_missing")], "u_b"), { user: B })).rejects.toThrow("A source file is unavailable or too large.");
 });
@@ -220,4 +222,22 @@ test("publishing a bible re-checks that the draft's owner can write the board: a
   /* The same with a stale version number: still no version. */
   const stale = await tenant.runInTenant(ws, () => publishBible("u_b", "B", "db1", 7).then(() => null, (e: Error) => e), { user: B });
   expect((stale as { currentVersion?: unknown }).currentVersion).toBeUndefined();
+});
+
+test("the sample's marker and the platform owner can still publish a bible to the sample; a teammate cannot", async () => {
+  const ws = workspace(`br-k-${run}`);
+  const { tenant } = await fixture(ws);
+  const { publishBible } = await import("../../lib/workbench/records");
+  const { resetPlatformOwnerIdentity } = await import("../../lib/platformOwnerPrivacy");
+  const before = process.env.SUPER_ADMIN_EMAIL;
+  process.env.SUPER_ADMIN_EMAIL = `root-${run}@example.test`; resetPlatformOwnerIdentity();
+  try {
+    const marker = await tenant.runInTenant(ws, () => publishBible("u_marker", "Marker", "d3", 1), { user: user("u_marker") });
+    expect(marker.version, "the marker publishes to their own sample").toBe(2);
+    const owner = { ...user("u_root"), email: `root-${run}@example.test` };
+    const root = await tenant.runInTenant(ws, () => publishBible("u_root", "Root", "dr", 2), { user: owner });
+    expect(root.version, "the platform owner publishes to the sample").toBe(3);
+    const mate = await tenant.runInTenant(ws, () => publishBible("u_b", "B", "db3", 3).then(() => null, (e: Error) => e), { user: B });
+    expect(mate?.message, "a teammate's draft linked to the sample cannot publish to it").toBe("Save your project first.");
+  } finally { if (before === undefined) delete process.env.SUPER_ADMIN_EMAIL; else process.env.SUPER_ADMIN_EMAIL = before; resetPlatformOwnerIdentity(); }
 });
