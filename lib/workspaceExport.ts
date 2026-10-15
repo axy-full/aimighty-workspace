@@ -1,4 +1,5 @@
 import { db, ready, now } from "./db";
+import { projectLister } from "./draftProject";
 import { requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
 import { creditsApply } from "./credits";
@@ -109,6 +110,14 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
           (SELECT json_extract(body,'$.productionProjectId') FROM workbench_projects WHERE owner=?))`,
       args: [ownerId, ownerId],
     })).rows.map(row => ({ ...row })) : [];
+    /* The Trash (lib/boardTrash.ts): what this person removed from their own drafts (theirs alone), and the takes and shots removed from boards they may list.
+       Never a teammate's private board's, and never another person's browser items. */
+    if (tables.has("board_trash")) {
+      const listed = await projectLister({ id: ownerId }, tx);
+      contents.board_trash = (await tx.execute("SELECT * FROM board_trash ORDER BY removed_at")).rows
+        .filter((row) => row.holder === ownerId || (row.holder === "" && listed(String(row.project_id))))
+        .map((row) => ({ ...row }));
+    }
     if (creditWorkspace) {
       // Customer billing is in credits. Provider costs and rate cards belong
       // in the platform's books, not in a customer data download.

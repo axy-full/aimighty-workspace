@@ -5,7 +5,7 @@ import { mediaBindingProblem } from "@/lib/mediaBindings";
 import { NextResponse, after } from "next/server";
 import { getGeneration, syncGeneration } from "@/lib/jobs";
 import { db, ready } from "@/lib/db";
-import { mediaDeletionReady, markGenerationDeletion } from "@/lib/mediaDeletion";
+import { mediaDeletionReady, markGenerationDeletion, markGenerationRestored } from "@/lib/mediaDeletion";
 import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
@@ -130,6 +130,9 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   const id = await takeIdFor(got.user, asked);
   /* A move to another project (or to none) changes who may open the uploads the take names: asked like an addition, before anything is written
      (lib/projectMove.ts). A take in a draft's own project leaves it only with its owner. Refused as an unknown take is. */
+  /* A take in a board's Trash is put back where it was removed from before it moves anywhere: a move would strand its record (lib/boardTrash.ts). Said before anything is written. */
+  if ((projectTo !== undefined || shotTo) && (await db().execute({ sql: "SELECT 1 FROM board_trash WHERE kind='take' AND item_id=? AND restored_at IS NULL", args: [id] })).rows.length)
+    return NextResponse.json({ error: "This take is in a board's Trash. Put it back before moving it." }, { status: 409 });
   if (projectTo !== undefined) {
     const cur = (await db().execute({ sql: "SELECT project_id, params FROM generations WHERE id=?", args: [id] })).rows[0];
     if (cur) {
@@ -198,7 +201,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
           const refused = await discardHeld(tx, id, row, got.user);
           if (refused) return refused;
         }
-        await markGenerationDeletion(tx, id, Date.now());
+        await markGenerationDeletion(tx, id, Date.now(), got.user.id);
         return null;
       }
       if (!Number(row.deleted)) return null;
@@ -206,6 +209,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
       if ((pending && pending.lease != null) || (row.stored_url == null && !Number(row.bytes))) return "This render's original has already been removed; it cannot be restored.";
       await tx.execute({ sql: "DELETE FROM generation_deletions WHERE id=?", args: [id] });
       await tx.execute({ sql: "UPDATE generations SET deleted=0, updated_at=? WHERE id=?", args: [Date.now(), id] });
+      await markGenerationRestored(tx, id, got.user.id);
       return null;
     });
     if (problem) return NextResponse.json({ error: problem }, { status: 409 });
@@ -346,7 +350,7 @@ export const DELETE = withTenant(async function DELETE(req: Request, { params }:
       if (refused) return refused;
     }
     // Keep the cost row for accounting. Source validation in draft saves shares this lock.
-    await markGenerationDeletion(tx, id);
+    await markGenerationDeletion(tx, id, Date.now(), got.user.id);
     return null;
   });
   if (problem) return NextResponse.json({ error: problem }, { status: 409 });

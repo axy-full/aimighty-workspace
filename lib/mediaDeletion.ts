@@ -45,6 +45,7 @@ export async function markGenerationDeletion(
   tx: Transaction,
   id: string,
   at = Date.now(),
+  by = "",
 ) {
   if (await consumerOriginalPending(tx, id))
     throw new MediaSourceError(CONSUMER_ORIGINAL_PENDING_MESSAGE);
@@ -57,6 +58,26 @@ export async function markGenerationDeletion(
     sql: "INSERT INTO generation_deletions(id,updated_at) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at",
     args: [id, at],
   });
+  /* A person removing a take (`by`) puts it in its board's Trash; a removal with no person (a system clean-up) does not, and its original is cleaned up as before. */
+  if (by) await recordTakeInTrash(tx, id, by, at);
+}
+
+/**
+ * A take a person removed is in a Trash (lib/boardTrash.ts), so its original is kept and it can be put back: its board's, or, for a take filed on no board, the
+ * workspace's (`project_id` is '' and the remover holds it, so only they and the admins who may change it list it). One already there stays as it is.
+ */
+export async function recordTakeInTrash(tx: Transaction, id: string, by: string, at = Date.now()) {
+  await tx.execute({
+    sql: `INSERT INTO board_trash(id,project_id,kind,item_id,label,payload,removed_by,removed_at,holder)
+          SELECT lower(hex(randomblob(16))),COALESCE(project_id,''),'take',id,substr(COALESCE(NULLIF(title,''),prompt,''),1,80),NULL,?,?,CASE WHEN project_id IS NULL THEN ? ELSE '' END FROM generations WHERE id=?
+          ON CONFLICT DO NOTHING`,
+    args: [by, at, by, id],
+  });
+}
+
+/** The take is back (not deleted): its Trash record, if it has one, is closed. */
+export async function markGenerationRestored(tx: Transaction, id: string, by: string, at = Date.now()) {
+  await tx.execute({ sql: "UPDATE board_trash SET restored_by=?, restored_at=? WHERE kind='take' AND item_id=? AND restored_at IS NULL", args: [by, at, id] });
 }
 
 /** Quota remains retained on the generation until all original objects were removed. */
@@ -73,6 +94,7 @@ export async function cleanupDeletedGenerations(
     WHERE g.deleted=1 AND g.status NOT IN ('queued','running','held') AND (? IS NULL OR g.id=?)
     AND (COALESCE(g.bytes,0)>0 OR g.stored_url IS NOT NULL OR d.id IS NOT NULL) AND COALESCE(d.lease_until,0)<=?
     ${pendingOriginals ? `AND g.id NOT IN (${pendingOriginals})` : ""}
+    AND g.id NOT IN (SELECT item_id FROM board_trash WHERE kind='take' AND restored_at IS NULL)
     ORDER BY COALESCE(d.updated_at,0),g.updated_at,g.id LIMIT ?`,
       args: [
         onlyId ?? null,

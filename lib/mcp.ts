@@ -126,6 +126,36 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "list_trash",
+    description: "What was removed from a board and can be put back: takes and shots, newest first. Only for the person who can edit the board. Leave out the project for the takes removed that were filed on no board.",
+    inputSchema: { type: "object", properties: { project: { type: "string", description: "The board's project name or id. Omit for takes that were filed on no board." } } },
+  },
+  {
+    name: "remove_to_trash",
+    description: "Remove a take or a shot from a board into its Trash. Nothing is erased, nothing is refunded or charged, and restore_from_trash puts it back.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "The board's exact project name or id." },
+        kind: { type: "string", description: "take | shot." },
+        id: { type: "string", description: "The take's or the shot's id." },
+      },
+      required: ["project", "kind", "id"],
+    },
+  },
+  {
+    name: "restore_from_trash",
+    description: "Put something back from a board's Trash, as it was. Never touches billing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "The board's exact project name or id. Omit for a take that was filed on no board." },
+        entry: { type: "string", description: "The Trash entry id from list_trash." },
+      },
+      required: ["entry"],
+    },
+  },
+  {
     name: "list_projects",
     description: "The workspace's projects, with how many renders each holds and what they cost.",
     inputSchema: { type: "object", properties: {} },
@@ -362,6 +392,27 @@ export async function runTool(
           `\n(That link needs the same token — it is not public.)`
         : "";
       return `${describe(generation)}${generation.authorName ? `\n  by ${generation.authorName}` : ""}${link}`;
+    }
+
+    case "list_trash": {
+      const project = await resolveProject(call, args.project as string | undefined, "read");
+      const { items } = (await call(project ? `/api/boards/${encodeURIComponent(project.id)}/trash` : "/api/trash")) as { items: { id: string; kind: string; label: string; restorable: boolean; why: string | null }[] };
+      if (!items.length) return "The Trash is empty.";
+      return items.map((i) => `${i.id} · ${i.kind} · ${i.label || "untitled"}${i.restorable ? "" : ` · cannot be put back: ${i.why ?? "its original is gone"}`}`).join("\n");
+    }
+
+    case "remove_to_trash": {
+      const project = await resolveProject(call, args.project as string | undefined, "spend");
+      if (!project) throw new Error("Name the board: its exact project name or id.");
+      if (args.kind !== "take" && args.kind !== "shot") throw new Error("kind is take or shot.");
+      const { entry } = (await call(`/api/boards/${encodeURIComponent(project.id)}/trash`, { method: "POST", body: { kind: args.kind, itemId: args.id } })) as { entry: { id: string; label: string } };
+      return `Removed ${args.kind} ${entry.label ? `“${entry.label}” ` : ""}to the Trash (entry ${entry.id}). restore_from_trash puts it back; nothing was erased or charged.`;
+    }
+
+    case "restore_from_trash": {
+      const project = await resolveProject(call, args.project as string | undefined, "spend");
+      const { entry } = (await call(`${project ? `/api/boards/${encodeURIComponent(project.id)}/trash` : "/api/trash"}/${encodeURIComponent(String(args.entry))}/restore`, { method: "POST", body: {} })) as { entry: { kind: string; label: string } };
+      return `Put the ${entry.kind} ${entry.label ? `“${entry.label}” ` : ""}back. Nothing was charged.`;
     }
 
     case "list_projects": {

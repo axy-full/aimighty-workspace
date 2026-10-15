@@ -315,6 +315,24 @@ const SCHEMA = [
      updated_at  INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_shots_project ON shots(project_id, position)`,
+  /* A board's Trash (lib/boardTrash.ts): what was removed from a board, who removed it and when; restored_at set once it is put back. For what the browser
+     held (a card, a note, a frame...) `payload` is the item whole and it is the remover's alone (`holder` is who); for a take or a shot it is what is needed to put it back
+     and `holder` is empty. Nothing here is ever erased. */
+  `CREATE TABLE IF NOT EXISTS board_trash (
+     id          TEXT PRIMARY KEY,
+     project_id  TEXT NOT NULL,  -- the board; '' for an unfiled take (the workspace's Trash), held by whoever removed it
+     kind        TEXT NOT NULL,
+     item_id     TEXT NOT NULL,
+     label       TEXT NOT NULL DEFAULT '',
+     payload     TEXT,
+     removed_by  TEXT NOT NULL,
+     removed_at  INTEGER NOT NULL,
+     restored_by TEXT,
+     restored_at INTEGER,
+     holder      TEXT NOT NULL DEFAULT ''
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_board_trash_project ON board_trash(project_id, removed_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_board_trash_open_v2 ON board_trash(project_id, kind, item_id, holder) WHERE restored_at IS NULL`,
   /* Atomik's words. An IDEA is a card: a logline, a tone, a few references,
      pinned by whoever thinks it is worth a brief. A TREATMENT is one document
      per production: scenes with prose, the setup defaults and the margin
@@ -876,7 +894,15 @@ async function addIndex(c: Client, stmt: string): Promise<void> {
  * rather than inheriting a rejected promise for the life of the container.
  */
 async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
-      await c.batch(SCHEMA, "write");
+      try {
+        await c.batch(SCHEMA, "write");
+      } catch (error) {
+        /* The Trash's earlier shape (lib/boardTrash.ts): a table with no `holder`, and an index that would let one person's record pre-empt another's. Nothing shipped
+           it; this repairs a database that ran it, and costs nothing on any other (it is only reached when the table has no `holder`). The failed batch rolled back whole. */
+        if (!/no such column: holder/i.test(String((error as Error).message ?? error))) throw error;
+        await c.batch(["ALTER TABLE board_trash ADD COLUMN holder TEXT NOT NULL DEFAULT ''", "DROP INDEX IF EXISTS idx_board_trash_open"], "write");
+        await c.batch(SCHEMA, "write");
+      }
       const addColumn = await columnInstaller(c);
       /* Bindings: drop the old one-row-per-slot constraint.
  
