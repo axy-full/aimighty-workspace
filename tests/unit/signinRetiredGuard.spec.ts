@@ -91,8 +91,9 @@ async function withTenantFor(store: () => tenant.TenantStore) {
   const ast = ts.createSourceFile("auth.ts", readFileSync("lib/auth.ts", "utf8"), ts.ScriptTarget.Latest, true);
   const declaration = ast.statements.find((statement) => ts.isFunctionDeclaration(statement) && statement.name?.text === "withTenant")!;
   const wrapped = {} as Pick<typeof auth, "withTenant">;
-  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", "crossOriginProblem", compile(declaration.getText(ast)))(
+  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", "crossOriginProblem", "hideOwnerAccountId", compile(declaration.getText(ast)))(
     wrapped, async () => store(), tenant.runWithStore, tenant.NoTenantError, MediaSourceError, workbenchScopeFor, (handler: unknown) => handler, crossOriginProblem,
+    async (res: Response) => res,
   );
   return { ...auth, withTenant: wrapped.withTenant };
 }

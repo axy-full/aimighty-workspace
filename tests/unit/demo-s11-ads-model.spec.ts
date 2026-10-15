@@ -18,7 +18,7 @@ const source = (moleculr: MoleculrBrief | undefined, extra: AdsExtra | null = nu
 });
 const KIT = { ...EMPTY_BRAND_KIT, name: "Clear Co", tagline: "Water, simply.", voice: "Quiet.", colors: ["#0A84FF", "#F5F5F7"], source: { url: "https://clear.example.test/", reviewedAt: "2026-10-05T10:00:00.000Z" } };
 const generation = (id: string, over: Record<string, unknown> = {}, media: "image" | "video" = "image"): LibraryEntry => ({
-  take: { id: `generation:${id}`, sourceId: id, kind: "GEN", name: `Take ${id}`, version: "v1", meta: "2.0 · 1:1", credits: 4, usd: null, status: "review", sha256: null, createdAt: 10 },
+  take: { id: `generation:${id}`, sourceId: id, kind: "generation", name: `Take ${id}`, version: "v1", meta: "2.0 · 1:1", credits: 4, usd: null, status: "review", sha256: null, createdAt: 10 },
   asset: { origin: "generation", value: { id, reviewState: "", model: "higgsfield/marketing-studio-image", kind: media, params: {}, status: "succeeded", createdAt: 10, ...over } as never },
   url: `/api/media/${id}`, media,
 });

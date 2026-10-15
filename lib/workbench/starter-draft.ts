@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { requireTenant } from "@/lib/tenant";
-import { seedStarterProduction, starterProductionId } from "@/lib/starter";
+import { seedStarterProduction, starterProductionId, type Seeder } from "@/lib/starter";
 import type { CastEntry } from "@/lib/production/cast";
 import { readDraft, saveDraft, workbenchReady, workbenchTransaction } from "./records";
 import { newProject, type Asset, type CanvasNode, type Project, type Shot } from "./studio";
@@ -117,9 +117,10 @@ export class StarterUnavailableError extends Error {
  * `created` says whether this call made the draft, and `seeded` whether it
  * made the production.
  */
-export async function openStarterDraft(owner: string): Promise<{ project: Project; revision: number; created: boolean; seeded: boolean }> {
+export async function openStarterDraft(person: Seeder): Promise<{ project: Project; revision: number; created: boolean; seeded: boolean }> {
+  const owner = typeof person === "string" ? person : person.id;
   await workbenchReady();
-  const made = await seedStarterProduction(owner);
+  const made = await seedStarterProduction(person);
   const seeded = Boolean(made);
   const productionId = made?.projectId ?? (await starterProductionId());
   if (!productionId) throw new StarterUnavailableError();

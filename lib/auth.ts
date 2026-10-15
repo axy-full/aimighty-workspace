@@ -23,7 +23,7 @@ import {
   type TenantStore, type TenantUser, type TenantToken, type TenantWorkspace, type WorkspaceRole,
 } from "./tenant";
 import { isHouseWorkspace } from "./houseWorkspace";
-import { maskSessionUser, platformOwnerIdentity } from "./platformOwnerPrivacy";
+import { hideOwnerAccountId, maskSessionUser, platformOwnerIdentity } from "./platformOwnerPrivacy";
 
 /**
  * Who is asking, and for which workspace.
@@ -265,7 +265,8 @@ export function withTenant<Req extends Request = Request, Ctx = unknown>(handler
       return Response.json({ code: "MFA_REQUIRED", error: "This workspace requires two-step sign-in. Set up your authenticator to continue.", securityUrl: "/account/security" }, { status: 428, headers: { "Cache-Control": "private, no-store" } });
     }
     try {
-      return await runWithStore(store, () => handler(req, ctx));
+      /* The platform owner's account id never goes to a client workspace's members (lib/platformOwnerPrivacy.ts › hideOwnerAccountId). */
+      return await hideOwnerAccountId(await runWithStore(store, () => handler(req, ctx)), store.workspace, store.user?.id);
     } catch (e) {
       if (e instanceof MediaSourceError) return Response.json({ error: e.message }, { status: 409 });
       if (e instanceof NoTenantError) {

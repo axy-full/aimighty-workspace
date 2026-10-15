@@ -79,7 +79,7 @@ test.describe("stages", () => {
     expect(s).toMatchObject({ stage: "held", label: "Held · needs 43 cr", tone: "amber", remainingMs: null, slow: false });
     expect(s.money?.text).toBe("Nothing charged yet");
     expect(renderState(take({ status: "held", held: { why: "credits" }, price: null }), T0).label).toBe("Held · needs credits");
-    expect(renderState(take({ status: "held", held: {}, price: { amount: 0.84, unit: "usd" } }), T0).label).toBe("Held · needs $0.840");
+    expect(renderState(take({ status: "held", held: {}, price: { amount: 0.84, unit: "usd" } }), T0).label).toBe("Held · needs $0.84");
   });
 });
 
@@ -209,7 +209,7 @@ test.describe("money", () => {
   test("in flight: the take's own reserved figure, held, charged only when it's ready", () => {
     expect(renderState(take({ status: "running" }), at(MIN)).money).toEqual({ text: "43 cr held · charged only when it’s ready", short: "43 cr held" });
     expect(renderState(take({ status: "queued", price: SEVEN, model: KLING }), at(MIN)).money?.text).toBe("7 cr held · charged only when it’s ready");
-    expect(renderState(take({ status: "running", price: { amount: 0.84, unit: "usd" } }), at(MIN)).money?.text).toBe("$0.840 held · charged only when it’s ready");
+    expect(renderState(take({ status: "running", price: { amount: 0.84, unit: "usd" } }), at(MIN)).money?.text).toBe("$0.84 held · charged only when it’s ready");
   });
 
   test("the figure is whatever the take carries, never a fixed one", () => {
@@ -244,7 +244,7 @@ test.describe("money", () => {
 
   test("a failure that was charged says what it cost (rule 14); an unknown charge claims nothing", () => {
     expect(renderState(take({ status: "failed", charged: { amount: 43, unit: "cr" }, retryPrice: HELD }), at(MIN)).money?.text).toBe("Didn’t finish · 43 cr charged · Retry · 43 cr");
-    expect(renderState(take({ status: "failed", charged: { amount: 0.42, unit: "usd" } }), at(MIN)).money?.text).toBe("Didn’t finish · $0.420 charged · Retry");
+    expect(renderState(take({ status: "failed", charged: { amount: 0.42, unit: "usd" } }), at(MIN)).money?.text).toBe("Didn’t finish · $0.42 charged · Retry");
     const unknown = renderState(take({ status: "failed", charged: null }), at(MIN));
     expect(unknown.money?.text).toBe("Didn’t finish · Retry");
     expect(unknown.nothingBilled).toBe(false);

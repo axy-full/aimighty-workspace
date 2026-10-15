@@ -877,7 +877,7 @@ export async function startIdentityStill(opts: {
            created_at, updated_at, token_id, shot_id, version, provider, task, billed_to)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [genId, opts.projectId, null, "image", RENDERER, finalPrompt,
-           JSON.stringify({ ratio: opts.ratio, resolution: "1K", rawPrompt: opts.prompt, identity: { id: opts.identity.id, name: opts.identity.name }, cast: [opts.identity.name] }),
+           JSON.stringify({ ratio: opts.ratio, resolution: "1K", rawPrompt: opts.prompt, identity: { id: opts.identity.id, name: opts.identity.name }, cast: [opts.identity.name], job: "cast" }),
            "running", opts.createdBy, ts, ts, opts.tokenId, opts.shotId, opts.version, "fal", "generate", "fal"],
   }, ...binding], "write");
   invalidate(PROJECTS_KEY);

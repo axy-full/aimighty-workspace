@@ -14,10 +14,11 @@ import { sharedBoards } from "./draftProject";
  *  (b) it is on work shared with the team: the production's shared Rig canvas (`workbench_team_canvas`), a project's boards, a project's library filing; or
  *  (c) shared production work already shows it: a shot's setup, a take's references (`generations.params`, not deleted), a shared bible version
  *      (`workbench_bibles`), a cast member, an identity (cover and photos), a Soul identity's references, a shot preset, a catalog version of an
- *      attribute, or a team-chat message.
+ *      attribute, or a team-chat message. A bible version and a shot preset of a private board's own production project grant only once that board is
+ *      shared (owner, 15 Oct 2026: readable only by people who can read the board); a preset of no project is the workspace's, and a team-chat message is the team's.
  *
  * Not shared work, so no grant: a private draft (`workbench_projects`, one person's) and everything filed or made inside one (a draft's own production
- * project, `prj_wb_…`: its library filings, takes, boards, shots, cast), edit versions, Atomik's own messages and steps. An upload only those use stays its
+ * project, `prj_wb_…`: its library filings, takes, boards, shots, cast, published bible versions, presets), edit versions, Atomik's own messages and steps. An upload only those use stays its
  * uploader's. Rows from before `uploader_id` that no record could name are unowned and stay open to the workspace's members, as they are today (an owner
  * decision to tighten later). Anything else is a 404 from the caller, never a 403, so nothing says the upload exists.
  *
@@ -67,13 +68,13 @@ const SOURCES: readonly Source[] = [
   { table: "attribute_versions", direct: "upload_id", where: (c) => `EXISTS(SELECT 1 FROM elements e WHERE e.id=t.element_id AND ${SHARED("e.project_id")(c)})` },
   { table: "messages", direct: "upload_id" },
   { table: "identities", direct: "cover_upload_id", where: SHARED("t.project_id") },
-  { table: "shot_presets", direct: "cover_upload_id" },
+  { table: "shot_presets", direct: "cover_upload_id", where: SHARED("t.project_id") },
   { table: "identities", json: "photos", photos: true, where: SHARED("t.project_id") },
-  { table: "shot_presets", json: "refs" },
+  { table: "shot_presets", json: "refs", where: SHARED("t.project_id") },
   { table: "soul_identities", json: "references_json", where: SHARED("t.production_project_id") },
   { table: "workbench_team_canvas", json: "body", where: SHARED("t.production_id") },
   { table: "boards", json: "nodes", where: SHARED("t.project_id") },
-  { table: "workbench_bibles", json: "body" },
+  { table: "workbench_bibles", json: "body", where: SHARED("t.project_id") },
   { table: "shots", json: "setup", where: SHARED("t.project_id") },
   { table: "generations", json: "params", where: (c) => `t.deleted=0 AND ${SHARED("t.project_id")(c)}` },
   /* What a teammate sees on a board shared with the team (and on the marked sample) is the author's own saved draft: its cards, its assets, its cast. */

@@ -1,4 +1,7 @@
 import { allowanceCheck } from "@/lib/allowance";
+import { madeInOf } from "./madeIn";
+import { jobHint, jobOf } from "./takeJob";
+import { shotTypeHint } from "./takeShotType";
 import { db, ready, now, id as newId } from "@/lib/db";
 
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
@@ -334,6 +337,16 @@ export async function executeAudioAdmission(
     params.batchId = body.batchId;
     if (Number.isInteger(body.variation) && body.variation >= 1 && body.variation <= 8) params.variation = body.variation;
   }
+  /* Make's own results (lib/madeIn.ts): marked by the server, only for a person's own Make request. */
+  const madeIn = madeInOf(body.madeIn, got);
+  if (madeIn) params.madeIn = madeIn;
+  /* What the take is for (lib/takeJob.ts): decided by the audio task; a hint on the request must be on the list and fit a sound, or it is refused here (a quote too). */
+  const hinted = jobHint(body.job, { kind: "audio", task });
+  if ("error" in hinted) return admissionReply({ error: hinted.error }, { status: 400 });
+  params.job = jobOf({ kind: "audio", task, hint: hinted.hint });
+  /* A sound has no shot type: naming one is refused, never stored. */
+  const shotTyped = shotTypeHint(body.shotType, { kind: "audio" });
+  if ("error" in shotTyped) return admissionReply({ error: shotTyped.error }, { status: 400 });
   const genId = newId("gen");
   const vendorUsd = estUsd ?? usdForCredits(estCredits, null);
   /* The terms the reservation and the settlement charge this job at: the quote, its ceiling, the credit wall
@@ -425,6 +438,8 @@ export async function executeAudioAdmission(
       text,
       JSON.stringify({
         ...params,
+        /* What it was quoted at and the ceiling approved, in our credits (lib/generationAdmission.ts quoteSnapshot); nothing on a workspace on its own keys. */
+        ...(creditsApply(requireTenant()) ? { quote: { credits: estimatedCredits, ...(Number.isInteger(body.maxCredits) && Number(body.maxCredits) >= 0 ? { maxCredits: Number(body.maxCredits) } : {}) } } : {}),
         estCredits,
         ...(estUsd != null ? { estUsd } : {}),
         ...(hold ? { held: hold } : {}),
