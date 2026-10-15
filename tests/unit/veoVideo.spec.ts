@@ -85,6 +85,7 @@ async function admit(input: Record<string, unknown>, seams: Seams = {}) {
   const { admitVeo } = await import("../../lib/veoVideo");
   return admitVeo(input, OWNER, options(), seams);
 }
+const person = (id: string, role: "admin" | "member" = "member", owner = false): AdmissionActor => ({ user: { id, email: `${id}@example.invalid`, name: id, role, owner, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] });
 const approved = { maxCredits: 100000 };
 const PRICE = 3.2; /* Veo 3.1 Standard, 8 s: 8 x 0.40 */
 
@@ -235,6 +236,14 @@ test("the cost approval rule: with a cap per shot, a member's clip past the cap 
         expect(String(reply.body.error)).toMatch(/An admin has to press this one/);
       }
       expect([await gens(), await meters()]).toEqual(before);
+      /* An admin's own press is what goes through: an admin's token, an agent run and an Atomik Auto step are machines, held to the cap like a member. */
+      const adminToken: AdmissionActor = { ...person("u_admin_tok", "admin", true), token: { id: "tok_admin", name: "agent", scope: "render" as const, capUsd: null } } as never;
+      const tokenReply = await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, adminToken, options(), {}), adminToken as never);
+      expect(tokenReply).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      const autoReply = await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, person("u_admin", "admin", true), { ...options(), run: { auto: true } } as never, {}), person("u_admin", "admin", true) as never);
+      expect(autoReply).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      const agentRun = person("agent:run_x", "admin", true);
+      expect(await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, agentRun, options(), {}), agentRun as never)).toMatchObject({ status: 403, body: { needsAdmin: true } });
       /* An admin goes through; a clip filed on no shot is not a shot's to cap. */
       expect((await admit({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true })).status).toBe(200);
       expect((await asMember({ tool: "video", prompt: "a tree", quoteOnly: true })).status).toBe(200);
