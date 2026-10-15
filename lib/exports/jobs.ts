@@ -13,7 +13,7 @@ import type { CompositionId } from "../../remotion/src/lib/types";
 import { FORMAT_FILE, SUBTITLE_FILE, isProRes } from "../../remotion/src/lib/types";
 import { PRORES_MAX_FRAMES } from "../../remotion/src/lib/limits";
 import { DEFAULT_OUTPUT, parseOutputOptions, type OutputOptions } from "../../remotion/src/lib/output";
-import { subtitleCuesOf } from "../../remotion/src/lib/subtitles";
+import { speakableCues, subtitleCuesOf } from "../../remotion/src/lib/subtitles";
 import {
   EXPORT_PRICE_LABEL,
   ExportError,
@@ -251,12 +251,14 @@ export async function createExport(
   let frames: number;
   let rate: number;
   let cueCount: number;
+  let speakableCount: number;
   try {
     const timeline = toTimeline(input.composition, checked.value as never);
     seconds = timeline.durationInFrames / timeline.fps;
     frames = timeline.durationInFrames;
     rate = timeline.fps;
     cueCount = subtitleCuesOf(timeline).length;
+    speakableCount = speakableCues(timeline).length;
   } catch (error) {
     if (error instanceof ExportTooLong) throw new ExportError(`${error.message} Make it shorter.`, 413);
     throw new ExportError(error instanceof Error ? error.message : "The export request is not valid.", 400);
@@ -266,6 +268,7 @@ export async function createExport(
     throw new ExportError(`A ProRes export can be at most ${PRORES_MAX_FRAMES} frames (60 s at 30 fps, 30 s at 60 fps); this one is ${frames} frames (${seconds.toFixed(1)} s at ${rate} fps). Use H.264 for a longer one.`, 413);
   }
   if (output.subtitles.length && cueCount === 0) throw new ExportError("The export request is not valid. output.subtitles: the export has no caption text (no cues) to write.", 400);
+  if (output.subtitles.length && speakableCount === 0) throw new ExportError("The export request is not valid. output.subtitles: every caption in this export is only styling, so there is no text to write.", 400);
   const spec: StoredSpec = { composition: input.composition, props: checked.value as unknown as Record<string, unknown>, media: bound.media, output };
 
   // Storage: an H.264 file is about 1 to 3 MB a second at 1080p (room for 4); ProRes 422 is about 16 MB a second and HQ 24 (room for 17 and 25), and each subtitle file is tiny.
