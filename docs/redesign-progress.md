@@ -746,3 +746,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Lead calls: use exact per-minute sync.so fractions (5/60, 8/60) so we never under-quote; no new CREDIT_MARGINS key (Sarvam rides the elevenlabs/text margins); no decoder build.
   - Owner questions: failed-job vendor charges on the ledger; a face without proof it comes from the clip; keeping Sarvam text in the replay store; who resolves `uncertain` lip-sync holds; the SARVAM_USD_PER_INR review and buffer; whether MCP render tokens may approve these engines.
   Fixes sent to lane B.
+- **16 Oct 01:00 IST.** Lane D fixed both review lists and merged up the stack (merges only).
+  - New heads: #766 6c8b1ddf, #768 5ba53250, #769 42bf8e5d, #770 0c0550ad, #772 0b847bf6, #773 26974395, #774 902aaeac, #775 68c3b3eb.
+  - Key changes: ProRes limited to 1,800 frames (env name dropped); the compose pin is exact at `sum(tmpfs) <= 3840`, but it was `<= 2048` in #699, so it needs the owner's word; conform is windowed, bounded and default off; zip opens every file while the workspace is in scope; stored bytes are verified; recovery is global.
+  - Both Opus reviewers are re-checking.
+  - CI: #699 and #764 are running now.
