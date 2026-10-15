@@ -752,3 +752,12 @@ Queue it after B1 (BFL); not part of deploy #4.
 3) Speed budget for v25: every v25 screen PR reports the same numbers against the current screen and may not be slower (LCP, INP, JS size). If one is slower, it says why and waits for my word.
 
 **Lead's notes.** (1) applies to #748 (the top bar, the first v25 PR) and every later v25 PR; the brand guard is new (the owner's own instruction, so it may be added). (2) The lead has no session and handles no credentials, so the signed-in board is measured another way (stated in the report). Lighthouse lab runs have no INP (it needs real interactions); Total Blocking Time is reported as the lab stand-in, labelled so. Runs are few, sequential and low-priority because the droplet is production. (3) goes into the v25 build plan (#747) as a rule for every screen PR.
+
+## Viral phase 2 (after Stripe launch): PARKED
+Owner, 15 Oct 2026, 16:05 IST (verbatim): "Viral mode, research only, docs only, no code, no keys, no spend.
+1) Trend source: TikTok signals first (hashtags, sounds, formats, growth, region = India + global). NEVER download or store other people's videos; signals only.
+2) Compare, in a short doc: Zyla's TikTok trend APIs (Trend Tracker / Media Trends / Trend Data Retriever / Capture Trends; check whether they are one product, who runs it, data source, India coverage, sounds, price, the ~12 s response), Tokchart API, EnsembleData, and one Apify actor for TikTok Creative Center. Plus the official ones: YouTube mostPopular by region, Google Trends (alpha / SerpApi), and Instagram hashtag search via Meta. One table: data, India, freshness, price per month at 500 calls a day, terms risk.
+3) Propose a provider-neutral "trend signal" adapter (env name TRENDS_API_KEY plus TRENDS_PROVIDER), switch off by default, with a test plan. I'll sign up for trials and set any key in Coolify myself.
+4) Park it under "Viral phase 2 (after Stripe launch)" in the plan; don't let it take lanes from deploy #4/#5 or the v25 first slice."
+
+**Lead's notes.** Research runs in a separate research agent (not a build lane), output `docs/plans/viral-trends.md` on redesign/integration. No code, no keys, no sign-ups, no paid calls. Nothing is built until after the Stripe launch and the owner's go.
