@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import os from "node:os";
 import path from "node:path";
 import { checkSpec, runExport, type Renderer } from "../../remotion/node/export";
-import { subtitleCuesOf, subtitleText, toSrt, toVtt, wrapLines, type Cue, type CompositionId, type Timeline } from "../../remotion/src/lib";
+import { subtitleCuesOf, subtitleText, toSrt, toVtt, wrapLines, neutralise, type Cue, type CompositionId, type Timeline } from "../../remotion/src/lib";
 import type { Prober } from "../../remotion/node/probe";
 
 /* Sidecar SRT and VTT from the same cue data as the burned-in captions: pure text, placed on the finished video's clock. */
@@ -26,7 +26,7 @@ test("SubRip: a counter, HH:MM:SS,mmm --> HH:MM:SS,mmm, the text, a blank line b
 
 test("WebVTT: the WEBVTT header, dots in the stamps, and markup characters as entities", () => {
   expect(toVtt([cue(0, 1500, "Tom & <Jerry>")])).toBe("WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.500\nTom &amp; &lt;Jerry&gt;\n");
-  expect(toSrt([cue(0, 1500, "Tom & <Jerry>")])).toContain("Tom & <Jerry>");
+  expect(toSrt([cue(0, 1500, "Tom & <Jerry>")])).toContain("Tom & \u2039Jerry\u203A");
   expect(subtitleText("srt", [cue(0, 1000, "x")])).toBe(toSrt([cue(0, 1000, "x")]));
   expect(subtitleText("vtt", [cue(0, 1000, "x")])).toBe(toVtt([cue(0, 1000, "x")]));
 });
@@ -116,4 +116,30 @@ test.describe("the export command writes the files", () => {
     if (!result.ok) return;
     expect(result.files.map((f) => f.name)).toEqual(["export.mp4", "still-0.png", "subtitles.vtt"]);
   });
+});
+
+test("cue text is data, never syntax: --> becomes an arrow, styling blocks and tags cannot style or break a cue, and a cue that was only styling is not written", () => {
+  const hostile = cue(0, 2000, "A --> B {\\an8}<b>bold</b> {\\pos(1,1)}<i>x</i> end");
+  const srt = toSrt([hostile]);
+  expect(srt).toBe("1\n00:00:00,000 --> 00:00:02,000\nA \u2192 B \u2039b\u203Abold\u2039/b\u203A \u2039i\u203Ax\u2039/i\u203A end\n");
+  expect(srt.split("\n").filter((line) => line.includes("-->"))).toHaveLength(1);
+  expect(srt.split("\n").filter((line) => !line.includes(" --> ")).join("\n")).not.toMatch(/[<>]|\{\\/);
+  const vtt = toVtt([hostile]);
+  expect(vtt).toBe("WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\nA \u2192 B &lt;b&gt;bold&lt;/b&gt; &lt;i&gt;x&lt;/i&gt; end\n");
+  expect(vtt.split("\n").filter((line) => line.includes("-->"))).toHaveLength(1);
+  /* A cue that is only a styling block has nothing to say: it is not written, and the counter stays unbroken. */
+  expect(toSrt([cue(0, 1000, "{\\an8}"), cue(1000, 2000, "Real")])).toBe("1\n00:00:01,000 --> 00:00:02,000\nReal\n");
+  expect(toVtt([cue(0, 1000, "{\\an8}"), cue(1000, 2000, "Real")])).toBe("WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nReal\n");
+  expect(neutralise("a --> b --> c", "srt")).toBe("a \u2192 b \u2192 c");
+});
+
+test("a cue never has zero length after rounding to milliseconds", () => {
+  /* 25 fps: a clip starting at frame 1 is at 40 ms; a cue of 0.4 ms at local 0.2 ms rounds to the same millisecond twice. */
+  const t = timelineOf("final", finalProps({ title: null, clips: [clip([cue(500, 2500, "kept")])] }));
+  const item = t.items.find((x) => x.kind === "clip");
+  if (!item || item.kind !== "clip") throw new Error("no clip");
+  item.subtitleCues.push({ startMs: 100.2, endMs: 100.4, text: "blink" }, { startMs: 3000.6, endMs: 3000.9, text: "also" });
+  const cues = subtitleCuesOf(t);
+  expect(cues.every((c) => c.endMs > c.startMs)).toBe(true);
+  expect(cues.map((c) => c.text)).toEqual(["kept"]);
 });

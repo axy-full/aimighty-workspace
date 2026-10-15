@@ -94,3 +94,27 @@ test("the voice files are inputs like the music: they must exist, have sound and
   expect(reasons).toEqual(expect.arrayContaining(["input/vo1.mp3: is 3.50 s, the request says 2 s", "input/vo2.mp3: has no audio"]));
   expect(reasons).toHaveLength(2);
 });
+
+test("two voice lines cannot play at once: an overlap is refused, naming both; touching lines and lines in any order are fine", () => {
+  const t = (lines: Record<string, unknown>[]) => checkSpec({ version: 1, composition: "final", props: props({ voiceover: lines }) });
+  const overlap = t([line({ startSeconds: 1, durationSeconds: 2 }), line({ file: "vo2.mp3", startSeconds: 2.5, durationSeconds: 1 })]);
+  expect(overlap).toEqual({ ok: false, code: "spec_invalid", errors: ["props.voiceover[1] overlaps props.voiceover[0]: two voice lines cannot play at once (one starts at 2.50 s, the other runs until 3.00 s)"] });
+  /* The same pair given in the other order names them by their place in the list. */
+  expect(t([line({ file: "vo2.mp3", startSeconds: 2.5, durationSeconds: 1 }), line({ startSeconds: 1, durationSeconds: 2 })])).toMatchObject({ ok: false, errors: [expect.stringContaining("props.voiceover[0] overlaps props.voiceover[1]")] });
+  expect(t([line({ startSeconds: 1, durationSeconds: 2 }), line({ file: "vo2.mp3", startSeconds: 3, durationSeconds: 1 })])).toMatchObject({ ok: true });
+  expect(t([line({ file: "vo2.mp3", startSeconds: 4, durationSeconds: 1 }), line({ startSeconds: 1, durationSeconds: 2 })])).toMatchObject({ ok: true });
+  /* Lines are clipped to the end of the cut before they are compared: this one ends at 6 s, so a second starting at 5.9 s is an overlap. */
+  expect(t([line({ startSeconds: 5, durationSeconds: 9 }), line({ file: "vo2.mp3", startSeconds: 5.9, durationSeconds: 0.5 })])).toMatchObject({ ok: false, code: "spec_invalid" });
+});
+
+test("a file named by the music and by a voice line has each claim checked; so does a clip used twice with different claims", async () => {
+  const checked = checkSpec({ version: 1, composition: "final", props: props({ music: { file: "shared.mp3", durationSeconds: 8, volume: 0.5 }, voiceover: [line({ file: "shared.mp3", durationSeconds: 2 })] }) });
+  if (!checked.ok) throw new Error(JSON.stringify(checked));
+  const declared = declaredOf(checked.id, checked.props);
+  expect(declared.filter((d) => d.file === "shared.mp3").map((d) => d.durationSeconds).sort()).toEqual([2, 8]);
+  const prober: Prober = { probe: async (file) => ({ durationSeconds: file.endsWith("shared.mp3") ? 8 : 10, width: 1920, height: 1080, hasVideo: !file.endsWith(".mp3"), hasAudio: true }) };
+  expect(await contradictions(declared, "/in", prober)).toEqual(["input/shared.mp3: is 8.00 s, the request says 2 s"]);
+  const twice = checkSpec({ version: 1, composition: "final", props: props({ clips: [clip, { ...clip, source: { ...SOURCE, hasAudio: false } }], music: null }) });
+  if (!twice.ok) throw new Error(JSON.stringify(twice));
+  expect(declaredOf(twice.id, twice.props).filter((d) => d.file === "a.mp4")).toHaveLength(2);
+});

@@ -540,8 +540,8 @@ test("compose: one single-slot worker, 3 vCPU / 8 GB, locked down, on remotion-i
   assert.ok(!/secret|token|password/i.test(relay) && !/network_mode|ports:|expose:|volumes:|privileged/.test(relay), "the relay holds no secret and publishes nothing");
   // The tmpfs mounts and the limits add up: both tmpfs full plus the browser still fit in memory.
   const sizes = [...worker.matchAll(/:size=(\d+)m/g)].map((m) => Number(m[1]));
-  /* Both tmpfs full (3 GB + 0.75 GB) plus a render's measured peak (about 1.8 GiB, rounded up to 2 GiB) fit in the 8 GB limit. */
-  assert.ok(sizes.reduce((a, b) => a + b, 0) + 2048 <= 8 * 1024);
+  /* The two tmpfs mounts together: 3072 + 768 = 3840 MB, exactly what the compose holds (was `<= 2048` when the sandbox tmpfs was 1280m). */
+  assert.ok(sizes.reduce((a, b) => a + b, 0) <= 3840);
   // The sandbox tmpfs holds a maximum export's inputs and its output.
   assert.ok((LIMITS.totalBytes + LIMITS.outputBytes) / MiB <= sizes[0]);
 });
@@ -694,5 +694,27 @@ test("a file may not be written while a run is going (409 run_in_progress); befo
     assert.deepEqual(during.data, { error: "run_in_progress" });
     await t.api("DELETE", `/v1/sessions/${id}`);
     await first;
+  } finally { await t.close(); }
+});
+
+test("a run is refused while an upload is in flight (409 run_in_progress), and starts once the upload is done", { skip }, async () => {
+  const t = await setup();
+  try {
+    const id = await session(t);
+    await put(t, id, "/vercel/sandbox/remotion/run.py", "print('ran')\n");
+    let hold;
+    const body = new ReadableStream({ start(controller) { hold = controller; controller.enqueue(new TextEncoder().encode("first part")); } });
+    const upload = put(t, id, "/vercel/sandbox/remotion/input/slow.mp4", body);
+    /* Give the worker a moment to accept the first bytes; the upload then stays in flight until the stream is closed. */
+    await sleep(250);
+    const refused = await run(t, id);
+    assert.equal(refused.status, 409);
+    assert.deepEqual(refused.data, { error: "run_in_progress" });
+    hold.close();
+    assert.equal((await upload).status, 201);
+    const done = await run(t, id);
+    assert.equal(done.status, 200);
+    assert.equal(done.data.exitCode, 0);
+    assert.match(done.data.stdout, /ran/);
   } finally { await t.close(); }
 });

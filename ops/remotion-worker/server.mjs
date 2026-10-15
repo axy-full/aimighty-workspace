@@ -523,6 +523,8 @@ export function createRemotionWorker(options) {
     requireRunning(session);
     if (!validRunBody(body)) throw new HttpError(400, { error: "command_refused" });
     if (session.run) return send(res, 409, { busy: true });
+    /* A run needs its inputs complete and still: an upload (or a read) in flight means the files are not settled, so nothing starts. */
+    if (session.pendingPaths.size > 0 || session.ops.size > 0) throw new HttpError(409, { error: "run_in_progress" });
     const cwd = disk(["remotion"]);
     const cwdInfo = await lstat(cwd).catch(() => null);
     if (!cwdInfo?.isDirectory()) throw new HttpError(409, { error: "workspace_missing" });
