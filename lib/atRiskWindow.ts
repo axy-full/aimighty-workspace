@@ -32,3 +32,10 @@ export const AT_RISK_COUNTS_SQL = `SELECT SUM(CASE WHEN g.stored_url IS NOT NULL
        SUM(CASE WHEN g.stored_url IS NULL AND ${PAST_WINDOW_SQL()} THEN 1 ELSE 0 END) AS lost
   FROM generations g WHERE g.status = 'succeeded' AND g.deleted = 0`;
 export const atRiskCountsQuery = (horizon: number): { sql: string; args: number[] } => ({ sql: AT_RISK_COUNTS_SQL, args: [horizon, horizon] });
+
+/** How many unsaved takes there are, in the two states the platform owner decides on (every workspace together, for the console's badge and tile). */
+export type RiskCounts = { atRisk: number; lost: number };
+/** "1 at risk · 2 lost", each part left out when 0, "" when both are 0. */
+export const riskWords = (c: RiskCounts): string => [c.atRisk > 0 ? `${c.atRisk} at risk` : "", c.lost > 0 ? `${c.lost} lost` : ""].filter(Boolean).join(" · ");
+/** Lost takes were paid for and need the owner's decision too, so either one raises the alarm. */
+export const riskAlarm = (c: RiskCounts): boolean => c.atRisk > 0 || c.lost > 0;

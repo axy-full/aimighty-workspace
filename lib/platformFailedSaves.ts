@@ -3,7 +3,8 @@ import { platformAuditStatement } from "@/lib/platformAudit";
 import { runInTenant } from "@/lib/tenant";
 import { db, ready } from "@/lib/db";
 import { findModel } from "@/lib/models";
-import { UNSAVED_SQL, isLostAge } from "@/lib/atRiskWindow";
+import { UNSAVED_SQL, atRiskHorizon, isLostAge, type RiskCounts } from "@/lib/atRiskWindow";
+import { atRiskCounts } from "@/lib/atRisk";
 
 /**
  * Failed saves: renders that finished at the engine but whose file never reached our storage (a `succeeded` generation with no
@@ -55,10 +56,23 @@ export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
   return value;
 }
 
-/** How many are at risk, for the console's badge and its Overview tile (the lost ones are listed, but no longer alarm: nothing can be done by waiting); null when no workspace could be read. */
-export async function failedSavesCount(): Promise<number | null> {
-  const { items, unreadable } = await listFailedSaves();
-  return unreadable > 0 && items.length === 0 ? null : items.filter((item) => !item.lost).length;
+/**
+ * How many unsaved takes there are across every workspace, at risk and lost, for the console's badge and its Overview tile (owner, 15 Oct 20:45: "show both, e.g. "1 at risk · 2 lost".
+ * Lost takes were paid for and need my decision too."). Counted in each workspace's database, not from the list, so the figures are not cut off at the list's 200. Null when no workspace
+ * could be read.
+ */
+export async function failedSavesCounts(): Promise<RiskCounts | null> {
+  await platformReady();
+  const total: RiskCounts = { atRisk: 0, lost: 0 };
+  let read = 0, unreadable = 0;
+  const horizon = atRiskHorizon();
+  for (const ws of await listWorkspaces()) {
+    try {
+      const c = await runInTenant(ws, () => atRiskCounts(horizon));
+      total.atRisk += c.atRisk; total.lost += c.lost; read++;
+    } catch { unreadable++; }
+  }
+  return unreadable > 0 && read === 0 ? null : total;
 }
 
 export class RetryRefused extends Error { constructor(message: string, readonly status: number) { super(message); } }

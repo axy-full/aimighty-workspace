@@ -200,7 +200,7 @@ test("the failed-saves list says at risk or lost with the shared definition, the
   const { platformDb, platformReady } = await import("../../lib/platform");
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
-  const { listFailedSaves, failedSavesCount, forgetFailedSaves } = await import("../../lib/platformFailedSaves");
+  const { listFailedSaves, failedSavesCounts, forgetFailedSaves } = await import("../../lib/platformFailedSaves");
   await platformReady();
   const ws = workspace("risk_list");
   await platformDb().execute({ sql: "INSERT INTO workspaces(id,slug,name,db_url,owner_id,uses_platform_keys,created_at,updated_at,concurrency,renders_per_hour) VALUES(?,?,?,?,'tester',1,0,0,20,200)", args: [ws.id, ws.id, "Risk list", ws.dbUrl] });
@@ -212,7 +212,10 @@ test("the failed-saves list says at risk or lost with the shared definition, the
   forgetFailedSaves();
   const read = (await listFailedSaves(at + 1)).items.filter((i) => i.workspaceId === ws.id);
   expect(Object.fromEntries(read.map((i) => [i.id, i.lost]))).toEqual({ r71: false, r73: true });
-  expect(await failedSavesCount(), "only the take at risk is counted (the console's other workspaces add nothing here)").toBeGreaterThanOrEqual(1);
+  /* The console's badge and tile count both states, in every workspace, exactly (not from the list): this workspace holds 1 at risk and 1 lost. */
+  const counted = await failedSavesCounts();
+  expect(counted?.atRisk).toBeGreaterThanOrEqual(1);
+  expect(counted?.lost).toBeGreaterThanOrEqual(1);
   const inList = (await listFailedSaves(at + 1)).items;
   expect(inList.filter((i) => !i.lost).map((i) => i.id)).toContain("r71");
   /* The screen shows the shared label for a lost row and "at risk" for the other. */
@@ -303,4 +306,29 @@ test("a member's GET /api/settings never carries the internal at-risk memory (ta
   const body = await (await target.exports.GET!()).json() as { settings: Record<string, string> };
   expect(Object.keys(body.settings).sort()).toEqual(["capWarnPct", "namingTemplate"]);
   expect(JSON.stringify(body)).not.toContain("gen_private_of_another_member");
+});
+
+test("the console shows both counts as \"1 at risk · 2 lost\", each left out at 0, and raises the alarm when either is above 0", () => {
+  expect(atRiskWindow.riskWords({ atRisk: 1, lost: 2 })).toBe("1 at risk · 2 lost");
+  expect(atRiskWindow.riskWords({ atRisk: 3, lost: 0 })).toBe("3 at risk");
+  expect(atRiskWindow.riskWords({ atRisk: 0, lost: 2 })).toBe("2 lost");
+  expect(atRiskWindow.riskWords({ atRisk: 0, lost: 0 })).toBe("");
+  expect(atRiskWindow.riskAlarm({ atRisk: 0, lost: 2 }), "lost needs the owner's decision too").toBe(true);
+  expect(atRiskWindow.riskAlarm({ atRisk: 1, lost: 0 })).toBe(true);
+  expect(atRiskWindow.riskAlarm({ atRisk: 0, lost: 0 })).toBe(false);
+  /* Both screens read the pure words and alarm, and neither keeps a second copy. */
+  const nav = readFileSync(path.resolve("components/v12/platform/PlatformConsole.tsx"), "utf8");
+  const tile = readFileSync(path.resolve("components/v12/platform/Overview.tsx"), "utf8");
+  for (const [name, source] of [["PlatformConsole", nav], ["Overview", tile]]) { expect(source, name).toMatch(/riskWords/); expect(source, name).toMatch(/riskAlarm/); }
+  expect(nav).toMatch(/riskAlarm\(c\) \? \{ n: riskWords\(c\), tone: "bad" \} : null/);
+});
+
+test("the overview carries both counts, read from every workspace", async () => {
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { consoleOverview } = await import("../../lib/platformConsole.server");
+  await platformReady();
+  const seen = await consoleOverview();
+  expect(seen.failedSaves, "readable").not.toBeNull();
+  expect(Object.keys(seen.failedSaves!).sort()).toEqual(["atRisk", "lost"]);
+  void platformDb;
 });
