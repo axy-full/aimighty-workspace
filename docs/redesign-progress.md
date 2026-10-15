@@ -871,3 +871,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - A sync.so output host refused after completion settles as a charged failure.
     - Runway: failure text says "Nothing billed" (no vendor credits shown); overrun recorded on failures; Gen-4.5/Turbo start images pass the consent gate (owner can relax).
   - BFL: settlement uses BFL's cost only if `cost` comes back. One paid qualification call (owner's yes) would settle both that and the MP unit.
+- **16 Oct 02:21 IST.** #771 (Rekognition consent gate) readiness CI green 24/24 (run 38799490414, base release/1 663fb243) on the Opus-approved head 71a87a44. Ready, but NEEDS AKSHAY: it is an engine, its RESERVERS entry is a guard-list edit, and it has 8 owner questions, above all the reference source. Not merged. CI slots are free.
