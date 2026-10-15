@@ -33,7 +33,8 @@ export class SyncError extends Error {
 }
 
 export type SyncStatus = "pending" | "processing" | "completed" | "failed";
-export type SyncGeneration = { id: string; status: SyncStatus; outputUrl?: string; outputDuration?: number; error?: string };
+/** `reportedCostUsd`: what sync.so says the job cost, when its reply says (the field is TO CONFIRM); absent when it does not. */
+export type SyncGeneration = { id: string; status: SyncStatus; outputUrl?: string; outputDuration?: number; error?: string; reportedCostUsd?: number };
 
 /** The base address: https, or a local stand-in for a test (http on localhost or 127.0.0.1 only). */
 function base(): string {
@@ -114,7 +115,9 @@ export async function generationStatus(id: string, deps: Deps = {}): Promise<Syn
   const { json } = await call("GET", `/v2/generate/${encodeURIComponent(id)}`, { deps, timeout: POLL_TIMEOUT_MS });
   const status = STATUS[String(json.status ?? "").toUpperCase()] ?? "processing";
   const duration = Number(json.outputDuration);
+  const cost = json.cost == null ? NaN : Number(json.cost);
   return {
+    ...(Number.isFinite(cost) && cost >= 0 ? { reportedCostUsd: cost } : {}),
     id, status,
     ...(typeof json.outputUrl === "string" ? { outputUrl: json.outputUrl } : {}),
     ...(Number.isFinite(duration) && duration > 0 ? { outputDuration: duration } : {}),

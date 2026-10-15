@@ -96,13 +96,13 @@ async function world(seconds = { clip: 4, voice: 5 }, voiceConsent = true): Prom
 }
 
 /** The adapter seams: a job that completes on the second poll, recording every call. */
-function fakeVendor(over: { completeAt?: number; outputDuration?: number; failWith?: string; submitError?: Error; uploadError?: Error; storeError?: Error; deleteJobError?: boolean } = {}) {
+function fakeVendor(over: { completeAt?: number; outputDuration?: number; failWith?: string; reportedCostUsd?: number; submitError?: Error; uploadError?: Error; storeError?: Error; deleteJobError?: boolean } = {}) {
   const calls: string[] = [];
   let polls = 0, assetSeq = 0;
   const deps = {
     upload: async () => { if (over.uploadError) throw over.uploadError; calls.push("upload"); return `asset_${++assetSeq}`; },
     submit: async (input: { model: string; syncMode: string; videoAssetId: string; audioAssetId: string }) => { calls.push(`submit:${input.model}:${input.syncMode}`); if (over.submitError) throw over.submitError; return { id: "job_1" }; },
-    status: async () => { polls++; calls.push("status"); if (over.failWith) return { id: "job_1", status: "failed" as const, error: over.failWith }; return polls < (over.completeAt ?? 2) ? { id: "job_1", status: "processing" as const } : { id: "job_1", status: "completed" as const, outputUrl: "https://example.invalid/out.mp4", outputDuration: over.outputDuration }; },
+    status: async () => { polls++; calls.push("status"); if (over.failWith) return { id: "job_1", status: "failed" as const, error: over.failWith, ...(over.reportedCostUsd != null ? { reportedCostUsd: over.reportedCostUsd } : {}) }; return polls < (over.completeAt ?? 2) ? { id: "job_1", status: "processing" as const } : { id: "job_1", status: "completed" as const, outputUrl: "https://example.invalid/out.mp4", outputDuration: over.outputDuration }; },
     download: async () => { calls.push("download"); return Buffer.from("lip-synced-clip"); },
     store: async (genId: string, bytes: Buffer) => { if (over.storeError) { const e = over.storeError; over.storeError = undefined; throw e; } calls.push("store"); return { url: `stored/${genId}.mp4`, bytes: bytes.length }; },
     deleteJob: async (id: string) => { calls.push(`deleteJob:${id}`); if (over.deleteJobError) throw new Error("409 still processing"); return true; },
@@ -111,7 +111,7 @@ function fakeVendor(over: { completeAt?: number; outputDuration?: number; failWi
   return { deps, calls };
 }
 
-async function admit(w: World, extra: Record<string, unknown> = {}, seams: { consent?: ReturnType<typeof passing> } = { consent: passing(w.consentId) }) {
+async function admit(w: World, extra: Record<string, unknown> = {}, seams: { consent?: ReturnType<typeof passing>; voices?: () => Promise<{ id: string; category: string }[]> } = { consent: passing(w.consentId) }) {
   const { admitLipSync } = await import("../../lib/lipSync");
   const reply = await admitLipSync({ ...w.body, ...extra }, OWNER, options(), seams);
   return reply;
@@ -127,13 +127,18 @@ test("the quote: the audio's length for cut_off, else the longer track, at the p
   const { SYNC_RATES } = await import("../../lib/vendorRates");
   const { quotedSeconds, lipSyncUsd } = await import("../../lib/lipSync");
   /* The recorded provider prices (docs/plans/provider-adapters.md § 1): dollars per output second, to confirm against the plan bought. */
-  expect(SYNC_RATES.models).toEqual({ "lipsync-2": 0.05, "lipsync-2-pro": 0.083, "sync-3": 0.133 });
+  /* sync.so's page rounds the per-second figures; the exact per-minute fractions ($5 and $8 a minute) are used so a quote is never under it. */
+  expect(SYNC_RATES.models).toEqual({ "lipsync-2": 0.05, "lipsync-2-pro": 5 / 60, "sync-3": 8 / 60 });
+  expect(SYNC_RATES.models["lipsync-2-pro"]).toBeGreaterThan(0.083);
+  expect(SYNC_RATES.models["sync-3"]).toBeGreaterThan(0.133);
   expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/TO CONFIRM[\s\S]{0,400}SYNC_RATES|SYNC_RATES[\s\S]{0,200}models: \{ "lipsync-2"/);
   expect(quotedSeconds(4, 5, "bounce")).toBe(5);
   expect(quotedSeconds(8, 5, "loop")).toBe(8);
   expect(quotedSeconds(8, 5, "cut_off")).toBe(5);
-  expect(lipSyncUsd(5, "lipsync-2-pro")).toBeCloseTo(0.415, 6);
-  expect(lipSyncUsd(5, "sync-3")).toBeCloseTo(0.665, 6);
+  expect(lipSyncUsd(5, "lipsync-2-pro")).toBeCloseTo(0.416667, 6);
+  /* Rounded UP to the micro-dollar, never down. */
+  for (const model of ["lipsync-2", "lipsync-2-pro", "sync-3"] as const) for (const seconds of [1, 3.3, 5, 7.77]) expect(lipSyncUsd(seconds, model)).toBeGreaterThanOrEqual(seconds * SYNC_RATES.models[model] - 1e-12);
+  expect(lipSyncUsd(5, "sync-3")).toBeCloseTo(0.666667, 6);
   process.env.SYNC_ENABLED = "1";
   await asTenant(house(), async () => {
     const w = await world();
@@ -142,7 +147,7 @@ test("the quote: the audio's length for cut_off, else the longer track, at the p
     expect(quote.status).toBe(200);
     /* The house is judged at cost in dollars: 5 s of lipsync-2-pro, default model. */
     expect(quote.body).toMatchObject({ seconds: 5, model: "lipsync-2-pro", syncMode: "bounce", unit: "usd", estimatedCredits: 5 });
-    expect(Number(quote.body.price)).toBeCloseTo(0.415, 6);
+    expect(Number(quote.body.price)).toBeCloseTo(0.416667, 6);
     expect(quote.body.needs).toEqual(["castMemberId", "faceFrameUploadId", "projectId", "use"]);
     expect(await admit(w, { quoteOnly: true, model: "sync-3", syncMode: "cut_off" })).toMatchObject({ status: 200, body: { seconds: 5, model: "sync-3", syncMode: "cut_off" } });
     /* A quote writes nothing and reserves nothing. */
@@ -244,11 +249,11 @@ test("submit, poll, store, settle, delete: the whole job on mocks, at the real p
     const take = await gen(genId);
     expect(take).toMatchObject({ status: "succeeded", stored_url: `stored/${genId}.mp4` });
     /* The delivered length (4.2 s, under the quote) at the model's rate: the real cost on the take and on the ledger line. */
-    expect(Number(take.cost_usd)).toBeCloseTo(4.2 * 0.083, 6);
+    expect(Number(take.cost_usd)).toBeCloseTo((4.2 * 5) / 60, 6);
     const settled = (await meterRows()).slice(before);
     expect(settled).toHaveLength(1);
     expect(settled[0]).toMatchObject({ id: genId, status: "succeeded" });
-    expect(Number(settled[0].engine_cost_usd)).toBeCloseTo(4.2 * 0.083, 6);
+    expect(Number(settled[0].engine_cost_usd)).toBeCloseTo((4.2 * 5) / 60, 6);
     expect(Number(settled[0].billed_credits ?? 0)).toBe(0);
     /* Only ids and figures are on the row: no face image, no frame, no name. The consent is named by id. */
     expect(take.lip).toMatchObject({ consentId: w.consentId, castMemberId: w.cast, use: "production", model: "lipsync-2-pro", seconds: 5 });
@@ -260,14 +265,16 @@ test("submit, poll, store, settle, delete: the whole job on mocks, at the real p
   });
 });
 
-test("the delivered length never costs past the quote, and a vendor that gives no length settles at the quote", async () => {
+test("the delivered length never costs past the quote; a vendor that gives no length settles at the input voice track's length, never the bare quote", async () => {
+  const { lipSyncUsd } = await import("../../lib/lipSync");
   process.env.SYNC_ENABLED = "1";
   await asTenant(house(), async () => {
-    for (const [duration, expectedSeconds] of [[9, 5], [undefined, 5], [3, 3]] as const) {
-      const w = await world();
+    /* clip 4 s, voice 5 s: quote 5 s. clip 8 s, voice 5 s: quote 8 s, and with no length from the vendor 5 s (the voice track), not 8. */
+    for (const [clip, voice, duration, expectedSeconds] of [[4, 5, 9, 5], [4, 5, undefined, 5], [4, 5, 3, 3], [8, 5, undefined, 5], [8, 5, 7, 7]] as const) {
+      const w = await world({ clip, voice });
       const genId = String((await admit(w, { maxCredits: 100 })).body.id);
       await run(genId, fakeVendor({ outputDuration: duration }).deps, 4);
-      expect(Number((await gen(genId)).cost_usd), String(duration)).toBeCloseTo(expectedSeconds * 0.083, 6);
+      expect(Number((await gen(genId)).cost_usd), `${clip}/${voice}/${duration}`).toBeCloseTo(lipSyncUsd(expectedSeconds, "lipsync-2-pro"), 9);
     }
   });
 });
@@ -291,7 +298,7 @@ test("a failure at sync.so settles at nothing: 'Nothing billed', a failed row, a
     expect(Number(row.billed_credits ?? 0)).toBe(0);
     expect(vendor.calls).toEqual(expect.arrayContaining(["deleteJob:job_1", "deleteAsset:asset_1", "deleteAsset:asset_2"]));
     expect(vendor.calls).not.toContain("download");
-    expect(take.lip).toMatchObject({ status: "failed", vendorDeleted: 1 });
+    expect(take.lip).toMatchObject({ status: "failed", vendorDeleted: 1, reconcile: 1 });
   });
 });
 
@@ -475,6 +482,159 @@ test("the adapter: the requests it makes, the statuses it reads, the base addres
     if (before.key === undefined) delete process.env.SYNC_API_KEY; else process.env.SYNC_API_KEY = before.key;
     if (before.base === undefined) delete process.env.SYNC_BASE_URL; else process.env.SYNC_BASE_URL = before.base;
   }
+});
+
+test("a failure sync.so charged for: its figure is the ledger line's cost, nobody is billed, the take reads 'Nothing billed'; none reported is recorded as 0 and marked to reconcile", async () => {
+  process.env.SYNC_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const w = await world();
+    const genId = String((await admit(w, { maxCredits: 100 })).body.id);
+    await run(genId, fakeVendor({ failWith: "could not lip-sync this clip", reportedCostUsd: 0.07 }).deps, 3);
+    const take = await gen(genId);
+    expect(take.status).toBe("failed");
+    expect(String(take.error)).toMatch(/Nothing was billed/);
+    expect(Number(take.cost_usd)).toBeCloseTo(0.07, 6);
+    const row = (await meterRows()).find((r) => r.id === genId)!;
+    expect(row).toMatchObject({ status: "failed" });
+    expect(Number(row.engine_cost_usd)).toBeCloseTo(0.07, 6);
+    expect(Number(row.billed_credits ?? 0)).toBe(0);
+    expect(take.lip).toMatchObject({ reconcile: 0 });
+  });
+});
+
+test("a claim that never got both inputs up never reached the submit and settles at nothing; one with both inputs and no job id is a lost acknowledgement, held", async () => {
+  const { advanceLipSyncJobWith } = await import("../../lib/lipSync");
+  const { db } = await import("../../lib/db");
+  process.env.SYNC_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const late = () => Date.now() + 60 * 60_000;
+    for (const [assets, want] of [[{}, "failed"], [{ videoAsset: "va" }, "failed"], [{ videoAsset: "va", audioAsset: "aa" }, "uncertain"]] as const) {
+      const w = await world();
+      const genId = String((await admit(w, { maxCredits: 100 })).body.id);
+      await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.lipsync.claimedAt',1,'$.lipsync.videoAsset',?,'$.lipsync.audioAsset',?) WHERE id=?", args: [(assets as { videoAsset?: string }).videoAsset ?? null, (assets as { audioAsset?: string }).audioAsset ?? null, genId] });
+      const vendor = fakeVendor();
+      const lip = await advanceLipSyncJobWith(genId, { ...vendor.deps, clock: late });
+      expect(lip?.status, JSON.stringify(assets)).toBe(want);
+      expect(vendor.calls.filter((c) => c.startsWith("submit"))).toEqual([]);
+      const row = (await meterRows()).find((r) => r.id === genId)!;
+      expect(row.status).toBe(want === "failed" ? "failed" : "running");
+      if (want === "failed") expect(Number(row.engine_cost_usd)).toBe(0);
+    }
+  });
+});
+
+test("a voice is a stock one of ours only when ElevenLabs lists every voice in it as premade: cloned, professional, generated, unknown, another vendor's, a dub and a voice change need the person's voice consent", async () => {
+  const { db } = await import("../../lib/db");
+  process.env.SYNC_ENABLED = "1";
+  const listed = [{ id: "v_premade", category: "premade" }, { id: "v_premade2", category: "premade" }, { id: "v_cloned", category: "cloned" }, { id: "v_pro", category: "professional" }, { id: "v_gen", category: "generated" }];
+  const voices = async () => listed;
+  await asTenant(house(), async () => {
+    const take = async (over: { provider?: string; task?: string; voiceId?: string; lines?: { voiceId: string }[] }) => {
+      const id = uid("gen_voice");
+      const params = { task: over.task ?? "speech", ...(over.voiceId ? { voiceId: over.voiceId } : {}), ...(over.lines ? { lines: over.lines } : {}) };
+      await db().execute({ sql: "INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at,task,stored_url,bytes,duration_s) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", args: [id, "audio", over.provider ?? "elevenlabs", "m", "line", JSON.stringify(params), "succeeded", Date.now(), Date.now(), "generate", `x/${id}.mp3`, 10, 5] });
+      return id;
+    };
+    const ask = async (audioGenId: string, seams: { voices?: typeof voices } = { voices }) => {
+      const w = await world({ clip: 4, voice: 5 }, false);
+      let faceCalls = 0;
+      const reply = await admit(w, { maxCredits: 100, audioUploadId: undefined, audioGenId }, { consent: async (...a) => { faceCalls++; return passing(w.consentId)(...a); }, ...seams });
+      return { reply, faceCalls };
+    };
+    /* Premade, alone or all of a dialogue: no voice consent asked; the face gate still runs. */
+    for (const id of [await take({ voiceId: "v_premade" }), await take({ task: "dialogue", lines: [{ voiceId: "v_premade" }, { voiceId: "v_premade2" }] })]) {
+      const { reply, faceCalls } = await ask(id);
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      expect(faceCalls).toBe(1);
+    }
+    /* Everything else is refused for the voice consent, before the face check is even asked. */
+    const refused: [string, string][] = [
+      ["cloned", await take({ voiceId: "v_cloned" })], ["professional", await take({ voiceId: "v_pro" })], ["generated", await take({ voiceId: "v_gen" })],
+      ["unknown voice", await take({ voiceId: "v_not_listed" })], ["no voice id", await take({})],
+      ["one cloned in a dialogue", await take({ task: "dialogue", lines: [{ voiceId: "v_premade" }, { voiceId: "v_cloned" }] })],
+      ["another vendor", await take({ provider: "xai", voiceId: "v_premade" })], ["a dub", await take({ task: "dub", voiceId: "v_premade" })],
+      ["a voice change", await take({ task: "voiceChange", voiceId: "v_premade" })],
+    ];
+    for (const [label, id] of refused) {
+      const { reply, faceCalls } = await ask(id);
+      expect(reply, label).toMatchObject({ status: 409, body: { code: "no-voice-consent" } });
+      expect(faceCalls, label).toBe(0);
+    }
+    /* A voice list that cannot be read fails closed. */
+    const { reply, faceCalls } = await ask(await take({ voiceId: "v_premade" }), { voices: async () => { throw new Error("ElevenLabs is down"); } });
+    expect(reply).toMatchObject({ status: 409, body: { code: "no-voice-consent" } });
+    expect(faceCalls).toBe(0);
+  });
+});
+
+test("engine on, a workspace at its own $0 cap: refused 429 in the cap's words, with nothing held, written or sent, and the face gate never asked", async () => {
+  const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
+  const { db } = await import("../../lib/db");
+  await platformReady();
+  const ws = "ws_lipsync_cap0";
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour,allowance_usd) VALUES(?,?,?,?,1,'owner',0,0,20,200,0)", args: [ws, ws, ws, `file:${path.join(dir, ws + ".db")}`] });
+  await grantCredits(ws, 500, "Test", "owner", "manual");
+  const site = (await platformDb().execute("SELECT value FROM platform_layer WHERE key='site'")).rows[0]?.value;
+  const setSite = (v: unknown) => platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify(v)] });
+  try {
+    await setSite({ enginesOnWorkspaces: [ws] });
+    process.env.SYNC_ENABLED = "1";
+    const row = (await getWorkspace(ws))!;
+    expect(row.allowanceUsd).toBe(0);
+    await asTenant(row, async () => {
+      const w = await world();
+      const before = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+      const handedOff = deferred.length;
+      let faceCalls = 0;
+      const reply = await admit(w, { maxCredits: 100000 }, { consent: async (...a) => { faceCalls++; return passing(w.consentId)(...a); } });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(429);
+      expect(String(reply.body.error)).toMatch(/monthly cap on the platform's engines/);
+      expect(String(reply.body.error)).not.toMatch(/\$|\d/);
+      expect(faceCalls).toBe(0);
+      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(before);
+      const mine = (await (await platformDb().execute({ sql: "SELECT id FROM meter_events WHERE workspace_id=?", args: [ws] })).rows);
+      expect(mine).toEqual([]);
+      expect(deferred.length).toBe(handedOff);
+    });
+  } finally {
+    if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
+  }
+});
+
+test("the approval fingerprint names the engine that will be paid, not a guess from the model's provider", async () => {
+  const { admitLipSync } = await import("../../lib/lipSync");
+  const { admissionReply } = await import("../../lib/admissionSupport");
+  process.env.SYNC_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const w = await world();
+    let captured: { compiled: Record<string, unknown> } | null = null;
+    const reply = await admitLipSync({ ...w.body, maxCredits: 100 }, OWNER, { defer: async () => {}, checkpoint: (value) => { captured = value; return admissionReply({ prepared: true }); } }, { consent: passing(w.consentId) });
+    expect(reply.body).toEqual({ prepared: true });
+    expect((captured!.compiled.funding as { engine: string }).engine).toBe("syncso");
+  });
+});
+
+test("what a person reads of a lip-sync take: its state, model, mode and length, and none of the vendor's ids, links, claims, consent ids, face hash or rates", async () => {
+  const { db } = await import("../../lib/db");
+  const { rowToGeneration } = await import("../../lib/jobs");
+  const { publicDirectParams } = await import("../../lib/directEnginePublic");
+  process.env.SYNC_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const w = await world();
+    const genId = String((await admit(w, { maxCredits: 100 })).body.id);
+    await run(genId, fakeVendor({ outputDuration: 4, deleteJobError: true }).deps, 4);
+    const raw = (await db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [genId] })).rows[0];
+    const rawParams = JSON.parse(String(raw.params));
+    /* The row keeps the workflow's record in full (the proof there is something to hide)... */
+    expect(Object.keys(rawParams.lipsync)).toEqual(expect.arrayContaining(["syncId", "videoAsset", "audioAsset", "consentId", "faceSha256", "rateUsdPerSecond", "pollUntil", "claimedAt"]));
+    expect(rawParams.lipsync.syncId).toBe("job_1");
+    /* ...and every read goes through the projection. */
+    const read = rowToGeneration({ ...raw, project_name: null }) as unknown as { params: Record<string, unknown> };
+    expect(read.params.lipsync).toEqual({ status: "done", model: "lipsync-2-pro", syncMode: "bounce", seconds: 5 });
+    expect(JSON.stringify(read.params.lipsync)).not.toMatch(/job_1|asset|consent|faceSha|rate|castMember|poll|claim|usd|cleanup|reconcile/i);
+    expect(publicDirectParams({ task: "other", x: { syncId: "kept" } })).toEqual({ task: "other", x: { syncId: "kept" } });
+    expect(publicDirectParams({ task: "lipsync" })).toEqual({ task: "lipsync" });
+  });
 });
 
 /** Every source file under lib, app and components. */

@@ -268,12 +268,14 @@ export const ELEVENLABS_RATES = {
 } as const;
 /**
  * sync.so lip-sync, direct (lib/syncso.ts, lib/lipSync.ts), in the vendor's own units: dollars per OUTPUT second, the Hobbyist and Creator plans'
- * public prices as recorded in docs/plans/provider-adapters.md § 1 (the vendor's pricing page, read 14 Oct 2026). **TO CONFIRM** against the plan the
+ * public prices as recorded in docs/plans/provider-adapters.md § 1 (the vendor's pricing page, read 14 Oct 2026; the page rounds the per-second figures, so
+ * the per-minute fractions are used). **TO CONFIRM** against the plan the
  * owner buys: the Scale plan's rates are lower ($0.04, $0.067 and $0.107 a second), and a quote at these is the more cautious. Billing is on output
  * frames, quoted per second at 25 fps. Server-only like every rate here; a customer's price is these through the margin table (lib/creditTerms.ts).
  */
 export const SYNC_RATES = {
-  models: { "lipsync-2": 0.05, "lipsync-2-pro": 0.083, "sync-3": 0.133 },
+  /* sync.so's page shows these rounded ($0.083 and $0.133 a second); the exact per-minute figures ($5 and $8 a minute) are used so that a quote is never under it. */
+  models: { "lipsync-2": 0.05, "lipsync-2-pro": 5 / 60, "sync-3": 8 / 60 },
   defaultModel: "lipsync-2-pro",
   syncModes: ["bounce", "loop", "cut_off", "silence", "remap"],
   defaultSyncMode: "bounce",
