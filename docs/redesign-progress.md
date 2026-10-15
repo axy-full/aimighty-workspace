@@ -847,3 +847,12 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - TOPAZ_RATES uses the dearer reading at $0.10 per credit.
     - Field names TO CONFIRM.
     - Wiring waits for lane B's #778 head. For the Opus review: the allow-list's "S3 presigned storage" entry.
+- **16 Oct 02:10 IST.** Lane D: Veo 3.1 adapter, file-only, draft PR #779 (dce5df9c, base release/1, NEEDS AKSHAY).
+  - Env names: GEMINI_API_KEY (existing), GEMINI_BASE_URL (existing, optional), VEO_ENABLED (new).
+  - Prices verified on ai.google.dev pricing (updated 15 Oct), per second with audio: Standard $0.40 at 720p/1080p, $0.60 at 4k; Fast $0.10 at 720p, $0.12 at 1080p, $0.30 at 4k.
+  - Lane D's recalled Fast figure of $0.15 was wrong; fix sent.
+  - Billing: only on success; blocked videos aren't charged.
+  - Storage: Google keeps videos 2 days.
+  - Data use: the paid tier's content is "not used to improve our products".
+  - Google's sample follows redirects on download, so a manual redirect with a hop allow-list and no key on later hops replaces `redirect: "error"`.
+  - Wiring waits for lane B's #778 head.
