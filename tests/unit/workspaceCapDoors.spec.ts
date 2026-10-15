@@ -101,9 +101,11 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   { dir: "generate", body: { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" } },
   { dir: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 5, projectId: "film" } },
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
-  /* Lip-sync is off unless its engine is on for the workspace, so this press stops at "no such tool" and spends nothing (tests/unit/lipSync.spec.ts proves the cap with it on). */
-  /* Sarvam is off unless its engine is on for the workspace, so this press stops at "no such tool" and spends nothing (tests/unit/sarvam.spec.ts proves the rest with it on). */
-  /* FLUX.2 is off unless its engine is on for the workspace, so this press stops at "no such tool" and spends nothing (tests/unit/bfl.spec.ts proves the rest with it on). */
+  /* Lip-sync is off unless its engine is on for the workspace, so THIS press only proves the door is shut while it is off: it stops at "no such tool" and spends nothing, at any cap.
+     The cap wall with the engine ON is proved in tests/unit/lipSync.spec.ts: a listed workspace at its own $0 cap is refused 429 in the cap's words, nothing held, written or sent. */
+  /* Sarvam is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/sarvam.spec.ts
+     (a listed workspace at its own $0 cap is refused 429 in the cap's words, nothing held, written, reserved or sent). */
+  /* FLUX.2 is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/bfl.spec.ts. */
   { dir: "bfl", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
   { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", castMemberId: "cast_1", faceFrameUploadId: "up_face", projectId: "film", use: "production", maxCredits: 100000 } },

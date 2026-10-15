@@ -71,6 +71,22 @@ export function sarvamUsd(tool: SarvamToolId, units: { chars?: number; seconds?:
 const kindOf = (tool: SarvamToolId): MeterKind => (tool === "translate" ? "text" : "audio");
 const SOURCE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
+/**
+ * What a claim keeps of a reply (GenerationRequestOptions.recorded). A transcript of a real person's speech, and a translation of what they said, are personal
+ * data: they are returned to the caller and written nowhere here, and that includes the idempotency claim, which would otherwise replay them. A replay of such a
+ * request answers "done, not kept". Every other reply (a speech take's id, a quote, a refusal) is kept as it is.
+ */
+export function recordedSarvamReply(json: string): string {
+  let body: unknown;
+  try { body = JSON.parse(json); } catch { return json; }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json;
+  const reply = body as Record<string, unknown>;
+  if (!("transcript" in reply) && !("text" in reply)) return json;
+  const { transcript: _transcript, text: _text, ...rest } = reply;
+  void _transcript; void _text;
+  return JSON.stringify({ ...rest, kept: false, note: "Done. The text is not kept: run it again to get it." });
+}
+
 /** The adapter seams, for tests. The public admission passes none. */
 export type SarvamSeams = { speak?: typeof speak; transcribe?: typeof transcribe; translate?: typeof translate };
 

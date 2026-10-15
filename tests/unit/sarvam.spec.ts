@@ -73,7 +73,8 @@ test("the rupee rate is the owner's, in the environment: with none, or a bad one
   const { usdPerInr, sarvamUsd } = await import("../../lib/sarvamTools");
   const { SARVAM_RATES } = await import("../../lib/vendorRates");
   expect(SARVAM_RATES.speechInrPer10kChars).toEqual({ "bulbul:v3": 30, "bulbul:v4-flash": 20 });
-  expect(SARVAM_RATES.transcribeInrPerHour).toBe(29.4);
+  /* The plan records ₹29.40 an hour and Sarvam's docs table says ₹30: the higher is used so a quote is never under. */
+  expect(SARVAM_RATES.transcribeInrPerHour).toBe(30);
   expect(SARVAM_RATES.translateInrPer10kChars).toEqual({ "sarvam-translate:v1": 20, "mayura:v1": 20 });
   expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/TO CONFIRM[\s\S]{0,700}SARVAM_USD_PER_INR/);
   expect(usdPerInr()).toBe(FX);
@@ -83,11 +84,11 @@ test("the rupee rate is the owner's, in the environment: with none, or a bad one
     expect(sarvamUsd("speech", { chars: 100 }, "bulbul:v3"), String(bad)).toBeNull();
   }
   process.env.SARVAM_USD_PER_INR = String(FX);
-  /* 10,000 characters of Bulbul v3 is ₹30; v4-flash ₹20; an hour of speech to text ₹29.40; 10,000 characters translated ₹20. */
+  /* 10,000 characters of Bulbul v3 is ₹30; v4-flash ₹20; an hour of speech to text ₹300; 10,000 characters translated ₹20. */
   expect(sarvamUsd("speech", { chars: 10_000 }, "bulbul:v3")).toBeCloseTo(30 * FX, 6);
   expect(sarvamUsd("speech", { chars: 10_000 }, "bulbul:v4-flash")).toBeCloseTo(20 * FX, 6);
-  expect(sarvamUsd("transcribe", { seconds: 3600 }, "saaras:v4")).toBeCloseTo(29.4 * FX, 6);
-  expect(sarvamUsd("transcribe", { seconds: 10 }, "saaras:v4")).toBeCloseTo((10 / 3600) * 29.4 * FX, 6);
+  expect(sarvamUsd("transcribe", { seconds: 3600 }, "saaras:v4")).toBeCloseTo(30 * FX, 6);
+  expect(sarvamUsd("transcribe", { seconds: 10 }, "saaras:v4")).toBeCloseTo((10 / 3600) * 30 * FX, 6);
   expect(sarvamUsd("translate", { chars: 2000 }, "sarvam-translate:v1")).toBeCloseTo(4 * FX, 6);
   expect(sarvamUsd("speech", { chars: 100 }, "bulbul:v9")).toBeNull();
   expect(sarvamUsd("speech", { chars: 0 }, "bulbul:v3")).toBeNull();
@@ -129,7 +130,7 @@ test("the quote: each tool in rupees through the owner's rate and the price path
     const clip = await upload("clip", "audio", 12);
     const tr = await ask({ tool: "transcribe", sourceUploadId: clip, quoteOnly: true });
     expect(tr).toMatchObject({ status: 200, body: { tool: "transcribe", seconds: 12 } });
-    expect(Number(tr.body.price)).toBeCloseTo((12 / 3600) * 29.4 * FX, 6);
+    expect(Number(tr.body.price)).toBeCloseTo((12 / 3600) * 30 * FX, 6);
     const tl = await ask({ tool: "translate", text: "Hello there", source: "en-IN", target: "ta-IN", quoteOnly: true });
     expect(tl).toMatchObject({ status: 200, body: { tool: "translate", model: "sarvam-translate:v1", chars: 11 } });
     expect(Number(tl.body.price)).toBeCloseTo((11 / 10_000) * 20 * FX, 6);
@@ -201,7 +202,7 @@ test("translate and transcribe: one request, reserved first, settled at the real
     expect(heard).toMatchObject({ status: 200, body: { ok: true, transcript: "namaste", language: "hi-IN", seconds: 10 } });
     const rows2 = (await meterRows()).slice(before);
     expect(rows2[1]).toMatchObject({ status: "succeeded", kind: "audio" });
-    expect(Number(rows2[1].engine_cost_usd)).toBeCloseTo((10 / 3600) * 29.4 * FX, 6);
+    expect(Number(rows2[1].engine_cost_usd)).toBeCloseTo((10 / 3600) * 30 * FX, 6);
     /* Neither wrote a take: the text and the transcript are the caller's, returned and kept nowhere here. */
     expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(generations);
     /* A failure: refused before work, and a dropped connection: both are nothing billed, on the ledger as a zero. */
@@ -406,6 +407,125 @@ test("the adapter: the requests it makes, what it reads back, the base address i
     if (before.key === undefined) delete process.env.SARVAM_API_KEY; else process.env.SARVAM_API_KEY = before.key;
     if (before.base === undefined) delete process.env.SARVAM_BASE_URL; else process.env.SARVAM_BASE_URL = before.base;
   }
+});
+
+test("engine on, a workspace at its own $0 cap: refused 429 in the cap's words, with nothing held, written, reserved or sent", async () => {
+  const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
+  const { db } = await import("../../lib/db");
+  await platformReady();
+  const ws = "ws_sarvam_cap0";
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour,allowance_usd) VALUES(?,?,?,?,1,'owner',0,0,20,200,0)", args: [ws, ws, ws, `file:${path.join(dir, ws + ".db")}`] });
+  await grantCredits(ws, 500, "Test", "owner", "manual");
+  const site = (await platformDb().execute("SELECT value FROM platform_layer WHERE key='site'")).rows[0]?.value;
+  const setSite = (v: unknown) => platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify(v)] });
+  try {
+    await setSite({ enginesOnWorkspaces: [ws] });
+    process.env.SARVAM_ENABLED = "1";
+    const row = (await getWorkspace(ws))!;
+    expect(row.allowanceUsd).toBe(0);
+    await asTenant(row, async () => {
+      await (await import("../../lib/db")).ready();
+      const generations = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+      let calls = 0;
+      const seams = { speak: async () => { calls++; return Buffer.from("x"); }, translate: async () => { calls++; return { text: "x" }; } };
+      for (const input of [{ tool: "speech", text: "Hello there", language: "hi-IN" }, { tool: "translate", text: "Hello there", source: "en-IN", target: "ta-IN" }]) {
+        const reply = await ask({ ...input, ...approved() }, seams);
+        expect(reply.status, JSON.stringify(reply.body)).toBe(429);
+        expect(String(reply.body.error)).toMatch(/monthly cap on the platform's engines/);
+        expect(String(reply.body.error)).not.toMatch(/\$|\d/);
+      }
+      expect(calls).toBe(0);
+      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(generations);
+      expect((await platformDb().execute({ sql: "SELECT id FROM meter_events WHERE workspace_id=?", args: [ws] })).rows).toEqual([]);
+    });
+  } finally {
+    if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
+  }
+});
+
+test("no transcript or translation text lands in the idempotency claim: the first caller gets the text, a replay answers 'done, not kept', and the claim row holds none of it", async () => {
+  const { createRequire } = await import("node:module");
+  const ts = (await import("typescript")).default;
+  const { recordedSarvamReply } = await import("../../lib/sarvamTools");
+  /* The reply that is kept: the text and the transcript are cut; everything else stays. */
+  expect(JSON.parse(recordedSarvamReply(JSON.stringify({ ok: true, tool: "translate", text: "secret words", source: "en-IN", target: "ta-IN", estimatedCredits: 1 })))).toEqual({ ok: true, tool: "translate", source: "en-IN", target: "ta-IN", estimatedCredits: 1, kept: false, note: "Done. The text is not kept: run it again to get it." });
+  expect(recordedSarvamReply(JSON.stringify({ ok: true, transcript: "secret speech", language: "hi-IN" }))).not.toContain("secret speech");
+  expect(JSON.parse(recordedSarvamReply(JSON.stringify({ id: "gen_1", status: "succeeded" })))).toEqual({ id: "gen_1", status: "succeeded" });
+  expect(recordedSarvamReply("not json")).toBe("not json");
+  /* The real route, with its session and `after` replaced and everything else real. */
+  const nodeRequire = createRequire(path.resolve("package.json"));
+  const resolveSource = (from: string, name: string) => {
+    const base = name.startsWith("@/") ? path.resolve(name.slice(2)) : path.resolve(path.dirname(from), name);
+    for (const candidate of [`${base}.ts`, `${base}.tsx`, path.join(base, "index.ts"), base]) if (readdirSync(path.dirname(candidate)).includes(path.basename(candidate))) return candidate;
+    return base;
+  };
+  const file = "app/api/sarvam/route.ts";
+  const source = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const target = { exports: {} as { POST: (req: Request, ctx?: unknown) => Promise<Response> } };
+  new Function("require", "module", "exports", source)((name: string) => {
+    if (name === "@/lib/auth") return { ...nodeRequire(path.resolve("lib/auth.ts")), withTenant: (h: unknown) => h, requireRender: async () => OWNER };
+    if (name === "next/server") return { NextResponse: Response, after: () => {} };
+    return name.startsWith("@/") || name.startsWith(".") ? nodeRequire(resolveSource(file, name)) : nodeRequire(name);
+  }, target, target.exports);
+  process.env.SARVAM_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const { db } = await import("../../lib/db");
+    const { requireTenant } = await import("../../lib/tenant");
+    const press = async (body: Record<string, unknown>, key: string) => {
+      const res = await target.exports.POST(new Request("http://localhost/api/sarvam", {
+        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key, "X-Workbench-Scope": `particl-active-${requireTenant().id}-owner` }, body: JSON.stringify(body),
+      }));
+      return { status: res.status, body: JSON.parse(await res.text()) as Record<string, unknown>, replayed: res.headers.get("Idempotency-Replayed") === "true" };
+    };
+    const clip = await upload("clip", "audio", 5);
+    const cases: [Record<string, unknown>, string, string][] = [
+      [{ tool: "translate", text: "A very private sentence", source: "en-IN", target: "hi-IN", ...approved() }, "translate", "[hi-IN] A very private sentence"],
+      [{ tool: "transcribe", sourceUploadId: clip, ...approved() }, "transcribe", "mock transcript"],
+    ];
+    for (const [body, label, secret] of cases) {
+      const key = `idem-${label}-${Date.now().toString(36)}`;
+      const first = await press(body, key);
+      expect(first.status, label).toBe(200);
+      expect(JSON.stringify(first.body), label).toContain(secret);
+      const stored = String((await db().execute({ sql: "SELECT response_json FROM generation_requests WHERE request_key=?", args: [key] })).rows[0].response_json);
+      expect(stored, label).not.toContain(secret);
+      expect(stored, label).not.toMatch(/private sentence|mock transcript/);
+      const again = await press(body, key);
+      expect(again.replayed, label).toBe(true);
+      expect(JSON.stringify(again.body), label).not.toContain(secret);
+      expect(again.body, label).toMatchObject({ ok: true, kept: false, note: "Done. The text is not kept: run it again to get it." });
+    }
+    /* A speech take's reply holds no text and is kept as it was. */
+    const spoken = await press({ tool: "speech", text: "Hello", language: "en-IN", ...approved() }, `idem-speech-${Date.now().toString(36)}`);
+    expect(spoken.status).toBe(200);
+    expect(spoken.body.id).toBeTruthy();
+    made.push(path.join(process.cwd(), ".data", "generations", `${String(spoken.body.id)}.mp3`));
+  });
+});
+
+test("over MCP: the three tools are listed only where the engine is on and priced; a call asks the route for the price and the caller cannot approve", async () => {
+  const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
+  const calls: { body: Record<string, unknown> }[] = [];
+  const call = async (_p: string, init: { body?: unknown } = {}) => {
+    const body = init.body as Record<string, unknown>;
+    calls.push({ body });
+    return body.quoteOnly === true ? { estimatedCredits: 2, price: 0.02, unit: "usd" } : body.tool === "translate" ? { ok: true, text: "[ta-IN] Hello" } : { id: "gen_s1" };
+  };
+  await asTenant(house(), async () => {
+    delete process.env.SARVAM_ENABLED;
+    expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("sarvam_speech");
+    await expect(runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call)).rejects.toThrow("There is no such tool here.");
+    process.env.SARVAM_ENABLED = "1";
+    expect((await directEngineMcpTools()).map((t) => t.name)).toEqual(expect.arrayContaining(["sarvam_speech", "sarvam_transcribe", "sarvam_translate"]));
+    expect(await runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call)).toBe("[ta-IN] Hello");
+    expect(calls.map((c) => [c.body.quoteOnly === true, c.body.maxCredits ?? null])).toEqual([[true, null], [false, 2]]);
+    expect(await runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN" }, call)).toMatch(/^Speech made\.\n\nid: gen_s1/);
+    await expect(runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN", maxCredits: 1 }, call)).rejects.toThrow(/not yours to approve/);
+    /* No rupee rate: the tools are not offered (they cannot be priced), and a call says so. */
+    delete process.env.SARVAM_USD_PER_INR;
+    expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("sarvam_translate");
+    await expect(runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call)).rejects.toThrow("There is no such tool here.");
+  });
 });
 
 function sourceFiles(): string[] {

@@ -268,12 +268,14 @@ export const ELEVENLABS_RATES = {
 } as const;
 /**
  * sync.so lip-sync, direct (lib/syncso.ts, lib/lipSync.ts), in the vendor's own units: dollars per OUTPUT second, the Hobbyist and Creator plans'
- * public prices as recorded in docs/plans/provider-adapters.md § 1 (the vendor's pricing page, read 14 Oct 2026). **TO CONFIRM** against the plan the
+ * public prices as recorded in docs/plans/provider-adapters.md § 1 (the vendor's pricing page, read 14 Oct 2026; the page rounds the per-second figures, so
+ * the per-minute fractions are used). **TO CONFIRM** against the plan the
  * owner buys: the Scale plan's rates are lower ($0.04, $0.067 and $0.107 a second), and a quote at these is the more cautious. Billing is on output
  * frames, quoted per second at 25 fps. Server-only like every rate here; a customer's price is these through the margin table (lib/creditTerms.ts).
  */
 export const SYNC_RATES = {
-  models: { "lipsync-2": 0.05, "lipsync-2-pro": 0.083, "sync-3": 0.133 },
+  /* sync.so's page shows these rounded ($0.083 and $0.133 a second); the exact per-minute figures ($5 and $8 a minute) are used so that a quote is never under it. */
+  models: { "lipsync-2": 0.05, "lipsync-2-pro": 5 / 60, "sync-3": 8 / 60 },
   defaultModel: "lipsync-2-pro",
   syncModes: ["bounce", "loop", "cut_off", "silence", "remap"],
   defaultSyncMode: "bounce",
@@ -291,7 +293,8 @@ export const SARVAM_RATES = {
   /** Text to speech, rupees per 10,000 characters. */
   speechInrPer10kChars: { "bulbul:v3": 30, "bulbul:v4-flash": 20 },
   /** Speech to text, rupees per hour of audio. Speaker labels (diarization), a batch feature, are not offered yet. */
-  transcribeInrPerHour: 29.4,
+  /* The plan records ₹29.40 an hour; Sarvam's own docs table says ₹30. The higher is used so a quote is never under; TO CONFIRM against the first invoice. */
+  transcribeInrPerHour: 30,
   /** Translation, rupees per 10,000 characters. */
   translateInrPer10kChars: { "sarvam-translate:v1": 20, "mayura:v1": 20 },
   defaultSpeechModel: "bulbul:v3", defaultTranscribeModel: "saaras:v4", defaultTranslateModel: "sarvam-translate:v1",

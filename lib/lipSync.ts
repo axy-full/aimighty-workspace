@@ -36,8 +36,10 @@ import { consentLive } from "./security/consent-words";
  *   failed      refused before work or failed after: settled at NOTHING ("Nothing billed"), the vendor's copy (if any) deleted
  *   uncertain   the submission's acknowledgement was lost. Nothing here ever submits a second time: a lost reply may still be a charged job
  *
- * THE CONSENT GATE. Every real face passes `requireConsentMatch` (lib/consentMatch.ts) BEFORE anything is reserved or sent, with a still of the face in the
- * clip (an image upload of this workspace) and the production and use named. A voice that is not a stock synthesized one (an upload, anything but a
+ * THE CONSENT GATE. A face image passes `requireConsentMatch` (lib/consentMatch.ts) BEFORE anything is reserved or sent: a still the caller chooses (an image
+ * upload of this workspace), with the cast member, the production and the use named. **What is checked is that chosen image against the cast member's consent
+ * reference. It is NOT proven to come from the clip**: Particl cannot decode a clip's frames on the server today, so a caller could name a still of one person
+ * and a clip of another. That gap is the owner's to close (an extracted frame, or a face check inside the clip); until then it is stated, not hidden. A voice that is not a stock synthesized one (an upload, anything but a
  * speech, dialogue or dub take) also needs a live consent covering the VOICE. Today the face gate refuses every check (no consent record holds a face
  * reference yet, lib/consentReference.ts) and it runs for the house workspace only, so no lip-sync is admitted until the owner chooses that source.
  * Because "real" cannot be known from a clip, there is no "this face is not real" exemption: every lip-sync passes the gate.
@@ -59,8 +61,8 @@ const SUBMIT_GRACE_MS = 10 * 60_000;
 const POLL_LEASE_MS = 120_000;
 export const LIPSYNC_POLL_INTERVAL_MS = 15_000;
 export const CLEANUP_MAX_TRIES = 5;
-/** What a speech take of Particl's own made: a synthesized, stock voice, no real person's. */
-const SYNTHETIC_AUDIO_TASKS = ["speech", "dialogue", "dub"];
+/** What a take of Particl's own may be, to be a synthesized stock voice with no real person's: ElevenLabs speech or dialogue, with EVERY voice a `premade` one. */
+const SYNTHETIC_AUDIO_TASKS = ["speech", "dialogue"];
 /** The uses a lip-synced face may be for. */
 const LIPSYNC_USES = ["production", "ads", "social"] as const;
 
@@ -68,11 +70,11 @@ export type LipSyncState = "queued" | "submitted" | "processing" | "done" | "fai
 export type LipSyncParams = {
   status: LipSyncState; model: SyncModel; syncMode: SyncMode;
   videoSource: { kind: "upload" | "generation"; id: string }; audioSource: { kind: "upload" | "generation"; id: string };
-  seconds: number; ratePerSecond: number; reservedUsd: number; estimateCredits: number;
+  seconds: number; audioSeconds: number; rateUsdPerSecond: number; reservedUsd: number; estimateCredits: number;
   consentId: string; castMemberId: string; use: string; faceSha256: string; voiceConsentId: string | null;
   funded: number; claimedAt: number | null; syncId: string | null; videoAsset: string | null; audioAsset: string | null;
   submittedAt: number | null; lastPolledAt: number | null; pollUntil: number | null; settled: number;
-  cleanupDue: number; cleanupTries: number; vendorDeleted: number;
+  cleanupDue: number; cleanupTries: number; vendorDeleted: number; reconcile: number;
 };
 type Row = { id: string; project_id: string | null; shot_id: string | null; created_by: string | null; status: string; created_at: number; params: string };
 type Job = { row: Row; lip: LipSyncParams; model: SyncModel };
@@ -117,12 +119,12 @@ async function patch(genId: string, fields: Partial<LipSyncParams>, guard?: { sq
 export const quotedSeconds = (videoSeconds: number, audioSeconds: number, syncMode: SyncMode): number =>
   Math.round((syncMode === "cut_off" ? audioSeconds : Math.max(videoSeconds, audioSeconds)) * 1000) / 1000;
 /** Dollars at the model's per-second rate, to the micro-dollar. */
-export const lipSyncUsd = (seconds: number, model: SyncModel): number => Math.round(seconds * SYNC_RATES.models[model] * 1e6) / 1e6;
+export const lipSyncUsd = (seconds: number, model: SyncModel): number => Math.ceil(seconds * SYNC_RATES.models[model] * 1e6 - 1e-6) / 1e6;
 
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 /** What the face gate and the admission may be handed in a test. The public admission passes none. */
-export type LipSyncSeams = { consent?: (castMemberId: string, face: Buffer, scope: ConsentScope) => Promise<ConsentMatch> };
+export type LipSyncSeams = { consent?: (castMemberId: string, face: Buffer, scope: ConsentScope) => Promise<ConsentMatch>; voices?: () => Promise<{ id: string; category: string }[]> };
 
 type SourceFound = { source: StoredSource; seconds: number };
 async function resolveSource(kind: "video" | "audio", uploadId: unknown, genId: unknown): Promise<SourceFound | { error: string; status: number }> {
@@ -137,11 +139,25 @@ async function resolveSource(kind: "video" | "audio", uploadId: unknown, genId: 
   return { source, seconds: length.seconds };
 }
 
-/** Is the voice a synthetic, stock one of Particl's own? Only a take of ours that made speech is. */
-async function audioIsSynthetic(source: StoredSource): Promise<boolean> {
+/**
+ * Is the voice a synthesized stock one of Particl's own? Only an ElevenLabs speech or dialogue take whose every voice ElevenLabs lists as `premade`. A cloned,
+ * professional or generated voice, any other vendor's take, a dub, a voice change, music, and an upload are a real person's or unknown: they need a live consent
+ * covering the voice. Anything that cannot be read (the take, its voices, the voice list) is "not synthetic": fail closed.
+ */
+async function audioIsSynthetic(source: StoredSource, voices: NonNullable<LipSyncSeams["voices"]>): Promise<boolean> {
   if (source.kind !== "generation") return false;
-  const row = (await db().execute({ sql: "SELECT json_extract(params,'$.task') AS task, task AS col FROM generations WHERE id=?", args: [source.id] })).rows[0];
-  return Boolean(row) && (SYNTHETIC_AUDIO_TASKS.includes(String(row.task)) || SYNTHETIC_AUDIO_TASKS.includes(String(row.col)));
+  const row = (await db().execute({ sql: "SELECT provider, json_extract(params,'$.task') AS task, json_extract(params,'$.voiceId') AS voice, json_extract(params,'$.lines') AS lines FROM generations WHERE id=?", args: [source.id] })).rows[0];
+  /* A Sarvam speech take (lib/sarvamTools.ts) is a stock voice: that engine offers and calls no voice cloning (a test pins it). */
+  if (row?.provider === "sarvam" && row.task === "sarvam_speech") return true;
+  if (!row || row.provider !== "elevenlabs" || !SYNTHETIC_AUDIO_TASKS.includes(String(row.task))) return false;
+  let ids: unknown[] = [];
+  if (row.task === "speech") ids = [row.voice];
+  else { try { ids = (JSON.parse(String(row.lines)) as { voiceId?: unknown }[]).map((l) => l?.voiceId); } catch { return false; } }
+  if (!ids.length || ids.some((id) => typeof id !== "string" || !id)) return false;
+  try {
+    const listed = await voices();
+    return ids.every((id) => listed.find((v) => v.id === id)?.category === "premade");
+  } catch { return false; }
 }
 
 /** Admission: validate, measure, quote, pass the consent gate, and (unless quoteOnly) fund one job and hand it to the worker. */
@@ -202,7 +218,7 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   const quota = await checkQuota(video.source.bytes + audio.source.bytes);
   if (!quota.allow) return admissionReply({ error: quota.error }, { status: 507 });
   const compiled = { task: LIPSYNC_TASK, model, syncMode, video: { kind: video.source.kind, id: video.source.id }, audio: { kind: audio.source.kind, id: audio.source.id }, seconds, projectId, shotId };
-  const stopped = admissionCheckpoint(options, body, got, "video", usd, model, compiled);
+  const stopped = admissionCheckpoint(options, body, got, "video", usd, model, compiled, { engine: "syncso" });
   if (stopped) return stopped;
 
   /* ── The consent gate: every real face, and a real voice, BEFORE a row is written or a cent reserved. ── */
@@ -217,7 +233,7 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   if (!faceRow || !openable || !String(faceRow.mime ?? "").startsWith("image/")) return admissionReply({ error: "Add a still of the face in the clip (an image from this workspace).", code: "bad-input" }, { status: 400 });
   /* A real person's voice needs the voice covered; a stock synthesized voice of ours raises no question (docs/plans/provider-adapters.md § 1). */
   let voiceConsentId: string | null = null;
-  if (!(await audioIsSynthetic(audio.source))) {
+  if (!(await audioIsSynthetic(audio.source, seams.voices ?? (async () => (await import("./elevenlabs")).listVoices())))) {
     const voice = await liveVoiceConsentFor(castMemberId, { projectId, use });
     if (!voice) return admissionReply({ error: "This voice isn't one of ours, so it needs the person's consent on record, covering the voice. Record it on the Cast card first.", code: "no-voice-consent" }, { status: 409 });
     voiceConsentId = voice.id;
@@ -236,10 +252,10 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   const lip: LipSyncParams = {
     status: "queued", model, syncMode,
     videoSource: { kind: video.source.kind, id: video.source.id }, audioSource: { kind: audio.source.kind, id: audio.source.id },
-    seconds, ratePerSecond: SYNC_RATES.models[model], reservedUsd: usd, estimateCredits: estimatedCredits,
+    seconds, audioSeconds: audio.seconds, rateUsdPerSecond: SYNC_RATES.models[model], reservedUsd: usd, estimateCredits: estimatedCredits,
     consentId: match.consentId, castMemberId, use, faceSha256: match.faceSha256, voiceConsentId,
     funded: 0, claimedAt: null, syncId: null, videoAsset: null, audioAsset: null, submittedAt: null, lastPolledAt: null, pollUntil: null, settled: 0,
-    cleanupDue: 0, cleanupTries: 0, vendorDeleted: 0,
+    cleanupDue: 0, cleanupTries: 0, vendorDeleted: 0, reconcile: 0,
   };
   const params = { task: LIPSYNC_TASK, job: "fix", lipsync: lip, sourceName: video.source.name.slice(0, 200), estUsd: usd, estCredits: 0 };
   const binding = await claimBinding(options.requestClaim, genId);
@@ -275,7 +291,7 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
 /** The terminal write: the take's outcome and its bill commit together; delivery to the ledger is idempotent. A failure settles at nothing. */
 export async function settleLipSync(
   genId: string, status: "done" | "failed",
-  outcome: { message?: string; costUsd: number; storedUrl?: string; bytes?: number; seconds?: number | null; said?: ProviderOutcome | null },
+  outcome: { message?: string; costUsd: number; storedUrl?: string; bytes?: number; seconds?: number | null; said?: ProviderOutcome | null; reconcile?: boolean },
 ): Promise<void> {
   const job = await load(genId);
   if (!job || job.lip.settled) return;
@@ -291,15 +307,17 @@ export async function settleLipSync(
         args: [outcome.storedUrl ?? null, outcome.bytes ?? null, outcome.costUsd, ms, outcome.seconds ?? null, now(), genId],
       }
     : {
-        sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms,?), cost_usd=0,
+        sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms,?), cost_usd=?,
                 provider_outcome=COALESCE(?,provider_outcome),
-                params=json_set(params,'$.lipsync.status','failed','$.lipsync.settled',1,'$.lipsync.cleanupDue',?), updated_at=?
+                params=json_set(params,'$.lipsync.status','failed','$.lipsync.settled',1,'$.lipsync.cleanupDue',?,'$.lipsync.reconcile',?), updated_at=?
               WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
-        args: [(outcome.message ?? "The lip-sync failed.").slice(0, 600), ms, said ? serializeOutcome(said) : null, lip.syncId || lip.videoAsset || lip.audioAsset ? 1 : 0, now(), genId],
+        args: [(outcome.message ?? "The lip-sync failed.").slice(0, 600), ms, outcome.costUsd, said ? serializeOutcome(said) : null, lip.syncId || lip.videoAsset || lip.audioAsset ? 1 : 0, outcome.reconcile ? 1 : 0, now(), genId],
       };
   await writeGenerationOutcome(write, {
-    id: genId, kind: "video", engine: "syncso", model, status: succeeded ? "succeeded" : "failed", engineCostUsd: succeeded ? outcome.costUsd : 0, durationMs: ms,
+    id: genId, kind: "video", engine: "syncso", model, status: succeeded ? "succeeded" : "failed", engineCostUsd: outcome.costUsd, durationMs: ms,
     projectId: row.project_id, shotId: row.shot_id, createdBy: row.created_by,
+    /* A failure the vendor charged us for is recorded at its cost on the ledger line and billed to nobody: the workspace still reads "Nothing billed". */
+    ...(!succeeded && outcome.costUsd > 0 ? { unbilled: true } : {}),
     ...(said ? { providerOutcome: said } : {}),
   });
   await deliverGenerationSettlement(genId);
@@ -329,8 +347,13 @@ export async function advanceLipSyncJobWith(genId: string, deps: LipSyncDeps): P
       if (!claimed) {
         // Someone holds the claim. A young claim is a submission in flight; an old one with no job id is a lost acknowledgement.
         const held = (await load(genId))?.lip;
-        if (held && held.status === "queued" && held.claimedAt && clock() - Number(held.claimedAt) > SUBMIT_GRACE_MS)
-          await patch(genId, { status: "uncertain" });
+        if (held && held.status === "queued" && held.claimedAt && clock() - Number(held.claimedAt) > SUBMIT_GRACE_MS) {
+          /* The two inputs are uploaded before the submit, so a claim that never got both assets up never reached it: nothing was sent, settle at nothing. Only a claim with both assets and no job id is a lost acknowledgement. */
+          if (!held.videoAsset || !held.audioAsset) {
+            await settleLipSync(genId, "failed", { message: "Nothing was submitted: the job stopped before it was sent. Nothing was billed.", costUsd: 0 });
+            await cleanupLipSyncVendor(genId, deps).catch(() => {});
+          } else await patch(genId, { status: "uncertain" });
+        }
         return (await load(genId))?.lip ?? null;
       }
       job = (await load(genId))!;
@@ -391,7 +414,9 @@ export async function advanceLipSyncJobWith(genId: string, deps: LipSyncDeps): P
       const state = await (deps.status ?? generationStatus)(lip.syncId);
       if (state.status === "failed") {
         // Whether sync.so bills a failed or rejected job is not stated on its billing page: settled at nothing, absorbed by the platform.
-        await settleLipSync(genId, "failed", { message: `The lip-sync failed at sync.so${state.error ? `: ${state.error}` : "."} Nothing was billed.`, costUsd: 0, said: silentOutcome("syncso", "run", "failed", state.error) });
+        /* Whatever sync.so reports it charged is the ledger line's cost (nobody is billed it); none reported: recorded as 0 and marked to reconcile against sync.so's invoice. */
+        const reported = state.reportedCostUsd != null && state.reportedCostUsd > 0 ? state.reportedCostUsd : 0;
+        await settleLipSync(genId, "failed", { message: `The lip-sync failed at sync.so${state.error ? `: ${state.error}` : "."} Nothing was billed.`, costUsd: reported, reconcile: state.reportedCostUsd == null, said: silentOutcome("syncso", "run", "failed", state.error) });
         await cleanupLipSyncVendor(genId, deps).catch(() => {});
         return (await load(genId, { any: true }))?.lip ?? null;
       }
@@ -401,8 +426,8 @@ export async function advanceLipSyncJobWith(genId: string, deps: LipSyncDeps): P
       }
       const bytes = await (deps.download ?? downloadOutput)({ id: lip.syncId, url: state.outputUrl });
       const { value: stored } = await withRetry(() => (deps.store ?? storeVideoBytes)(genId, bytes), { max: 3 });
-      /* The real cost: the delivered length (never past the quote) at the model's per-second rate. No length from the vendor reads as the quote. */
-      const delivered = state.outputDuration && state.outputDuration > 0 ? Math.min(state.outputDuration, lip.seconds) : lip.seconds;
+      /* The real cost: the delivered length (never past the quote) at the model's per-second rate. No length from the vendor reads as the input voice track's length (never the bare quote). */
+      const delivered = state.outputDuration && state.outputDuration > 0 ? Math.min(state.outputDuration, lip.seconds) : Math.min(lip.seconds, lip.audioSeconds);
       await settleLipSync(genId, "done", { costUsd: lipSyncUsd(delivered, job.model), storedUrl: stored.url, bytes: stored.bytes, seconds: Math.round(delivered * 1000) / 1000 });
       /* Stored and settled: the vendor's copy goes. A failure is retried by the cron and never blocks the take. */
       await cleanupLipSyncVendor(genId, deps).catch(() => {});
