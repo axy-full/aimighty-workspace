@@ -595,6 +595,19 @@ test("the shot cap is judged at the quote and the press, before any row is writt
       expect(deferred.length).toBe(before.handed);
       /* An admin's goes through; so does a member's take on a shot with no code to speak of, a request with no shot, and any rule but "cap". */
       await runInTenant(house(), async () => { expect((await press(OWNER, { quoteOnly: true })).status).toBe(200); }, OWNER as never);
+      /* An admin who is not a person at the press (a token, an agent, a step Atomik's Auto approved) never skips the cap. */
+      const TOKEN = { id: "tok_admin", name: "Assistant", scope: "render" as const, capUsd: null };
+      const ADMIN_TOKEN: AdmissionActor = { ...OWNER, token: TOKEN };
+      const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1" } as AdmissionActor["user"] };
+      await runInTenant(house(), async () => {
+        for (const extra of [{ quoteOnly: true }, {}]) expect(await press(ADMIN_TOKEN, extra), `token ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, { user: ADMIN_TOKEN.user, token: TOKEN } as never);
+      await runInTenant(house(), async () => {
+        for (const extra of [{ quoteOnly: true }, {}]) expect(await press(AGENT, extra), `agent ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, AGENT as never);
+      await runInTenant(house(), async () => {
+        for (const quoteOnly of [true, undefined]) expect(await admitLipSync({ ...w.body, shotId, maxCredits: 100000, quoteOnly }, OWNER, { ...options(), run: { auto: true } as never }, seams), `auto ${String(quoteOnly)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, OWNER as never);
       expect((await press(MEMBER, { quoteOnly: true, shotId: undefined })).status).toBe(200);
       await setRule("ask");
       expect((await press(MEMBER, { quoteOnly: true })).status).toBe(200);
