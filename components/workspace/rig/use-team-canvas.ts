@@ -415,8 +415,8 @@ export function useTeamCanvas({ scope, productionId, current, fold }: {
           for (const [id, n] of Object.entries(truth.nodes)) nodes.set(id, plainJson(n) as unknown as Json);
           for (const [id, a] of Object.entries(truth.assets)) assets.set(id, plainJson(a) as unknown as Json);
           root.set("order", orderedIds(truth));
-          /* The cards the server made, so a removal a save only implied never takes one off in the room either. */
-          if (truth.serverMade && Object.keys(truth.serverMade).length) root.set("serverMade", { ...(root.get("serverMade") ?? {}), ...truth.serverMade });
+          /* The cards the server made, so a removal a save only implied never takes one off in the room either. The room only asks whether the server made a card, never by whom: the author is not copied in (it can be the owner's account id, which every member of the room reads). */
+          if (truth.serverMade && Object.keys(truth.serverMade).length) root.set("serverMade", { ...(root.get("serverMade") ?? {}), ...Object.fromEntries(Object.keys(truth.serverMade).map((id) => [id, "server"])) });
         });
       } else {
         fold((p) => withTeamCanvas(p, readStorage(root)));

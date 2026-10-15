@@ -18,6 +18,7 @@ import { validateAudio } from "./audio";
 import { REF_KINDS, type Project } from "./studio";
 import { MAX_SCRIPT_CHARS, MAX_SCRIPT_PAGES } from "./screenplay";
 import { CINEMA_STUDIO_CONTROLS } from "../cinemaStudioTypes";
+import { NANO_BANANA_2_ID, NANO_BANANA_PRO_ID } from "../models";
 /** A Cinema Studio 4.0 take's creative controls on its node: documented controls and values only (lib/cinemaStudioTypes.ts). */
 const cinemaControlsSchema = z.object(Object.fromEntries(CINEMA_STUDIO_CONTROLS.map((control) =>
   [control.key, z.enum(control.options.map((o) => o.value) as [string, ...string[]]).optional()]))).strict();
@@ -240,7 +241,7 @@ export const productionSchema = z.object({
     name: z.string().max(300), sha256: z.string().regex(/^[a-f0-9]{64}$/), pages: z.number().int().min(1).max(400), text: z.string().max(200_000), at: z.string().datetime(),
   }).strict().optional(),
   boards: z.object({
-    style: z.enum(['live', 'color-sketch', 'bw-sketch']), model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gpt-image-2', 'gpt-image-2.5-flare', 'grok-imagine-image-2.0']),
+    style: z.enum(['live', 'color-sketch', 'bw-sketch']), model: z.enum([NANO_BANANA_2_ID, NANO_BANANA_PRO_ID, 'gpt-image-2', 'gpt-image-2.5-flare', 'grok-imagine-image-2.0']),
     frames: z.record(z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), z.object({
       prompt: z.string().max(8000),
       sketch: z.object({ assetId: z.string().max(100), name: z.string().max(200) }).strict().optional(),
@@ -281,7 +282,7 @@ export const productionSchema = z.object({
   /* Production › Environment (owner, 24 September): the world, place by place; plates are renders or uploads. */
   environment: z.object({
     world: z.string().max(6000),
-    model: z.enum(['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gpt-image-2', 'gpt-image-2.5-flare', 'grok-imagine-image-2.0']),
+    model: z.enum([NANO_BANANA_2_ID, NANO_BANANA_PRO_ID, 'gpt-image-2', 'gpt-image-2.5-flare', 'grok-imagine-image-2.0']),
     entries: z.array(z.object({
       id: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/), name: z.string().max(120), notes: z.string().max(4000), prompt: z.string().max(5000),
       references: z.array(z.string().max(100)).max(6),

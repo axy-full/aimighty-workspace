@@ -16,6 +16,8 @@ import { discardHeldJob } from "@/lib/held";
 import { withLedgerCharges } from "@/lib/usageLedger";
 import { NO_SUCH_PROJECT, mayReachProject, mayReadTake } from "@/lib/draftProject";
 import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
+import { readableActors } from "@/lib/platformOwnerPrivacy";
+import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 import type { Transaction } from "@libsql/client";
 
 const ACTIVE = "This generation is still active. Wait for it to finish before deleting it.";
@@ -101,6 +103,14 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   await ready();
   const asked = (await params).id;
   const body = (await req.json().catch(() => null)) ?? {};
+  /* Approving a take is a person's alone (owner, 14 Oct; CLAUDE.md rules 11 and 14): an API token, an MCP client or an agent identity prepares, picks and sends back, and never signs off.
+     Asked before the take is read, so a take that is there and one that is not answer alike. (Clearing a sign-off is asked below, once the take's state is known.) */
+  const person = isPerson({ user: got.user, token: got.token });
+  /* The review is read once, here: a word (null clears it), or the request is refused before any read. The gate below, the validation and the write all read this value and never the
+     raw body, so a value that is not a word (an array holding "approved", a number, an object) can neither pass the gate nor be written as something else. */
+  const reviewTo: string | undefined = body.reviewState === undefined ? undefined : body.reviewState === null ? "" : typeof body.reviewState === "string" ? body.reviewState : "bad";
+  if (reviewTo === "bad") return NextResponse.json({ error: "A review is picked, approved or changes, or empty to clear it." }, { status: 400 });
+  if (reviewTo === "approved" && !person) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   /* A project and a shot are each named by one id: a string, or null / "" for none. Anything else (an array, a number, an object) is refused here, before any
      read or write, so the id that is checked below is the very id that is written. Every check below reads these, never the raw body. */
   const idOf = (value: unknown): string | null | "bad" => (value === null || value === "" ? null : typeof value === "string" ? value : "bad");
@@ -144,13 +154,15 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
      and a mark only on a take that finished — a render in flight, held or
      failed has nothing to judge yet. Clearing is always allowed. */
   let reviewedFrom: string | null = null;
-  if (body.reviewState !== undefined) {
-    const wanted = String(body.reviewState ?? "");
+  if (reviewTo !== undefined) {
+    const wanted = reviewTo;
     if (!REVIEW_STATES.includes(wanted)) return NextResponse.json({ error: "A review is picked, approved or changes, or empty to clear it." }, { status: 400 });
     const row = (await db().execute({ sql: "SELECT status, review_state FROM generations WHERE id=? AND deleted=0", args: [id] })).rows[0];
     if (!row) return NextResponse.json({ error: "This take is no longer in the project." }, { status: 404 });
     if (wanted && String(row.status) !== "succeeded") return NextResponse.json({ error: "Only a finished take can be picked, approved or sent back." }, { status: 409 });
     reviewedFrom = String(row.review_state ?? "");
+    /* A sign-off is undone by a person alone: a token or an agent cannot clear, pick over or send back what a person approved (that would pull it off a client's review link too). */
+    if (reviewedFrom === "approved" && wanted !== "approved" && !person) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   }
   /* Someone else's take is changed by its maker, the board's owner or an admin only: a rename, a move, a review, a trash or a restore alike.
      (After the checks above, which only read: a word the trail does not know, a take that is gone or not finished answer as they did.) */
@@ -217,10 +229,10 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   // Signing off on a shot, or asking for changes. The name is recorded so a
   // review is answerable to someone rather than appearing from nowhere.
   let review: Record<string, unknown> | null = null;
-  if (body.reviewState !== undefined) {
+  if (reviewTo !== undefined) {
     /* draft → picked → approved. An artist picks one take per shot; a
        director approves it or sends it back. (Checked above.) */
-    const state = String(body.reviewState ?? "");
+    const state = reviewTo;
     /* The trail keeps both marks: who picked and who approved, each with its
        own moment (brief 2.1). Clearing a state clears that mark alone, so a
        take sent back for changes still says who had picked it. */
@@ -239,10 +251,12 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     });
     /* The marks as recorded, for the grids to show at once (who picked, who approved, when). */
     const marks = (await db().execute({ sql: "SELECT review_state, review_by, picked_by, picked_at, approved_by, approved_at, updated_at FROM generations WHERE id=?", args: [id] })).rows[0];
-    if (marks) review = {
-      reviewState: String(marks.review_state ?? ""), reviewBy: marks.review_by == null ? null : String(marks.review_by),
-      pickedBy: marks.picked_by == null ? null : String(marks.picked_by), pickedAt: marks.picked_at == null ? null : Number(marks.picked_at),
-      approvedBy: marks.approved_by == null ? null : String(marks.approved_by), approvedAt: marks.approved_at == null ? null : Number(marks.approved_at),
+    /* A mark this change left alone may hold an account id (an older row): who marked it is read as a reader may be told, never as an id (lib/platformOwnerPrivacy.ts). */
+    const shown = marks ? await readableActors([marks.review_by, marks.picked_by, marks.approved_by]) : null;
+    if (marks && shown) review = {
+      reviewState: String(marks.review_state ?? ""), reviewBy: shown(marks.review_by),
+      pickedBy: shown(marks.picked_by), pickedAt: marks.picked_at == null ? null : Number(marks.picked_at),
+      approvedBy: shown(marks.approved_by), approvedAt: marks.approved_at == null ? null : Number(marks.approved_at),
       updatedAt: Number(marks.updated_at),
     };
     /* Picking a take asks someone for a decision: tell the admins who want
