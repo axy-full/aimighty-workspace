@@ -988,3 +988,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Owner check: REKOGNITION_ENABLED was reported missing at 19:30.
   - Rekognition price verified from AWS's price list (Mumbai): $0.00125/image for the first 1M, matching #771.
 - **16 Oct 04:02 IST.** #786 Recraft APPROVED at 3e4bd8d1: bounded reply reads; an unusable 200 becomes a charged failure, never uncertain. #714 at fadac5da carries the Rekognition and NB 2.1 sources.
+- **16 Oct 04:03 IST.** Lane D:
+  - #779 cad0a2ed: shot cap.
+  - #783 9fca09be: must-fix done (read+change access required; Atomik acts as its starter); diff bounded; stale sweep; EngineVendor "vision"; shot cap.
+  - New #787 Kling 4.0 (3dd3e5a7): gated model row outside MODELS, KLING4_ENABLED.
+    - Kling 4.0 is NOT on fal yet (fal lists v3, v3 Turbo and O3; the v4 OpenAPI returns 404).
+    - Lane D is making #787 draft and inert (placeholders, refused while unconfirmed).
+  - The Pro pick isn't built. Proposal for the owner: lib/proPick.ts config list (Kling 4.0 → 3.0 Pro fallback) with a site-setting override; the composer marks Pro entries. Note the composer has no Pro row today, and Veo and Runway are tools, not model rows.
+  - Opus checks queued.
