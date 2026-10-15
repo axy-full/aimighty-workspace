@@ -72,7 +72,7 @@ async function project(id: string) {
 async function meterRows() {
   const { platformDb, platformReady } = await import("../../lib/platform");
   await platformReady();
-  return (await platformDb().execute("SELECT id,workspace_id,status,engine_cost_usd,billed_credits,paid_by_platform FROM meter_events WHERE engine='bfl' ORDER BY created_at, id")).rows;
+  return (await platformDb().execute("SELECT id,workspace_id,status,engine_cost_usd,overrun_usd,billed_credits,paid_by_platform FROM meter_events WHERE engine='bfl' ORDER BY created_at, id")).rows;
 }
 async function gen(id: string) {
   const { db } = await import("../../lib/db");
@@ -184,6 +184,13 @@ test("the endpoint is the EU one by default, never the global address; a base ad
     for (const bad of ["https://evil.example.com/o.png", "https://delivery-eu.bfl.ai.evil.com/o.png", "https://bfl.ai.evil.com/o.png", "http://delivery-eu.bfl.ai/o.png", "https://user@delivery-eu.bfl.ai/o.png"])
       expect(await bfl.fetchResult(bad, { fetch: reply(200, "x") }).then(() => null, (e) => e), bad).toBeInstanceOf(bfl.BflError);
     expect(calls.length).toBe(results + 2);
+    /* No request follows a redirect (the key is a header, and undici forwards custom headers to another origin): each is sent with redirect "error", and a redirecting server's answer is a failure. */
+    const seen: (string | undefined)[] = [];
+    const redirecting = (async (_url: unknown, init?: RequestInit) => { seen.push(init?.redirect); if (init?.redirect === "error") throw new TypeError("fetch failed: unexpected redirect"); return new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data" } }); }) as never;
+    expect(await bfl.submitImage({ model: "flux-2-pro", prompt: "x", width: 64, height: 64, references: [] }, { fetch: redirecting }).then(() => null, (e) => e)).toBeInstanceOf(bfl.BflError);
+    expect(await bfl.pollImage({ id: "j1", pollingUrl: "https://api.eu.bfl.ai/v1/get_result?id=j1" }, { fetch: redirecting }).then(() => null, (e) => e)).toBeInstanceOf(bfl.BflError);
+    expect(await bfl.fetchResult("https://delivery-eu.bfl.ai/o.png", { fetch: redirecting }).then(() => null, (e) => e)).toBeInstanceOf(bfl.BflError);
+    expect(seen).toEqual(["error", "error", "error"]);
     /* A refusal is a clear 4xx (a throttle included); a 408 and a 5xx may have taken the job. */
     for (const [status, early] of [[400, true], [402, true], [422, true], [429, true], [408, false], [500, false], [503, false]] as const) {
       const failed = await bfl.submitImage({ model: "flux-2-pro", prompt: "x", width: 64, height: 64, references: [] }, { fetch: reply(status, { detail: "nope" }) }).then(() => null, (e) => e);
@@ -310,20 +317,28 @@ test("a still from words: submit, poll, fetch the moment it is Ready, store unde
     expect(settled[0]).toMatchObject({ id: genId, status: "succeeded" });
     expect(Number(settled[0].engine_cost_usd)).toBeCloseTo(0.045, 6);
     expect(Number(settled[0].billed_credits ?? 0)).toBe(0);
+    /* No figure from BFL: settled at the quote and marked to reconcile. */
+    expect(take.bfl.reconcile).toBe(1);
     /* Another step on a finished job does nothing. */
     const again = fakeBfl();
     await run(genId, again.deps, 2);
     expect(again.calls).toEqual([]);
-    /* BFL states a figure: lower is the cost, higher is capped at the quote. */
-    for (const [stated, expected] of [[0.03, 0.03], [0.5, 0.045]] as const) {
+    /* BFL states a figure: lower is the cost (nothing to reconcile); higher is billed at the quote, the excess recorded as the overrun and marked to reconcile. */
+    for (const [stated, expected, over, reconcile] of [[0.03, 0.03, null, 0], [0.5, 0.045, 0.455, 1]] as const) {
       const id = String((await admit({ tool: "image", prompt: "a crane", ...approved })).body.id);
       await run(id, fakeBfl({ stated }).deps, 4);
-      expect(Number((await gen(id)).cost_usd), String(stated)).toBeCloseTo(expected, 6);
+      const done = await gen(id);
+      expect(Number(done.cost_usd), String(stated)).toBeCloseTo(expected, 6);
+      expect(done.bfl.reconcile, String(stated)).toBe(reconcile);
+      const line = (await meterRows()).find((r) => r.id === id)!;
+      expect(Number(line.engine_cost_usd), String(stated)).toBeCloseTo(expected, 6);
+      if (over === null) expect(line.overrun_usd ?? null).toBeNull(); else expect(Number(line.overrun_usd)).toBeCloseTo(over, 6);
+      expect(Number(line.billed_credits ?? 0)).toBe(0);
     }
   });
 });
 
-test("a failure settles at nothing: an Error or a moderated job, a refusal before work (a throttle too), and the person is told 'Nothing billed'", async () => {
+test("a failure bills nothing: an Error or a moderated job, a refusal before work (a throttle too), the person is told 'Nothing billed'; the ledger line records what BFL stated, or nothing marked to reconcile", async () => {
   const { BflError } = await import("../../lib/bfl");
   process.env.BFL_ENABLED = "1";
   await asTenant(house(), async () => {
@@ -338,6 +353,7 @@ test("a failure settles at nothing: an Error or a moderated job, a refusal befor
     expect(moderated.take.status).toBe("failed");
     expect(String(moderated.take.error)).toMatch(/Nothing was billed/);
     expect(Number(moderated.take.cost_usd)).toBe(0);
+    expect(moderated.take.bfl.reconcile).toBe(1);
     expect(JSON.parse(String(moderated.take.provider_outcome))).toMatchObject({ provider: "bfl", stage: "run", billing: { state: "unknown" } });
     expect(moderated.vendor.calls).not.toContain("fetch");
     const throttled = await failedBy({ submitError: new BflError("BFL refused the request: too many active tasks", 429, true) });
@@ -345,6 +361,16 @@ test("a failure settles at nothing: an Error or a moderated job, a refusal befor
     expect(JSON.parse(String(throttled.take.provider_outcome))).toMatchObject({ provider: "bfl", stage: "submit", code: "http_429" });
     const rows = (await meterRows()).slice(before);
     expect(rows.every((r) => r.status === "failed" && Number(r.engine_cost_usd) === 0 && Number(r.billed_credits ?? 0) === 0)).toBe(true);
+    /* BFL stated a cost for the job and then failed or moderated it: recorded at that cost on the ledger line, billed to nobody, nothing to reconcile. */
+    const charged = await failedBy({ fail: "BFL's moderation stopped this.", stated: 0.03 });
+    expect(charged.take.status).toBe("failed");
+    expect(String(charged.take.error)).toMatch(/Nothing was billed/);
+    expect(Number(charged.take.cost_usd)).toBeCloseTo(0.03, 6);
+    expect(charged.take.bfl.reconcile).toBe(0);
+    const line = (await meterRows()).find((r) => r.id === charged.id)!;
+    expect(line).toMatchObject({ status: "failed" });
+    expect(Number(line.engine_cost_usd)).toBeCloseTo(0.03, 6);
+    expect(Number(line.billed_credits ?? 0)).toBe(0);
   });
 });
 
@@ -375,7 +401,7 @@ test("a lost acknowledgement is never sent again, and a job that never got to it
   });
 });
 
-test("the ten minutes: an image that is Ready is fetched at once; a fetch that fails is retried while its address lives; past the window it is lost, settled at nothing and said so", async () => {
+test("the ten minutes: an image that is Ready is fetched at once; a fetch that fails is retried while its address lives; past the window it is lost, recorded at what BFL charged, billed to nobody, and said so", async () => {
   const { BFL_RESULT_LIFETIME_MS } = await import("../../lib/bfl");
   expect(BFL_RESULT_LIFETIME_MS).toBe(10 * 60_000);
   process.env.BFL_ENABLED = "1";
@@ -398,9 +424,19 @@ test("the ten minutes: an image that is Ready is fetched at once; a fetch that f
     const lost = await gen(b);
     expect(lost.status).toBe("failed");
     expect(String(lost.error)).toMatch(/could not be saved in time\. Nothing was billed/);
-    expect(Number(lost.cost_usd)).toBe(0);
+    /* BFL made it (Ready), so it charged: recorded at the quote (it stated none), billed to nobody, marked to reconcile. */
+    expect(Number(lost.cost_usd)).toBeCloseTo(0.045, 6);
+    expect(lost.bfl.reconcile).toBe(1);
     expect((await meterRows()).find((r) => r.id === b)).toMatchObject({ status: "failed" });
-    expect(Number((await meterRows()).find((r) => r.id === b)!.engine_cost_usd)).toBe(0);
+    expect(Number((await meterRows()).find((r) => r.id === b)!.engine_cost_usd)).toBeCloseTo(0.045, 6);
+    expect(Number((await meterRows()).find((r) => r.id === b)!.billed_credits ?? 0)).toBe(0);
+    /* When BFL stated the cost it is that figure, with nothing to reconcile. */
+    const c = String((await admit({ tool: "image", prompt: "a crane", ...approved })).body.id);
+    const statedDead = fakeBfl({ readyAt: 1, fetchErrors: 99, stated: 0.03 });
+    await expect(advanceBflJobWith(c, statedDead.deps)).rejects.toThrow();
+    await advanceBflJobWith(c, { ...statedDead.deps, clock: () => Date.now() + BFL_RESULT_LIFETIME_MS });
+    expect(Number((await meterRows()).find((r) => r.id === c)!.engine_cost_usd)).toBeCloseTo(0.03, 6);
+    expect((await gen(c)).bfl.reconcile).toBe(0);
   });
 });
 
@@ -543,26 +579,60 @@ test("a listed customer workspace pays exactly the quote in credits, once, and a
   }
 });
 
-test("over MCP: flux2_image is listed only where the engine is on, flux2_edit only where its face gate can run; a call asks the route for the price and the caller cannot approve", async () => {
+test("over MCP: flux2_image is listed only where the engine is on, flux2_edit only where its face gate can run; Ask prepares and starts nothing, Auto starts only at or under the per-job line, the caller cannot approve", async () => {
   const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  const { jobApprovalLineCredits } = await import("../../lib/approvalRule");
+  const { creditUsd } = await import("../../lib/creditTerms");
+  const line = jobApprovalLineCredits(creditUsd());
+  const spend = async (value: string | null) => { if (value === null) await db().execute("DELETE FROM settings WHERE key='spendWithoutAsking'"); else await setSetting("spendWithoutAsking", value, "admin"); invalidateSettings(); };
+  let credits = 1;
   const calls: Record<string, unknown>[] = [];
-  const call = async (_p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; calls.push(body); return body.quoteOnly === true ? { estimatedCredits: 1, price: 0.05, unit: "usd" } : { id: "gen_f1" }; };
+  const call = async (_p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; calls.push(body); return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 100, unit: "usd" } : { id: "gen_f1" }; };
   await asTenant(house(), async () => {
+    await ready();
     delete process.env.BFL_ENABLED;
     expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("flux2_image");
     await expect(runDirectEngineTool("flux2_image", { prompt: "a tree" }, call)).rejects.toThrow("There is no such tool here.");
     process.env.BFL_ENABLED = "1";
     expect((await directEngineMcpTools()).map((t) => t.name)).toEqual(expect.arrayContaining(["flux2_image"]));
     expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("flux2_edit");
-    expect(await runDirectEngineTool("flux2_image", { prompt: "a tree", width: 512, height: 512 }, call)).toMatch(/^Image started\.\n\nid: gen_f1/);
-    expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null, c.tool])).toEqual([[true, null, "image"], [false, 1, "image"]]);
-    await expect(runDirectEngineTool("flux2_image", { prompt: "a tree", maxCredits: 1 }, call)).rejects.toThrow(/not yours to approve/);
-    process.env.REKOGNITION_ENABLED = "1";
-    expect((await directEngineMcpTools()).map((t) => t.name)).toContain("flux2_edit");
-    calls.length = 0;
-    await runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1, u2", cast_member_ids: "c1,c2", project_id: "p", use: "production" }, call);
-    expect(calls[0]).toMatchObject({ tool: "edit", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }], quoteOnly: true });
-    await expect(runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1,u2", cast_member_ids: "c1", project_id: "p", use: "production" }, call)).rejects.toThrow(/one cast member for each reference/);
+    try {
+      /* Ask (the default, and anything but an exact "auto"): priced and prepared, nothing sent. */
+      for (const mode of [null, "ask", "AUTO"]) {
+        await spend(mode); calls.length = 0;
+        const text = await runDirectEngineTool("flux2_image", { prompt: "a tree", width: 512, height: 512 }, call);
+        expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.01\nprepared: flux-2-pro still, 512 by 512\n\nThis needs a person's approval: nothing was started or spent/);
+        expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null])).toEqual([[true, null]]);
+      }
+      /* Auto: at or under the line it starts at the server's price; above it (guardrail 4) it asks a person. */
+      await spend("auto");
+      for (const c of [1, line]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("flux2_image", { prompt: "a tree", width: 512, height: 512 }, call), String(c)).toMatch(/^Image started\.\n\nid: gen_f1/);
+        expect(calls.map((x) => [x.quoteOnly === true, x.maxCredits ?? null, x.tool])).toEqual([[true, null, "image"], [false, c, "image"]]);
+      }
+      for (const c of [line + 1, 900]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("flux2_image", { prompt: "a tree" }, call), String(c)).toMatch(/not started[\s\S]*needs a person's approval/);
+        expect(calls).toHaveLength(1);
+      }
+      credits = 1;
+      for (const mode of ["ask", "auto"]) {
+        await spend(mode); calls.length = 0;
+        for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) await expect(runDirectEngineTool("flux2_image", { prompt: "a tree", ...bad }, call)).rejects.toThrow(/only a person approves/);
+        expect(calls).toEqual([]);
+      }
+      await spend(null);
+      process.env.REKOGNITION_ENABLED = "1";
+      expect((await directEngineMcpTools()).map((t) => t.name)).toContain("flux2_edit");
+      calls.length = 0;
+      const prepared = await runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1, u2", cast_member_ids: "c1,c2", project_id: "p", use: "production" }, call);
+      expect(calls[0]).toMatchObject({ tool: "edit", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }], quoteOnly: true });
+      expect(prepared).toMatch(/prepared: flux-2-pro edit of 2 reference\(s\) for production p/);
+      await expect(runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1,u2", cast_member_ids: "c1", project_id: "p", use: "production" }, call)).rejects.toThrow(/one cast member for each reference/);
+    } finally { await spend(null); }
   });
 });
 
