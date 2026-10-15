@@ -815,3 +815,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #770 4c8381a9: `offsetSeconds` refused from requests (trusted renderer props only); window start frame-aligned; real renders 13/13.
   - #772 7623f406, #773 d27f9c91 (14/14 renders), #774 e41f523c (273 specs), #775 1e1e9aa8 (283 specs).
   - Opus delta checks running.
+- **16 Oct 01:50 IST.** Opus delta check APPROVED #770 at 4c8381a9 (`trusted` is reachable only from Root.tsx; moved assertions are recomputed whole-frame values), and #772 7623f406 and #773 d27f9c91 with it. The whole worker stack #768-#773 is now approved at its current heads. Still NEEDS AKSHAY: #699's env names, #700's migration, and #768's compose pin.
