@@ -281,6 +281,24 @@ export const SYNC_RATES = {
 export type SyncModel = keyof typeof SYNC_RATES.models;
 export type SyncMode = (typeof SYNC_RATES.syncModes)[number];
 
+/**
+ * Sarvam, direct (lib/sarvam.ts, lib/sarvamTools.ts), in the vendor's own unit: RUPEES (pay as you go; docs/plans/provider-adapters.md § 2, the vendor's
+ * pricing page as the plan records it, 14 Oct 2026). **TO CONFIRM** against Sarvam's page and the first invoice. Converted to dollars ONLY at the owner's own
+ * rate, `SARVAM_USD_PER_INR` (set in the deployment, reviewed monthly): with none, or one that is not a positive number, nothing is priced and every Sarvam
+ * tool says so and cannot run. Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const SARVAM_RATES = {
+  /** Text to speech, rupees per 10,000 characters. */
+  speechInrPer10kChars: { "bulbul:v3": 30, "bulbul:v4-flash": 20 },
+  /** Speech to text, rupees per hour of audio. Speaker labels (diarization), a batch feature, are not offered yet. */
+  transcribeInrPerHour: 29.4,
+  /** Translation, rupees per 10,000 characters. */
+  translateInrPer10kChars: { "sarvam-translate:v1": 20, "mayura:v1": 20 },
+  defaultSpeechModel: "bulbul:v3", defaultTranscribeModel: "saaras:v4", defaultTranslateModel: "sarvam-translate:v1",
+} as const;
+export type SarvamSpeechModel = keyof typeof SARVAM_RATES.speechInrPer10kChars;
+export type SarvamTranslateModel = keyof typeof SARVAM_RATES.translateInrPer10kChars;
+
 /** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
 export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;

@@ -834,6 +834,11 @@ export async function syncPending(
   results.attempted += lips.attempted;
   results.failed += lips.failed;
   results.deferred += lips.deferred;
+  // Sarvam calls that were never finished: settled at nothing, which frees their hold. Never sent again.
+  const sarvams = await (await import("./sarvamTools")).recoverSarvamJobs({ limit: 8, deadlineAt: options.deadlineAt });
+  results.attempted += sarvams.attempted;
+  results.failed += sarvams.failed;
+  results.deferred += sarvams.deferred;
   const horizon = now() - 3 * 86400_000;
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
@@ -862,6 +867,8 @@ export async function syncPending(
           if (gen.kind === "audio" && params.task === "dub") return;
           // A lip-sync job's row is advanced by its own workflow above (lib/lipSync.ts); it is neither a render nor an orphan.
           if (gen.kind === "video" && params.task === "lipsync") return;
+          // A Sarvam speech take is made inside one request of ours and settled there (lib/sarvamTools.ts); a stale one is ended by its own stage above.
+          if (gen.kind === "audio" && params.task === "sarvam_speech") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome

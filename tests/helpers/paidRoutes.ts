@@ -13,6 +13,7 @@ export const PAID_ROUTES: PaidRoute[] = [
   { dir: "generate", spends: "video, image, upscale (Topaz), Seedance edit, Cinema Studio, Motion transfer, Object swap and the agent's renders" },
   { dir: "audio", spends: "speech, sound effects and music" },
   { dir: "audio/dub", spends: "dubbing" },
+  { dir: "sarvam", spends: "Sarvam speech, transcription and translation (off unless the engine is on for the workspace)" },
   { dir: "lipsync", spends: "lip-sync (sync.so; off unless the engine is on for the workspace)" },
   { dir: "audio/transcribe", spends: "transcription" },
   { dir: "jobs/[id]/release", spends: "releasing a held take once the balance covers it" },
