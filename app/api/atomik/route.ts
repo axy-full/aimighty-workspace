@@ -95,7 +95,7 @@ export const POST = withTenant(async function POST(req: NextRequest) {
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
       context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
-      memory: await plannerMemoryText({ projectId, query: text }).catch(() => ""),
+      memory: await plannerMemoryText({ projectId, query: text, viewer: got.user.id }).catch(() => ""),
       library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
   }

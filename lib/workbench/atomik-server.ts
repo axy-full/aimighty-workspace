@@ -287,7 +287,7 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   /* The team's memory for this production: read into planning and suite-agent runs, not into Astra's scene
      edits or a bounded reference-ad review. Read the same way for the quote and the run, so the estimate
      covers it; a memory that cannot be read leaves the request as it was. */
-  const memory = input.astraBlender || input.referenceAd ? [] : await plannerMemory({ projectId: project.productionProjectId, query: input.request }).catch(() => []);
+  const memory = input.astraBlender || input.referenceAd ? [] : await plannerMemory({ projectId: project.productionProjectId, query: input.request, viewer: owner }).catch(() => []);
   const models = await deps.models();
   const menu = atomikModels(models).filter(model => (!input.suite || /^(anthropic|openai)\//.test(model.id)) && (!references.images.length || model.vision));
   if (want === 'auto' && input.effort && input.effort !== 'auto') throw new AtomikError('Choose a model before setting its reasoning effort.', 422);

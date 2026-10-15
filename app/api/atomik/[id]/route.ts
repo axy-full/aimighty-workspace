@@ -114,7 +114,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const projectId = await readableProjectOr(got.user, loaded.chat.projectId);
     const context = await projectContext(projectId);
     /* The team's memory for this project (lib/atomikMemory): ranked and small, never money. The quote and the turn read it alike. */
-    const memory = await plannerMemoryText({ projectId, query: text }).catch(() => "");
+    const memory = await plannerMemoryText({ projectId, query: text, viewer: got.user.id }).catch(() => "");
     const rules = writerRulesByScope(await effectiveRules());
     /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
     const inputs = await plannerInputs(got.user.id, projectId);

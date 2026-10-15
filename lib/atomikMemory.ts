@@ -1,7 +1,7 @@
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
 import { requireTenant } from "./tenant";
-import { isSampleProject, mayReachProject, mayReadTake } from "./draftProject";
+import { currentPerson, isSampleProject, mayReachProject, mayReadTake } from "./draftProject";
 import { uploadOpenableBy } from "./uploadAccess";
 import { archiveDeleteStatements, archiveStatement, archiveTransaction } from "./archive";
 import {
@@ -209,9 +209,15 @@ async function element(assetId: string, by: string): Promise<{ label: string; ki
  * draft of its production). A Library asset keeps the name it was kept with;
  * only that it is still in the Library is read. Absent: gone, so a planner
  * leaves the entry out.
+ *
+ * Also absent, and listed in `hidden`, is a take or an upload `viewer` may not open (a take on someone else's private board, an upload only its uploader may open: the same
+ * helpers the board uses, mayReadTake and uploadOpenableBy). An entry kept before the board gate holds that asset's title as it was kept, and must not serve it to them.
+ * `viewer` null: nobody to hide it from (a system read).
  */
-async function refsPresent(ids: string[]): Promise<Map<string, { label: string | null; kind: string | null }>> {
-  const present = new Map<string, { label: string | null; kind: string | null }>();
+type Found = { label: string | null; kind: string | null };
+type Present = Map<string, Found> & { hidden: Set<string> };
+async function refsPresent(ids: string[], viewer: string | null): Promise<Present> {
+  const present = Object.assign(new Map<string, Found>(), { hidden: new Set<string>() }) as Present;
   const byOrigin = { generation: [] as string[], upload: [] as string[] };
   const souls: string[] = [];
   const casts = new Map<string, Set<string>>();
@@ -228,11 +234,18 @@ async function refsPresent(ids: string[]): Promise<Map<string, { label: string |
       const marks = chunk.map(() => "?").join(",");
       const rs = await db().execute({
         sql: origin === "generation"
-          ? `SELECT id FROM generations WHERE id IN (${marks}) AND COALESCE(deleted, 0) = 0`
+          ? `SELECT id, project_id FROM generations WHERE id IN (${marks}) AND COALESCE(deleted, 0) = 0`
           : `SELECT id FROM uploads WHERE id IN (${marks})`,
         args: chunk,
       });
-      for (const r of rs.rows) present.set(`${origin}:${String(r.id)}`, { label: null, kind: null });
+      for (const r of rs.rows) {
+        const key = `${origin}:${String(r.id)}`;
+        const openable = !viewer || (origin === "generation"
+          ? await mayReadTake({ id: viewer }, r.project_id == null ? null : String(r.project_id))
+          : await uploadOpenableBy(String(r.id), { id: viewer }));
+        if (openable) present.set(key, { label: null, kind: null });
+        else present.hidden.add(key);
+      }
     }
   }
   for (let i = 0; i < souls.length; i += 200) {
@@ -510,7 +523,6 @@ async function scopedEntries(workspaceId: string, projectId: string | null, stat
   return rs.rows.map((r) => ({ ...toEntry(r as Row), byName: text((r as Row).by_name), acceptedByName: text((r as Row).accepted_by_name) }));
 }
 
-type Present = Awaited<ReturnType<typeof refsPresent>>;
 const refsOf = (entries: readonly Pick<MemoryEntry, "assetId">[]) => entries.flatMap((e) => (e.assetId ? [e.assetId] : []));
 /** An entry with the name its element has now, where Memory reads it live (a Soul ID, a Cast & Elements entry). */
 function live<E extends Pick<MemoryEntry, "assetId" | "assetLabel" | "assetKind">>(e: E, present: Present): E {
@@ -527,6 +539,8 @@ async function lockedProjects(viewer: string, entries: readonly Pick<MemoryEntry
 
 function toView(e: Named, viewer: string, present: Present, locked: ReadonlySet<string>): MemoryView {
   const { createdBy, acceptedBy, byName, acceptedByName, ...rest } = live(e, present);
+  /* A reference to what this person may not open reads as no longer there: the title it was kept with is not theirs to see. */
+  if (e.assetId && present.hidden.has(e.assetId)) { rest.assetLabel = null; rest.assetKind = null; }
   return {
     ...rest, scope: e.projectId ? "project" : "workspace",
     byYou: createdBy === viewer, byName, acceptedByYou: acceptedBy === viewer, acceptedByName,
@@ -541,14 +555,14 @@ export async function listMemory(projectId: string | null, viewer: string): Prom
   const workspaceId = requireTenant().id;
   const asked = projectOf(projectId);
   const entries = await scopedEntries(workspaceId, (await mayRead(viewer, asked)) ? asked : null);
-  const present = await refsPresent(refsOf(entries));
+  const present = await refsPresent(refsOf(entries), viewer);
   const locked = await lockedProjects(viewer, entries);
   return entries.map((e) => toView(e, viewer, present, locked));
 }
 
 /** One entry as its view, for a route's reply. */
 export async function memoryView(entry: MemoryEntry, viewer: string): Promise<MemoryView> {
-  const present = await refsPresent(refsOf([entry]));
+  const present = await refsPresent(refsOf([entry]), viewer);
   return toView({ ...entry, byName: null, acceptedByName: null }, viewer, present, await lockedProjects(viewer, [entry]));
 }
 
@@ -567,7 +581,7 @@ export async function findForForget(said: unknown, projectId: unknown, viewer: s
   const entries = await scopedEntries(workspaceId, (await mayRead(viewer, asked)) ? asked : null, "active");
   const matches = forgetMatches(subject, entries);
   const byId = new Map(entries.map((e) => [e.id, e]));
-  const present = await refsPresent(refsOf(entries));
+  const present = await refsPresent(refsOf(entries), viewer);
   const locked = await lockedProjects(viewer, entries);
   return { subject, matches: matches.map((m) => ({ ...toView(byId.get(m.id)!, viewer, present, locked), selected: m.selected })) };
 }
@@ -578,17 +592,17 @@ export async function findForForget(said: unknown, projectId: unknown, viewer: s
  * proposals, other projects' entries, references whose asset has left the
  * Library and anything about money are never among them.
  */
-export async function plannerMemory(at: { projectId: string | null | undefined; query: string }): Promise<PlannerMemoryItem[]> {
+export async function plannerMemory(at: { projectId: string | null | undefined; query: string; /** Who the turn is for: a reference to what they may not open is left out (refsPresent). Absent: the person making this request; null: a system read. */ viewer?: string | null }): Promise<PlannerMemoryItem[]> {
   await memoryReady();
   const workspaceId = requireTenant().id;
   const projectId = at.projectId && PROJECT_ID.test(at.projectId) ? at.projectId : null;
   const entries = await scopedEntries(workspaceId, projectId, "active");
-  const present = await refsPresent(refsOf(entries));
+  const present = await refsPresent(refsOf(entries), at.viewer === undefined ? currentPerson()?.id ?? null : at.viewer);
   /* An element that is gone is left out; one that is there is planned with by the name it has now. */
   return rankForPlanner(entries.filter((e) => !e.assetId || present.has(e.assetId)).map((e) => live(e, present)), { projectId, query: at.query });
 }
 
 /** The chat planner's MEMORY section body, or "" when there is nothing to say. */
-export async function plannerMemoryText(at: { projectId: string | null | undefined; query: string }): Promise<string> {
+export async function plannerMemoryText(at: Parameters<typeof plannerMemory>[0]): Promise<string> {
   return memoryLines(await plannerMemory(at));
 }
