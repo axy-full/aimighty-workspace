@@ -399,6 +399,45 @@ test("the tool: an agent can run consent.check on an image from this workspace; 
   }
 });
 
+test("the tool reads only an upload the person may open: another person's private upload is refused before any reference is read or any call is made, and nothing is billed", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { runConsentCheckWith } = await import("../../lib/consentMatch");
+  const { storeUpload } = await import("../../lib/storage");
+  const { db, ready } = await import("../../lib/db");
+  process.env.REKOGNITION_ENABLED = "1";
+  const made: string[] = [];
+  const member = (id: string) => ({ id, email: `${id}@example.invalid`, name: id, role: "member", owner: false, disabled: false, createdAt: 0, lastSeen: null });
+  try {
+    const projectId = uid("prod"), cast = uid("cast");
+    const upl = uid("upl_private"), mine = uid("upl_mine");
+    await runInTenant(house(), async () => {
+      await ready();
+      await consent(projectId, cast);
+      for (const [id, uploader] of [[upl, "person_other"], [mine, "person_me"]] as const) {
+        await storeUpload(id, "png", png("mock-face:alice"), "image/png");
+        made.push(path.join(process.cwd(), ".data", "uploads", `${id}.png`));
+        await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,uploader_id) VALUES(?,?,?,?,?,?,?,?,?)", args: [id, `${id}.png`, "image/png", "png", 15, "x", `uploads/${id}.png`, Date.now(), uploader] });
+      }
+    }, { user: member("person_me") } as never);
+    let referenceReads = 0;
+    const seams = { reference: async () => { referenceReads++; return png("mock-face:alice"); } };
+    const base = { castMemberId: cast, projectId, use: "production" };
+    await runInTenant(house(), async () => {
+      const counts = await platformCounts();
+      /* Not theirs and not shared: answered exactly as an upload that is not there, before the reference is read or the provider called. */
+      expect(await runConsentCheckWith({ ...base, uploadId: upl }, seams)).toMatchObject({ ok: false, code: "bad-input", message: "Pick an image from this workspace's uploads." });
+      expect(await runConsentCheckWith({ ...base, uploadId: "up_not_there" }, seams)).toMatchObject({ ok: false, code: "bad-input", message: "Pick an image from this workspace's uploads." });
+      expect(referenceReads).toBe(0);
+      expect(await platformCounts()).toEqual(counts);
+      /* Their own upload is theirs to check. */
+      expect(await runConsentCheckWith({ ...base, uploadId: mine }, seams)).toMatchObject({ ok: true, matched: true });
+      expect(referenceReads).toBe(1);
+    }, { user: member("person_me") } as never);
+  } finally {
+    for (const file of made) await unlink(file).catch(() => {});
+  }
+});
+
 test("the adapter: a real request is a SigV4-signed CompareFaces call to Mumbai; no face and a refusal cost nothing, a 200 with no face is charged; no key says which; only ap-south-1", async () => {
   const { compareFacesWith, RekognitionError } = await import("../../lib/rekognition");
   const calls: { url: string; headers: Record<string, string>; body: string }[] = [];

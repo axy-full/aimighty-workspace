@@ -2,6 +2,7 @@ import { db, ready } from "./db";
 import { currentTenant } from "./tenant";
 import { REKOGNITION_MAX_BYTES } from "./rekognition";
 import { readUploadBytes } from "./storage";
+import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import {
   ConsentMatchError, NOT_DONE, checkedScope, faceCheckOnHere, matchConsentFace,
   type ConsentMatch, type ConsentMatchCode, type ConsentScope, type ConsentSeams,
@@ -65,7 +66,10 @@ export async function runConsentCheckWith(input: ConsentCheckInput, seams: Conse
   try { scope = checkedScope(input); } catch (error) { return error instanceof ConsentMatchError ? { ok: false, code: error.code, message: error.message } : { ok: false, code: "bad-input", message: "Name the production and the use." }; }
   const uploadId = typeof input.uploadId === "string" ? input.uploadId : "";
   const row = /^[A-Za-z0-9_.:-]{1,160}$/.test(uploadId) ? (await db().execute({ sql: "SELECT ext, mime, stored_url FROM uploads WHERE id = ? LIMIT 1", args: [uploadId] })).rows[0] : undefined;
-  if (!row || !String(row.mime ?? "").startsWith("image/")) return { ok: false, code: "bad-input", message: "Pick an image from this workspace's uploads." };
+  /* A person's request reads only an upload they may open (lib/uploadAccess.ts): another person's private upload answers as one that is not there. */
+  const viewer = currentViewer();
+  const openable = !row || !viewer || (await uploadOpenableBy(uploadId, viewer));
+  if (!row || !openable || !String(row.mime ?? "").startsWith("image/")) return { ok: false, code: "bad-input", message: "Pick an image from this workspace's uploads." };
   try {
     const bytes = await readUploadBytes(uploadId, String(row.ext), String(row.stored_url), REKOGNITION_MAX_BYTES);
     const match = await matchConsentFace(String(input.castMemberId ?? ""), bytes, scope, seams);
