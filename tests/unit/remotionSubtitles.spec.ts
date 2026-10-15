@@ -70,6 +70,10 @@ test("the spec: subtitles is a list of srt and/or vtt (any case, once each); any
     expect((spec(bad) as { errors: string[] }).errors[0]).toBe("spec.output.subtitles: must be a list of srt and/or vtt");
   }
   expect(spec(["srt"], finalProps({ clips: [clip([])] }))).toEqual({ ok: false, code: "spec_invalid", errors: ["spec.output.subtitles: the export has no caption text (no cues) to write"] });
+  /* Every cue only styling: nothing to write, so no empty SubRip file and no header-only WebVTT. */
+  expect(spec(["srt", "vtt"], finalProps({ clips: [clip([cue(500, 2500, "{\\an8}"), cue(3000, 3500, "{\\pos(1,1)} ")])] }))).toEqual({ ok: false, code: "spec_invalid", errors: ["spec.output.subtitles: every caption in this export is only styling, so there is no text to write"] });
+  /* One cue with words is enough. */
+  expect(spec(["srt"], finalProps({ clips: [clip([cue(500, 2500, "{\\an8}"), cue(3000, 3500, "Real")])] }))).toMatchObject({ ok: true });
   expect(spec(["srt"], { aspect: "16:9", scale: 0.25, card: { title: "Hi", durationSeconds: 1 } }, "title-card")).toMatchObject({ ok: false });
   expect(checkSpec({ version: 1, composition: "final", props: finalProps(), output: { video: false } })).toEqual({ ok: false, code: "spec_invalid", errors: ["spec.output: asks for nothing"] });
 });

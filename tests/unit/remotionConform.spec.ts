@@ -167,6 +167,40 @@ test.describe("the export command with a conformer", () => {
     expect(seenInput["vfr.mp4"]).toBe("conformed-vfr.mp4");
   });
 
+  test("a windowed copy starts at zero, so the renderer is told where in the source it starts: offsetSeconds on every source that uses it, on no other", async () => {
+    const later = { version: 1, composition: "final", props: { aspect: "16:9", scale: 0.25, title: null, clips: [{ ...clip("vfr.mp4"), trim: { startSeconds: 2, endSeconds: 4 } }, clip("cfr.mp4"), { ...clip("vfr.mp4"), trim: { startSeconds: 6, endSeconds: 7 } }], captionStyle: null, end: null, music: null }, output: { conform: "auto" } };
+    type Props = { clips: { source: { file: string; offsetSeconds?: number } }[] };
+    const got: { props?: Props } = {};
+    const laterPlan = checkSpec(later);
+    if (!laterPlan.ok) throw new Error(JSON.stringify(laterPlan));
+    const watching: Renderer = { ...renderer, selectComposition: async (a) => { got.props = a.inputProps as Props; return { id: a.id, width: laterPlan.timeline.width, height: laterPlan.timeline.height, fps: laterPlan.timeline.fps, durationInFrames: laterPlan.timeline.durationInFrames, props: a.inputProps }; } };
+    const result = await runExport({ ...args({}, fakeConformer()), spec: later, renderer: watching });
+    expect(result).toMatchObject({ ok: true });
+    expect(conformerLog[0].window).toEqual({ startSeconds: 1.75, endSeconds: 7.25 });
+    expect(got.props?.clips.map((c) => [c.source.file, c.source.offsetSeconds])).toEqual([["vfr.mp4", 1.75], ["cfr.mp4", undefined], ["vfr.mp4", 1.75]]);
+    /* Nothing conformed, nothing marked. */
+    got.props = undefined;
+    await runExport({ ...args({}, fakeConformer(true)), spec: later, renderer: watching });
+    expect((got as { props?: Props }).props?.clips.map((c) => c.source.offsetSeconds)).toEqual([undefined, undefined, undefined]);
+  });
+
+  test("offsetSeconds: checked against the file, left out when zero, and it moves the picture's start in the file earlier by that much, never before the start", () => {
+    const src = (extra: Record<string, unknown>) => ({ version: 1, composition: "final", props: { aspect: "16:9", scale: 0.25, title: null, clips: [{ ...clip("a.mp4"), source: { file: "a.mp4", durationSeconds: 10, width: 1920, height: 1080, hasAudio: true, ...extra }, trim: { startSeconds: 3, endSeconds: 5 } }], captionStyle: null, end: null, music: null } });
+    expect(checkSpec(src({ offsetSeconds: 11 }))).toMatchObject({ ok: false });
+    expect(checkSpec(src({ offsetSeconds: -1 }))).toMatchObject({ ok: false });
+    const plain = checkSpec(src({ offsetSeconds: 0 }));
+    if (!plain.ok) throw new Error(JSON.stringify(plain));
+    expect((plain.props as { clips: { source: object }[] }).clips[0].source).not.toHaveProperty("offsetSeconds");
+    const shifted = checkSpec(src({ offsetSeconds: 2.5 }));
+    if (!shifted.ok) throw new Error(JSON.stringify(shifted));
+    const first = (t: typeof plain.timeline) => t.items.find((i) => i.kind === "clip") as { trimBefore: number } | undefined;
+    expect(first(plain.timeline)?.trimBefore).toBe(90);
+    expect(first(shifted.timeline)?.trimBefore).toBe(15);
+    const late = checkSpec(src({ offsetSeconds: 4 }));
+    if (!late.ok) throw new Error(JSON.stringify(late));
+    expect(first(late.timeline)?.trimBefore).toBe(0);
+  });
+
   test("a file used twice is covered from its earliest point to its latest, and a stretch is clamped to the file", () => {
     const twice = checkSpec({ version: 1, composition: "final", props: { aspect: "16:9", scale: 0.25, title: null, clips: [{ ...clip("vfr.mp4"), trim: { startSeconds: 1, endSeconds: 2 } }, { ...clip("vfr.mp4"), trim: { startSeconds: 7, endSeconds: 9.9 } }], captionStyle: null, end: null, music: null } });
     if (!twice.ok) throw new Error(JSON.stringify(twice));
@@ -227,12 +261,12 @@ test("real ffmpeg (skipped where Remotion is not installed): the fixture clip be
     expect(info.streams.some((x: { codec_type: string }) => x.codec_type === "audio")).toBe(false);
     expect(Math.abs(Number(info.format.duration) - 10)).toBeLessThan(0.2);
     expect(factsFromFfprobe(info)).toMatchObject({ fps: 25, variableFrameRate: false });
-    /* Only a window, on the source's own clock: 2 s to 4 s of the clip, starting at 2 s, not at 0. */
+    /* Only a window: 2 s to 4 s of the clip, as a copy that starts at zero (the export carries the position as offsetSeconds). */
     const windowed = path.join(dir, "windowed.mp4");
     await createFfmpegConformer(path.join(COMPOSITOR, "ffmpeg"), 120_000).conform(source, windowed, 25, { window: { startSeconds: 2, endSeconds: 4 } });
     const w = JSON.parse(execFileSync(path.join(COMPOSITOR, "ffprobe"), ["-hide_banner", "-v", "error", "-print_format", "json", "-show_format", windowed], { encoding: "utf8" }));
-    expect(Number(w.format.start_time)).toBeGreaterThan(1.9);
-    expect(Number(w.format.start_time)).toBeLessThan(2.1);
+    expect(Number(w.format.start_time)).toBeGreaterThanOrEqual(0);
+    expect(Number(w.format.start_time)).toBeLessThan(0.1);
     expect(Math.abs(Number(w.format.duration) - 2)).toBeLessThan(0.2);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -254,7 +288,7 @@ test("the probe reads the picture's codec and pixel format, and cover art in an 
   expect(reportInputs([{ file: "song.mp3", facts: cover }], 30, new Set(), new Set())).toEqual([]);
 });
 
-test("the conform ffmpeg call reads only the formats it needs, converts only the window and keeps the source's clock, and removes a copy that failed", async () => {
+test("the conform ffmpeg call reads only the formats it needs, converts only the window into a copy that starts at zero, and removes a copy that failed", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "remotion-conform-args-"));
   try {
     const seen: string[][] = [];
@@ -265,12 +299,11 @@ test("the conform ffmpeg call reads only the formats it needs, converts only the
     expect(at("-format_whitelist")).toEqual(["-format_whitelist", "mov,mp4,m4a,matroska,webm"]);
     expect(at("-ss")).toEqual(["-ss", "2"]);
     expect(at("-t")).toEqual(["-t", "3.5"]);
-    expect(at("-output_ts_offset")).toEqual(["-output_ts_offset", "2"]);
+    expect(args).not.toContain("-output_ts_offset");
     expect(args.indexOf("-ss")).toBeLessThan(args.indexOf("-i"));
     expect(args.indexOf("-format_whitelist")).toBeLessThan(args.indexOf("-i"));
-    expect(args.indexOf("-output_ts_offset")).toBeGreaterThan(args.indexOf("-i"));
     expect(args).toContain("timeout=777");
-    /* No window: the whole file, no offset. */
+    /* No window: the whole file. */
     seen.length = 0;
     await createFfmpegConformer("/bin/ffmpeg", 1000, ok).conform("/in/a.mp4", "/out/0.mp4", 30);
     expect(seen[0]).not.toContain("-ss");
