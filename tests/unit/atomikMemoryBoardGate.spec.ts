@@ -276,6 +276,39 @@ test("the marked sample: anyone may read its memory, only its marker writes it",
   }
 });
 
+test("the platform owner writes the marked sample's memory, as the rule says (owner, 13 Oct): add, keep, import, edit and forget all work, and nothing marks it read-only for them", async () => {
+  /* The platform owner is named by the deployment (isPlatformOwner, lib/auth.ts): the configured address. */
+  const previous = process.env.SUPER_ADMIN_EMAIL;
+  process.env.SUPER_ADMIN_EMAIL = "u_platform@example.test";
+  try {
+    for (const kind of ["board", "plain"] as const) {
+      const ws = workspace();
+      const marker = person("u_marker", "owner"), platform = person("u_platform", "admin"), mate = person("u_mate", "member");
+      const m = await import("../../lib/atomikMemory");
+      let project: string;
+      if (kind === "board") project = (await seed(ws, marker)).board;
+      else { project = "prod_sample"; await inTenant(ws, () => production(project), marker); }
+      await markSample(ws, marker, project, "d1");
+      const kept = await inTenant(ws, () => m.addMemory({ kind: "note", text: "The sample keeps a lighthouse." , projectId: project }, marker.id), marker);
+      await inTenant(ws, async () => {
+        const added = await m.addMemory({ kind: "note", text: "Added by the platform owner.", projectId: project }, platform.id);
+        expect(added.projectId, kind).toBe(project);
+        expect((await m.keepMemory({ items: [{ kind: "note", text: "Kept by the platform owner." }], from: "atomik-read", projectId: project }, platform.id)).entries.length, kind).toBe(1);
+        expect((await m.importMemory({ text: "- Imported by the platform owner, about the harbour.", projectId: project }, platform.id)).entries.length, kind).toBeGreaterThan(0);
+        expect((await m.updateMemory(kept.id, { text: "The sample keeps two lighthouses." }, platform.id)).text, kind).toContain("two");
+        expect((await m.listMemory(project, platform.id)).every((e) => e.readOnly === false), `${kind}: nothing is read-only for the platform owner`).toBe(true);
+        expect(await m.forgetMemory([added.id], platform.id), kind).toBe(1);
+      }, platform);
+      /* The same address does not lift anyone else: a member is still refused on the same sample. */
+      await inTenant(ws, async () => { await expect(m.addMemory({ kind: "note", text: "Mine.", projectId: project }, mate.id), kind).rejects.toMatchObject({ status: 404 }); }, mate);
+    }
+  } finally {
+    /* The next spec in this worker must not inherit a platform owner. */
+    if (previous === undefined) delete process.env.SUPER_ADMIN_EMAIL;
+    else process.env.SUPER_ADMIN_EMAIL = previous;
+  }
+});
+
 test("readOnly marks the entries a person can read but not change: a shared board's, never their own or the workspace's", async () => {
   const ws = workspace();
   const owner = person("u_owner", "owner"), mate = person("u_mate", "member");
