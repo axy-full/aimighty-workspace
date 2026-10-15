@@ -127,9 +127,9 @@ services:
     restart: unless-stopped
     environment:
       RELAY_WORKERS: ${ASTRA_WORKER_COUNT:-1}
-      RELAY_TARGET_1: render-1
-      RELAY_TARGET_2: render-2
-      RELAY_TARGET_3: render-3
+      RELAY_TARGET_1: ${RELAY_TARGET_1:-render-1}
+      RELAY_TARGET_2: ${RELAY_TARGET_2:-render-2}
+      RELAY_TARGET_3: ${RELAY_TARGET_3:-render-3}
     cpus: 0.25
     cpu_shares: 128
     mem_limit: 128m

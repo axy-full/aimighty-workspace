@@ -9,9 +9,11 @@
 //  - it never looks inside a connection, so the workers' own `Authorization: Bearer` check still guards every request;
 //  - it listens on exactly 8081..8080+N and connects to exactly the N fixed worker names, always on port 8790; no
 //    other port, no other destination; a name that is asked for is never taken from a connection, only from the fixed list;
-//  - it resolves nothing but those fixed names (the `lookup` function is called with no other name);
+//  - it resolves nothing but those fixed names (the `lookup` function is called with no other name), and refuses to connect
+//    to any address that is not private (RFC 1918, loopback): a missing worker looked up upstream is never connected to;
 //  - a worker that is down or slow gets the client's connection closed, nothing else, and the relay keeps serving.
 
+import { lookup as systemLookup } from "node:dns";
 import net from "node:net";
 import { pathToFileURL } from "node:url";
 
@@ -21,14 +23,36 @@ export const MAX_WORKERS = 3;
 export const DEFAULT_WORKERS = 1;
 export const DEFAULT_TARGETS = ["render-1", "render-2", "render-3"];
 export const LIMITS = { connectMs: 5_000, idleMs: 200_000, perPort: 16 };
-const NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+/* A worker is called render-1, render-2 or render-3, optionally with the platform's own suffix (render-1-abc123). Nothing else: not a number (16843009 and 0x1010101 are 1.1.1.1), not a dotted name. */
+const NAME = /^render-[1-3](?:-[a-z0-9]+)?$/;
+
+/** Only private (RFC 1918, loopback, IPv6 unique-local) addresses are ever connected to: a name that resolves anywhere else (a missing worker looked up upstream) is refused. */
+export function privateAddress(address) {
+  if (typeof address !== "string") return false;
+  if (net.isIPv4(address)) {
+    const [a, b] = address.split(".").map(Number);
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  if (net.isIPv6(address)) return address === "::1" || /^f[cd][0-9a-f]{2}:/i.test(address);
+  return false;
+}
+export const guardedLookup = (inner) => (hostname, options, callback) => {
+  const done = typeof options === "function" ? options : callback;
+  const opts = typeof options === "function" ? {} : options;
+  inner(hostname, opts, (error, address, family) => {
+    if (error) return done(error);
+    const list = Array.isArray(address) ? address : [{ address, family }];
+    if (!list.length || !list.every((entry) => privateAddress(entry.address))) return done(Object.assign(new Error("not a private address"), { code: "ERELAY_ADDR" }));
+    return Array.isArray(address) ? done(null, address) : done(null, address, family);
+  });
+};
 
 /** The routes for `workers` workers (1 to 3) and the fixed names to forward to. Throws on anything else. */
 export function routesFor({ workers = DEFAULT_WORKERS, targets = DEFAULT_TARGETS } = {}) {
   if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS) throw new Error(`RELAY_WORKERS must be a whole number from 1 to ${MAX_WORKERS}.`);
   if (!Array.isArray(targets) || targets.length < workers) throw new Error("A target name is needed for every worker.");
   return targets.slice(0, workers).map((host, index) => {
-    if (typeof host !== "string" || !NAME.test(host)) throw new Error(`Target ${index + 1} is not a plain container name.`);
+    if (typeof host !== "string" || !NAME.test(host)) throw new Error(`Target ${index + 1} is not a worker container name (render-1 to render-3, with the platform's suffix if it adds one).`);
     return { listenPort: BASE_PORT + index + 1, host, port: WORKER_PORT };
   });
 }
@@ -48,7 +72,7 @@ export async function createRelay({ routes, listenHost = "0.0.0.0", listenPorts,
       if (open >= limits.perPort) { client.destroy(); log(`worker ${index + 1}: busy, connection refused`); return; }
       open++;
       sockets.add(client);
-      const upstream = net.connect({ host: route.host, port: route.port, ...(lookup ? { lookup } : {}), timeout: limits.connectMs });
+      const upstream = net.connect({ host: route.host, port: route.port, lookup: guardedLookup(lookup ?? systemLookup), timeout: limits.connectMs });
       sockets.add(upstream);
       let connected = false;
       const end = () => { client.destroy(); upstream.destroy(); };

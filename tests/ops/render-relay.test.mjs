@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import net from "node:net";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { createRelay, routesFor, configFromEnv, WORKER_PORT, BASE_PORT } from "../../ops/render-worker/relay.mjs";
+import { createRelay, routesFor, configFromEnv, privateAddress, WORKER_PORT, BASE_PORT } from "../../ops/render-worker/relay.mjs";
 
 // The relay (ops/render-worker/relay.mjs) against fake TCP "workers" on loopback addresses; and a static read of
 // compose.yaml and the Dockerfile. No Docker, no network beyond 127.0.0.0/8.
@@ -57,7 +57,7 @@ test("one worker is the default: relay port 8081 to render-1:8790; two or three 
   assert.deepEqual(configFromEnv({ RELAY_WORKERS: "3" }).map((r) => [r.listenPort, r.host, r.port]), [[8081, "render-1", 8790], [8082, "render-2", 8790], [8083, "render-3", 8790]]);
   assert.equal(BASE_PORT, 8080);
   for (const bad of [0, 4, -1, 1.5, "2x", NaN]) assert.throws(() => routesFor({ workers: bad }), /1 to 3/, String(bad));
-  for (const host of ["../x", "a.b", "1.1.1.1", "a_b", "", "UPPER", "x".repeat(64), "-a", "a b"]) assert.throws(() => routesFor({ workers: 1, targets: [host, "render-2", "render-3"] }), /plain container name/, JSON.stringify(host));
+  for (const host of ["../x", "a.b", "1.1.1.1", "a_b", "", "UPPER", "x".repeat(64), "-a", "a b", "16843009", "0x1010101", "render-4", "render-0", "render-1.evil", "render-1-", "Render-1", "render-1_x"]) assert.throws(() => routesFor({ workers: 1, targets: [host, "render-2", "render-3"] }), /worker container name/, JSON.stringify(host));
   /* Environment other than RELAY_* is not read: a secret in it changes nothing. */
   assert.deepEqual(configFromEnv({ ASTRA_WORKER_SECRET_1: "s".repeat(40), RELAY_WORKERS: "2", ASTRA_WORKER_COUNT: "3" }).map((r) => r.listenPort), [8081, 8082]);
 });
@@ -250,7 +250,7 @@ test("compose.yaml: the relay is on render-internal only here (the app's network
   for (const key of ["network_mode", "ports", "expose", "volumes", "extra_hosts", "dns", "privileged", "cap_add", "devices", "user"]) assert.equal(relay[key], undefined, `the relay has no ${key}`);
   assert.deepEqual(relay.command, ["node", "/app/relay.mjs"]);
   assert.deepEqual(Object.keys(relay.environment).sort(), ["RELAY_TARGET_1", "RELAY_TARGET_2", "RELAY_TARGET_3", "RELAY_WORKERS"]);
-  assert.deepEqual([relay.environment.RELAY_TARGET_1, relay.environment.RELAY_TARGET_2, relay.environment.RELAY_TARGET_3], ["render-1", "render-2", "render-3"]);
+  assert.deepEqual([1, 2, 3].map((n) => relay.environment[`RELAY_TARGET_${n}`]), [1, 2, 3].map((n) => `\${RELAY_TARGET_${n}:-render-${n}}`), "each target is overridable, defaulting to the fixed name");
   assert.ok(Object.keys(relay.environment).every((name) => !/secret|token|key|password|auth/i.test(name)));
   assert.ok(Object.values(relay.environment).every((value) => !/\$\{ASTRA_WORKER_SECRET/.test(String(value))));
   assert.equal(relay.read_only, true); assert.deepEqual(relay.cap_drop, ["ALL"]); assert.deepEqual(relay.security_opt, ["no-new-privileges:true"]);
@@ -264,4 +264,33 @@ test("the Dockerfile: the relay runs from the worker's image as the same non-roo
   for (const file of ["server.mjs", "relay.mjs", "check-egress.mjs", "check-relay.mjs"]) assert.match(dockerfile, new RegExp(`^COPY ${file.replace(".", "\\.")} /app/${file.replace(".", "\\.")}$`, "m"), file);
   assert.doesNotMatch(dockerfile, /^(ENV|ARG)\s+\S*(SECRET|TOKEN|PASSWORD)/im);
   assert.doesNotMatch(dockerfile, /EXPOSE\s+(?!8790\b)/);
+});
+
+test("a worker name may carry the platform's suffix (render-1-abc123) and nothing else; numeric hosts are never accepted (16843009 and 0x1010101 are 1.1.1.1)", () => {
+  assert.deepEqual(routesFor({ workers: 2, targets: ["render-1-abc123", "render-2-x9", "render-3"] }).map((r) => r.host), ["render-1-abc123", "render-2-x9"]);
+  assert.deepEqual(configFromEnv({ RELAY_WORKERS: "1", RELAY_TARGET_1: "render-1-abc123" }).map((r) => r.host), ["render-1-abc123"]);
+  for (const host of ["16843009", "0x1010101", "0x01010101", "1.1.1.1", "[::1]", "render-1:80", "render-1@evil.com"]) assert.throws(() => configFromEnv({ RELAY_WORKERS: "1", RELAY_TARGET_1: host }), /worker container name/, host);
+});
+
+test("privateAddress: RFC 1918, loopback and IPv6 unique-local only", () => {
+  for (const ok of ["10.0.0.1", "127.0.0.2", "172.16.0.5", "172.31.255.1", "192.168.1.1", "::1", "fd12:3456::1"]) assert.equal(privateAddress(ok), true, ok);
+  for (const bad of ["8.8.8.8", "1.1.1.1", "172.15.0.1", "172.32.0.1", "192.169.0.1", "169.254.169.254", "100.64.0.1", "2606:4700::1111", "example.com", "", undefined]) assert.equal(privateAddress(bad), false, String(bad));
+});
+
+test("a worker name that resolves to a public address is never connected to: the lookup is refused, the caller is closed, the log says so by number", async () => {
+  let hits = 0;
+  const public_ = net.createServer((socket) => { hits++; socket.destroy(); });
+  await new Promise((resolve) => public_.listen(WORKER_PORT, "127.0.0.9", resolve));
+  const asked = [];
+  /* A lookup that answers with a public address (as an upstream resolver would for a name that is not on the internal network). Loopback is the stand-in listener, so the refusal must come from the address check, not from a connect failure. */
+  const lookup = (hostname, options, callback) => { asked.push(hostname); return options?.all ? callback(null, [{ address: "8.8.8.8", family: 4 }]) : callback(null, "8.8.8.8", 4); };
+  const lines = [];
+  const relay = await createRelay({ routes: routesFor({ workers: 1 }), listenHost: "127.0.0.1", listenPorts: [0], lookup, log: (line) => lines.push(line), limits: { connectMs: 1000, idleMs: 5000, perPort: 4 } });
+  try {
+    const result = await talk(relay.ports[0], "hello");
+    assert.equal(result.got, "");
+    assert.deepEqual(asked, ["render-1"]);
+    assert.ok(lines.some((line) => /worker 1: unreachable \(ERELAY_ADDR\)/.test(line)), JSON.stringify(lines));
+    assert.equal(hits, 0);
+  } finally { await relay.close(); await new Promise((resolve) => public_.close(resolve)); }
 });
