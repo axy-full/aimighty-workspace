@@ -946,3 +946,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - FLUX 3 Video also exists; not building it now.
   - Also from the 22:15 note: Slice 4 ("later") items are built only "on a client need or a bake-off win", so none start without the owner.
   - The rule reads "No separate paid qualification run; the team's first real use is the test." Every "TO CONFIRM in the first qualification run" note therefore means the first house use.
+- **16 Oct 03:21 IST.** Opus:
+  - #779 f38ea780 APPROVED.
+  - #783 Vision label check NOT APPROVED. Must-fix: no take access check, so a member could check a private-board take (its image goes to Google and the read text comes back) and write onto others' takes. Should-fixes: cap the diff input; a stale-reservation sweep. Sent to lane D.
+  - #782 a86cc188 APPROVED (classify extreme shapes by long edge too).
+  - #784 NB 2.1 APPROVED (should-fix: filter gated models through isOffered so a retired one is never listed).
+  - Sent to lane B.
