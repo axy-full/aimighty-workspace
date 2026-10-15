@@ -695,3 +695,25 @@ test("a file may not be written while a run is going (409 run_in_progress); befo
     await first;
   } finally { await t.close(); }
 });
+
+test("a run is refused while an upload is in flight (409 run_in_progress), and starts once the upload is done", { skip }, async () => {
+  const t = await setup();
+  try {
+    const id = await session(t);
+    await put(t, id, "/vercel/sandbox/remotion/run.py", "print('ran')\n");
+    let hold;
+    const body = new ReadableStream({ start(controller) { hold = controller; controller.enqueue(new TextEncoder().encode("first part")); } });
+    const upload = put(t, id, "/vercel/sandbox/remotion/input/slow.mp4", body);
+    /* Give the worker a moment to accept the first bytes; the upload then stays in flight until the stream is closed. */
+    await sleep(250);
+    const refused = await run(t, id);
+    assert.equal(refused.status, 409);
+    assert.deepEqual(refused.data, { error: "run_in_progress" });
+    hold.close();
+    assert.equal((await upload).status, 201);
+    const done = await run(t, id);
+    assert.equal(done.status, 200);
+    assert.equal(done.data.exitCode, 0);
+    assert.match(done.data.stdout, /ran/);
+  } finally { await t.close(); }
+});
