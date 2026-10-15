@@ -30,8 +30,9 @@ import { getConsent } from "./security/consent";
 import { consentLive } from "./security/consent-words";
 
 /**
- * Runway's three tools, DIRECT (lib/runway.ts), on standby: ON for the HOUSE workspace only (the plan: "no customer workspace uses Runway until the owner has Enterprise terms,
- * or written confirmation, that excludes training"; Runway's standard terms let it train on inputs and outputs). One door (POST /api/runway { tool }) for the button, Make, a board
+ * Runway's three tools, DIRECT (lib/runway.ts), on standby: ON for the HOUSE workspace only (the owner's decision, plan § 7: standby, "house only until training-free terms". The plan read Runway's
+ * standard terms page (updated 15 Sep 2026) as letting it train on inputs and outputs; dev.runwayml.com says "No training on your data". Which governs is the binding terms,
+ * for the owner and counsel; this wall is not changed by either). One door (POST /api/runway { tool }) for the button, Make, a board
  * card, Atomik, a saved skill and an outside agent: the same quote, the same approval, the same price, the same consent gate.
  *
  *   `runway_performance`  Act-Two: a performance video drives a character (an image or a clip).

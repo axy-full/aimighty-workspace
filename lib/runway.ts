@@ -12,8 +12,8 @@ import { RUNWAY_RATES, type RunwayModel } from "./vendorRates";
  * What is called (docs/plans/provider-adapters.md § 7): `POST /v1/character_performance` (act_two), `POST /v1/video_to_video` (aleph2), `POST /v1/image_to_video` (gen4.5,
  * gen4_turbo), `GET /v1/tasks/{id}` and `DELETE /v1/tasks/{id}`, with `Authorization: Bearer` and `X-Runway-Version: 2024-11-06`. Inputs go in the request as data URIs from
  * bytes read on the server (an image up to 5 MB, a video up to 16 MB), so none of our storage links reaches the vendor. A finished task's output addresses "expire within
- * 24-48 hours": they are copied at once, and only from an https host on the allow-list below (never with our key). **The request and reply field names, the model ids and the output
- * host list are TO CONFIRM in the first qualification run** (the plan names the endpoints and models, not every field, and no output host); every reply is read defensively.
+ * 24-48 hours": they are copied at once, and only from an https host on the allow-list below (never with our key). **The request and reply field names and the model ids are TO CONFIRM
+ * on the first real use; the output host is pinned to the one distribution Runway's docs show** (the plan names the endpoints and models, not every field, and no output host); every reply is read defensively.
  */
 export const RUNWAY_SWITCH = "RUNWAY_ENABLED";
 export const RUNWAY_DEFAULT_BASE = "https://api.dev.runwayml.com/v1";
@@ -24,7 +24,7 @@ export const RUNWAY_VIDEO_LIMIT_BYTES = 16 * 1024 * 1024;
 export const RUNWAY_OUTPUT_LIMIT_BYTES = 512 * 1024 * 1024;
 /** A task's output address lives 24 to 48 hours (Runway's outputs page); one pass later than this is past any chance of it. */
 export const RUNWAY_RESULT_LIFETIME_MS = 24 * 3600_000;
-/** The hosts a task's output may be fetched from (TO CONFIRM): a host on runwayml.com, or the one CloudFront distribution Runway's outputs have been served from. Nothing else is ever fetched. */
+/** The hosts a task's output may be fetched from: Runway's own domain, or the ONE CloudFront distribution its docs show for outputs (pinned exactly, never `*.cloudfront.net`). Nothing else is ever fetched. */
 export const RUNWAY_RESULT_HOSTS = { suffixes: ["runwayml.com"], exact: ["dnznrvs05pmza.cloudfront.net"] } as const;
 
 export const runwayConfigured = (): boolean => Boolean(process.env.RUNWAY_API_KEY) || engineMock();

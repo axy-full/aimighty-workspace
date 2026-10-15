@@ -321,10 +321,11 @@ export const BFL_RATES = {
 export type BflModel = keyof typeof BFL_RATES.models;
 
 /**
- * Runway, direct (lib/runway.ts, lib/runwayTools.ts), in the vendor's own unit: CREDITS PER SECOND (Runway sells credits at $0.01 each), as docs/plans/provider-adapters.md
- * § 7 records them (Runway's pricing page, read 14 Oct 2026). **TO CONFIRM** against Runway's own page and the first invoice: this table is the plan's, not verified here.
- * Aleph 2 has a 56-credit minimum. Seconds are rounded UP to whole seconds (the billing unit is not stated), so a quote is never under. `minSeconds`/`maxSeconds` are the
- * input lengths the plan records (Act-Two's performance video 3 to 30 s; Aleph 2's input 2 to 30 s; Gen-4.5 2 to 10 s; Gen-4 Turbo's are not stated, so Gen-4.5's are used, TO CONFIRM).
+ * Runway, direct (lib/runway.ts, lib/runwayTools.ts), in the vendor's own unit: CREDITS PER SECOND (Runway sells credits at $0.01 each).
+ * Verified against Runway's pricing page (docs.dev.runwayml.com/guides/pricing), 16 Oct 2026; confirm against the first invoice. Aleph 2 has a 56-credit minimum.
+ * Seconds are rounded UP to whole seconds (the billing unit is not stated), so a quote is never under. `minSeconds`/`maxSeconds` are the input lengths (Act-Two's performance
+ * video 3 to 30 s; Aleph 2's input 2 to 30 s, up to 30 fps, output at the input's resolution up to 1080p; Gen-4.5 2 to 10 s). **Gen-4 Turbo's limits are not stated, so Gen-4.5's
+ * are used: TO CONFIRM.** ProRes and PNG-sequence outputs add 5 credits a second on Gen-4.5 and Aleph 2: they are not offered (no request asks for one), so no row prices them.
  * Server-only like every rate here; a customer's price is these through the margin table.
  */
 export const RUNWAY_RATES = {

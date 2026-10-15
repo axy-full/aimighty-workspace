@@ -141,7 +141,7 @@ async function run(genId: string, deps: ReturnType<typeof fakeRunway>["deps"] & 
   return last;
 }
 
-test("the prices are the plan's recorded ones (TO CONFIRM), per second in credits at $0.01; whole seconds round up; Aleph 2 has its minimum; the limits are checked in words", async () => {
+test("the prices are Runway's published ones (verified 16 Oct 2026), per second in credits at $0.01; whole seconds round up; Aleph 2 has its minimum; the limits are checked in words", async () => {
   const { RUNWAY_RATES } = await import("../../lib/vendorRates");
   const { runwayUsd } = await import("../../lib/runwayTools");
   expect(RUNWAY_RATES.creditUsd).toBe(0.01);
@@ -151,7 +151,7 @@ test("the prices are the plan's recorded ones (TO CONFIRM), per second in credit
     "gen4.5": { creditsPerSecond: 12, minCredits: 0, minSeconds: 2, maxSeconds: 10 },
     gen4_turbo: { creditsPerSecond: 5, minCredits: 0, minSeconds: 2, maxSeconds: 10 },
   });
-  expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/TO CONFIRM[\s\S]{0,2000}export const RUNWAY_RATES/);
+  expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/Verified against Runway's pricing page[^\n]*16 Oct 2026; confirm against the first invoice[\s\S]{0,1400}export const RUNWAY_RATES/);
   expect(runwayUsd("act_two", 5)).toBeCloseTo(0.25, 6);
   expect(runwayUsd("gen4.5", 5)).toBeCloseTo(0.6, 6);
   expect(runwayUsd("gen4_turbo", 10)).toBeCloseTo(0.5, 6);
