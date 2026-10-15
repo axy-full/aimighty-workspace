@@ -266,6 +266,60 @@ export const ELEVENLABS_RATES = {
     defaultMode: "v1",
   },
 } as const;
+/**
+ * sync.so lip-sync, direct (lib/syncso.ts, lib/lipSync.ts), in the vendor's own units: dollars per OUTPUT second, the Hobbyist and Creator plans'
+ * public prices as recorded in docs/plans/provider-adapters.md § 1 (the vendor's pricing page, read 14 Oct 2026; the page rounds the per-second figures, so
+ * the per-minute fractions are used). **TO CONFIRM** against the plan the
+ * owner buys: the Scale plan's rates are lower ($0.04, $0.067 and $0.107 a second), and a quote at these is the more cautious. Billing is on output
+ * frames, quoted per second at 25 fps. Server-only like every rate here; a customer's price is these through the margin table (lib/creditTerms.ts).
+ */
+export const SYNC_RATES = {
+  /* sync.so's page shows these rounded ($0.083 and $0.133 a second); the exact per-minute figures ($5 and $8 a minute) are used so that a quote is never under it. */
+  models: { "lipsync-2": 0.05, "lipsync-2-pro": 5 / 60, "sync-3": 8 / 60 },
+  defaultModel: "lipsync-2-pro",
+  syncModes: ["bounce", "loop", "cut_off", "silence", "remap"],
+  defaultSyncMode: "bounce",
+} as const;
+export type SyncModel = keyof typeof SYNC_RATES.models;
+export type SyncMode = (typeof SYNC_RATES.syncModes)[number];
+
+/**
+ * Sarvam, direct (lib/sarvam.ts, lib/sarvamTools.ts), in the vendor's own unit: RUPEES (pay as you go; docs/plans/provider-adapters.md § 2, the vendor's
+ * pricing page as the plan records it, 14 Oct 2026). **TO CONFIRM** against Sarvam's page and the first invoice. Converted to dollars ONLY at the owner's own
+ * rate, `SARVAM_USD_PER_INR` (set in the deployment, reviewed monthly): with none, or one that is not a positive number, nothing is priced and every Sarvam
+ * tool says so and cannot run. Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const SARVAM_RATES = {
+  /** Text to speech, rupees per 10,000 characters. */
+  speechInrPer10kChars: { "bulbul:v3": 30, "bulbul:v4-flash": 20 },
+  /** Speech to text, rupees per hour of audio. Speaker labels (diarization), a batch feature, are not offered yet. */
+  /* The plan records ₹29.40 an hour; Sarvam's own docs table says ₹30. The higher is used so a quote is never under; TO CONFIRM against the first invoice. */
+  transcribeInrPerHour: 30,
+  /** Translation, rupees per 10,000 characters. */
+  translateInrPer10kChars: { "sarvam-translate:v1": 20, "mayura:v1": 20 },
+  defaultSpeechModel: "bulbul:v3", defaultTranscribeModel: "saaras:v4", defaultTranslateModel: "sarvam-translate:v1",
+} as const;
+export type SarvamSpeechModel = keyof typeof SARVAM_RATES.speechInrPer10kChars;
+export type SarvamTranslateModel = keyof typeof SARVAM_RATES.translateInrPer10kChars;
+
+/**
+ * Black Forest Labs FLUX.2, direct (lib/bfl.ts, lib/bflImage.ts), in the vendor's own unit: dollars (BFL credits are $0.01). **Verified against BFL's published
+ * pricing data, 16 Oct 2026; confirm against the first invoice.** Per model, in credits (x $0.01): flux-2-pro 3 for the first output megapixel, 1.5 for each further one
+ * and 1.5 for each megapixel of reference; flux-2-flex 5, 5 and 5; flux-2-max 7, 3 and 3. Output megapixels are rounded UP (BFL's own calculator does), so a quote is
+ * never under. Output up to 4 MP and up to 8 references for all three. Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const BFL_RATES = {
+  creditUsd: 0.01,
+  models: {
+    /** firstMp: the first output megapixel; extraMp: each further one; refMp: each megapixel of reference sent. */
+    "flux-2-pro": { firstMp: 0.03, extraMp: 0.015, refMp: 0.015, maxMp: 4, maxRefs: 8 },
+    "flux-2-flex": { firstMp: 0.05, extraMp: 0.05, refMp: 0.05, maxMp: 4, maxRefs: 8 },
+    "flux-2-max": { firstMp: 0.07, extraMp: 0.03, refMp: 0.03, maxMp: 4, maxRefs: 8 },
+  },
+  defaultModel: "flux-2-pro",
+} as const;
+export type BflModel = keyof typeof BFL_RATES.models;
+
 /** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
 export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;

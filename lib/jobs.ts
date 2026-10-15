@@ -22,6 +22,7 @@ import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
 import { heldPriceNow } from "./creditTerms";
 import { withoutVendorDollars } from "./analyticsRedact";
+import { publicDirectParams } from "./directEnginePublic";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
@@ -196,6 +197,8 @@ export function rowToGeneration(r: any): Generation {
   delete params.genjutsuOriginal;
   delete params.storeUntil;
   delete params.settledBy;
+  /* A direct engine's working record (its job and asset ids, links, claims, consent ids, vendor figures) is the workflow's own: only what describes the take is read. */
+  params = publicDirectParams(params);
   if (params.held && typeof params.held === "object")
     params.held = heldForBrowser(params.held, inCredits, r.kind === "image" || r.kind === "audio" ? r.kind : "video", String(r.model ?? ""));
   /* A workspace on the platform's keys reads its params with no figure in the vendors' dollars
@@ -829,6 +832,21 @@ export async function syncPending(
   results.attempted += dubs.attempted;
   results.failed += dubs.failed;
   results.deferred += dubs.deferred;
+  // Lip-sync jobs (sync.so): ask after the running, and delete the vendor's copy of the finished. Never resubmit.
+  const lips = await (await import("./lipSync")).recoverLipSyncJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += lips.attempted;
+  results.failed += lips.failed;
+  results.deferred += lips.deferred;
+  // Sarvam calls that were never finished: settled at nothing, which frees their hold. Never sent again.
+  const sarvams = await (await import("./sarvamTools")).recoverSarvamJobs({ limit: 8, deadlineAt: options.deadlineAt });
+  results.attempted += sarvams.attempted;
+  results.failed += sarvams.failed;
+  results.deferred += sarvams.deferred;
+  // FLUX.2 jobs (BFL): ask after the running; a Ready image is collected at once, inside its ten minutes. Never resubmit.
+  const bfls = await (await import("./bflImage")).recoverBflJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += bfls.attempted;
+  results.failed += bfls.failed;
+  results.deferred += bfls.deferred;
   const horizon = now() - 3 * 86400_000;
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
@@ -855,6 +873,12 @@ export async function syncPending(
           const params = JSON.parse(String(row.params || "{}"));
           // A dubbing project's row is advanced by its own workflow above; it is neither a render nor an orphan.
           if (gen.kind === "audio" && params.task === "dub") return;
+          // A lip-sync job's row is advanced by its own workflow above (lib/lipSync.ts); it is neither a render nor an orphan.
+          if (gen.kind === "video" && params.task === "lipsync") return;
+          // A Sarvam speech take is made inside one request of ours and settled there (lib/sarvamTools.ts); a stale one is ended by its own stage above.
+          if (gen.kind === "audio" && params.task === "sarvam_speech") return;
+          // A FLUX.2 job's row is advanced by its own workflow above (lib/bflImage.ts); it is neither a render nor an orphan (an orphan sweep would end it as "sent, outcome unknown").
+          if (gen.kind === "image" && params.task === "bfl_image") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome

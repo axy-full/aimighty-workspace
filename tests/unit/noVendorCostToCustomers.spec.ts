@@ -97,6 +97,26 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
       { sql: take, args: ["g_voice", "p_margin", null, "audio", "eleven_multilingual_sts_v2", "Voice change",
         JSON.stringify({ task: "voiceChange", estUsd: cost.voice, estCredits: 1234, credits: 1234, tier: "creator" }),
         "u_admin", at + 3, at + 3, "elevenlabs", cost.voice, null, null, null, "/api/media/g_voice", 1234] },
+      /* A lip-sync take (sync.so, direct): its params carry the workflow's own record, the vendor's per-second rate and what it reserved, its job and asset ids,
+         its poll lease, the consent ids and the face still's hash. A credit workspace (or anyone) reads none of it (lib/directEnginePublic.ts). */
+      { sql: take, args: ["g_lipsync", "p_margin", null, "video", "lipsync-2-pro", "Lip-sync · harbour",
+        JSON.stringify({ task: "lipsync", job: "fix", estUsd: cost.dub, estCredits: 0, lipsync: {
+          status: "done", model: "lipsync-2-pro", syncMode: "bounce", seconds: 5, audioSeconds: 5, rateUsdPerSecond: cost.dubRate, reservedUsd: cost.dub, estimateCredits: 7,
+          consentId: "consent_margin", castMemberId: "cast_margin", use: "production", faceSha256: "a".repeat(64), voiceConsentId: null, funded: 1, claimedAt: at,
+          syncId: "vendor-job-lipsync-1", videoAsset: "vendor-asset-v", audioAsset: "vendor-asset-a", submittedAt: at, lastPolledAt: at, pollUntil: at, settled: 1, cleanupDue: 1, cleanupTries: 2, vendorDeleted: 0, reconcile: 1 } }),
+        "u_member", at + 5, at + 5, "syncso", 0, null, null, null, "/api/media/g_lipsync", null] },
+      /* A Sarvam speech take: its params carry the workflow's record with what the vendor charged (lib/directEnginePublic.ts keeps only the take's own words). */
+      { sql: take, args: ["g_sarvam", "p_margin", null, "audio", "bulbul:v3", "Namaste",
+        JSON.stringify({ task: "sarvam_speech", job: "voice", sarvam: { tool: "speech", model: "bulbul:v3", language: "hi-IN", voice: "stock-one", chars: 7, usd: cost.voice } }),
+        "u_member", at + 6, at + 6, "sarvam", 0, null, null, null, "/api/media/g_sarvam", null] },
+      /* A FLUX.2 take (BFL): its params carry the workflow's record, the reserved dollars, what BFL stated, its job id and polling address, the reference uploads with the
+         cast and consent ids and the face hashes. Nobody reads any of it (lib/directEnginePublic.ts keeps the take's own words). */
+      { sql: take, args: ["g_flux", "p_margin", null, "image", "flux-2-pro", "A crane at dawn",
+        JSON.stringify({ task: "bfl_image", job: "keyframe", ratio: "1:1", size: "1024x1024", estUsd: cost.still, estCredits: 0, bfl: {
+          status: "done", tool: "edit", model: "flux-2-pro", width: 1024, height: 1024, seed: null, outputMegapixels: 1, reservedUsd: cost.still, estimateCredits: 3, use: "production",
+          references: [{ uploadId: "up_ref", castMemberId: "cast_margin", consentId: "consent_margin", faceSha256: "b".repeat(64), megapixels: 1 }],
+          funded: 1, claimedAt: at, bflId: "vendor-job-flux-1", pollingUrl: "https://api.eu.bfl.ai/v1/get_result?id=vendor-job-flux-1", statedUsd: cost.still, submittedAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1 } }),
+        "u_member", at + 7, at + 7, "bfl", 0, null, null, null, "/api/media/g_flux", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
@@ -167,6 +187,9 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a failed provider job)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_failed?sync=0", params: { id: "g_failed" } },
   { name: "GET /api/jobs/[id] (a dub)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_dub?sync=0", params: { id: "g_dub" } },
   { name: "GET /api/jobs/[id] (a voice change)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_voice?sync=0", params: { id: "g_voice" } },
+  { name: "GET /api/jobs/[id] (a lip-sync take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_lipsync?sync=0", params: { id: "g_lipsync" } },
+  { name: "GET /api/jobs/[id] (a Sarvam speech take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_sarvam?sync=0", params: { id: "g_sarvam" } },
+  { name: "GET /api/jobs/[id] (a FLUX.2 take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_flux?sync=0", params: { id: "g_flux" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },

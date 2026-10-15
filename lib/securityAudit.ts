@@ -21,6 +21,8 @@ const actions = [
   "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed", "workspace.mfa_required", "workspace.mfa_optional", "workspace.restored",
   "api_token.created", "api_token.revoked", "review_link.created", "review_link.revoked",
   "identity_consent.recorded", "identity_consent.withdrawn",
+  /* A face was compared with a consent's reference (lib/consentMatch.ts): the consent's id, the similarity score and whether it matched, and the time. No image, crop or face vector. */
+  "consent.face_checked",
 ] as const;
 export type SecurityAction = (typeof actions)[number];
 type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link" | "identity_consent";
@@ -31,6 +33,9 @@ type Details = {
   mode?: "platform" | "own";
   scope?: "read" | "render" | "prepare";
   expiresAt?: number;
+  /** A face check's similarity score, 0 to 100, and whether it passed. */
+  similarity?: number;
+  matched?: boolean;
 };
 export type SecurityAuditInput = {
   workspaceId: string | null;
@@ -57,7 +62,8 @@ export function securityAuditStatement(input: SecurityAuditInput, changedOnly = 
     const valid = key === "role" ? ["admin", "member"].includes(String(value))
       : key === "mode" ? ["platform", "own"].includes(String(value))
       : key === "scope" ? ["read", "render", "prepare"].includes(String(value))
-      : key === "disabled" || key === "unlocked" ? typeof value === "boolean"
+      : key === "disabled" || key === "unlocked" || key === "matched" ? typeof value === "boolean"
+      : key === "similarity" ? typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100
       : key === "expiresAt" ? typeof value === "number" && Number.isSafeInteger(value) && value >= 0
       : false;
     if (!valid) throw new Error("Invalid security history detail");
