@@ -44,7 +44,6 @@ async function health(who: "anonymous" | "member" | "owner", options: { database
     "@/lib/dispatch": { dispatchMode: () => "native" },
     "@/lib/deployment": { deployedCommit: () => "0123456789abcdef0123456789abcdef01234567" },
     "@/lib/dispatch-log": { recentDispatches: async () => [{ id: "r1", eventId: "render-other-workspace-gen_1", phase: "send", outcome: "sent", status: 202, workspaceId: "ws_other", createdAt: 1 }] },
-    "@vercel/blob": { put: async () => ({ url: "https://private.example/x" }), del: async () => undefined },
   };
   const source = ts.transpileModule(readFileSync(path.resolve("app/api/health/route.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const exports: { GET?: (req: Request) => Promise<Response> } = {};
