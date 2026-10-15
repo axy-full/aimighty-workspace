@@ -40,6 +40,8 @@ type DirectTool = {
    * per-job line runs without a tap"); a hero or full-quality model always asks. Absent means never a draft: it always asks.
    */
   draft?: (body: Record<string, unknown>) => boolean;
+  /** False when the call's own arguments must not be kept anywhere (Sarvam's translation text: "kept nowhere"): it is then answered in words only, never filed as a prepared job. */
+  file?: false;
 };
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
@@ -95,6 +97,8 @@ const SARVAM_SPEECH: DirectTool = {
     inputSchema: { type: "object", properties: { text: { type: "string", description: "Up to 2,500 characters." }, language: { type: "string", description: "A code such as hi-IN or en-IN." }, model: { type: "string", description: "bulbul:v3 (default) or bulbul:v4-flash." }, voice: { type: "string", description: "A stock voice's name. Optional." }, pace: { type: "number", description: "0.5 to 2. Optional." }, ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." } }, required: ["text", "language"] },
   },
   present: sarvamPresent("sarvam_speech"),
+  /* The flash model is the draft; bulbul:v3 (the default) is full quality and always asks. */
+  draft: (b) => b.model === "bulbul:v4-flash",
   prepared: (b) => `prepared: speech (${String(b.model ?? "bulbul:v3")}, ${String(b.language)}), ${[...String(b.text ?? "")].length} characters`,
   request: (a) => ({ path: "/api/sarvam", body: { tool: "speech", text: str(a.text), language: str(a.language), model: str(a.model), voice: str(a.voice), pace: num(a.pace), projectId: str(a.project_id) } }),
   describe: (out, quote) => `Speech made.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
@@ -106,6 +110,8 @@ const SARVAM_TRANSCRIBE: DirectTool = {
     inputSchema: { type: "object", properties: { source_upload_id: { type: "string", description: "An audio upload of this workspace (or source_take_id)." }, source_take_id: { type: "string" }, language: { type: "string", description: "A code such as hi-IN, or leave it to be detected." }, request_id: { type: "string" } }, required: [] },
   },
   present: sarvamPresent("sarvam_transcribe"),
+  /* Not a render: a short transcript is a working step, so it is a draft at any setting. */
+  draft: () => true,
   prepared: (b) => `prepared: transcript of ${String(b.sourceUploadId ?? b.sourceGenId ?? "an audio clip")}`,
   request: (a) => ({ path: "/api/sarvam", body: { tool: "transcribe", sourceUploadId: str(a.source_upload_id), sourceGenId: str(a.source_take_id), language: str(a.language) } }),
   describe: (out) => out.kept === false ? String(out.note) : `Transcript (${String(out.language ?? "language detected")}, ${String(out.seconds)} s):\n\n${String(out.transcript)}`,
@@ -117,6 +123,9 @@ const SARVAM_TRANSLATE: DirectTool = {
     inputSchema: { type: "object", properties: { text: { type: "string", description: "Up to 2,000 characters (1,000 on mayura:v1)." }, source: { type: "string", description: "A code such as en-IN." }, target: { type: "string", description: "A code such as ta-IN." }, model: { type: "string", description: "sarvam-translate:v1 (default) or mayura:v1." }, request_id: { type: "string" } }, required: ["text", "source", "target"] },
   },
   present: sarvamPresent("sarvam_translate"),
+  /* Not a render (a draft at any setting), and its text is kept nowhere, so it is never filed as a prepared job. */
+  draft: () => true,
+  file: false,
   prepared: (b) => `prepared: translation ${String(b.source)} to ${String(b.target)}, ${[...String(b.text ?? "")].length} characters`,
   request: (a) => ({ path: "/api/sarvam", body: { tool: "translate", text: str(a.text), source: str(a.source), target: str(a.target), model: str(a.model) } }),
   describe: (out) => (out.kept === false ? String(out.note) : String(out.text)),
@@ -171,7 +180,7 @@ export async function runDirectEngineTool(name: string, args: Args, call: Call):
   catch (error) {
     if (!(error instanceof Error) || !/This token prepares jobs/.test(error.message)) throw error;
     const line = tool.prepared ? tool.prepared(clean) : name;
-    const filed = await fileForPerson(name, clean, line, call);
+    const filed = tool.file === false ? null : await fileForPerson(name, clean, line, call);
     if (!filed) throw error;
     return `Prepared, not started.\n\n${line}\nprepared job: ${filed}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections, where its price is shown.`;
   }
@@ -181,7 +190,7 @@ export async function runDirectEngineTool(name: string, args: Args, call: Call):
   /* Ask (the default), Auto over the line, or Auto on anything but a draft: priced and prepared, not started. */
   if (!(await spendsWithoutAsking()) || !(tool.draft?.(clean) ?? false) || quote.estimatedCredits > (await autoLineCredits())) {
     const line = tool.prepared ? tool.prepared(clean) : name;
-    const filed = await fileForPerson(name, clean, line, call);
+    const filed = tool.file === false ? null : await fileForPerson(name, clean, line, call);
     return `Priced and prepared, not started.\n\nprice: ${priceText}\n${line}\n${filed ? `prepared job: ${filed}\n` : ""}\nThis needs a person's approval: nothing was started or spent. ${filed ? "It waits in Particl › Settings › Connections for a person." : "A person approves it in Particl."}`;
   }
   /* Auto, at or under the line: the workspace's own standing setting approves it, at the price the server just gave. */
