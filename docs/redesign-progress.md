@@ -903,3 +903,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - 28 new specs; a production build plus bundle.spec pass.
   - Opus money review started.
 - **16 Oct 02:53 IST.** #779 Veo at f9285327: billed length is ceil(measured − 0.05 s), capped by the quote (lead accepted the 0.05 s container tolerance). #778 84245fe2 merged in. Ask with images now files a prepared job with ids only. Opus delta check queued. Lane D next: the Cloud Vision label check (Slice 3).
+- **16 Oct 02:58 IST.** Lane B:
+  - Heads: #776 3a6f3c76, #777 9f21ad44, #778 84245fe2, #780 2573d58c (Runway should-fixes: "Nothing billed" wording; overrun on failures; start stills through the consent gate; host pinned; training-claim source cited).
+  - New #782 AWS MediaConvert (7528506b, file-only, NEEDS AKSHAY): SigV4 without the SDK; Mumbai only; env names MEDIACONVERT_ACCESS_KEY_ID, MEDIACONVERT_SECRET_ACCESS_KEY, MEDIACONVERT_ROLE_ARN, MEDIACONVERT_BUCKET, MEDIACONVERT_REGION, MEDIACONVERT_ENDPOINT (optional), MEDIACONVERT_QUEUE_ARN (optional), MEDIACONVERT_ENABLED.
+  - MediaConvert Mumbai prices from AWS's price list API (Basic, AVC single pass, per output minute): HD ≤30 fps $0.015, ≤60 $0.0188; 4K $0.03 / $0.0375; SD $0.0075 / $0.0094. Billed per second, 10 s minimum per output. Sent to lane B.
+  - Lane B next: Nano Banana 2.1 and Gemini 3.x.
+  - Opus queue: #781, the #779 delta, the #780 delta, #782.
+  - Owner questions: Settings › Connections can't approve an engine job yet (one-tap approve is UI follow-up work); AWS owner actions (role, Mumbai bucket with an expiry rule, key pair, endpoint).
