@@ -27,7 +27,7 @@ import { createFfmpegSilenceDetector } from "./silence";
 import { createFfprobe } from "./probe";
 import { createRealRenderer } from "./renderer";
 
-const EXIT = { spec_invalid: 2, too_long: 2, input_missing: 3, input_mismatch: 3, render_failed: 4 } as const;
+const EXIT = { spec_invalid: 2, too_long: 2, input_missing: 3, input_mismatch: 3, render_failed: 4, silence_failed: 5 } as const;
 
 function intEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];

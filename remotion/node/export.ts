@@ -19,7 +19,7 @@ import { isCompositionId, validateProps } from "../src/lib/validate";
 import { CONFORM_BUDGET_MS, CONFORM_FILE_MS, CONFORM_MODES, CONFORM_PAD_SECONDS, DEFAULT_CONFORM, filesToConform, reportInputs, type ConformMode, type ConformWindow, type Conformer, type InputReport } from "./conform";
 import type { MediaFacts, Prober } from "./probe";
 import type { SilenceDetector } from "./silence";
-import { mergeKeep, speechRanges } from "../src/lib/silence";
+import { chooseSpeech, mergeKeep, speechRanges } from "../src/lib/silence";
 import type { CutdownProps, Range } from "../src/lib/types";
 
 export type ExportSpec = {
@@ -39,7 +39,7 @@ export type Renderer = {
   renderStill(args: { serveUrl: string; composition: CompositionInfo; inputProps: Record<string, unknown>; frame: number; outputLocation: string }): Promise<void>;
 };
 
-export type ExportFailure = { ok: false; code: "spec_invalid" | "too_long" | "input_missing" | "input_mismatch" | "render_failed"; errors: string[] };
+export type ExportFailure = { ok: false; code: "spec_invalid" | "too_long" | "input_missing" | "input_mismatch" | "silence_failed" | "render_failed"; errors: string[] };
 export type ExportSuccess = {
   ok: true;
   composition: CompositionId;
@@ -51,7 +51,7 @@ export type ExportSuccess = {
   /** One line per picture input: its rate, and whether the render read a constant-rate copy (node/conform.ts). Absent when nothing was rendered. */
   inputs?: InputReport[];
   /** A silence-aware cutdown: what was found in the source's sound and the ranges the cut was planned to keep. */
-  silence?: { file: string; silentSeconds: number; speech: Range[]; kept: Range[] };
+  silence?: { file: string; silentSeconds: number; speech: Range[]; chosen: Range[]; kept: Range[]; fallback?: "no_silence_found" | "all_silent" };
   files: { name: string; kind: "video" | "still" | "subtitle"; bytes: number; frame?: number; format?: VideoFormat | SubtitleFormat; mime?: string }[];
 };
 export type ExportResult = ExportSuccess | ExportFailure;
@@ -322,14 +322,20 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
     try {
       silences = await args.silenceDetector.detect(path.join(args.inputDir, p.source.file), p.source.durationSeconds);
     } catch (error) {
-      return fail("input_mismatch", [`input/${p.source.file}: ${(error as Error).message}`]);
+      /* Its own code (not "an input is wrong"): the file is fine as far as the request says, the detector could not read its sound. */
+      return fail("silence_failed", [`input/${p.source.file}: ${(error as Error).message}`]);
     }
     const speech = speechRanges(silences, p.source.durationSeconds);
-    const kept = mergeKeep(p.keep, speech);
+    /* Two fallbacks, both reported: no quiet stretch at all means "speech" would be the whole file, which marks nothing; all quiet means no speech. Either way nothing is added and the cut is planned from the explicit ranges or the even spread. */
+    const fallback: "no_silence_found" | "all_silent" | undefined = silences.length === 0 ? "no_silence_found" : speech.length === 0 ? "all_silent" : undefined;
+    const explicit = mergeKeep(p.keep, []);
+    const room = Math.max(0, p.targetSeconds - explicit.reduce((sum, r) => sum + (r.endSeconds - r.startSeconds), 0));
+    const chosen = fallback ? [] : chooseSpeech(speech, room);
+    const kept = mergeKeep(p.keep, chosen);
     const next = checkSpec({ ...(args.spec as object), props: { ...checked.props, keep: kept, silence: "off" } }, limits);
     if (!next.ok) return next;
     checked = next;
-    silenceReport = { file: p.source.file, silentSeconds: Math.round(silences.reduce((sum, r) => sum + (r.endSeconds - r.startSeconds), 0) * 1000) / 1000, speech, kept };
+    silenceReport = { file: p.source.file, silentSeconds: Math.round(silences.reduce((sum, r) => sum + (r.endSeconds - r.startSeconds), 0) * 1000) / 1000, speech: fallback ? [] : speech, chosen, kept, ...(fallback ? { fallback } : {}) };
   }
 
   await mkdir(args.outputDir, { recursive: true });

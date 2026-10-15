@@ -5,7 +5,7 @@ import path from "node:path";
 import { checkSpec, runExport, type CompositionInfo, type Renderer } from "../../remotion/node/export";
 import { createFfmpegSilenceDetector, type SilenceDetector } from "../../remotion/node/silence";
 import type { Prober } from "../../remotion/node/probe";
-import { MAX_KEEP_RANGES, SPEECH_PAD_SECONDS, mergeKeep, parseSilence, speechRanges, validateProps, type Range } from "../../remotion/src/lib";
+import { MAX_KEEP_RANGES, MIN_SEGMENT_SECONDS, SPEECH_PAD_SECONDS, chooseSpeech, mergeKeep, parseSilence, speechRanges, validateProps, type Range } from "../../remotion/src/lib";
 
 /* Silence-aware cutdowns: the quiet stretches of the source are found, the spoken ones become the cut's marked moments. */
 
@@ -135,15 +135,15 @@ test.describe("the export command plans the cut from the speech", () => {
     if (!result.ok) return;
     expect(calls).toEqual(["talk.mp4"]);
     expect(rendered.props).toMatchObject({ silence: "off", keep: [r(3.85, 9.15)] });
-    expect(result.silence).toEqual({ file: "talk.mp4", silentSeconds: 15, speech: [r(3.85, 9.15)], kept: [r(3.85, 9.15)] });
+    expect(result.silence).toEqual({ file: "talk.mp4", silentSeconds: 15, speech: [r(3.85, 9.15)], chosen: [r(3.85, 9.15)], kept: [r(3.85, 9.15)] });
     expect(JSON.parse(readFileSync(path.join(base, "output", "result.json"), "utf8")).silence.kept).toEqual([r(3.85, 9.15)]);
   });
 
   test("explicit keep ranges are kept as well as the speech", async () => {
     const result = await runExport(args(cutdown({ silence: "keep-speech", keep: [r(15, 16)] }), detector([r(0, 4), r(9, 14)])));
     expect(result).toMatchObject({ ok: true });
-    /* silence 0-4 and 9-14: speech 3.85-9.15 and 13.85-20; the explicit 15-16 lies inside the second */
-    expect(rendered.props?.keep).toEqual([r(3.85, 9.15), r(13.85, 20)]);
+    /* silence 0-4 and 9-14: speech 3.85-9.15 (5.3 s) and 13.85-20 (6.15 s); the explicit 15-16 takes 1 s of the 6, so 5 s are left and neither whole stretch fits: the longest is taken and the planner trims it. The explicit range lies inside it. */
+    expect(rendered.props?.keep).toEqual([r(13.85, 20)]);
   });
 
   test("off (the default): the detector is never asked, and the cut is planned as before", async () => {
@@ -158,13 +158,118 @@ test.describe("the export command plans the cut from the speech", () => {
     expect(await runExport(args(cutdown({ silence: "keep-speech" })))).toEqual({ ok: false, code: "spec_invalid", errors: ["props.silence: silence detection is not available here"] });
     expect(await runExport(args(cutdown({ silence: "keep-speech" }, { ...SOURCE, hasAudio: false }), detector([])))).toMatchObject({ ok: false, code: "spec_invalid", errors: ["props.silence: the source has no sound to find silence in"] });
     const failing: SilenceDetector = { detect: async () => { throw new Error("could not be read for silence"); } };
-    expect(await runExport(args(cutdown({ silence: "keep-speech" }), failing))).toEqual({ ok: false, code: "input_mismatch", errors: ["input/talk.mp4: could not be read for silence"] });
+    expect(await runExport(args(cutdown({ silence: "keep-speech" }), failing))).toEqual({ ok: false, code: "silence_failed", errors: ["input/talk.mp4: could not be read for silence"] });
     expect(rendered.props).toBeUndefined();
   });
 
   test("all quiet: no speech is found, nothing is added, and the cut is the even spread", async () => {
     const result = await runExport(args(cutdown({ silence: "keep-speech" }), detector([r(0, 20)])));
-    expect(result).toMatchObject({ ok: true, silence: { speech: [], kept: [] } });
+    expect(result).toMatchObject({ ok: true, silence: { speech: [], chosen: [], kept: [], fallback: "all_silent" } });
     expect(rendered.props?.keep).toEqual([]);
+  });
+});
+
+test("clamped: rounding to the millisecond never pushes a range past the end of the file", () => {
+  expect(speechRanges([r(0, 4)], 7.9996)).toEqual([r(3.85, 7.9996)]);
+  for (const duration of [7.9996, 10.0004, 9.99999, 123.4567]) for (const x of speechRanges([r(1, 2), r(duration - 2, duration - 0.0004)], duration)) {
+    expect(x.endSeconds).toBeLessThanOrEqual(duration);
+    expect(x.startSeconds).toBeGreaterThanOrEqual(0);
+    expect(x.endSeconds).toBeGreaterThan(x.startSeconds);
+  }
+});
+
+test("choosing speech for a cut: whole stretches, longest first, until the target is used; none under a second; nothing is shrunk", () => {
+  expect(MIN_SEGMENT_SECONDS).toBe(1);
+  const a = r(0, 5), b = r(8, 12), c = r(15, 17), d = r(20, 20.4), e = r(25, 26.5);
+  /* Everything fits: all of it, in time order, the 0.4 s blip left out. */
+  expect(chooseSpeech([a, b, c, d, e], 30)).toEqual([a, b, c, e]);
+  /* 6 s budget: the 5 s stretch fits, the 4 s one does not after it, nor the 2 s (7 s), nor the 1.5 s (6.5 s). */
+  expect(chooseSpeech([a, b, c, d, e], 6)).toEqual([a]);
+  /* 7 s: 5 + 2. */
+  expect(chooseSpeech([a, b, c, e], 7)).toEqual([a, c]);
+  /* Not a single stretch fits whole: the longest is taken and the planner trims it. */
+  expect(chooseSpeech([r(0, 20), r(30, 40)], 6)).toEqual([r(0, 20)]);
+  /* All short: the longest of them, so the cut is not empty; no budget or no speech: nothing. */
+  expect(chooseSpeech([r(0, 0.5), r(2, 2.8)], 6)).toEqual([r(2, 2.8)]);
+  expect(chooseSpeech([a], 0)).toEqual([]);
+  expect(chooseSpeech([], 6)).toEqual([]);
+  /* No stretch is ever shortened here. */
+  for (const stretch of chooseSpeech([a, b, c, e], 7)) expect([a, b, c, e]).toContainEqual(stretch);
+});
+
+test("explicit keep ranges always survive: speech is added longest first only while it fits within 12 ranges, and what touches an explicit range is absorbed", () => {
+  const explicit = Array.from({ length: 12 }, (_, i) => r(i * 10, i * 10 + 1));
+  expect(mergeKeep(explicit, [r(200, 230), r(300, 301)])).toEqual(explicit);
+  /* Speech that overlaps an explicit range costs no range. */
+  expect(mergeKeep(explicit, [r(0.5, 4)])).toEqual([r(0, 4), ...explicit.slice(1)]);
+  /* Room for some speech: the longest goes in first. */
+  const few = [r(0, 1), r(50, 51)];
+  const speech = Array.from({ length: 14 }, (_, i) => r(100 + i * 10, 100 + i * 10 + 1 + (i % 4)));
+  const merged = mergeKeep(few, speech);
+  expect(merged).toHaveLength(MAX_KEEP_RANGES);
+  expect(merged).toEqual(expect.arrayContaining(few));
+  const dropped = speech.filter((x) => !merged.some((m) => m.startSeconds === x.startSeconds));
+  const kept = speech.filter((x) => merged.some((m) => m.startSeconds === x.startSeconds));
+  expect(Math.max(...dropped.map((x) => x.endSeconds - x.startSeconds))).toBeLessThanOrEqual(Math.min(...kept.map((x) => x.endSeconds - x.startSeconds)));
+  /* Time order. */
+  expect(merged.map((x) => x.startSeconds)).toEqual([...merged.map((x) => x.startSeconds)].sort((p, q) => p - q));
+});
+
+test.describe("speech longer than the cut, and the two named fallbacks", () => {
+  let base: string;
+  test.beforeEach(() => {
+    base = mkdtempSync(path.join(os.tmpdir(), "remotion-silence-more-"));
+    mkdirSync(path.join(base, "bundle"), { recursive: true });
+    writeFileSync(path.join(base, "bundle", "index.html"), "<html></html>");
+    mkdirSync(path.join(base, "input"), { recursive: true });
+    writeFileSync(path.join(base, "input", "talk.mp4"), "video");
+  });
+  test.afterEach(() => rmSync(base, { recursive: true, force: true }));
+  const prober: Prober = { probe: async () => ({ durationSeconds: 20, width: 1920, height: 1080, hasVideo: true, hasAudio: true }) };
+  const seen: { props?: Record<string, unknown> } = {};
+  const renderer: Renderer = {
+    prepare: async () => {},
+    selectComposition: async ({ id, inputProps }) => {
+      seen.props = inputProps;
+      const planned = checkSpec({ version: 1, composition: "cutdown", props: inputProps });
+      if (!planned.ok) throw new Error("not valid");
+      return { id, width: planned.timeline.width, height: planned.timeline.height, fps: planned.timeline.fps, durationInFrames: planned.timeline.durationInFrames, props: inputProps } as CompositionInfo;
+    },
+    renderVideo: async ({ outputLocation }) => writeFileSync(outputLocation, "mp4"),
+    renderStill: async ({ outputLocation }) => writeFileSync(outputLocation, "png"),
+  };
+  const run = (silences: Range[], extra: Record<string, unknown> = {}) => runExport({ prober, spec: { version: 1, composition: "cutdown", props: cutdown({ silence: "keep-speech", ...extra }) }, inputDir: path.join(base, "input"), outputDir: path.join(base, "output"), bundleDir: path.join(base, "bundle"), workDir: path.join(base, "work"), renderer, silenceDetector: { detect: async () => silences } });
+
+  test("three spoken stretches of 5, 4 and 2 s for a 6 s cut: the whole 5 s one is chosen and the cut is grown from it, not every stretch shrunk", async () => {
+    const result = await run([r(5, 8), r(12, 15), r(17, 20)]);
+    expect(result).toMatchObject({ ok: true, durationInFrames: 180 });
+    if (!result.ok) return;
+    expect(result.silence?.speech).toEqual([r(0, 5.15), r(7.85, 12.15), r(14.85, 17.15)]);
+    expect(result.silence?.chosen).toEqual([r(0, 5.15)]);
+    expect(seen.props?.keep).toEqual([r(0, 5.15)]);
+    expect(result.silence?.fallback).toBeUndefined();
+  });
+
+  test("no silence at all: the fallback is named, nothing is added, and the cut is the even spread", async () => {
+    const result = await run([]);
+    expect(result).toMatchObject({ ok: true, silence: { speech: [], chosen: [], kept: [], fallback: "no_silence_found", silentSeconds: 0 } });
+    expect(seen.props?.keep).toEqual([]);
+  });
+
+  test("your own keep ranges survive and take their share of the cut before any speech is chosen", async () => {
+    const result = await run([r(5, 8), r(12, 15), r(17, 20)], { keep: [r(18, 19.5)] });
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    /* 1.5 s explicit leaves 4.5 s: only the 4.3 s stretch fits whole. */
+    expect(result.silence?.chosen).toEqual([r(7.85, 12.15)]);
+    expect(seen.props?.keep).toEqual([r(7.85, 12.15), r(18, 19.5)]);
+  });
+
+  test("a detector that cannot read the file has its own code, and the command exits 5 for it", async () => {
+    const failing = await runExport({ prober, spec: { version: 1, composition: "cutdown", props: cutdown({ silence: "keep-speech" }) }, inputDir: path.join(base, "input"), outputDir: path.join(base, "output"), bundleDir: path.join(base, "bundle"), workDir: path.join(base, "work"), renderer, silenceDetector: { detect: async () => { throw new Error("could not be read for silence"); } } });
+    expect(failing).toMatchObject({ ok: false, code: "silence_failed" });
+    const cli = readFileSync(path.join(process.cwd(), "remotion", "node", "cli.ts"), "utf8");
+    expect(cli).toMatch(/silence_failed: 5/);
+    expect(cli).toMatch(/render_failed: 4, silence_failed: 5/);
   });
 });
