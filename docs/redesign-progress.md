@@ -790,3 +790,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #748 should-fixes: a resize resets the person's pan and zoom; a failed poster upgrade drops a good poster; shots-v12 must keep literal counts.
   - Also found: no srcset (JS tier selection instead); posters cost more egress on retina screens; the 640 px sample clip is upscaled 1.3× at 2560@2×; at 1728/1920 the bottom bar is offset by the prototype's 420 px rule; Home and customer Home at 2560 strand whitespace (outside these PRs; fails rule 7).
   - Sent to lane C.
+- **16 Oct 01:37 IST.** #771 delta check APPROVED at 71a87a44. The acting person comes only from the auth-set tenant user, so a run id can't be spoofed by MCP or token callers; no person means refuse before any read, reservation or AWS call; 51 specs pass; RESERVERS is still add-only; no new env names. Readiness CI started. Stays NEEDS AKSHAY (the 8 owner questions, above all the reference source).
