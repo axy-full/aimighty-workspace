@@ -894,3 +894,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Only a session can decide on a prepared job.
   - No false "filed" claims.
   - Top-level args can hold prompt text, as render_shot already does in prepared_jobs.prompt. Owner question: keep prompt text in prepared jobs at all?
+- **16 Oct 02:52 IST.** Lane C: #781 Topaz direct opened (2037d70d, base #778 84245fe2, NEEDS AKSHAY).
+  - Env names: TOPAZ_API_KEY and TOPAZ_DIRECT_ENABLED.
+  - With the engine on, still and clip upscale go direct; off, fal is unchanged.
+  - Settlement follows lane B's pattern; an estimate above the quote uploads nothing; the video copy is deleted.
+  - TOPAZ_RATES uses the dearer reading at $0.10.
+  - The S3 allow-list is narrowed to buckets containing "topaz" (TO CONFIRM).
+  - 28 new specs; a production build plus bundle.spec pass.
+  - Opus money review started.
