@@ -338,6 +338,8 @@ export const TOPAZ_RATES = {
   confirmed: false,
   note: "owner to confirm plan and reading against the first invoice",
   imageTiers: [{ maxMegapixels: 24, credits: 1 }, { maxMegapixels: 32, credits: 2 }, { maxMegapixels: 48, credits: 3 }],
+  /** The docs' linear reading: one credit a started 24 megapixels. A still is quoted at the HIGHER of this and the tier table above, size by size, so a quote is never under either reading. */
+  imageMegapixelsPerCredit: 24,
   /** Credits a second at 30 fps, by output tier; a frame rate of F costs F / 30 times as much. 720p is the 1080p tier. */
   videoCreditsPerSecondAt30: { "1080p": 4, "4k": 5 },
 } as const;

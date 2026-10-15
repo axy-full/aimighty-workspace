@@ -32,6 +32,12 @@ test("the table prices at Developer, $0.10 a credit, on the dearer reading every
   expect(TOPAZ_RATES.note).toContain("owner to confirm plan and reading against the first invoice");
   // Images by the API page's tiers: 24 MP 1 credit, 32 MP 2, 48 MP 3.
   expect([1, 24, 24.01, 32, 32.01, 48].map(topazImageCredits)).toEqual([1, 1, 2, 2, 3, 3]);
+  // A still is quoted at the HIGHER of the tier table and the docs' linear rule (a credit a started 24 MP), size by size; never the lower.
+  expect(TOPAZ_RATES.imageMegapixelsPerCredit).toBe(24);
+  const linear = (mp: number) => Math.ceil(mp / TOPAZ_RATES.imageMegapixelsPerCredit - 1e-9);
+  const tier = (mp: number) => TOPAZ_RATES.imageTiers.find((t) => mp <= t.maxMegapixels)!.credits;
+  for (const mp of [0.5, 8, 23.99, 24, 24.01, 31.99, 32, 32.01, 47.99, 48]) expect(topazImageCredits(mp), String(mp)).toBe(Math.max(tier(mp), linear(mp)));
+  for (const mp of [0.5, 24, 24.01, 32, 32.01, 48]) expect(topazImageCredits(mp), String(mp)).toBeGreaterThanOrEqual(Math.max(tier(mp), linear(mp)));
   expect(() => topazImageCredits(48.01)).toThrow(TopazError);
   expect(() => topazImageCredits(0)).toThrow(TopazError);
   expect(topazImageQuoteUsd(24)).toBe(0.1);

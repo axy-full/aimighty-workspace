@@ -88,16 +88,16 @@ async function admit(input: Record<string, unknown>) {
 const approved = { maxCredits: 100000 };
 
 /** An in-memory Topaz: records every call, answers as asked. */
-function fakeTopaz(over: { credits?: number | null; failCredits?: number | null; fail?: string; imageSubmitError?: Error; createError?: Error; uploadError?: Error; completeError?: Error; estimateHigh?: number; deleteFails?: number; noUrlPolls?: number; polls?: number } = {}) {
+function fakeTopaz(over: { credits?: number | null; failCredits?: number | null; fail?: string; imageSubmitError?: Error; createError?: Error; uploadError?: Error; completeError?: Error; estimateHigh?: number; deleteFails?: number; noUrlPolls?: number; polls?: number; downloadError?: Error } = {}) {
   const calls: string[] = [];
   const sent: { submit?: Record<string, unknown>; create?: Record<string, unknown> } = {};
   let polls = 0, noUrl = over.noUrlPolls ?? 0, deleteFails = over.deleteFails ?? 0;
   const ready = over.polls ?? 2;
   const credits = over.credits === undefined ? undefined : over.credits;
   const deps: TopazDeps = {
-    submitImage: async (input) => { calls.push("submit"); sent.submit = { width: input.width, height: input.height, model: input.settings.model, factor: input.settings.factor, bytes: input.bytes.length }; if (over.imageSubmitError) throw over.imageSubmitError; return { id: "topaz_img_1", outputMegapixels: 8, credits: 1 }; },
+    submitImage: async (input) => { calls.push("submit"); sent.submit = { filename: input.filename, mime: input.mime, width: input.width, height: input.height, model: input.settings.model, factor: input.settings.factor, bytes: input.bytes.length }; if (over.imageSubmitError) throw over.imageSubmitError; return { id: "topaz_img_1", outputMegapixels: 8, credits: 1 }; },
     imageStatus: async () => { polls++; calls.push("status"); if (over.fail) return { id: "topaz_img_1", status: "failed" as const, error: over.fail, ...(over.failCredits != null ? { credits: over.failCredits } : {}) }; return polls < ready ? { id: "topaz_img_1", status: "processing" as const } : { id: "topaz_img_1", status: "completed" as const, ...(credits != null ? { credits } : {}) }; },
-    downloadImage: async () => { calls.push("download"); return Buffer.from("upscaled-image"); },
+    downloadImage: async () => { calls.push("download"); if (over.downloadError) throw over.downloadError; return Buffer.from("upscaled-image"); },
     createVideo: async (input) => { calls.push("create"); sent.create = { sizeBytes: input.source.sizeBytes, width: input.source.width, height: input.source.height, fps: input.settings.fps }; if (over.createError) throw over.createError; return { id: "topaz_vid_1", estimatedCredits: over.estimateHigh != null ? { low: 1, high: over.estimateHigh } : { low: 6, high: 8 }, output: { width: 1216, height: 2160, frameRate: input.settings.fps } }; },
     accept: async () => { calls.push("accept"); return { uploadUrls: ["https://topaz-up.s3.amazonaws.com/p1"] }; },
     uploadParts: async (urls, bytes) => { calls.push("upload"); if (over.uploadError) throw over.uploadError; return urls.map((_, i) => ({ partNum: i + 1, eTag: `t${i}` + bytes.length })); },
@@ -109,7 +109,7 @@ function fakeTopaz(over: { credits?: number | null; failCredits?: number | null;
       if (noUrl-- > 0) return { id: "topaz_vid_1", status: "completed" as const, ...(credits != null ? { credits } : {}) };
       return { id: "topaz_vid_1", status: "completed" as const, downloadUrl: "https://dl.topazlabs.com/out.mp4", ...(credits != null ? { credits } : {}) };
     },
-    downloadVideo: async () => { calls.push("download"); return Buffer.from("upscaled-clip"); },
+    downloadVideo: async () => { calls.push("download"); if (over.downloadError) throw over.downloadError; return Buffer.from("upscaled-clip"); },
     deleteMedia: async () => { calls.push("delete"); if (deleteFails-- > 0) throw new Error("not yet"); return true; },
     cancel: async () => { calls.push("cancel"); return true; },
     store: async (genId, bytes, kind) => { calls.push("store"); return { url: `stored/${genId}.${kind === "image" ? "png" : "mp4"}`, bytes: bytes.length }; },
@@ -380,6 +380,122 @@ test("a lost acknowledgement is never sent again: a still's submit and a clip's 
     expect(stale.calls).toEqual([]);
     expect((await gen(id)).status).toBe("failed");
     expect(String((await gen(id)).error)).toMatch(/Nothing was submitted/);
+  });
+});
+
+test("the shot cap is judged at the press, as the fal path judges it: a member past the shot's cap is refused 403 with no row, no hold and no failed take; an admin is not", async () => {
+  process.env.TOPAZ_DIRECT_ENABLED = "1";
+  const { admitTopaz } = await import("../../lib/topazUpscale");
+  const { setSetting } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  await asTenant(house(), async () => {
+    await ready();
+    await project("p_topaz_cap");
+    const shotId = uid("shot");
+    await db().execute({ sql: "INSERT INTO shots(id,project_id,code,created_at,updated_at) VALUES(?,?,'SH010',1,1)", args: [shotId, "p_topaz_cap"] });
+    const src = await still("cap", 4000, 3000);
+    const member: AdmissionActor = { user: { ...OWNER.user, id: "member_1", role: "member", owner: false } as AdmissionActor["user"] };
+    const { runInTenant } = await import("../../lib/tenant");
+    const asMember = (fn: () => Promise<void>) => runInTenant(house(), fn, member as never);
+    try {
+      await setSetting("approvalRule", "cap", "admin");
+      await setSetting("shotCapCredits", "1", "admin");
+      const before = (await meterRows()).length;
+      const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+      const handedOff = deferred.length;
+      const input = { tool: "image", sourceUploadId: src, topaz: SETTINGS, shotId, ...approved };
+      await asMember(async () => {
+        const refused = await admitTopaz(input, member, options());
+        expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+        expect(refused.body).toMatchObject({ needsAdmin: true });
+        expect(String(refused.body.error)).toMatch(/SH010/);
+        /* A quote says so too. */
+        expect((await admitTopaz({ ...input, quoteOnly: true }, member, options())).status).toBe(403);
+      });
+      /* Nothing was written, held or handed off. */
+      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
+      expect((await meterRows()).length).toBe(before);
+      expect(deferred.length).toBe(handedOff);
+      /* An admin's own take goes through. */
+      expect((await admitTopaz(input, OWNER, options())).status).toBe(200);
+      /* A member's take under the cap goes through. */
+      await setSetting("shotCapCredits", "100000", "admin");
+      await asMember(async () => { expect((await admitTopaz(input, member, options())).status).toBe(200); });
+    } finally { await setSetting("approvalRule", "anyone", "admin"); }
+  });
+});
+
+test("the original goes up under its real name and type (PNG, JPEG or WebP), not always original.png", async () => {
+  process.env.TOPAZ_DIRECT_ENABLED = "1";
+  const { imageFileOf } = await import("../../lib/topazUpscale");
+  expect(imageFileOf(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0]))).toEqual({ filename: "original.jpg", mime: "image/jpeg" });
+  expect(imageFileOf(Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBPVP8 ")]))).toEqual({ filename: "original.webp", mime: "image/webp" });
+  expect(imageFileOf(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toEqual({ filename: "original.png", mime: "image/png" });
+  const { db, ready } = await import("../../lib/db");
+  const { storeUpload } = await import("../../lib/storage");
+  const sharp = (await import("sharp")).default;
+  await asTenant(house(), async () => {
+    await ready();
+    for (const [ext, mime, filename] of [["jpg", "image/jpeg", "original.jpg"], ["webp", "image/webp", "original.webp"], ["png", "image/png", "original.png"]] as const) {
+      const id = uid("fmt");
+      const img = sharp({ create: { width: 2000, height: 1000, channels: 3, background: { r: 1, g: 2, b: 3 } } });
+      const bytes = await (ext === "jpg" ? img.jpeg() : ext === "webp" ? img.webp() : img.png()).toBuffer();
+      const stored = await storeUpload(id, ext, bytes, mime);
+      made.push(path.join(process.cwd(), ".data", "uploads", `${id}.${ext}`));
+      await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytes.length, "x", 2000, 1000, stored.url, Date.now(), "image"] });
+      const genId = String((await admit({ tool: "image", sourceUploadId: id, topaz: SETTINGS, ...approved })).body.id);
+      const vendor = fakeTopaz({ credits: 1 });
+      await run(genId, vendor.deps, 1);
+      expect(vendor.sent.submit, ext).toMatchObject({ filename, mime });
+    }
+  });
+});
+
+test("a finished output that cannot be collected is not retried for ever: asked again inside the grace, then settled as a charged failure (recorded at what Topaz reported, billed to nobody), a clip's vendor copy deleted, the reason plain on the take", async () => {
+  process.env.TOPAZ_DIRECT_ENABLED = "1";
+  const { advanceTopazJobWith } = await import("../../lib/topazUpscale");
+  await asTenant(house(), async () => {
+    const src = await still("g");
+    const video = await clip("g");
+    for (const [tool, body, credits, usd] of [["image", { sourceUploadId: src, topaz: SETTINGS }, 1, 0.1], ["video", { sourceUploadId: video, astra: ASTRA }, 5, 0.5]] as const) {
+      const id = String((await admit({ tool, ...body, ...approved })).body.id);
+      const vendor = fakeTopaz({ credits, downloadError: new Error("the download was refused") });
+      /* Inside the grace the pass fails and the job is kept to try again; nothing is settled. */
+      for (let i = 0; i < 4; i++) await advanceTopazJobWith(id, vendor.deps).catch(() => {});
+      expect((await gen(id)).status, tool).toBe("running");
+      expect((await gen(id)).topaz.settled, tool).toBe(0);
+      /* Past the grace it ends: settled once, charged at the reported credits, billed to nobody. */
+      const late = { ...vendor.deps, clock: () => Date.now() + 31 * 60_000 };
+      const done = await advanceTopazJobWith(id, late);
+      expect(done, tool).toMatchObject({ status: "failed", settled: 1 });
+      const take = await gen(id);
+      expect(take.status, tool).toBe("failed");
+      expect(String(take.error), tool).toBe("The upscale was ready but could not be saved in time. Nothing was billed.");
+      expect(take.topaz.reconcile, tool).toBe(0);
+      expect(JSON.parse(String(take.provider_outcome)), tool).toMatchObject({ provider: "topaz" });
+      const line = (await meterRows()).find((r) => r.id === id)!;
+      expect(line, tool).toMatchObject({ status: "failed" });
+      expect(Number(line.engine_cost_usd), tool).toBeCloseTo(usd, 6);
+      expect(Number(line.billed_credits ?? 0), tool).toBe(0);
+      if (tool === "video") {
+        /* The clip's vendor copy is deleted; a still has no endpoint. */
+        expect(vendor.calls).toContain("delete");
+        expect((await gen(id)).topaz).toMatchObject({ vendorDeleted: 1, cleanupDue: 0 });
+      } else expect(vendor.calls).not.toContain("delete");
+      /* Settled once: later passes do nothing. */
+      const calls = vendor.calls.length;
+      await advanceTopazJobWith(id, late);
+      expect(vendor.calls.length, tool).toBe(calls);
+    }
+    /* Not reported: the quote, marked to reconcile. */
+    const id = String((await admit({ tool: "image", sourceUploadId: src, topaz: SETTINGS, ...approved })).body.id);
+    const quiet = fakeTopaz({ credits: null, downloadError: new Error("host not on the list") });
+    for (let i = 0; i < 4; i++) await advanceTopazJobWith(id, quiet.deps).catch(() => {});
+    await advanceTopazJobWith(id, { ...quiet.deps, clock: () => Date.now() + 31 * 60_000 });
+    const take = await gen(id);
+    expect(take.status).toBe("failed");
+    expect(take.topaz.reconcile).toBe(1);
+    expect(Number((await meterRows()).find((r) => r.id === id)!.engine_cost_usd)).toBeCloseTo(0.1, 6);
   });
 });
 

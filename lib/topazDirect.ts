@@ -32,12 +32,14 @@ export const TOPAZ_IMAGE_OUTPUT_LIMIT_BYTES = 200 * 1024 * 1024;
 export { TOPAZ_RATES };
 export type TopazVideoTier = keyof typeof TOPAZ_RATES.videoCreditsPerSecondAt30;
 
-/** The credits a still costs by its output size (megapixels). Over 48 MP is not offered. */
+/** The credits a still costs by its output size (megapixels): the higher of the tier table and the linear rule. Over 48 MP is not offered. */
 export function topazImageCredits(outputMegapixels: number): number {
   if (!Number.isFinite(outputMegapixels) || outputMegapixels <= 0) throw new TopazError("The still's output size is not known.");
   const tier = TOPAZ_RATES.imageTiers.find((t) => outputMegapixels <= t.maxMegapixels);
   if (!tier) throw new TopazError("Topaz image output is limited to 48 megapixels.");
-  return tier.credits;
+  /* Two readings of Topaz's own pages give a still's price: the API page's tier table and the docs' linear rule (a credit a started 24 MP). The quote is the higher of the two for this size, never the lower. */
+  const linear = Math.ceil(outputMegapixels / TOPAZ_RATES.imageMegapixelsPerCredit - 1e-9);
+  return Math.max(tier.credits, linear);
 }
 
 /** The credits a clip costs: its output frames at the tier's rate, rounded up to a whole credit. */

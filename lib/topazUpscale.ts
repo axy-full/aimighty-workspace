@@ -19,7 +19,7 @@ import { inspectTopazImage } from "./topazImage.server";
 import type { Reference } from "./ark";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
+import { jobLineNow, shotCapGate } from "./shotCap";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { ASTRA_MODEL, astraSettings, type AstraSettings } from "./astra";
@@ -207,9 +207,11 @@ export async function admitTopaz(input: Record<string, unknown>, got: AdmissionA
 
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
+  let shotCode: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
+    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
     projectId ??= shot.projectId;
   }
@@ -219,6 +221,11 @@ export async function admitTopaz(input: Record<string, unknown>, got: AdmissionA
   const inCredits = creditsApply(requireTenant());
   const over = jobLineNow({ credits: estimatedCredits, usd, key: "topaz", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
+  /* The cost approval rule (brief 2.2), as the fal path judges it: with a cap per shot, a member's take past it needs an admin. Refused here, before a row is written, so no failed take is left behind. */
+  if (shotId && shotCode) {
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: got.user.role === "admin" });
+    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
+  }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, outputWidth: measured.outputWidth, outputHeight: measured.outputHeight, ...(tool === "video" ? { seconds: measured.seconds, fps: measured.fps } : { megapixels: Math.round(measured.outputMegapixels * 10) / 10 }) });
   const wall = await allowanceCheck("topaz", usd, model);
   if (!wall.ok) return admissionReply({ error: wall.error }, { status: wall.status });
@@ -323,6 +330,12 @@ export async function settleTopaz(
 
 /* ── The machine ────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
+/** The original's real file name and type, read from its first bytes (PNG, JPEG or WebP; anything else is sent as PNG, which is what the door accepted it as). */
+export function imageFileOf(bytes: Buffer): { filename: string; mime: string } {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return { filename: "original.jpg", mime: "image/jpeg" };
+  if (bytes.length >= 12 && bytes.subarray(0, 4).toString("latin1") === "RIFF" && bytes.subarray(8, 12).toString("latin1") === "WEBP") return { filename: "original.webp", mime: "image/webp" };
+  return { filename: "original.png", mime: "image/png" };
+}
 const messageOf = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback).slice(0, 300);
 const defaultStore = (genId: string, bytes: Buffer, kind: "image" | "video") => (kind === "image" ? storeImageBytes(genId, bytes) : storeVideoBytes(genId, bytes));
 
@@ -376,7 +389,7 @@ export async function advanceTopazJobWith(genId: string, deps: TopazDeps): Promi
       if (t.tool === "image") {
         try {
           await patch(genId, { sendingAt: clock() });
-          const sent = await (deps.submitImage ?? submitImageUpscale)({ bytes, filename: "original.png", mime: "image/png", width: t.inputWidth, height: t.inputHeight, settings: t.settings as TopazImageSettings });
+          const sent = await (deps.submitImage ?? submitImageUpscale)({ bytes, ...imageFileOf(bytes), width: t.inputWidth, height: t.inputHeight, settings: t.settings as TopazImageSettings });
           await patch(genId, { status: "submitted", vendorId: sent.id, submittedAt: clock() });
         } catch (error) {
           if (error instanceof TopazError && error.rejectedBeforeWork) {
@@ -436,16 +449,27 @@ export async function advanceTopazJobWith(genId: string, deps: TopazDeps): Promi
       if (state.status !== "completed") return (await load(genId))?.t ?? null;
       if (state.credits != null) await patch(genId, { statedCredits: state.credits });
       const url = t.tool === "video" ? (state as TopazVideoProcess).downloadUrl : undefined;
+      /* The moment it was first seen done starts the grace window, whatever goes wrong next (no address, a download refused, a store that fails). */
+      let readyAt = t.readyAt;
+      if (!readyAt) { readyAt = clock(); await patch(genId, { readyAt }); }
+      /* Done at Topaz but not collectable within the grace: a failure to collect, which Topaz charged for (its reported credits, else the quote, billed to nobody, marked to reconcile). The vendor copy of a clip is deleted. */
+      const lostIt = async (why: string) => {
+        await end("failed", { message: "The upscale was ready but could not be saved in time. Nothing was billed.", costUsd: topazCreditsUsd(state.credits ?? t.statedCredits ?? t.quoteCredits), reconcile: (state.credits ?? t.statedCredits) == null, said: silentOutcome("topaz", "run", "not_kept", why), cleanup: "delete" });
+        return (await load(genId, { any: true }))?.t ?? null;
+      };
       if (t.tool === "video" && !url) {
-        /* Done at Topaz, no address yet: asked again. Past the grace it is a failure to collect, which Topaz charged for (its reported credits, else the quote, billed to nobody, marked to reconcile). */
-        if (!t.readyAt) await patch(genId, { readyAt: clock() });
-        else if (clock() - Number(t.readyAt) > READY_GRACE_MS) {
-          await end("failed", { message: "The upscale was ready but could not be saved in time. Nothing was billed.", costUsd: topazCreditsUsd(state.credits ?? t.quoteCredits), reconcile: state.credits == null, said: silentOutcome("topaz", "run", "not_kept", "no download address"), cleanup: "delete" });
-        }
+        if (clock() - Number(readyAt) > READY_GRACE_MS) return lostIt("no download address");
         return (await load(genId, { any: true }))?.t ?? null;
       }
-      const output = t.tool === "image" ? await (deps.downloadImage ?? downloadImage)(vendorId) : await (deps.downloadVideo ?? downloadVideo)({ id: vendorId, url });
-      const { value: stored } = await withRetry(() => (deps.store ?? defaultStore)(genId, output, t.tool), { max: 3 });
+      let stored: { url: string; bytes: number };
+      try {
+        const output = t.tool === "image" ? await (deps.downloadImage ?? downloadImage)(vendorId) : await (deps.downloadVideo ?? downloadVideo)({ id: vendorId, url });
+        stored = (await withRetry(() => (deps.store ?? defaultStore)(genId, output, t.tool), { max: 3 })).value;
+      } catch (error) {
+        /* A download that is refused (a redirect the allow-list will not follow, a host off the list) or a store that fails is asked again until the grace is over, then it is settled; it never retries for ever. */
+        if (clock() - Number(readyAt) > READY_GRACE_MS) return lostIt(messageOf(error, "the output could not be collected"));
+        throw error;
+      }
       /* Topaz's own figure when it reports one, else the quote and marked to reconcile; never billed above the quote (settleTopaz records the excess as the overrun and marks it). */
       const statedCredits = state.credits ?? t.statedCredits;
       await settleTopaz(genId, "done", { costUsd: statedCredits != null ? topazCreditsUsd(statedCredits) : t.reservedUsd, reconcile: statedCredits == null, storedUrl: stored.url, bytes: stored.bytes, seconds: t.tool === "video" ? Math.round(t.seconds * 1000) / 1000 : null });
