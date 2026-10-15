@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
-import { AGE_CONFIRM_REFUSAL, ageConfirmedStatement } from "./ageConfirm";
+import { AGE_CONFIRM_REFUSAL, AGE_CONFIRM_SINCE, ageConfirmedStatement } from "./ageConfirm";
 import { assertInvitationSession } from "./accountInvitationSession";
 import {
   accountDbReady,
@@ -41,6 +41,7 @@ type Registration = {
   plan_id: PaidPlan;
   cadence: Cadence;
   expires_at: number;
+  created_at: number;
   verified_at: number | null;
   account_id: string | null;
   request_id: string | null;
@@ -132,7 +133,7 @@ export async function beginSignup(input: SignupInput, source: string) {
       );
     await tx.execute({
       sql: `INSERT INTO signup_registrations(email,name,password_hash,workspace_name,plan_id,cadence,token_hash,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)
-   ON CONFLICT(email) DO UPDATE SET name=excluded.name,password_hash=excluded.password_hash,workspace_name=excluded.workspace_name,plan_id=excluded.plan_id,cadence=excluded.cadence,token_hash=excluded.token_hash,expires_at=excluded.expires_at,updated_at=excluded.updated_at`,
+   ON CONFLICT(email) DO UPDATE SET name=excluded.name,password_hash=excluded.password_hash,workspace_name=excluded.workspace_name,plan_id=excluded.plan_id,cadence=excluded.cadence,token_hash=excluded.token_hash,expires_at=excluded.expires_at,created_at=excluded.created_at,updated_at=excluded.updated_at`,
       args: [
         data.email,
         data.name,
@@ -165,6 +166,8 @@ export async function resendSignup(emailInput: string, source: string) {
       })
     ).rows[0];
     if (!row) return null;
+    /* A registration begun before the tick shipped was begun without it: it is not refreshed, and its owner starts again (lib/ageConfirm.ts AGE_CONFIRM_SINCE). */
+    if (Number(row.created_at) < AGE_CONFIRM_SINCE) throw new AccountError("That sign-up is out of date. Start sign-up again.", 410);
     await tx.execute({
       sql: "UPDATE signup_registrations SET token_hash=?,expires_at=?,updated_at=? WHERE email=? AND verified_at IS NULL",
       args: [hash(token), expiresAt, now(), email],
@@ -211,7 +214,8 @@ export async function verifySignup(
         args: [hash(token)],
       })
     ).rows[0] as unknown as Registration | undefined;
-    if (!r || r.expires_at < now())
+    /* A registration begun before the tick shipped is expired for good (lib/ageConfirm.ts AGE_CONFIRM_SINCE): no account and no 18+ line without a tick. */
+    if (!r || r.expires_at < now() || r.created_at < AGE_CONFIRM_SINCE)
       throw new AccountError(
         "This verification link has expired or is not valid. Request another email.",
         410,

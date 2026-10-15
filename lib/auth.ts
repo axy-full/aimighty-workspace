@@ -437,10 +437,6 @@ export async function findByEmail(email: string) {
   return findAccountByEmail(email);
 }
 
-export async function createUser(email: string, name: string, password: string): Promise<{ id: string; email: string; name: string }> {
-  return createAccount(email, name, hashPassword(password));
-}
-
 /**
  * First run: the first account becomes the platform owner and gets the
  * studio's original workspace — the primary database — as its own.

@@ -171,22 +171,65 @@ test("the sign-up route refuses without the tick and passes it down with it", as
   for (const input of seen) expect(input).toMatchObject({ ageConfirmed: true });
 });
 
-test("every place that inserts an account either writes the confirmation beside it or is one of the two that are not sign-ups", () => {
+test("every place that makes an account is on an exact list: the sign-up sites write the confirmation beside the insert, and the rest are named", () => {
   const files: string[] = [];
   const walk = (root: string) => { for (const name of readdirSync(root)) { const full = path.join(root, name); if (statSync(full).isDirectory()) walk(full); else if (/\.(ts|tsx)$/.test(name)) files.push(full); } };
   walk("lib"); walk("app");
-  const NOT_SIGN_UPS = new Set(["lib/platform.ts", "lib/previewSeed.ts"]);
-  const sites: string[] = [];
+  const inserts: string[] = [], calls: string[] = [];
+  const platformInserts: string[] = [];
   for (const file of files) {
     const text = readFileSync(file, "utf8");
     const rel = file.split(path.sep).join("/");
-    for (const match of text.matchAll(/INSERT (?:OR IGNORE |OR REPLACE )?INTO accounts\b/g)) {
+    for (const match of text.matchAll(/INSERT (?:OR IGNORE |OR REPLACE )?INTO accounts\b[^`"]*/g)) {
       const window = text.slice(match.index!, match.index! + 900);
-      sites.push(rel);
-      if (!NOT_SIGN_UPS.has(rel)) expect(window, `${rel}: an account is made without the confirmation beside it`).toMatch(/ageConfirmedStatement/);
+      if (rel === "lib/platform.ts") { platformInserts.push(match[0].replace(/\s+/g, " ").trim()); continue; }
+      inserts.push(rel);
+      expect(window, `${rel}: an account is made without the confirmation beside it`).toMatch(/ageConfirmedStatement/);
+    }
+    /* Every call of the two account-making helpers (their definitions are not calls). */
+    for (const match of text.matchAll(/\b(createAccount|createUser)\(/g)) {
+      const before = text.slice(Math.max(0, match.index! - 40), match.index!);
+      if (/function\s+$/.test(before)) continue;
+      calls.push(`${rel}:${match[1]}`);
     }
   }
-  /* The four sign-up sites and the two that are not. A new site fails this until it is listed or confirmed. */
-  expect(sites.sort()).toEqual(["lib/platform.ts", "lib/platform.ts", "lib/signupRegistration.ts", "lib/signupRegistration.ts", "lib/teamInvitations.ts"]);
+  /* Sign-up sites that write the line beside the insert: the registration verified (1), the invitation (1), the team invitation (1). */
+  expect(inserts.sort()).toEqual(["lib/signupRegistration.ts", "lib/signupRegistration.ts", "lib/teamInvitations.ts"]);
+  /* lib/platform.ts: exactly the one-time import of an older install's users, and createAccount's own insert (whose callers are listed next). */
+  expect(platformInserts.sort()).toEqual([
+    "INSERT INTO accounts (id, email, name, password_hash, created_at) VALUES (?,?,?,?,?)",
+    "INSERT OR IGNORE INTO accounts (id, email, name, password_hash, disabled, created_at, last_seen) VALUES (?,?,?,?,?,?,?)",
+  ]);
+  /* Callers of the helper: first-run setup (which writes the line right after) and the preview seed. A new caller fails here until it is listed, or confirms. */
+  expect(calls.sort()).toEqual(["lib/auth.ts:createAccount", "lib/previewSeed.ts:createAccount"]);
   expect(readFileSync("lib/auth.ts", "utf8")).toMatch(/createAccount\(.*\);\s*await platformDb\(\)\.execute\(ageConfirmedStatement\(account\.id\)\)/);
+  expect(readFileSync("lib/auth.ts", "utf8"), "the tick-less helper is gone").not.toMatch(/export async function createUser/);
+});
+
+test("a registration begun before the tick shipped is neither resent nor verified: no account and no line; a fresh begin then works", async () => {
+  const { beginSignup, resendSignup, verifySignup } = await import("../../lib/signupRegistration");
+  const { AGE_CONFIRM_SINCE } = await import("../../lib/ageConfirm");
+  const { platformDb } = await import("../../lib/platform");
+  const { createHash } = await import("node:crypto");
+  const email = mail("oldreg");
+  const token = "o".repeat(43);
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const db = platformDb();
+  /* The row an older server wrote: no tick was asked, its link has not expired, and it was begun before the constant. */
+  await db.execute({
+    sql: "INSERT INTO signup_registrations(email,name,password_hash,workspace_name,plan_id,cadence,token_hash,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+    args: [email, "Old", "x", "Old house", "explore", "monthly", tokenHash, Date.now() + 3_600_000, AGE_CONFIRM_SINCE - 86_400_000, AGE_CONFIRM_SINCE - 86_400_000],
+  });
+  await db.execute("DELETE FROM account_action_limits WHERE key LIKE 'signup-email-%'");
+  await expect(resendSignup(email, "old-source")).rejects.toMatchObject({ status: 410 });
+  await expect(verifySignup(token)).rejects.toMatchObject({ status: 410 });
+  expect(await accountOf(email), "no account").toBeNull();
+  expect((await db.execute({ sql: "SELECT 1 FROM security_audit WHERE action='account.age_confirmed' AND actor_id IN (SELECT id FROM accounts WHERE email=?)", args: [email] })).rows).toHaveLength(0);
+  expect(Number((await db.execute({ sql: "SELECT created_at FROM signup_registrations WHERE email=?", args: [email] })).rows[0].created_at), "the resend did not refresh it").toBeLessThan(AGE_CONFIRM_SINCE);
+  /* A fresh begin (which needs the tick) resets the row, and then verifying works and writes the line. */
+  await db.execute("DELETE FROM account_action_limits WHERE key LIKE 'signup-email-%'");
+  const started = await beginSignup({ name: "Old", email, workspace: "Old house", password, ageConfirmed: true }, "old-source-2");
+  expect(Number((await db.execute({ sql: "SELECT created_at FROM signup_registrations WHERE email=?", args: [email] })).rows[0].created_at)).toBeGreaterThanOrEqual(AGE_CONFIRM_SINCE);
+  const verified = await verifySignup(started.token);
+  expect(await lines(verified.owner.id)).toHaveLength(1);
 });

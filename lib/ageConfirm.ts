@@ -9,9 +9,17 @@ import { securityAuditStatement } from "./securityAudit";
  * nothing else (no name, email, address or text; explicit fields only, lib/securityAudit.ts). `accounts.accepted_policy_at`, the date the old tick was ticked, is still written beside it.
  * No table or column is added: the history table already exists in the platform database.
  *
- * Not sign-ups, so not asked: the one-time import of an older install's users (lib/platform.ts), and the preview seed's placeholder accounts that nobody can sign in to (lib/previewSeed.ts).
+ * Not sign-ups, so not asked: the one-time import of an older install's users (lib/platform.ts), and the preview seed's account for the platform owner (lib/previewSeed.ts, a preview environment's own
+ * account, entered by a reset link).
  */
 export { AGE_CONFIRM_LABEL, AGE_CONFIRM_REFUSAL } from "./ageConfirmText";
+
+/**
+ * The moment the tick shipped (15 Oct 2026, 16:35 UTC). An email sign-up registration is only a row until its link is opened, and a row made before this moment was begun without the tick, so it
+ * is never resent or verified into an account: its owner starts sign-up again (lib/signupRegistration.ts). Every begin since sets the row's creation time to its own, so it is at or after this. Moving
+ * it later is safe only up to the moment of the deploy: a begin made before the constant but after the deploy would have to start again.
+ */
+export const AGE_CONFIRM_SINCE = Date.UTC(2026, 9, 15, 16, 35, 0);
 
 /** The history line for a new account: its id and the moment, written in the transaction that creates the account. */
 export function ageConfirmedStatement(accountId: string): InStatement {
