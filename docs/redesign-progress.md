@@ -759,3 +759,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 01:02 IST.** Opus re-check of the app side: #766 6c8b1ddf, #774 902aaeac and #775 68c3b3eb all APPROVED. 86/86 specs pass; the money guard is unchanged; no new env names or migrations; engineGate is still byte-identical to #771's. Small follow-ups sent to lane D: the MCP tool text still says conform is `auto` and ProRes is "60 s"; nits on #775. Owner questions still open: #766's three guard-type spec edits; one shared `enginesOnWorkspaces` list for every engine; ProRes on the native worker needs measuring.
 - **16 Oct 01:09 IST.** #699 (Remotion worker) readiness CI green 24/24 (run 38789485436, base release/1 663fb243) on the Opus-approved head a5e0f445. Ready, but NEEDS AKSHAY for its env names; not merged.
 - **16 Oct 01:15 IST.** #764 (Big Buck Bunny credit) readiness CI FAILED at ffefe887 (run 38790550600, core → "Verify production bundle privacy"). The guard bundle.spec.ts ("no vendor rate reaches the browser", "holds no rate to divide") found Seedance rate tables and `imageRefInUsd:0` in a client chunk. The same base passes on release/1 and #699, so #764's new client imports pulled vendorRates into the browser. The guard did its job; it is not touched. Lane C is fixing the code. The Opus review missed it, because the bundle check needs a production build.
+- **16 Oct 01:31 IST.** Lane D follow-ups:
+  - #770 (7f4f1e74): the new sound test caught a real flaw. Remotion renders NO audio from a windowed copy that keeps the source clock. Redesigned: the copy starts at zero, plus an internal `offsetSeconds`; real-render tests now pin picture and sound (a tone change lands within 0.1 s).
+  - #769 6e7bac28: refuses style-only cues.
+  - #773 5981c59b: README.
+  - #774 fd185f44: MCP text corrected (conform off, 1800 frames).
+  - #775 4e7110e2: blank sizes refused. The subtitle-order nit is skipped, because it would mean editing a test assertion.
+  - mcpTools.spec (pins `{ credits: creditsApply(...) }` in app/api/mcp/route.ts) was broken by #766. The code is fixed, not the test, and is being moved onto #766 itself so #766 passes alone.
+  - Opus delta check of #769/#770/#773 started; #766/#774 follow when lane D reports.
