@@ -166,7 +166,7 @@ test("another workspace gets nothing; a board the author has shared (teamShared)
   }, person("u_mate"));
 });
 
-test("the marked sample production is everyone's to read and nobody's to write (owner, 12 Oct); an undone mark is not", async () => {
+test("the marked sample production is everyone's to read; only its owner and the platform owner write it, everyone else is refused (owner, 13 Oct); an undone mark is not", async () => {
   const ws = workspace(`pc-f-${run}`);
   const { tenant, database, privateProject } = await boards(ws);
   const { requireProduction } = await import("../../lib/workbench/team-canvas");
@@ -175,7 +175,9 @@ test("the marked sample production is everyone's to read and nobody's to write (
   await tenant.runInTenant(ws, async () => {
     await database.db().execute({ sql: "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('sampleProduction',?,'u_owner',1)", args: [mark()] });
     await expect(requireProduction(privateProject, undefined, "read"), "read").resolves.toBeUndefined();
-    await expect(requireProduction(privateProject, undefined, "write"), "write").rejects.toThrow(/not in this workspace/);
+    await expect(requireProduction(privateProject, undefined, "write"), "another viewer's write").rejects.toThrow(/not in this workspace/);
+    /* The sample's owner (the person it was marked from) writes it as their own board (the platform owner does too: tests/unit/sampleReadOnly.spec.ts). */
+    await expect(requireProduction(privateProject, "u_owner", "write"), "its owner's write").resolves.toBeUndefined();
     expect((await projectLister({ id: "u_mate" }))(privateProject)).toBe(true);
     await database.db().execute({ sql: "UPDATE settings SET value=? WHERE key='sampleProduction'", args: [mark({ hiddenAt: 5 })] });
     await expect(requireProduction(privateProject, undefined, "read")).rejects.toThrow(/not in this workspace/);

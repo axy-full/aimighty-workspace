@@ -64,7 +64,7 @@ export function compileAstraBlender(
   // This is the only dynamic insertion. Base64's alphabet cannot terminate a
   // Python string, and its decoded contents are passed exclusively to JSON.
   const payload = Buffer.from(JSON.stringify({ scene, bindings: resolved, exportGlb: options.exportGlb ?? false, portableAssets: options.portableAssets ?? false, limits: ASTRA_BLENDER_RUNTIME_LIMITS }), "utf8").toString("base64");
-  return `# Astra blender: generated from a bounded scene document, never model code.
+  return `# 3D scene: generated from a bounded scene document, never model code.
 import base64
 import json
 import math
@@ -85,7 +85,7 @@ if len(args) != 1 or not pathlib.Path(args[0]).is_absolute():
 output = pathlib.Path(args[0]).resolve()
 output.mkdir(parents=True, exist_ok=True)
 if bpy.app.version < (5, 0, 0):
-    raise RuntimeError("Astra blender requires Blender 5 or newer.")
+    raise RuntimeError("This scene script requires Blender 5 or newer.")
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.context.preferences.filepaths.use_scripts_auto_execute = False
@@ -201,7 +201,7 @@ def add_animation(obj, keys):
     # Blender 5's layered actions: assign an explicit slot and channel bag.
     action = bpy.data.actions.new(name=obj.name + " movement")
     slot = action.slots.new(obj.id_type, obj.name)
-    strip = action.layers.new("Astra transforms").strips.new(type='KEYFRAME')
+    strip = action.layers.new("Scene transforms").strips.new(type='KEYFRAME')
     channels = strip.channelbag(slot, ensure=True)
     for property_name, source_name in (("location", "position"), ("rotation_euler", "rotation"), ("scale", "scale")):
         for axis in range(3):
@@ -314,20 +314,20 @@ for spec in SPEC['lights']:
     obj.location = spec['position']
     obj.rotation_euler = radians(spec['rotation'])
 
-world = bpy.data.worlds.new("Astra world")
+world = bpy.data.worlds.new("Scene world")
 world.use_nodes = True
 background = world.node_tree.nodes.get('Background')
 background.inputs['Color'].default_value = (*linear_color(SPEC['world']['color']), 1.0)
 background.inputs['Strength'].default_value = SPEC['world']['strength']
 scene.world = world
 
-camera_data = bpy.data.cameras.new("Astra camera")
+camera_data = bpy.data.cameras.new("Scene camera")
 camera_data.lens = SPEC['camera']['focalLength']
 camera_data.sensor_width = 36
 camera_data.sensor_fit = 'HORIZONTAL'
 camera_data.clip_start = 0.01
 camera_data.clip_end = 10000
-camera = bpy.data.objects.new("Astra camera", camera_data)
+camera = bpy.data.objects.new("Scene camera", camera_data)
 scene.collection.objects.link(camera)
 camera.location = SPEC['camera']['position']
 direction = Vector(SPEC['camera']['target']) - camera.location

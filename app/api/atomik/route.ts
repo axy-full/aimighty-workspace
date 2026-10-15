@@ -1,9 +1,9 @@
 import { NextResponse, after, type NextRequest } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
-import { readableProjectOr } from "@/lib/draftProject";
+import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
-import { listChats, createChat, engines, requestEffort, runTurn, projectContext, type AgentMode } from "@/lib/atomik";
+import { listChats, createChat, engines, requestEffort, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, type AgentMode } from "@/lib/atomik";
 import { atomikEffortOptions } from "@/lib/atomik-reasoning";
 import { cleanAttachments } from "@/lib/attachments";
 import { effectiveRules } from "@/lib/rules";
@@ -87,15 +87,18 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure;
     const text = typeof body.text === "string" ? body.text.trim().slice(0, 20000) : "";
     if (!text) return NextResponse.json({ error: "Say something first." }, { status: 400 });
-    /* A project this person may not read (a private board; lib/draftProject.ts) is no project (null): nothing of its takes, titles or prompts is read for the model. */
-    const projectId = await readableProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null);
+    /* Two projects, asked of this person alone (lib/draftProject.ts): the one they may READ (their own board, a teammate's shared board) feeds the quote's context and memory reads; the one they may FILE into is what the turn spends against, so a quote prices it the same. Someone else's private board gives neither. */
+    const asked = typeof body.projectId === "string" ? body.projectId : null;
+    const readProject = await contextProjectOr(got.user, asked);
+    const projectId = await admittedProjectOr(got.user, asked);
     /* The project's library and presets for library steps, read as the turn will read them. */
     const inputs = await plannerInputs(auth.user.id, projectId);
-    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId,
+    const viewOnly = Boolean(readProject && !projectId);
+    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, viewOnly,
       model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
-      context: await projectContext(projectId), rules: writerRulesByScope(await effectiveRules()),
+      context: [viewOnly ? VIEW_ONLY_INSTRUCTION : "", await projectContext(readProject)].filter(Boolean).join("\n\n"), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
-      memory: await plannerMemoryText({ projectId, query: text }).catch(() => ""),
+      memory: await plannerMemoryText({ projectId: readProject, query: text, viewer: got.user.id }).catch(() => ""),
       library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
   }
@@ -103,7 +106,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
   { const off = await sampleWorkspaceOff(); if (off) return off; }
   const id = await createChat({
     userId: got.user.id,
-    projectId: typeof body.projectId === "string" ? body.projectId : null,
+    /* The project a chat keeps: one its maker may READ (their own board, a teammate's shared board, any project that is not a private board); a private board of someone else's, or an id that is none, is stored as no project (the same answer for both). Spending, step filing and memory writes need more, and are decided separately (admission, and the turn). */
+    projectId: await contextProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null),
     model: typeof body.model === "string" && body.model ? body.model : "auto",
     effort: requestEffort(body.effort),
     agentMode: body.agentMode === "auto" ? "auto" : ("ask" as AgentMode),

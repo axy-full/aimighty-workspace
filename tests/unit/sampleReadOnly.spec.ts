@@ -7,7 +7,7 @@ import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
 
 /**
- * The marked sample production is read-only for every viewer, the workspace's owner and admins included (owner, 12 Oct): nothing is written into it (its canvas,
+ * The marked sample production is read-only for every viewer but its owner (the person it was marked from) and the platform owner (owner, 13 Oct); the workspace's owner and admins who are neither stay refused: nothing is written into it (its canvas,
  * its saved board, a copy opened of it, its shots, takes or library); every viewer can still read it and make a board of their own. The answers are the ones a
  * shared board gives a teammate: 403 `view_only` for saves, shots, takes and filings, 404 for canvas writes. Real temporary databases; sign-in is a fake.
  */
@@ -19,7 +19,7 @@ process.env.ENGINE_MOCK = "1";
 const run = Math.random().toString(36).slice(2, 8);
 const workspace = (id: string) => ({ id, name: id, slug: id, legacy: false, dbUrl: `file:${path.join(dir, id + ".db")}`, dbToken: null, keys: {}, usesPlatformKeys: true }) as TenantWorkspace;
 const user = (id: string, role: "admin" | "member" = "member") => ({ id, email: `${id}@example.test`, name: id, role, owner: id === "u_owner", disabled: false, lastSeen: null, createdAt: 0 });
-const VIEWERS = [["the workspace owner (who marked it)", "u_owner", "admin"], ["an admin", "u_admin", "admin"], ["a member", "u_mate", "member"]] as const;
+const VIEWERS = [["the workspace owner (who did not mark it)", "u_owner", "admin"], ["an admin", "u_admin", "admin"], ["a member", "u_mate", "member"]] as const;
 
 function loadRoute<T>(file: string, who: () => ReturnType<typeof user>): T {
   const root = process.cwd();
@@ -41,20 +41,20 @@ async function fixture(ws: TenantWorkspace) {
   const { newProject } = await import("../../lib/workbench/studio");
   const { workbenchReady } = await import("../../lib/workbench/records");
   const { teamCanvasReady } = await import("../../lib/workbench/team-canvas");
-  const sample = draft.mappedId("prj_wb_", ws.id, "u_owner", "d1");
+  const sample = draft.mappedId("prj_wb_", ws.id, "u_marker", "d1");
   await tenant.runInTenant(ws, async () => {
     await database.ready(); await workbenchReady(); await teamCanvasReady();
     const db = database.db();
     await db.execute({ sql: "INSERT OR IGNORE INTO productions(id,name,created_at) VALUES('prod_g','Group',0)", args: [] });
     await db.execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at,production_id) VALUES(?,?,0,'prod_g')", args: [sample, "The sample"] });
     await db.execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at,production_id) VALUES('prod_open','Ordinary',0,'prod_g')", args: [] });
-    await db.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)", args: ["u_owner:d1", "u_owner", "d1", "d1", JSON.stringify({ ...newProject("d1"), id: "d1", productionProjectId: sample })] });
+    await db.execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)", args: ["u_marker:d1", "u_marker", "d1", "d1", JSON.stringify({ ...newProject("d1"), id: "d1", productionProjectId: sample })] });
     await db.execute({ sql: "INSERT INTO workbench_team_canvas(production_id,body,revision,updated_by,updated_at) VALUES(?,?,1,'u_owner',1)", args: [sample, JSON.stringify({ nodes: { n1: { id: "n1", title: "Opening" } } })] });
     await db.execute({ sql: "INSERT INTO shots(id,project_id,code,title,created_at,updated_at) VALUES(?,?,'SH010','Sample shot',1,1)", args: [`shot_s_${run}`, sample] });
     await db.execute({ sql: "INSERT INTO shots(id,project_id,code,title,created_at,updated_at) VALUES(?,?,'SH010','Open shot',1,1)", args: [`shot_o_${run}`, "prod_open"] });
     await db.execute({ sql: "INSERT INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at,kind) VALUES(?,?,?,?,?,'succeeded',1,1,'image')", args: [`gen_s_${run}`, sample, "m", "p", "{}"] });
     await db.execute({ sql: "INSERT INTO generations(id,project_id,model,prompt,params,status,created_at,updated_at,kind) VALUES(?,?,?,?,?,'succeeded',1,1,'image')", args: [`gen_o_${run}`, "prod_open", "m", "p", "{}"] });
-    await db.execute({ sql: "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('sampleProduction',?,'u_owner',1)", args: [JSON.stringify({ version: 1, projectId: sample, name: "The sample", draftOwner: "u_owner", draftId: "d1", markedBy: "u_owner", markedAt: 5 })] });
+    await db.execute({ sql: "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('sampleProduction',?,'u_owner',1)", args: [JSON.stringify({ version: 1, projectId: sample, name: "The sample", draftOwner: "u_marker", draftId: "d1", markedBy: "u_marker", markedAt: 5 })] });
   }, { user: user("u_owner", "admin") });
   return { tenant, database, sample, newProject };
 }
@@ -95,7 +95,7 @@ test("every viewer is refused every write into the sample production, and every 
       await expect(requireProduction(sample, undefined, "write"), `${label}: canvas write`).rejects.toThrow(/not in this workspace/);
       expect((await canvas.PATCH(json("PATCH", { productionId: sample, upsertNodes: [], removeNodes: [], upsertAssets: [], order: null }), undefined as never)).status, `${label}: canvas PATCH`).toBe(404);
       for (const [what, project] of [["their copy", { ...opened.project }], ["the board it was marked from", { ...newProject("d1"), id: "d1", productionProjectId: sample }]] as const) {
-        const save = await studio.PUT(json("PUT", { project, revision: id === "u_owner" && what !== "their copy" ? 1 : opened.revision }), undefined as never);
+        const save = await studio.PUT(json("PUT", { project, revision: opened.revision }), undefined as never);
         expect(save.status, `${label}: save of ${what}`).toBe(403);
         expect((await save.json()).code).toBe("view_only");
       }
@@ -126,9 +126,9 @@ test("every viewer is refused every write into the sample production, and every 
   /* Undoing the mark lifts it: the marker's own board saves and its canvas takes writes again. */
   await tenant.runInTenant(ws, async () => {
     await database.db().execute({ sql: "UPDATE settings SET value=json_set(value,'$.hiddenAt',9) WHERE key='sampleProduction'", args: [] });
-    who = user("u_owner", "admin");
+    who = user("u_marker");
     await expect(requireProduction(sample, undefined, "write")).resolves.toBeUndefined();
-  }, { user: user("u_owner", "admin") });
+  }, { user: user("u_marker") });
 });
 
 test("every other way in is shut too: cast, treatment, cards, assets, wires, boards, notes, the production's own name, sharing, publishing, mapping, filings, for the owner, an admin and a member alike", async () => {
@@ -224,11 +224,8 @@ test("every other way in is shut too: cast, treatment, cards, assets, wires, boa
       }
       /* Sharing, publishing and mapping from the sample's copy and from the board it was marked from. */
       expect(await sampleDraftRefusal(id, copy), `${label}: a copy`).not.toBeNull();
-      expect(await sampleDraftRefusal("u_owner", original), `${label}: the original`).not.toBeNull();
+      expect(await sampleDraftRefusal(id, original), `${label}: the original`).not.toBeNull();
       expect(await sampleDraftRefusal(id, newProject(`own-${id}`)), `${label}: their own board is not asked`).toBeNull();
-      if (id === "u_owner") for (const action of [{ action: "team-share", shared: true }, { action: "map-shot", nodeId: "n" }, { action: "publish", expectedBibleVersion: 0 }]) {
-        expect(await code(await studio.POST(json("POST", { projectId: "d1", ...action }), undefined as never)), `${label}: ${action.action} on the marked board`).toEqual(VIEW);
-      }
       for (const action of [{ action: "team-share", shared: true }, { action: "map-shot", nodeId: "n" }, { action: "publish", expectedBibleVersion: 0 }])
         expect(await code(await studio.POST(json("POST", { projectId: copy.id, ...action }), undefined as never)), `${label}: ${action.action} on their copy`).toEqual(VIEW);
       await expect(unlinkProjectLibraryUpload(id, copy.id, "upl_x"), `${label}: a library unlink`).rejects.toBeInstanceOf(ProjectLibraryError);
@@ -274,4 +271,77 @@ test("a lift lets the RUN write the sample (it writes as an agent), not the pers
     expect((await sampleWriteRefusal(sample, { id: "u_owner" }))?.status).toBe(403);
     await expect(requireProduction(sample, "u_owner", "read")).resolves.toBeUndefined();
   }, { user: user("u_owner", "admin") });
+});
+
+test("the sample's owner (the person it was marked from) and the platform owner write it as their own board; a member, an admin and the workspace owner stay refused", async () => {
+  const ws = workspace(`sro-d-${run}`);
+  const { tenant, database, sample, newProject } = await fixture(ws);
+  /* The platform owner is named by the deployment (isPlatformOwner, lib/auth.ts): the configured address. */
+  const previous = process.env.SUPER_ADMIN_EMAIL;
+  process.env.SUPER_ADMIN_EMAIL = "u_platform@example.test";
+  try {
+  let who = user("u_mate");
+  const R = <T,>(file: string) => loadRoute<T>(file, () => who);
+  const canvas = R<typeof import("../../app/api/workbench/team-canvas/route")>("app/api/workbench/team-canvas/route.ts");
+  const studio = R<typeof import("../../app/api/workbench/projects/route")>("app/api/workbench/projects/route.ts");
+  const shots = R<typeof import("../../app/api/shots/route")>("app/api/shots/route.ts");
+  const shot = R<typeof import("../../app/api/shots/[id]/route")>("app/api/shots/[id]/route.ts");
+  const jobs = R<typeof import("../../app/api/jobs/[id]/route")>("app/api/jobs/[id]/route.ts");
+  const cast = R<typeof import("../../app/api/cast/route")>("app/api/cast/route.ts");
+  const cards = R<typeof import("../../app/api/canvas/route")>("app/api/canvas/route.ts");
+  const productions = R<typeof import("../../app/api/productions/[id]/route")>("app/api/productions/[id]/route.ts");
+  const reorder = R<typeof import("../../app/api/shots/reorder/route")>("app/api/shots/reorder/route.ts");
+  const demo = R<typeof import("../../app/api/demo/sample/route")>("app/api/demo/sample/route.ts");
+  const { requireProduction } = await import("../../lib/workbench/team-canvas");
+  const { linkProjectLibraryUpload, unlinkProjectLibraryUpload } = await import("../../lib/workbench/project-library");
+  const { sampleDraftRefusal, sampleRunRefusal } = await import("../../lib/demo/readonly.server");
+  const status = (res: Response) => res.status;
+  await tenant.runInTenant(ws, async () => {
+    const db = database.db();
+    await db.execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind) VALUES('upl_e','a.png','image/png','png',1,'x','',1,'image')", args: [] });
+  }, { user: user("u_owner", "admin") });
+  const EDITORS = [["the sample's owner (the marker)", "u_marker"], ["the platform owner", "u_platform"]] as const;
+  for (const [label, id] of EDITORS) {
+    who = user(id, id === "u_platform" ? "admin" : "member");
+    await tenant.runInTenant(ws, async () => {
+      const opened = await (await demo.POST(json("POST", { action: "open" }), undefined as never)).json();
+      expect(opened.viewOnly, `${label}: the sample opens editable`).toBeUndefined();
+      await expect(requireProduction(sample, undefined, "write"), `${label}: canvas write`).resolves.toBeUndefined();
+      expect(await sampleDraftRefusal(id, { id: opened.project.id, productionProjectId: sample }), `${label}: their copy`).toBeNull();
+      expect(await sampleDraftRefusal(id, { ...newProject("d1"), id: "d1", productionProjectId: sample }), `${label}: the original`).toBeNull();
+      const save = await studio.PUT(json("PUT", { project: { ...opened.project, name: `Edited ${id}` }, revision: opened.revision }), undefined as never);
+      expect(save.status, `${label}: a save of their copy: ${JSON.stringify(await save.clone().json())}`).toBe(200);
+      const made = await shots.POST(json("POST", { projectId: sample, code: `SH${id === "u_marker" ? 71 : 72}`, title: "Added" }), undefined as never);
+      expect(made.status, `${label}: a shot into the sample`).toBe(200);
+      const newShot = (await made.json()).shot.id as string;
+      expect(status(await shot.PATCH(json("PATCH", { title: "Renamed" }), ctx(newShot))), `${label}: a shot's edit`).toBe(200);
+      expect(status(await jobs.PATCH(json("PATCH", { title: "Renamed take" }), ctx(`gen_s_${run}`))), `${label}: a take's rename`).toBe(200);
+      expect(status(await cast.POST(json("POST", { projectId: sample, name: `Cast${id}` }), undefined as never)), `${label}: cast`).toBe(200);
+      expect(status(await cards.POST(json("POST", { projectId: sample, kind: "note", text: "x" }), undefined as never)), `${label}: a card`).toBe(200);
+      expect(status(await productions.PATCH(json("PATCH", { name: `Group ${id}` }), ctx("prod_g"))), `${label}: the production's name`).toBe(200);
+      expect(status(await reorder.POST(json("POST", { projectId: sample, ids: [`shot_s_${run}`, newShot] }), undefined as never)), `${label}: reorder`).toBe(200);
+      await expect(linkProjectLibraryUpload(id, opened.project.id, "upl_e"), `${label}: a library filing`).resolves.toBeUndefined();
+      await expect(unlinkProjectLibraryUpload(id, opened.project.id, "upl_e"), `${label}: a library removal`).resolves.toBeUndefined();
+      /* A run on the sample is theirs to stop or undo, whoever asked for it. */
+      expect(await sampleRunRefusal(sample, `rar_${"b".repeat(24)}`, { id }), `${label}: a run`).toBeNull();
+      const undo = await canvas.POST(json("POST", { action: "agent.undo", productionId: sample, runId: `rar_${"b".repeat(24)}` }), undefined as never);
+      expect((await undo.clone().json().catch(() => ({}))).code, `${label}: undo is not refused as view-only`).not.toBe("view_only");
+      const patch = await canvas.PATCH(json("PATCH", { productionId: sample, upsertNodes: [], removeNodes: [], upsertAssets: [], order: null }), undefined as never);
+      expect(patch.status, `${label}: canvas PATCH`).toBe(200);
+    }, { user: user(id, id === "u_platform" ? "admin" : "member") });
+  }
+  /* A member, an admin and the workspace's owner are still refused (the first test holds the whole list). */
+  for (const [label, id, role] of VIEWERS) {
+    who = user(id, role);
+    await tenant.runInTenant(ws, async () => {
+      await expect(requireProduction(sample, undefined, "write"), `${label}: canvas write`).rejects.toThrow(/not in this workspace/);
+      const made = await shots.POST(json("POST", { projectId: sample, code: "SH99", title: "Hijack" }), undefined as never);
+      expect(made.status, `${label}: a shot`).toBe(403);
+    }, { user: user(id, role) });
+  }
+  } finally {
+    /* The next spec in this worker must not inherit a platform owner. */
+    if (previous === undefined) delete process.env.SUPER_ADMIN_EMAIL;
+    else process.env.SUPER_ADMIN_EMAIL = previous;
+  }
 });

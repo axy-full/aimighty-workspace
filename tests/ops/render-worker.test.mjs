@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createConnection } from "node:net";
-import { createRenderWorker, LIMITS } from "../../ops/render-worker/server.mjs";
+import { createRenderWorker, LIMITS, EGRESS_RETRY_DELAY_MS, main as startWorker } from "../../ops/render-worker/server.mjs";
 
 // The worker runs the real /usr/bin/python3 and the same launcher shape the
 // app writes (rlimits, then execve of Blender), except that the launcher execs
@@ -525,19 +525,17 @@ test("README's smoke script is smoke.mjs, byte for byte", async () => {
   assert.equal(`${block[1]}\n`, smoke);
 });
 
-test("compose: three identical workers but for their cores, locked down, internal network only", () => {
+test("compose: one worker, locked down, internal network only, its secret required (the relay and the cores are in render-relay.test.mjs)", () => {
   const compose = readFileSync(new URL("../../ops/render-worker/compose.yaml", import.meta.url), "utf8");
   const yaml = compose.replace(/^\s*#.*$/gm, "");
-  const blocks = yaml.split(/^ {2}(render-[123]):\n/m).slice(1);
-  const services = Object.fromEntries(Array.from({ length: blocks.length / 2 }, (_, index) => [blocks[index * 2], blocks[index * 2 + 1].split(/^\S/m)[0].replace(/ +#.*$/gm, "")]));
-  assert.deepEqual(Object.keys(services), ["render-1", "render-2", "render-3"]);
-  assert.deepEqual(Object.values(services).map((block) => /cpuset: "([\d,]+)"/.exec(block)?.[1]), ["12,13", "14,15", "16,17"]);
-  assert.deepEqual(Object.values(services).map((block) => /ASTRA_WORKER_SECRET: \$\{(ASTRA_WORKER_SECRET_\d):\?/.exec(block)?.[1]), ["ASTRA_WORKER_SECRET_1", "ASTRA_WORKER_SECRET_2", "ASTRA_WORKER_SECRET_3"]);
-  const [first, ...rest] = Object.values(services).map((block) => block.replace(/^ +cpuset: .*\n/m, "").replace(/ASTRA_WORKER_SECRET_\d/g, "ASTRA_WORKER_SECRET_N"));
-  for (const other of rest) assert.equal(other, first);
+  const blocks = yaml.split(/^ {2}(render-[123]|render-relay):\n/m).slice(1);
+  const all = Object.fromEntries(Array.from({ length: blocks.length / 2 }, (_, index) => [blocks[index * 2], blocks[index * 2 + 1].split(/^\S/m)[0].replace(/ +#.*$/gm, "")]));
+  assert.deepEqual(Object.keys(all), ["render-1", "render-relay"]);
+  const first = all["render-1"];
+  assert.equal(/cpuset: \$\{RENDER_CPUSET_\d:-([\d,]+)\}/.exec(first)?.[1], "6,7", "default on the 8-core server's cores 0-7: worker 1 on 6,7");
   for (const line of ["cpus: 2", "cpu_shares: 256", "mem_limit: 4g", "memswap_limit: 4g", "pids_limit: 256", "read_only: true", "cap_drop: [ALL]",
-    'security_opt: ["no-new-privileges:true"]', "networks: [render-internal]", "/vercel/sandbox:size=1g,uid=10001,gid=10001,mode=0700", "/tmp:size=256m",
-    "ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_N:?"]) {
+    'security_opt: ["no-new-privileges:true"]', "network_mode: render-internal", "/vercel/sandbox:size=1g,uid=10001,gid=10001,mode=0700", "/tmp:size=256m",
+    "ASTRA_WORKER_SECRET: ${ASTRA_WORKER_SECRET_1:?"]) {
     assert.ok(first.includes(line), line);
   }
   assert.ok(!/^\s*ports:/m.test(yaml) && !/^\s*expose:/m.test(yaml));
@@ -548,4 +546,86 @@ test("compose: three identical workers but for their cores, locked down, interna
   assert.match(dockerfile, /^USER 10001:10001$/m);
   assert.match(dockerfile, /^HEALTHCHECK /m);
   assert.ok(!/SECRET\s*=/.test(dockerfile.replace(/^#.*$/gm, "")), "no secret in the image");
+});
+
+test("fail-closed start: the egress check runs before the worker listens; anything but a pass logs the lines, waits, exits non-zero and never binds; a pass listens", async () => {
+  const root = await mkdtemp(join(tmpdir(), "render-worker-gate-"));
+  const env = () => ({ ASTRA_WORKER_SECRET: SECRET, ASTRA_WORKER_TEST_ROOT: root, PORT: "0" });
+  const run = async (gate, overrides = {}) => {
+    const events = [];
+    const worker = await startWorker({ env: overrides.env ?? env(), gate, signals: false, exit: (code) => events.push(`exit ${code}`), sleep: async (ms) => { events.push(`sleep ${ms}`); }, log: (line) => events.push(`log ${line}`), error: (line) => events.push(`error ${line}`) });
+    return { events, worker };
+  };
+  try {
+    for (const [label, gate] of [["a failing verdict", async () => ({ ok: false, failures: ["REACHED host:172.20.0.1:22 ECONNREFUSED", "LEAK env ASTRA_WORKER_SECRET_2"] })], ["no verdict", async () => undefined], ["a gate that throws", async () => { throw new Error("boom"); }]]) {
+      const { events, worker } = await run(gate);
+      assert.equal(worker, null, label);
+      assert.deepEqual(events.map((e) => e.split(" ")[0] + " " + (e.split(" ")[1] ?? "")).filter((e) => /^(sleep|exit)/.test(e)), [`sleep ${EGRESS_RETRY_DELAY_MS}`, "exit 1"], `${label}: waits, then exits non-zero`);
+      assert.ok(!events.some((e) => /listening/.test(e)), `${label}: never listens`);
+    }
+    const failing = await run(async () => ({ ok: false, failures: ["REACHED host:172.20.0.1:22 ECONNREFUSED", "LEAK env ASTRA_WORKER_SECRET_2"] }));
+    const message = failing.events.find((e) => e.startsWith("error ")) ?? "";
+    assert.match(message, /egress check failed/); assert.match(message, /REACHED host:172\.20\.0\.1:22/); assert.match(message, /LEAK env ASTRA_WORKER_SECRET_2/);
+    assert.ok(!message.includes(SECRET), "never the secret's value");
+    /* A pass listens, on the configured port. */
+    const passed = await run(async () => ({ ok: true, failures: [] }));
+    try {
+      assert.ok(passed.worker, "the worker was returned");
+      assert.ok(await waitFor(() => passed.worker.server.listening), "and it is listening");
+      assert.ok(passed.events.some((e) => /^log render worker listening on \d+$/.test(e)));
+      assert.ok(!passed.events.some((e) => /^exit/.test(e)));
+    } finally { await passed.worker.close(); }
+    /* A bad secret is refused before the check even runs: the check is not asked. */
+    let asked = 0;
+    const refused = await run(async () => { asked++; return { ok: true, failures: [] }; }, { env: { ASTRA_WORKER_SECRET: "short", ASTRA_WORKER_TEST_ROOT: root } });
+    assert.equal(asked, 0); assert.equal(refused.worker, null); assert.ok(refused.events.includes("exit 1"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("fail-closed start: server.mjs asks its gate before it can listen, the real gate is the shared probe with no app line, the exit delay is long enough not to hot-loop, and compose retries on a restart policy that does not give up", () => {
+  const code = readFileSync(new URL("../../ops/render-worker/server.mjs", import.meta.url), "utf8");
+  const mainAt = code.indexOf("export async function main");
+  const gateAt = code.indexOf("await runGate()", mainAt), readyAt = code.indexOf("await worker.ready()", mainAt), listenAt = code.indexOf(".listen(port", mainAt);
+  assert.ok(mainAt > 0 && gateAt > mainAt && gateAt < readyAt && readyAt < listenAt, "gate, then ready, then listen");
+  assert.equal(code.split(".listen(").length - 1, 1, "one place binds a port");
+  assert.match(code, /import\("\.\/check-egress\.mjs"\)/);
+  assert.match(code, /testRoot \? null : realGate/, "only the test root (tests only, and never inside the image) skips the real check");
+  assert.ok(EGRESS_RETRY_DELAY_MS >= 30_000, "the wait before exiting");
+  const compose = readFileSync(new URL("../../ops/render-worker/compose.yaml", import.meta.url), "utf8").replace(/^\s*#.*$/gm, "");
+  assert.match(compose, /^ {2}render-1:[\s\S]*?restart: unless-stopped/m);
+  assert.ok(!/ASTRA_WORKER_TEST_ROOT/.test(compose), "compose never sets the test root");
+  const dockerfile = readFileSync(new URL("../../ops/render-worker/Dockerfile", import.meta.url), "utf8");
+  assert.match(dockerfile, /COPY check-egress\.mjs \/app\/check-egress\.mjs/, "the worker's image carries the check it imports");
+  assert.ok(!/ASTRA_WORKER_TEST_ROOT/.test(dockerfile.replace(/^#.*$/gm, "")), "the image never sets the test root");
+});
+
+test("ASTRA_WORKER_TEST_ROOT is ignored inside the image (ASTRA_WORKER_CONTAINER=1): the real egress check runs and the worker uses the real root; outside it the test root still skips the check", async () => {
+  const root = await mkdtemp(join(tmpdir(), "render-worker-testroot-"));
+  try {
+    for (const container of ["1", undefined]) {
+      const label = container ? "in the image" : "outside it";
+      const events = [];
+      let asked = 0;
+      const env = { ASTRA_WORKER_SECRET: SECRET, ASTRA_WORKER_TEST_ROOT: root, PORT: "0", ...(container ? { ASTRA_WORKER_CONTAINER: container } : {}) };
+      const realGate = async () => { asked++; return { ok: false, failures: ["REACHED example.com"] }; };
+      const worker = await startWorker({ env, realGate, signals: false, exit: (code) => events.push(`exit ${code}`), sleep: async () => {}, log: (line) => events.push(`log ${line}`), error: (line) => events.push(`error ${line}`) });
+      if (container) {
+        assert.equal(asked, 1, `${label}: the real check ran although a test root was set`);
+        assert.equal(worker, null, label);
+        assert.ok(events.includes("exit 1") && !events.some((e) => /listening/.test(e)), `${label}: ${JSON.stringify(events)}`);
+      } else {
+        assert.equal(asked, 0, `${label}: the test root skips the check`);
+        assert.ok(worker, label);
+        try { assert.ok(await waitFor(() => worker.server.listening), label); } finally { await worker.close(); }
+        assert.ok(!events.some((e) => /^exit/.test(e)), label);
+      }
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("ASTRA_WORKER_TEST_ROOT: the code reads it only through `inContainer ? undefined : ...`, so the image can never use it", () => {
+  const code = readFileSync(new URL("../../ops/render-worker/server.mjs", import.meta.url), "utf8");
+  assert.deepEqual([...code.matchAll(/ASTRA_WORKER_TEST_ROOT/g)].length, 2, "one comment mention and one read");
+  assert.match(code, /const testRoot = inContainer \? undefined : env\.ASTRA_WORKER_TEST_ROOT;/);
+  assert.match(code, /sweepStrays: inContainer,/);
 });

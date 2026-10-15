@@ -44,8 +44,9 @@ async function fixture(name: string) {
   const statement = source.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text === "withTenant")!;
   const compile = (text: string) => ts.transpileModule(text, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const wrapper = {} as Pick<typeof auth, "withTenant">;
-  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", "crossOriginProblem", compile(statement.getText(source)))(
+  new Function("exports", "resolveStore", "runWithStore", "NoTenantError", "MediaSourceError", "workbenchScopeFor", "recoveryRoute", "crossOriginProblem", "hideOwnerAccountId", compile(statement.getText(source)))(
     wrapper, async () => store, tenant.runWithStore, tenant.NoTenantError, MediaSourceError, scope.workbenchScopeFor, (handler: unknown) => handler, crossOriginProblem,
+    async (res: Response) => res,
   );
   const calls: { id: string; workspaceId: string; userId: string; tokenScope?: string }[] = [];
   let result: { status: string } = { status: "requested" }, failure: unknown;

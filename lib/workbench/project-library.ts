@@ -1,4 +1,4 @@
-import { isSampleProject } from '@/lib/draftProject';
+import { isSampleProject, mayReachProject } from '@/lib/draftProject';
 import { requireTenant } from '@/lib/tenant';
 import { sampleViewOnly } from '@/lib/workbench/team-boards';
 import { viewOnlyRefusal } from '@/lib/workbench/view-only';
@@ -40,8 +40,10 @@ export async function resolveProjectLibrary(owner: string, id: string) {
   if (!productionProjectId || !(await db().execute({sql:'SELECT id FROM projects WHERE id=?',args:[productionProjectId]})).rows.length)
     throw new ProjectLibraryError('This Studio project no longer has a linked production project.', 409);
   const refs = referencedMedia(draft.project);
+  /* The published version of a board counts only for someone who can read that board (lib/draftProject.ts). */
+  const readable = await mayReachProject({id: owner}, productionProjectId, 'read');
   const [shared, edits] = await Promise.all([
-    db().execute({sql:'SELECT body FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[productionProjectId]}),
+    readable ? db().execute({sql:'SELECT body FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[productionProjectId]}) : Promise.resolve({rows: [] as {body?: unknown}[]}),
     db().execute({sql:'SELECT DISTINCT kind,source_id FROM workbench_edit_sources WHERE owner=? AND draft_id=?',args:[owner,id]}),
   ]);
   for (const row of shared.rows) {
@@ -95,7 +97,7 @@ export async function linkProjectLibraryUpload(owner: string, projectId: string,
   const scope = await resolveProjectLibrary(owner, projectId);
   if (!uploadId || uploadId.length > 200) throw new ProjectLibraryError('Choose a stored upload.');
   /* The marked sample production takes no filing, from anyone (lib/demo/readonly.server.ts). */
-  if (await isSampleProject(scope.productionProjectId)) throw new ProjectLibraryError(viewOnlyRefusal((await sampleViewOnly(requireTenant())).owner.name), 403);
+  if (await isSampleProject(scope.productionProjectId, undefined, { id: owner })) throw new ProjectLibraryError(viewOnlyRefusal((await sampleViewOnly(requireTenant())).owner.name), 403);
   /* Filing is not a way to open someone's private upload: the person filing must be able to open it (lib/uploadAccess.ts); said as a missing one is. */
   if (!(await uploadOpenableBy(uploadId, { id: owner }))) throw new ProjectLibraryError('This upload is no longer available in the workspace.', 404);
   const result = await db().execute({
@@ -112,6 +114,6 @@ export async function unlinkProjectLibraryUpload(owner: string, projectId: strin
   const scope = await resolveProjectLibrary(owner,projectId);
   if (!uploadId || uploadId.length>200) throw new ProjectLibraryError('Choose a stored upload.');
   /* The marked sample's filings are nobody's to remove (lib/demo/readonly.server.ts). */
-  if (await isSampleProject(scope.productionProjectId)) throw new ProjectLibraryError(viewOnlyRefusal((await sampleViewOnly(requireTenant())).owner.name), 403);
+  if (await isSampleProject(scope.productionProjectId, undefined, { id: owner })) throw new ProjectLibraryError(viewOnlyRefusal((await sampleViewOnly(requireTenant())).owner.name), 403);
   await archiveAndDelete(db(), "project_library_uploads", 'project_id=? AND upload_id=?', [scope.productionProjectId,uploadId]);
 }

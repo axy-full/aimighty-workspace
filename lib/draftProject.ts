@@ -64,17 +64,45 @@ export async function sampleMarkNow(ex: Exec = db()): Promise<{ projectId: strin
   try { const mark = parseSampleMark(JSON.parse(String(row.value))); return mark ? { projectId: mark.projectId, draftOwner: mark.draftOwner, draftId: mark.draftId, markedBy: mark.markedBy } : null; } catch { return null; }
 }
 /**
- * Whether `projectId` is the marked sample: read-only for every person, whoever they are and whatever lift is on. The one-run lift (lib/demo/lift.server.ts) lets
- * the RUN spend, and a run writes as an agent or with no person, which is never asked here; the lifter's own presses are not the run's work.
+ * Who may write the marked sample (owner, 13 Oct: "the sample stays editable for its owner/the platform owner, read-only only for other viewers"): the person whose board it
+ * was marked from (the marker whose draft is marked), and the platform owner (`isPlatformOwner`, lib/auth.ts, by the deployment's own record, never a typed address). For
+ * them the sample is their own board; for everyone else, admins included, it is read-only. Where there is no mark there is nothing to lock.
  */
-export async function isSampleProject(projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
+export async function mayEditSample(personId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
+  if (!personId) return false;
+  const mark = await sampleMarkNow(ex);
+  if (!mark) return true;
+  if (mark.draftOwner === personId) return true;
+  return platformOwnerId(personId);
+}
+/** Whether this account is the platform owner: the check lib/auth.ts › isPlatformOwner makes (the configured address, or the owner of the studio's own workspace), by the address the session carries or, from an id alone, by the accounts the platform owner's identity names. */
+async function platformOwnerId(personId: string): Promise<boolean> {
+  const user = currentTenant()?.user;
+  const { isPlatformOwner } = await import("./auth");
+  if (user && user.id === personId && typeof user.email === "string") return isPlatformOwner({ id: user.id, email: user.email });
+  const { isOwnerIdentity, platformOwnerIdentity } = await import("./platformOwnerPrivacy");
+  return isOwnerIdentity(await platformOwnerIdentity(), { id: personId });
+}
+/** Whether `projectId` is the marked sample, whoever asks. */
+export async function isSampleIdentity(projectId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
   if (!projectId) return false;
   return (await sampleMarkNow(ex))?.projectId === projectId;
 }
-/** Whether saving this draft would write the sample: a copy someone opened of it (`sample-…`), the marker's own board it was marked from, or any draft linked to it. */
+/**
+ * Whether `projectId` is the marked sample AND locked against `person` (default: the person making this request): read-only for every person but those who may edit it
+ * (`mayEditSample`), whatever lift is on. The one-run lift (lib/demo/lift.server.ts) lets the RUN spend, and a run writes as an agent or with no person, which is never asked
+ * here; the lifter's own presses are not the run's work.
+ */
+export async function isSampleProject(projectId: string | null | undefined, ex: Exec = db(), person?: { id: string } | null): Promise<boolean> {
+  if (!(await isSampleIdentity(projectId, ex))) return false;
+  const who = person === undefined ? currentPerson() : person;
+  return !(await mayEditSample(who?.id, ex));
+}
+/** Whether saving this draft would write the sample against `owner`: a copy someone opened of it (`sample-…`), the marker's own board it was marked from, or any draft linked to it, unless `owner` may edit the sample. */
 export async function isSampleDraft(owner: string, draftId: string, productionId: string | null | undefined, ex: Exec = db()): Promise<boolean> {
   const mark = await sampleMarkNow(ex);
   if (!mark) return false;
+  if (await mayEditSample(owner, ex)) return false;
   return draftId.startsWith("sample-") || (mark.draftOwner === owner && mark.draftId === draftId) || (!!productionId && productionId === mark.projectId);
 }
 
@@ -115,11 +143,29 @@ export function currentPerson(): { id: string; role?: string } | null {
 export async function mayReachProject(person: { id: string } | null, projectId: string | null | undefined, access: "read" | "write" | "admit" = "write", ex: Exec = db()): Promise<boolean> {
   if (!person) return true;
   /* The sample is nobody's to write: not its marker's, not the workspace owner's or an admin's. */
-  if (access === "write" && (await isSampleProject(projectId, ex))) return false;
+  if (access === "write" && (await isSampleProject(projectId, ex, person))) return false;
   if (!isDraftProject(projectId)) return true;
   if (await ownsDraftProject(person.id, projectId!, ex)) return true;
   if (await isMarkedSample(projectId!, ex)) return true;
   return access === "read" && (await draftIsTeamShared(projectId!, ex));
+}
+
+/**
+ * `projectId` when `person` may FILE into it ("admit": their own board, the sample, or any project that is not a private board), else null, no project. The one rule a chat's project
+ * lives by (chat create and PATCH, skills, the turn): a private board of someone else's and an id that is none give the same null, so nothing says whether one exists.
+ */
+export async function admittedProjectOr(person: { id: string } | null, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
+  if (projectId == null || projectId === "") return null;
+  return (await mayReachProject(person, projectId, "admit", ex)) ? projectId : null;
+}
+
+/**
+ * `projectId` when `person` may READ it (their own board, the sample, a teammate's SHARED board, any project that is not a private board), else null. No admin elevation: an admin
+ * reads another member's private board through the audited admin read, not here. This feeds Atomik's CONTEXT only; spending, step filing and memory writes need `admittedProjectOr`.
+ */
+export async function contextProjectOr(person: { id: string } | null, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
+  if (projectId == null || projectId === "") return null;
+  return (await mayReachProject(person, projectId, "read", ex)) ? projectId : null;
 }
 
 /** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
@@ -223,8 +269,3 @@ export async function takeLister(viewer: Viewer, ex: Exec = db()): Promise<(proj
   return projectLister(viewer, ex);
 }
 
-/** `projectId` when `viewer` may READ that project (its owner, an admin of the workspace, anyone for a shared board or the sample), else null, no project: what a route that feeds a project's takes, titles or prompts to a model runs on, so nothing of a private board is read and no record (a meter line, a reservation, a memory) is ever written against it or against a placeholder id. */
-export async function readableProjectOr(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
-  if (projectId == null) return null;
-  return seesEveryBoard(viewer) || (await mayReachProject(viewer, projectId, "read", ex)) ? projectId : null;
-}

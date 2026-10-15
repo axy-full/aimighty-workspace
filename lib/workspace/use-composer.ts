@@ -307,6 +307,8 @@ export function useComposer(options: {
   compose?: (prompt: string, shot: Record<string, string>, type: ComposerType) => { prompt: string; shotSpec: Record<string, string> | null };
   /** The button's verb ("Generate" unless the host says otherwise: Make says "Make"). */
   verb?: string;
+  /** Make's composer alone says so: its takes are marked "made in Make" by the server (lib/madeIn.ts), and Make's results are those. */
+  madeIn?: "make";
   /** Told once a press has been accepted by the server (see ComposerSent). Optional; nothing depends on it. */
   onSent?: (sent: ComposerSent) => void;
   /** Engines this host does not offer at all (not in the list, not selected, not the default). A module-level function, so it is stable. */
@@ -487,6 +489,8 @@ export function useComposer(options: {
   const live = useRef({ state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed, enhancedOf });
   useEffect(() => { live.current = { state, model, settings, credits, blocked, target, audioBody, quoteKey, quote, sent, seed, enhancedOf }; });
   const busy = useRef(false);
+  const madeInRef = useRef(options.madeIn);
+  useEffect(() => { madeInRef.current = options.madeIn; });
 
   /** The project to file into: the open one, or a new "Untitled" through the ordinary creation path. */
   const ensureProject = useCallback(async (): Promise<Project> => {
@@ -612,8 +616,8 @@ export function useComposer(options: {
           const request = (variation: number): DispatchRequest => model.audioTask
             ? {
                 endpoint: "/api/audio",
-                quoteBody: { ...now.audioBody!, batchId, variation, batchSize: count },
-                body: { ...now.audioBody!, projectId: mapping.productionProjectId, shotId: mapping.shotId, batchId, variation, batchSize: count },
+                quoteBody: { ...now.audioBody!, batchId, variation, batchSize: count, ...(madeInRef.current ? { madeIn: madeInRef.current } : {}) },
+                body: { ...now.audioBody!, projectId: mapping.productionProjectId, shotId: mapping.shotId, batchId, variation, batchSize: count, ...(madeInRef.current ? { madeIn: madeInRef.current } : {}) },
               }
             : {
                 endpoint: "/api/generate",
@@ -624,6 +628,7 @@ export function useComposer(options: {
                   batch: { id: batchId, variation, size: count }, shotSpec: now.sent.shotSpec, cinema: now.sent.cinema,
                   ...(now.seed !== null ? { seed: variationSeed(now.seed, variation) } : {}),
                   ...enhancedField(now),
+                  ...(madeInRef.current ? { madeIn: madeInRef.current } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },
               };
@@ -723,8 +728,8 @@ export function useComposer(options: {
           request: model.audioTask
             ? {
                 endpoint: "/api/audio",
-                quoteBody: { ...now.audioBody! },
-                body: { ...now.audioBody!, projectId: mapping.productionProjectId, shotId: mapping.shotId },
+                quoteBody: { ...now.audioBody!, ...(madeInRef.current ? { madeIn: madeInRef.current } : {}) },
+                body: { ...now.audioBody!, projectId: mapping.productionProjectId, shotId: mapping.shotId, ...(madeInRef.current ? { madeIn: madeInRef.current } : {}) },
               }
             : {
                 endpoint: "/api/generate",
@@ -742,6 +747,7 @@ export function useComposer(options: {
                   cinema: now.sent.cinema,
                   ...(now.seed !== null ? { seed: now.seed } : {}),
                   ...enhancedField(now),
+                  ...(madeInRef.current ? { madeIn: madeInRef.current } : {}),
                   ...(settings.draft ? { draft: true } : {}),
                   ...(settings.generateAudio ? { generateAudio: true } : {}),
                 },

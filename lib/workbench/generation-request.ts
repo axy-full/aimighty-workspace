@@ -29,6 +29,8 @@ export type GenerationBodyInput = {
   maxCredits?: number;
   references: GenerationReference[];
   marketing?: unknown;
+  /** Make's composer alone sends this (lib/madeIn.ts): the server marks the take "made in Make" for a person's own request, whatever else says so. */
+  madeIn?: "make";
   /** The fingerprint of the quote being approved; POST /api/generate refuses a request whose price or inputs changed since. */
   quoteFingerprint?: string;
   firstFrameAssetId?: string;
@@ -88,6 +90,7 @@ export function generationRequestBody(input: GenerationBodyInput): Record<string
     ...(input.cinema && Object.keys(input.cinema).length ? { cinema: input.cinema } : {}),
     ...(input.generateAudio === true && input.kind === "video" ? { generateAudio: true } : {}),
     ...(typeof input.seed === "number" && Number.isFinite(input.seed) && input.kind === "video" ? { seed: input.seed } : {}),
+    ...(input.madeIn === "make" ? { madeIn: "make" } : {}),
     ...(input.enhanced === false ? { enhanced: false } : input.enhanced ? { enhanced: { from: input.enhanced.from } } : {}),
   };
 }

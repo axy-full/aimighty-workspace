@@ -2,10 +2,11 @@ import { chatIsMine } from "./atomikAccess";
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
 import { requireTenant } from "./tenant";
+import { admittedProjectOr, contextProjectOr } from "./draftProject";
 import { getSetting } from "./settings";
 import { MODELS } from "./models";
 import { mediaMutation } from "./mediaMutation";
-import { engines, estimateStepUsd, fitStepParams, getChat, stepForBrowser, type Engine, type Step } from "./atomik";
+import { VIEW_ONLY_LINE, engines, estimateStepUsd, fitStepParams, getChat, stepForBrowser, type Engine, type Step } from "./atomik";
 import { KEY_STEP_MODELS, keyStepLabel } from "./atomikKeySteps";
 import { PROJECT_ID } from "./atomikMemoryText";
 import {
@@ -549,16 +550,24 @@ export async function runSkill(id: unknown, input: {
   /* Where the plan is filed: the chat the person is in, or a new one for the project. */
   const chatId = typeof input.chatId === "string" && input.chatId ? input.chatId : null;
   let projectId: string | null = null;
+  /* The chat's project as read, so the clear below lands only if it is still that (a PATCH that landed meanwhile stands). */
+  let storedProject: string | null = null;
   if (chatId) {
     const chat = (await db().execute({ sql: "SELECT id, project_id, status FROM atomik_chats WHERE id = ? AND deleted = 0 AND created_by = ?", args: [chatId, by] })).rows[0] as Row | undefined;
     if (!chat) throw new SkillError("That chat is gone.", 404);
     if (chat.status === "running") throw new SkillError("Atomik is still planning in this chat. Run the skill when it has answered.", 409);
-    projectId = text(chat.project_id);
+    /* The chat's project as this person may file into it now: none where they may not (the rule chats live by, lib/draftProject.ts). */
+    storedProject = text(chat.project_id);
+    projectId = await contextProjectOr({ id: by }, storedProject);
   } else if (input.projectId != null && input.projectId !== "") {
     if (typeof input.projectId !== "string" || !PROJECT_ID.test(input.projectId)) throw new SkillError("Choose a saved project.");
-    if (!(await db().execute({ sql: "SELECT 1 FROM projects WHERE id = ? LIMIT 1", args: [input.projectId] })).rows.length) throw new SkillError("That project is not in this workspace.", 404);
-    projectId = input.projectId;
+    /* A project this person may not read (someone else's private board, or an id that is none) is no project, the same for both; any other must be in this workspace. Filing its steps is gated at admission. */
+    projectId = await contextProjectOr({ id: by }, input.projectId);
+    if (projectId && !(await db().execute({ sql: "SELECT 1 FROM projects WHERE id = ? LIMIT 1", args: [projectId] })).rows.length) throw new SkillError("That project is not in this workspace.", 404);
   }
+
+  /* A board the person may only look at (a teammate's shared board) has no renders to set up: a skill is renders, so none is filed there (nothing is written). */
+  if (projectId && !(await admittedProjectOr({ id: by }, projectId))) throw new SkillError(VIEW_ONLY_LINE, 409);
 
   const said = describeValues(template.parameters, values);
   const swaps = steps.filter((s) => s.swapped).map((s) => `${s.title} on ${s.label}, as you chose`);
@@ -577,8 +586,11 @@ export async function runSkill(id: unknown, input: {
   await mediaMutation(async (tx) => {
     if (chatId) {
       /* Never under a turn still planning: the guard is the row itself. */
+      /* The chat keeps a project only if its person may still read it (an old chat on a board they can no longer reach is cleared here, as at a turn). */
       const moved = await tx.execute({ sql: "UPDATE atomik_chats SET status = 'waiting', updated_at = ? WHERE id = ? AND deleted = 0 AND status <> 'running'", args: [ts + 1, chatId] });
       if (!Number(moved.rowsAffected ?? 0)) throw new SkillError("Atomik is still planning in this chat. Run the skill when it has answered.", 409);
+      /* A project the person can no longer even read is dropped, but only where the chat still holds the one that was read. */
+      if (storedProject !== projectId) await tx.execute({ sql: "UPDATE atomik_chats SET project_id = ? WHERE id = ? AND project_id IS ?", args: [projectId, chatId, storedProject] });
     } else {
       await tx.execute({
         sql: `INSERT INTO atomik_chats (id, project_id, title, model, effort, agent_mode, status, text_cost_usd, created_by, created_at, updated_at, deleted)

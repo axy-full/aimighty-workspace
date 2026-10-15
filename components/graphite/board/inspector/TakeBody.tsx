@@ -58,7 +58,7 @@ export function TakeBody({ row, ctx }: { row: ShotTakes; ctx: BoardCtx }) {
   /* Change with words on a clip: its price from the same free quote Seedance Edit's panel asks, read while the take is open. */
   const editBody = v ? editQuoteBody(v, ctx.project.productionProjectId) : null;
   const editQuote = useStageQuotes(ctx.scope, editBody && !ctx.offline && judgeable(v!) ? { edit: { body: editBody } } : {}).quotes.edit;
-  const editPrice = upTo(editQuote?.credits);
+  const editPrice = upTo(editQuote?.credits, editQuote?.usd);
   if (!v) return <p className="gx-insp-quiet" data-testid="insp-no-take">No take yet.</p>;
 
   if (editing && v.media === "video") {
