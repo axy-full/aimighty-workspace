@@ -887,3 +887,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Gap: a filed engine job doesn't open as a one-tap approval yet (owner question; falls short of rule 14's one tap).
   - Veo should-fixes sent to lane D: number of videos = 1; settle at min(quote, measured length × rate); narrow the download hosts (*.google.com is too broad); env note.
   - Shared cron edits skip only `veo_video` rows.
+- **16 Oct 02:45 IST.** #779 Veo APPROVED at 55b5d36e. The mp4 header parser is safe on hostile input and the bill can't exceed the quote; downloads are limited to generativelanguage.googleapis.com and *.googleusercontent.com; sampleCount is 1. Small should-fix sent: round measured seconds up. Still waiting on lane B's next #778 head (prepared-job gap) and #780 Runway fixes.
