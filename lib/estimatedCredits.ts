@@ -5,8 +5,8 @@ import { freezeEstimatesSql } from "./creditSql";
  * A take with a cost and no receipt has its figure FROZEN here, the first time anything reads it, and the figure is never computed again (owner, 14 Oct 2026: "freeze estimated
  * figures in their own table"; 15 Oct: "freeze the figure the first time it's read, then never again; it never reads 0"; docs/plans/step-0-data.md item 4, M2). Takes made before
  * metering were once priced at read time from the cost and TODAY's margin table, so a change to the table repriced history on statements, usage and caps; now each is written once, at
- * the terms of the day it is first read, into `estimated_credits`, and every reader reads that row: `billedCreditsExpr` (lib/creditSql.ts), and the statement, the cap baseline and the
- * cap reader through `estimated_credits` directly. A take with a receipt is untouched (the receipt is read first, and is never frozen over); a take with no cost has nothing to freeze and
+ * the terms of the day it is first read, into `estimated_credits`, and every reader reads it through `billedCreditsExpr` (lib/creditSql.ts): the take's receipt,
+ * then this frozen figure, then 0 (the statement, the cap baseline and the cap reader all use it). A take with a receipt is untouched (the receipt is read first, and is never frozen over); a take with no cost has nothing to freeze and
  * reads 0 (it may still be in flight: a row written now would pin 0 for a take that later gets a cost). Nothing is written to the meter, a receipt or a balance.
  *
  * It is one idempotent INSERT OR IGNORE keyed by the take's id, so two readers that arrive together freeze once and the later one changes nothing. It needs only this workspace's own
