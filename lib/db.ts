@@ -47,6 +47,9 @@ export function db(): Client {
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS credit_receipts (event_id TEXT PRIMARY KEY, credits REAL NOT NULL, revision INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS credit_receipt_cursor (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL)`,
+  /* The figure of each take with a cost and no receipt, frozen the first time it is read (lib/estimatedCredits.ts) and never computed again: a change to the margin table cannot
+     reprice history. A take with a row here and no receipt is "estimated". Rows are only ever added. */
+  `CREATE TABLE IF NOT EXISTS estimated_credits (gen_id TEXT PRIMARY KEY, credits INTEGER NOT NULL, frozen_at INTEGER NOT NULL)`,
   ...SECURITY_AUDIT_SCHEMA,
   /* Workbench redesign: private drafts inside the resolved tenant database.
      Shared bible versions and node/shot mappings are added by workbenchReady. */

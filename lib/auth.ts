@@ -10,6 +10,7 @@ import { assertRequestAttached } from "./requestAttachment";
 import { db, ready, now } from "./db";
 import { creditsApply } from "./credits";
 import { billedCreditsSum } from "./creditSql";
+import { syncCreditReceipts } from "./creditReceipts";
 import { creditUsd } from "./creditTerms";
 import { tokenMonthStart } from "./cycle";
 import {
@@ -352,6 +353,7 @@ export async function requireRender(): Promise<
 
 /** The token's billed month in whole credits, as used by a credit ceiling. */
 export async function tokenCreditsThisMonth(tokenId: string): Promise<number> {
+  await syncCreditReceipts().catch(() => {}); // receipts in, and a take made before metering has its figure frozen
   const rs = await db().execute({
     sql: `SELECT ${billedCreditsSum()} AS spend FROM generations WHERE token_id = ? AND created_at >= ?`,
     args: [tokenId, tokenMonthStart()],
@@ -370,6 +372,7 @@ export async function tokenCreditsThisMonth(tokenId: string): Promise<number> {
  */
 export async function tokenSpendThisMonth(tokenId: string): Promise<{ usd: number; credits: number | null }> {
   const inCredits = creditsApply(currentTenant()?.workspace);
+  if (inCredits) await syncCreditReceipts().catch(() => {});
   const rs = await db().execute({
     sql: `SELECT ${inCredits ? billedCreditsSum() : "COALESCE(SUM(COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0)),0)"} AS spend
           FROM generations WHERE token_id = ? AND created_at >= ?`,
