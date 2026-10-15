@@ -51,6 +51,11 @@ export type ClipSource = {
   height: number;
   /** false = do not use the file's sound (a muted clip, or a file with none); true = use it, and the file must have it. Default true. */
   hasAudio: boolean;
+  /**
+   * Where in the source the file in input/ starts, when it holds only a stretch of it (the conform pre-pass's windowed copy): the file's
+   * first frame is the source's `offsetSeconds`. Trims and cues stay in source time. Absent: the file is the whole source.
+   */
+  offsetSeconds?: number;
 };
 
 export type Word = { startMs: number; endMs: number; text: string };

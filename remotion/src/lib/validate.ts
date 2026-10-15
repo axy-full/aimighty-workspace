@@ -162,19 +162,22 @@ function common(rec: Rec, issues: Issues, limits: ExportLimits): { aspect: Aspec
 
 function source(value: unknown, path: string, issues: Issues, limits: ExportLimits): ClipSource {
   const blank: ClipSource = { file: "x.mp4", durationSeconds: 1, width: 2, height: 2, hasAudio: false };
-  const rec = record(value, path, issues, ["file", "durationSeconds", "width", "height", "hasAudio"]);
+  const rec = record(value, path, issues, ["file", "durationSeconds", "width", "height", "hasAudio", "offsetSeconds"]);
   if (!rec) return blank;
   if (!isSafeInputPath(rec.file, VIDEO_EXT)) {
     issues.add(`${path}.file`, "must be a plain relative path to a video file in the input folder");
   }
   const hasAudio = rec.hasAudio === undefined ? true : rec.hasAudio;
   if (typeof hasAudio !== "boolean") issues.add(`${path}.hasAudio`, "must be true or false");
+  const durationSeconds = num(rec.durationSeconds, `${path}.durationSeconds`, issues, 0.1, limits.maxSourceSeconds);
+  const offsetSeconds = rec.offsetSeconds === undefined ? 0 : num(rec.offsetSeconds, `${path}.offsetSeconds`, issues, 0, durationSeconds);
   return {
     file: typeof rec.file === "string" ? rec.file : blank.file,
-    durationSeconds: num(rec.durationSeconds, `${path}.durationSeconds`, issues, 0.1, limits.maxSourceSeconds),
+    durationSeconds,
     width: Math.round(num(rec.width, `${path}.width`, issues, 16, 7680)),
     height: Math.round(num(rec.height, `${path}.height`, issues, 16, 7680)),
     hasAudio: hasAudio === false ? false : true,
+    ...(offsetSeconds > 0 ? { offsetSeconds } : {}),
   };
 }
 
