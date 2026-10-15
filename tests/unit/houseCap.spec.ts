@@ -229,11 +229,68 @@ test("the reservation: 80% tells the platform owner once a month, 100% stops the
   }
 });
 
+test("a held take (Cinema Studio, band 3) counts at its hold for the house: the cap is checked at cost x band, the row records the band, concurrent holds near the cap admit one, settlement gives the room back", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { platformDb, platformReady, setHouseCap } = await import("../../lib/platform");
+  const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
+  const { houseSpendSince, houseMonthStart, HOUSE_CAP_REACHED } = await import("../../lib/houseCap");
+  const { meter } = await import("../../lib/meter");
+  await platformReady();
+  await houseRow();
+  const model = "gemini-3.1-flash-image";
+  const usd = 0.04;
+  const tag = `${Date.now().toString(36)}h`;
+  const reserve = async (id: string, band: number) => {
+    await db().execute({ sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at) VALUES(?,'image','google',?,'a still','{}','running',?,?)`, args: [id, model, Date.now(), Date.now()] });
+    await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd }, band > 1 ? { holdBand: band } : {});
+  };
+  const row = async (id: string) => (await platformDb().execute({ sql: "SELECT hold_band,engine_cost_usd,status FROM meter_events WHERE id=?", args: [id] })).rows[0];
+  const refusal = (promise: Promise<void>) => promise.then(() => null, (e) => e);
+  try {
+    await runInTenant(house(), async () => {
+      await ready();
+      const base = await houseSpendSince(houseMonthStart());
+      /* Room for one hold (3 x $0.04 = $0.12) and a little more, not for two. */
+      await setHouseCap(Math.ceil((base + 0.15) * 1000) / 1000, "acct_house_cap_owner");
+      await reserve(`gen_housecap_hold_a_${tag}`, 3);
+      /* The row records its band, so every later reservation counts it running at its hold. */
+      expect(Number((await row(`gen_housecap_hold_a_${tag}`)).hold_band)).toBe(3);
+      expect(await houseSpendSince(houseMonthStart())).toBeCloseTo(base + 0.12, 6);
+      /* A second hold, and a plain take that would pass the cap with the first at its hold, are refused; counted at their quote they would have fit. */
+      for (const [id, band] of [[`gen_housecap_hold_b_${tag}`, 3], [`gen_housecap_plain_${tag}`, 1]] as const) {
+        const refused = await refusal(reserve(id, band));
+        expect(refused, id).toBeInstanceOf(SpendReservationError);
+        expect(refused, id).toMatchObject({ status: 429, message: HOUSE_CAP_REACHED });
+        expect(await row(id)).toBeUndefined();
+      }
+      /* It settles at what it cost, never past its hold: the rest of the hold is room again. */
+      await meter({ id: `gen_housecap_hold_a_${tag}`, kind: "image", engine: "google", model, status: "succeeded", engineCostUsd: 0.05 });
+      expect(Number((await row(`gen_housecap_hold_a_${tag}`)).engine_cost_usd)).toBeCloseTo(0.05, 6);
+      expect(await houseSpendSince(houseMonthStart())).toBeCloseTo(base + 0.05, 6);
+      await reserve(`gen_housecap_plain_ok_${tag}`, 1);
+      /* Two held takes raced with room for one: exactly one is admitted. */
+      const now = await houseSpendSince(houseMonthStart());
+      await setHouseCap(Math.ceil((now + 0.15) * 1000) / 1000, "acct_house_cap_owner");
+      const raced = await Promise.all([refusal(reserve(`gen_housecap_race_a_${tag}`, 3)), refusal(reserve(`gen_housecap_race_b_${tag}`, 3))]);
+      expect(raced.filter((r) => r === null)).toHaveLength(1);
+      expect(raced.find((r) => r !== null)).toMatchObject({ status: 429, message: HOUSE_CAP_REACHED });
+      expect(await houseSpendSince(houseMonthStart())).toBeCloseTo(now + 0.12, 6);
+    });
+  } finally {
+    const { platformDb: p } = await import("../../lib/platform");
+    await p().execute("UPDATE workspaces SET allowance_usd=NULL WHERE id='ws_legacy'");
+  }
+});
+
 test("a customer workspace's reservation is untouched: no house cap read, its own allowance still the wall", () => {
   const reservation = readFileSync("lib/generationRequests.ts", "utf8");
   /* The house's check is its own branch, tied to the house workspace and to nothing else. */
   expect(reservation).toContain("const houseCapNow = isHouseWorkspace(ws) ? houseCapOfStored(standing.rows[0]?.allowance_usd).usd : null;");
   expect(reservation).toContain("if (houseCapNow != null) {");
+  /* A held house take counts at its hold, and its row records the band. */
+  expect(reservation).toContain("const needs = cost * (houseHeld ? keptBand : 1);");
+  expect(reservation).toContain("heldAtCeiling || houseHeld ? keptBand : null");
   expect(reservation).toContain("if (capNow != null && ");
   const allowance = readFileSync("lib/allowance.ts", "utf8");
   expect(allowance).toContain("if (isHouseWorkspace(currentTenant()?.workspace)) return houseCapCheck(estUsd, band);");
