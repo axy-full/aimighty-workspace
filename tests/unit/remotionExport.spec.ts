@@ -6,7 +6,7 @@ import { checkSpec, contradictions, declaredOf, inputFilesOf, runExport, type Co
 import { encodingFor } from "../../remotion/node/renderer";
 import { factsFromFfprobe, type MediaFacts, type Prober } from "../../remotion/node/probe";
 import { toTimeline, validateProps, type CompositionId } from "../../remotion/src/lib";
-import { DEFAULT_LIMITS } from "../../remotion/src/lib/limits";
+import { PRORES_MAX_FRAMES } from "../../remotion/src/lib/limits";
 
 /** A renderer that renders nothing: it measures with the same timeline code and writes small stand-in files. */
 function fakeRenderer(opts: { failOn?: "prepare" | "select" | "video" | "still"; lie?: boolean } = {}) {
@@ -137,15 +137,17 @@ test.describe("output formats: H.264 by default, ProRes 422 and 422 HQ, never H.
     expect(result).toEqual({ ok: false, code: "spec_invalid", errors: ["spec.output.format: needs the video (output.video is false)"] });
   });
 
-  test("ProRes is held to a shorter length (60 s by default), H.264 is not; the limit is the worker's and can only be tightened", () => {
-    const long = (seconds: number) => ({ version: 1, composition: "final", props: { aspect: "16:9", scale: 0.25, title: null, clips: [{ source: { ...SOURCE, durationSeconds: seconds }, trim: { startSeconds: 0, endSeconds: seconds } }], end: null, music: null }, output: { format: "prores-422" } });
-    expect(DEFAULT_LIMITS.maxProResSeconds).toBe(60);
-    const sixty = checkSpec(long(60));
-    expect(sixty).toMatchObject({ ok: true, format: "prores-422" });
-    const seventy = checkSpec(long(70));
-    expect(seventy).toEqual({ ok: false, code: "too_long", errors: ["A ProRes export can be at most 60 s; this one is 70.0 s. Use H.264 for a longer one."] });
+  test("ProRes is held to 1800 frames (60 s at 30 fps, 30 s at 60 fps), a constant that nothing can raise; H.264 is not held", () => {
+    const long = (seconds: number, fps = 30) => ({ version: 1, composition: "final", props: { aspect: "16:9", fps, scale: 0.25, title: null, clips: [{ source: { ...SOURCE, durationSeconds: seconds }, trim: { startSeconds: 0, endSeconds: seconds } }], end: null, music: null }, output: { format: "prores-422" } });
+    expect(PRORES_MAX_FRAMES).toBe(1800);
+    expect(checkSpec(long(60))).toMatchObject({ ok: true, format: "prores-422" });
+    expect(checkSpec(long(30, 60))).toMatchObject({ ok: true, format: "prores-422" });
+    expect(checkSpec(long(70))).toEqual({ ok: false, code: "too_long", errors: ["A ProRes export can be at most 1800 frames (60 s at 30 fps, 30 s at 60 fps); this one is 2100 frames (70.0 s at 30 fps). Use H.264 for a longer one."] });
+    /* The same length at a higher frame rate is more frames, so it is refused: 45 s at 60 fps is 2700. */
+    expect(checkSpec(long(45, 60))).toEqual({ ok: false, code: "too_long", errors: ["A ProRes export can be at most 1800 frames (60 s at 30 fps, 30 s at 60 fps); this one is 2700 frames (45.0 s at 60 fps). Use H.264 for a longer one."] });
+    expect(checkSpec(long(60, 25))).toMatchObject({ ok: true });
+    expect(checkSpec(long(75, 25))).toMatchObject({ ok: false, code: "too_long" });
     expect(checkSpec({ ...long(70), output: { format: "h264" } })).toMatchObject({ ok: true, format: "h264" });
-    expect(checkSpec(long(40), { ...DEFAULT_LIMITS, maxProResSeconds: 30 })).toMatchObject({ ok: false, code: "too_long" });
   });
 });
 
