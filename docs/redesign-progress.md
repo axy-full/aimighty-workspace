@@ -798,3 +798,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   None offers zero retention. This is consistent with the owner's "Particl does not train; providers may", but sync.so receives faces and voices, so it's a LAWYER item. Docs lane E is adding these to #761 with email drafts (nothing sent).
   - Lane B: #778 updated to 78e6fe6a (flex and max priced; all models 4 MP / 8 refs; host checks extended). Lane B is now on Runway.
   - Open owner question on BFL: what counts as a megapixel. #778 uses 1,000,000 px, so 1024×1024 quotes as 2 MP. BFL's own page uses 1,048,576 px elsewhere, which would make it 1 MP, so the default size may over-quote ~50% unless settlement uses BFL's stated cost. With the Opus money reviewer.
+- **16 Oct 01:43 IST.** Docs lane E: #761 updated at 3acaec69 (docs only, nothing sent, CI cancelled). The BFL, Sarvam and sync.so rows now carry the published statements beside the owner's recorded settings: BFL dashboard opt-out, sync.so's written no-training confirmation, Sarvam retention 0 days. New items:
+  - OD-W1: sync.so's published terms (training, perpetual licence) conflict with its written confirmation, and it receives faces and voices.
+  - OD-W2: Sarvam trains unless you opt out.
+  - L-W2, L-W3, L-W4: lawyer items.
+  - vendor-requests.md §8 (BFL opt-out email) and §9 (Sync Labs opt-out and deletion email), plus a Sarvam re-check action.
