@@ -886,3 +886,12 @@ REPORT at 10:30 on the status page: what merged (PR, head, Opus verdict), what i
 
 ## Owner, 15 Oct 2026 (late evening, verbatim): screen sizes
 Screen sizes: add 2560×1440 (27-inch monitors and scaled 4K) and 1728×1117 (16-inch MacBook Pro) to the screenshot and walk checks, alongside 1440×900, 1280×800 and 1920×1080. For every v25 screen PR from #748 on, attach all five. At 2560×1440 check the opposite of overflow: no stranded cards, no unreadable small text, the three bars still centred, the canvas scaling up rather than leaving dead space. Report anything that looks wrong; don't redesign to fix it.
+
+## Owner, 15 Oct 2026, 22:30 IST (verbatim): large-screen rules for every v25 screen PR (replaces the earlier screen-size note)
+large-screen rules for every v25 screen PR, from #748 on.
+1) Sizes: test and screenshot at five viewports: 1280×800, 1440×900, 1728×1117 (16-inch MacBook Pro), 1920×1080, 2560×1440 (27-inch monitors and scaled 4K). Attach all five to every screen PR.
+2) Scaling: on viewports wider than 1440 px the board canvas scales up to fill the space (bigger cards, same layout, text and chips scale with the cards, like Figma zoom-to-fit). The rail, top bar, bottom bar and buttons stay at normal size and stay centred. Today at 2560×1440 the cards sit in the top half with the bottom third empty; that is the bug to fix. CSS in the screen PRs, no new design round.
+3) Sharpness: text, icons, buttons and the logo are vector (SVG) at every size, never bitmaps. Every picture on the board (thumbnails, frames, stills, previews) is served at the size the screen needs, with 2× versions for Retina and large monitors (srcset/sizes), and is never upscaled past its real pixels. Any soft or pixelated image in the 1728 or 2560 screenshots is a must-fix.
+4) Checks at 2560×1440: no stranded cards, no text under 12 px, no dead space below the cards, the three bars centred, no horizontal scroll. Report anything that looks wrong; don't redesign to fix it.
+
+**Lead's note.** Conflict with rule 3: public/brand has the wordmark and lockups as PNG only (the mark is SVG), so #748/#756/#762 draw the wordmark as a bitmap; an SVG wordmark is needed from the owner's brand files (asked). Until then the PNG @4x stays, flagged as a must-fix in each PR.
