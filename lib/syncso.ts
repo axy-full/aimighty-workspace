@@ -45,6 +45,11 @@ export class SyncError extends Error {
   constructor(message: string, readonly status: number | null = null, readonly body: unknown = null, readonly rejectedBeforeGeneration = false) { super(message); this.name = "SyncError"; }
 }
 
+/** The finished job's output is not one we will fetch (a host off the allow-list, none named, or over the size we keep). It will never become fetchable: the caller settles the job and stops asking. */
+export class SyncOutputRefused extends SyncError {
+  constructor(message: string) { super(message); this.name = "SyncOutputRefused"; }
+}
+
 export type SyncStatus = "pending" | "processing" | "completed" | "failed";
 /** `reportedCostUsd`: what sync.so says the job cost, when its reply says (the field is TO CONFIRM); absent when it does not. */
 export type SyncGeneration = { id: string; status: SyncStatus; outputUrl?: string; outputDuration?: number; error?: string; reportedCostUsd?: number };
@@ -144,13 +149,13 @@ export async function generationStatus(id: string, deps: Deps = {}): Promise<Syn
 export async function downloadOutput(output: { id: string; url?: string }, deps: Deps = {}): Promise<Buffer> {
   if (engineMock()) return Buffer.from(MOCK_OUTPUT);
   const url = syncHostUrl(output.url);
-  if (!url) throw new SyncError("sync.so named no output we can download.");
+  if (!url) throw new SyncOutputRefused("sync.so named no output we can download.");
   let res: Response;
   try { res = await (deps.fetch ?? recoveryFetch)(url.href, { method: "GET", redirect: "error", signal: AbortSignal.timeout(300_000) }); }
   catch { throw new SyncError("The lip-synced clip could not be downloaded."); }
   if (!res.ok) throw new SyncError(`The lip-synced clip could not be downloaded (${res.status}).`, res.status);
   const declared = Number(res.headers.get("content-length") ?? 0);
-  if (declared > SYNC_OUTPUT_LIMIT_BYTES) throw new SyncError("The lip-synced clip is larger than Particl keeps.");
+  if (declared > SYNC_OUTPUT_LIMIT_BYTES) throw new SyncOutputRefused("The lip-synced clip is larger than Particl keeps.");
   const bytes = Buffer.from(await res.arrayBuffer());
   if (!bytes.length || bytes.length > SYNC_OUTPUT_LIMIT_BYTES) throw new SyncError("The lip-synced clip came back empty or too large.");
   return bytes;

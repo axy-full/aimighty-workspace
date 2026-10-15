@@ -207,7 +207,7 @@ function Prepared() {
       {jobs.map((job) => (
         <Row key={job.id} name={job.prompt.length > 90 ? `${job.prompt.slice(0, 89)}…` : job.prompt} line={[preparedSpec(job), job.project, `from ${job.tokenName ?? "a revoked token"}`].filter(Boolean).join(" · ")} testId="settings-prepared-job">
           <Btn disabled={busy != null} onClick={() => void decide(job, "dismissed")} testId="settings-prepared-dismiss">Dismiss</Btn>
-          <Btn disabled={busy != null} onClick={() => void decide(job, "opened")} testId="settings-prepared-open">Open in Make</Btn>
+          {job.engine ? null : <Btn disabled={busy != null} onClick={() => void decide(job, "opened")} testId="settings-prepared-open">Open in Make</Btn>}
         </Row>
       ))}
     </div>
