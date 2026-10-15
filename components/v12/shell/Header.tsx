@@ -12,7 +12,7 @@ import { IconButton, Tooltip, useToast, Menu, type MenuItem } from "../ui";
 import { LowCreditChip } from "./LowCreditChip";
 import { ActivityPill } from "./Activity";
 import { AccountMenu } from "./AccountMenu";
-import { PlusPopover } from "./PlusPopover";
+import dynamic from "next/dynamic";
 import { boardStates } from "./activity";
 import { boardRings } from "@/lib/v12/boardRing";
 import { useTick } from "../render/use-render";
@@ -24,6 +24,9 @@ import { keyOf } from "@/lib/v12/keymap";
 import { toggleAtomikDock } from "@/lib/v12/atomik-dock";
 import "./header.css";
 import "../render/render.css";
+
+/** The "+" popover is drawn only once it has been opened: its code is fetched on first use, not with every screen (a v25 speed-budget cut, owner 15 Oct). */
+const PlusPopover = dynamic(() => import("./PlusPopover").then((m) => m.PlusPopover), { ssr: false });
 
 /** The most boards GET /api/workbench/projects returns (app/api/workbench/projects/route.ts). */
 const PROJECTS_LIST_LIMIT = 100;
@@ -153,6 +156,8 @@ export function V12Header({ account, project, projects, onPick }: {
   const [more, setMore] = useState(false);
   const plusAnchor = useRef<HTMLButtonElement>(null);
   const [plus, setPlus] = useState(false);
+  const [plusUsed, setPlusUsed] = useState(false);
+  const openPlus = (open: boolean | ((was: boolean) => boolean)) => { setPlusUsed(true); setPlus(open); };
 
   const copyLink = (id: string) => copyBoardLink(id, toast);
   const tabItems: MenuItem[] = tabMenu ? [
@@ -165,7 +170,7 @@ export function V12Header({ account, project, projects, onPick }: {
   const moreItems: MenuItem[] = [
     ...hidden.map((id) => ({ id, label: nameOf(id), onSelect: () => goBoard(id) })),
     { id: "sep", separator: true },
-    { id: "new", label: "+ New board", onSelect: () => setPlus(true) },
+    { id: "new", label: "+ New board", onSelect: () => openPlus(true) },
   ];
 
   const ordinal = (i: number) => (i + 3 <= 9 ? keyOf(`tab-${i + 3}`) : undefined);
@@ -234,7 +239,7 @@ export function V12Header({ account, project, projects, onPick }: {
             </button>
           </Tooltip>
         ) : null}
-        <IconButton ref={plusAnchor} tooltip={{ name: "New tab · boards and kinds" }} label="New tab" className="v12-tab-plus" pressed={plus} aria-haspopup="dialog" onClick={() => setPlus((v) => !v)} data-testid="v12-tab-plus">
+        <IconButton ref={plusAnchor} tooltip={{ name: "New tab · boards and kinds" }} label="New tab" className="v12-tab-plus" pressed={plus} aria-haspopup="dialog" onClick={() => openPlus((v) => !v)} data-testid="v12-tab-plus">
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
         </IconButton>
       </nav>
@@ -273,8 +278,10 @@ export function V12Header({ account, project, projects, onPick }: {
 
       <Menu open={tabMenu !== null} onClose={() => setTabMenu(null)} anchor={tabAnchor} label="Tab" items={tabItems} width={200} testId="v12-tab-menu" />
       <Menu open={more} onClose={() => setMore(false)} anchor={moreAnchor} label="More boards" items={moreItems} width={280} testId="v12-more-menu" />
-      <PlusPopover open={plus} onClose={() => setPlus(false)} anchor={plusAnchor} projects={projects} closed={tabs.state.closed}
-        onOpen={(id) => { setPlus(false); goBoard(id); }} />
+      {plusUsed ? (
+        <PlusPopover open={plus} onClose={() => setPlus(false)} anchor={plusAnchor} projects={projects} closed={tabs.state.closed}
+          onOpen={(id) => { setPlus(false); goBoard(id); }} />
+      ) : null}
     </header>
   );
 }

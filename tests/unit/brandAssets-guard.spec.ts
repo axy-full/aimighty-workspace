@@ -85,8 +85,9 @@ test("(c) the header's logo is the brand's mark and wordmark from public/brand, 
   expect(mark, "the mark").toMatch(/^\/brand\/particl-mark-on-(?:dark|light)\.svg$/);
   expect(word, "the wordmark").toMatch(/^\/brand\/particl-wordmark-on-(?:dark|light)@4x\.png$/);
   for (const file of [mark, word]) expect(existsSync(`${PUBLIC}${file}`), `${file} exists`).toBe(true);
-  expect(logo).toMatch(/<Image\b[^>]*src=\{HEADER_MARK\}/);
-  expect(logo).toMatch(/<Image\b[^>]*src=\{HEADER_WORDMARK\}/);
+  /* Pictures of those files: the mark directly, the wordmark through Next's image route (sized(HEADER_WORDMARK, n)), as plain <img> elements. */
+  expect(logo).toMatch(/<img\b[^>]*src=\{HEADER_MARK\}/);
+  expect(logo).toMatch(/<img\b[^>]*src=\{sized\(HEADER_WORDMARK, 128\)\}/);
   /* No drawing and no typed name inside it, and not the full lockup: it has a "studio" line, and renders large only (sign-in, marketing, documents). */
   const body = logo.slice(logo.indexOf("export function HeaderLogo"));
   expect(body, "no inline drawing").not.toMatch(/<svg|<circle|TRAIL/);
