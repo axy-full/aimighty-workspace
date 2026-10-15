@@ -405,7 +405,7 @@ Reading the text inside a picture: OCR.
 - **Privacy:**
   - **The training clause:** before any customer switch, the owner sends BFL the training opt-out, or signs enterprise terms (owner action; counsel reads them).
   - A reference showing a real person needs a face consent record (above).
-  - Data leaves India. The EU endpoint gives GDPR terms (owner question B).
+  - Data leaves India. The EU endpoint gives GDPR terms (decided: B1 defaults to it).
 - **Failure:** BFL's pricing page says nothing about failed or moderated jobs. Until confirmed: settle at 0, "Nothing billed", absorbed by the platform. A job whose image could not be copied within the 10 minutes is a failure to collect. It is retried only if BFL still answers, and it is settled as "Nothing billed" if the image is lost (the platform absorbs it).
 - **Risks:**
   - the 10-minute link;
@@ -508,12 +508,16 @@ Astra is billed by output frame: about 7.7 frames a credit at 1080p, and 4.3 at 
 
 Both sides double at 60 fps: fal by its rule, Topaz because it bills by frame. The "sells at" figures are samples through `billCredits()`.
 
-**Recommendation (owner question H): stay on fal for Topaz.**
-- fal is cheaper or equal on every job Particl runs.
-- It needs no subscription.
-- It is already built, with its recovery path (docs/astra-video-upscale.md).
-
-Look again only if Topaz quotes an Enterprise price below fal's, or if a model Particl wants is only on the direct API. No PR is proposed, and no Topaz setting is added.
+**Owner decision, 15 Oct 2026, 14:05 IST (verbatim in docs/redesign-plan.md on redesign/integration): Topaz goes DIRECT. It replaces item H, "Topaz stays on fal", which this plan first recommended.**
+- **New adapter for Topaz Labs' own API**, image and video upscale, using `TOPAZ_API_KEY` (set in Coolify: production only, locked, not in previews). The same presets and controls as today (`lib/topaz.ts`). Mocks only until the owner approves the house run. Opus money review, NEEDS AKSHAY.
+- **Before building (T0, docs only):**
+  - a price table from Topaz's published API rates against our current fal rates (`lib/vendorRates.ts`): per image and per second at 720p, 1080p and 4K, for each model we offer, the Starlight-equivalent included. The comparison in this section is its start; the table is its finished form.
+  - If direct is dearer, the new customer prices are shown; nothing is priced below cost.
+  - Data terms: Topaz does not train on our uploads; how long it keeps files; the vendor's copy is deleted after we store the output (the same rule as Runway and sync.so).
+- **T1:** the adapter behind its switch, off in production, on mocks.
+- **T2:** the owner approves the small paid run on the house workspace, then it is qualified.
+- **T3:** the switch, and the fal Topaz endpoints are removed. fal then keeps only Kling, Bria and Luma reframe.
+- **Queued after B1 (BFL).** Not part of deploy #4. Customer prices still come only from the rate card and the server's price path; a change to what customers see changes CLAUDE.md § Pricing too and needs the owner's yes.
 
 ## 9. Coolify setting names, per provider (names only)
 
@@ -530,9 +534,9 @@ Look again only if Topaz quotes an Enterprise price below fal's, or if a model P
 | AWS Rekognition | `REKOGNITION_ACCESS_KEY_ID`, `REKOGNITION_SECRET_ACCESS_KEY` | `REKOGNITION_REGION` (`ap-south-1`) | `REKOGNITION_ENABLED` | — |
 | Google Cloud Vision | `GOOGLE_VISION_API_KEY` (already set) | `GOOGLE_VISION_BASE_URL` | `GOOGLE_VISION_ENABLED` | — |
 | Recraft | `RECRAFT_API_KEY` | `RECRAFT_BASE_URL` | `RECRAFT_ENABLED` | — |
-| Black Forest Labs | `BFL_API_KEY` | `BFL_BASE_URL` (global or `api.eu.bfl.ai`, owner question B) | `BFL_ENABLED` | — |
+| Black Forest Labs | `BFL_API_KEY` | `BFL_BASE_URL` (unset: B1 defaults to `https://api.eu.bfl.ai`; if set, an `https://` `*.bfl.ai` host) | `BFL_ENABLED` | — |
 | Runway (standby) | `RUNWAY_API_KEY` | `RUNWAY_BASE_URL` | `RUNWAY_ENABLED` (house workspace only) | — |
-| Topaz | none: stays on fal, `FAL_KEY` (existing) | `FAL_BASE_URL` (existing) | — | — |
+| Topaz | `TOPAZ_API_KEY` (set: production only, locked, not in previews) | `TOPAZ_BASE_URL` | `TOPAZ_ENABLED` | — (`FAL_KEY` stays for Kling, Bria and Luma reframe) |
 
 **Why the AWS names cannot collide.** None of the Rekognition names starts with `AWS_`, `R2_`, `S3_`, `STORAGE_` or `BLOB_`.
 - **What the storage code reads:**
@@ -560,7 +564,7 @@ Look again only if Topaz quotes an Enterprise price below fal's, or if a model P
 3. **Rekognition**, with **Google Cloud Vision's text check** in the same Verify lane. Vision has no consent or biometric question, so its V-PRs can land before the Rekognition ones.
 4. **Recraft, then Black Forest Labs**: an image lane (SOW E2) that can run beside 2 and 3, because it shares no code with them.
 5. **Runway**: standby, house workspace only.
-6. **Topaz**: no change (stay on fal).
+6. **Topaz, direct** (owner, 15 Oct 14:05), after B1: T0 price table and data terms (docs), T1 adapter on mocks, T2 the owner-approved house run, T3 the switch and the removal of fal's Topaz endpoints.
 
 Every adapter lands **behind its switch, off in production.** None needs board UI. Every screen **waits for Claude Design / v18**. **No switch is turned on for a customer before counsel** (DECIDED). Qualification runs happen in the house workspace only, at the stated cost, after the owner's yes.
 
@@ -589,7 +593,7 @@ Every adapter lands **behind its switch, off in production.** None needs board U
 | C2 | `svg` originals in storage, served safely (download only or a strict CSP) | S, 3h | **Opus (security)** | C1 |
 | C3 | `recraft_image`, `recraft_vectorize`, `recraft_remove_background` tools; MCP | S, 4h | — | C1, C2 |
 | C4 | Recraft rate rows; qualification run (about $0.14, one of each) | S, 2h | **NEEDS OWNER** | C3 |
-| B1 | BFL adapter: submit, worker poll of `polling_url`, copy within 10 minutes, `BFL_ENABLED` off, mocks | M, 6h | **Opus (money)** | — |
+| B1 | BFL adapter: submit, worker poll of `polling_url`, copy within 10 minutes, `BFL_ENABLED` off, mocks; EU endpoint default pinned by a test (never `api.bfl.ai`), `*.bfl.ai` hosts only | M, 6h | **Opus (money)** | — |
 | B2 | `flux2_image` and `flux2_edit` (up to 8 references; consent gate for real people) | S, 5h | **Opus (privacy)** | B1 |
 | B3 | BFL rate rows; qualification run (about $0.15) | S, 2h | **NEEDS OWNER** | B2 |
 | R1-R5 | Runway (standby), unchanged from the first draft: adapter (M, 8h, Opus money), rows (NEEDS OWNER), `runway_performance` (Opus privacy), `runway_edit`, house-only qualification (about $1.41) | about 21h | as listed | training-free terms for any customer use |
@@ -656,11 +660,11 @@ Every adapter lands **behind its switch, off in production.** None needs board U
 - **A. Where the additions go.** **Recommended:**
   - Vision's text check in the Verify lane with Rekognition, but free to land first (no consent question);
   - Recraft, then BFL, as an image lane beside Sarvam and Rekognition;
-  - Topaz unchanged.
-- **B. BFL.** Direct, as named (the SOW said fal)? And the global or the EU endpoint? **Recommended:** direct, on the EU endpoint (GDPR terms), with the training opt-out sent before any customer use.
+  - Topaz direct, after B1 (decided 15 Oct 14:05, §8).
+- **B. BFL.** DECIDED: direct, on the EU endpoint (GDPR terms). The owner set `BFL_API_KEY` on 15 Oct 13:45 (production only, locked; the training opt-out is done in BFL's dashboard). **B1's defaults:** `BFL_BASE_URL` is unset, so B1 uses `https://api.eu.bfl.ai` in code, never the global `api.bfl.ai`, with a test pinning the default; a `BFL_BASE_URL` that is set must be an `https://` `*.bfl.ai` host; a polling or result URL BFL returns is followed only when its host is a `bfl.ai` subdomain (no SSRF); a test says which region served the call; `BFL_ENABLED` stays unset until the owner turns it on; no paid call without the owner's yes.
 - **C. Which sync.so plan to buy.** **Recommended: Creator** ($19 a month: 3 jobs at once, 5-minute videos). Move to Scale (20% off usage, 15 at once) when volume justifies $249 a month.
 - **G. Vision's uses.** The Verify text check and reading on-screen text for translation now; the mandatories check once mandatories are stored? **Recommended: yes.**
-- **H. Topaz.** Stay on fal, with no direct account (fal is cheaper or equal on every job Particl runs)? **Recommended: yes.**
+- **H. Topaz.** DECIDED (owner, 15 Oct 14:05): direct, on Topaz's own API with `TOPAZ_API_KEY`; the first recommendation here (stay on fal) is replaced. See §8.
 - **I. sync-3's photo input** (a talking person from a still). Leave it out of v1? **Recommended: yes**, video only, until the consent design for it exists.
 
 ## Sources (all read 14 Oct 2026)
