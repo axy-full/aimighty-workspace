@@ -1,5 +1,5 @@
 import { directTextCostUsd, isDirectText, textEngine, textKeyName } from './openai-direct';
-import { TextNotSentError } from './textDirect';
+import { TextNotSentError, textRun } from './textDirect';
 import { engineMock } from './mock';
 import { creditsApply } from "./credits";
 import { atomikPublicResponse } from "./workbench/atomik-response";
@@ -12,7 +12,6 @@ import { db, ready, id as newId, now } from "./db";
 import { platformDb, platformReady } from "./platform";
 import { currentTenant, requireTenant } from "./tenant";
 import { findModel, textCostUsd, textQuoteCostUsd, type CatalogModel } from "./catalog";
-import { engineFor } from "./engines";
 import { meter, meteredCharge } from "./meter";
 import {
   reserveGenerationSpend,
@@ -279,7 +278,7 @@ return await withRecoveryActivity('paid-text', async () => {
       sql: `UPDATE paid_text_jobs SET status='running',updated_at=? WHERE id=?`,
       args: [now(), id],
     });
-    const submit = overrides.submit ?? engineFor("vercel").run!;
+    const submit = overrides.submit ?? textRun;
     submitted = true;
     const response = await submit({
       body: requestBody,

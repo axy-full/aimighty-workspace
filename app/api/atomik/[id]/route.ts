@@ -1,4 +1,4 @@
-import { readableProjectOr } from "@/lib/draftProject";
+import { mayReachProject, readableProjectOr } from "@/lib/draftProject";
 import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
@@ -52,7 +52,8 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
     model: typeof b.model === "string" ? b.model : undefined,
     effort: requestEffort(b.effort),
     agentMode: b.agentMode === "ask" || b.agentMode === "auto" ? b.agentMode as AgentMode : undefined,
-    projectId: b.projectId === undefined ? undefined : (b.projectId || null),
+    /* As at creation: only a project this person may file into is kept; anything else clears it. */
+    projectId: b.projectId === undefined ? undefined : (typeof b.projectId === "string" && b.projectId && (await mayReachProject(got.user, b.projectId, "admit")) ? b.projectId : null),
   });
   return NextResponse.json(await getChat(id));
   } catch (error) {

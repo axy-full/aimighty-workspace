@@ -7,7 +7,7 @@ import { ASTRA_BLENDER_MODEL, astraSceneSchema, parseAstraScene, type AstraScene
 import { astraAgentResultSchema, validateAstraProposal } from './proposal';
 import { astraNativeSchema, astraNativeResultSchema, validateAstraNativeResult, type AstraNativeSource } from './native';
 import type { Asset } from '../workbench/studio';
-import type { GatewayReply } from '../gateway';
+import type { TextReply as GatewayReply } from '../textReply';
 import { languageModel } from '../language-provider';
 import { engineMock } from '../mock';
 import type { CatalogModel } from '../catalog';
