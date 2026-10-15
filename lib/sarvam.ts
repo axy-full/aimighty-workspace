@@ -62,6 +62,8 @@ async function post(path: string, body: { json?: unknown; form?: FormData }, dep
       method: "POST",
       headers: { "api-subscription-key": key(), ...(body.json !== undefined ? { "content-type": "application/json" } : {}) },
       body: body.form ?? JSON.stringify(body.json),
+      /* The key goes in a header, and undici forwards custom headers across an origin: a redirect is a failure, never followed. */
+      redirect: "error",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (error) {
