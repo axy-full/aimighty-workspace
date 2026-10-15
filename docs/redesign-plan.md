@@ -830,3 +830,44 @@ Lanes B and D are free. Start the Stripe-readiness work, no money or migrations 
 - Deploy #5 order noted: #748 → #756 → #762, then #758, on green and Opus review, with my yes per PR.
 
 **Lead's notes.** Checks passed (709497a). pid 610521 = python3 http.server on 127.0.0.1:4799 serving ~/wt/v25-import/design/particl-prototype-25, user agent, orphaned, started 15 Oct 00:38 IST; the lead's `kill` was denied by the session's permission settings (not worked around): needs an allow rule (`/permissions`) or it ends at the next reboot. Lane D: UNKNOWN list + vendor email drafts (nothing sent). Lane C: the Big Buck Bunny credit PR.
+
+## FINAL ENGINE STACK: owner, 15 Oct 2026, 22:15 IST (verbatim; replaces his 22:10 and 22:15 notes)
+FINAL ENGINE STACK. Approved. Build it, switch it on, keep it ready. We test it live on particl.si with the Aimighty team. No half measures. This replaces my 22:10 and 22:15 notes.
+
+THE STACK (15 vendors + our server; my advisor's document follows)
+In use, keep: BytePlus Seedance 2.5/2.0 · Google (Nano Banana Pro AND Nano Banana 2.1, Veo 3.1, Gemini 3.x, Cloud Vision) · OpenAI GPT Image 2.5 · Anthropic Claude · ElevenLabs · Topaz (direct) · Bria (direct) · Higgsfield · xAI Grok.
+Keys already set, wire now: Runway (Act-Two, Aleph 2, Gen-4.5) · sync.so (lipsync-2-pro; sync-3 for hero/4K) · Sarvam (Bulbul, Saaras, dubbing) · Black Forest Labs (FLUX 3 and FLUX.2 identity, replacing fal flux-lora) · AWS Mumbai (Rekognition consent match; MediaConvert Smart Crop, replacing Luma reframe).
+New: Recraft V4.1 + V3 (decks, brand assets, sketch/ink/comic storyboards). Tell me the exact env name; I set it in Coolify. Kling 4.0 on fal the day it is live (3.0 Pro until then).
+Our server: Remotion + ffmpeg worker (animatic, timeline, titles, subtitles, karaoke captions, narrated assembly, cutdowns, silence cuts, fps conform, H.264 + ProRes mezzanine + DNxHR, stems from our timeline, Download all zip) · Chromium PDF (treatment, pitch, PPM decks) · Blender relay (#757, already merged).
+Pro pick menu: Seedance 2.5, Veo 3.1, Kling 4.0, Runway Gen-4.5. Names live in config, never in the design.
+Leave out: MiniMax/Hailuo, Suno, Udio, Sora, PlayHT, Luma reframe, any face swap built on InsightFace, Wav2Lip, self-hosted MMAudio. H.265 stays off until my lawyer answers.
+Later, on a client need or a bake-off win: HeyGen Avatar IV, Ideogram, FASHN, Hunyuan3D/Tripo, Magnific, AudioShake, Storyblocks, TwelveLabs, Wan 3.0, Gemini Omni Flash. Ask Adobe for a Firefly Reframe quote now.
+
+ORDER
+Slice 1: Remotion worker ON + Chromium PDF. Measure one real 30 s 1080p export (time, cost) first.
+Slice 2: sync.so, Sarvam, BFL, Runway, Veo 3.1, AWS, Topaz direct (T0–T3).
+Slice 3: Nano Banana 2.1 beside Pro; Gemini 3.x for moments, cutdown planning and the vision judge; Cloud Vision label check with exact text diff (never an AI model alone); Recraft; Kling 4.0.
+Slice 4: the "later" list, one at a time.
+
+RULES FOR EVERY ENGINE
+- Its own PR, titled NEEDS AKSHAY; I say yes per PR; it goes live in the next deploy.
+- Before merge: price table from the provider's own page, mock tests, Opus money review, the real provider cost on every ledger line, its own kill switch.
+- ON for the house workspace (ws_legacy) and any workspace I list in the site setting; OFF for customer workspaces until launch.
+- Spend: the normal per-step approval in the UI is the approval. No separate paid qualification run; the team's first real use is the test. Monthly cap on the house workspace: $500, warning at 80% (say if a cap needs a migration).
+- No migrations without my word. Guard tests never weakened. Secrets never in code or chat.
+- Data terms: Particl's Terms promise PARTICL does not train on customer content; providers may, under their own policies. No no-training gate on wiring. The Privacy Policy names every provider with a link to its policy. Switch off training/"improve the models" on every account that offers it (ElevenLabs now) and record it. Keep a one-page "where your data goes" table (provider → what is sent → retention → training) in docs/legal and on the site. Fold into #761.
+- Consent: every real face passes Rekognition against its consent record before Act-Two, cloning or lip-sync runs.
+
+BAKE-OFFS (the team runs them live; results decide defaults): (a) 8-panel storyboard, two characters, three styles, on Recraft, GPT Image 2.5, Nano Banana Pro and 2.1; (b) 10 real briefs × top 3 video engines; (c) one Hindi lip-sync clip on sync.so.
+
+TESTING WITH THE AIMIGHTY TEAM
+Prepare invite links to the house workspace (I send them; one admin, the rest members); a one-page test script per slice (what to try, what "good" looks like, where to report); a feedback board that files bugs to you; fixes back as PRs the same day.
+
+DOCS: update docs/plans/provider-adapters.md (#714), the v25 build plan and the feature report to match; tell me what is missing from #714's env name table.
+
+REPORT daily at 10:30: what is live, what the team found, spend so far, what is blocked on me.
+Start with Slice 1 now.
+
+RECRAFT_API_KEY is set in Coolify (production only, locked, runtime only). Nothing else to buy; all stack keys are in place.
+
+Slice 5 (Viral trend panel, after Slice 3): the trend-signal adapter from docs/plans/viral-trends.md. Sources: YouTube mostPopular (IN), Google Trends via SerpApi, TikTok signals via Zyla (hashtags, sounds, formats only; never videos), Instagram hashtag search via Meta once our app is approved. One list with a source badge and a "crossing to India" flag. Tell me the env names; I'll set the keys when you're ready for them.
