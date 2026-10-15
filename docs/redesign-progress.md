@@ -863,3 +863,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Opus re-check of #776-#778 and full review of #780 started. That includes whether the Auto line is the workspace's per-job line or a flat 200 cr.
   - Lanes C (Topaz) and D (Veo) are now wiring on top of #778 5278689f. Lane B next: AWS MediaConvert, file-only first.
 - **16 Oct 02:17 IST.** #764 (Big Buck Bunny credit) readiness CI green 24/24 (run 38798946935, base release/1 663fb243) on the Opus-approved head 8b92b135. The bundle privacy guard now passes. Ready, but NEEDS AKSHAY: it adds an import-pinning entry to platformOwnerPrivacy.spec, which the standing yes excludes as a guard edit, and the credit wording is the owner's call. Not merged.
+- **16 Oct 02:20 IST.** Opus money re-check APPROVED #776 9d27d22f, #777 6d850f9d and #778 5278689f; #780 Runway 5daab7bb APPROVED with should-fixes. 222 specs pass.
+  - The Auto line is min(Rig job ceiling, 200 cr), a platform constant, not a flat number. Nothing can set Auto today, so every MCP call is Ask.
+  - Lead calls sent to lane B:
+    - MCP Auto runs drafts only (rule 14).
+    - Ask files a real prepared job via /api/prepared-jobs.
+    - A sync.so output host refused after completion settles as a charged failure.
+    - Runway: failure text says "Nothing billed" (no vendor credits shown); overrun recorded on failures; Gen-4.5/Turbo start images pass the consent gate (owner can relax).
+  - BFL: settlement uses BFL's cost only if `cost` comes back. One paid qualification call (owner's yes) would settle both that and the MP unit.
