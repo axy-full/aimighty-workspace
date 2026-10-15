@@ -51,8 +51,6 @@ export function paidByPlatform(name: VendorKeyName): boolean {
 
 /** Native compute (a Vercel Sandbox or the self-hosted render workers) has no workspace BYOK credentials. Disabled platform funding fails admission. */
 export function paidByPlatformEngine(engine: string): boolean {
-  /* The face check (lib/consentMatch.ts) is a safety gate: its cost is metered at the provider's price and bills no credits, in any workspace it is on for. */
-  if (engine === "rekognition") return false;
   if (isAstraComputeEngine(engine)) {
     const ws = currentTenant()?.workspace;
     return Boolean(ws) && !isHouseWorkspace(ws);
