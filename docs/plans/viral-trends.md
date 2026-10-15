@@ -4,9 +4,17 @@
 
 Read on 15 Oct 2026. No keys, no sign-ups, no calls made. Everything below comes from public pages (URLs in section 6). "Unverified" means I could not confirm it from the vendor's own page.
 
-## Owner decisions (15 Oct 2026, 16:40)
-- The trend panel shows two sources side by side: **"rising globally (TikTok)"** and **"rising in India (YouTube, Google Trends)"**, because TikTok is banned in India.
-- The platform-level cache (an exception to ground rule 2) and the customer price wait until after launch.
+## Owner decisions (15 Oct 2026)
+**Three sources together, after launch** (owner, verbatim):
+- TikTok (global early signal): via the chosen provider, signals only, never videos.
+- YouTube mostPopular (region IN) + Google Trends (SerpApi until the official API opens): India now.
+- Meta Instagram hashtag search (official Graph API, after Meta app review): confirms whether a TikTok/YouTube trend is rising on Reels in India.
+
+**The panel** shows one list with a source badge per signal and a **"crossing to India"** flag when a global TikTok signal also rises on YouTube/Google/Instagram. (This replaces the 16:40 wording of two side-by-side sources.)
+
+The platform-level cache (an exception to ground rule 2) and the customer price wait until after launch. Still parked.
+
+**What this means for the adapter (section 4):** one provider per platform rather than one `TRENDS_PROVIDER` for all: `TRENDS_TIKTOK_PROVIDER` + `TRENDS_TIKTOK_API_KEY`, `YOUTUBE_API_KEY` (official), `SERPAPI_API_KEY`, and the Meta app's token (after app review), each optional, behind the one `TRENDS_ENABLED` switch; names to confirm with the owner before anything is built. The "crossing to India" flag compares a normalised `name` (lower-case, without `#`, simple transliteration) across `platform`s within a window (for example 7 days), with a minimum rise on the India side; Instagram is used only to confirm a signal already found (30 hashtags per 7 days per account). Tests add: the flag set only when both sides rise; each signal carries exactly one source badge; no media.
 
 ## 1. Short version
 
