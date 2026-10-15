@@ -117,6 +117,15 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
           references: [{ uploadId: "up_ref", castMemberId: "cast_margin", consentId: "consent_margin", faceSha256: "b".repeat(64), megapixels: 1 }],
           funded: 1, claimedAt: at, bflId: "vendor-job-flux-1", pollingUrl: "https://api.eu.bfl.ai/v1/get_result?id=vendor-job-flux-1", statedUsd: cost.still, submittedAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1 } }),
         "u_member", at + 7, at + 7, "bfl", 0, null, null, null, "/api/media/g_flux", null] },
+      /* A Topaz upscale take (direct): its params carry the workflow's record, the Topaz credits quoted and reported, the reserved dollars, Topaz's request id, the source ids and
+         the sizes. Nobody reads any of it (lib/directEnginePublic.ts keeps the take's own words). */
+      { sql: take, args: ["g_topaz", "p_margin", "s_margin", "video", "topaz/upscale/video/creative", "Upscale · harbour",
+        JSON.stringify({ task: "topaz_upscale", job: "fix", sourceGenId: "g_take", estUsd: cost.take, estCredits: 0, topaz: {
+          status: "done", tool: "video", model: "topaz/upscale/video/creative", source: { kind: "generation", id: "g_take" }, settings: { creativity: 0.5, realism: 0.5, sharpness: 0.5, fps: 30 },
+          inputWidth: 1920, inputHeight: 1080, outputWidth: 3840, outputHeight: 2160, outputMegapixels: 0, seconds: 5, fps: 30, sourceFps: 30, container: "mp4", sourceBytes: 1000,
+          quoteCredits: 25, reservedUsd: cost.take, estimateCredits: 3, funded: 1, claimedAt: at, sendingAt: at, vendorId: "vendor-request-topaz-1", statedCredits: 24, estimatedHigh: 25,
+          submittedAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1, cleanupDue: 0, cleanupCancel: 0, cleanupTries: 0, vendorDeleted: 1, reconcile: 0 } }),
+        "u_member", at + 8, at + 8, "topaz", 0, null, null, null, "/api/media/g_topaz", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
@@ -190,6 +199,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a lip-sync take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_lipsync?sync=0", params: { id: "g_lipsync" } },
   { name: "GET /api/jobs/[id] (a Sarvam speech take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_sarvam?sync=0", params: { id: "g_sarvam" } },
   { name: "GET /api/jobs/[id] (a FLUX.2 take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_flux?sync=0", params: { id: "g_flux" } },
+  { name: "GET /api/jobs/[id] (a Topaz upscale take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_topaz?sync=0", params: { id: "g_topaz" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },

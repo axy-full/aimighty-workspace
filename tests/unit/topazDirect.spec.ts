@@ -60,8 +60,12 @@ test("a job settles at what Topaz says it used and never above its quote; no wor
 });
 
 test("only Topaz's own hosts and its storage are ever fetched, as https with no port and no credentials", () => {
-  for (const ok of ["https://api.topazlabs.com/x", "https://topazlabs.com/x", "https://dl.topazlabs.com/a?b=1", "https://bucket.s3.amazonaws.com/k", "https://bucket.s3.us-west-2.amazonaws.com/k", "https://s3.amazonaws.com/b/k", "https://bucket.s3-eu-west-1.amazonaws.com/k"]) expect(topazHostUrl(ok)?.href, ok).toBe(ok);
-  for (const bad of ["http://api.topazlabs.com/x", "https://api.topazlabs.com:8443/x", "https://u:p@api.topazlabs.com/x", "https://topazlabs.com.evil.test/x", "https://eviltopazlabs.com/x", "https://amazonaws.com/x", "https://ec2.amazonaws.com/x", "https://x.s3.evil.test/x", "https://evil.test/?h=api.topazlabs.com", "file:///etc/passwd", "ftp://api.topazlabs.com/x", "not a url", "", null, undefined, 5, "https://" + "a".repeat(5000) + ".topazlabs.com"]) expect(topazHostUrl(bad), String(bad)).toBeNull();
+  for (const ok of ["https://api.topazlabs.com/x", "https://topazlabs.com/x", "https://dl.topazlabs.com/a?b=1", "https://topaz-uploads.s3.amazonaws.com/k", "https://prod-topaz-video.s3.us-west-2.amazonaws.com/k", "https://topaz-eu.s3-eu-west-1.amazonaws.com/k"]) expect(topazHostUrl(ok)?.href, ok).toBe(ok);
+  for (const bad of ["http://api.topazlabs.com/x", "https://api.topazlabs.com:8443/x", "https://u:p@api.topazlabs.com/x", "https://topazlabs.com.evil.test/x", "https://eviltopazlabs.com/x", "https://amazonaws.com/x", "https://ec2.amazonaws.com/x", "https://x.s3.evil.test/x", "https://bucket.s3.amazonaws.com/k", "https://s3.amazonaws.com/topaz/k", "https://s3.topaz.amazonaws.com/k", "https://topaz.s3.amazonaws.com.evil.test/k", "https://topaz-uploads.s3.amazonaws.com:8443/k", "https://evil.test/?h=api.topazlabs.com", "file:///etc/passwd", "ftp://api.topazlabs.com/x", "not a url", "", null, undefined, 5, "https://" + "a".repeat(5000) + ".topazlabs.com"]) expect(topazHostUrl(bad), String(bad)).toBeNull();
+});
+
+test("a host is read in lower case, as the address itself is", () => {
+  expect(topazHostUrl("https://Topaz-Uploads.S3.amazonaws.com/k")?.href).toBe("https://topaz-uploads.s3.amazonaws.com/k");
 });
 
 test("every request goes to the one fixed address with the key in its header only, refuses redirects, and is made once", async () => {
@@ -129,7 +133,7 @@ test("a still's status and download: an unknown word is still processing, the ou
   expect(await downloadImage("p1", { fetch: direct.fetch })).toEqual(PNG);
   expect(direct.calls.map((c) => [c.method, c.url, c.headers["x-api-key"], c.redirect])).toEqual([["GET", "https://api.topazlabs.com/image/v1/download/p1", KEY, "error"]]);
   // Download: an address, on Topaz's host, fetched without the key.
-  const viaUrl = stub((c) => (c.url.includes("/image/v1/download/") ? json({ download_url: "https://bucket.s3.amazonaws.com/out.png?sig=1" }) : new Response(new Uint8Array(PNG), { headers: { "content-type": "image/png" } })));
+  const viaUrl = stub((c) => (c.url.includes("/image/v1/download/") ? json({ download_url: "https://topaz-out.s3.amazonaws.com/out.png?sig=1" }) : new Response(new Uint8Array(PNG), { headers: { "content-type": "image/png" } })));
   expect(await downloadImage("p1", { fetch: viaUrl.fetch })).toEqual(PNG);
   expect(viaUrl.calls[1].headers["x-api-key"]).toBeUndefined();
   expect(viaUrl.calls[1].redirect).toBe("error");
@@ -161,7 +165,7 @@ test("a clip: the request carries the source and Astra 2's controls and asks for
   const source = { container: "mp4" as const, sizeBytes: 12_345_678, durationSeconds: 5, frameRate: 30, width: 1920, height: 1080 };
   const s = stub((c) => {
     if (c.url.endsWith("/video/")) return json({ requestId: "r1", estimates: { cost: [18, 25], time: [60, 90] } });
-    if (c.url.endsWith("/accept")) return json({ urls: ["https://bucket.s3.amazonaws.com/p1?sig=a", "https://bucket.s3.amazonaws.com/p2?sig=b"] });
+    if (c.url.endsWith("/accept")) return json({ urls: ["https://topaz-up.s3.amazonaws.com/p1?sig=a", "https://topaz-up.s3.amazonaws.com/p2?sig=b"] });
     if (c.method === "PUT") return new Response(null, { status: 200, headers: { etag: `"tag-${c.url.includes("p1") ? 1 : 2}"` } });
     return json({});
   });
@@ -197,13 +201,13 @@ test("upload addresses that are not Topaz's are refused before any byte is sent;
   const s = stub(() => new Response(null, { status: 200, headers: { etag: '"t"' } }));
   await expect(acceptVideo("r1", { fetch: stub(() => json({ urls: ["https://evil.test/up"] })).fetch })).rejects.toThrow("upload addresses");
   await expect(acceptVideo("r1", { fetch: stub(() => json({ urls: [] })).fetch })).rejects.toThrow("upload addresses");
-  await expect(acceptVideo("r1", { fetch: stub(() => json({ urls: ["https://bucket.s3.amazonaws.com/a", "http://bucket.s3.amazonaws.com/b"] })).fetch })).rejects.toThrow("upload addresses");
+  await expect(acceptVideo("r1", { fetch: stub(() => json({ urls: ["https://topaz-up.s3.amazonaws.com/a", "http://topaz-up.s3.amazonaws.com/b"] })).fetch })).rejects.toThrow("upload addresses");
   await expect(uploadVideoParts(["https://evil.test/up"], Buffer.alloc(4), { fetch: s.fetch })).rejects.toThrow("not one Topaz's storage uses");
   expect(s.calls).toHaveLength(0);
   const failing = stub(() => new Response(null, { status: 403 }));
-  await expect(uploadVideoParts(["https://b.s3.amazonaws.com/a", "https://b.s3.amazonaws.com/b"], Buffer.alloc(4), { fetch: failing.fetch })).rejects.toThrow("did not take the upload");
+  await expect(uploadVideoParts(["https://topaz-b.s3.amazonaws.com/a", "https://topaz-b.s3.amazonaws.com/b"], Buffer.alloc(4), { fetch: failing.fetch })).rejects.toThrow("did not take the upload");
   expect(failing.calls).toHaveLength(1);
-  await expect(uploadVideoParts(["https://b.s3.amazonaws.com/a"], Buffer.alloc(4), { fetch: stub(() => new Response(null, { status: 200 })).fetch })).rejects.toThrow("did not name an uploaded part");
+  await expect(uploadVideoParts(["https://topaz-b.s3.amazonaws.com/a"], Buffer.alloc(4), { fetch: stub(() => new Response(null, { status: 200 })).fetch })).rejects.toThrow("did not name an uploaded part");
   await expect(uploadVideoParts([], Buffer.alloc(4))).rejects.toThrow("nothing to upload");
   await expect(completeVideoUpload("r1", [])).rejects.toThrow("no uploaded parts");
 });
@@ -251,11 +255,10 @@ test("the fixture (ENGINE_MOCK=1): a still and a clip run end to end in process,
   await expect(videoStatus(vid.id, never)).rejects.toMatchObject({ status: 404 });
 });
 
-test("the module is the adapter alone: nothing imports it yet, it reads no setting but the key, names its switch, and holds no vendor figure of anyone else's", () => {
+test("the adapter reads no setting but the key, names its switch, and holds no figure of its own (its rates are lib/vendorRates.ts TOPAZ_RATES)", () => {
   const source = readFileSync("lib/topazDirect.ts", "utf8");
   const env = [...source.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1]);
   expect([...new Set(env)]).toEqual(["TOPAZ_API_KEY"]);
   expect(TOPAZ_SWITCH).toBe("TOPAZ_DIRECT_ENABLED");
-  expect(source).not.toMatch(/vendorRates|fal\.ai|FAL_KEY|\bnext\/|use client/);
-  for (const file of ["lib/topaz.ts", "lib/astra.ts", "lib/jobs.ts", "lib/models.ts", "lib/providers.ts"]) expect(readFileSync(file, "utf8"), file).not.toContain("topazDirect");
+  expect(source).not.toMatch(/fal\.ai|FAL_KEY|\bnext\/|use client/);
 });

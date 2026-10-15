@@ -1,6 +1,7 @@
 import { engineMock } from "./mock";
 import { recoveryFetch } from "./recovery";
 import { astraSettings, type AstraSettings } from "./astra";
+import { TOPAZ_RATES } from "./vendorRates";
 import { topazImageOutput, topazImageSettings, type TopazImageSettings } from "./topaz";
 
 /**
@@ -28,22 +29,7 @@ const POLL_TIMEOUT_MS = 20_000;
 export const TOPAZ_OUTPUT_LIMIT_BYTES = 1024 * 1024 * 1024;
 export const TOPAZ_IMAGE_OUTPUT_LIMIT_BYTES = 200 * 1024 * 1024;
 
-/**
- * What Topaz charges us, in Topaz credits, and what a credit costs. **Developer plan, $0.10 a credit, and the dearer of every reading Topaz's own pages give, so a quote is never under what
- * the invoice can be** (docs/plans/topaz-direct-prices.md): images by the API page's tiers (24 MP 1 credit, 32 MP 2, 48 MP 3); Astra 2 video by the family table's 40 credits per 10 s at
- * 1080p and 30 fps (4 a second) and the Astra 2 page's 5 a second at 4K, both scaling with the frame rate (60 fps doubles them). There is no 720p figure: 720p is priced as 1080p. Every
- * preset is treated as the Gigapixel family. **OWNER TO CONFIRM the plan and each reading against the first invoice**; a change is a change to this table only.
- */
-export const TOPAZ_RATES = {
-  plan: "developer",
-  usdPerCredit: 0.10,
-  confirmed: false,
-  note: "owner to confirm plan and reading against the first invoice",
-  imageTiers: [{ maxMegapixels: 24, credits: 1 }, { maxMegapixels: 32, credits: 2 }, { maxMegapixels: 48, credits: 3 }],
-  /** Credits a second at 30 fps, by output tier; a frame rate of F costs F / 30 times as much. 720p is the 1080p tier. */
-  videoCreditsPerSecondAt30: { "1080p": 4, "4k": 5 },
-} as const;
-
+export { TOPAZ_RATES };
 export type TopazVideoTier = keyof typeof TOPAZ_RATES.videoCreditsPerSecondAt30;
 
 /** The credits a still costs by its output size (megapixels). Over 48 MP is not offered. */
@@ -81,18 +67,22 @@ export function topazSettleUsd(reportedCredits: number | null | undefined, quote
 }
 
 /**
- * An address Topaz gave us (an upload address, an output address), accepted only as an https host on topazlabs.com or under it, or on Amazon S3 (where its presigned storage addresses are,
- * TO CONFIRM against the hosts it really uses), with no port and no credentials. Nothing else is ever fetched. Every request here also refuses redirects (`redirect: "error"`): a redirect
- * would carry our key, or our bytes, to a host this list never saw.
+ * An address Topaz gave us (an upload address, an output address), accepted only as an https host on topazlabs.com or under it, or on a bucket of Topaz's own on Amazon S3, with no port and no
+ * credentials. Nothing else is ever fetched. Every request here also refuses redirects (`redirect: "error"`): a redirect would carry our key, or our bytes, to a host this list never saw.
+ *
+ * **TO CONFIRM against the first qualification run:** Topaz's video API hands out presigned storage addresses and its pages we could read name no bucket. The narrowest pattern that can be
+ * justified is used: a virtual-hosted S3 address (`<bucket>.s3[.region].amazonaws.com`, never path-style `s3.amazonaws.com/<bucket>`) whose bucket name has `topaz` in it. If Topaz's
+ * buckets are named otherwise, an upload or a download is refused (the job ends "Nothing billed" and its request is cancelled): it fails safe, and the list is widened to the bucket the run
+ * shows, in this one place.
  */
-const S3 = /^(?:[a-z0-9][a-z0-9.-]*\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/;
+export const TOPAZ_STORAGE_HOST = /^(?=[a-z0-9.-]*topaz)[a-z0-9][a-z0-9.-]*\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/;
 export function topazHostUrl(raw: unknown): URL | null {
   if (typeof raw !== "string" || raw.length > 4096) return null;
   let url: URL;
   try { url = new URL(raw); } catch { return null; }
   if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
   const host = url.hostname.toLowerCase();
-  return host === "topazlabs.com" || host.endsWith(".topazlabs.com") || S3.test(host) ? url : null;
+  return host === "topazlabs.com" || host.endsWith(".topazlabs.com") || TOPAZ_STORAGE_HOST.test(host) ? url : null;
 }
 
 export const topazConfigured = (): boolean => Boolean(process.env.TOPAZ_API_KEY) || engineMock();
@@ -293,7 +283,7 @@ export async function createVideoRequest(input: { source: TopazVideoSource; sett
 
 /** Accepts the request and returns the addresses to put the clip to, one for each part (https on Topaz's own hosts or its storage; anything else is refused). */
 export async function acceptVideo(id: string, deps: Deps = {}): Promise<{ uploadUrls: string[] }> {
-  if (engineMock()) { const job = mockVideos.get(id); if (!job) throw new TopazError("Topaz has no such request.", 404, null, true); job.accepted = true; return { uploadUrls: [`https://mock.s3.amazonaws.com/${id}/part-1`] }; }
+  if (engineMock()) { const job = mockVideos.get(id); if (!job) throw new TopazError("Topaz has no such request.", 404, null, true); job.accepted = true; return { uploadUrls: [`https://topaz-mock.s3.amazonaws.com/${id}/part-1`] }; }
   const { json, status } = await call("PATCH", `/video/${encodeURIComponent(id)}/accept`, { deps });
   const raw = json.urls ?? json.uploadUrls ?? json.upload_urls;
   const urls = Array.isArray(raw) ? raw : [];
@@ -341,7 +331,7 @@ export async function videoStatus(id: string, deps: Deps = {}): Promise<TopazVid
     const job = mockVideos.get(id);
     if (!job) throw new TopazError("Topaz has no such request.", 404, null, true);
     job.polls += 1;
-    return job.polls < 2 ? { id, status: "processing", progress: 0.5 } : { id, status: "completed", progress: 1, downloadUrl: `https://mock.s3.amazonaws.com/${id}/output.mp4`, credits: job.credits };
+    return job.polls < 2 ? { id, status: "processing", progress: 0.5 } : { id, status: "completed", progress: 1, downloadUrl: `https://topaz-mock.s3.amazonaws.com/${id}/output.mp4`, credits: job.credits };
   }
   const { json } = await call("GET", `/video/${encodeURIComponent(id)}/status`, { deps, timeout: POLL_TIMEOUT_MS });
   const status = VIDEO_STATUS[String(json.status ?? "").toLowerCase()] ?? "processing";
