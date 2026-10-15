@@ -791,3 +791,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Also found: no srcset (JS tier selection instead); posters cost more egress on retina screens; the 640 px sample clip is upscaled 1.3× at 2560@2×; at 1728/1920 the bottom bar is offset by the prototype's 420 px rule; Home and customer Home at 2560 strand whitespace (outside these PRs; fails rule 7).
   - Sent to lane C.
 - **16 Oct 01:37 IST.** #771 delta check APPROVED at 71a87a44. The acting person comes only from the auth-set tenant user, so a run id can't be spoofed by MCP or token callers; no person means refuse before any read, reservation or AWS call; 51 specs pass; RESERVERS is still add-only; no new env names. Readiness CI started. Stays NEEDS AKSHAY (the 8 owner questions, above all the reference source).
+- **16 Oct 01:41 IST.** Provider data terms, from their own pages:
+  - BFL: trains on API inputs and outputs by default; opt-out by email ("Training Opt Out" to privacy@blackforestlabs.ai); no retention period.
+  - Sarvam: content retention is user-configurable (default 30 days after last access); trains unless you opt out in account settings; transfers to the US and EU.
+  - sync.so: trains ("developing, training, and fine-tuning"); perpetual licence; no opt-out or zero-retention on their pages; DELETE endpoints exist for generations and assets; their terms carry bracketed draft text on face and voice tools.
+  None offers zero retention. This is consistent with the owner's "Particl does not train; providers may", but sync.so receives faces and voices, so it's a LAWYER item. Docs lane E is adding these to #761 with email drafts (nothing sent).
+  - Lane B: #778 updated to 78e6fe6a (flex and max priced; all models 4 MP / 8 refs; host checks extended). Lane B is now on Runway.
+  - Open owner question on BFL: what counts as a megapixel. #778 uses 1,000,000 px, so 1024×1024 quotes as 2 MP. BFL's own page uses 1,048,576 px elsewhere, which would make it 1 MP, so the default size may over-quote ~50% unless settlement uses BFL's stated cost. With the Opus money reviewer.
