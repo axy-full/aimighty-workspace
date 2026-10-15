@@ -777,3 +777,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - Flags for the owner: (1) the scale is computed in TS, but the owner said "CSS only"; (2) tests/shots-v12-workbench.spec.ts was edited (1920 expectations now in canvas units × scale; identical at ≤1440).
     - Opus large-screen review is running.
 - **16 Oct 01:33 IST.** #764 delta check APPROVED at 8b92b135. The credit's client files now import only sampleClip (no imports), useSampleClip (react) and SampleClipCredit; bundle.spec.ts has no diff from release/1; 31 specs pass. Readiness CI started; it will be the real bundle confirmation.
+- **16 Oct 01:36 IST.** Lane B pushed:
+  - #771 71a87a44: the agent upload check resolves the acting person (signed-in person, or the Atomik run's owner); no acting person means refuse, nothing billed.
+  - #776 4f8a0cce: vendor internals stripped via directEnginePublic; voice consent unless every voice is `premade`; face-check wording plus an owner-decision paragraph; engine-on $0-cap test; exact 5/60 and 8/60 rates; MCP lip_sync behind the gate, with caller maxCredits refused.
+  - #777 2c9c2d10: transcript and translation text cut from the replay claim; STT ₹30/h; MCP sarvam_* tools.
+  - New #778 BFL FLUX.2 (24a24523, NEEDS AKSHAY): BFL_API_KEY, BFL_BASE_URL (default api.eu.bfl.ai), BFL_ENABLED; edit references pass the consent gate.
+  - BFL prices verified from BFL's published pricing data (the source behind docs.bfl.ai/quick_start/pricing; 1 cr = $0.01): pro 3 / 1.5 / 1.5 cr (first MP / further MP / input MP), which matches; flex 5 / 5 / 5; max 7 / 3 / 3. Lane B is adding the flex and max rules. Result URLs are valid 10 min; up to 4 MP and 8 references.
+  - Opus checks running: #771 delta, the #776/#777 re-check and the #778 money review. Retention and training terms for Sarvam and BFL still need reading (their legal pages).
