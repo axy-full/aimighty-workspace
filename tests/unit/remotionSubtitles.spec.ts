@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import os from "node:os";
 import path from "node:path";
 import { checkSpec, runExport, type Renderer } from "../../remotion/node/export";
-import { subtitleCuesOf, subtitleText, toSrt, toTimeline, toVtt, wrapLines, type Cue, type CompositionId, type Timeline } from "../../remotion/src/lib";
+import { subtitleCuesOf, subtitleText, toSrt, toVtt, wrapLines, type Cue, type CompositionId, type Timeline } from "../../remotion/src/lib";
 import type { Prober } from "../../remotion/node/probe";
 
 /* Sidecar SRT and VTT from the same cue data as the burned-in captions: pure text, placed on the finished video's clock. */
@@ -102,7 +102,9 @@ test.describe("the export command writes the files", () => {
     writeFileSync(path.join(base, "bundle", "index.html"), "<html></html>");
     writeFileSync(path.join(base, "input", "clips", "a.mp4"), "video");
     const probing: Prober = { probe: async () => ({ durationSeconds: 10, width: 1920, height: 1080, hasVideo: true, hasAudio: true }) };
-    const timeline = toTimeline("final", checkSpec(args({}).spec).ok ? (checkSpec(args({}).spec) as { props: never }).props : (undefined as never));
+    const planned = checkSpec(args({}).spec);
+    if (!planned.ok) throw new Error(JSON.stringify(planned));
+    const timeline = planned.timeline;
     const renderer: Renderer = {
       prepare: async () => {},
       selectComposition: async ({ id, inputProps }) => ({ id, width: timeline.width, height: timeline.height, fps: timeline.fps, durationInFrames: timeline.durationInFrames, props: inputProps }),
