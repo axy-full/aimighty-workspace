@@ -51,17 +51,16 @@ const collect = async (stream: ReadableStream<Uint8Array>) => {
   for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); }
   return Buffer.concat(parts);
 };
-const source = (chunks: number, byte: number, size = 64 * 1024, opened?: string[], name = "x") => (): Promise<ReadableStream<Uint8Array>> => {
-  opened?.push(name);
+const source = (chunks: number, byte: number, size = 64 * 1024, log?: { pulls: number; cancelled: boolean }): ReadableStream<Uint8Array> => {
   let left = chunks;
-  return Promise.resolve(new ReadableStream<Uint8Array>({ pull(controller) { if (left-- > 0) controller.enqueue(new Uint8Array(size).fill(byte)); else controller.close(); } }));
+  return new ReadableStream<Uint8Array>({ pull(controller) { if (log) log.pulls += 1; if (left-- > 0) controller.enqueue(new Uint8Array(size).fill(byte)); else controller.close(); }, cancel() { if (log) log.cancelled = true; } }, { highWaterMark: 0 });
 };
 
 test("a zip of several entries is a valid archive with each file byte for byte, stored, and an empty file is allowed", async () => {
   const entries: ZipEntry[] = [
-    { name: "a.mp4", bytes: 6 * 64 * 1024, open: source(6, 1) },
-    { name: "b.srt", bytes: 64 * 1024, open: source(1, 2) },
-    { name: "empty.vtt", bytes: 0, open: source(0, 0) },
+    { name: "a.mp4", bytes: 6 * 64 * 1024, stream: source(6, 1) },
+    { name: "b.srt", bytes: 64 * 1024, stream: source(1, 2) },
+    { name: "empty.vtt", bytes: 0, stream: source(0, 0) },
   ];
   const archive = unzipSync(new Uint8Array(await collect(zipStream(entries))));
   expect(Object.keys(archive).sort()).toEqual(["a.mp4", "b.srt", "empty.vtt"]);
@@ -70,18 +69,28 @@ test("a zip of several entries is a valid archive with each file byte for byte, 
   expect(archive["empty.vtt"].length).toBe(0);
 });
 
-test("it is read at the consumer's pace, one chunk at a time: the second file is not opened until the first is done, and a cancel closes the source", async () => {
-  const opened: string[] = [];
-  let cancelled = false;
-  const big = (): Promise<ReadableStream<Uint8Array>> => { opened.push("big"); return Promise.resolve(new ReadableStream<Uint8Array>({ pull(controller) { controller.enqueue(new Uint8Array(64 * 1024)); }, cancel() { cancelled = true; } })); };
-  const stream = zipStream([{ name: "big.mov", bytes: 1e9, open: big }, { name: "after.srt", bytes: 10, open: source(1, 1, 10, opened, "after") }]);
+test("it is read at the consumer's pace, one chunk at a time: a later file is not read until the first is done, and a cancel closes every file still open", async () => {
+  const first = { pulls: 0, cancelled: false };
+  const second = { pulls: 0, cancelled: false };
+  const stream = zipStream([
+    { name: "big.mov", bytes: 1e9, stream: new ReadableStream<Uint8Array>({ pull(controller) { first.pulls += 1; controller.enqueue(new Uint8Array(64 * 1024)); }, cancel() { first.cancelled = true; } }) },
+    { name: "after.srt", bytes: 10, stream: source(1, 1, 10, second) },
+  ]);
   const reader = stream.getReader();
   await reader.read();
   await reader.read();
-  expect(opened).toEqual(["big"]);
+  expect(first.pulls).toBeGreaterThan(0);
+  expect(second.pulls).toBe(0);
   await reader.cancel();
-  expect(cancelled).toBe(true);
-  expect(opened).toEqual(["big"]);
+  expect(first.cancelled).toBe(true);
+  expect(second.cancelled).toBe(true);
+});
+
+test("an empty chunk from storage does not stall the archive", async () => {
+  const withEmpty = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array(0)); controller.enqueue(new Uint8Array(10).fill(7)); controller.enqueue(new Uint8Array(0)); controller.close(); } });
+  const archive = unzipSync(new Uint8Array(await collect(zipStream([{ name: "x.srt", bytes: 10, stream: withEmpty }, { name: "y.vtt", bytes: 1, stream: source(1, 9, 1) }]))));
+  expect(Buffer.from(archive["x.srt"]).equals(Buffer.alloc(10, 7))).toBe(true);
+  expect(Buffer.from(archive["y.vtt"]).equals(Buffer.alloc(1, 9))).toBe(true);
 });
 
 test("a ready export's zip holds its video and its subtitle files, named as they are listed, and only those", async () => context("zip", async (m) => {
@@ -161,3 +170,40 @@ test("the route: owner only, streamed as an attachment, 404 for a bad id, and th
   expect(response.status).toBe(404);
   expect(offLog).toEqual([]);
 });
+
+test("every file is opened inside exportZip while the workspace is in scope (the response is read later, outside it), in listed order", async () => context("zipscope", async (m) => {
+  const { currentTenant } = await import("../../lib/tenant");
+  const created = await m.createExport(request("request-zip-000010", { subtitles: ["srt", "vtt"] }), { id: "u_test" }, m.deps());
+  await m.runExport(created.job.id, m.deps());
+  const opened: { upload: string; workspace: string | undefined }[] = [];
+  const open = async (uploadId: string) => { opened.push({ upload: uploadId.replace(created.job.id, ""), workspace: currentTenant()?.workspace?.id }); return source(1, 3); };
+  const result = await m.exportZip("u_test", created.job.id, m.deps(), { open });
+  expect(opened).toEqual([{ upload: "_video", workspace: "ws_zipscope" }, { upload: "_subtitle_srt", workspace: "ws_zipscope" }, { upload: "_subtitle_vtt", workspace: "ws_zipscope" }]);
+  /* Reading the body later, outside any workspace, opens nothing more. */
+  await collect(result.stream);
+  expect(opened).toHaveLength(3);
+}));
+
+test("a row whose stored object is gone is a clean 404 before any response, not a 200 that stops; files opened before it are let go", async () => context("zipgone", async (m) => {
+  const created = await m.createExport(request("request-zip-000011", { subtitles: ["srt"] }), { id: "u_test" }, m.deps());
+  await m.runExport(created.job.id, m.deps());
+  /* The real storage: delete the video's object and keep its row. */
+  const { deleteUpload } = await import("../../lib/storage");
+  const row = (await m.db().execute({ sql: "SELECT ext, stored_url FROM uploads WHERE id=?", args: [`${created.job.id}_video`] })).rows[0];
+  await deleteUpload(`${created.job.id}_video`, String(row.ext), String(row.stored_url));
+  await expect(m.exportZip("u_test", created.job.id, m.deps())).rejects.toMatchObject({ status: 404, message: "A file of that export is not available any more." });
+  /* A later file failing lets go of the earlier ones. */
+  const first = { pulls: 0, cancelled: false };
+  const open = async (uploadId: string) => { if (uploadId.endsWith("_subtitle_srt")) throw new Error("blob not found"); return source(1, 1, 10, first); };
+  await expect(m.exportZip("u_test", created.job.id, m.deps(), { open })).rejects.toMatchObject({ status: 404 });
+  expect(first.cancelled).toBe(true);
+}));
+
+test("a size that is not a whole number cannot slip past the limit: NULL, text and negative sizes are refused", async () => context("zipsize", async (m) => {
+  const created = await m.createExport(request("request-zip-000012"), { id: "u_test" }, m.deps());
+  await m.runExport(created.job.id, m.deps());
+  for (const bad of ["'abc'", "-5", "1.5"]) {
+    await m.db().execute(`UPDATE uploads SET bytes=${bad} WHERE id='${created.job.id}_video'`);
+    await expect(m.exportZip("u_test", created.job.id, m.deps()), bad).rejects.toMatchObject({ status: 404, message: "A file of that export is not available any more." });
+  }
+}));
