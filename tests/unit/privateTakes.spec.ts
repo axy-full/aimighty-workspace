@@ -254,8 +254,13 @@ test("GET /api/usage: a private board's render stays in the spend and loses its 
     expect(recent.find((r: { credits: number }) => r.credits === 7)!).toMatchObject({ id: `t_priv2_${run}`, prompt: `${PRIV}-two` });
   }
   for (const actor of [ADMIN, WS_OWNER]) {
-    const recent = (await usage(actor)).recent;
-    for (const credits of [12, 7]) expect(recent.find((r: { credits: number }) => r.credits === credits)!, `${actor.user.id} ${credits}`).toMatchObject({ id: "", title: "A private board", prompt: "" });
+    const body = await usage(actor);
+    expect(total(body), actor.user.id).toBe(27);
+    for (const credits of [12, 7]) expect(body.recent.find((r: { credits: number }) => r.credits === credits)!, `${actor.user.id} ${credits}`).toMatchObject({ id: "", title: "A private board", prompt: "", params: {}, status: "succeeded" });
+    expect(JSON.stringify(body), actor.user.id).not.toContain(`t_priv1_${run}`);
+    expect(JSON.stringify(body), actor.user.id).not.toContain(`t_priv2_${run}`);
+    expect(JSON.stringify(body), actor.user.id).not.toContain(PRIV);
+    expect(body.recent.find((r: { credits: number }) => r.credits === 5), actor.user.id).toMatchObject({ id: `t_shared_${run}`, prompt: `${SHARED}-one` });
   }
   /* Another workspace: its ledger has none of these. */
   const other = workspace(`pt-e2-${run}`);

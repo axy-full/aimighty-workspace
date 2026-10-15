@@ -89,12 +89,34 @@ export async function workspaceExport(ownerId: string, ownerEmail: string, perso
         await tx.execute("SELECT name FROM sqlite_master WHERE type='table'")
       ).rows.map((row) => String(row.name)),
     );
+    /* Which board a row belongs to, for every table that holds one (below), so that a private board the person may not take out leaves NOTHING behind: its name, shots, canvas, notes and
+       provenance go with its takes. Rows tied by an id of another table (a take, an element, a recipe, a run, a production) are tied through that table's own project. */
+    const owners = async (sql: string) => new Map((await tx.execute(sql)).rows.map((row) => [String(row.id), row.project_id == null ? null : String(row.project_id)]));
+    const hiddenBoard = (id: string | null | undefined) => Boolean(boards) && isDraftProject(id ?? null) && !boards!.has(String(id));
+    const via = boards ? {
+      take: await owners("SELECT id, project_id FROM generations WHERE project_id GLOB 'prj_wb_*'"),
+      element: tables.has("elements") ? await owners("SELECT id, project_id FROM elements WHERE project_id GLOB 'prj_wb_*'") : new Map<string, string | null>(),
+      recipe: tables.has("recipes") ? await owners("SELECT id, project_id FROM recipes WHERE project_id GLOB 'prj_wb_*'") : new Map<string, string | null>(),
+      run: tables.has("runs") ? await owners("SELECT id, project_id FROM runs WHERE project_id GLOB 'prj_wb_*'") : new Map<string, string | null>(),
+      shot: tables.has("shots") ? await owners("SELECT id, project_id FROM shots WHERE project_id GLOB 'prj_wb_*'") : new Map<string, string | null>(),
+      production: tables.has("projects") ? await owners("SELECT production_id AS id, id AS project_id FROM projects WHERE production_id IS NOT NULL AND id GLOB 'prj_wb_*'") : new Map<string, string | null>(),
+    } : null;
+    /* Table -> how its rows name their board. A table not here is not tied to a board (workspace-wide records: top-ups, rules, uploads, presets of no project). */
+    const boardOf: Record<string, (row: Row) => (string | null | undefined)[]> = {
+      projects: (r) => [String(r.id)], productions: (r) => [via!.production.get(String(r.id))],
+      boards: (r) => [r.project_id as string], shots: (r) => [r.project_id as string], cast_members: (r) => [r.project_id as string], identities: (r) => [r.project_id as string],
+      treatment_versions: (r) => [r.project_id as string], ideas: (r) => [r.project_id as string], treatments: (r) => [r.project_id as string], canvas_items: (r) => [r.project_id as string],
+      shot_presets: (r) => [r.project_id as string], elements: (r) => [r.project_id as string], bindings: (r) => [r.project_id as string, via!.shot.get(String(r.shot_id))],
+      recipes: (r) => [r.project_id as string], runs: (r) => [r.project_id as string], workbench_bibles: (r) => [r.project_id as string],
+      element_attributes: (r) => [via!.element.get(String(r.element_id))], attribute_versions: (r) => [via!.element.get(String(r.element_id)), via!.take.get(String(r.gen_id))],
+      recipe_stages: (r) => [via!.recipe.get(String(r.recipe_id))], stage_runs: (r) => [via!.run.get(String(r.run_id))],
+      take_provenance: (r) => [via!.take.get(String(r.take_id)), via!.shot.get(String(r.shot_id))], take_ports: (r) => [via!.take.get(String(r.take_id)), via!.element.get(String(r.element_id))],
+      notes: (r) => [via!.take.get(String(r.gen_id))], review_notes: (r) => [via!.take.get(String(r.gen_id))],
+    };
     for (const name of SHARED_TABLES) {
-      contents[name] = tables.has(name)
-        ? (await tx.execute(`SELECT * FROM ${name}`)).rows.map((row) => ({
-            ...row,
-          }))
-        : [];
+      const rows = tables.has(name) ? (await tx.execute(`SELECT * FROM ${name}`)).rows.map((row) => ({ ...row })) : [];
+      const tie = boards ? boardOf[name] : undefined;
+      contents[name] = tie ? rows.filter((row) => !tie(row).some((id) => hiddenBoard(id))) : rows;
     }
     contents.users = (
       await tx.execute(
@@ -224,7 +246,7 @@ export async function workspaceExport(ownerId: string, ownerEmail: string, perso
     workspace: { id: workspace.id, slug: workspace.slug, name: workspace.name },
     exportedAt: new Date(now()).toISOString(),
     exportedBy: ownerEmail,
-    note: "Includes shared workspace records, published project bibles and your private drafts. Other collaborators' private drafts and credentials are excluded. Media bytes are downloaded separately from the master manifest; stored paths require authorized workspace access.",
+    note: "Includes the workspace's records, published project bibles and your own drafts. Another member's private board is included for an admin, and counted in its maker's history. Credentials are excluded. Media bytes are downloaded separately from the master manifest; stored paths require authorized workspace access.",
     counts: Object.fromEntries(
       Object.entries(contents).map(([name, rows]) => [name, rows.length]),
     ),

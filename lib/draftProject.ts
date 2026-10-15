@@ -370,8 +370,10 @@ export async function readableProjectOr(viewer: Viewer, projectId: string | null
  * workspace, so it is counted each time, and the board's owner reads "Exported by <admin>" apart from "Viewed by". No line, no export of that board.
  */
 async function recordAdminExport(adminId: string, projectId: string, ex: Exec): Promise<boolean> {
-  /* Only a board that exists in this workspace: one with a draft, or whose takes remain (held or deleted); an id with neither is nobody's. */
-  const known = (await boardDraftOf(projectId, ex)) || (await ex.execute({ sql: "SELECT 1 FROM generations WHERE project_id=? LIMIT 1", args: [projectId] })).rows.length > 0;
+  /* Only a board that exists in this workspace: one with a draft, a project row, or takes that remain (held or deleted); an id with none is nobody's. */
+  const known = (await boardDraftOf(projectId, ex))
+    || (await ex.execute({ sql: "SELECT 1 FROM projects WHERE id=? LIMIT 1", args: [projectId] })).rows.length > 0
+    || (await ex.execute({ sql: "SELECT 1 FROM generations WHERE project_id=? LIMIT 1", args: [projectId] })).rows.length > 0;
   if (!known) return false;
   try {
     await ex.execute(securityAuditStatement({ workspaceId: requireTenant().id, actorId: adminId, action: "board.exported_by_admin", targetType: "board", targetId: projectId }));
@@ -390,8 +392,11 @@ async function recordAdminExport(adminId: string, projectId: string, ex: Exec): 
  */
 export async function exportableBoards(person: Person | null, ex: Exec = db()): Promise<Set<string> | null> {
   if (!person) return null;
-  const held = (await ex.execute({ sql: "SELECT DISTINCT project_id FROM generations WHERE project_id GLOB 'prj_wb_*'", args: [] })).rows.map((row) => String(row.project_id));
-  if (!held.length) return null;
+  /* Every private board the export could carry a row of: one with a project row (its name, shots, canvas, notes live there) or a take that is not deleted, so a board with a shot and no
+     take is counted too. An empty set (not null) when there is none: the person is asked about, and nothing is hidden because nothing is there. */
+  const held = new Set<string>();
+  for (const sql of ["SELECT id AS project_id FROM projects WHERE id GLOB 'prj_wb_*'", "SELECT DISTINCT project_id FROM generations WHERE deleted = 0 AND project_id GLOB 'prj_wb_*'"])
+    for (const row of (await ex.execute({ sql, args: [] })).rows) held.add(String(row.project_id));
   const readable = new Set<string>();
   for (const id of held) {
     const othersPrivate = isWorkspaceAdmin(person) && !(await ownsDraftProject(person.id, id, ex)) && !(await isMarkedSample(id, ex)) && (await draftShare(id, ex)).mode === "none";
