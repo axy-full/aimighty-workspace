@@ -891,7 +891,7 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
     args: [genId],
   })).rows[0];
   // Nothing left to end (already over, hidden, or a dubbing project or lip-sync job its own workflow owns).
-  if (!row || (row.kind === "audio" && row.task === "dub") || (row.kind === "video" && row.task === "lipsync") || (row.kind === "audio" && row.task === "sarvam_speech")) {
+  if (!row || (row.kind === "audio" && row.task === "dub") || (row.kind === "video" && row.task === "lipsync") || (row.kind === "audio" && row.task === "sarvam_speech") || (row.kind === "image" && row.task === "bfl_image")) {
     await deliverGenerationSettlement(genId);
     return;
   }

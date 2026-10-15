@@ -103,6 +103,8 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
   /* Lip-sync is off unless its engine is on for the workspace, so this press stops at "no such tool" and spends nothing (tests/unit/lipSync.spec.ts proves the cap with it on). */
   /* Sarvam is off unless its engine is on for the workspace, so this press stops at "no such tool" and spends nothing (tests/unit/sarvam.spec.ts proves the rest with it on). */
+  /* FLUX.2 is off unless its engine is on for the workspace, so this press stops at "no such tool" and spends nothing (tests/unit/bfl.spec.ts proves the rest with it on). */
+  { dir: "bfl", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
   { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", castMemberId: "cast_1", faceFrameUploadId: "up_face", projectId: "film", use: "production", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
@@ -379,6 +381,8 @@ const RESERVERS: Record<string, Reserver> = {
   "lib/dubbing.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["?? submitDubbing)("] },
   /* Lip-sync (sync.so): reserved at admission, before its row is ever advanced; every vendor call is in the advance step, which only runs on a funded row. */
   /* Sarvam: one reservation site (reserveCall), reached before any of its three vendor calls; its speech take, translation and transcription all go through it. */
+  /* FLUX.2 (BFL): reserved at admission, before its row is ever advanced; its one vendor call (the submit) is in the advance step, which only runs on a funded row. */
+  "lib/bflImage.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.submit ?? submitImage)("] },
   "lib/sarvamTools.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (seams.speak ?? speak)(", "await (seams.translate ?? translate)(", "await (seams.transcribe ?? transcribe)("] },
   "lib/lipSync.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.upload ?? uploadAsset)(", "await (deps.submit ?? submitLipSync)("] },
   "lib/transcription.ts": { reserve: "?? reserveGenerationSpend)(", count: 1, vendor: ["?? grokTranscribe)("] },
@@ -408,6 +412,7 @@ const DOOR_MODULE: Record<string, string> = {
   "audio/dub": "lib/dubbing.ts",
   "lipsync": "lib/lipSync.ts",
   "sarvam": "lib/sarvamTools.ts",
+  "bfl": "lib/bflImage.ts",
   "audio/transcribe": "lib/transcription.ts",
   "jobs/[id]/release": "lib/held.ts",
   /* Taking a step claims it; the step's render is paid through admission. */

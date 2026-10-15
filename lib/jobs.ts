@@ -839,6 +839,11 @@ export async function syncPending(
   results.attempted += sarvams.attempted;
   results.failed += sarvams.failed;
   results.deferred += sarvams.deferred;
+  // FLUX.2 jobs (BFL): ask after the running; a Ready image is collected at once, inside its ten minutes. Never resubmit.
+  const bfls = await (await import("./bflImage")).recoverBflJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += bfls.attempted;
+  results.failed += bfls.failed;
+  results.deferred += bfls.deferred;
   const horizon = now() - 3 * 86400_000;
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
@@ -869,6 +874,8 @@ export async function syncPending(
           if (gen.kind === "video" && params.task === "lipsync") return;
           // A Sarvam speech take is made inside one request of ours and settled there (lib/sarvamTools.ts); a stale one is ended by its own stage above.
           if (gen.kind === "audio" && params.task === "sarvam_speech") return;
+          // A FLUX.2 job's row is advanced by its own workflow above (lib/bflImage.ts); it is neither a render nor an orphan (an orphan sweep would end it as "sent, outcome unknown").
+          if (gen.kind === "image" && params.task === "bfl_image") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome

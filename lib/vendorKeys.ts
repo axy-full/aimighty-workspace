@@ -6,11 +6,11 @@ import { productionIntended } from "./vercelGuard";
 export type VendorKeyName = "ark" | "gemini" | "gateway" | "openai" | "anthropic" | "fal" | "elevenlabs" | "higgsfield" | "xai";
 
 /**
- * The vendors the money gates (credit wall, allowance, who pays) are asked about. The direct engines of the 15 Oct 2026 stack (sync.so, Sarvam) hold
+ * The vendors the money gates (credit wall, allowance, who pays) are asked about. The direct engines of the 15 Oct 2026 stack (sync.so, Sarvam, Black Forest Labs) hold
  * no workspace key and have no key screen, so they are not VendorKeyNames: the gates read no vendor name today beyond "does the platform pay", and
  * these two name what is asking.
  */
-export type EngineVendor = VendorKeyName | "sync" | "sarvam";
+export type EngineVendor = VendorKeyName | "sync" | "sarvam" | "bfl";
 
 const ENV: Record<VendorKeyName, string> = {
   ark: "ARK_API_KEY", gemini: "GEMINI_API_KEY", gateway: "AI_GATEWAY_API_KEY", openai: "OPENAI_API_KEY", anthropic: "ANTHROPIC_API_KEY",

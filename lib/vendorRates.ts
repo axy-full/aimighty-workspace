@@ -299,6 +299,25 @@ export const SARVAM_RATES = {
 export type SarvamSpeechModel = keyof typeof SARVAM_RATES.speechInrPer10kChars;
 export type SarvamTranslateModel = keyof typeof SARVAM_RATES.translateInrPer10kChars;
 
+/**
+ * Black Forest Labs FLUX.2, direct (lib/bfl.ts, lib/bflImage.ts), in the vendor's own unit: dollars (BFL credits are $0.01). **TO CONFIRM** against BFL's
+ * pricing calculator and the first bill: these are the figures docs/plans/provider-adapters.md § 6 records (BFL's pricing page gives "from" prices; the per-
+ * megapixel rule for [pro] is the plan's reported one). Only what the plan records is priced: [pro] by the megapixel with its references counted; [flex] and
+ * [max] at their "from" price for one megapixel and no reference, because the plan records no per-megapixel rule for them (a larger or referenced request is
+ * refused, never guessed). Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const BFL_RATES = {
+  creditUsd: 0.01,
+  models: {
+    /** firstMp: the first output megapixel; extraMp: each further one; refMp: each megapixel of reference sent. null: the plan records no rule. */
+    "flux-2-pro": { firstMp: 0.03, extraMp: 0.015, refMp: 0.015, maxMp: 4, maxRefs: 8 },
+    "flux-2-flex": { firstMp: 0.05, extraMp: null, refMp: null, maxMp: 1, maxRefs: 0 },
+    "flux-2-max": { firstMp: 0.07, extraMp: null, refMp: null, maxMp: 1, maxRefs: 0 },
+  },
+  defaultModel: "flux-2-pro",
+} as const;
+export type BflModel = keyof typeof BFL_RATES.models;
+
 /** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
 export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;
