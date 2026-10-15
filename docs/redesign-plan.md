@@ -734,3 +734,14 @@ Queue it after B1 (BFL); not part of deploy #4.
 ## Owner, 15 Oct 2026, 14:05 IST (verbatim): bibles, presets, #731
 1) Private boards' bibles and board-tied presets: NARROW them, as you recommend. They're readable only by people who can read that board (same rule as private takes and #745). Workspace-level presets not tied to a board stay readable by all members. In deploy #4 if Opus-approved and green by 18:30, otherwise deploy #5. Tests for owner, teammate without access, admin (audited path only).
 2) #731: no metering date needed. Particl hasn't launched (no paying customers), so #731 is PARKED until after launch; launch day is the line.
+
+## Owner, 15 Oct 2026, 14:20 and 14:25 IST (verbatim)
+14:20, replies to the lead's 14:12 update:
+1) My 14:15 note stands: v25 (#746, #748–#750) moves to deploy #5 now, out of today's queue. Deploy #4 = what's merged + #744, #745, #751, #727, #753. Tell me "ready" the moment those are merged and green; don't hold for 18:30. If #753 is the only one left, go without it and ship it as #4b.
+2) #753: its CI on 156ae976 showed every job cancelled. Opus approval isn't enough; it needs a real full green run before merge. My yes to merge into release/1 once it's green.
+3) The Astra "unavailable" case from #753: in the follow-up PR, make the message say why and what to do ("This uses media from a private board. Ask its owner to share it."), with no board name if the user can't read it.
+4) Fix #714's plan line "Topaz stays on fal" in that same follow-up; don't wait until it's next touched.
+5) The name-check command is fine as long as it prints only set/missing, never a value.
+14:25: done on my side: Sarvam retention set to 0 days; sync.so confirmed no training on our data in writing (kept with company records, not the repo); TOPAZ_API_KEY is production only, locked, not in previews. Record these in the deploy #4 checklist as done. Nothing else from me until you say "ready", then I take the Turso backup.
+
+**Lead's notes.** The 14:15 note never reached the lead's session; acted on the 14:20 message. #752 (the library-tray focus fix, only needed for #746) is held for deploy #5 with v25; its CI run was cancelled. The name check now prints NAME=set/missing only (the earlier gemini yes/no came from reading a value and is removed). #714's provider plan lives only on #714's branch (docs/plans/provider-adapters.md is not on release/1), so the Topaz line is fixed by a commit on #714 and the follow-up PR links it.
