@@ -46,6 +46,22 @@ test("the price: the Basic-tier first-tier Mumbai rates (verified 16 Oct 2026), 
   expect(mc.mediaConvertBand({ width: 720, height: 576, fps: 25 })).toEqual({ size: "sd", rate: "le30" });
   expect(mc.mediaConvertBand({ width: 722, height: 576, fps: 25 })).toEqual({ size: "hd", rate: "le30" });
   expect(mc.mediaConvertBand({ width: 3840, height: 2160, fps: 60 })).toEqual({ size: "uhd", rate: "le60" });
+  /* An extreme shape is read by its long edge as well, whichever class is dearer: 3840x540 has HD's pixels but a 4K edge. */
+  expect(mc.mediaConvertBand({ width: 3840, height: 540, fps: 30 })).toEqual({ size: "uhd", rate: "le30" });
+  expect(mc.mediaConvertBand({ width: 540, height: 3840, fps: 30 })).toEqual({ size: "uhd", rate: "le30" });
+  expect(mc.mediaConvertBand({ width: 1920, height: 100, fps: 30 })).toEqual({ size: "hd", rate: "le30" });
+  expect(mc.mediaConvertBand({ width: 800, height: 450, fps: 30 })).toEqual({ size: "hd", rate: "le30" });
+  expect(mc.mediaConvertBand({ width: 720, height: 576, fps: 25 })).toEqual({ size: "sd", rate: "le30" });
+  expect(mc.mediaConvertBand({ width: 1920, height: 1080, fps: 30 })).toEqual({ size: "hd", rate: "le30" });
+  expect(mc.mediaConvertUsd(60, { width: 3840, height: 540, fps: 30 })).toBeCloseTo(0.03, 9);
+  /* Never cheaper than either reading, over a spread of shapes. */
+  for (const [w, h] of [[3840, 540], [1920, 200], [4096, 128], [640, 480], [1080, 1920], [1280, 720], [128, 4096], [2000, 1000]] as const) {
+    const price = mc.mediaConvertUsd(60, { width: w, height: h, fps: 30 });
+    const pixels = w * h;
+    const byPixels = pixels <= 720 * 576 ? 0.0075 : pixels <= 1920 * 1080 ? 0.015 : 0.03;
+    const byEdge = Math.max(w, h) <= 720 ? 0.0075 : Math.max(w, h) <= 1920 ? 0.015 : 0.03;
+    expect(price, `${w}x${h}`).toBeGreaterThanOrEqual(Math.max(byPixels, byEdge) - 1e-12);
+  }
   expect(mc.mediaConvertBand({ ...hd, fps: 30.01 }).rate).toBe("le60");
   expect(mc.mediaConvertBand({ ...hd, fps: 60.5 }).rate).toBe("gt60");
   /* 5 s is billed as the 10 s minimum; 61 s is 61 seconds as fractional minutes. */

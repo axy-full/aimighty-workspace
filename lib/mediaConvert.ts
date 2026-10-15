@@ -47,7 +47,7 @@ export class MediaConvertError extends Error {
  * FIRST volume tier (never the cheaper later tiers: a quote is never under). **Verified against AWS's price list API for ap-south-1, 16 Oct 2026; confirm against the first invoice.**
  * The rate depends on the output's resolution class and frame-rate band. Billing is per second, converted to fractional minutes, with a 10-second minimum per output
  * (aws.amazon.com/mediaconvert/pricing). The resolution-class boundaries below are AWS's classes read by pixel count and are TO CONFIRM against its definition: SD is up to 720x576, HD
- * up to 1920x1080 (a 1080x1920 portrait is HD: the same pixels), anything larger is 4K. Server-only like every rate here.
+ * up to 1920x1080 (a 1080x1920 portrait is HD: the same pixels), anything larger is 4K; the long edge is read too (up to 720 SD, up to 1920 HD) and the dearer of the two classes is used. Server-only like every rate here.
  */
 export const MEDIACONVERT_RATES = {
   tier: "basic",
@@ -60,6 +60,9 @@ export const MEDIACONVERT_RATES = {
   /** Pixel counts at which a class ends (inclusive). */
   sdMaxPixels: 720 * 576,
   hdMaxPixels: 1920 * 1080,
+  /** Long edges at which a class ends (inclusive): an extreme shape (3840x540) is read by its long edge too, whichever class is dearer. */
+  sdMaxLongEdge: 720,
+  hdMaxLongEdge: 1920,
 } as const;
 export type MediaConvertRates = typeof MEDIACONVERT_RATES;
 
@@ -67,8 +70,11 @@ export type MediaConvertRates = typeof MEDIACONVERT_RATES;
 export function mediaConvertBand(shape: { width: number; height: number; fps: number }, rates: MediaConvertRates = MEDIACONVERT_RATES): { size: "sd" | "hd" | "uhd"; rate: "le30" | "le60" | "gt60" } {
   const { width, height, fps } = shape;
   if (![width, height, fps].every((n) => Number.isFinite(n) && n > 0)) throw new MediaConvertError("A job is priced from its size and frame rate.", "config");
-  const pixels = width * height;
-  return { size: pixels <= rates.sdMaxPixels ? "sd" : pixels <= rates.hdMaxPixels ? "hd" : "uhd", rate: fps <= 30 ? "le30" : fps <= 60 ? "le60" : "gt60" };
+  const pixels = width * height, longEdge = Math.max(width, height);
+  /* Whichever class is dearer: by pixel count, or by the long edge (so a 3840x540 strip is not priced as HD). */
+  const byPixels = pixels <= rates.sdMaxPixels ? 0 : pixels <= rates.hdMaxPixels ? 1 : 2;
+  const byEdge = longEdge <= rates.sdMaxLongEdge ? 0 : longEdge <= rates.hdMaxLongEdge ? 1 : 2;
+  return { size: (["sd", "hd", "uhd"] as const)[Math.max(byPixels, byEdge)], rate: fps <= 30 ? "le30" : fps <= 60 ? "le60" : "gt60" };
 }
 
 /** What one job costs for `outputSeconds` of output at this size and frame rate: whole seconds (rounded up, never under), at least the minimum, at the per-minute rate, to the micro-dollar rounded up. */
