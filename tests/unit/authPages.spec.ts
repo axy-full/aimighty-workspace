@@ -65,7 +65,9 @@ test("after a reset that needs the second factor, sign-in says the password chan
 test("the invitation page asks for the policy before an account is made", () => {
   const page = readFileSync("app/(auth)/invite/[code]/page.tsx", "utf8");
   expect(page).toContain("accept: agreed");
-  expect(page).toMatch(/type="checkbox" required/);
+  /* The tick is the shared required checkbox (components/AgeConfirm.tsx; lib/ageConfirm.ts), not a box of the page's own. */
+  expect(page).toMatch(/<AgeConfirm[^>]*checked=\{agreed\}/);
+  expect(readFileSync("components/AgeConfirm.tsx", "utf8")).toMatch(/type="checkbox" required/);
   const route = readFileSync("app/api/auth/accept/route.ts", "utf8");
   expect(route).toContain("acceptedPolicy: policyAccepted(body)");
 });

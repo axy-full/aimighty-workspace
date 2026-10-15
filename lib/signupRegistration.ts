@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
+import { AGE_CONFIRM_REFUSAL, ageConfirmedStatement } from "./ageConfirm";
 import { assertInvitationSession } from "./accountInvitationSession";
 import {
   accountDbReady,
@@ -29,6 +30,8 @@ export type SignupInput = {
   password: string;
   planId?: string;
   cadence?: string;
+  /** The 18+ and Terms tick (lib/ageConfirm.ts). Required to begin or accept a sign-up: an account is never made without it. */
+  ageConfirmed?: boolean;
 };
 type Registration = {
   email: string;
@@ -103,6 +106,8 @@ async function emailLimits(email: string, source: string) {
 /** No account or external resource is created until this one-use email proof is consumed. */
 export async function beginSignup(input: SignupInput, source: string) {
   await accountDbReady();
+  /* A registration row is the only way verifySignup can make an account, so the tick is required here (and the account's history line is written there). */
+  if (input.ageConfirmed !== true) throw new AccountError(AGE_CONFIRM_REFUSAL);
   const data = validated(input);
   if (await findAccountByEmail(data.email))
     throw new AccountError(
@@ -241,6 +246,8 @@ export async function verifySignup(
       sql: "INSERT INTO accounts(id,email,name,password_hash,created_at,accepted_policy_at) VALUES(?,?,?,?,?,?)",
       args: [owner.id, owner.email, owner.name, r.password_hash, now(), now()],
     });
+    /* The tick was required to begin this registration (beginSignup); its date is the account's. */
+    await tx.execute(ageConfirmedStatement(owner.id));
     const requestId = await prepareWorkspace(tx, {
       owner,
       name: r.workspace_name,
@@ -261,6 +268,7 @@ export async function acceptSignupInvitation(
   signedInAccountId?: string,
   signedInSession?: string,
 ) {
+  if (input.ageConfirmed !== true) throw new AccountError(AGE_CONFIRM_REFUSAL);
   const data = validated(input),
     welcomeCredits = await approvedWelcomeCredits();
   return accountTransaction(async (tx) => {
@@ -320,7 +328,7 @@ export async function acceptSignupInvitation(
           name: String(existing.name),
         }
       : { id: newId("usr"), email: data.email, name: data.name };
-    if (!existing)
+    if (!existing) {
       await tx.execute({
         sql: "INSERT INTO accounts(id,email,name,password_hash,created_at,accepted_policy_at) VALUES(?,?,?,?,?,?)",
         args: [
@@ -332,6 +340,9 @@ export async function acceptSignupInvitation(
           now(),
         ],
       });
+      /* The 18+ confirmation, with its date, in the same transaction as the account (lib/ageConfirm.ts). */
+      await tx.execute(ageConfirmedStatement(owner.id));
+    }
     const requestId = await prepareWorkspace(tx, {
       owner,
       name: data.workspace,

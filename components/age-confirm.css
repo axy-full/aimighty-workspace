@@ -1,0 +1,6 @@
+/* The 18+ tick (components/AgeConfirm.tsx): the row is the touch target, 44 px high, readable (12 px at least, light text on black), with a visible focus ring on the box. */
+.age-confirm { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; font-size: 13px; line-height: 1.4; color: rgba(245, 245, 247, 0.85); cursor: pointer; }
+.age-confirm-box { flex: none; width: 20px; height: 20px; margin: 1px 0 0; accent-color: #0a84ff; cursor: pointer; }
+.age-confirm-box:focus-visible { outline: 2px solid #6eb4ff; outline-offset: 2px; }
+.age-confirm-link { color: #9ccbff; text-decoration: underline; text-underline-offset: 2px; }
+.age-confirm-link:focus-visible { outline: 2px solid #6eb4ff; outline-offset: 2px; border-radius: 2px; }
