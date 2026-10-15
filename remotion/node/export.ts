@@ -4,15 +4,17 @@
  * call runExport with a fake one.
  *
  * Contract (version 1):
- *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45] } }
+ *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"] } }
  *   input/      the files the props name, as plain relative paths
- *   output/     export.mp4 (H.264) or export.mov (ProRes) when output.video is not false, still-<frame>.png for each still, result.json
+ *   output/     export.mp4 (H.264) or export.mov (ProRes) when output.video is not false, still-<frame>.png for each still,
+ *               subtitles.srt / subtitles.vtt when asked (from the same cues as the captions; no render), result.json
  */
 import { copyFile, link, lstat, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_LIMITS, type ExportLimits } from "../src/lib/limits";
 import { toTimeline, ExportTooLong } from "../src/lib/timeline";
-import { FORMAT_FILE, H265_NAMES, VIDEO_FORMATS, isProRes, type CompositionId, type Timeline, type VideoFormat } from "../src/lib/types";
+import { FORMAT_FILE, H265_NAMES, SUBTITLE_FILE, SUBTITLE_FORMATS, VIDEO_FORMATS, isProRes, type CompositionId, type SubtitleFormat, type Timeline, type VideoFormat } from "../src/lib/types";
+import { subtitleCuesOf, subtitleText } from "../src/lib/subtitles";
 import { isCompositionId, validateProps } from "../src/lib/validate";
 import type { Prober } from "./probe";
 
@@ -20,7 +22,7 @@ export type ExportSpec = {
   version: 1;
   composition: CompositionId;
   props: unknown;
-  output?: { video?: boolean; format?: string; stills?: number[] };
+  output?: { video?: boolean; format?: string; stills?: number[]; subtitles?: string[] };
 };
 
 export type CompositionInfo = { id: string; width: number; height: number; fps: number; durationInFrames: number; props: Record<string, unknown> };
@@ -42,7 +44,7 @@ export type ExportSuccess = {
   fps: number;
   durationInFrames: number;
   seconds: number;
-  files: { name: string; kind: "video" | "still"; bytes: number; frame?: number; format?: VideoFormat; mime?: string }[];
+  files: { name: string; kind: "video" | "still" | "subtitle"; bytes: number; frame?: number; format?: VideoFormat | SubtitleFormat; mime?: string }[];
 };
 export type ExportResult = ExportSuccess | ExportFailure;
 
@@ -123,7 +125,7 @@ export function inputFilesOf(timeline: Timeline): string[] {
 }
 
 export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
-  | { ok: true; id: CompositionId; props: Record<string, unknown>; timeline: Timeline; video: boolean; format: VideoFormat; stills: number[] }
+  | { ok: true; id: CompositionId; props: Record<string, unknown>; timeline: Timeline; video: boolean; format: VideoFormat; stills: number[]; subtitles: SubtitleFormat[] }
   | ExportFailure {
   if (typeof spec !== "object" || spec === null || Array.isArray(spec)) return fail("spec_invalid", ["spec: must be an object"]);
   const rec = spec as Record<string, unknown>;
@@ -134,11 +136,12 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   let video = true;
   let format: VideoFormat = "h264";
   let stills: number[] = [];
+  let subtitles: SubtitleFormat[] = [];
   if (rec.output !== undefined) {
     const out = rec.output as Record<string, unknown> | null;
     if (typeof out !== "object" || out === null || Array.isArray(out)) errors.push("spec.output: must be an object");
     else {
-      for (const key of Object.keys(out)) if (!["video", "format", "stills"].includes(key)) errors.push(`spec.output.${key}: is not allowed`);
+      for (const key of Object.keys(out)) if (!["video", "format", "stills", "subtitles"].includes(key)) errors.push(`spec.output.${key}: is not allowed`);
       if (out.format !== undefined) {
         const asked = typeof out.format === "string" ? out.format.trim().toLowerCase() : "";
         if (H265_NAMES.includes(asked)) errors.push("spec.output.format: H.265 is not available.");
@@ -148,6 +151,12 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
       }
       if (out.video !== undefined && typeof out.video !== "boolean") errors.push("spec.output.video: must be true or false");
       if (out.video === false) video = false;
+      if (out.subtitles !== undefined) {
+        const asked = Array.isArray(out.subtitles) && out.subtitles.length <= 8 ? [...new Set(out.subtitles.map((f) => (typeof f === "string" ? f.trim().toLowerCase() : "")))] : null;
+        if (!asked || asked.length === 0 || asked.some((f) => !(SUBTITLE_FORMATS as readonly string[]).includes(f))) {
+          errors.push(`spec.output.subtitles: must be a list of ${SUBTITLE_FORMATS.join(" and/or ")}`);
+        } else subtitles = asked as SubtitleFormat[];
+      }
       if (out.stills !== undefined) {
         if (!Array.isArray(out.stills) || out.stills.length > limits.maxStills || out.stills.some((n) => !Number.isInteger(n) || n < 0)) {
           errors.push(`spec.output.stills: must be a list of at most ${limits.maxStills} frame numbers`);
@@ -155,7 +164,7 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
       }
     }
   }
-  if (!video && stills.length === 0) errors.push("spec.output: asks for nothing");
+  if (!video && stills.length === 0 && subtitles.length === 0) errors.push("spec.output: asks for nothing");
   if (errors.length || !isCompositionId(rec.composition)) return fail("spec_invalid", errors);
   const id = rec.composition;
   const checked = validateProps(id, rec.props, limits);
@@ -169,9 +178,12 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   if (video && isProRes(format) && timeline.durationInFrames > limits.maxProResSeconds * timeline.fps) {
     return fail("too_long", [`A ProRes export can be at most ${limits.maxProResSeconds} s; this one is ${(timeline.durationInFrames / timeline.fps).toFixed(1)} s. Use H.264 for a longer one.`]);
   }
+  if (subtitles.length && subtitleCuesOf(timeline).length === 0) {
+    return fail("spec_invalid", ["spec.output.subtitles: the export has no caption text (no cues) to write"]);
+  }
   const outOfRange = stills.filter((frame) => frame >= timeline.durationInFrames);
   if (outOfRange.length) return fail("spec_invalid", [`spec.output.stills: frame ${outOfRange[0]} is past the end (${timeline.durationInFrames} frames)`]);
-  return { ok: true, id, props: checked.value as unknown as Record<string, unknown>, timeline, video, format, stills };
+  return { ok: true, id, props: checked.value as unknown as Record<string, unknown>, timeline, video, format, stills, subtitles };
 }
 
 /** True when `child` is `parent` or inside it, by real path (a symlink cannot lead out). */
@@ -221,10 +233,31 @@ export async function prepareServeDir(bundleDir: string, inputDir: string, serve
   await mirror(inputDir, path.join(serveDir, "public", "input"));
 }
 
+/** The sidecar subtitle files, written from the timeline's cues. Plain text: no renderer and no media file is needed. */
+async function writeSubtitles(timeline: Timeline, formats: SubtitleFormat[], outputDir: string, files: ExportSuccess["files"]): Promise<void> {
+  const cues = subtitleCuesOf(timeline);
+  for (const format of formats) {
+    const file = SUBTITLE_FILE[format];
+    const target = path.join(outputDir, file.name);
+    await writeFile(target, subtitleText(format, cues), "utf8");
+    files.push({ name: file.name, kind: "subtitle", bytes: (await stat(target)).size, format, mime: file.mime });
+  }
+}
+
 export async function runExport(args: RunExportArgs): Promise<ExportResult> {
   const limits = args.limits ?? DEFAULT_LIMITS;
   const checked = checkSpec(args.spec, limits);
   if (!checked.ok) return checked;
+  /* Subtitles alone need no picture: no input file is opened, the renderer is not started, and nothing is probed or served. */
+  if (!checked.video && checked.stills.length === 0) {
+    await mkdir(args.outputDir, { recursive: true });
+    const t = checked.timeline;
+    const files: ExportSuccess["files"] = [];
+    await writeSubtitles(t, checked.subtitles, args.outputDir, files);
+    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, files };
+    await writeFile(path.join(args.outputDir, "result.json"), JSON.stringify(success, null, 2));
+    return success;
+  }
   const missing = await missingInputs(args.inputDir, inputFilesOf(checked.timeline));
   if (missing.length) return fail("input_missing", missing.map((file) => `input/${file}: not found`));
   // A declared length or size the file contradicts is refused, never rendered from.
@@ -255,6 +288,7 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
       await args.renderer.renderStill({ serveUrl: serveDir, composition, inputProps: checked.props, frame, outputLocation });
       files.push({ name, kind: "still", frame, bytes: (await stat(outputLocation)).size });
     }
+    await writeSubtitles(t, checked.subtitles, args.outputDir, files);
     const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, files };
     await writeFile(path.join(args.outputDir, "result.json"), JSON.stringify(success, null, 2));
     return success;

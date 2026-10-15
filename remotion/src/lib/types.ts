@@ -140,8 +140,10 @@ export type ClipTimelineItem = {
   sourceHeight: number;
   hasAudio: boolean;
   reframe: ReframeSpec;
-  /** Cues in time local to the start of this item. */
+  /** Cues to burn in, in time local to the start of this item: empty when no caption style is chosen. */
   cues: Cue[];
+  /** The same cues whether or not they are burned in, for the sidecar subtitle files (src/lib/subtitles.ts). */
+  subtitleCues: Cue[];
   captionStyle: CaptionStyle | null;
 };
 export type TitleTimelineItem = { kind: "title"; from: number; durationInFrames: number; card: TitleCardSpec };
@@ -176,3 +178,11 @@ export const FORMAT_FILE: Record<VideoFormat, { name: string; mime: string }> = 
 };
 /** Names a person or an agent might ask for that mean H.265. Refused with a plain reason, never guessed at. */
 export const H265_NAMES: readonly string[] = ["h265", "h.265", "hevc", "h265-mp4", "x265"];
+
+/** The sidecar subtitle files an export may also write (spec.output.subtitles), from the same cue data as the burned-in captions. */
+export const SUBTITLE_FORMATS = ["srt", "vtt"] as const;
+export type SubtitleFormat = (typeof SUBTITLE_FORMATS)[number];
+export const SUBTITLE_FILE: Record<SubtitleFormat, { name: string; mime: string }> = {
+  srt: { name: "subtitles.srt", mime: "application/x-subrip" },
+  vtt: { name: "subtitles.vtt", mime: "text/vtt" },
+};
