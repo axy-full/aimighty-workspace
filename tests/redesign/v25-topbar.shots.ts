@@ -28,3 +28,13 @@ test("the v25 top bar with the ⌘K bar focused", async ({ page }) => {
     await proto.waitForTimeout(400);
   });
 });
+
+/* On a board the bar has no Atomik panel button (owner, 15 Oct: ⌘J opens the board's own dock). Run this one with REDESIGN_PROTOTYPE_PAGE="Particl board v25.html" and -g "board". */
+test("the v25 top bar on a board: no panel button, the board's own Atomik rail at the right", async ({ page }) => {
+  const { ids } = await redesignWithBoards(page, ["Harbour film · 30 s ad", "Harbour film · social cut"]);
+  await openAsTabs(page, ids, `/suites?view=board&project=${encodeURIComponent(ids[0])}`);
+  await expect(page.getByTestId("agent-rail")).toBeVisible();
+  await page.mouse.move(700, 800);
+  await page.waitForTimeout(1200);
+  await captureBeside(page, "v25-topbar-board", "mode=director&step=shots");
+});
