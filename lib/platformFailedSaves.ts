@@ -23,9 +23,10 @@ const PER_WORKSPACE = 50;
 const TOTAL = 200;
 const FRESH_MS = 30_000;
 let cache: { at: number; value: FailedSaves } | null = null;
+let countsCache: { at: number; value: RiskCounts | null } | null = null;
 
 /** Drops the short-lived copy, so the next read is of the databases (after a retry, and in tests). */
-export function forgetFailedSaves(): void { cache = null; }
+export function forgetFailedSaves(): void { cache = null; countsCache = null; }
 
 export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
   if (cache && now - cache.at < FRESH_MS) return cache.value;
@@ -61,7 +62,9 @@ export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
  * Lost takes were paid for and need my decision too."). Counted in each workspace's database, not from the list, so the figures are not cut off at the list's 200. Null when no workspace
  * could be read.
  */
-export async function failedSavesCounts(): Promise<RiskCounts | null> {
+export async function failedSavesCounts(now = Date.now()): Promise<RiskCounts | null> {
+  /* The console polls this every 30 s: the same short copy as the list, dropped by the same forgetFailedSaves(). */
+  if (countsCache && now - countsCache.at < FRESH_MS) return countsCache.value;
   await platformReady();
   const total: RiskCounts = { atRisk: 0, lost: 0 };
   let read = 0, unreadable = 0;
@@ -72,7 +75,9 @@ export async function failedSavesCounts(): Promise<RiskCounts | null> {
       total.atRisk += c.atRisk; total.lost += c.lost; read++;
     } catch { unreadable++; }
   }
-  return unreadable > 0 && read === 0 ? null : total;
+  const value = unreadable > 0 && read === 0 ? null : total;
+  countsCache = { at: now, value };
+  return value;
 }
 
 export class RetryRefused extends Error { constructor(message: string, readonly status: number) { super(message); } }

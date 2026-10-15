@@ -196,7 +196,7 @@ test("a take the heartbeat cannot save is logged once a day, with an id, kind, p
   } finally { console.warn = warn; }
 });
 
-test("the failed-saves list says at risk or lost with the shared definition, the badge counts only the ones at risk, and the list reads without saving anything", async () => {
+test("the failed-saves list says at risk or lost with the shared definition, the counts include both states, and the list reads without saving anything", async () => {
   const { platformDb, platformReady } = await import("../../lib/platform");
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
@@ -331,4 +331,28 @@ test("the overview carries both counts, read from every workspace", async () => 
   expect(seen.failedSaves, "readable").not.toBeNull();
   expect(Object.keys(seen.failedSaves!).sort()).toEqual(["atRisk", "lost"]);
   void platformDb;
+});
+
+test("the counts are kept for the list's short time: two reads inside it ask the workspaces once, one after it asks again, and forgetting drops them", async () => {
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { failedSavesCounts, forgetFailedSaves } = await import("../../lib/platformFailedSaves");
+  await platformReady();
+  const client = platformDb();
+  const original = client.execute.bind(client);
+  let asked = 0;
+  (client as { execute: unknown }).execute = async (query: unknown) => { if (String(typeof query === "string" ? query : (query as { sql: string }).sql).includes("FROM workspaces")) asked++; return original(query as never); };
+  try {
+    forgetFailedSaves();
+    const at = Date.now();
+    const first = await failedSavesCounts(at);
+    expect(asked).toBe(1);
+    expect(await failedSavesCounts(at + 1_000)).toEqual(first);
+    expect(await failedSavesCounts(at + 29_000)).toEqual(first);
+    expect(asked, "inside the short time: no new read").toBe(1);
+    await failedSavesCounts(at + 31_000);
+    expect(asked, "after it: read again").toBe(2);
+    forgetFailedSaves();
+    await failedSavesCounts(at + 32_000);
+    expect(asked, "after a retry or a reset: read again").toBe(3);
+  } finally { (client as { execute: unknown }).execute = original; }
 });
