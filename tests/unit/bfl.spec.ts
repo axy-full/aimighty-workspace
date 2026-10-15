@@ -431,10 +431,10 @@ test("the shot cap is judged at the quote and the press, before any face is chec
       const ADMIN_TOKEN: AdmissionActor = { ...OWNER, token: TOKEN };
       const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1" } as AdmissionActor["user"] };
       await runInTenant(house(), async () => {
-        for (const go of [still, edit]) for (const extra of [{ quoteOnly: true }, {}]) expect(await go(ADMIN_TOKEN, extra), `token ${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+        for (const go of [still, edit, identity]) for (const extra of [{ quoteOnly: true }, {}]) expect(await go(ADMIN_TOKEN, extra), `token ${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
       }, { user: ADMIN_TOKEN.user, token: TOKEN } as never);
       await runInTenant(house(), async () => {
-        for (const go of [still, edit]) for (const extra of [{ quoteOnly: true }, {}]) expect(await go(AGENT, extra), `agent ${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+        for (const go of [still, edit, identity]) for (const extra of [{ quoteOnly: true }, {}]) expect(await go(AGENT, extra), `agent ${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
       }, AGENT as never);
       await runInTenant(house(), async () => {
         for (const quoteOnly of [true, undefined]) expect(await admitBfl({ tool: "image", prompt: "a crane", shotId, ...approved, quoteOnly }, OWNER, { ...options(), run: { auto: true } as never }, seams), `auto ${String(quoteOnly)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
