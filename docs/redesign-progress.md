@@ -768,3 +768,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - mcpTools.spec (pins `{ credits: creditsApply(...) }` in app/api/mcp/route.ts) was broken by #766. The code is fixed, not the test, and is being moved onto #766 itself so #766 passes alone.
   - Opus delta check of #769/#770/#773 started; #766/#774 follow when lane D reports.
 - **16 Oct 01:31 IST.** Opus delta check APPROVED #769 6e7bac28, #770 7f4f1e74 (the redesign is sound; the changed assertions are design changes and just as tight; a new sound-sync test), #772 96b844c7 and #773 5981c59b. Two #770 should-fixes sent to lane D: refuse `offsetSeconds` from requests, and frame-align the window start.
+- **16 Oct 01:32 IST.** Lane C hand-back.
+  - #764 at 8b92b135 fixes the bundle leak in code. lib/sampleClip.ts had imported DEMO_FIXTURE_CLIP_URL from lib/demoProduction.ts, which reaches vendorPricing; it now uses its own constant, plus an import-ban spec. bundle.spec.ts is untouched; a local production build passes it. The body now names the import-pinning entry. Opus delta check is running, then CI.
+  - Large-screen pass:
+    - Heads: #748 6ed91190, #749 71cbe3e3, #750 bd738204, #756 4493caa3, #762 3606f9d8.
+    - What changed: the canvas zooms min(w/1440, h/900), clamped 1-2, and the bars keep their size; posters are captured at draw size (they were upscaled from 480 px); 5-size specs on every PR.
+    - Findings at 2560: no stranded cards, no text under 12 px, no sideways scroll, bars centred. The stage still leaves its lower half empty, as at 1440. At 1728/1920 the bottom bar sits 420 px in from the canvas's left (board-bar.css rule). The customer Home keeps an 880 px centre column. The wordmark is still PNG.
+    - Flags for the owner: (1) the scale is computed in TS, but the owner said "CSS only"; (2) tests/shots-v12-workbench.spec.ts was edited (1920 expectations now in canvas units × scale; identical at ≤1440).
+    - Opus large-screen review is running.
