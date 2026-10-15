@@ -39,7 +39,7 @@ export class RekognitionError extends Error {
 
 /**
  * The seams a test needs (a fake fetch, a clock, an environment). They exist on `compareFacesWith` only, which nothing outside the gate's core and the
- * tests imports (tests/unit/rekognitionConsent.spec.ts reads the source to say so). The exported `compareFaces` always uses the real environment and fetch.
+ * tests imports (tests/unit/rekognitionConsent.spec.ts reads the source to say so). The gate calls it with no seams, which means the real environment and fetch.
  */
 export type RekognitionSeams = { fetch?: typeof fetch; now?: () => Date; env?: Record<string, string | undefined> };
 
@@ -60,10 +60,7 @@ function mockCompare(source: Buffer, target: Buffer): FaceComparison {
   return { similarity: a === b ? 99.2 : 11.4, facesFound: 1 };
 }
 
-/** One CompareFaces call: the largest face in `source` against the faces in `target`. Throws RekognitionError; never returns a guess. */
-export const compareFaces = (source: Buffer, target: Buffer): Promise<FaceComparison> => compareFacesWith(source, target, {});
-
-/** The same with the test seams. Internal: see RekognitionSeams. */
+/** One CompareFaces call: the largest face in `source` against the faces in `target`. Throws RekognitionError; never returns a guess. Internal: see RekognitionSeams. */
 export async function compareFacesWith(source: Buffer, target: Buffer, deps: RekognitionSeams): Promise<FaceComparison> {
   for (const image of [source, target]) {
     if (!image.length || image.length > REKOGNITION_MAX_BYTES) throw new RekognitionError("The image is empty or over 5 MB.", "bad-image");
