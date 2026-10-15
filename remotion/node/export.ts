@@ -14,7 +14,7 @@ import path from "node:path";
 import { DEFAULT_LIMITS, PRORES_MAX_FRAMES, type ExportLimits } from "../src/lib/limits";
 import { toTimeline, ExportTooLong } from "../src/lib/timeline";
 import { FORMAT_FILE, H265_NAMES, SUBTITLE_FILE, SUBTITLE_FORMATS, VIDEO_FORMATS, isProRes, type CompositionId, type SubtitleFormat, type Timeline, type VideoFormat } from "../src/lib/types";
-import { subtitleCuesOf, subtitleText } from "../src/lib/subtitles";
+import { speakableCues, subtitleCuesOf, subtitleText } from "../src/lib/subtitles";
 import { isCompositionId, validateProps } from "../src/lib/validate";
 import { CONFORM_BUDGET_MS, CONFORM_FILE_MS, CONFORM_MODES, CONFORM_PAD_SECONDS, DEFAULT_CONFORM, filesToConform, reportInputs, type ConformMode, type ConformWindow, type Conformer, type InputReport } from "./conform";
 import type { MediaFacts, Prober } from "./probe";
@@ -114,6 +114,20 @@ export function usedWindow(timeline: Timeline, file: string, fileSeconds?: numbe
   const startSeconds = Math.max(0, Math.round((start - CONFORM_PAD_SECONDS) * 1000) / 1000);
   const endSeconds = Math.min(ceiling, Math.round((end + CONFORM_PAD_SECONDS) * 1000) / 1000);
   return { startSeconds, endSeconds };
+}
+
+/** The props with `offsetSeconds` set on every source that uses a windowed copy (a copy of just the stretch of the file the export uses). */
+export function withSourceOffsets(id: CompositionId, props: Record<string, unknown>, offsets: ReadonlyMap<string, number>): Record<string, unknown> {
+  const next = structuredClone(props) as Record<string, unknown>;
+  const mark = (holder: unknown) => {
+    const source = (holder as { source?: { file?: string; offsetSeconds?: number } } | undefined)?.source;
+    const offset = source?.file ? offsets.get(source.file) : undefined;
+    if (source && offset !== undefined && offset > 0) source.offsetSeconds = offset;
+  };
+  if (id === "captions" || id === "reframe") mark(next.clip);
+  else if (id === "cutdown") mark(next);
+  else if (id === "final") for (const clip of (next.clips as unknown[] | undefined) ?? []) mark(clip);
+  return next;
 }
 
 /** Longest a declared length may differ from the file's. */
@@ -220,6 +234,9 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   if (subtitles.length && subtitleCuesOf(timeline).length === 0) {
     return fail("spec_invalid", ["spec.output.subtitles: the export has no caption text (no cues) to write"]);
   }
+  if (subtitles.length && speakableCues(timeline).length === 0) {
+    return fail("spec_invalid", ["spec.output.subtitles: every caption in this export is only styling, so there is no text to write"]);
+  }
   const outOfRange = stills.filter((frame) => frame >= timeline.durationInFrames);
   if (outOfRange.length) return fail("spec_invalid", [`spec.output.stills: frame ${outOfRange[0]} is past the end (${timeline.durationInFrames} frames)`]);
   return { ok: true, id, props: checked.value as unknown as Record<string, unknown>, timeline, video, format, stills, subtitles, conform };
@@ -313,6 +330,7 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
     const videoInputs = [...probed.entries()].filter(([, facts]) => facts.hasVideo).map(([file, facts]) => ({ file, facts }));
     const conformed = new Set<string>();
     const failed = new Set<string>();
+    const offsets = new Map<string, number>();
     if (args.conformer) {
       let n = 0;
       const budget = Math.min(args.conformBudgetMs ?? CONFORM_BUDGET_MS, CONFORM_BUDGET_MS);
@@ -325,15 +343,15 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
         const copy = path.join(args.workDir, "conformed", `${n++}.mp4`);
         try {
           await mkdir(path.dirname(copy), { recursive: true });
-          await args.conformer.conform(path.join(args.inputDir, file), copy, checked.timeline.fps, {
-            window: usedWindow(checked.timeline, file, probed.get(file)?.durationSeconds),
-            timeoutMs: Math.min(CONFORM_FILE_MS, left),
-          });
+          const window = usedWindow(checked.timeline, file, probed.get(file)?.durationSeconds);
+          await args.conformer.conform(path.join(args.inputDir, file), copy, checked.timeline.fps, { window, timeoutMs: Math.min(CONFORM_FILE_MS, left) });
           /* The copy is moved into the served folder, not copied: it is large, and it is the only copy. */
           const target = path.join(serveDir, "public", "input", file);
           await rm(target, { force: true });
           await rename(copy, target);
           conformed.add(file);
+          const startedAt = window?.startSeconds ?? 0;
+          if (startedAt > 0) offsets.set(file, startedAt);
         } catch {
           failed.add(file);
           await rm(copy, { force: true }).catch(() => {});
@@ -341,7 +359,9 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
       }
     }
     await args.renderer.prepare();
-    const composition = await args.renderer.selectComposition({ serveUrl: serveDir, id: checked.id, inputProps: checked.props });
+    /* The renderer is told where each windowed copy starts in its source, so trims and cues (in source time) still land on the right frame. */
+    const renderProps = offsets.size ? withSourceOffsets(checked.id, checked.props, offsets) : checked.props;
+    const composition = await args.renderer.selectComposition({ serveUrl: serveDir, id: checked.id, inputProps: renderProps });
     const t = checked.timeline;
     if (composition.width !== t.width || composition.height !== t.height || composition.fps !== t.fps || composition.durationInFrames !== t.durationInFrames) {
       return fail("render_failed", [`The composition measured ${composition.width}x${composition.height} @${composition.fps} for ${composition.durationInFrames} frames; the timeline says ${t.width}x${t.height} @${t.fps} for ${t.durationInFrames}.`]);
@@ -350,13 +370,13 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
     if (checked.video) {
       const file = FORMAT_FILE[checked.format];
       const outputLocation = path.join(args.outputDir, file.name);
-      await args.renderer.renderVideo({ serveUrl: serveDir, composition, inputProps: checked.props, outputLocation, format: checked.format, concurrency: args.concurrency ?? 2, onProgress: args.onProgress });
+      await args.renderer.renderVideo({ serveUrl: serveDir, composition, inputProps: renderProps, outputLocation, format: checked.format, concurrency: args.concurrency ?? 2, onProgress: args.onProgress });
       files.push({ name: file.name, kind: "video", bytes: (await stat(outputLocation)).size, format: checked.format, mime: file.mime });
     }
     for (const frame of checked.stills) {
       const name = `still-${frame}.png`;
       const outputLocation = path.join(args.outputDir, name);
-      await args.renderer.renderStill({ serveUrl: serveDir, composition, inputProps: checked.props, frame, outputLocation });
+      await args.renderer.renderStill({ serveUrl: serveDir, composition, inputProps: renderProps, frame, outputLocation });
       files.push({ name, kind: "still", frame, bytes: (await stat(outputLocation)).size });
     }
     await writeSubtitles(t, checked.subtitles, args.outputDir, files);
