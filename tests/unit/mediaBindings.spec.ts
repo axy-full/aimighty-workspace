@@ -90,6 +90,10 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
     "@/lib/push": {},
     "@/lib/cache": { invalidate: () => {} },
     "@/lib/held": await import("../../lib/held"),
+    /* The route reads the review reason and writes the review event in its PATCH; the DELETE paths under test never call it. */
+    "@/lib/takeReview": {},
+    /* The PATCH checks the send-back reasons through it; the DELETE paths under test never call it. */
+    "@/lib/rejectReasons": {},
     "@/lib/usageLedger": { withLedgerCharges: async <G>(generations: G[]) => generations },
   };
   const file = path.resolve(`app/api/${kind}/[id]/route.ts`);
