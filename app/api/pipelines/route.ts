@@ -1,6 +1,6 @@
 import { withTenant, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { mayReachProject, projectLister } from "@/lib/draftProject";
+import { mayReachProject, readableBoardIds } from "@/lib/draftProject";
 import { pipelineStore } from "@/lib/pipeline/store";
 import { publicRun, pipelineStageModels } from "@/lib/pipeline/service";
 import { PipelineError } from "@/lib/pipeline/schema";
@@ -16,13 +16,14 @@ export const GET = withTenant(async (req) => {
   const store = await pipelineStore(),
     projectId = new URL(req.url).searchParams.get("projectId") || undefined;
   /* A private board's published bible is read only by people who can read that board (lib/draftProject.ts): its author, or anyone once it is shared. No admin elevation. */
-  const listed = await projectLister(auth.user);
+  const readable = JSON.stringify(await readableBoardIds(auth.user));
   const publications = (
     await db().execute({
-      sql: `SELECT b.project_id AS projectId,b.version,p.name,b.body FROM workbench_bibles b JOIN projects p ON p.id=b.project_id ${projectId ? "WHERE b.project_id=?" : ""} ORDER BY b.created_at DESC LIMIT 500`,
-      args: projectId ? [projectId] : [],
+      sql: `SELECT b.project_id AS projectId,b.version,p.name,b.body FROM workbench_bibles b JOIN projects p ON p.id=b.project_id
+        WHERE (b.project_id NOT GLOB 'prj_wb_*' OR b.project_id IN (SELECT value FROM json_each(?))) ${projectId ? "AND b.project_id=?" : ""} ORDER BY b.created_at DESC LIMIT 100`,
+      args: projectId ? [readable, projectId] : [readable],
     })
-  ).rows.filter((row) => listed(String(row.projectId))).slice(0, 100).map((row) => {
+  ).rows.map((row) => {
     const body = JSON.parse(String(row.body));
     return {
       projectId: String(row.projectId),

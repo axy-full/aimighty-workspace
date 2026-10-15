@@ -13,6 +13,7 @@ export const GET = withTenant(async (req: Request, { params }: { params: Promise
   if (auth.response) return auth.response;
   const { id } = await params;
   const row = await findWorkbenchMedia(id, auth.user.id);
+  /* A refused file looks exactly like an unknown one here (#675): the reason is said only where the person's own project already names the file. */
   if (!row) return new Response('Not found', { status: 404 });
   const serving = servingFor(String(row.mime));
   const headers = new Headers({

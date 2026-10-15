@@ -161,7 +161,7 @@ function route(file: string) {
     "next/headers": { cookies: blocked("cookies") },
     "@/lib/db": { db: blocked("database") },
     /* The pipelines route asks whether a person may read a board before it builds on, or lists, a published version; a refused body never reaches it. */
-    "@/lib/draftProject": { mayReachProject: blocked("board-access"), projectLister: blocked("board-list") },
+    "@/lib/draftProject": { mayReachProject: blocked("board-access"), readableBoardIds: blocked("board-list") },
     "@/lib/pipeline/store": { pipelineStore: blocked("pipeline-store") },
     "@/lib/pipeline/service": {
       publicRun: blocked("public-run"),

@@ -1,7 +1,7 @@
 import { crossOriginProblem } from '@/lib/requestOrigin';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { findWorkbenchMedia } from '@/lib/workbench/media-records';
+import { findWorkbenchMedia, privateMediaMessage } from '@/lib/workbench/media-records';
 import { requireUser, withTenant } from '@/lib/auth';
 import { requireTenant } from '@/lib/tenant';
 import { readBoundedText } from '@/lib/requestBody';
@@ -45,6 +45,7 @@ export const POST = withTenant(async (request: Request) => {
       } else if (stored?.[1] === 'workbench/media') {
         const row = await findWorkbenchMedia(stored[2], auth.user.id);
         if (row) mime = String(row.mime);
+        else { const why = await privateMediaMessage(stored[2], auth.user.id); if (why) throw new AtomikError(why, 422); }
       }
       const ext = stored ? extensions[mime ?? ''] : original?.url.match(/^\/campaign\/[A-Za-z0-9_.-]+\.(png|jpe?g|webp|tiff?|bmp)$/i)?.[1]?.toLowerCase();
       if (!original || !ext) throw new AtomikError(`Export ${asset.name} as PNG, JPEG, WebP, TIFF, BMP or an embedded GLB, then attach it to this scene.`, 422);
