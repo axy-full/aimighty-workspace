@@ -810,3 +810,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - Charged failures record no cost.
   - Lead finding (from Opus question 1): directEngineMcp sends the route's quote as maxCredits for MCP callers. A render token would then spend up to 200 cr with no person's tap, against rule 14. Lane B is making the new engines' MCP path follow the workspace's Ask/Auto setting (Ask = prepared, not spent). `render_shot` already behaves this way: owner question.
   - Redirect hardening is going into all three adapters.
+- **16 Oct 01:50 IST.** Lane D:
+  - #766 8229e0f9: the mcp route code fix, so mcpTools.spec passes on #766 alone; the test is unchanged.
+  - #770 4c8381a9: `offsetSeconds` refused from requests (trusted renderer props only); window start frame-aligned; real renders 13/13.
+  - #772 7623f406, #773 d27f9c91 (14/14 renders), #774 e41f523c (273 specs), #775 1e1e9aa8 (283 specs).
+  - Opus delta checks running.
