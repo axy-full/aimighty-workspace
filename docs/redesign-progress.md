@@ -980,3 +980,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Merges: none qualify under the standing yes (every candidate changes a guard/test assertion, an env name, money, or needs the owner's yes).
   - Lanes: B on shotCapGate across its doors; C on the #786 should-fixes; D on the #783 must-fix plus shotCapGate on Veo/Vision; docs E on the #714 env table and verified-price section.
   - No paid generation; spend $0.
+- **16 Oct 04:00 IST.** Docs lane E: #714 updated at 0707413a.
+  - New table: the env names each PR actually reads (checked by grep), with set/not-set status and kill switches.
+  - Corrections to the 15 Oct proposals: no TOPAZ_BASE_URL or GOOGLE_VISION_BASE_URL; the switches are TOPAZ_DIRECT_ENABLED and VISION_LABEL_CHECK_ENABLED.
+  - A "Verified prices, 16 Oct 2026" section.
+  - A missing-names list: proposed but unread names, SYNC_WEBHOOK_SECRET unread, no PR yet for Gemini 3.x / Kling 4.0 / Bria direct / Pro pick / DNxHR, and Slice 5 names still proposals.
+  - Owner check: REKOGNITION_ENABLED was reported missing at 19:30.
+  - Rekognition price verified from AWS's price list (Mumbai): $0.00125/image for the first 1M, matching #771.
