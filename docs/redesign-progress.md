@@ -956,3 +956,6 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Identity = FLUX.2 multi-reference editing from the identity's own photos, with no training. Every photo passes the consent gate. Own switch BFL_IDENTITY_ENABLED. The LoRA path and the composer's @Name switch-over are untouched (owner step).
   - #782 156f3251 (dearer size class); #784 1aab803f (retired gated models never listed).
   - Opus review queued. Lane B idle (remaining work needs owner decisions).
+- **16 Oct 03:37 IST.** Opus APPROVED #785 bd9e0b7e, #782 156f3251 and #784 1aab803f.
+  - #785 should-fixes sent to lane B: FLUX 3 tier = dearer of longest-side and decimal-MP (else 1024² under-quotes $0.048 vs $0.07); identity checks its production and the person's reach; cover photo first; Klein a draft only ≤2k.
+  - Owner question: FLUX 3 tier definition.
