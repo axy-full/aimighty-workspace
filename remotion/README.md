@@ -32,7 +32,7 @@ input/     the files the props name
 output/    export.mp4 (or export.mov for ProRes), still-<frame>.png, subtitles.srt / subtitles.vtt, result.json
 ```
 
-`output.format` is `h264` (the default: `export.mp4`, CRF 20, AAC), `prores-422` or `prores-422-hq` (`export.mov`, 10-bit 4:2:2 with 16-bit PCM sound; at most 60 s by default, `REMOTION_PRORES_MAX_SECONDS` can only shorten that). H.265 is refused ("H.265 is not available."): owner, 15 Oct 2026, until his lawyer answers. A ProRes 30 s 1080p file is about 485 MB (422) or 716 MB (422 HQ); `result.json` names each file with its `format` and `mime`.
+`output.format` is `h264` (the default: `export.mp4`, CRF 20, AAC), `prores-422` or `prores-422-hq` (`export.mov`, 10-bit 4:2:2 with 16-bit PCM sound; at most 1800 frames: 60 s at 30 fps, 30 s at 60 fps; a constant, not a setting). H.265 is refused ("H.265 is not available."): owner, 15 Oct 2026, until his lawyer answers. A ProRes 30 s 1080p file is about 485 MB (422) or 716 MB (422 HQ); `result.json` names each file with its `format` and `mime`.
 
 `output.subtitles` (`srt` and/or `vtt`) writes sidecar subtitle files from the same cues the captions are burned in from, on the finished video's own clock (a trim moves them, a cut-away caption is not in the file, a cutdown's source-time cues land in the cut). It is plain text: with `output.video: false` and no stills it needs no input file and no renderer. An export with no caption text refuses it (`spec.output.subtitles: the export has no caption text (no cues) to write`). `result.json` lists each file with kind `subtitle`, its format and mime (`application/x-subrip`, `text/vtt`).
 
