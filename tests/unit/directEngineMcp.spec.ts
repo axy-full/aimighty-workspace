@@ -57,27 +57,64 @@ test("lip_sync is in the list, and callable, only where the engine gate and the 
   });
 });
 
-test("a call asks the route for the price and sends the job with that price as its ceiling; the caller cannot write the approval; a retry key is the Idempotency-Key", async () => {
+/** Sets the workspace's spending setting ("auto" is the only value that lets a call start; any other is Ask). */
+async function setSpend(value: string | null) {
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  await ready();
+  if (value === null) await db().execute("DELETE FROM settings WHERE key='spendWithoutAsking'"); else await setSetting("spendWithoutAsking", value, "admin");
+  invalidateSettings();
+}
+
+test("only a person approves spending: Ask (the default) returns the priced, prepared job and starts nothing; Auto starts it only at or under the per-job line, never above guardrail 4; the caller cannot write the approval", async () => {
   const { runDirectEngineTool } = await import("../../lib/directEngineMcp");
+  const { jobApprovalLineCredits } = await import("../../lib/approvalRule");
+  const { creditUsd } = await import("../../lib/creditTerms");
+  const line = jobApprovalLineCredits(creditUsd());
+  expect(line).toBe(200);
   process.env.SYNC_ENABLED = "1";
   process.env.REKOGNITION_ENABLED = "1";
   await inTenant(tenant("ws_legacy"), async () => {
-    const { calls, call } = recorder({ estimatedCredits: 7, price: 0.7, unit: "usd" });
-    const text = await runDirectEngineTool("lip_sync", { ...ARGS, model: "sync-3", request_id: "req-1" }, call);
-    expect(text).toMatch(/^Lip-sync started\.\n\nid: gen_mcp_1\nprice: \$0\.70/);
-    expect(calls).toHaveLength(2);
-    expect(calls[0]).toMatchObject({ path: "/api/lipsync", body: { quoteOnly: true, model: "sync-3", clipUploadId: "up_clip", audioUploadId: "up_voice", castMemberId: "cast_a", faceFrameUploadId: "up_face", projectId: "prod_a", use: "production" } });
-    expect(calls[0].body).not.toHaveProperty("maxCredits");
-    expect(calls[1]).toMatchObject({ path: "/api/lipsync", body: { model: "sync-3", maxCredits: 7 }, headers: { "Idempotency-Key": "mcp-lip_sync:req-1" } });
-    expect(calls[1].body).not.toHaveProperty("quoteOnly");
-    /* The approval is never the caller's, under either spelling; a bad retry key is refused; an unpriced job starts nothing. */
-    for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) { const r = recorder(); await expect(runDirectEngineTool("lip_sync", { ...ARGS, ...bad }, r.call)).rejects.toThrow(/not yours to approve/); expect(r.calls).toEqual([]); }
+    const prepared = /^Priced and prepared, not started\.\n\nprice: \$0\.70[\s\S]*needs a person's approval: nothing was started or spent/;
+    /* Ask: the default, and anything but an exact "auto". */
+    for (const mode of [null, "ask", "AUTO", "auto ", "yes", "1", ""]) {
+      await setSpend(mode);
+      const r = recorder({ estimatedCredits: 7, price: 0.7, unit: "usd" });
+      const text = await runDirectEngineTool("lip_sync", { ...ARGS, model: "sync-3", request_id: "req-1" }, r.call);
+      expect(text, String(mode)).toMatch(prepared);
+      expect(text).toContain("prepared: lip-sync (sync-3) of up_clip with up_voice for production prod_a");
+      expect(r.calls, String(mode)).toHaveLength(1);
+      expect(r.calls[0].body).toMatchObject({ quoteOnly: true, model: "sync-3", clipUploadId: "up_clip" });
+      expect(r.calls.some((c) => "maxCredits" in c.body)).toBe(false);
+    }
+    /* Auto, at or under the line: it starts, at the price the server just gave, under the retry key. */
+    await setSpend("auto");
+    for (const credits of [1, 7, line]) {
+      const r = recorder({ estimatedCredits: credits, price: 0.7, unit: "usd" });
+      const text = await runDirectEngineTool("lip_sync", { ...ARGS, request_id: "req-2" }, r.call);
+      expect(text, String(credits)).toMatch(/^Lip-sync started\.\n\nid: gen_mcp_1\nprice: \$0\.70/);
+      expect(r.calls).toHaveLength(2);
+      expect(r.calls[1]).toMatchObject({ path: "/api/lipsync", body: { maxCredits: credits }, headers: { "Idempotency-Key": "mcp-lip_sync:req-2" } });
+      expect(r.calls[1].body).not.toHaveProperty("quoteOnly");
+    }
+    /* Auto, above the line (and so above guardrail 4): prepared, and it asks a person. */
+    for (const credits of [line + 1, 250, 5000]) {
+      const r = recorder({ estimatedCredits: credits, price: 20.5, unit: "usd" });
+      expect(await runDirectEngineTool("lip_sync", ARGS, r.call), String(credits)).toMatch(/not started[\s\S]*needs a person's approval/);
+      expect(r.calls).toHaveLength(1);
+    }
+    /* The caller never writes the approval, in either mode and under either spelling; a bad retry key is refused; an unpriced job starts nothing. */
+    for (const mode of ["ask", "auto"]) {
+      await setSpend(mode);
+      for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) { const r = recorder(); await expect(runDirectEngineTool("lip_sync", { ...ARGS, ...bad }, r.call)).rejects.toThrow(/only a person approves/); expect(r.calls).toEqual([]); }
+    }
     const r2 = recorder(); await expect(runDirectEngineTool("lip_sync", { ...ARGS, request_id: "bad id!" }, r2.call)).rejects.toThrow(/request_id/); expect(r2.calls).toEqual([]);
     const r3 = recorder({ price: 1 }); await expect(runDirectEngineTool("lip_sync", ARGS, r3.call)).rejects.toThrow(/could not be priced/); expect(r3.calls).toHaveLength(1);
     /* A refusal from the route (the consent gate, the cap, a token that may not spend) reaches the agent as it is. */
     const refuse = async () => { throw new Error("This person's consent has no face reference yet."); };
     await expect(runDirectEngineTool("lip_sync", ARGS, refuse)).rejects.toThrow("no face reference yet");
     expect(await runDirectEngineTool("render_shot", ARGS, recorder().call)).toBeNull();
+    await setSpend(null);
   });
 });
 
@@ -86,6 +123,9 @@ test("the MCP endpoint lists and calls them through the same module, and says no
   expect(route).toContain("tools: [...TOOLS, ...(await directEngineMcpTools())]");
   expect(route).toContain("(await runDirectEngineTool(name, args, call)) ??");
   const source = readFileSync("lib/directEngineMcp.ts", "utf8");
-  expect(source).toContain("body: { ...clean, maxCredits: quote.estimatedCredits }");
+  expect(source).toContain("maxCredits: quote.estimatedCredits");
+  expect(source).toContain("if (!(await spendsWithoutAsking()) || quote.estimatedCredits > (await autoLineCredits()))");
   expect(source).not.toMatch(/args\.maxCredits|args\.max_credits|a\.max/);
+  /* The send is after the Ask return and after the line: the only place a maxCredits is written. */
+  expect(source.indexOf("needs a person")).toBeLessThan(source.indexOf("maxCredits: quote.estimatedCredits"));
 });
