@@ -60,6 +60,37 @@ export function cleanPrepared(input: PreparedInput) {
 /** Keys no prepared job may carry: they are the approval or the price, which only a person gives. */
 const APPROVAL_KEYS = /^(?:max_?credits|quote_?only|quote_?fingerprint|approved?|price|estimated_?credits)$/i;
 
+/** What an engine job's argument may be: a word, a number, yes/no, or a list or group of them (ids only below the top level), at most three deep. */
+export type PreparedValue = string | number | boolean | PreparedValue[] | { [key: string]: PreparedValue };
+const MAX_ARGS_JSON = 8000, MAX_DEPTH = 3, MAX_ITEMS = 16;
+/** Below the top level a word is an id (an upload, a cast member, a take): no spaces, no long text, never a data address or file bytes. */
+const ID_VALUE = /^[A-Za-z0-9_.:-]{1,160}$/;
+function checkKey(key: string) {
+  if (!/^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(key)) throw new PreparedError("An argument has a name that is not allowed.");
+  if (APPROVAL_KEYS.test(key)) throw new PreparedError("A prepared job carries no price or approval: only a person approves.");
+}
+function cleanValue(value: unknown, depth: number): PreparedValue | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string") {
+    if (depth === 0) { if (value.length > 2000) throw new PreparedError("An argument is too long."); return value.replace(/\u0000/g, ""); }
+    if (!ID_VALUE.test(value)) throw new PreparedError("Inside a list or group an argument is an id, not text or a file.");
+    return value;
+  }
+  if (typeof value === "number") { if (!Number.isFinite(value)) throw new PreparedError("An argument is a word, a number or yes/no."); return value; }
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "object") throw new PreparedError("An argument is a word, a number or yes/no.");
+  if (depth + 1 >= MAX_DEPTH) throw new PreparedError("An argument is nested too deep.");
+  if (Array.isArray(value)) {
+    if (value.length > MAX_ITEMS) throw new PreparedError("A list has too many items.");
+    return value.map((v) => cleanValue(v, depth + 1)).filter((v): v is PreparedValue => v !== undefined);
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > MAX_ITEMS) throw new PreparedError("A group has too many entries.");
+  const out: { [key: string]: PreparedValue } = {};
+  for (const [key, v] of entries) { checkKey(key); const c = cleanValue(v, depth + 1); if (c !== undefined) out[key] = c; }
+  return out;
+}
+
 /**
  * An engine job (a direct engine's tool, lib/directEngineMcp.ts, in Ask): the tool's id, its plain arguments (strings, numbers, booleans, never an approval or a price) and
  * a one-line description for the person. It is filed exactly like a render: nothing is priced, held or sent, and only a person approves it.
@@ -71,18 +102,15 @@ export function cleanEngineJob(input: PreparedInput) {
   if (!prompt) throw new PreparedError("Describe the job to prepare.");
   const raw = input.args;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new PreparedError("Give the tool's arguments.");
-  const args: Record<string, string | number | boolean> = {};
+  const args: Record<string, PreparedValue> = {};
   const entries = Object.entries(raw as Record<string, unknown>);
   if (entries.length > 24) throw new PreparedError("Too many arguments.");
   for (const [key, value] of entries) {
-    if (!/^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(key)) throw new PreparedError("An argument has a name that is not allowed.");
-    if (APPROVAL_KEYS.test(key)) throw new PreparedError("A prepared job carries no price or approval: only a person approves.");
-    if (value === undefined || value === null) continue;
-    if (typeof value === "string") { if (value.length > 2000) throw new PreparedError("An argument is too long."); args[key] = value.replace(/\u0000/g, ""); }
-    else if (typeof value === "number" && Number.isFinite(value)) args[key] = value;
-    else if (typeof value === "boolean") args[key] = value;
-    else throw new PreparedError("An argument is a word, a number or yes/no.");
+    checkKey(key);
+    const clean = cleanValue(value, 0);
+    if (clean !== undefined) args[key] = clean;
   }
+  if (JSON.stringify(args).length > MAX_ARGS_JSON) throw new PreparedError("The arguments are too large.");
   const project = typeof input.project === "string" && input.project.trim() ? input.project.trim().slice(0, 120) : null;
   return { tool, args, prompt, project };
 }
