@@ -90,9 +90,9 @@ export async function exportZip(owner: string, id: string, deps: ExportDeps = {}
   for (const output of job.outputs) {
     const row = (await db().execute({ sql: "SELECT ext, stored_url, bytes FROM uploads WHERE id=?", args: [output.uploadId] })).rows[0];
     if (!row) throw new ExportError(GONE, 404);
-    /* A size that is not a whole, non-negative number would slip past the limit below as NaN: refuse it. */
+    /* A size that is empty or not a whole, non-negative number would slip past the limit below (as NaN, or as 0): refuse it. */
     const bytes = Number(row.bytes);
-    if (row.bytes == null || !Number.isSafeInteger(bytes) || bytes < 0) throw new ExportError(GONE, 404);
+    if (row.bytes == null || String(row.bytes).trim() === "" || !Number.isSafeInteger(bytes) || bytes < 0) throw new ExportError(GONE, 404);
     total += bytes;
     // A name once only: a second file with the same name is numbered, never overwritten.
     let name = output.filename;

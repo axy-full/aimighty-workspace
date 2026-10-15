@@ -199,10 +199,10 @@ test("a row whose stored object is gone is a clean 404 before any response, not 
   expect(first.cancelled).toBe(true);
 }));
 
-test("a size that is not a whole number cannot slip past the limit: NULL, text and negative sizes are refused", async () => context("zipsize", async (m) => {
+test("a size that is not a whole number cannot slip past the limit: NULL, empty, text and negative sizes are refused", async () => context("zipsize", async (m) => {
   const created = await m.createExport(request("request-zip-000012"), { id: "u_test" }, m.deps());
   await m.runExport(created.job.id, m.deps());
-  for (const bad of ["'abc'", "-5", "1.5"]) {
+  for (const bad of ["'abc'", "-5", "1.5", "''", "'  '"]) {
     await m.db().execute(`UPDATE uploads SET bytes=${bad} WHERE id='${created.job.id}_video'`);
     await expect(m.exportZip("u_test", created.job.id, m.deps()), bad).rejects.toMatchObject({ status: 404, message: "A file of that export is not available any more." });
   }
