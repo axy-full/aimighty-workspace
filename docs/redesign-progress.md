@@ -856,3 +856,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Data use: the paid tier's content is "not used to improve our products".
   - Google's sample follows redirects on download, so a manual redirect with a hop allow-list and no key on later hops replaces `redirect: "error"`.
   - Wiring waits for lane B's #778 head.
+- **16 Oct 02:15 IST.** Lane B pushed fixes: #776 9d27d22f, #777 6d850f9d, #778 5278689f (redirect "error" everywhere; MCP follows Ask/Auto, caller maxCredits refused; BFL settlement: stated cost else quote + reconcile, overrun recorded, charged failures unbilled). New #780 Runway (5daab7bb, NEEDS AKSHAY, house only).
+  - Runway env names: RUNWAY_API_KEY (not set), RUNWAY_BASE_URL (optional), RUNWAY_ENABLED. Act-Two and Aleph 2 pass the face gate.
+  - Runway prices verified on docs.dev.runwayml.com: $0.01/credit; act_two 5 cr/s, aleph2 28 cr/s (56 cr min), gen4.5 12, gen4_turbo 5. All match.
+  - Conflict on Runway training: dev.runwayml.com says "Zero-data retention … as default" and "No training on your data", but the PR says the standard terms allow training. Lane B is citing or correcting it; owner and lawyer to settle; the house-only wall stays.
+  - Opus re-check of #776-#778 and full review of #780 started. That includes whether the Auto line is the workspace's per-job line or a flat 200 cr.
+  - Lanes C (Topaz) and D (Veo) are now wiring on top of #778 5278689f. Lane B next: AWS MediaConvert, file-only first.
