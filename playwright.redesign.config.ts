@@ -5,10 +5,13 @@ import { defineConfig } from "@playwright/test";
  * at the two desktop sizes the owner reviews. Needs a local ENGINE_MOCK=1 server at PW_BASE_URL, like the workbench
  * suite. Not part of CI: the lead runs it per PR and attaches the images.
  */
+/* The owner's five desktop sizes (15 Oct 2026, 22:30): 13-inch laptop, the reference, 16-inch MacBook Pro, full HD, and 27-inch or scaled 4K. */
 const sizes = [
-  [1440, 900],
   [1280, 800],
+  [1440, 900],
+  [1728, 1117],
   [1920, 1080],
+  [2560, 1440],
 ];
 export default defineConfig({
   testDir: "tests/redesign",
