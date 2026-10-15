@@ -16,11 +16,15 @@ Particl's own templates for exports: captions on a cut, title and end cards, 16:
 | `end-card` | headline, call-to-action pill, line, optional logo | `card` |
 | `captions` | one clip with burned-in captions (`bold`, `clean`, `karaoke`) | `clip`, `captionStyle` |
 | `reframe` | one clip as 16:9 or 9:16: `fill` (crop on a focus point) or `fit` (whole picture, blurred backdrop) | `clip` |
-| `cutdown` | 6, 15 or 30 s from one source: marked moments or an even spread; frame-exact | `source`, `targetSeconds`, `keep`, `cues` |
+| `cutdown` | 6, 15 or 30 s from one source: marked moments (by hand or from the speech) or an even spread; frame-exact | `source`, `targetSeconds`, `keep`, `silence`, `cues` |
 | `final` | title, clips (trimmed, reframed, captioned), end card, music, and spoken lines (a narrated assembly) | `title`, `clips`, `end`, `music`, `voiceover`, `duck` |
 | `fixture-clip` | our own sample picture, for tests and timing | `durationSeconds`, `label` |
 
 All take `aspect` (`16:9` or `9:16`), `fps` (24, 25, 30, 60; default 30) and `scale` (0.1 to 1; default 1 = 1920x1080 or 1080x1920; smaller is for previews and tests). Props are checked by `src/lib/validate.ts`: unknown keys, URLs, absolute paths, `..`, over-long text, too many clips or cues are refused. A source needs its `durationSeconds`, `width` and `height` (the app knows them); a declared length longer than the file would fail a render, so the worker's export command can probe and correct it.
+
+### Silence-aware cutdowns (`cutdown`: `silence`)
+
+`silence` is `off` (the default) or `keep-speech`. With `keep-speech` the export first finds the quiet stretches of the source's sound with the bundled ffmpeg's `silencedetect` (quieter than -35 dB for at least 0.6 s), keeps everything else, padded by 0.15 s each side so no word is clipped, drops blips shorter than 0.3 s, uses at most the 12 longest spoken stretches, adds them to any `keep` ranges you gave, and plans the 6, 15 or 30 s cut from that (`src/lib/silence.ts`, `node/silence.ts`). The render gets the final `keep` ranges and `silence: "off"`. `result.json` has `silence`: the file, the seconds of silence found, the spoken stretches and the ranges the cut was planned to keep. A source with no sound, or a worker with no detector, refuses it; a source that is all quiet adds nothing and the cut is the even spread.
 
 ### Narrated assembly (`final`: `voiceover`, `duck`)
 

@@ -24,6 +24,7 @@ import { DEFAULT_LIMITS } from "../src/lib/limits";
 import { runExport } from "./export";
 import { bundledFfmpeg, bundledFfprobe } from "./ffprobe-path";
 import { createFfmpegConformer } from "./conform";
+import { createFfmpegSilenceDetector } from "./silence";
 import { createFfprobe } from "./probe";
 import { createRealRenderer } from "./renderer";
 
@@ -64,6 +65,7 @@ async function main(): Promise<number> {
     workDir: path.join(session, "work"),
     prober: createFfprobe(bundledFfprobe()),
     conformer: createFfmpegConformer(bundledFfmpeg()),
+    silenceDetector: createFfmpegSilenceDetector(bundledFfmpeg()),
     renderer: createRealRenderer({ browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE || null }),
     limits,
     concurrency: intEnv("REMOTION_CONCURRENCY", 2, 1, 8),

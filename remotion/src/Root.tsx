@@ -20,7 +20,7 @@ const DEFAULTS: PropsById = {
   "end-card": { ...COMMON, card: { headline: "Thank you", theme: DEFAULT_THEME, durationSeconds: 3 } },
   captions: { ...COMMON, clip: CLIP, captionStyle: "bold" },
   reframe: { ...COMMON, aspect: "9:16", clip: CLIP },
-  cutdown: { ...COMMON, source: SOURCE, targetSeconds: 6, keep: [], cues: [], captionStyle: null, reframe: FILL },
+  cutdown: { ...COMMON, source: SOURCE, targetSeconds: 6, keep: [], silence: "off", cues: [], captionStyle: null, reframe: FILL },
   final: { ...COMMON, title: null, clips: [CLIP], captionStyle: null, end: null, music: null, voiceover: [], duck: 0.3 },
   "fixture-clip": { ...COMMON, durationSeconds: 2, label: "SAMPLE" },
 };
