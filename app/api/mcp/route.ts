@@ -67,7 +67,8 @@ const workspacePost = withTenant(async function POST(req: Request) {
     const call = makeCaller(new URL(req.url).origin, req.headers.get("authorization") ?? "");
     try {
       const exportsOn = await engineEnabled("REMOTION_EXPORTS", currentTenant()?.workspace);
-      const text = await runTool(name, args, call, linkOrigin(req), { credits: creditsApply(currentTenant()?.workspace), exports: exportsOn });
+      const credits = { credits: creditsApply(currentTenant()?.workspace) };
+      const text = await runTool(name, args, call, linkOrigin(req), { ...credits, exports: exportsOn });
       return ok(id, { content: [{ type: "text", text }] });
     } catch (e) {
       // A refused render or a bad project name is information for the model,
