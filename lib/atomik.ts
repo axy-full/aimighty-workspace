@@ -326,6 +326,12 @@ export async function patchChat(chatId: string, patch: {
   await db().execute({ sql: `UPDATE atomik_chats SET ${sets.join(", ")} WHERE id = ?`, args });
 }
 
+/** Drops a chat's project, but only where it still is what the caller read: a PATCH that landed meanwhile stands. */
+export async function clearChatProject(chatId: string, was: string): Promise<void> {
+  await ready();
+  await db().execute({ sql: "UPDATE atomik_chats SET project_id = NULL, updated_at = ? WHERE id = ? AND project_id IS ?", args: [now(), chatId, was] });
+}
+
 export async function deleteChat(chatId: string): Promise<void> {
   await ready();
   /* A chat is soft-deleted and its transcript and proposals stay with it:
@@ -897,6 +903,10 @@ export type TurnResult = {
  * the first featured planner the gateway is actually serving, so a chat
  * started before a model was retired still answers.
  */
+/** What the plan says when a board is view-only for the person (a teammate's shared board): plain words, no model name. */
+export const VIEW_ONLY_LINE = "This board is view-only for you, so I won't set up renders on it.";
+/** The instruction the planner is given on such a board, so it plans in words and does not propose renders. */
+export const VIEW_ONLY_INSTRUCTION = `This board is view-only for the person you are talking to. Do not propose any render step (no video, image or audio); answer in words, and say once that renders cannot be set up on this board. ${VIEW_ONLY_LINE}`;
 type TurnOptions = { context?: string; rules?: string; model?: string; effort?: string; maxCredits?: number;
   /** The workspace's memory for this turn (lib/atomikMemory › plannerMemoryText): ranked, small, never money. The quote and the turn read the same. */
   memory?: string;
@@ -907,6 +917,8 @@ type TurnOptions = { context?: string; rules?: string; model?: string; effort?: 
   priceKeyStep?: (body: Record<string, unknown>) => Promise<{ usd: number } | { error: string }>;
   /** The Studio project a transform files under, for that quote (the person's own, for this production). */
   workbenchProjectId?: string | null;
+  /** The board the chat is on is one its person may only look at (a teammate's shared board): no render step is proposed there, and the plan says why. */
+  viewOnly?: boolean;
   quoteOnly?: boolean; userMessage?: { text: string; attachments: Attachment[] }; projectId?: string | null };
 export async function runTurn(chatId: string | null, opts: TurnOptions & { quoteOnly: true }): Promise<PaidTextQuote>;
 export async function runTurn(chatId: string, opts?: TurnOptions & { quoteOnly?: false }): Promise<TurnResult>;
@@ -997,6 +1009,11 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
     say: `${model} completed but did not return a usable proposal. The response has been saved; choose another planner for a new request.`,
     activity: [], propose: [], ask: null, title: null, remember: [], declined: [],
   };
+  /* A board its person may only look at has no renders to set up: none is proposed (a step files into the chat's board at approval, which a view-only board refuses), and the plan says so. */
+  if (opts.viewOnly && turn.propose.length) {
+    turn.propose = [];
+    if (!turn.say.includes(VIEW_ONLY_LINE)) turn.say = `${turn.say}\n\n${VIEW_ONLY_LINE}`.slice(0, 8000);
+  }
   /* A library step is priced before it is shown: the admission quote for the exact body its render
      will send. One nothing could price is not proposed, and the plan says why (no estimate, no work). */
   const keyPrices = await priceKeyProposals(turn.propose, {

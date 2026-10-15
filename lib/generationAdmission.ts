@@ -119,6 +119,8 @@ import { uploadSourceParams } from "@/lib/sourceClip";
 import { jobLineGate, shotCapGate } from "@/lib/shotCap";
 import { isAgentId } from "@/lib/security/people-only";
 import { madeInOf } from "@/lib/madeIn";
+import { jobHint, jobOf, type Job } from "@/lib/takeJob";
+import { isShotType, shotTypeHint, shotTypeOf, type ShotType } from "@/lib/takeShotType";
 import { approvedTakeOf } from "@/lib/shots";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import { recordProvenance, portsForShot } from "@/lib/provenance";
@@ -218,6 +220,22 @@ function validateReferences(
   return null;
 }
 
+/**
+ * What a take was quoted at, kept on the take (owner, 14 Oct 2026; docs/plans/step-0-data.md item 4): `{ credits, ceilingCredits?, maxCredits? }`, written once at admission in the same
+ * insert, so "quoted 43, approved up to 60, charged 43" can be read afterwards. It matches the quote object the person was shown exactly: `credits` is our price in credits (the
+ * server's price path, `estimatedCredits`), `ceilingCredits` the most a take that holds a band can come to (Cinema Studio: "about N, up to 3N"), present only when the band is above 1,
+ * and `maxCredits` the ceiling the request carried (the person's, or the plan's approval's), when there is one. Never a vendor dollar; nothing for the house (it has no credit quote);
+ * never part of the quote's fingerprint.
+ */
+export function quoteSnapshot(credits: number, maxCredits: unknown, band = 1): { credits: number; ceilingCredits?: number; maxCredits?: number } | undefined {
+  if (!creditsApply(requireTenant()) || !Number.isFinite(credits) || credits < 0) return undefined;
+  return {
+    credits,
+    ...(band > 1 ? { ceilingCredits: credits * band } : {}),
+    ...(typeof maxCredits === "number" && Number.isInteger(maxCredits) && maxCredits >= 0 ? { maxCredits } : {}),
+  };
+}
+
 /** What a draft's final is made from: the draft's own row, never the request (lib/draftFinal.ts). */
 type FinalSource = {
   draftId: string;
@@ -232,7 +250,7 @@ type FinalSource = {
   hasVideoInput: boolean;
   /** The final the draft named when it was read ("" for none): the claim only lands if it still names it. */
   heldBy: string;
-  carried: { rawPrompt?: string; cast?: string[]; shotSpec?: Record<string, string> };
+  carried: { rawPrompt?: string; cast?: string[]; shotSpec?: Record<string, string>; shotType?: ShotType };
 };
 type FinalRefusal = { error: string; status: number; finalId?: string };
 /** The keys a final's request may carry. Everything else about it is its draft's; where it files
@@ -307,6 +325,7 @@ async function draftFinalSource(body: Record<string, unknown>): Promise<FinalSou
       ...(typeof params.rawPrompt === "string" ? { rawPrompt: params.rawPrompt } : {}),
       ...(Array.isArray(params.cast) ? { cast: params.cast.filter((c): c is string => typeof c === "string").slice(0, 20) } : {}),
       ...(shotSpec ? { shotSpec } : {}),
+      ...(isShotType(params.shotType) ? { shotType: params.shotType } : {}),
     },
   };
 }
@@ -439,6 +458,8 @@ export async function executeGenerationAdmission(
     /* An approval of another member's step (owner, 13 Oct): the render files into that step's own chat's project, resolved here from a step this caller claimed and has
        not sent, never named by the client, so its caps and the 200 cr line apply as on any render there and the approver never reads the board. */
     let stepFiled = false;
+    /* Who made the step's chat: the filing target is checked as THEIR board to file into, whoever approves (below). */
+    let stepCreator = "";
     if (body.atomikStepId !== undefined) {
       const filing = typeof body.atomikStepId === "string" ? await claimedStepFiling(body.atomikStepId, got.user) : null;
       if (!filing) return admissionReply({ error: "That step is gone." }, { status: 404 });
@@ -457,6 +478,7 @@ export async function executeGenerationAdmission(
       Object.assign(body, stepRender({ kind: filing.step.kind as never, title: filing.step.title, prompt: filing.step.prompt, model: filing.step.model, params: filing.step.params as never, refs: filing.step.refs as never }, filing.projectId).body, keep);
       if (body.projectId == null) delete body.projectId;
       stepFiled = true;
+      stepCreator = filing.createdBy;
     }
     if (body.projectId) {
       const project = await db().execute({
@@ -465,7 +487,9 @@ export async function executeGenerationAdmission(
       });
       /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): filing into either is refused as a missing project is,
          before anything is quoted, held or reserved, so the answer says nothing about whether it exists. An Atomik run (no person) is not asked. */
-      const reach = stepFiled || (await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "admit"));
+      /* A step's render is filed into its chat's project, which the chat's maker named: it is reachable if THEY may file there (their own board, or any shared project), never because an
+         approver claimed it (an admin approving a member's own step still files into the member's own board). A private board of someone else is refused as a missing project is. */
+      const reach = stepFiled ? await mayReachProject({ id: stepCreator }, String(body.projectId), "admit") : await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "admit");
       if (!project.rows.length || !reach)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
@@ -650,6 +674,17 @@ export async function executeGenerationAdmission(
       if (body.resolution != null && body.resolution !== DRAFT_RESOLUTION)
         return admissionReply({ error: `A draft renders at ${DRAFT_RESOLUTION}.` }, { status: 400 });
     }
+    /* The take's job (lib/takeJob.ts): a hint from the request must be on the closed list, fit the kind, and, for the jobs the take itself decides (fix, upscale, draft, final), agree
+       with it, or the request is refused here, for a quote as for a press, before anything is held. */
+    const jobFacts = { kind: (model.kind === "image" ? "image" : "video") as "image" | "video", task: model.kind === "image" ? model.stillTask ?? "generate" : task.id, draft, finalOf: final != null };
+    const hinted = jobHint(body.job, jobFacts);
+    if ("error" in hinted) return admissionReply({ error: hinted.error }, { status: 400 });
+    const jobHinted: Job | null = hinted.hint;
+    /* The take's shot type (lib/takeShotType.ts), the same way: a hint is checked against the list and the Setup's shot size. A final carries its draft's. */
+    const shotSize = (final ? final.carried.shotSpec : shotSpecOf(body.shotSpec))?.shot ?? null;
+    const shotTyped = shotTypeHint(body.shotType, { kind: model.kind === "image" ? "image" : "video", shot: shotSize });
+    if ("error" in shotTyped) return admissionReply({ error: shotTyped.error }, { status: 400 });
+    const shotTypeStored: ShotType | null = final ? final.carried.shotType ?? shotTypeOf({ kind: "video", shot: shotSize }) : shotTypeOf({ kind: model.kind === "image" ? "image" : "video", shot: shotSize, hint: shotTyped.hint });
     const sourceGenId = body.sourceGenId ? String(body.sourceGenId) : null;
     /* An uploaded clip as the source of a locked task: the client sends it here, not among the references. */
     const sourceUploadId =
@@ -685,7 +720,7 @@ export async function executeGenerationAdmission(
     if (modelId === ASTRA_MODEL) {
       try { astra = astraSettings(body.astra); }
       catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
-      if (prompt) return admissionReply({error:"Astra uses its detail controls. Text-directed video edits use the Seedance 2.5 edit model."},{status:400});
+      if (prompt) return admissionReply({error:"Topaz Astra uses its detail controls. Text-directed video edits use the Seedance 2.5 edit model."},{status:400});
     }
     if (task.locked) {
       /* An engine that cannot do the task must say so here, not drop the
@@ -852,7 +887,7 @@ export async function executeGenerationAdmission(
           sourceRatio = `${astraSource.width}:${astraSource.height}`;
           sourceResolution = `${Math.min(astraSource.width,astraSource.height)}p`;
         } catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
-        notices.push("Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
+        notices.push("Topaz Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
       }
       if (genjutsu && sourceRef) {
         try { genjutsuSource = await inspectOriginalVideo(sourceRef, sourceBytes); }
@@ -1585,6 +1620,10 @@ export async function executeGenerationAdmission(
       const stillParams = {
         /* Make's own results (lib/madeIn.ts): marked by the server, only for a person's own Make request. */
         madeIn: madeInOf(body.madeIn, got),
+        quote: quoteSnapshot(quotedCredits(estStillUsd, modelId), body.maxCredits),
+        /* What the take is for (lib/takeJob.ts): written here, never taken from the request as it is. */
+        job: jobOf({ kind: "image", task: model.stillTask ?? "generate", useAs: ["first", "cast"].includes(String(body.useAs)) ? String(body.useAs) : null, hint: jobHinted }),
+        ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
         ...(marketing ? { marketing, higgsfieldCredentialFingerprint: marketingFingerprint, higgsfieldVendorCostUsd: estStillUsd } : {}),
         ...(soulBinding ? { soulIdentityId: soulBinding.id, soulReferenceId: soulBinding.providerReferenceId,
           soulCredentialFingerprint: soulBinding.credentialFingerprint, soulStrength, soulVendorCostUsd: estStillUsd,
@@ -1883,7 +1922,7 @@ export async function executeGenerationAdmission(
         // converges on their taste rather than on a generic one.
         const writerRules = rulesBlock(rules, "video", "writer", model.family);
         const style = [
-          houseStyleBlock(await houseStyle(projectIdForCast)),
+          houseStyleBlock(await houseStyle(got.user, projectIdForCast)),
           writerRules ? `THE PLATFORM'S RULES\n${writerRules}` : "",
         ]
           .filter(Boolean)
@@ -2185,6 +2224,9 @@ export async function executeGenerationAdmission(
     const storedParams: Record<string, unknown> = final ? {
       ...params,
       finalOf: final.draftId,
+      quote: quoteSnapshot(quotedCredits(estUsd, modelId), body.maxCredits, band),
+      job: jobOf({ kind: "video", task: "generate", finalOf: true }),
+      ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
       draftExpiresAt: final.expiresAt,
       hasVideoInput,
       inputSeconds: hasVideoInput ? inputSeconds : undefined,
@@ -2195,6 +2237,9 @@ export async function executeGenerationAdmission(
     } : {
       ...params,
       madeIn: madeInOf(body.madeIn, got),
+      quote: quoteSnapshot(quotedCredits(estUsd, modelId), body.maxCredits, band),
+      job: jobOf({ kind: "video", task: task.id, draft, onShot: shotId != null, hint: jobHinted }),
+      ...(shotTypeStored ? { shotType: shotTypeStored } : {}),
       ...(genjutsu ? { workbenchProjectId: body.workbenchProjectId, quoteBasis: "live-provider-estimate" } : {}),
       references: references.map((r) =>
         r.fromGeneration

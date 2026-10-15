@@ -1,5 +1,6 @@
 import type { BeatSheet } from "./beats";
 import { BOARD_MODELS, stillShape, type BoardModel } from "./boards";
+import { NANO_BANANA_2_ID } from "../models";
 import type { GenerationBodyInput, GenerationReference } from "../workbench/generation-request";
 import { mediaReferenceIdentity } from "../workbench/media-reference-input";
 import type { Asset, Project } from "../workbench/studio";
@@ -38,7 +39,7 @@ export type EnvironmentEntry = {
 /** `world`: rules every place shares — the period, the palette, the weather, the light. */
 export type Environment = { world: string; model: BoardModel; entries: EnvironmentEntry[]; agentJobId?: string };
 
-export const DEFAULT_ENVIRONMENT: Environment = { world: "", model: "gemini-3.1-flash-image", entries: [] };
+export const DEFAULT_ENVIRONMENT: Environment = { world: "", model: NANO_BANANA_2_ID, entries: [] };
 
 const newId = () => `env-${crypto.randomUUID().slice(0, 8)}`;
 /** `id`: a place made from a source (an agent run, the beat sheet) takes an id from it, so two windows taking the same source make it once. */
