@@ -1,7 +1,7 @@
 import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
-import { currentContext, requireSuperAdmin } from "@/lib/auth";
+import { currentContext, isPlatformOwner, requireSuperAdmin } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
 import { runInTenant } from "@/lib/tenant";
 import { platformDb, platformReady } from "@/lib/platform";
@@ -30,19 +30,20 @@ export const maxDuration = 30;
 export const GET = recoveryRoute(async function GET(req: Request) {
   /* Two answers from one route, because it has two audiences.
    *
-   * An uptime monitor needs to know the app is alive and can reach its
-   * database and its storage, and which commit is live (the repository is
-   * public), and needs no credential to ask. Everything else here is a
-   * fingerprint of the deployment — how many renders the studio has, which
-   * vendor keys it holds, which door stills go through, the address
-   * invitations are sent from, and the cron's last heartbeat. That was fine while nobody could find the
-   * app; it is a briefing note now the front door is open.
+   * Anyone, signed in or not (an uptime monitor, a member of any workspace): is it
+   * up, and which commit is live (the repository is public). Nothing else. `ok`
+   * already covers the database, the storage and the Vercel-identity check; what
+   * failed is for the platform owner to read, signed in. Everything else here is a
+   * fingerprint of the deployment — the house workspace's name, the platform's
+   * dispatch timeline, which vendor keys it holds, the address invitations are
+   * sent from, the cron's last heartbeat — and it belongs to the platform owner
+   * alone (the same gate as the console: lib/auth.ts › isPlatformOwner), never to
+   * an ordinary member: the dispatch log is the platform's, across workspaces.
    *
-   * `deep` is stricter still: it WRITES to Vercel Blob, presigns, ranges
-   * and deletes on every call, so anonymously it was an unauthenticated
-   * lever on the studio's storage account. */
+   * `deep` is stricter still: it WRITES to the storage account, presigns, ranges
+   * and deletes on every call, so it stays behind requireSuperAdmin. */
   const ctx = await currentContext().catch(() => null);
-  const full = Boolean(ctx?.workspace);
+  const full = Boolean(ctx?.workspace && ctx.user && (await isPlatformOwner(ctx.user).catch(() => false)));
   const deep = new URL(req.url).searchParams.get("deep") === "1";
   if (deep) {
     const auth = await requireSuperAdmin().catch(() => ({ response: NextResponse.json({ error: "Diagnostics unavailable" }, { status: 503 }) }));
@@ -55,9 +56,9 @@ export const GET = recoveryRoute(async function GET(req: Request) {
     await platformReady();
     await platformDb().execute("SELECT 1");
     database = /^(libsql|https):/.test(process.env.PLATFORM_DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "") ? "turso" : "local-file";
-    if (ctx?.workspace) {
+    if (full) {
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      const r: any = await runInTenant(ctx.workspace, async () => {
+      const r: any = await runInTenant(ctx!.workspace!, async () => {
         await ready();
         const rs = await db().execute(`
           SELECT SUM(CASE WHEN stored_url IS NOT NULL THEN 1 ELSE 0 END) AS saved,
@@ -124,19 +125,9 @@ export const GET = recoveryRoute(async function GET(req: Request) {
   if (!full) {
     return NextResponse.json(
       {
-        /* "blob-BROKEN" is only reachable when signed in now, so for a monitor
-         this is the database answer — which is the one that goes down. */
         ok,
-        mock: engineMock(),
-        dispatch: { mode: dispatchMode() },
-        database: database === "unreachable" ? "unreachable" : "ok",
-        storage:
-          storage.endsWith("-BROKEN")
-            ? "broken"
-            : storage === "missing"
-              ? "missing"
-              : "ok",
-        storageVerified: false,
+        /* Only a mocked-engine server says so (development and tests: their gates read it before they run anything); a real deployment never has the field. */
+        ...(engineMock() ? { mock: true } : {}),
         /* The short commit, so a deploy can be checked from outside (the repository is public). */
         commit: (deployedCommit() ?? "local").slice(0, 7),
       },
@@ -144,7 +135,7 @@ export const GET = recoveryRoute(async function GET(req: Request) {
     );
   }
 
-  /* The rest is one workspace's briefing, answered inside that workspace. */
+  /* The rest is the platform owner's briefing, answered inside the workspace they are in. */
   return runInTenant(ctx!.workspace!, async () =>
     NextResponse.json(
       {
@@ -202,7 +193,7 @@ export const GET = recoveryRoute(async function GET(req: Request) {
 });
 
 /**
- * When the cron last ran, who ran it, and whether that is recent enough.
+ * When the cron last ran, who ran it ('scheduler' for our own server's scheduled task, else 'manual'), and whether that is recent enough.
  * The schedule is every 10 minutes; anything past 15 means a tick was missed.
  */
 async function cronStatus() {
@@ -226,7 +217,6 @@ async function cronStatus() {
   return {
     lastRunAt: new Date(at).toISOString(),
     by: st.lastCronBy ?? null,
-    agent: st.lastCronAgent ?? null,
     agoMinutes: ago,
     healthy: ago <= 15 && st.lastCronStatus !== "failed" && st.lastCronStatus !== "partial",
     status: st.lastCronStatus ?? "unknown",

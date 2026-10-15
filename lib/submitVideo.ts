@@ -264,15 +264,15 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
       try {
         const settings = astraSettings(job.params.astra), source = job.params.astraSource;
         if (job.params.resolution !== "4k" || job.params.fps60 !== (settings.fps === 60) || !source || ![source.width,source.height,source.seconds].every(n=>Number.isFinite(n)&&n>0) || source.seconds>300)
-          throw new Error("Astra source and output settings need a new quote.");
+          throw new Error("Topaz Astra source and output settings need a new quote.");
       } catch {
-        const message = "Astra's output requirements changed. Review this source again in Gen before submitting a new upscale. No provider request was sent.";
+        const message = "Topaz Astra's output requirements changed. Review this source again in Make before submitting a new upscale. No provider request was sent.";
         await failVideoDispatch(job.genId, message);
         const current = await submissionRow(job.genId);
         const handle = current && knownTask(current);
         if (handle) return {ok:true,taskId:handle,attempts:1};
         if (current && JSON.parse(current.params || "{}").paidClaim != null)
-          return {ok:false,cls:"uncertain",error:"A prior Astra submission is still being reconciled. No additional request was sent; its estimated cost remains reserved."};
+          return {ok:false,cls:"uncertain",error:"A prior Topaz Astra submission is still being reconciled. No additional request was sent; its estimated cost remains reserved."};
         return {ok:false,cls:"fatal",error:message};
       }
     }

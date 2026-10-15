@@ -969,6 +969,7 @@ async function routeFixture() {
     "workbenchScopeFor",
     "recoveryRoute",
     "crossOriginProblem",
+    "hideOwnerAccountId",
     ts.transpileModule(declaration.getText(source), {
       compilerOptions: {
         module: ts.ModuleKind.CommonJS,
@@ -984,6 +985,7 @@ async function routeFixture() {
     scope.workbenchScopeFor,
     (handler: unknown) => handler,
     crossOriginProblem,
+    async (res: Response) => res,
   );
   let starts = 0,
     disconnects = 0,

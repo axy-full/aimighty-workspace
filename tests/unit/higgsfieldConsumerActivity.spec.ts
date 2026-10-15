@@ -260,6 +260,7 @@ async function routeFixture() {
     "workbenchScopeFor",
     "recoveryRoute",
     "crossOriginProblem",
+    "hideOwnerAccountId",
     wrapper,
   )(
     wrapperExports,
@@ -270,6 +271,7 @@ async function routeFixture() {
     workbenchScopeFor,
     (fn: unknown) => fn,
     crossOriginProblem,
+    async (res: Response) => res,
   );
   const reads: string[] = [],
     limits: unknown[][] = [];

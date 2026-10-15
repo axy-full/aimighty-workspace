@@ -176,7 +176,7 @@ export function useTranscribe({ scope, source, projectId, name, onDone }: {
   const problem = claim.problem || error || (!pending && !saved ? quote?.error ?? "" : "");
   return {
     phase,
-    price: quote?.credits != null ? exact(quote.credits) : null,
+    price: quote?.credits != null ? exact(quote.credits, quote.usd) : null,
     pricing: quote?.credits != null ? "ready" : quote?.error ? "error" : "loading",
     tryAgain: () => pricing.tryAgain("transcript"),
     run: () => void run(),

@@ -3,7 +3,7 @@ import { studioRequest } from "@/components/workbench/GenerationDialog";
 import { useQuoteReads, type QuoteReader } from "./use-quote-reads";
 
 /** Prices a generation request, quote-only (nothing reserved). */
-const readGenerateQuote: QuoteReader = (request, scope, signal) => studioRequest<{ estimatedCredits: number; approximate?: boolean }>("/api/generate/quote", {
+const readGenerateQuote: QuoteReader = (request, scope, signal) => studioRequest<{ estimatedCredits: number; approximate?: boolean; price?: number; unit?: string }>("/api/generate/quote", {
   method: "POST", signal,
   headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope },
   body: JSON.stringify(request.body),

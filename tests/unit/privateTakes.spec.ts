@@ -299,7 +299,7 @@ test("a thumbnail, a take's provenance and the strip's take: a hidden take is th
   expect(await tenant.runInTenant(other, async () => { const res = await provenance.GET(new Request("https://particl.test/x"), { params: Promise.resolve({ id: `t_priv1_${run}` }) }); return [res.status, await res.json()] as const; }, { user: ADMIN.user })).toEqual(unknownProv);
 });
 
-test("Atomik: a project the caller may not read is no project for the model, before anything is read; an owner and an admin read it; another workspace reads nothing", async () => {
+test("Atomik: a project the caller may not read is no project for the model, before anything is read; its owner reads it; an admin, an admin token and the workspace owner get nothing, as for an unknown id; another workspace reads nothing", async () => {
   const ws = workspace(`pt-g-${run}`);
   const { tenant, projects } = await fixture(ws);
   const atomik = await import("../../lib/atomik");
@@ -330,13 +330,26 @@ test("Atomik: a project the caller may not read is no project for the model, bef
     expect(JSON.stringify(got), actor.user.id).not.toMatch(/SecretCast|PRIV-|Only the owner/);
     expect(got.map((s) => s.context), actor.user.id).toEqual(unknown.map((s) => s.context));
   }
-  /* Shared and the sample: readable (view), as for anyone. */
-  expect((await ask(MATE, projects.shared)).map((s) => s.projectId)).toEqual([projects.shared, projects.shared]);
+  /* A teammate's shared board is view-only for them (owner, 14 Oct 23:35): it may feed the model's context, but it is no project to file or spend against, so the quote and the turn carry no project and the model is told to propose no renders. Its author files on it as always. */
+  const viewOnly = await ask(MATE, projects.shared);
+  expect(viewOnly.map((s) => s.projectId)).toEqual([null, null]);
+  for (const s of viewOnly) expect(s.context).toContain("This board is view-only for you, so I won't set up renders on it.");
+  const author = await ask(OWNER, projects.shared);
+  expect(author.map((s) => s.projectId)).toEqual([projects.shared, projects.shared]);
+  for (const s of author) expect(s.context ?? "").not.toContain("view-only");
+  /* The sample: readable (view), as for anyone. */
   expect((await ask(MATE, projects.sample)).map((s) => s.projectId)).toEqual([projects.sample, projects.sample]);
-  for (const actor of [OWNER, ADMIN, ADMIN_TOKEN, WS_OWNER]) {
+  {
+    const got = await ask(OWNER, projects.private);
+    expect(got.map((s) => s.projectId), OWNER.user.id).toEqual([projects.private, projects.private]);
+    expect(got[0].context, OWNER.user.id).toContain("SecretCast");
+  }
+  /* An admin has no elevation here (owner, 14 Oct 23:35): someone else's private board gives Atomik neither context nor a project to file or spend against, the same as an unknown id. The audited admin read is its own path (#715). */
+  for (const actor of [ADMIN, ADMIN_TOKEN, WS_OWNER]) {
     const got = await ask(actor, projects.private);
-    expect(got.map((s) => s.projectId), actor.user.id).toEqual([projects.private, projects.private]);
-    expect(got[0].context, actor.user.id).toContain("SecretCast");
+    expect(got.map((s) => s.projectId), actor.user.id).toEqual([null, null]);
+    expect(JSON.stringify(got), actor.user.id).not.toMatch(/SecretCast|PRIV-|Only the owner/);
+    expect(got.map((s) => s.context), actor.user.id).toEqual(unknown.map((s) => s.context));
   }
   /* Another workspace: the id is no project there, and it reads no cast. */
   const other = workspace(`pt-g2-${run}`);

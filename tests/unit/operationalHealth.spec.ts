@@ -7,7 +7,7 @@ import ts from "typescript";
 import { deployedCommit } from "../../lib/deployment";
 
 const nativeRequire = createRequire(path.resolve("package.json"));
-function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseDown?: boolean; dispatchLogDown?: boolean; rangeStatus?: number; cleanupFails?: boolean; env?: Record<string, string> } = {}) {
+function healthFixture(options: { signedIn?: boolean; owner?: boolean; admin?: boolean; databaseDown?: boolean; dispatchLogDown?: boolean; rangeStatus?: number; cleanupFails?: boolean; env?: Record<string, string> } = {}) {
   const env = { NODE_ENV: "production", BLOB_READ_WRITE_TOKEN: "SECRET", ...options.env };
   const writes: string[] = [], deletes: string[] = [];
   const ctx = options.signedIn ? { user: { id: "account" }, workspace: { id: "workspace", name: "Workspace" } } : null;
@@ -15,7 +15,7 @@ function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseD
   const mocks: Record<string, unknown> = {
     "next/server": { NextResponse: Response },
     "@/lib/providers": { PROVIDERS: [], providerConfigured: () => false, providerVia: () => null },
-    "@/lib/auth": { currentContext: async () => ctx, requireSuperAdmin: async () => options.admin ? { user: ctx?.user } : { response: Response.json({ error: "Forbidden" }, { status: 403 }) } },
+    "@/lib/auth": { currentContext: async () => ctx, isPlatformOwner: async () => Boolean(options.owner || options.admin), requireSuperAdmin: async () => options.admin ? { user: ctx?.user } : { response: Response.json({ error: "Forbidden" }, { status: 403 }) } },
     "@/lib/tenant": { runInTenant: async (_ws: unknown, fn: () => unknown) => fn() },
     "@/lib/platform": { platformReady: async () => undefined, platformDb: () => database },
     "@/lib/db": { ready: async () => undefined, db: () => database },
@@ -55,23 +55,24 @@ function healthFixture(options: { signedIn?: boolean; admin?: boolean; databaseD
   return { get: exports.GET!, writes, deletes };
 }
 
-test("public health is read-only and explicitly does not claim storage verification", async () => {
+test("public health is read-only and says only ok and the commit", async () => {
   const f = healthFixture();
   const response = await f.get(new Request("https://example.test/api/health"));
   expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({ ok: true, database: "ok", storageVerified: false, dispatch: { mode: "native" } });
+  /* Anyone, signed in or not: is it up and which commit, nothing else (owner, 14 Oct). `ok` covers the database and the storage. */
+  expect(await response.json()).toEqual({ ok: true, commit: "local" });
   expect(f.writes).toHaveLength(0);
 });
 
-test("the dispatch timeline is in the signed-in briefing only, and its failure is coarse", async () => {
+test("the dispatch timeline is in the platform owner's briefing only, and its failure is coarse", async () => {
   const anonymous = await (await healthFixture().get(new Request("https://example.test/api/health"))).json();
-  expect(anonymous.dispatch).toEqual({ mode: "native" });
-  const full = await (await healthFixture({ signedIn: true }).get(new Request("https://example.test/api/health"))).json();
+  expect(anonymous.dispatch).toBeUndefined();
+  const full = await (await healthFixture({ signedIn: true, owner: true }).get(new Request("https://example.test/api/health"))).json();
   expect(full.dispatch.mode).toBe("native");
   expect(full.dispatch.recent).toHaveLength(2);
   expect(full.dispatch.recent[0]).toMatchObject({ phase: "run", outcome: "finished-ok", eventId: "render-ws-gen_1" });
   expect(full.dispatch.recent[1]).toMatchObject({ phase: "send", outcome: "sent", status: 202 });
-  const down = healthFixture({ signedIn: true, dispatchLogDown: true });
+  const down = healthFixture({ signedIn: true, owner: true, dispatchLogDown: true });
   const response = await down.get(new Request("https://example.test/api/health"));
   expect(response.status).toBe(200);
   const body = await response.json();
@@ -105,10 +106,10 @@ test("deep probes use unique object names and a broken database returns a coarse
   expect(await response.text()).not.toContain("SECRET");
 });
 
-test("the commit: Vercel's, else the self-hosted image's GIT_COMMIT_SHA, else \"local\"; seven characters, signed in or not", async () => {
+test("the commit: Vercel's, else the self-hosted image's GIT_COMMIT_SHA, else \"local\"; seven characters, for the owner or anyone", async () => {
   const SHA = "0123456789abcdef0123456789abcdef01234567", VERCEL_SHA = "fedcba9876543210fedcba9876543210fedcba98";
   const health = async (env: Record<string, string>, signedIn: boolean) =>
-    (await healthFixture({ signedIn, env }).get(new Request("https://example.test/api/health"))).json();
+    (await healthFixture({ signedIn, owner: signedIn, env }).get(new Request("https://example.test/api/health"))).json();
   expect((await health({ GIT_COMMIT_SHA: SHA }, true)).commit).toBe("0123456");
   expect((await health({ GIT_COMMIT_SHA: SHA, VERCEL_GIT_COMMIT_SHA: VERCEL_SHA }, true)).commit).toBe("fedcba9");
   expect((await health({}, true)).commit).toBe("local");
@@ -118,7 +119,7 @@ test("the commit: Vercel's, else the self-hosted image's GIT_COMMIT_SHA, else \"
   expect(anonymous.commit).toBe("fedcba9");
   expect(JSON.stringify(anonymous)).not.toContain(VERCEL_SHA.slice(0, 8));
   expect(JSON.stringify(anonymous)).not.toContain("0123456");
-  expect(Object.keys(anonymous).sort()).toEqual(["commit", "database", "dispatch", "mock", "ok", "storage", "storageVerified"]);
+  expect(Object.keys(anonymous).sort()).toEqual(["commit", "ok"]);
   expect((await health({ GIT_COMMIT_SHA: SHA }, false)).commit).toBe("0123456");
   expect((await health({}, false)).commit).toBe("local");
   const down = await healthFixture({ databaseDown: true, env: { GIT_COMMIT_SHA: SHA } }).get(new Request("https://example.test/api/health"));

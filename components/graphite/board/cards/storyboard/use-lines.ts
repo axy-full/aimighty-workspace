@@ -53,10 +53,10 @@ export function useLineDrawings(seam: DraftSeam, shotId: string, readOnly: strin
   const pricing = useStageQuotes(scope, requests);
   const ids = Object.keys(requests);
   const credits = (id: string) => pricing.quotes[id]?.credits;
-  const own = credits(shotId) != null ? exact(credits(shotId)) : null;
+  const own = credits(shotId) != null ? exact(credits(shotId), pricing.quotes[shotId]?.usd) : null;
   const otherIds = ids.filter((id) => id !== shotId);
   const otherPrices = otherIds.map(credits);
-  const othersPrice = otherIds.length && otherPrices.every((c) => c != null) ? priceSum(otherPrices.map((c) => exact(c))) : null;
+  const othersPrice = otherIds.length && otherPrices.every((c) => c != null) ? priceSum(otherIds.map((id) => exact(credits(id), pricing.quotes[id]?.usd))) : null;
   const failed = ids.filter((id) => pricing.quotes[id]?.error);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);

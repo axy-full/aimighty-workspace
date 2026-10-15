@@ -10,7 +10,7 @@ import type { LibraryEntry } from "../../lib/workspace/library";
 
 /* Stream 11 · the Social board's cards, from the project's Library alone. */
 const video = (id: string, seconds: number | null, origin: "upload" | "generation" = "upload", model = ""): LibraryEntry => ({
-  take: { id: `${origin}:${id}`, sourceId: id, kind: origin === "upload" ? "UPLOAD" : "GEN", name: `${id}.mp4`, version: "v1", meta: "", credits: null, usd: null, status: origin === "upload" ? "uploaded" : "review", sha256: null, createdAt: 1 },
+  take: { id: `${origin}:${id}`, sourceId: id, kind: origin === "upload" ? "upload" : "generation", name: `${id}.mp4`, version: "v1", meta: "", credits: null, usd: null, status: origin === "upload" ? "uploaded" : "review", sha256: null, createdAt: 1 },
   asset: { origin, value: origin === "upload" ? { id, durationS: seconds } : { id, model, kind: "video", params: {}, status: "succeeded", durationS: seconds, createdAt: 1 } } as never,
   url: `/api/uploads/${id}`, media: "video",
 });
