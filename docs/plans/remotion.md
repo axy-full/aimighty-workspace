@@ -46,6 +46,26 @@ Modelled on the self-hosted Astra render worker (`ops/render-worker/`, `docs/ast
 3. Record wall time, peak memory and CPU, at concurrency 1, 2 and 3.
 4. Set the CPU/memory limits, the concurrency, the per-run deadline and the per-workspace limits from the numbers. Write them into this file.
 
+### Measured on this droplet (15 Oct 2026, CPU only, outside Docker, no engine calls)
+Owner, 15 Oct 22:15: "Measure one real 30 s 1080p export (time, cost) first." Run by lane D with the real export command (`node build/cli.mjs`, composition `final`, PR #697's compositions) through `heavy.sh` at `nice -n 19`, one at a time. The cut: 1920x1080, 30 fps, 30.0 s: a 2 s title card, three 8 s clips with karaoke captions, a 4 s end card, a 30 s music track. The sample is the repo's 10 s fixture clip scaled to 1080p (softer than real footage, so it encodes a little cheaper). Remotion 4.0.530, its Chrome Headless Shell, H.264 CRF 20 with AAC. The host was busy (load average 7 to 14 on 8 vCPU), so wall times are what nice 19 gets on a loaded server; CPU seconds do not move with load and are the figure to plan from.
+
+| Run | Concurrency | Wall | CPU s (user+sys) | Avg cores | Peak RSS, all processes summed | Largest process | Output |
+|---|---|---|---|---|---|---|---|
+| H.264 | 1 | 270 s | 215 | 0.80 | 1.76 GiB | 704 MiB | 26.0 MB |
+| H.264 | 2 | 183 s | 213 | 1.16 | 1.78 GiB | 704 MiB | 26.0 MB |
+| H.264 | 3 | 163 s | 218 | 1.34 | 1.73 GiB | 705 MiB | 26.0 MB |
+| ProRes 422 (standard) | 2 | 203 s | 337 | 1.66 | 1.23 GiB | 206 MiB | 485 MB |
+| ProRes 422 HQ | 2 | 211 s | 368 | 1.74 | 1.22 GiB | 218 MiB | 716 MB |
+
+Six more H.264 runs (three overlapping another run for about 10 minutes, so their wall times are inflated) gave 207 to 214 CPU s each: CPU cost is the same at any concurrency, only wall time falls. RSS is summed over every process, so shared pages count more than once; it stays near 1.8 GiB at any concurrency.
+
+- **Reading it.** An H.264 export of a 30 s 1080p cut is about 212 CPU s (about 7 CPU minutes per finished minute). On the worker's 3 vCPU with nothing else running that is an estimated 70 s plus about 10 s start-up (not measured: the server was never quiet). ProRes costs about 1.6x the CPU of H.264 and is 19x to 28x larger.
+- **Cost, with the assumption.** Droplet 8 vCPU / 32 GB at about US$192 a month (docs/scale-out-runbook.md section 7, shared CPU; the owner can give the exact plan), which is US$0.0329 per vCPU-hour. H.264, 30 s: US$0.0019 (US$0.0039 per finished minute). ProRes 422: US$0.0031 (US$0.0062 per minute); HQ: US$0.0034 (US$0.0067). By wall-time share of the droplet on the 3-vCPU worker: about US$0.003 per H.264 export. R2 storage about US$0.015 per GB-month, downloads free: 26 MB H.264 is US$0.0004 a month, 485 MB ProRes US$0.0073, 716 MB ProRes HQ US$0.0107. Exports are free to customers (0 cr).
+- **ProRes.** Remotion's option is `proResProfile`; the profile name for ProRes 422 is `standard` (HQ is the default if the name is not recognised). Remotion's own ffmpeg has `prores_ks`. The cli and renderer hard-code H.264, so ProRes needs a spec field (PR in the Slice 1 list). A 485 to 716 MB output does not fit the worker's 1 GB session tmpfs beside the inputs.
+- **DNxHR.** Not timed: the ffmpeg pinned inside Remotion has no DNxHD encoder, so DNxHR needs a different ffmpeg in the image (a licence and image-size question for the owner's lawyer). **H.265 stays off** (libx265 is present in that ffmpeg; owner: until the lawyer answers).
+- **Chrome download.** The first runs downloaded Chrome Headless Shell (92 MB, from remotion.media) into the scratch folder, because a session folder has no `package.json` to hold it. Later runs set `REMOTION_BROWSER_EXECUTABLE` to the copy already on disk. The worker image installs it at build time, so the sealed worker never downloads anything.
+- **Not yet set from these numbers:** the worker CPU and memory limits (the plan's 3 vCPU / 6 to 8 GB starting point has room: memory peaks near 1.8 GiB), the concurrency (2 is a good default), the per-run deadline, and the per-workspace limits.
+
 ## PRs (in order; each small, with tests; NEEDS AKSHAY)
 1. **`remotion/` compositions plus unit and render tests** (no app wiring). Mocked inputs. Snapshot frames at fixed times.
 2. **`ops/remotion-worker/`**: Dockerfile, server, compose, smoke, README with the click list, tests with a fake renderer. No app wiring.
