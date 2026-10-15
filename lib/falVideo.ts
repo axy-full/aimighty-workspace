@@ -168,6 +168,8 @@ export async function submitFalVideo(opts: Parameters<typeof buildFalInput>[0]):
 export function falVideoCostUsd(modelId: string, p: FalVideoParams & { task?: string }): number | null {
   const est = estimateCostUsd(modelId, String(p.resolution ?? "1080p"), String(p.ratio ?? "16:9"), Number(p.duration ?? 0), 0, false, {
     audio: Boolean(p.generateAudio), task: p.task as TaskId | undefined, fps60: Boolean(p.fps60),
+    /* A finished take is priced from its own recorded parameters, whatever a gated model's switch says now. */
+    settle: true,
   });
   return est ? est.net : null;
 }

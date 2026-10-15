@@ -148,6 +148,15 @@ async function listWorkspaces(ids: string[]): Promise<() => Promise<void>> {
 const KLING4 = "fal-ai/kling-video/v4/pro";
 const KLING3_PRO = "fal-ai/kling-video/v3/pro";
 test.afterEach(() => { delete process.env.KLING4_ENABLED; });
+/**
+ * Stands in for the lead's confirmation: the row ships `confirmed: false` (Kling 4.0 is not on fal as of 16 Oct 2026), and these tests exercise what happens once it is true. It is put back after.
+ */
+async function whileConfirmed<T>(fn: () => Promise<T>): Promise<T> {
+  const { GATED_VENDOR_RATES } = await import("../../lib/vendorRates");
+  const was = GATED_VENDOR_RATES[KLING4].confirmed;
+  GATED_VENDOR_RATES[KLING4].confirmed = true;
+  try { return await fn(); } finally { GATED_VENDOR_RATES[KLING4].confirmed = was; }
+}
 
 test("Kling 4.0 resolves on fal, gated by KLING4_ENABLED, and is in no list that walks the registry; Kling 3.0 and 3.0 Pro are as they were", async () => {
   const { MODELS, GATED_MODELS, getModel, findModel, isOffered, offeredModels, displayModelName } = await import("../../lib/models");
@@ -176,17 +185,62 @@ test("Kling 4.0 resolves on fal, gated by KLING4_ENABLED, and is in no list that
   expect(engineLabel(KLING4)).toEqual({ short: "K 4.0", long: "Kling 4.0" });
 });
 
-test("the Kling 4.0 rate is a placeholder marked TO CONFIRM (the plan holds none), equal to 3.0 Pro's, and prices a five-second clip per second", async () => {
+test("the Kling 4.0 rate is a placeholder marked TO CONFIRM (the plan holds none), equal to 3.0 Pro's; a finished take is priced from its own parameters per second", async () => {
   const { estimateCostUsd } = await import("../../lib/vendorPricing");
-  const at = (id: string, audio: boolean) => estimateCostUsd(id, "1080p", "16:9", 5, 0, false, { audio, task: "generate" })?.net;
+  const at = (id: string, audio: boolean) => estimateCostUsd(id, "1080p", "16:9", 5, 0, false, { audio, task: "generate", settle: true })?.net;
   expect(at(KLING4, true)).toBeCloseTo(0.168 * 5, 6);
   expect(at(KLING4, false)).toBeCloseTo(0.112 * 5, 6);
   expect(at(KLING4, true)).toBe(at(KLING3_PRO, true));
   const rates = readFileSync("lib/vendorRates.ts", "utf8");
-  expect(rates).toMatch(/Kling 4\.0 on fal\. \*\*TO CONFIRM, and a PLACEHOLDER: the plan[\s\S]{0,700}"fal-ai\/kling-video\/v4\/pro": \{/);
+  expect(rates).toMatch(/Kling 4\.0 on fal\. \*\*TO CONFIRM, and a PLACEHOLDER: the plan[\s\S]{0,900}"fal-ai\/kling-video\/v4\/pro": \{/);
   const models = readFileSync("lib/models.ts", "utf8");
   expect(models).toMatch(/TO\s+\* CONFIRM against fal's own listing before KLING4_ENABLED is set/);
 });
+
+test("no price without the switch AND the confirmation: the quote helpers (the planned budget, the preview batch, any estimate) return none for Kling 4.0 for a customer who names the id, for an unconfirmed row even for the house, and a finished take is still priced", async () => scope("k4-price", async () => {
+  const { estimateCostUsd } = await import("../../lib/vendorPricing");
+  const { plannedTakeUsd } = await import("../../lib/shotBudgetCost");
+  const { previewPlan } = await import("../../lib/previewCost");
+  const { falVideoCostUsd } = await import("../../lib/falVideo");
+  const { modelGateClosed } = await import("../../lib/modelGate");
+  const { requireTenant } = await import("../../lib/tenant");
+  const quote = () => estimateCostUsd(KLING4, "1080p", "16:9", 5, 0, false, { audio: true, task: "generate" });
+  const none = () => {
+    expect(quote()).toBeNull();
+    expect(plannedTakeUsd(5, KLING4)).toBe(0);
+    expect(previewPlan(KLING4, "1080p", 5).perClipUsd).toBe(0);
+  };
+  /* A settled take is priced from its own recorded parameters in every state below. */
+  const settled = () => expect(falVideoCostUsd(KLING4, { resolution: "1080p", ratio: "16:9", duration: 5, generateAudio: true, watermark: false })).toBeCloseTo(0.84, 6);
+  /* Nobody has asked the gate: no price, and the catalogue's other models are unaffected. */
+  none(); settled();
+  expect(estimateCostUsd(KLING3_PRO, "1080p", "16:9", 5, 0, false, { audio: true, task: "generate" })?.net).toBeCloseTo(0.84, 6);
+  /* The row is unconfirmed as it ships: switch on and the workspace listed, still no price. */
+  process.env.KLING4_ENABLED = "1";
+  const restore = await listWorkspaces([requireTenant().id]);
+  try {
+    expect(await modelGateClosed(KLING4)).toBe("Kling 4.0 isn't available yet.");
+    none(); settled();
+    await whileConfirmed(async () => {
+      /* Confirmed and listed, switch on: priced, for this workspace in this request. */
+      expect(await modelGateClosed(KLING4)).toBeNull();
+      expect(quote()?.net).toBeCloseTo(0.84, 6);
+      expect(plannedTakeUsd(5, KLING4)).toBeCloseTo(0.56, 6);
+      expect(previewPlan(KLING4, "1080p", 5).perClipUsd).toBeGreaterThan(0);
+      settled();
+      /* The switch off again: the next time the gate is asked, no price. */
+      delete process.env.KLING4_ENABLED;
+      expect(await modelGateClosed(KLING4)).toBe("There is no such model here.");
+      none(); settled();
+    });
+  } finally { await restore(); }
+  /* A customer workspace that is not listed names the id with the switch on and the row confirmed: no price. */
+  process.env.KLING4_ENABLED = "1";
+  await whileConfirmed(async () => {
+    expect(await modelGateClosed(KLING4)).toBe("There is no such model here.");
+    none(); settled();
+  });
+}));
 
 test("the browser's rate table carries the Kling 4.0 rate only while its switch is open for the workspace; the catalogue's table is unchanged", async () => {
   const { buildRateTable } = await import("../../lib/rateTable.server");
@@ -211,7 +265,7 @@ test("it goes to the fal endpoint it is declared at, by the same rule as Kling 3
   expect(falEndpointFor(getModel(KLING3_PRO), "generate", false)).toBe("fal-ai/kling-video/v3/pro/text-to-video");
 });
 
-test("the gate: closed unless the switch is exactly 1 AND the workspace is the house or listed; models without a gate are never gated", async () => scope("k4-gate", async () => {
+test("the gate (once the row is confirmed): closed unless the switch is exactly 1 AND the workspace is the house or listed; models without a gate are never gated", async () => scope("k4-gate", async () => whileConfirmed(async () => {
   const { openGates, openGatedModels, modelGateClosed, GATE_CLOSED } = await import("../../lib/modelGate");
   const { requireTenant } = await import("../../lib/tenant");
   const customer = requireTenant().id;
@@ -243,9 +297,9 @@ test("the gate: closed unless the switch is exactly 1 AND the workspace is the h
   expect(await modelGateClosed(KLING3_PRO)).toBeNull();
   expect(await modelGateClosed("not-a-model")).toBeNull();
   expect(await modelGateClosed(null)).toBeNull();
-}));
+})));
 
-test("admission: closed, a Kling 4.0 request is refused before anything is priced, held, written or sent; open (listed), it is quoted like any fal clip; Kling 3.0 Pro is unaffected", async () => scope("k4-admission", async (service) => {
+test("admission (once the row is confirmed): closed, a Kling 4.0 request is refused before anything is priced, held, written or sent; open (listed), it is quoted like any fal clip; Kling 3.0 Pro is unaffected", async () => scope("k4-admission", async (service) => whileConfirmed(async () => {
   const { requireTenant } = await import("../../lib/tenant");
   const body = { model: KLING4, prompt: "raw: A street", resolution: "1080p", ratio: "16:9", duration: 5, projectId: "project" };
   delete process.env.KLING4_ENABLED;
@@ -272,7 +326,40 @@ test("admission: closed, a Kling 4.0 request is refused before anything is price
   expect(await rows()).toHaveLength(0);
   expect(await meters()).toHaveLength(0);
   expect(dispatched).toHaveLength(0);
+})));
+
+test("unconfirmed: Kling 4.0 is not on fal as of 16 Oct 2026, so its row is confirmed:false and it cannot be listed or asked for even with KLING4_ENABLED=1, for the house or a listed workspace", async () => scope("k4-unconfirmed", async (service) => {
+  const { GATED_VENDOR_RATES } = await import("../../lib/vendorRates");
+  const { modelGateClosed, openGatedModels, openGates, isConfirmed, unavailableYet } = await import("../../lib/modelGate");
+  const { requireTenant } = await import("../../lib/tenant");
+  expect(GATED_VENDOR_RATES[KLING4].confirmed).toBe(false);
+  expect(isConfirmed(KLING4)).toBe(false);
+  expect(unavailableYet(KLING4)).toBe("Kling 4.0 isn't available yet.");
+  const body = { model: KLING4, prompt: "raw: A street", resolution: "1080p", ratio: "16:9", duration: 5, projectId: "project" };
+  const restore = await listWorkspaces([requireTenant().id]);
+  try {
+    for (const switchValue of [undefined, "0", "1"]) {
+      if (switchValue === undefined) delete process.env.KLING4_ENABLED; else process.env.KLING4_ENABLED = switchValue;
+      /* The house and a listed workspace alike. */
+      expect(await modelGateClosed(KLING4, { id: "ws_legacy" }), String(switchValue)).toBe("Kling 4.0 isn't available yet.");
+      expect(await modelGateClosed(KLING4), String(switchValue)).toBe("Kling 4.0 isn't available yet.");
+      expect(await openGatedModels({ id: "ws_legacy" })).toEqual([]);
+      expect(await openGatedModels()).toEqual([]);
+      expect([...(await openGates())]).toEqual([]);
+    }
+    process.env.KLING4_ENABLED = "1";
+    const refused = await service.gen.prepareGeneration(body, actor);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) { expect(refused.status).toBe(404); expect(refused.body.error).toBe("Kling 4.0 isn't available yet."); }
+    expect(await rows()).toHaveLength(0);
+    expect(await meters()).toHaveLength(0);
+    expect(dispatched).toHaveLength(0);
+    /* Kling 3.0 Pro is unaffected. */
+    expect((await service.gen.prepareGeneration({ ...body, model: KLING3_PRO }, actor)).ok).toBe(true);
+  } finally { await restore(); }
 }));
+
+const gate0 = () => readFileSync("lib/modelGate.ts", "utf8");
 
 test("structure: the gate is checked in admission before the identity, the price and the reservation; the two composer lists add the model only through openGatedModels; the registry's own lists never hold it", () => {
   const admission = readFileSync("lib/generationAdmission.ts", "utf8");
@@ -286,6 +373,10 @@ test("structure: the gate is checked in admission before the identity, the price
   /* The registry array itself carries no gated model, so a list that walks it cannot offer one. */
   const models = readFileSync("lib/models.ts", "utf8");
   expect(models.slice(0, models.indexOf("export const GATED_MODELS"))).not.toContain("gate:");
+  /* The placeholder is unconfirmed in the code that ships, and the gate reads that before the switch. */
+  expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/Kling 4\.0 is not on fal as of 16 Oct 2026[\s\S]{0,500}confirmed: false,/);
+  expect(gate0()).toMatch(/if \(!isConfirmed\(model\.id\)\) return unavailableYet\(model\.id\);\s+return/);
+  expect(gate0()).toContain("m.gate && isConfirmed(m.id)");
   /* One new setting, the plan's own name; no other. */
   const gate = readFileSync("lib/modelGate.ts", "utf8");
   expect([...gate.matchAll(/process\.env\.([A-Z_0-9]+)/g)].map((m) => m[1])).toEqual([]);

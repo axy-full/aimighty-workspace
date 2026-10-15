@@ -590,7 +590,8 @@ export const GATED_MODELS: ModelDef[] = [
    * Kuaishou's next engine, reached the way Kling 3.0 is: on fal, the platform's FAL_KEY, billed per second of output, the same task shape (text-to-video, a first
    * frame makes it image-to-video). **The plan (docs/plans/provider-adapters.md, L1) says "Kling 4.0 on fal the day it is live (3.0 Pro until then)" and holds no
    * endpoint, no rate and no schema for it: the endpoint below, its rates (lib/vendorRates.ts) and the assumption that it takes Kling 3.0's request fields are all TO
-   * CONFIRM against fal's own listing before KLING4_ENABLED is set.** Off by default and for every customer workspace: it is in no offer list and admission
+   * CONFIRM against fal's own listing before KLING4_ENABLED is set.** **Kling 4.0 is not on fal as of 16 Oct 2026** (fal lists v3, v3 Turbo and O3): the row is `confirmed: false`
+   * in GATED_VENDOR_RATES and cannot be listed or asked for until the lead flips it. Off by default and for every customer workspace: it is in no offer list and admission
    * refuses it until the switch is open (`gate`).
    * ------------------------------------------------------------------ */
   {

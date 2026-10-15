@@ -30,9 +30,9 @@ export function listRate(
 
 export function perSecondRate(
   modelId: string, resolution: string,
-  opts: { audio?: boolean; task?: TaskId | string; fps60?: boolean } = {}
+  opts: { audio?: boolean; task?: TaskId | string; fps60?: boolean; settle?: boolean } = {}
 ): number | null {
-  const m = ratesFor(modelId);
+  const m = ratesFor(modelId, opts.settle === true);
   if (!m?.secondRates?.length) return null;
   const tier = m.secondRates.find((t) => t.resolutions.includes(resolution.toLowerCase())) ?? m.secondRates[0];
   const taskRate = opts.task && opts.task !== "generate" ? m.taskRates?.[opts.task as TaskId] : undefined;
@@ -43,7 +43,7 @@ export function perSecondRate(
 export function estimateCostUsd(
   modelId: string, resolution: string, ratio: string, duration: number,
   inputSeconds = 0, hasVideoInput = false,
-  opts: { audio?: boolean; task?: TaskId | string; fps60?: boolean } = {}
+  opts: { audio?: boolean; task?: TaskId | string; fps60?: boolean; settle?: boolean } = {}
 ): { list: number; net: number } | null {
   /* Per-second engines: the rate times the seconds, and nothing to guess. */
   const perSecond = perSecondRate(modelId, resolution, opts);
