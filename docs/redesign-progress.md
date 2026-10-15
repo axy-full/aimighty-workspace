@@ -902,3 +902,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - The S3 allow-list is narrowed to buckets containing "topaz" (TO CONFIRM).
   - 28 new specs; a production build plus bundle.spec pass.
   - Opus money review started.
+- **16 Oct 02:53 IST.** #779 Veo at f9285327: billed length is ceil(measured − 0.05 s), capped by the quote (lead accepted the 0.05 s container tolerance). #778 84245fe2 merged in. Ask with images now files a prepared job with ids only. Opus delta check queued. Lane D next: the Cloud Vision label check (Slice 3).
