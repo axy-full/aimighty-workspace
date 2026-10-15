@@ -16,8 +16,8 @@ export type RunBehaviour = {
   mp4?: Buffer | null;
   /** The text of each subtitle file the request asked for (by format); a default line otherwise. */
   subtitles?: Partial<Record<"srt" | "vtt", Buffer | null>>;
-  /** Sent as the video's length when it is read; false leaves the header out. */
-  contentLength?: boolean;
+  /** Sent as the video's length when it is read: false leaves the header out, a number states that length whatever the body is. */
+  contentLength?: boolean | number;
   /** Runs inside the run call, before it answers. A promise that does not settle holds the run until the session is deleted. */
   during?: (session: { name: string; spec: Record<string, unknown> | null; files: string[] }) => Promise<void> | void;
   /** Runs when an output is read. */
@@ -97,7 +97,7 @@ export function exportWorkerPool(origins: string[] = EXPORT_WORKER_URLS, secrets
       const path = url.searchParams.get("path")!;
       await behaviour.onRead?.(path);
       const file = held.files.get(path.startsWith(root) ? path.slice(root.length) : path);
-      return file ? new Response(new Uint8Array(file), { status: 200, headers: behaviour.contentLength === false ? {} : { "content-length": String(file.length) } }) : reply(404);
+      return file ? new Response(new Uint8Array(file), { status: 200, headers: behaviour.contentLength === false ? {} : { "content-length": String(typeof behaviour.contentLength === "number" ? behaviour.contentLength : file.length) } }) : reply(404);
     }
     return reply(404);
   };

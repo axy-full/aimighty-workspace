@@ -8,7 +8,8 @@ export const CONFORM_VALUES = ["auto", "off"] as const;
 export type ConformValue = (typeof CONFORM_VALUES)[number];
 
 export type OutputOptions = { format: VideoFormat; subtitles: SubtitleFormat[]; conform: ConformValue };
-export const DEFAULT_OUTPUT: OutputOptions = Object.freeze({ format: "h264", subtitles: Object.freeze([]) as unknown as SubtitleFormat[], conform: "auto" }) as OutputOptions;
+/** Conform is off by default (the worker's default too; the owner can turn it on). */
+export const DEFAULT_OUTPUT: OutputOptions = Object.freeze({ format: "h264", subtitles: Object.freeze([]) as unknown as SubtitleFormat[], conform: "off" }) as OutputOptions;
 
 export function parseOutputOptions(value: unknown): { ok: true; value: OutputOptions } | { ok: false; errors: string[] } {
   if (value === undefined || value === null) return { ok: true, value: { ...DEFAULT_OUTPUT, subtitles: [] } };
@@ -29,7 +30,7 @@ export function parseOutputOptions(value: unknown): { ok: true; value: OutputOpt
     if (!asked || asked.length === 0 || asked.some((f) => !(SUBTITLE_FORMATS as readonly string[]).includes(f))) errors.push(`output.subtitles: must be a list of ${SUBTITLE_FORMATS.join(" and/or ")}`);
     else subtitles = asked as SubtitleFormat[];
   }
-  let conform: ConformValue = "auto";
+  let conform: ConformValue = "off";
   if (rec.conform !== undefined) {
     const asked = typeof rec.conform === "string" ? rec.conform.trim().toLowerCase() : "";
     if (!(CONFORM_VALUES as readonly string[]).includes(asked)) errors.push(`output.conform: must be ${CONFORM_VALUES.join(" or ")}`);

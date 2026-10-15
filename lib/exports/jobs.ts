@@ -3,7 +3,7 @@ import type { Client } from "@libsql/client";
 import { db } from "../db";
 import { requireTenant } from "../tenant";
 import { checkQuota } from "../limits";
-import { storeUpload, storeUploadStream } from "../storage";
+import { deleteUpload, storeUpload, storeUploadStream } from "../storage";
 import { workbenchTransaction } from "../workbench/records";
 import { EVENTS } from "../dispatch";
 import { liveSlots } from "../worker-slots";
@@ -11,7 +11,7 @@ import { toTimeline, ExportTooLong } from "../../remotion/src/lib/timeline";
 import { validateProps } from "../../remotion/src/lib/validate";
 import type { CompositionId } from "../../remotion/src/lib/types";
 import { FORMAT_FILE, SUBTITLE_FILE, isProRes } from "../../remotion/src/lib/types";
-import { DEFAULT_LIMITS as TEMPLATE_LIMITS } from "../../remotion/src/lib/limits";
+import { PRORES_MAX_FRAMES } from "../../remotion/src/lib/limits";
 import { DEFAULT_OUTPUT, parseOutputOptions, type OutputOptions } from "../../remotion/src/lib/output";
 import { subtitleCuesOf } from "../../remotion/src/lib/subtitles";
 import {
@@ -248,18 +248,22 @@ export async function createExport(
   const checked = validateProps(input.composition, bound.props);
   if (!checked.ok) throw new ExportError(`The export request is not valid. ${checked.errors.slice(0, 4).join(" ")}`.slice(0, 600), 400);
   let seconds: number;
+  let frames: number;
+  let rate: number;
   let cueCount: number;
   try {
     const timeline = toTimeline(input.composition, checked.value as never);
     seconds = timeline.durationInFrames / timeline.fps;
+    frames = timeline.durationInFrames;
+    rate = timeline.fps;
     cueCount = subtitleCuesOf(timeline).length;
   } catch (error) {
     if (error instanceof ExportTooLong) throw new ExportError(`${error.message} Make it shorter.`, 413);
     throw new ExportError(error instanceof Error ? error.message : "The export request is not valid.", 400);
   }
-  /* A ProRes file is large (about 16 MB a second at 422, 24 at HQ), so it is held to a shorter length than H.264; the worker enforces the same limit. */
-  if (isProRes(output.format) && seconds > TEMPLATE_LIMITS.maxProResSeconds) {
-    throw new ExportError(`A ProRes export can be at most ${TEMPLATE_LIMITS.maxProResSeconds} s; this one is ${seconds.toFixed(1)} s. Use H.264 for a longer one.`, 413);
+  /* A ProRes file is large (about 0.5 to 0.8 MB a frame), so it is held to the worker's own constant: 1800 frames (60 s at 30 fps, 30 s at 60 fps). The words are the worker's. */
+  if (isProRes(output.format) && frames > PRORES_MAX_FRAMES) {
+    throw new ExportError(`A ProRes export can be at most ${PRORES_MAX_FRAMES} frames (60 s at 30 fps, 30 s at 60 fps); this one is ${frames} frames (${seconds.toFixed(1)} s at ${rate} fps). Use H.264 for a longer one.`, 413);
   }
   if (output.subtitles.length && cueCount === 0) throw new ExportError("The export request is not valid. output.subtitles: the export has no caption text (no cues) to write.", 400);
   const spec: StoredSpec = { composition: input.composition, props: checked.value as unknown as Record<string, unknown>, media: bound.media, output };
@@ -479,8 +483,9 @@ export async function runExport(id: string, deps: ExportDeps = {}): Promise<"bus
       return undefined;
     }
     const savedVideo = await saveVideo(row, video, options.format, file, clock);
-    if (savedVideo.bytes < 16) {
-      await end((await record(id))!, "failed", failure("The export finished without a file."), clock);
+    if ("rejected" in savedVideo) {
+      /* Nothing is kept: the object is removed and no row is written. Nothing billed. */
+      await end((await record(id))!, "failed", failure(savedVideo.rejected === "short" ? "The export finished without a file." : "The export file did not arrive whole."), clock);
       return undefined;
     }
     outputs.push(savedVideo);
@@ -509,11 +514,26 @@ export async function runExport(id: string, deps: ExportDeps = {}): Promise<"bus
   return undefined;
 }
 
-/** The video, streamed from the worker into the workspace's own storage: a ProRes file can be over a gigabyte and is never held in memory. */
-async function saveVideo(row: Row, video: { stream: ReadableStream<Uint8Array>; size: number | null }, format: OutputOptions["format"], file: { name: string; mime: string }, clock: () => number): Promise<ExportOutput> {
+/**
+ * The video, streamed from the worker into the workspace's own storage: a ProRes file can be over a gigabyte and is never held in
+ * memory. What arrived is checked before anything is recorded: the bytes stored must be the length the worker declared, and at least
+ * a header's worth. A file that is short, cut off or empty is removed from storage and no upload row is written for it.
+ */
+async function saveVideo(row: Row, video: { stream: ReadableStream<Uint8Array>; size: number | null }, format: OutputOptions["format"], file: { name: string; mime: string }, clock: () => number): Promise<ExportOutput | { rejected: "short" | "cut" }> {
   const ext = file.name.slice(file.name.lastIndexOf(".") + 1);
   const uploadId = `${row.id}_video`;
-  const stored = await storeUploadStream(uploadId, ext, video.stream, file.mime, video.size === null ? OUTPUT_LIMIT : Math.min(OUTPUT_LIMIT, video.size + 1024));
+  let stored: { url: string; sha256: string; bytes: number };
+  try {
+    stored = await storeUploadStream(uploadId, ext, video.stream, file.mime, video.size === null ? OUTPUT_LIMIT : Math.min(OUTPUT_LIMIT, video.size + 1024));
+  } catch (error) {
+    await deleteUpload(uploadId, ext, "").catch(() => {});
+    throw error;
+  }
+  const rejected = stored.bytes < 16 ? "short" : video.size !== null && stored.bytes !== video.size ? "cut" : null;
+  if (rejected) {
+    await deleteUpload(uploadId, ext, stored.url).catch(() => {});
+    return { rejected };
+  }
   const filename = `export-${row.id.slice(7, 15)}${format === "h264" ? "" : format === "prores-422-hq" ? "-prores-hq" : "-prores"}.${ext}`;
   await db().execute({
     sql: `INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,kind,duration_s,created_at,uploader_id) VALUES(?,?,?,?,?,?,NULL,NULL,?,?,NULL,?,?) ON CONFLICT(id) DO NOTHING`,

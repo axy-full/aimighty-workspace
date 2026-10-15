@@ -47,7 +47,7 @@ async function setup(name: string) {
 }
 
 test("the options: H.264 by default, ProRes 422 or HQ, subtitles srt and/or vtt, conform auto or off; H.265 and everything else is refused", () => {
-  expect(parseOutputOptions(undefined)).toEqual({ ok: true, value: { format: "h264", subtitles: [], conform: "auto" } });
+  expect(parseOutputOptions(undefined)).toEqual({ ok: true, value: { format: "h264", subtitles: [], conform: "off" } });
   expect(parseOutputOptions({ format: "PRORES-422-HQ", subtitles: ["SRT", "vtt", "srt"], conform: "off" })).toEqual({ ok: true, value: { format: "prores-422-hq", subtitles: ["srt", "vtt"], conform: "off" } });
   for (const name of ["h265", "H.265", "hevc", " HEVC ", "x265", "h265-mp4"]) expect(parseOutputOptions({ format: name })).toEqual({ ok: false, errors: ["output.format: H.265 is not available."] });
   expect(parseOutputOptions({ format: "gif", subtitles: ["ass"], conform: "always", extra: 1 })).toEqual({ ok: false, errors: ["output.extra: is not allowed", "output.format: must be one of h264, prores-422, prores-422-hq", "output.subtitles: must be a list of srt and/or vtt", "output.conform: must be auto or off"] });
@@ -74,7 +74,7 @@ test("an unwanted request is refused before anything is stored: H.265, an unknow
   expect(await bad({ subtitles: ["srt"] }, { clip: { source: { take: "take_one", hasAudio: true }, cues: [] } })).toMatchObject({ status: 400, message: expect.stringContaining("no caption text") });
   /* 70 s: the take is 10 s in the resolver above, so use a final of seven clips */
   const final = (output: unknown) => m.createExport({ requestId: "request-long-0001", composition: "final", props: { aspect: "16:9", scale: 0.25, clips: Array.from({ length: 7 }, () => ({ source: { take: "take_one", hasAudio: true } })) }, output: output as Record<string, unknown> }, { id: "u_test" }, m.deps()).then(() => null, (error) => error as { message: string; status: number });
-  expect(await final({ format: "prores-422" })).toMatchObject({ status: 413, message: "A ProRes export can be at most 60 s; this one is 70.0 s. Use H.264 for a longer one." });
+  expect(await final({ format: "prores-422" })).toMatchObject({ status: 413, message: "A ProRes export can be at most 1800 frames (60 s at 30 fps, 30 s at 60 fps); this one is 2100 frames (70.0 s at 30 fps). Use H.264 for a longer one." });
   expect((await m.db().execute("SELECT COUNT(*) AS n FROM export_jobs")).rows[0].n).toBe(0);
 }));
 
@@ -96,7 +96,7 @@ test("a ProRes export: the worker is told the format, the .mov is streamed into 
   expect(job.outputs[0]).toMatchObject({ kind: "video", format: "prores-422", mime: "video/quicktime", bytes: 5000, url: `/api/uploads/${created.job.id}_video` });
   expect(job.outputs[0].filename).toMatch(/^export-[a-f0-9]{8}-prores\.mov$/);
   const spec = JSON.parse(m.pool.calls.find((call) => call.query?.endsWith("spec.json"))!.body!.toString());
-  expect(spec.output).toEqual({ video: true, format: "prores-422", conform: "auto" });
+  expect(spec.output).toEqual({ video: true, format: "prores-422", conform: "off" });
   const upload = (await m.db().execute({ sql: "SELECT mime, ext, bytes, kind, sha256, stored_url FROM uploads WHERE id=?", args: [`${created.job.id}_video`] })).rows[0];
   expect([upload.mime, upload.ext, Number(upload.bytes), upload.kind]).toEqual(["video/quicktime", "mov", 5000, "video"]);
   expect(String(upload.stored_url).startsWith(`ws/${m.ws.id}/uploads/`)).toBe(true);
@@ -190,3 +190,37 @@ test("an outside agent can ask for the options over MCP: output goes to the same
   expect(tool.description).toMatch(/voiceover/);
   expect(tool.description).toMatch(/keep-speech/);
 });
+
+test("the ProRes limit is the worker's: 1800 frames, so the same words, 60 s at 30 fps and 30 s at 60 fps, and a higher frame rate cannot get round it", async () => context("frames", async (m) => {
+  const clips = (n: number) => Array.from({ length: n }, () => ({ source: { take: "take_one", hasAudio: true } }));
+  const ask = (id: string, n: number, fps: number) => m.createExport({ requestId: id, composition: "final", props: { aspect: "16:9", fps, scale: 0.25, clips: clips(n) }, output: { format: "prores-422" } }, { id: "u_test" }, m.deps()).then((r) => r.job.id, (e: { status: number; message: string }) => `${e.status}: ${e.message}`);
+  expect(String(await ask("request-frames-001", 6, 30))).toMatch(/^export_/);
+  expect(String(await ask("request-frames-002", 3, 60))).toMatch(/^export_/);
+  expect(await ask("request-frames-003", 4, 60)).toBe("413: A ProRes export can be at most 1800 frames (60 s at 30 fps, 30 s at 60 fps); this one is 2400 frames (40.0 s at 60 fps). Use H.264 for a longer one.");
+  const worker = checkSpec({ version: 1, composition: "final", props: { aspect: "16:9", fps: 60, scale: 0.25, title: null, end: null, music: null, captionStyle: null, clips: Array.from({ length: 4 }, () => ({ source: { file: "a.mp4", durationSeconds: 10, width: 1920, height: 1080, hasAudio: true }, cues: [], reframe: { mode: "fill", focusX: 0.5, focusY: 0.5 } })) }, output: { format: "prores-422" } });
+  expect((worker as { errors: string[] }).errors[0]).toBe("A ProRes export can be at most 1800 frames (60 s at 30 fps, 30 s at 60 fps); this one is 2400 frames (40.0 s at 60 fps). Use H.264 for a longer one.");
+}));
+
+test("a file that arrives cut short (fewer bytes than the worker declared) or empty is not kept: the object is removed, no upload row is written, and the job fails with Nothing billed", async () => context("cut", async (m) => {
+  const stored = (id: string) => (async () => (await m.db().execute({ sql: "SELECT COUNT(*) AS n FROM uploads WHERE id LIKE ?", args: [`${id}%`] })).rows[0].n)();
+  const cut = await m.createExport(request("request-cut-0000001", { format: "prores-422" }), { id: "u_test" }, m.deps());
+  m.pool.behave({ mp4: Buffer.alloc(5000, 9), contentLength: 9000 });
+  await m.runExport(cut.job.id, m.deps());
+  expect(await m.getExport("u_test", cut.job.id, m.deps())).toMatchObject({ status: "failed", outputs: [], error: "The export file did not arrive whole. Nothing billed." });
+  expect(await stored(cut.job.id)).toBe(0);
+  const short = await m.createExport(request("request-cut-0000002"), { id: "u_test" }, m.deps());
+  m.pool.behave({ mp4: Buffer.alloc(8, 1), contentLength: false });
+  await m.runExport(short.job.id, m.deps());
+  expect(await m.getExport("u_test", short.job.id, m.deps())).toMatchObject({ status: "failed", error: "The export finished without a file. Nothing billed." });
+  expect(await stored(short.job.id)).toBe(0);
+}));
+
+test("a save that never finished (the function was cut off mid-save) is ended by recovery: failed, Nothing billed, its worker session stopped", async () => context("savecut", async (m) => {
+  const created = await m.createExport(request("request-save-000001", { format: "prores-422" }), { id: "u_test" }, m.deps());
+  const name = "remotion-export-01234567-89ab-cdef-0123-456789abcdef";
+  await m.db().execute({ sql: "UPDATE export_jobs SET status='saving', runtime_id=?, claimed_at=? WHERE id=?", args: [name, 1_000, created.job.id] });
+  const before = m.pool.calls.length;
+  await m.recoverExports({ deadlineAt: Date.now() + 100_000 }, { ...m.deps(), clock: () => 3 * 60 * 60_000, enqueue: async () => true });
+  expect(await m.getExport("u_test", created.job.id, m.deps())).toMatchObject({ status: "failed", error: "The export did not finish. Nothing billed." });
+  expect(m.pool.calls.slice(before).some((c) => c.method === "DELETE" && c.path.endsWith(name))).toBe(true);
+}));
