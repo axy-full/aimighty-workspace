@@ -706,3 +706,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #773: rounding can refuse an export whose speech runs to the end, and long talks get cut into slivers.
   - #772: no must-fix, but it can't land before #770.
   Injection, egress and env checks are clean across the stack. Lead decisions: limit ProRes to 1800 frames; make the ProRes cap a constant (no new env name); `output.conform` defaults to `off` until the owner says otherwise. All fixes sent to lane D.
+- **16 Oct 00:16 IST.** Opus review of the app-side export PRs. #766 and #774 APPROVED; #775 NOT APPROVED. 78/78 specs pass, and the money guard (export code can't reach the meter or ledger) is unchanged.
+  - #775 must-fix: the zip opens files lazily, so the workspace check doesn't run for the second and later files. Fix: open every file before streaming. A missing stored object would also give a truncated zip.
+  - #774 should-fixes: compare stored bytes with the worker's declared length; a ProRes save may not fit in what's left of the native route's 300 s.
+  - #766 should-fix: recovery of stuck jobs must depend only on the global switch.
+  - `lib/engineGate.ts` is byte-identical to #771's.
+  - Owner questions: (1) #766 edits three guard-type specs (demo-s15-guest-tenant, -guest-model, -admin-site). They are additions only (`enginesOnWorkspaces: []`) and tighter, but they need the owner's yes. (2) `enginesOnWorkspaces` is one list for every engine, so listing a workspace for exports also turns on the billed Rekognition consent check. Intended? (3) The list can only be changed via PATCH /api/admin/site, with no admin screen until launch.
+  Fixes queued to lane D after the worker stack.
