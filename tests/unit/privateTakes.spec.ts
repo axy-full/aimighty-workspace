@@ -93,7 +93,8 @@ test("GET /api/jobs: a private board's takes are its owner's and the workspace's
     return tenant.runInTenant(within, async () => (await route.GET(new Request(`https://particl.test/api/jobs${query}`), undefined as never)).json(), { user: actor.user, token: actor.token as never });
   };
   const everyone = [`${SHARED}-one`, `${SAMPLE}-one`, `${OPEN}-one`, `${FREE}-one`];
-  for (const actor of SEES_PRIVATE) expect(prompts(await list(actor)), actor.user.id).toEqual([`${PRIV}-two`, `${PRIV}-one`, ...everyone]);
+  expect(prompts(await list(OWNER))).toEqual([`${PRIV}-two`, `${PRIV}-one`, ...everyone]);
+  for (const actor of [ADMIN, WS_OWNER]) expect(prompts(await list(actor)), actor.user.id).toEqual(everyone);
   for (const actor of HIDDEN_FROM) {
     const body = await list(actor);
     expect(prompts(body), actor.user.id).toEqual(everyone);
@@ -247,10 +248,14 @@ test("GET /api/usage: a private board's render stays in the spend and loses its 
     expect(JSON.stringify(body), actor.user.id).not.toContain(PRIV);
     expect(body.recent.find((r: { credits: number }) => r.credits === 5), actor.user.id).toMatchObject({ id: `t_shared_${run}`, prompt: `${SHARED}-one` });
   }
-  for (const actor of SEES_PRIVATE) {
+  {
+    const recent = (await usage(OWNER)).recent;
+    expect(recent.find((r: { credits: number }) => r.credits === 12)!).toMatchObject({ id: `t_priv1_${run}`, prompt: `${PRIV}-one` });
+    expect(recent.find((r: { credits: number }) => r.credits === 7)!).toMatchObject({ id: `t_priv2_${run}`, prompt: `${PRIV}-two` });
+  }
+  for (const actor of [ADMIN, WS_OWNER]) {
     const recent = (await usage(actor)).recent;
-    expect(recent.find((r: { credits: number }) => r.credits === 12)!, actor.user.id).toMatchObject({ id: `t_priv1_${run}`, prompt: `${PRIV}-one` });
-    expect(recent.find((r: { credits: number }) => r.credits === 7)!, actor.user.id).toMatchObject({ id: `t_priv2_${run}`, prompt: `${PRIV}-two` });
+    for (const credits of [12, 7]) expect(recent.find((r: { credits: number }) => r.credits === credits)!, `${actor.user.id} ${credits}`).toMatchObject({ id: "", title: "A private board", prompt: "" });
   }
   /* Another workspace: its ledger has none of these. */
   const other = workspace(`pt-e2-${run}`);
