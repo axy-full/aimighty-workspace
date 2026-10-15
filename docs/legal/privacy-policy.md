@@ -10,10 +10,10 @@ Draft 0.1, 15 Oct 2026. Not live. The live page is `app/(app)/privacy/page.tsx` 
 
 ## 2. What we keep
 
-- **Account:** name, email, password hash; the 18+ confirmation with its date and the version of the Terms accepted [D1]; Google sign-in details if you use it.
+- **Account:** name, email, password hash; the 18+ confirmation with its date [D1]; Google sign-in details if you use it.
 - **Work:** prompts, references, takes and their masters, cast and identities, shots and projects.
 - **Records:** what was billed, in credits, and the engine's cost behind it, for our own books.
-- **Reports:** what a person sends at /report: a link or take id, what is wrong, and an email if they give one.
+- **Reports:** what a person sends at /report: a link or take id, what is wrong, and an email if they give one; a salted hash of the sender's IP address (used to limit repeat reports); and, if they are signed in, their account and workspace ids.
 - **Technical logs**, for a short while, to find faults. The product also records timings and ids (for example the time to a first render and where people stop), never prompt text [CLAUDE.md, rule 17].
 - **Faces and voices:** photos for an identity, voice recordings, the consent record, and where used the results of face matching (see section 4).
 - **Payments:** when online billing is live, the payment processor holds card details; we keep the invoice record. Planned.
@@ -26,7 +26,7 @@ To run the service you asked for; to bill; to keep it safe; to answer reports; t
 
 ## 4. Faces, voices and other special data
 
-Training an identity uses photos of a real person; the person in them must have agreed, and you confirm that when you train one [D3]. Voice work sends audio to the engines named below. Voice cloning is not offered now [D10]. Face matching with AWS Rekognition is planned and off today (REKOGNITION_ENABLED is not set in production, 15 Oct 19:30); the owner wants counsel before any customer switch [D10].
+Training an identity uses photos of a real person; the person in them must have agreed, and you confirm that when you train one [D3]. Voice work sends audio to the engines named below. Voice cloning is not offered now [D10]. Face matching with AWS Rekognition is planned and off today; the owner wants counsel before any customer switch [D10].
 [OWNER DECISION OD-P3: whether Rekognition's similarity scores are erased when a person withdraws consent. D10 lists this as a question "against never-delete". Options: (a) erase scores on withdrawal; (b) keep and say so.]
 ⚖ LAWYER L-P3: face and voice as biometric or sensitive data under Indian law (the DPDP Act has no separate sensitive class; check the IT Act's SPDI rules still in force), consent wording, withdrawal, retention, and transfer to US vendors [D10].
 
@@ -44,7 +44,7 @@ Each vendor gets only what it needs to do its job, and goes straight to that ven
 | Resend | Email | Your email address, for sign-in and invites | Live | live Privacy page |
 | Inngest | Background jobs | Identifiers of work to run, not prompts | Live | live Privacy page |
 | Liveblocks | Live team editing on a shared board | Board content shared in a live session | Live | live Privacy page |
-| Google (sign-in) | Sign in with Google | Your Google account identifier and email | Live | docs/redesign-plan.md › "Owner decision (Akshay, 12 Oct evening)" |
+| Google (sign-in) | Sign in with Google | Your Google account identifier and email | Live, but still in Google's Testing mode until the owner publishes it | docs/redesign-plan.md › "Owner decision (Akshay, 12 Oct evening)" |
 | Anthropic | Atomik's writing and planning | Your words to Atomik and files attached | Live | live Privacy page |
 | OpenAI | Stills; some of Atomik's writing | Prompts and reference images | Live | live Privacy page |
 | Google (Gemini) | Stills; some of Atomik's writing | Prompts and reference images | Live | live Privacy page |
@@ -73,7 +73,7 @@ Our promise: we do not train on your work [D5]. The engines receive prompts and 
 
 | Vendor | Recorded |
 |---|---|
-| Black Forest Labs | Training opt-out set in its dashboard (15 Oct 13:44) |
+| Black Forest Labs | Training opt-out set in its dashboard (15 Oct 13:45) |
 | sync.so | No training on our data, confirmed in writing; the letter is with company records, not in the repo (15 Oct 14:25) |
 | Sarvam | Retention set to 0 days (15 Oct 14:25) |
 | Topaz | Asked: no training on our uploads, how long it keeps files, delete its copy after we store the output. Not recorded as answered |

@@ -21,7 +21,7 @@ Particl is for film made with generative engines by working teams. This is what 
 
 ## 2. You are responsible
 
-You are responsible for what you generate and publish [D9]. Some engines' adjustable safety filters are set to their least restrictive level (Gemini: BLOCK_NONE on all four adjustable categories; Google's fixed filters stay) [D9]. So this policy, not the filters, is the control, and a report and takedown process is part of it.
+You are responsible for what you generate and publish [D9]. Gemini's adjustable safety filters are set to their least restrictive level (BLOCK_NONE on all four adjustable categories; Google's fixed filters stay) [D9; lib/geminiSafety.ts]. [OWNER DECISION OD-T17: whether to publish this setting at all; see Terms section 8.] So this policy, not the filters, is the control, and a report and takedown process is part of it.
 
 ## 3. What the engines refuse
 

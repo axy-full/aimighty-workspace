@@ -6,9 +6,9 @@ Draft 0.1, 15 Oct 2026. Not live. The live Terms page only says "Contact the pla
 
 Recorded: "Refund Policy (7 days if no credits used)" [D7]. Drafted on that wording:
 
-You can ask for a refund of a plan or a credit pack within 7 days of paying, if none of the credits from that purchase have been used. We refund what you paid for it, to the method you paid with.
+You can ask for a refund of a plan or a credit pack within 7 days of paying, if none of the credits from that purchase have been used. We refund what you paid for it.
 
-[OWNER DECISION OD-R1: the 7-day rule is not in CLAUDE.md › Pricing, and that section is the source of truth for what customers are charged. If confirmed, Pricing needs a refund paragraph; nothing in the code refunds a purchase today.]
+[OWNER DECISION OD-R1: the record says "Refund Policy (7 days if no credits used)"; reading it as covering both a plan and a credit pack is this draft's interpretation. The 7-day rule is not in CLAUDE.md › Pricing, and that section is the source of truth for what customers are charged. If confirmed, Pricing needs a refund paragraph; nothing in the code refunds a purchase today.]
 
 ## 2. What "used" means
 
@@ -22,26 +22,26 @@ A credit is used when it is spent on a job, or held for a job that is still runn
 - Renewals: [OWNER DECISION OD-R4: does the 7-day rule apply to each renewal, or to the first payment only? Options: first payment only; each monthly renewal; annual renewals only.]
 - Annual plans after day 7: [OWNER DECISION OD-R5: no refund for the unused months, or a pro-rata refund. Not recorded.]
 - If we do not renew a plan because nothing was generated in the 60 days before renewal, there is no charge to refund [D8].
-- Included credits expire at the end of the cycle and are not refundable [D8].
+- Included credits expire at the end of their credit window [D8]. [OWNER DECISION OD-R11: whether an included or expired credit is ever refundable. D8 says credits expire, not that they are non-refundable. Drafted as not refundable.]
 
 ## 4. Packs and bonus credits
 
 - A pack bought within 7 days with none of its credits used is refundable. Bonus credits are free [D8; lib/creditTerms.ts], so a refund returns the price paid and cancels the bonus credits [OWNER DECISION OD-R10: confirm; not recorded].
-- Pack credits last 12 months, counted only while the workspace is off a plan [D8]. Credits that have expired are not refundable.
+- Pack credits last 12 months, counted only while the workspace is off a plan [D8]. Credits that have expired are drafted as not refundable (OD-R11).
 [OWNER DECISION OD-R6: a refund after day 7 for a pack with nothing used. Not recorded. Options: none; at the owner's discretion; credit note.]
 
 ## 5. The free grant
 
-The one-time free grant has no cash value and is never refunded [D8: "Free grant is one-time, never recurring"].
+The free grant is given once [D8: "Free grant is one-time, never recurring"]. [OWNER DECISION OD-R12: whether it has no cash value and is never refunded. Not recorded; it is not a purchase, so this draft refunds nothing for it.]
 
 ## 6. Failed or refused work is not a refund
 
 A refused or failed request that cost nothing says "Nothing billed" and can be retried under the same approval. A request that was charged and failed shows what it cost. A provider rejection releases its reservation. If a request times out after submission, we reconcile it before changing the charge. Undo does not change billing [D8; Terms › Credits]. These adjust your credits and are separate from a refund of money.
-[OWNER DECISION OD-R7: whether a failed charged request is returned as credits only, or as money on request. Not recorded. Today the product returns credits.]
+[OWNER DECISION OD-R7: whether a failed charged request is returned as credits only, or as money on request. Not recorded. What the record has: a charged failure "says what it cost" (CLAUDE.md, rule 14); a queued-job cancel that stays charged is logged "for review and manual refund" (docs/redesign-plan.md › "Owner decisions (Akshay, 11 Oct midday)", item 2(c)). It has no automatic return of money.]
 
 ## 7. How and when
 
-Ask through [OWNER DECISION OD-R8: the contact for refunds]. We reply within [OD-R8: days] and pay within [OD-R8: business days] to the original payment method.
+Ask through [OWNER DECISION OD-R8: the contact for refunds, the time to reply and pay, and where the money goes]. We reply within [OD-R8: days] and pay within [OD-R8: business days], to [OD-R8: the original payment method, or another].
 [OWNER DECISION OD-R9: who bears the payment processor's fees on a refund.]
 
 ## 8. Disputes

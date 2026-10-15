@@ -11,7 +11,7 @@ These terms are between [COMPANY] ("we") and the person or company that creates 
 
 ## 2. Who may use Particl
 
-You must be 18 or older [D1]. A person who signs up for a company confirms they may bind it. We do not allow anyone under 18 to hold an account.
+You must be 18 or older [D1]. [OWNER DECISION OD-T14: whether a person who signs up for a company confirms they may bind it. Not recorded. Options: say so here; leave it to the workspace owner's acceptance.] We do not allow anyone under 18 to hold an account.
 
 ⚖ LAWYER L-T2: capacity to contract and the DPDP Act's rules on children's data. We rely on the tick and make no other age check.
 [OWNER DECISION OD-T2: is the tick enough, or is there a further check? Options: (a) tick only; (b) tick plus a stronger check for suspected minors; (c) none beyond the tick, but suspend on report.]
@@ -44,9 +44,9 @@ Rules in this section follow CLAUDE.md › Pricing [D8]. Where a figure differs 
 No seat fees on any paid plan. Annual billing is 20% off. If a workspace has generated nothing in the 60 days before a renewal, we do not renew; the plan lapses and we say so. Selecting a plan at sign-up does not activate it or grant credits [live Terms page].
 [OWNER DECISION OD-T4: which plan table is final. CLAUDE.md lists Invite, Studio, Agency, Production. Prototype v15 shows other placeholders marked "confirm" (Explore $50, Create $100, Master $250; Business 100, 250, 500 per seat, pooled).]
 
-**Included credits** expire at the end of the billing cycle. They do not roll over, and they are spent before purchased credits [D8].
+**Included credits** expire at the end of their credit window (monthly; annual plans have monthly credit windows [live Terms page]). They do not roll over, and they are spent before purchased credits [D8].
 
-**Packs.** A pack's credits, and its bonus credits, last 12 months, counted only while the workspace is off a paid plan. The clock pauses while the workspace is on a plan and runs again when the plan ends. Bonus credits are at most 20% of a pack, are given free and carry no cash value [D8; lib/creditTerms.ts]. Existing credits are not given a retroactive expiry [live Terms page].
+**Packs.** A pack's credits, and its bonus credits, last 12 months, counted only while the workspace is off a paid plan. The clock pauses while the workspace is on a plan and runs again when the plan ends. Bonus credits are at most 20% of a pack, are given free [D8; lib/creditTerms.ts]. [OWNER DECISION OD-T18: whether bonus credits carry no cash value. Not recorded; the refund treatment is OD-R10.] Existing credits are not given a retroactive expiry [live Terms page].
 [OWNER DECISION OD-T5: when a workspace leaves a plan, does the pack clock resume with its remaining months or restart at 12? CLAUDE.md › Pricing says this is "still open".]
 [OWNER DECISION OD-T6: the one-time free grant (250 cr on the Invite plan). The record gives it no expiry, and the code does not expire it. Options: (a) no expiry; (b) expires 12 months after it is given; (c) expires with the first paid purchase.]
 [OWNER DECISION OD-T7: whether credits can be transferred between workspaces or exchanged for cash. Not recorded. Options: (a) neither; (b) transfer inside one owner's workspaces only.]
@@ -83,7 +83,7 @@ Recorded: "no AI tag" and "customer handles disclosure" [D2, D4]. Drafted on tha
 
 ## 8. Acceptable use and what you generate
 
-The Acceptable Use Policy (`acceptable-use-policy.md`) is part of these terms. You are responsible for what you generate and publish [D9]. Some engines' adjustable safety filters are set to their least restrictive level [D9], so the policy and the report process are our controls. Breaking the policy can suspend or end your workspace.
+The Acceptable Use Policy (`acceptable-use-policy.md`) is part of these terms. You are responsible for what you generate and publish [D9]. Gemini's adjustable safety filters are set to their least restrictive level [D9; lib/geminiSafety.ts], so the policy and the report process are our controls. [OWNER DECISION OD-T17: whether to publish this setting at all. Options: state it in the Terms and the AUP; say only that the engines' own filters apply and keep the setting out of public text.] Breaking the policy can suspend or end your workspace.
 
 ## 9. Reports, takedown and the grievance officer
 
@@ -103,7 +103,7 @@ A client review link is a read-only page of approved takes with the workspace's 
 
 ## 12. Ending
 
-You may stop using Particl and the owner may delete the workspace. We may suspend or end a workspace for breaking these terms or the policy, for non-payment, or if the law requires. Unused credits on a workspace we end for breaking the terms are [OWNER DECISION OD-T11: forfeited, or refunded in part. Not recorded; see also OD-R4].
+You may stop using Particl and the owner may delete the workspace. We may suspend or end a workspace for breaking these terms or the policy, [OWNER DECISION OD-T15: for non-payment, or if the law requires. Not recorded; the record has suspension for abuse only. Options: add both; abuse only.] Unused credits on a workspace we end for breaking the terms are [OWNER DECISION OD-T11: forfeited, or refunded in part. Not recorded; see also OD-R4].
 
 ## 13. Disclaimers and liability
 
@@ -112,7 +112,7 @@ You may stop using Particl and the owner may delete the workspace. We may suspen
 
 ## 14. Indemnity
 
-You cover us for claims that come from content you upload or generate and from your breach of these terms or the policy.
+[OWNER DECISION OD-T16: an indemnity from the customer. Not recorded. Options: include it as drafted (claims from content you upload or generate, and from your breach of these terms or the policy); narrow it to content; leave it out.]
 ⚖ LAWYER L-T13: scope and fairness of the indemnity.
 
 ## 15. Governing law and disputes
