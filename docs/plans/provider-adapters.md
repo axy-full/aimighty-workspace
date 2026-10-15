@@ -2,6 +2,28 @@
 
 > **15 Oct 2026, 22:15 IST:** section 9 (the setting-name table) is updated to the owner's FINAL ENGINE STACK: every provider with its key name, address, switch and extras, what the old table was missing, the site setting for "engines on" and the house-cap finding. The rest of this plan is as of 14 Oct and is not rewritten here.
 
+## Where this stands: the final engine stack, its slices and its PRs (owner, 15 Oct 2026, 22:15 IST; updated 15 Oct late evening)
+
+The owner approved the FINAL ENGINE STACK ("Build it, switch it on, keep it ready. We test it live on particl.si with the Aimighty team") and a standing yes for tonight (22:20): PRs merge into release/1 only, with no migration, env name, money behaviour, sign-in or guard-test change; anything else opens as NEEDS AKSHAY. **No paid generation runs before the team tests with the owner** (no bake-off, no qualification render, no "quick check"); mock tests only. Source: `docs/redesign-plan.md`, "FINAL ENGINE STACK" and "22:20 IST".
+
+**Rules for every engine** (owner): its own PR, titled NEEDS AKSHAY, a yes per PR, live in the next deploy; before merge a price table from the provider's own page, mock tests, an Opus money review, the real provider cost on every ledger line and its own kill switch; **ON for the house workspace (`ws_legacy`) and any workspace listed in the site setting, OFF for customer workspaces until launch**; the normal per-step approval in the UI is the approval, and the team's first real use is the test (**this replaces every "qualification run" row below**); a monthly cap on the house workspace of $500 with a warning at 80%; no migration without the owner's word; guard tests never weakened; secrets never in code or chat. **Data terms** (22:15): Particl promises it does not train on customer content; providers may under their own policies; there is **no no-training gate on wiring** (so Runway's and BFL's training clauses in sections 5 to 7 are information for the privacy table in `docs/legal/where-your-data-goes.md`, not a block); training or "improve the models" is switched off on every account that offers it, and recorded. **Consent:** every real face passes Rekognition against its consent record before Act-Two, cloning or lip-sync runs.
+
+**The order, by slice** (each engine its own PR):
+
+| Slice | What | PRs and where it stands |
+|---|---|---|
+| **1** | Remotion worker ON (animatic, timeline, titles, subtitles, karaoke captions, narrated assembly, cutdowns, silence cuts, fps conform, H.264 + ProRes mezzanine + DNxHR, stems from our timeline, Download all zip) and **Chromium PDF** (treatment, pitch, PPM decks). First: measure one real 30 s 1080p export (CPU only, our own media; time, cost). | Remotion #697 compositions, #699 worker, #700 app and fair queue (`export_jobs` migration: needs the owner's word), #768 format (H.264, ProRes 422 and HQ; H.265 refused), #769 subtitles, #770 conform, #772 narrated assembly, #773 silence-aware cutdowns; **#767 PDF decks** (stacked on #700, `PDF_EXPORTS`, free); #766 exports on for the house and listed workspaces only (`enginesOnWorkspaces`). Plan: `docs/plans/remotion.md`. **DNxHR is not in #768's list** (H.264 and ProRes only): a follow-up is needed. |
+| **2** | sync.so (lipsync-2-pro; sync-3 for hero and 4K); Sarvam (Bulbul, Saaras, dubbing); Black Forest Labs (FLUX 3 and FLUX.2 identity, replacing fal flux-lora); Runway (Act-Two, Aleph 2, Gen-4.5); **Veo 3.1**; AWS Mumbai (**Rekognition** consent match; **MediaConvert Smart Crop**, replacing Luma reframe); Topaz direct (T0 to T3). | **#771 Rekognition consent gate** (NEEDS AKSHAY; the gate fails closed until the reference source is chosen, see below). sync.so, Sarvam, BFL, Runway, Veo, MediaConvert and Topaz have no PR yet; their rows are in the table below. #765 the house workspace's $500 cap with an 80% warning (the finding in section 9) is its own PR. |
+| **3** | **Nano Banana 2.1** beside Pro; **Gemini 3.x** for moments, cutdown planning and the vision judge; **Cloud Vision label check with an exact text diff** (never an AI model alone); **Recraft V4.1 and V3** (decks, brand assets, sketch, ink and comic storyboards); **Kling 4.0** on fal the day it is live (3.0 Pro until then). | No PRs yet. |
+| **4** | The "later" list, one at a time, on a client need or a bake-off win: HeyGen Avatar IV, Ideogram, FASHN, Hunyuan3D/Tripo, Magnific, AudioShake, Storyblocks, TwelveLabs, Wan 3.0, Gemini Omni Flash. Owner action now: ask Adobe for a Firefly Reframe quote. | Not planned in detail. |
+| **5** | The viral trend panel (after Slice 3): YouTube mostPopular (IN), Google Trends via SerpApi, TikTok signals via Zyla (hashtags, sounds, formats; never videos), Instagram hashtag search via Meta once our app is approved; one list with a source badge and a "crossing to India" flag. | `docs/plans/viral-trends.md`; names in section 9, E. |
+
+**Left out, by decision:** MiniMax/Hailuo, Suno, Udio, Sora, PlayHT, any face swap built on InsightFace, Wav2Lip, self-hosted MMAudio, Luma reframe (replaced by MediaConvert). **H.265 stays off** until the owner's lawyer answers.
+**Pro pick menu:** Seedance 2.5, Veo 3.1, Kling 4.0, Runway Gen-4.5. Names live in config, never in the design.
+**Owner decision pending: the face reference source (#771).** A consent record holds no face image today (the recorder is audio only), so the check refuses every face with "This person's consent has no face reference yet" until the owner picks one: (1) a face photo taken at consent time (a new table or column; ties the face to the person who consented; the heaviest for counsel; the coordinator recommends it), (2) the cast member's identity master (no schema change; proves "same as the cast member", not "the person who consented"), or (3) a frame from a video recording. **Until then lip-sync, Act-Two and cloning cannot run on real faces.** The check runs for the house workspace only.
+**Bake-offs the team runs live** (results decide defaults; no paid run before the team tests with the owner): (a) an 8-panel storyboard, two characters, three styles, on Recraft, GPT Image 2.5, Nano Banana Pro and 2.1; (b) 10 real briefs on the top 3 video engines; (c) one Hindi lip-sync clip on sync.so.
+
+
 The owner asked for this on 14 Oct: plans first, no paid calls. This plan was read from release/1 at 890d559c. The providers' public pages were read on 14 Oct 2026; the links are at the end.
 
 **No provider API was called while writing this,** not even a free one, and no key was used. **Every price below is a sample / proposal.** The owner approves every rate-card row. Screens are not specified here: anything a person will see **waits for Claude Design / v18**.
@@ -602,11 +624,11 @@ The plan's single `TRENDS_PROVIDER` and `TRENDS_API_KEY` are replaced by the per
 
 ### The site setting (a platform setting, not an env name)
 
-"On for the house workspace (ws_legacy) and any workspace I list in the site setting; OFF for customer workspaces until launch" (owner, 15 Oct 22:15). The site settings are one row in the platform database (`platform_layer`, key `site`; `lib/site/settings.ts`), changed only by the platform owner from /admin, with no migration and no env. **Proposed name: `enginesOnWorkspaces`**, a list of workspace ids (well-formed, distinct, at most 50), empty by default, the same shape as `newInterfaceWorkspaces`. An engine is offered to a workspace only when **its `<VENDOR>_ENABLED` switch is on** (the global kill switch) **and** the workspace is the house workspace or is listed in `enginesOnWorkspaces`. Adding the field is a small change to `SiteSettings`, `cleanSite` and `sitePatch` and a control in /admin; the row already exists. One list covers every engine in the stack; a per-engine list is not proposed. At launch the owner opens engines to all by a platform-layer default, not by listing everyone.
+"On for the house workspace (ws_legacy) and any workspace I list in the site setting; OFF for customer workspaces until launch" (owner, 15 Oct 22:15). The site settings are one row in the platform database (`platform_layer`, key `site`; `lib/site/settings.ts`), changed only by the platform owner from /admin, with no migration and no env. **Proposed name: `enginesOnWorkspaces`**, a list of workspace ids (well-formed, distinct, at most 50), empty by default, the same shape as `newInterfaceWorkspaces`. An engine is offered to a workspace only when **its `<VENDOR>_ENABLED` switch is on** (the global kill switch) **and** the workspace is the house workspace or is listed in `enginesOnWorkspaces`. Adding the field is a small change to `SiteSettings`, `cleanSite` and `sitePatch` and a control in /admin; the row already exists. **Status (15 Oct late evening):** #766 (exports) and #771 (the face check) already read a field of this name through a shared engine gate (`lib/engineGate.ts`: the engine's own switch exactly `1` and the house workspace or a listed one, failing closed); nothing writes the list yet. #767 (PDF decks) still reads `newInterfaceWorkspaces`, so the two lists should be made one in the PR that adds the field. One list covers every engine in the stack; a per-engine list is not proposed. At launch the owner opens engines to all by a platform-layer default, not by listing everyone.
 
 ### The house cap (no env name; a code finding)
 
-The owner's cap is $500 a month on the house workspace, warning at 80%. **Neither needs a migration.** The per-workspace cap already exists as the column `workspaces.allowance_usd`, set from /admin (`lib/allowanceDesk.ts`), and `PLATFORM_ALLOWANCE_USD` is only the default for customer workspaces. **But `allowanceUsd()` returns no cap at all for the house workspace** (`lib/allowance.ts`: "The house workspace has none (`lib/houseWorkspace.ts`)"), so setting the column on the house row would change nothing today. The cap therefore needs a small code change (the house workspace reads its own `allowance_usd` when one is stored, and none otherwise), plus the 80% warning, which is not in the code on `release/1`. No new env name and no migration. A new env name such as `HOUSE_ALLOWANCE_USD` is not recommended: the column is already the one place the desk reads and writes.
+The owner's cap is $500 a month on the house workspace, warning at 80%. **Neither needs a migration.** The per-workspace cap already exists as the column `workspaces.allowance_usd`, set from /admin (`lib/allowanceDesk.ts`), and `PLATFORM_ALLOWANCE_USD` is only the default for customer workspaces. **But `allowanceUsd()` returns no cap at all for the house workspace** (`lib/allowance.ts`: "The house workspace has none (`lib/houseWorkspace.ts`)"), so setting the column on the house row would change nothing today. The cap therefore needs a small code change (the house workspace reads its own `allowance_usd` when one is stored, and none otherwise), plus the 80% warning, which is not in the code on `release/1`. No new env name and no migration. A new env name such as `HOUSE_ALLOWANCE_USD` is not recommended: the column is already the one place the desk reads and writes. **Status:** this is now **#765** (NEEDS AKSHAY: the house workspace's $500 monthly cap with a warning at 80%).
 
 ### What was missing from the old table
 
@@ -644,47 +666,52 @@ The table in this section before 15 Oct 22:15 had eight rows (sync.so, Sarvam, R
 
 ## 10. Order and PRs
 
-**The order (DECIDED for the first four; the additions slotted per owner question A):**
-1. **sync.so lip-sync, direct.**
-2. **Sarvam, direct.**
-3. **Rekognition**, with **Google Cloud Vision's text check** in the same Verify lane. Vision has no consent or biometric question, so its V-PRs can land before the Rekognition ones.
-4. **Recraft, then Black Forest Labs**: an image lane (SOW E2) that can run beside 2 and 3, because it shares no code with them.
-5. **Runway**: standby, house workspace only.
-6. **Topaz, direct** (owner, 15 Oct 14:05), after B1: T0 price table and data terms (docs), T1 adapter on mocks, T2 the owner-approved house run, T3 the switch and the removal of fal's Topaz endpoints.
+**Updated 15 Oct 2026, 22:15 IST to the final engine stack.** The order is the slices in "Where this stands" above, not the 14 Oct order. What follows is the PR list. A **Slice** column places each row; rows for engines the stack adds since 14 Oct (Veo, MediaConvert, Nano Banana 2.1, Gemini 3.x, Kling 4.0, the label check) are new and have no PR yet. **Every "qualification run" row is superseded** (owner, 15 Oct 22:15 and 22:20): there is no separate paid run; the person's normal per-step approval is the approval, and the team's first real use, with the owner, is the test. The spend figures stay as expectations of what a first use costs.
 
-Every adapter lands **behind its switch, off in production.** None needs board UI. Every screen **waits for Claude Design / v18**. **No switch is turned on for a customer before counsel** (DECIDED). Qualification runs happen in the house workspace only, at the stated cost, after the owner's yes.
+**14 Oct order, kept for the record (DECIDED then; slotted into the slices now):** sync.so, Sarvam, Rekognition with Vision's text check, Recraft then BFL, Runway, Topaz direct (T0 price table and data terms, T1 adapter on mocks, T2 the house run, T3 the switch and the removal of fal's Topaz endpoints).
 
-| # | PR | Size | Review | After |
-|---|---|---|---|---|
-| Y1 | sync.so adapter: asset upload from bytes, `POST /v2/generate`, poll, `DELETE` after storing, `BASIS`, a new task `lipsync`, `SYNC_ENABLED` off, mocks | M, 8h | **Opus (money)** | — |
-| Y2 | `lip_sync` tool: lipsync-2, lipsync-2-pro, sync-3; consent gate (face, and voice if not stock); source links; MCP | M, 6h | **Opus (privacy)** | Y1 |
-| Y3 | Lip-sync rate rows for the plan bought | S, 2h | **NEEDS OWNER (prices)** | Y1 |
-| Y4 | Signed webhooks (`Sync-Signature`) as a faster path beside polling | S, 3h | Opus (security) | Y2 |
-| Y5 | Qualification run: one 5 s job on each model, about $1.33 | — | **NEEDS OWNER (spend)** | Y2, Y3 |
-| S1 | Sarvam adapter: speech, short transcripts and translation (answered at once), batch transcription (polled), `SARVAM_ENABLED` off, rupee rates and `SARVAM_USD_PER_INR`, mocks | M, 8h | **Opus (money)** | — |
-| S2 | `sarvam_speech` (stock voices only) | S, 4h | — | S1 |
-| S3 | `sarvam_translate` | S, 3h | — | S1 |
-| S4 | `sarvam_transcribe` (Auto by language, per owner question F) | M, 6h | Opus (privacy) | S1 |
-| S5 | Sarvam rate rows; qualification run (about ₹4) | S, 2h | **NEEDS OWNER** | S2-S4 |
-| V1 | Vision adapter: `images:annotate` `TEXT_DETECTION`, bytes in, `GOOGLE_VISION_ENABLED` off, mocks | S, 3h | — | — |
-| V2 | `text_check` inside Verify (the `artifacts` check; priced into Verify's quote) | M, 5h | **Opus (money)** | V1 |
-| V3 | `read_text` for on-screen text (feeds S3) | S, 3h | — | V1, S3 |
-| V4 | Qualification run (inside Google's 1,000 free images a month) | — | NEEDS OWNER | V2 |
-| K1 | Rekognition adapter: `signRequest` SigV4, Mumbai, `REKOGNITION_*` names, `REKOGNITION_ENABLED` off, mocks | S, 4h | — | AWS account set up |
-| K2 | Consent gate for face checks (any new use word, after counsel); `record_face_consent` as a people-only tool | S, 4h | **Opus (privacy)**, NEEDS OWNER | counsel |
-| K3 | `face_check` inside Verify: priced into its quote, threshold setting (owner question E), scores in `take_verifications` | M, 6h | **Opus (privacy, money)** | K1, K2 |
-| K4 | `face_detect` on references before training | S, 3h | Opus (privacy) | K2 |
-| K5 | Qualification run (about 10 calls, $0.0125, or inside AWS's free tier) | — | **NEEDS OWNER** | K3 |
-| C1 | Recraft adapter: generate, vectorize, remove background; `b64_json`; settle at the reply's units; `RECRAFT_ENABLED` off; mocks | M, 6h | **Opus (money)** | — |
-| C2 | `svg` originals in storage, served safely (download only or a strict CSP) | S, 3h | **Opus (security)** | C1 |
-| C3 | `recraft_image`, `recraft_vectorize`, `recraft_remove_background` tools; MCP | S, 4h | — | C1, C2 |
-| C4 | Recraft rate rows; qualification run (about $0.14, one of each) | S, 2h | **NEEDS OWNER** | C3 |
-| B1 | BFL adapter: submit, worker poll of `polling_url`, copy within 10 minutes, `BFL_ENABLED` off, mocks; EU endpoint default pinned by a test (never `api.bfl.ai`), `*.bfl.ai` hosts only | M, 6h | **Opus (money)** | — |
-| B2 | `flux2_image` and `flux2_edit` (up to 8 references; consent gate for real people) | S, 5h | **Opus (privacy)** | B1 |
-| B3 | BFL rate rows; qualification run (about $0.15) | S, 2h | **NEEDS OWNER** | B2 |
-| R1-R5 | Runway (standby), unchanged from the first draft: adapter (M, 8h, Opus money), rows (NEEDS OWNER), `runway_performance` (Opus privacy), `runway_edit`, house-only qualification (about $1.41) | about 21h | as listed | training-free terms for any customer use |
+Every adapter lands **behind its own kill switch** (`<VENDOR>_ENABLED`, off unless set), is on for the house workspace and listed workspaces only (`enginesOnWorkspaces`, the shared engine gate `lib/engineGate.ts` from #771, which the exports in #766 and later engines use), and off for customers until launch. None needs board UI. Every screen **waits for Claude Design / v18**. **Counsel before any switch is turned on for a customer** is unchanged (14 Oct).
 
-**About 120 hours in total,** Runway's 21 included.
+| # | Slice | PR | Size | Review | After |
+|---|---|---|---|---|---|
+| Y1 | 2 | sync.so adapter: asset upload from bytes, `POST /v2/generate`, poll, `DELETE` after storing, `BASIS`, a new task `lipsync`, `SYNC_ENABLED` off, mocks | M, 8h | **Opus (money)** | — |
+| Y2 | 2 | `lip_sync` tool: lipsync-2, lipsync-2-pro, sync-3; consent gate (face, and voice if not stock); source links; MCP | M, 6h | **Opus (privacy)** | Y1 |
+| Y3 | 2 | Lip-sync rate rows for the plan bought | S, 2h | **NEEDS OWNER (prices)** | Y1 |
+| Y4 | 2 | Signed webhooks (`Sync-Signature`) as a faster path beside polling | S, 3h | Opus (security) | Y2 |
+| Y5 | 2 | ~~Qualification run~~ superseded: the team's first real use is the test (about $1.33 for one 5 s job on each model); includes the Hindi clip, bake-off (c) | — | none | Y2, Y3 |
+| S1 | 2 | Sarvam adapter: speech, short transcripts and translation (answered at once), batch transcription (polled), `SARVAM_ENABLED` off, rupee rates and `SARVAM_USD_PER_INR`, mocks | M, 8h | **Opus (money)** | — |
+| S2 | 2 | `sarvam_speech` (stock voices only) | S, 4h | — | S1 |
+| S3 | 2 | `sarvam_translate` | S, 3h | — | S1 |
+| S4 | 2 | `sarvam_transcribe` (Auto by language, per owner question F) | M, 6h | Opus (privacy) | S1 |
+| S5 | 2 | Sarvam rate rows (the qualification run is superseded; first use about ₹4) | S, 2h | **NEEDS OWNER** | S2-S4 |
+| V1 | 3 | Vision adapter: `images:annotate` `TEXT_DETECTION`, bytes in, `GOOGLE_VISION_ENABLED` off, mocks | S, 3h | — | — |
+| V2 | 3 | `text_check` inside Verify (the `artifacts` check; priced into Verify's quote) | M, 5h | **Opus (money)** | V1 |
+| V3 | 3 | `read_text` for on-screen text (feeds S3) | S, 3h | — | V1, S3 |
+| V4 | 3 | ~~Qualification run~~ superseded (inside Google's 1,000 free images a month) | — | none | V2 |
+| K1 | 2 | **In #771 (NEEDS AKSHAY, mocked).** Rekognition adapter: `signRequest` SigV4, Mumbai, `REKOGNITION_*` names, `REKOGNITION_ENABLED` off, mocks | S, 4h | — | AWS account set up |
+| K2 | 2 | **#771 builds the gate** (`requireConsentMatch`, the `consent.check` tool; it fails closed until the owner picks the reference source). Left for K2 proper: any new use word after counsel; `record_face_consent` as a people-only tool, and the reference source once chosen | S, 4h | **Opus (privacy)**, NEEDS OWNER | counsel |
+| K3 | 2 | `face_check` inside Verify: priced into its quote, threshold setting (owner question E), scores in `take_verifications` | M, 6h | **Opus (privacy, money)** | K1, K2 |
+| K4 | 2 | `face_detect` on references before training | S, 3h | Opus (privacy) | K2 |
+| K5 | 2 | ~~Qualification run~~ superseded (about 10 calls, $0.0125, or inside AWS's free tier) | — | none | K3 |
+| C1 | 3 | Recraft adapter: generate, vectorize, remove background; `b64_json`; settle at the reply's units; `RECRAFT_ENABLED` off; mocks | M, 6h | **Opus (money)** | — |
+| C2 | 3 | `svg` originals in storage, served safely (download only or a strict CSP) | S, 3h | **Opus (security)** | C1 |
+| C3 | 3 | `recraft_image`, `recraft_vectorize`, `recraft_remove_background` tools; MCP | S, 4h | — | C1, C2 |
+| C4 | 3 | Recraft V4.1 and V3 rate rows (the qualification run is superseded; first use about $0.14); V3 and the sketch, ink and comic storyboard styles added to C3 | S, 2h | **NEEDS OWNER** | C3 |
+| B1 | 2 | BFL adapter: submit, worker poll of `polling_url`, copy within 10 minutes, `BFL_ENABLED` off, mocks; EU endpoint default pinned by a test (never `api.bfl.ai`), `*.bfl.ai` hosts only | M, 6h | **Opus (money)** | — |
+| B2 | 2 | `flux2_image` and `flux2_edit` (up to 8 references; consent gate for real people) | S, 5h | **Opus (privacy)** | B1 |
+| B3 | 2 | BFL rate rows (the qualification run is superseded; first use about $0.15) | S, 2h | **NEEDS OWNER** | B2 |
+| R1-R5 | 2 | Runway, now in the stack (Act-Two, Aleph 2, Gen-4.5; Gen-4.5 is also a Pro pick): adapter (M, 8h, Opus money), rows (NEEDS OWNER), `runway_performance` (Opus privacy; passes the consent gate first), `runway_edit`; first use about $1.41, no separate run | about 21h | as listed | the consent reference source (#771); house workspace only until launch |
+| T0-T3 | 2 | Topaz direct, from section 8: T0 price table and data terms (docs), T1 adapter on mocks (`TOPAZ_ENABLED`), T2 the switch for the house, T3 the removal of fal's Topaz endpoints | M, about 8h | **Opus (money)**, NEEDS AKSHAY | B1 |
+| G1 | 2 | **Veo 3.1** (new): adapter on the Gemini key and host (to confirm), model row and rate row from Google's own page, `VEO_ENABLED`; a Pro pick | M, about 8h | **Opus (money)** | — |
+| M1 | 2 | **AWS MediaConvert Smart Crop** (new, replaces Luma reframe): adapter (SigV4 through `signRequest`; the role, bucket, endpoint and key pair in section 9), job poll, copy back under the workspace's prefix, `MEDIACONVERT_ENABLED`; Luma reframe removed after | M, about 10h | **Opus (money, privacy)** | the owner's AWS role and bucket |
+| N1 | 3 | **Nano Banana 2.1** beside Pro (model row, rate row, `NANOBANANA21_ENABLED`) | S, about 4h | **Opus (money)** | — |
+| N2 | 3 | **Gemini 3.x** for moments, cutdown planning and the vision judge: tools in the registry, no new paid path except the model's own price | M, about 8h | **Opus (money)** | N1 |
+| V5 | 3 | **Cloud Vision label check with an exact text diff:** read the text, then diff it exactly against the brief's mandatory text; **never an AI model alone**; a mismatch marks the take for a person | M, about 6h | Opus (money) | V2 |
+| L1 | 3 | **Kling 4.0 on fal** the day it is live (`KLING4_ENABLED`; Kling 3.0 Pro until then); a Pro pick | S, about 4h | **Opus (money)** | fal listing it |
+| P1 | 3 | **Pro pick menu in config:** Seedance 2.5, Veo 3.1, Kling 4.0, Runway Gen-4.5; names in config, never in the design | S, about 3h | — | G1, L1, R1 |
+| D1 | 1 | **DNxHR mezzanine** (a follow-up: #768's title lists H.264 and ProRes 422 and HQ only) | S, about 4h | Opus (money) | #768 |
+
+**About 120 hours for the 14 Oct rows,** Runway's 21 included; the rows above are estimates only. The Remotion and PDF PRs are in Slice 1 and their own plan.
 
 - **No migration.** The one possible schema change is K2's, and only if counsel asks for a new kind of consent record rather than a new use word. If so, it ships after the owner's backup.
 - **The `svg` original in C2** is a storage path and a content type, not a table change.
@@ -726,6 +753,8 @@ Every adapter lands **behind its switch, off in production.** None needs board U
   | Recraft | $0.14 |
   | BFL | $0.15 |
   | Runway | $1.41 |
+
+  These are what a first real use costs, **not** a separate run: the owner's 15 Oct decision is that the per-step approval is the approval and the team's first use is the test. No paid run happens before the team tests with the owner.
 
 ## 12. Owner questions
 
