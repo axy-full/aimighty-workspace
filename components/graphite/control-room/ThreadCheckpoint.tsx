@@ -7,7 +7,6 @@ import { AtomikProvider, useAtomik } from "@/components/atomik/AtomikProvider";
 import { openAtomikChat } from "@/lib/shell/use-skills";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { approvalsChanged } from "@/lib/control-room/approve";
-import { exact, upTo } from "@/lib/shell/price-words";
 import { Price, usePriceTitle } from "../Price";
 
 /**
@@ -60,7 +59,7 @@ function Ready({ checkpoint }: { checkpoint: Step }) {
   const credits = a.credits(checkpoint);
   const live = a.approvable(checkpoint) && credits !== null;
   /* Continue sends the live quote as its ceiling: "up to" where the quote is approximate, the figure where it is not. */
-  const price = live ? (a.approximate(checkpoint) ? upTo(credits) : exact(credits)) : null;
+  const price = live ? a.priceOf(checkpoint, a.approximate(checkpoint) ? "up-to" : "exact") : null;
   const dollars = usePriceTitle(price) ?? undefined;
   return (
     <div className="cr-checkpoint" role="group" aria-label="Checkpoint" data-testid="approval-checkpoint">

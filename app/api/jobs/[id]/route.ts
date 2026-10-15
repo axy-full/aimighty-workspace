@@ -16,6 +16,7 @@ import { discardHeldJob } from "@/lib/held";
 import { withLedgerCharges } from "@/lib/usageLedger";
 import { NO_SUCH_PROJECT, mayReachProject, mayReadTake } from "@/lib/draftProject";
 import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
+import { readableActors } from "@/lib/platformOwnerPrivacy";
 import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 import { cleanReasonText, REASON_TEXT_MAX, reviewActionOf, reviewEventStatement, reviewViaOf } from "@/lib/takeReview";
 import { cleanReasons } from "@/lib/rejectReasons";
@@ -277,10 +278,12 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     ], "write");
     /* The marks as recorded, for the grids to show at once (who picked, who approved, when). */
     const marks = (await db().execute({ sql: "SELECT review_state, review_by, picked_by, picked_at, approved_by, approved_at, updated_at FROM generations WHERE id=?", args: [id] })).rows[0];
-    if (marks) review = {
-      reviewState: String(marks.review_state ?? ""), reviewBy: marks.review_by == null ? null : String(marks.review_by),
-      pickedBy: marks.picked_by == null ? null : String(marks.picked_by), pickedAt: marks.picked_at == null ? null : Number(marks.picked_at),
-      approvedBy: marks.approved_by == null ? null : String(marks.approved_by), approvedAt: marks.approved_at == null ? null : Number(marks.approved_at),
+    /* A mark this change left alone may hold an account id (an older row): who marked it is read as a reader may be told, never as an id (lib/platformOwnerPrivacy.ts). */
+    const shown = marks ? await readableActors([marks.review_by, marks.picked_by, marks.approved_by]) : null;
+    if (marks && shown) review = {
+      reviewState: String(marks.review_state ?? ""), reviewBy: shown(marks.review_by),
+      pickedBy: shown(marks.picked_by), pickedAt: marks.picked_at == null ? null : Number(marks.picked_at),
+      approvedBy: shown(marks.approved_by), approvedAt: marks.approved_at == null ? null : Number(marks.approved_at),
       updatedAt: Number(marks.updated_at),
     };
     /* Picking a take asks someone for a decision: tell the admins who want

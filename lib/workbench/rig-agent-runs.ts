@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import type { AdmissionActor, AdmissionReply, PreparedAdmission, PrepareAdmissionResult } from "../admissionTypes";
 import { preparedClaimFingerprint } from "../admissionSupport";
 import { budgetAsk } from "../caps";
-import { creditState } from "../credits";
+import { creditState, creditsApply } from "../credits";
+import { creditUsd } from "../creditTerms";
+import { dollars } from "../format";
 import { db, now } from "../db";
 import { DRAFT_RESOLUTION } from "../draftFinal";
 import { checkGenerationRequest, runCharges, RUN_LIMIT_REACHED } from "../generationRequests";
@@ -166,7 +168,17 @@ async function defaultFollow(jobId: string) {
   if (gen && LIVE_JOB.has(gen.status)) await syncGeneration(gen).catch(() => { /* the next look tries again */ });
 }
 
-const figure = (credits: number) => `${creditFigure(credits)} cr`;
+/** The house is never billed in credits (lib/houseWorkspace.ts): its sentences name dollars at cost, two decimals, rounded up; every other workspace's name credits. Display only. */
+const atCost = () => !creditsApply(requireTenant());
+const figure = (credits: number, usd?: number) => atCost() ? dollars(usd ?? credits * creditUsd()) : `${creditFigure(credits)} cr`;
+/** The render's own dollars when its quote is in dollars (the house); undefined otherwise. */
+const quoteUsd = (admission: PreparedAdmission): number | undefined => admission.quote.unit === "usd" ? admission.quote.price : undefined;
+/** "about 31 cr, at most 93 cr", or the same in dollars for the house. */
+const heldWords = (admission: PreparedAdmission, credits: number): string => {
+  if (!atCost()) return cinemaPriceWords(credits);
+  const usd = quoteUsd(admission) ?? credits * creditUsd();
+  return `about ${dollars(usd)}, at most ${dollars(usd * (admission.quote.ceilingCredits != null && admission.quote.estimatedCredits > 0 ? admission.quote.ceilingCredits / admission.quote.estimatedCredits : 3))}`;
+};
 
 /** The shot a render step is about, as the plan named it. */
 export function stepTitle(run: Pick<RunRow, "plan">, step: Pick<StepRow, "nodeId" | "label">): string {
@@ -210,7 +222,7 @@ async function creditsProblem(admission: PreparedAdmission): Promise<string | nu
   /* A take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) needs the balance to cover its hold. */
   const ceiling = admission.quote.ceilingCredits;
   if (!state || state.balance >= (ceiling ?? admission.quote.estimatedCredits)) return null;
-  return `Not enough credits: the next render is ${ceiling != null ? `${cinemaPriceWords(admission.quote.estimatedCredits)},` : `about ${figure(admission.quote.estimatedCredits)}`} and ${figure(Math.max(0, state.balance))} are left. Top up, then press Retry.`;
+  return `Not enough credits: the next render is ${ceiling != null ? `${heldWords(admission, admission.quote.estimatedCredits)},` : `about ${figure(admission.quote.estimatedCredits, quoteUsd(admission))}`} and ${figure(Math.max(0, state.balance))} are left. Top up, then press Retry.`;
 }
 
 /** What a reservation needs to count a render toward this run: refused when the run was stopped or switched off meanwhile. */
@@ -431,7 +443,7 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
   const line = effectiveJobCeiling(run.perJobCap, await (deps.ceiling ?? rigJobCeiling)());
   const title = stepTitle(run, step);
   /* A take that holds its ceiling (Cinema Studio) is approved at its hold: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
-  const heldPrice = admission.quote.ceilingCredits != null ? cinemaPriceWords(quoteCredits) : `about ${figure(quoteCredits)}`;
+  const heldPrice = admission.quote.ceilingCredits != null ? heldWords(admission, quoteCredits) : `about ${figure(quoteCredits, quoteUsd(admission))}`;
   if (approval) {
     const worst = quoteCredits * Math.max(1, band);
     const cover = coverage(approval, { seq: step.seq, fixOf: step.fixOf, quote: quoteCredits, worst, fingerprint }, now(), line);
@@ -457,7 +469,7 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
   const why = budget ? `${budget.line} ${title} is next · ${heldPrice}.`
     : run.mode !== "auto" ? `${title} is ready to render · ${heldPrice}.`
     : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · ${heldPrice}. Render it, skip it, or stop.`
-    : `${title} is about ${figure(quoteCredits)}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
+    : `${title} is about ${figure(quoteCredits, quoteUsd(admission))}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);
   return needsYou(run, why);
 }

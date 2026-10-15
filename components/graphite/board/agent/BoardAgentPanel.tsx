@@ -56,7 +56,7 @@ export function BoardAgentPanel({ ctx, onCollapse }: { ctx: BoardCtx; onCollapse
   useEffect(() => { if (moved) void reread(); }, [moved, reread]);
   /* The sample's line on the sample production, or anywhere in the sample workspace (BoardView's gate): nothing here spends. */
   const sample: string | null = ctx.exploreOnly ?? null;
-  const ask = agentAsk({ read: agent.ready, enabled: answer?.enabled ?? false, run, planning: agent.terms?.planning ?? null, words, busy, sample: sample !== null, offline: ctx.offline });
+  const ask = agentAsk({ read: agent.ready, enabled: answer?.enabled ?? false, run, planning: agent.terms?.planning ?? null, planningUsd: agent.terms?.planningUsd ?? null, words, busy, sample: sample !== null, offline: ctx.offline });
   const title = usePriceTitle(ask.price);
   const send = async () => {
     if (ask.disabled || !ask.price || ask.price.kind === "free") return;

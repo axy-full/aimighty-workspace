@@ -1,6 +1,6 @@
 import type { EngineAdapter } from "./types";
 import { gatewayChat, gatewayReachable } from "../gateway";
-import { textPost } from "../textDirect";
+import { textRun } from "../textDirect";
 import { enhancePrompt } from "../enhance";
 import { estimateRefineUsd } from "../refineGate";
 
@@ -11,7 +11,7 @@ export const vercel: EngineAdapter = {
   configured: () => gatewayReachable(),
   estimate: () => null,
   async render() { throw new Error("The gateway thinks; stills through it are rendered by the image adapter."); },
-  run: (req) => textPost(req.body, { auth: req.auth, timeoutMs: req.timeoutMs, mock: req.mock }),
+  run: textRun,
   chat: (req) => gatewayChat(req),
   /** enhance(prompt, targetEngine, setup, cast, rules): the writer, told the target engine's dialect, with what the compiler knows as its style block. */
   async enhance(req) {

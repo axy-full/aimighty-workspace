@@ -58,7 +58,7 @@ export function useShowMeLooks(seam: DraftSeam, answers: Answers, readOnly: stri
   const pricing = useStageQuotes(scope, requests);
   const ids = Object.keys(requests);
   const credits = ids.map((id) => pricing.quotes[id]?.credits);
-  const price = ids.length && credits.every((c) => c != null) ? priceSum(credits.map((c) => exact(c))) : null;
+  const price = ids.length && credits.every((c) => c != null) ? priceSum(ids.map((id) => exact(pricing.quotes[id]?.credits, pricing.quotes[id]?.usd))) : null;
   const failed = ids.filter((id) => pricing.quotes[id]?.error);
   /* The last price read, shown (disabled) while the next is read, never nothing. */
   const [last, setLast] = useState<PriceValue | null>(null);
