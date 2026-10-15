@@ -3,7 +3,6 @@ import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { offeredModels } from "@/lib/models";
 import { requireUser, withTenant } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
-import { safetyThreshold } from "@/lib/gemini";
 import { getSetting, invalidateSettings } from "@/lib/settings";
 import { ENGINES } from "@/lib/engines";
 import { estimateRefineUsd } from "@/lib/refineGate";
@@ -47,8 +46,6 @@ export const GET = withTenant(async function GET() {
       kinds: ENGINES[p.id]?.kinds ?? [],
       /** "key" for the vendor's own key, "gateway" for Vercel AI Gateway. */
       via: providerVia(p),
-      /** Google only: where its adjustable safety thresholds sit. */
-      safety: p.id === "google" ? (safetyThreshold() ?? "Engine default") : undefined,
       /* Retired models are not offered (lib/models.ts › retired); past jobs still resolve them. */
       models: offeredModels().filter((m) => m.provider === p.id && (!m.soulIdentity || soulCharacterGenerationEnabled()) && (!m.cinemaStudio || cinemaStudioEnabled()))
         .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),

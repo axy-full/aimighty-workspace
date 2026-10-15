@@ -711,7 +711,7 @@ test("generate and shorts refuse with their reason and read or send nothing, eve
   const { fetcher, calls } = backend();
   const engine = engineFor(context(fetcher));
   const reasons = {
-    generate: "Not runnable yet — single generations run in Gen, on Particl's own engines.",
+    generate: "Not runnable yet — single generations run in Make, on Particl's own engines.",
     shorts: "Not runnable yet — no API-key engine makes a set of shorts.",
   } as const;
   for (const [page, reason] of Object.entries(reasons) as [keyof typeof reasons, string][]) {

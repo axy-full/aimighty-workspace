@@ -154,7 +154,9 @@ test('Gemini: the exact generateContent request on the stable Flash-Lite id', as
   expect(reply.ok).toBe(true);
   expect(calls[0].url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent');
   expect(names(calls[0].headers)).toEqual(['content-type', 'user-agent', 'x-goog-api-key']);
-  expect(calls[0].body).toEqual({ generationConfig: { maxOutputTokens: 600 }, systemInstruction: { parts: [{ text: 'Write briefly.' }] }, contents: [{ role: 'user', parts: [{ text: 'A tree in rain.' }] }] });
+  /* Owner, 14 Oct 2026: every Gemini call carries the one safety configuration (lib/geminiSafety.ts): the four adjustable categories at BLOCK_NONE. */
+  expect(calls[0].body).toEqual({ generationConfig: { maxOutputTokens: 600 }, systemInstruction: { parts: [{ text: 'Write briefly.' }] }, contents: [{ role: 'user', parts: [{ text: 'A tree in rain.' }] }],
+    safetySettings: ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT'].map((category) => ({ category, threshold: 'BLOCK_NONE' })) });
 });
 
 test('xAI: the exact Responses request on the dated Grok 4.20 id', async () => {
