@@ -131,7 +131,7 @@ export async function astraRenderWithWorkerWaits(data: AstraEventData, step: Ast
 export const astraRender = inngest.createFunction(
   {
     id: "astra-blender-render",
-    name: "Render Astra 3D",
+    name: "Render 3D",
     triggers: [{ event: EVENTS.astraRender }],
     // Three renders at once, platform-wide, on either backend (the self-hosted pool has three workers).
     concurrency: [{ limit: ASTRA_RENDER_CONCURRENCY }, { limit: 2, key: "event.data.workspaceId" }],

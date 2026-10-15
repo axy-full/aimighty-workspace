@@ -7,7 +7,7 @@ import { ASTRA_BLENDER_MODEL, astraSceneSchema, parseAstraScene, type AstraScene
 import { astraAgentResultSchema, validateAstraProposal } from './proposal';
 import { astraNativeSchema, astraNativeResultSchema, validateAstraNativeResult, type AstraNativeSource } from './native';
 import type { Asset } from '../workbench/studio';
-import type { GatewayReply } from '../gateway';
+import type { TextReply as GatewayReply } from '../textReply';
 import { languageModel } from '../language-provider';
 import { engineMock } from '../mock';
 import type { CatalogModel } from '../catalog';
@@ -26,7 +26,7 @@ export type AstraAgentEnvelope = {
 };
 export function astraAgentInstructions(mode?: 'scene' | 'native') {
   if (mode === 'native') return [
-    'You are Astra blender, a production Blender 5.2.2 technical artist powered by GPT-6 Astra.',
+    'You are a production Blender 5.2.2 technical artist.',
     'Return a complete, reviewable native Blender Python revision. Use bpy for modeling, modifiers, topology, UVs, procedural materials, geometry nodes, armatures/rigging, constraints, shape keys, keyframed animation, camera tours, lights, compositing and simulations as needed. Do not restrict work to the visual editor primitives. Be explicit when an operation cannot fit the runtime.',
     'The sourceJson field contains one complete source document. program is executable Python, with no code fences. It runs only after separate user render approval inside an offline isolated Blender VM; this proposal does not execute anything.',
     'The worker initializes the supplied declarative scene, or opens baseBlendAssetId when supplied, before executing program. ASSETS maps approved asset IDs to absolute local file paths. Use only those paths; never internet URLs, downloads, package installation, credentials or host files. Imports of standard Python modules, bpy and mathutils are allowed in the VM.',
@@ -38,7 +38,7 @@ export function astraAgentInstructions(mode?: 'scene' | 'native') {
     'Source schema: ' + JSON.stringify(z.toJSONSchema(astraNativeSchema)),
   ].join('\n');
   return [
-    'You are Astra blender, a production 3D scene assistant powered by GPT-6 Astra.',
+    'You are a production 3D scene assistant.',
     'Produce a complete editable scene matching the user request. Use metres, Z up and XYZ Euler rotation in degrees. Preserve camera, lights, materials, animation and objects unless a change is needed. Locked objects must remain byte-for-byte unchanged.',
     'Use check_scene to validate your candidate if useful. There are at most two model calls; the final call has no tools. Return a concise summary, change list and sceneJson containing exactly one complete JSON scene. No Python, code fences, external URLs or executable code.',
     'Only use supplied asset IDs for model/image objects. Never invent assets or claim to have seen their contents. Metadata is not visual evidence. Imported models keep their original geometry/materials; primitives cannot stand in for detailed uploaded geometry without stating the limitation.',
@@ -66,7 +66,7 @@ export function astraAgentMessages(envelope: AstraAgentEnvelope): ModelMessage[]
   return [{ role: 'user', content: envelope.images?.length ? [{ type: 'text', text: context }, ...envelope.images.flatMap(image => [{ type: 'text' as const, text: image.label }, { type: 'image' as const, image: image.dataUrl, providerOptions: { openai: { imageDetail: 'low' } } }])] : context }];
 }
 export function createAstraAgent(envelope: AstraAgentEnvelope, model: LanguageModel, checkpoint?: (trace: string) => Promise<void>) {
-  if (envelope.model !== ASTRA_BLENDER_MODEL || envelope.inputTokenBudget !== ASTRA_AGENT_INPUT_TOKENS || !Number.isSafeInteger(envelope.maxTokens) || envelope.maxTokens < 1 || envelope.maxTokens > 32768) throw new Error('Invalid Astra execution budget.');
+  if (envelope.model !== ASTRA_BLENDER_MODEL || envelope.inputTokenBudget !== ASTRA_AGENT_INPUT_TOKENS || !Number.isSafeInteger(envelope.maxTokens) || envelope.maxTokens < 1 || envelope.maxTokens > 32768) throw new Error('Invalid 3D execution budget.');
   parseAstraScene(envelope.scene);
   let checks = 0;
   const trace: unknown[] = [];
@@ -110,10 +110,10 @@ export function createAstraAgent(envelope: AstraAgentEnvelope, model: LanguageMo
 export async function runAstraAgent(envelope: AstraAgentEnvelope, auth: Record<string, string>, checkpoint?: (trace: string) => Promise<void>): Promise<GatewayReply> {
   if (engineMock()) {
     const scene = structuredClone(envelope.scene);
-    scene.name = 'Astra scene proposal';
+    scene.name = '3D scene proposal';
     const result = envelope.mode === 'native'
       ? { summary: 'Mock native proposal; no provider was called.', steps: ['Prepared editable native source for review.'], sourceJson: JSON.stringify(envelope.native ?? { schemaVersion: 1, name: 'Native 3D scene', program: "import bpy\nbpy.context.scene.render.engine = 'CYCLES'\n", assetIds: [] }) }
-      : { summary: 'Mock Astra proposal; no provider was called.', steps: ['Preserved the scene and prepared a reviewable revision.'], sceneJson: JSON.stringify(scene) };
+      : { summary: 'Mock 3D proposal; no provider was called.', steps: ['Preserved the scene and prepared a reviewable revision.'], sceneJson: JSON.stringify(scene) };
     return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: { cost: 0 } }) };
   }
   const model = languageModel(ASTRA_BLENDER_MODEL, { auth });

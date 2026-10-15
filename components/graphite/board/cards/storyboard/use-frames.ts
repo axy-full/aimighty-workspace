@@ -66,7 +66,7 @@ export function useStoryboardDraw(seam: DraftSeam, readOnly: string | null): Sto
   const pricing = useStageQuotes(scope, requests);
   const ids = Object.keys(requests);
   const prices = ids.map((id) => pricing.quotes[id]?.credits);
-  const price = ids.length && prices.every((c) => c != null) ? priceSum(prices.map((c) => exact(c))) : null;
+  const price = ids.length && prices.every((c) => c != null) ? priceSum(ids.map((id) => exact(pricing.quotes[id]?.credits, pricing.quotes[id]?.usd))) : null;
   const failed = ids.filter((id) => pricing.quotes[id]?.error);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);

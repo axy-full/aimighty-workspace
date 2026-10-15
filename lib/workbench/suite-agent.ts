@@ -4,7 +4,7 @@ import { ToolLoopAgent, Output, isStepCount, tool, type ModelMessage, type Langu
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { z } from 'zod';
 import { engineMock } from '../mock';
-import type { GatewayReply } from '../gateway';
+import type { TextReply as GatewayReply } from '../textReply';
 import { finalToolStep, languageModel } from '../language-provider';
 import { SUITE_AGENT_COPY, suiteAgentResultSchema, type SuiteAgentResult } from './suite-agent-plan';
 import type { SuiteId } from '../suites';

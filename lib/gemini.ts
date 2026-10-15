@@ -7,7 +7,8 @@ import { vendorKey } from "./vendorKeys";
 import { estimateImageCostUsd } from "./vendorPricing";
 import { engineMock } from "./mock";
 import { fixtureBytes } from "./mockFs";
-import { gatewayErrorOutcome, gatewayRefusalOutcome, googleErrorOutcome, googleRefusalOutcome, type ProviderOutcome } from "./providerOutcome";
+import { gatewayErrorOutcome, gatewayRefusalOutcome, googleErrorOutcome, googleRefusalOutcome, safetyBlockOutcome, type ProviderOutcome } from "./providerOutcome";
+import { SAFETY_BLOCK_MESSAGE, geminiBlockReason, geminiSafetySettings } from "./geminiSafety";
 
 /**
  * Google's still engines — Nano Banana Pro and Nano Banana 2 — through one
@@ -71,28 +72,13 @@ export async function refPayload(ref: Reference): Promise<{ mime: string; b64: s
 }
 
 /**
- * What to say when Google declines a still.
- *
- * The old wording asserted flatly that the thresholds were already off.
- * That is only true at the default -- set GOOGLE_SAFETY_THRESHOLD to
- * something restrictive and the message became a lie that sent people
- * rewording a prompt no rewording would save. It now reads the setting it
- * is describing.
+ * What to say when the image engine declines a still without drawing it. Google's four adjustable categories are always sent switched off (lib/geminiSafety.ts), so what
+ * is left is the filter no setting reaches. When the engine names why (a block or a prohibited-content finish) it is `safetyBlock`: a plain message, charged nothing.
  */
 function refusal(text: string | null, outcome: ProviderOutcome): StillRefusalError {
-  const t = safetyThreshold();
-  const off = t === "OFF" || t === "BLOCK_NONE";
-  const where = off
-    ? "The adjustable safety thresholds are already off, so this is the layer no setting turns off."
-    : t
-      ? `The adjustable thresholds are set to ${t} on this deployment, so this may be one of them — ` +
-        "GOOGLE_SAFETY_THRESHOLD=OFF turns all four down. The image engine keeps one filter behind them that no setting reaches."
-      : "This deployment sends no thresholds, so the image engine's own defaults applied — " +
-        "GOOGLE_SAFETY_THRESHOLD=OFF turns the adjustable four down. The image engine keeps one filter behind them that no setting reaches.";
-  /* Whether anything was charged is the provider's to say (its usage or cost,
-     carried on the error's outcome) — never asserted here. */
+  /* Whether anything was charged is the provider's to say (its usage or cost, carried on the error's outcome) — never asserted here. */
   return new StillRefusalError(
-    "The image engine's built-in filter declined this one. " + where +
+    "The image engine's built-in filter declined this one. The adjustable safety settings are already off, so this is the layer no setting turns off." +
     " Reword the prompt or drop a reference and try again." +
     (text ? ` The image engine said: ${text.slice(0, 300)}` : ""),
     outcome,
@@ -110,39 +96,20 @@ export class StillRefusalError extends Error {
   }
 }
 
+/** Google's own fixed filters blocked the answer: a plain message for the person, nothing charged, and the reason kept for the log (never the prompt or the output). */
+export class SafetyBlockError extends StillRefusalError {
+  constructor(readonly reason: string, outcome: ProviderOutcome) {
+    super(SAFETY_BLOCK_MESSAGE, outcome);
+    this.name = "SafetyBlockError";
+  }
+}
+
 /** The gateway answered the still with an error: its status and a bounded copy of its body. */
 export class GatewayImageError extends Error {
   constructor(message: string, readonly status: number, readonly outcome: ProviderOutcome) {
     super(message);
     this.name = "GatewayImageError";
   }
-}
-
-/* ── Safety thresholds ──────────────────────────────────────────────────
- * Google's four adjustable categories are sent explicitly at OFF, so a
- * prompt is never held back by the probability classifiers — the team's
- * shots are judged by the one filter Google keeps for itself. Google's own
- * default for Gemini 2.5/3 models is already Off when nothing is sent;
- * saying so on every request keeps that true if their default moves.
- * GOOGLE_SAFETY_THRESHOLD overrides (BLOCK_NONE, BLOCK_ONLY_HIGH,
- * BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE, or "default" to send none).
- * ------------------------------------------------------------------- */
-export const SAFETY_CATEGORIES = [
-  "HARM_CATEGORY_HARASSMENT",
-  "HARM_CATEGORY_HATE_SPEECH",
-  "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-  "HARM_CATEGORY_DANGEROUS_CONTENT",
-] as const;
-
-export function safetyThreshold(): string | null {
-  const t = (process.env.GOOGLE_SAFETY_THRESHOLD ?? "OFF").trim().toUpperCase();
-  if (t === "DEFAULT" || t === "") return null;
-  return ["OFF", "BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"].includes(t) ? t : "OFF";
-}
-
-export function safetySettings(): { category: string; threshold: string }[] | null {
-  const threshold = safetyThreshold();
-  return threshold ? SAFETY_CATEGORIES.map((category) => ({ category, threshold })) : null;
 }
 
 export async function generateImage(opts: {
@@ -239,7 +206,7 @@ async function viaGateway(opts: {
     content.push({ type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } });
   }
   const imageConfig = { aspectRatio: opts.ratio, imageSize: opts.size.toUpperCase() };
-  const safety = safetySettings();
+  const safety = geminiSafetySettings();
   const bodyFor = (withSafety: boolean) => {
     const google: Record<string, unknown> = { imageConfig };
     if (withSafety && safety) google.safetySettings = safety;
@@ -265,6 +232,7 @@ async function viaGateway(opts: {
   // Should the gateway ever refuse the safety block itself, the render must
   // not die for it: send once more the way it went before the block existed.
   if (res.status === 400 && safety && /safety/i.test(raw)) {
+    console.warn(JSON.stringify({ event: "gemini_safety_settings_refused", status: res.status })); // no body: it can carry the prompt
     res = await send(bodyFor(false));
     raw = await res.text();
   }
@@ -286,7 +254,11 @@ async function viaGateway(opts: {
   const url: string | undefined = images[0]?.image_url?.url;
   const text: string | null =
     typeof msg.content === "string" && msg.content.trim() ? msg.content.trim() : null;
-  if (!url || !url.startsWith("data:")) throw refusal(text, gatewayRefusalOutcome(j.usage?.cost, text));
+  if (!url || !url.startsWith("data:")) {
+    const blocked = geminiBlockReason(j);
+    if (blocked) throw new SafetyBlockError(blocked, safetyBlockOutcome("gateway", blocked));
+    throw refusal(text, gatewayRefusalOutcome(j.usage?.cost, text));
+  }
 
   const comma = url.indexOf(",");
   const mime = url.slice(5, url.indexOf(";")) || "image/jpeg";
@@ -325,14 +297,14 @@ async function viaGoogle(opts: {
     input.push({ type: "image", mime_type: mime, data: b64 });
   }
   /* This door speaks the Interactions API, which takes the same four
-     thresholds under a snake_case name -- safety_settings, matching
+     settings under a snake_case name -- safety_settings, matching
      mime_type and aspect_ratio below -- rather than the camelCase
      safetySettings that generateContent wants. Until now only the gateway
      door sent them, so a render that fell through to this one was judged
      by Google's defaults while the refusal text claimed otherwise. */
-  const safety = safetySettings();
+  const safety = geminiSafetySettings();
   const bodyFor = (withSafety: boolean) => JSON.stringify({
-    model: process.env.GEMINI_IMAGE_MODEL ?? opts.model.id,
+    model: opts.model.id,
     input,
     ...(withSafety && safety ? { safety_settings: safety } : {}),
     response_format: {
@@ -359,6 +331,7 @@ async function viaGoogle(opts: {
   // the block itself, the render must not die for it -- send it once more
   // the way it went before the block existed.
   if (res.status === 400 && safety && /safety/i.test(raw)) {
+    console.warn(JSON.stringify({ event: "gemini_safety_settings_refused", status: res.status })); // no body: it can carry the prompt
     res = await send(bodyFor(false));
     raw = await res.text();
   }
@@ -386,7 +359,11 @@ async function viaGoogle(opts: {
     }
   }
   const text = texts.length ? texts.join("\n").trim() : null;
-  if (!data) throw refusal(text, googleRefusalOutcome(j.usage, text));
+  if (!data) {
+    const blocked = geminiBlockReason(j);
+    if (blocked) throw new SafetyBlockError(blocked, safetyBlockOutcome("google", blocked));
+    throw refusal(text, googleRefusalOutcome(j.usage, text));
+  }
 
   const u = j.usage;
   const totalTokens =

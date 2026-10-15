@@ -99,9 +99,9 @@ export function scenesOf(project: Project | null): number {
 export const lookRefs = (project: Project | null) =>
   (project?.assets ?? []).filter((a) => ["image", "link", "document"].includes(a.kind)).length;
 /* The category drafts file 3D uploads and renders under; older drafts carry the pre-rename value. */
-const ASTRA_CATEGORIES = new Set(["3D", "Astra", ["Astra", "blender"].join(" ")]);
+const is3DCategory = (category: string) => category === "3D" || category === "Astra" || category === "Astra blender";
 const astraAssets = (project: Project | null) =>
-  (project?.assets ?? []).filter((a) => ASTRA_CATEGORIES.has(a.category) || a.mime === "model/gltf-binary").length;
+  (project?.assets ?? []).filter((a) => is3DCategory(a.category) || a.mime === "model/gltf-binary").length;
 const uploads = (project: Project | null, kind?: string) =>
   (project?.assets ?? []).filter((a) => a.uploadId && !a.generationId && (!kind || a.kind === kind)).length;
 const runtimeSeconds = (project: Project | null) =>
@@ -270,7 +270,7 @@ export const SPEC_PAGES: Partial<Record<PageId, SpecPage>> = {
       { title: "PLANNING", note: "reviewed before it runs", cards: [
         { name: "Conversation", desc: "Plain-language planning with the whole project in context.", chips: ["quoted"], owner: "Atomik", tool: "agent" },
         { name: "Multi-step plans", desc: "A plan is a named sequence of priced steps you can edit before running.", chips: ["editable"], owner: "Atomik", plan: true, tool: "agent" },
-        { name: "Cross-suite", desc: "One plan can span Production, Marketing and the Viral Studio.", chips: ["4 suites"], owner: "Atomik", tool: "agent" },
+        { name: "Cross-suite", desc: "One plan can span Studio, Ads and Social.", chips: ["4 suites"], owner: "Atomik", tool: "agent" },
         { name: "Autonomy", desc: "Run a whole stage, or step through it one action at a time.", chips: ["step", "run"], owner: "You", tool: "agent" },
       ] },
       { title: "CONTEXT", note: "", cards: [

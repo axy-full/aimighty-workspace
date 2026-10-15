@@ -284,3 +284,51 @@ export async function readableActors(values: Iterable<unknown>): Promise<(value:
     return String(shown(value));
   };
 }
+
+/* ── The owner's account id, at the response boundary ── */
+
+/**
+ * The platform owner's account ids, as a CLIENT workspace's members may see them (owner, 14 Oct: "hide my account id in client workspaces"): every one of them that is not
+ * the viewer's own reads as the opaque id the Team page already gives the support row (`supportMemberId`), inside any value or key of a response. The viewer's own id is
+ * left alone (the owner's own screens compare it with what they made), and the house workspace is untouched. This is for what is SENT: the stored rows keep the raw id,
+ * because the server needs it (who may change work, who may release a take, the jobs tray, recovery).
+ */
+export async function storedAccountIdMask(
+  ws: Pick<TenantWorkspace, "id"> | null | undefined,
+  viewerId?: string | null,
+): Promise<<T>(value: T) => T> {
+  if (!ws || isHouseWorkspace(ws)) return (value) => value;
+  const ids = (await platformOwnerIdentity()).accountIds.filter((id) => id && id !== viewerId);
+  if (!ids.length) return (value) => value;
+  const opaque = new Map(ids.map((id) => [id, supportMemberId(ws.id, id)] as const));
+  const swap = (text: string) => { let out = text; for (const [id, hidden] of opaque) if (out.includes(id)) out = out.split(id).join(hidden); return out; };
+  const walk = (value: unknown): unknown =>
+    typeof value === "string" ? swap(value)
+    : Array.isArray(value) ? value.map(walk)
+    : value && typeof value === "object" ? Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, inner]) => [swap(key), walk(inner)]))
+    : value;
+  return <T,>(value: T) => walk(value) as T;
+}
+
+/** `storedAccountIdMask` for the workspace in scope. */
+export async function storedAccountIdMaskHere(viewerId?: string | null) {
+  return storedAccountIdMask(currentTenant()?.workspace, viewerId);
+}
+
+/**
+ * Every JSON answer a data route gives, with the owner's account id hidden from everyone but the owner (lib/auth.ts › withTenant calls this on each). Cheap when there
+ * is nothing to hide: the body is only parsed when it holds one of the ids. Not JSON, or compressed, or empty: returned as it is.
+ */
+export async function hideOwnerAccountId(res: Response, ws: Pick<TenantWorkspace, "id"> | null | undefined, viewerId?: string | null): Promise<Response> {
+  if (!ws || isHouseWorkspace(ws) || !res.body) return res;
+  if (!/json/i.test(res.headers.get("content-type") ?? "") || res.headers.get("content-encoding")) return res;
+  const ids = (await platformOwnerIdentity()).accountIds.filter((id) => id && id !== viewerId);
+  if (!ids.length) return res;
+  const text = await res.clone().text();
+  if (!ids.some((id) => text.includes(id))) return res;
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return res; }
+  const headers = new Headers(res.headers);
+  headers.delete("content-length");
+  return new Response(JSON.stringify((await storedAccountIdMask(ws, viewerId))(parsed)), { status: res.status, statusText: res.statusText, headers });
+}

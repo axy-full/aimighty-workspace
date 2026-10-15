@@ -83,6 +83,7 @@ async function load(kind: "uploads" | "jobs", cleanupFails = false) {
     "@/lib/jobs": {},
     /* The route reads who marked a take through it (a PATCH response); the DELETE path under test never calls it. */
     "@/lib/platformOwnerPrivacy": {},
+    "@/lib/security/people-only": {},
     "@/lib/demo/readonly.server": await import("../../lib/demo/readonly.server"),
     "@/lib/shots": {},
     "@/lib/workAccess": await import("../../lib/workAccess"),

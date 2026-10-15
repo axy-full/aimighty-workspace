@@ -110,6 +110,10 @@ const NO_LEDGER: RunLedger = { charges: [], ceiling: null };
 /** The planning turn's meter event: one per run. */
 export const planEventId = (runId: string) => `rigplan_${runId.replace(/^rar_/, "")}`;
 
+/** A render's own dollars when its admission quoted in dollars (the house); else null. Display only. */
+const stepQuoteUsd = (s: StepRow): number | null => (s.admission && s.admission.quote.unit === "usd" ? s.admission.quote.price : null);
+const stepWorstUsd = (s: StepRow): number | null => { const u = stepQuoteUsd(s); return u == null ? null : u * Math.max(1, s.band ?? 1); };
+
 /** A render step as the plan's quote reads it. */
 function quoteStep(run: RunRow, s: StepRow): QuoteInputStep {
   return {
@@ -145,8 +149,13 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
   if (!["running", "needs_you", "paused"].includes(run.state)) return { quote: null, blocked: null, approval: null };
   const quote = planQuote(takes.map((s) => quoteStep(run, s)), jobLine);
   if (!quote.ready) return { quote: null, blocked: takes.some((s) => s.state === "waiting" || s.state === "paused") ? quote.reason : null, approval: null };
+  /* The house pays in dollars: the covered renders' own dollars, added (display only; the total above stays the credits the approval is made on). */
+  const covered = quote.steps.map((q) => takes.find((s) => s.seq === q.seq));
+  const usds = covered.map((s) => (s ? stepWorstUsd(s) : null));
+  const totalUsd = usds.length && usds.every((u): u is number => u != null) ? usds.reduce((a, b) => a + b, 0) : null;
   return {
-    quote: { total: quote.total, ceiling: quote.ceiling, approximate: quote.approximate, fingerprint: quote.fingerprint, covered: quote.steps.map((s) => s.seq), asks: quote.asks.map((a) => a.seq) },
+    quote: { total: quote.total, ceiling: quote.ceiling, approximate: quote.approximate, fingerprint: quote.fingerprint, covered: quote.steps.map((s) => s.seq), asks: quote.asks.map((a) => a.seq),
+      ...(totalUsd != null ? { totalUsd } : {}) },
     blocked: null, approval: null,
   };
 }
@@ -187,6 +196,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
     return {
       seq: s.seq, nodeId: s.nodeId, tool: "render", title, state: s.state, quote: s.quoteCredits,
       worst: s.quoteCredits == null ? null : fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)),
+      ...(stepQuoteUsd(s) != null ? { quoteUsd: stepQuoteUsd(s), worstUsd: stepWorstUsd(s) } : {}),
       pause: s.state === "paused" ? s.pause : null, charged, outcome, charge: ledger, reason: s.reason,
       canRender: mine && open && asking, fingerprint: open && s.admission ? s.admission.quote.fingerprint : null,
       fixOf: s.fixOf, inPlan: !!s.approvalId,

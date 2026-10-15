@@ -1,6 +1,6 @@
 import { NextResponse, after, type NextRequest } from "next/server";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
-import { readableProjectOr } from "@/lib/draftProject";
+import { mayReachProject, readableProjectOr } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { listChats, createChat, engines, requestEffort, runTurn, projectContext, type AgentMode } from "@/lib/atomik";
@@ -103,7 +103,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
   { const off = await sampleWorkspaceOff(); if (off) return off; }
   const id = await createChat({
     userId: got.user.id,
-    projectId: typeof body.projectId === "string" ? body.projectId : null,
+    /* The project a chat files its steps into, as its maker may file there: a private board of someone else's, or an id that is none, is stored as no project (the same answer for both). */
+    projectId: typeof body.projectId === "string" && body.projectId && (await mayReachProject(got.user, body.projectId, "admit")) ? body.projectId : null,
     model: typeof body.model === "string" && body.model ? body.model : "auto",
     effort: requestEffort(body.effort),
     agentMode: body.agentMode === "auto" ? "auto" : ("ask" as AgentMode),

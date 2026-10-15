@@ -103,7 +103,7 @@ export function useMoveOffer(ctx: BoardCtx, run: RigAgentRunView | null, model: 
   const quotes = useStageQuotes(ctx.scope, plan ? { move: { body: plan.body } } : {});
   const quote = quotes.quotes.move;
   if (!plan || !target) return null;
-  return { seq: target.seq, engine: plan.engine, engineLabel: plan.label, price: quote && quote.credits != null && !quote.approximate ? movePrice(quote.credits) : null, nodeId: plan.nodeId };
+  return { seq: target.seq, engine: plan.engine, engineLabel: plan.label, price: quote && quote.credits != null && !quote.approximate ? movePrice(quote.credits, quote.usd) : null, nodeId: plan.nodeId };
 }
 
 type Props = {
