@@ -421,6 +421,20 @@ test("the shot cap is judged at the quote and the press, before any face is chec
       expect((await meterRows()).length).toBe(before.meter);
       expect(deferred.length).toBe(before.handed);
       await runInTenant(house(), async () => { expect((await still(OWNER, { quoteOnly: true })).status).toBe(200); }, OWNER as never);
+      /* An admin who is not a person at the press (a token, an agent, a step Atomik's Auto approved) never skips the cap. */
+      const TOKEN = { id: "tok_admin", name: "Assistant", scope: "render" as const, capUsd: null };
+      const ADMIN_TOKEN: AdmissionActor = { ...OWNER, token: TOKEN };
+      const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1" } as AdmissionActor["user"] };
+      await runInTenant(house(), async () => {
+        for (const go of [still, edit]) for (const extra of [{ quoteOnly: true }, {}]) expect(await go(ADMIN_TOKEN, extra), `token ${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, { user: ADMIN_TOKEN.user, token: TOKEN } as never);
+      await runInTenant(house(), async () => {
+        for (const go of [still, edit]) for (const extra of [{ quoteOnly: true }, {}]) expect(await go(AGENT, extra), `agent ${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, AGENT as never);
+      await runInTenant(house(), async () => {
+        for (const quoteOnly of [true, undefined]) expect(await admitBfl({ tool: "image", prompt: "a crane", shotId, ...approved, quoteOnly }, OWNER, { ...options(), run: { auto: true } as never }, seams), `auto ${String(quoteOnly)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, OWNER as never);
+      expect(faceCalls).toBe(0);
       expect((await still(MEMBER, { quoteOnly: true, shotId: undefined })).status).toBe(200);
       await setRule("ask");
       expect((await still(MEMBER, { quoteOnly: true })).status).toBe(200);
