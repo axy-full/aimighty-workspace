@@ -542,7 +542,8 @@ test("a voice is a stock one of ours only when ElevenLabs lists every voice in i
       return { reply, faceCalls };
     };
     /* Premade, alone or all of a dialogue: no voice consent asked; the face gate still runs. */
-    for (const id of [await take({ voiceId: "v_premade" }), await take({ task: "dialogue", lines: [{ voiceId: "v_premade" }, { voiceId: "v_premade2" }] })]) {
+    /* A Sarvam speech take is a stock voice too (that engine offers no cloning). */
+    for (const id of [await take({ voiceId: "v_premade" }), await take({ task: "dialogue", lines: [{ voiceId: "v_premade" }, { voiceId: "v_premade2" }] }), await take({ provider: "sarvam", task: "sarvam_speech" })]) {
       const { reply, faceCalls } = await ask(id);
       expect(reply.status, JSON.stringify(reply.body)).toBe(200);
       expect(faceCalls).toBe(1);

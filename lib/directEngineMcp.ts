@@ -1,5 +1,6 @@
 import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
+import { sarvamTools } from "./sarvamTools";
 
 /**
  * The direct engines' tools (sync.so, and in the stack above it Sarvam and BFL) as an outside agent over MCP sees them (rule 11: the button, Make, a board
@@ -65,7 +66,43 @@ const LIP_SYNC: DirectTool = {
   describe: (out, quote) => `Lip-sync started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC];
+const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+/** A Sarvam tool is present when the engine is on here AND it can be priced (a tool that cannot be priced cannot run). */
+const sarvamPresent = (id: string) => async () => (await sarvamTools()).some((t) => t.id === id && !("unavailable" in t && t.unavailable));
+const SARVAM_PROJECT = { project_id: { type: "string", description: "Optional: the production it is filed under." } };
+
+const SARVAM_SPEECH: DirectTool = {
+  def: {
+    name: "sarvam_speech",
+    description: "Speak a line in an Indian language or English (Sarvam Bulbul, a stock voice: no cloning). Priced first; the job is sent at that price as its ceiling. Returns an audio take id; collect it with get_render.",
+    inputSchema: { type: "object", properties: { text: { type: "string", description: "Up to 2,500 characters." }, language: { type: "string", description: "A code such as hi-IN or en-IN." }, model: { type: "string", description: "bulbul:v3 (default) or bulbul:v4-flash." }, voice: { type: "string", description: "A stock voice's name. Optional." }, pace: { type: "number", description: "0.5 to 2. Optional." }, ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." } }, required: ["text", "language"] },
+  },
+  present: sarvamPresent("sarvam_speech"),
+  request: (a) => ({ path: "/api/sarvam", body: { tool: "speech", text: str(a.text), language: str(a.language), model: str(a.model), voice: str(a.voice), pace: num(a.pace), projectId: str(a.project_id) } }),
+  describe: (out, quote) => `Speech made.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
+};
+const SARVAM_TRANSCRIBE: DirectTool = {
+  def: {
+    name: "sarvam_transcribe",
+    description: "Transcribe a short audio clip of this workspace (under about 30 seconds; Sarvam Saaras). Priced first. The transcript is returned to you and kept nowhere.",
+    inputSchema: { type: "object", properties: { source_upload_id: { type: "string", description: "An audio upload of this workspace (or source_take_id)." }, source_take_id: { type: "string" }, language: { type: "string", description: "A code such as hi-IN, or leave it to be detected." }, request_id: { type: "string" } }, required: [] },
+  },
+  present: sarvamPresent("sarvam_transcribe"),
+  request: (a) => ({ path: "/api/sarvam", body: { tool: "transcribe", sourceUploadId: str(a.source_upload_id), sourceGenId: str(a.source_take_id), language: str(a.language) } }),
+  describe: (out) => out.kept === false ? String(out.note) : `Transcript (${String(out.language ?? "language detected")}, ${String(out.seconds)} s):\n\n${String(out.transcript)}`,
+};
+const SARVAM_TRANSLATE: DirectTool = {
+  def: {
+    name: "sarvam_translate",
+    description: "Translate text between English and Indian languages (Sarvam). Priced first. The translation is returned to you and kept nowhere.",
+    inputSchema: { type: "object", properties: { text: { type: "string", description: "Up to 2,000 characters (1,000 on mayura:v1)." }, source: { type: "string", description: "A code such as en-IN." }, target: { type: "string", description: "A code such as ta-IN." }, model: { type: "string", description: "sarvam-translate:v1 (default) or mayura:v1." }, request_id: { type: "string" } }, required: ["text", "source", "target"] },
+  },
+  present: sarvamPresent("sarvam_translate"),
+  request: (a) => ({ path: "/api/sarvam", body: { tool: "translate", text: str(a.text), source: str(a.source), target: str(a.target), model: str(a.model) } }),
+  describe: (out) => (out.kept === false ? String(out.note) : String(out.text)),
+};
+
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

@@ -293,7 +293,8 @@ export const SARVAM_RATES = {
   /** Text to speech, rupees per 10,000 characters. */
   speechInrPer10kChars: { "bulbul:v3": 30, "bulbul:v4-flash": 20 },
   /** Speech to text, rupees per hour of audio. Speaker labels (diarization), a batch feature, are not offered yet. */
-  transcribeInrPerHour: 29.4,
+  /* The plan records ₹29.40 an hour; Sarvam's own docs table says ₹30. The higher is used so a quote is never under; TO CONFIRM against the first invoice. */
+  transcribeInrPerHour: 30,
   /** Translation, rupees per 10,000 characters. */
   translateInrPer10kChars: { "sarvam-translate:v1": 20, "mayura:v1": 20 },
   defaultSpeechModel: "bulbul:v3", defaultTranscribeModel: "saaras:v4", defaultTranslateModel: "sarvam-translate:v1",

@@ -105,6 +105,10 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
           consentId: "consent_margin", castMemberId: "cast_margin", use: "production", faceSha256: "a".repeat(64), voiceConsentId: null, funded: 1, claimedAt: at,
           syncId: "vendor-job-lipsync-1", videoAsset: "vendor-asset-v", audioAsset: "vendor-asset-a", submittedAt: at, lastPolledAt: at, pollUntil: at, settled: 1, cleanupDue: 1, cleanupTries: 2, vendorDeleted: 0, reconcile: 1 } }),
         "u_member", at + 5, at + 5, "syncso", 0, null, null, null, "/api/media/g_lipsync", null] },
+      /* A Sarvam speech take: its params carry the workflow's record with what the vendor charged (lib/directEnginePublic.ts keeps only the take's own words). */
+      { sql: take, args: ["g_sarvam", "p_margin", null, "audio", "bulbul:v3", "Namaste",
+        JSON.stringify({ task: "sarvam_speech", job: "voice", sarvam: { tool: "speech", model: "bulbul:v3", language: "hi-IN", voice: "stock-one", chars: 7, usd: cost.voice } }),
+        "u_member", at + 6, at + 6, "sarvam", 0, null, null, null, "/api/media/g_sarvam", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
@@ -176,6 +180,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a dub)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_dub?sync=0", params: { id: "g_dub" } },
   { name: "GET /api/jobs/[id] (a voice change)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_voice?sync=0", params: { id: "g_voice" } },
   { name: "GET /api/jobs/[id] (a lip-sync take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_lipsync?sync=0", params: { id: "g_lipsync" } },
+  { name: "GET /api/jobs/[id] (a Sarvam speech take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_sarvam?sync=0", params: { id: "g_sarvam" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },

@@ -147,6 +147,8 @@ async function resolveSource(kind: "video" | "audio", uploadId: unknown, genId: 
 async function audioIsSynthetic(source: StoredSource, voices: NonNullable<LipSyncSeams["voices"]>): Promise<boolean> {
   if (source.kind !== "generation") return false;
   const row = (await db().execute({ sql: "SELECT provider, json_extract(params,'$.task') AS task, json_extract(params,'$.voiceId') AS voice, json_extract(params,'$.lines') AS lines FROM generations WHERE id=?", args: [source.id] })).rows[0];
+  /* A Sarvam speech take (lib/sarvamTools.ts) is a stock voice: that engine offers and calls no voice cloning (a test pins it). */
+  if (row?.provider === "sarvam" && row.task === "sarvam_speech") return true;
   if (!row || row.provider !== "elevenlabs" || !SYNTHETIC_AUDIO_TASKS.includes(String(row.task))) return false;
   let ids: unknown[] = [];
   if (row.task === "speech") ids = [row.voice];
