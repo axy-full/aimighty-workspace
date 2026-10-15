@@ -46,14 +46,14 @@ import { consentLive } from "./security/consent-words";
  *
  * CONSENT. **Act-Two passes `requireConsentMatch` (lib/consentMatch.ts) for the DRIVING face (the performer) AND the TARGET character, each with its own cast member and a still of
  * its face, before any row or reservation: no exemption.** Aleph 2 edits a clip that may show a real person, which cannot be known from the clip, so it passes the gate too (one
- * face still and cast member). Gen-4 from a still is not gated (the plan lists no gate for it). Today the gate refuses every check (no consent record holds a face reference yet) and
- * runs for the house workspace only, so Act-Two and Aleph 2 are refused until the owner chooses that source. What is checked is the chosen still against the reference, NOT proven to
+ * face still and cast member). Gen-4.5 and Gen-4 Turbo pass it too for their start still, as a FLUX.2 edit's reference does (consistent; the plan lists no gate for it, and the owner can relax it later; no "shows nobody" exemption). Today the gate refuses every check (no consent record holds a face reference yet) and
+ * runs for the house workspace only, so every Runway tool is refused until the owner chooses that source. What is checked is the chosen still against the reference, NOT proven to
  * come from the clip or the character image (see lib/lipSync.ts).
  *
  * MONEY. Quote: whole seconds (rounded up) x the model's credits a second (RUNWAY_RATES, lib/vendorRates.ts, the plan's table, TO CONFIRM; Aleph 2's 56-credit minimum) at $0.01 a
  * credit, through the margin table (`quotedCredits`, keyed by the model); reserved at the quote; settled at the task's own `cost.credits`, the quote (marked `reconcile`) when it reports none,
  * and never billed above the quote (more reported is recorded as the meter's `overrun_usd` and marked `reconcile`). A failed task Runway did charge for settles at that cost on the ledger line,
- * unbilled (the take says so); one that cost nothing says "Nothing billed"; a clip lost after the task succeeded is recorded at the reported cost, else the quote. A person approves: `maxCredits` must cover the quote.
+ * unbilled; the take reads "Nothing billed" either way (no vendor credit is in anything the workspace reads); a clip lost after the task succeeded is recorded at the reported cost, else the quote. A person approves: `maxCredits` must cover the quote.
  */
 export const RUNWAY_TASK = "runway_video";
 const ENTITY_ID = /^[A-Za-z0-9_.:-]{1,160}$/;
@@ -205,6 +205,9 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
     if (image.bytes > RUNWAY_IMAGE_LIMIT_BYTES) return bad("A start still is up to 5 MB here.");
     if (!prompt) return bad("Write what happens.");
     inputs.image = { id: image.id };
+    /* The start still is checked like a reference of a FLUX.2 edit (consistent; the owner can relax it later): it must show a cast member with live consent, and there is no "shows nobody" exemption. */
+    const gated = await face("subject", body.castMemberId, image.id, "start still's");
+    if (gated) return gated;
   } else if (tool === "edit") {
     model = "aleph2";
     if (!prompt) return bad("Write what to change.");
@@ -276,7 +279,7 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   if (faces.length) {
     if (!projectId || !use) return admissionReply({ error: "Name the production and what it is for (production, ads or social): a person's face needs their consent on record.", code: "bad-input" }, { status: 400 });
     try {
-      if (!(await faceCheckAvailable())) throw new ConsentMatchError("off", "The face check isn't on for this workspace, so a real face can't be used here yet.", 403);
+      if (seams.houseOnly !== false && !(await faceCheckAvailable())) throw new ConsentMatchError("off", "The face check isn't on for this workspace, so a real face can't be used here yet.", 403);
       for (const f of faces) {
         const bytes = await readUploadBytes(f.upload.id, f.upload.ext, f.upload.stored, RUNWAY_IMAGE_LIMIT_BYTES);
         const match = await (seams.consent ?? requireConsentMatch)(f.castMemberId, bytes, { projectId, use });
@@ -341,7 +344,8 @@ export async function settleRunway(
      A failure Runway charged for is recorded at that cost on the ledger line (never above the quote) and billed to nobody. */
   const cost = Math.min(Math.max(0, outcome.costUsd), runway.reservedUsd);
   const overrunUsd = outcome.costUsd > runway.reservedUsd + 1e-9 ? Math.round((outcome.costUsd - runway.reservedUsd) * 1e6) / 1e6 : null;
-  const reconcile = outcome.reconcile === true || overrunUsd !== null;  const write = ok
+  const reconcile = outcome.reconcile === true || overrunUsd !== null;
+  const write = ok
     ? {
         sql: `UPDATE generations SET status='succeeded', stored_url=?, bytes=?, cost_usd=?, error=NULL, duration_ms=?, duration_s=?,
                 params=json_set(params,'$.runway.status','done','$.runway.settled',1,'$.runway.cleanupDue',1,'$.runway.reconcile',?), updated_at=?
@@ -357,7 +361,7 @@ export async function settleRunway(
     id: genId, kind: "video", engine: "runway", model: runway.model, status: ok ? "succeeded" : "failed", engineCostUsd: cost, durationMs: ms,
     projectId: row.project_id, shotId: row.shot_id, createdBy: row.created_by,
     ...(!ok && cost > 0 ? { unbilled: true } : {}),
-    ...(ok && overrunUsd !== null ? { overrunUsd } : {}),
+    ...(overrunUsd !== null ? { overrunUsd } : {}),
     ...(said ? { providerOutcome: said } : {}),
   });
   await deliverGenerationSettlement(genId);
@@ -453,10 +457,10 @@ export async function advanceRunwayJobWith(genId: string, deps: RunwayDeps): Pro
       }
       const state = await (deps.poll ?? pollTask)(runway.taskId);
       if (state.status === "failed") {
-        /* A failed task Runway charged for settles at what it reports (the take says so); one that cost nothing is "Nothing billed"; none reported is 0, marked to reconcile. */
+        /* The workspace reads "Nothing billed" whatever Runway charged: no vendor credit appears in anything it reads. A failed task Runway charged for is recorded at what it reports on the
+           platform ledger line only (unbilled; never above the quote, the excess as the overrun); none reported is 0, marked to reconcile. */
         const charged = state.costCredits != null && state.costCredits > 0 ? state.costCredits * RUNWAY_RATES.creditUsd : 0;
-        const said = charged > 0 ? `Runway reports it charged ${state.costCredits} credits for this task.` : "Nothing was billed.";
-        await settleRunway(genId, "failed", { message: `${state.failure} ${said}`, costUsd: charged, reconcile: state.costCredits == null, said: silentOutcome("runway", "run", "failed", state.failure) });
+        await settleRunway(genId, "failed", { message: `${state.failure} Nothing was billed.`, costUsd: charged, reconcile: state.costCredits == null, said: silentOutcome("runway", "run", "failed", state.failure) });
         await cleanupRunwayVendor(genId, deps).catch(() => {});
         return (await load(genId, { any: true }))?.runway ?? null;
       }
@@ -536,12 +540,12 @@ const COMMON = { provider: "runway", kind: "engine" as const, route: "/api/runwa
 export const RUNWAY_TOOLS = [
   { ...COMMON, id: "runway_performance", tool: "performance" as const, models: ["act_two"], inputs: { performanceClipUploadId: "a 3 to 30 s performance video", characterUploadId: "the character, an image or a clip", performerCastMemberId: "who performs", performerFaceUploadId: "a still of the performer's face", characterCastMemberId: "who the character shows", characterFaceUploadId: "a still of the character's face (an image character is its own)", projectId: "the production", use: "production, ads or social", maxCredits: "the approved price" }, output: "a video take", gate: "a live consent record for the performer AND the character (lib/consentMatch.ts)" },
   { ...COMMON, id: "runway_edit", tool: "edit" as const, models: ["aleph2"], inputs: { clipUploadId: "a 2 to 30 s video", prompt: "what to change", castMemberId: "who is in it", faceFrameUploadId: "a still of their face", projectId: "the production", use: "production, ads or social", maxCredits: "the approved price" }, output: "a video take", gate: "a live consent record for the person (lib/consentMatch.ts)" },
-  { ...COMMON, id: "runway_video", tool: "video" as const, models: ["gen4.5", "gen4_turbo"], inputs: { startImageUploadId: "a start still", prompt: "what happens", duration: "2 to 10 seconds", model: "gen4.5 (default) or gen4_turbo", ratio: "width:height", maxCredits: "the approved price" }, output: "a video take" },
+  { ...COMMON, id: "runway_video", tool: "video" as const, models: ["gen4.5", "gen4_turbo"], inputs: { startImageUploadId: "a start still (it is the face still checked)", castMemberId: "who the still shows", projectId: "the production", use: "production, ads or social", prompt: "what happens", duration: "2 to 10 seconds", model: "gen4.5 (default) or gen4_turbo", ratio: "width:height", maxCredits: "the approved price" }, output: "a video take", gate: "a live consent record for the person the start still shows (lib/consentMatch.ts)" },
 ];
 
-/** The tools present for a workspace: none unless Runway is on here (its switch, and the house workspace only). Act-Two and Aleph 2 only where their face gate can run. */
+/** The tools present for a workspace: none unless Runway is on here (its switch, and the house workspace only). Every one of them passes the face gate, so none is offered where it cannot run. */
 export async function runwayTools(workspace: { id: string } | null | undefined = currentTenant()?.workspace): Promise<typeof RUNWAY_TOOLS> {
   if (!(await runwayOnHere(workspace))) return [];
   const faces = await faceCheckAvailable(workspace);
-  return RUNWAY_TOOLS.filter((t) => t.tool === "video" || faces);
+  return faces ? RUNWAY_TOOLS : [];
 }

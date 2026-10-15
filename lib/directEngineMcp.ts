@@ -237,18 +237,22 @@ const RUNWAY_EDIT: DirectTool = {
 const RUNWAY_VIDEO: DirectTool = {
   def: {
     name: "runway_video",
-    description: "Make a clip from a start still of this workspace and words (Runway Gen-4.5 or Gen-4 Turbo). Priced first; a person approves it in Particl (or the workspace lets small jobs run). Returns a video take id; collect it with get_render.",
+    description:
+      "Make a clip from a start still of this workspace and words (Runway Gen-4.5 or Gen-4 Turbo). Priced first; a person approves it in Particl (or the workspace lets small jobs run). The still passes the consent gate first: " +
+      "it needs the cast member it shows, the production and what it is for. Returns a video take id; collect it with get_render.",
     inputSchema: {
       type: "object",
       properties: {
-        start_image_upload_id: { type: "string", description: "A still of this workspace." }, prompt: { type: "string", description: "What happens." }, duration: { type: "number", description: "2 to 10 seconds." },
-        model: { type: "string", description: "gen4.5 (default) or gen4_turbo." }, ...RUNWAY_COMMON,
+        start_image_upload_id: { type: "string", description: "A still of this workspace; it is the face still checked." }, cast_member_id: { type: "string", description: "Who the still shows." }, prompt: { type: "string", description: "What happens." },
+        duration: { type: "number", description: "2 to 10 seconds." }, model: { type: "string", description: "gen4.5 (default) or gen4_turbo." }, use: { type: "string", description: "production, ads or social." }, ...RUNWAY_COMMON,
       },
-      required: ["start_image_upload_id", "prompt"],
+      required: ["start_image_upload_id", "cast_member_id", "prompt", "project_id", "use"],
     },
   },
   present: runwayPresent("runway_video"),
-  request: (a) => ({ path: "/api/runway", body: { tool: "video", startImageUploadId: str(a.start_image_upload_id), prompt: str(a.prompt), duration: num(a.duration), model: str(a.model), ratio: str(a.ratio), seed: num(a.seed), projectId: str(a.project_id) } }),
+  /* gen4_turbo is the draft; gen4.5 is the hero model and always asks. (Act-Two and Aleph 2 are never drafts.) */
+  draft: (b) => b.model === "gen4_turbo",
+  request: (a) => ({ path: "/api/runway", body: { tool: "video", startImageUploadId: str(a.start_image_upload_id), castMemberId: str(a.cast_member_id), prompt: str(a.prompt), duration: num(a.duration), model: str(a.model), ratio: str(a.ratio), seed: num(a.seed), projectId: str(a.project_id), use: str(a.use) } }),
   prepared: (b) => `prepared: ${String(b.model ?? "gen4.5")} clip of ${String(b.duration ?? 5)} s`,
   describe: (out, quote) => runwayPrice(out, quote, "Video"),
 };
