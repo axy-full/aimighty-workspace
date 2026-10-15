@@ -568,3 +568,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **15 Oct 04:12 IST.** **#732 CI GREEN 24/24** (run 38644221017, base 429566c1), so **merged** (Step 0 quote snapshot). #730 into CI.
 - **15 Oct 04:42 IST.** **#723 CI GREEN 24/24** (run 38648280558), so **merged** (approving a take is people-only; tokens can't un-approve; the bulk-clear route checks for a person). #728 (M1, stacked on #723) stays unmerged (migration).
 - **15 Oct 05:10 IST.** **#730 CI GREEN 24/24** (run 38650782480), so **merged** (Gemini safety: one pinned BLOCK_NONE config; blocks free, no prompt logged; GEMINI_IMAGE_MODEL and GOOGLE_SAFETY_THRESHOLD removed from code). Owner: the Coolify name-check command is due in the morning report. #738 (stacked) stays parked (the :184 line).
+- **15 Oct 05:41 IST.** **#726 CI GREEN 24/24** (run 38653933775), so **merged** (the closed list of reject reasons). Next: #743 after #742; then #725, #727, #737, #739.
