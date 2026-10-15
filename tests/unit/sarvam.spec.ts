@@ -525,6 +525,7 @@ test("over MCP: the three tools are listed only where the engine is on and price
   const call = async (_p: string, init: { body?: unknown } = {}) => {
     const body = init.body as Record<string, unknown>;
     calls.push({ body });
+    if (_p === "/api/prepared-jobs") return { job: { id: "prep_s1" } };
     return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 100, unit: "usd" } : body.tool === "translate" ? { ok: true, text: "[ta-IN] Hello" } : { id: "gen_s1" };
   };
   await asTenant(house(), async () => {
@@ -539,7 +540,7 @@ test("over MCP: the three tools are listed only where the engine is on and price
       for (const mode of [null, "ask", "AUTO", ""]) {
         await spend(mode); calls.length = 0;
         const text = await runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call);
-        expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.02\nprepared: translation en-IN to ta-IN, 5 characters\n\nThis needs a person's approval: nothing was started or spent/);
+        expect(text, String(mode)).toMatch(/^Priced, not started\.\n\nprice: \$0\.02\nprepared: translation en-IN to ta-IN, 5 characters\nNothing was filed: this tool's text is kept nowhere[\s\S]*nothing was started or spent\. A person can make this themselves in Particl/);
         expect(calls.map((c) => c.body.quoteOnly === true)).toEqual([true]);
         expect(calls.some((c) => "maxCredits" in c.body)).toBe(false);
       }
@@ -550,12 +551,18 @@ test("over MCP: the three tools are listed only where the engine is on and price
         expect(await runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call), String(c)).toBe("[ta-IN] Hello");
         expect(calls.map((x) => [x.body.quoteOnly === true, x.body.maxCredits ?? null])).toEqual([[true, null], [false, c]]);
       }
+      /* Speech: only the flash model is a draft; bulbul:v3 (the default) is full quality and always asks, at any price. */
       credits = 2; calls.length = 0;
-      expect(await runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN" }, call)).toMatch(/^Speech made\.\n\nid: gen_s1/);
+      expect(await runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN", model: "bulbul:v4-flash" }, call)).toMatch(/^Speech made\.\n\nid: gen_s1/);
+      for (const model of [undefined, "bulbul:v3"]) {
+        calls.length = 0;
+        expect(await runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN", ...(model ? { model } : {}) }, call), String(model)).toMatch(/not started[\s\S]*prepared job: prep_s1[\s\S]*needs a person's approval/);
+        expect(calls.some((c) => "maxCredits" in c.body)).toBe(false);
+      }
       for (const c of [line + 1, 500]) {
         credits = c; calls.length = 0;
-        expect(await runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN" }, call), String(c)).toMatch(/not started[\s\S]*needs a person's approval/);
-        expect(calls).toHaveLength(1);
+        expect(await runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN", model: "bulbul:v4-flash" }, call), String(c)).toMatch(/not started[\s\S]*needs a person's approval/);
+        expect(calls).toHaveLength(2);
       }
       /* The caller never writes the approval, in either mode. */
       for (const mode of ["ask", "auto"]) {

@@ -20,7 +20,7 @@ import { jobLineNow } from "./shotCap";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { SYNC_RATES, type SyncMode, type SyncModel } from "./vendorRates";
-import { SYNC_SWITCH, SyncError, deleteAsset, deleteGeneration, downloadOutput, generationStatus, isSyncMode, isSyncModel, submitLipSync, syncConfigured, uploadAsset } from "./syncso";
+import { SYNC_SWITCH, SyncError, SyncOutputRefused, deleteAsset, deleteGeneration, downloadOutput, generationStatus, isSyncMode, isSyncModel, submitLipSync, syncConfigured, uploadAsset } from "./syncso";
 import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type ConsentMatch, type ConsentScope } from "./consentMatch";
 import { liveVoiceConsentFor, getConsent } from "./security/consent";
 import { consentLive } from "./security/consent-words";
@@ -424,7 +424,17 @@ export async function advanceLipSyncJobWith(genId: string, deps: LipSyncDeps): P
         if (lip.status !== "processing") await patch(genId, { status: "processing" });
         return (await load(genId))?.lip ?? null;
       }
-      const bytes = await (deps.download ?? downloadOutput)({ id: lip.syncId, url: state.outputUrl });
+      let bytes: Buffer;
+      try { bytes = await (deps.download ?? downloadOutput)({ id: lip.syncId, url: state.outputUrl }); }
+      catch (error) {
+        /* sync.so made the clip and named an address we will not fetch (off its allow-list, none, or too large): that never becomes fetchable, so it is not retried. sync.so charged for it: the take reads
+           "Nothing billed", and the ledger line records the delivered length at the model's rate, unbilled and marked to reconcile (the figure is ours). */
+        if (!(error instanceof SyncOutputRefused)) throw error;
+        const seconds = state.outputDuration && state.outputDuration > 0 ? Math.min(state.outputDuration, lip.seconds) : Math.min(lip.seconds, lip.audioSeconds);
+        await settleLipSync(genId, "failed", { message: "The lip-sync finished but its clip could not be fetched safely. Nothing was billed.", costUsd: lipSyncUsd(seconds, job.model), reconcile: true, said: silentOutcome("syncso", "run", "not_kept", "output address refused") });
+        await cleanupLipSyncVendor(genId, deps).catch(() => {});
+        return (await load(genId, { any: true }))?.lip ?? null;
+      }
       const { value: stored } = await withRetry(() => (deps.store ?? storeVideoBytes)(genId, bytes), { max: 3 });
       /* The real cost: the delivered length (never past the quote) at the model's per-second rate. No length from the vendor reads as the input voice track's length (never the bare quote). */
       const delivered = state.outputDuration && state.outputDuration > 0 ? Math.min(state.outputDuration, lip.seconds) : Math.min(lip.seconds, lip.audioSeconds);

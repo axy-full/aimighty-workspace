@@ -20,6 +20,8 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 test.beforeAll(async () => { await alignLedgerUnit(); });
+/* Every Runway tool passes the face gate, so the face check is on unless a test says otherwise. */
+test.beforeEach(() => { process.env.REKOGNITION_ENABLED = "1"; });
 test.afterEach(() => { delete process.env.RUNWAY_ENABLED; delete process.env.REKOGNITION_ENABLED; process.env.ENGINE_MOCK = "1"; });
 
 const tenant = (id: string, over: Partial<TenantWorkspace> = {}): TenantWorkspace => ({
@@ -54,6 +56,8 @@ async function upload(label: string, mediaKind: "video" | "image", seconds: numb
   await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s) VALUES(?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytesOver ?? bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds] });
   return id;
 }
+/** Each cast member's consent record, by cast id: the gate seam answers with the person's own record, so a job that is sent finds it live. */
+const known = new Map<string, string>();
 async function consent(projectId: string, subjectKey: string): Promise<string> {
   const { db } = await import("../../lib/db");
   const { consentsReady } = await import("../../lib/security/consent");
@@ -64,6 +68,7 @@ async function consent(projectId: string, subjectKey: string): Promise<string> {
           VALUES (?,?,?,?,?,1,0,?,'',?,?,1,'u_test',?,NULL)`,
     args: [id, projectId, subjectKey, "", "Sample Person", JSON.stringify(["production", "ads"]), Date.now() + 86_400_000, "rec_1", Date.now()],
   });
+  known.set(subjectKey, id);
   return id;
 }
 async function project(id: string) {
@@ -89,11 +94,14 @@ const rowCount = async () => { const { db } = await import("../../lib/db"); retu
 type Seams = { consent?: ReturnType<typeof passing>; houseOnly?: boolean };
 async function admit(input: Record<string, unknown>, seams: Seams = {}) {
   const { admitRunway } = await import("../../lib/runwayTools");
-  return admitRunway(input, OWNER, options(), seams);
+  return admitRunway(input, OWNER, options(), { consent: async (cast, face) => passing(known.get(cast) ?? "consent_seam")(cast, face), ...seams });
 }
-/** The video tool's body: a start still and words. */
+/** The video tool's body: a start still (the face still checked), the cast member it shows, the production, the use and words. */
 async function videoBody(extra: Record<string, unknown> = {}) {
-  return { tool: "video", startImageUploadId: await upload("still", "image"), prompt: "A crane lifts at dawn", duration: 5, ...extra };
+  const projectId = uid("prod"), cast = uid("cast");
+  await project(projectId);
+  await consent(projectId, cast);
+  return { tool: "video", startImageUploadId: await upload("still", "image"), castMemberId: cast, projectId, use: "production", prompt: "A crane lifts at dawn", duration: 5, ...extra };
 }
 type Act = { projectId: string; performerCast: string; characterCast: string; consents: Record<string, string>; body: Record<string, unknown> };
 /** A production, two cast members, a 5 s performance clip, a character image (its own still) and the performer's face still. */
@@ -164,11 +172,11 @@ test("the prices are Runway's published ones (verified 16 Oct 2026), per second 
     const rows = (await Promise.all([
       admit({ ...(await videoBody()), quoteOnly: true }), admit({ ...(await videoBody({ model: "gen4_turbo", duration: 10 })), quoteOnly: true }),
     ]));
-    expect(rows[0]).toMatchObject({ status: 200, body: { unit: "usd", model: "gen4.5", seconds: 5 } });
+    expect(rows[0]).toMatchObject({ status: 200, body: { unit: "usd", model: "gen4.5", seconds: 5, needs: ["projectId", "use"] } });
     expect(Number(rows[0].body.price)).toBeCloseTo(0.6, 6);
     expect(Number(rows[1].body.price)).toBeCloseTo(0.5, 6);
     /* Limits and inputs, each in words, before anything is reserved. */
-    for (const bad of [{ duration: 1 }, { duration: 11 }, { duration: 5.5 }, { model: "gen3" }, { prompt: "" }, { ratio: "wide" }, { seed: -1 }, { startImageUploadId: "up_nope" }])
+    for (const bad of [{ duration: 1 }, { duration: 11 }, { duration: 5.5 }, { model: "gen3" }, { prompt: "" }, { ratio: "wide" }, { seed: -1 }, { startImageUploadId: "up_nope" }, { castMemberId: "" }])
       expect((await admit({ ...(await videoBody()), ...bad, quoteOnly: true })).status, JSON.stringify(bad)).toBeGreaterThanOrEqual(400);
     expect((await admit({ tool: "other", quoteOnly: true })).status).toBe(400);
     const aleph = await editWorld(3);
@@ -194,7 +202,9 @@ test("on standby: the house workspace only, and only with the switch on; a liste
     expect(await runwayTools()).toEqual([]);
     expect(await admit({ ...(await videoBody()), maxCredits: 100000 })).toMatchObject({ status: 404, body: { error: "There is no such tool here." } });
     process.env.RUNWAY_ENABLED = "1";
-    expect((await runwayTools()).map((t) => t.id)).toEqual(["runway_video"]);
+    /* Every Runway tool passes the face gate, so with the face check off none is offered. */
+    delete process.env.REKOGNITION_ENABLED;
+    expect(await runwayTools()).toEqual([]);
     process.env.REKOGNITION_ENABLED = "1";
     const on = await runwayTools();
     expect(on.map((t) => t.id)).toEqual(["runway_performance", "runway_edit", "runway_video"]);
@@ -227,6 +237,7 @@ test("approval: the price must be approved, and every face-bearing tool is refus
     const video = await videoBody();
     expect((await admit(video, seams)).status).toBe(409);
     expect((await admit({ ...video, maxCredits: 1 }, seams)).status).toBe(409);
+    for (const bad of [{ castMemberId: "" }, { castMemberId: undefined }, { use: "identity" }, { use: undefined }, { projectId: undefined }]) expect((await admit({ ...video, maxCredits: 100000, ...bad }, seams)).status, JSON.stringify(bad)).toBeGreaterThanOrEqual(400);
     const act = await actWorld();
     for (const bad of [{ performerCastMemberId: "" }, { characterCastMemberId: "" }, { use: "identity" }, { use: undefined }, { projectId: undefined }, { performerFaceUploadId: "up_nope" }, { performerFaceUploadId: act.body.performanceClipUploadId }, { characterUploadId: "up_nope" }, { expressionIntensity: 9 }, { bodyControl: "yes" }]) {
       const reply = await admit({ ...act.body, maxCredits: 100000, ...bad }, seams);
@@ -282,12 +293,18 @@ test("the consent gates: Act-Two checks the performer AND the character, Aleph 2
     const e = await admit({ ...edit.body, maxCredits: 100000 }, { consent: record() });
     expect(e.status, JSON.stringify(e.body)).toBe(200);
     expect(seen).toEqual([edit.cast]);
-    /* Gen-4 from a still: no gate at all, and no face check needed. */
-    delete process.env.REKOGNITION_ENABLED;
+    /* Gen-4.5 / Gen-4 Turbo: the start still is the face still checked, for the cast member it shows (like a FLUX.2 edit's reference; no "shows nobody" exemption). */
     seen.length = 0;
-    const v = await admit({ ...(await videoBody()), maxCredits: 100000 }, { consent: record() });
+    const video = await videoBody({ model: "gen4_turbo" });
+    const v = await admit({ ...video, maxCredits: 100000 }, { consent: record() });
     expect(v.status, JSON.stringify(v.body)).toBe(200);
-    expect(seen).toEqual([]);
+    expect(seen).toEqual([video.castMemberId]);
+    expect((await gen(String(v.body.id))).rw.consents.map((c) => [c.role, c.castMemberId])).toEqual([["subject", video.castMemberId]]);
+    /* The real gate refuses it today, and the face check off refuses it in words. */
+    expect(await executeRunwayAdmission({ ...(await videoBody()), maxCredits: 100000 }, OWNER, options())).toMatchObject({ status: 409, body: { code: "no-reference" } });
+    delete process.env.REKOGNITION_ENABLED;
+    expect(await admit({ ...(await videoBody()), maxCredits: 100000 }, { consent: record() })).toMatchObject({ status: 403 });
+    expect(await rowCount()).toBe(rows + 3);
   });
 });
 
@@ -367,8 +384,9 @@ test("a failure: the take reads 'Nothing billed' when it cost nothing; a charged
     expect(unknown.take.rw.reconcile).toBe(1);
     const charged = await failedBy({ costCredits: 20 });
     expect(charged.take.status).toBe("failed");
-    expect(String(charged.take.error)).toMatch(/charged 20 credits/);
-    expect(String(charged.take.error)).not.toMatch(/Nothing was billed/);
+    /* The workspace reads "Nothing billed" and no vendor credit; the charge is on the platform ledger line only. */
+    expect(String(charged.take.error)).toMatch(/Nothing was billed/);
+    expect(String(charged.take.error)).not.toMatch(/credit|charged|\$/i);
     expect(Number(charged.take.cost_usd)).toBeCloseTo(0.2, 6);
     expect(charged.line).toMatchObject({ status: "failed" });
     expect(Number(charged.line.engine_cost_usd)).toBeCloseTo(0.2, 6);
@@ -376,6 +394,11 @@ test("a failure: the take reads 'Nothing billed' when it cost nothing; a charged
     /* Never above the quote, whatever is reported. */
     const huge = await failedBy({ costCredits: 5000 });
     expect(Number(huge.line.engine_cost_usd)).toBeCloseTo(0.6, 6);
+    /* The excess over the quote is recorded as the overrun on a charged failure too (50 - 0.6 dollars), and marked to reconcile; an in-quote charge has none. */
+    expect(Number(huge.line.overrun_usd)).toBeCloseTo(49.4, 6);
+    expect(huge.take.rw.reconcile).toBe(1);
+    expect(charged.line.overrun_usd ?? null).toBeNull();
+    expect(String(huge.take.error)).not.toMatch(/credit|charged|\$/i);
   });
 });
 
@@ -694,7 +717,7 @@ test("what a person reads of a Runway take: its state, tool, model and length, a
   });
 });
 
-test("over MCP: the tools are listed only where Runway is on (the house), the two with a face only where the face gate can run; Ask prepares and starts nothing, Auto starts only at or under the per-job line, the caller cannot approve", async () => {
+test("over MCP: the tools are listed only where Runway is on (the house) and the face gate can run; Ask prepares and starts nothing, Auto starts only at or under the per-job line, the caller cannot approve", async () => {
   const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
   const { setSetting, invalidateSettings } = await import("../../lib/settings");
   const { db, ready } = await import("../../lib/db");
@@ -704,8 +727,8 @@ test("over MCP: the tools are listed only where Runway is on (the house), the tw
   const spend = async (value: string | null) => { if (value === null) await db().execute("DELETE FROM settings WHERE key='spendWithoutAsking'"); else await setSetting("spendWithoutAsking", value, "admin"); invalidateSettings(); };
   let credits = 6;
   const calls: Record<string, unknown>[] = [];
-  const call = async (_p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; calls.push(body); return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 10, unit: "usd" } : { id: "gen_r1" }; };
-  const VIDEO = { start_image_upload_id: "up_still", prompt: "A crane lifts", duration: 5 };
+  const call = async (_p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; calls.push(body); if (_p === "/api/prepared-jobs") return { job: { id: "prep_r1" } }; return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 10, unit: "usd" } : { id: "gen_r1" }; };
+  const VIDEO = { start_image_upload_id: "up_still", cast_member_id: "c1", project_id: "p", use: "production", prompt: "A crane lifts", duration: 5, model: "gen4_turbo" };
   await asTenant(house(), async () => {
     await ready();
     delete process.env.RUNWAY_ENABLED;
@@ -713,17 +736,32 @@ test("over MCP: the tools are listed only where Runway is on (the house), the tw
     await expect(runDirectEngineTool("runway_video", VIDEO, call)).rejects.toThrow("There is no such tool here.");
     process.env.RUNWAY_ENABLED = "1";
     const names = async () => (await directEngineMcpTools()).map((t) => t.name);
-    expect(await names()).toContain("runway_video");
-    expect(await names()).not.toContain("runway_performance");
-    expect(await names()).not.toContain("runway_edit");
+    expect(await names()).toEqual(expect.arrayContaining(["runway_performance", "runway_edit", "runway_video"]));
+    /* Every Runway tool passes the face gate: with the face check off none is listed or callable. */
+    delete process.env.REKOGNITION_ENABLED;
+    expect((await names()).filter((n) => n.startsWith("runway_"))).toEqual([]);
+    await expect(runDirectEngineTool("runway_video", VIDEO, call)).rejects.toThrow("There is no such tool here.");
+    process.env.REKOGNITION_ENABLED = "1";
+    const HERO = { ...VIDEO, model: "gen4.5" };
     try {
       for (const mode of [null, "ask", "AUTO"]) {
         await spend(mode); calls.length = 0;
-        const text = await runDirectEngineTool("runway_video", VIDEO, call);
-        expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.60\nprepared: gen4\.5 clip of 5 s\n\nThis needs a person's approval: nothing was started or spent/);
-        expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null])).toEqual([[true, null]]);
+        const text = await runDirectEngineTool("runway_video", HERO, call);
+        expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.60\nprepared: gen4\.5 clip of 5 s\nprepared job: prep_r1\n\nThis needs a person's approval: nothing was started or spent/);
+        expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null])).toEqual([[true, null], [false, null]]);
+        expect(calls[1]).toMatchObject({ engine: "runway_video", args: { tool: "video", startImageUploadId: "up_still", castMemberId: "c1", model: "gen4.5" } });
+        expect(JSON.stringify(calls[1])).not.toMatch(/maxCredits|quoteOnly/i);
       }
+      /* Auto runs only a draft (gen4_turbo); the hero model gen4.5, Aleph 2 and Act-Two always ask, at any price. */
       await spend("auto");
+      credits = 1; calls.length = 0;
+      expect(await runDirectEngineTool("runway_video", HERO, call)).toMatch(/not started[\s\S]*prepared job: prep_r1/);
+      expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
+      calls.length = 0;
+      expect(await runDirectEngineTool("runway_edit", { clip_upload_id: "up_k", prompt: "grey sky", cast_member_id: "c1", face_frame_upload_id: "up_f", project_id: "p", use: "production" }, call)).toMatch(/not started/);
+      expect(await runDirectEngineTool("runway_performance", { performance_clip_upload_id: "up_p", character_upload_id: "up_c", performer_cast_member_id: "c1", performer_face_upload_id: "up_f1", character_cast_member_id: "c2", project_id: "p", use: "production" }, call)).toMatch(/not started/);
+      expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
+      credits = 6;
       for (const c of [6, line]) {
         credits = c; calls.length = 0;
         expect(await runDirectEngineTool("runway_video", VIDEO, call), String(c)).toMatch(/^Video started\.\n\nid: gen_r1/);
@@ -732,7 +770,7 @@ test("over MCP: the tools are listed only where Runway is on (the house), the tw
       for (const c of [line + 1, 900]) {
         credits = c; calls.length = 0;
         expect(await runDirectEngineTool("runway_video", VIDEO, call), String(c)).toMatch(/not started[\s\S]*needs a person's approval/);
-        expect(calls).toHaveLength(1);
+        expect(calls).toHaveLength(2);
       }
       credits = 6;
       for (const mode of ["ask", "auto"]) {
@@ -741,15 +779,13 @@ test("over MCP: the tools are listed only where Runway is on (the house), the tw
         expect(calls).toEqual([]);
       }
       await spend(null);
-      process.env.REKOGNITION_ENABLED = "1";
-      expect(await names()).toEqual(expect.arrayContaining(["runway_performance", "runway_edit", "runway_video"]));
       calls.length = 0;
       const act = await runDirectEngineTool("runway_performance", { performance_clip_upload_id: "up_p", character_upload_id: "up_c", performer_cast_member_id: "c1", performer_face_upload_id: "up_f1", character_cast_member_id: "c2", project_id: "p", use: "production", body_control: true }, call);
       expect(calls[0]).toMatchObject({ tool: "performance", performanceClipUploadId: "up_p", characterUploadId: "up_c", performerCastMemberId: "c1", performerFaceUploadId: "up_f1", characterCastMemberId: "c2", bodyControl: true, quoteOnly: true });
       expect(act).toMatch(/prepared: Act-Two performance of up_p onto up_c for production p/);
       const edit = await runDirectEngineTool("runway_edit", { clip_upload_id: "up_k", prompt: "grey sky", cast_member_id: "c1", face_frame_upload_id: "up_f", project_id: "p", use: "production" }, call);
       expect(edit).toMatch(/prepared: Aleph 2 edit of up_k for production p/);
-      expect(calls.at(-1)).toMatchObject({ tool: "edit", clipUploadId: "up_k", castMemberId: "c1", quoteOnly: true });
+      expect(calls.filter((c) => c.quoteOnly === true).at(-1)).toMatchObject({ tool: "edit", clipUploadId: "up_k", castMemberId: "c1", quoteOnly: true });
     } finally { await spend(null); }
   });
 });
