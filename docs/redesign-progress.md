@@ -910,3 +910,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Lane B next: Nano Banana 2.1 and Gemini 3.x.
   - Opus queue: #781, the #779 delta, the #780 delta, #782.
   - Owner questions: Settings › Connections can't approve an engine job yet (one-tap approve is UI follow-up work); AWS owner actions (role, Mumbai bucket with an expiry rule, key pair, endpoint).
+- **16 Oct 03:01 IST.** Opus results:
+  - #781 Topaz APPROVED with should-fixes. The fal path is unchanged when off; the hand-over can't double-reserve; shared edits match only topaz_upscale rows.
+    - Should-fixes sent to lane C: shot cap at the press; a download that fails after completion becomes a charged failure, not an endless retry; image quote = the higher of tier and linear; real filename/MIME. The "topaz" S3 substring protects little; pin hosts after the qualification run.
+    - Owner question: Topaz keeps still copies (no image delete endpoint).
+  - #779 Veo delta APPROVED; should-fix: a 0 s reading falls back to the quote.
+  - #780 Runway delta APPROVED.
+  - #782 MediaConvert APPROVED (file-only; SigV4 correct; nit: accept the plain endpoint host).
+  - Every engine PR is NEEDS AKSHAY.
