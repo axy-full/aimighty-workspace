@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 /**
  * Large screens (owner, 15 Oct 2026, 22:30), for the v25 card on its test-only page app/(test)/v25-board-parts (a 404 outside a local ENGINE_MOCK=1 development server): at 1280x800,
- * 1440x900, 1728x1117, 1920x1080 and 2560x1440 no sideways scroll, every card inside the window and none stranded outside its group, and no word smaller than 12 px. The test page draws gradients, not pictures, so sharpness is checked on the board (#748), where the cards hold real pictures. (The board's canvas scales up above 1440 px on #748; this page is the card alone, drawn at its own size.)
+ * 1440x900, 1728x1117, 1920x1080 and 2560x1440 no sideways scroll, every card inside the window, and no word smaller than 12 px. The test page draws gradients, not pictures, so sharpness is checked on the board (#748), where the cards hold real pictures. (The board's canvas scales up above 1440 px on #748; this page is the card alone, drawn at its own size.)
  */
 const SIZES = [[1280, 800], [1440, 900], [1728, 1117], [1920, 1080], [2560, 1440]] as const;
 
