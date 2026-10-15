@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { VEO_RATES } from "../../lib/vendorRates";
+import { mp4DurationSeconds } from "../../lib/mp4Duration";
 import { VeoError, fetchResult, pollVideo, submitVideo, veoBase, veoDownloadUrl, veoHostUrl, veoQuoteUsd, veoSettingsError, type VeoRequest } from "../../lib/veo";
 
 /**
@@ -69,13 +70,15 @@ test("submit: one POST to the model's own address with the key in a header only,
   const body = JSON.parse(String(seen[0].init.body));
   expect(JSON.stringify(body)).not.toContain(KEY);
   expect(body.instances[0]).toEqual({ prompt: "A paper boat on a puddle.", image: { bytesBase64Encoded: png.bytes.toString("base64"), mimeType: "image/png" } });
-  expect(body.parameters).toEqual({ aspectRatio: "16:9", resolution: "720p", durationSeconds: 8, negativePrompt: "text", seed: 7 });
+  /* Exactly one clip, always: a default above one would bill several against a one-clip quote. */
+  expect(body.parameters).toEqual({ aspectRatio: "16:9", resolution: "720p", durationSeconds: 8, sampleCount: 1, negativePrompt: "text", seed: 7 });
   /* References ride as references. */
   seen.length = 0;
   await submitVideo(request({ references: [png, png] }), { fetch: answer(200, { name: OP }, seen) });
   const withRefs = JSON.parse(String(seen[0].init.body));
   expect(withRefs.instances[0].referenceImages).toHaveLength(2);
   expect(withRefs.parameters.personGeneration).toBe("allow_adult");
+  expect(withRefs.parameters.sampleCount).toBe(1);
   expect(body.parameters).not.toHaveProperty("personGeneration");
 });
 
@@ -162,21 +165,21 @@ test("the result follows at most two redirects, each only to an allowed https ho
   const keyOf = (s: Seen) => (s.init.headers as Record<string, string> | undefined)?.["x-goog-api-key"];
   /* An allowed hop is followed, without the key; a relative address is read against the current one. */
   const seen: Seen[] = [];
-  const bytes = await fetchResult(uri, { fetch: route({ [uri]: "https://storage.googleapis.com/bucket/clip.mp4?sig=1", "https://storage.googleapis.com/bucket/clip.mp4?sig=1": "/moved/clip.mp4" }, seen) });
+  const bytes = await fetchResult(uri, { fetch: route({ [uri]: "https://video-downloads.googleusercontent.com/bucket/clip.mp4?sig=1", "https://video-downloads.googleusercontent.com/bucket/clip.mp4?sig=1": "/moved/clip.mp4" }, seen) });
   expect(bytes.toString()).toBe("clip-bytes");
-  expect(seen.map((s) => s.url)).toEqual([uri, "https://storage.googleapis.com/bucket/clip.mp4?sig=1", "https://storage.googleapis.com/moved/clip.mp4"]);
+  expect(seen.map((s) => s.url)).toEqual([uri, "https://video-downloads.googleusercontent.com/bucket/clip.mp4?sig=1", "https://video-downloads.googleusercontent.com/moved/clip.mp4"]);
   expect(seen.map(keyOf)).toEqual([KEY, undefined, undefined]);
   expect(seen.every((s) => s.init.redirect === "manual")).toBe(true);
   expect(JSON.stringify(seen.slice(1).map((s) => s.init))).not.toContain(KEY);
   for (const s of seen.slice(1)) expect(s.url).not.toContain(KEY);
-  /* The other Google hosts are allowed as hops. */
-  for (const host of ["https://video.googleusercontent.com/c.mp4", "https://storage.cloud.google.com/c.mp4"]) {
-    const s: Seen[] = [];
-    expect((await fetchResult(uri, { fetch: route({ [uri]: host }, s) })).toString()).toBe("clip-bytes");
-    expect(s.map(keyOf)).toEqual([KEY, undefined]);
-  }
+  /* The one other host allowed as a hop is Google's own file host. */
+  const own: Seen[] = [];
+  expect((await fetchResult(uri, { fetch: route({ [uri]: "https://generativelanguage.googleapis.com/v1beta/files/other:download?alt=media" }, own) })).toString()).toBe("clip-bytes");
+  expect(own.map(keyOf)).toEqual([KEY, undefined]);
   /* A hop to anywhere else is refused, and nothing is sent there. */
-  for (const bad of ["https://example.com/c.mp4", "http://storage.googleapis.com/c.mp4", "https://googleapis.com.evil.example/c.mp4", "https://evil-googleusercontent.com/c.mp4", "https://user:pw@storage.googleapis.com/c.mp4", "https://storage.googleapis.com:8443/c.mp4", "file:///etc/passwd", "data:text/plain,x"]) {
+  for (const bad of ["https://example.com/c.mp4", "http://video.googleusercontent.com/c.mp4", "http://generativelanguage.googleapis.com/c.mp4", "https://googleapis.com.evil.example/c.mp4", "https://evil-googleusercontent.com/c.mp4", "https://googleusercontent.com/c.mp4", "https://user:pw@video.googleusercontent.com/c.mp4", "https://video.googleusercontent.com:8443/c.mp4", "file:///etc/passwd", "data:text/plain,x",
+    /* Narrowed (owner's yes needed to widen): other people's pages and buckets on Google's domains are not download hosts. */
+    "https://sites.google.com/c.mp4", "https://script.google.com/macros/s/x/exec", "https://storage.googleapis.com/bucket/c.mp4", "https://storage.cloud.google.com/c.mp4", "https://docs.google.com/c.mp4", "https://www.google.com/c.mp4", "https://drive.google.com/c.mp4", "https://firebasestorage.googleapis.com/c.mp4"]) {
     const s: Seen[] = [];
     await expect(fetchResult(uri, { fetch: route({ [uri]: bad }, s) }), bad).rejects.toThrow("an address we do not follow");
     expect(s.map((x) => x.url), bad).toEqual([uri]);
@@ -184,12 +187,15 @@ test("the result follows at most two redirects, each only to an allowed https ho
   const noLocation: Seen[] = [];
   await expect(fetchResult(uri, { fetch: (async (url: string, init: RequestInit) => { noLocation.push({ url, init }); return new Response(null, { status: 302 }); }) as never })).rejects.toThrow("an address we do not follow");
   /* A third redirect is one too many. */
-  const a = "https://storage.googleapis.com/a", b = "https://storage.googleapis.com/b", c = "https://storage.googleapis.com/c";
+  const a = "https://video.googleusercontent.com/a", b = "https://video.googleusercontent.com/b", c = "https://video.googleusercontent.com/c";
   const loop: Seen[] = [];
   await expect(fetchResult(uri, { fetch: route({ [uri]: a, [a]: b, [b]: c }, loop) })).rejects.toThrow("moved too many times");
   expect(loop).toHaveLength(3);
-  expect(veoDownloadUrl("https://storage.googleapis.com/x")).not.toBeNull();
+  expect(veoDownloadUrl("https://generativelanguage.googleapis.com/x")).not.toBeNull();
+  expect(veoDownloadUrl("https://video.googleusercontent.com/x")).not.toBeNull();
   expect(veoDownloadUrl("https://example.com/x")).toBeNull();
+  expect(veoDownloadUrl("https://storage.googleapis.com/x")).toBeNull();
+  expect(veoDownloadUrl("https://sites.google.com/x")).toBeNull();
 });
 
 test("the fixture (ENGINE_MOCK=1): no request leaves the process; a job is pending then ready; a refusal and a filtered clip are available by prompt; the result is the fixture clip", async () => {
@@ -211,4 +217,27 @@ test("the fixture (ENGINE_MOCK=1): no request leaves the process; a job is pendi
   await expect(pollVideo({ operation: "models/veo-3.1-generate-preview/operations/mock_veo_nope" }, { fetch: never })).rejects.toMatchObject({ status: 404 });
   /* Settings are still checked in a mock: a fixture never accepts what the vendor would not. */
   await expect(submitVideo(request({ resolution: "1080p", durationSeconds: 4 }), { fetch: never })).rejects.toMatchObject({ rejectedBeforeGeneration: true });
+});
+
+test("the length of a clip is read from its container header: real files, version 0 and 1 headers, a header at the end, and anything unreadable is null", async () => {
+  const { readFileSync } = await import("node:fs");
+  const near = (v: number | null, want: number) => { expect(v).not.toBeNull(); expect(Math.abs(v! - want)).toBeLessThan(0.01); };
+  near(mp4DurationSeconds(readFileSync("public/fixtures/clip.mp4")), 10);
+  near(mp4DurationSeconds(readFileSync("public/fixtures/clip-6s.mp4")), 6.033);
+  near(mp4DurationSeconds(readFileSync("public/fixtures/swap-5s-854x480.mp4")), 5);
+  const u32 = (n: number) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+  const box = (type: string, ...parts: Buffer[]) => { const body = Buffer.concat(parts); return Buffer.concat([u32(8 + body.length), Buffer.from(type, "latin1"), body]); };
+  const v0 = (timescale: number, duration: number) => box("moov", box("mvhd", Buffer.from([0, 0, 0, 0]), u32(0), u32(0), u32(timescale), u32(duration), Buffer.alloc(80)));
+  const big = (n: number) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); return b; };
+  const v1 = (timescale: number, duration: number) => box("moov", box("mvhd", Buffer.from([1, 0, 0, 0]), big(0), big(0), u32(timescale), big(duration), Buffer.alloc(80)));
+  near(mp4DurationSeconds(v0(1000, 4000)), 4);
+  near(mp4DurationSeconds(v1(90000, 360000)), 4);
+  /* The header after the media, as an unoptimised file has it. */
+  near(mp4DurationSeconds(Buffer.concat([box("ftyp", Buffer.from("isom0000")), box("mdat", Buffer.alloc(5000)), v0(600, 4800)])), 8);
+  for (const bad of [Buffer.alloc(0), Buffer.from("not an mp4 at all"), box("ftyp", Buffer.from("isom0000")), v0(0, 1000), v0(1000, 0), v0(1000, 10_000_000), Buffer.from(v0(1000, 4000).subarray(0, 30)), box("moov", box("trak", Buffer.alloc(20)))]) expect(mp4DurationSeconds(bad)).toBeNull();
+  /* A box that claims more than the file holds, and a version we do not know. */
+  const lie = v0(1000, 4000); lie.writeUInt32BE(1_000_000, 0);
+  expect(mp4DurationSeconds(lie)).toBeNull();
+  const odd = v0(1000, 4000); odd[8 + 8] = 7;
+  expect(mp4DurationSeconds(odd)).toBeNull();
 });

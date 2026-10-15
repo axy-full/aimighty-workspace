@@ -253,6 +253,46 @@ test("a clip from words: submit, poll, fetch the moment it is done, store under 
   });
 });
 
+test("the clip is settled at what it measures: a clip shorter than asked costs its seconds times the rate, never above the quote; one longer than asked, or unreadable, settles at the quote; all marked to reconcile", async () => {
+  process.env.VEO_ENABLED = "1";
+  const u32 = (n: number) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+  const box = (type: string, ...parts: Buffer[]) => { const body = Buffer.concat(parts); return Buffer.concat([u32(8 + body.length), Buffer.from(type, "latin1"), body]); };
+  const clipOf = (seconds: number) => Buffer.concat([box("ftyp", Buffer.from("isom0000")), box("moov", box("mvhd", Buffer.from([0, 0, 0, 0]), u32(0), u32(0), u32(1000), u32(Math.round(seconds * 1000)), Buffer.alloc(80)))]);
+  const { db } = await import("../../lib/db");
+  await asTenant(house(), async () => {
+    const make = async (bytes: Buffer | null, body: Record<string, unknown> = {}) => {
+      const id = String((await admit({ tool: "video", prompt: "a crane", ...body, ...approved })).body.id);
+      const vendor = fakeVeo();
+      if (bytes) vendor.deps.fetchClip = (async () => { vendor.calls.push("fetch"); return bytes; }) as typeof vendor.deps.fetchClip;
+      await run(id, vendor.deps, 4);
+      const take = await gen(id);
+      const secs = Number((await db().execute({ sql: "SELECT duration_s FROM generations WHERE id=?", args: [id] })).rows[0].duration_s);
+      const line = (await meterRows()).find((r) => r.id === id)!;
+      return { take, line, secs };
+    };
+    /* Asked 8 s, got 4: 4 x 0.40. */
+    const shorter = await make(clipOf(4));
+    expect(shorter.take.status).toBe("succeeded");
+    expect(Number(shorter.take.cost_usd)).toBeCloseTo(1.6, 6);
+    expect(Number(shorter.line.engine_cost_usd)).toBeCloseTo(1.6, 6);
+    expect(shorter.take.veo.reconcile).toBe(1);
+    expect(shorter.secs).toBeCloseTo(4, 3);
+    expect(shorter.line.overrun_usd ?? null).toBeNull();
+    /* The Fast model at 1080p is measured at its own rate: 5 s x 0.12 of an asked 8 s. */
+    const fast = await make(clipOf(5), { model: "veo-3.1-fast-generate-preview", resolution: "1080p" });
+    expect(Number(fast.take.cost_usd)).toBeCloseTo(0.6, 6);
+    /* As asked, longer than asked, unreadable or empty of a header: the quote, never more. */
+    for (const [bytes, label] of [[clipOf(8), "as asked"], [clipOf(12), "longer"], [Buffer.from("veo-clip"), "unreadable"]] as const) {
+      const r = await make(bytes);
+      expect(Number(r.take.cost_usd), label).toBeCloseTo(PRICE, 6);
+      expect(Number(r.line.engine_cost_usd), label).toBeCloseTo(PRICE, 6);
+      expect(r.line.overrun_usd ?? null, label).toBeNull();
+      expect(r.take.veo.reconcile, label).toBe(1);
+    }
+    expect((await make(Buffer.from("veo-clip"))).secs).toBe(8);
+  });
+});
+
 test("a failure bills nothing: a blocked or failed clip, a refusal before work (a throttle too); the person is told 'Nothing billed' and the ledger line records nothing, because Google charges only for a clip it generates", async () => {
   const { VeoError } = await import("../../lib/veo");
   process.env.VEO_ENABLED = "1";

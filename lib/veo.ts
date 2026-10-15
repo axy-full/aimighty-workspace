@@ -18,6 +18,9 @@ export type { VeoAspect, VeoModel, VeoResolution };
  * The rates (lib/vendorRates.ts VEO_RATES) and the setting limits below were read from Google's pricing and Veo pages by the lead on 16 Oct 2026; **the request and reply field names and the model ids
  * are still TO CONFIRM against Google's reference before anything is switched on.** Every reply is read defensively; a status we do not know is "pending", never a verdict.
  *
+ * GEMINI_BASE_URL is shared with the stills (lib/gemini.ts). Veo reads it too and holds it to an https googleapis.com host with nothing after it: set to anything
+ * else (a proxy, a mock server), every Veo call is refused here before a request is made, while the stills keep using it.
+ *
  * Money: Google bills a clip on success only ("You will only be charged if your video is successfully generated"; blocked videos are not charged). A finished operation that carries no video (the safety filter, an error) is not billed;
  * the caller records it as failed at nothing. The quote is the rate times the seconds, never under.
  */
@@ -152,6 +155,8 @@ export async function submitVideo(input: VeoRequest, deps: Deps = {}): Promise<{
     durationSeconds: input.durationSeconds,
     /* Reference images need adults only (Google: personGeneration "allow_adult"). */
     ...(input.references?.length ? { personGeneration: "allow_adult" } : {}),
+    /* Exactly one clip: the quote is for one, and a default above one would bill several against it. Google's field name for the count (sampleCount; the SDK calls it numberOfVideos) is TO CONFIRM. */
+    sampleCount: 1,
     ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
     ...(input.seed != null ? { seed: input.seed } : {}),
   };
@@ -189,14 +194,19 @@ export async function pollVideo(job: { operation: string }, deps: Deps = {}): Pr
   return { status: "failed", failure: filtered ? "Google's safety filter stopped this." : "Google's reply named no video we can fetch." };
 }
 
-/** The hosts a download may be redirected through (Google's own file and storage hosts): https, no credentials, no port. */
+/**
+ * The hosts a download may be redirected through: Google's file host itself (generativelanguage.googleapis.com) and its user-content download hosts
+ * (`*.googleusercontent.com`, subdomains only): https, no credentials, no port. **Deliberately narrow: not `*.google.com` (sites.google.com and script.google.com
+ * serve other people's pages) and not the rest of `*.googleapis.com` (storage.googleapis.com holds anyone's bucket). TO CONFIRM in the first qualification run,
+ * with the owner's yes, which host Google really redirects a download to; a host that is not listed fails the fetch, recorded at nothing, and is added then.**
+ */
 export function veoDownloadUrl(raw: unknown): URL | null {
   if (typeof raw !== "string" || raw.length > 4096) return null;
   let url: URL;
   try { url = new URL(raw); } catch { return null; }
   if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
   const h = url.hostname;
-  return ["googleapis.com", "googleusercontent.com", "google.com"].some((d) => h === d || h.endsWith(`.${d}`)) ? url : null;
+  return h === "generativelanguage.googleapis.com" || h.endsWith(".googleusercontent.com") ? url : null;
 }
 const MAX_DOWNLOAD_HOPS = 2;
 

@@ -20,6 +20,7 @@ import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { VEO_RATES, type VeoAspect, type VeoModel, type VeoResolution } from "./vendorRates";
 import { VEO_REFERENCE_LIMIT_BYTES, VEO_MAX_REFERENCES, VEO_SWITCH, VeoError, fetchResult, isVeoModel, pollVideo, submitVideo, veoConfigured, veoQuoteUsd, veoSettingsError } from "./veo";
+import { mp4DurationSeconds } from "./mp4Duration";
 import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type ConsentMatch, type ConsentScope } from "./consentMatch";
 import { getConsent } from "./security/consent";
 import { consentLive } from "./security/consent-words";
@@ -42,7 +43,8 @@ import { consentLive } from "./security/consent-words";
  * the owner chooses a reference source, so **a clip from images is refused today**; there is no "this shows nobody" exemption. A clip from words alone has no image and no gate.
  *
  * MONEY. Quote: the seconds at VEO_RATES (lib/vendorRates.ts, verified against Google's pricing page, 16 Oct 2026; confirm against the first invoice), through the margin table
- * (`quotedCredits`, keyed by the model); reserved at the quote on the meter; Google states no cost, so a clip is settled at the quote and marked `reconcile` (the figure is ours), and
+ * (`quotedCredits`, keyed by the model); reserved at the quote on the meter; Google states no cost, so a clip is settled at its own measured length (read from the stored
+ * file's container header, lib/mp4Duration.ts) times the rate, or at the quote when its length cannot be read, and marked `reconcile` (the figure is ours), and
  * NEVER billed above the quote. Google bills only on success ("You will only be charged if your video is successfully generated"; blocked videos are not charged), so a failure we can see
  * is settled at nothing. A clip Google made and we could not keep (its address lives two days) is recorded on the ledger line at the quote, billed to nobody, marked `reconcile`.
  * A person approves: `maxCredits` must cover the quote (over MCP only the workspace's own Ask/Auto setting does: lib/directEngineMcp.ts).
@@ -253,7 +255,7 @@ export async function admitVeo(input: Record<string, unknown>, got: AdmissionAct
 /* ── Settling ───────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 /** The terminal write: the take's outcome and its bill commit together; delivery to the ledger is idempotent. A failure settles at nothing unless Google made the clip. */
-export async function settleVeo(genId: string, status: "done" | "failed", outcome: { message?: string; costUsd: number; storedUrl?: string; bytes?: number; said?: ProviderOutcome | null; reconcile?: boolean }): Promise<void> {
+export async function settleVeo(genId: string, status: "done" | "failed", outcome: { message?: string; costUsd: number; storedUrl?: string; bytes?: number; seconds?: number | null; said?: ProviderOutcome | null; reconcile?: boolean }): Promise<void> {
   const job = await load(genId);
   if (!job || job.veo.settled) return;
   const { row, veo } = job;
@@ -269,7 +271,7 @@ export async function settleVeo(genId: string, status: "done" | "failed", outcom
     ? {
         sql: `UPDATE generations SET status='succeeded', stored_url=?, bytes=?, cost_usd=?, error=NULL, duration_ms=?, duration_s=?, params=json_set(params,'$.veo.status','done','$.veo.settled',1,'$.veo.reconcile',?), updated_at=?
               WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
-        args: [outcome.storedUrl ?? null, outcome.bytes ?? null, cost, ms, veo.durationSeconds, reconcile ? 1 : 0, now(), genId],
+        args: [outcome.storedUrl ?? null, outcome.bytes ?? null, cost, ms, outcome.seconds ?? veo.durationSeconds, reconcile ? 1 : 0, now(), genId],
       }
     : {
         sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms,?), cost_usd=?, provider_outcome=COALESCE(?,provider_outcome),
@@ -386,8 +388,12 @@ export async function advanceVeoJobWith(genId: string, deps: VeoDeps): Promise<V
       /* The moment it is done: fetched and stored, before anything else. The key goes on the first request only (lib/veo.ts). */
       const bytes = await (deps.fetchClip ?? fetchResult)(state.resultUrl);
       const { value: stored } = await withRetry(() => (deps.store ?? storeVideoBytes)(genId, bytes), { max: 3 });
-      /* Google states no cost: the quote, marked to reconcile; never billed above the quote. */
-      await settleVeo(genId, "done", { costUsd: veo.reservedUsd, reconcile: true, storedUrl: stored.url, bytes: stored.bytes });
+      /* Google states no cost. The clip's own length is read from its container: what Google bills is the seconds it made, so a clip shorter than asked settles at the
+         seconds it has times the rate (never above the quote); one we cannot measure settles at the quote. Either way the figure is ours, marked to reconcile. */
+      const measured = mp4DurationSeconds(bytes);
+      const rate = VEO_RATES.models[veo.model].usdPerSecond[veo.resolution];
+      const measuredUsd = measured != null ? Math.ceil(measured * rate * 1e6 - 1e-6) / 1e6 : null;
+      await settleVeo(genId, "done", { costUsd: measuredUsd != null ? Math.min(veo.reservedUsd, measuredUsd) : veo.reservedUsd, seconds: measured, reconcile: true, storedUrl: stored.url, bytes: stored.bytes });
       return (await load(genId, { any: true }))?.veo ?? null;
     } catch (error) {
       // Transport or storage: keep the operation and the reservation; the next pass asks again (the two days still run). Nothing is resubmitted.
