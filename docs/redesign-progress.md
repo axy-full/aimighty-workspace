@@ -767,3 +767,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #775 4e7110e2: blank sizes refused. The subtitle-order nit is skipped, because it would mean editing a test assertion.
   - mcpTools.spec (pins `{ credits: creditsApply(...) }` in app/api/mcp/route.ts) was broken by #766. The code is fixed, not the test, and is being moved onto #766 itself so #766 passes alone.
   - Opus delta check of #769/#770/#773 started; #766/#774 follow when lane D reports.
+- **16 Oct 01:31 IST.** Opus delta check APPROVED #769 6e7bac28, #770 7f4f1e74 (the redesign is sound; the changed assertions are design changes and just as tight; a new sound-sync test), #772 96b844c7 and #773 5981c59b. Two #770 should-fixes sent to lane D: refuse `offsetSeconds` from requests, and frame-align the window start.
