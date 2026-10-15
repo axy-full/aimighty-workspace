@@ -368,6 +368,18 @@ test("the cost approval rule: with a cap per shot, a member's check on a take of
         }
         expect(calls).toEqual(["detect"]);
         expect((await meterRows()).filter((r) => r.workspace_id === id).length).toBe(after);
+        /* Only an admin's own press waives the cap: an admin's token, an Atomik Auto step and an agent run for an admin are machines, held like a member. */
+        const adminToken = { ...person("u_admin_tok", "admin", true), token: { id: "tok_admin", name: "agent", scope: "render" as const, capUsd: null } } as AdmissionActor;
+        expect(await admitAs(adminToken, { takeId: stuck, expected: "ACME", quoteOnly: true }, spy, ws)).toMatchObject({ status: 403, body: { needsAdmin: true } });
+        const { admitLabelCheck } = await import("../../lib/visionLabel");
+        const { runInTenant } = await import("../../lib/tenant");
+        const adminUser = person("u_admin", "admin", true);
+        expect(await runInTenant(ws, () => admitLabelCheck({ takeId: stuck, expected: "ACME", quoteOnly: true }, adminUser, { ...options(), run: { auto: true } } as never, spy), adminUser as never)).toMatchObject({ status: 403, body: { needsAdmin: true } });
+        const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+        await rigAgentReady();
+        const runId = uid("run");
+        await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: [runId, "prod_x", "draft_x", "u_member", uid("req"), "goal", "auto", "finished"] });
+        expect(await admitAs(person(`agent:${runId}`, "admin", true), { takeId: stuck, expected: "ACME", quoteOnly: true }, spy, ws)).toMatchObject({ status: 403, body: { needsAdmin: true } });
         /* An admin goes through; a take on a shot with room, or on no shot, is not held. */
         expect((await admitAs(person("u_admin", "admin", true), { takeId: stuck, expected: "ACME", ...approved }, spy, ws)).status).toBe(200);
         expect((await admitAs(member, { takeId: free, expected: "ACME", ...approved }, spy, ws)).status).toBe(200);
@@ -403,6 +415,10 @@ test("a reservation the process never settled is settled at nothing by the cron 
     expect(settled).toMatchObject({ status: "failed" });
     expect(Number(settled.engine_cost_usd)).toBe(0);
     expect(Number(settled.billed_credits ?? 0)).toBe(0);
+    /* Whether Google read the picture is unknown, and the ledger line says so for the admin desk to reconcile. */
+    const { platformDb: pdb } = await import("../../lib/platform");
+    const outcome = JSON.parse(String((await pdb().execute({ sql: "SELECT provider_outcome FROM meter_events WHERE id=?", args: [lost] })).rows[0].provider_outcome));
+    expect(outcome).toMatchObject({ provider: "google", stage: "run", code: "no_answer", billing: { state: "unknown" } });
     /* Another engine's reservation is not this stage's. */
     const { platformDb } = await import("../../lib/platform");
     expect((await platformDb().execute({ sql: "SELECT status FROM meter_events WHERE id=?", args: [other] })).rows[0].status).toBe("running");

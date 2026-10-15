@@ -10,6 +10,7 @@ import { checkLimits } from "./limits";
 import { readImageBytes, readUploadBytes } from "./storage";
 import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { meter, type MeterKind } from "./meter";
+import { noAnswerOutcome } from "./providerOutcome";
 import { platformDb, platformReady } from "./platform";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
@@ -135,7 +136,8 @@ export async function admitLabelCheck(input: Record<string, unknown>, got: Admis
      check past it needs an admin, refused before anything is read, reserved or written. A shot that is gone is no shot's to cap. */
   const shot = shotId ? await getShot(shotId) : null;
   if (shotId && shot) {
-    const stop = await shotCapGate({ shotId, code: shot.code, takeUsd: usd, modelId: marginKey, isAdmin: got.user.role === "admin" });
+    /* An admin's own press only: the acting person (the run's owner, as a member, for an agent run), not on a token and not an Atomik Auto step (the test jobLineNow applies). */
+    const stop = await shotCapGate({ shotId, code: shot.code, takeUsd: usd, modelId: marginKey, isAdmin: person.role === "admin" && got.token == null && options.run?.auto !== true });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", mode, rules, images: 1 });
@@ -198,7 +200,8 @@ export async function recoverLabelChecks(options: { limit?: number; deadlineAt?:
   for (const row of stale) {
     if (clock() >= deadlineAt) { deferred++; continue; }
     attempted++;
-    try { await meter({ id: String(row.id), kind: String(row.kind) as MeterKind, engine: "vision", model: String(row.model), status: "failed", engineCostUsd: 0 }); } catch { failed++; }
+    /* Whether Google read the picture is unknown: settled at nothing, and said so on the ledger line (a no-answer outcome, billing unknown) for the admin desk to reconcile against Google's invoice. */
+    try { await meter({ id: String(row.id), kind: String(row.kind) as MeterKind, engine: "vision", model: String(row.model), status: "failed", engineCostUsd: 0, providerOutcome: noAnswerOutcome("google", "run", "this check was never finished") }); } catch { failed++; }
   }
   return { attempted, failed, deferred };
 }
