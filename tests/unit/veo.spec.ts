@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { VEO_RATES, VeoError, fetchResult, pollVideo, submitVideo, veoBase, veoHostUrl, veoQuoteUsd, veoSettingsError, type VeoRequest } from "../../lib/veo";
+import { VEO_RATES, VeoError, fetchResult, pollVideo, submitVideo, veoBase, veoDownloadUrl, veoHostUrl, veoQuoteUsd, veoSettingsError, type VeoRequest } from "../../lib/veo";
 
 /**
  * The Veo 3.1 adapter (lib/veo.ts) alone: no database, no route, no money. Every call is a function this file hands the adapter, or the in-process fixture under
@@ -32,7 +32,14 @@ test("the quote is the rate times the seconds, rounded up, for every offered mod
   expect(veoSettingsError(request({ aspectRatio: "1:1" as never }))).toMatch(/shape/);
   expect(veoSettingsError({ ...request(), references: [1, 2, 3, 4] })).toMatch(/At most 3/);
   expect(veoSettingsError({ ...request({ durationSeconds: 6 }), references: [1] })).toMatch(/8 seconds/);
-  expect(veoSettingsError({ ...request({ aspectRatio: "9:16" }), references: [1] })).toMatch(/16:9/);
+  /* References work in either shape; only the length matters. */
+  expect(veoSettingsError({ ...request({ aspectRatio: "9:16" }), references: [1] })).toBeNull();
+  /* The rates are Google's published figures (verified 16 Oct 2026). */
+  expect(veoQuoteUsd({ model: "veo-3.1-generate-preview", resolution: "720p", durationSeconds: 8 })).toBe(3.2);
+  expect(veoQuoteUsd({ model: "veo-3.1-generate-preview", resolution: "1080p", durationSeconds: 8 })).toBe(3.2);
+  expect(veoQuoteUsd({ model: "veo-3.1-fast-generate-preview", resolution: "720p", durationSeconds: 8 })).toBe(0.8);
+  expect(veoQuoteUsd({ model: "veo-3.1-fast-generate-preview", resolution: "1080p", durationSeconds: 8 })).toBe(0.96);
+  expect(veoQuoteUsd({ model: "veo-3.1-fast-generate-preview", resolution: "720p", durationSeconds: 4 })).toBe(0.4);
 });
 
 test("only an https host under googleapis.com is ever called or followed: no http, no other host, no look-alike, no credentials, no port; GEMINI_BASE_URL is held to the same rule", () => {
@@ -65,7 +72,10 @@ test("submit: one POST to the model's own address with the key in a header only,
   /* References ride as references. */
   seen.length = 0;
   await submitVideo(request({ references: [png, png] }), { fetch: answer(200, { name: OP }, seen) });
-  expect(JSON.parse(String(seen[0].init.body)).instances[0].referenceImages).toHaveLength(2);
+  const withRefs = JSON.parse(String(seen[0].init.body));
+  expect(withRefs.instances[0].referenceImages).toHaveLength(2);
+  expect(withRefs.parameters.personGeneration).toBe("allow_adult");
+  expect(body.parameters).not.toHaveProperty("personGeneration");
 });
 
 test("submit: settings the vendor does not take never reach it (the request is not made), and a missing key is a clear refusal", async () => {
@@ -116,25 +126,69 @@ test("poll: not done and anything we do not know is pending; a video address on 
   for (const operation of ["", "../x", "models/x/operations/y/../z", "https://evil.example/x", "models/x/operations/y?key=1"]) await expect(pollVideo({ operation }, { fetch: answer(200, {}) }), operation).rejects.toThrow(VeoError);
 });
 
-test("the result: fetched with the key, no redirect, only from googleapis.com, capped; empty or oversized is refused", async () => {
+test("the result: the first request carries the key and goes to googleapis.com, capped; empty or oversized is refused", async () => {
   const seen: Seen[] = [];
   const uri = "https://generativelanguage.googleapis.com/v1beta/files/abc:download?alt=media";
   const bytes = await fetchResult(uri, { fetch: (async (url: string, init: RequestInit) => { seen.push({ url: String(url), init }); return new Response(Buffer.from("mp4-bytes"), { status: 200 }); }) as never });
   expect(bytes.toString()).toBe("mp4-bytes");
-  expect(seen[0].init.redirect).toBe("error");
+  expect(seen).toHaveLength(1);
+  expect(seen[0].init.redirect).toBe("manual");
   expect(seen[0].init.headers).toMatchObject({ "x-goog-api-key": KEY });
   expect(seen[0].url).not.toContain(KEY);
   const none: Seen[] = [];
   await expect(fetchResult("https://example.com/v.mp4", { fetch: answer(200, "x", none) })).rejects.toThrow("not one we fetch");
   await expect(fetchResult("http://generativelanguage.googleapis.com/v.mp4", { fetch: answer(200, "x", none) })).rejects.toThrow("not one we fetch");
+  /* The first address must be googleapis.com: the wider download list is for hops only. */
+  await expect(fetchResult("https://storage.googleapis.com.evil.example/v.mp4", { fetch: answer(200, "x", none) })).rejects.toThrow("not one we fetch");
+  await expect(fetchResult("https://lh3.googleusercontent.com/v.mp4", { fetch: answer(200, "x", none) })).rejects.toThrow("not one we fetch");
   expect(none).toHaveLength(0);
   await expect(fetchResult(uri, { fetch: answer(200, "") })).rejects.toThrow("empty or too large");
   await expect(fetchResult(uri, { fetch: answer(404, "") })).rejects.toMatchObject({ status: 404 });
   const huge = (async () => new Response("x", { status: 200, headers: { "content-length": String(300 * 1024 * 1024) } })) as never;
   await expect(fetchResult(uri, { fetch: huge })).rejects.toThrow("larger than Particl keeps");
-  /* A redirect is an error: the platform's fetch, asked not to follow, refuses. */
-  const redirecting = (async (_u: string, init: RequestInit) => { if (init.redirect === "error") throw new TypeError("redirect mode is set to error"); return new Response("x"); }) as never;
-  await expect(fetchResult(uri, { fetch: redirecting })).rejects.toMatchObject({ message: "The clip could not be fetched from Google." });
+  const dropped = (async () => { throw new TypeError("fetch failed"); }) as never;
+  await expect(fetchResult(uri, { fetch: dropped })).rejects.toMatchObject({ message: "The clip could not be fetched from Google." });
+});
+
+test("the result follows at most two redirects, each only to an allowed https host, and sends the key to the first request only", async () => {
+  const uri = "https://generativelanguage.googleapis.com/v1beta/files/abc:download?alt=media";
+  const route = (hops: Record<string, string | number>, seen: Seen[]): typeof fetch => (async (url: string, init: RequestInit) => {
+    seen.push({ url: String(url), init });
+    const next = hops[String(url)];
+    if (typeof next === "string") return new Response(null, { status: 302, headers: { location: next } });
+    return new Response(Buffer.from("clip-bytes"), { status: 200 });
+  }) as never;
+  const keyOf = (s: Seen) => (s.init.headers as Record<string, string> | undefined)?.["x-goog-api-key"];
+  /* An allowed hop is followed, without the key; a relative address is read against the current one. */
+  const seen: Seen[] = [];
+  const bytes = await fetchResult(uri, { fetch: route({ [uri]: "https://storage.googleapis.com/bucket/clip.mp4?sig=1", "https://storage.googleapis.com/bucket/clip.mp4?sig=1": "/moved/clip.mp4" }, seen) });
+  expect(bytes.toString()).toBe("clip-bytes");
+  expect(seen.map((s) => s.url)).toEqual([uri, "https://storage.googleapis.com/bucket/clip.mp4?sig=1", "https://storage.googleapis.com/moved/clip.mp4"]);
+  expect(seen.map(keyOf)).toEqual([KEY, undefined, undefined]);
+  expect(seen.every((s) => s.init.redirect === "manual")).toBe(true);
+  expect(JSON.stringify(seen.slice(1).map((s) => s.init))).not.toContain(KEY);
+  for (const s of seen.slice(1)) expect(s.url).not.toContain(KEY);
+  /* The other Google hosts are allowed as hops. */
+  for (const host of ["https://video.googleusercontent.com/c.mp4", "https://storage.cloud.google.com/c.mp4"]) {
+    const s: Seen[] = [];
+    expect((await fetchResult(uri, { fetch: route({ [uri]: host }, s) })).toString()).toBe("clip-bytes");
+    expect(s.map(keyOf)).toEqual([KEY, undefined]);
+  }
+  /* A hop to anywhere else is refused, and nothing is sent there. */
+  for (const bad of ["https://example.com/c.mp4", "http://storage.googleapis.com/c.mp4", "https://googleapis.com.evil.example/c.mp4", "https://evil-googleusercontent.com/c.mp4", "https://user:pw@storage.googleapis.com/c.mp4", "https://storage.googleapis.com:8443/c.mp4", "file:///etc/passwd", "data:text/plain,x"]) {
+    const s: Seen[] = [];
+    await expect(fetchResult(uri, { fetch: route({ [uri]: bad }, s) }), bad).rejects.toThrow("an address we do not follow");
+    expect(s.map((x) => x.url), bad).toEqual([uri]);
+  }
+  const noLocation: Seen[] = [];
+  await expect(fetchResult(uri, { fetch: (async (url: string, init: RequestInit) => { noLocation.push({ url, init }); return new Response(null, { status: 302 }); }) as never })).rejects.toThrow("an address we do not follow");
+  /* A third redirect is one too many. */
+  const a = "https://storage.googleapis.com/a", b = "https://storage.googleapis.com/b", c = "https://storage.googleapis.com/c";
+  const loop: Seen[] = [];
+  await expect(fetchResult(uri, { fetch: route({ [uri]: a, [a]: b, [b]: c }, loop) })).rejects.toThrow("moved too many times");
+  expect(loop).toHaveLength(3);
+  expect(veoDownloadUrl("https://storage.googleapis.com/x")).not.toBeNull();
+  expect(veoDownloadUrl("https://example.com/x")).toBeNull();
 });
 
 test("the fixture (ENGINE_MOCK=1): no request leaves the process; a job is pending then ready; a refusal and a filtered clip are available by prompt; the result is the fixture clip", async () => {

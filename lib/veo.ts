@@ -10,11 +10,12 @@ import { vendorKey } from "./vendorKeys";
  *
  * What is called: `POST {host}/v1beta/models/{model}:predictLongRunning` with the header `x-goog-api-key`, a long-running operation in reply (`name`); that operation
  * polled at `GET {host}/v1beta/{name}` until `done`; the video at the `uri` the finished operation names, fetched by us with the key and stored by us. Only an https
- * host under googleapis.com is ever called or followed, **and no redirect is ever followed** (`redirect: "error"`). **Every request and reply field name, the model
- * ids, the setting limits (durations, resolutions, what 1080p and references require) and the rates below follow Google's public pages as the plan records them and
- * are TO CONFIRM against Google's own page before anything is switched on.** Every reply is read defensively; a status we do not know is "pending", never a verdict.
+ * host under googleapis.com is ever called, no redirect is followed on a call (`redirect: "error"`), and the clip's download follows at most two redirects, each
+ * checked against an https allow-list, **with the key sent only on the first request** (Google's own sample downloads "using the URI and API key and follow redirects").
+ * The rates and the setting limits below were read from Google's pricing and Veo pages by the lead on 16 Oct 2026; **the request and reply field names and the model ids
+ * are still TO CONFIRM against Google's reference before anything is switched on.** Every reply is read defensively; a status we do not know is "pending", never a verdict.
  *
- * Money: Google bills a clip on success only (docs/redesign/cancel-billing.md). A finished operation that carries no video (the safety filter, an error) is not billed;
+ * Money: Google bills a clip on success only ("You will only be charged if your video is successfully generated"; blocked videos are not charged). A finished operation that carries no video (the safety filter, an error) is not billed;
  * the caller records it as failed at nothing. The quote is the rate times the seconds, never under.
  */
 export const VEO_SWITCH = "VEO_ENABLED";
@@ -27,18 +28,18 @@ export const VEO_REFERENCE_LIMIT_BYTES = 20 * 1024 * 1024;
 export const VEO_MAX_REFERENCES = 3;
 
 /**
- * TO CONFIRM. Dollars per second of finished clip, sound included, per model and resolution. **These are figures recalled from Google's public listing, not read from
- * it: the plan (docs/plans/provider-adapters.md) holds no Veo price, and nothing here was checked against Google's own page.** Do not switch Veo on, and do not let
- * a price from this table reach a customer, until the lead has checked each row. When wired, this table moves to lib/vendorRates.ts beside the other engines' rates.
+ * Dollars per second of finished clip, sound always included, per model and resolution. **Verified against Google's pricing page (ai.google.dev/gemini-api/docs/pricing,
+ * updated 15 Oct 2026), 16 Oct 2026; confirm against the first invoice.** Veo 3.1 Standard 0.40 at 720p and 1080p; Veo 3.1 Fast 0.10 at 720p and 0.12 at 1080p. Not
+ * offered: 4k (Standard 0.60, Fast 0.30) and Lite (0.05 at 720p, 0.08 at 1080p; it takes no reference images). Server-only like every rate; a customer's price is these through the
+ * margin table. When wired, this table moves to lib/vendorRates.ts beside the other engines' rates.
  */
 export const VEO_RATES = {
-  /* TO CONFIRM (all rows). */
   models: {
     "veo-3.1-generate-preview": { label: "Veo 3.1", usdPerSecond: { "720p": 0.4, "1080p": 0.4 } },
-    "veo-3.1-fast-generate-preview": { label: "Veo 3.1 Fast", usdPerSecond: { "720p": 0.15, "1080p": 0.15 } },
+    "veo-3.1-fast-generate-preview": { label: "Veo 3.1 Fast", usdPerSecond: { "720p": 0.1, "1080p": 0.12 } },
   },
   defaultModel: "veo-3.1-generate-preview",
-  /* TO CONFIRM: 4, 6 or 8 seconds. */
+  /* Google's Veo page (updated 8 Oct 2026): 4, 6 or 8 seconds; 8 is required for 1080p, reference images and an extension. Clips are kept 2 days. */
   durations: [4, 6, 8],
   resolutions: ["720p", "1080p"],
   aspects: ["16:9", "9:16"],
@@ -78,7 +79,7 @@ function key(): string {
   return value;
 }
 
-/** The settings the vendor takes, or why not. Nothing here spends anything; a refusal is before any request. TO CONFIRM against Google's page. */
+/** The settings the vendor takes, or why not (Google's Veo page, 8 Oct 2026). Nothing here spends anything; a refusal is before any request. */
 export function veoSettingsError(input: Pick<VeoRequest, "model" | "durationSeconds" | "resolution" | "aspectRatio"> & { references?: unknown[] }): string | null {
   if (!isVeoModel(input.model)) return "That video model is not offered.";
   if (!(VEO_RATES.durations as readonly number[]).includes(input.durationSeconds)) return `A clip is ${VEO_RATES.durations.join(", ")} seconds.`;
@@ -88,7 +89,6 @@ export function veoSettingsError(input: Pick<VeoRequest, "model" | "durationSeco
   const refs = input.references?.length ?? 0;
   if (refs > VEO_MAX_REFERENCES) return `At most ${VEO_MAX_REFERENCES} reference images.`;
   if (refs > 0 && input.durationSeconds !== 8) return "A clip from reference images is 8 seconds.";
-  if (refs > 0 && input.aspectRatio !== "16:9") return "A clip from reference images is 16:9.";
   return null;
 }
 
@@ -168,6 +168,8 @@ export async function submitVideo(input: VeoRequest, deps: Deps = {}): Promise<{
     aspectRatio: input.aspectRatio,
     resolution: input.resolution,
     durationSeconds: input.durationSeconds,
+    /* Reference images need adults only (Google: personGeneration "allow_adult"). */
+    ...(input.references?.length ? { personGeneration: "allow_adult" } : {}),
     ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
     ...(input.seed != null ? { seed: input.seed } : {}),
   };
@@ -205,15 +207,40 @@ export async function pollVideo(job: { operation: string }, deps: Deps = {}): Pr
   return { status: "failed", failure: filtered ? "Google's safety filter stopped this." : "Google's reply named no video we can fetch." };
 }
 
-/** The finished clip, from the googleapis.com address in the finished operation, with our key and no redirect, capped. Nothing is stored here. */
+/** The hosts a download may be redirected through (Google's own file and storage hosts): https, no credentials, no port. */
+export function veoDownloadUrl(raw: unknown): URL | null {
+  if (typeof raw !== "string" || raw.length > 4096) return null;
+  let url: URL;
+  try { url = new URL(raw); } catch { return null; }
+  if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
+  const h = url.hostname;
+  return ["googleapis.com", "googleusercontent.com", "google.com"].some((d) => h === d || h.endsWith(`.${d}`)) ? url : null;
+}
+const MAX_DOWNLOAD_HOPS = 2;
+
+/**
+ * The finished clip. The first request goes to the googleapis.com address in the finished operation WITH our key; Google's own sample follows redirects, so up to two
+ * are followed (`redirect: "manual"`), each only to an https host on the download allow-list above and **never with the key**. Capped. Nothing is stored here.
+ */
 export async function fetchResult(resultUrl: string, deps: Deps = {}): Promise<Buffer> {
   if (engineMock()) return fixtureBytes("clip.mp4");
-  const url = veoHostUrl(resultUrl);
+  let url = veoHostUrl(resultUrl);
   if (!url) throw new VeoError("Google's result address is not one we fetch.");
-  let res: Response;
-  try { res = await (deps.fetch ?? recoveryFetch)(url.href, { method: "GET", headers: { "x-goog-api-key": key() }, redirect: "error", signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) }); }
-  catch (error) { if (error instanceof VeoError) throw error; throw new VeoError("The clip could not be fetched from Google."); }
-  if (!res.ok) { await res.body?.cancel().catch(() => {}); throw new VeoError(`The clip could not be fetched from Google (${res.status}).`, res.status); }
+  const doFetch = deps.fetch ?? recoveryFetch;
+  let res: Response | null = null;
+  for (let hop = 0; hop <= MAX_DOWNLOAD_HOPS; hop += 1) {
+    try { res = await doFetch(url.href, { method: "GET", headers: hop === 0 ? { "x-goog-api-key": key() } : {}, redirect: "manual", signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) }); }
+    catch (error) { if (error instanceof VeoError) throw error; throw new VeoError("The clip could not be fetched from Google."); }
+    if (res.status < 300 || res.status >= 400) break;
+    await res.body?.cancel().catch(() => {});
+    if (hop === MAX_DOWNLOAD_HOPS) throw new VeoError("The clip's address moved too many times.");
+    let target: string | null = null;
+    try { const location = res.headers.get("location"); target = location ? new URL(location, url).href : null; } catch { /* not an address */ }
+    const next = veoDownloadUrl(target);
+    if (!next) throw new VeoError("Google sent the clip to an address we do not follow.");
+    url = next;
+  }
+  if (!res || !res.ok) { await res?.body?.cancel().catch(() => {}); throw new VeoError(`The clip could not be fetched from Google (${res?.status ?? 0}).`, res?.status ?? null); }
   if (Number(res.headers.get("content-length") ?? 0) > VEO_OUTPUT_LIMIT_BYTES) { await res.body?.cancel().catch(() => {}); throw new VeoError("The clip is larger than Particl keeps."); }
   const bytes = Buffer.from(await res.arrayBuffer());
   if (!bytes.length || bytes.length > VEO_OUTPUT_LIMIT_BYTES) throw new VeoError("The clip came back empty or too large.");
