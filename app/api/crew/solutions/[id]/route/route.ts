@@ -19,7 +19,7 @@ type Ctx = { params: Promise<{ id: string }> };
  *            open that shot. (Storyboards frames come from the beat sheet, so
  *            this is a Rig shot, and the confirmation says Rig.) The wire
  *            value stays `boards` for the clients that already send it.
- *   gen    → nothing is written; the text is handed back as Gen's prompt
+ *   gen    → nothing is written; the text is handed back as Make's prompt
  */
 export const POST = withTenant(async (req: Request, { params }: Ctx) => {
   const caller = await crewCaller(req);
@@ -32,7 +32,7 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
       await setSolutionStatus(solution.id, "generated");
       return Response.json({ to, status: "generated", prompt: solution.text }, { headers: NO_STORE });
     }
-    if (to !== "brief" && to !== "boards") throw new CrewError("Choose Brief, Boards or Gen.", 400);
+    if (to !== "brief" && to !== "boards") throw new CrewError("Choose Brief, Boards or Make.", 400);
     await workbenchReady();
     const draft = await readDraft(caller.userId, solution.projectId);
     if (!draft) throw new CrewError("Save your project first.", 404);

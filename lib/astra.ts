@@ -14,7 +14,7 @@ export const DEFAULT_ASTRA: AstraSettings = {
 export function astraSettings(value: unknown): AstraSettings {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error(
-      "Choose the Astra output settings before reviewing its cost.",
+      "Choose the Topaz Astra output settings before reviewing its cost.",
     );
   const input = value as Record<string, unknown>;
   if (
@@ -24,7 +24,7 @@ export function astraSettings(value: unknown): AstraSettings {
     )
   )
     throw new Error(
-      "Use 30 or 60 fps and Astra detail settings between 0 and 1.",
+      "Use 30 or 60 fps and Topaz Astra detail settings between 0 and 1.",
     );
   return {
     creativity: input.creativity as number,
@@ -40,7 +40,7 @@ export function astraInput(
 ) {
   const settings = astraSettings(value);
   if (!Number.isFinite(sourceHeight) || sourceHeight <= 0)
-    throw new Error("The original source dimensions are required for Astra.");
+    throw new Error("The original source dimensions are required for Topaz Astra.");
   return {
     video_url: url,
     upscale_factor: Math.min(

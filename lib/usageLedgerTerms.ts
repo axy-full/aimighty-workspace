@@ -99,7 +99,7 @@ export const CONNECTED_LABEL: Record<ConnectedState, string> = {
 
 const WORKFLOWS: Record<string, string> = {
   generation: "Generation", "marketing-video": "Marketing video", "marketing-template": "Marketing template",
-  genjutsu: "Genjutsu", "voice-tool": "Voice tool", shorts: "Shorts", "reference-match": "Reference match", virality: "Virality",
+  genjutsu: "Motion transfer / Object swap", "voice-tool": "Voice tool", shorts: "Shorts", "reference-match": "Reference match", virality: "Virality",
 };
 export const workflowLabel = (workflow: string): string => WORKFLOWS[workflow] ?? "Connected job";
 

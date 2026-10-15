@@ -1,4 +1,5 @@
 import { isJob } from "@/lib/takeJob";
+import { isShotType } from "@/lib/takeShotType";
 import { NextResponse, after } from "next/server";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
 import { hasActiveGenerations, listGenerations, syncActive } from "@/lib/jobs";
@@ -32,6 +33,9 @@ export const GET = withTenant(async function GET(req: Request) {
   /* A take's job (lib/takeJob.ts): one value from the closed list. */
   const job = url.searchParams.get("job");
   if (job !== null && (!isJob(job) || url.searchParams.getAll("job").length > 1)) return NextResponse.json({ error: "Unknown job." }, { status: 400 });
+  /* A take's shot type (lib/takeShotType.ts): one value from the closed list. */
+  const shotType = url.searchParams.get("shotType");
+  if (shotType !== null && (!isShotType(shotType) || url.searchParams.getAll("shotType").length > 1)) return NextResponse.json({ error: "Unknown shot type." }, { status: 400 });
   const stable = url.searchParams.get("pagination") === "stable";
   let page: ReturnType<typeof assetPageQuery> | null = null;
   try {
@@ -80,6 +84,7 @@ export const GET = withTenant(async function GET(req: Request) {
     unfiled: url.searchParams.get("unfiled") === "1",
     ...(madeIn === "make" ? { madeIn: "make" as const } : {}),
     ...(job !== null && isJob(job) ? { job } : {}),
+    ...(shotType !== null && isShotType(shotType) ? { shotType } : {}),
     search,
     before,
     cursor: page?.cursor,
