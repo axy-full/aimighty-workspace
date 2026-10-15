@@ -1,3 +1,4 @@
+import { AGE_CONFIRM_REFUSAL, ageConfirmedStatement } from "./ageConfirm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
   accountDbReady,
@@ -387,10 +388,7 @@ export async function acceptWorkspaceInvitation(input: {
         !mailboxProven(input.code, input.mailboxProof)
       )
         throw new MailboxProofNeeded();
-      if (!input.acceptedPolicy)
-        throw new AccountError(
-          "Read the content policy and terms, and tick the box.",
-        );
+      if (!input.acceptedPolicy) throw new AccountError(AGE_CONFIRM_REFUSAL);
       const password = String(input.password ?? ""),
         problem = passwordProblem(password);
       if (problem) throw new AccountError(problem);
@@ -402,6 +400,8 @@ export async function acceptWorkspaceInvitation(input: {
         sql: "INSERT INTO accounts(id,email,name,password_hash,created_at,accepted_policy_at) VALUES(?,?,?,?,?,?)",
         args: [accountId, email, name, hashPassword(password), now(), now()],
       });
+      /* The 18+ confirmation, with its date, in the same transaction as the account (lib/ageConfirm.ts). */
+      await tx.execute(ageConfirmedStatement(accountId));
     }
     // A second pending invite never demotes an existing owner/admin.
     if (!alreadyMember)

@@ -1,4 +1,5 @@
 "use client";
+import { AgeConfirm } from "@/components/AgeConfirm";
 import { useId, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import { Dialog } from "../ui";
 import { PlanPicker } from "@/components/v12/settings/PlanPicker";
@@ -116,7 +117,9 @@ function InvitePath({ state, setState, invite, back, google }: { state: JoinStat
         {google ? (
           /* A form POST from this page, not a link: only that keeps the invite and the policy accepted (lib/googleSignIn.ts startIntent). */
           <form method="post" action={GOOGLE_START} onSubmit={() => saveJoinReturn(back)} style={{ display: "contents" }}>
-            {Object.entries(googleJoinFields({ invite: code, next: back })).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}
+            {/* `accept` is the tick below, not a hidden field: Google is never started for a new account without it (lib/ageConfirm.ts). */}
+            {Object.entries(googleJoinFields({ invite: code, next: back })).filter(([name]) => name !== "accept").map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}
+            <AgeConfirm name="accept" className="v12-join-age" testId="v12-join-age" />
             <button type="submit" className="v12-join-btn" data-testid="v12-join-google">
               Continue with Google
             </button>
@@ -126,7 +129,6 @@ function InvitePath({ state, setState, invite, back, google }: { state: JoinStat
           {busy ? "Checking the code…" : "Continue with email"}
         </button>
       </div>
-      {google ? <p className="v12-join-line" data-testid="v12-join-google-policy">By continuing with Google you accept the <a href="/policy">content policy</a> and <a href="/terms">terms</a>.</p> : null}
       {problem ? <p className="v12-join-problem" role="alert" data-testid="v12-join-invite-problem">{problem}</p> : null}
     </section>
   );
