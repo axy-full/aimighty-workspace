@@ -4,7 +4,7 @@ import { workbenchReady, workbenchTransaction } from "@/lib/workbench/records";
 import { mediaBindingProblem } from "@/lib/mediaBindings";
 import { NextResponse, after } from "next/server";
 import { getGeneration, syncGeneration } from "@/lib/jobs";
-import { db, ready } from "@/lib/db";
+import { db, ready, id as newId } from "@/lib/db";
 import { mediaDeletionReady, markGenerationDeletion } from "@/lib/mediaDeletion";
 import { requireUser, withTenant } from "@/lib/auth";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
@@ -18,6 +18,8 @@ import { NO_SUCH_PROJECT, mayReachProject, mayReadTake } from "@/lib/draftProjec
 import { NOT_YOURS, mayChangeProject, mayChangeWork } from "@/lib/workAccess";
 import { readableActors } from "@/lib/platformOwnerPrivacy";
 import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
+import { cleanReasonText, REASON_TEXT_MAX, reviewActionOf, reviewEventStatement, reviewViaOf } from "@/lib/takeReview";
+import { cleanReasons } from "@/lib/rejectReasons";
 import type { Transaction } from "@libsql/client";
 
 const ACTIVE = "This generation is still active. Wait for it to finish before deleting it.";
@@ -163,7 +165,18 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
     reviewedFrom = String(row.review_state ?? "");
     /* A sign-off is undone by a person alone: a token or an agent cannot clear, pick over or send back what a person approved (that would pull it off a client's review link too). */
     if (reviewedFrom === "approved" && wanted !== "approved" && !person) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
+    /* Why a take is sent back (lib/rejectReasons.ts): optional here (a caller that sends only the mark keeps working), checked when sent, and only with a send-back. The person's
+       own words go in the take's notes, in the same write as the mark. */
+    if (body.reasons !== undefined || body.drift !== undefined || body.reasonText !== undefined) {
+      if (wanted !== "changes") return NextResponse.json({ error: "A reason goes with sending a take back." }, { status: 400 });
+      const checked = cleanReasons(body.reasons, body.drift);
+      if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+      if (body.reasonText !== undefined && typeof body.reasonText !== "string") return NextResponse.json({ error: "A reason is some words." }, { status: 400 });
+      if (cleanReasonText(body.reasonText).length > REASON_TEXT_MAX) return NextResponse.json({ error: `A reason is at most ${REASON_TEXT_MAX} characters.` }, { status: 400 });
+    }
   }
+  else if (body.reasons !== undefined || body.drift !== undefined || body.reasonText !== undefined)
+    return NextResponse.json({ error: "A reason goes with sending a take back." }, { status: 400 });
   /* Someone else's take is changed by its maker, the board's owner or an admin only: a rename, a move, a review, a trash or a restore alike.
      (After the checks above, which only read: a word the trail does not know, a take that is gone or not finished answer as they did.) */
   const refused = await notYours(got.user, id);
@@ -237,18 +250,32 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
        own moment (brief 2.1). Clearing a state clears that mark alone, so a
        take sent back for changes still says who had picked it. */
     const ts = Date.now();
-    await db().execute({
-      sql: `UPDATE generations SET review_state=?, review_by=?, reviewed_at=?,
+    /* One write: the mark, the event that records who judged it and by which channel, and, for a send-back, the person's own words as a note on the take. A reject can no longer land
+       without its reason, and a reason can no longer land without its mark. */
+    const action = reviewActionOf(state)!;
+    const checked = state === "changes" ? cleanReasons(body.reasons, body.drift) : null;
+    const words = state === "changes" ? cleanReasonText(body.reasonText) : "";
+    const noteId = words ? newId("note") : null;
+    await db().batch([
+      {
+        sql: `UPDATE generations SET review_state=?, review_by=?, reviewed_at=?,
                    picked_by = CASE WHEN ? THEN ? ELSE picked_by END,
                    picked_at = CASE WHEN ? THEN ? ELSE picked_at END,
                    approved_by = CASE WHEN ? THEN ? ELSE approved_by END,
                    approved_at = CASE WHEN ? THEN ? ELSE approved_at END,
                    updated_at=? WHERE id=?`,
-      args: [state, state ? got.user.name : null, state ? ts : null,
-             state === "picked" ? 1 : 0, got.user.name, state === "picked" ? 1 : 0, ts,
-             state === "approved" ? 1 : 0, got.user.name, state === "approved" ? 1 : 0, ts,
-             ts, id],
-    });
+        args: [state, state ? got.user.name : null, state ? ts : null,
+               state === "picked" ? 1 : 0, got.user.name, state === "picked" ? 1 : 0, ts,
+               state === "approved" ? 1 : 0, got.user.name, state === "approved" ? 1 : 0, ts,
+               ts, id],
+      },
+      ...(noteId ? [{ sql: `INSERT INTO notes (id, gen_id, user_id, text, mentions, created_at) VALUES (?,?,?,?,?,?)`, args: [noteId, id, got.user.id, words, "[]", ts] }] : []),
+      /* Clearing a take that carries no mark changes nothing, so it writes no event. */
+      ...(state === "" && reviewedFrom === "" ? [] : [reviewEventStatement({
+        genId: id, action, actorId: got.user.id, via: reviewViaOf({ user: got.user, token: got.token }), tokenId: got.token?.id ?? null,
+        reasons: checked?.ok ? checked.value.reasons : undefined, drift: checked?.ok ? checked.value.drift : null, noteId, at: ts,
+      })]),
+    ], "write");
     /* The marks as recorded, for the grids to show at once (who picked, who approved, when). */
     const marks = (await db().execute({ sql: "SELECT review_state, review_by, picked_by, picked_at, approved_by, approved_at, updated_at FROM generations WHERE id=?", args: [id] })).rows[0];
     /* A mark this change left alone may hold an account id (an older row): who marked it is read as a reader may be told, never as an id (lib/platformOwnerPrivacy.ts). */

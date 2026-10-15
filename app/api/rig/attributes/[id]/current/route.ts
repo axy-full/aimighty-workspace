@@ -7,6 +7,7 @@ import { setCurrentVersion } from "@/lib/elements";
 import { isChoiceKey, takesReturnedToDraft } from "@/lib/impactChoice";
 import { isVisual, type AttributeKind } from "@/lib/rig";
 import { invalidate, PROJECTS_KEY } from "@/lib/cache";
+import { clearApprovalsForMasterChange } from "@/lib/takeReview";
 import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
 
 /**
@@ -114,24 +115,17 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (takesReturnedToDraft(body.choice) !== "none") {
     const shots = impact.shots.filter((s) => s.approved).map((s) => s.shotId);
     if (shots.length) {
-      const holes = shots.map(() => "?").join(",");
       /* Only the takes this attribute could have changed. A wardrobe or a
          plate is in the picture; it is not in the sound, and un-approving a
          production's audio because a coat changed is a signature destroyed
          for nothing. */
       const kinds = isVisual(String(row.kind) as AttributeKind) ? ["video", "image"] : ["audio"];
-      const kindHoles = kinds.map(() => "?").join(",");
       /* review_state alone. approved_by and approved_at are the approval
          trail brief 2.1 exists for, and /api/jobs/[id] deliberately keeps
          them when it clears a state: who signed a take off, and when, is a
          record and not a status. */
-      const out = await db().execute({
-        sql: `UPDATE generations SET review_state = '', updated_at = ?
-              WHERE shot_id IN (${holes}) AND review_state = 'approved' AND deleted = 0
-                AND kind IN (${kindHoles})`,
-        args: [now(), ...shots, ...kinds],
-      });
-      returned = out.rowsAffected;
+      /* The same write records why: a `cleared` event for each take returned (by the system, cause master_changed, the person who changed the master as its actor). */
+      returned = await clearApprovalsForMasterChange(db(), { shotIds: shots, kinds, actorId: got.user.id, at: now() });
     }
   }
   /* Approved counts are memoised for the projects list; anything that writes
