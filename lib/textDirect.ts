@@ -1,9 +1,11 @@
 import { TEXT_SAFETY_BLOCK_MESSAGE, geminiBlockReason, safetyBlockLog } from './geminiSafety';
 import { APICallError, generateText, Output, type LanguageModelUsage, type ModelMessage, type SystemModelMessage } from 'ai';
 import type { JSONObject, JSONSchema7 } from '@ai-sdk/provider';
-import { gatewayPost, type GatewayReply } from './gateway';
+import { gatewayPost } from './gateway';
 import { engineMock } from './mock';
-import { assertTextProvider, sdkTextUsage } from './openai-direct';
+import { assertTextProvider, openaiDirectPost, sdkTextUsage, textVendor } from './openai-direct';
+import { mockTextReply, type MockKind, type TextReply } from './textReply';
+import type { TextRun } from './engines/types';
 import { languageModel } from './language-provider';
 import { recoveryFetch } from './recovery';
 import { directVendorOf, isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
@@ -23,20 +25,30 @@ import { directVendorOf, isDirectRoute, redactProviderError, textRoute, type Dir
  */
 export type TextPostOptions = {
   auth?: Record<string, string>; timeoutMs?: number;
-  mock?: 'prompt' | 'turn' | 'idea' | 'scene' | 'shots' | 'memory';
+  mock?: MockKind;
   /** Tests inject the transport; production uses the recovery fetch. */
   fetch?: typeof fetch;
 };
 
-export async function textPost(body: string, opts: TextPostOptions = {}): Promise<GatewayReply> {
-  if (engineMock()) return gatewayPost(body, opts);
+export async function textPost(body: string, opts: TextPostOptions = {}): Promise<TextReply> {
+  /* The canned reply under ENGINE_MOCK: nothing leaves the process (moved here from lib/gateway.ts). */
+  const mocked = await mockTextReply(body, opts.mock);
+  if (mocked) return mocked;
   const input = record(JSON.parse(body));
   if (typeof input.model !== 'string') throw new Error('Choose a language model before submitting.');
   const route = textRoute(input.model);
-  if (!isDirectRoute(route)) return gatewayPost(body, opts);
+  if (isDirectRoute(route)) {
+    assertTextProvider(input.model, opts.auth);
+    return directTextPost(route, input, opts);
+  }
+  /* OpenAI's own text API, directly (moved here from lib/gateway.ts); every other model that is not switched on in TEXT_DIRECT is the gateway's door. */
   assertTextProvider(input.model, opts.auth);
-  return directTextPost(route, input, opts);
+  if (textVendor(input.model) === 'openai') return openaiDirectPost(input, { timeoutMs: opts.timeoutMs });
+  return gatewayPost(body, opts);
 }
+
+/** A text call by its parts (the thinking engine's shape): what the paid text paths and Atomik send. */
+export const textRun = (req: TextRun): Promise<TextReply> => textPost(req.body, { auth: req.auth, timeoutMs: req.timeoutMs, mock: req.mock });
 
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 const int = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -247,7 +259,7 @@ export function stepTextUsage(model: string, usage: LanguageModelUsage, direct: 
 
 const FINISH: Record<string, string> = { stop: 'stop', length: 'length', 'content-filter': 'content_filter', 'tool-calls': 'tool_calls', error: 'error' };
 
-async function directTextPost(vendor: DirectVendor, input: Record<string, unknown>, opts: TextPostOptions): Promise<GatewayReply> {
+async function directTextPost(vendor: DirectVendor, input: Record<string, unknown>, opts: TextPostOptions): Promise<TextReply> {
   const reply = (status: number, message: string) => ({ ok: false, status, text: JSON.stringify({ provider: vendor, error: { message: message.slice(0, 400) } }) });
   let sent = false;
   try {
