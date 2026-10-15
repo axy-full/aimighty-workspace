@@ -358,6 +358,15 @@ test("the adapter: the requests it makes, what it reads back, the base address i
     const spoken = await sarvam.speak({ text: "namaste", language: "hi-IN", model: "bulbul:v3", voice: "stock-one", pace: 1 }, { fetch: reply(200, { audios: [audio] }) });
     expect(spoken.toString()).toBe("audio-bytes");
     expect(calls[0].url).toBe("https://api.sarvam.ai/text-to-speech");
+    /* No request follows a redirect (the key is a header, and a redirect could carry it to another origin): each is sent with redirect "error", and a redirecting server's answer is a failure. */
+    const seen: (string | undefined)[] = [];
+    const redirecting = (async (_url: unknown, init?: RequestInit) => { seen.push(init?.redirect); if (init?.redirect === "error") throw new TypeError("fetch failed: unexpected redirect"); return new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data" } }); }) as never;
+    for (const run of [
+      () => sarvam.speak({ text: "x", language: "hi-IN", model: "bulbul:v3" }, { fetch: redirecting }),
+      () => sarvam.translate({ text: "x", source: "en-IN", target: "ta-IN", model: "sarvam-translate:v1" }, { fetch: redirecting }),
+      () => sarvam.transcribe({ bytes: Buffer.from("wav"), filename: "clip.wav", mime: "audio/wav", model: "saaras:v4" }, { fetch: redirecting }),
+    ]) expect(await run().then(() => null, (e) => e)).toBeInstanceOf(sarvam.SarvamError);
+    expect(seen).toEqual(["error", "error", "error"]);
     expect(calls[0].headers["api-subscription-key"]).toBe("test-sarvam-key-not-real");
     expect(JSON.parse(String(calls[0].body))).toEqual({ text: "namaste", target_language_code: "hi-IN", model: "bulbul:v3", output_audio_codec: "mp3", speaker: "stock-one", pace: 1 });
     /* No voice cloning is offered: nothing in the request names a reference voice. */
@@ -503,24 +512,58 @@ test("no transcript or translation text lands in the idempotency claim: the firs
   });
 });
 
-test("over MCP: the three tools are listed only where the engine is on and priced; a call asks the route for the price and the caller cannot approve", async () => {
+test("over MCP: the three tools are listed only where the engine is on and priced; Ask (the default) prepares and starts nothing, Auto starts only at or under the per-job line, and the caller cannot approve", async () => {
   const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  const { jobApprovalLineCredits } = await import("../../lib/approvalRule");
+  const { creditUsd } = await import("../../lib/creditTerms");
+  const spend = async (value: string | null) => { if (value === null) await db().execute("DELETE FROM settings WHERE key='spendWithoutAsking'"); else await setSetting("spendWithoutAsking", value, "admin"); invalidateSettings(); };
+  const line = jobApprovalLineCredits(creditUsd());
+  let credits = 2;
   const calls: { body: Record<string, unknown> }[] = [];
   const call = async (_p: string, init: { body?: unknown } = {}) => {
     const body = init.body as Record<string, unknown>;
     calls.push({ body });
-    return body.quoteOnly === true ? { estimatedCredits: 2, price: 0.02, unit: "usd" } : body.tool === "translate" ? { ok: true, text: "[ta-IN] Hello" } : { id: "gen_s1" };
+    return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 100, unit: "usd" } : body.tool === "translate" ? { ok: true, text: "[ta-IN] Hello" } : { id: "gen_s1" };
   };
   await asTenant(house(), async () => {
+    await ready();
     delete process.env.SARVAM_ENABLED;
     expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("sarvam_speech");
     await expect(runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call)).rejects.toThrow("There is no such tool here.");
     process.env.SARVAM_ENABLED = "1";
     expect((await directEngineMcpTools()).map((t) => t.name)).toEqual(expect.arrayContaining(["sarvam_speech", "sarvam_transcribe", "sarvam_translate"]));
-    expect(await runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call)).toBe("[ta-IN] Hello");
-    expect(calls.map((c) => [c.body.quoteOnly === true, c.body.maxCredits ?? null])).toEqual([[true, null], [false, 2]]);
-    expect(await runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN" }, call)).toMatch(/^Speech made\.\n\nid: gen_s1/);
-    await expect(runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN", maxCredits: 1 }, call)).rejects.toThrow(/not yours to approve/);
+    try {
+      /* Ask (the default, and anything but an exact "auto"): priced and prepared, nothing sent, no text in the answer. */
+      for (const mode of [null, "ask", "AUTO", ""]) {
+        await spend(mode); calls.length = 0;
+        const text = await runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call);
+        expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.02\nprepared: translation en-IN to ta-IN, 5 characters\n\nThis needs a person's approval: nothing was started or spent/);
+        expect(calls.map((c) => c.body.quoteOnly === true)).toEqual([true]);
+        expect(calls.some((c) => "maxCredits" in c.body)).toBe(false);
+      }
+      /* Auto, at or under the line: it starts at the server's price; over the line (guardrail 4) it asks a person. */
+      await spend("auto");
+      for (const c of [1, 2, line]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call), String(c)).toBe("[ta-IN] Hello");
+        expect(calls.map((x) => [x.body.quoteOnly === true, x.body.maxCredits ?? null])).toEqual([[true, null], [false, c]]);
+      }
+      credits = 2; calls.length = 0;
+      expect(await runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN" }, call)).toMatch(/^Speech made\.\n\nid: gen_s1/);
+      for (const c of [line + 1, 500]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN" }, call), String(c)).toMatch(/not started[\s\S]*needs a person's approval/);
+        expect(calls).toHaveLength(1);
+      }
+      /* The caller never writes the approval, in either mode. */
+      for (const mode of ["ask", "auto"]) {
+        await spend(mode); calls.length = 0;
+        for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) await expect(runDirectEngineTool("sarvam_speech", { text: "Hello", language: "en-IN", ...bad }, call)).rejects.toThrow(/only a person approves/);
+        expect(calls).toEqual([]);
+      }
+    } finally { await spend(null); }
     /* No rupee rate: the tools are not offered (they cannot be priced), and a call says so. */
     delete process.env.SARVAM_USD_PER_INR;
     expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("sarvam_translate");

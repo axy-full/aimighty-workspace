@@ -63,6 +63,8 @@ async function call(method: "GET" | "POST", url: string, body: unknown, deps: De
       method,
       headers: { "x-key": key(), accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}) },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      /* The key is a header and undici forwards custom headers across an origin: a redirect is a failure, never followed. */
+      redirect: "error",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (error) {
@@ -137,7 +139,7 @@ export async function fetchResult(resultUrl: string, deps: Deps = {}): Promise<B
   const url = bflHostUrl(resultUrl);
   if (!url) throw new BflError("BFL's result address is not one we fetch.");
   let res: Response;
-  try { res = await (deps.fetch ?? recoveryFetch)(url.href, { method: "GET", signal: AbortSignal.timeout(120_000) }); }
+  try { res = await (deps.fetch ?? recoveryFetch)(url.href, { method: "GET", redirect: "error", signal: AbortSignal.timeout(120_000) }); }
   catch { throw new BflError("The image could not be fetched from BFL."); }
   if (!res.ok) throw new BflError(`The image could not be fetched from BFL (${res.status}).`, res.status);
   if (Number(res.headers.get("content-length") ?? 0) > BFL_OUTPUT_LIMIT_BYTES) throw new BflError("The image is larger than Particl keeps.");

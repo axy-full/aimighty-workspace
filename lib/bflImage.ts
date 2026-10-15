@@ -33,7 +33,8 @@ import { consentLive } from "./security/consent-words";
  *   queued     admitted, consent passed (an edit), funded (the reservation is the whole price)
  *   submitted  the job is with BFL (an id and the polling address BFL named)
  *   done       the image is fetched THE MOMENT it is Ready (its signed address lives ten minutes), STORED under the workspace's own prefix, the take settled
- *   failed     refused before work, moderated, failed, or its image lost past the ten minutes: settled at NOTHING ("Nothing billed")
+ *   failed     refused before work (settled at NOTHING, "Nothing billed"); moderated or failed after submission, or its image lost past the ten minutes: the workspace is billed nothing, and the ledger
+ *              line records what BFL charged (below)
  *   uncertain  the submission's acknowledgement was lost. Nothing here ever submits a second time: a lost reply may still be a charged job
  *
  * CONSENT (an edit). A reference may show a real person. Every reference of an edit therefore carries the cast member it shows and passes `requireConsentMatch`
@@ -43,7 +44,9 @@ import { consentLive } from "./security/consent-words";
  *
  * MONEY. Quote: the output megapixels (rounded up) and each reference's megapixels (rounded up) at BFL_RATES (lib/vendorRates.ts, verified against BFL's published
  * pricing data, 16 Oct 2026; confirm against the first invoice), through the margin table (`quotedCredits`, keyed by the model); reserved at the quote on the meter; settled at the cost BFL states when it states one,
- * else at the quote, and NEVER above the quote; at nothing on any failure. A person approves: `maxCredits` must cover the quote.
+ * else at the quote (and marked `reconcile`: the figure is ours), and NEVER billed above the quote (a stated figure above it settles at the quote, the excess is recorded as the meter's `overrun_usd` and marked `reconcile`).
+ * A failure BFL charged for is recorded on the ledger line at its cost, unbilled (the workspace still reads "Nothing billed"): an image lost after BFL said Ready is always charged (its stated cost, else the quote,
+ * marked `reconcile`); a moderated or failed job at the cost BFL's reply stated for it, and at nothing, marked `reconcile`, when it stated none (BFL's pages say nothing about billing those). A person approves: `maxCredits` must cover the quote.
  *
  * PRIVACY. References are read from this workspace (the same open-by-person rule as every source) and sent as data, never as a link of ours. BFL's privacy
  * policy allows training on inputs and outputs unless the account has opted out (the owner has done the opt-out in BFL's dashboard; counsel before any customer switch).
@@ -65,6 +68,8 @@ export type BflParams = {
   outputMegapixels: number; reservedUsd: number; estimateCredits: number; use: string | null;
   funded: number; claimedAt: number | null; bflId: string | null; pollingUrl: string | null; statedUsd: number | null;
   submittedAt: number | null; sendingAt: number | null; readyAt: number | null; lastPolledAt: number | null; pollUntil: number | null; settled: number;
+  /** 1 when the figure on the ledger line is ours, not BFL's (none stated, or BFL stated more than the quote): to be checked against BFL's invoice. */
+  reconcile: number;
 };
 type Row = { id: string; project_id: string | null; shot_id: string | null; created_by: string | null; status: string; created_at: number; params: string; prompt: string };
 type Job = { row: Row; bfl: BflParams };
@@ -224,7 +229,7 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   const genId = newId("gen"), ts = now();
   const bfl: BflParams = {
     status: "queued", tool, model, width, height, seed, references: matched, outputMegapixels: outputMp, reservedUsd: usd, estimateCredits: estimatedCredits, use,
-    funded: 0, claimedAt: null, bflId: null, pollingUrl: null, statedUsd: null, submittedAt: null, sendingAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0,
+    funded: 0, claimedAt: null, bflId: null, pollingUrl: null, statedUsd: null, submittedAt: null, sendingAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0, reconcile: 0,
   };
   const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
   const g = gcd(width, height);
@@ -260,29 +265,33 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
 /* ── Settling ───────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 /** The terminal write: the take's outcome and its bill commit together; delivery to the ledger is idempotent. A failure settles at nothing. */
-export async function settleBfl(genId: string, status: "done" | "failed", outcome: { message?: string; costUsd: number; storedUrl?: string; bytes?: number; said?: ProviderOutcome | null }): Promise<void> {
+export async function settleBfl(genId: string, status: "done" | "failed", outcome: { message?: string; costUsd: number; storedUrl?: string; bytes?: number; said?: ProviderOutcome | null; reconcile?: boolean }): Promise<void> {
   const job = await load(genId);
   if (!job || job.bfl.settled) return;
   const { row, bfl } = job;
   const said = status === "failed" && outcome.said ? await fundedOutcome(outcome.said, genId, "bfl").catch(() => outcome.said ?? null) : null;
   const ms = Math.max(0, now() - Number(row.created_at));
   const ok = status === "done";
-  /* Never above the quote, whatever BFL states. */
-  const cost = ok ? Math.min(outcome.costUsd, bfl.reservedUsd) : 0;
-  const write = ok
+  /* A finished job is charged at most the quote, whatever BFL states: what it states past the quote is recorded as the overrun (the platform's, flagged to reconcile), never billed.
+     A failure BFL charged for (costUsd above nothing) is recorded at that cost on the ledger line and billed to nobody. */
+  const cost = ok ? Math.min(outcome.costUsd, bfl.reservedUsd) : Math.max(0, outcome.costUsd);
+  const overrunUsd = ok && outcome.costUsd > bfl.reservedUsd + 1e-9 ? Math.round((outcome.costUsd - bfl.reservedUsd) * 1e6) / 1e6 : null;
+  const reconcile = outcome.reconcile === true || overrunUsd !== null;  const write = ok
     ? {
-        sql: `UPDATE generations SET status='succeeded', stored_url=?, bytes=?, cost_usd=?, error=NULL, duration_ms=?, params=json_set(params,'$.bfl.status','done','$.bfl.settled',1), updated_at=?
+        sql: `UPDATE generations SET status='succeeded', stored_url=?, bytes=?, cost_usd=?, error=NULL, duration_ms=?, params=json_set(params,'$.bfl.status','done','$.bfl.settled',1,'$.bfl.reconcile',?), updated_at=?
               WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
-        args: [outcome.storedUrl ?? null, outcome.bytes ?? null, cost, ms, now(), genId],
+        args: [outcome.storedUrl ?? null, outcome.bytes ?? null, cost, ms, reconcile ? 1 : 0, now(), genId],
       }
     : {
-        sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms,?), cost_usd=0, provider_outcome=COALESCE(?,provider_outcome),
-                params=json_set(params,'$.bfl.status','failed','$.bfl.settled',1), updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
-        args: [(outcome.message ?? "The image failed.").slice(0, 600), ms, said ? serializeOutcome(said) : null, now(), genId],
+        sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms,?), cost_usd=?, provider_outcome=COALESCE(?,provider_outcome),
+                params=json_set(params,'$.bfl.status','failed','$.bfl.settled',1,'$.bfl.reconcile',?), updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
+        args: [(outcome.message ?? "The image failed.").slice(0, 600), ms, cost, said ? serializeOutcome(said) : null, reconcile ? 1 : 0, now(), genId],
       };
   await writeGenerationOutcome(write, {
     id: genId, kind: "image", engine: "bfl", model: bfl.model, status: ok ? "succeeded" : "failed", engineCostUsd: cost, durationMs: ms,
     projectId: row.project_id, shotId: row.shot_id, createdBy: row.created_by,
+    ...(!ok && cost > 0 ? { unbilled: true } : {}),
+    ...(overrunUsd !== null ? { overrunUsd } : {}),
     ...(said ? { providerOutcome: said } : {}),
   });
   await deliverGenerationSettlement(genId);
@@ -363,13 +372,14 @@ export async function advanceBflJobWith(genId: string, deps: BflDeps): Promise<B
       await patch(genId, { lastPolledAt: clock() });
       /* Past the ten minutes a Ready image's address is dead: it is a failure to collect, settled at nothing (the platform absorbs it). */
       if (bfl.readyAt && clock() - Number(bfl.readyAt) > BFL_RESULT_LIFETIME_MS - 30_000) {
-        await settleBfl(genId, "failed", { message: "The image was ready but could not be saved in time. Nothing was billed.", costUsd: 0, said: silentOutcome("bfl", "run", "not_kept", "result expired before it was saved") });
+        /* BFL made it (it said Ready), so BFL charged for it: recorded at its stated cost, else the quote, billed to nobody, and marked to reconcile when the figure is ours. */
+        await settleBfl(genId, "failed", { message: "The image was ready but could not be saved in time. Nothing was billed.", costUsd: bfl.statedUsd ?? bfl.reservedUsd, reconcile: bfl.statedUsd == null, said: silentOutcome("bfl", "run", "not_kept", "result expired before it was saved") });
         return (await load(genId, { any: true }))?.bfl ?? null;
       }
       const state = await (deps.poll ?? pollImage)({ id: bfl.bflId, pollingUrl: bfl.pollingUrl });
       if (state.status === "failed") {
-        // BFL's pages say nothing about billing a failed or moderated job: settled at nothing, absorbed by the platform.
-        await settleBfl(genId, "failed", { message: `${state.failure ?? "BFL could not make this image."} Nothing was billed.`, costUsd: 0, said: silentOutcome("bfl", "run", "failed", state.failure) });
+        /* BFL's pages say nothing about billing a failed or moderated job. When its reply stated a cost for the job, that is what it is recorded at (billed to nobody); when it stated none it is recorded as nothing and marked to reconcile against BFL's invoice. */
+        await settleBfl(genId, "failed", { message: `${state.failure ?? "BFL could not make this image."} Nothing was billed.`, costUsd: bfl.statedUsd ?? 0, reconcile: bfl.statedUsd == null, said: silentOutcome("bfl", "run", "failed", state.failure) });
         return (await load(genId, { any: true }))?.bfl ?? null;
       }
       if (state.status !== "ready" || !state.resultUrl) return (await load(genId))?.bfl ?? null;
@@ -377,8 +387,8 @@ export async function advanceBflJobWith(genId: string, deps: BflDeps): Promise<B
       /* The moment it is Ready: fetched and stored, before anything else. Never fetched with our key, only from the bfl.ai address in the poll. */
       const bytes = await (deps.fetchImage ?? fetchResult)(state.resultUrl);
       const { value: stored } = await withRetry(() => (deps.store ?? storeImageBytes)(genId, bytes), { max: 3 });
-      /* BFL's own figure when it states one, else the quote; never above the quote (settleBfl caps it). */
-      await settleBfl(genId, "done", { costUsd: bfl.statedUsd ?? bfl.reservedUsd, storedUrl: stored.url, bytes: stored.bytes });
+      /* BFL's own figure when it states one, else the quote and marked to reconcile; never billed above the quote (settleBfl records the excess as the overrun and marks it). */
+      await settleBfl(genId, "done", { costUsd: bfl.statedUsd ?? bfl.reservedUsd, reconcile: bfl.statedUsd == null, storedUrl: stored.url, bytes: stored.bytes });
       return (await load(genId, { any: true }))?.bfl ?? null;
     } catch (error) {
       // Transport or storage: keep the id and the reservation; the next pass asks again (the ten minutes still run). Nothing is resubmitted.
