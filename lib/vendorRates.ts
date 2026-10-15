@@ -320,6 +320,27 @@ export const BFL_RATES = {
 } as const;
 export type BflModel = keyof typeof BFL_RATES.models;
 
+/**
+ * Google Veo 3.1, direct on the Gemini API (lib/veo.ts, lib/veoVideo.ts), in the vendor's own unit: dollars per second of finished clip, sound always included.
+ * **Verified against Google's pricing page (ai.google.dev/gemini-api/docs/pricing, updated 15 Oct 2026), 16 Oct 2026; confirm against the first invoice.** Veo 3.1 Standard
+ * 0.40 at 720p and 1080p; Veo 3.1 Fast 0.10 at 720p and 0.12 at 1080p. Not offered: 4k (Standard 0.60, Fast 0.30) and Lite (0.05 at 720p, 0.08 at 1080p; it takes no
+ * reference images). Google charges only for a clip that is generated; a blocked video is not charged. Limits from Google's Veo page (updated 8 Oct 2026): 4, 6 or 8
+ * seconds, and 8 is required for 1080p and for reference images. Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const VEO_RATES = {
+  models: {
+    "veo-3.1-generate-preview": { label: "Veo 3.1", usdPerSecond: { "720p": 0.4, "1080p": 0.4 } },
+    "veo-3.1-fast-generate-preview": { label: "Veo 3.1 Fast", usdPerSecond: { "720p": 0.1, "1080p": 0.12 } },
+  },
+  defaultModel: "veo-3.1-generate-preview",
+  durations: [4, 6, 8],
+  resolutions: ["720p", "1080p"],
+  aspects: ["16:9", "9:16"],
+} as const;
+export type VeoModel = keyof typeof VEO_RATES.models;
+export type VeoResolution = (typeof VEO_RATES.resolutions)[number];
+export type VeoAspect = (typeof VEO_RATES.aspects)[number];
+
 /** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
 export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;

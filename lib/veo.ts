@@ -2,6 +2,9 @@ import { engineMock } from "./mock";
 import { fixtureBytes } from "./mockFs";
 import { recoveryFetch } from "./recovery";
 import { vendorKey } from "./vendorKeys";
+import { VEO_RATES, type VeoAspect, type VeoModel, type VeoResolution } from "./vendorRates";
+
+export type { VeoAspect, VeoModel, VeoResolution };
 
 /**
  * Google Veo 3.1, DIRECT on the Gemini API (the owner: "Veo 3.1 (Google, direct via the Gemini API)"): a clip with its sound from words, from words and a first
@@ -12,7 +15,7 @@ import { vendorKey } from "./vendorKeys";
  * polled at `GET {host}/v1beta/{name}` until `done`; the video at the `uri` the finished operation names, fetched by us with the key and stored by us. Only an https
  * host under googleapis.com is ever called, no redirect is followed on a call (`redirect: "error"`), and the clip's download follows at most two redirects, each
  * checked against an https allow-list, **with the key sent only on the first request** (Google's own sample downloads "using the URI and API key and follow redirects").
- * The rates and the setting limits below were read from Google's pricing and Veo pages by the lead on 16 Oct 2026; **the request and reply field names and the model ids
+ * The rates (lib/vendorRates.ts VEO_RATES) and the setting limits below were read from Google's pricing and Veo pages by the lead on 16 Oct 2026; **the request and reply field names and the model ids
  * are still TO CONFIRM against Google's reference before anything is switched on.** Every reply is read defensively; a status we do not know is "pending", never a verdict.
  *
  * Money: Google bills a clip on success only ("You will only be charged if your video is successfully generated"; blocked videos are not charged). A finished operation that carries no video (the safety filter, an error) is not billed;
@@ -26,27 +29,6 @@ const DOWNLOAD_TIMEOUT_MS = 120_000;
 export const VEO_OUTPUT_LIMIT_BYTES = 256 * 1024 * 1024;
 export const VEO_REFERENCE_LIMIT_BYTES = 20 * 1024 * 1024;
 export const VEO_MAX_REFERENCES = 3;
-
-/**
- * Dollars per second of finished clip, sound always included, per model and resolution. **Verified against Google's pricing page (ai.google.dev/gemini-api/docs/pricing,
- * updated 15 Oct 2026), 16 Oct 2026; confirm against the first invoice.** Veo 3.1 Standard 0.40 at 720p and 1080p; Veo 3.1 Fast 0.10 at 720p and 0.12 at 1080p. Not
- * offered: 4k (Standard 0.60, Fast 0.30) and Lite (0.05 at 720p, 0.08 at 1080p; it takes no reference images). Server-only like every rate; a customer's price is these through the
- * margin table. When wired, this table moves to lib/vendorRates.ts beside the other engines' rates.
- */
-export const VEO_RATES = {
-  models: {
-    "veo-3.1-generate-preview": { label: "Veo 3.1", usdPerSecond: { "720p": 0.4, "1080p": 0.4 } },
-    "veo-3.1-fast-generate-preview": { label: "Veo 3.1 Fast", usdPerSecond: { "720p": 0.1, "1080p": 0.12 } },
-  },
-  defaultModel: "veo-3.1-generate-preview",
-  /* Google's Veo page (updated 8 Oct 2026): 4, 6 or 8 seconds; 8 is required for 1080p, reference images and an extension. Clips are kept 2 days. */
-  durations: [4, 6, 8],
-  resolutions: ["720p", "1080p"],
-  aspects: ["16:9", "9:16"],
-} as const;
-export type VeoModel = keyof typeof VEO_RATES.models;
-export type VeoResolution = (typeof VEO_RATES.resolutions)[number];
-export type VeoAspect = (typeof VEO_RATES.aspects)[number];
 
 export const veoConfigured = (): boolean => Boolean(vendorKey("gemini")) || engineMock();
 export const isVeoModel = (v: unknown): v is VeoModel => typeof v === "string" && Object.hasOwn(VEO_RATES.models, v);

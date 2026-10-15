@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { VEO_RATES, VeoError, fetchResult, pollVideo, submitVideo, veoBase, veoDownloadUrl, veoHostUrl, veoQuoteUsd, veoSettingsError, type VeoRequest } from "../../lib/veo";
+import { VEO_RATES } from "../../lib/vendorRates";
+import { VeoError, fetchResult, pollVideo, submitVideo, veoBase, veoDownloadUrl, veoHostUrl, veoQuoteUsd, veoSettingsError, type VeoRequest } from "../../lib/veo";
 
 /**
  * The Veo 3.1 adapter (lib/veo.ts) alone: no database, no route, no money. Every call is a function this file hands the adapter, or the in-process fixture under

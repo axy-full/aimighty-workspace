@@ -68,6 +68,7 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   { dir: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 5 } },
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
   { dir: "bfl", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
+  { dir: "veo", body: { tool: "video", prompt: "A tree in rain", maxCredits: 100000 } },
   { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", castMemberId: "cast_1", faceFrameUploadId: "up_face", projectId: "film", use: "production", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },

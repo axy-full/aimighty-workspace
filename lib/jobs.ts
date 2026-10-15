@@ -847,6 +847,11 @@ export async function syncPending(
   results.attempted += bfls.attempted;
   results.failed += bfls.failed;
   results.deferred += bfls.deferred;
+  // Veo clips (Google): ask after the running; a finished clip is collected at once, inside its two days. Never resubmit.
+  const veos = await (await import("./veoVideo")).recoverVeoJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += veos.attempted;
+  results.failed += veos.failed;
+  results.deferred += veos.deferred;
   const horizon = now() - 3 * 86400_000;
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
@@ -879,6 +884,8 @@ export async function syncPending(
           if (gen.kind === "audio" && params.task === "sarvam_speech") return;
           // A FLUX.2 job's row is advanced by its own workflow above (lib/bflImage.ts); it is neither a render nor an orphan (an orphan sweep would end it as "sent, outcome unknown").
           if (gen.kind === "image" && params.task === "bfl_image") return;
+          // A Veo clip's row is advanced by its own workflow above (lib/veoVideo.ts); it is neither a render nor an orphan.
+          if (gen.kind === "video" && params.task === "veo_video") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome

@@ -1,5 +1,5 @@
 /**
- * What a person may read of a direct engine's working record in a take's params (lip-sync's `lipsync`, FLUX.2's `bfl`, Sarvam's `sarvam`).
+ * What a person may read of a direct engine's working record in a take's params (lip-sync's `lipsync`, FLUX.2's `bfl`, Veo's `veo`, Sarvam's `sarvam`).
  *
  * Those records keep the workflow's own state: the vendor's job and asset ids, the polling address, lease and claim times, the consent ids, the SHA-256 of
  * the face still, what the vendor charged and what it said it would. None of it is for a browser, a token or an export: ids a vendor holds copies under, links,
@@ -11,6 +11,7 @@
 const KEEP: Record<string, { key: string; fields: string[] }> = {
   lipsync: { key: "lipsync", fields: ["status", "model", "syncMode", "seconds"] },
   bfl_image: { key: "bfl", fields: ["status", "tool", "model", "width", "height", "outputMegapixels"] },
+  veo_video: { key: "veo", fields: ["status", "model", "durationSeconds", "resolution", "aspectRatio"] },
   sarvam_speech: { key: "sarvam", fields: ["tool", "model", "language", "chars"] },
 };
 
