@@ -224,6 +224,8 @@ export async function publishBible(owner:string, name:string, draftId:string, ex
   const draft=await readDraft(owner,draftId);
   if(!draft?.project.productionProjectId)throw new Error('Save your project first.');
   const p=draft.project;
+  /* Publishing is writing to the board: someone who cannot write it is refused here, before any version is compared, so a refusal never says what version the board is at. */
+  if(!(await mayReachProject({id:owner},p.productionProjectId!,'write')))throw new Error('Save your project first.');
   if(!Number.isInteger(expectedVersion)||expectedVersion<0)throw new Error('Load the current shared context before publishing.');
   const snapshot={...publishedContext(p),publishedBy:name};
   await warmOpenable(snapshot);

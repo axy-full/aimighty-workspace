@@ -7,7 +7,7 @@ import { inspectOriginalVideo } from "../videoMetadata.server";
 import { REFERENCE_AD_FRAMES, REFERENCE_AD_SECONDS, referenceAdFrameTimes, assertReferenceAnalysisSource, type ReferenceAnalysisSource } from "./reference-ad-analysis";
 import { db } from "../db";
 import { readImageBytes, readUploadBytes } from "../storage";
-import { findWorkbenchMedia } from "./media-records";
+import { findWorkbenchMedia, privateMediaMessage } from "./media-records";
 import type { Asset, Project } from "./studio";
 import { mediaReferenceIdentity } from "./media-reference-input";
 import { generatedReferenceSeconds } from "../referenceDuration";
@@ -141,7 +141,7 @@ async function sourceFor(asset: Asset, owner: string, canonical = false) {
     const row = await findWorkbenchMedia(legacyId, owner);
     if (!row)
       throw new AtomikReferenceError(
-        "A selected private upload is unavailable to this account.",
+        (await privateMediaMessage(legacyId, owner)) ?? "A selected private upload is unavailable to this account.",
         404,
       );
     return {

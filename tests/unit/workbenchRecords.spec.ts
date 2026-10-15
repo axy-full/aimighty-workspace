@@ -105,9 +105,11 @@ test('only an uploader publication grants shared legacy media access within the 
 
 test('two collaborators publishing the same base accept one winner and can explicitly recover without losing either context',async()=>{
  const {saveDraft,readDraft,publishBible}=await import('../../lib/workbench/records');
- const {seedProject}=await import('../../lib/workbench/studio');const {runInTenant}=await import('../../lib/tenant');const {db}=await import('../../lib/db');
+ const {seedProject}=await import('../../lib/workbench/studio');const {runInTenant}=await import('../../lib/tenant');const {db,ready}=await import('../../lib/db');
  await runInTenant(workspace('publication-race'),async()=>{
-  const a={...seedProject(),id:'alice-draft'};
+  /* Two collaborators publishing on one production: an ordinary production of the workspace, which both may write (publishing is refused to anyone who cannot write the board, so a private board is no place for the race). */
+  await ready();await db().execute({sql:"INSERT INTO projects(id,name,created_at) VALUES('prod_team','Team production',0)",args:[]});
+  const a={...seedProject(),id:'alice-draft',productionProjectId:'prod_team'};
   const saved=await saveDraft('alice',a,0);
   await publishBible('alice','Alice',a.id,0);
   const b={...a,id:'bob-draft',productionProjectId:saved.productionProjectId,bibleVersion:1};

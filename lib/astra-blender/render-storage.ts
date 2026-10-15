@@ -4,7 +4,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { db } from '../db';
 import { openUploadStream, openMediaStream, storeUpload } from '../storage';
-import { findWorkbenchMedia } from '../workbench/media-records';
+import { findWorkbenchMedia, privateMediaMessage } from '../workbench/media-records';
 import { originalAssetDownload } from '../workbench/original-asset';
 import { workbenchTransaction } from '../workbench/records';
 import type { Asset, Project } from '../workbench/studio';
@@ -56,6 +56,11 @@ export async function loadAstraRenderInputs(assets: Asset[], owner: string): Pro
             }
             else {
                 const row = kind === 'uploads' ? (await db().execute({ sql: 'SELECT mime,ext,bytes AS size,stored_url FROM uploads WHERE id=?', args: [id] })).rows[0] : await findWorkbenchMedia(id, owner);
+                if (!row && kind !== 'uploads') {
+                    const why = await privateMediaMessage(id, owner);
+                    if (why)
+                        throw new Error(why);
+                }
                 if (!row || !MIMES[String(row.mime)] || Number(row.size) > 50 * 1024 * 1024)
                     throw new Error('A source file is unavailable or too large.');
                 mime = String(row.mime);

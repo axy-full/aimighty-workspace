@@ -1,7 +1,7 @@
 import { withTenant, requireUser } from '@/lib/auth';
 import { openUploadStream } from '@/lib/storage';
 import { servingFor } from '@/lib/serveType';
-import { findWorkbenchMedia } from '@/lib/workbench/media-records';
+import { findWorkbenchMedia, privateMediaMessage } from '@/lib/workbench/media-records';
 import { attachmentDisposition } from '@/lib/contentDisposition';
 import { byteRange } from '@/lib/mediaRange';
 
@@ -13,7 +13,7 @@ export const GET = withTenant(async (req: Request, { params }: { params: Promise
   if (auth.response) return auth.response;
   const { id } = await params;
   const row = await findWorkbenchMedia(id, auth.user.id);
-  if (!row) return new Response('Not found', { status: 404 });
+  if (!row) return new Response((await privateMediaMessage(id, auth.user.id)) ?? 'Not found', { status: 404 });
   const serving = servingFor(String(row.mime));
   const headers = new Headers({
     'Content-Type': serving.contentType,

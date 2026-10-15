@@ -195,6 +195,16 @@ export async function projectLister(person: { id: string } | null, ex: Exec = db
   return (projectId) => !isDraftProject(projectId) || own.has(projectId!) || shared.has(projectId!);
 }
 
+/**
+ * The ids of the private boards (`prj_wb_…`) `person` may read: their own and their held boards', the team-shared ones and the sample; what `projectLister` answers for a draft board, as a
+ * list a query can take (`IN (SELECT value FROM json_each(?))`). No admin elevation.
+ */
+export async function readableBoardIds(person: { id: string }, ex: Exec = db()): Promise<string[]> {
+  const workspace = requireTenant().id;
+  const own = (await ex.execute({ sql: "SELECT project_id FROM workbench_projects WHERE owner=?", args: [person.id] })).rows.map((row) => mappedId(DRAFT_PROJECT_PREFIX, workspace, person.id, String(row.project_id)));
+  return [...new Set([...own, heldBoardsProjectId(workspace, person.id), ...(await sharedBoards(ex)).projects])];
+}
+
 /** An id that names no project: a route that must answer a private board exactly as it answers an unknown id runs on this in the board's place. */
 export const NO_SUCH_PROJECT = "\u0000unknown";
 /** `projectId` when `person` may reach it for `access`, else the id of no project: the one question, always asked, so the reads that follow are the same either way. */
