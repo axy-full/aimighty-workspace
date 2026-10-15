@@ -540,7 +540,7 @@ test("over MCP: the three tools are listed only where the engine is on and price
       for (const mode of [null, "ask", "AUTO", ""]) {
         await spend(mode); calls.length = 0;
         const text = await runDirectEngineTool("sarvam_translate", { text: "Hello", source: "en-IN", target: "ta-IN" }, call);
-        expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.02\nprepared: translation en-IN to ta-IN, 5 characters\n\nThis needs a person's approval: nothing was started or spent/);
+        expect(text, String(mode)).toMatch(/^Priced, not started\.\n\nprice: \$0\.02\nprepared: translation en-IN to ta-IN, 5 characters\nNothing was filed: this tool's text is kept nowhere[\s\S]*nothing was started or spent\. A person can make this themselves in Particl/);
         expect(calls.map((c) => c.body.quoteOnly === true)).toEqual([true]);
         expect(calls.some((c) => "maxCredits" in c.body)).toBe(false);
       }

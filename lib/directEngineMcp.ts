@@ -240,17 +240,24 @@ async function spendsWithoutAsking(): Promise<boolean> {
 
 /**
  * Files the prepared job for a person through the existing prepared-jobs door (POST /api/prepared-jobs), as an outside agent's prepared render is filed. It prices, holds and sends nothing.
- * Only a token made to prepare may file one (a render token is refused there by design, and its call then answers in words only), and the door refuses an approval or a price in the arguments.
- * Returns the job's id, or null when the door would not take it.
+ * Only a token made to prepare may file one (a render token is refused there by design), and the door refuses an approval, a price, text or file bytes inside a list.
+ * Returns `{ id }` when it was filed, or `{ refused }` with the door's plain reason when it was not: a job is never said to be filed unless it was.
  */
-async function fileForPerson(name: string, clean: Record<string, unknown>, line: string, call: Call): Promise<string | null> {
+async function fileForPerson(name: string, clean: Record<string, unknown>, line: string, call: Call): Promise<{ id: string } | { refused: string }> {
   try {
     const { quoteOnly: _q, ...args } = clean;
     void _q;
     const out = (await call("/api/prepared-jobs", { method: "POST", body: { engine: name, args, prompt: line, project: typeof clean.projectId === "string" ? clean.projectId : undefined } })) as { job?: { id?: unknown } };
-    return typeof out.job?.id === "string" ? out.job.id : null;
-  } catch { return null; }
+    return typeof out.job?.id === "string" ? { id: out.job.id } : { refused: "Particl did not take it." };
+  } catch (error) { return { refused: error instanceof Error && error.message ? error.message.slice(0, 160) : "Particl did not take it." }; }
 }
+/** A tool whose own text is kept nowhere is never filed; it is answered in words, plainly. */
+const NOT_KEPT = { refused: "this tool's text is kept nowhere, so it cannot be kept for a person." } as const;
+/** What the agent reads about the job it asked for: the filed id, or plainly that nothing was filed and what the person does instead. */
+const filedWords = (filed: { id: string } | { refused: string } | null, why?: string) =>
+  filed && "id" in filed
+    ? `prepared job: ${filed.id}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections for a person.`
+    : `Nothing was filed: ${filed ? filed.refused : why ?? "this tool's arguments are not kept"}\n\nThis needs a person's approval: nothing was started or spent. A person can make this themselves in Particl, where its price is shown before they approve it.`;
 
 /** Runs one of them, or returns null when the name is none of these (the caller then tries its own tools). */
 export async function runDirectEngineTool(name: string, args: Args, call: Call): Promise<string | null> {
@@ -269,9 +276,9 @@ export async function runDirectEngineTool(name: string, args: Args, call: Call):
   catch (error) {
     if (!(error instanceof Error) || !/This token prepares jobs/.test(error.message)) throw error;
     const line = tool.prepared ? tool.prepared(clean) : name;
-    const filed = tool.file === false ? null : await fileForPerson(name, clean, line, call);
-    if (!filed) throw error;
-    return `Prepared, not started.\n\n${line}\nprepared job: ${filed}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections, where its price is shown.`;
+    const filed = tool.file === false ? NOT_KEPT : await fileForPerson(name, clean, line, call);
+    if (!("id" in filed)) throw error;
+    return `Prepared, not started.\n\n${line}\nprepared job: ${filed.id}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections, where its price is shown.`;
   }
   if (typeof quote.estimatedCredits !== "number" || !Number.isInteger(quote.estimatedCredits) || quote.estimatedCredits < 0 || typeof quote.price !== "number" || !Number.isFinite(quote.price))
     throw new Error("This could not be priced, so nothing was started.");
@@ -279,8 +286,8 @@ export async function runDirectEngineTool(name: string, args: Args, call: Call):
   /* Ask (the default), Auto over the line, or Auto on anything but a draft: priced and prepared, not started. */
   if (!(await spendsWithoutAsking()) || !(tool.draft?.(clean) ?? false) || quote.estimatedCredits > (await autoLineCredits())) {
     const line = tool.prepared ? tool.prepared(clean) : name;
-    const filed = tool.file === false ? null : await fileForPerson(name, clean, line, call);
-    return `Priced and prepared, not started.\n\nprice: ${priceText}\n${line}\n${filed ? `prepared job: ${filed}\n` : ""}\nThis needs a person's approval: nothing was started or spent. ${filed ? "It waits in Particl › Settings › Connections for a person." : "A person approves it in Particl."}`;
+    const filed = tool.file === false ? NOT_KEPT : await fileForPerson(name, clean, line, call);
+    return `${"id" in filed ? "Priced and prepared" : "Priced"}, not started.\n\nprice: ${priceText}\n${line}\n${filedWords(filed)}`;
   }
   /* Auto, at or under the line: the workspace's own standing setting approves it, at the price the server just gave. */
   const out = await call(path, { method: "POST", body: { ...clean, maxCredits: quote.estimatedCredits }, headers: requestId ? { "Idempotency-Key": `mcp-${name}:${requestId}` } : undefined });

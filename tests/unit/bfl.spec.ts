@@ -371,6 +371,12 @@ test("a failure bills nothing: an Error or a moderated job, a refusal before wor
     expect(line).toMatchObject({ status: "failed" });
     expect(Number(line.engine_cost_usd)).toBeCloseTo(0.03, 6);
     expect(Number(line.billed_credits ?? 0)).toBe(0);
+    /* Never above the quote on a failure either: a stated cost past it is recorded at the quote, the excess as the overrun, and marked to reconcile. */
+    const over = await failedBy({ fail: "BFL's moderation stopped this.", stated: 0.5 });
+    const overLine = (await meterRows()).find((r) => r.id === over.id)!;
+    expect(Number(overLine.engine_cost_usd)).toBeCloseTo(0.045, 6);
+    expect(Number(overLine.overrun_usd)).toBeCloseTo(0.455, 6);
+    expect(over.take.bfl.reconcile).toBe(1);
   });
 });
 
@@ -641,6 +647,14 @@ test("over MCP: flux2_image is listed only where the engine is on, flux2_edit on
       const prepared = await runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1, u2", cast_member_ids: "c1,c2", project_id: "p", use: "production" }, call);
       expect(calls[0]).toMatchObject({ tool: "edit", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }], quoteOnly: true });
       expect(prepared).toMatch(/prepared: flux-2-pro edit of 2 reference\(s\) for production p/);
+      /* The references (ids only) are kept in the filed job: nested lists are taken by the prepared-jobs door. */
+      expect(prepared).toContain("prepared job: prep_f1");
+      expect(calls.find((c) => c.engine === "flux2_edit")).toMatchObject({ args: { tool: "edit", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }] } });
+      /* When the door will not take it, the answer says plainly that nothing was filed. */
+      const refusing = async (_p: string, init: { body?: unknown } = {}) => { if (_p === "/api/prepared-jobs") throw new Error("Inside a list or group an argument is an id, not text or a file."); return (await call(_p, init)) as Record<string, unknown>; };
+      const unfiled = await runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1", cast_member_ids: "c1", project_id: "p", use: "production" }, refusing);
+      expect(unfiled).toMatch(/^Priced, not started\.[\s\S]*Nothing was filed: Inside a list or group an argument is an id[\s\S]*A person can make this themselves in Particl/);
+      expect(unfiled).not.toMatch(/prepared job:|waits in Particl/);
       await expect(runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1,u2", cast_member_ids: "c1", project_id: "p", use: "production" }, call)).rejects.toThrow(/one cast member for each reference/);
     } finally { await spend(null); }
   });
@@ -689,7 +703,7 @@ test("structure: the seams stay internal, the route is the one door, consent and
   /* The image is fetched, stored and settled in that order; settled never above the quote. */
   expect(at("(deps.fetchImage ?? fetchResult)(")).toBeLessThan(at("(deps.store ?? storeImageBytes)("));
   expect(at("(deps.store ?? storeImageBytes)(")).toBeLessThan(at('await settleBfl(genId, "done"'));
-  expect(flow).toContain("Math.min(outcome.costUsd, bfl.reservedUsd)");
+  expect(flow).toContain("Math.min(Math.max(0, outcome.costUsd), bfl.reservedUsd)");
   /* Prices come from the rate table and the margin path. */
   expect(flow).toContain("quotedCredits(usd, model)");
   expect(flow).not.toMatch(/0\.0\d+|0\.1\d+/);
