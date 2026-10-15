@@ -198,7 +198,7 @@ export async function executeDubbingAdmission(
 
   const genId = newId("gen"), jobId = `dub_${randomUUID().replaceAll("-", "")}`, ts = now();
   const params = {
-    task: "dub", dubbingStatus: "queued", dubbingJobId: jobId,
+    task: "dub", job: "voice", dubbingStatus: "queued", dubbingJobId: jobId,
     ...(source.kind === "upload" ? { sourceUploadId: source.id } : { sourceGenId: source.id }),
     sourceName: source.name.slice(0, 200), sourceSeconds: seconds, minutes, sourceLang, targetLang, mode, usdPerMinute, estUsd: reservedUsd, estCredits: 0,
   };
