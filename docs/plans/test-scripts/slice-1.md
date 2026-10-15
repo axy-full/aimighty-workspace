@@ -44,6 +44,6 @@ Where a button is not on the screen yet, ask Atomik for the same thing ("export 
 - Prices, if shown, read as the product shows them (`N cr`, `up to N cr` or `free`), never a bare dollar vendor cost.
 
 ## How to report
-Use **the feedback board: [LINK]**. One card per problem. Put in: what you pressed, what you expected, what happened, the production name, the time you pressed it, a screenshot or screen recording, and your device and browser. Never paste a password, a key or an invite link. Bugs are filed to the build team and fixes come back as PRs, the same day where we can.
+Use **the feedback board: https://claude.ai/artifact/RwiYcD2sVpLiLw7kGyt4wC**. One card per problem. Put in: what you pressed, what you expected, what happened, the production name, the time you pressed it, a screenshot or screen recording, and your device and browser. Never paste a password, a key or an invite link. Bugs are filed to the build team and fixes come back as PRs, the same day where we can.
 
 When you finish, add one line to the board: "Slice 1: all six checked" or which ones you could not reach.

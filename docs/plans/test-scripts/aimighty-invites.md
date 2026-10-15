@@ -23,7 +23,7 @@ Sign in as the owner of the house workspace, **on the address the team will use*
 ## The message to send with each link
 Two sentences, plain, no secrets. Replace the brackets.
 
-> Hi [NAME], you're invited to try Particl with the Aimighty team: open [LINK] to set a password and join (it works once, for 7 days). When you're in, follow the first test script [SCRIPT LINK] and tell us what breaks on the feedback board [BOARD LINK].
+> Hi [NAME], you're invited to try Particl with the Aimighty team: open [LINK] to set a password and join (it works once, for 7 days). When you're in, follow the first test script [SCRIPT LINK] and tell us what breaks on the feedback board https://claude.ai/artifact/RwiYcD2sVpLiLw7kGyt4wC.
 
 For the admin, change the first sentence's ending: "...to set a password and join as an admin (it works once, for 7 days)." (The role is set after they join: step 4.)
 
