@@ -975,3 +975,159 @@ test("a take is marked made in Make only when a person's own request says so, fo
   expect(madeInOf("make", { user: { id: "u_1" }, token: {} })).toBeUndefined();
   expect(madeInOf("make", { user: { id: "u_1" } })).toBe("make");
 }));
+
+test("a take carries what it was quoted at and the ceiling approved (params.quote), in our credits, for a still, a clip and a sound; the quote and its fingerprint do not move", async () => scope("quote-snapshot", async (service) => {
+  const { db } = await import("../../lib/db");
+  const params = async (id: unknown) => JSON.parse(String((await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [id as string] })).rows[0].params));
+  const still = { model: "gemini-3.1-flash-image", prompt: "A tree", projectId: "project", ratio: "16:9", resolution: "1K" };
+  const clip = { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "720p", duration: 5 };
+  const sound = { task: "sound", text: "Soft rain", durationSeconds: 10, projectId: "project" };
+  let n = 0;
+  const press = async (kind: "gen" | "audio", body: Record<string, unknown>, ceiling?: number) => {
+    const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    const admit = kind === "audio" ? service.audio.admitAudio : service.gen.admitGeneration;
+    const prepared = value(await prepare(body as never, actor));
+    /* A prepared request carries its approval: the quoted figure (lib/admissionSupport.ts); a higher one is the person's own ceiling. */
+    const sent = ceiling == null ? prepared : { ...prepared, request: { ...prepared.request, maxCredits: ceiling } };
+    const reply = await admit(sent, actor, { requestKey: `quote-snap-${n++}-${kind}`, defer: noInline });
+    expect(reply.status, JSON.stringify(reply.body)).toBeLessThan(300);
+    return { id: reply.body.id, quote: prepared.quote };
+  };
+  for (const [label, kind, body] of [["a still", "gen", still], ["a clip", "gen", clip], ["a sound", "audio", sound]] as const) {
+    const quoted = value(await (kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration)(body as never, actor)).quote;
+    const credits = quoted.estimatedCredits;
+    expect(Number.isInteger(credits) && credits > 0, label).toBe(true);
+    /* The credits it was quoted at, and the approval a prepared request carries (the quoted figure). */
+    const plain = await press(kind, { ...body });
+    expect((await params(plain.id)).quote, label).toEqual({ credits, maxCredits: credits });
+    /* A person's own, higher ceiling is kept as theirs. */
+    const approved = await press(kind, { ...body }, credits + 7);
+    expect((await params(approved.id)).quote, label).toEqual({ credits, maxCredits: credits + 7 });
+    /* Only the server writes it: a quote on the request, or inside another key, is not kept. */
+    expect((await params((await press(kind, { ...body, quote: { credits: 1, maxCredits: 99 }, params: { quote: { credits: 1 } } })).id)).quote, label).toEqual({ credits, maxCredits: credits });
+    /* A record of the quote, not an input to it: the quote and its fingerprint are the same whatever ceiling follows. */
+    expect(approved.quote, label).toEqual(quoted);
+    expect(plain.quote, label).toEqual(quoted);
+  }
+  /* No vendor dollar anywhere in it. */
+  for (const row of (await db().execute("SELECT id FROM generations")).rows)
+    expect(JSON.stringify((await params(row.id)).quote ?? {}), String(row.id)).not.toMatch(/usd|cost|\$/i);
+}));
+
+test("the house (billed in dollars at cost) keeps no credit quote on its takes; a figure that is not a credit count is never kept", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const house = { id: "ws_legacy", slug: "house", name: "house", legacy: true, dbUrl: `file:${path.join(dir, "house.db")}`, dbToken: null, keys: {}, usesPlatformKeys: true, allowanceUsd: null, gatewayKeyId: null, ownerId: "owner", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: null, rendersPerHour: null, storageQuotaBytes: null, deletedAt: null } as TenantWorkspace;
+  await runInTenant(house, async () => { expect(services().gen.quoteSnapshot(7, 9)).toBeUndefined(); });
+  await scope("quote-snapshot-credits", async (service) => {
+    expect(service.gen.quoteSnapshot(7, 9)).toEqual({ credits: 7, maxCredits: 9 });
+    expect(service.gen.quoteSnapshot(7, 21, 3)).toEqual({ credits: 7, ceilingCredits: 21, maxCredits: 21 });
+    expect(service.gen.quoteSnapshot(7, 9, 1)).toEqual({ credits: 7, maxCredits: 9 });
+    expect(service.gen.quoteSnapshot(7, undefined)).toEqual({ credits: 7 });
+    for (const bad of [1.5, -1, "9", null, NaN]) expect(service.gen.quoteSnapshot(7, bad), String(bad)).toEqual({ credits: 7 });
+    for (const credits of [NaN, Infinity, -1]) expect(service.gen.quoteSnapshot(credits, 9), String(credits)).toBeUndefined();
+  });
+});
+
+
+test("a take's job (lib/takeJob.ts) is written by the server for a still, a clip, a draft and a sound; a bad hint is a 400 for a quote and a press; the label never moves the quote", async () => scope("job-label", async (service) => {
+  const { db } = await import("../../lib/db");
+  const params = async (id: unknown) => JSON.parse(String((await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [id as string] })).rows[0].params));
+  const still = { model: "gemini-3.1-flash-image", prompt: "A tree", projectId: "project", ratio: "16:9", resolution: "1K" };
+  const clip = { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "720p", duration: 5 };
+  const draft = { model: "dreamina-seedance-2-5-260628", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "480p", duration: 5, draft: true };
+  const sound = { task: "sound", text: "Soft rain", durationSeconds: 10, projectId: "project" };
+  let n = 0;
+  const press = async (kind: "gen" | "audio", body: Record<string, unknown>) => {
+    const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    const admit = kind === "audio" ? service.audio.admitAudio : service.gen.admitGeneration;
+    const prepared = value(await prepare(body as never, actor));
+    const reply = await admit(prepared, actor, { requestKey: `job-${n++}-${kind}`, defer: noInline });
+    expect(reply.status, JSON.stringify(reply.body)).toBeLessThan(300);
+    return { id: reply.body.id, fingerprint: prepared.quote.fingerprint };
+  };
+  /* From the facts: no hint needed, and the one the server writes is the only one. */
+  expect((await params((await press("gen", still)).id)).job).toBe("other");
+  expect((await params((await press("gen", { ...still, useAs: "first" })).id)).job).toBe("keyframe");
+  expect((await params((await press("gen", { ...still, useAs: "cast" })).id)).job).toBe("cast");
+  expect((await params((await press("gen", clip)).id)).job).toBe("other");
+  expect((await params((await press("gen", draft)).id)).job).toBe("shot_draft");
+  expect((await params((await press("audio", sound)).id)).job).toBe("sound");
+  expect((await params((await press("audio", { task: "speech", text: "Hello", voiceId: "EXAVITQu4vr4xnSDxMaL", modelId: "eleven_multilingual_v2", projectId: "project" })).id)).job).toBe("voice");
+  /* A hint that is on the list and fits the kind counts where the facts do not decide; the facts win where they do. */
+  expect((await params((await press("gen", { ...still, job: "storyboard" })).id)).job).toBe("storyboard");
+  expect((await params((await press("gen", { ...clip, job: "shot" })).id)).job).toBe("shot");
+  expect(await service.gen.prepareGeneration({ ...draft, job: "shot_final" } as never, actor)).toMatchObject({ ok: false, status: 400 });
+  /* Nothing else writes it: not another params key, not a shotSpec. */
+  expect((await params((await press("gen", { ...still, params: { job: "cast" }, shotSpec: { job: "cast" } })).id)).job).toBe("other");
+  /* The jobs a take decides for itself (fix, upscale, draft, final, and a sound's own) cannot be named by a request that the take does not bear out. */
+  const refusals: [("gen" | "audio"), Record<string, unknown>][] = [
+    ["gen", { ...clip, job: "upscale" }], ["gen", { ...clip, job: "fix" }], ["gen", { ...clip, job: "shot_draft" }], ["gen", { ...clip, job: "shot_final" }],
+    ["gen", { ...still, job: "upscale" }], ["gen", { ...still, job: "fix" }], ["audio", { ...sound, job: "voice" }], ["audio", { ...sound, job: "music" }],
+  ];
+  for (const [kind, body] of refusals) {
+    const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    expect(await prepare(body as never, actor), JSON.stringify(body)).toMatchObject({ ok: false, status: 400 });
+  }
+  /* ...and the same hint that the take bears out is only the fact. */
+  expect((await params((await press("gen", { ...draft, job: "shot_draft" })).id)).job).toBe("shot_draft");
+  expect((await params((await press("audio", { ...sound, job: "sound" })).id)).job).toBe("sound");
+  /* A hint off the list or for another kind of take is refused (a quote as a press), before anything is held. */
+  for (const [kind, body] of [["gen", { ...still, job: "shot_final" }], ["gen", { ...clip, job: "storyboard" }], ["gen", { ...still, job: "Shot" }], ["gen", { ...still, job: 7 }], ["gen", { ...still, job: "" }], ["audio", { ...sound, job: "keyframe" }]] as const) {
+    const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    expect(await prepare(body as never, actor), JSON.stringify(body)).toMatchObject({ ok: false, status: 400 });
+  }
+  /* The label is not part of the quote: the same request with any hint, or none, has the same price and the same fingerprint. */
+  const plain = value(await service.gen.prepareGeneration(clip as never, actor));
+  for (const job of ["shot", "other", undefined]) {
+    const hinted = value(await service.gen.prepareGeneration({ ...clip, job } as never, actor));
+    expect(hinted.quote, String(job)).toEqual(plain.quote);
+  }
+}));
+
+test("a take's shot type (lib/takeShotType.ts) is written by the server: from a checked hint, else from the Setup's shot size where that says it for certain; refused when it does not fit; never on a sound; never in the quote", async () => scope("shot-type", async (service) => {
+  const { db } = await import("../../lib/db");
+  const params = async (id: unknown) => JSON.parse(String((await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [id as string] })).rows[0].params));
+  const still = { model: "gemini-3.1-flash-image", prompt: "A tree", projectId: "project", ratio: "16:9", resolution: "1K" };
+  const clip = { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "720p", duration: 5 };
+  const sound = { task: "sound", text: "Soft rain", durationSeconds: 10, projectId: "project" };
+  let n = 0;
+  const press = async (kind: "gen" | "audio", body: Record<string, unknown>) => {
+    const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    const admit = kind === "audio" ? service.audio.admitAudio : service.gen.admitGeneration;
+    const prepared = value(await prepare(body as never, actor));
+    const reply = await admit(prepared, actor, { requestKey: `shot-type-${n++}-${kind}`, defer: noInline });
+    expect(reply.status, JSON.stringify(reply.body)).toBeLessThan(300);
+    return reply.body.id;
+  };
+  /* Nothing said and nothing the Setup tells: nothing stored. */
+  expect((await params(await press("gen", clip))).shotType).toBeUndefined();
+  expect((await params(await press("gen", { ...clip, shotSpec: { shot: "cu" } }))).shotType).toBeUndefined();
+  /* The Setup's shot size, where it says a recipe for certain. */
+  expect((await params(await press("gen", { ...clip, shotSpec: { shot: "evs" } }))).shotType).toBe("establishing_wide");
+  expect((await params(await press("gen", { ...still, shotSpec: { shot: "ots" } }))).shotType).toBe("over_the_shoulder");
+  expect((await params(await press("gen", { ...clip, shotSpec: { shot: "insert" } }))).shotType).toBe("detail");
+  /* A hint, which beats the Setup. */
+  expect((await params(await press("gen", { ...clip, shotType: "pack_shot" }))).shotType).toBe("pack_shot");
+  expect((await params(await press("gen", { ...still, shotType: "custom" }))).shotType).toBe("custom");
+  expect((await params(await press("gen", { ...clip, shotType: "aerial_reveal", shotSpec: { shot: "evs" } }))).shotType).toBe("aerial_reveal");
+  expect((await params(await press("gen", { ...clip, shotType: "detail", shotSpec: { shot: "insert" } }))).shotType).toBe("detail");
+  /* With the Setup's size unset (the Auto default) the three Setup-decided recipes can still be named. */
+  for (const type of ["establishing_wide", "over_the_shoulder", "detail"])
+    expect((await params(await press("gen", { ...clip, shotType: type }))).shotType, type).toBe(type);
+  /* Nothing else writes it. */
+  expect((await params(await press("gen", { ...still, params: { shotType: "custom" }, shotSpec: { shotType: "custom" } }))).shotType).toBeUndefined();
+  /* Refused, for a quote and a press: off the list, not a word, one the Setup does not bear out, and any on a sound. */
+  for (const [kind, body] of [["gen", { ...clip, shotType: "face_close_up" }], ["gen", { ...clip, shotType: "Pack shot" }], ["gen", { ...clip, shotType: 4 }], ["gen", { ...clip, shotType: "" }],
+    ["gen", { ...clip, shotType: "establishing_wide", shotSpec: { shot: "ms" } }], ["gen", { ...clip, shotType: "over_the_shoulder", shotSpec: { shot: "cu" } }], ["gen", { ...still, shotType: "detail", shotSpec: { shot: "ots" } }],
+    ["audio", { ...sound, shotType: "custom" }]] as const) {
+    const prepare = kind === "audio" ? service.audio.prepareAudio : service.gen.prepareGeneration;
+    expect(await prepare(body as never, actor), JSON.stringify(body)).toMatchObject({ ok: false, status: 400 });
+  }
+  expect((await params(await press("audio", sound))).shotType).toBeUndefined();
+  /* Not part of the quote: any hint or none, the same price and the same fingerprint. */
+  const plain = value(await service.gen.prepareGeneration(clip as never, actor));
+  for (const shotType of ["pack_shot", "custom", "talking_to_camera", undefined]) {
+    const hinted = value(await service.gen.prepareGeneration({ ...clip, shotType } as never, actor));
+    expect(hinted.quote, String(shotType)).toEqual(plain.quote);
+  }
+}));

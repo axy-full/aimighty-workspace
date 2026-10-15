@@ -4,6 +4,7 @@ import { useShell } from "@/lib/shell/state";
 import { DOCK_WIDTH } from "@/lib/board/geometry";
 import type { BoardAgentView } from "@/lib/board/types";
 import { runNeedsYou } from "@/lib/shell/board-agent";
+import { priceWords, upTo } from "@/lib/shell/price-words";
 import type { BoardCtx } from "../cards/types";
 import { showQuestions } from "../cards/questions/model";
 import { AgentRail, BoardAgentPanel } from "./BoardAgentPanel";
@@ -17,14 +18,14 @@ import { useAgentRun } from "./use-board-agent";
 export type BoardStartInput = { words: string; aspect: string; seconds: number | null; attachments: string[] };
 export type BoardAgentSeam = {
   /** What "Start" costs (Atomik's thinking), from the server's estimate with the attached files priced in; null while the board has no Atomik. `problem`: why it can't be priced (the server's words). */
-  startPrice: { credits: number | null; state: "loading" | "ready" | "unavailable"; problem?: string } | null;
+  startPrice: { credits: number | null; /** The same in the engines' dollars, where the server gave it (the house pays them). */ usd?: number | null; state: "loading" | "ready" | "unavailable"; problem?: string } | null;
   /** Starts Atomik on this board (a person pressed Start at the price shown); null while the board has no Atomik. Resolves to a refusal, or null. */
   start: ((input: BoardStartInput) => Promise<string | null>) | null;
   /** The board agent's durable run, as the server holds it (null: none yet, or not read yet). */
   run: BoardAgentView | null;
 };
 
-type Priced = { key: string; planning: number | null; problem: string | null };
+type Priced = { key: string; planning: number | null; usd?: number | null; problem: string | null };
 const keyOf = (attachments: readonly string[]) => attachments.join(" ");
 
 /**
@@ -42,11 +43,12 @@ export function useBoardAgent(attachments: readonly string[] = []): BoardAgentSe
   useEffect(() => {
     if (!key || !enabled) return;
     let live = true;
-    void quote(key.split(" ")).then((got) => { if (live) setPriced({ key, planning: "error" in got ? null : got.planning, problem: "error" in got ? got.error : null }); });
+    void quote(key.split(" ")).then((got) => { if (live) setPriced({ key, planning: "error" in got ? null : got.planning, usd: "error" in got ? null : got.planningUsd ?? null, problem: "error" in got ? got.error : null }); });
     return () => { live = false; };
   }, [key, enabled, quote]);
   const own = key && priced?.key === key ? priced : null;
   const planning = key ? own?.planning ?? null : agent.terms?.planning ?? null;
+  const planningUsd = key ? own?.usd ?? null : agent.terms?.planningUsd ?? null;
   const start = async (input: BoardStartInput): Promise<string | null> => {
     if (planning === null) return "Atomik’s thinking can’t be priced right now.";
     const files = input.attachments;
@@ -57,17 +59,17 @@ export function useBoardAgent(attachments: readonly string[] = []): BoardAgentSe
       const got = await quote(files);
       if ("error" in got) { setPriced({ key, planning: null, problem: got.error }); return got.error; }
       now = got.planning;
-      if (now !== null) setPriced({ key, planning: now, problem: null });
+      if (now !== null) setPriced({ key, planning: now, usd: got.planningUsd ?? null, problem: null });
     } else {
       await agent.refresh();
       now = agent.latestPlanning();
     }
-    if (now !== null && now > planning) return `Atomik’s thinking now costs up to ${now} cr, not ${planning} cr. Press Start again at the new price.`;
+    if (now !== null && now > planning) return `Atomik’s thinking now costs ${priceWords(upTo(now, agent.latestPlanningUsd())) ?? "more"}, not ${priceWords(upTo(planning, planningUsd)) ?? "the price shown"}. Press Start again at the new price.`;
     return agent.plan(input.words, planning, { aspect: input.aspect, seconds: input.seconds }, files);
   };
   if (!answer || !answer.enabled) return { startPrice: null, start: null, run: answer?.run ?? null };
   const startPrice: NonNullable<BoardAgentSeam["startPrice"]> =
-    planning !== null ? { credits: planning, state: "ready" }
+    planning !== null ? { credits: planning, usd: planningUsd, state: "ready" }
     : key ? (own ? { credits: null, state: "unavailable", ...(own.problem ? { problem: own.problem } : {}) } : { credits: null, state: "loading" })
     : agent.ready ? { credits: null, state: "unavailable" } : { credits: null, state: "loading" };
   return { startPrice, start, run: answer.run };

@@ -1,3 +1,4 @@
+import { TEXT_SAFETY_BLOCK_MESSAGE, geminiBlockReason, safetyBlockLog } from './geminiSafety';
 import { APICallError, generateText, Output, type LanguageModelUsage, type ModelMessage, type SystemModelMessage } from 'ai';
 import type { JSONObject, JSONSchema7 } from '@ai-sdk/provider';
 import { gatewayPost, type GatewayReply } from './gateway';
@@ -264,6 +265,11 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
       maxOutputTokens: request.maxOutputTokens, temperature: request.temperature, topP: request.topP, stopSequences: request.stopSequences,
       providerOptions: request.providerOptions, ...(output ? { output } : {}),
     });
+    /* Google's own fixed safety filter blocked the answer (lib/geminiSafety.ts): a plain message, nothing charged, and only the reason is logged, never the prompt or the output. */
+    if (vendor === 'google') {
+      const blocked = geminiBlockReason({ finishReason: (result as { rawFinishReason?: unknown }).rawFinishReason }) ?? (result.finishReason === 'content-filter' ? 'CONTENT_FILTER' : null) ?? geminiBlockReason(result.providerMetadata?.google);
+      if (blocked) { console.warn(safetyBlockLog(blocked, null)); return reply(422, TEXT_SAFETY_BLOCK_MESSAGE); }
+    }
     // The step's usage carries the provider's raw counts; the aggregate drops them. No tools, so one step.
     const usage = result.steps.length === 1 ? result.steps[0].usage : { raw: undefined };
     return { ok: true, status: 200, text: JSON.stringify({

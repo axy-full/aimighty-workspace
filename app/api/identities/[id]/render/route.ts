@@ -77,6 +77,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
                ratio, resolution: "1K", rawPrompt: prompt,
                identity: { id: identity.id, name: identity.name },
                cast: [identity.name],
+               job: "cast",
                seed: seed != null && Number.isFinite(seed) ? seed + i : undefined,
              }),
              "running", got.user.id, ts, ts, got.token?.id ?? null, "fal", "generate", "fal"],

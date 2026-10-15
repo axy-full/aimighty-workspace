@@ -65,7 +65,7 @@ export function makeDest(project: string | null | undefined, onBoard: boolean): 
 export const RECENT_CHIPS = ["All", "Takes", "Unfiled", "Filed"] as const;
 export type RecentChip = (typeof RECENT_CHIPS)[number];
 /** What Recent reads of a library card: a take or an upload, and the shot a take is filed on. */
-type RecentEntry = { take: { kind: "GEN" | "UPLOAD" }; asset: { origin: "generation" | "upload"; value: object } };
+type RecentEntry = { take: { kind: "generation" | "upload" }; asset: { origin: "generation" | "upload"; value: object } };
 const shotOf = (entry: RecentEntry): string | null => {
   if (entry.asset.origin !== "generation") return null;
   const shot = (entry.asset.value as { shotId?: unknown }).shotId;
@@ -79,7 +79,7 @@ const shotOf = (entry: RecentEntry): string | null => {
 export function recentEntries<T extends RecentEntry>(entries: readonly T[], chip: RecentChip): T[] {
   if (chip === "All") return [...entries];
   return entries.filter((entry) => {
-    if (entry.take.kind !== "GEN" || entry.asset.origin !== "generation") return false;
+    if (entry.take.kind !== "generation" || entry.asset.origin !== "generation") return false;
     if (chip === "Takes") return true;
     return chip === "Filed" ? shotOf(entry) !== null : shotOf(entry) === null;
   });

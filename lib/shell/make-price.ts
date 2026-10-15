@@ -3,6 +3,7 @@ import { cinemaPriceParts } from "../cinemaHold";
 import type { ComposerModel, ComposerPicks, ComposerQuote, ComposerType, ModelPreference } from "../workspace/composer";
 import { composerSettings, DEFAULT_MODEL_PREFERENCE, shownTotal } from "../workspace/composer";
 import { exact, priceWords, upTo, type PriceValue } from "./price-words";
+import { NANO_BANANA_PRO_ID } from "../models";
 
 /**
  * What Make shows beside a paid control (the button, the engine line, a sheet row, Again): the server's
@@ -33,7 +34,7 @@ export const hiddenInMake = (modelId: string): boolean => !MAKE_SHOWS_CINEMA && 
  */
 export const MAKE_MODEL_PREFERENCE: ModelPreference = {
   video: ["dreamina-seedance-2-5-260628", ...DEFAULT_MODEL_PREFERENCE.video],
-  image: ["gemini-3-pro-image", ...DEFAULT_MODEL_PREFERENCE.image],
+  image: [NANO_BANANA_PRO_ID, ...DEFAULT_MODEL_PREFERENCE.image],
   audio: [(model) => model.audioTask === "speech", ...DEFAULT_MODEL_PREFERENCE.audio],
 };
 /** Make opens at 1080p (an engine that has no 1080p renders at its own first size, and the line says which). */

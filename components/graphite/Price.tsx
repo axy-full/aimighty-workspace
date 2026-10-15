@@ -1,6 +1,6 @@
 "use client";
 import { useSession } from "@/lib/session";
-import { creditRate, priceTitle, priceView, type PriceValue } from "@/lib/shell/price-words";
+import { creditRate, modeOf, priceTitle, priceView, type PriceValue } from "@/lib/shell/price-words";
 
 /**
  * A price, as Particl shows one (lib/shell/price-words.ts): "43 cr", "up to 69 cr" or "free",
@@ -19,7 +19,8 @@ export function Price({ value, className, testId }: {
   className?: string;
   testId?: string;
 }) {
-  const view = priceView(value, useCreditUsd());
+  const { rates } = useSession();
+  const view = priceView(value, creditRate(rates.creditUsd), modeOf(rates));
   if (!view) return null;
   return (
     <span className={className ? `gx-price ${className}` : "gx-price"} title={view.title ?? undefined}
@@ -38,5 +39,6 @@ export function useCreditUsd(): number | null {
 
 /** A price's hover ("$4.30", "up to $6.90"), for a control that carries it; null for "free" or an unknown rate. */
 export function usePriceTitle(value: PriceValue | null | undefined): string | null {
-  return priceTitle(value, useCreditUsd());
+  const { rates } = useSession();
+  return priceTitle(value, creditRate(rates.creditUsd), modeOf(rates));
 }

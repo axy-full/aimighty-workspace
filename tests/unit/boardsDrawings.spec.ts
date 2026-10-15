@@ -51,7 +51,7 @@ test("a drawing bound to a campaign, an Astra scene, another asset's lineage or 
   const moleculr = { ...EMPTY_MOLECULR, brandKit: { ...EMPTY_BRAND_KIT, logoAssetId: "d1" } };
   expect(() => deleteDrawing({ ...project(), moleculr }, "d1")).toThrow("used by Brand logo");
   const astraNative = { assetIds: ["d1"] } as unknown as NonNullable<Project["astraNative"]>;
-  expect(() => deleteDrawing({ ...project(), astraNative }, "d1")).toThrow("used in an Astra scene");
+  expect(() => deleteDrawing({ ...project(), astraNative }, "d1")).toThrow("used in a 3D scene");
   const made = { ...drawing("t1"), name: "Frame 1.1", category: "Storyboard", refs: ["d1"] };
   expect(() => deleteDrawing({ ...project(), assets: [...project().assets, made] }, "d1")).toThrow("“Frame 1.1” was made from this drawing");
   expect(() => deleteDrawing({ ...project(), assets: [...project().assets, { ...made, refs: [], parentId: "d1" }] }, "d1")).toThrow("made from this drawing");

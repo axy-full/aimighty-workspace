@@ -19,6 +19,7 @@ import { approvedBody, fetchStepQuote, planTotal, quoteMoved, stepPrice, stepRen
 import { isKeyStep, keyStepFamily, keyStepLabel } from "@/lib/atomikKeySteps";
 import { useSkillRunOpens } from "./skills/useSkillRunOpens";
 import { cinemaPriceWords } from "@/lib/cinemaHold";
+import { creditRate, priceValue, type PriceValue } from "@/lib/shell/price-words";
 
 /**
  * Atomik, at app level (design/particl-graphite/README.md §5).
@@ -106,6 +107,8 @@ export type AtomikLive = {
   /** A step's price, as a number in the workspace's unit, or null when nothing has priced it yet
    *  (or it is read-only) — never shown as free. */
   credits: (step: Step) => number | null;
+  /** A step's price as a price (lib/shell/price-words.ts), in the workspace's unit: credits, or for the house its engine dollars; null when `credits` is. `up-to` for an estimate. */
+  priceOf: (step: Step, kind: "exact" | "up-to") => PriceValue | null;
   /** A step's price as shown: `24 cr`, `Read-only` for a step planned on the connected account, or why there is none. */
   priceLabel: (step: Step) => string;
   /** True once Continue can run this step at a price it shows: the checkpoint's live quote is in. */
@@ -151,7 +154,7 @@ const Ctx = createContext<AtomikLive | null>(null);
 
 
 export function AtomikProvider({ children }: { children: ReactNode }) {
-  const { signedIn, workspace, email, requestScope } = useSession();
+  const { signedIn, workspace, email, requestScope, rates } = useSession();
   const { current: production } = useProject();
   const money = useMoney();
   const prodKey = production?.id ?? null;
@@ -338,6 +341,13 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   /* In the workspace's unit, from the server (lib/price.ts): the browser
      holds no margin to convert the engines' dollars with. */
   const credits = useCallback((s: Step) => isAccountStep(s) ? null : stepPrice(s, money.inCredits, liveQuoted?.stepId === s.id ? liveQuoted.quote : null), [money, liveQuoted]);
+  const rate = creditRate(rates.creditUsd);
+  const priceOf = useCallback((s: Step, kind: "exact" | "up-to"): PriceValue | null => {
+    const n = credits(s);
+    if (n === null) return null;
+    /* The house pays in dollars (lib/houseWorkspace.ts): `n` is the engine's dollars, and its credits are the dollars at a credit's price, rounded up. */
+    return money.inCredits ? priceValue(n, kind) : priceValue(rate ? Math.ceil(n / rate - 1e-9) : 0, kind, n);
+  }, [credits, money.inCredits, rate]);
   const isReadOnly = useCallback((s: Step) => isAccountStep(s), []);
   /* An archived thread's step is shown at its price and waits, unpaid, until the thread is restored. */
   const approvable = useCallback((s: Step) => !archived && !isAccountStep(s) && liveQuoted?.stepId === s.id, [liveQuoted, archived]);
@@ -580,7 +590,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
 
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
-    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceLabel, approvable, approximate, heldWords, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
+    chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceOf, priceLabel, approvable, approximate, heldWords, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
     busy, error: paid.error ?? ownSave?.error ?? errors[activeKey] ?? null, recoveryText, models, model, effort, modelNote, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear: start, threads,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -595,7 +605,7 @@ const EMPTY_THREADS: AtomikThreads = {
 
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
-  totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceLabel: () => "", approvable: () => false, approximate: () => false, heldWords: () => null, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
+  totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceOf: () => null, priceLabel: () => "", approvable: () => false, approximate: () => false, heldWords: () => null, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
   busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", modelNote:null, draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {}, threads: EMPTY_THREADS,
 };
 
