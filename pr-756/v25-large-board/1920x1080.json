@@ -1,0 +1,9 @@
+{
+  "name": "v25-large-board",
+  "app": "/suites?project=starter-c16cfdca84c4009b0e712ad6&suite=particl&page=brief&view=board&stage=shots",
+  "prototype": "mode=director&step=shots",
+  "size": {
+    "width": 1920,
+    "height": 1080
+  }
+}
