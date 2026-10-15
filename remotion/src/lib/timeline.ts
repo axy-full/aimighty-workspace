@@ -70,7 +70,7 @@ function clipFrames(item: ClipItem, fps: number): { srcStartFrame: number; durat
 function finish(placed: TimelineItem[], durationInFrames: number, fps: number, aspect: Aspect, scale: number, extra: Partial<Timeline>, limits: ExportLimits): Timeline {
   if (durationInFrames < 1) throw new RangeError("The export has no frames.");
   if (durationInFrames > limits.maxSeconds * fps) throw new ExportTooLong(`The export would be ${(durationInFrames / fps).toFixed(1)} s; the limit is ${limits.maxSeconds} s.`);
-  return { ...frameSize(aspect, scale), fps, durationInFrames, items: placed, music: null, fixture: null, ...extra };
+  return { ...frameSize(aspect, scale), fps, durationInFrames, items: placed, music: null, voiceover: [], duck: 1, fixture: null, ...extra };
 }
 
 function layout(items: TimelineItem[], fps: number, aspect: Aspect, scale: number, extra: Partial<Timeline>, limits: ExportLimits): Timeline {
@@ -159,6 +159,14 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
       }
       if (p.end) items.push({ kind: "end", from: 0, durationInFrames: frames(p.end.durationSeconds, p.fps), card: p.end });
       const timeline = layout(items, p.fps, p.aspect, p.scale, {}, limits);
+      timeline.duck = p.duck;
+      p.voiceover.forEach((line, index) => {
+        const from = frames(line.startSeconds, p.fps);
+        if (from >= timeline.durationInFrames) {
+          throw new RangeError(`props.voiceover[${index}]: starts at ${line.startSeconds} s, after the end of the cut (${(timeline.durationInFrames / p.fps).toFixed(1)} s)`);
+        }
+        timeline.voiceover.push({ file: line.file, from, durationInFrames: Math.max(1, Math.min(frames(line.durationSeconds, p.fps), timeline.durationInFrames - from)), volume: line.volume });
+      });
       if (p.music) {
         timeline.music = {
           file: p.music.file,

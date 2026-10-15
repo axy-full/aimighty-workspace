@@ -6,4 +6,5 @@ export * from "./cutdown";
 export * from "./reframe";
 export * from "./text";
 export * from "./timeline";
+export * from "./ducking";
 export * from "./subtitles";

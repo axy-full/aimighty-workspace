@@ -17,10 +17,14 @@ Particl's own templates for exports: captions on a cut, title and end cards, 16:
 | `captions` | one clip with burned-in captions (`bold`, `clean`, `karaoke`) | `clip`, `captionStyle` |
 | `reframe` | one clip as 16:9 or 9:16: `fill` (crop on a focus point) or `fit` (whole picture, blurred backdrop) | `clip` |
 | `cutdown` | 6, 15 or 30 s from one source: marked moments or an even spread; frame-exact | `source`, `targetSeconds`, `keep`, `cues` |
-| `final` | title, clips (trimmed, reframed, captioned), end card, music | `title`, `clips`, `end`, `music` |
+| `final` | title, clips (trimmed, reframed, captioned), end card, music, and spoken lines (a narrated assembly) | `title`, `clips`, `end`, `music`, `voiceover`, `duck` |
 | `fixture-clip` | our own sample picture, for tests and timing | `durationSeconds`, `label` |
 
 All take `aspect` (`16:9` or `9:16`), `fps` (24, 25, 30, 60; default 30) and `scale` (0.1 to 1; default 1 = 1920x1080 or 1080x1920; smaller is for previews and tests). Props are checked by `src/lib/validate.ts`: unknown keys, URLs, absolute paths, `..`, over-long text, too many clips or cues are refused. A source needs its `durationSeconds`, `width` and `height` (the app knows them); a declared length longer than the file would fail a render, so the worker's export command can probe and correct it.
+
+### Narrated assembly (`final`: `voiceover`, `duck`)
+
+`voiceover` is a list of up to 24 spoken lines, each `{ file, durationSeconds, startSeconds, volume }` (an audio file in `input/`, its length, where it starts on the finished video's clock in seconds, 0 to 1; start defaults to 0, volume to 1). A line may not start after the end of the cut; one that runs past it is cut at the end. **While any line plays, the music and the clips' own sound drop to `duck` of their level** (0 to 1, default 0.3; 1 = no ducking), with a straight 0.2 s ramp down before the voice starts and back up after it stops (`src/lib/ducking.ts`, pure frame maths). The voice files are checked like the music: they must exist, have sound and be as long as the request says. Measured on a real render: the music and the clip sound sit at 0.3 of their level during a line and are back to above 0.85 after it, and the voice is heard only where it is placed.
 
 ## The export command (what the worker runs)
 

@@ -21,7 +21,7 @@ const DEFAULTS: PropsById = {
   captions: { ...COMMON, clip: CLIP, captionStyle: "bold" },
   reframe: { ...COMMON, aspect: "9:16", clip: CLIP },
   cutdown: { ...COMMON, source: SOURCE, targetSeconds: 6, keep: [], cues: [], captionStyle: null, reframe: FILL },
-  final: { ...COMMON, title: null, clips: [CLIP], captionStyle: null, end: null, music: null },
+  final: { ...COMMON, title: null, clips: [CLIP], captionStyle: null, end: null, music: null, voiceover: [], duck: 0.3 },
   "fixture-clip": { ...COMMON, durationSeconds: 2, label: "SAMPLE" },
 };
 

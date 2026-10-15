@@ -80,12 +80,13 @@ export function declaredOf(id: CompositionId, props: Record<string, unknown>): D
   const out = new Map<string, Declared>();
   const video = (s: { file: string; durationSeconds: number; width: number; height: number; hasAudio: boolean }) =>
     out.set(s.file, { file: s.file, kind: "video", durationSeconds: s.durationSeconds, width: s.width, height: s.height, hasAudio: s.hasAudio });
-  const p = props as never as { clip?: { source: Parameters<typeof video>[0] }; source?: Parameters<typeof video>[0]; clips?: { source: Parameters<typeof video>[0] }[]; music?: { file: string; durationSeconds: number } | null };
+  const p = props as never as { clip?: { source: Parameters<typeof video>[0] }; source?: Parameters<typeof video>[0]; clips?: { source: Parameters<typeof video>[0] }[]; music?: { file: string; durationSeconds: number } | null; voiceover?: { file: string; durationSeconds: number }[] };
   if (id === "captions" || id === "reframe") video(p.clip!.source);
   if (id === "cutdown") video(p.source!);
   if (id === "final") {
     for (const clip of p.clips ?? []) video(clip.source);
     if (p.music) out.set(p.music.file, { file: p.music.file, kind: "audio", durationSeconds: p.music.durationSeconds });
+    for (const line of p.voiceover ?? []) out.set(line.file, { file: line.file, kind: "audio", durationSeconds: line.durationSeconds });
   }
   return [...out.values()];
 }
@@ -127,6 +128,7 @@ export function inputFilesOf(timeline: Timeline): string[] {
     else if (item.card.logo) files.add(item.card.logo.file);
   }
   if (timeline.music) files.add(timeline.music.file);
+  for (const line of timeline.voiceover) files.add(line.file);
   return [...files];
 }
 
