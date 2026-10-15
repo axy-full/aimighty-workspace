@@ -3,6 +3,7 @@ import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
 import { bflTools } from "./bflImage";
 import { veoTools } from "./veoVideo";
+import { labelCheckTools } from "./visionLabel";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "./approvalRule";
@@ -220,7 +221,46 @@ const VEO_VIDEO: DirectTool = {
   describe: (out, quote) => `Clip started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT, VEO_VIDEO];
+const labelPresent = (id: string) => async () => (await labelCheckTools()).some((t) => t.id === id);
+const LABEL_CHECK: DirectTool = {
+  def: {
+    name: "label_check",
+    description:
+      "Check that the text in a take's picture says exactly what the brief requires (Google Cloud Vision reads it; a character-by-character diff compares it, never an AI model). Priced first; a person approves it in Particl " +
+      "(or the workspace lets small jobs run). A mismatch or missing text flags the take for a person and shows the difference; it never blocks the take. A video is checked on a frame of it (an image upload of this workspace).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        take_id: { type: "string", description: "The take to check." },
+        expected: { type: "string", description: "The text the label must carry." },
+        frame_upload_id: { type: "string", description: "An image upload of this workspace to read (a frame of a video take). An image take needs none." },
+        mode: { type: "string", description: "whole (default: the picture's text is exactly the required text) or contains (the required text is in it)." },
+        unicode: { type: "string", description: "nfc (default) or none." },
+        case: { type: "string", description: "exact (default) or fold." },
+        whitespace: { type: "string", description: "exact (default) or collapse." },
+        request_id: { type: "string", description: "Optional: unique to this check; a retried call with it gets back the check it started." },
+      },
+      required: ["take_id", "expected"],
+    },
+  },
+  present: labelPresent("label_check"),
+  /* A check renders nothing and costs a few cents: a draft at any setting, so Auto may start it at or under the per-job line. */
+  draft: () => true,
+  prepared: (b) => `prepared: label check of take ${String(b.takeId)} against ${[...String(b.expected ?? "")].length} characters of required text`,
+  request: (a) => {
+    const rules = { unicode: str(a.unicode), case: str(a.case), whitespace: str(a.whitespace) };
+    return {
+      path: "/api/label-check",
+      body: {
+        takeId: str(a.take_id), expected: str(a.expected), frameUploadId: str(a.frame_upload_id), mode: str(a.mode),
+        rules: Object.values(rules).some((v) => v !== undefined) ? Object.fromEntries(Object.entries(rules).filter(([, v]) => v !== undefined)) : undefined,
+      },
+    };
+  },
+  describe: (out, quote) => `Label checked: ${String(out.verdict)}${out.flagged ? " (flagged for a person)" : ""}.\n\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n${out.verdict === "match" ? "" : `difference: ${Number(out.distance)} character(s); read: ${JSON.stringify(String(out.detected ?? "").slice(0, 200))}\n`}\nThe result is kept on the take.`,
+};
+
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT, VEO_VIDEO, LABEL_CHECK];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

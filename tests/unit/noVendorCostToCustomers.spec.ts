@@ -126,6 +126,14 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
           reservedUsd: cost.dub, estimateCredits: 32, use: "production", funded: 1, claimedAt: at, operation: "models/veo-3.1-generate-preview/operations/vendor-job-veo-1",
           submittedAt: at, sendingAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1, reconcile: 1 } }),
         "u_member", at + 8, at + 8, "veo", 0, null, null, null, "/api/media/g_veo", null] },
+      /* A take that carries a label check (Cloud Vision): its params carry the check's result (the verdict, the rules, the text read, the difference) and, as the workflow wrote
+         them, the picture it read and the check's own figures. A person reads the result and nothing else of it (lib/directEnginePublic.ts). */
+      { sql: take, args: ["g_label", "p_margin", null, "image", "gemini-3.1-flash-image", "A crane at dusk, with a label",
+        JSON.stringify({ estUsd: cost.still, estCredits: 0, labelCheck: {
+          v: 1, verdict: "mismatch", flagged: true, mode: "whole", rules: { unicode: "nfc", case: "exact", whitespace: "exact" }, expected: "ACME COLA", detected: "ACME COIA", distance: 2,
+          ops: [{ op: "equal", text: "ACME CO" }, { op: "remove", text: "L" }, { op: "add", text: "I" }, { op: "equal", text: "A" }], words: [{ text: "ACME", box: [1, 2, 3, 4] }], checkedAt: at,
+          source: { kind: "upload", id: "up_frame_private" }, reservedUsd: cost.still, meterId: "vlc_vendor_secret_1" } }),
+        "u_member", at + 9, at + 9, "google", cost.still, null, null, null, "/api/media/g_label", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
@@ -199,6 +207,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a lip-sync take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_lipsync?sync=0", params: { id: "g_lipsync" } },
   { name: "GET /api/jobs/[id] (a Sarvam speech take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_sarvam?sync=0", params: { id: "g_sarvam" } },
   { name: "GET /api/jobs/[id] (a FLUX.2 take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_flux?sync=0", params: { id: "g_flux" } },
+  { name: "GET /api/jobs/[id] (a take with a label check)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_label?sync=0", params: { id: "g_label" } },
   { name: "GET /api/jobs/[id] (a Veo clip)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_veo?sync=0", params: { id: "g_veo" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
