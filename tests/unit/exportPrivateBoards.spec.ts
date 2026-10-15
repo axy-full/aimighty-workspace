@@ -58,13 +58,21 @@ test("an admin's takes export includes every member's private board, with one hi
   const { rows } = await tenant.runInTenant(ws, () => exportRows(ADMIN), { user: user("u_admin", "admin", true) });
   expect(ids(rows)).toEqual(["ADMINOWN-TAKE", "FREE-TAKE", "OPEN-TAKE", "P1-TAKE", "P2-TAKE", "SHARED-TAKE"]);
   expect(await lines(tenant, database, ws), "one line per private board that is another member's: two; the shared board and the admin's own: none").toEqual(
-    [`u_admin:board.opened_by_admin:${boards.p1}`, `u_admin:board.opened_by_admin:${boards.p2}`].sort());
+    [`u_admin:board.exported_by_admin:${boards.p1}`, `u_admin:board.exported_by_admin:${boards.p2}`].sort());
   /* Ids and action only: the history holds no name, prompt or title. */
   const text = JSON.stringify(await lines(tenant, database, ws));
   expect(text).not.toMatch(/P1-TAKE|P2-TAKE|Mate one|Mate two/);
-  /* The same export again soon after is the same lines (the 15-minute rule). */
+  /* An export is counted every time: the same export again soon after writes two NEW lines (no 15-minute rule for exports). */
   await tenant.runInTenant(ws, () => exportRows(ADMIN), { user: user("u_admin", "admin", true) });
-  expect(await lines(tenant, database, ws)).toHaveLength(2);
+  expect(await lines(tenant, database, ws)).toHaveLength(4);
+  /* The board's maker reads it apart from a view: "exported", twice. */
+  const { boardViews } = await import("../../lib/workbench/team-boards");
+  const seen = await tenant.runInTenant(ws, () => boardViews(ws, "u_mate1"), { user: user("u_mate1") });
+  expect(seen.map((v) => v.what)).toEqual(["exported", "exported"]);
+  /* A normal look at the same board is still the 15-minute "opened" line, once. */
+  const { mayReachProject } = await import("../../lib/draftProject");
+  await tenant.runInTenant(ws, async () => { await mayReachProject(ADMIN, boards.p1, "read"); await mayReachProject(ADMIN, boards.p1, "read"); }, { user: user("u_admin", "admin", true) });
+  expect((await lines(tenant, database, ws)).filter((l) => l.includes("opened_by_admin"))).toEqual([`u_admin:board.opened_by_admin:${boards.p1}`]);
 });
 
 test("the JSON export includes the private boards' takes for the admin the same way, one line per board", async () => {
@@ -73,7 +81,7 @@ test("the JSON export includes the private boards' takes for the admin the same 
   const { workspaceExport } = await import("../../lib/workspaceExport");
   const payload = await tenant.runInTenant(ws, () => workspaceExport("u_admin", "u_admin@example.test", ADMIN), { user: user("u_admin", "admin", true) }) as unknown as { generations: { prompt: string }[] };
   expect(ids(payload.generations)).toEqual(["ADMINOWN-TAKE", "FREE-TAKE", "OPEN-TAKE", "P1-TAKE", "P2-TAKE", "SHARED-TAKE"]);
-  expect(await lines(tenant, database, ws)).toHaveLength(2);
+  expect(await lines(tenant, database, ws)).toEqual([`u_admin:board.exported_by_admin:${(await import("../../lib/draftProject")).mappedId("prj_wb_", ws.id, "u_mate1", "d1")}`, `u_admin:board.exported_by_admin:${(await import("../../lib/draftProject")).mappedId("prj_wb_", ws.id, "u_mate2", "d2")}`].sort());
 });
 
 test("a member's export never includes another member's private board, and writes no line", async () => {

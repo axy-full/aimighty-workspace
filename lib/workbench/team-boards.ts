@@ -274,7 +274,7 @@ export async function listWorkspaceBoards(ws: Pick<TenantWorkspace, "id">, admin
 }
 
 /** An admin's look at, or change to, a board of someone else's, as its maker is told: "Viewed by <admin>, <date>". */
-export type BoardView = { boardId: string; by: { id: string; name: string; support?: true }; what: "viewed" | "edited"; at: number };
+export type BoardView = { boardId: string; by: { id: string; name: string; support?: true }; what: "viewed" | "edited" | "exported"; at: number };
 
 /**
  * Who has looked at or changed the caller's OWN boards as an admin, newest first (a board's id alone narrows it). Only the maker reads these: the boards asked about are the ones
@@ -288,7 +288,7 @@ export async function boardViews(ws: Pick<TenantWorkspace, "id">, me: string, on
   if (!onlyBoard) byProject.set(heldBoardsProjectId(ws.id, me), "deleted-boards");
   const ids = [...byProject.keys()];
   const rows = (await db().execute({
-    sql: `SELECT actor_id, action, target_id, created_at FROM security_audit WHERE workspace_id=? AND action IN ('board.opened_by_admin','board.edited_by_admin') AND target_id IN (${ids.map(() => "?").join(",")}) ORDER BY created_at DESC, id DESC LIMIT 100`,
+    sql: `SELECT actor_id, action, target_id, created_at FROM security_audit WHERE workspace_id=? AND action IN ('board.opened_by_admin','board.edited_by_admin','board.exported_by_admin') AND target_id IN (${ids.map(() => "?").join(",")}) ORDER BY created_at DESC, id DESC LIMIT 100`,
     args: [ws.id, ...ids],
   })).rows;
   const admins = [...new Set(rows.map((row) => String(row.actor_id)))];
@@ -302,7 +302,7 @@ export async function boardViews(ws: Pick<TenantWorkspace, "id">, me: string, on
   return rows.map((row) => ({
     boardId: byProject.get(String(row.target_id))!,
     by: names.get(String(row.actor_id)) ?? { id: String(row.actor_id), name: "An admin" },
-    what: row.action === "board.edited_by_admin" ? "edited" as const : "viewed" as const,
+    what: row.action === "board.edited_by_admin" ? "edited" as const : row.action === "board.exported_by_admin" ? "exported" as const : "viewed" as const,
     at: Number(row.created_at),
   }));
 }

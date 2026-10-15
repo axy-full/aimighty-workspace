@@ -365,17 +365,37 @@ export async function readableProjectOr(viewer: Viewer, projectId: string | null
 }
 
 /**
+ * An admin takes a member's private board out in an export: one history line, `board.exported_by_admin` (ids and action only), EVERY time, for every private board the export
+ * includes (owner, 15 Oct 2026: "one audit line per private board per export"). It is its own action, not the 15-minute "opened" line: an export is a copy leaving the
+ * workspace, so it is counted each time, and the board's owner reads "Exported by <admin>" apart from "Viewed by". No line, no export of that board.
+ */
+async function recordAdminExport(adminId: string, projectId: string, ex: Exec): Promise<boolean> {
+  /* Only a board that exists in this workspace: one with a draft, or whose takes remain (held or deleted); an id with neither is nobody's. */
+  const known = (await boardDraftOf(projectId, ex)) || (await ex.execute({ sql: "SELECT 1 FROM generations WHERE project_id=? LIMIT 1", args: [projectId] })).rows.length > 0;
+  if (!known) return false;
+  try {
+    await ex.execute(securityAuditStatement({ workspaceId: requireTenant().id, actorId: adminId, action: "board.exported_by_admin", targetType: "board", targetId: projectId }));
+    return true;
+  } catch (error) {
+    console.error(JSON.stringify({ level: "error", event: "board.admin_export_unrecorded", message: error instanceof Error ? error.message : "unknown" }));
+    return false;
+  }
+}
+
+/**
  * The private boards `person` may take the takes of into an EXPORT, as a set, or null when nothing needs hiding (nobody, background work, or no take is filed under a private board).
- * An export is the one place an admin takes every member's work out of the workspace at once, so it is complete, with its audit (owner, 15 Oct 2026: "Admin exports include
- * private boards, with one audit line per private board per export"): each private board that holds a take goes through the audited read once, `mayReachProject(..., "read")`, which
- * writes one history line for it (ids and action only) under the 15-minute rule, and a board whose line cannot be written is left out (no line, no read). The person's own boards and
- * shared ones need no line; a member gets only what they could see.
+ * An export is the one place an admin takes every member's work out of the workspace at once, so it is complete, and counted: for each private board that holds a take and is
+ * another member's (not the admin's own, not shared, not the sample), an admin writes one `board.exported_by_admin` line, every export (`recordAdminExport`), and a board whose line
+ * cannot be written is left out (no line, no export). The person's own boards, shared ones and the sample need no line; a member gets only what they could see.
  */
 export async function exportableBoards(person: Person | null, ex: Exec = db()): Promise<Set<string> | null> {
   if (!person) return null;
   const held = (await ex.execute({ sql: "SELECT DISTINCT project_id FROM generations WHERE project_id GLOB 'prj_wb_*'", args: [] })).rows.map((row) => String(row.project_id));
   if (!held.length) return null;
   const readable = new Set<string>();
-  for (const id of held) if (await mayReachProject(person, id, "read", ex)) readable.add(id);
+  for (const id of held) {
+    const othersPrivate = isWorkspaceAdmin(person) && !(await ownsDraftProject(person.id, id, ex)) && !(await isMarkedSample(id, ex)) && (await draftShare(id, ex)).mode === "none";
+    if (othersPrivate ? await recordAdminExport(person.id, id, ex) : await mayReachProject(person, id, "read", ex)) readable.add(id);
+  }
   return readable;
 }
