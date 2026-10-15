@@ -101,8 +101,7 @@ export async function GET(req: Request) {
             const unsavedBefore = await listAtRisk(horizon, AT_RISK_LISTED).catch(() => []);
             let atRiskTried = 0;
             await stage("generations", async () => {
-              const report = await syncPending(8, { deadlineAt, horizon });
-              atRiskTried = report.atRiskTried ?? 0;
+              const report = await syncPending(8, { deadlineAt, horizon, onAtRiskChosen: (count) => { atRiskTried = count; } });
               if (report.failed) throw new Error("RECONCILIATION_FAILED");
               deferred ||= report.deferred > 0;
             });

@@ -799,8 +799,13 @@ export function heartbeatSaveDeadline(deadlineAt: number): number {
 export async function syncPending(
   limit = 30,
   /** `horizon`: the visit's own (lib/atRisk.ts), so the window the cron counted is the window this chooses by. */
-  options: { deadlineAt?: number; horizon?: number } = {},
-): Promise<ReconcileResult & { deferred: number; /** Of the takes chosen, how many were at risk (lib/atRisk.ts): succeeded, no stored copy, inside the window. */ atRiskTried: number }> {
+  options: {
+    deadlineAt?: number;
+    horizon?: number;
+    /** Told, once, how many of the takes this pass chose were at risk (lib/atRisk.ts): succeeded, no stored copy, inside the window. The return value keeps its own shape. */
+    onAtRiskChosen?: (count: number) => void;
+  } = {},
+): Promise<ReconcileResult & { deferred: number }> {
   await ready();
   await syncCreditReceipts();
   await uploadReservationsReady();
@@ -808,7 +813,6 @@ export async function syncPending(
   const results = {
     ...(await flushGenerationSettlements(bounded)),
     deferred: 0,
-    atRiskTried: 0,
   };
   const legacy = await repairLegacyGenerationSettlements(bounded);
   results.attempted += legacy.attempted;
@@ -841,7 +845,7 @@ export async function syncPending(
       ORDER BY g.updated_at,g.created_at,g.id LIMIT ?`,
     args: [horizon, bounded],
   });
-  results.atRiskTried = rows(rs).filter((row) => row.status === "succeeded" && row.stored_url == null).length;
+  options.onAtRiskChosen?.(rows(rs).filter((row) => row.status === "succeeded" && row.stored_url == null).length);
   // Oldest checked first, with a persisted check time: failures cannot starve later jobs.
   for (let i = 0; i < rs.rows.length; i += 4) {
     if (options.deadlineAt != null && now() >= options.deadlineAt) {

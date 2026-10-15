@@ -66,9 +66,12 @@ test("the counter and the rescuer agree: a 71 h take is at risk and chosen to be
     expect(await atRiskCounts(atRiskHorizon(at))).toEqual({ saved: 1, atRisk: 1, lost: 2 });
     const touched = async (id: string) => Number((await db().execute({ sql: "SELECT updated_at FROM generations WHERE id=?", args: [id] })).rows[0].updated_at);
     const [before71, before73] = [await touched("t71"), await touched("t73")];
-    const report = await syncPending(8);
+    let chosen = -1;
+    const report = await syncPending(8, { onAtRiskChosen: (count) => { chosen = count; } });
+    /* The return keeps its release/1 shape; the at-risk count comes through the callback. */
+    expect(Object.keys(report).sort()).toEqual(["attempted", "deferred", "failed"]);
     /* The rescuer's choice is the same window: it chose the 71 h take (and stamped it as checked), and not the 73 h one. */
-    expect(report.atRiskTried).toBe(1);
+    expect(chosen).toBe(1);
     expect(await touched("t71")).toBeGreaterThan(before71);
     expect(await touched("t73")).toBe(before73);
     expect(fetched, "no provider was called").toEqual([]);
@@ -235,7 +238,7 @@ test("the heartbeat reports tried, saved and unsavable beside the net rescued fi
     "@/lib/recoveryDrain": { drainRecoveryJobs: async () => ({}), RECOVERY_DRAIN_WORK_BUDGET_MS: 1 },
     "next/server": { NextResponse: { json: (body: unknown, init?: ResponseInit) => Response.json(body, init) }, after: () => {} },
     "@/lib/db": { db: () => ({ execute: async () => ({ rows: [{ pending: 0 }] }) }), ready: async () => {} },
-    "@/lib/jobs": { syncPending: async () => ({ failed: 0, deferred: 0, atRiskTried: 3 }) },
+    "@/lib/jobs": { syncPending: async (_limit: number, o?: { onAtRiskChosen?: (n: number) => void }) => { o?.onAtRiskChosen?.(3); return { failed: 0, deferred: 0 }; } },
     "@/lib/atRisk": {
       atRiskHorizon: () => 0, atRiskCounts: async () => counted.shift()!,
       listAtRisk: (() => { const reads = [[row("a"), row("b"), row("c"), row("d")], [row("c"), row("d")]]; return async () => reads.shift()!; })(),
