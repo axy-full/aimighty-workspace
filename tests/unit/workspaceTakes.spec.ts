@@ -35,7 +35,7 @@ test("library assets map to Takes cards with billed credits, statuses and integr
     upload("u1"),
     upload("u2", { filename: "plate.mp4", mime: "video/mp4", kind: "video", width: 1920, height: 1080, durationS: 12, sha256: "" }),
   ]);
-  expect(takes[0]).toEqual({ id: "generation:g1", sourceId: "g1", kind: "GEN", name: "The approach", version: "v2", meta: "2.5 · 5s", credits: 18, usd: null,
+  expect(takes[0]).toEqual({ id: "generation:g1", sourceId: "g1", kind: "generation", name: "The approach", version: "v2", meta: "2.5 · 5s", credits: 18, usd: null,
     status: "approved", sha256: null, createdAt: 10 });
   expect(takes[1]).toMatchObject({ name: "The encounter", meta: "2.5 · 6s", credits: 21, status: "review" });
   /* "not billed" only because the ledger holds nothing for it; the line says why and what to do. */
@@ -47,7 +47,7 @@ test("library assets map to Takes cards with billed credits, statuses and integr
   expect(takes[6]).not.toHaveProperty("failedUnbilled");
   expect(takes[7]).toMatchObject({ credits: null, status: "review" });
   expect(takes[8]).toMatchObject({ credits: null, usd: 1.16 });
-  expect(takes[9]).toEqual({ id: "upload:u1", sourceId: "u1", kind: "UPLOAD", name: "u1.jpg", version: "v1", meta: "4032×3024 · JPEG", credits: null, usd: null,
+  expect(takes[9]).toEqual({ id: "upload:u1", sourceId: "u1", kind: "upload", name: "u1.jpg", version: "v1", meta: "4032×3024 · JPEG", credits: null, usd: null,
     status: "uploaded", sha256: SHA, createdAt: 5 });
   expect(takes[10]).toMatchObject({ meta: "1920×1080 · MP4 · 12s", sha256: null });
   // No vendor name reaches a card.

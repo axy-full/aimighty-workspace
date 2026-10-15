@@ -1,4 +1,5 @@
 "use client";
+import { dollars } from "@/lib/format";
 import { useEffect, useId, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import type { Project } from "@/lib/workbench/studio";
 import { useMemory, useMemoryApi, type KeepReply, type MemoryApi } from "@/lib/shell/use-memory";
@@ -510,7 +511,7 @@ type ReadReply = { id: string; model: string; entries: ImportedEntry[]; skipped:
 const READ_URL = "/api/atomik/memory/read";
 
 /** A price as the workspace pays it: credits, or the vendor's dollars for a workspace on its own keys. */
-const priced = (credits: number, usd?: number) => (usd === undefined ? `about ${credits} cr` : `about $${usd.toFixed(3)}`);
+const priced = (credits: number, usd?: number) => (usd === undefined ? `about ${credits} cr` : `about ${dollars(usd)}`);
 
 /**
  * Atomik reads the text and proposes entries: priced first with an
@@ -596,7 +597,7 @@ export function AtomikRead({ scope, api, text, projectId, place, entries, open, 
   };
   if (!open && !pending && !reply) return null;
   const value = reply?.value;
-  const billed: ReactNode = value ? (value.credits != null ? (newWords ? <Price value={exact(value.credits)} /> : `${value.credits} cr`) : value.costUsd != null && !newWords ? `$${value.costUsd.toFixed(3)}` : null) : null;
+  const billed: ReactNode = value ? (value.credits != null ? (newWords ? <Price value={exact(value.credits)} /> : `${value.credits} cr`) : value.costUsd != null && !newWords ? dollars(value.costUsd) : null) : null;
   return (
     <div className="am-read" data-testid="memory-read">
       {value ? (

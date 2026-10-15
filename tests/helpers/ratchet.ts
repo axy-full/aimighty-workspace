@@ -6,7 +6,9 @@ import { readFileSync } from "node:fs";
  * Shared by the banned-names check (tests/unit/ui-names-guard.spec.ts) and the priced-buttons check
  * (tests/unit/spend-buttons.spec.ts). A file not on the ratchet has an allowance of zero.
  */
-export type Entry = { count: number; until: string; by: string };
+export type Entry = { count: number; until: string; by: string; extended?: Extended };
+/** The owner's recorded word for moving a date later: `from` is the date on the base branch, `owner` quotes him with the date and time. */
+export type Extended = { from: string; owner: string };
 export type Section = Record<string, Entry>;
 
 /** Today at the end of the day in UTC, or the day a test pretends it is (RATCHET_TODAY=YYYY-MM-DD). */
@@ -41,19 +43,31 @@ export function lowered(section: Section, now: Record<string, number>): Section 
   return next;
 }
 
-/** What a section of a ratchet file held where this branch left main, or null when main has no such file (or no checkout). */
+/** The ref a ratchet is compared against: RATCHET_BASE (CI sets the pull request's base), else origin/main. */
+export const baseRef = () => process.env.RATCHET_BASE?.trim() || "origin/main";
+
+/** What a section of a ratchet file held where this branch left its base (baseRef), or null when the base has no such file (or no checkout). */
 export function onMain<T>(file: string): T | null {
-  const base = spawnSync("git", ["merge-base", "HEAD", "origin/main"], { encoding: "utf8" });
+  const base = spawnSync("git", ["merge-base", "HEAD", baseRef()], { encoding: "utf8" });
   if (base.status !== 0) return null;
   const before = spawnSync("git", ["show", `${base.stdout.trim()}:${file}`], { encoding: "utf8", maxBuffer: 1 << 24 });
   return before.status === 0 ? (JSON.parse(before.stdout) as T) : null;
 }
 
-/** Entries added, counts raised or dates moved later, against main's. */
+/** "Owner, " then a date and a time of day: "Owner, 14 Oct 21:55: ..." or "Owner, 2026-10-14 21:55 ...". */
+const OWNER_WORD = /^Owner, (\d{1,2} [A-Za-z]{3,9}( \d{4})?|\d{4}-\d{2}-\d{2}) \d{1,2}:\d{2}/;
+
+/** A later date the owner has recorded: `from` is exactly the base's date and `owner` quotes him with a date and time. */
+export const extendedFrom = (entry: Entry, was: string) => entry.extended?.from === was && OWNER_WORD.test(entry.extended?.owner ?? "");
+
+/**
+ * Entries added, counts raised or dates moved later, against the base's. A later date passes only with an `extended` record
+ * (extendedFrom). The record moves a date and nothing else: an added entry or a raised count fails with or without it.
+ */
 export function growth(now: Section, then: Section) {
   return {
     added: Object.keys(now).filter((path) => !(path in then)),
     raised: Object.entries(now).filter(([path, e]) => path in then && e.count > then[path].count).map(([path, e]) => `${path}: ${then[path].count} -> ${e.count}`),
-    later: Object.entries(now).filter(([path, e]) => path in then && e.until > then[path].until).map(([path, e]) => `${path}: ${then[path].until} -> ${e.until}`),
+    later: Object.entries(now).filter(([path, e]) => path in then && e.until > then[path].until && !extendedFrom(e, then[path].until)).map(([path, e]) => `${path}: ${then[path].until} -> ${e.until}`),
   };
 }

@@ -10,7 +10,7 @@ import type { RenderPrice, RenderTake } from "@/lib/v12/renderState";
 import { failureUncharged } from "@/lib/errors";
 
 /**
- * Make's results: the workspace's takes, newest first, from today's takes list (GET /api/jobs, scoped by the request
+ * Make's results: the takes made in Make (`madeIn=make`: lib/madeIn.ts), newest first, from today's takes list (GET /api/jobs, scoped by the request
  * scope), read again when a take starts or ends (the jobs bus) and every few seconds while one is in flight. The money
  * of a take in flight is the jobs tray's (the meter's reserved figure, lib/jobsTray.server); a settled take's is the
  * ledger's (`creditsBilled`). Typical times come from GET /api/v12/typical-times (C1).
@@ -32,7 +32,7 @@ export function useResults(scope: string): ResultsState & { refresh: () => void 
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    fetcher(`/api/jobs?limit=${RESULTS_READ}`, { cache: "no-store", signal: controller.signal })
+    fetcher(`/api/jobs?limit=${RESULTS_READ}&madeIn=make`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const body = (await response.json().catch(() => null)) as { generations?: Generation[] } | null;
         if (controller.signal.aborted) return;

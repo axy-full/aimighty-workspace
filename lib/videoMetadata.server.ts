@@ -127,7 +127,7 @@ export async function inspectOriginalVideo(
     )
       throw new Error(
         options.maxSeconds === undefined
-          ? "Astra accepts video clips up to five minutes with valid source dimensions."
+          ? "Topaz Astra accepts video clips up to five minutes with valid source dimensions."
           : `Use a video up to ${formatLimit(maxSeconds)} long with valid picture dimensions.`,
       );
     const fps = includeFrameRate
