@@ -22,11 +22,14 @@ const tenant = (id: string): TenantWorkspace => ({
 } as TenantWorkspace);
 const inTenant = async (ws: TenantWorkspace, fn: () => Promise<void>) => (await import("../../lib/tenant")).runInTenant(ws, fn);
 
-const recorder = (quote: Record<string, unknown> = { estimatedCredits: 5, price: 0.42, unit: "usd" }) => {
+const recorder = (quote: Record<string, unknown> = { estimatedCredits: 5, price: 0.42, unit: "usd" }, door: { prepare?: "ok" | "refused" | "no-quote" } = {}) => {
   const calls: { path: string; body: Record<string, unknown>; headers?: Record<string, string> }[] = [];
   const call = async (p: string, init: { body?: unknown; headers?: Record<string, string> } = {}) => {
     const body = init.body as Record<string, unknown>;
     calls.push({ path: p, body, headers: init.headers });
+    /* The prepared-jobs door: a token made to prepare files the job; a render token is refused there by design (and, with "no-quote", a prepare token is refused at the paid door). */
+    if (p === "/api/prepared-jobs") { if (door.prepare === "refused") throw new Error("Only a token made to prepare jobs files one; a person uses Make."); return { job: { id: "prep_1" } }; }
+    if (door.prepare === "no-quote") throw new Error("This token prepares jobs; a person approves each in Particl.");
     return body.quoteOnly === true ? quote : { id: "gen_mcp_1", status: "running" };
   };
   return { calls, call };
@@ -83,15 +86,27 @@ test("only a person approves spending: Ask (the default) returns the priced, pre
       const text = await runDirectEngineTool("lip_sync", { ...ARGS, model: "sync-3", request_id: "req-1" }, r.call);
       expect(text, String(mode)).toMatch(prepared);
       expect(text).toContain("prepared: lip-sync (sync-3) of up_clip with up_voice for production prod_a");
-      expect(r.calls, String(mode)).toHaveLength(1);
+      /* Filed for a person through the prepared-jobs door, and its id returned. */
+      expect(text, String(mode)).toContain("prepared job: prep_1");
+      expect(r.calls.map((c) => c.path), String(mode)).toEqual(["/api/lipsync", "/api/prepared-jobs"]);
       expect(r.calls[0].body).toMatchObject({ quoteOnly: true, model: "sync-3", clipUploadId: "up_clip" });
+      expect(r.calls[1].body).toMatchObject({ engine: "lip_sync", prompt: "prepared: lip-sync (sync-3) of up_clip with up_voice for production prod_a", project: "prod_a", args: { model: "sync-3", clipUploadId: "up_clip", castMemberId: "cast_a" } });
+      /* No price, approval or quote flag rides in the filed job. */
+      expect(JSON.stringify(r.calls[1].body)).not.toMatch(/maxCredits|quoteOnly|fingerprint/i);
       expect(r.calls.some((c) => "maxCredits" in c.body)).toBe(false);
     }
-    /* Auto, at or under the line: it starts, at the price the server just gave, under the retry key. */
+    /* Auto runs only a DRAFT (lipsync-2) at or under the line; the full-quality models (the default lipsync-2-pro, and sync-3) always ask, at any price. */
     await setSpend("auto");
+    for (const model of [undefined, "lipsync-2-pro", "sync-3"]) {
+      const r = recorder({ estimatedCredits: 1, price: 0.05, unit: "usd" });
+      expect(await runDirectEngineTool("lip_sync", { ...ARGS, ...(model ? { model } : {}) }, r.call), String(model)).toMatch(/not started[\s\S]*prepared job: prep_1[\s\S]*needs a person's approval/);
+      expect(r.calls.map((c) => c.path)).toEqual(["/api/lipsync", "/api/prepared-jobs"]);
+      expect(r.calls.some((c) => "maxCredits" in c.body)).toBe(false);
+    }
+    /* A draft at or under the line: it starts, at the price the server just gave, under the retry key. */
     for (const credits of [1, 7, line]) {
       const r = recorder({ estimatedCredits: credits, price: 0.7, unit: "usd" });
-      const text = await runDirectEngineTool("lip_sync", { ...ARGS, request_id: "req-2" }, r.call);
+      const text = await runDirectEngineTool("lip_sync", { ...ARGS, model: "lipsync-2", request_id: "req-2" }, r.call);
       expect(text, String(credits)).toMatch(/^Lip-sync started\.\n\nid: gen_mcp_1\nprice: \$0\.70/);
       expect(r.calls).toHaveLength(2);
       expect(r.calls[1]).toMatchObject({ path: "/api/lipsync", body: { maxCredits: credits }, headers: { "Idempotency-Key": "mcp-lip_sync:req-2" } });
@@ -100,14 +115,27 @@ test("only a person approves spending: Ask (the default) returns the priced, pre
     /* Auto, above the line (and so above guardrail 4): prepared, and it asks a person. */
     for (const credits of [line + 1, 250, 5000]) {
       const r = recorder({ estimatedCredits: credits, price: 20.5, unit: "usd" });
-      expect(await runDirectEngineTool("lip_sync", ARGS, r.call), String(credits)).toMatch(/not started[\s\S]*needs a person's approval/);
-      expect(r.calls).toHaveLength(1);
+      expect(await runDirectEngineTool("lip_sync", { ...ARGS, model: "lipsync-2" }, r.call), String(credits)).toMatch(/not started[\s\S]*needs a person's approval/);
+      expect(r.calls.map((c) => c.path)).toEqual(["/api/lipsync", "/api/prepared-jobs"]);
     }
     /* The caller never writes the approval, in either mode and under either spelling; a bad retry key is refused; an unpriced job starts nothing. */
     for (const mode of ["ask", "auto"]) {
       await setSpend(mode);
       for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) { const r = recorder(); await expect(runDirectEngineTool("lip_sync", { ...ARGS, ...bad }, r.call)).rejects.toThrow(/only a person approves/); expect(r.calls).toEqual([]); }
     }
+    /* A render token cannot file a prepared job (refused by design): the answer is in words only and nothing starts. A prepare token cannot even ask for a price: its call is filed unpriced. */
+    await setSpend("ask");
+    const refused = recorder({ estimatedCredits: 7, price: 0.7, unit: "usd" }, { prepare: "refused" });
+    const wordsOnly = await runDirectEngineTool("lip_sync", ARGS, refused.call);
+    expect(wordsOnly).toMatch(/^Priced and prepared, not started\.[\s\S]*A person approves it in Particl\./);
+    expect(wordsOnly).not.toContain("prepared job:");
+    const preparer = recorder({}, { prepare: "no-quote" });
+    const unpriced = await runDirectEngineTool("lip_sync", ARGS, preparer.call);
+    expect(unpriced).toMatch(/^Prepared, not started\.[\s\S]*prepared job: prep_1[\s\S]*nothing was started or spent/);
+    expect(preparer.calls.map((c) => c.path)).toEqual(["/api/lipsync", "/api/prepared-jobs"]);
+    /* Any other refusal at the paid door still reaches the agent. */
+    const other = async () => { throw new Error("The cap was reached."); };
+    await expect(runDirectEngineTool("lip_sync", ARGS, other)).rejects.toThrow("cap was reached");
     const r2 = recorder(); await expect(runDirectEngineTool("lip_sync", { ...ARGS, request_id: "bad id!" }, r2.call)).rejects.toThrow(/request_id/); expect(r2.calls).toEqual([]);
     const r3 = recorder({ price: 1 }); await expect(runDirectEngineTool("lip_sync", ARGS, r3.call)).rejects.toThrow(/could not be priced/); expect(r3.calls).toHaveLength(1);
     /* A refusal from the route (the consent gate, the cap, a token that may not spend) reaches the agent as it is. */
@@ -118,13 +146,45 @@ test("only a person approves spending: Ask (the default) returns the priced, pre
   });
 });
 
+test("an engine job in the prepared-jobs door: filed by a token made to prepare, with no price or approval in it, read back as words (never its arguments), refused to any other token, and never opened in Make", async () => {
+  const jobs = await import("../../lib/security/prepared-jobs");
+  const { preparedSpec } = await import("../../lib/security/prepared-words");
+  const { db, ready } = await import("../../lib/db");
+  await inTenant(tenant("ws_prepared_engine"), async () => {
+    await ready();
+    const token = { id: `tok_${Date.now().toString(36)}`, scope: "prepare" };
+    const filed = await jobs.prepareJob({ engine: "lip_sync", prompt: "prepared: lip-sync (sync-3) of up_clip", project: "prod_a", args: { model: "sync-3", clipUploadId: "up_clip", castMemberId: "cast_a", skipped: undefined } }, token);
+    expect(filed).toMatchObject({ engine: { tool: "lip_sync" }, state: "waiting", project: "prod_a", prompt: "prepared: lip-sync (sync-3) of up_clip" });
+    expect(JSON.stringify(filed)).not.toMatch(/clipUploadId|castMemberId|args/);
+    expect(preparedSpec(filed)).toBe("lip sync");
+    /* The arguments are kept for the person's approval, in the workspace's own database. */
+    const row = (await db().execute({ sql: "SELECT settings_json FROM prepared_jobs WHERE id=?", args: [filed.id] })).rows[0];
+    expect(JSON.parse(String(row.settings_json))).toEqual({ engine: "lip_sync", args: { model: "sync-3", clipUploadId: "up_clip", castMemberId: "cast_a" } });
+    /* A render token, a read token and no token do not file one (as for a render). */
+    for (const scope of ["render", "read"]) await expect(jobs.prepareJob({ engine: "lip_sync", prompt: "x", args: {} }, { id: "tok_x", scope })).rejects.toThrow(/Only a token made to prepare/);
+    await expect(jobs.prepareJob({ engine: "lip_sync", prompt: "x", args: {} }, undefined)).rejects.toThrow(/Only a token made to prepare/);
+    /* A price, an approval or a quote flag in the arguments is refused, under any spelling. */
+    for (const key of ["maxCredits", "max_credits", "quoteOnly", "quoteFingerprint", "approved", "price", "estimatedCredits"])
+      await expect(jobs.prepareJob({ engine: "lip_sync", prompt: "x", args: { [key]: 1 } }, token), key).rejects.toThrow(/only a person approves/);
+    for (const bad of [{ engine: "Lip Sync", prompt: "x", args: {} }, { engine: "lip_sync", prompt: "", args: {} }, { engine: "lip_sync", prompt: "x", args: [] }, { engine: "lip_sync", prompt: "x", args: { a: { b: 1 } } }, { engine: "lip_sync", prompt: "x", args: { "bad key": 1 } }])
+      await expect(jobs.prepareJob(bad, token), JSON.stringify(bad)).rejects.toThrow();
+    /* A person decides it (marked, never erased); a Seedance job is unchanged. */
+    expect(await jobs.decidePrepared(filed.id, "dismissed", "u_person")).toBe(true);
+    const seedance = await jobs.prepareJob({ prompt: "A crane at dawn", model: "2.5", duration: 5 }, token);
+    expect(seedance.engine).toBeNull();
+    expect(preparedSpec(seedance)).toMatch(/^Seedance 2\.5/);
+  });
+  /* Settings › Connections never offers "Open in Make" for an engine job (Make opens a Seedance render). */
+  expect(readFileSync("components/graphite/settings/connections/ConnectionsSection.tsx", "utf8")).toContain("{job.engine ? null : <Btn");
+});
+
 test("the MCP endpoint lists and calls them through the same module, and says nothing else about spending", () => {
   const route = readFileSync("app/api/mcp/route.ts", "utf8");
   expect(route).toContain("tools: [...TOOLS, ...(await directEngineMcpTools())]");
   expect(route).toContain("(await runDirectEngineTool(name, args, call)) ??");
   const source = readFileSync("lib/directEngineMcp.ts", "utf8");
   expect(source).toContain("maxCredits: quote.estimatedCredits");
-  expect(source).toContain("if (!(await spendsWithoutAsking()) || quote.estimatedCredits > (await autoLineCredits()))");
+  expect(source).toContain("if (!(await spendsWithoutAsking()) || !(tool.draft?.(clean) ?? false) || quote.estimatedCredits > (await autoLineCredits()))");
   expect(source).not.toMatch(/args\.maxCredits|args\.max_credits|a\.max/);
   /* The send is after the Ask return and after the line: the only place a maxCredits is written. */
   expect(source.indexOf("needs a person")).toBeLessThan(source.indexOf("maxCredits: quote.estimatedCredits"));
