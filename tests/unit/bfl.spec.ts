@@ -218,11 +218,13 @@ test("off: with the switch off, or a workspace not on the list, there is no tool
     expect(await bflTools()).toEqual([]);
     expect(await admit({ tool: "image", prompt: "a tree", ...approved })).toMatchObject({ status: 404, body: { error: "There is no such tool here." } });
     process.env.BFL_ENABLED = "1";
-    expect((await bflTools()).map((t) => t.id)).toEqual(["flux2_image"]);
+    expect((await bflTools()).map((t) => t.id)).toEqual(["flux2_image", "flux3_image"]);
     process.env.REKOGNITION_ENABLED = "1";
     const on = await bflTools();
-    expect(on.map((t) => t.id)).toEqual(["flux2_image", "flux2_edit"]);
-    expect(on.every((t) => t.provider === "bfl" && t.route === "/api/bfl" && t.models.join() === "flux-2-pro,flux-2-flex,flux-2-max")).toBe(true);
+    expect(on.map((t) => t.id)).toEqual(["flux2_image", "flux3_image", "flux2_edit"]);
+    expect(on.every((t) => t.provider === "bfl" && t.route === "/api/bfl")).toBe(true);
+    expect(on.filter((t) => t.id !== "flux3_image").every((t) => t.models.join() === "flux-2-pro,flux-2-flex,flux-2-max")).toBe(true);
+    expect(on.find((t) => t.id === "flux3_image")!.models.join()).toBe("flux-3-image,flux-3-image-klein");
     expect((await meterRows()).length).toBe(before);
   });
   process.env.BFL_ENABLED = "1";
@@ -248,10 +250,10 @@ test("the quote, and every input refused in words before anything is reserved; a
     const flex = await admit({ tool: "image", prompt: "a tree", model: "flux-2-flex", width: 1024, height: 1024, quoteOnly: true });
     expect(Number(flex.body.price)).toBeCloseTo(0.05 + 0.05, 6);
     const refused: [Record<string, unknown>, RegExp][] = [
-      [{ tool: "video" }, /Pick image or edit/],
+      [{ tool: "video" }, /Pick image, edit or identity/],
       [{ tool: "image", prompt: "" }, /Write what to make/],
       [{ tool: "image", prompt: "x".repeat(5001) }, /5,000 characters/],
-      [{ tool: "image", prompt: "a", model: "flux-3" }, /flux-2-pro, flux-2-flex or flux-2-max/],
+      [{ tool: "image", prompt: "a", model: "flux-3" }, /flux-2-pro, flux-2-flex, flux-2-max, flux-3-image or flux-3-image-klein/],
       [{ tool: "image", prompt: "a", width: 1000, height: 1024 }, /steps of 16/],
       [{ tool: "image", prompt: "a", width: 32, height: 1024 }, /from 64/],
       [{ tool: "image", prompt: "a", width: 2560, height: 2560 }, /up to 4 megapixels/],
@@ -656,6 +658,203 @@ test("over MCP: flux2_image is listed only where the engine is on, flux2_edit on
       expect(unfiled).toMatch(/^Priced, not started\.[\s\S]*Nothing was filed: Inside a list or group an argument is an id[\s\S]*A person can make this themselves in Particl/);
       expect(unfiled).not.toMatch(/prepared job:|waits in Particl/);
       await expect(runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1,u2", cast_member_ids: "c1", project_id: "p", use: "production" }, call)).rejects.toThrow(/one cast member for each reference/);
+    } finally { await spend(null); }
+  });
+});
+
+test("FLUX 3 Image and Klein: priced per image by size tier (BFL's table, verified 16 Oct 2026), the longest side rounded up to the next tier, a stills-from-words engine with no references, refused past 4096", async () => {
+  const { BFL_RATES } = await import("../../lib/vendorRates");
+  const { flux3Quote } = await import("../../lib/bflImage");
+  const rows = (m: "flux-3-image" | "flux-3-image-klein") => BFL_RATES.tiered[m].tiers.map((t) => [t.upTo, t.usd]);
+  expect(rows("flux-3-image")).toEqual([[768, 0.041], [1024, 0.048], [1536, 0.07], [2048, 0.1], [4096, 0.607]]);
+  expect(rows("flux-3-image-klein")).toEqual([[768, 0.008], [1024, 0.009], [1536, 0.011], [2048, 0.014], [4096, 0.036]]);
+  expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/erified against\s+\* BFL's published pricing data \(docs\.bfl\.ai\/quick_start\/pricing\), 16 Oct 2026; confirm against the first invoice[\s\S]{0,1800}tiered:/);
+  const usd = (m: "flux-3-image" | "flux-3-image-klein", w: number, h: number) => { const q = flux3Quote(m, w, h); return "usd" in q ? q.usd : q.error; };
+  /* The longest side decides, rounded UP to the next tier: one pixel over a tier is the next tier's price. */
+  for (const [side, tier] of [[64, 0], [768, 0], [769, 1], [1024, 1], [1025, 2], [1536, 2], [1537, 3], [2048, 3], [2049, 4], [4096, 4]] as const) {
+    expect(usd("flux-3-image", side, 64), `${side}`).toBeCloseTo(BFL_RATES.tiered["flux-3-image"].tiers[tier].usd, 9);
+    expect(usd("flux-3-image-klein", 64, side), `${side}`).toBeCloseTo(BFL_RATES.tiered["flux-3-image-klein"].tiers[tier].usd, 9);
+  }
+  expect(usd("flux-3-image", 1920, 1080)).toBeCloseTo(0.1, 9);
+  expect(String(usd("flux-3-image", 4112, 1024))).toMatch(/up to 4096 pixels on a side/);
+  expect(usd("flux-3-image-klein", 1024, 1024)).toBeLessThan(usd("flux-3-image", 1024, 1024) as number);
+  process.env.BFL_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const before = (await meterRows()).length;
+    const q = await admit({ tool: "image", prompt: "a tree", model: "flux-3-image", width: 1024, height: 1024, quoteOnly: true });
+    expect(q).toMatchObject({ status: 200, body: { tool: "image", model: "flux-3-image", unit: "usd", references: 0 } });
+    expect(Number(q.body.price)).toBeCloseTo(0.048, 9);
+    const klein = await admit({ tool: "image", prompt: "a tree", model: "flux-3-image-klein", width: 2048, height: 1152, quoteOnly: true });
+    expect(Number(klein.body.price)).toBeCloseTo(0.014, 9);
+    expect(Number((await admit({ tool: "image", prompt: "a tree", model: "flux-3-image", width: 4096, height: 2304, quoteOnly: true })).body.price)).toBeCloseTo(0.607, 9);
+    /* No megapixel rule for FLUX 3 (the size is the tier), and nothing past 4096 a side. */
+    for (const [input, words] of [
+      [{ tool: "image", prompt: "a", model: "flux-3-image", width: 4112, height: 1024 }, /up to 4096 pixels on a side/],
+      [{ tool: "edit", prompt: "a", model: "flux-3-image", references: [{ uploadId: "u1", castMemberId: "c" }] }, /use FLUX\.2 for an edit or an identity/],
+      [{ tool: "identity", prompt: "a", model: "flux-3-image-klein", identityId: "idn", castMemberId: "c" }, /no such tool|use FLUX\.2/],
+      [{ tool: "image", prompt: "a", model: "flux-3-image", references: [{ uploadId: "u1", castMemberId: "c" }] }, /takes no references/],
+    ] as [Record<string, unknown>, RegExp][]) {
+      const reply = await admit({ ...input, quoteOnly: true });
+      expect(reply.status, JSON.stringify(input)).toBeGreaterThanOrEqual(400);
+      expect(String(reply.body.error), JSON.stringify(input)).toMatch(words);
+    }
+    expect((await meterRows()).length).toBe(before);
+    /* The whole job: reserved at the tier price, submitted at /v1/flux-3-image, settled at it; the reservation is the quote. */
+    const reply = await admit({ tool: "image", prompt: "a crane at dawn", model: "flux-3-image-klein", width: 1024, height: 1024, ...approved });
+    expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+    const held = (await meterRows()).slice(before);
+    expect(Number(held[0].engine_cost_usd)).toBeCloseTo(0.009, 9);
+    const vendor = fakeBfl();
+    await run(String(reply.body.id), vendor.deps, 4);
+    expect(vendor.calls[0]).toBe("submit:flux-3-image-klein");
+    expect(Number((await gen(String(reply.body.id))).cost_usd)).toBeCloseTo(0.009, 9);
+  });
+  /* The path: the adapter posts to /v1/<model>. */
+  const bfl = await import("../../lib/bfl");
+  delete process.env.ENGINE_MOCK;
+  const before = process.env.BFL_API_KEY;
+  try {
+    process.env.BFL_API_KEY = "test-bfl-key-not-real";
+    const seen: string[] = [];
+    const f = (async (url: unknown) => { seen.push(String(url)); return new Response(JSON.stringify({ id: "j", polling_url: "https://api.eu.bfl.ai/v1/get_result?id=j" }), { status: 200 }); }) as never;
+    for (const model of ["flux-3-image", "flux-3-image-klein"] as const) await bfl.submitImage({ model, prompt: "x", width: 1024, height: 1024, references: [] }, { fetch: f });
+    expect(seen).toEqual(["https://api.eu.bfl.ai/v1/flux-3-image", "https://api.eu.bfl.ai/v1/flux-3-image-klein"]);
+  } finally { process.env.ENGINE_MOCK = "1"; if (before === undefined) delete process.env.BFL_API_KEY; else process.env.BFL_API_KEY = before; }
+});
+
+/** An identity of this workspace: a row with its photos (uploads of known size), as the legacy identity trainer keeps them. */
+async function identityWith(photoCount: number, over: { noPhotos?: boolean } = {}) {
+  const { db, ready } = await import("../../lib/db");
+  await ready();
+  const photos: { id: string; bytes: Buffer }[] = [];
+  for (let i = 0; i < photoCount; i++) photos.push(await image(`photo_${i}`));
+  const id = uid("idn");
+  await db().execute({ sql: "INSERT INTO identities (id, name, photos, status, provider, created_by, created_at, updated_at) VALUES (?,?,?,'draft','fal','u_test',?,?)", args: [id, `Sample ${id}`, JSON.stringify(over.noPhotos ? [] : photos.map((p) => p.id)), Date.now(), Date.now()] });
+  return { id, photos };
+}
+
+test("FLUX.2 identity: an identity's own photos are the references, every one through the consent gate, behind a switch of its own; the fal LoRA path is not touched", async () => {
+  const { db } = await import("../../lib/db");
+  const { bflTools } = await import("../../lib/bflImage");
+  const { rowToGeneration } = await import("../../lib/jobs");
+  process.env.BFL_ENABLED = "1";
+  process.env.REKOGNITION_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const projectId = uid("prod"), cast = uid("cast");
+    await project(projectId);
+    const consentId = await consent(projectId, cast);
+    const idn = await identityWith(3);
+    const input = { tool: "identity", prompt: "her on a train platform at dusk", identityId: idn.id, castMemberId: cast, projectId, use: "production", ...approved };
+    /* Its own switch: off, the tool is not here and not listed, whatever BFL_ENABLED says. */
+    delete process.env.BFL_IDENTITY_ENABLED;
+    expect(await admit(input)).toMatchObject({ status: 404, body: { error: "There is no such tool here." } });
+    expect((await bflTools()).map((t) => t.id)).not.toContain("flux2_identity");
+    for (const value of ["0", "true", "yes", ""]) { process.env.BFL_IDENTITY_ENABLED = value; expect((await admit(input)).status, value).toBe(404); }
+    process.env.BFL_IDENTITY_ENABLED = "1";
+    expect((await bflTools()).map((t) => t.id)).toContain("flux2_identity");
+    delete process.env.REKOGNITION_ENABLED;
+    expect((await bflTools()).map((t) => t.id)).not.toContain("flux2_identity");
+    process.env.REKOGNITION_ENABLED = "1";
+    const before = (await meterRows()).length;
+    const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    /* The real gate refuses today (no consent record holds a face reference): nothing is created or reserved. */
+    expect(await admit(input)).toMatchObject({ status: 409, body: { code: "no-reference" } });
+    expect((await meterRows()).length).toBe(before);
+    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
+    /* Words first: no identity, no cast member, no production or use, a hand-supplied reference list, an unknown or empty identity. */
+    let faceCalls = 0;
+    const seen: string[] = [];
+    const seams = { consent: async (c: string, face: Buffer) => { faceCalls++; seen.push(c); return passing(consentId)(c, face); } };
+    for (const bad of [{ identityId: undefined }, { identityId: "../x" }, { castMemberId: undefined }, { use: undefined }, { projectId: undefined }, { references: [{ uploadId: idn.photos[0].id, castMemberId: cast }] }]) {
+      expect((await admit({ ...input, ...bad }, seams)).status, JSON.stringify(bad)).toBe(400);
+    }
+    expect(await admit({ ...input, identityId: "idn_not_here" }, seams)).toMatchObject({ status: 404 });
+    const empty = await identityWith(0, { noPhotos: true });
+    expect(await admit({ ...input, identityId: empty.id }, seams)).toMatchObject({ status: 404 });
+    expect(faceCalls).toBe(0);
+    /* The quote is an edit's: the identity's photos are the references. */
+    const quote = await admit({ ...input, quoteOnly: true });
+    expect(quote).toMatchObject({ status: 200, body: { tool: "identity", references: 3, needs: ["castMemberId", "projectId", "use"] } });
+    expect(Number(quote.body.price)).toBeCloseTo(0.03 + 0.015 + 3 * 2 * 0.015, 6);
+    expect((await meterRows()).length).toBe(before);
+    /* Passing the gate: EVERY photo was checked, for the cast member named, then the photos go up as data in the identity's order. */
+    const reply = await admit(input, seams);
+    expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+    expect(faceCalls).toBe(3);
+    expect(seen).toEqual([cast, cast, cast]);
+    const genId = String(reply.body.id);
+    const vendor = fakeBfl();
+    await run(genId, vendor.deps, 4);
+    expect(vendor.sent[0].references.map((r) => r.toString())).toEqual(idn.photos.map((p) => p.bytes.toString()));
+    const take = await gen(genId);
+    expect(take.status).toBe("succeeded");
+    expect(take.bfl).toMatchObject({ tool: "edit", identityId: idn.id });
+    expect(take.bfl.references.map((r) => [r.uploadId, r.castMemberId, r.consentId])).toEqual(idn.photos.map((p) => [p.id, cast, consentId]));
+    /* A person reads none of it: not the identity, the photos, the cast or the consent. */
+    const raw = (await db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [genId] })).rows[0];
+    const read = rowToGeneration({ ...raw, project_name: null }) as unknown as { params: Record<string, unknown> };
+    expect(read.params.bfl).toEqual({ status: "done", tool: "edit", model: "flux-2-pro", width: 1024, height: 1024, outputMegapixels: 2 });
+    expect(JSON.stringify(read.params.bfl)).not.toMatch(/idn_|identityId|up_|photo_|cast_|consent/i);
+    /* At most eight photos are used, cover first. */
+    const big = await identityWith(11);
+    faceCalls = 0;
+    const eight = await admit({ ...input, identityId: big.id }, seams);
+    expect(eight.status, JSON.stringify(eight.body)).toBe(200);
+    expect(faceCalls).toBe(8);
+    const v2 = fakeBfl();
+    await run(String(eight.body.id), v2.deps, 4);
+    expect(v2.sent[0].references.map((r) => r.toString())).toEqual(big.photos.slice(0, 8).map((p) => p.bytes.toString()));
+    /* A photo the gate refuses stops everything: no row, no reservation. */
+    const { ConsentMatchError } = await import("../../lib/consentMatch");
+    const rowsNow = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    const meterNow = (await meterRows()).length;
+    let n = 0;
+    const second = { consent: async (c: string, face: Buffer) => { if (++n === 2) throw new ConsentMatchError("no-match", "This face doesn't look like the person who gave consent. A person needs to look at it.", 409); return passing(consentId)(c, face); } };
+    expect(await admit(input, second)).toMatchObject({ status: 409, body: { code: "no-match" } });
+    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(rowsNow);
+    expect((await meterRows()).length).toBe(meterNow);
+  });
+  /* The fal LoRA identity path is untouched: this PR adds no reference to it. */
+  const flow = readFileSync("lib/bflImage.ts", "utf8");
+  expect(flow).not.toMatch(/from "\.\/identities"|from "\.\/fal"|flux-lora|loraUrl/);
+  expect(flow).toContain('"SELECT photos FROM identities WHERE id=? LIMIT 1"');
+});
+
+test("over MCP: flux3_image (Klein is the draft, flux-3-image always asks) and flux2_identity (listed only on its own switch, with the face gate)", async () => {
+  const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  const spend = async (value: string | null) => { if (value === null) await db().execute("DELETE FROM settings WHERE key='spendWithoutAsking'"); else await setSetting("spendWithoutAsking", value, "admin"); invalidateSettings(); };
+  const calls: Record<string, unknown>[] = [];
+  const call = async (_p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; calls.push(body); if (_p === "/api/prepared-jobs") return { job: { id: "prep_f3" } }; return body.quoteOnly === true ? { estimatedCredits: 1, price: 0.01, unit: "usd" } : { id: "gen_f3" }; };
+  process.env.BFL_ENABLED = "1";
+  await asTenant(house(), async () => {
+    await ready();
+    const names = async () => (await directEngineMcpTools()).map((t) => t.name);
+    delete process.env.REKOGNITION_ENABLED; delete process.env.BFL_IDENTITY_ENABLED;
+    expect(await names()).toEqual(expect.arrayContaining(["flux2_image", "flux3_image"]));
+    expect(await names()).not.toContain("flux2_identity");
+    process.env.REKOGNITION_ENABLED = "1";
+    expect(await names()).not.toContain("flux2_identity");
+    process.env.BFL_IDENTITY_ENABLED = "1";
+    expect(await names()).toContain("flux2_identity");
+    try {
+      await spend("auto");
+      calls.length = 0;
+      expect(await runDirectEngineTool("flux3_image", { prompt: "a tree", model: "flux-3-image" }, call)).toMatch(/not started[\s\S]*prepared job: prep_f3/);
+      expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
+      calls.length = 0;
+      expect(await runDirectEngineTool("flux3_image", { prompt: "a tree", model: "flux-3-image-klein" }, call)).toMatch(/^Image started/);
+      expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null, c.tool, c.model])).toEqual([[true, null, "image", "flux-3-image-klein"], [false, 1, "image", "flux-3-image-klein"]]);
+      calls.length = 0;
+      expect(await runDirectEngineTool("flux3_image", { prompt: "a tree" }, call)).toMatch(/not started/);
+      expect(calls[0]).toMatchObject({ model: "flux-3-image" });
+      await spend("ask");
+      calls.length = 0;
+      const text = await runDirectEngineTool("flux2_identity", { prompt: "her at dusk", identity_id: "idn_1", cast_member_id: "c1", project_id: "p", use: "production" }, call);
+      expect(text).toMatch(/prepared: flux-2-pro still of identity idn_1 for production p[\s\S]*prepared job: prep_f3/);
+      expect(calls[0]).toMatchObject({ tool: "identity", identityId: "idn_1", castMemberId: "c1", projectId: "p", use: "production", quoteOnly: true });
+      expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
     } finally { await spend(null); }
   });
 });

@@ -150,6 +150,33 @@ const FLUX2_IMAGE: DirectTool = {
   request: (a) => ({ path: "/api/bfl", body: { tool: "image", prompt: str(a.prompt), model: str(a.model), width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id) } }),
   describe: (out, quote) => `Image started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
+const FLUX3_IMAGE: DirectTool = {
+  def: {
+    name: "flux3_image",
+    description: "Make a still from words (FLUX 3 Image, Black Forest Labs), priced per image by size. Priced first; a person approves it in Particl (or the workspace lets small jobs run). Returns an image take id; collect it with get_render.",
+    inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to make." }, ...SIZE, seed: { type: "number" }, model: { type: "string", description: "flux-3-image (default) or flux-3-image-klein (the quick, cheap one)." }, ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." } }, required: ["prompt"] },
+  },
+  present: bflPresent("flux3_image"),
+  /* The Klein model is the draft; flux-3-image is full quality and always asks. */
+  draft: (b) => b.model === "flux-3-image-klein",
+  prepared: (b) => `prepared: ${String(b.model ?? "flux-3-image")} still, ${String(b.width ?? 1024)} by ${String(b.height ?? 1024)}`,
+  request: (a) => ({ path: "/api/bfl", body: { tool: "image", prompt: str(a.prompt), model: str(a.model) ?? "flux-3-image", width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id) } }),
+  describe: (out, quote) => `Image started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
+};
+const FLUX2_IDENTITY: DirectTool = {
+  def: {
+    name: "flux2_identity",
+    description:
+      "Make a still of a saved identity (FLUX.2, Black Forest Labs): the identity's own photos (its cover first, up to eight) are the references, so the person stays the same. Priced first. Every photo passes the consent gate first: it needs the cast member " +
+      "the identity is, the production and what it is for. Returns an image take id; collect it with get_render.",
+    inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to make." }, identity_id: { type: "string", description: "An identity of this workspace." }, cast_member_id: { type: "string", description: "Who the identity is." }, ...SIZE, use: { type: "string", description: "production, ads or social." }, seed: { type: "number" }, ...BFL_COMMON }, required: ["prompt", "identity_id", "cast_member_id", "project_id", "use"] },
+  },
+  present: bflPresent("flux2_identity"),
+  draft: (b) => (b.model ?? "flux-2-pro") === "flux-2-pro",
+  prepared: (b) => `prepared: ${String(b.model ?? "flux-2-pro")} still of identity ${String(b.identityId)} for production ${String(b.projectId)}`,
+  request: (a) => ({ path: "/api/bfl", body: { tool: "identity", prompt: str(a.prompt), identityId: str(a.identity_id), castMemberId: str(a.cast_member_id), model: str(a.model), width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id), use: str(a.use) } }),
+  describe: (out, quote) => `Image started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
+};
 const FLUX2_EDIT: DirectTool = {
   def: {
     name: "flux2_edit",
@@ -169,7 +196,7 @@ const FLUX2_EDIT: DirectTool = {
   describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT];
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX3_IMAGE, FLUX2_IDENTITY, FLUX2_EDIT];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

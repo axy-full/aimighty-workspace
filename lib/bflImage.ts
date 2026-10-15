@@ -18,8 +18,8 @@ import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./adm
 import { jobLineNow } from "./shotCap";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
-import { BFL_RATES, type BflModel } from "./vendorRates";
-import { BFL_RESULT_LIFETIME_MS, BFL_REFERENCE_LIMIT_BYTES, BFL_SWITCH, BflError, bflConfigured, fetchResult, isBflModel, pollImage, submitImage } from "./bfl";
+import { BFL_RATES, type BflModel, type Flux2Model, type Flux3Model } from "./vendorRates";
+import { BFL_IDENTITY_SWITCH, BFL_RESULT_LIFETIME_MS, BFL_REFERENCE_LIMIT_BYTES, BFL_SWITCH, BflError, bflConfigured, fetchResult, isBflModel, isFlux3Model, pollImage, submitImage } from "./bfl";
 import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type ConsentMatch, type ConsentScope } from "./consentMatch";
 import { getConsent } from "./security/consent";
 import { consentLive } from "./security/consent-words";
@@ -65,6 +65,8 @@ export type BflState = "queued" | "submitted" | "done" | "failed" | "uncertain";
 export type BflParams = {
   status: BflState; tool: "image" | "edit"; model: BflModel; width: number; height: number; seed: number | null;
   references: { uploadId: string; castMemberId: string; consentId: string; faceSha256: string; megapixels: number }[];
+  /** The identity whose photos were the references (FLUX.2 identity), or null. Private to the row. */
+  identityId?: string | null;
   outputMegapixels: number; reservedUsd: number; estimateCredits: number; use: string | null;
   funded: number; claimedAt: number | null; bflId: string | null; pollingUrl: string | null; statedUsd: number | null;
   submittedAt: number | null; sendingAt: number | null; readyAt: number | null; lastPolledAt: number | null; pollUntil: number | null; settled: number;
@@ -112,7 +114,7 @@ async function patch(genId: string, fields: Partial<BflParams>, guard?: { sql: s
 export const megapixels = (width: number, height: number): number => Math.max(1, Math.ceil((width * height) / 1_000_000 - 1e-9));
 
 /** The price in dollars, or a refusal in words: only what the plan records is priced. */
-export function bflQuote(model: BflModel, outputMp: number, referenceMps: number[]): { usd: number } | { error: string } {
+export function bflQuote(model: Flux2Model, outputMp: number, referenceMps: number[]): { usd: number } | { error: string } {
   const r = BFL_RATES.models[model];
   if (outputMp > r.maxMp) return { error: `${model} makes up to ${r.maxMp} megapixels.` };
   if (referenceMps.length > r.maxRefs) return { error: `${model} takes up to ${r.maxRefs} references.` };
@@ -121,6 +123,17 @@ export function bflQuote(model: BflModel, outputMp: number, referenceMps: number
   if (referenceMps.length) usd += referenceMps.reduce((n, mp) => n + mp, 0) * r.refMp;
   /* Rounded UP to the micro-dollar, so a quote is never under. */
   return { usd: Math.ceil(usd * 1e6 - 1e-6) / 1e6 };
+}
+
+/**
+ * FLUX 3 Image and Klein: one price per image by size tier. A size is read by its longest side and rounded UP to the next tier (which size a tier covers is TO CONFIRM, so a
+ * quote is never under); a side past the largest tier is refused. Dollars, to the micro-dollar rounded up.
+ */
+export function flux3Quote(model: Flux3Model, width: number, height: number): { usd: number } | { error: string } {
+  const longest = Math.max(width, height);
+  const tier = BFL_RATES.tiered[model].tiers.find((t) => longest <= t.upTo);
+  if (!tier) return { error: `${model} makes up to ${BFL_RATES.tiered[model].tiers.at(-1)!.upTo} pixels on a side.` };
+  return { usd: Math.ceil(tier.usd * 1e6 - 1e-6) / 1e6 };
 }
 
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -135,32 +148,56 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   if (!(await engineEnabled(BFL_SWITCH))) return admissionReply({ error: "There is no such tool here." }, { status: 404 });
   const body = structuredClone(input) as Record<string, unknown>;
   const tool = body.tool;
-  if (tool !== "image" && tool !== "edit") return admissionReply({ error: "Pick image or edit." }, { status: 400 });
+  if (tool !== "image" && tool !== "edit" && tool !== "identity") return admissionReply({ error: "Pick image, edit or identity." }, { status: 400 });
+  /* FLUX.2 identity (the replacement for the fal LoRA identity path) has a kill switch of its own, besides the engine's: off, the tool is simply not here. */
+  if (tool === "identity" && !(await engineEnabled(BFL_IDENTITY_SWITCH))) return admissionReply({ error: "There is no such tool here." }, { status: 404 });
+  /* An identity is an edit whose references are the identity's own photos: everything below is the edit's flow, the consent gate included. */
+  const flow: "image" | "edit" = tool === "identity" ? "edit" : tool;
   const quoteOnly = body.quoteOnly === true;
   await ready();
   if (!bflConfigured()) return admissionReply({ error: "This is not set up: BFL_API_KEY is needed." }, { status: 400 });
   const allowance = await allowanceCheck("bfl");
   if (!allowance.ok && allowance.status !== 402) return admissionReply({ error: allowance.error }, { status: allowance.status });
 
-  if (body.model != null && !isBflModel(body.model)) return admissionReply({ error: "Pick flux-2-pro, flux-2-flex or flux-2-max." }, { status: 400 });
+  if (body.model != null && !isBflModel(body.model)) return admissionReply({ error: "Pick flux-2-pro, flux-2-flex, flux-2-max, flux-3-image or flux-3-image-klein." }, { status: 400 });
   const model: BflModel = isBflModel(body.model) ? body.model : BFL_RATES.defaultModel;
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt || prompt.length > 5000) return admissionReply({ error: "Write what to make, in up to 5,000 characters." }, { status: 400 });
   const width = body.width == null ? 1024 : Number(body.width), height = body.height == null ? 1024 : Number(body.height);
   for (const side of [width, height]) if (!Number.isInteger(side) || side < MIN_SIDE || side % MULTIPLE !== 0) return admissionReply({ error: `Width and height are whole numbers from ${MIN_SIDE}, in steps of ${MULTIPLE}.` }, { status: 400 });
   const outputMp = megapixels(width, height);
-  if ((width * height) / 1_000_000 > BFL_RATES.models[model].maxMp + 1e-9) return admissionReply({ error: `${model} makes up to ${BFL_RATES.models[model].maxMp} megapixels.` }, { status: 400 });
+  /* FLUX 3 makes stills from words, priced by size tier; it takes no references here (FLUX.2 does the edits and identities). */
+  const flux3 = isFlux3Model(model);
+  if (flux3 && flow !== "image") return admissionReply({ error: "FLUX 3 Image makes stills from words: use FLUX.2 for an edit or an identity." }, { status: 400 });
+  if (!flux3 && (width * height) / 1_000_000 > BFL_RATES.models[model as Flux2Model].maxMp + 1e-9) return admissionReply({ error: `${model} makes up to ${BFL_RATES.models[model as Flux2Model].maxMp} megapixels.` }, { status: 400 });
   let seed: number | null = null;
   if (body.seed != null) { if (!Number.isInteger(body.seed) || (body.seed as number) < 0 || (body.seed as number) > 2 ** 31) return admissionReply({ error: "A seed is a whole number." }, { status: 400 }); seed = body.seed as number; }
 
   /* The references of an edit: each of this workspace, openable by this person, an image of a measured size, naming the cast member it shows. */
   type Ref = { uploadId: string; castMemberId: string; mp: number; ext: string; stored: string };
   const refs: Ref[] = [];
-  if (tool === "image") { if (body.references != null) return admissionReply({ error: "A still from words takes no references: use edit." }, { status: 400 }); }
+  let identityUsed: string | null = null;
+  if (flow === "image") { if (body.references != null || body.identityId != null) return admissionReply({ error: "A still from words takes no references: use edit." }, { status: 400 }); }
   else {
-    const list = Array.isArray(body.references) ? body.references : [];
+    let list: unknown[] = Array.isArray(body.references) ? body.references : [];
+    let identityId: string | null = null;
+    if (tool === "identity") {
+      /* The references are the identity's own photos (its cover first, at most eight), each of which must show the cast member named: every one passes the consent gate below. */
+      if (body.references != null) return admissionReply({ error: "An identity brings its own photos: name the identity, not the references." }, { status: 400 });
+      identityId = typeof body.identityId === "string" && ENTITY_ID.test(body.identityId) ? body.identityId : null;
+      const castMemberId = typeof body.castMemberId === "string" && ENTITY_ID.test(body.castMemberId) ? body.castMemberId : null;
+      if (!identityId) return admissionReply({ error: "Name the identity to render.", code: "bad-input" }, { status: 400 });
+      if (!castMemberId) return admissionReply({ error: "Say which cast member this identity is: every face needs the person's consent on record.", code: "bad-input" }, { status: 400 });
+      const found = (await db().execute({ sql: "SELECT photos FROM identities WHERE id=? LIMIT 1", args: [identityId] })).rows[0];
+      let photos: unknown = [];
+      try { photos = found ? JSON.parse(String(found.photos)) : []; } catch { /* unreadable */ }
+      const ids = Array.isArray(photos) ? photos.filter((p): p is string => typeof p === "string" && UPLOAD_ID.test(p)).slice(0, BFL_RATES.models[model as Flux2Model].maxRefs) : [];
+      if (!found || !ids.length) return admissionReply({ error: "That identity is not in this workspace, or has no photos." }, { status: 404 });
+      list = ids.map((uploadId) => ({ uploadId, castMemberId }));
+      identityUsed = identityId;
+    }
     if (!list.length) return admissionReply({ error: "Add one to eight reference images." }, { status: 400 });
-    if (list.length > BFL_RATES.models[model].maxRefs) return admissionReply({ error: `${model} takes up to ${BFL_RATES.models[model].maxRefs} references.` }, { status: 400 });
+    if (list.length > BFL_RATES.models[model as Flux2Model].maxRefs) return admissionReply({ error: `${model} takes up to ${BFL_RATES.models[model as Flux2Model].maxRefs} references.` }, { status: 400 });
     const viewer = currentViewer();
     for (const entry of list) {
       const uploadId = entry && typeof entry === "object" ? (entry as { uploadId?: unknown }).uploadId : undefined;
@@ -176,7 +213,7 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
       refs.push({ uploadId, castMemberId: cast, mp: megapixels(w, h), ext: String(row.ext), stored: String(row.stored_url) });
     }
   }
-  const priced = bflQuote(model, outputMp, refs.map((r) => r.mp));
+  const priced = flux3 ? flux3Quote(model as Flux3Model, width, height) : bflQuote(model as Flux2Model, outputMp, refs.map((r) => r.mp));
   if ("error" in priced) return admissionReply({ error: priced.error }, { status: 400 });
   const usd = priced.usd;
 
@@ -194,7 +231,7 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   const inCredits = creditsApply(requireTenant());
   const over = jobLineNow({ credits: estimatedCredits, usd, key: "bfl", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
-  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, width, height, megapixels: outputMp, references: refs.length, ...(tool === "edit" ? { needs: ["castMemberId on each reference", "projectId", "use"] } : {}) });
+  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, width, height, megapixels: outputMp, references: refs.length, ...(tool === "edit" ? { needs: ["castMemberId on each reference", "projectId", "use"] } : tool === "identity" ? { needs: ["castMemberId", "projectId", "use"] } : {}) });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });
   const wall = await allowanceCheck("bfl", usd, model);
@@ -205,13 +242,13 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   if (!lim.allow) return admissionReply({ error: lim.error }, { status: lim.why === "rate" ? 429 : 409 });
   const quota = await checkQuota(8 * 1024 * 1024);
   if (!quota.allow) return admissionReply({ error: quota.error }, { status: 507 });
-  const stopped = admissionCheckpoint(options, body, got, "image", usd, model, { task: BFL_TASK, tool, model, width, height, seed, references: refs.map((r) => r.uploadId), projectId, shotId }, { engine: "bfl" });
+  const stopped = admissionCheckpoint(options, body, got, "image", usd, model, { task: BFL_TASK, tool, model, width, height, seed, references: refs.map((r) => r.uploadId), identityId: identityUsed, projectId, shotId }, { engine: "bfl" });
   if (stopped) return stopped;
 
   /* ── The consent gate (an edit): every reference, BEFORE a row is written or a cent reserved. ── */
   const use = typeof body.use === "string" && (USES as readonly string[]).includes(body.use) ? (body.use as (typeof USES)[number]) : null;
   const matched: BflParams["references"] = [];
-  if (tool === "edit") {
+  if (flow === "edit") {
     if (!projectId || !use) return admissionReply({ error: "Name the production and what it is for (production, ads or social): an edit with a person's image needs their consent on record.", code: "bad-input" }, { status: 400 });
     try {
       if (!(await faceCheckAvailable())) throw new ConsentMatchError("off", "The face check isn't on for this workspace, so an image of a real person can't be used here yet.", 403);
@@ -228,12 +265,12 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
 
   const genId = newId("gen"), ts = now();
   const bfl: BflParams = {
-    status: "queued", tool, model, width, height, seed, references: matched, outputMegapixels: outputMp, reservedUsd: usd, estimateCredits: estimatedCredits, use,
+    status: "queued", tool: flow, model, width, height, seed, references: matched, identityId: identityUsed, outputMegapixels: outputMp, reservedUsd: usd, estimateCredits: estimatedCredits, use,
     funded: 0, claimedAt: null, bflId: null, pollingUrl: null, statedUsd: null, submittedAt: null, sendingAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0, reconcile: 0,
   };
   const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
   const g = gcd(width, height);
-  const params = { task: BFL_TASK, job: tool === "edit" ? "fix" : "keyframe", ratio: `${width / g}:${height / g}`, size: `${width}x${height}`, bfl, estUsd: usd, estCredits: 0 };
+  const params = { task: BFL_TASK, job: flow === "edit" ? "fix" : "keyframe", ratio: `${width / g}:${height / g}`, size: `${width}x${height}`, bfl, estUsd: usd, estCredits: 0 };
   const binding = await claimBinding(options.requestClaim, genId);
   await db().batch([
     {
@@ -433,15 +470,21 @@ export async function recoverBflJobs(options: { limit?: number; deadlineAt?: num
 /* ── The registry tools ────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 const COMMON = { provider: "bfl", kind: "engine" as const, route: "/api/bfl", needs: ["BFL_API_KEY", "BFL_ENABLED"], who: "prepare: anyone; approve: a person" as const, models: Object.keys(BFL_RATES.models) as BflModel[] };
-/** The two tools, declared beside their handler (docs/particl-sow-2026-10-04.md § 4.3). One route, one price path, one approval for every consumer. */
+/** The tools, declared beside their handler (docs/particl-sow-2026-10-04.md § 4.3). One route, one price path, one approval for every consumer. */
 export const BFL_TOOLS = [
   { ...COMMON, id: "flux2_image", tool: "image" as const, inputs: { prompt: "what to make", model: "flux-2-pro (default), flux-2-flex or flux-2-max", width: "a multiple of 16 (default 1024)", height: "a multiple of 16 (default 1024)", seed: "optional", maxCredits: "the approved price" }, output: "an image take" },
+  { ...COMMON, id: "flux3_image", tool: "image" as const, models: Object.keys(BFL_RATES.tiered) as BflModel[], inputs: { prompt: "what to make", model: "flux-3-image (default) or flux-3-image-klein", width: "a multiple of 16, up to 4096 (default 1024)", height: "a multiple of 16, up to 4096 (default 1024)", seed: "optional", maxCredits: "the approved price" }, output: "an image take" },
+  { ...COMMON, id: "flux2_identity", tool: "identity" as const, needs: ["BFL_API_KEY", "BFL_ENABLED", "BFL_IDENTITY_ENABLED"], inputs: { prompt: "what to make", identityId: "an identity of this workspace (its photos are the references, up to eight)", castMemberId: "who the identity is", projectId: "the production", use: "production, ads or social", model: "flux-2-pro (default), flux-2-flex or flux-2-max", maxCredits: "the approved price" }, output: "an image take, linked to every photo", gate: "a live consent record for the person every photo shows (lib/consentMatch.ts)" },
   { ...COMMON, id: "flux2_edit", tool: "edit" as const, inputs: { prompt: "what to change", references: "one to eight { uploadId, castMemberId } of this workspace", projectId: "the production", use: "production, ads or social", maxCredits: "the approved price" }, output: "an image take, linked to every reference", gate: "a live consent record for the person each reference shows (lib/consentMatch.ts)" },
 ];
 
-/** The tools present for a workspace: none unless the engine is on for it. An edit is offered only where its face gate can run (the house workspace today). */
+/**
+ * The tools present for a workspace: none unless the engine is on for it. An edit is offered only where its face gate can run (the house workspace today); the identity
+ * tool only where its own switch (BFL_IDENTITY_ENABLED) is on as well.
+ */
 export async function bflTools(workspace: { id: string } | null | undefined = currentTenant()?.workspace): Promise<typeof BFL_TOOLS> {
   if (!(await engineEnabled(BFL_SWITCH, workspace))) return [];
   const faces = await faceCheckAvailable(workspace);
-  return BFL_TOOLS.filter((t) => t.tool === "image" || faces);
+  const identity = faces && (await engineEnabled(BFL_IDENTITY_SWITCH, workspace));
+  return BFL_TOOLS.filter((t) => (t.tool === "image" ? true : t.tool === "identity" ? identity : faces));
 }

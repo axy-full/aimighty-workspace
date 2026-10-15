@@ -1,6 +1,6 @@
 import { engineMock } from "./mock";
 import { recoveryFetch } from "./recovery";
-import { BFL_RATES, type BflModel } from "./vendorRates";
+import { BFL_RATES, type BflModel, type Flux2Model, type Flux3Model } from "./vendorRates";
 
 /**
  * Black Forest Labs FLUX.2, DIRECT (the owner: "Black Forest Labs (FLUX 3 and FLUX.2 identity, replacing fal flux-lora)"): stills from words, and edits from up
@@ -25,7 +25,11 @@ export const BFL_OUTPUT_LIMIT_BYTES = 64 * 1024 * 1024;
 export const BFL_REFERENCE_LIMIT_BYTES = 20 * 1024 * 1024;
 
 export const bflConfigured = (): boolean => Boolean(process.env.BFL_API_KEY) || engineMock();
-export const isBflModel = (v: unknown): v is BflModel => typeof v === "string" && Object.hasOwn(BFL_RATES.models, v);
+export const isFlux2Model = (v: unknown): v is Flux2Model => typeof v === "string" && Object.hasOwn(BFL_RATES.models, v);
+export const isFlux3Model = (v: unknown): v is Flux3Model => typeof v === "string" && Object.hasOwn(BFL_RATES.tiered, v);
+export const isBflModel = (v: unknown): v is BflModel => isFlux2Model(v) || isFlux3Model(v);
+/** The switch of the identity tool (FLUX.2 identity, the replacement for the fal LoRA path): its own kill switch, besides BFL_ENABLED. */
+export const BFL_IDENTITY_SWITCH = "BFL_IDENTITY_ENABLED";
 
 /** A refusal or failure from BFL (or from reaching it). `rejectedBeforeGeneration`: it answered a clear refusal (4xx other than 408) before taking the job. */
 export class BflError extends Error {
