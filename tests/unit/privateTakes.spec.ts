@@ -299,7 +299,7 @@ test("a thumbnail, a take's provenance and the strip's take: a hidden take is th
   expect(await tenant.runInTenant(other, async () => { const res = await provenance.GET(new Request("https://particl.test/x"), { params: Promise.resolve({ id: `t_priv1_${run}` }) }); return [res.status, await res.json()] as const; }, { user: ADMIN.user })).toEqual(unknownProv);
 });
 
-test("Atomik: a project the caller may not read is no project for the model, before anything is read; an owner and an admin read it; another workspace reads nothing", async () => {
+test("Atomik: a project the caller may not read is no project for the model, before anything is read; its owner reads it; an admin, an admin token and the workspace owner get nothing, as for an unknown id; another workspace reads nothing", async () => {
   const ws = workspace(`pt-g-${run}`);
   const { tenant, projects } = await fixture(ws);
   const atomik = await import("../../lib/atomik");
