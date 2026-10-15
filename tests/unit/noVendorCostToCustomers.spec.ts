@@ -117,6 +117,15 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
           references: [{ uploadId: "up_ref", castMemberId: "cast_margin", consentId: "consent_margin", faceSha256: "b".repeat(64), megapixels: 1 }],
           funded: 1, claimedAt: at, bflId: "vendor-job-flux-1", pollingUrl: "https://api.eu.bfl.ai/v1/get_result?id=vendor-job-flux-1", statedUsd: cost.still, submittedAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1 } }),
         "u_member", at + 7, at + 7, "bfl", 0, null, null, null, "/api/media/g_flux", null] },
+      /* A Runway take (Act-Two, direct): its params carry the workflow's record, the reserved dollars, what Runway reported, its task id, the inputs, the cast and consent ids and the face
+         hashes. Nobody reads any of it (lib/directEnginePublic.ts keeps the take's own words). */
+      { sql: take, args: ["g_runway", "p_margin", null, "video", "act_two", "Performance · act_two",
+        JSON.stringify({ task: "runway_video", job: "fix", estUsd: cost.dub, estCredits: 0, runway: {
+          status: "done", tool: "performance", model: "act_two", seconds: 5, reservedUsd: cost.dub, estimateCredits: 7, use: "production",
+          inputs: { clip: { kind: "upload", id: "up_perf" }, character: { id: "up_char", media: "image" } }, prompt: null, ratio: null, seed: null, bodyControl: false, expressionIntensity: 3,
+          consents: [{ role: "performer", castMemberId: "cast_margin", consentId: "consent_margin", faceSha256: "c".repeat(64) }, { role: "character", castMemberId: "cast_margin", consentId: "consent_margin", faceSha256: "d".repeat(64) }],
+          funded: 1, claimedAt: at, sendingAt: at, taskId: "vendor-task-runway-1", submittedAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1, cleanupDue: 1, cleanupTries: 1, vendorDeleted: 0, statedUsd: cost.dub, reconcile: 1 } }),
+        "u_member", at + 8, at + 8, "runway", 0, null, null, null, "/api/media/g_runway", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
@@ -190,6 +199,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a lip-sync take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_lipsync?sync=0", params: { id: "g_lipsync" } },
   { name: "GET /api/jobs/[id] (a Sarvam speech take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_sarvam?sync=0", params: { id: "g_sarvam" } },
   { name: "GET /api/jobs/[id] (a FLUX.2 take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_flux?sync=0", params: { id: "g_flux" } },
+  { name: "GET /api/jobs/[id] (a Runway take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_runway?sync=0", params: { id: "g_runway" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },

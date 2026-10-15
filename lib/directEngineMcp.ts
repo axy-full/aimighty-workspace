@@ -2,13 +2,14 @@ import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
 import { bflTools } from "./bflImage";
+import { runwayTools } from "./runwayTools";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "./approvalRule";
 import { creditUsd } from "./creditTerms";
 
 /**
- * The direct engines' tools (sync.so, and in the stack above it Sarvam and BFL) as an outside agent over MCP sees them (rule 11: the button, Make, a board
+ * The direct engines' tools (sync.so, and in the stack above it Sarvam, BFL and Runway) as an outside agent over MCP sees them (rule 11: the button, Make, a board
  * card, Atomik, a saved skill and an outside agent call the same tool, at the same price, through the same approval).
  *
  * - **Behind the same engine gate as the route.** A tool is listed, and callable, only where its own `*Tools()` says it is present for this workspace
@@ -150,7 +151,90 @@ const FLUX2_EDIT: DirectTool = {
   describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT];
+const bool = (v: unknown): boolean | undefined => (typeof v === "boolean" ? v : undefined);
+const runwayPresent = (id: string) => async () => (await runwayTools()).some((t) => t.id === id);
+const RUNWAY_COMMON = {
+  ratio: { type: "string", description: "Width:height such as 1280:720. Optional." }, seed: { type: "number" }, ...SARVAM_PROJECT,
+  request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." },
+};
+const runwayPrice = (out: Record<string, unknown>, quote: { estimatedCredits: number; price: number; unit: string }, what: string) =>
+  `${what} started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`;
+
+const RUNWAY_PERFORMANCE: DirectTool = {
+  def: {
+    name: "runway_performance",
+    description:
+      "Drive a character with a performance video (Runway Act-Two). Priced first; a person approves it in Particl (or the workspace lets small jobs run). Both faces pass the consent gate first: the performer's and the character's, " +
+      "each needs the cast member's live consent, a still of the face, the production and what it is for. Returns a video take id; collect it with get_render.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        performance_clip_upload_id: { type: "string", description: "A 3 to 30 second video of this workspace (or performance_clip_take_id)." }, performance_clip_take_id: { type: "string" },
+        character_upload_id: { type: "string", description: "The character: an image or a video of this workspace." },
+        performer_cast_member_id: { type: "string", description: "Who performs." }, performer_face_upload_id: { type: "string", description: "A still of the performer's face." },
+        character_cast_member_id: { type: "string", description: "Who the character shows." }, character_face_upload_id: { type: "string", description: "A still of the character's face (an image character is its own)." },
+        body_control: { type: "boolean" }, expression_intensity: { type: "number", description: "1 to 5." },
+        use: { type: "string", description: "production, ads or social." }, ...RUNWAY_COMMON,
+      },
+      required: ["character_upload_id", "performer_cast_member_id", "performer_face_upload_id", "character_cast_member_id", "project_id", "use"],
+    },
+  },
+  present: runwayPresent("runway_performance"),
+  request: (a) => ({
+    path: "/api/runway",
+    body: {
+      tool: "performance", performanceClipUploadId: str(a.performance_clip_upload_id), performanceClipGenId: str(a.performance_clip_take_id), characterUploadId: str(a.character_upload_id),
+      performerCastMemberId: str(a.performer_cast_member_id), performerFaceUploadId: str(a.performer_face_upload_id), characterCastMemberId: str(a.character_cast_member_id), characterFaceUploadId: str(a.character_face_upload_id),
+      bodyControl: bool(a.body_control), expressionIntensity: num(a.expression_intensity), ratio: str(a.ratio), seed: num(a.seed), projectId: str(a.project_id), use: str(a.use),
+    },
+  }),
+  prepared: (b) => `prepared: Act-Two performance of ${String(b.performanceClipUploadId ?? b.performanceClipGenId ?? "a clip")} onto ${String(b.characterUploadId)} for production ${String(b.projectId)}`,
+  describe: (out, quote) => runwayPrice(out, quote, "Performance"),
+};
+const RUNWAY_EDIT: DirectTool = {
+  def: {
+    name: "runway_edit",
+    description:
+      "Edit a clip of this workspace from words (Runway Aleph 2). Priced first; a person approves it in Particl (or the workspace lets small jobs run). The face passes the consent gate first: it needs the cast member in the clip, " +
+      "a still of their face, the production and what it is for. Returns a video take id; collect it with get_render.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clip_upload_id: { type: "string", description: "A 2 to 30 second video of this workspace (or clip_take_id)." }, clip_take_id: { type: "string" },
+        prompt: { type: "string", description: "What to change." }, cast_member_id: { type: "string", description: "Who is in the clip." }, face_frame_upload_id: { type: "string", description: "A still of their face." },
+        use: { type: "string", description: "production, ads or social." }, ...RUNWAY_COMMON,
+      },
+      required: ["prompt", "cast_member_id", "face_frame_upload_id", "project_id", "use"],
+    },
+  },
+  present: runwayPresent("runway_edit"),
+  request: (a) => ({
+    path: "/api/runway",
+    body: { tool: "edit", clipUploadId: str(a.clip_upload_id), clipGenId: str(a.clip_take_id), prompt: str(a.prompt), castMemberId: str(a.cast_member_id), faceFrameUploadId: str(a.face_frame_upload_id), ratio: str(a.ratio), seed: num(a.seed), projectId: str(a.project_id), use: str(a.use) },
+  }),
+  prepared: (b) => `prepared: Aleph 2 edit of ${String(b.clipUploadId ?? b.clipGenId ?? "a clip")} for production ${String(b.projectId)}`,
+  describe: (out, quote) => runwayPrice(out, quote, "Edit"),
+};
+const RUNWAY_VIDEO: DirectTool = {
+  def: {
+    name: "runway_video",
+    description: "Make a clip from a start still of this workspace and words (Runway Gen-4.5 or Gen-4 Turbo). Priced first; a person approves it in Particl (or the workspace lets small jobs run). Returns a video take id; collect it with get_render.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        start_image_upload_id: { type: "string", description: "A still of this workspace." }, prompt: { type: "string", description: "What happens." }, duration: { type: "number", description: "2 to 10 seconds." },
+        model: { type: "string", description: "gen4.5 (default) or gen4_turbo." }, ...RUNWAY_COMMON,
+      },
+      required: ["start_image_upload_id", "prompt"],
+    },
+  },
+  present: runwayPresent("runway_video"),
+  request: (a) => ({ path: "/api/runway", body: { tool: "video", startImageUploadId: str(a.start_image_upload_id), prompt: str(a.prompt), duration: num(a.duration), model: str(a.model), ratio: str(a.ratio), seed: num(a.seed), projectId: str(a.project_id) } }),
+  prepared: (b) => `prepared: ${String(b.model ?? "gen4.5")} clip of ${String(b.duration ?? 5)} s`,
+  describe: (out, quote) => runwayPrice(out, quote, "Video"),
+};
+
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT, RUNWAY_PERFORMANCE, RUNWAY_EDIT, RUNWAY_VIDEO];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

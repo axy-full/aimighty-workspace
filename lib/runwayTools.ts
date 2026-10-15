@@ -50,9 +50,9 @@ import { consentLive } from "./security/consent-words";
  * come from the clip or the character image (see lib/lipSync.ts).
  *
  * MONEY. Quote: whole seconds (rounded up) x the model's credits a second (RUNWAY_RATES, lib/vendorRates.ts, the plan's table, TO CONFIRM; Aleph 2's 56-credit minimum) at $0.01 a
- * credit, through the margin table (`quotedCredits`, keyed by the model); reserved at the quote; settled at the task's own `cost.credits` (never above the quote), the quote when it
- * reports none. A failed task Runway did charge for settles at that cost on the ledger line (the house is billed no credits) and the take says so; one that cost nothing says
- * "Nothing billed". A person approves: `maxCredits` must cover the quote.
+ * credit, through the margin table (`quotedCredits`, keyed by the model); reserved at the quote; settled at the task's own `cost.credits`, the quote (marked `reconcile`) when it reports none,
+ * and never billed above the quote (more reported is recorded as the meter's `overrun_usd` and marked `reconcile`). A failed task Runway did charge for settles at that cost on the ledger line,
+ * unbilled (the take says so); one that cost nothing says "Nothing billed"; a clip lost after the task succeeded is recorded at the reported cost, else the quote. A person approves: `maxCredits` must cover the quote.
  */
 export const RUNWAY_TASK = "runway_video";
 const ENTITY_ID = /^[A-Za-z0-9_.:-]{1,160}$/;
@@ -73,9 +73,13 @@ export type RunwayParams = {
   prompt: string | null; ratio: string | null; seed: number | null; bodyControl: boolean; expressionIntensity: number;
   consents: { role: "performer" | "character" | "subject"; castMemberId: string; consentId: string; faceSha256: string }[];
   funded: number; claimedAt: number | null; sendingAt: number | null; taskId: string | null; submittedAt: number | null; readyAt: number | null; lastPolledAt: number | null; pollUntil: number | null;
-  settled: number; cleanupDue: number; cleanupTries: number; vendorDeleted: number; reconcile: number;
+  settled: number; cleanupDue: number; cleanupTries: number; vendorDeleted: number;
+  /** What Runway's poll reported the task cost, in dollars (its credits at $0.01), once known; null when it reported none. */
+  statedUsd: number | null;
+  /** 1 when the figure on the ledger line is ours, not Runway's (none reported, or more than the quote): to be checked against Runway's invoice. */
+  reconcile: number;
 };
-type Row = { id: string; project_id: string | null; shot_id: string | null; created_by: string | null; status: string; created_at: number; params: string };
+type Row = { id: string; project_id: string | null; shot_id: string | null; created_by: string | null; status: string; created_at: number; params: string; prompt: string };
 type Job = { row: Row; runway: RunwayParams };
 
 /** The adapter seams for the workflow, for tests. Public callers (the route, the cron) pass none. */
@@ -98,7 +102,7 @@ export async function runwayOnHere(workspace: { id: string } | null | undefined 
 async function load(genId: string, opts: { any?: boolean } = {}): Promise<Job | null> {
   await ready();
   const row = (await db().execute({
-    sql: `SELECT id, project_id, shot_id, created_by, status, created_at, params FROM generations WHERE id=? AND json_extract(params,'$.task')=?${opts.any ? "" : " AND deleted=0"}`,
+    sql: `SELECT id, project_id, shot_id, created_by, status, created_at, params, prompt FROM generations WHERE id=? AND json_extract(params,'$.task')=?${opts.any ? "" : " AND deleted=0"}`,
     args: [genId, RUNWAY_TASK],
   })).rows[0] as unknown as Row | undefined;
   if (!row) return null;
@@ -287,7 +291,7 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   const genId = newId("gen"), ts = now();
   const runway: RunwayParams = {
     status: "queued", tool, model, seconds, reservedUsd: usd, estimateCredits: estimatedCredits, use, inputs, prompt: prompt || null, ratio, seed, bodyControl, expressionIntensity, consents,
-    funded: 0, claimedAt: null, sendingAt: null, taskId: null, submittedAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0, cleanupDue: 0, cleanupTries: 0, vendorDeleted: 0, reconcile: 0,
+    funded: 0, claimedAt: null, sendingAt: null, taskId: null, submittedAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0, cleanupDue: 0, cleanupTries: 0, vendorDeleted: 0, statedUsd: null, reconcile: 0,
   };
   const params = { task: RUNWAY_TASK, job: tool === "video" ? "other" : "fix", runway, estUsd: usd, estCredits: 0 };
   const title = `${tool === "performance" ? "Performance" : tool === "edit" ? "Edit" : "Video"} · ${(prompt || model).slice(0, 60)}`.slice(0, 80);
@@ -332,23 +336,27 @@ export async function settleRunway(
   const said = status === "failed" && outcome.said ? await fundedOutcome(outcome.said, genId, "runway").catch(() => outcome.said ?? null) : null;
   const ms = Math.max(0, now() - Number(row.created_at));
   const ok = status === "done";
-  /* Never above the quote, whatever Runway reports. */
+  /* A finished task is charged at most the quote, whatever Runway reports: what it reports past the quote is recorded as the overrun (the platform's, marked to reconcile), never billed.
+     A failure Runway charged for is recorded at that cost on the ledger line (never above the quote) and billed to nobody. */
   const cost = Math.min(Math.max(0, outcome.costUsd), runway.reservedUsd);
-  const write = ok
+  const overrunUsd = outcome.costUsd > runway.reservedUsd + 1e-9 ? Math.round((outcome.costUsd - runway.reservedUsd) * 1e6) / 1e6 : null;
+  const reconcile = outcome.reconcile === true || overrunUsd !== null;  const write = ok
     ? {
         sql: `UPDATE generations SET status='succeeded', stored_url=?, bytes=?, cost_usd=?, error=NULL, duration_ms=?, duration_s=?,
-                params=json_set(params,'$.runway.status','done','$.runway.settled',1,'$.runway.cleanupDue',1), updated_at=?
+                params=json_set(params,'$.runway.status','done','$.runway.settled',1,'$.runway.cleanupDue',1,'$.runway.reconcile',?), updated_at=?
               WHERE id=? AND deleted=0 AND status IN ('queued','running')`,
-        args: [outcome.storedUrl ?? null, outcome.bytes ?? null, cost, ms, runway.seconds, now(), genId],
+        args: [outcome.storedUrl ?? null, outcome.bytes ?? null, cost, ms, runway.seconds, reconcile ? 1 : 0, now(), genId],
       }
     : {
         sql: `UPDATE generations SET status='failed', error=?, duration_ms=COALESCE(duration_ms,?), cost_usd=?, provider_outcome=COALESCE(?,provider_outcome),
                 params=json_set(params,'$.runway.status','failed','$.runway.settled',1,'$.runway.cleanupDue',?,'$.runway.reconcile',?), updated_at=? WHERE id=? AND status NOT IN ('succeeded','cancelled')`,
-        args: [(outcome.message ?? "The task failed.").slice(0, 600), ms, cost, said ? serializeOutcome(said) : null, runway.taskId ? 1 : 0, outcome.reconcile ? 1 : 0, now(), genId],
+        args: [(outcome.message ?? "The task failed.").slice(0, 600), ms, cost, said ? serializeOutcome(said) : null, runway.taskId ? 1 : 0, reconcile ? 1 : 0, now(), genId],
       };
   await writeGenerationOutcome(write, {
     id: genId, kind: "video", engine: "runway", model: runway.model, status: ok ? "succeeded" : "failed", engineCostUsd: cost, durationMs: ms,
     projectId: row.project_id, shotId: row.shot_id, createdBy: row.created_by,
+    ...(!ok && cost > 0 ? { unbilled: true } : {}),
+    ...(ok && overrunUsd !== null ? { overrunUsd } : {}),
     ...(said ? { providerOutcome: said } : {}),
   });
   await deliverGenerationSettlement(genId);
@@ -436,9 +444,10 @@ export async function advanceRunwayJobWith(genId: string, deps: RunwayDeps): Pro
     if (!leased) return runway;
     try {
       await patch(genId, { lastPolledAt: clock() });
-      /* Past the window an output address lives, a finished task's clip is lost: settled at nothing (the platform absorbs it). */
+      /* Past the window an output address lives, a finished task's clip is lost. Runway made it, so it charged: the workspace is billed nothing, and the ledger line records Runway's reported
+         cost, else the quote, unbilled and marked to reconcile when the figure is ours. */
       if (runway.readyAt && clock() - Number(runway.readyAt) > RUNWAY_RESULT_LIFETIME_MS - 3600_000) {
-        await settleRunway(genId, "failed", { message: "The clip was ready but could not be saved in time. Nothing was billed.", costUsd: 0, said: silentOutcome("runway", "run", "not_kept", "result expired before it was saved") });
+        await settleRunway(genId, "failed", { message: "The clip was ready but could not be saved in time. Nothing was billed.", costUsd: runway.statedUsd ?? runway.reservedUsd, reconcile: runway.statedUsd == null, said: silentOutcome("runway", "run", "not_kept", "result expired before it was saved") });
         return (await load(genId, { any: true }))?.runway ?? null;
       }
       const state = await (deps.poll ?? pollTask)(runway.taskId);
@@ -451,12 +460,12 @@ export async function advanceRunwayJobWith(genId: string, deps: RunwayDeps): Pro
         return (await load(genId, { any: true }))?.runway ?? null;
       }
       if (state.status !== "succeeded") return (await load(genId))?.runway ?? null;
-      if (!runway.readyAt) await patch(genId, { readyAt: clock() });
+      if (!runway.readyAt) await patch(genId, { readyAt: clock(), statedUsd: state.costCredits != null ? state.costCredits * RUNWAY_RATES.creditUsd : null });
       /* The moment it is done: fetched and stored, before anything else. Never fetched with our key, only from an allow-listed https address. */
       const bytes = await (deps.fetchClip ?? fetchOutput)(state.outputUrl);
       const { value: stored } = await withRetry(() => (deps.store ?? storeVideoBytes)(genId, bytes), { max: 3 });
-      /* Runway's own figure (credits at $0.01; "fully refunded tasks report 0"), else the quote; never above the quote (settleRunway caps it). */
-      await settleRunway(genId, "done", { costUsd: state.costCredits != null ? state.costCredits * RUNWAY_RATES.creditUsd : runway.reservedUsd, storedUrl: stored.url, bytes: stored.bytes });
+      /* Runway's own figure (credits at $0.01; "fully refunded tasks report 0"), else the quote and marked to reconcile; never billed above the quote (settleRunway records the excess as the overrun and marks it). */
+      await settleRunway(genId, "done", { costUsd: state.costCredits != null ? state.costCredits * RUNWAY_RATES.creditUsd : runway.reservedUsd, reconcile: state.costCredits == null, storedUrl: stored.url, bytes: stored.bytes });
       await cleanupRunwayVendor(genId, deps).catch(() => {});
       return (await load(genId, { any: true }))?.runway ?? null;
     } catch (error) {

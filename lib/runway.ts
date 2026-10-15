@@ -30,7 +30,7 @@ export const RUNWAY_RESULT_HOSTS = { suffixes: ["runwayml.com"], exact: ["dnznrv
 export const runwayConfigured = (): boolean => Boolean(process.env.RUNWAY_API_KEY) || engineMock();
 export const isRunwayModel = (v: unknown): v is RunwayModel => typeof v === "string" && Object.hasOwn(RUNWAY_RATES.models, v);
 
-/** A refusal or failure from Runway (or from reaching it). `rejectedBeforeGeneration`: a clear 4xx (not 408/429-less) before the task was taken. */
+/** A refusal or failure from Runway (or from reaching it). `rejectedBeforeGeneration`: a clear 4xx (not a 408 or 429) before the task was taken. */
 export class RunwayError extends Error {
   constructor(message: string, readonly status: number | null = null, readonly rejectedBeforeGeneration = false) { super(message); this.name = "RunwayError"; }
 }
@@ -71,6 +71,8 @@ async function call(method: "GET" | "POST" | "DELETE", path: string, body: unkno
       method,
       headers: { authorization: `Bearer ${key()}`, "x-runway-version": RUNWAY_VERSION, accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}) },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      /* The key is a header and undici forwards custom headers across an origin: a redirect is a failure, never followed. */
+      redirect: "error",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (error) {
@@ -162,7 +164,7 @@ export async function fetchOutput(outputUrl: string, deps: Deps = {}): Promise<B
   const url = runwayResultUrl(outputUrl);
   if (!url) throw new RunwayError("Runway's output address is not one we fetch.");
   let res: Response;
-  try { res = await (deps.fetch ?? recoveryFetch)(url.href, { method: "GET", signal: AbortSignal.timeout(300_000) }); }
+  try { res = await (deps.fetch ?? recoveryFetch)(url.href, { method: "GET", redirect: "error", signal: AbortSignal.timeout(300_000) }); }
   catch { throw new RunwayError("The clip could not be fetched from Runway."); }
   if (!res.ok) throw new RunwayError(`The clip could not be fetched from Runway (${res.status}).`, res.status);
   if (Number(res.headers.get("content-length") ?? 0) > RUNWAY_OUTPUT_LIMIT_BYTES) throw new RunwayError("The clip is larger than Particl keeps.");

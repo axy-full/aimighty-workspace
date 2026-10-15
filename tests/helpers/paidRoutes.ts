@@ -15,6 +15,7 @@ export const PAID_ROUTES: PaidRoute[] = [
   { dir: "audio/dub", spends: "dubbing" },
   { dir: "bfl", spends: "FLUX.2 stills and edits (BFL; off unless the engine is on for the workspace)" },
   { dir: "sarvam", spends: "Sarvam speech, transcription and translation (off unless the engine is on for the workspace)" },
+  { dir: "runway", spends: "Runway performance, edit and video tasks (house workspace only, and only with the engine on)" },
   { dir: "lipsync", spends: "lip-sync (sync.so; off unless the engine is on for the workspace)" },
   { dir: "audio/transcribe", spends: "transcription" },
   { dir: "jobs/[id]/release", spends: "releasing a held take once the balance covers it" },
