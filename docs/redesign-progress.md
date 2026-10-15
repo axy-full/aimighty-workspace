@@ -1005,3 +1005,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 04:10 IST.** Opus APPROVED lane B's shot-cap batch; the #785 merge resolution is correct (identity scope → shot cap → consent gate). Should-fix across every engine door: isAdmin must exclude machines (an admin token or Atomik Auto run would skip the press-time cap). Sent to lanes B, C and D.
 - **16 Oct 04:15 IST.** Lane C: the isAdmin machine fix is in #781 c49dc865 and #786 8dde8995 (admin token, agent:, Auto run → 403; tests pass). One batched Opus check will follow once lanes B and D push the same fix. Lane C is done for tonight.
 - **16 Oct 04:20 IST.** Lane B: isAdmin machine fix in all five doors via a shared shotCapAdmin helper in lib/shotCap.ts. Heads: #776 1772672e, #777 a04921ca, #778 a95fd177, #780 107f504a, #785 4e69c1a1. Lane B is done for tonight. The batched Opus check waits for lane D.
+- **16 Oct 04:23 IST.** Lane D:
+  - #787 b7902f86, now draft and inert: confirmed:false, so it is listed nowhere and admission 404s until confirmed; quote helpers give no price unless the gate is open and the row confirmed.
+  - #783 018874ac (isAdmin from the acting person; sweep outcome marked for reconcile).
+  - #779 aaf012fd (isAdmin fix).
+  - The batched Opus check covers every isAdmin delta (B, C, D) plus #787. Lane D is done for tonight.
