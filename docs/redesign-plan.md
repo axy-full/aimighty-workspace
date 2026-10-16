@@ -954,3 +954,15 @@ Owner (Akshay, 16 Oct, 11:50): answers to your 11:35 update, in one note.
 7) DEPLOY #5: tell me when #762 is green; I back up and deploy. allowance_usd, RUNWAY_API_KEY and the Sarvam switches are coming from me shortly.
 
 **Lead's notes.** (1) Storing the tick needs one additive column on uploads plus a settings-key map for ElevenLabs clone ids (no new table); taken as the owner's word for that schema change, built as its own NEEDS AKSHAY PR. (2) #788 already carries the writeSite fix (Opus: the bug is latent in the engine stack, not on release/1). (3) Kling 4.0 is not on fal as of 16 Oct ~12:00 IST (v4 OpenAPI 404; fal's Kling pages list v3, v3 Turbo, O3); kling.ai's homepage says "All-New Kling 4.0". #787 stays inert. (4) Pinned build chosen: BtbN FFmpeg-Builds autobuild-2026-09-30-13-08 (a month-end release, kept long-term), ffmpeg-n8.1.3-9-g29e619e767-linux64-lgpl-8.1.tar.xz, sha256 dfa863a00ca81f1bdf58a372b18cff4820f0017e55de32778de8ecd8ed92a02e, LGPL build (has the dnxhd encoder; no GPL parts needed for DNxHR), verified on the droplet in ~/lead-notes/ffmpeg-dl-20261016.
+
+## Owner, 16 Oct 2026, 12:05 IST (verbatim): standing yes
+Owner (Akshay, 16 Oct, 12:05): STANDING YES. From now on, merge any PR into release/1 yourself, without waiting for me, when ALL of these hold:
+- CI green 24/24 on the final head;
+- a fresh Opus review approved it with no open must-fix (money PRs: Opus money review approved);
+- it does not weaken, delete or loosen any guard test or security check (any such change still needs my word; batch them for me once a day at 10:30);
+- merges are into release/1 only; never main.
+This includes engine, money, env-name and migration PRs (migrations still ship only in a deploy after my backup).
+Still mine: merging release/1 into main and every deploy (backup first, then I press Deploy). Prepare one deploy PR per day when release/1 has changes, with migrations and new env names listed at the top, and tell me "ready".
+Use the speed: work the 36-PR v25 plan and the engine slices in parallel; give me the dated plan I asked for at 12:00.
+
+**Lead's notes.** Replaces the 15 Oct 22:20 standing yes. Deploy #5 stays the four PRs (#748, #756, #762, #758): its deploy PR is cut from release/1 at the commit after #758, before any other merge. No 12:00 message reached the lead; the dated plan is written from the 12:05 note.
