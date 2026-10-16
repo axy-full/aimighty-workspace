@@ -1154,3 +1154,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #798 NOT APPROVED (tooltip-audit guard: icon-only buttons named by title only); lane C fixing the code.
 - **16 Oct 12:58 IST.** #797 Hindi tool APPROVED at 4b804536: machine approvals refused; a retry's Hindi only skips translation; MCP files nothing and says so. #800 (source-take private-board check) is under security review. #797 merges after #794/#791 land (stacked).
 - **16 Oct 13:00 IST.** #800 (findStoredSource private-board check) APPROVED at f8612b50. Every caller goes through the one function; background jobs keep working, with no viewer as before; workers fail closed with a plain reason before any vendor call. Queued to merge after the current queue.
+- **16 Oct 13:03 IST.**
+  - #798 at 7f8bd736 (tooltip fix, nits), delta check running.
+  - Slip, lane C: started a mock server and browser spec when `slot.sh` refused for low memory (34% free < 40%). Nothing failed; lane C won't repeat it. Droplet memory at the check: 10 GB of 31 available.
+  - Two cancelled runs had stalled "in progress" holding CI slots; force-cancelled.
