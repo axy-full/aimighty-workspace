@@ -69,6 +69,8 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
   { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
+  /* The Hindi version is the same: it is off unless Sarvam is on, so THIS press proves its door is shut and spends nothing. Each of its steps is Sarvam's or lip-sync's own, and the cap wall with the engine ON is proved in tests/unit/hindiVersion.spec.ts. */
+  { dir: "hindi-version", body: { lines: [{ text: "Hello" }], lipSync: "none", versionId: "hv_door_press", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
   { dir: "jobs/[id]/release", body: { credits: 10 }, id: "gen_held" },
   { dir: "atomik/steps/[id]/claim", body: {}, id: "step_1" },

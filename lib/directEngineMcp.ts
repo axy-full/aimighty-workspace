@@ -143,6 +143,7 @@ const HINDI_VERSION: DirectTool = {
         lip_sync: { type: "string", description: "hero (default: the lines marked hero), all, or none (a Hindi voice-over on every shot)." },
         voice: { type: "string", description: "A stock voice's name. Optional." },
         project_id: { type: "string", description: "The production. Optional." },
+        draft_id: { type: "string", description: "The board to place the Hindi on (its voice lines and lip-synced shots). Optional; each line then needs startSeconds, or follows the video before it." },
         request_id: { type: "string" },
       },
       required: ["lines_json"],
@@ -154,7 +155,7 @@ const HINDI_VERSION: DirectTool = {
   request: (a) => {
     let lines: unknown;
     try { lines = JSON.parse(String(a.lines_json ?? "")); } catch { throw new Error("lines_json must be a JSON array."); }
-    return { path: "/api/hindi-version", body: { lines, lipSync: str(a.lip_sync), voice: str(a.voice), projectId: str(a.project_id) } };
+    return { path: "/api/hindi-version", body: { lines, lipSync: str(a.lip_sync), voice: str(a.voice), projectId: str(a.project_id), draftId: str(a.draft_id) } };
   },
   describe: (out, quote) => `Hindi version started.\n\nid: ${String(out.id)}\nprice: up to ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}`,
 };

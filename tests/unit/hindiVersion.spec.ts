@@ -21,8 +21,10 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 test.beforeAll(async () => { await alignLedgerUnit(); });
-test.beforeEach(() => { process.env.SARVAM_USD_PER_INR = "0.012"; process.env.SARVAM_ENABLED = "1"; process.env.SYNC_ENABLED = "1"; });
-test.afterEach(() => { delete process.env.SARVAM_ENABLED; delete process.env.SYNC_ENABLED; delete process.env.SARVAM_USD_PER_INR; process.env.ENGINE_MOCK = "1"; });
+const realFetch = globalThis.fetch;
+/* The adapters run for real against a stubbed network: Sarvam's own request shape in, its reply shape out (lib/sarvam.ts). Nothing leaves this process. */
+test.beforeEach(() => { process.env.ENGINE_MOCK = "0"; process.env.SARVAM_API_KEY = "sample-key"; process.env.SYNC_API_KEY = "sample-key"; process.env.SARVAM_USD_PER_INR = "0.012"; process.env.SARVAM_ENABLED = "1"; process.env.SYNC_ENABLED = "1"; });
+test.afterEach(() => { globalThis.fetch = realFetch; delete process.env.SARVAM_ENABLED; delete process.env.SYNC_ENABLED; delete process.env.SARVAM_USD_PER_INR; delete process.env.SARVAM_API_KEY; delete process.env.SYNC_API_KEY; process.env.ENGINE_MOCK = "1"; });
 
 const tenant = (id: string, over: Partial<TenantWorkspace> = {}): TenantWorkspace => ({
   id, slug: id, name: id, legacy: id === "ws_legacy", dbUrl: `file:${path.join(dir, `${id}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true,
@@ -68,14 +70,20 @@ async function gen(id: string) {
   return (await db().execute({ sql: "SELECT status,kind,shot_id,prompt,json_extract(params,'$.hindi') AS hindi FROM generations WHERE id=?", args: [id] })).rows[0] as unknown as Record<string, unknown>;
 }
 
-/** Sarvam's two calls, recording what they were given. The Hindi is the English wrapped, so a test can see which line it came from. */
+/** Sarvam's network, stubbed: translate answers the English wrapped in Hindi, speech answers a WAV of the given length; a text containing `failTranslateOn` is refused 422. */
 function fakeSarvam(over: { speechSeconds?: number; failTranslateOn?: string } = {}) {
   const calls: string[] = [];
-  const seams = {
-    translate: async (i: { text: string }) => { calls.push(`translate:${i.text}`); if (over.failTranslateOn && i.text.includes(over.failTranslateOn)) throw new Error("Sarvam is down"); return { text: `हिंदी ${i.text}` }; },
-    speak: async (i: { text: string }) => { calls.push(`speak:${i.text}`); return wav(over.speechSeconds ?? 3); },
-  };
-  return { seams: { sarvam: seams } as import("../../lib/hindiVersion").HindiSeams, calls };
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const u = String(url), body = JSON.parse(String(init?.body ?? "{}")) as Record<string, string>;
+    if (u.endsWith("/translate")) {
+      calls.push(`translate:${body.input}`);
+      if (over.failTranslateOn && body.input.includes(over.failTranslateOn)) return new Response(JSON.stringify({ message: "Sarvam is down" }), { status: 422 });
+      return Response.json({ translated_text: `हिंदी ${body.input}` });
+    }
+    if (u.endsWith("/text-to-speech")) { calls.push(`speak:${body.text}`); return Response.json({ audios: [wav(over.speechSeconds ?? 3).toString("base64")] }); }
+    throw new Error(`The network is closed: ${u}`);
+  }) as typeof fetch;
+  return { seams: {} as import("../../lib/hindiVersion").HindiSeams, calls };
 }
 function fakeSync() {
   let polls = 0, assets = 0;
@@ -241,7 +249,7 @@ test("a step that fails costs nothing and stops only its line; a retry under the
     expect(good.calls).toEqual(["translate:Make it in minutes.", "speak:हिंदी Make it in minutes."]);
     /* Every step failing, and nothing started, is an error, not a partial success. */
     const dead = await admit({ lines: [{ text: "Only line" }], versionId: stamp(), maxCredits: total }, fakeSarvam({ failTranslateOn: "Only" }).seams);
-    expect(dead.status).toBe(502);
+    expect(dead.status).toBe(422);
     expect(dead.body).toMatchObject({ error: expect.stringContaining("Nothing was billed") });
   });
 });
@@ -293,4 +301,109 @@ test("the reply the claim keeps has no Hindi in it; the tool is declared beside 
   expect(route).toContain("requireRender()");
   expect(route).toContain("sampleWorkspaceOff");
   expect(route).toContain("withGenerationRequest");
+});
+
+test("the board: the Hindi is placed whole as boardVoice.hi: a voice line per spoken line at its start, a swap per synced take-named shot; a line that overlaps or has no length is left out and named", async () => {
+  const { db } = await import("../../lib/db");
+  await asTenant(house(), async () => {
+    /* The cut's take for the synced shot is a video take (a generation) of 4 s, so a swap can name it. */
+    const clip = await clipUpload(4);
+    const { ready } = await import("../../lib/db");
+    await ready();
+    const cutTake = uid("gen_cut");
+    await db().execute({ sql: "INSERT INTO generations (id, kind, model, prompt, params, status, created_by, created_at, updated_at, stored_url, duration_s) VALUES (?,?,?,?,?,?,?,?,?,?,?)", args: [cutTake, "video", "sample-model", "a shot", "{}", "succeeded", "owner", Date.now(), Date.now(), `generations/${cutTake}.mp4`, 4] });
+    const three = [
+      { text: "Meet the new Particl.", clipTakeId: cutTake, hero: true },
+      { hindi: "दूसरी पंक्ति", clipUploadId: clip },
+      { hindi: "तीसरी पंक्ति", startSeconds: 20 },
+    ];
+    const seen: { owner: string; draftId: string; voice: import("../../lib/v12/board/cut-data").LanguageVoice }[] = [];
+    const draft = async (owner: string, draftId: string, voice: import("../../lib/v12/board/cut-data").LanguageVoice) => { seen.push({ owner, draftId, voice }); return { written: voice.lines.length }; };
+    const q = await admit({ lines: three, draftId: "board_1", quoteOnly: true });
+    expect(q.status, JSON.stringify(q.body)).toBe(200);
+    fakeSarvam({ speechSeconds: 3 });
+    const r = await admit({ lines: three, draftId: "board_1", versionId: stamp(), maxCredits: Number(q.body.estimatedCredits) }, { draft });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ owner: "owner", draftId: "board_1" });
+    const lines3 = r.body.lines as { voiceTakeId: string; syncedTakeId?: string }[];
+    /* Line 1 starts at 0 (3 s of Hindi in a 4 s shot), line 2 at 4 (the shot's own length), line 3 where it was told. Each is a recorded-length audio take. */
+    expect(seen[0].voice.lines.map((l) => [l.take === lines3[0].voiceTakeId || l.take === lines3[1].voiceTakeId || l.take === lines3[2].voiceTakeId, l.startSeconds])).toEqual([[true, 0], [true, 4], [true, 20]]);
+    expect(seen[0].voice.lines[0].text).toBe("हिंदी Meet the new Particl.");
+    expect(seen[0].voice.swap).toEqual({ [cutTake]: lines3[0].syncedTakeId });
+    expect(r.body.draft).toMatchObject({ language: "hi", written: 3, swaps: 1 });
+    expect(JSON.stringify(r.body.draft)).not.toContain("left");
+    for (const l of seen[0].voice.lines) expect(Number((await db().execute({ sql: "SELECT duration_s FROM generations WHERE id=?", args: [l.take] })).rows[0].duration_s)).toBeGreaterThan(0);
+    /* A voice longer than its slot is named, and left out of the draft rather than overlapped. */
+    fakeSarvam({ speechSeconds: 6 });
+    const q2 = await admit({ lines: three.slice(0, 2), draftId: "board_1", quoteOnly: true });
+    const r2 = await admit({ lines: three.slice(0, 2), draftId: "board_1", versionId: stamp(), maxCredits: Number(q2.body.estimatedCredits) + 20 }, { draft });
+    expect(r2.status, JSON.stringify(r2.body)).toBe(200);
+    expect(r2.body.draft).toMatchObject({ written: 1, left: [{ order: 0, why: expect.stringContaining("past its slot") }] });
+    /* No start to go on: said in words, before anything is bought. */
+    expect((await admit({ lines: [{ text: "One" }, { text: "Two" }], draftId: "board_1", quoteOnly: true })).status).toBe(400);
+    expect((await admit({ lines: [{ text: "One", startSeconds: -1 }], quoteOnly: true })).status).toBe(400);
+    expect((await admit({ lines: [{ text: "One" }], draftId: "../x", quoteOnly: true })).status).toBe(400);
+  });
+});
+
+test("the board: written through the real draft path, the language replaces itself whole and the rest of the draft is untouched; no board there is said, not thrown", async () => {
+  const { writeHindiToDraft } = await import("../../lib/hindiVersion");
+  const { newProject } = await import("../../lib/workbench/studio");
+  const { saveDraft, readDraft } = await import("../../lib/workbench/records");
+  await asTenant(house(), async () => {
+    const id = uid("board");
+    const draft = { ...newProject("A board"), id, boardVoice: { fr: { lines: [{ take: "gen_fr", startSeconds: 0, text: "bonjour" }] }, hi: { lines: [{ take: "gen_old", startSeconds: 1, text: "पुराना" }] } } };
+    await saveDraft("owner", draft as never, 0);
+    expect(await writeHindiToDraft("owner", id, { lines: [{ take: "gen_new", startSeconds: 0, text: "नया" }], swap: { gen_a: "gen_b" } })).toEqual({ written: 1 });
+    const after = await readDraft("owner", id);
+    expect(after?.project.boardVoice).toEqual({ fr: { lines: [{ take: "gen_fr", startSeconds: 0, text: "bonjour" }] }, hi: { lines: [{ take: "gen_new", startSeconds: 0, text: "नया" }], swap: { gen_a: "gen_b" } } });
+    expect(after?.revision).toBe(2);
+    expect(after?.project.name).toBe("A board");
+    expect(await writeHindiToDraft("owner", uid("none"), { lines: [] })).toMatchObject({ written: 0, note: "That board is not here." });
+  });
+});
+
+test("a customer workspace on the list pays in credits what each step quotes, once, within the approved total; one at its own $0 cap is refused in the cap's words with nothing held or written", async () => {
+  const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
+  const { creditState } = await import("../../lib/credits");
+  await platformReady();
+  const make = async (id: string, allowance: number | null) => {
+    await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour,allowance_usd) VALUES(?,?,?,?,1,'owner',0,0,20,200,?)", args: [id, id, id, `file:${path.join(dir, id + ".db")}`, allowance] });
+    await grantCredits(id, 500, "Test", "owner", "manual");
+    return (await getWorkspace(id))!;
+  };
+  const open = await make("ws_hindi_listed", null), capped = await make("ws_hindi_capped", 0);
+  const site = (await platformDb().execute("SELECT value FROM platform_layer WHERE key='site'")).rows[0]?.value;
+  const setSite = (v: unknown) => platformDb().execute({ sql: "INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value", args: [JSON.stringify(v)] });
+  const billed = async (ws: string) => (await platformDb().execute({ sql: "SELECT billed_credits, status FROM meter_events WHERE workspace_id=? AND engine='sarvam' ORDER BY created_at", args: [ws] })).rows;
+  try {
+    await setSite({ enginesOnWorkspaces: ["ws_hindi_listed", "ws_hindi_capped"] });
+    const two = [{ text: "Meet the new Particl." }, { hindi: "यह सीधा हिंदी में लिखा है" }];
+    await asTenant(open, async () => {
+      const q = await admit({ lines: two, lipSync: "none", quoteOnly: true });
+      expect(q.body).toMatchObject({ unit: "cr", lines: 2, synced: 0 });
+      const total = Number(q.body.estimatedCredits);
+      fakeSarvam();
+      const before = (await creditState())!.balance;
+      const r = await admit({ lines: two, lipSync: "none", versionId: stamp(), maxCredits: total });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      const rows = await billed("ws_hindi_listed");
+      expect(rows).toHaveLength(3);
+      const paid = rows.reduce((n, x) => n + Number(x.billed_credits), 0);
+      expect(paid).toBe(Number(r.body.spent));
+      expect(paid).toBeLessThanOrEqual(total);
+      expect((await creditState())!.balance).toBeCloseTo(before - paid, 6);
+    });
+    await asTenant(capped, async () => {
+      fakeSarvam();
+      const q = await admit({ lines: two, lipSync: "none", quoteOnly: true });
+      const r = await admit({ lines: two, lipSync: "none", versionId: stamp(), maxCredits: Number(q.body.estimatedCredits) });
+      expect(r.status, JSON.stringify(r.body)).toBe(429);
+      expect(String(r.body.error).replace(/^Line \d+: /, "")).not.toMatch(/\$|\d/);
+      expect(await billed("ws_hindi_capped")).toHaveLength(0);
+    });
+  } finally {
+    if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
+  }
 });
