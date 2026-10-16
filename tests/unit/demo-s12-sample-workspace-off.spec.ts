@@ -65,6 +65,7 @@ function door(dirName: string, actor: AdmissionActor = OWNER): Handler {
 const DIGEST = "a".repeat(64);
 const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   { dir: "generate", body: { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5 } },
+  { dir: "generate/batch", body: { members: [{ model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }, { model: "dreamina-seedance-2-0-260128", prompt: "A tree in sun", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }], fingerprint: "0".repeat(64), maxCredits: 100000 } },
   { dir: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 5 } },
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
