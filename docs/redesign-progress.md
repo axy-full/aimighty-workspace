@@ -1143,3 +1143,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - (2) Likely server cause: when TEXT_DIRECT doesn't list anthropic, the default writer Sonnet 5.5 isn't routable, so the pick falls to gpt-5-mini on the Responses API (400 tokens, default reasoning). That yields an empty or truncated answer and a 502 after seconds. Catalogue reads can add 15 s + 15 s when MODEL_CATALOG ≠ static.
   - To confirm (owner): Coolify names TEXT_DIRECT, ANTHROPIC_API_KEY, OPENAI_API_KEY, MODEL_CATALOG; DevTools POST /api/prompt/enhance (quote and run timings, status, `writer` in the response).
   - Lane H started: PR A client (visible state, 8 s timeout and fallback, Make never waits on Enhance, words in the box before spend, cost shown); PR B server (8 s enhance deadline, no bill when unanswered, gpt-5-mini low reasoning, failed catalogue read cached).
+- **16 Oct 12:45 IST.** Lane B: #797 Hindi version tool (D-2), 5b415cf5, on #794.
+  - One plan, one person approval, each step at its own price held to the approved total; hero shots lip-synced by default; writes boardVoice.hi.
+  - Opus money review running.
+  - Lane B next: the findStoredSource private-board check, then the Agent-mode server parts.
