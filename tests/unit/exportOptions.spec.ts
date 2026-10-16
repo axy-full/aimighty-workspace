@@ -191,7 +191,8 @@ test("an outside agent can ask for the options over MCP: output goes to the same
   expect(tool.description).toMatch(/voiceover/);
   expect(tool.description).toMatch(/keep-speech/);
   /* The formats are H.264 and the ProRes mezzanine; DNxHR is dropped for now (owner, 16 Oct 2026) and the copy says so. */
-  expect(tool.description).toMatch(/H\.264 and the ProRes mezzanine are the only formats: DNxHR is not offered for now/);
+  /* The sentence follows the closing brace of the output list; the list itself reads straight through. */
+  expect(tool.description).toMatch(/H\.265 is not available\), subtitles:\['srt','vtt'\] \(written from the cues\), conform:'off'[^}]*\}\. H\.264 and the ProRes mezzanine are the only formats: DNxHR is not offered for now\. /);
   expect(JSON.stringify(tool.inputSchema)).toMatch(/the only formats; no DNxHR for now/);
   expect(parseOutputOptions({ format: "dnxhr" })).toMatchObject({ ok: false });
   expect(parseOutputOptions({ format: "DNxHD" })).toMatchObject({ ok: false });
