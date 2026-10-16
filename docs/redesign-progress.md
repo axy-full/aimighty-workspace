@@ -1042,3 +1042,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Opus confirmations running for these and lane C's (#781 6618a2a9, #786 93376514).
 - **16 Oct 06:20 IST.** Opus APPROVED #700 at ca36d823. Downstream merges #766 5f9fdf0c, #774 c68dd76a and #775 04d78e0b are clean (empty remerge-diff); #767 438b3dee's README-only resolution is fine. The money guard only gained a test. Nit: a bare catch at jobs.ts:412 could log ids.
 - **16 Oct 06:21 IST.** Opus confirmed the housekeeping merges: #781 6618a2a9, #786 93376514, #779 828a0632, #783 843fd3d0 and #787 7ebd88a9 all have empty remerge-diffs, and each shotCapAdmin swap is behaviour-identical. Every open engine and export PR now has a current Opus approval at its head (#787 as an inert draft). All lanes are idle; the next step is the 10:30 report (cron at 09:55).
+- **16 Oct 08:17 IST. Check-in.**
+  - Production: health ok at 709497a; watcher quiet; df 14%.
+  - CI: none running.
+  - Every release/1-based PR has a green run at its current head: #697 38779199114, #699 38789485436, #748 38816384718, #749 38816325995, #750 38821582430, #758 38826553542, #763 38783461231, #764 38798946935, #771 38799490414. release/1 is still 663fb243.
+  - Merges: none qualify under the standing yes.
+  - Lanes: all idle. Slices 1-3 are built except items waiting on owner decisions: Gemini 3.x pricing/routing, the Pro pick shape, an SVG sanitiser or raster-only, DNxHR (needs a different ffmpeg). Slice 4 is "on a client need or bake-off win"; Slice 5 comes after.
+  - No paid generation; spend $0. The 10:30 report is built at 09:55.
