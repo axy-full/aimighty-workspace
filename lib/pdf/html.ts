@@ -61,6 +61,8 @@ table.grid td{font-size:calc(var(--u) * .95);line-height:1.3;padding:calc(var(--
 .foot span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:calc(var(--u) * 2)}.foot span:last-child{white-space:nowrap}
 .foot{position:absolute;left:${margin};right:${margin};bottom:calc(${doc.bleedMm}mm + var(--u) * 3.4);display:flex;justify-content:space-between;font-size:calc(var(--u) * 1.05);color:${t.mut};border-top:1px solid ${t.line};padding-top:calc(var(--u) * .9)}
 .cover .foot{display:none}
+.cover.pitch{padding-left:calc(${margin} + var(--u) * 2.4);border-left:calc(var(--u) * 1.1) solid ${t.accent}}.cover.pitch h1{font-size:calc(var(--u) * 7.4);letter-spacing:-.02em}.cover.pitch h1.t2{font-size:calc(var(--u) * 5.2)}.cover.pitch h1.t3{font-size:calc(var(--u) * 3.8)}.cover.pitch .eyebrow{font-size:calc(var(--u) * 1.5);letter-spacing:.2em}.cover.pitch .sub{font-size:calc(var(--u) * 2.4);color:${t.fg}}
+.cover.treatment h1{font-weight:500}.cover.treatment .eyebrow{letter-spacing:.3em}
 ${widths}
 `.replace(/\n/g, "");
 }
@@ -70,7 +72,7 @@ function pageHtml(page: DeckPage, index: number, total: number, doc: DeckDoc): s
   const head = (p: { eyebrow?: string; heading: string }) => `<header>${p.eyebrow ? `<p class="eyebrow">${esc(p.eyebrow)}</p>` : ""}<h2>${esc(p.heading)}</h2></header>`;
   switch (page.type) {
     case "cover":
-      return `<section class="page cover">${page.logo ? `<img class="logo" src="assets/${page.logo}" alt="">` : ""}<p class="eyebrow">${esc(KIND_LABEL[doc.kind])}</p><h1${page.title.length > 72 ? ' class="t3"' : page.title.length > 36 ? ' class="t2"' : ""}>${esc(page.title)}</h1>${page.subtitle ? `<div class="rule"></div><p class="sub">${esc(page.subtitle)}</p>` : ""}${page.meta?.length ? `<p class="meta">${esc(page.meta.join("  ·  "))}</p>` : ""}${foot}</section>`;
+      return `<section class="page cover${page.style ? ` ${page.style}` : ""}">${page.logo ? `<img class="logo" src="assets/${page.logo}" alt="">` : ""}<p class="eyebrow">${esc(page.eyebrow ?? KIND_LABEL[doc.kind])}</p><h1${page.title.length > 72 ? ' class="t3"' : page.title.length > 36 ? ' class="t2"' : ""}>${esc(page.title)}</h1>${page.subtitle ? `<div class="rule"></div><p class="sub">${esc(page.subtitle)}</p>` : ""}${page.meta?.length ? `<p class="meta">${esc(page.meta.join("  ·  "))}</p>` : ""}${foot}</section>`;
     case "text":
       return `<section class="page">${head(page)}<div class="body">${paragraphs(page.paragraphs)}</div>${foot}</section>`;
     case "bullets":

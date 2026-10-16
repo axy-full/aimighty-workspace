@@ -10,9 +10,9 @@ import { acquireSlot, releaseSlot } from "../worker-slots";
 import { ExportWorkerBusyError, ExportWorkerRefusedError, ExportWorkerError, openExportSession, type ExportWorkerDeps } from "../exports/worker";
 import { nameStem } from "../v12/deliver";
 import { PDF_COMPOSITION, PDF_HTML_FILE, PDF_OUTPUT_FILE, checkDeckHtml, pdfFacts, type PdfSpec } from "../../remotion/src/lib/pdf";
-import { DeckTooLong, ppmDoc, pitchDoc, treatmentDoc, type BuildOptions } from "./builders";
+import { DeckTooLong, FILM_PICTURES, filmDoc, filmPictureHandles, ppmDoc, pitchDoc, treatmentDoc, type BuildOptions } from "./builders";
 import { PdfError, NOTHING_BILLED, type DeckPdf, type DeckRequest } from "./contract";
-import { DEFAULT_PAGE, PAGE_SIZES, type DeckDoc } from "./deck";
+import { DEFAULT_PAGE, MAX_IMAGES, PAGE_SIZES, type DeckDoc } from "./deck";
 import { deckHtml } from "./html";
 import { bindPictures, workspacePictures, type PictureSource, type Viewer } from "./images";
 
@@ -32,7 +32,15 @@ export type PdfDeps = ExportWorkerDeps & {
 
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
-async function source(request: DeckRequest, viewer: Viewer, build: BuildOptions): Promise<DeckDoc> {
+/** A film deck's board: the caller's own saved draft, or a board that does not exist for them. */
+async function filmBoard(request: DeckRequest, viewer: Viewer) {
+  if (!request.board) throw new PdfError("A film deck needs the board it is made from (board).");
+  const draft = await readDraft(viewer.id, request.board);
+  if (!draft) throw new PdfError("That board isn't available in this workspace.", 404);
+  return draft.project;
+}
+
+async function source(request: DeckRequest, viewer: Viewer, build: BuildOptions, film: Awaited<ReturnType<typeof filmBoard>> | null): Promise<DeckDoc> {
   if (request.kind === "treatment") {
     if (!request.projectId) throw new PdfError("A treatment needs the production it belongs to (projectId).");
     /* A private board is its owner's and a shared one a teammate's to read; to anyone else it is a production that does not exist. */
@@ -47,6 +55,7 @@ async function source(request: DeckRequest, viewer: Viewer, build: BuildOptions)
     if (!draft) throw new PdfError("That board isn't available in this workspace.", 404);
     return ppmDoc(draft.project, build);
   }
+  if (request.kind === "film" && film) return filmDoc(film, { ...build, cover: request.cover ?? "treatment" });
   if (!request.pitch) throw new PdfError("A pitch deck needs its words (pitch: a logline, an audience and sections).");
   return pitchDoc({ title: request.title ?? "", logline: request.pitch.logline, audience: request.pitch.audience, sections: request.pitch.sections }, build);
 }
@@ -60,12 +69,18 @@ const REFUSALS: Record<number, string> = {
 
 export async function makeDeckPdf(request: DeckRequest, viewer: Viewer, deps: PdfDeps = {}): Promise<DeckPdf> {
   const tenant = requireTenant();
+  if (request.cover && request.kind !== "film") throw new PdfError("A cover is chosen for film decks only.");
   const date = DATE.format((deps.now ?? (() => new Date()))());
-  const bound = await bindPictures(request, viewer, deps.pictures ?? workspacePictures);
+  /* A film deck brings the board's own storyboard pictures, after any the caller named. */
+  const film = request.kind === "film" ? await filmBoard(request, viewer) : null;
+  const pictureRequest = film
+    ? { ...request, images: [...(request.images ?? []), ...filmPictureHandles(film).slice(0, Math.max(0, Math.min(FILM_PICTURES, MAX_IMAGES - (request.images?.length ?? 0)))).map((h) => ({ ...h, optional: true as const }))] }
+    : request;
+  const bound = await bindPictures(pictureRequest, viewer, deps.pictures ?? workspacePictures);
   const size = request.page ?? DEFAULT_PAGE[request.kind];
   let doc: DeckDoc;
   try {
-    doc = await source(request, viewer, { size, bleedMm: request.bleedMm ?? 0, title: request.title, logo: bound.logo, pictures: bound.pictures, date });
+    doc = await source(request, viewer, { size, bleedMm: request.bleedMm ?? 0, title: request.title, logo: bound.logo, pictures: bound.pictures, date }, film);
   } catch (error) {
     if (error instanceof DeckTooLong) throw new PdfError(error.message, 413);
     throw error;

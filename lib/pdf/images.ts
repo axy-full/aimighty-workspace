@@ -64,7 +64,7 @@ export const workspacePictures: PictureSource = {
 
 /** Bind a request's logo and pictures to files named i1.png, i2.jpg …: what the pages refer to and the worker is sent. */
 export async function bindPictures(
-  request: Pick<DeckRequest, "images" | "logo">,
+  request: Pick<DeckRequest, "logo"> & { images?: readonly (NonNullable<DeckRequest["images"]>[number] & { optional?: true })[] },
   viewer: Viewer,
   source: PictureSource = workspacePictures,
 ): Promise<{ files: Picture[]; logo: string | null; pictures: BoundPicture[] }> {
@@ -82,6 +82,10 @@ export async function bindPictures(
   };
   const logo = request.logo ? await bind({ upload: request.logo.upload }) : null;
   const pictures: BoundPicture[] = [];
-  for (const item of request.images ?? []) pictures.push({ file: await bind({ upload: item.upload, take: item.take }), caption: item.caption ?? "" });
+  for (const item of request.images ?? []) {
+    /* A picture the deck chose for itself (the storyboard's) that the caller cannot read, or that is not ready, is left out; one the caller named is an error. */
+    try { pictures.push({ file: await bind({ upload: item.upload, take: item.take }), caption: item.caption ?? "" }); }
+    catch (error) { if (!(item.optional && error instanceof PdfError && [404, 409, 415].includes(error.status))) throw error; }
+  }
   return { files, logo, pictures };
 }

@@ -79,10 +79,11 @@
 /* Edit: the cut, how it is dressed, and one MP4 per language (components/v12/board/EditStage.tsx) */
 .v12 .v12-es { grid-template-columns: minmax(0, 1fr); }
 @container (min-width: 1100px) {
-  .v12 .v12-es { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); grid-template-areas: "c f" "c l"; }
+  .v12 .v12-es { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); grid-template-areas: "c f" "c l" "c d"; }
   .v12 .v12-es > [data-testid="v12-edit-cut"] { grid-area: c; }
   .v12 .v12-es > [data-testid="v12-edit-film"] { grid-area: f; }
   .v12 .v12-es > [data-testid="v12-edit-languages"] { grid-area: l; }
+  .v12 .v12-es > [data-testid="v12-edit-decks"] { grid-area: d; }
 }
 .v12 .v12-es-cut { padding: 0; overflow: hidden; align-items: stretch; }
 .v12 .v12-es-cut .gx-cut { width: 100%; max-width: none; height: auto; min-height: 280px; }

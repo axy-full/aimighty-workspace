@@ -28,8 +28,10 @@ export const deckRequestSchema = z
     title: z.string().max(120).optional(),
     /** A treatment: the production it belongs to. */
     projectId: id.optional(),
-    /** A PPM deck: the board's own id. */
+    /** A PPM deck or a film deck: the board's own id. */
     board: id.optional(),
+    /** A film deck's cover: a quiet Treatment (the default) or a bold Pitch. The pages after it are the same. */
+    cover: z.enum(["treatment", "pitch"]).optional(),
     /** A pitch deck: the words, written by the caller. */
     pitch: z.object({ logline: z.string().max(300).optional(), audience: z.string().max(120).optional(), sections: z.array(section).min(1).max(14) }).strict().optional(),
     images: z.array(handle).max(MAX_IMAGES).optional(),
