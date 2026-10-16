@@ -21,11 +21,19 @@ import type { BoardCard, RegionId } from "@/lib/board/types";
 import { FLAVOR_BOARD, FLAVOR_LABEL, type Flavor } from "./kinds";
 
 /** One stage as saved in the draft. Absent list: the kind's own rail. */
-export type SavedStage = { id: string; label?: string; skipped?: boolean; custom?: boolean };
+export type SavedStage = {
+  id: string; label?: string; skipped?: boolean; custom?: boolean;
+  /** A built-in stage the person removed: kept in the list so it is never added back, and not drawn on the rail. */
+  removed?: boolean;
+};
 
 /** A stage as the rail draws it. */
 /** `builtIn`: the kind's own name for the stage (null for one a person added); a label that differs is a rename. */
-export type Stage = { id: string; label: string; builtIn: string | null; skipped: boolean; custom: boolean; regions: readonly RegionId[] };
+export type Stage = {
+  id: string; label: string; builtIn: string | null; skipped: boolean; custom: boolean; regions: readonly RegionId[];
+  /** The kind the rail belongs to: an edit uses it to keep the built-in stages the person removed (`removed`) out of the rail for good. */
+  flavor?: Flavor;
+};
 
 /** What a built-in stage draws: the regions its cards sit in, and for a shared region which of them. */
 type StageDef = {
@@ -132,17 +140,19 @@ export function stageId(flavor: Flavor, id: string | null | undefined): string |
 /**
  * The rail: the saved list when there is one, else the kind's own. Reading changes what is shown, never what is saved:
  *  - a stage saved under its old id (Cut) is read as the new one (Edit), in the same place;
- *  - unknown built-in ids are dropped;
- *  - a rail saved before a stage was added to the kind (Treatment, Pitch, Locations) gains it at its usual place: after the
- *    stage before it in the kind's list, or before the stage after it when nothing before is there. A rail that already holds
- *    any such stage was saved since (it keeps what the person removed), and a rail is never grown past `MAX_STAGES`.
- * The next edit of the rail saves the list as shown.
+ *  - unknown built-in ids are dropped, and so are built-in stages flagged `removed` (they stay removed);
+ *  - a stage added to the kind after rails were first saved (Treatment, Pitch, Locations) that a saved rail neither holds nor
+ *    flags as removed is a rail saved before it: it is added at its usual place, after the stage before it in the kind's list,
+ *    or before the stage after it when nothing before is there. A rail is never grown past `MAX_STAGES`.
+ * The next edit of the rail saves the list as shown, with a flag for every built-in stage that is not on it.
+ * One limit of that: a rail saved before v25 that already holds 24 stages has no room for the new ones, so they are not shown, and
+ * its next edit saves them flagged removed though the person never removed them. They can be added back with "+ Stage".
  */
 export function stagesOf(flavor: Flavor, saved: readonly SavedStage[] | null | undefined): Stage[] {
   const defs = builtInStages(flavor);
   const byId = new Map(defs.map((d) => [d.id, d]));
   for (const d of defs) for (const old of d.was ?? []) if (!byId.has(old)) byId.set(old, d);
-  if (!saved?.length) return defs.map((d) => ({ id: d.id, label: d.label, builtIn: d.label, skipped: false, custom: false, regions: d.regions }));
+  if (!saved?.length) return defs.map((d) => ({ id: d.id, label: d.label, builtIn: d.label, skipped: false, custom: false, regions: d.regions, flavor }));
   const seen = new Set<string>();
   const out: Stage[] = [];
   for (const s of saved) {
@@ -152,18 +162,17 @@ export function stagesOf(flavor: Flavor, saved: readonly SavedStage[] | null | u
     if (seen.has(id)) continue;
     if (!def && !s.custom) continue;
     seen.add(id);
-    out.push({ id, label: cleanLabel(s.label) ?? def?.label ?? "New stage", builtIn: def?.label ?? null, skipped: Boolean(s.skipped), custom: !def, regions: def?.regions ?? [] });
+    /* A removed flag hides the stage whatever else it says, so a flag on a custom stage can never draw more than the rail holds. */
+    if (s.removed) continue;
+    out.push({ id, label: cleanLabel(s.label) ?? def?.label ?? "New stage", builtIn: def?.label ?? null, skipped: Boolean(s.skipped), custom: !def, regions: def?.regions ?? [], flavor });
   }
-  const newer = defs.filter((d) => d.added);
-  if (newer.length && !newer.some((d) => seen.has(d.id))) {
-    for (const d of newer) {
-      if (out.length >= MAX_STAGES) break;
-      const at = defs.indexOf(d);
-      const before = defs.slice(0, at).map((x) => out.findIndex((s) => s.id === x.id)).filter((i) => i >= 0);
-      const after = defs.slice(at + 1).map((x) => out.findIndex((s) => s.id === x.id)).filter((i) => i >= 0);
-      const index = before.length ? Math.max(...before) + 1 : after.length ? Math.min(...after) : out.length;
-      out.splice(index, 0, { id: d.id, label: d.label, builtIn: d.label, skipped: false, custom: false, regions: d.regions });
-    }
+  for (const d of defs) {
+    if (!d.added || seen.has(d.id) || out.length >= MAX_STAGES) continue;
+    const at = defs.indexOf(d);
+    const before = defs.slice(0, at).map((x) => out.findIndex((s) => s.id === x.id)).filter((i) => i >= 0);
+    const after = defs.slice(at + 1).map((x) => out.findIndex((s) => s.id === x.id)).filter((i) => i >= 0);
+    const index = before.length ? Math.max(...before) + 1 : after.length ? Math.min(...after) : out.length;
+    out.splice(index, 0, { id: d.id, label: d.label, builtIn: d.label, skipped: false, custom: false, regions: d.regions, flavor });
   }
   return out;
 }
@@ -199,8 +208,25 @@ export function currentStage(stages: readonly Stage[], asked: string | null | un
 
 /* ── Rail edits: each returns the whole saved list, which the draft keeps ─────────────────────────── */
 
-const toSaved = (stages: readonly Stage[]): SavedStage[] =>
-  stages.map((s) => ({ id: s.id, ...(s.custom || s.label !== s.builtIn ? { label: s.label } : {}), ...(s.skipped ? { skipped: true } : {}), ...(s.custom ? { custom: true } : {}) }));
+/** The list an edit saves: the stages as shown, then a `removed` flag for each of the kind's built-in stages that is not on the rail. */
+const toSaved = (stages: readonly Stage[]): SavedStage[] => {
+  const shown: SavedStage[] = stages.map((s) => ({ id: s.id, ...(s.custom || s.label !== s.builtIn ? { label: s.label } : {}), ...(s.skipped ? { skipped: true } : {}), ...(s.custom ? { custom: true } : {}) }));
+  const flavor = stages.find((s) => s.flavor)?.flavor;
+  if (!flavor) return shown;
+  const kept = new Set(stages.map((s) => s.id));
+  return [...shown, ...builtInStages(flavor).filter((d) => !kept.has(d.id)).map((d) => ({ id: d.id, removed: true as const }))];
+};
+
+/**
+ * A rail to start a board with: the kind's own steps, less the ones a new board leaves out (saved as `{ id, removed: true }`, so a
+ * later read never adds them back) and with the ones it skips marked `skipped`. The saved list a new board's draft keeps as
+ * `boardStages`; lane F's New project writes it with this, never by hand.
+ */
+export function startingRail(flavor: Flavor, plan: { without?: readonly string[]; skipped?: readonly string[] } = {}): SavedStage[] {
+  const gone = new Set(plan.without ?? []);
+  const quiet = new Set(plan.skipped ?? []);
+  return toSaved(stagesOf(flavor, null).filter((s) => !gone.has(s.id)).map((s) => (quiet.has(s.id) ? { ...s, skipped: true } : s)));
+}
 
 export function renameStage(stages: readonly Stage[], id: string, label: string): SavedStage[] {
   const name = cleanLabel(label);
@@ -232,7 +258,7 @@ export const stageLimit = (count: number): string | null => (count >= MAX_STAGES
 export function addStage(stages: readonly Stage[], after: string | null, label: string, makeId: () => string): { saved: SavedStage[]; id: string | null } {
   if (stageLimit(stages.length)) return { saved: toSaved(stages), id: null };
   const id = `custom-${makeId()}`;
-  const fresh: Stage = { id, label: cleanLabel(label) ?? "New stage", builtIn: null, skipped: false, custom: true, regions: [] };
+  const fresh: Stage = { id, label: cleanLabel(label) ?? "New stage", builtIn: null, skipped: false, custom: true, regions: [], flavor: stages.find((s) => s.flavor)?.flavor };
   const at = after ? stages.findIndex((s) => s.id === after) + 1 : stages.length;
   const next = [...stages.slice(0, at > 0 ? at : stages.length), fresh, ...stages.slice(at > 0 ? at : stages.length)];
   return { saved: toSaved(next), id };

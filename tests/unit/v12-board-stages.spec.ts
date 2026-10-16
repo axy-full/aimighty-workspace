@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { MAX_STAGES, freeCards, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, stageId } from "../../lib/v12/board/stages";
+import { MAX_STAGES, freeCards, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, stageId, startingRail } from "../../lib/v12/board/stages";
 import type { BoardCard } from "../../lib/board/types";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
@@ -242,15 +242,30 @@ test("a rail saved before v25 keeps what its person did with Cut: a rename, a sk
   expect(ids("film", [{ id: "cut" }, { id: "edit" }, { id: "brief" }]).filter((id) => id === "edit")).toHaveLength(1);
 });
 
-test("a rail saved since v25 is not grown again: what its person removed stays removed", () => {
+test("what a person removed stays removed, every time the rail is read, even all three new steps; a rail saved before them gains them", () => {
   const stages = stagesOf("film", null);
   const withoutTreatment = removeStage(stages, "treatment");
   expect(ids("film", withoutTreatment)).not.toContain("treatment");
   expect(ids("film", withoutTreatment)).toContain("pitch");
-  /* A rail with one of the new stages in it was saved since. */
-  expect(ids("film", [{ id: "brief" }, { id: "locations" }, { id: "edit" }])).toEqual(["brief", "locations", "edit"]);
+  expect(withoutTreatment).toContainEqual({ id: "treatment", removed: true });
+  /* All three removed, then the rail edited again and read again: still gone. */
+  let saved = removeStage(stages, "treatment");
+  saved = removeStage(stagesOf("film", saved), "pitch");
+  saved = removeStage(stagesOf("film", saved), "locations");
+  saved = renameStage(stagesOf("film", saved), "brief", "Idea");
+  for (let reads = 0; reads < 3; reads += 1) expect(ids("film", saved)).toEqual(["brief", "script", "cast", "elements", "storyboard", "shots", "edit", "deliver"]);
+  /* A rail saved before them, with none of the three and none flagged, gains them. */
+  expect(ids("film", [{ id: "brief" }, { id: "cast" }, { id: "cut" }])).toEqual(["treatment", "pitch", "brief", "cast", "locations", "edit"]);
+  /* Flagged ones are not added back, the others are. */
+  expect(ids("film", [{ id: "brief" }, { id: "pitch", removed: true }, { id: "cast" }])).toEqual(["treatment", "brief", "cast", "locations"]);
+  /* The flags are not stages: they do not count toward the rail's 24, but the schema keeps them to the kind's own steps. */
+  expect(projectSchema.safeParse({ ...newProject("Board"), boardStages: saved }).success).toBe(true);
+  expect(saved.filter((s) => s.removed)).toHaveLength(3);
   /* The default rail is unchanged by reading it back. */
   expect(ids("film", skipStage(stages, "brief", false))).toEqual(stages.map((s) => s.id));
+  /* A removed custom stage is simply gone; no flag. */
+  const withCustom = addStage(stages, null, "Mine", () => "m");
+  expect(removeStage(stagesOf("film", withCustom.saved), withCustom.id!).some((s) => s.id === withCustom.id)).toBe(false);
 });
 
 test("the new stages join a rail only up to the most a board holds", () => {
@@ -279,4 +294,33 @@ test("Pitch, Treatment and Locations have no cards of their own yet: no card of 
     expect(FILM_STAGES.find((d) => d.id === id)!.regions).toEqual([]);
     expect(stageCards({ id, regions: [] }, CARDS, "film")).toEqual([]);
   }
+});
+
+test("a board started with a shorter rail (Treatment and Locations left out, Elements skipped) keeps it, however it is read or edited", () => {
+  const rail = startingRail("film", { without: ["treatment", "locations"], skipped: ["elements"] });
+  expect(rail).toContainEqual({ id: "treatment", removed: true });
+  expect(rail).toContainEqual({ id: "locations", removed: true });
+  expect(rail).toContainEqual({ id: "elements", skipped: true });
+  const want = ["pitch", "brief", "script", "cast", "elements", "storyboard", "shots", "edit", "deliver"];
+  expect(ids("film", rail)).toEqual(want);
+  expect(stagesOf("film", rail).find((s) => s.id === "elements")!.skipped).toBe(true);
+  /* Removing Pitch later does not bring the others back. */
+  const lessPitch = removeStage(stagesOf("film", rail), "pitch");
+  expect(ids("film", lessPitch)).toEqual(want.slice(1));
+  expect(projectSchema.safeParse({ ...newProject("Board"), boardStages: lessPitch }).success).toBe(true);
+  expect(startingRail("film")).toEqual(stagesOf("film", null).map((s) => ({ id: s.id })));
+  expect(startingRail("previs", { without: ["script"] }).map((s) => s.id)).toContain("script");
+});
+
+test("a removed flag is only for the kind's own stages: the schema refuses it on a custom stage, and a rail never draws more than it holds", () => {
+  const project = newProject("Board");
+  expect(projectSchema.safeParse({ ...project, boardStages: [{ id: "custom-a", custom: true, removed: true }] }).success).toBe(false);
+  expect(projectSchema.safeParse({ ...project, boardStages: [{ id: "treatment", removed: true }] }).success).toBe(true);
+  /* The shape that would have drawn 36: 24 custom stages and 12 flagged ones (read from a draft that never went through the schema). */
+  const custom = Array.from({ length: 24 }, (_, i) => ({ id: `custom-${i}`, label: `Extra ${i}`, custom: true }));
+  const flagged = Array.from({ length: 12 }, (_, i) => ({ id: `custom-gone${i}`, label: `Gone ${i}`, custom: true, removed: true }));
+  const drawn = stagesOf("film", [...custom, ...flagged]);
+  expect(drawn.length).toBeLessThanOrEqual(MAX_STAGES);
+  expect(drawn.some((s) => s.id.startsWith("custom-gone"))).toBe(false);
+  expect(projectSchema.safeParse({ ...project, boardStages: [...custom, ...flagged] }).success).toBe(false);
 });

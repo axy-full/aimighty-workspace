@@ -381,7 +381,10 @@ export const projectSchema = z.object({
     label: z.string().max(40).optional(),
     skipped: z.boolean().optional(),
     custom: z.boolean().optional(),
-  }).strict()).max(24).optional(),
+    removed: z.boolean().optional(),
+  }).strict().refine((stage) => !(stage.removed && stage.custom), "A removed flag is only for the kind's own stages")).max(36).optional()
+    /* At most 24 stages on the rail (lib/v12/board/stages.ts › MAX_STAGES); the rest of the list is built-in stages the person removed. */
+    .refine((list) => !list || list.filter((stage) => !stage.removed).length <= 24, "Too many stages"),
   /* How each person works the board, Agent or Director, by person id; each mode's setup per step; a card's own settings (lib/v12/board/board-data.ts). Additive and optional, draft JSON only. */
   boardMode: z.record(z.string().regex(PERSON_ID), z.enum(["agent", "director"])).optional()
     .refine((v) => !v || Object.keys(v).length <= BOARD_DATA_LIMITS.people, "Too many people"),
