@@ -247,7 +247,7 @@ test.describe("desktop, switch on", () => {
     await open(page);
     await page.locator('[data-testid="v12-rig-output"][data-id="cut"]').click();
     await expect(page.getByTestId("v12-rig")).toHaveCount(0);
-    await expect(page.getByTestId("v12-stage-crumb")).toHaveText("Cut");
+    await expect(page.getByTestId("v12-stage-crumb")).toHaveText("Edit");
     await page.getByTestId("v12-view-switch").getByRole("radio", { name: "Rig" }).click();
     await expect(page.getByTestId("v12-rig")).toBeVisible();
     await page.getByTestId("v12-view-switch").getByRole("radio", { name: "Canvas" }).click();
