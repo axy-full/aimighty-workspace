@@ -1079,3 +1079,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Lane C: #781 08b88c5b (24 MP cap; Developer plan confirmed) and #786 1083e90a (consent code removed); now on "Approve at N cr".
   - CI: #756 running (38853865454), #758 queued behind it.
   - Docs E's env list file stays uncommitted (its git add was denied); the list was given to the owner in chat.
+- **16 Oct 11:08 IST.** Lane D:
+  - Slice 1: QUEUE_EXPIRY_MS is a constant (#700 562ef2a8); DNxHR dropped from the READMEs, MCP text and schema (dnxhr/dnxhd refused); merged up: #768 760d679d, #769 e770c884, #770 b6d3d70e, #772 218da1f1, #773 e189479f, #766 384bf316, #774 ed6ae091, #775 68bee3b8, #767 533144f4.
+  - Consent removed from #779 Veo (3f525724); #783 7ab1985f merged.
+  - New #788 Pro pick (d35da7ce, base #787): lib/proPick.ts (Seedance 2.5, Veo 3.1, Kling 4.0 → Kling 3.0 Pro fallback, Runway Gen-4.5) with a site override. Also fixes a bug: writeSite dropped enginesOnWorkspaces and proPick.
+  - The lead updated slice-1.md §4 and remotion.md for DNxHR dropped.
+  - Opus reviews next.

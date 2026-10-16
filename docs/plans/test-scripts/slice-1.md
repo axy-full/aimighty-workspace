@@ -26,8 +26,8 @@ Where a button is not on the screen yet, ask Atomik for the same thing ("export 
 **Try:** Ask for a 6 s, a 15 s and a 30 s cutdown of the cut.
 **Good looks like:** each has the length you asked for within a frame or two; none starts or ends mid-word; the captions and end card still fit; the planning picks moments worth keeping (say if it does not). Silence cuts, if offered, do not clip the start of a word.
 
-## 4. A ProRes / DNxHR mezzanine
-**Try:** Export the cut as a ProRes file, then as DNxHR.
+## 4. A ProRes mezzanine
+**Try:** Export the cut as a ProRes 422 (or 422 HQ) file. DNxHR is dropped for now (owner, 16 Oct): delivery is ProRes mezzanine and H.264 only.
 **Good looks like:** the file is large and downloads fully; it opens in your editor (Premiere, Resolve) without a conform dialog; frame size and frame rate are the project's; the length matches the MP4 within a frame; audio is present and in sync. A cut in another frame rate is conformed to the project's rate without changing its length.
 
 ## 5. Download all
