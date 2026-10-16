@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { TRAIL } from "@/components/ui/Mark";
+import { BrandLogo } from "@/components/ui/BrandLogo";
 import { Glyph, SEGMENT_LOOK, posterOf } from "./icons";
 import { HEADER_SEGMENT, type HeaderSegmentId } from "@/lib/shell/ia";
 import { useShell } from "@/lib/shell/state";
@@ -87,10 +87,7 @@ export function Header({ account, project = null, bar = null }: { account: Works
     <header className="gx-header" data-row="header" data-menu={menu ? "open" : undefined} ref={box}>
       {/* The mark goes Home, as the Home segment does. */}
       <button type="button" className="gx-brand" onClick={() => goTo("home")} aria-label="particl home" data-testid="brand-home">
-        <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
-          {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
-        </svg>
-        <span className="gx-brand-name">particl</span>
+        <BrandLogo />
         {shell.wide ? badge : null}
       </button>
       {shell.wide ? null : (
