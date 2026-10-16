@@ -70,8 +70,8 @@ test("an engine-scoped rule is that engine's dialect: picked for its family only
 });
 
 test("text jobs route to known models: enhancement fast and cheap by default, ideas and shots stronger; an unknown id loses to the default", () => {
-  /* Owner, 11 Oct 2026: enhancement on Sonnet 5.5, ideas and shots on Opus 5.5. */
-  expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: "anthropic/claude-sonnet-5.5", idea: "anthropic/claude-opus-5.5", shot: "anthropic/claude-opus-5.5" });
+  /* Owner, 11 Oct 2026: enhancement on Sonnet 5.5, ideas and shots on Opus 5.5. Owner, 16 Oct 2026: the default prompt writer is Opus 5.5 for now. */
+  expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: "anthropic/claude-opus-5.5", idea: "anthropic/claude-opus-5.5", shot: "anthropic/claude-opus-5.5" });
   const m = cleanModels({ text: { enhance: "anthropic/claude-haiku-4.5", idea: "not-a-model", shot: 7 } });
   expect(m.text).toEqual({ enhance: "anthropic/claude-haiku-4.5", idea: DEFAULT_TEXT_MODELS.idea, shot: DEFAULT_TEXT_MODELS.shot });
   expect(cleanModels("junk").text).toEqual(DEFAULT_TEXT_MODELS);

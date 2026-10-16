@@ -103,8 +103,14 @@ export function toCatalogModel(m: RawModel & { id: string }): CatalogModel {
 
 let cache: { at: number; models: CatalogModel[] } | null = null;
 /** Drop the cached live read, so the next read goes to the gateway again (tests that model an offline catalogue). */
-export function forgetCatalogCache(): void { cache = null; }
+export function forgetCatalogCache(): void { cache = null; failedAt = null; }
 const TTL_MS = 60 * 60 * 1000;   // an hour; the catalogue moves in weeks
+/**
+ * A read that failed (the gateway refused, timed out at 15 s, or egress is blocked) is not asked again for this long: without it every quote waited
+ * the full 15 s again, and a person pressing Enhance waited behind it. What was last read, or nothing, is served meanwhile; a forced read still asks.
+ */
+export const FAILED_READ_TTL_MS = 60_000;
+let failedAt: number | null = null;
 
 /**
  * Every model the gateway will serve this deployment.
@@ -117,6 +123,7 @@ const TTL_MS = 60 * 60 * 1000;   // an hour; the catalogue moves in weeks
 export async function gatewayCatalog(force = false): Promise<CatalogModel[]> {
   if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.models;
   if (!gatewayReachable() && !vendorKey('openai')) return [];
+  if (!force && failedAt !== null && Date.now() - failedAt < FAILED_READ_TTL_MS) return cache?.models ?? [];
   try {
     // This metadata endpoint is public; an OpenAI-only workspace still needs
     // its capabilities and price metadata without borrowing Gateway credentials.
@@ -126,16 +133,18 @@ export async function gatewayCatalog(force = false): Promise<CatalogModel[]> {
     });
     if (!res.ok) {
       console.warn(`catalog: ${res.status} ${(await res.text()).slice(0, 160)}`);
+      failedAt = Date.now();
       return cache?.models ?? [];
     }
     const j = await res.json() as { data?: RawModel[] };
     const models = (j.data ?? [])
       .filter((m): m is RawModel & { id: string } => typeof m.id === "string")
       .map(toCatalogModel);
-    if (models.length) cache = { at: Date.now(), models };
+    if (models.length) { cache = { at: Date.now(), models }; failedAt = null; }
     return models;
   } catch (e) {
     console.warn(`catalog: ${(e as Error).message}`);
+    failedAt = Date.now();
     return cache?.models ?? [];
   }
 }

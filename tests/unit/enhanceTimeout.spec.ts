@@ -7,12 +7,12 @@ import ts from "typescript";
 import type { AdmissionActor } from "../../lib/admissionTypes";
 
 /**
- * Enhance ends within 90 s on any host (docs/long-flows.md › C4): no request
- * stays silent for more than 100 s. The budget runs from the route's entry:
- * the provider gets what is left of it, and with under 20 s left the press is
- * refused before anything is reserved. A provider that stalls past it is
- * settled exactly once as `uncertain`, its 1 cr estimate billed until the cron's pass returns it, and the same
- * press sent again never calls the provider a second time.
+ * Enhance ends within 8 s on any host (the owner's note of 16 Oct 2026; the browser gives up at the same 8 s, lib/shell/enhance-press.ts): the
+ * deadline runs from the route's entry, the provider gets what is left of it, and with under 3 s left the press is refused before anything is
+ * reserved. A writer that gives NO answer by then is settled once as failed at zero ("Nothing billed", released, 504): the one change to the money
+ * rule, for the enhancer alone (`unansweredIsFree`, lib/paidText.ts). Every other text job keeps the shared rule (a cut-off call is `uncertain`, its
+ * estimate billed until the cron's pass returns it), and so does an enhancement the provider answered with an error status. The same press sent again
+ * never calls the provider a second time.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "enhance-timeout-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -42,7 +42,7 @@ function load<T>(file: string, overrides: Record<string, unknown>): T {
   return target.exports as T;
 }
 
-type Submit = (request: { timeoutMs?: number }) => Promise<{ ok: boolean; status: number; text: string }>;
+type Submit = (request: { timeoutMs?: number; body?: string }) => Promise<{ ok: boolean; status: number; text: string }>;
 type Handler = (req: Request) => Promise<Response>;
 /** Time moved on by a slow catalogue read: Date.now runs this far ahead while a test lasts. */
 let skew = 0;
@@ -74,6 +74,11 @@ async function traces(ws: string) {
   };
 }
 
+async function balanceOf(ws: string) {
+  const { billingStateFor } = await import("../../lib/billingLedger");
+  return (await billingStateFor(ws)).credits.balance;
+}
+
 async function inWorkspace(ws: string, fn: () => Promise<void>) {
   const { platformReady, platformDb, rowToWorkspace, grantCredits } = await import("../../lib/platform");
   const { runInTenant } = await import("../../lib/tenant");
@@ -96,18 +101,19 @@ function press(key: string): Request {
   });
 }
 
-test("the route's whole answer is budgeted at 90 s from entry, under its own limit", () => {
+test("the route's whole answer is budgeted at 8 s from entry, with the provider's unanswered call free", () => {
   const route = readFileSync("app/api/prompt/enhance/route.ts", "utf8");
-  expect(route).toContain("const ENHANCE_BUDGET_MS = 90_000;");
-  expect(route).toMatch(/runPaidText\(\{ \.\.\.input, maxCredits: [^}]*deadline \}, \{ model,/);
+  expect(route).toContain("const deadline = Date.now() + ENHANCE_DEADLINE_MS;");
+  expect(route).toMatch(/runPaidText\(\{ \.\.\.input, maxCredits: [^}]*deadline, minProviderMs: ENHANCE_MIN_PROVIDER_MS, unansweredIsFree: true \}, \{ model,/);
+  expect(readFileSync("lib/paidText.ts", "utf8")).toContain("export const ENHANCE_DEADLINE_MS = 8_000;");
   /* Under the route's own limit, so the timeout answers before the host cuts the request. */
-  expect(Number(/export const maxDuration = (\d+)/.exec(route)?.[1])).toBeGreaterThan(90);
+  expect(Number(/export const maxDuration = (\d+)/.exec(route)?.[1])).toBeGreaterThan(8);
 });
 
-test("a provider that stalls past the budget is settled once as uncertain, the 1 cr estimate billed, and the same press is not sent again", async () => {
+test("a writer that never answers: failed at zero, Nothing billed, the reservation released, and the same press is not sent again", async () => {
   await inWorkspace("ws_enhance_stall", async () => {
     const timeouts: (number | undefined)[] = [];
-    /* A stalled provider: the call's own AbortSignal.timeout fires (lib/gateway.ts gatewayPost) — here at once. */
+    /* A stalled provider: the call's own AbortSignal.timeout fires (lib/textDirect.ts) — here at once. */
     const stalled: Submit = async (request) => {
       timeouts.push(request.timeoutMs);
       throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
@@ -115,55 +121,106 @@ test("a provider that stalls past the budget is settled once as uncertain, the 1
     const route = enhance(stalled);
     const first = await route(press("enhance-stall-1"));
     const body = await first.json();
-    expect(first.status).toBe(502);
-    expect(body.error).toBe("The text request was interrupted after submission. It will not be sent again, and its estimated credits are returned to your balance automatically, usually within a few hours.");
+    expect(first.status).toBe(504);
+    expect(body.error).toBe("The writer didn't answer in time. Nothing billed.");
     expect(timeouts).toHaveLength(1);
-    expect(timeouts[0]).toBeLessThanOrEqual(90_000);
-    expect(timeouts[0]).toBeGreaterThan(60_000);
+    expect(timeouts[0]).toBeLessThanOrEqual(8_000);
+    expect(timeouts[0]).toBeGreaterThan(4_000);
 
     const settled = await traces("ws_enhance_stall");
     expect(settled.jobs).toHaveLength(1);
-    expect(settled.jobs[0].status).toBe("uncertain");
-    expect(Number(settled.jobs[0].cost_usd)).toBe(Number(settled.jobs[0].estimate_usd));
+    expect(settled.jobs[0].status).toBe("failed");
+    expect(Number(settled.jobs[0].cost_usd)).toBe(0);
     expect(Number(settled.jobs[0].estimate_usd)).toBeGreaterThan(0);
     expect(settled.meters).toHaveLength(1);
     expect(settled.meters[0].status).toBe("failed");
-    expect(Number(settled.meters[0].engine_cost_usd)).toBe(Number(settled.jobs[0].estimate_usd));
-    /* The 1 cr estimate is billed for now; the cron's pass returns it once no request can still answer (paidTextReconcile.spec.ts). */
-    expect(Number(settled.meters[0].billed_credits)).toBe(1);
+    expect(Number(settled.meters[0].engine_cost_usd)).toBe(0);
+    expect(Number(settled.meters[0].billed_credits)).toBe(0);
+    expect(await balanceOf("ws_enhance_stall"), "the whole 1,000 cr grant is still there").toBe(1000);
 
     /* The same press again (a retry of the lost reply): answered from its claim, never a second call or charge. */
     const again = await route(press("enhance-stall-1"));
-    expect(again.status).toBe(502);
+    expect(again.status).toBe(504);
     expect(await again.json()).toEqual(body);
     expect(timeouts).toHaveLength(1);
     expect(await traces("ws_enhance_stall")).toEqual(settled);
   });
 });
 
-test("time spent before the provider call comes off its timeout: a slow catalogue leaves the provider the rest of the 90 s", async () => {
+test("the shared rule is unchanged for any other text job: a cut-off call is uncertain and bills its estimate until the cron's pass returns it", async () => {
+  await inWorkspace("ws_text_stall", async () => {
+    const { runPaidText } = await import("../../lib/paidText");
+    const stalled: Submit = async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); };
+    const error = await runPaidText({ id: "text-stall", model: WRITER, messages: [{ role: "user", content: "a tree in rain" }], maxTokens: 400, kind: "plan", mock: "prompt", createdBy: "owner" }, { model: MODEL as never, submit: stalled }).then(() => null, (e: unknown) => e as Error & { status?: number });
+    expect(error?.message).toMatch(/^The text request was interrupted after submission\./);
+    const settled = await traces("ws_text_stall");
+    expect(settled.jobs[0].status).toBe("uncertain");
+    expect(Number(settled.jobs[0].cost_usd)).toBe(Number(settled.jobs[0].estimate_usd));
+    expect(Number(settled.meters[0].billed_credits)).toBe(1);
+  });
+});
+
+test("an error status from the provider is an answer: the enhancer keeps the shared rule for it (a 5xx is uncertain, a refusal is free)", async () => {
+  await inWorkspace("ws_enhance_5xx", async () => {
+    const down: Submit = async () => ({ ok: false, status: 503, text: "" });
+    const out = await enhance(down)(press("enhance-5xx"));
+    expect(out.status).toBe(502);
+    expect((await out.json()).error).toMatch(/^The text provider returned an uncertain result\./);
+    const settled = await traces("ws_enhance_5xx");
+    expect(settled.jobs[0].status).toBe("uncertain");
+    expect(Number(settled.meters[0].billed_credits)).toBe(1);
+  });
+  await inWorkspace("ws_enhance_refused", async () => {
+    const declined: Submit = async () => ({ ok: false, status: 400, text: "" });
+    const out = await enhance(declined)(press("enhance-refused"));
+    expect((await out.json()).error).toBe("The text provider declined this request (400). No generation credits were charged.");
+    const settled = await traces("ws_enhance_refused");
+    expect(settled.jobs[0].status).toBe("failed");
+    expect(Number(settled.meters[0].billed_credits)).toBe(0);
+  });
+});
+
+test("time spent before the provider call comes off its timeout: a slow catalogue leaves the provider the rest of the 8 s", async () => {
   await inWorkspace("ws_enhance_slow_catalogue", async () => {
     const timeouts: (number | undefined)[] = [];
     const answers: Submit = async (request) => {
       timeouts.push(request.timeoutMs);
       return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ prompt: "A lone tree in steady rain, slow push-in, grey dusk light." }) } }], usage: { cost: 0.0004 } }) };
     };
-    const out = await enhance(answers, 40_000)(press("enhance-slow-catalogue"));
+    const out = await enhance(answers, 2_500)(press("enhance-slow-catalogue"));
     expect(out.status, JSON.stringify(await out.clone().json())).toBe(200);
     expect(timeouts).toHaveLength(1);
-    expect(timeouts[0]).toBeLessThanOrEqual(50_000);
-    expect(timeouts[0]).toBeGreaterThan(30_000);
+    expect(timeouts[0]).toBeLessThanOrEqual(5_500);
+    expect(timeouts[0]).toBeGreaterThan(4_000);
   });
 });
 
-test("with under 20 s of the budget left before the provider call, the press is refused with nothing written, reserved, metered or sent", async () => {
+test("with under 3 s of the deadline left before the provider call, the press is refused with nothing written, reserved, metered or sent", async () => {
   await inWorkspace("ws_enhance_late", async () => {
     let sent = 0;
     const never: Submit = async () => { sent++; throw new Error("The provider must not be called"); };
-    const out = await enhance(never, 75_000)(press("enhance-late"));
+    const out = await enhance(never, 6_000)(press("enhance-late"));
     expect(out.status).toBe(503);
     expect((await out.json()).error).toBe("The text provider is slow to answer right now. Nothing was charged; try again in a moment.");
     expect(sent).toBe(0);
     expect(await traces("ws_enhance_late")).toEqual({ jobs: [], meters: [], reservations: 0 });
+  });
+});
+
+test("the writer is asked to think lightly, with a small fixed room, and the quote and the run say the same", async () => {
+  await inWorkspace("ws_enhance_quick", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const answers: Submit = async (request) => {
+      bodies.push(JSON.parse(request.body ?? "{}"));
+      return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ prompt: "A lone tree in steady rain, slow push-in." }) } }], usage: { cost: 0.0004 } }) };
+    };
+    const route = enhance(answers);
+    const quote = await route(new Request("http://localhost/api/prompt/enhance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: "a tree in rain", mode: "video", provider: "claude", quoteOnly: true }) }));
+    expect(quote.status).toBe(200);
+    const out = await route(press("enhance-quick"));
+    expect(out.status).toBe(200);
+    expect(bodies).toHaveLength(1);
+    /* Haiku 4.5 offers no named effort (a toggle and a budget): it is asked as it always was; the Claude 5.5 writers and gpt-5-mini are in the next tests. */
+    expect(bodies[0].max_tokens).toBeLessThanOrEqual(400 + 1_024);
   });
 });

@@ -5,7 +5,7 @@ import { catalog } from "@/lib/catalog";
 import { withGenerationRequest } from "@/lib/generationRequests";
 import { displayModelName } from "@/lib/models";
 import { isVerifiedTextModel } from "@/lib/atomikModelPolicy";
-import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure, quotePaidText, requestMaxCredits, runPaidText } from "@/lib/paidText";
+import { ENHANCE_DEADLINE_MS, ENHANCE_MIN_PROVIDER_MS, paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure, quotePaidText, requestMaxCredits, runPaidText } from "@/lib/paidText";
 import { getPlatformLayer } from "@/lib/platform";
 import { textModelFor } from "@/lib/platformLayer";
 import { getSetting } from "@/lib/settings";
@@ -17,8 +17,6 @@ import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
-/** The whole request answers within this (no request stays silent past 100 s; docs/long-flows.md › C4). */
-const ENHANCE_BUDGET_MS = 90_000;
 
 /**
  * POST /api/prompt/enhance { prompt, provider?, model?, mode, anchored?, editing? }
@@ -34,7 +32,8 @@ const ENHANCE_BUDGET_MS = 90_000;
  * meter settles what the provider reports, and nothing is reserved on a quote.
  */
 export const POST = withTenant(async function POST(req: Request) {
-  const deadline = Date.now() + ENHANCE_BUDGET_MS;
+  /* The writer gets the same 8 s the browser waits (ENHANCE_DEADLINE_MS), counted from the request's start: the catalogue read and the claim come out of it. */
+  const deadline = Date.now() + ENHANCE_DEADLINE_MS;
   const got = await requireRender();
   if (got.response) return got.response;
   const quoteOnly = (await req.clone().json().catch(() => ({}))).quoteOnly === true;
@@ -63,18 +62,20 @@ export const POST = withTenant(async function POST(req: Request) {
 
       const engine = typeof body.model === "string" && body.model ? displayModelName(body.model.slice(0, 120)) : null;
       const messages = enhancerMessages(prompt, { mode: body.mode, anchored: body.anchored === true, editing: body.editing === true, engine });
-      const input = { model: writer, messages, maxTokens: ENHANCE_MAX_TOKENS, kind: "enhance", mock: "prompt" as const, createdBy: got.user.id };
+      /* `quick`: the lightest reasoning the writer offers, with a small fixed room to think (lib/paidText.ts quickEffort); quoted and run the same way. */
+      const input = { model: writer, messages, maxTokens: ENHANCE_MAX_TOKENS, kind: "enhance", mock: "prompt" as const, createdBy: got.user.id, quick: true };
       /* The catalogue read above is the one priced from: a second read could wait on the gateway again. */
       const model = models.find((m) => m.id === writer);
       if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input, model));
       /* The price the person saw is required: there is no unquoted enhancement.
          The answer is judged before the job settles: a rewrite that dropped a
          citation, or that is not a prompt, is refused and the workspace is not charged.
-         The provider gets what is left of the 90 s budget; with under 20 s left the
-         press is refused before anything is reserved (503, nothing charged). A provider
-         that stalls past the budget settles the job as uncertain and the 1 cr estimate
-         is billed (lib/paidText.ts) until the cron's pass returns it, 30 min on. */
-      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true), deadline }, { model, accept: (text) => parseEnhanced(text, prompt) });
+         The provider gets what is left of the 8 s deadline; with under 3 s left the
+         press is refused before anything is reserved (503, nothing charged). A writer
+         that does not answer at all by the deadline settles as failed at zero: 504,
+         "Nothing billed" (`unansweredIsFree`, lib/paidText.ts). A reply of any kind that
+         is not an answer (an error status) keeps the shared rule, below. */
+      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true), deadline, minProviderMs: ENHANCE_MIN_PROVIDER_MS, unansweredIsFree: true }, { model, accept: (text) => parseEnhanced(text, prompt) });
       const parsed = parseEnhanced(result.text, prompt);
       if (!parsed.ok) return NextResponse.json({ error: parsed.reason }, { status: 502 });
       return NextResponse.json({ prompt: parsed.prompt, provider, writer }, { headers: { "Cache-Control": "no-store" } });

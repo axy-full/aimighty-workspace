@@ -6,7 +6,7 @@ import { atomikPublicResponse } from "./workbench/atomik-response";
 import { workbenchScopeProblem } from "./workbench/request-scope";
 import { billCredits } from "./creditTerms";
 import { paidByPlatform } from "./platformSpend";
-import { atomikReasoningRequest } from "./atomik-reasoning";
+import { atomikEffortOptions, atomikReasoningRequest } from "./atomik-reasoning";
 import { withRecoveryActivity } from './recovery';
 import { db, ready, id as newId, now } from "./db";
 import { platformDb, platformReady } from "./platform";
@@ -24,6 +24,15 @@ import { jobLineNow } from "./shotCap";
 
 /** The least time a deadline-bound text job must still have for its provider call (runPaidText `deadline`). */
 export const PAID_TEXT_MIN_PROVIDER_MS = 20_000;
+/**
+ * The prompt enhancer's own deadline for the provider (the browser gives up at the same 8 s: lib/shell/enhance-press.ts ENHANCE_CLIENT_MS), and the
+ * least of it that must be left to start a call. An enhancement is a few hundred tokens: a writer that has not answered by now is not going to, and the
+ * person is better served by their own words at once than by a press that hangs.
+ */
+export const ENHANCE_DEADLINE_MS = 8_000;
+export const ENHANCE_MIN_PROVIDER_MS = 3_000;
+/** The extra output tokens a quick (low-effort) writer may think with on top of the visible answer: enough for a rewrite, never the 4,096 of a planning turn. */
+export const QUICK_REASONING_TOKENS = 1_024;
 
 export class PaidTextError extends Error {
   constructor(
@@ -103,7 +112,16 @@ export function textRequestEstimate(
 }
 
 export type PaidTextQuote = { model: string; effort: string; estimateCredits: number; estimateUsd?: number };
-type QuotedTextInput = { model: string; effort?: string; maxTokens: number; messages: unknown[]; maxCredits?: number };
+type QuotedTextInput = {
+  model: string; effort?: string; maxTokens: number; messages: unknown[]; maxCredits?: number;
+  /** A short rewrite that must come back fast (the prompt enhancer): the lightest reasoning the model offers, with a small, fixed room to think. Quoted and run the same way. */
+  quick?: boolean;
+};
+/** The lightest named effort a model offers, for a call that must answer inside a few seconds; none when it offers no control. */
+export function quickEffort(model: CatalogModel): string | undefined {
+  const offered = atomikEffortOptions(model).map((option) => option.value);
+  return ["none", "minimal", "low"].find((value) => offered.includes(value));
+}
 async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) {
   const model = override ?? (await findModel(input.model));
   if (!model)
@@ -114,7 +132,12 @@ async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) 
   if (!Number.isInteger(input.maxTokens) || input.maxTokens < 1 || input.maxTokens > 4000)
     throw new PaidTextError("Atomik visible output must be between 1 and 4000 tokens.", 400);
   let reasoning: ReturnType<typeof atomikReasoningRequest>;
-  try { reasoning = atomikReasoningRequest(model, input.effort, input.maxTokens); }
+  try {
+    const quick = input.quick && input.effort === undefined ? quickEffort(model) : undefined;
+    reasoning = atomikReasoningRequest(model, quick ?? input.effort, input.maxTokens);
+    /* A quick call keeps its ceiling small: the answer's own room, and a fixed little for thinking, whatever the effort's usual allowance. */
+    if (quick) reasoning = { ...reasoning, maxTokens: Math.min(reasoning.maxTokens, input.maxTokens + QUICK_REASONING_TOKENS) };
+  }
   catch (error) { throw new PaidTextError(error instanceof Error ? error.message : "Choose a supported reasoning effort.", 400); }
   const usesImages = input.messages.some((message) => {
     if (!message || typeof message !== "object") return false;
@@ -203,6 +226,16 @@ export async function runPaidText(
      * written or reserved, so nothing is charged.
      */
     deadline?: number;
+    /** The least of `deadline` that must be left to start the provider call (default PAID_TEXT_MIN_PROVIDER_MS). */
+    minProviderMs?: number;
+    /** See QuotedTextInput. */
+    quick?: boolean;
+    /**
+     * A provider that never answered (the call was cut off at the deadline or the connection broke, with no reply of any kind) settles as failed at
+     * zero: nothing is billed, the reservation is released and the message says so. Without it such a call stays uncertain and bills its estimate until
+     * the cron's pass returns it (the default, for every other text job). A reply of any kind, an error status included, is not "no answer".
+     */
+    unansweredIsFree?: boolean;
     /** Chat messages already keep their own cost row. Failed calls still remain in paid_text_jobs and meter_events. */
     recordSpend?: boolean;
   },
@@ -238,7 +271,7 @@ return await withRecoveryActivity('paid-text', async () => {
       "This text job already has a paid claim. Recover its saved result; it will not be submitted again.",
       409,
     );
-  if (input.deadline !== undefined && input.deadline - Date.now() < PAID_TEXT_MIN_PROVIDER_MS)
+  if (input.deadline !== undefined && input.deadline - Date.now() < (input.minProviderMs ?? PAID_TEXT_MIN_PROVIDER_MS))
     throw new PaidTextError("The text provider is slow to answer right now. Nothing was charged; try again in a moment.", 503);
   const ts = now();
   await db().execute({
@@ -259,6 +292,8 @@ return await withRecoveryActivity('paid-text', async () => {
     { token: currentTenant()?.token },
   );
   let submitted = false;
+  /* Set the moment the provider replies in any way (a status, an error, a body): from then on the call was answered. */
+  let answered = false;
   /* What becomes of an unconfirmed submission's estimate: returned by the cron's pass (reconcilePaidTextJobs),
      or, on the workspace's own key, nothing was charged in credits to return. */
   const afterwards = paidByPlatform(textKeyName(input.model))
@@ -288,6 +323,7 @@ return await withRecoveryActivity('paid-text', async () => {
         ? Math.max(1_000, Math.min(input.timeoutMs ?? Infinity, input.deadline - Date.now()))
         : input.timeoutMs ?? 270_000,
     });
+    answered = true;
     if (!response.ok) {
       const rejected = [400, 401, 402, 403, 404, 422, 429].includes(
         response.status,
@@ -391,6 +427,13 @@ return await withRecoveryActivity('paid-text', async () => {
     /* Already refunded by the cron's pass: nothing here may charge it again. */
     if (!(error instanceof PaidTextError) && record?.status === "refunded")
       throw new PaidTextError(`The text request was interrupted after submission. It will not be sent again, and ${afterwards}.`);
+    /* No reply at all, and the caller says that costs nothing (the prompt enhancer): failed at zero, the reservation released, "Nothing billed". */
+    if (!(error instanceof PaidTextError) && input.unansweredIsFree && submitted && !answered && record?.status === "running") {
+      const moved = await settle(`UPDATE paid_text_jobs SET status='failed',cost_usd=0,updated_at=? WHERE id=?`, [now(), id]).catch(() => false);
+      await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=0 WHERE id=?`, args: [id] }).catch(() => {});
+      if (moved) await meter({ ...event, status: "failed", engineCostUsd: 0 });
+      throw new PaidTextError("The writer didn't answer in time. Nothing billed.", 504);
+    }
     if (!(error instanceof PaidTextError)) {
       const completed = record?.status === "succeeded";
       const cost = completed
