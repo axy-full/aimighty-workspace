@@ -83,7 +83,8 @@ test("desktop: Home lists a teammate's board with its maker; it opens view-only 
     await expect(mate.getByTestId("v12-menu-share-team")).toHaveCount(0);
     await mate.keyboard.press("Escape");
     await expect(mate.getByTestId("v12-stage-rail")).toBeVisible();
-    /* The tools that make something are off, and a note cannot be put down. */
+    /* The tools that make something are off, and a note cannot be put down (on a stage that draws the canvas: Storyboard is a page now). */
+    await mate.locator('[data-testid="v12-stage-row"][data-stage="elements"] .v12-rail-btn').click();
     await expect(mate.getByTestId("v12-board-tools").getByRole("button", { name: /^Note/ })).toBeDisabled();
     await mate.waitForTimeout(2_500);
     expect(saves, "a teammate's board is never saved").toEqual([]);

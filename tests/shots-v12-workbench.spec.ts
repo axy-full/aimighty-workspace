@@ -14,7 +14,6 @@ const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const noSideways = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
 const shots = (page: Page) => page.locator('.bd-node[data-card-kind="take"]');
 const boxes = (page: Page) => shots(page).evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }));
-const frames = (page: Page) => page.locator('.bd-node[data-card-kind="frame"]');
 const overlap = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
@@ -191,39 +190,6 @@ test.describe("desktop, switch on", () => {
     await second.getByTestId("take-reject-chip").first().click();
     await second.getByTestId("take-reject-confirm").click();
     await expect(second.getByTestId("take-rejected")).toContainText("Rejected", { timeout: 30_000 });
-    expect(errors).toEqual([]);
-  });
-
-  test("Storyboard: 4 across, one 24 px gap, one frame size; a selected frame shows one row with Details, which opens the Inspector", async ({ page }) => {
-    const { errors } = await openBoard(page, "/suites?view=board&stage=storyboard");
-    await expect(frames(page)).toHaveCount(8, { timeout: 90_000 });
-    await closeDock(page);
-    await expect.poll(async () => new Set((await frames(page).evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().x))))).size).toBe(acrossOf("closed"));
-    const k = scaleOf();
-    const b = await frames(page).evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }));
-    expect(new Set(b.map((x) => x.w))).toEqual(new Set([Math.round(260 * k)]));
-    expect(new Set(b.map((x) => x.h)).size).toBe(1);
-    const xs = [...new Set(b.map((x) => x.x))].sort((p, q) => p - q);
-    for (let i = 1; i < xs.length; i++) sameAs(xs[i] - xs[i - 1] - Math.round(260 * k), 24 * k, k, "column gap");
-    const ys = [...new Set(b.map((x) => x.y))].sort((p, q) => p - q);
-    expect(ys).toHaveLength(Math.ceil(8 / acrossOf("closed")));
-    sameAs(ys[1] - ys[0] - b[0].h, 24 * k, k, "row gap");
-    /* The group has no frame and no title: the stage header says them. */
-    await expect(page.getByTestId("board-group").first()).toHaveAttribute("data-grid", "true");
-    expect(await page.getByTestId("board-group").first().evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("0px");
-    /* Calm until selected; then one row: its action and Details. */
-    await expect(page.getByTestId("frame-grid-actions")).toHaveCount(0);
-    await frames(page).first().click();
-    await expect(page.getByTestId("board-inspector")).toHaveCount(0);
-    const row = page.getByTestId("frame-grid-actions");
-    await expect(row).toHaveCount(1);
-    await expect(row.getByTestId("frame-details")).toBeVisible();
-    const box = (await frames(page).first().boundingBox())!;
-    sameAs(box.width, Math.round(260 * k), k, "frame width");
-    sameAs(box.height, b[0].h, k, "frame height");
-    await row.getByTestId("frame-details").click();
-    await expect(page.getByTestId("board-inspector")).toBeVisible();
-    expect(await noSideways(page)).toBe(true);
     expect(errors).toEqual([]);
   });
 

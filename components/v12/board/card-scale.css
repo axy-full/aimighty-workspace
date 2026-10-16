@@ -12,7 +12,8 @@
   --gx-sp-12: calc(12px * var(--k, 1));
   display: grid; grid-template-columns: repeat(auto-fill, calc(280px * var(--k, 1))); gap: calc(16px * var(--k, 1)); align-items: start;
 }
-.v12 .v12-scaled .v12-card-tile-lg { width: calc(44px * var(--k, 1)); height: calc(44px * var(--k, 1)); font-size: calc(20px * var(--k, 1)); }
+/* The big letter tile is centred by its margins, not by a transform: a word is never drawn through one (owner, 16 Oct 2026). */
+.v12 .v12-scaled .v12-card-tile-lg { inset: 0; margin: auto; transform: none; width: calc(44px * var(--k, 1)); height: calc(44px * var(--k, 1)); font-size: calc(20px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-tile-sm { width: calc(22px * var(--k, 1)); height: calc(22px * var(--k, 1)); right: calc(8px * var(--k, 1)); bottom: calc(8px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-tile-xs { width: calc(18px * var(--k, 1)); height: calc(18px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-page-head { height: calc(36px * var(--k, 1)); }

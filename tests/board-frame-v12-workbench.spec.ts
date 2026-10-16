@@ -43,7 +43,8 @@ test.describe("desktop, switch on", () => {
   });
 
   test("keys: 1–9 jump to a stage, [ and ] step; Esc clears the selection before anything else", async ({ page }) => {
-    await openBoard(page, "/suites?view=board&stage=storyboard");
+    /* A stage that draws the canvas: Storyboard is a page of its own now. */
+    await openBoard(page, "/suites?view=board&stage=elements");
     await expect(page.getByTestId("v12-stage-rail")).toBeVisible({ timeout: 60_000 });
     await page.locator(".react-flow__pane").click({ position: { x: 40, y: 40 } });
     await page.keyboard.press("5");
@@ -95,7 +96,8 @@ test.describe("desktop, switch on", () => {
   });
 
   test("the right toolbar: first-visit labels until Got it, again with ?first=1; tooltips say what a tool does; the view switch", async ({ page }) => {
-    await openBoard(page, "/suites?view=board&stage=storyboard");
+    /* A stage that draws the canvas (and its tools): Storyboard is a page of its own now. */
+    await openBoard(page, "/suites?view=board&stage=elements");
     const tools = page.getByTestId("v12-board-tools");
     await expect(tools).toBeVisible({ timeout: 60_000 });
     await expect(tools).toHaveAttribute("data-labels", "true");
@@ -113,7 +115,7 @@ test.describe("desktop, switch on", () => {
       await page.locator('[data-testid="v12-board-tools"] [data-tool="note"]').hover();
       await expect(page.getByTestId("v12-tooltip")).toContainText("A sticky note for ideas, feedback or to-dos.", { timeout: 3_000 });
     }).toPass({ timeout: 45_000 });
-    await page.goto("/suites?view=board&stage=storyboard&first=1");
+    await page.goto("/suites?view=board&stage=elements&first=1");
     await expect(page.getByTestId("v12-board-tools")).toHaveAttribute("data-labels", "true", { timeout: 60_000 });
     /* Canvas and List are today's views; Rig is built (P5); Strip is not yet. */
     const view = page.getByTestId("v12-view-switch");

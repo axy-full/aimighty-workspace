@@ -205,10 +205,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
   /* Campaign's Product, Look and Formats are pages from the start: Product is where a campaign begins. */
   const page: StagePageKind | null = pageWanted === "deliver" ? (cutNow && deliverCard ? "deliver" : null) : pageWanted === "ppm" ? (allCards.length > 0 ? "ppm" : null) : pageWanted;
-  /* A client round's share card (redesign P2-c) rides in the page when a page covers the canvas, so it is never hidden behind it. */
-  const roundShare = page ? allCards.find((c) => c.id === "round:deliver") ?? null : null;
+  /* A client round's cards (redesign P2-c) ride in the page when a page covers the canvas, so none is hidden behind it: the share card, and the round's own card of the stage the page stands for (Storyboard's "what changed"). */
+  const roundShares = useMemo(() => (page ? allCards.filter((c) => c.id === "round:deliver" || (c.id.startsWith("round:") && stageOwn.some((o) => o.id === c.id))) : []), [page, allCards, stageOwn]);
   /* The board's free cards (a dropped tile, a note, an upload) show on whichever stage is open, where they were put. */
-  const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards).filter((c) => !(roundShare && c.id === roundShare.id)), [stage, stageOwn, allCards, roundShare]);
+  const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards).filter((c) => !roundShares.some((r) => r.id === c.id)), [stage, stageOwn, allCards, roundShares]);
   /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
      a 24 px gap and its shot cards one size. Off the switch, or on any other stage, today's definitions as they are. */
   /* A large screen scales the canvas up (lib/v12/board/screen-scale.ts); the groups stay as many across as they are at 1440. */
@@ -817,7 +817,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
                 : page === "brief" ? <BriefStage ctx={ctx} />
                 : page === "script" ? <ScriptStage ctx={ctx} />
                 : page === "storyboard" ? <StoryboardStage ctx={ctx} /> : null}
-              {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
+              {roundShares.map((roundShare) => <div key={roundShare.id} className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div>)}
             </div>
           ) : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
