@@ -1268,3 +1268,6 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#800 MUST-FIX (security):** the fix failed open for `agent:*` ids with no run row, and loosened a sourceBoardAccess privacy assertion. Lane B makes it fail closed (an anonymous member) and reverts the assertion.
   - **Should-fix, as a separate PR:** Recraft, Topaz and Veo source reads adopt `actingViewer()`.
   - **#807** waits for #809 (owner's yes).
+- **16 Oct 15:38 IST.** **#812** (viewport on whole device pixels, c359f7dd) APPROVED by Opus. Should-fix: a DPR-2 browser check (lane C).
+  - **Limit:** it removes softness only at zoom 1 (≤1440, the old board, and a person's own zoom at 100%).
+  - **Above 1440, the large-screen zoom (1.2/1.6/1.88) still blurs text and borders** until the layout conversion, which waits for the owner's go.
