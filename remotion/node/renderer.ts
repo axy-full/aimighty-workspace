@@ -1,5 +1,16 @@
 import { access, constants } from "node:fs/promises";
 import type { CompositionInfo, Renderer } from "./export";
+import type { VideoFormat } from "../src/lib/types";
+
+/**
+ * How each format is encoded. H.264 as before (CRF 20, AAC). ProRes 422 or 422 HQ in a .mov: 10-bit 4:2:2 pictures and 16-bit
+ * PCM sound. Remotion's `proResProfile` names are 'standard' (ProRes 422) and 'hq' (ProRes 422 HQ); an unknown name falls back
+ * to HQ without a word, so the names are pinned by a test.
+ */
+export function encodingFor(format: VideoFormat): Record<string, string | number> {
+  if (format === "h264") return { codec: "h264", audioCodec: "aac", pixelFormat: "yuv420p", crf: 20, x264Preset: "medium" };
+  return { codec: "prores", proResProfile: format === "prores-422-hq" ? "hq" : "standard", audioCodec: "pcm-16", pixelFormat: "yuv422p10le" };
+}
 
 export type RealRendererOptions = {
   /**
@@ -52,18 +63,15 @@ export function createRealRenderer(options: RealRendererOptions = {}): Renderer 
       const comp = await selectComposition({ serveUrl, id, inputProps, ...common() });
       return comp as CompositionInfo;
     },
-    async renderVideo({ serveUrl, composition, inputProps, outputLocation, concurrency, onProgress }) {
+    async renderVideo({ serveUrl, composition, inputProps, outputLocation, format, concurrency, onProgress }) {
       const { renderMedia } = await load();
+      const encode = encodingFor(format);
       await renderMedia({
         serveUrl,
         composition,
         inputProps,
         outputLocation,
-        codec: "h264",
-        audioCodec: "aac",
-        pixelFormat: "yuv420p",
-        crf: 20,
-        x264Preset: "medium",
+        ...encode,
         concurrency,
         overwrite: true,
         onProgress: onProgress ? (p: { renderedFrames: number }) => onProgress(p.renderedFrames, composition.durationInFrames) : undefined,

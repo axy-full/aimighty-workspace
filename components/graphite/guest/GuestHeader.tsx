@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { TRAIL } from "@/components/ui/Mark";
+import { BrandLogo } from "@/components/ui/BrandLogo";
 import { Glyph, SEGMENT_LOOK } from "../icons";
 
 /**
@@ -28,12 +28,10 @@ export function GuestHeader({ mark, view, onHome, onGated, onSignup }: {
         <button type="button" className="gx-gh-back" onClick={onHome} aria-label="Back to Home" data-testid="guest-back"><span aria-hidden="true">‹</span></button>
       ) : null}
       <button type="button" className="gx-brand" onClick={onHome} aria-label="particl home" data-testid="guest-brand">
-        <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
-          {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
-        </svg>
-        <span className="gx-brand-name">particl</span>
+        <BrandLogo />
         <span className="gx-brand-mark gx-gh-mark">{mark}</span>
-        <span className="gx-gh-title">{view === "sample" ? "Sample" : "Particl"}</span>
+        {/* On a phone the sample's screen is named (with its back button); the front page shows the logo. */}
+        {view === "sample" ? <span className="gx-gh-title">Sample</span> : null}
       </button>
       <div className="gx-seg gx-gh-seg" role="tablist" aria-label="Go to">
         {segments.map((s) => (

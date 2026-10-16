@@ -21,6 +21,9 @@ export const CUTDOWN_TARGETS = [6, 15, 30] as const;
 export type CutdownTarget = (typeof CUTDOWN_TARGETS)[number];
 
 export const CAPTION_STYLES = ["bold", "clean", "karaoke"] as const;
+/** Silence-aware cutdowns: "keep-speech" detects the quiet stretches of the source and keeps the rest (src/lib/silence.ts, node/silence.ts). */
+export const SILENCE_MODES = ["off", "keep-speech"] as const;
+export type SilenceMode = (typeof SILENCE_MODES)[number];
 export type CaptionStyle = (typeof CAPTION_STYLES)[number];
 
 export const REFRAME_MODES = ["fill", "fit"] as const;
@@ -48,6 +51,11 @@ export type ClipSource = {
   height: number;
   /** false = do not use the file's sound (a muted clip, or a file with none); true = use it, and the file must have it. Default true. */
   hasAudio: boolean;
+  /**
+   * Where in the source the file in input/ starts, when it holds only a stretch of it (the conform pre-pass's windowed copy): the file's
+   * first frame is the source's `offsetSeconds`. Trims and cues stay in source time. Absent: the file is the whole source.
+   */
+  offsetSeconds?: number;
 };
 
 export type Word = { startMs: number; endMs: number; text: string };
@@ -92,6 +100,8 @@ export type ClipItem = {
 };
 
 export type MusicSpec = { file: string; durationSeconds: number; volume: number };
+/** One spoken line of a narrated cut: an audio file placed on the finished video's clock. */
+export type VoiceLine = { file: string; durationSeconds: number; startSeconds: number; volume: number };
 
 type Common = { aspect: Aspect; fps: number; scale: number };
 
@@ -104,6 +114,8 @@ export type CutdownProps = Common & {
   targetSeconds: CutdownTarget;
   /** Moments that must stay in the cut, in source time. */
   keep: Range[];
+  /** Off by default. keep-speech adds the source's spoken stretches to `keep` before the cut is planned. */
+  silence: SilenceMode;
   cues: Cue[];
   captionStyle: CaptionStyle | null;
   reframe: ReframeSpec;
@@ -114,6 +126,10 @@ export type FinalProps = Common & {
   captionStyle: CaptionStyle | null;
   end: EndCardSpec | null;
   music: MusicSpec | null;
+  /** Spoken lines laid over the cut (a narrated assembly). Empty: none. */
+  voiceover: VoiceLine[];
+  /** The share of its level the music and the clips' own sound keep while a voice line plays: 1 = no ducking. Default 0.3. */
+  duck: number;
 };
 export type FixtureClipProps = Common & { durationSeconds: number; label: string };
 
@@ -140,8 +156,10 @@ export type ClipTimelineItem = {
   sourceHeight: number;
   hasAudio: boolean;
   reframe: ReframeSpec;
-  /** Cues in time local to the start of this item. */
+  /** Cues to burn in, in time local to the start of this item: empty when no caption style is chosen. */
   cues: Cue[];
+  /** The same cues whether or not they are burned in, for the sidecar subtitle files (src/lib/subtitles.ts). */
+  subtitleCues: Cue[];
   captionStyle: CaptionStyle | null;
 };
 export type TitleTimelineItem = { kind: "title"; from: number; durationInFrames: number; card: TitleCardSpec };
@@ -155,8 +173,36 @@ export type Timeline = {
   durationInFrames: number;
   items: TimelineItem[];
   music: { file: string; volume: number; durationInFrames: number } | null;
+  /** Voice lines in frames, clipped to the end of the cut. */
+  voiceover: { file: string; from: number; durationInFrames: number; volume: number }[];
+  /** See FinalProps.duck. */
+  duck: number;
   /** Set only by the fixture clip. */
   fixture: { label: string } | null;
 };
 
 export type Box = { x: number; y: number; width: number; height: number };
+
+/**
+ * The finished video's format (spec.output.format). H.264 is the default delivery file; ProRes 422 and ProRes 422 HQ
+ * are mezzanine files for editing. H.265 is refused (owner, 15 Oct 2026: "H.265 stays off until my lawyer answers").
+ */
+export const VIDEO_FORMATS = ["h264", "prores-422", "prores-422-hq"] as const;
+export type VideoFormat = (typeof VIDEO_FORMATS)[number];
+export const isProRes = (format: VideoFormat): boolean => format !== "h264";
+/** The file a format is written to, and its media type. */
+export const FORMAT_FILE: Record<VideoFormat, { name: string; mime: string }> = {
+  h264: { name: "export.mp4", mime: "video/mp4" },
+  "prores-422": { name: "export.mov", mime: "video/quicktime" },
+  "prores-422-hq": { name: "export.mov", mime: "video/quicktime" },
+};
+/** Names a person or an agent might ask for that mean H.265. Refused with a plain reason, never guessed at. */
+export const H265_NAMES: readonly string[] = ["h265", "h.265", "hevc", "h265-mp4", "x265"];
+
+/** The sidecar subtitle files an export may also write (spec.output.subtitles), from the same cue data as the burned-in captions. */
+export const SUBTITLE_FORMATS = ["srt", "vtt"] as const;
+export type SubtitleFormat = (typeof SUBTITLE_FORMATS)[number];
+export const SUBTITLE_FILE: Record<SubtitleFormat, { name: string; mime: string }> = {
+  srt: { name: "subtitles.srt", mime: "application/x-subrip" },
+  vtt: { name: "subtitles.vtt", mime: "text/vtt" },
+};

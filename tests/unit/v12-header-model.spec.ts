@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { EMPTY_TABS, afterClose, fitBoardTabs, closeOthers, closeTab, headerKey, openTab, parseTabs, pruneTabs, restoreTab, visibleTabs } from "../../components/v12/shell/tabs";
+import { EMPTY_TABS, afterClose, fitBoardTabs, closeOthers, closeTab, headerKey, openTab, parseTabs, pruneTabs, restoreTab, tabInitial, visibleTabs } from "../../components/v12/shell/tabs";
 import { LOOK_MS, activityGroups, activityLabel, activityTone, boardStates, heldPrice } from "../../components/v12/shell/activity";
 import type { TrayJob } from "../../lib/jobsTray";
 import type { QueueItem } from "../../lib/control-room/queue";
@@ -135,4 +135,14 @@ test("a take queued for a free slot holds nothing yet: its figure is the start's
   const started = job({ id: "go", price: { amount: 43, unit: "cr" } });
   const groups = activityGroups([waiting, started], [], { scope: "all", draftId: null, now: 60_000, heldWord: (j) => heldPrice(j, label) });
   expect(groups.running.map((r) => r.meta)).toEqual(["Mirror film · Queued · 1 min so far", "Mirror film · Rendering · 1 min so far · about 3 min left · 43 cr held"]);
+});
+
+test("a board's tab tile shows the first letter or digit of its name, upper-cased, and a dot for a name with none", () => {
+  expect(tabInitial("Harbour film · 30 s ad")).toBe("H");
+  expect(tabInitial("  launch clips")).toBe("L");
+  expect(tabInitial("“Quoted” film")).toBe("Q");
+  expect(tabInitial("30 s ad")).toBe("3");
+  expect(tabInitial("élan")).toBe("É");
+  expect(tabInitial("··· ")).toBe("·");
+  expect(tabInitial("")).toBe("·");
 });

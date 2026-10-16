@@ -24,7 +24,10 @@ export const EXPORT_PRICE_LABEL = "Free";
 export const NOTHING_BILLED = "Nothing billed.";
 
 export type ExportOutput = {
-  kind: "video" | "still";
+  /** A video (H.264 .mp4, or ProRes .mov), or a subtitle file (.srt, .vtt). */
+  kind: "video" | "still" | "subtitle";
+  /** The video format or subtitle format this file is, when it is one of those. */
+  format?: string;
   uploadId: string;
   /** Served by the workspace's own upload route, so the same access rules apply. */
   url: string;
@@ -62,6 +65,8 @@ export const exportRequestSchema = z
     requestId: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/),
     composition: z.enum(EXPORT_COMPOSITIONS),
     props: z.record(z.string(), z.unknown()),
+    /** What the finished files should be: `{ format: "h264" | "prores-422" | "prores-422-hq", subtitles: ["srt", "vtt"], conform: "auto" | "off" }`, all optional. H.265 is refused. */
+    output: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 export type ExportRequest = z.infer<typeof exportRequestSchema>;
