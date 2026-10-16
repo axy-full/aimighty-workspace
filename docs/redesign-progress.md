@@ -1106,3 +1106,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Weekday fix in the demo plan: 24 Oct is a Saturday and 27 Oct a Tuesday (31 Oct is a Saturday).
   - Lane F started (v25 demo-path screens).
 - **16 Oct 11:52 IST.** Full Opus review: #749 (card) c021c3d3 and #750 (rail) bd738204 APPROVED, no must-fix. Both are reachable only from ENGINE_MOCK test pages; they conflict with each other on one CSS file. They merge after the deploy #5 cut. Should-fixes (text-card scrim, corner tile, aria-expanded, rail props from stages.ts, 44 px "Add step") fold into lane C's path PRs.
+- **16 Oct 12:03 IST.** Owner's 12:20 answers recorded. Demo plan re-dated: full path live Fri 23 (deploy #8), film Sat 24–Mon 26, freeze Tue 27, rehearsal 28–30. Cut-first list added (owner's order, then the lead's). Cast is AI-made only, so the consent record stays off path; one deck with two covers; Hindi lip-sync on hero shots.

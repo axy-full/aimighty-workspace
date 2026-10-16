@@ -10,11 +10,14 @@ Written by the lead, 16 Oct 2026, for the owner's 12:15 note (verbatim in `docs/
 
 Also on the path: pricing page, credits, project spend and client review links in the new design; Stripe checkout in test mode only if Stripe's invite allows it.
 
-**Key dates**
-- **24 Oct:** every engine below is live on the house workspace and the path works end to end. The team makes the film 24–27 Oct.
-- **28 Oct:** feature freeze, fixes only after it.
-- **29–30 Oct:** rehearsal and fixes.
-- **31 Oct:** the demo.
+**Key dates (re-dated 16 Oct after the owner's 12:20 answers: a day of slack)**
+- **Fri 23 Oct:** the full path is live on the house workspace (deploy #8 that morning); every engine below is on.
+- **Sat 24 to Mon 26 Oct:** the team makes the film (the Hindi test clip first on Sat 24 morning).
+- **Tue 27 Oct:** feature freeze, fixes only after it. The fallback project is made.
+- **Wed 28 to Fri 30 Oct:** rehearsal and fixes.
+- **Sat 31 Oct:** the demo.
+
+**Owner's answers (12:20):** export worker stack and relay by Mon 19 (owner and advisor); the demo runs on Remotion's free tier, the paid licence before launch; AI-made characters only, so the consent record stays off the path; one deck PDF with a Treatment cover and a Pitch cover; Hindi lip-sync on hero shots only (final call after the 24 Oct test clip); invites from Sat 24; Stripe test keys to be confirmed by the owner.
 
 **Rules unchanged:** each PR is merged into release/1 under the 12:05 standing yes (CI 24/24, fresh Opus approval, no guard loosened). Every deploy is the owner's (backup first). Mocks only in development; the team's real use from 24 Oct is the first paid use, approved step by step in the UI, against the house $500 cap.
 
@@ -39,11 +42,11 @@ Also on the path: pricing page, credits, project spend and client review links i
 | House $500 cap | #765, approved | CI | Fri 16 | deploy #6 (needs the `allowance_usd` value) |
 
 **Deploys:**
-- **#5:** the four PRs, ready today.
+- **#5:** the four PRs, ready today (Fri 16).
 - **#6:** Sat 17 to Sun 18. All engines above plus Slice 1. Migration: `export_jobs`.
-- **#7:** Thu 22. The new-design screens, part 1.
-- **#8:** Sat 24 morning. Path complete.
-- After 24 Oct: fix deploys only.
+- **#7:** Wed 21. The new-design screens, part 1.
+- **#8:** Fri 23 morning. Path complete.
+- After 23 Oct: fix deploys only.
 
 ## B. New-design screens on the path (house workspace, behind the new-interface switch)
 
@@ -67,10 +70,10 @@ Numbers are the v25 plan's (`docs/plans/v25-build-plan.md`); "D-n" items are new
 | D-2 | **Hindi version tool:** script translate (Sarvam) → Hindi voice lines (Sarvam Bulbul) → lip-sync each shot (sync.so) → a Hindi cut. One tool, priced, one approval; button + Atomik + MCP (rule 11) | B | Sat 17–Tue 20 | Wed 21 |
 | 21 | Assembly engine on the Remotion worker (cut, voice, music, titles, subtitles → MP4) | D | Sat 17–Tue 20 | Wed 21 |
 | 22/23-lite | **Edit + Export:** the cut and "Export MP4" for English and Hindi (no cutdowns, no zip) | D + C | Wed 21–Thu 22 | Thu 22 |
-| 28-lite + D-3 | **Pitch and Treatment deck PDF** from the board (Chromium PDF) | D | Wed 21–Fri 23 | Fri 23 |
-| D-4 | **Money in the new design:** credits and project spend in the top bar and the board, the pricing page link, client review links from a take/cut | C | Fri 23 | Fri 23 |
-| D-5 | **Stripe test-mode checkout:** only if the owner's Stripe account allows test mode; otherwise the pricing page only | C | Fri 23 (if yes) | Fri 23 |
-| D-6 | **Demo test:** a Playwright run of the whole path on mocks (Home → film → Hindi → MP4 + PDF), at 1440 and 1920 | D | Thu 22–Fri 23 | Fri 23 |
+| 28-lite + D-3 | **One deck PDF** from the board (Chromium PDF), with a Treatment cover and a Pitch cover | D | Wed 21–Thu 22 | Thu 22 |
+| D-4 | **Money in the new design:** credits and project spend in the top bar and the board, the pricing page link, client review links from a take/cut | C | Wed 21–Thu 22 | Thu 22 |
+| D-5 | **Stripe test-mode checkout:** only if the owner confirms test keys; otherwise the pricing page only | C | Thu 22 (if yes) | Thu 22 |
+| D-6 | **Demo test:** a Playwright run of the whole path on mocks (Home → film → Hindi → MP4 + PDF), at 1440 and 1920 | D | Thu 22 | Thu 22 |
 
 **Waits until after 31 Oct:**
 - v25 PRs 10, 12, 13, 16, 17, 20, 24–27, 29–31 and 33–36.
@@ -80,7 +83,7 @@ Numbers are the v25 plan's (`docs/plans/v25-build-plan.md`); "D-n" items are new
 ## C. Demo readiness (docs lane E and the lead)
 - **Thu 22:** demo checklist (machine, account, workspace, switches, network, each step with its expected screen and time, the fallback at each step).
 - **Thu 22:** the team's demo script: the brief, the 30 s ad's shots, the Hindi lines, who does what from 24 to 27 Oct.
-- **Tue 27:** the fallback sample project. Once the film is made, duplicate the board as "Demo (fallback)" with every take, the Hindi cut, the MP4s and the PDFs already rendered and approved, so the demo can run without one live render. Plus offline copies of both MP4s and the PDF.
+- **Tue 27 (freeze day):** the fallback sample project. Once the film is made, duplicate the board as "Demo (fallback)" with every take, the Hindi cut, the MP4s and the PDFs already rendered and approved, so the demo can run without one live render. Plus offline copies of both MP4s and the PDF.
 - **Daily 10:30:** progress against this list, risks to 31 Oct, the owner's questions in one batch.
 
 ## D. Risks to 31 Oct
@@ -97,3 +100,12 @@ Numbers are the v25 plan's (`docs/plans/v25-build-plan.md`); "D-n" items are new
 4. **"Pitch":** the Pitch deck PDF made from the board (Treatment-style, Chromium), shown as the first step? Recommended: yes, one deck, with "Treatment" and "Pitch" as two cover styles.
 5. **Hindi:** lip-sync every shot, or the hero shots plus a Hindi voice-over on the rest? Recommended: decide after the 24 Oct test clip.
 6. **The team:** who gets invites (one admin, the rest members), and on which day?
+
+## F. What to cut first if a day slips (owner's order, then the lead's)
+1. Director-mode polish (Director keeps the working settings column and bar; extras wait).
+2. Kling 4.0 (Kling 3.0 Pro stays in the Pro pick).
+3. The Pitch cover (the deck ships with the Treatment cover only).
+4. Stripe test checkout (the pricing page only).
+5. Agent mode on Script, Cast and Storyboard (Agent stays on Shots; the other steps run in Director).
+6. Storyboard styles beyond one.
+7. Compare in Preview (versions strip stays).

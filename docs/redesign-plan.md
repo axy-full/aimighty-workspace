@@ -977,3 +977,16 @@ Demo story: one 30 s ad, brief to final film, in English AND Hindi, in the new d
 5) Daily at 10:30: progress against this path, risks to 31 Oct, and my questions in one batch.
 
 **Lead's note.** The dated list is docs/plans/demo-31oct-plan.md; it supersedes docs/plans/dated-plan-16oct.md until 31 Oct.
+
+## Owner, 16 Oct 2026, 12:20 IST (verbatim): answers to the demo plan
+Owner (Akshay, 16 Oct, 12:20): answers to the demo plan.
+1) Stripe: [I'll confirm test keys today / no test mode: show the pricing page only].
+2) Export worker: I create the stack and relay with my advisor by Mon 19. Remotion: we'll buy the paid licence before launch; the demo runs on the free tier.
+3) Cast: AI-made characters only. Keep the consent record off the demo path.
+4) One deck PDF with a Treatment cover and a Pitch cover: yes.
+5) Hindi lip-sync on hero shots only; final call after the 24 Oct test clip.
+6) Invites: [names and emails] from Sat 24.
+7) allowance_usd and RUNWAY_API_KEY: coming from me today.
+Build slack into the plan: with the answers above, move the feature freeze to 27 Oct, aim for the full path live on 23 Oct, and list what you'd cut first if a day slips (my order: Director-mode polish, then Kling 4.0, then the Pitch cover).
+
+**Lead's notes.** Items 1 and 6 still carry the owner's placeholders (Stripe test keys to be confirmed; invite names and emails to come). The demo plan is re-dated: full path live Fri 23 Oct, team film Sat 24 to Mon 26, freeze Tue 27, rehearsal 28 to 30.
