@@ -36,6 +36,14 @@ export async function shotCapGate(o: { shotId: string; code: string; takeUsd: nu
 }
 
 /**
+ * Is this the tap of an ADMIN PERSON, the only one the cost approval rule lets past a shot's cap? An admin's own session is; an admin's token, an MCP client, an
+ * `agent:*` identity and a step Atomik's Auto approved are machines, and a machine never skips the cap (the same test as `jobLineNow`'s `machine`).
+ */
+export function shotCapAdmin(actor: { user: { id: string; role: string }; token?: unknown }, auto = false): boolean {
+  return actor.user.role === "admin" && actor.token == null && !isAgentId(actor.user.id) && auto !== true;
+}
+
+/**
  * Guardrail 4 before a job is parked, quoted or sent (lib/approvalRule.ts › jobLineVerdict): a job above the approval line needs an
  * admin's own tap, whatever the rule and shot; a token, an MCP client or an agent is refused outright. The reservation
  * (lib/generationRequests.ts) judges the same job again under its write lock and is the authority; this stops it earlier, so a member's

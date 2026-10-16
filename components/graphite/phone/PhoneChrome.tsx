@@ -1,4 +1,5 @@
 "use client";
+import { BrandLogo } from "@/components/ui/BrandLogo";
 import type { ReactNode } from "react";
 import { useSession } from "@/lib/session";
 import { creditsUsd } from "@/lib/shell/price-words";
@@ -24,7 +25,7 @@ const TABS: { id: PhoneTab; label: string }[] = [
  * workspace's credits, which open Top up (Settings › Plan & credits, the existing request flow). The credits
  * are the account's balance as the desktop header shows it, with its dollar value on hover.
  */
-export function PhoneHeader({ title, account, onBack, onTopUp }: { title: string; account: WorkspaceAccount | null; onBack: (() => void) | null; onTopUp: () => void }) {
+export function PhoneHeader({ title, account, onBack, onTopUp, logo = false }: { title: string; account: WorkspaceAccount | null; onBack: (() => void) | null; onTopUp: () => void; /** Home: the brand's logo stands for the title, which stays as the heading for a screen reader. */ logo?: boolean }) {
   const { rates } = useSession();
   const rate = useCreditUsd();
   const balance = account?.credits?.balance ?? null;
@@ -36,7 +37,7 @@ export function PhoneHeader({ title, account, onBack, onTopUp }: { title: string
     <header className="ph-header" data-testid="phone-header">
       <div className="ph-header-lead">
         {onBack ? <button type="button" className="ph-back" aria-label="Back" onClick={onBack} data-testid="phone-back">‹</button> : null}
-        <h1 className="ph-title" data-testid="phone-title">{title}</h1>
+        <h1 className={logo ? "ph-title ph-title-logo" : "ph-title"} data-testid="phone-title">{logo ? <><BrandLogo /><span className="ph-sr">{title}</span></> : title}</h1>
       </div>
       <button type="button" className="ph-credits" onClick={onTopUp} title={house ? "Billed in dollars at the engines' cost: this workspace has no credits to top up." : usd ? `${usd} · Top up` : credits.title}
         aria-label={house ? "At cost, no top-up" : undefined} data-testid="phone-credits">{house ? "At cost" : credits.text}</button>

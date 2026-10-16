@@ -110,7 +110,7 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   /* Runway is the same, and house-only besides: THIS press proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/runway.spec.ts. */
   { dir: "runway", body: { tool: "video", prompt: "A tree in rain", startImageUploadId: "up_still", maxCredits: 100000 } },
   { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
-  { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", castMemberId: "cast_1", faceFrameUploadId: "up_face", projectId: "film", use: "production", maxCredits: 100000 } },
+  { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
   { dir: "jobs/[id]/release", body: { credits: 10 }, id: "gen_held" },
   { dir: "atomik/steps/[id]/claim", body: {}, id: "step_1" },
@@ -401,8 +401,6 @@ const RESERVERS: Record<string, Reserver> = {
   "lib/workbench/development-server.ts": { reserve: "await deps.reserve(", count: 1, vendor: ["await deps.call("], bound: "reserve: reserveGenerationSpend" },
   "lib/workbench/rig-agent.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["?? defaultPlan)("] },
   "lib/crew/round.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await askGrok("] },
-  /* The consent face check (lib/consentMatchCore.ts, behind lib/consentMatch.ts): reserves its one provider call's cost before making it, and settles that row at the provider's price or at nothing. */
-  "lib/consentMatchCore.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await compareFacesWith("] },
   /* An Atomik turn is paid text: its reservation is runPaidText's (lib/paidText.ts); the meter() after it re-settles that row. */
   "lib/atomik.ts": { reserve: "await runPaidText(", count: 1, vendor: ["await meter({ id: messageId"] },
 };

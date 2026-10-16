@@ -16,8 +16,9 @@ import { writeGenerationOutcome, deliverGenerationSettlement } from "./generatio
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, type StoredSource } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
-import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
+import { uploadOpenableBy, type Viewer } from "./uploadAccess";
+import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { engineEnabled } from "./engineGate";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { RUNWAY_RATES, type RunwayModel } from "./vendorRates";
@@ -25,15 +26,12 @@ import {
   RUNWAY_IMAGE_LIMIT_BYTES, RUNWAY_RESULT_LIFETIME_MS, RUNWAY_SWITCH, RUNWAY_VIDEO_LIMIT_BYTES, RunwayError, deleteTask, fetchOutput, isRunwayModel, pollTask, runwayConfigured, submitTask,
   type RunwayRequest,
 } from "./runway";
-import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type ConsentMatch, type ConsentScope } from "./consentMatch";
-import { getConsent } from "./security/consent";
-import { consentLive } from "./security/consent-words";
 
 /**
  * Runway's three tools, DIRECT (lib/runway.ts), on standby: ON for the HOUSE workspace only (the owner's decision, plan § 7: standby, "house only until training-free terms". The plan read Runway's
  * standard terms page (updated 15 Sep 2026) as letting it train on inputs and outputs; dev.runwayml.com says "No training on your data". Which governs is the binding terms,
  * for the owner and counsel; this wall is not changed by either). One door (POST /api/runway { tool }) for the button, Make, a board
- * card, Atomik, a saved skill and an outside agent: the same quote, the same approval, the same price, the same consent gate.
+ * card, Atomik, a saved skill and an outside agent: the same quote, the same approval, the same price.
  *
  *   `runway_performance`  Act-Two: a performance video drives a character (an image or a clip).
  *   `runway_edit`         Aleph 2: a clip of this workspace edited from words.
@@ -44,11 +42,9 @@ import { consentLive } from "./security/consent-words";
  * address expires in 24 to 48 hours, so it is fetched at once from an allow-listed https host and stored under the workspace's own prefix; then the vendor's copy is deleted
  * (`DELETE /v1/tasks/{id}`), retried by the cron up to CLEANUP_MAX_TRIES times and never blocking the take.
  *
- * CONSENT. **Act-Two passes `requireConsentMatch` (lib/consentMatch.ts) for the DRIVING face (the performer) AND the TARGET character, each with its own cast member and a still of
- * its face, before any row or reservation: no exemption.** Aleph 2 edits a clip that may show a real person, which cannot be known from the clip, so it passes the gate too (one
- * face still and cast member). Gen-4.5 and Gen-4 Turbo pass it too for their start still, as a FLUX.2 edit's reference does (consistent; the plan lists no gate for it, and the owner can relax it later; no "shows nobody" exemption). Today the gate refuses every check (no consent record holds a face reference yet) and
- * runs for the house workspace only, so every Runway tool is refused until the owner chooses that source. What is checked is the chosen still against the reference, NOT proven to
- * come from the clip or the character image (see lib/lipSync.ts).
+ * CONSENT, FINAL (owner, 16 Oct 2026): there is NO face check and no consent record here, for any of the three tools. Particl matches no face and screens no prompt for
+ * resemblance; the person generating is responsible, Runway's own filters apply and their refusals are shown as they come. Runway is HOUSE-ONLY (owner, 16 Oct item 8) until
+ * counsel answers on Runway's terms.
  *
  * MONEY. Quote: whole seconds (rounded up) x the model's credits a second (RUNWAY_RATES, lib/vendorRates.ts, the plan's table, TO CONFIRM; Aleph 2's 56-credit minimum) at $0.01 a
  * credit, through the margin table (`quotedCredits`, keyed by the model); reserved at the quote; settled at the task's own `cost.credits`, the quote (marked `reconcile`) when it reports none,
@@ -56,23 +52,20 @@ import { consentLive } from "./security/consent-words";
  * unbilled; the take reads "Nothing billed" either way (no vendor credit is in anything the workspace reads); a clip lost after the task succeeded is recorded at the reported cost, else the quote. A person approves: `maxCredits` must cover the quote.
  */
 export const RUNWAY_TASK = "runway_video";
-const ENTITY_ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const UPLOAD_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const POLL_LEASE_MS = 120_000;
 const SUBMIT_GRACE_MS = 10 * 60_000;
 export const RUNWAY_POLL_INTERVAL_MS = 5_000;
 export const CLEANUP_MAX_TRIES = 5;
-const USES = ["production", "ads", "social"] as const;
 const RATIO = /^\d{3,4}:\d{3,4}$/;
 
 export type RunwayToolId = "performance" | "edit" | "video";
 export type RunwayState = "queued" | "submitted" | "done" | "failed" | "uncertain";
 type Source = { kind: "upload" | "generation"; id: string };
 export type RunwayParams = {
-  status: RunwayState; tool: RunwayToolId; model: RunwayModel; seconds: number; reservedUsd: number; estimateCredits: number; use: string | null;
+  status: RunwayState; tool: RunwayToolId; model: RunwayModel; seconds: number; reservedUsd: number; estimateCredits: number;
   inputs: { clip?: Source; character?: { id: string; media: "image" | "video" }; image?: { id: string } };
   prompt: string | null; ratio: string | null; seed: number | null; bodyControl: boolean; expressionIntensity: number;
-  consents: { role: "performer" | "character" | "subject"; castMemberId: string; consentId: string; faceSha256: string }[];
   funded: number; claimedAt: number | null; sendingAt: number | null; taskId: string | null; submittedAt: number | null; readyAt: number | null; lastPolledAt: number | null; pollUntil: number | null;
   settled: number; cleanupDue: number; cleanupTries: number; vendorDeleted: number;
   /** What Runway's poll reported the task cost, in dollars (its credits at $0.01), once known; null when it reported none. */
@@ -89,7 +82,7 @@ export type RunwayDeps = {
   store?: (genId: string, bytes: Buffer) => Promise<{ url: string; bytes: number }>; clock?: () => number;
 };
 /** What the admission may be handed in a test. The public admission passes none. `houseOnly: false` lets a test run a workspace that is not the house, to prove the cap wall. */
-export type RunwaySeams = { consent?: (castMemberId: string, face: Buffer, scope: ConsentScope) => Promise<ConsentMatch>; houseOnly?: boolean };
+export type RunwaySeams = { houseOnly?: boolean };
 
 /** Is Runway on here: the engine's switch and list, and the house workspace only. */
 export async function runwayOnHere(workspace: { id: string } | null | undefined = currentTenant()?.workspace, seams: RunwaySeams = {}): Promise<boolean> {
@@ -134,12 +127,13 @@ export function runwayUsd(model: RunwayModel, seconds: number): number {
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 type Found = { source: StoredSource; seconds: number };
-async function resolveClip(uploadId: unknown, genId: unknown): Promise<Found | { error: string; status: number }> {
+async function resolveClip(uploadId: unknown, genId: unknown, viewer: Viewer): Promise<Found | { error: string; status: number }> {
   const up = uploadId ? String(uploadId) : "", gen = genId ? String(genId) : "";
   if ((!up && !gen) || (up && gen)) return { error: "Pick one video original.", status: 400 };
   if ((up && !UPLOAD_ID.test(up)) || (gen && !UPLOAD_ID.test(gen))) return { error: "That source is not valid.", status: 400 };
   const source = await findStoredSource(up ? { uploadId: up } : { genId: gen });
-  if (!source || source.mediaKind !== "video") return { error: "That video original is not in this workspace.", status: 404 };
+  /* An upload is read only by a person who may open it, for an agent run (as its owner) as for a person. */
+  if (!source || source.mediaKind !== "video" || (source.kind === "upload" && !(await uploadOpenableBy(source.id, viewer)))) return { error: "That video original is not in this workspace.", status: 404 };
   if (source.bytes > RUNWAY_VIDEO_LIMIT_BYTES) return { error: "Runway takes a video up to 16 MB here.", status: 400 };
   const length = await resolveStoredDuration(source);
   if (length.seconds == null) return { error: `This video has no measured length, so it cannot be priced per second${length.reason ? `: ${length.reason}` : "."}`, status: 422 };
@@ -147,11 +141,10 @@ async function resolveClip(uploadId: unknown, genId: unknown): Promise<Found | {
 }
 type Upload = { id: string; ext: string; stored: string; mime: string; bytes: number; kind: string };
 /** An upload of this workspace the person may open. */
-async function openUpload(id: unknown): Promise<Upload | null> {
+async function openUpload(id: unknown, viewer: Viewer): Promise<Upload | null> {
   if (typeof id !== "string" || !UPLOAD_ID.test(id)) return null;
   const row = (await db().execute({ sql: "SELECT ext, mime, stored_url, bytes, kind FROM uploads WHERE id=? LIMIT 1", args: [id] })).rows[0];
-  const viewer = currentViewer();
-  if (!row || (viewer && !(await uploadOpenableBy(id, viewer)))) return null;
+  if (!row || !(await uploadOpenableBy(id, viewer))) return null;
   return { id, ext: String(row.ext), stored: String(row.stored_url), mime: String(row.mime ?? ""), bytes: Number(row.bytes), kind: String(row.kind ?? "") };
 }
 
@@ -168,6 +161,9 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   if (tool !== "performance" && tool !== "edit" && tool !== "video") return admissionReply({ error: "Pick performance, edit or video." }, { status: 400 });
   const quoteOnly = body.quoteOnly === true;
   await ready();
+  /* The person this request acts for (the signed-in person, or an Atomik run's owner): none, and nothing is read. */
+  const viewer = await actingViewer();
+  if (!viewer) return admissionReply({ error: NO_ACTING_PERSON }, { status: 403 });
   if (!runwayConfigured()) return admissionReply({ error: "This is not set up: RUNWAY_API_KEY is needed." }, { status: 400 });
   const allowance = await allowanceCheck("runway");
   if (!allowance.ok && allowance.status !== 402) return admissionReply({ error: allowance.error }, { status: allowance.status });
@@ -182,54 +178,36 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
 
   let model: RunwayModel, seconds: number;
   const inputs: RunwayParams["inputs"] = {};
-  /* What each face gate will check: the still, the cast member it shows, and the role. */
-  const faces: { role: "performer" | "character" | "subject"; castMemberId: string; upload: Upload }[] = [];
   let bodyControl = false, expressionIntensity = 3;
-  let clipSource: StoredSource | null = null;
-  const castOf = (v: unknown) => (typeof v === "string" && ENTITY_ID.test(v) ? v : null);
-  const face = async (role: "performer" | "character" | "subject", cast: unknown, upload: unknown, label: string): Promise<AdmissionReply | null> => {
-    const castMemberId = castOf(cast), up = await openUpload(upload);
-    if (!castMemberId) return bad(`Say which cast member the ${label} shows: every face needs the person's consent on record.`);
-    if (!up || !up.mime.startsWith("image/") || up.bytes > RUNWAY_IMAGE_LIMIT_BYTES) return bad(`Add a still of the ${label}'s face (an image of this workspace, up to 5 MB).`);
-    faces.push({ role, castMemberId, upload: up });
-    return null;
-  };
   if (tool === "video") {
     model = body.model == null ? RUNWAY_RATES.defaultVideoModel : (body.model as RunwayModel);
     if (model !== "gen4.5" && model !== "gen4_turbo") return bad("Pick gen4.5 or gen4_turbo.");
     const limits = RUNWAY_RATES.models[model];
     seconds = Number(body.duration ?? 5);
     if (!Number.isInteger(seconds) || seconds < limits.minSeconds || seconds > limits.maxSeconds) return bad(`${model} makes ${limits.minSeconds} to ${limits.maxSeconds} seconds.`);
-    const image = await openUpload(body.startImageUploadId);
+    const image = await openUpload(body.startImageUploadId, viewer);
     if (!image || !image.mime.startsWith("image/")) return bad("Pick a start still from this workspace's image uploads.", 404);
     if (image.bytes > RUNWAY_IMAGE_LIMIT_BYTES) return bad("A start still is up to 5 MB here.");
     if (!prompt) return bad("Write what happens.");
     inputs.image = { id: image.id };
-    /* The start still is checked like a reference of a FLUX.2 edit (consistent; the owner can relax it later): it must show a cast member with live consent, and there is no "shows nobody" exemption. */
-    const gated = await face("subject", body.castMemberId, image.id, "start still's");
-    if (gated) return gated;
   } else if (tool === "edit") {
     model = "aleph2";
     if (!prompt) return bad("Write what to change.");
-    const clip = await resolveClip(body.clipUploadId, body.clipGenId);
+    const clip = await resolveClip(body.clipUploadId, body.clipGenId, viewer);
     if ("error" in clip) return bad(clip.error, clip.status);
     const limits = RUNWAY_RATES.models.aleph2;
     if (clip.seconds < limits.minSeconds - 1e-9 || clip.seconds > limits.maxSeconds + 1e-9) return bad(`Aleph 2 takes a clip of ${limits.minSeconds} to ${limits.maxSeconds} seconds.`);
     seconds = Math.ceil(clip.seconds - 1e-9);
-    clipSource = clip.source;
     inputs.clip = { kind: clip.source.kind, id: clip.source.id };
-    const gated = await face("subject", body.castMemberId, body.faceFrameUploadId, "person in the clip");
-    if (gated) return gated;
   } else {
     model = "act_two";
     const limits = RUNWAY_RATES.models.act_two;
-    const clip = await resolveClip(body.performanceClipUploadId, body.performanceClipGenId);
+    const clip = await resolveClip(body.performanceClipUploadId, body.performanceClipGenId, viewer);
     if ("error" in clip) return bad(clip.error, clip.status);
     if (clip.seconds < limits.minSeconds - 1e-9 || clip.seconds > limits.maxSeconds + 1e-9) return bad(`Act-Two takes a performance of ${limits.minSeconds} to ${limits.maxSeconds} seconds.`);
     seconds = Math.ceil(clip.seconds - 1e-9);
-    clipSource = clip.source;
     inputs.clip = { kind: clip.source.kind, id: clip.source.id };
-    const character = await openUpload(body.characterUploadId);
+    const character = await openUpload(body.characterUploadId, viewer);
     if (!character || !(character.mime.startsWith("image/") || character.mime.startsWith("video/"))) return bad("Pick the character from this workspace's image or video uploads.", 404);
     const media = character.mime.startsWith("video/") ? "video" : "image";
     if (character.bytes > (media === "image" ? RUNWAY_IMAGE_LIMIT_BYTES : RUNWAY_VIDEO_LIMIT_BYTES)) return bad(`A character ${media} is up to ${media === "image" ? 5 : 16} MB here.`);
@@ -237,12 +215,6 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
     if (body.bodyControl != null && typeof body.bodyControl !== "boolean") return bad("Body control is on or off.");
     bodyControl = body.bodyControl === true;
     if (body.expressionIntensity != null) { const e = body.expressionIntensity; if (!Number.isInteger(e) || (e as number) < 1 || (e as number) > 5) return bad("Expression strength is 1 to 5."); expressionIntensity = e as number; }
-    /* Both faces: the DRIVING one (the performer) and the TARGET (the character). A character that is an image is its own still; a video character needs one named. */
-    const performer = await face("performer", body.performerCastMemberId, body.performerFaceUploadId, "performer");
-    if (performer) return performer;
-    const characterStill = media === "image" && body.characterFaceUploadId == null ? character.id : body.characterFaceUploadId;
-    const target = await face("character", body.characterCastMemberId, characterStill, "character");
-    if (target) return target;
   }
 
   const usd = runwayUsd(model, seconds);
@@ -250,16 +222,23 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   const inCredits = creditsApply(requireTenant());
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
+  let shotCode: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return bad("That shot is gone.");
+    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return bad("That shot belongs to another production.");
     projectId ??= shot.projectId;
   }
   if (projectId && !(await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [projectId] })).rows.length) return bad("That production is not in this workspace.", 404);
   const over = jobLineNow({ credits: estimatedCredits, usd, key: "runway", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
-  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, seconds, ...(faces.length ? { needs: ["projectId", "use"] } : {}) });
+  /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. Refused on the quote and the press, before any face is checked and any row is written, so no failed take is left in the Library. */
+  if (shotId && shotCode) {
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
+    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
+  }
+  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, seconds });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return bad("Approve the price first: the estimate is above the approved credit amount.", 409);
   const wall = await allowanceCheck("runway", usd, model);
@@ -273,28 +252,10 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   const stopped = admissionCheckpoint(options, body, got, "video", usd, model, { task: RUNWAY_TASK, tool, model, seconds, prompt, ratio, seed, inputs, bodyControl, expressionIntensity, projectId, shotId }, { engine: "runway" });
   if (stopped) return stopped;
 
-  /* ── The consent gates (Act-Two: the performer AND the character; Aleph 2: the person), BEFORE a row is written or a cent reserved. No exemption. ── */
-  const use = typeof body.use === "string" && (USES as readonly string[]).includes(body.use) ? (body.use as (typeof USES)[number]) : null;
-  const consents: RunwayParams["consents"] = [];
-  if (faces.length) {
-    if (!projectId || !use) return admissionReply({ error: "Name the production and what it is for (production, ads or social): a person's face needs their consent on record.", code: "bad-input" }, { status: 400 });
-    try {
-      if (seams.houseOnly !== false && !(await faceCheckAvailable())) throw new ConsentMatchError("off", "The face check isn't on for this workspace, so a real face can't be used here yet.", 403);
-      for (const f of faces) {
-        const bytes = await readUploadBytes(f.upload.id, f.upload.ext, f.upload.stored, RUNWAY_IMAGE_LIMIT_BYTES);
-        const match = await (seams.consent ?? requireConsentMatch)(f.castMemberId, bytes, { projectId, use });
-        consents.push({ role: f.role, castMemberId: f.castMemberId, consentId: match.consentId, faceSha256: match.faceSha256 });
-      }
-    } catch (error) {
-      if (error instanceof ConsentMatchError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
-      return admissionReply({ error: "The face check could not be done. Nothing was billed.", code: "unavailable" }, { status: 503 });
-    }
-  }
-  void clipSource;
 
   const genId = newId("gen"), ts = now();
   const runway: RunwayParams = {
-    status: "queued", tool, model, seconds, reservedUsd: usd, estimateCredits: estimatedCredits, use, inputs, prompt: prompt || null, ratio, seed, bodyControl, expressionIntensity, consents,
+    status: "queued", tool, model, seconds, reservedUsd: usd, estimateCredits: estimatedCredits, inputs, prompt: prompt || null, ratio, seed, bodyControl, expressionIntensity,
     funded: 0, claimedAt: null, sendingAt: null, taskId: null, submittedAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0, cleanupDue: 0, cleanupTries: 0, vendorDeleted: 0, statedUsd: null, reconcile: 0,
   };
   const params = { task: RUNWAY_TASK, job: tool === "video" ? "other" : "fix", runway, estUsd: usd, estCredits: 0 };
@@ -396,11 +357,6 @@ export async function advanceRunwayJobWith(genId: string, deps: RunwayDeps): Pro
       }
       job = (await load(genId))!;
       const { runway, row } = job;
-      /* Consent is judged again at the moment of sending: a record withdrawn or ended while the job waited stops it, and nothing has been sent. */
-      for (const c of runway.consents) {
-        const rec = await getConsent(c.consentId).catch(() => null);
-        if (!rec || !consentLive(rec)) { await settleRunway(genId, "failed", { message: "Nothing was sent: a person's consent no longer holds. Nothing was billed.", costUsd: 0 }); return (await load(genId, { any: true }))?.runway ?? null; }
-      }
       /* The inputs are read before anything is sent: one that cannot be read submits nothing and refunds everything. */
       let request: RunwayRequest;
       try {
@@ -538,14 +494,12 @@ export async function recoverRunwayJobs(options: { limit?: number; deadlineAt?: 
 const COMMON = { provider: "runway", kind: "engine" as const, route: "/api/runway", needs: ["RUNWAY_API_KEY", "RUNWAY_ENABLED"], who: "prepare: anyone; approve: a person" as const };
 /** The three tools, declared beside their handler (docs/particl-sow-2026-10-04.md § 4.3). One route, one price path, one approval for every consumer. */
 export const RUNWAY_TOOLS = [
-  { ...COMMON, id: "runway_performance", tool: "performance" as const, models: ["act_two"], inputs: { performanceClipUploadId: "a 3 to 30 s performance video", characterUploadId: "the character, an image or a clip", performerCastMemberId: "who performs", performerFaceUploadId: "a still of the performer's face", characterCastMemberId: "who the character shows", characterFaceUploadId: "a still of the character's face (an image character is its own)", projectId: "the production", use: "production, ads or social", maxCredits: "the approved price" }, output: "a video take", gate: "a live consent record for the performer AND the character (lib/consentMatch.ts)" },
-  { ...COMMON, id: "runway_edit", tool: "edit" as const, models: ["aleph2"], inputs: { clipUploadId: "a 2 to 30 s video", prompt: "what to change", castMemberId: "who is in it", faceFrameUploadId: "a still of their face", projectId: "the production", use: "production, ads or social", maxCredits: "the approved price" }, output: "a video take", gate: "a live consent record for the person (lib/consentMatch.ts)" },
-  { ...COMMON, id: "runway_video", tool: "video" as const, models: ["gen4.5", "gen4_turbo"], inputs: { startImageUploadId: "a start still (it is the face still checked)", castMemberId: "who the still shows", projectId: "the production", use: "production, ads or social", prompt: "what happens", duration: "2 to 10 seconds", model: "gen4.5 (default) or gen4_turbo", ratio: "width:height", maxCredits: "the approved price" }, output: "a video take", gate: "a live consent record for the person the start still shows (lib/consentMatch.ts)" },
+  { ...COMMON, id: "runway_performance", tool: "performance" as const, models: ["act_two"], inputs: { performanceClipUploadId: "a 3 to 30 s performance video", characterUploadId: "the character, an image or a clip", maxCredits: "the approved price" }, output: "a video take" },
+  { ...COMMON, id: "runway_edit", tool: "edit" as const, models: ["aleph2"], inputs: { clipUploadId: "a 2 to 30 s video", prompt: "what to change", maxCredits: "the approved price" }, output: "a video take" },
+  { ...COMMON, id: "runway_video", tool: "video" as const, models: ["gen4.5", "gen4_turbo"], inputs: { startImageUploadId: "a start still", prompt: "what happens", duration: "2 to 10 seconds", model: "gen4.5 (default) or gen4_turbo", ratio: "width:height", maxCredits: "the approved price" }, output: "a video take" },
 ];
 
-/** The tools present for a workspace: none unless Runway is on here (its switch, and the house workspace only). Every one of them passes the face gate, so none is offered where it cannot run. */
+/** The tools present for a workspace: none unless Runway is on here (its switch, and the house workspace only). No face check gates any of them. */
 export async function runwayTools(workspace: { id: string } | null | undefined = currentTenant()?.workspace): Promise<typeof RUNWAY_TOOLS> {
-  if (!(await runwayOnHere(workspace))) return [];
-  const faces = await faceCheckAvailable(workspace);
-  return faces ? RUNWAY_TOOLS : [];
+  return (await runwayOnHere(workspace)) ? RUNWAY_TOOLS : [];
 }

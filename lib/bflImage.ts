@@ -15,32 +15,28 @@ import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./g
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
-import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
+import { uploadOpenableBy } from "./uploadAccess";
+import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { engineEnabled } from "./engineGate";
 import { BFL_RATES, type BflModel } from "./vendorRates";
 import { BFL_RESULT_LIFETIME_MS, BFL_REFERENCE_LIMIT_BYTES, BFL_SWITCH, BflError, bflConfigured, fetchResult, isBflModel, pollImage, submitImage } from "./bfl";
-import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type ConsentMatch, type ConsentScope } from "./consentMatch";
-import { getConsent } from "./security/consent";
-import { consentLive } from "./security/consent-words";
 
 /**
  * FLUX.2 through BFL (lib/bfl.ts): `flux2_image` (a still from words) and `flux2_edit` (a still from words and one to eight references of this workspace),
  * one door (POST /api/bfl { tool }) for the button, Make, a board card, Atomik, a saved skill and an outside agent: the same quote, the same approval, the same
- * price, and for an edit the same consent gate. An ASYNCHRONOUS vendor job kept as a durable workflow in the take's own row (generations.params.bfl; no new table),
+ * price. An ASYNCHRONOUS vendor job kept as a durable workflow in the take's own row (generations.params.bfl; no new table),
  * shaped like lip-sync (lib/lipSync.ts):
  *
- *   queued     admitted, consent passed (an edit), funded (the reservation is the whole price)
+ *   queued     admitted, funded (the reservation is the whole price)
  *   submitted  the job is with BFL (an id and the polling address BFL named)
  *   done       the image is fetched THE MOMENT it is Ready (its signed address lives ten minutes), STORED under the workspace's own prefix, the take settled
  *   failed     refused before work (settled at NOTHING, "Nothing billed"); moderated or failed after submission, or its image lost past the ten minutes: the workspace is billed nothing, and the ledger
  *              line records what BFL charged (below)
  *   uncertain  the submission's acknowledgement was lost. Nothing here ever submits a second time: a lost reply may still be a charged job
  *
- * CONSENT (an edit). A reference may show a real person. Every reference of an edit therefore carries the cast member it shows and passes `requireConsentMatch`
- * (lib/consentMatch.ts: the reference itself is the still checked against that person's live consent for this production and use) BEFORE a row is written or a cent
- * reserved. Today that gate refuses every check (no consent record holds a face reference yet) and runs for the house workspace only, so **an edit is refused today**; there is
- * no "this shows nobody" exemption (it would be an honour system until a face-detection check exists). A still from words alone has no reference and no gate.
+ * CONSENT, FINAL (owner, 16 Oct 2026): there is NO face check and no consent record here. Particl matches no face and screens no prompt for resemblance; the person
+ * generating is responsible, BFL's own filters apply and their refusals are shown as they come. A reference is an image upload of this workspace, nothing more.
  *
  * MONEY. Quote: the output megapixels (rounded up) and each reference's megapixels (rounded up) at BFL_RATES (lib/vendorRates.ts, verified against BFL's published
  * pricing data, 16 Oct 2026; confirm against the first invoice), through the margin table (`quotedCredits`, keyed by the model); reserved at the quote on the meter; settled at the cost BFL states when it states one,
@@ -52,20 +48,18 @@ import { consentLive } from "./security/consent-words";
  * policy allows training on inputs and outputs unless the account has opted out (the owner has done the opt-out in BFL's dashboard; counsel before any customer switch).
  */
 export const BFL_TASK = "bfl_image";
-const ENTITY_ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const UPLOAD_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const POLL_LEASE_MS = 120_000;
 const SUBMIT_GRACE_MS = 10 * 60_000;
 export const BFL_POLL_INTERVAL_MS = 2_000;
-const USES = ["production", "ads", "social"] as const;
 const MULTIPLE = 16;
 const MIN_SIDE = 64;
 
 export type BflState = "queued" | "submitted" | "done" | "failed" | "uncertain";
 export type BflParams = {
   status: BflState; tool: "image" | "edit"; model: BflModel; width: number; height: number; seed: number | null;
-  references: { uploadId: string; castMemberId: string; consentId: string; faceSha256: string; megapixels: number }[];
-  outputMegapixels: number; reservedUsd: number; estimateCredits: number; use: string | null;
+  references: { uploadId: string; megapixels: number }[];
+  outputMegapixels: number; reservedUsd: number; estimateCredits: number;
   funded: number; claimedAt: number | null; bflId: string | null; pollingUrl: string | null; statedUsd: number | null;
   submittedAt: number | null; sendingAt: number | null; readyAt: number | null; lastPolledAt: number | null; pollUntil: number | null; settled: number;
   /** 1 when the figure on the ledger line is ours, not BFL's (none stated, or BFL stated more than the quote): to be checked against BFL's invoice. */
@@ -79,8 +73,6 @@ export type BflDeps = {
   submit?: typeof submitImage; poll?: typeof pollImage; fetchImage?: typeof fetchResult;
   store?: (genId: string, bytes: Buffer) => Promise<{ url: string; bytes: number }>; clock?: () => number;
 };
-/** What the admission may be handed in a test. The public admission passes none. */
-export type BflSeams = { consent?: (castMemberId: string, face: Buffer, scope: ConsentScope) => Promise<ConsentMatch> };
 
 /* ── The row ────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
@@ -125,10 +117,10 @@ export function bflQuote(model: BflModel, outputMp: number, referenceMps: number
 
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
-export const executeBflAdmission = (input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> => admitBfl(input, got, options, {});
+export const executeBflAdmission = (input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> => admitBfl(input, got, options);
 
-/** The same with the test seams. Internal: only the tests import it (tests/unit/bfl.spec.ts says so by reading the source). */
-export async function admitBfl(input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution, seams: BflSeams): Promise<AdmissionReply> {
+/** The admission. Internal: only the tests and the door import it (tests/unit/bfl.spec.ts says so by reading the source). */
+export async function admitBfl(input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> {
   const refusal = assertAdmissionActor(got);
   if (refusal) return refusal;
   /* Off for this workspace (the switch, or not on the engine list): the tool is simply not here. */
@@ -153,27 +145,27 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   let seed: number | null = null;
   if (body.seed != null) { if (!Number.isInteger(body.seed) || (body.seed as number) < 0 || (body.seed as number) > 2 ** 31) return admissionReply({ error: "A seed is a whole number." }, { status: 400 }); seed = body.seed as number; }
 
-  /* The references of an edit: each of this workspace, openable by this person, an image of a measured size, naming the cast member it shows. */
-  type Ref = { uploadId: string; castMemberId: string; mp: number; ext: string; stored: string };
+  /* The references of an edit: each of this workspace, openable by the person this request acts for (the signed-in person, or an Atomik run's owner), an image of a measured size. */
+  type Ref = { uploadId: string; mp: number; ext: string; stored: string };
   const refs: Ref[] = [];
   if (tool === "image") { if (body.references != null) return admissionReply({ error: "A still from words takes no references: use edit." }, { status: 400 }); }
   else {
     const list = Array.isArray(body.references) ? body.references : [];
     if (!list.length) return admissionReply({ error: "Add one to eight reference images." }, { status: 400 });
     if (list.length > BFL_RATES.models[model].maxRefs) return admissionReply({ error: `${model} takes up to ${BFL_RATES.models[model].maxRefs} references.` }, { status: 400 });
-    const viewer = currentViewer();
+    /* The person this request acts for: none, and no upload is read. */
+    const viewer = await actingViewer();
+    if (!viewer) return admissionReply({ error: NO_ACTING_PERSON }, { status: 403 });
     for (const entry of list) {
       const uploadId = entry && typeof entry === "object" ? (entry as { uploadId?: unknown }).uploadId : undefined;
-      const cast = entry && typeof entry === "object" ? (entry as { castMemberId?: unknown }).castMemberId : undefined;
       if (typeof uploadId !== "string" || !UPLOAD_ID.test(uploadId)) return admissionReply({ error: "That reference is not valid." }, { status: 400 });
       const row = (await db().execute({ sql: "SELECT ext, mime, stored_url, bytes, width, height FROM uploads WHERE id=? LIMIT 1", args: [uploadId] })).rows[0];
-      const openable = !row || !viewer || (await uploadOpenableBy(uploadId, viewer));
+      const openable = !row || (await uploadOpenableBy(uploadId, viewer));
       if (!row || !openable || !String(row.mime ?? "").startsWith("image/")) return admissionReply({ error: "Pick references from this workspace's image uploads." }, { status: 404 });
       if (Number(row.bytes) > BFL_REFERENCE_LIMIT_BYTES) return admissionReply({ error: "A reference is up to 20 MB." }, { status: 400 });
       const w = Number(row.width), h = Number(row.height);
       if (!(w > 0) || !(h > 0)) return admissionReply({ error: "A reference has no measured size, so it cannot be priced." }, { status: 422 });
-      if (typeof cast !== "string" || !ENTITY_ID.test(cast)) return admissionReply({ error: "Say which cast member each reference shows: every face needs the person's consent on record.", code: "bad-input" }, { status: 400 });
-      refs.push({ uploadId, castMemberId: cast, mp: megapixels(w, h), ext: String(row.ext), stored: String(row.stored_url) });
+      refs.push({ uploadId, mp: megapixels(w, h), ext: String(row.ext), stored: String(row.stored_url) });
     }
   }
   const priced = bflQuote(model, outputMp, refs.map((r) => r.mp));
@@ -182,9 +174,11 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
 
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
+  let shotCode: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
+    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
     projectId ??= shot.projectId;
   }
@@ -194,7 +188,12 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   const inCredits = creditsApply(requireTenant());
   const over = jobLineNow({ credits: estimatedCredits, usd, key: "bfl", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
-  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, width, height, megapixels: outputMp, references: refs.length, ...(tool === "edit" ? { needs: ["castMemberId on each reference", "projectId", "use"] } : {}) });
+  /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. Refused on the quote and the press, before any face is checked and any row is written, so no failed take is left in the Library. */
+  if (shotId && shotCode) {
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
+    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
+  }
+  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, width, height, megapixels: outputMp, references: refs.length });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });
   const wall = await allowanceCheck("bfl", usd, model);
@@ -208,27 +207,11 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
   const stopped = admissionCheckpoint(options, body, got, "image", usd, model, { task: BFL_TASK, tool, model, width, height, seed, references: refs.map((r) => r.uploadId), projectId, shotId }, { engine: "bfl" });
   if (stopped) return stopped;
 
-  /* ── The consent gate (an edit): every reference, BEFORE a row is written or a cent reserved. ── */
-  const use = typeof body.use === "string" && (USES as readonly string[]).includes(body.use) ? (body.use as (typeof USES)[number]) : null;
-  const matched: BflParams["references"] = [];
-  if (tool === "edit") {
-    if (!projectId || !use) return admissionReply({ error: "Name the production and what it is for (production, ads or social): an edit with a person's image needs their consent on record.", code: "bad-input" }, { status: 400 });
-    try {
-      if (!(await faceCheckAvailable())) throw new ConsentMatchError("off", "The face check isn't on for this workspace, so an image of a real person can't be used here yet.", 403);
-      for (const ref of refs) {
-        const bytes = await readUploadBytes(ref.uploadId, ref.ext, ref.stored, BFL_REFERENCE_LIMIT_BYTES);
-        const match = await (seams.consent ?? requireConsentMatch)(ref.castMemberId, bytes, { projectId, use });
-        matched.push({ uploadId: ref.uploadId, castMemberId: ref.castMemberId, consentId: match.consentId, faceSha256: match.faceSha256, megapixels: ref.mp });
-      }
-    } catch (error) {
-      if (error instanceof ConsentMatchError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
-      return admissionReply({ error: "The face check could not be done. Nothing was billed.", code: "unavailable" }, { status: 503 });
-    }
-  }
+  const matched: BflParams["references"] = refs.map((r) => ({ uploadId: r.uploadId, megapixels: r.mp }));
 
   const genId = newId("gen"), ts = now();
   const bfl: BflParams = {
-    status: "queued", tool, model, width, height, seed, references: matched, outputMegapixels: outputMp, reservedUsd: usd, estimateCredits: estimatedCredits, use,
+    status: "queued", tool, model, width, height, seed, references: matched, outputMegapixels: outputMp, reservedUsd: usd, estimateCredits: estimatedCredits,
     funded: 0, claimedAt: null, bflId: null, pollingUrl: null, statedUsd: null, submittedAt: null, sendingAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0, reconcile: 0,
   };
   const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
@@ -327,11 +310,6 @@ export async function advanceBflJobWith(genId: string, deps: BflDeps): Promise<B
       }
       job = (await load(genId))!;
       const { bfl, row } = job;
-      /* Consent is judged again at the moment of sending: a record withdrawn or ended while the job waited stops it, and nothing has been sent. */
-      for (const ref of bfl.references) {
-        const c = await getConsent(ref.consentId).catch(() => null);
-        if (!c || !consentLive(c)) { await settleBfl(genId, "failed", { message: "Nothing was sent: a person's consent no longer holds. Nothing was billed.", costUsd: 0 }); return (await load(genId, { any: true }))?.bfl ?? null; }
-      }
       /* The references are read before anything is sent: one that cannot be read submits nothing and refunds everything. */
       let references: Buffer[];
       try {
@@ -433,15 +411,13 @@ export async function recoverBflJobs(options: { limit?: number; deadlineAt?: num
 /* ── The registry tools ────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 const COMMON = { provider: "bfl", kind: "engine" as const, route: "/api/bfl", needs: ["BFL_API_KEY", "BFL_ENABLED"], who: "prepare: anyone; approve: a person" as const, models: Object.keys(BFL_RATES.models) as BflModel[] };
-/** The two tools, declared beside their handler (docs/particl-sow-2026-10-04.md § 4.3). One route, one price path, one approval for every consumer. */
+/** The tools, declared beside their handler (docs/particl-sow-2026-10-04.md § 4.3). One route, one price path, one approval for every consumer. */
 export const BFL_TOOLS = [
   { ...COMMON, id: "flux2_image", tool: "image" as const, inputs: { prompt: "what to make", model: "flux-2-pro (default), flux-2-flex or flux-2-max", width: "a multiple of 16 (default 1024)", height: "a multiple of 16 (default 1024)", seed: "optional", maxCredits: "the approved price" }, output: "an image take" },
-  { ...COMMON, id: "flux2_edit", tool: "edit" as const, inputs: { prompt: "what to change", references: "one to eight { uploadId, castMemberId } of this workspace", projectId: "the production", use: "production, ads or social", maxCredits: "the approved price" }, output: "an image take, linked to every reference", gate: "a live consent record for the person each reference shows (lib/consentMatch.ts)" },
+  { ...COMMON, id: "flux2_edit", tool: "edit" as const, inputs: { prompt: "what to change", references: "one to eight { uploadId } of this workspace", projectId: "the production (optional)", maxCredits: "the approved price" }, output: "an image take, linked to every reference" },
 ];
 
-/** The tools present for a workspace: none unless the engine is on for it. An edit is offered only where its face gate can run (the house workspace today). */
+/** The tools present for a workspace: none unless the engine is on for it (the house, or a workspace on the engine list). No face check gates any of them. */
 export async function bflTools(workspace: { id: string } | null | undefined = currentTenant()?.workspace): Promise<typeof BFL_TOOLS> {
-  if (!(await engineEnabled(BFL_SWITCH, workspace))) return [];
-  const faces = await faceCheckAvailable(workspace);
-  return BFL_TOOLS.filter((t) => t.tool === "image" || faces);
+  return (await engineEnabled(BFL_SWITCH, workspace)) ? BFL_TOOLS : [];
 }

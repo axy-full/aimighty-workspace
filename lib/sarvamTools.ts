@@ -15,10 +15,12 @@ import { storeAudioBytes } from "./storage";
 import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import { meter, type MeterKind } from "./meter";
+import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
+import { uploadOpenableBy } from "./uploadAccess";
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, inspectAudioBuffer } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
+import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
 import { engineEnabled } from "./engineGate";
 import { SARVAM_RATES, type SarvamSpeechModel, type SarvamTranslateModel } from "./vendorRates";
 import {
@@ -35,8 +37,8 @@ import {
  * A transcript of a real person's speech, and a translation of what they said, are personal data: they are returned to the caller and written nowhere
  * here (a speech take's text is the take's own prompt, in this workspace's database like any take's).
  *
- * MONEY. Priced in rupees from the plan's recorded rate page (lib/vendorRates.ts SARVAM_RATES, to confirm) and converted ONLY at the owner's own rate,
- * `SARVAM_USD_PER_INR`: with none (or a bad one) nothing is priced, the tools say so and cannot run. A customer's price is the dollars through the margin
+ * MONEY. Priced in rupees from the plan's recorded rate page (lib/vendorRates.ts SARVAM_RATES, to confirm) and converted ONLY at the owner's own rate
+ * `SARVAM_USD_PER_INR` plus a 3% buffer (`SARVAM_RATES.fxBuffer`): with none (or a bad one) nothing is priced, the tools say so and cannot run. A customer's price is the dollars through the margin
  * table (`quotedCredits`, keyed as the reservation keys it); reserved at the quote on the meter and settled at the real cost (one request, so cost = quote);
  * a person approves (`maxCredits`). **Any failure settles at nothing ("Nothing billed")**: Sarvam's pages say nothing about billing a failed call, so the
  * outcome reads "billing unknown" and the platform absorbs it (plan § 2).
@@ -57,7 +59,7 @@ export function usdPerInr(): number | null {
 const micro = (usd: number) => Math.round(usd * 1e6) / 1e6;
 const chars = (text: string) => [...text].length;
 
-/** What a call costs the platform, in dollars, at the owner's rupee rate; null when there is no rate. */
+/** What a call costs the platform, in dollars: the rupee cost at the owner's rupee rate plus the 3% buffer (SARVAM_RATES.fxBuffer); null when there is no rate. */
 export function sarvamUsd(tool: SarvamToolId, units: { chars?: number; seconds?: number }, model: string): number | null {
   const fx = usdPerInr();
   if (fx == null) return null;
@@ -65,7 +67,7 @@ export function sarvamUsd(tool: SarvamToolId, units: { chars?: number; seconds?:
   if (tool === "speech") inr = ((units.chars ?? 0) / 10_000) * (SARVAM_RATES.speechInrPer10kChars[model as SarvamSpeechModel] ?? NaN);
   else if (tool === "translate") inr = ((units.chars ?? 0) / 10_000) * (SARVAM_RATES.translateInrPer10kChars[model as SarvamTranslateModel] ?? NaN);
   else inr = ((units.seconds ?? 0) / 3600) * SARVAM_RATES.transcribeInrPerHour;
-  return Number.isFinite(inr) && inr > 0 ? micro(inr * fx) : null;
+  return Number.isFinite(inr) && inr > 0 ? micro(inr * fx * SARVAM_RATES.fxBuffer) : null;
 }
 
 const kindOf = (tool: SarvamToolId): MeterKind => (tool === "translate" ? "text" : "audio");
@@ -149,8 +151,11 @@ export async function admitSarvam(input: Record<string, unknown>, got: Admission
     language = typeof body.language === "string" ? body.language : "";
     const uploadId = body.sourceUploadId ? String(body.sourceUploadId) : "", genId = body.sourceGenId ? String(body.sourceGenId) : "";
     if ((!uploadId && !genId) || (uploadId && genId) || (uploadId && !SOURCE_ID.test(uploadId)) || (genId && !SOURCE_ID.test(genId))) return admissionReply({ error: "Pick one audio original to transcribe." }, { status: 400 });
+    /* An upload is read only by a person who may open it: the signed-in person, or an Atomik run's owner. None behind the request, and nothing is read. */
+    const viewer = await actingViewer();
+    if (!viewer) return admissionReply({ error: NO_ACTING_PERSON }, { status: 403 });
     const found = await findStoredSource(uploadId ? { uploadId } : { genId });
-    if (!found || found.mediaKind !== "audio") return admissionReply({ error: "That audio original is not in this workspace." }, { status: 404 });
+    if (!found || found.mediaKind !== "audio" || (found.kind === "upload" && !(await uploadOpenableBy(found.id, viewer)))) return admissionReply({ error: "That audio original is not in this workspace." }, { status: 404 });
     const length = await resolveStoredDuration(found);
     if (length.seconds == null) return admissionReply({ error: `This audio has no measured length, so it cannot be priced${length.reason ? `: ${length.reason}` : "."}` }, { status: 422 });
     if (length.seconds > SARVAM_SHORT_AUDIO_SECONDS) return admissionReply({ error: `Transcription here takes a clip under ${SARVAM_SHORT_AUDIO_SECONDS} seconds; longer audio is a batch job, which is not offered yet.` }, { status: 400 });
@@ -170,15 +175,22 @@ export async function admitSarvam(input: Record<string, unknown>, got: Admission
   const inCredits = creditsApply(requireTenant());
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
+  let shotCode: string | null = null;
   if (tool === "speech" && shotId) {
     const shot = await getShot(shotId);
     if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
+    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
     projectId ??= shot.projectId;
   }
   if (projectId && !(await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [projectId] })).rows.length) return admissionReply({ error: "That production is not in this workspace." }, { status: 404 });
   const over = jobLineNow({ credits: estimatedCredits, usd, key: "sarvam", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
+  /* The cost approval rule (brief 2.2), for the one tool that makes a take (speech): with a cap per shot, a member's take past it needs an admin. Refused on the quote and the press, before any row is written, so no failed take is left in the Library. A translation or a transcript makes no take and is not judged against a shot. */
+  if (tool === "speech" && shotId && shotCode) {
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: marginKey, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
+    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
+  }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model, ...units });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });

@@ -20,9 +20,7 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 test.beforeAll(async () => { await alignLedgerUnit(); });
-/* Every Runway tool passes the face gate, so the face check is on unless a test says otherwise. */
-test.beforeEach(() => { process.env.REKOGNITION_ENABLED = "1"; });
-test.afterEach(() => { delete process.env.RUNWAY_ENABLED; delete process.env.REKOGNITION_ENABLED; process.env.ENGINE_MOCK = "1"; });
+test.afterEach(() => { delete process.env.RUNWAY_ENABLED; process.env.ENGINE_MOCK = "1"; });
 
 const tenant = (id: string, over: Partial<TenantWorkspace> = {}): TenantWorkspace => ({
   id, slug: id, name: id, legacy: id === "ws_legacy", dbUrl: `file:${path.join(dir, `${id}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true,
@@ -43,7 +41,7 @@ const deferred: (() => Promise<unknown>)[] = [];
 const options = (): AdmissionExecution => ({ defer: async (work) => { deferred.push(work); } });
 
 /** One upload of this workspace: a stored original with a known length (a video) or none (an image). */
-async function upload(label: string, mediaKind: "video" | "image", seconds: number | null = null, bytesOver?: number): Promise<string> {
+async function upload(label: string, mediaKind: "video" | "image", seconds: number | null = null, bytesOver?: number, uploader: string | null = null): Promise<string> {
   const { db, ready } = await import("../../lib/db");
   const { storeUpload } = await import("../../lib/storage");
   await ready();
@@ -53,22 +51,7 @@ async function upload(label: string, mediaKind: "video" | "image", seconds: numb
   const bytes = Buffer.from(`sample-${mediaKind}-${id}`);
   await storeUpload(id, ext, bytes, mime);
   made.push(path.join(process.cwd(), ".data", "uploads", `${id}.${ext}`));
-  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s) VALUES(?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytesOver ?? bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds] });
-  return id;
-}
-/** Each cast member's consent record, by cast id: the gate seam answers with the person's own record, so a job that is sent finds it live. */
-const known = new Map<string, string>();
-async function consent(projectId: string, subjectKey: string): Promise<string> {
-  const { db } = await import("../../lib/db");
-  const { consentsReady } = await import("../../lib/security/consent");
-  await consentsReady();
-  const id = uid("consent");
-  await db().execute({
-    sql: `INSERT INTO identity_consents (id, project_id, subject_key, subject_label, person_name, covers_face, covers_voice, uses_json, other_use, until_at, recording_id, attested, recorded_by, recorded_at, revoked_at)
-          VALUES (?,?,?,?,?,1,0,?,'',?,?,1,'u_test',?,NULL)`,
-    args: [id, projectId, subjectKey, "", "Sample Person", JSON.stringify(["production", "ads"]), Date.now() + 86_400_000, "rec_1", Date.now()],
-  });
-  known.set(subjectKey, id);
+  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s,uploader_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytesOver ?? bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds, uploader] });
   return id;
 }
 async function project(id: string) {
@@ -76,9 +59,6 @@ async function project(id: string) {
   await ready();
   await db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES(?,?,0)", args: [id, id] });
 }
-const passing = (consentId = "consent_seam") => async (_cast: string, face: Buffer) => ({ consentId, similarity: 99, matched: true as const, checkedAt: Date.now(), faceSha256: `sha_${face.length}` });
-/** The gate as it answers for people whose consent records exist: each cast member's own record. */
-const passingFor = (consents: Record<string, string>) => async (cast: string, face: Buffer) => passing(consents[cast])(cast, face);
 async function meterRows() {
   const { platformDb, platformReady } = await import("../../lib/platform");
   await platformReady();
@@ -91,35 +71,29 @@ async function gen(id: string) {
 }
 const rowCount = async () => { const { db } = await import("../../lib/db"); return Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n); };
 
-type Seams = { consent?: ReturnType<typeof passing>; houseOnly?: boolean };
+type Seams = { houseOnly?: boolean };
 async function admit(input: Record<string, unknown>, seams: Seams = {}) {
   const { admitRunway } = await import("../../lib/runwayTools");
-  return admitRunway(input, OWNER, options(), { consent: async (cast, face) => passing(known.get(cast) ?? "consent_seam")(cast, face), ...seams });
+  return admitRunway(input, OWNER, options(), seams);
 }
-/** The video tool's body: a start still (the face still checked), the cast member it shows, the production, the use and words. */
+/** The video tool's body: a start still and words, in a production. Nothing about a person: no face, cast member or consent. */
 async function videoBody(extra: Record<string, unknown> = {}) {
-  const projectId = uid("prod"), cast = uid("cast");
+  const projectId = uid("prod");
   await project(projectId);
-  await consent(projectId, cast);
-  return { tool: "video", startImageUploadId: await upload("still", "image"), castMemberId: cast, projectId, use: "production", prompt: "A crane lifts at dawn", duration: 5, ...extra };
+  return { tool: "video", startImageUploadId: await upload("still", "image"), projectId, prompt: "A crane lifts at dawn", duration: 5, ...extra };
 }
-type Act = { projectId: string; performerCast: string; characterCast: string; consents: Record<string, string>; body: Record<string, unknown> };
-/** A production, two cast members, a 5 s performance clip, a character image (its own still) and the performer's face still. */
+type Act = { projectId: string; body: Record<string, unknown> };
+/** A production, a 5 s performance clip and a character image. */
 async function actWorld(over: { clipSeconds?: number } = {}): Promise<Act> {
-  const projectId = uid("prod"), performerCast = uid("cast"), characterCast = uid("cast");
+  const projectId = uid("prod");
   await project(projectId);
-  const consents = { [performerCast]: await consent(projectId, performerCast), [characterCast]: await consent(projectId, characterCast) };
-  const body = {
-    tool: "performance", performanceClipUploadId: await upload("perf", "video", over.clipSeconds ?? 5), characterUploadId: await upload("char", "image"),
-    performerCastMemberId: performerCast, performerFaceUploadId: await upload("pface", "image"), characterCastMemberId: characterCast, projectId, use: "production",
-  };
-  return { projectId, performerCast, characterCast, consents, body };
+  const body = { tool: "performance", performanceClipUploadId: await upload("perf", "video", over.clipSeconds ?? 5), characterUploadId: await upload("char", "image"), projectId };
+  return { projectId, body };
 }
 async function editWorld(seconds = 5) {
-  const projectId = uid("prod"), cast = uid("cast");
+  const projectId = uid("prod");
   await project(projectId);
-  const consents = { [cast]: await consent(projectId, cast) };
-  return { projectId, cast, consents, body: { tool: "edit", clipUploadId: await upload("clip", "video", seconds), prompt: "Make the sky grey", castMemberId: cast, faceFrameUploadId: await upload("face", "image"), projectId, use: "production" } };
+  return { projectId, body: { tool: "edit", clipUploadId: await upload("clip", "video", seconds), prompt: "Make the sky grey", projectId } };
 }
 
 type VendorOver = { runningPolls?: number; failWith?: string; costCredits?: number | null; submitError?: Error; fetchErrors?: number; storeError?: Error; deleteError?: boolean };
@@ -172,11 +146,11 @@ test("the prices are Runway's published ones (verified 16 Oct 2026), per second 
     const rows = (await Promise.all([
       admit({ ...(await videoBody()), quoteOnly: true }), admit({ ...(await videoBody({ model: "gen4_turbo", duration: 10 })), quoteOnly: true }),
     ]));
-    expect(rows[0]).toMatchObject({ status: 200, body: { unit: "usd", model: "gen4.5", seconds: 5, needs: ["projectId", "use"] } });
+    expect(rows[0]).toMatchObject({ status: 200, body: { unit: "usd", model: "gen4.5", seconds: 5 } });
     expect(Number(rows[0].body.price)).toBeCloseTo(0.6, 6);
     expect(Number(rows[1].body.price)).toBeCloseTo(0.5, 6);
     /* Limits and inputs, each in words, before anything is reserved. */
-    for (const bad of [{ duration: 1 }, { duration: 11 }, { duration: 5.5 }, { model: "gen3" }, { prompt: "" }, { ratio: "wide" }, { seed: -1 }, { startImageUploadId: "up_nope" }, { castMemberId: "" }])
+    for (const bad of [{ duration: 1 }, { duration: 11 }, { duration: 5.5 }, { model: "gen3" }, { prompt: "" }, { ratio: "wide" }, { seed: -1 }, { startImageUploadId: "up_nope" }])
       expect((await admit({ ...(await videoBody()), ...bad, quoteOnly: true })).status, JSON.stringify(bad)).toBeGreaterThanOrEqual(400);
     expect((await admit({ tool: "other", quoteOnly: true })).status).toBe(400);
     const aleph = await editWorld(3);
@@ -184,7 +158,7 @@ test("the prices are Runway's published ones (verified 16 Oct 2026), per second 
     for (const seconds of [1, 31]) expect((await admit({ ...(await editWorld(seconds)).body, quoteOnly: true })).status, String(seconds)).toBe(400);
     const act = await actWorld();
     const q = await admit({ ...act.body, quoteOnly: true });
-    expect(q).toMatchObject({ status: 200, body: { model: "act_two", seconds: 5, needs: ["projectId", "use"] } });
+    expect(q).toMatchObject({ status: 200, body: { model: "act_two", seconds: 5 } });
     expect((await admit({ ...(await actWorld({ clipSeconds: 2 })).body, quoteOnly: true })).status).toBe(400);
     /* A quote writes nothing and reserves nothing. */
     expect((await meterRows()).length).toBe(before);
@@ -202,10 +176,6 @@ test("on standby: the house workspace only, and only with the switch on; a liste
     expect(await runwayTools()).toEqual([]);
     expect(await admit({ ...(await videoBody()), maxCredits: 100000 })).toMatchObject({ status: 404, body: { error: "There is no such tool here." } });
     process.env.RUNWAY_ENABLED = "1";
-    /* Every Runway tool passes the face gate, so with the face check off none is offered. */
-    delete process.env.REKOGNITION_ENABLED;
-    expect(await runwayTools()).toEqual([]);
-    process.env.REKOGNITION_ENABLED = "1";
     const on = await runwayTools();
     expect(on.map((t) => t.id)).toEqual(["runway_performance", "runway_edit", "runway_video"]);
     expect(on.every((t) => t.provider === "runway" && t.route === "/api/runway")).toBe(true);
@@ -216,7 +186,6 @@ test("on standby: the house workspace only, and only with the switch on; a liste
   try {
     await platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify({ enginesOnWorkspaces: ["ws_runway_listed"] })] });
     process.env.RUNWAY_ENABLED = "1";
-    process.env.REKOGNITION_ENABLED = "1";
     await asTenant(tenant("ws_runway_listed"), async () => {
       expect(await runwayTools()).toEqual([]);
       expect(await admit({ ...(await videoBody()), quoteOnly: true })).toMatchObject({ status: 404 });
@@ -227,84 +196,34 @@ test("on standby: the house workspace only, and only with the switch on; a liste
   }
 });
 
-test("approval: the price must be approved, and every face-bearing tool is refused for a missing production, use, cast member or face still before anything is read or sent", async () => {
+test("approval: the price must be approved; nothing about a person is asked for, matched, stored or refused (owner, 16 Oct 2026): each tool goes straight through the public door with no face, cast member or consent record", async () => {
   process.env.RUNWAY_ENABLED = "1";
   await asTenant(house(), async () => {
     const before = (await meterRows()).length;
     const rows = await rowCount();
-    let seamCalls = 0;
-    const seams = { consent: async (...a: Parameters<ReturnType<typeof passing>>) => { seamCalls++; return passing()(...a); } };
     const video = await videoBody();
-    expect((await admit(video, seams)).status).toBe(409);
-    expect((await admit({ ...video, maxCredits: 1 }, seams)).status).toBe(409);
-    for (const bad of [{ castMemberId: "" }, { castMemberId: undefined }, { use: "identity" }, { use: undefined }, { projectId: undefined }]) expect((await admit({ ...video, maxCredits: 100000, ...bad }, seams)).status, JSON.stringify(bad)).toBeGreaterThanOrEqual(400);
+    expect((await admit(video)).status).toBe(409);
+    expect((await admit({ ...video, maxCredits: 1 })).status).toBe(409);
     const act = await actWorld();
-    for (const bad of [{ performerCastMemberId: "" }, { characterCastMemberId: "" }, { use: "identity" }, { use: undefined }, { projectId: undefined }, { performerFaceUploadId: "up_nope" }, { performerFaceUploadId: act.body.performanceClipUploadId }, { characterUploadId: "up_nope" }, { expressionIntensity: 9 }, { bodyControl: "yes" }]) {
-      const reply = await admit({ ...act.body, maxCredits: 100000, ...bad }, seams);
-      expect(reply.status, JSON.stringify(bad)).toBeGreaterThanOrEqual(400);
-    }
+    for (const bad of [{ characterUploadId: "up_nope" }, { expressionIntensity: 9 }, { bodyControl: "yes" }]) expect((await admit({ ...act.body, maxCredits: 100000, ...bad })).status, JSON.stringify(bad)).toBeGreaterThanOrEqual(400);
     const edit = await editWorld();
-    for (const bad of [{ castMemberId: "" }, { use: undefined }, { faceFrameUploadId: edit.body.clipUploadId }, { projectId: undefined }, { prompt: "" }]) {
-      const reply = await admit({ ...edit.body, maxCredits: 100000, ...bad }, seams);
-      expect(reply.status, JSON.stringify(bad)).toBeGreaterThanOrEqual(400);
-    }
-    expect(seamCalls).toBe(0);
+    expect((await admit({ ...edit.body, maxCredits: 100000, prompt: "" })).status).toBe(400);
     expect((await meterRows()).length).toBe(before);
     expect(await rowCount()).toBe(rows);
     expect(deferred.length).toBe(0);
-  });
-});
-
-test("the consent gates: Act-Two checks the performer AND the character, Aleph 2 the person, Gen-4 from a still none; the real gate refuses today and nothing is created", async () => {
-  process.env.RUNWAY_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
-  await asTenant(house(), async () => {
-    const before = (await meterRows()).length;
-    const rows = await rowCount();
+    /* The public door, no seams, no consent: every tool is admitted, and the row holds nothing about a person. */
     const { executeRunwayAdmission } = await import("../../lib/runwayTools");
-    const { ConsentMatchError } = await import("../../lib/consentMatch");
-    /* The public admission, no seams: a live consent exists, and still every check is refused ("no face reference yet"). */
-    const act = await actWorld();
-    expect(await executeRunwayAdmission({ ...act.body, maxCredits: 100000 }, OWNER, options())).toMatchObject({ status: 409, body: { code: "no-reference" } });
-    const edit = await editWorld();
-    expect(await executeRunwayAdmission({ ...edit.body, maxCredits: 100000 }, OWNER, options())).toMatchObject({ status: 409, body: { code: "no-reference" } });
-    expect((await meterRows()).length).toBe(before);
-    expect(await rowCount()).toBe(rows);
-    /* The face check not available (REKOGNITION off): refused in words. */
-    delete process.env.REKOGNITION_ENABLED;
-    expect(await admit({ ...act.body, maxCredits: 100000 }, { consent: passing() })).toMatchObject({ status: 403 });
-    process.env.REKOGNITION_ENABLED = "1";
-    /* Act-Two: both faces are checked, with their own cast members, performer first. The second failing creates nothing. */
-    const seen: string[] = [];
-    const record = (fail?: string) => async (cast: string, face: Buffer) => { seen.push(cast); if (fail === cast) throw new ConsentMatchError("no-match", "This face doesn't look like the person who gave consent. A person needs to look at it.", 409); return passing()(cast, face); };
-    expect(await admit({ ...act.body, maxCredits: 100000 }, { consent: record(act.characterCast) })).toMatchObject({ status: 409, body: { code: "no-match" } });
-    expect(seen).toEqual([act.performerCast, act.characterCast]);
-    expect(await rowCount()).toBe(rows);
-    expect((await meterRows()).length).toBe(before);
-    seen.length = 0;
-    const ok = await admit({ ...act.body, maxCredits: 100000 }, { consent: record() });
-    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
-    expect(seen).toEqual([act.performerCast, act.characterCast]);
-    const take = await gen(String(ok.body.id));
-    expect(take.rw.consents.map((c) => [c.role, c.castMemberId])).toEqual([["performer", act.performerCast], ["character", act.characterCast]]);
-    expect(JSON.stringify(take.rw)).not.toMatch(/Sample Person|base64|http/);
-    /* Aleph 2: one gate. */
-    seen.length = 0;
-    const e = await admit({ ...edit.body, maxCredits: 100000 }, { consent: record() });
-    expect(e.status, JSON.stringify(e.body)).toBe(200);
-    expect(seen).toEqual([edit.cast]);
-    /* Gen-4.5 / Gen-4 Turbo: the start still is the face still checked, for the cast member it shows (like a FLUX.2 edit's reference; no "shows nobody" exemption). */
-    seen.length = 0;
-    const video = await videoBody({ model: "gen4_turbo" });
-    const v = await admit({ ...video, maxCredits: 100000 }, { consent: record() });
-    expect(v.status, JSON.stringify(v.body)).toBe(200);
-    expect(seen).toEqual([video.castMemberId]);
-    expect((await gen(String(v.body.id))).rw.consents.map((c) => [c.role, c.castMemberId])).toEqual([["subject", video.castMemberId]]);
-    /* The real gate refuses it today, and the face check off refuses it in words. */
-    expect(await executeRunwayAdmission({ ...(await videoBody()), maxCredits: 100000 }, OWNER, options())).toMatchObject({ status: 409, body: { code: "no-reference" } });
-    delete process.env.REKOGNITION_ENABLED;
-    expect(await admit({ ...(await videoBody()), maxCredits: 100000 }, { consent: record() })).toMatchObject({ status: 403 });
+    const ids: string[] = [];
+    for (const body of [act.body, edit.body, video]) {
+      expect(body).not.toHaveProperty("castMemberId");
+      const ok = await executeRunwayAdmission({ ...body, maxCredits: 100000 }, OWNER, options());
+      expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+      ids.push(String(ok.body.id));
+      expect(JSON.stringify((await gen(String(ok.body.id))).rw)).not.toMatch(/consent|face|cast|sha256|similarity/i);
+    }
     expect(await rowCount()).toBe(rows + 3);
+    for (const id of ids) await run(id, fakeRunway({ costCredits: 10 }).deps, 4);
+    deferred.length = 0;
   });
 });
 
@@ -446,22 +365,109 @@ test("refused before work, or never sent: nothing billed; a refusal that may hav
   });
 });
 
-test("consent withdrawn while the job waited: nothing is sent and nothing is billed", async () => {
-  const { db } = await import("../../lib/db");
+test("the shot cap is judged at the quote and the press, before any row is written: a member past it is refused 403 (needs an admin) with no take left, for each tool; an admin, no shot and a rule that is not 'cap' go through", async () => {
+  const { admitRunway } = await import("../../lib/runwayTools");
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  const { runInTenant } = await import("../../lib/tenant");
   process.env.RUNWAY_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
-  await asTenant(house(), async () => {
+  const MEMBER: AdmissionActor = { user: { ...OWNER.user, id: "member_1", role: "member", owner: false } as AdmissionActor["user"] };
+  await runInTenant(house(), async () => {
+    await ready();
+    const setRule = async (rule: string | null, cap?: number) => {
+      for (const [key, value] of [["approvalRule", rule], ["shotCapCredits", cap == null ? null : String(cap)]] as const) {
+        if (value === null) await db().execute({ sql: "DELETE FROM settings WHERE key=?", args: [key] }); else await setSetting(key, value, "admin");
+      }
+      invalidateSettings();
+    };
+    const video = await videoBody();
     const act = await actWorld();
-    const consentId = await consent(act.projectId, act.performerCast);
-    const id = String((await admit({ ...act.body, maxCredits: 100000 }, { consent: passing(consentId) })).body.id);
-    await db().execute({ sql: "UPDATE identity_consents SET revoked_at=? WHERE id=?", args: [Date.now(), consentId] });
-    const vendor = fakeRunway();
-    await run(id, vendor.deps, 2);
-    expect(vendor.calls).toEqual([]);
-    expect(await gen(id)).toMatchObject({ status: "failed" });
-    expect(String((await gen(id)).error)).toMatch(/consent no longer holds/);
-    expect(Number((await gen(id)).cost_usd)).toBe(0);
-  });
+    const edit = await editWorld();
+    const shotId = uid("shot");
+    await db().execute({ sql: "INSERT INTO shots (id, project_id, code, title, created_at, updated_at) VALUES (?,?,?,?,0,0)", args: [shotId, video.projectId, "S01", "A shot"] });
+    /* The shot already holds a take (a dollar of an image, ten credits), so even a one-credit line takes it past a cap of one. */
+    await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,shot_id,cost_usd,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,0,0)", args: [uid("gen_prior"), "image", "gemini-3.1-flash-image", "A prior still", "{}", "succeeded", shotId, 1] });
+    const seams = {};
+    const bodies: Record<string, Record<string, unknown>> = { video: { ...video, projectId: video.projectId }, performance: { ...act.body, projectId: video.projectId }, edit: { ...edit.body, projectId: video.projectId } };
+    const press = (tool: string, actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitRunway({ ...bodies[tool], shotId, maxCredits: 100000, ...extra }, actor, options(), seams);
+    const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    try {
+      await setRule("cap", 1);
+      const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
+      for (const tool of Object.keys(bodies)) for (const extra of [{ quoteOnly: true }, {}]) {
+        const refused = await press(tool, MEMBER, extra);
+        expect(refused, `${tool} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+        expect(String(refused.body.error)).toMatch(/S01/);
+      }
+      expect(await rows()).toBe(before.rows);
+      expect((await meterRows()).length).toBe(before.meter);
+      expect(deferred.length).toBe(before.handed);
+      await runInTenant(house(), async () => { expect((await press("video", OWNER, { quoteOnly: true })).status).toBe(200); }, OWNER as never);
+      /* An admin who is not a person at the press (a token, an agent, a step Atomik's Auto approved) never skips the cap. */
+      const TOKEN = { id: "tok_admin", name: "Assistant", scope: "render" as const, capUsd: null };
+      const ADMIN_TOKEN: AdmissionActor = { ...OWNER, token: TOKEN };
+      const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1" } as AdmissionActor["user"] };
+      /* The run acts for a person (its owner), so the cap is what refuses it. */
+      const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+      await rigAgentReady();
+      await db().execute({ sql: "INSERT OR IGNORE INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_1", "prod_x", "draft_x", "u_runner", "req_cap", "goal", "auto", "finished"] });
+      await runInTenant(house(), async () => {
+        for (const tool of Object.keys(bodies)) for (const extra of [{ quoteOnly: true }, {}]) expect(await press(tool, ADMIN_TOKEN, extra), `token ${tool} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, { user: ADMIN_TOKEN.user, token: TOKEN } as never);
+      await runInTenant(house(), async () => {
+        for (const tool of Object.keys(bodies)) for (const extra of [{ quoteOnly: true }, {}]) expect(await press(tool, AGENT, extra), `agent ${tool} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, AGENT as never);
+      await runInTenant(house(), async () => {
+        for (const quoteOnly of [true, undefined]) expect(await admitRunway({ ...bodies.video, shotId, maxCredits: 100000, quoteOnly }, OWNER, { ...options(), run: { auto: true } as never }, seams), `auto ${String(quoteOnly)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      }, OWNER as never);
+      expect((await press("video", MEMBER, { quoteOnly: true, shotId: undefined })).status).toBe(200);
+      await setRule("ask");
+      expect((await press("video", MEMBER, { quoteOnly: true })).status).toBe(200);
+      await setRule("cap", 100000);
+      expect((await press("video", MEMBER, { quoteOnly: true })).status).toBe(200);
+      const made = await press("video", MEMBER);
+      expect(made.status, JSON.stringify(made.body)).toBe(200);
+      expect(await rows()).toBe(before.rows + 1);
+      /* (Run to the end, so the cron in a later test finds nothing of ours waiting.) */
+      await run(String(made.body.id), fakeRunway({ costCredits: 60 }).deps, 4);
+    } finally { await setRule(null); }
+  }, MEMBER as never);
+});
+
+test("an upload is read only by a person who may open it, for every tool: an Atomik run acts as its owner, another person's private upload is not there, and with no person behind the request nothing is read", async () => {
+  const { admitRunway } = await import("../../lib/runwayTools");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  const { db, ready } = await import("../../lib/db");
+  process.env.RUNWAY_ENABLED = "1";
+  const agentUser = (runId: string) => ({ ...OWNER.user, id: `agent:${runId}`, role: "member", owner: false }) as AdmissionActor["user"];
+  await runInTenant(house(), async () => {
+    await ready(); await rigAgentReady();
+    await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_rw_owned", "prod_x", "draft_x", "u_runner", "req_rw", "goal", "auto", "finished"] });
+    const own = { still: await upload("still", "image", null, undefined, "u_runner"), clip: await upload("clip", "video", 5, undefined, "u_runner"), char: await upload("char", "image", null, undefined, "u_runner") };
+    const other = { still: await upload("still", "image", null, undefined, "u_other"), clip: await upload("clip", "video", 5, undefined, "u_other"), char: await upload("char", "image", null, undefined, "u_other") };
+    const bodies = (u: typeof own) => ({
+      video: { tool: "video", startImageUploadId: u.still, prompt: "A crane", duration: 5 },
+      edit: { tool: "edit", clipUploadId: u.clip, prompt: "Make the sky grey" },
+      performance: { tool: "performance", performanceClipUploadId: u.clip, characterUploadId: u.char },
+    });
+    const ask = (actor: AdmissionActor, body: Record<string, unknown>) => admitRunway({ ...body, quoteOnly: true }, actor, options(), {});
+    await runInTenant(house(), async () => {
+      for (const [tool, body] of Object.entries(bodies(own))) expect((await ask({ user: agentUser("run_rw_owned") }, body)).status, `own ${tool}`).toBe(200);
+      for (const [tool, body] of Object.entries(bodies(other))) expect(await ask({ user: agentUser("run_rw_owned") }, body), `other ${tool}`).toMatchObject({ status: 404 });
+      /* One of the two inputs of Act-Two being another person's is enough. */
+      expect((await ask({ user: agentUser("run_rw_owned") }, { ...bodies(own).performance, characterUploadId: other.char })).status).toBe(404);
+      expect((await ask({ user: agentUser("run_rw_owned") }, { ...bodies(own).performance, performanceClipUploadId: other.clip })).status).toBe(404);
+    }, { user: agentUser("run_rw_owned") } as never);
+    await runInTenant(house(), async () => {
+      for (const [tool, body] of Object.entries(bodies(own))) expect(await ask({ user: agentUser("run_none") }, body), tool).toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+    }, { user: agentUser("run_none") } as never);
+    const person: AdmissionActor = { user: { ...OWNER.user, id: "u_runner", role: "member", owner: false } as AdmissionActor["user"] };
+    await runInTenant(house(), async () => {
+      for (const [tool, body] of Object.entries(bodies(own))) expect((await ask(person, body)).status, `person own ${tool}`).toBe(200);
+      for (const [tool, body] of Object.entries(bodies(other))) expect((await ask(person, body)).status, `person other ${tool}`).toBe(404);
+    }, { user: person.user } as never);
+  }, OWNER as never);
 });
 
 test("the output address lives a day: a fetch that fails is retried in time; past the window the clip is lost, recorded at what Runway charged (reported, else the quote), billed to nobody, and said so", async () => {
@@ -518,12 +524,11 @@ test("the vendor's copy: a delete that fails is retried by the cron up to five t
   });
 });
 
-test("Act-Two and Aleph 2 send their inputs as data, and the take's record names the people by id and hash only", async () => {
+test("Act-Two and Aleph 2 send their inputs as data, and the take's record names the uploads by id only", async () => {
   process.env.RUNWAY_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
   await asTenant(house(), async () => {
     const act = await actWorld();
-    const id = String((await admit({ ...act.body, bodyControl: true, expressionIntensity: 4, maxCredits: 100000 }, { consent: passingFor(act.consents) })).body.id);
+    const id = String((await admit({ ...act.body, bodyControl: true, expressionIntensity: 4, maxCredits: 100000 })).body.id);
     const vendor = fakeRunway({ costCredits: 25 });
     await run(id, vendor.deps, 4);
     const sent = vendor.sent[0] as Extract<import("../../lib/runway").RunwayRequest, { tool: "performance" }>;
@@ -533,7 +538,7 @@ test("Act-Two and Aleph 2 send their inputs as data, and the take's record names
     expect(sent.reference.mime).toBe("video/mp4");
     expect((await gen(id)).status).toBe("succeeded");
     const edit = await editWorld(3);
-    const eid = String((await admit({ ...edit.body, maxCredits: 100000 }, { consent: passingFor(edit.consents) })).body.id);
+    const eid = String((await admit({ ...edit.body, maxCredits: 100000 })).body.id);
     const ev = fakeRunway({ costCredits: 84 });
     await run(eid, ev.deps, 4);
     expect(ev.sent[0]).toMatchObject({ tool: "edit", prompt: "Make the sky grey" });
@@ -580,12 +585,10 @@ test("a listed customer workspace (the house-only wall lifted for the test) pays
       await ready();
       const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
       const handedOff = deferred.length;
-      let faceCalls = 0;
-      const reply = await admit({ ...(await videoBody()), maxCredits: 100000 }, { ...open, consent: async (...a) => { faceCalls++; return passing()(...a); } });
+      const reply = await admit({ ...(await videoBody()), maxCredits: 100000 }, open);
       expect(reply.status, JSON.stringify(reply.body)).toBe(429);
       expect(String(reply.body.error)).toMatch(/monthly cap on the platform's engines/);
       expect(String(reply.body.error)).not.toMatch(/\$|\d/);
-      expect(faceCalls).toBe(0);
       expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
       expect((await platformDb().execute({ sql: "SELECT id FROM meter_events WHERE workspace_id=?", args: [capped] })).rows).toEqual([]);
       expect(deferred.length).toBe(handedOff);
@@ -696,19 +699,18 @@ test("the fixture end to end (ENGINE_MOCK): the default adapter submits, polls, 
   } finally { globalThis.fetch = original; }
 });
 
-test("what a person reads of a Runway take: its state, tool, model and length, and none of the vendor's ids, claims, consent ids, face hashes or figures", async () => {
+test("what a person reads of a Runway take: its state, tool, model and length, and none of the vendor's ids, claims or figures", async () => {
   const { db } = await import("../../lib/db");
   const { rowToGeneration } = await import("../../lib/jobs");
   const { publicDirectParams } = await import("../../lib/directEnginePublic");
   process.env.RUNWAY_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
   await asTenant(house(), async () => {
     const act = await actWorld();
-    const genId = String((await admit({ ...act.body, maxCredits: 100000 }, { consent: passingFor(act.consents) })).body.id);
+    const genId = String((await admit({ ...act.body, maxCredits: 100000 })).body.id);
     await run(genId, fakeRunway({ costCredits: 25, deleteError: true }).deps, 4);
     const raw = (await db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [genId] })).rows[0];
     const rawParams = JSON.parse(String(raw.params));
-    expect(Object.keys(rawParams.runway)).toEqual(expect.arrayContaining(["taskId", "consents", "inputs", "reservedUsd", "statedUsd", "pollUntil", "claimedAt", "reconcile"]));
+    expect(Object.keys(rawParams.runway)).toEqual(expect.arrayContaining(["taskId", "inputs", "reservedUsd", "statedUsd", "pollUntil", "claimedAt", "reconcile"]));
     const read = rowToGeneration({ ...raw, project_name: null }) as unknown as { params: Record<string, unknown> };
     expect(read.params.runway).toEqual({ status: "done", tool: "performance", model: "act_two", seconds: 5 });
     expect(JSON.stringify(read.params.runway)).not.toMatch(/task_1|consent|faceSha|cast_|up_|usd|poll|claim|cleanup|reconcile|inputs/i);
@@ -728,7 +730,7 @@ test("over MCP: the tools are listed only where Runway is on (the house) and the
   let credits = 6;
   const calls: Record<string, unknown>[] = [];
   const call = async (_p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; calls.push(body); if (_p === "/api/prepared-jobs") return { job: { id: "prep_r1" } }; return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 10, unit: "usd" } : { id: "gen_r1" }; };
-  const VIDEO = { start_image_upload_id: "up_still", cast_member_id: "c1", project_id: "p", use: "production", prompt: "A crane lifts", duration: 5, model: "gen4_turbo" };
+  const VIDEO = { start_image_upload_id: "up_still", project_id: "p", prompt: "A crane lifts", duration: 5, model: "gen4_turbo" };
   await asTenant(house(), async () => {
     await ready();
     delete process.env.RUNWAY_ENABLED;
@@ -737,11 +739,6 @@ test("over MCP: the tools are listed only where Runway is on (the house) and the
     process.env.RUNWAY_ENABLED = "1";
     const names = async () => (await directEngineMcpTools()).map((t) => t.name);
     expect(await names()).toEqual(expect.arrayContaining(["runway_performance", "runway_edit", "runway_video"]));
-    /* Every Runway tool passes the face gate: with the face check off none is listed or callable. */
-    delete process.env.REKOGNITION_ENABLED;
-    expect((await names()).filter((n) => n.startsWith("runway_"))).toEqual([]);
-    await expect(runDirectEngineTool("runway_video", VIDEO, call)).rejects.toThrow("There is no such tool here.");
-    process.env.REKOGNITION_ENABLED = "1";
     const HERO = { ...VIDEO, model: "gen4.5" };
     try {
       for (const mode of [null, "ask", "AUTO"]) {
@@ -749,7 +746,7 @@ test("over MCP: the tools are listed only where Runway is on (the house) and the
         const text = await runDirectEngineTool("runway_video", HERO, call);
         expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.60\nprepared: gen4\.5 clip of 5 s\nprepared job: prep_r1\n\nThis needs a person's approval: nothing was started or spent/);
         expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null])).toEqual([[true, null], [false, null]]);
-        expect(calls[1]).toMatchObject({ engine: "runway_video", args: { tool: "video", startImageUploadId: "up_still", castMemberId: "c1", model: "gen4.5" } });
+        expect(calls[1]).toMatchObject({ engine: "runway_video", args: { tool: "video", startImageUploadId: "up_still", model: "gen4.5" } });
         expect(JSON.stringify(calls[1])).not.toMatch(/maxCredits|quoteOnly/i);
       }
       /* Auto runs only a draft (gen4_turbo); the hero model gen4.5, Aleph 2 and Act-Two always ask, at any price. */
@@ -758,8 +755,8 @@ test("over MCP: the tools are listed only where Runway is on (the house) and the
       expect(await runDirectEngineTool("runway_video", HERO, call)).toMatch(/not started[\s\S]*prepared job: prep_r1/);
       expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
       calls.length = 0;
-      expect(await runDirectEngineTool("runway_edit", { clip_upload_id: "up_k", prompt: "grey sky", cast_member_id: "c1", face_frame_upload_id: "up_f", project_id: "p", use: "production" }, call)).toMatch(/not started/);
-      expect(await runDirectEngineTool("runway_performance", { performance_clip_upload_id: "up_p", character_upload_id: "up_c", performer_cast_member_id: "c1", performer_face_upload_id: "up_f1", character_cast_member_id: "c2", project_id: "p", use: "production" }, call)).toMatch(/not started/);
+      expect(await runDirectEngineTool("runway_edit", { clip_upload_id: "up_k", prompt: "grey sky", project_id: "p" }, call)).toMatch(/not started/);
+      expect(await runDirectEngineTool("runway_performance", { performance_clip_upload_id: "up_p", character_upload_id: "up_c", project_id: "p" }, call)).toMatch(/not started/);
       expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
       credits = 6;
       for (const c of [6, line]) {
@@ -781,11 +778,11 @@ test("over MCP: the tools are listed only where Runway is on (the house) and the
       await spend(null);
       calls.length = 0;
       const act = await runDirectEngineTool("runway_performance", { performance_clip_upload_id: "up_p", character_upload_id: "up_c", performer_cast_member_id: "c1", performer_face_upload_id: "up_f1", character_cast_member_id: "c2", project_id: "p", use: "production", body_control: true }, call);
-      expect(calls[0]).toMatchObject({ tool: "performance", performanceClipUploadId: "up_p", characterUploadId: "up_c", performerCastMemberId: "c1", performerFaceUploadId: "up_f1", characterCastMemberId: "c2", bodyControl: true, quoteOnly: true });
-      expect(act).toMatch(/prepared: Act-Two performance of up_p onto up_c for production p/);
-      const edit = await runDirectEngineTool("runway_edit", { clip_upload_id: "up_k", prompt: "grey sky", cast_member_id: "c1", face_frame_upload_id: "up_f", project_id: "p", use: "production" }, call);
-      expect(edit).toMatch(/prepared: Aleph 2 edit of up_k for production p/);
-      expect(calls.filter((c) => c.quoteOnly === true).at(-1)).toMatchObject({ tool: "edit", clipUploadId: "up_k", castMemberId: "c1", quoteOnly: true });
+      expect(calls[0]).toMatchObject({ tool: "performance", performanceClipUploadId: "up_p", characterUploadId: "up_c", bodyControl: true, quoteOnly: true });
+      expect(act).toMatch(/prepared: Act-Two performance of up_p onto up_c/);
+      const edit = await runDirectEngineTool("runway_edit", { clip_upload_id: "up_k", prompt: "grey sky", project_id: "p" }, call);
+      expect(edit).toMatch(/prepared: Aleph 2 edit of up_k/);
+      expect(calls.filter((c) => c.quoteOnly === true).at(-1)).toMatchObject({ tool: "edit", clipUploadId: "up_k", quoteOnly: true });
     } finally { await spend(null); }
   });
 });
@@ -798,7 +795,7 @@ function sourceFiles(): string[] {
   return out;
 }
 
-test("structure: the seams stay internal, the route is the one door, both gates come before the row and the reservation before the submit, the settings are the plan's names", () => {
+test("structure: the seams stay internal, the route is the one door, no consent code, the reservation comes before the row and the submit, the settings are the plan's names", () => {
   const reachers = (needle: RegExp) => sourceFiles().filter((f) => needle.test(readFileSync(f, "utf8"))).sort();
   expect(reachers(/\badmitRunway\b/)).toEqual(["lib/runwayTools.ts"]);
   expect(reachers(/\badvanceRunwayJobWith\b/)).toEqual(["lib/runwayTools.ts"]);
@@ -808,14 +805,10 @@ test("structure: the seams stay internal, the route is the one door, both gates 
   expect(flow).toContain("admitRunway(input, got, options, {})");
   /* The wall: the house only, unless a test passes the seam; the public admission passes none. */
   expect(flow).toContain("seams.houseOnly !== false && !isHouseWorkspace(workspace)");
-  expect(at("(seams.consent ?? requireConsentMatch)(")).toBeGreaterThan(0);
-  expect(at("Approve the price first")).toBeLessThan(at("(seams.consent ?? requireConsentMatch)("));
-  expect(at("(seams.consent ?? requireConsentMatch)(")).toBeLessThan(at("INSERT INTO generations"));
+  /* No face check, no consent record (owner, 16 Oct 2026). */
+  expect(flow.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")).not.toMatch(/consent|rekognition|faceSha|castMember|faceCheck|performer/i);
   expect(at("INSERT INTO generations")).toBeLessThan(at("await reserveGenerationSpend("));
   expect(at("await reserveGenerationSpend(")).toBeLessThan(at("await (deps.submit ?? submitTask)("));
-  /* Both faces of an Act-Two are in the list the gate walks. */
-  expect(flow).toContain('face("performer"');
-  expect(flow).toContain('face("character"');
   /* Fetched, stored, settled, then the vendor's copy deleted, in that order. */
   expect(at("(deps.fetchClip ?? fetchOutput)(")).toBeLessThan(at("(deps.store ?? storeVideoBytes)("));
   expect(at("(deps.store ?? storeVideoBytes)(")).toBeLessThan(at('await settleRunway(genId, "done"'));

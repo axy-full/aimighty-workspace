@@ -8,6 +8,7 @@ import { platformDb, platformReady } from "@/lib/platform";
 import { vendorKey } from "@/lib/vendorKeys";
 import { allSettings } from "@/lib/settings";
 import { db, ready } from "@/lib/db";
+import { LOST_LABEL, atRiskCountsQuery, atRiskHorizon } from "@/lib/atRiskWindow";
 import { backendKind, cloudBackend } from "@/lib/storage/backend";
 import { mailConfigured, mailFrom } from "@/lib/mail";
 import { engineMock } from "@/lib/mock";
@@ -51,7 +52,10 @@ export const GET = recoveryRoute(async function GET(req: Request) {
   }
   let database = "unreachable";
   let videosSaved = 0;
-  let videosAtRisk = 0; // succeeded renders whose file never landed in our storage
+  /* Succeeded takes whose file never landed in our storage (lib/atRisk.ts): `videosAtRisk` is those made in the last 72 hours, which the heartbeat still tries to save; `lost` is the ones
+     older than that, which nothing tries any more. Both count every kind of take (video, still, sound, 3D), not only videos: the name `videosAtRisk` is kept so nothing that reads it breaks. */
+  let videosAtRisk = 0;
+  let lost = 0;
   try {
     await platformReady();
     await platformDb().execute("SELECT 1");
@@ -60,14 +64,12 @@ export const GET = recoveryRoute(async function GET(req: Request) {
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
       const r: any = await runInTenant(ctx!.workspace!, async () => {
         await ready();
-        const rs = await db().execute(`
-          SELECT SUM(CASE WHEN stored_url IS NOT NULL THEN 1 ELSE 0 END) AS saved,
-                 SUM(CASE WHEN stored_url IS NULL THEN 1 ELSE 0 END) AS atrisk
-          FROM generations WHERE status='succeeded' AND deleted=0`);
+        const rs = await db().execute(atRiskCountsQuery(atRiskHorizon()));
         return rs.rows[0];
       });
       videosSaved = Number(r?.saved ?? 0);
       videosAtRisk = Number(r?.atrisk ?? 0);
+      lost = Number(r?.lost ?? 0);
     }
   } catch {
     database = "unreachable";
@@ -158,6 +160,8 @@ export const GET = recoveryRoute(async function GET(req: Request) {
         ...(presignRange ? { presignRange } : {}),
         videosSaved,
         videosAtRisk,
+        lost,
+        lostLabel: LOST_LABEL,
         /* `via` is the door, not just whether a vendor is reachable: stills can
        be served by Google's own key or by the Vercel gateway, and which one
        it is decides whose balance pays. Without it the only way to find out
