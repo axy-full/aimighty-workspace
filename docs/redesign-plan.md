@@ -1162,3 +1162,25 @@ Recorded by the lead. Sections 2 to 4 are verbatim; section 1 is verbatim less o
 - The board-zoom change was already paused (15:50, A.3); it stays paused until v28 is approved.
 - 2b replaces the #807 tooltip pinned at 15:50 (A.9). The no-charge message A.9 pinned in `tests/unit/enhanceStableKey.spec.ts` stays exactly as pinned.
 - The lead's answer to section 4, and to 2d's question, is in the 17 Oct 10:30 report.
+
+## Owner, 16 Oct 2026, late evening: v29 direction, and six data PRs before the freeze
+
+Recorded by the lead, verbatim less one aside about who decides pricing.
+
+> v29 direction, so you can plan the week.
+>
+> What changes: the board becomes a canvas with one frame per step (Luma style), the Atomik bar grows a card that asks up to three questions, shows the approach with one price and ticks a checklist as jobs finish, Director mode gets a composer of picture tiles (engine, resolution, takes, length, references and so on), and Quick Look becomes a viewer with an Info / Edit / Comments inspector. Design first: the v29 prototype is being made tonight. No v29 interface PRs until I approve the zip. Pause any restyling of the current app.
+>
+> What you can land before the 27 Oct freeze, each as its own small PR into release/1 with CI 24/24 and a fresh Opus approval, no interface changes:
+> 1. Per-shot ledger. Every job writes production, step, shot, mode, engine, settings, credits quoted, credits charged (0 on fail or cancel), result id, started and finished times.
+> 2. Job receipts. A read model per production: what ran, what it cost, what failed, in order.
+> 3. Elements. An @handle unique per workspace, a kind (cast, prop, wardrobe, location, reference) and an Active/Draft flag. The library is ours; Higgsfield's API has no reference-elements endpoint, so we store references and pass them per call.
+> 4. Board pages. A frame per step per production with an order and a page id, so steps can have their own links later.
+> 5. Settings. Two new fields with defaults: ask_before_generating (on) and a monthly spend limit with a paused state (no behaviour yet).
+> 6. Soul ID. Higgsfield API on our key is confirmed (POST /v1/custom-references, Key auth). A client stub behind a feature flag, no spend, no UI.
+>
+> Do not change the pricing line (200 cr per job, 480p drafts first) or any money behaviour. The export worker is still due Monday 19. The bake-off slots on Tue 20, Wed 21 and Thu 22 stand.
+>
+> By Friday, tell me which of 1 to 6 you can land before the 27th, with real PR numbers once they exist.
+
+**Lead's note:** v29 replaces the v28 brief in the entry above as the design to wait for. Every item there that waits "until v28 is approved" now waits for the v29 zip.
