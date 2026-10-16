@@ -17,6 +17,9 @@
  * - `newInterfaceWorkspaces`: workspaces, besides the platform's own house workspace, that see the interface being
  *   built from design/particl-prototype-12 (lib/newInterface.ts). Empty by default: every customer workspace keeps
  *   today's screens.
+ * - `enginesOnWorkspaces`: workspaces, besides the platform's own house workspace, that may use an engine whose own
+ *   switch is on (lib/engineGate.ts): Remotion exports today, the provider engines of docs/plans/provider-adapters.md
+ *   next. One list for every engine. Empty by default: every customer workspace is off until launch.
  */
 export const SITE_ROW = "site";
 
@@ -26,9 +29,10 @@ export type SiteSettings = {
   visitorPages: boolean;
   guestWorkspace: string | null;
   newInterfaceWorkspaces: string[];
+  enginesOnWorkspaces: string[];
 };
 
-export const DEFAULT_SITE: SiteSettings = Object.freeze({ openSignup: false, guestHome: false, visitorPages: false, guestWorkspace: null, newInterfaceWorkspaces: Object.freeze([]) as unknown as string[] }) as SiteSettings;
+export const DEFAULT_SITE: SiteSettings = Object.freeze({ openSignup: false, guestHome: false, visitorPages: false, guestWorkspace: null, newInterfaceWorkspaces: Object.freeze([]) as unknown as string[], enginesOnWorkspaces: Object.freeze([]) as unknown as string[] }) as SiteSettings;
 
 /** The most workspaces the new interface can be switched on for by list. */
 const MAX_NEW_INTERFACE = 50;
@@ -52,6 +56,7 @@ export function cleanSite(value: unknown): SiteSettings {
     visitorPages: raw.visitorPages === true,
     guestWorkspace: typeof ws === "string" && WORKSPACE_ID.test(ws) ? ws : null,
     newInterfaceWorkspaces: cleanIds(raw.newInterfaceWorkspaces),
+    enginesOnWorkspaces: cleanIds(raw.enginesOnWorkspaces),
   };
 }
 
@@ -59,7 +64,7 @@ export function cleanSite(value: unknown): SiteSettings {
 export function sitePatch(body: unknown): { patch: Partial<SiteSettings> } | { error: string } {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Send the settings to change." };
   const raw = body as Record<string, unknown>;
-  const unknown = Object.keys(raw).filter((k) => !["openSignup", "guestHome", "visitorPages", "guestWorkspace", "newInterfaceWorkspaces"].includes(k));
+  const unknown = Object.keys(raw).filter((k) => !["openSignup", "guestHome", "visitorPages", "guestWorkspace", "newInterfaceWorkspaces", "enginesOnWorkspaces"].includes(k));
   if (unknown.length) return { error: `Not a site setting: ${unknown.join(", ")}.` };
   const patch: Partial<SiteSettings> = {};
   for (const key of ["openSignup", "guestHome", "visitorPages"] as const) {
@@ -78,6 +83,12 @@ export function sitePatch(body: unknown): { patch: Partial<SiteSettings> } | { e
     if (!Array.isArray(ids) || ids.length > MAX_NEW_INTERFACE || ids.some((id) => typeof id !== "string" || !WORKSPACE_ID.test(id)))
       return { error: `newInterfaceWorkspaces must be a list of at most ${MAX_NEW_INTERFACE} workspace ids.` };
     patch.newInterfaceWorkspaces = cleanIds(ids);
+  }
+  if ("enginesOnWorkspaces" in raw) {
+    const ids = raw.enginesOnWorkspaces;
+    if (!Array.isArray(ids) || ids.length > MAX_NEW_INTERFACE || ids.some((id) => typeof id !== "string" || !WORKSPACE_ID.test(id)))
+      return { error: `enginesOnWorkspaces must be a list of at most ${MAX_NEW_INTERFACE} workspace ids.` };
+    patch.enginesOnWorkspaces = cleanIds(ids);
   }
   if (!Object.keys(patch).length) return { error: "Nothing to change." };
   return { patch };

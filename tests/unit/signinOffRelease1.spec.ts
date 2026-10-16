@@ -121,6 +121,7 @@ async function runSync(retiredModule: Record<string, unknown>) {
     "next/server": { NextResponse: { json: (body: unknown, init?: ResponseInit) => Response.json(body, init) }, after: () => {} },
     "@/lib/db": { ready: async () => {}, db: () => ({ execute: async () => ({ rows: [{ pending: 0, atrisk: 0 }] }) }) },
     "@/lib/jobs": { syncPending: work("generations", { failed: false, deferred: 0 }) },
+    "@/lib/atRisk": { atRiskHorizon: () => 0, atRiskCounts: async () => ({ saved: 0, atRisk: 0, lost: 0 }), listAtRisk: async () => [], whyNotSaved: () => null, logUnsavable: async () => 0, storedAmong: async () => new Set<string>() },
     "@/lib/pipeline/executor": { drainPipelineWakeups: work("pipelines", { failed: false }) },
     "@/lib/identities": { syncTrainingIdentities: work("training", { failed: false }) },
     "@/lib/soulIdentities": { syncSoulIdentities: work("soul_training", { failed: false }) },

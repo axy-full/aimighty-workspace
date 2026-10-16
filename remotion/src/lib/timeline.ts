@@ -32,6 +32,8 @@ function clipItem(args: {
   sourceWidth: number;
   sourceHeight: number;
   srcStartFrame: number;
+  /** Where in the source the file starts (ClipSource.offsetSeconds): the picture is read that much earlier in the file. */
+  offsetSeconds?: number;
   durationInFrames: number;
   cues: Cue[];
   reframe: ReframeSpec;
@@ -42,18 +44,19 @@ function clipItem(args: {
     srcEndMs: frameToMs(args.srcStartFrame + args.durationInFrames, args.fps),
     outStartMs: 0,
   };
-  const local = args.captionStyle ? normaliseCues(remapCues(args.cues, [segment]), frameToMs(args.durationInFrames, args.fps)) : [];
+  const local = normaliseCues(remapCues(args.cues, [segment]), frameToMs(args.durationInFrames, args.fps));
   return {
     kind: "clip",
     from: args.from,
     durationInFrames: args.durationInFrames,
     file: args.file,
-    trimBefore: args.srcStartFrame,
+    trimBefore: Math.max(0, args.srcStartFrame - Math.round((args.offsetSeconds ?? 0) * args.fps)),
     sourceWidth: args.sourceWidth,
     sourceHeight: args.sourceHeight,
     hasAudio: args.hasAudio,
     reframe: args.reframe,
-    cues: local,
+    cues: args.captionStyle ? local : [],
+    subtitleCues: local,
     captionStyle: args.captionStyle,
   };
 }
@@ -69,7 +72,7 @@ function clipFrames(item: ClipItem, fps: number): { srcStartFrame: number; durat
 function finish(placed: TimelineItem[], durationInFrames: number, fps: number, aspect: Aspect, scale: number, extra: Partial<Timeline>, limits: ExportLimits): Timeline {
   if (durationInFrames < 1) throw new RangeError("The export has no frames.");
   if (durationInFrames > limits.maxSeconds * fps) throw new ExportTooLong(`The export would be ${(durationInFrames / fps).toFixed(1)} s; the limit is ${limits.maxSeconds} s.`);
-  return { ...frameSize(aspect, scale), fps, durationInFrames, items: placed, music: null, fixture: null, ...extra };
+  return { ...frameSize(aspect, scale), fps, durationInFrames, items: placed, music: null, voiceover: [], duck: 1, fixture: null, ...extra };
 }
 
 function layout(items: TimelineItem[], fps: number, aspect: Aspect, scale: number, extra: Partial<Timeline>, limits: ExportLimits): Timeline {
@@ -106,6 +109,7 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
         fps: p.fps,
         file: p.clip.source.file,
         hasAudio: p.clip.source.hasAudio,
+        offsetSeconds: p.clip.source.offsetSeconds,
         sourceWidth: p.clip.source.width,
         sourceHeight: p.clip.source.height,
         ...f,
@@ -124,6 +128,7 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
           fps: p.fps,
           file: p.source.file,
           hasAudio: p.source.hasAudio,
+          offsetSeconds: p.source.offsetSeconds,
           sourceWidth: p.source.width,
           sourceHeight: p.source.height,
           srcStartFrame: segment.srcStartFrame,
@@ -147,6 +152,7 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
             fps: p.fps,
             file: clip.source.file,
             hasAudio: clip.source.hasAudio,
+            offsetSeconds: clip.source.offsetSeconds,
             sourceWidth: clip.source.width,
             sourceHeight: clip.source.height,
             ...clipFrames(clip, p.fps),
@@ -158,6 +164,23 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
       }
       if (p.end) items.push({ kind: "end", from: 0, durationInFrames: frames(p.end.durationSeconds, p.fps), card: p.end });
       const timeline = layout(items, p.fps, p.aspect, p.scale, {}, limits);
+      timeline.duck = p.duck;
+      p.voiceover.forEach((line, index) => {
+        const from = frames(line.startSeconds, p.fps);
+        if (from >= timeline.durationInFrames) {
+          throw new RangeError(`props.voiceover[${index}]: starts at ${line.startSeconds} s, after the end of the cut (${(timeline.durationInFrames / p.fps).toFixed(1)} s)`);
+        }
+        timeline.voiceover.push({ file: line.file, from, durationInFrames: Math.max(1, Math.min(frames(line.durationSeconds, p.fps), timeline.durationInFrames - from)), volume: line.volume });
+      });
+      /* Two voice lines cannot play at once: a line that starts before the one before it has ended is refused, not mixed. */
+      const placed = timeline.voiceover.map((line, index) => ({ line, index })).sort((a, b) => a.line.from - b.line.from || a.index - b.index);
+      for (let k = 1; k < placed.length; k += 1) {
+        const before = placed[k - 1];
+        const line = placed[k];
+        if (line.line.from < before.line.from + before.line.durationInFrames) {
+          throw new RangeError(`props.voiceover[${line.index}] overlaps props.voiceover[${before.index}]: two voice lines cannot play at once (one starts at ${(line.line.from / p.fps).toFixed(2)} s, the other runs until ${((before.line.from + before.line.durationInFrames) / p.fps).toFixed(2)} s)`);
+        }
+      }
       if (p.music) {
         timeline.music = {
           file: p.music.file,
