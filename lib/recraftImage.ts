@@ -22,7 +22,6 @@ import { RECRAFT_RATES, type RecraftModel } from "./vendorRates";
 import {
   RECRAFT_DEFAULT_SIZE, RECRAFT_SIZES, RECRAFT_SOURCE_LIMITS, RECRAFT_STYLE, RECRAFT_SWITCH, RecraftError, generateImage, isRecraftModel, isVectorModel, recraftConfigured, removeBackground, vectorize, type RecraftReply,
 } from "./recraft";
-import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type ConsentMatch, type ConsentScope } from "./consentMatch";
 
 /**
  * Recraft through its own API (lib/recraft.ts): `recraft_image` (a still from words), `recraft_remove_background` (a still of this workspace with its background removed) and `recraft_vectorize`
@@ -45,23 +44,19 @@ import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type Consen
  * stated figure above it settles at the quote, the excess is the meter's `overrun_usd`, marked `reconcile`). A failure Recraft's pages say nothing about is settled at nothing ("Nothing billed"); an image lost after
  * Recraft answered is always charged (stated cost, else the quote, marked `reconcile`), recorded unbilled. A person approves: `maxCredits` must cover the quote. One image a job: ask again for more.
  *
- * CONSENT. Style references (which would carry a person's image) are not offered here; when they are, each passes `requireConsentMatch` exactly as FLUX.2's edit references do. A still sent to be vectorized or
- * cut out may show a person: a caller names the cast member, the production and the use and the still passes `requireConsentMatch` before anything is reserved; **with none named it is not checked (an honour system
- * the gate cannot close: a face check inside the still does not exist), which the PR flags for the owner.**
+ * NO FACE MATCHING. The owner has taken consent matching out of the product (16 Oct 2026: "No face matching anywhere, ever"), so nothing here checks a face or a consent record. Style references
+ * (which would carry a person's image) are not offered, and a still sent to be cut out is read from this workspace like any other source.
  *
- * PRIVACY. A source is read from this workspace (the same open-by-person rule as every source) and sent as data, never as a link of ours. Recraft says API data is not stored and never used to train (the plan, § 5).
+ * PRIVACY. A source is read from this workspace (the same open-by-person rule as every source) and sent as data, never as a link of ours. Recraft's terms: API Assets are not stored by default (§ 4.2) and not used for training (§ 6.3).
  */
 export const RECRAFT_TASK = "recraft_image";
 export const SVG_REFUSAL = "SVG output is not switched on yet: an SVG can carry script and outside references, and a sanitiser has to clean it before it is stored or served. Nothing was quoted for work and nothing was billed.";
 const SOURCE_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const ENTITY_ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const SUBMIT_GRACE_MS = 10 * 60_000;
-const USES = ["production", "ads", "social"] as const;
 export type RecraftTool = "image" | "remove_background" | "vectorize";
 export type RecraftState = "queued" | "done" | "failed" | "uncertain";
 export type RecraftParams = {
   status: RecraftState; tool: RecraftTool; model: string; size: string; style: string | null; source: { kind: "upload" | "generation"; id: string } | null;
-  consentId: string | null; castMemberId: string | null;
   reservedUsd: number; estimateCredits: number; funded: number; claimedAt: number | null; sendingAt: number | null; statedUsd: number | null; settled: number; reconcile: number;
 };
 type Row = { id: string; project_id: string | null; shot_id: string | null; created_by: string | null; status: string; created_at: number; params: string; prompt: string };
@@ -72,8 +67,6 @@ export type RecraftDeps = {
   generate?: typeof generateImage; vectorize?: typeof vectorize; removeBackground?: typeof removeBackground;
   store?: (genId: string, bytes: Buffer) => Promise<{ url: string; bytes: number }>; clock?: () => number;
 };
-/** What the admission may be handed in a test. The public admission passes none. */
-export type RecraftSeams = { consent?: (castMemberId: string, face: Buffer, scope: ConsentScope) => Promise<ConsentMatch> };
 
 /* ── The row ────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
@@ -146,10 +139,7 @@ async function readSource(s: Pick<Source, "kind" | "id" | "ext" | "stored">): Pr
 
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
-export const executeRecraftAdmission = (input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> => admitRecraft(input, got, options, {});
-
-/** The same with the test seams. Internal: only the tests import it (tests/unit/recraft.spec.ts says so by reading the source). */
-export async function admitRecraft(input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution, seams: RecraftSeams): Promise<AdmissionReply> {
+export async function executeRecraftAdmission(input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> {
   const refusal = assertAdmissionActor(got);
   if (refusal) return refusal;
   /* Off for this workspace (the switch, or not on the engine list): the tool is simply not here. */
@@ -220,24 +210,9 @@ export async function admitRecraft(input: Record<string, unknown>, got: Admissio
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });
 
-  /* ── The consent gate, for a still that a caller says shows a person: BEFORE a row is written or a cent reserved. ── */
-  let match: ConsentMatch | null = null;
-  const castMemberId = typeof body.castMemberId === "string" ? body.castMemberId : "";
-  if (source && castMemberId) {
-    const use = typeof body.use === "string" && (USES as readonly string[]).includes(body.use) ? (body.use as (typeof USES)[number]) : null;
-    if (!ENTITY_ID.test(castMemberId) || !projectId || !use) return admissionReply({ error: "Name the production and what it is for (production, ads or social): a still of a person needs their consent on record.", code: "bad-input" }, { status: 400 });
-    try {
-      if (!(await faceCheckAvailable())) throw new ConsentMatchError("off", "The face check isn't on for this workspace, so an image of a real person can't be used here yet.", 403);
-      match = await (seams.consent ?? requireConsentMatch)(castMemberId, await readSource(source), { projectId, use });
-    } catch (error) {
-      if (error instanceof ConsentMatchError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
-      return admissionReply({ error: "The face check could not be done. Nothing was billed.", code: "unavailable" }, { status: 503 });
-    }
-  }
-
   const genId = newId("gen"), ts = now();
   const recraft: RecraftParams = {
-    status: "queued", tool, model: marginKey, size, style, source: source ? { kind: source.kind, id: source.id } : null, consentId: match?.consentId ?? null, castMemberId: match ? castMemberId : null,
+    status: "queued", tool, model: marginKey, size, style, source: source ? { kind: source.kind, id: source.id } : null,
     reservedUsd: usd, estimateCredits: estimatedCredits, funded: 0, claimedAt: null, sendingAt: null, statedUsd: null, settled: 0, reconcile: 0,
   };
   const [w, h] = size.split("x").map(Number);

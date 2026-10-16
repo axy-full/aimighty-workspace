@@ -8,7 +8,7 @@ import type { TenantWorkspace } from "../../lib/tenant";
 import type { AdmissionActor, AdmissionExecution } from "../../lib/admissionTypes";
 
 /**
- * Recraft (lib/recraft.ts, lib/recraftImage.ts, lib/recraftMcp.ts). Mocked: every adapter call is a function this file hands the workflow (the internal seams `admitRecraft` and
+ * Recraft (lib/recraft.ts, lib/recraftImage.ts, lib/recraftMcp.ts). Mocked: every adapter call is a function this file hands the workflow (the internal seam
  * `advanceRecraftJobWith`, which the public route and the cron do not offer), a fake `fetch` for the adapter itself, or the in-process fixture under ENGINE_MOCK=1; no request leaves this process
  * and no provider is paid. Local temporary databases only. Neutral sample names.
  *
@@ -20,7 +20,7 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 test.beforeAll(async () => { await alignLedgerUnit(); });
-test.afterEach(() => { delete process.env.RECRAFT_ENABLED; delete process.env.REKOGNITION_ENABLED; delete process.env.RECRAFT_BASE_URL; process.env.ENGINE_MOCK = "1"; });
+test.afterEach(() => { delete process.env.RECRAFT_ENABLED; delete process.env.RECRAFT_BASE_URL; process.env.ENGINE_MOCK = "1"; });
 
 const tenant = (id: string, over: Partial<TenantWorkspace> = {}): TenantWorkspace => ({
   id, slug: id, name: id, legacy: id === "ws_legacy", dbUrl: `file:${path.join(dir, `${id}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true,
@@ -68,9 +68,9 @@ async function gen(id: string) {
   const r = (await db().execute({ sql: "SELECT status,kind,stored_url,bytes,cost_usd,error,provider_outcome,json_extract(params,'$.recraft') AS recraft FROM generations WHERE id=?", args: [id] })).rows[0] as unknown as Record<string, unknown>;
   return { status: r.status, kind: r.kind, stored_url: r.stored_url, bytes: r.bytes, cost_usd: r.cost_usd, error: r.error, provider_outcome: r.provider_outcome, recraft: JSON.parse(String(r.recraft)) as import("../../lib/recraftImage").RecraftParams };
 }
-async function admit(input: Record<string, unknown>, seams: import("../../lib/recraftImage").RecraftSeams = {}) {
-  const { admitRecraft } = await import("../../lib/recraftImage");
-  return admitRecraft(input, OWNER, options(), seams);
+async function admit(input: Record<string, unknown>) {
+  const { executeRecraftAdmission } = await import("../../lib/recraftImage");
+  return executeRecraftAdmission(input, OWNER, options());
 }
 const approved = { maxCredits: 100000 };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
@@ -408,7 +408,7 @@ test("the shot cap is judged at the press, as the fal path judges it: a member p
     await db().execute({ sql: "INSERT INTO shots(id,project_id,code,created_at,updated_at) VALUES(?,?,'SH020',1,1)", args: [shotId, "p_recraft_cap"] });
     const member: AdmissionActor = { user: { ...OWNER.user, id: "member_1", role: "member", owner: false } as AdmissionActor["user"] };
     const { runInTenant } = await import("../../lib/tenant");
-    const { admitRecraft } = await import("../../lib/recraftImage");
+    const { executeRecraftAdmission: admitRecraft } = await import("../../lib/recraftImage");
     const asMember = (fn: () => Promise<void>) => runInTenant(house(), fn, member as never);
     try {
       await setSetting("approvalRule", "cap", "admin");
@@ -418,11 +418,11 @@ test("the shot cap is judged at the press, as the fal path judges it: a member p
       const handedOff = deferred.length;
       const input = { tool: "image", prompt: "a heron", model: "recraftv4_1_pro", shotId, ...approved };
       await asMember(async () => {
-        const refused = await admitRecraft(input, member, options(), {});
+        const refused = await admitRecraft(input, member, options());
         expect(refused.status, JSON.stringify(refused.body)).toBe(403);
         expect(refused.body).toMatchObject({ needsAdmin: true });
         expect(String(refused.body.error)).toMatch(/SH020/);
-        expect((await admitRecraft({ ...input, quoteOnly: true }, member, options(), {})).status).toBe(403);
+        expect((await admitRecraft({ ...input, quoteOnly: true }, member, options())).status).toBe(403);
       });
       expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
       expect((await meterRows()).length).toBe(before);
@@ -436,16 +436,16 @@ test("the shot cap is judged at the press, as the fal path judges it: a member p
       ];
       for (const [name, actor, opts] of nonPeople) {
         await runInTenant(house(), async () => {
-          const refused = await admitRecraft(input, actor, opts, {});
+          const refused = await admitRecraft(input, actor, opts);
           expect(refused.status, `${name}: ${JSON.stringify(refused.body)}`).toBe(403);
           expect(refused.body, name).toMatchObject({ needsAdmin: true });
         }, actor as never);
       }
       expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
       expect((await meterRows()).length).toBe(before);
-      expect((await admitRecraft(input, OWNER, options(), {})).status).toBe(200);
+      expect((await admitRecraft(input, OWNER, options())).status).toBe(200);
       await setSetting("shotCapCredits", "100000", "admin");
-      await asMember(async () => { expect((await admitRecraft(input, member, options(), {})).status).toBe(200); });
+      await asMember(async () => { expect((await admitRecraft(input, member, options())).status).toBe(200); });
     } finally { await setSetting("approvalRule", "anyone", "admin"); }
   });
 });
@@ -490,37 +490,15 @@ test("a lost reply is never sent again, and a job that never got to its request 
   });
 });
 
-test("remove background: the still is read from this workspace and sent as data; a still that shows a person passes the consent gate before a row or a cent; the take is linked to its original", async () => {
+test("remove background: the still is read from this workspace and sent as data; no face or consent check is made (the owner took matching out); the take is linked to its original", async () => {
   process.env.RECRAFT_ENABLED = "1";
-  const { ConsentMatchError } = await import("../../lib/consentMatch");
   const { db } = await import("../../lib/db");
   await asTenant(house(), async () => {
-    await project("p_recraft_a");
     const src = await image("person");
-    const before = (await meterRows()).length;
-    const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-    /* A caller who names a cast member must also name the production and the use. */
-    expect(await admit({ tool: "remove_background", sourceUploadId: src.id, castMemberId: "cast_a", ...approved })).toMatchObject({ status: 400, body: { code: "bad-input" } });
-    /* The gate refuses: nothing written, nothing held, nothing handed off. */
-    const handedOff = deferred.length;
-    const refusing = async () => { throw new ConsentMatchError("no-consent", "No live consent is on record for this person.", 403); };
-    /* Where the face check cannot run, a still of a person is refused: "off". */
-    delete process.env.REKOGNITION_ENABLED;
-    expect(await admit({ tool: "remove_background", sourceUploadId: src.id, castMemberId: "cast_a", projectId: "p_recraft_a", use: "production", ...approved }, { consent: refusing })).toMatchObject({ status: 403, body: { code: "off" } });
+    /* No face check, in any state of the switch, and a caller's cast fields are not read. */
     process.env.REKOGNITION_ENABLED = "1";
-    const no = await admit({ tool: "remove_background", sourceUploadId: src.id, castMemberId: "cast_a", projectId: "p_recraft_a", use: "production", ...approved }, { consent: refusing });
-    expect(no).toMatchObject({ status: 403, body: { code: "no-consent" } });
-    expect((await meterRows()).length).toBe(before);
-    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
-    expect(deferred.length).toBe(handedOff);
-    /* The gate passes: the consent id is on the take's record. */
-    const seen: Buffer[] = [];
-    const passing = async (_c: string, face: Buffer) => { seen.push(face); return { consentId: "consent_x", similarity: 99, matched: true as const, checkedAt: Date.now(), faceSha256: "sha" }; };
-    process.env.REKOGNITION_ENABLED = "1";
-    const ok = await admit({ tool: "remove_background", sourceUploadId: src.id, castMemberId: "cast_a", projectId: "p_recraft_a", use: "production", ...approved }, { consent: passing });
+    const ok = await admit({ tool: "remove_background", sourceUploadId: src.id, castMemberId: "cast_a", use: "production", ...approved });
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
-    expect(seen).toHaveLength(1);
-    expect(seen[0].equals(src.bytes)).toBe(true);
     const id = String(ok.body.id);
     const vendor = fakeRecraft();
     await run(id, vendor.deps, 2);
@@ -528,14 +506,15 @@ test("remove background: the still is read from this workspace and sent as data;
     expect((vendor.sent[0] as { bytes: Buffer }).bytes.equals(src.bytes)).toBe(true);
     const take = await gen(id);
     expect(take).toMatchObject({ status: "succeeded", kind: "image" });
-    expect(take.recraft).toMatchObject({ tool: "remove_background", model: "recraft_remove_background", consentId: "consent_x", castMemberId: "cast_a" });
+    expect(take.recraft).toMatchObject({ tool: "remove_background", model: "recraft_remove_background" });
+    expect(take.recraft).not.toHaveProperty("consentId");
+    expect(take.recraft).not.toHaveProperty("castMemberId");
     expect(Number(take.cost_usd)).toBeCloseTo(0.01, 6);
     const lineage = (await db().execute({ sql: "SELECT source_gen_id, json_extract(params,'$.sourceUploadId') AS up FROM generations WHERE id=?", args: [id] })).rows[0];
     expect(lineage.up).toBe(src.id);
-    /* Without a named person the still is not checked (the gate cannot find a face inside a still): the PR flags it. */
-    const plain = await admit({ tool: "remove_background", sourceUploadId: src.id, ...approved }, { consent: refusing });
-    expect(plain.status).toBe(200);
     /* A source that cannot be read at send time sends nothing and settles at nothing. */
+    const plain = await admit({ tool: "remove_background", sourceUploadId: src.id, ...approved });
+    expect(plain.status).toBe(200);
     await db().execute({ sql: "DELETE FROM uploads WHERE id=?", args: [src.id] });
     const gone = fakeRecraft();
     await run(String(plain.body.id), gone.deps, 2);
@@ -678,19 +657,20 @@ function sourceFiles(): string[] {
   return out;
 }
 
-test("structure: the seams stay internal, the route is the one door, the SVG refusal comes before anything is written, consent and the reservation come before the request, the settings are the plan's names", () => {
+test("structure: the seams stay internal, the route is the one door, the SVG refusal comes before anything is written, the approval and the reservation come before the request, the settings are the plan's names", () => {
   const reachers = (needle: RegExp) => sourceFiles().filter((f) => needle.test(readFileSync(f, "utf8"))).sort();
-  expect(reachers(/\badmitRecraft\b/)).toEqual(["lib/recraftImage.ts"]);
+  expect(reachers(/\bexecuteRecraftAdmission\b/)).toEqual(["app/api/recraft/route.ts", "lib/recraftImage.ts"]);
   expect(reachers(/\badvanceRecraftJobWith\b/)).toEqual(["lib/recraftImage.ts"]);
   expect(reachers(/@\/lib\/recraftImage["']/)).toEqual(["app/api/recraft/route.ts"]);
   const flow = readFileSync("lib/recraftImage.ts", "utf8");
   const at = (needle: string) => flow.indexOf(needle);
-  expect(flow).toContain("admitRecraft(input, got, options, {})");
+  expect(flow).toContain("export async function executeRecraftAdmission(");
   expect(at("SVG_REFUSAL, code")).toBeGreaterThan(0);
   expect(at('tool === "vectorize") return admissionReply({ error: SVG_REFUSAL')).toBeLessThan(at("INSERT INTO generations"));
   expect(at("isVectorModel(model)")).toBeLessThan(at("INSERT INTO generations"));
-  expect(at("Approve the price first")).toBeLessThan(at("(seams.consent ?? requireConsentMatch)("));
-  expect(at("(seams.consent ?? requireConsentMatch)(")).toBeLessThan(at("INSERT INTO generations"));
+  expect(at("Approve the price first")).toBeLessThan(at("INSERT INTO generations"));
+  /* No face matching anywhere (owner, 16 Oct 2026). */
+  expect(flow.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")).not.toMatch(/consentMatch|requireConsentMatch|faceCheck|rekognition/i);
   expect(at("INSERT INTO generations")).toBeLessThan(at("await reserveGenerationSpend("));
   expect(at("await reserveGenerationSpend(")).toBeLessThan(at("await (deps.generate ?? generateImage)("));
   expect(at("await reserveGenerationSpend(")).toBeLessThan(at("await (deps.removeBackground ?? removeBackground)("));

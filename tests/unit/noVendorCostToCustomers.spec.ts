@@ -120,7 +120,7 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
       /* A Recraft take: its params carry the workflow's record, the reserved dollars, what Recraft stated and the source. Nobody reads any of it (lib/directEnginePublic.ts keeps the take's own words). */
       { sql: take, args: ["g_recraft", "p_margin", null, "image", "recraftv4_1", "A heron at dusk",
         JSON.stringify({ task: "recraft_image", job: "keyframe", ratio: "1:1", size: "1024x1024", estUsd: cost.still, estCredits: 0, recraft: {
-          status: "done", tool: "image", model: "recraftv4_1", size: "1024x1024", style: null, source: { kind: "upload", id: "up_vendor_src" }, consentId: null, castMemberId: null,
+          status: "done", tool: "image", model: "recraftv4_1", size: "1024x1024", style: null, source: { kind: "upload", id: "up_vendor_src" },
           reservedUsd: cost.still, estimateCredits: 3, funded: 1, claimedAt: at, sendingAt: at, statedUsd: cost.still, settled: 1, reconcile: 1 } }),
         "u_member", at + 8, at + 8, "recraft", 0, null, null, null, "/api/media/g_recraft", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */

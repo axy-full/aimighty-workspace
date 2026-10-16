@@ -39,13 +39,12 @@ export const RECRAFT_REMOVE_BACKGROUND_TOOL: RecraftDirectTool = {
   def: {
     name: "recraft_remove_background",
     description:
-      "Cut the background out of a still of this workspace (Recraft); a transparent PNG take is added beside the original. Priced first; always asks a person. If the still shows a real person, name their cast member, the production and what it " +
-      "is for: their live consent is checked first. Returns an image take id; collect it with get_render.",
-    inputSchema: { type: "object", properties: { source_upload_id: { type: "string", description: "An upload of this workspace (or source_take_id: one of its takes)." }, source_take_id: { type: "string" }, cast_member_id: { type: "string", description: "The cast member the still shows, if it shows a person." }, use: { type: "string", description: "production, ads or social (needed with cast_member_id)." }, ...COMMON }, required: [] },
+      "Cut the background out of a still of this workspace (Recraft); a transparent PNG take is added beside the original. Priced first; always asks a person. Returns an image take id; collect it with get_render.",
+    inputSchema: { type: "object", properties: { source_upload_id: { type: "string", description: "An upload of this workspace (or source_take_id: one of its takes)." }, source_take_id: { type: "string" }, ...COMMON }, required: [] },
   },
   present: present("recraft_remove_background"),
   prepared: (b) => `prepared: background removal of ${String(b.sourceUploadId ?? b.sourceGenId ?? "a still")}`,
-  request: (a) => ({ path: "/api/recraft", body: { tool: "remove_background", sourceUploadId: str(a.source_upload_id), sourceGenId: str(a.source_take_id), castMemberId: str(a.cast_member_id), use: str(a.use), projectId: str(a.project_id) } }),
+  request: (a) => ({ path: "/api/recraft", body: { tool: "remove_background", sourceUploadId: str(a.source_upload_id), sourceGenId: str(a.source_take_id), projectId: str(a.project_id) } }),
   describe: (out, quote) => `Background removal started.\n\nid: ${String(out.id)}\nprice: ${price(quote)}\n\nCall get_render with this id to collect it.`,
 };
 export const RECRAFT_DIRECT_TOOLS: RecraftDirectTool[] = [RECRAFT_IMAGE_TOOL, RECRAFT_REMOVE_BACKGROUND_TOOL];
