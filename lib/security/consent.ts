@@ -90,24 +90,6 @@ export async function listConsents(projectId: string, subjectKey?: string | null
   return rs.rows.map((r) => toRecord(r, who));
 }
 
-/**
- * The newest record for a cast member that covers their face, is not withdrawn and has not ended (for `use`, when given), in this
- * workspace's own database; null when there is none. Read by the face-check gate (lib/consentMatch.ts). Optionally one production's.
- */
-export async function liveFaceConsentFor(subjectKey: string, opts: { projectId?: string | null; use?: ConsentUse; at?: number } = {}): Promise<ConsentRecord | null> {
-  await consentsReady();
-  const at = opts.at ?? now();
-  const rs = await db().execute({
-    sql: `SELECT * FROM identity_consents WHERE subject_key = ? AND covers_face = 1 AND revoked_at IS NULL AND until_at > ?${opts.projectId ? " AND project_id = ?" : ""} ORDER BY recorded_at DESC, id DESC LIMIT 20`,
-    args: opts.projectId ? [subjectKey, at, opts.projectId] : [subjectKey, at],
-  });
-  for (const row of rs.rows) {
-    const record = toRecord(row, new Map());
-    if (consentLive(record, at) && record.face && (!opts.use || record.uses.includes(opts.use))) return record;
-  }
-  return null;
-}
-
 export async function getConsent(id: string): Promise<ConsentRecord | null> {
   await consentsReady();
   const rs = await db().execute({ sql: `SELECT * FROM identity_consents WHERE id = ? LIMIT 1`, args: [id] });
