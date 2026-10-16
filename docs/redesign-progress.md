@@ -1244,3 +1244,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - deck-editor.md reconciled with the owner's section 3 and library; its additions are marked for him;
     - sharpness-5k.md now carries the audit;
     - the demo docs are moved to the Tue 27 freeze.
+- **16 Oct 15:09 IST.** Lane D readied the Slice 1 chain. Every PR now merges cleanly onto release/1 in stack order, using merge commits with the hand-resolved files listed.
+  - **Unchanged approved heads:** #700, #768, #769, #770, #772 and #773 go into a chain queue (new `mergechain.sh`: it retargets each PR to release/1 just before its CI and stops at the first failure). The queue starts after queue 1 finishes.
+  - **Re-merged heads**, with Opus for delta checks: #766, #774, #775, #767, #803, #793, #801, #804 and #794, plus #791's spec fix.
+  - **Agent pricing proposal (private) delivered to the owner:** per-type factors over the Director price, set in the `AGENT_PRICE_RULES` env; decisions D1–D9 for him.
