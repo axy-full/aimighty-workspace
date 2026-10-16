@@ -1186,3 +1186,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Needs the owner's word (it changes what a workspace is charged):** an enhancer call that gets no reply at all becomes "Nothing billed". It was uncertain and billed until the cron pass returned it.
   - **Also the owner's:** the new ⓘ wording, the per-person auto-enhance switch removed, and whether enhancer 5xx should be free too.
   - **Env (owner):** TEXT_DIRECT to include anthropic with ANTHROPIC_API_KEY; MODEL_CATALOG=static.
+- **16 Oct 14:05 IST.** Opus money review: #809 (32a84b4c) and #807 (8aec8769) APPROVED with should-fixes, sent to lane H.
+  - **#809:** a "billing unknown" marker on the free no-reply line; guard the atomik_spend zeroing on `moved`.
+  - **#807:** the fallback line says "Nothing billed." or what it cost (rule 14); client limit 10 s.
+  - **Confirmed:** the free path is the enhancer's only; there is no race with the cron. The test changes are the deliberate default swap plus the one money flip; no guard is loosened.
+  - **#809 waits for the owner's yes** on free-on-no-reply.
