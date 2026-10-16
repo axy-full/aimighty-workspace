@@ -1,6 +1,6 @@
 // Egress gate (README.md, "Verify", step 1). Run in a worker's terminal while no render is running:
 //
-//   node /app/check-egress.mjs --option c --app <production app container name>:3000
+//   node /app/check-egress.mjs --option c --app <production app container name>:3000   (add --own REMOTION_WORKER_SECRET in the Remotion worker)
 //
 // It tries to resolve a public name, to open connections out, and to reach the HOST (the render-internal network's gateway
 // and host.docker.internal), prints one line per probe, and ends with `EGRESS GATE: PASS` (exit 0) or
@@ -12,7 +12,7 @@
 //   blocked URL CODE | REACHED URL STATUS                             https://example.com, http://1.1.1.1 (and the app)
 //   blocked host.docker.internal CODE | RESOLVED host.docker.internal ADDR
 //   blocked host:IP:PORT CODE | REACHED host:IP:PORT CODE             IP = the gateway of each network this container is on
-//   clean env | LEAK env NAME                                         no secret name beyond the worker's own ASTRA_WORKER_SECRET (_N, S)
+//   clean env | LEAK env NAME                                         no worker-secret name beyond the worker's own (ASTRA_WORKER_SECRET, or REMOTION_WORKER_SECRET with --own)
 //   clean ipv6 | LEAK ipv6 ADDRESS                                    no IPv6 address but link-local (the network has no IPv6; the host's is not probed)
 // Expectations: everything `blocked`/`clean`, except the app line: (a) `REACHED` (the app is on render-internal), (b) and (c)
 // `blocked` (in (c) only the relay is on both networks). A connection the HOST refuses (ECONNREFUSED) counts as REACHED: the
@@ -71,14 +71,19 @@ export function ipv6Of(interfaces = os.networkInterfaces()) {
   return out;
 }
 
-/** The ASTRA_WORKER_SECRET-prefixed names that are NOT the worker's own variable: ASTRA_WORKER_SECRET_<N>, the app's ASTRA_WORKER_SECRETS. */
-export const foreignSecretNames = (env) => Object.keys(env ?? {}).filter((name) => /^ASTRA_WORKER_SECRET./i.test(name));
+/**
+ * Worker-secret names that are NOT the worker's own variable. A worker holds its own secret (`own`: ASTRA_WORKER_SECRET in the
+ * render worker, REMOTION_WORKER_SECRET in the Remotion worker) and no other: not ASTRA_WORKER_SECRET_<N>, not the app's
+ * ASTRA_WORKER_SECRETS or REMOTION_WORKER_SECRETS, and not the other kind of worker's secret.
+ */
+export const foreignSecretNames = (env, own = "ASTRA_WORKER_SECRET") =>
+  Object.keys(env ?? {}).filter((name) => /^(ASTRA|REMOTION)_WORKER_SECRET/i.test(name) && name.toLowerCase() !== own.toLowerCase());
 
 /**
  * The probes, as printed lines, run at the same time (the total is the slowest one, not the sum). With `app` null there is no
  * app line (the worker's own start-up check does not know the app). Every dependency is injectable so tests use none of the network.
  */
-export async function probe({ app, lookup = (name) => dns.promises.lookup(name), fetcher = fetch, timeoutMs = 5000, interfaces, tcp = tcpProbe, env = process.env } = {}) {
+export async function probe({ own, app, lookup = (name) => dns.promises.lookup(name), fetcher = fetch, timeoutMs = 5000, interfaces, tcp = tcpProbe, env = process.env } = {}) {
   const resolves = async (name, label) => {
     try { const found = await bounded(Promise.resolve(lookup(name)), timeoutMs); return `RESOLVED ${name} ${found?.address ?? found}`; }
     catch (error) { return `blocked ${label} ${error?.code ?? error?.name ?? "error"}`; }
@@ -95,7 +100,7 @@ export async function probe({ app, lookup = (name) => dns.promises.lookup(name),
     ...gateways.flatMap((ip) => HOST_PORTS.map((port) => tcp(ip, port))),
   ];
   const lines = await Promise.all(ordered);
-  const named = foreignSecretNames(env);
+  const named = foreignSecretNames(env, own);
   lines.push(named.length ? named.map((name) => `LEAK env ${name}`).join("\n") : "clean env");
   const v6 = ipv6Of(interfaces);
   lines.push(v6.length ? v6.map((address) => `LEAK ipv6 ${address}`).join("\n") : "clean ipv6");
@@ -135,7 +140,7 @@ export function judge(lines, option, app) {
   const hostName = once("hostname", HOST_NAME);
   if (hostName && !hostName.startsWith("blocked ")) failures.push(`host name: ${hostName}`);
   const envLine = once("env", "environment");
-  if (envLine && envLine !== "clean env") failures.push(`environment: ${envLine} (a worker holds only its own ASTRA_WORKER_SECRET: no ASTRA_WORKER_SECRET_<N>, no ASTRA_WORKER_SECRETS)`);
+  if (envLine && envLine !== "clean env") failures.push(`environment: ${envLine} (a worker holds only its own ASTRA_WORKER_SECRET or REMOTION_WORKER_SECRET: no ASTRA_WORKER_SECRET_<N>, no ASTRA_WORKER_SECRETS or REMOTION_WORKER_SECRETS, not the other kind of worker's)`);
   const v6Line = once("ipv6", "IPv6");
   if (v6Line && v6Line !== "clean ipv6") failures.push(`IPv6: ${v6Line} (the network has no IPv6, so the host's is not probed)`);
   /* The host: every gateway that was probed has all of its ports, each blocked; at least one gateway must have been probed. */
@@ -172,7 +177,7 @@ export const STARTUP_DEADLINE_MS = 20_000;
  * `{ ok, failures }`; never throws; a probe that has not finished by the deadline is a failure. Failure lines carry names and
  * addresses only, never a value.
  */
-export async function startupGate({ run = () => probe({ app: null, timeoutMs: 4000 }), deadlineMs = STARTUP_DEADLINE_MS } = {}) {
+export async function startupGate({ own, run = () => probe({ own, app: null, timeoutMs: 4000 }), deadlineMs = STARTUP_DEADLINE_MS } = {}) {
   let timer;
   try {
     const lines = await Promise.race([
@@ -186,10 +191,11 @@ export async function startupGate({ run = () => probe({ app: null, timeoutMs: 40
 }
 
 const parse = (argv) => {
-  const out = { option: "", app: "", stdin: false };
+  const out = { option: "", app: "", own: "ASTRA_WORKER_SECRET", stdin: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--option") out.option = argv[++i] ?? "";
     else if (argv[i] === "--app") out.app = argv[++i] ?? "";
+    else if (argv[i] === "--own") out.own = argv[++i] ?? "";
     else if (argv[i] === "--from-stdin") out.stdin = true;
   }
   return out;
@@ -198,13 +204,14 @@ const parse = (argv) => {
 async function main() {
   const args = parse(process.argv.slice(2));
   if (!OPTIONS[args.option]) { console.log("EGRESS GATE: FAIL (give --option a, b or c)"); process.exit(1); }
+  if (!/^(ASTRA|REMOTION)_WORKER_SECRET$/.test(args.own)) { console.log("EGRESS GATE: FAIL (--own is ASTRA_WORKER_SECRET or REMOTION_WORKER_SECRET)"); process.exit(1); }
   let lines;
   if (args.stdin) {
     const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk);
     lines = Buffer.concat(chunks).toString("utf8").split("\n");
   } else {
     if (!/^[a-z0-9][a-z0-9.-]*:\d{2,5}$/i.test(args.app)) { console.log("EGRESS GATE: FAIL (give --app <production app container name>:3000)"); process.exit(1); }
-    lines = await probe({ app: args.app });
+    lines = await probe({ own: args.own, app: args.app });
     for (const line of lines) console.log(line);
   }
   const verdict = judge(lines, args.option, args.stdin ? "" : args.app);

@@ -409,7 +409,14 @@ export async function runExport(id: string, deps: ExportDeps = {}): Promise<"bus
     const cancelled = async () => Boolean((await record(id))?.cancel_requested);
     // The request bound its media earlier: ask again, as the job's owner, before anything leaves the workspace.
     for (const media of spec.media) {
-      if (!(await (deps.reach ?? mediaStillReachable)(row.owner, media))) {
+      let reachable: boolean;
+      try { reachable = await (deps.reach ?? mediaStillReachable)(row.owner, media); }
+      catch {
+        /* The question could not be answered (a database error), which says nothing about the file: its own words, still nothing billed. */
+        await end((await record(id))!, "failed", failure("The files in this export could not be checked just now. Try the export again."), clock);
+        return undefined;
+      }
+      if (!reachable) {
         await end((await record(id))!, "failed", failure("A file in the export is not available any more."), clock);
         return undefined;
       }

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createConnection } from "node:net";
-import { createRemotionWorker, exportEnv, EXPORT_COMMAND, LIMITS, SESSION_NAME } from "../../ops/remotion-worker/server.mjs";
+import { createRemotionWorker, exportEnv, EXPORT_COMMAND, LIMITS, SESSION_NAME, EGRESS_RETRY_DELAY_MS, main as startWorker } from "../../ops/remotion-worker/server.mjs";
 
 // The worker runs a real /usr/bin/python3 as a stand-in for the fixed export command (the `command`
 // option; the real one is `node /opt/remotion/cli.mjs`), and /vercel/sandbox is mapped onto a scratch
@@ -522,19 +522,24 @@ test("README's measurement script is measure.mjs, byte for byte", async () => {
   assert.equal(`${block[1]}\n`, measure);
 });
 
-test("compose: one single-slot worker, 3 vCPU / 8 GB, locked down, internal network only, no secret in git", () => {
+test("compose: one single-slot worker, 3 vCPU / 8 GB, locked down, on remotion-internal by network_mode only, behind a secret-free relay, no secret in git", () => {
   const compose = readFileSync(new URL("../../ops/remotion-worker/compose.yaml", import.meta.url), "utf8");
   const yaml = compose.replace(/^\s*#.*$/gm, "").replace(/ +#.*$/gm, "");
-  assert.deepEqual([...yaml.matchAll(/^ {2}([\w-]+):\n {4}build:/gm)].map((m) => m[1]), ["remotion-1"]);
+  assert.deepEqual([...yaml.matchAll(/^ {2}([\w-]+):\n {4}build:/gm)].map((m) => m[1]), ["remotion-1", "remotion-relay"]);
+  const worker = yaml.slice(yaml.indexOf("  remotion-1:"), yaml.indexOf("  remotion-relay:"));
+  const relay = yaml.slice(yaml.indexOf("  remotion-relay:"), yaml.indexOf("\nnetworks:"));
   for (const line of ["context: ../..", "dockerfile: ops/remotion-worker/Dockerfile", "cpus: 3", "cpu_shares: 256", "mem_limit: 8g", "memswap_limit: 8g", "pids_limit: 1024", "read_only: true", "cap_drop: [ALL]",
-    'security_opt: ["no-new-privileges:true"]', "networks: [remotion-internal]", "/vercel/sandbox:size=1280m,uid=10001,gid=10001,mode=0700", "/tmp:size=768m,uid=10001,gid=10001,mode=1777",
-    "REMOTION_WORKER_SECRET: ${REMOTION_WORKER_SECRET:?", 'REMOTION_CONCURRENCY: "2"', 'REMOTION_MAX_SECONDS: "120"']) {
-    assert.ok(yaml.includes(line), line);
+    'security_opt: ["no-new-privileges:true"]', "network_mode: remotion-internal", "depends_on: [remotion-relay]", "container_name: remotion-1", "/vercel/sandbox:size=1280m,uid=10001,gid=10001,mode=0700", "/tmp:size=768m,uid=10001,gid=10001,mode=1777",
+    "REMOTION_WORKER_SECRET: ${REMOTION_WORKER_SECRET:?", 'REMOTION_CONCURRENCY: "2"', 'REMOTION_MAX_SECONDS: "120"', "restart: unless-stopped"]) {
+    assert.ok(worker.includes(line), line);
   }
-  assert.ok(!/^\s*ports:/m.test(yaml) && !/^\s*expose:/m.test(yaml) && !/network_mode/.test(yaml) && !/privileged/.test(yaml));
+  assert.ok(!/^\s*networks:/m.test(worker) && !/^\s*ports:/m.test(yaml) && !/^\s*expose:/m.test(yaml) && !/privileged/.test(yaml), "the worker is on no network but its own, and nothing is published");
   assert.match(yaml, /^networks:\n {2}remotion-internal:\n {4}name: remotion-internal\n {4}internal: true\n/m);
+  /* The relay: the same image's relay stage, on the internal network only here (the app's comes from Connect To Predefined Network), no secret, locked down. */
+  for (const line of ["target: relay", "networks: [remotion-internal]", "RELAY_TARGET_1: ${RELAY_TARGET_1:-remotion-1}", "read_only: true", "cap_drop: [ALL]", 'security_opt: ["no-new-privileges:true"]', "mem_limit: 128m", "pids_limit: 64", "cpus: 0.25", "8081"]) assert.ok(relay.includes(line), line);
+  assert.ok(!/secret|token|password/i.test(relay) && !/network_mode|ports:|expose:|volumes:|privileged/.test(relay), "the relay holds no secret and publishes nothing");
   // The tmpfs mounts and the limits add up: both tmpfs full plus the browser still fit in memory.
-  const sizes = [...yaml.matchAll(/:size=(\d+)m/g)].map((m) => Number(m[1]));
+  const sizes = [...worker.matchAll(/:size=(\d+)m/g)].map((m) => Number(m[1]));
   assert.ok(sizes.reduce((a, b) => a + b, 0) <= 2048);
   // The sandbox tmpfs holds a maximum export's inputs and its output.
   assert.ok((LIMITS.totalBytes + LIMITS.outputBytes) / MiB <= sizes[0]);
@@ -544,7 +549,7 @@ test("Dockerfile: base pinned by digest, Chrome pinned by the lockfile, build-ti
   const dockerfile = readFileSync(new URL("../../ops/remotion-worker/Dockerfile", import.meta.url), "utf8");
   const code = dockerfile.replace(/^#.*$/gm, "");
   const froms = [...code.matchAll(/^FROM (\S+)/gm)].map((m) => m[1]);
-  assert.equal(froms.length, 3, "build, runtime-deps, run");
+  assert.equal(froms.length, 4, "build, runtime-deps, relay, run");
   for (const from of froms) assert.match(from, /^node:22\.[\d.]+-bookworm-slim@sha256:[0-9a-f]{64}$/);
   assert.equal(new Set(froms).size, 1, "one pinned base for every stage");
   assert.match(code, /npm ci --no-audit/);
@@ -552,6 +557,15 @@ test("Dockerfile: base pinned by digest, Chrome pinned by the lockfile, build-ti
   assert.match(code, /ensureBrowser\(\{ chromeMode: 'headless-shell' \}\)/);
   assert.match(code, /^COPY remotion\/package\.json remotion\/package-lock\.json/m);
   assert.match(code, /npm run bundle/);
+  /* The browser is named, never looked for: the exact file, checked at build, set for the worker; package.json is copied beside node_modules. */
+  const browser = "/opt/remotion/node_modules/.remotion/chrome-headless-shell/linux64/chrome-headless-shell-linux64/chrome-headless-shell";
+  assert.ok(code.includes(`REMOTION_BROWSER_EXECUTABLE=${browser}`), "the worker's browser is the exact installed file");
+  assert.ok(code.includes("test -x node_modules/.remotion/chrome-headless-shell/linux64/chrome-headless-shell-linux64/chrome-headless-shell"), "the build fails if it is not there");
+  assert.ok(code.includes('RUN test -x "$REMOTION_BROWSER_EXECUTABLE"'));
+  assert.match(code, /^COPY --from=runtime-deps \/opt\/remotion\/package\.json \/opt\/remotion\/package\.json$/m);
+  /* The egress check ships in the image; the relay is its own small stage. */
+  assert.match(code, /^COPY ops\/render-worker\/check-egress\.mjs \/app\/check-egress\.mjs$/m);
+  assert.match(code, /AS relay\n(?:.*\n)*?COPY ops\/render-worker\/relay\.mjs \/app\/relay\.mjs\n(?:.*\n)*?CMD \["node", "\/app\/relay\.mjs"\]/);
   assert.match(code, /^USER 10001:10001$/m);
   assert.match(code, /^HEALTHCHECK /m);
   assert.match(code, /REMOTION_RUNTIME_DIR=\/opt\/remotion/, "Chrome is looked up where the build put it, not under the session folder");
@@ -564,6 +578,7 @@ test("Dockerfile: base pinned by digest, Chrome pinned by the lockfile, build-ti
   assert.match(ignore, /^\*$/m);
   assert.match(ignore, /^!remotion$/m);
   assert.match(ignore, /^remotion\/node_modules$/m);
+  for (const file of ["check-egress.mjs", "relay.mjs", "check-relay.mjs"]) assert.ok(ignore.includes(`!ops/render-worker/${file}`), file);
 });
 
 // The real built export command, driven through the worker over HTTP. Skipped until `npm run bundle` has run in remotion/.
@@ -590,5 +605,115 @@ test("through the worker: the real export command renders a sample and refuses a
     const refused = await t.api("POST", `/v1/sessions/${id}/run`, { json: { cmd: process.execPath, args: [CLI], timeoutMs: 60_000 } });
     assert.equal(refused.data.exitCode, 2);
     assert.match(refused.data.stderr, /spec_invalid/);
+  } finally { await t.close(); }
+});
+
+/* ── Fail-closed start, the test root, a run in progress (Opus review of #699) ───────────────────────────────────────── */
+
+test("fail-closed start: the egress check runs before the worker listens; anything but a pass logs the lines, waits, exits non-zero and never binds; a pass listens", async () => {
+  const root = await mkdtemp(join(tmpdir(), "remotion-worker-gate-"));
+  const env = () => ({ REMOTION_WORKER_SECRET: SECRET, REMOTION_WORKER_TEST_ROOT: root, PORT: "0" });
+  const run = async (gate, overrides = {}) => {
+    const events = [];
+    const worker = await startWorker({ env: overrides.env ?? env(), gate, signals: false, exit: (code) => events.push(`exit ${code}`), sleep: async (ms) => { events.push(`sleep ${ms}`); }, log: (line) => events.push(`log ${line}`), error: (line) => events.push(`error ${line}`) });
+    return { events, worker };
+  };
+  try {
+    for (const [label, gate] of [["a failing verdict", async () => ({ ok: false, failures: ["REACHED host:172.20.0.1:22 ECONNREFUSED", "LEAK env ASTRA_WORKER_SECRET"] })], ["no verdict", async () => undefined], ["a gate that throws", async () => { throw new Error("boom"); }]]) {
+      const { events, worker } = await run(gate);
+      assert.equal(worker, null, label);
+      assert.deepEqual(events.map((e) => e.split(" ").slice(0, 2).join(" ")).filter((e) => /^(sleep|exit)/.test(e)), [`sleep ${EGRESS_RETRY_DELAY_MS}`, "exit 1"], `${label}: waits, then exits non-zero`);
+      assert.ok(!events.some((e) => /listening/.test(e)), `${label}: never listens`);
+    }
+    const failing = await run(async () => ({ ok: false, failures: ["REACHED host:172.20.0.1:22 ECONNREFUSED", "LEAK env ASTRA_WORKER_SECRET"] }));
+    const message = failing.events.find((e) => e.startsWith("error ")) ?? "";
+    assert.match(message, /egress check failed/); assert.match(message, /LEAK env ASTRA_WORKER_SECRET/);
+    assert.ok(!message.includes(SECRET), "never the secret's value");
+    const passed = await run(async () => ({ ok: true, failures: [] }));
+    try {
+      assert.ok(passed.worker, "the worker was returned");
+      assert.ok(await waitFor(() => passed.worker.server.listening), "and it is listening");
+      assert.equal(passed.worker.server.address().address, "127.0.0.1", "a test root binds loopback only");
+      assert.ok(passed.events.some((e) => /^log remotion worker listening on \d+$/.test(e)));
+    } finally { await passed.worker.close(); }
+    let asked = 0;
+    const refused = await run(async () => { asked++; return { ok: true, failures: [] }; }, { env: { REMOTION_WORKER_SECRET: "short", REMOTION_WORKER_TEST_ROOT: root } });
+    assert.equal(asked, 0); assert.equal(refused.worker, null); assert.ok(refused.events.includes("exit 1"), "a bad secret is refused before the check is asked");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("REMOTION_WORKER_TEST_ROOT is ignored inside the image (REMOTION_WORKER_CONTAINER=1): the real egress check runs; outside it the test root skips the check", async () => {
+  const root = await mkdtemp(join(tmpdir(), "remotion-worker-testroot-"));
+  try {
+    for (const container of ["1", undefined]) {
+      const label = container ? "in the image" : "outside it";
+      const events = [];
+      let asked = 0;
+      const env = { REMOTION_WORKER_SECRET: SECRET, REMOTION_WORKER_TEST_ROOT: root, PORT: "0", ...(container ? { REMOTION_WORKER_CONTAINER: container } : {}) };
+      const realGate = async () => { asked++; return { ok: false, failures: ["REACHED example.com"] }; };
+      const worker = await startWorker({ env, realGate, signals: false, exit: (code) => events.push(`exit ${code}`), sleep: async () => {}, log: (line) => events.push(`log ${line}`), error: (line) => events.push(`error ${line}`) });
+      if (container) {
+        assert.equal(asked, 1, `${label}: the real check ran although a test root was set`);
+        assert.equal(worker, null, label);
+        assert.ok(events.includes("exit 1") && !events.some((e) => /listening/.test(e)), `${label}: ${JSON.stringify(events)}`);
+      } else {
+        assert.equal(asked, 0, `${label}: the test root skips the check`);
+        assert.ok(worker, label);
+        try { assert.ok(await waitFor(() => worker.server.listening), label); } finally { await worker.close(); }
+      }
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("server.mjs: the gate is asked before the worker can listen, the real gate is the shared check with the worker's own secret named, and the test root is read once behind the container guard", () => {
+  const code = readFileSync(SERVER, "utf8");
+  const mainAt = code.indexOf("export async function main");
+  const gateAt = code.indexOf("await runGate()", mainAt), readyAt = code.indexOf("await worker.ready()", mainAt), listenAt = code.indexOf(".listen(port", mainAt);
+  assert.ok(mainAt > 0 && gateAt > mainAt && gateAt < readyAt && readyAt < listenAt, "gate, then ready, then listen");
+  assert.equal(code.split(".listen(").length - 1, 1, "one place binds a port");
+  assert.match(code, /import\("\.\/check-egress\.mjs"\)/);
+  assert.match(code, /startupGate\(\{ own: "REMOTION_WORKER_SECRET" \}\)/);
+  assert.match(code, /testRoot \? null : realGate/, "only the test root (tests only, never inside the image) skips the real check");
+  assert.equal([...code.matchAll(/REMOTION_WORKER_TEST_ROOT/g)].length, 2, "one comment mention and one read");
+  assert.match(code, /const testRoot = inContainer \? undefined : env\.REMOTION_WORKER_TEST_ROOT;/);
+  assert.match(code, /sweepStrays: inContainer,/);
+  assert.ok(EGRESS_RETRY_DELAY_MS >= 30_000, "the wait before exiting");
+});
+
+test("a file may not be written while a run is going (409 run_in_progress); before and after the run it may", { skip }, async () => {
+  const t = await setup();
+  try {
+    const id = await session(t);
+    const marker = join(t.tmp, "scratch", "started");
+    await put(t, id, "/vercel/sandbox/remotion/run.py", `import time\nopen('${marker}', 'w').write('1')\ntime.sleep(60)\n`);
+    const first = run(t, id, { timeoutMs: 30_000 });
+    assert.ok(await waitFor(() => existsSync(marker)));
+    const during = await put(t, id, "/vercel/sandbox/remotion/input/late.mp4", "x");
+    assert.equal(during.status, 409);
+    assert.deepEqual(during.data, { error: "run_in_progress" });
+    await t.api("DELETE", `/v1/sessions/${id}`);
+    await first;
+  } finally { await t.close(); }
+});
+
+test("a run is refused while an upload is in flight (409 run_in_progress), and starts once the upload is done", { skip }, async () => {
+  const t = await setup();
+  try {
+    const id = await session(t);
+    await put(t, id, "/vercel/sandbox/remotion/run.py", "print('ran')\n");
+    let hold;
+    const body = new ReadableStream({ start(controller) { hold = controller; controller.enqueue(new TextEncoder().encode("first part")); } });
+    const upload = put(t, id, "/vercel/sandbox/remotion/input/slow.mp4", body);
+    /* Give the worker a moment to accept the first bytes; the upload then stays in flight until the stream is closed. */
+    await sleep(250);
+    const refused = await run(t, id);
+    assert.equal(refused.status, 409);
+    assert.deepEqual(refused.data, { error: "run_in_progress" });
+    hold.close();
+    assert.equal((await upload).status, 201);
+    const done = await run(t, id);
+    assert.equal(done.status, 200);
+    assert.equal(done.data.exitCode, 0);
+    assert.match(done.data.stdout, /ran/);
   } finally { await t.close(); }
 });

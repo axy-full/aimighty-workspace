@@ -7,9 +7,10 @@ Plan and decisions: `docs/plans/remotion.md`. Licence: Remotion Free License, co
 | File | What |
 |---|---|
 | `Dockerfile` | Node 22 (Debian bookworm slim, pinned by digest), the compositions bundle and the export command built in at image build, Remotion's pinned Chrome Headless Shell (version follows `remotion/package-lock.json`), FFmpeg and ffprobe from `@remotion/compositor`, non-root user `remotion` (uid 10001), healthcheck. A tiny offline render (2 s, 192x108) runs at build time as that user, through the command the worker runs; a missing library fails the build. |
-| `Dockerfile.dockerignore` | The build context is the repository root (the compositions are in `/remotion`); this keeps it to `remotion/` and this folder. |
-| `server.mjs` | The worker API on port 8790 (plain Node, no dependencies; the Astra worker's protocol). Not 8080: the host firewall drops 8080 in DOCKER-USER. |
-| `compose.yaml` | The worker and the `remotion-internal` network. |
+| `Dockerfile.dockerignore` | The build context is the repository root (the compositions are in `/remotion`); this keeps it to `remotion/`, this folder and the three shared files of `ops/render-worker/`. |
+| `/app/check-egress.mjs`, `/app/relay.mjs`, `/app/check-relay.mjs` | Copied from `ops/render-worker/`: the egress check (run by the worker before it listens, and by hand), the relay (the `relay` build stage) and the relay check. Shared with the Astra worker; `--own REMOTION_WORKER_SECRET` tells the check which secret is the worker's own. |
+| `server.mjs` | The worker API on port 8790 (plain Node, no dependencies; the Astra worker's protocol). Not 8080: the host firewall drops 8080 in DOCKER-USER. **Fail-closed start:** before it listens it runs the egress check in its own network and environment; if that is not a pass it logs the failing lines (names only), waits 30 s, exits non-zero and never binds. `REMOTION_WORKER_TEST_ROOT` (tests only) is ignored inside the image. |
+| `compose.yaml` | The worker, its relay and the `remotion-internal` network. The worker is on that network only (`network_mode`); the relay is the one service on it and on the app's network. |
 | `smoke.mjs` | The no-cost smoke export (same text as in "Verify", step 3). |
 | `measure.mjs` | The 30 s 1080p measurement (same text as in "Limits"). |
 
@@ -19,8 +20,8 @@ Tests: `node --test tests/ops/remotion-worker.test.mjs` (a stand-in for the expo
 
 | Variable | Where | Value |
 |---|---|---|
-| `REMOTION_WORKER_SECRET` | the worker stack | A random value of at least 32 characters (`openssl rand -hex 32`, on your own machine). One secret per worker. Runtime only: never a build variable, never in git or chat. |
-| `REMOTION_WORKER_URLS` | the production app only | Comma list of worker base URLs, for example `http://<remotion-1 name>:8790`. The name depends on the networking option (below). Nothing reads it until `REMOTION_EXPORTS` is on. |
+| `REMOTION_WORKER_SECRET` | the worker stack | A random value of at least 32 characters (`openssl rand -hex 32`, on your own machine). One secret per worker. Runtime only: never a build variable, never in git or chat. The relay never sees one. |
+| `REMOTION_WORKER_URLS` | the production app only | The relay's address, one entry per worker: `http://<remotion-relay name>:8081`. Nothing reads it until `REMOTION_EXPORTS` is on. |
 | `REMOTION_WORKER_SECRETS` | the production app only | Comma list of secrets **in the same order** as `REMOTION_WORKER_URLS`. Runtime only. |
 | `REMOTION_EXPORTS` | the production app only | The switch. **Leave it unset or off** until the screens exist and the owner has tested it. Off: `/api/exports` answers 404, the export tools are not offered over MCP, nothing is admitted, written or dispatched. |
 | `REMOTION_EXPORT_MAX_RUNNING` | the production app (platform setting) | Exports one workspace may have rendering at once. Default 1, 1 to 4. Not a price. |
@@ -29,44 +30,48 @@ Tests: `node --test tests/ops/remotion-worker.test.mjs` (a stand-in for the expo
 
 Tuning of the export command (`REMOTION_CONCURRENCY`, `REMOTION_MAX_SECONDS`) is set in `compose.yaml`, from the measurement below, and never comes from a request.
 
-## Networking: owner decision
+## Networking: option (c), the relay (the owner's choice for the Astra workers, adopted here)
 
-Use the same option as the Astra render workers; the reasoning, the trade-offs and the Verify step that proves it are in `ops/render-worker/README.md`, "Networking: owner decision". `compose.yaml` as shipped (`remotion-internal` only) is the common starting point. **The egress check below is a hard gate: no real export until it passes, and again after every change to the stack or the firewall.** What changes per option:
+The reasoning and the Verify step are in `ops/render-worker/README.md`, "Networking: option (c), the relay". Here, in `compose.yaml`:
 
-- **(a) `network_mode` on an internal network the advisor creates.** The same `render-internal` network as the Astra workers (the advisor creates it once: `docker network create --internal render-internal`). In `compose.yaml`: replace `networks: [remotion-internal]` with `network_mode: render-internal` and delete the top-level `networks:` block. Connect To Predefined Network stays off. The app is already joined to `render-internal` for Astra (`docker network connect render-internal <production app container>`, repeated after each app deploy), so there is no extra step.
-- **(b) The platform's predefined network, egress dropped by a host rule.** Give the service a fixed address on that network (`ipv4_address`, in a small compose PR) and add its source to the DOCKER-USER rule written in `ops/render-worker/README.md` (b). Weaker against hostile code (DNS can leave): the same caveat. Chrome only ever opens pages of our own bundle, but the gate is the same.
-- **(c) A relay in the stack.** Not built yet (a follow-up PR for both worker kinds).
+- `remotion-internal` is declared `internal: true`, so Compose creates it with no gateway: no internet.
+- `remotion-1` is on it through `network_mode: remotion-internal` and on nothing else: no other network, no published port. (Coolify adds its own network, which has a gateway, to a service without `network_mode`.)
+- `remotion-relay` (the `relay` stage of the same Dockerfile, `node /app/relay.mjs`) is on `remotion-internal` and, with **Connect To Predefined Network** on, on the app's network. It forwards 8081 to the worker's 8790 and nothing else, holds no secret, never reads a connection's bytes (the worker's own `Authorization: Bearer` check still guards every request), connects only to the fixed name `remotion-1` (with the platform's suffix if it adds one; set `RELAY_TARGET_1` on the relay to the real name then) and refuses any address that is not private.
+- The app is **not** on `remotion-internal`. A worker cannot reach it, the relay is the only way in, and nothing needs redoing after an app redeploy.
+- **Fail-closed:** the worker runs the egress check itself before it listens. **The check run by hand (Verify step 1) is still a hard gate: no real export until it passes, and again after every change to the stack, a firewall change, a Docker Engine upgrade or a reboot.**
+- **Not verified until deployed:** that Compose creates `remotion-internal` (the relay's network) before it starts the `network_mode` worker (`depends_on` asks for it), and that Coolify keeps `container_name` and `depends_on` as written. Options (a) and (b) of the Astra README are not used.
 
 ## Setup click list (owner and advisor)
 
 Nothing here costs money.
 
-1. **Pick the networking option** (above): the one chosen for Astra.
+1. **Networking** (above): option (c). **Connect To Predefined Network: on** in step 3.
 2. **Make the secret (owner).** On your own machine, run `openssl rand -hex 32` once. Keep it in your password manager as "remotion worker 1".
 3. **Create the stack (owner, in Coolify).** Project of the production app, **+ New**, **Docker Compose** (from the GitHub repository), branch `release/1` (or `main` once merged).
    - **Base Directory:** `/ops/remotion-worker`. **Docker Compose Location:** `/compose.yaml`.
    - **Domains:** none. No ports are published.
-   - **Connect To Predefined Network:** off for (a); on for (b) and (c).
+   - **Connect To Predefined Network:** on (it puts the relay on the app's network).
    - The image builds from the repository root (`context: ../..` in `compose.yaml`), so Coolify must have cloned the whole repository. If the first build stops with "remotion/package.json not found", tell the advisor (see "Not verified without Docker").
 4. **Secret on the stack (owner).** Environment Variables: `REMOTION_WORKER_SECRET` = the secret. Runtime only: leave **Build Variable** ("Available at Buildtime") unticked.
 5. **Apply the option's server or compose part (advisor),** as written above.
 6. **Deploy (owner).** The first build installs the npm packages (about 250 MB), downloads Chrome Headless Shell (about 90 MB) and renders a 2-second test clip as the runtime user; a few minutes. Wait until the service shows **healthy**. A red build with a Chrome library error means the apt list in the `Dockerfile` needs a package: send the last 40 lines of the build log.
 7. **Run Verify step 1 (owner).** Stop here if it fails.
-8. **Production app (owner).** Set `REMOTION_WORKER_URLS` (read the container name on the stack's page; Coolify may add a suffix to `remotion-1`) and `REMOTION_WORKER_SECRETS` (the same secret), both runtime only. Leave `REMOTION_EXPORTS` unset. Redeploy the app; for (a), the advisor reconnects it to `render-internal` now.
+8. **Production app (owner).** Set `REMOTION_WORKER_URLS` (`http://<remotion-relay name>:8081`, read from the stack's page; if Coolify adds a suffix to `remotion-1`, set `RELAY_TARGET_1` on the relay to the real name) and `REMOTION_WORKER_SECRETS` (the same secret), both runtime only. Leave `REMOTION_EXPORTS` unset. Redeploy the app.
 9. **Run Verify steps 2 to 4, then the measurement under "Limits" and send the numbers to the lead.**
 
 ## Verify
 
-1. **Egress gate (owner, Coolify terminal of `remotion-1`).** Run while no export is running (a finished export ends every other process in the worker, including a terminal):
+1. **Egress gate (owner, Coolify terminal of `remotion-1`).** **No real export until it passes.** Run while no export is running (a finished export ends every other process in the worker, including a terminal):
    ```sh
-   node -e "require('dns').lookup('example.com', (e, a) => console.log(e ? 'blocked dns ' + e.code : 'RESOLVED example.com ' + a)); for (const u of ['https://example.com', 'http://1.1.1.1', 'http://' + process.argv[1]]) fetch(u, {signal: AbortSignal.timeout(5000)}).then(r => console.log('REACHED', u, r.status), e => console.log('blocked', u, e.cause?.code ?? e.name))" <production app container name>:3000
+   node /app/check-egress.mjs --option c --own REMOTION_WORKER_SECRET --app <production app container name>:3000
    ```
-   The DNS line must say `blocked dns` and the two internet lines `blocked`, in every option. Any `RESOLVED` or `REACHED` there: **stop**, no exports, tell the advisor (a name that resolves is a way out, even with no route). The last line (the app, directly) must say `blocked` in (b); in (a) and (c) the app sits on `render-internal` with the workers, so `REACHED` is expected there.
+   It prints one line per probe and ends with `EGRESS GATE: PASS` (exit 0) or `EGRESS GATE: FAIL (...)` (exit 1). Every line must be `blocked` (or `clean env`, `clean ipv6`): the DNS line, the two internet lines, `host.docker.internal`, the host itself (`host:IP:PORT`, eight ports on the gateway of every network the worker is on; a refused connection counts as `REACHED`), the environment (no worker-secret name beyond its own `REMOTION_WORKER_SECRET`: no `ASTRA_WORKER_SECRET*`, no `REMOTION_WORKER_SECRET_<N>` or `REMOTION_WORKER_SECRETS`), IPv6, and, for option (c), the app line `blocked ...` too: only the relay is on both networks. Any `REACHED`, `RESOLVED` or `LEAK`, or a missing, repeated or unrecognised line: **FAIL**, stop, tell the advisor. The worker runs this same check itself before it listens (without the app line).
+1b. **The relay (owner, Coolify terminal of `remotion-relay`):** `node /app/check-relay.mjs`. It checks that the relay's environment holds no secret-looking variable, that the worker answers port 8081 with `401`, and that 8790, 8080, 8082, 8083, 80 and 22 are closed. It ends with `RELAY CHECK: PASS` or `FAIL`.
 2. **The app reaches the worker and the secret is required (owner, production app terminal):**
    ```sh
    node -e "for (const u of process.env.REMOTION_WORKER_URLS.split(',')) fetch(u.trim() + '/v1/sessions').then(r => console.log(u, r.status), e => console.log(u, 'unreachable', e.cause?.code ?? e.name))"
    ```
-   `401` = reachable and locked. `unreachable` = the network option is not applied (for (a): the app is not on `render-internal`).
+   `401` = reachable and locked. `unreachable` = the relay is not reachable from the app (Connect To Predefined Network is off, or the relay is down).
 3. **Smoke export (owner, production app terminal; no money: our own 2-second sample picture, nothing billed or stored).** Paste the whole block:
    ```sh
 cat > /tmp/remotion-smoke.mjs <<'EOF'
@@ -158,7 +163,7 @@ node /tmp/remotion-smoke.mjs
    ```sh
    docker inspect <worker> --format 'cpus={{.HostConfig.NanoCpus}} shares={{.HostConfig.CpuShares}} mem={{.HostConfig.Memory}} swap={{.HostConfig.MemorySwap}} pids={{.HostConfig.PidsLimit}} ro={{.HostConfig.ReadonlyRootfs}} capdrop={{.HostConfig.CapDrop}} secopt={{.HostConfig.SecurityOpt}} ports={{json .HostConfig.PortBindings}} user={{.Config.User}} netmode={{.HostConfig.NetworkMode}} nets={{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
    ```
-   Expect `cpus=3000000000`, `shares=256`, `mem=8589934592`, `swap=8589934592`, `pids=1024`, `ro=true`, `capdrop=[ALL]`, `secopt=[no-new-privileges:true]`, `ports={}` (or `null`), `user=10001:10001`; networks: `remotion-internal` only for the shipped file, `render-internal` as `netmode` for (a), the predefined and per-resource networks for (b). In the worker's own terminal, `cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/pids.max` prints `300000 100000`, `8589934592`, `1024`; `id -u` prints `10001`; `touch /x` fails (read-only).
+   Expect `cpus=3000000000`, `shares=256`, `mem=8589934592`, `swap=8589934592`, `pids=1024`, `ro=true`, `capdrop=[ALL]`, `secopt=[no-new-privileges:true]`, `ports={}` (or `null`), `user=10001:10001`; netmode `remotion-internal` and no networks listed beyond it. For `remotion-relay`: `cpus=250000000`, `mem=134217728`, `pids=64`, `ro=true`, `capdrop=[ALL]`, `ports={}`, networks `remotion-internal` plus the app's network and the stack's own. In the worker's own terminal, `cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/pids.max` prints `300000 100000`, `8589934592`, `1024`; `id -u` prints `10001`; `touch /x` fails (read-only).
 
 ## Limits
 
