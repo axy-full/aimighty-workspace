@@ -1152,3 +1152,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 12:56 IST.** **#762 MERGED** (f4d6eaab, Opus approved and import-pinning entry confirmed, CI 38862946581) → release/1 82233068. **Deploy #5 PR #799** (deploy/5 at 82233068 → main): #757, #760, #748, #756, #762, #758. No migrations; no new app env names (#757's RELAY_* are for the relay stack). Rollback main 709497a7. Told the owner "ready".
   - Merge queue for deploy #6 started (CI then merge, one at a time, only at the Opus-approved head): #771, #697, #699, #765, #763, #764.
   - #798 NOT APPROVED (tooltip-audit guard: icon-only buttons named by title only); lane C fixing the code.
+- **16 Oct 12:58 IST.** #797 Hindi tool APPROVED at 4b804536: machine approvals refused; a retry's Hindi only skips translation; MCP files nothing and says so. #800 (source-take private-board check) is under security review. #797 merges after #794/#791 land (stacked).
