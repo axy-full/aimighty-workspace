@@ -74,7 +74,7 @@ export const approveLabel = (item: Pick<PreviewItemView, "versions">, index: num
 /** Whether ✓ and ✕ act on the version on screen. */
 export const judgeVersion = (item: PreviewItemView, index: number): PreviewVersionView | null => {
   const v = item.versions[clampIndex(index, item.versions.length)];
-  return item.canJudge && v && v.genId && (v.status === "ready" || v.status === "approved" || v.status === "rejected") ? v : null;
+  return item.canJudge && v && v.genId && v.url && (v.status === "ready" || v.status === "approved" || v.status === "rejected") ? v : null;
 };
 
 /** "0:03 / 0:08". */
