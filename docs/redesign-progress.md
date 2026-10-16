@@ -1085,3 +1085,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - New #788 Pro pick (d35da7ce, base #787): lib/proPick.ts (Seedance 2.5, Veo 3.1, Kling 4.0 → Kling 3.0 Pro fallback, Runway Gen-4.5) with a site override. Also fixes a bug: writeSite dropped enginesOnWorkspaces and proPick.
   - The lead updated slice-1.md §4 and remotion.md for DNxHR dropped.
   - Opus reviews next.
+- **16 Oct 11:11 IST.** Opus APPROVED the Slice 1 delta: QUEUE_EXPIRY_MS is a constant and the env var is ignored; the DNxHR changes are wording and tests only; merges are empty or README-only; the money guard is untouched; env names are exactly the six approved. Nit sent to lane D: an MCP description sentence sits inside the format list.
