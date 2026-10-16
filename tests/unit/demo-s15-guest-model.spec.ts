@@ -61,7 +61,7 @@ const importsOf = (file: string) => [...readFileSync(path.join(ROOT, file), "utf
 test("guest components and the guest reader import only what they are allowed", () => {
   const allowed = new Set([
     "react", "next/link",
-    "@/components/ui/Mark", "../icons",
+    "@/components/ui/Mark", "@/components/ui/BrandLogo", "../icons",
     "../home/BriefBox", "../home/brief-file", "../home/home-model", "../home/TemplateRow", "../home/home.css", "./guest.css",
     "./GuestBox", "./GuestHeader", "./GuestSample", "./SignupSheet", "./RequestAccess",
     "@/lib/guest/brief", "@/components/graphite/home/home-model", "./brief", "./sample",

@@ -165,7 +165,7 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
           onQueue={judgements.add} onDone={() => go({ screen: "home" })} />
       ) : (
         <>
-          <PhoneHeader title={page ? page.title : larger ? LARGER_TITLES[larger] : screen === "record" && project ? project.name : screen === "states" ? `${project?.name ?? "Particl"} · states` : TITLES[screen ?? "home"] ?? "Particl"} account={account} onBack={page || larger || screen !== "home" ? home : null} onTopUp={topUp} />
+          <PhoneHeader title={page ? page.title : larger ? LARGER_TITLES[larger] : screen === "record" && project ? project.name : screen === "states" ? `${project?.name ?? "Particl"} · states` : TITLES[screen ?? "home"] ?? "Particl"} logo={!page && !larger && (screen ?? "home") === "home"} account={account} onBack={page || larger || screen !== "home" ? home : null} onTopUp={topUp} />
           {larger ? (
             <LargerScreen page={larger} onHome={home} />
           ) : screen === "make" && !page ? (
