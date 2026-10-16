@@ -39,7 +39,7 @@ export const WAITING_LIMIT = 50;
 const RESOLUTIONS = ["480p", "720p", "1080p"];
 const RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 
-export type PreparedInput = { prompt?: unknown; model?: unknown; duration?: unknown; resolution?: unknown; ratio?: unknown; audio?: unknown; project?: unknown };
+export type PreparedInput = { prompt?: unknown; model?: unknown; duration?: unknown; resolution?: unknown; ratio?: unknown; audio?: unknown; project?: unknown; engine?: unknown; args?: unknown };
 
 /** Validates what an agent sends: the same fields render_shot takes, nothing that names a price or a person. */
 export function cleanPrepared(input: PreparedInput) {
@@ -57,13 +57,72 @@ export function cleanPrepared(input: PreparedInput) {
   return { prompt, model, duration, resolution, ratio, audio, project };
 }
 
+/** Keys no prepared job may carry: they are the approval or the price, which only a person gives. */
+const APPROVAL_KEYS = /^(?:max_?credits|quote_?only|quote_?fingerprint|approved?|price|estimated_?credits)$/i;
+
+/** What an engine job's argument may be: a word, a number, yes/no, or a list or group of them (ids only below the top level), at most three deep. */
+export type PreparedValue = string | number | boolean | PreparedValue[] | { [key: string]: PreparedValue };
+const MAX_ARGS_JSON = 8000, MAX_DEPTH = 3, MAX_ITEMS = 16;
+/** Below the top level a word is an id (an upload, a cast member, a take): no spaces, no long text, never a data address or file bytes. */
+const ID_VALUE = /^[A-Za-z0-9_.:-]{1,160}$/;
+function checkKey(key: string) {
+  if (!/^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(key)) throw new PreparedError("An argument has a name that is not allowed.");
+  if (APPROVAL_KEYS.test(key)) throw new PreparedError("A prepared job carries no price or approval: only a person approves.");
+}
+function cleanValue(value: unknown, depth: number): PreparedValue | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string") {
+    if (depth === 0) { if (value.length > 2000) throw new PreparedError("An argument is too long."); return value.replace(/\u0000/g, ""); }
+    if (!ID_VALUE.test(value)) throw new PreparedError("Inside a list or group an argument is an id, not text or a file.");
+    return value;
+  }
+  if (typeof value === "number") { if (!Number.isFinite(value)) throw new PreparedError("An argument is a word, a number or yes/no."); return value; }
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "object") throw new PreparedError("An argument is a word, a number or yes/no.");
+  if (depth + 1 >= MAX_DEPTH) throw new PreparedError("An argument is nested too deep.");
+  if (Array.isArray(value)) {
+    if (value.length > MAX_ITEMS) throw new PreparedError("A list has too many items.");
+    return value.map((v) => cleanValue(v, depth + 1)).filter((v): v is PreparedValue => v !== undefined);
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > MAX_ITEMS) throw new PreparedError("A group has too many entries.");
+  const out: { [key: string]: PreparedValue } = {};
+  for (const [key, v] of entries) { checkKey(key); const c = cleanValue(v, depth + 1); if (c !== undefined) out[key] = c; }
+  return out;
+}
+
+/**
+ * An engine job (a direct engine's tool, lib/directEngineMcp.ts, in Ask): the tool's id, its plain arguments (strings, numbers, booleans, never an approval or a price) and
+ * a one-line description for the person. It is filed exactly like a render: nothing is priced, held or sent, and only a person approves it.
+ */
+export function cleanEngineJob(input: PreparedInput) {
+  const tool = typeof input.engine === "string" ? input.engine : "";
+  if (!/^[a-z][a-z0-9_]{1,40}$/.test(tool)) throw new PreparedError("Name the tool to prepare.");
+  const prompt = typeof input.prompt === "string" ? input.prompt.replace(/\u0000/g, "").trim().slice(0, 400) : "";
+  if (!prompt) throw new PreparedError("Describe the job to prepare.");
+  const raw = input.args;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new PreparedError("Give the tool's arguments.");
+  const args: Record<string, PreparedValue> = {};
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (entries.length > 24) throw new PreparedError("Too many arguments.");
+  for (const [key, value] of entries) {
+    checkKey(key);
+    const clean = cleanValue(value, 0);
+    if (clean !== undefined) args[key] = clean;
+  }
+  if (JSON.stringify(args).length > MAX_ARGS_JSON) throw new PreparedError("The arguments are too large.");
+  const project = typeof input.project === "string" && input.project.trim() ? input.project.trim().slice(0, 120) : null;
+  return { tool, args, prompt, project };
+}
+
 /** Files a prepared job for a `prepare` token. Nothing is priced, held or sent. */
 export async function prepareJob(input: PreparedInput, token: { id: string; scope: string } | undefined, at = now()): Promise<PreparedJob> {
   if (!token || token.scope !== "prepare") throw new PreparedError("Only a token made to prepare jobs files one; a person uses Make.", 403);
-  const clean = cleanPrepared(input);
+  const engine = input.engine !== undefined ? cleanEngineJob(input) : null;
+  const clean = engine ? null : cleanPrepared(input);
   await preparedReady();
   const id = newId("prep");
-  const { prompt, project, ...settings } = clean;
+  const { prompt, project, ...settings } = engine ? { prompt: engine.prompt, project: engine.project, engine: engine.tool, args: engine.args } : clean!;
   /* The cap and the insert are one statement (review of #558, L6): many calls at once still leave at most the cap. */
   const rs = await db().execute({
     sql: `INSERT INTO prepared_jobs (id, token_id, prompt, settings_json, project, state, created_at)
@@ -90,6 +149,7 @@ export async function preparedJobs(filter: { state?: PreparedState; tokenId?: st
     const s = ((): Record<string, unknown> => { try { return JSON.parse(String(r.settings_json)); } catch { return {}; } })();
     return {
       id: String(r.id), tokenId: String(r.token_id), tokenName: r.token_name == null ? null : String(r.token_name), prompt: String(r.prompt),
+      engine: typeof s.engine === "string" ? { tool: s.engine } : null,
       model: s.model === "2.0" ? "2.0" : "2.5", duration: Number(s.duration ?? 5), resolution: String(s.resolution ?? "1080p"), ratio: String(s.ratio ?? "16:9"),
       audio: s.audio === true, project: r.project == null ? null : String(r.project),
       state: r.state === "opened" ? "opened" : r.state === "dismissed" ? "dismissed" : "waiting",
