@@ -108,7 +108,7 @@ export function V25CardParts() {
           <Board cards={SHOTS} label="Shots" />
           <h1 className="v25-parts-h">Card · every status and kind (mock data)</h1>
           <Board cards={KINDS} label="Kinds" />
-          <h1 className="v25-parts-h">Card · fed by a shot's takes (mock rows; ✓ ✕ call the review routes)</h1>
+          <h1 className="v25-parts-h">Card · fed by a shot’s takes (mock rows; ✓ ✕ call the review routes)</h1>
           <TakeBoard />
         </div>
       </ToastProvider>
