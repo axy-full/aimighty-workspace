@@ -17,7 +17,8 @@ import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admis
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
 import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
 import { mayReachProject } from "./draftProject";
-import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { uploadOpenableBy } from "./uploadAccess";
+import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { engineEnabled } from "./engineGate";
 import { BFL_RATES, type BflModel, type Flux2Model, type Flux3Model } from "./vendorRates";
 import { BFL_IDENTITY_SWITCH, BFL_RESULT_LIFETIME_MS, BFL_REFERENCE_LIMIT_BYTES, BFL_SWITCH, BflError, bflConfigured, fetchResult, isBflModel, isFlux3Model, pollImage, submitImage } from "./bfl";
@@ -75,8 +76,6 @@ export type BflDeps = {
   submit?: typeof submitImage; poll?: typeof pollImage; fetchImage?: typeof fetchResult;
   store?: (genId: string, bytes: Buffer) => Promise<{ url: string; bytes: number }>; clock?: () => number;
 };
-/** What the admission may be handed in a test. The public admission passes none. */
-export type BflSeams = Record<never, never>;
 
 /* ── The row ────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
@@ -185,12 +184,15 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
     projectId ??= shot.projectId;
   }
   if (projectId && !(await db().execute({ sql: "SELECT id FROM projects WHERE id=?", args: [projectId] })).rows.length) return admissionReply({ error: "That production is not in this workspace." }, { status: 404 });
-  /* The references of an edit: each of this workspace, openable by this person, an image of a measured size, naming the cast member it shows. */
+  /* The references of an edit: each of this workspace, openable by the person this request acts for (the signed-in person, or an Atomik run's owner), an image of a measured size. */
   type Ref = { uploadId: string; mp: number; ext: string; stored: string };
   const refs: Ref[] = [];
   let identityUsed: string | null = null;
   if (flow === "image") { if (body.references != null || body.identityId != null) return admissionReply({ error: "A still from words takes no references: use edit." }, { status: 400 }); }
   else {
+    /* The person this request acts for: none, and no upload (nor any identity's photos) is read. */
+    const viewer = await actingViewer();
+    if (!viewer) return admissionReply({ error: NO_ACTING_PERSON }, { status: 403 });
     let list: unknown[] = Array.isArray(body.references) ? body.references : [];
     if (tool === "identity") {
       /* The references are the identity's own photos (its cover first, at most eight). */
@@ -200,7 +202,7 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
       /* Before its photos are read: the identity must belong to THIS production (or be unfiled), and the person must be able to reach that production (a private board of someone else's is not theirs to spend on). Both refusals read as "no such identity". */
       const owner = (await db().execute({ sql: "SELECT project_id FROM identities WHERE id=? LIMIT 1", args: [identityId] })).rows[0];
       const ownerProject = owner?.project_id == null ? null : String(owner.project_id);
-      if (!owner || (ownerProject !== null && ownerProject !== projectId) || (projectId !== null && !(await mayReachProject(got.user, projectId, "admit"))))
+      if (!owner || (ownerProject !== null && ownerProject !== projectId) || (projectId !== null && !(await mayReachProject(viewer, projectId, "admit"))))
         return admissionReply({ error: "That identity is not in this workspace, or has no photos." }, { status: 404 });
       const found = (await db().execute({ sql: "SELECT photos, cover_upload_id FROM identities WHERE id=? LIMIT 1", args: [identityId] })).rows[0];
       let photos: unknown = [];
@@ -215,12 +217,11 @@ export async function admitBfl(input: Record<string, unknown>, got: AdmissionAct
     }
     if (!list.length) return admissionReply({ error: "Add one to eight reference images." }, { status: 400 });
     if (list.length > BFL_RATES.models[model as Flux2Model].maxRefs) return admissionReply({ error: `${model} takes up to ${BFL_RATES.models[model as Flux2Model].maxRefs} references.` }, { status: 400 });
-    const viewer = currentViewer();
     for (const entry of list) {
       const uploadId = entry && typeof entry === "object" ? (entry as { uploadId?: unknown }).uploadId : undefined;
       if (typeof uploadId !== "string" || !UPLOAD_ID.test(uploadId)) return admissionReply({ error: "That reference is not valid." }, { status: 400 });
       const row = (await db().execute({ sql: "SELECT ext, mime, stored_url, bytes, width, height FROM uploads WHERE id=? LIMIT 1", args: [uploadId] })).rows[0];
-      const openable = !row || !viewer || (await uploadOpenableBy(uploadId, viewer));
+      const openable = !row || (await uploadOpenableBy(uploadId, viewer));
       if (!row || !openable || !String(row.mime ?? "").startsWith("image/")) return admissionReply({ error: "Pick references from this workspace's image uploads." }, { status: 404 });
       if (Number(row.bytes) > BFL_REFERENCE_LIMIT_BYTES) return admissionReply({ error: "A reference is up to 20 MB." }, { status: 400 });
       const w = Number(row.width), h = Number(row.height);
@@ -460,7 +461,7 @@ export async function recoverBflJobs(options: { limit?: number; deadlineAt?: num
 /* ── The registry tools ────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 const COMMON = { provider: "bfl", kind: "engine" as const, route: "/api/bfl", needs: ["BFL_API_KEY", "BFL_ENABLED"], who: "prepare: anyone; approve: a person" as const, models: Object.keys(BFL_RATES.models) as BflModel[] };
-/** The two tools, declared beside their handler (docs/particl-sow-2026-10-04.md § 4.3). One route, one price path, one approval for every consumer. */
+/** The tools, declared beside their handler (docs/particl-sow-2026-10-04.md § 4.3). One route, one price path, one approval for every consumer. */
 export const BFL_TOOLS = [
   { ...COMMON, id: "flux2_image", tool: "image" as const, inputs: { prompt: "what to make", model: "flux-2-pro (default), flux-2-flex or flux-2-max", width: "a multiple of 16 (default 1024)", height: "a multiple of 16 (default 1024)", seed: "optional", maxCredits: "the approved price" }, output: "an image take" },
   { ...COMMON, id: "flux3_image", tool: "image" as const, models: Object.keys(BFL_RATES.tiered) as BflModel[], inputs: { prompt: "what to make", model: "flux-3-image (default) or flux-3-image-klein", width: "a multiple of 16, up to 4096 (default 1024)", height: "a multiple of 16, up to 4096 (default 1024)", seed: "optional", maxCredits: "the approved price" }, output: "an image take" },
