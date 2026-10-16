@@ -145,6 +145,8 @@ export function stageId(flavor: Flavor, id: string | null | undefined): string |
  *    flags as removed is a rail saved before it: it is added at its usual place, after the stage before it in the kind's list,
  *    or before the stage after it when nothing before is there. A rail is never grown past `MAX_STAGES`.
  * The next edit of the rail saves the list as shown, with a flag for every built-in stage that is not on it.
+ * One limit of that: a rail saved before v25 that already holds 24 stages has no room for the new ones, so they are not shown, and
+ * its next edit saves them flagged removed though the person never removed them. They can be added back with "+ Stage".
  */
 export function stagesOf(flavor: Flavor, saved: readonly SavedStage[] | null | undefined): Stage[] {
   const defs = builtInStages(flavor);
@@ -160,7 +162,8 @@ export function stagesOf(flavor: Flavor, saved: readonly SavedStage[] | null | u
     if (seen.has(id)) continue;
     if (!def && !s.custom) continue;
     seen.add(id);
-    if (s.removed && def) continue;
+    /* A removed flag hides the stage whatever else it says, so a flag on a custom stage can never draw more than the rail holds. */
+    if (s.removed) continue;
     out.push({ id, label: cleanLabel(s.label) ?? def?.label ?? "New stage", builtIn: def?.label ?? null, skipped: Boolean(s.skipped), custom: !def, regions: def?.regions ?? [], flavor });
   }
   for (const d of defs) {
