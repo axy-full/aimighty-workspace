@@ -2,13 +2,14 @@ import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
 import { bflTools } from "./bflImage";
+import { veoTools } from "./veoVideo";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "./approvalRule";
 import { creditUsd } from "./creditTerms";
 
 /**
- * The direct engines' tools (sync.so, and in the stack above it Sarvam and BFL) as an outside agent over MCP sees them (rule 11: the button, Make, a board
+ * The direct engines' tools (sync.so, and in the stack above it Sarvam, BFL and Veo) as an outside agent over MCP sees them (rule 11: the button, Make, a board
  * card, Atomik, a saved skill and an outside agent call the same tool, at the same price, through the same approval).
  *
  * - **Behind the same engine gate as the route.** A tool is listed, and callable, only where its own `*Tools()` says it is present for this workspace
@@ -162,7 +163,52 @@ const FLUX2_EDIT: DirectTool = {
   describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT];
+const veoPresent = (id: string) => async () => (await veoTools()).some((t) => t.id === id);
+const VEO_VIDEO: DirectTool = {
+  def: {
+    name: "veo_video",
+    description:
+      "Make a clip with its sound from words (Veo 3.1, Google). Priced first; a person approves it in Particl (or the workspace lets small jobs run). Optional first frame, or up to three reference images (8 s), " +
+      "of this workspace. Google's refusals are shown as they come. Returns a video take id; collect it with get_render.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "What to make." },
+        model: { type: "string", description: "veo-3.1-generate-preview (default) or veo-3.1-fast-generate-preview." },
+        duration_seconds: { type: "number", description: "4, 6 or 8 (default 8)." },
+        resolution: { type: "string", description: "720p (default) or 1080p (8 s only)." },
+        aspect_ratio: { type: "string", description: "16:9 (default) or 9:16." },
+        first_frame_upload_id: { type: "string", description: "Optional: an image upload of this workspace to start from." },
+        reference_upload_ids: { type: "string", description: "Optional: comma-separated upload ids, up to three (8 s)." },
+        negative_prompt: { type: "string", description: "Optional: what to avoid." },
+        seed: { type: "number" },
+        project_id: { type: "string", description: "Optional: the production it is filed under." },
+        request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." },
+      },
+      required: ["prompt"],
+    },
+  },
+  present: veoPresent("veo_video"),
+  /* Fast is the draft; Standard (the default) is the hero and always asks. */
+  draft: (b) => b.model === "veo-3.1-fast-generate-preview",
+  prepared: (b) => `prepared: ${String(b.model ?? "veo-3.1-generate-preview")} clip, ${String(b.durationSeconds ?? 8)} s, ${String(b.resolution ?? "720p")}`,
+  request: (a) => {
+    const uploads = list(a.reference_upload_ids);
+    const first = str(a.first_frame_upload_id);
+    return {
+      path: "/api/veo",
+      body: {
+        tool: "video", prompt: str(a.prompt), model: str(a.model), durationSeconds: num(a.duration_seconds), resolution: str(a.resolution), aspectRatio: str(a.aspect_ratio),
+        negativePrompt: str(a.negative_prompt), seed: num(a.seed), projectId: str(a.project_id),
+        firstFrame: first ? { uploadId: first } : undefined,
+        references: uploads.length ? uploads.map((uploadId) => ({ uploadId })) : undefined,
+      },
+    };
+  },
+  describe: (out, quote) => `Clip started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
+};
+
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT, VEO_VIDEO];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

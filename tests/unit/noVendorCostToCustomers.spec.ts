@@ -117,6 +117,15 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
           references: [{ uploadId: "up_ref", castMemberId: "cast_margin", consentId: "consent_margin", faceSha256: "b".repeat(64), megapixels: 1 }],
           funded: 1, claimedAt: at, bflId: "vendor-job-flux-1", pollingUrl: "https://api.eu.bfl.ai/v1/get_result?id=vendor-job-flux-1", statedUsd: cost.still, submittedAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1 } }),
         "u_member", at + 7, at + 7, "bfl", 0, null, null, null, "/api/media/g_flux", null] },
+      /* A Veo clip (Google): its params carry the workflow's record, the reserved dollars, the operation name and the images' upload ids.
+         Nobody reads any of it (lib/directEnginePublic.ts keeps the take's own words). */
+      { sql: take, args: ["g_veo", "p_margin", null, "video", "veo-3.1-generate-preview", "A crane at dawn",
+        JSON.stringify({ task: "veo_video", job: "other", ratio: "16:9", resolution: "720p", duration: 8, estUsd: cost.dub, estCredits: 0, veo: {
+          status: "done", model: "veo-3.1-generate-preview", durationSeconds: 8, resolution: "720p", aspectRatio: "16:9", seed: 7, negativePrompt: "text",
+          images: [{ role: "first", uploadId: "up_ref" }],
+          reservedUsd: cost.dub, estimateCredits: 32, funded: 1, claimedAt: at, operation: "models/veo-3.1-generate-preview/operations/vendor-job-veo-1",
+          submittedAt: at, sendingAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1, reconcile: 1 } }),
+        "u_member", at + 8, at + 8, "veo", 0, null, null, null, "/api/media/g_veo", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
@@ -190,6 +199,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a lip-sync take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_lipsync?sync=0", params: { id: "g_lipsync" } },
   { name: "GET /api/jobs/[id] (a Sarvam speech take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_sarvam?sync=0", params: { id: "g_sarvam" } },
   { name: "GET /api/jobs/[id] (a FLUX.2 take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_flux?sync=0", params: { id: "g_flux" } },
+  { name: "GET /api/jobs/[id] (a Veo clip)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_veo?sync=0", params: { id: "g_veo" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },

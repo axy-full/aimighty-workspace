@@ -1,0 +1,731 @@
+import { test, expect } from "@playwright/test";
+import { alignLedgerUnit } from "../helpers/ledgerUnit";
+import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { TenantWorkspace } from "../../lib/tenant";
+import type { AdmissionActor, AdmissionExecution } from "../../lib/admissionTypes";
+
+/**
+ * Veo 3.1 through the Gemini API (lib/veo.ts, lib/veoVideo.ts). Mocked: every adapter call is a function this file hands the workflow (the internal seams `admitVeo` and
+ * `advanceVeoJobWith`, which the public route and the cron do not offer), or the in-process fixture under ENGINE_MOCK=1; no request leaves this process and no
+ * provider is paid. Local temporary databases only. Neutral sample names.
+ *
+ * Unit files share one platform database per worker and the house's id with it, so figures are read before and after, never absolute.
+ */
+const dir = mkdtempSync(path.join(tmpdir(), "particl-veo-"));
+process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
+process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
+process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
+process.env.ENGINE_MOCK = "1";
+test.beforeAll(async () => { await alignLedgerUnit(); });
+test.afterEach(() => { delete process.env.VEO_ENABLED; process.env.ENGINE_MOCK = "1"; });
+
+const tenant = (id: string, over: Partial<TenantWorkspace> = {}): TenantWorkspace => ({
+  id, slug: id, name: id, legacy: id === "ws_legacy", dbUrl: `file:${path.join(dir, `${id}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true,
+  allowanceUsd: null, gatewayKeyId: null, ownerId: "u_test", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null,
+  concurrency: 50, rendersPerHour: 1000, storageQuotaBytes: null, deletedAt: null, ...over,
+} as TenantWorkspace);
+const house = () => tenant("ws_legacy");
+const OWNER: AdmissionActor = { user: { id: "owner", email: "owner@example.invalid", name: "owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] };
+let n = 0;
+const uid = (label: string) => `${label}_${Date.now().toString(36)}_${++n}`;
+const made: string[] = [];
+test.afterAll(async () => { for (const f of made) await unlink(f).catch(() => {}); });
+async function asTenant(ws: TenantWorkspace, fn: () => Promise<void>): Promise<void> {
+  const { runInTenant } = await import("../../lib/tenant");
+  await runInTenant(ws, fn, OWNER as never);
+}
+const deferred: (() => Promise<unknown>)[] = [];
+const options = (): AdmissionExecution => ({ defer: async (work) => { deferred.push(work); } });
+
+/** An image upload of this workspace, with a measured size. */
+async function image(label: string, width = 1024, height = 1024): Promise<{ id: string; bytes: Buffer }> {
+  const { db, ready } = await import("../../lib/db");
+  const { storeUpload } = await import("../../lib/storage");
+  await ready();
+  const id = uid(label);
+  const bytes = Buffer.from(`sample-image-${id}`);
+  await storeUpload(id, "png", bytes, "image/png");
+  made.push(path.join(process.cwd(), ".data", "uploads", `${id}.png`));
+  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.png`, "image/png", "png", bytes.length, "x", width, height, `uploads/${id}.png`, Date.now(), "image"] });
+  return { id, bytes };
+}
+async function project(id: string) {
+  const { db, ready } = await import("../../lib/db");
+  await ready();
+  await db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES(?,?,0)", args: [id, id] });
+}
+async function meterRows() {
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  return (await platformDb().execute("SELECT id,workspace_id,status,engine_cost_usd,overrun_usd,billed_credits,paid_by_platform FROM meter_events WHERE engine='veo' ORDER BY created_at, id")).rows;
+}
+async function gen(id: string) {
+  const { db } = await import("../../lib/db");
+  const r = (await db().execute({ sql: "SELECT status,stored_url,bytes,cost_usd,error,provider_outcome,json_extract(params,'$.veo') AS veo FROM generations WHERE id=?", args: [id] })).rows[0] as unknown as Record<string, unknown>;
+  return { status: r.status, stored_url: r.stored_url, bytes: r.bytes, cost_usd: r.cost_usd, error: r.error, provider_outcome: r.provider_outcome, veo: JSON.parse(String(r.veo)) as import("../../lib/veoVideo").VeoParams };
+}
+async function admit(input: Record<string, unknown>) {
+  const { admitVeo } = await import("../../lib/veoVideo");
+  return admitVeo(input, OWNER, options());
+}
+const person = (id: string, role: "admin" | "member" = "member", owner = false): AdmissionActor => ({ user: { id, email: `${id}@example.invalid`, name: id, role, owner, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] });
+const approved = { maxCredits: 100000 };
+const PRICE = 3.2; /* Veo 3.1 Standard, 8 s: 8 x 0.40 */
+
+function fakeVeo(over: { readyAt?: number; fail?: string; submitError?: Error; fetchErrors?: number; storeError?: Error } = {}) {
+  const calls: string[] = [];
+  const sent: { prompt: string; model: string; durationSeconds: number; resolution: string; aspectRatio: string; firstFrame?: { bytes: Buffer; mime: string }; references?: { bytes: Buffer; mime: string }[]; seed?: number; negativePrompt?: string }[] = [];
+  let polls = 0, fetchErrors = over.fetchErrors ?? 0;
+  const deps = {
+    submit: async (input: (typeof sent)[number]) => {
+      calls.push(`submit:${input.model}`); sent.push(input);
+      if (over.submitError) throw over.submitError;
+      return { operation: "models/veo-3.1-generate-preview/operations/veo_job_1" };
+    },
+    poll: async () => { polls++; calls.push("poll"); if (over.fail) return { status: "failed" as const, failure: over.fail }; return polls < (over.readyAt ?? 2) ? { status: "pending" as const } : { status: "ready" as const, resultUrl: "https://generativelanguage.googleapis.com/v1beta/files/veo1:download?alt=media" }; },
+    fetchClip: async () => { calls.push("fetch"); if (fetchErrors > 0) { fetchErrors--; throw new Error("the clip's address did not answer"); } return Buffer.from("veo-clip"); },
+    store: async (genId: string, bytes: Buffer) => { if (over.storeError) { const e = over.storeError; over.storeError = undefined; throw e; } calls.push("store"); return { url: `stored/${genId}.mp4`, bytes: bytes.length }; },
+  };
+  return { deps, calls, sent };
+}
+async function run(genId: string, deps: ReturnType<typeof fakeVeo>["deps"] & { clock?: () => number }, times = 4) {
+  const { advanceVeoJobWith } = await import("../../lib/veoVideo");
+  let last = null;
+  for (let i = 0; i < times; i++) last = await advanceVeoJobWith(genId, deps);
+  return last;
+}
+
+test("the prices are Google's published ones, verified 16 Oct 2026: per second, by model and size; the table is the one rate source; 4k and Lite are not offered", async () => {
+  const { VEO_RATES } = await import("../../lib/vendorRates");
+  const { veoQuoteUsd } = await import("../../lib/veo");
+  expect(VEO_RATES.models["veo-3.1-generate-preview"].usdPerSecond).toEqual({ "720p": 0.4, "1080p": 0.4 });
+  expect(VEO_RATES.models["veo-3.1-fast-generate-preview"].usdPerSecond).toEqual({ "720p": 0.1, "1080p": 0.12 });
+  expect(Object.keys(VEO_RATES.models)).toHaveLength(2);
+  expect(VEO_RATES.resolutions).toEqual(["720p", "1080p"]);
+  expect(readFileSync("lib/vendorRates.ts", "utf8")).toMatch(/Verified against Google's pricing page[\s\S]{0,200}16 Oct 2026; confirm against the first invoice[\s\S]{0,1800}export const VEO_RATES/);
+  expect(veoQuoteUsd({ model: "veo-3.1-generate-preview", resolution: "720p", durationSeconds: 8 })).toBeCloseTo(3.2, 6);
+  expect(veoQuoteUsd({ model: "veo-3.1-generate-preview", resolution: "1080p", durationSeconds: 8 })).toBeCloseTo(3.2, 6);
+  expect(veoQuoteUsd({ model: "veo-3.1-generate-preview", resolution: "720p", durationSeconds: 4 })).toBeCloseTo(1.6, 6);
+  expect(veoQuoteUsd({ model: "veo-3.1-fast-generate-preview", resolution: "720p", durationSeconds: 6 })).toBeCloseTo(0.6, 6);
+  expect(veoQuoteUsd({ model: "veo-3.1-fast-generate-preview", resolution: "1080p", durationSeconds: 8 })).toBeCloseTo(0.96, 6);
+});
+
+test("off: with the switch off, or a workspace not on the list, there is no tool and nothing is metered; a listed workspace is offered the clip", async () => {
+  const { veoTools } = await import("../../lib/veoVideo");
+  await asTenant(house(), async () => {
+    const before = (await meterRows()).length;
+    delete process.env.VEO_ENABLED;
+    expect(await veoTools()).toEqual([]);
+    expect(await admit({ tool: "video", prompt: "a tree", ...approved })).toMatchObject({ status: 404, body: { error: "There is no such tool here." } });
+    for (const odd of ["0", "true", "yes", ""]) { process.env.VEO_ENABLED = odd; expect(await veoTools(), odd).toEqual([]); }
+    process.env.VEO_ENABLED = "1";
+    const on = await veoTools();
+    expect(on.map((t) => t.id)).toEqual(["veo_video"]);
+    expect(on.every((t) => t.provider === "google" && t.route === "/api/veo" && t.models.join() === "veo-3.1-generate-preview,veo-3.1-fast-generate-preview")).toBe(true);
+    expect((await meterRows()).length).toBe(before);
+  });
+  process.env.VEO_ENABLED = "1";
+  await asTenant(tenant("ws_veo_unlisted"), async () => {
+    expect(await veoTools()).toEqual([]);
+    expect(await admit({ tool: "video", prompt: "a tree", quoteOnly: true })).toMatchObject({ status: 404 });
+  });
+});
+
+test("the quote, and every input refused in words before anything is reserved; a quote writes nothing", async () => {
+  process.env.VEO_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const before = (await meterRows()).length;
+    const q = await admit({ tool: "video", prompt: "a paper boat on a puddle", quoteOnly: true });
+    expect(q).toMatchObject({ status: 200, body: { tool: "video", model: "veo-3.1-generate-preview", durationSeconds: 8, resolution: "720p", aspectRatio: "16:9", images: 0, unit: "usd", estimatedCredits: 32 } });
+    expect(Number(q.body.price)).toBeCloseTo(PRICE, 6);
+    const fast = await admit({ tool: "video", prompt: "a boat", model: "veo-3.1-fast-generate-preview", resolution: "1080p", quoteOnly: true });
+    expect(Number(fast.body.price)).toBeCloseTo(0.96, 6);
+    expect(Number((await admit({ tool: "video", prompt: "a boat", model: "veo-3.1-fast-generate-preview", durationSeconds: 4, quoteOnly: true })).body.price)).toBeCloseTo(0.4, 6);
+    const refused: [Record<string, unknown>, RegExp][] = [
+      [{ tool: "image" }, /Pick video/],
+      [{ tool: "video", prompt: "" }, /Write what to make/],
+      [{ tool: "video", prompt: "x".repeat(5001) }, /5,000 characters/],
+      [{ tool: "video", prompt: "a", model: "veo-4" }, /Pick veo-3.1-generate-preview or veo-3.1-fast-generate-preview/],
+      [{ tool: "video", prompt: "a", durationSeconds: 5 }, /4, 6, 8 seconds/],
+      [{ tool: "video", prompt: "a", durationSeconds: 6, resolution: "1080p" }, /1080p clips are 8 seconds/],
+      [{ tool: "video", prompt: "a", resolution: "4k" }, /720p or 1080p/],
+      [{ tool: "video", prompt: "a", aspectRatio: "1:1" }, /16:9 or 9:16/],
+      [{ tool: "video", prompt: "a", seed: -1 }, /seed/],
+      [{ tool: "video", prompt: "a", negativePrompt: "x".repeat(1001) }, /1,000 characters/],
+      [{ tool: "video", prompt: "a", references: "u1" }, /list/],
+      [{ tool: "video", prompt: "a", references: Array.from({ length: 4 }, (_, i) => ({ uploadId: `u${i}` })) }, /At most 3/],
+      [{ tool: "video", prompt: "a", firstFrame: { uploadId: "u1" }, references: [{ uploadId: "u2" }] }, /not both/],
+      [{ tool: "video", prompt: "a", firstFrame: { uploadId: "../x" } }, /not valid/],
+      [{ tool: "video", prompt: "a", firstFrame: { uploadId: "up_not_here" } }, /PNG, JPEG or WebP/],
+    ];
+    for (const [input, words] of refused) {
+      const reply = await admit({ ...input, quoteOnly: true });
+      expect(reply.status, JSON.stringify(input)).toBeGreaterThanOrEqual(400);
+      expect(String(reply.body.error), JSON.stringify(input)).toMatch(words);
+    }
+    const ref = await image("ref");
+    expect(await admit({ tool: "video", prompt: "a", firstFrame: { uploadId: ref.id }, quoteOnly: true })).toMatchObject({ status: 200, body: { images: 1 } });
+    /* References need 8 s: a six-second clip from them is refused, an eight-second one is quoted at the same price (a reference costs nothing extra). */
+    const six = await admit({ tool: "video", prompt: "a", durationSeconds: 6, references: [{ uploadId: ref.id }], quoteOnly: true });
+    expect(six).toMatchObject({ status: 400 });
+    expect(String(six.body.error)).toMatch(/8 seconds/);
+    const refs = await admit({ tool: "video", prompt: "a", aspectRatio: "9:16", references: [{ uploadId: ref.id }], quoteOnly: true });
+    expect(refs).toMatchObject({ status: 200, body: { images: 1 } });
+    expect(Number(refs.body.price)).toBeCloseTo(PRICE, 6);
+    expect((await meterRows()).length).toBe(before);
+  });
+});
+
+test("approval: a price that is not approved, or is above the approved amount, runs and writes nothing", async () => {
+  process.env.VEO_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const { db } = await import("../../lib/db");
+    const before = (await meterRows()).length;
+    const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    for (const bad of [{}, { maxCredits: 0 }, { maxCredits: "5" }, { maxCredits: 1.5 }, { maxCredits: 31 }]) expect((await admit({ tool: "video", prompt: "a tree", ...bad })).status, JSON.stringify(bad)).toBe(409);
+    expect((await meterRows()).length).toBe(before);
+    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
+  });
+});
+
+test("the cost approval rule: with a cap per shot, a member's clip past the cap is refused (403, needs an admin) for a quote and a press before any take is written; an admin and a shot with room go through", async () => {
+  const { db } = await import("../../lib/db");
+  const { invalidateSettings } = await import("../../lib/settings");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { admitVeo } = await import("../../lib/veoVideo");
+  const { platformDb } = await import("../../lib/platform");
+  process.env.VEO_ENABLED = "1";
+  const member: AdmissionActor = { user: { id: "u_member", email: "m@example.invalid", name: "m", role: "member", owner: false, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] };
+  const asMember = (input: Record<string, unknown>) => runInTenant(house(), () => admitVeo(input, member, options()), member as never);
+  const setting = async (rule: string, cap: number) => {
+    await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES('approvalRule',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [rule] });
+    await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES('shotCapCredits',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [String(cap)] });
+    invalidateSettings();
+  };
+  await asTenant(house(), async () => {
+    const prod = uid("prod"), roomy = uid("shot_roomy"), tight = uid("shot_tight");
+    await project(prod);
+    for (const [id, code] of [[roomy, "S1"], [tight, "S2"]] as const) await db().execute({ sql: "INSERT INTO shots(id,project_id,code,title,description,setup,created_at,updated_at) VALUES(?,?,?,?,?,?,1,1)", args: [id, prod, code, "t", "", "{}"] });
+    const gens = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    const meters = async () => Number((await platformDb().execute("SELECT COUNT(*) AS n FROM meter_events WHERE engine='veo'")).rows[0].n);
+    try {
+      /* The clip is 32 cr at the house's cost; a cap of 1 cr per shot cannot hold it. */
+      await setting("cap", 1);
+      const before = [await gens(), await meters()];
+      for (const extra of [{ quoteOnly: true }, approved]) {
+        const reply = await asMember({ tool: "video", prompt: "a tree", shotId: tight, ...extra });
+        expect(reply, JSON.stringify(extra)).toMatchObject({ status: 403, body: { needsAdmin: true, error: expect.stringContaining("S2") } });
+        expect(String(reply.body.error)).toMatch(/An admin has to press this one/);
+      }
+      expect([await gens(), await meters()]).toEqual(before);
+      /* An admin's own press is what goes through: an admin's token, an agent run and an Atomik Auto step are machines, held to the cap like a member. */
+      const adminToken: AdmissionActor = { ...person("u_admin_tok", "admin", true), token: { id: "tok_admin", name: "agent", scope: "render" as const, capUsd: null } } as never;
+      const tokenReply = await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, adminToken, options()), adminToken as never);
+      expect(tokenReply).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      const autoReply = await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, person("u_admin", "admin", true), { ...options(), run: { auto: true } } as never), person("u_admin", "admin", true) as never);
+      expect(autoReply).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      const agentRun = person("agent:run_x", "admin", true);
+      expect(await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, agentRun, options()), agentRun as never)).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      /* An admin goes through; a clip filed on no shot is not a shot's to cap. */
+      expect((await admit({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true })).status).toBe(200);
+      expect((await asMember({ tool: "video", prompt: "a tree", quoteOnly: true })).status).toBe(200);
+      /* A cap with room, or the rule off, lets the member's through. */
+      await setting("cap", 10_000);
+      expect((await asMember({ tool: "video", prompt: "a tree", shotId: roomy, quoteOnly: true })).status).toBe(200);
+      await setting("off", 1);
+      expect((await asMember({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true })).status).toBe(200);
+    } finally {
+      await db().execute("DELETE FROM settings WHERE key IN ('approvalRule','shotCapCredits')");
+      invalidateSettings();
+    }
+  });
+});
+
+test("a clip from words: submit, poll, fetch the moment it is done, store under the workspace, settle at the quote and mark it to reconcile; never above the quote", async () => {
+  process.env.VEO_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const before = (await meterRows()).length;
+    const handedOff = deferred.length;
+    const reply = await admit({ tool: "video", prompt: "a crane at dawn", seed: 11, negativePrompt: "text", ...approved });
+    expect(reply.status).toBe(200);
+    expect(deferred.length).toBe(handedOff + 1);
+    const genId = String(reply.body.id);
+    const held = (await meterRows()).slice(before);
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({ id: genId, status: "running" });
+    expect(Number(held[0].engine_cost_usd)).toBeCloseTo(PRICE, 6);
+    const vendor = fakeVeo();
+    const veo = await run(genId, vendor.deps, 4);
+    expect(veo).toMatchObject({ status: "done", settled: 1 });
+    expect(vendor.calls).toEqual(["submit:veo-3.1-generate-preview", "poll", "poll", "fetch", "store"]);
+    expect(vendor.sent[0]).toMatchObject({ prompt: "a crane at dawn", durationSeconds: 8, resolution: "720p", aspectRatio: "16:9", seed: 11, negativePrompt: "text" });
+    expect(vendor.sent[0].firstFrame).toBeUndefined();
+    const take = await gen(genId);
+    expect(take).toMatchObject({ status: "succeeded", stored_url: `stored/${genId}.mp4` });
+    expect(Number(take.cost_usd)).toBeCloseTo(PRICE, 6);
+    const settled = (await meterRows()).slice(before);
+    expect(settled[0]).toMatchObject({ id: genId, status: "succeeded" });
+    expect(Number(settled[0].engine_cost_usd)).toBeCloseTo(PRICE, 6);
+    expect(Number(settled[0].billed_credits ?? 0)).toBe(0);
+    /* Google states no figure: settled at the quote and marked to reconcile. */
+    expect(take.veo.reconcile).toBe(1);
+    const { db } = await import("../../lib/db");
+    expect(Number((await db().execute({ sql: "SELECT duration_s FROM generations WHERE id=?", args: [genId] })).rows[0].duration_s)).toBe(8);
+    /* Another step on a finished job does nothing. */
+    const again = fakeVeo();
+    await run(genId, again.deps, 2);
+    expect(again.calls).toEqual([]);
+    /* Never billed above the quote: a figure past it settles at the quote, the excess recorded as the overrun and marked to reconcile. */
+    const id = String((await admit({ tool: "video", prompt: "a crane", ...approved })).body.id);
+    const { settleVeo } = await import("../../lib/veoVideo");
+    await settleVeo(id, "done", { costUsd: 9, storedUrl: `stored/${id}.mp4`, bytes: 1 });
+    const done = await gen(id);
+    expect(Number(done.cost_usd)).toBeCloseTo(PRICE, 6);
+    expect(done.veo.reconcile).toBe(1);
+    const line = (await meterRows()).find((r) => r.id === id)!;
+    expect(Number(line.engine_cost_usd)).toBeCloseTo(PRICE, 6);
+    expect(Number(line.overrun_usd)).toBeCloseTo(9 - PRICE, 6);
+    expect(Number(line.billed_credits ?? 0)).toBe(0);
+  });
+});
+
+test("the clip is settled at what it measures: a clip shorter than asked costs its seconds times the rate, never above the quote; one longer than asked, or unreadable, settles at the quote; all marked to reconcile", async () => {
+  process.env.VEO_ENABLED = "1";
+  const u32 = (n: number) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+  const box = (type: string, ...parts: Buffer[]) => { const body = Buffer.concat(parts); return Buffer.concat([u32(8 + body.length), Buffer.from(type, "latin1"), body]); };
+  const clipOf = (seconds: number) => Buffer.concat([box("ftyp", Buffer.from("isom0000")), box("moov", box("mvhd", Buffer.from([0, 0, 0, 0]), u32(0), u32(0), u32(1000), u32(Math.round(seconds * 1000)), Buffer.alloc(80)))]);
+  const { db } = await import("../../lib/db");
+  await asTenant(house(), async () => {
+    const make = async (bytes: Buffer | null, body: Record<string, unknown> = {}) => {
+      const id = String((await admit({ tool: "video", prompt: "a crane", ...body, ...approved })).body.id);
+      const vendor = fakeVeo();
+      if (bytes) vendor.deps.fetchClip = (async () => { vendor.calls.push("fetch"); return bytes; }) as typeof vendor.deps.fetchClip;
+      await run(id, vendor.deps, 4);
+      const take = await gen(id);
+      const secs = Number((await db().execute({ sql: "SELECT duration_s FROM generations WHERE id=?", args: [id] })).rows[0].duration_s);
+      const line = (await meterRows()).find((r) => r.id === id)!;
+      return { take, line, secs };
+    };
+    /* Asked 8 s, got 4: 4 x 0.40. */
+    const shorter = await make(clipOf(4));
+    expect(shorter.take.status).toBe("succeeded");
+    expect(Number(shorter.take.cost_usd)).toBeCloseTo(1.6, 6);
+    expect(Number(shorter.line.engine_cost_usd)).toBeCloseTo(1.6, 6);
+    expect(shorter.take.veo.reconcile).toBe(1);
+    expect(shorter.secs).toBeCloseTo(4, 3);
+    expect(shorter.line.overrun_usd ?? null).toBeNull();
+    /* Billed per second: rounded up to whole seconds (a container's rounding of a whole-second clip, under a frame past it, is not a second more). */
+    for (const [length, billed] of [[7.96, 8], [6.04, 6], [4.0003, 4], [4.2, 5], [3.5, 4], [7.5, 8]] as const) {
+      const r = await make(clipOf(length));
+      expect(Number(r.take.cost_usd), String(length)).toBeCloseTo(Math.min(PRICE, billed * 0.4), 6);
+      expect(r.secs, String(length)).toBeCloseTo(length, 3);
+    }
+    /* A header that bills as nothing is not a length: the quote stands, and the take keeps the length asked for. */
+    for (const length of [0.001, 0.03, 0.05]) {
+      const r = await make(clipOf(length));
+      expect(r.take.status, String(length)).toBe("succeeded");
+      expect(Number(r.take.cost_usd), String(length)).toBeCloseTo(PRICE, 6);
+      expect(Number(r.line.engine_cost_usd), String(length)).toBeCloseTo(PRICE, 6);
+      expect(r.take.veo.reconcile, String(length)).toBe(1);
+      expect(r.secs, String(length)).toBe(8);
+    }
+    /* The Fast model at 1080p is measured at its own rate: 5 s x 0.12 of an asked 8 s. */
+    const fast = await make(clipOf(5), { model: "veo-3.1-fast-generate-preview", resolution: "1080p" });
+    expect(Number(fast.take.cost_usd)).toBeCloseTo(0.6, 6);
+    /* As asked, longer than asked, unreadable or empty of a header: the quote, never more. */
+    for (const [bytes, label] of [[clipOf(8), "as asked"], [clipOf(12), "longer"], [Buffer.from("veo-clip"), "unreadable"]] as const) {
+      const r = await make(bytes);
+      expect(Number(r.take.cost_usd), label).toBeCloseTo(PRICE, 6);
+      expect(Number(r.line.engine_cost_usd), label).toBeCloseTo(PRICE, 6);
+      expect(r.line.overrun_usd ?? null, label).toBeNull();
+      expect(r.take.veo.reconcile, label).toBe(1);
+    }
+    expect((await make(Buffer.from("veo-clip"))).secs).toBe(8);
+  });
+});
+
+test("a failure bills nothing: a blocked or failed clip, a refusal before work (a throttle too); the person is told 'Nothing billed' and the ledger line records nothing, because Google charges only for a clip it generates", async () => {
+  const { VeoError } = await import("../../lib/veo");
+  process.env.VEO_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const before = (await meterRows()).length;
+    const failedBy = async (over: Parameters<typeof fakeVeo>[0]) => {
+      const id = String((await admit({ tool: "video", prompt: "a crane", ...approved })).body.id);
+      const vendor = fakeVeo(over);
+      await run(id, vendor.deps, 3);
+      return { id, vendor, take: await gen(id) };
+    };
+    const blocked = await failedBy({ fail: "Google's safety filter stopped this." });
+    expect(blocked.take.status).toBe("failed");
+    expect(String(blocked.take.error)).toMatch(/Nothing was billed/);
+    expect(Number(blocked.take.cost_usd)).toBe(0);
+    expect(blocked.take.veo.reconcile).toBe(0);
+    expect(JSON.parse(String(blocked.take.provider_outcome))).toMatchObject({ provider: "google", stage: "run", billing: { state: "not_charged" } });
+    expect(blocked.vendor.calls).not.toContain("fetch");
+    const errored = await failedBy({ fail: "Google could not make this clip." });
+    expect(errored.take.status).toBe("failed");
+    expect(JSON.parse(String(errored.take.provider_outcome))).toMatchObject({ provider: "google", stage: "run" });
+    const throttled = await failedBy({ submitError: new VeoError("Google refused the request: quota", 429, true) });
+    expect(throttled.take.status).toBe("failed");
+    expect(JSON.parse(String(throttled.take.provider_outcome))).toMatchObject({ provider: "google", stage: "submit", code: "http_429" });
+    expect(String(throttled.take.error)).toMatch(/Nothing was billed/);
+    const rows = (await meterRows()).slice(before);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.status === "failed" && Number(r.engine_cost_usd) === 0 && Number(r.billed_credits ?? 0) === 0)).toBe(true);
+  });
+});
+
+test("a lost acknowledgement is never sent again, and a job that never got to its submit settles at nothing", async () => {
+  const { VeoError } = await import("../../lib/veo");
+  const { recoverVeoJobs, advanceVeoJobWith } = await import("../../lib/veoVideo");
+  const { db } = await import("../../lib/db");
+  process.env.VEO_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const id = String((await admit({ tool: "video", prompt: "a crane", ...approved })).body.id);
+    const lost = fakeVeo({ submitError: new VeoError("Google did not answer.") });
+    expect(await run(id, lost.deps, 1)).toMatchObject({ status: "uncertain", settled: 0 });
+    expect(String((await gen(id)).error)).toMatch(/will not be sent again/);
+    expect((await meterRows()).find((r) => r.id === id)).toMatchObject({ status: "running" });
+    const again = fakeVeo();
+    await run(id, again.deps, 3);
+    await recoverVeoJobs({ limit: 50 }, again.deps);
+    expect(again.calls).toEqual([]);
+    for (const [sendingAt, want] of [[null, "failed"], [1, "uncertain"]] as const) {
+      const id2 = String((await admit({ tool: "video", prompt: "a crane", ...approved })).body.id);
+      await db().execute({ sql: "UPDATE generations SET params=json_set(params,'$.veo.claimedAt',1,'$.veo.sendingAt',?) WHERE id=?", args: [sendingAt, id2] });
+      const vendor = fakeVeo();
+      expect(await advanceVeoJobWith(id2, { ...vendor.deps, clock: () => Date.now() + 3_600_000 }), String(sendingAt)).toMatchObject({ status: want });
+      expect(vendor.calls).toEqual([]);
+      expect((await meterRows()).find((r) => r.id === id2)).toMatchObject({ status: want === "failed" ? "failed" : "running" });
+    }
+  });
+});
+
+test("the two days: a clip that is done is fetched at once; a fetch that fails is retried while its address lives; past the window it is lost, recorded at the quote (Google made it), billed to nobody, and said so; an operation that never finishes is let go at nothing", async () => {
+  const { VEO_RESULT_LIFETIME_MS, VEO_OPERATION_LIMIT_MS, advanceVeoJobWith } = await import("../../lib/veoVideo");
+  expect(VEO_RESULT_LIFETIME_MS).toBe(2 * 86_400_000);
+  process.env.VEO_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const a = String((await admit({ tool: "video", prompt: "a crane", ...approved })).body.id);
+    const flaky = fakeVeo({ readyAt: 1, fetchErrors: 1 });
+    await expect(advanceVeoJobWith(a, flaky.deps)).rejects.toThrow();
+    expect((await gen(a)).status).toBe("running");
+    expect((await gen(a)).veo.readyAt).not.toBeNull();
+    await run(a, flaky.deps, 2);
+    expect((await gen(a)).status).toBe("succeeded");
+    const b = String((await admit({ tool: "video", prompt: "a crane", ...approved })).body.id);
+    const dead = fakeVeo({ readyAt: 1, fetchErrors: 99 });
+    await expect(advanceVeoJobWith(b, dead.deps)).rejects.toThrow();
+    const late = await advanceVeoJobWith(b, { ...dead.deps, clock: () => Date.now() + VEO_RESULT_LIFETIME_MS });
+    expect(late).toMatchObject({ status: "failed", settled: 1 });
+    const lost = await gen(b);
+    expect(String(lost.error)).toMatch(/could not be saved in time\. Nothing was billed/);
+    expect(Number(lost.cost_usd)).toBeCloseTo(PRICE, 6);
+    expect(lost.veo.reconcile).toBe(1);
+    const line = (await meterRows()).find((r) => r.id === b)!;
+    expect(line).toMatchObject({ status: "failed" });
+    expect(Number(line.engine_cost_usd)).toBeCloseTo(PRICE, 6);
+    expect(Number(line.billed_credits ?? 0)).toBe(0);
+    /* Never finishes: pending past the limit, settled at nothing and marked to reconcile. */
+    const c = String((await admit({ tool: "video", prompt: "a crane", ...approved })).body.id);
+    const stuck = fakeVeo({ readyAt: 999 });
+    await advanceVeoJobWith(c, stuck.deps);
+    const gone = await advanceVeoJobWith(c, { ...stuck.deps, clock: () => Date.now() + VEO_OPERATION_LIMIT_MS + 1000 });
+    expect(gone).toMatchObject({ status: "failed", settled: 1 });
+    const never = await gen(c);
+    expect(String(never.error)).toMatch(/did not finish this clip\. Nothing was billed/);
+    expect(Number(never.cost_usd)).toBe(0);
+    expect(never.veo.reconcile).toBe(1);
+    expect(Number((await meterRows()).find((r) => r.id === c)!.engine_cost_usd)).toBe(0);
+  });
+});
+
+test("two workers at once submit once; a storage failure keeps the job and the next pass finishes it", async () => {
+  const { advanceVeoJobWith } = await import("../../lib/veoVideo");
+  process.env.VEO_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const id = String((await admit({ tool: "video", prompt: "a crane", ...approved })).body.id);
+    const vendor = fakeVeo({ readyAt: 1, storeError: new Error("storage is busy") });
+    await Promise.allSettled([advanceVeoJobWith(id, vendor.deps), advanceVeoJobWith(id, vendor.deps)]);
+    expect(vendor.calls.filter((c) => c.startsWith("submit")).length).toBe(1);
+    await run(id, vendor.deps, 3);
+    expect((await gen(id)).status).toBe("succeeded");
+    expect(vendor.calls.filter((c) => c.startsWith("submit")).length).toBe(1);
+  });
+});
+
+test("an image: a first frame or references go up as data with their type, with no face check; the take's record names them by upload id only; a person reads none of it", async () => {
+  const { db } = await import("../../lib/db");
+  const { rowToGeneration } = await import("../../lib/jobs");
+  process.env.VEO_ENABLED = "1";
+  await asTenant(house(), async () => {
+    const a = await image("ref_a"), b = await image("ref_b");
+    const refsInput = { tool: "video", prompt: "her, walking", references: [{ uploadId: a.id }, { uploadId: b.id }], ...approved };
+    const frameInput = { tool: "video", prompt: "her, walking", firstFrame: { uploadId: a.id }, ...approved };
+    const reply = await admit(refsInput);
+    expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+    const genId = String(reply.body.id);
+    const vendor = fakeVeo();
+    await run(genId, vendor.deps, 4);
+    expect(vendor.sent[0].references?.map((r) => [r.bytes.toString(), r.mime])).toEqual([[a.bytes.toString(), "image/png"], [b.bytes.toString(), "image/png"]]);
+    expect(vendor.sent[0].firstFrame).toBeUndefined();
+    const take = await gen(genId);
+    expect(take.status).toBe("succeeded");
+    expect(Number(take.cost_usd)).toBeCloseTo(PRICE, 6);
+    expect(take.veo.images).toEqual([{ role: "reference", uploadId: a.id }, { role: "reference", uploadId: b.id }]);
+    expect(JSON.stringify(take.veo)).not.toMatch(/base64|sample-image|castMember|consent|faceSha/);
+    /* A first frame goes as the frame. */
+    const framed = String((await admit(frameInput)).body.id);
+    const vf = fakeVeo();
+    await run(framed, vf.deps, 4);
+    expect(vf.sent[0].firstFrame?.bytes.toString()).toBe(a.bytes.toString());
+    expect(vf.sent[0].references).toBeUndefined();
+    /* A person reads none of the working record. */
+    const raw = (await db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [genId] })).rows[0];
+    const read = rowToGeneration({ ...raw, project_name: null }) as unknown as { params: Record<string, unknown> };
+    expect(read.params.veo).toEqual({ status: "done", model: "veo-3.1-generate-preview", durationSeconds: 8, resolution: "720p", aspectRatio: "16:9" });
+    expect(JSON.stringify(read.params.veo)).not.toMatch(/veo_job_1|operation|up_|ref_a|usd|seed|images|negative/i);
+    /* Google's refusal of an image is shown as it comes, and nothing is billed. */
+    const { VeoError } = await import("../../lib/veo");
+    const refused = String((await admit(frameInput)).body.id);
+    await run(refused, fakeVeo({ submitError: new VeoError("Google refused the request: the image shows a person it cannot use", 400, true) }).deps, 2);
+    const shown = await gen(refused);
+    expect(shown.status).toBe("failed");
+    expect(String(shown.error)).toBe("Google refused the request: the image shows a person it cannot use Nothing was billed.");
+    expect(Number(shown.cost_usd)).toBe(0);
+  });
+  /* A listed customer workspace may use an image too: there is no house-only face check. */
+  const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
+  await platformReady();
+  const ws = "ws_veo_image_listed";
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour) VALUES(?,?,?,?,1,'owner',0,0,20,200)", args: [ws, ws, ws, `file:${path.join(dir, ws + ".db")}`] });
+  await grantCredits(ws, 500, "Test", "owner", "manual");
+  const site = (await platformDb().execute("SELECT value FROM platform_layer WHERE key='site'")).rows[0]?.value;
+  try {
+    await platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify({ enginesOnWorkspaces: [ws] })] });
+    await asTenant((await getWorkspace(ws))!, async () => {
+      const ref = await image("ref_c");
+      expect(await admit({ tool: "video", prompt: "a", firstFrame: { uploadId: ref.id }, ...approved })).toMatchObject({ status: 200 });
+    });
+  } finally {
+    if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
+  }
+});
+
+test("a listed customer workspace pays exactly the quote in credits, once, and a failure refunds it; at its own $0 cap it is refused 429 with nothing held, written or sent", async () => {
+  const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
+  const { creditState } = await import("../../lib/credits");
+  const { billCredits } = await import("../../lib/creditTerms");
+  const { db, ready } = await import("../../lib/db");
+  const { VeoError } = await import("../../lib/veo");
+  await platformReady();
+  const listed = "ws_veo_listed", capped = "ws_veo_cap0";
+  for (const [id, cap] of [[listed, null], [capped, 0]] as const) {
+    await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour,allowance_usd) VALUES(?,?,?,?,1,'owner',0,0,20,200,?)", args: [id, id, id, `file:${path.join(dir, id + ".db")}`, cap] });
+    await grantCredits(id, 500, "Test", "owner", "manual");
+  }
+  const site = (await platformDb().execute("SELECT value FROM platform_layer WHERE key='site'")).rows[0]?.value;
+  try {
+    await platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify({ enginesOnWorkspaces: [listed, capped] })] });
+    process.env.VEO_ENABLED = "1";
+    await asTenant((await getWorkspace(listed))!, async () => {
+      const expected = billCredits(PRICE, "veo-3.1-generate-preview");
+      expect(await admit({ tool: "video", prompt: "a crane", quoteOnly: true })).toMatchObject({ body: { unit: "cr", estimatedCredits: expected } });
+      const start = (await creditState())!.balance;
+      expect((await admit({ tool: "video", prompt: "a crane", maxCredits: expected - 1 })).status).toBe(409);
+      expect((await creditState())!.balance).toBe(start);
+      const id = String((await admit({ tool: "video", prompt: "a crane", maxCredits: expected })).body.id);
+      expect((await creditState())!.balance).toBeCloseTo(start - expected, 6);
+      await run(id, fakeVeo().deps, 4);
+      expect((await creditState())!.balance).toBeCloseTo(start - expected, 6);
+      const mine = (await meterRows()).filter((r) => r.workspace_id === listed);
+      expect(mine).toHaveLength(1);
+      expect(Number(mine[0].billed_credits)).toBe(expected);
+      /* A failure refunds it. */
+      const bad = String((await admit({ tool: "video", prompt: "a crane", maxCredits: expected })).body.id);
+      await run(bad, fakeVeo({ submitError: new VeoError("Google refused the request: no", 400, true) }).deps, 2);
+      expect((await creditState())!.balance).toBeCloseTo(start - expected, 6);
+    });
+    await asTenant((await getWorkspace(capped))!, async () => {
+      await ready();
+      const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+      const handedOff = deferred.length;
+      const reply = await admit({ tool: "video", prompt: "a crane", ...approved });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(429);
+      expect(String(reply.body.error)).toMatch(/monthly cap on the platform's engines/);
+      expect(String(reply.body.error)).not.toMatch(/\$|\d/);
+      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
+      expect((await platformDb().execute({ sql: "SELECT id FROM meter_events WHERE workspace_id=?", args: [capped] })).rows).toEqual([]);
+      expect(deferred.length).toBe(handedOff);
+    });
+  } finally {
+    if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
+  }
+});
+
+test("over MCP: veo_video is listed only where the engine is on; Ask files a prepared job and starts nothing; Auto starts only the Fast draft at or under the per-job line and Standard always asks; the caller cannot approve", async () => {
+  const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
+  const { setSetting, invalidateSettings } = await import("../../lib/settings");
+  const { db, ready } = await import("../../lib/db");
+  const { jobApprovalLineCredits } = await import("../../lib/approvalRule");
+  const { creditUsd } = await import("../../lib/creditTerms");
+  const line = jobApprovalLineCredits(creditUsd());
+  const spend = async (value: string | null) => { if (value === null) await db().execute("DELETE FROM settings WHERE key='spendWithoutAsking'"); else await setSetting("spendWithoutAsking", value, "admin"); invalidateSettings(); };
+  let credits = 1;
+  const calls: Record<string, unknown>[] = [];
+  const paths: string[] = [];
+  const call = async (p: string, init: { body?: unknown } = {}) => { const body = init.body as Record<string, unknown>; paths.push(p); calls.push(body); if (p === "/api/prepared-jobs") return { job: { id: "prep_v1" } }; return body.quoteOnly === true ? { estimatedCredits: credits, price: credits / 10, unit: "usd" } : { id: "gen_v1" }; };
+  const FAST = "veo-3.1-fast-generate-preview";
+  await asTenant(house(), async () => {
+    await ready();
+    delete process.env.VEO_ENABLED;
+    expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("veo_video");
+    await expect(runDirectEngineTool("veo_video", { prompt: "a tree" }, call)).rejects.toThrow("There is no such tool here.");
+    process.env.VEO_ENABLED = "1";
+    expect((await directEngineMcpTools()).map((t) => t.name)).toContain("veo_video");
+    try {
+      /* Ask (the default, and anything but an exact "auto"): priced, filed for a person, nothing sent, for either model. */
+      for (const mode of [null, "ask", "AUTO"]) {
+        for (const model of [undefined, FAST]) {
+          await spend(mode); calls.length = 0; paths.length = 0; credits = 32;
+          const text = await runDirectEngineTool("veo_video", { prompt: "a tree", ...(model ? { model } : {}) }, call);
+          expect(text, `${mode} ${model}`).toMatch(new RegExp(`^Priced and prepared, not started\\.\\n\\nprice: \\$3\\.20\\nprepared: ${model ?? "veo-3.1-generate-preview"} clip, 8 s, 720p\\nprepared job: prep_v1\\n\\nThis needs a person's approval: nothing was started or spent`));
+          expect(paths).toEqual(["/api/veo", "/api/prepared-jobs"]);
+          expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null])).toEqual([[true, null], [false, null]]);
+          expect(calls[1]).toMatchObject({ engine: "veo_video", args: { tool: "video", prompt: "a tree" } });
+          expect(JSON.stringify(calls[1])).not.toMatch(/maxCredits|quoteOnly/i);
+        }
+      }
+      /* Auto: Standard is the hero and always asks, at any price. */
+      await spend("auto");
+      for (const c of [1, line]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("veo_video", { prompt: "a tree" }, call), `standard ${c}`).toMatch(/not started[\s\S]*prepared job: prep_v1[\s\S]*needs a person's approval/);
+        expect(calls.some((x) => x.maxCredits !== undefined)).toBe(false);
+      }
+      /* Auto: the Fast draft starts at or under the line, at the server's price; above the line (guardrail 4) it asks. */
+      for (const c of [1, line]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("veo_video", { prompt: "a tree", model: FAST }, call), `fast ${c}`).toMatch(/^Clip started\.\n\nid: gen_v1/);
+        expect(calls.map((x) => [x.quoteOnly === true, x.maxCredits ?? null, x.tool, x.model])).toEqual([[true, null, "video", FAST], [false, c, "video", FAST]]);
+      }
+      for (const c of [line + 1, 900]) {
+        credits = c; calls.length = 0;
+        expect(await runDirectEngineTool("veo_video", { prompt: "a tree", model: FAST }, call), `fast ${c}`).toMatch(/not started[\s\S]*needs a person's approval/);
+        expect(calls.some((x) => x.maxCredits !== undefined)).toBe(false);
+      }
+      /* The caller cannot approve: a price in the arguments is refused, and nothing is called. */
+      credits = 1;
+      for (const mode of ["ask", "auto"]) {
+        await spend(mode); calls.length = 0;
+        for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) await expect(runDirectEngineTool("veo_video", { prompt: "a tree", model: FAST, ...bad }, call)).rejects.toThrow(/only a person approves/);
+        expect(calls).toEqual([]);
+      }
+      /* The images ride as the route's own shape; one cast member for each reference, and one for the first frame. */
+      await spend(null); calls.length = 0;
+      await runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1, u2", project_id: "p" }, call);
+      expect(calls[0]).toMatchObject({ tool: "video", references: [{ uploadId: "u1" }, { uploadId: "u2" }], projectId: "p", quoteOnly: true });
+      await runDirectEngineTool("veo_video", { prompt: "go", first_frame_upload_id: "u3", project_id: "p" }, call);
+      expect(calls.find((x) => x.firstFrame)).toMatchObject({ firstFrame: { uploadId: "u3" } });
+      /* Ask with images files a prepared job with the ids only: the door takes nested lists and groups of ids (lib/security/prepared-jobs.ts). */
+      const { cleanEngineJob } = await import("../../lib/security/prepared-jobs");
+      for (const [args, label] of [
+        [{ prompt: "swap", model: FAST, reference_upload_ids: "u1, u2", project_id: "p" }, "references"],
+        [{ prompt: "go", first_frame_upload_id: "u3", project_id: "p" }, "first frame"],
+      ] as const) {
+        await spend("ask"); calls.length = 0; paths.length = 0; credits = 32;
+        const text = await runDirectEngineTool("veo_video", args, call);
+        expect(text, label).toMatch(/^Priced and prepared, not started\.[\s\S]*prepared job: prep_v1[\s\S]*It waits in Particl/);
+        expect(text, label).not.toContain("Nothing was filed");
+        expect(paths, label).toEqual(["/api/veo", "/api/prepared-jobs"]);
+        const filed = calls[1] as { engine: string; args: Record<string, unknown>; prompt: string };
+        expect(filed.engine, label).toBe("veo_video");
+        if (label === "references") expect(filed.args).toMatchObject({ tool: "video", references: [{ uploadId: "u1" }, { uploadId: "u2" }] });
+        else expect(filed.args).toMatchObject({ tool: "video", firstFrame: { uploadId: "u3" } });
+        expect(JSON.stringify(filed), label).not.toMatch(/maxCredits|quoteOnly|base64/i);
+        /* What was filed is exactly what the real door accepts: ids and settings only, nothing priced or approved. */
+        const door = cleanEngineJob({ engine: filed.engine, args: filed.args, prompt: filed.prompt, project: "p" });
+        expect(door.args, label).toEqual(filed.args);
+      }
+      /* When the door will not take it, the answer says plainly that nothing was filed. */
+      const refusing = async (p: string, init: { body?: unknown } = {}) => { if (p === "/api/prepared-jobs") throw new Error("Inside a list or group an argument is an id, not text or a file."); return (await call(p, init)) as Record<string, unknown>; };
+      const unfiled = await runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1", project_id: "p" }, refusing);
+      expect(unfiled).toMatch(/^Priced, not started\.[\s\S]*Nothing was filed: Inside a list or group an argument is an id[\s\S]*A person can make this themselves in Particl/);
+      expect(unfiled).not.toMatch(/prepared job:|waits in Particl|Priced and prepared/);
+    } finally { await spend(null); }
+  });
+});
+
+test("the fixture end to end (ENGINE_MOCK): the default adapter submits, polls and fetches in process, with the network forbidden", async () => {
+  const { driveVeo } = await import("../../lib/veoVideo");
+  process.env.VEO_ENABLED = "1";
+  const original = globalThis.fetch;
+  let outbound = 0;
+  globalThis.fetch = (async () => { outbound++; throw new Error("no network in this test"); }) as never;
+  try {
+    await asTenant(house(), async () => {
+      const id = String((await admit({ tool: "video", prompt: "a crane at dawn", ...approved })).body.id);
+      await driveVeo(id, { budgetMs: 20_000, pauseMs: 0 });
+      expect(await gen(id)).toMatchObject({ status: "succeeded" });
+      made.push(path.join(process.cwd(), ".data", "generations", `${id}.mp4`));
+      const refused = String((await admit({ tool: "video", prompt: "[[mock-refuse]] a crane", ...approved })).body.id);
+      await driveVeo(refused, { budgetMs: 20_000, pauseMs: 0 });
+      expect(await gen(refused)).toMatchObject({ status: "failed" });
+      const filtered = String((await admit({ tool: "video", prompt: "[[mock-filtered]] a crane", ...approved })).body.id);
+      await driveVeo(filtered, { budgetMs: 20_000, pauseMs: 0 });
+      expect(await gen(filtered)).toMatchObject({ status: "failed" });
+      expect(String((await gen(filtered)).error)).toMatch(/safety filter/);
+      expect(outbound).toBe(0);
+    });
+  } finally { globalThis.fetch = original; }
+});
+
+function sourceFiles(): string[] {
+  const out: string[] = [];
+  const walk = (d: string) => { for (const f of readdirSync(d)) { const p = path.join(d, f); if (statSync(p).isDirectory()) walk(p); else if (/\.tsx?$/.test(f)) out.push(p.split(path.sep).join("/")); } };
+  for (const d of ["lib", "app", "components"]) walk(d);
+  return out;
+}
+
+test("structure: the seams stay internal, the route is the one door, the reservation comes before the row and the submit, every vendor call is without a redirect, the settings are the plan's names", () => {
+  const reachers = (needle: RegExp) => sourceFiles().filter((f) => needle.test(readFileSync(f, "utf8"))).sort();
+  expect(reachers(/\badmitVeo\b/)).toEqual(["lib/veoVideo.ts"]);
+  expect(reachers(/\badvanceVeoJobWith\b/)).toEqual(["lib/veoVideo.ts"]);
+  expect(reachers(/@\/lib\/veoVideo["']/)).toEqual(["app/api/veo/route.ts"]);
+  const flow = readFileSync("lib/veoVideo.ts", "utf8");
+  const at = (needle: string) => flow.indexOf(needle);
+  expect(flow).toContain("admitVeo(input, got, options)");
+  /* No face check anywhere: Rekognition is out (owner, 16 Oct 2026). */
+  expect(flow).not.toMatch(/consent|requireConsentMatch|faceCheck|castMember/i);
+  expect(readFileSync("lib/directEngineMcp.ts", "utf8").match(/const VEO_VIDEO[\s\S]*?\nconst REGISTRY/)?.[0] ?? "").not.toMatch(/consent|cast_member|castMember/i);
+  expect(at("Approve the price first")).toBeLessThan(at("INSERT INTO generations"));
+  expect(at("await shotCapGate({")).toBeGreaterThan(0);
+  expect(at("await shotCapGate({")).toBeLessThan(at("if (quoteOnly)"));
+  expect(at("await shotCapGate({")).toBeLessThan(at("INSERT INTO generations"));
+  expect(at("INSERT INTO generations")).toBeLessThan(at("await reserveGenerationSpend("));
+  expect(at("await reserveGenerationSpend(")).toBeLessThan(at("await (deps.submit ?? submitVideo)("));
+  /* The clip is fetched, stored and settled in that order; settled never above the quote. */
+  expect(at("(deps.fetchClip ?? fetchResult)(")).toBeLessThan(at("(deps.store ?? storeVideoBytes)("));
+  expect(at("(deps.store ?? storeVideoBytes)(")).toBeLessThan(at('await settleVeo(genId, "done"'));
+  expect(flow).toContain("Math.min(outcome.costUsd, veo.reservedUsd)");
+  /* Prices come from the rate table and the margin path. */
+  expect(flow).toContain("quotedCredits(usd, model)");
+  expect(flow).toContain("veoQuoteUsd(");
+  expect(flow).not.toMatch(/0\.\d{2,}/);
+  const adapter = readFileSync("lib/veo.ts", "utf8");
+  const code = adapter.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  const names = new Set([...code.matchAll(/process\.env\.([A-Z_]+)/g)].map((m) => m[1]));
+  expect([...names].sort()).toEqual(["GEMINI_BASE_URL"]);
+  expect(adapter).toContain('export const VEO_SWITCH = "VEO_ENABLED";');
+  expect(adapter).not.toMatch(/console\.(log|error|info)/);
+  /* Every request goes out without following a redirect on its own: calls refuse one, and the download follows only the hops it checks. */
+  const calls = [...code.matchAll(/(?:\)|doFetch)\(url\.href, \{/g)].map((m) => code.slice(m.index!, m.index! + 330));
+  expect(calls.length).toBeGreaterThanOrEqual(2);
+  for (const c of calls) expect(c).toMatch(/redirect: "(error|manual)"/);
+  expect(code).not.toMatch(/redirect: "follow"/);
+  /* No new table: the job lives in the take's own row. */
+  expect(flow).not.toMatch(/CREATE TABLE|ALTER TABLE/i);
+});
