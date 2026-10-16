@@ -1295,3 +1295,6 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **CI is slow:** one Verify run at a time in practice, and each release/1 push adds its own run.
   - **The licence note** (ops/remotion-worker/README.md) waits for #699 to merge.
 - **16 Oct 15:58 IST.** **#699 MERGED** into release/1 (the Remotion worker, a5e0f445, CI 24/24 run 38881011980). Queue 1 moves to #765. The docs lane opens the licence-note PR.
+- **16 Oct 16:00 IST.** **#813** (Remotion licence note, d53e03f3) APPROVED by Opus and queued after #796.
+  - The qualifier "contractors who work on the Remotion project" is the owner's own wording (15:50 B.2), so it is kept.
+  - **Owner note:** CLAUDE.md says the Company License is bought "before the next release" at 4 people; the READMEs say before the 4th person starts.
