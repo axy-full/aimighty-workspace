@@ -7,7 +7,7 @@ Written 10 Oct 2026 by the lead, at the owner's request ("write the plan into th
 
 ## The brief (owner, 10 Oct)
 
-- **The design:** design/particl-prototype-12 is the only design. It replaces design/particl-graphite, and each screen PR deletes the graphite design file(s) it replaces.
+- **The design:** design/particl-prototype-15 is the design (owner, 13 Oct 2026: v15 contains all of v14; design/particl-prototype-12 is kept as the one reference). It replaces design/particl-graphite, and each screen PR deletes the graphite design file(s) it replaces.
 - **Switch:** everything is built on release/1 behind the per-workspace switch. It is off for every customer workspace and on only for the internal house workspace.
 - **Work order:**
   - P1 Shell

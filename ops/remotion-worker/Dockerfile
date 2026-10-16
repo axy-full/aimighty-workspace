@@ -24,9 +24,22 @@ WORKDIR /opt/remotion
 COPY remotion/package.json remotion/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund \
  && node --input-type=module -e "const { ensureBrowser } = await import('@remotion/renderer'); await ensureBrowser({ chromeMode: 'headless-shell' });" \
- && test -n "$(find node_modules/.remotion -name 'chrome-headless-shell' -type f | head -n 1)"
+ && test -x node_modules/.remotion/chrome-headless-shell/linux64/chrome-headless-shell-linux64/chrome-headless-shell
 
-# ---- run
+# ---- the relay (compose.yaml builds this stage for `remotion-relay`, `target: relay`): a small TCP forwarder that holds no
+# secret and is the only thing on both the internal network and the platform's. Same file as the Astra relay
+# (ops/render-worker/relay.mjs); it forwards port 8081 to remotion-1:8790 and nothing else.
+FROM node:22.23.3-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS relay
+RUN groupadd --system --gid 10001 relay \
+ && useradd --system --uid 10001 --gid relay --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin relay
+WORKDIR /app
+COPY ops/render-worker/relay.mjs /app/relay.mjs
+COPY ops/render-worker/check-relay.mjs /app/check-relay.mjs
+USER 10001:10001
+EXPOSE 8081
+CMD ["node", "/app/relay.mjs"]
+
+# ---- run (the default target: the worker)
 FROM node:22.23.3-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
 # Libraries Chrome Headless Shell needs on bookworm (Remotion's list), and a base set of fonts for
 # text outside the bundled typeface's Latin range. FFmpeg and ffprobe ship inside @remotion/compositor.
@@ -36,6 +49,9 @@ RUN apt-get update \
       libxfixes3 libxcomposite1 libxdamage1 libpango-1.0-0 libcairo2 libcups2 libxext6 libx11-6 \
       fonts-noto-core fonts-noto-color-emoji \
  && rm -rf /var/lib/apt/lists/*
+# package.json too: Remotion looks for its browser by walking up to the nearest package.json, so without one it would look
+# in the wrong place and try to download. The worker does not rely on that: REMOTION_BROWSER_EXECUTABLE names the exact file.
+COPY --from=runtime-deps /opt/remotion/package.json /opt/remotion/package.json
 COPY --from=runtime-deps /opt/remotion/node_modules /opt/remotion/node_modules
 COPY --from=build /src/remotion/build/cli.mjs /opt/remotion/cli.mjs
 COPY --from=build /src/remotion/build/bundle /opt/remotion/bundle
@@ -44,6 +60,9 @@ COPY --from=build /src/remotion/build/bundle /opt/remotion/bundle
 COPY --from=build /src/remotion/public/fonts /opt/remotion/fonts
 COPY --from=build /src/remotion/test/pdf-check /opt/remotion/pdf-check
 COPY ops/remotion-worker/server.mjs /app/server.mjs
+# The egress check the worker runs before it listens, and the one the owner runs in a terminal (the same file as the Astra worker's):
+# they hold no secret and read none. See README.md, Verify step 1.
+COPY ops/render-worker/check-egress.mjs /app/check-egress.mjs
 
 # Non-root user. Its home is the session root, so anything Chrome writes there is wiped with the
 # session. /vercel/sandbox and /tmp are tmpfs mounts owned by this uid (compose.yaml); the rest
@@ -59,6 +78,7 @@ ENV NODE_ENV=production \
     REMOTION_BUNDLE_DIR=/opt/remotion/bundle \
     REMOTION_FONTS_DIR=/opt/remotion/fonts \
     REMOTION_RUNTIME_DIR=/opt/remotion \
+    REMOTION_BROWSER_EXECUTABLE=/opt/remotion/node_modules/.remotion/chrome-headless-shell/linux64/chrome-headless-shell-linux64/chrome-headless-shell \
     REMOTION_CONCURRENCY=2 \
     REMOTION_MAX_SECONDS=120
 
@@ -66,6 +86,7 @@ ENV NODE_ENV=production \
 # a 2-second sample at 192x108 (video and one still), checked with the bundled ffprobe. A missing
 # library or a broken bundle fails the build here, not in production. Costs nothing, uses no media.
 USER 10001:10001
+RUN test -x "$REMOTION_BROWSER_EXECUTABLE"
 RUN set -eu; \
     d=/tmp/build-check; mkdir -p "$d/output"; cd "$d"; \
     printf '%s' '{"version":1,"composition":"fixture-clip","props":{"aspect":"16:9","fps":30,"scale":0.1,"durationSeconds":2,"label":"BUILD"},"output":{"video":true,"stills":[30]}}' > spec.json; \

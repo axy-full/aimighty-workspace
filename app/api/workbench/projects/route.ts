@@ -58,7 +58,8 @@ export const GET=withTenant(async(req:Request)=>{
     if(seen)return projectResponse(req,{projects:list.rows,productions:productions.rows.filter(r=>listed(String(r.id))),project:seen.project,revision:seen.revision,shared:null,viewOnly:{owner:seen.owner},...(team?{team}:{})});
   }
   let shared=null;
-  if(draft?.project.productionProjectId){
+  /* The published version of the board this draft is linked to: read only by people who can read that board (a link kept after the board stopped being shared reads nothing). */
+  if(draft?.project.productionProjectId&&(await mayReachProject(auth.user,draft.project.productionProjectId,'read'))){
     const row=(await db().execute({sql:'SELECT body,version,owner FROM workbench_bibles WHERE project_id=? ORDER BY version DESC LIMIT 1',args:[draft.project.productionProjectId]})).rows[0];
     if(row){
       const body=JSON.parse(String(row.body));
@@ -119,7 +120,7 @@ export const POST=withTenant(async(req:Request)=>{
   /* Studio's first run: the workspace's starter production, seeded once and opened as this person's draft.
      Sample takes on the platform's own previews: no engine is called and nothing is charged (lib/starter.ts). */
   if(body?.action==='starter'){
-    try{return projectResponse(req,await openStarterDraft(auth.user.id));}
+    try{return projectResponse(req,await openStarterDraft({id:auth.user.id,name:auth.user.name}));}
     catch(error){
       if(error instanceof StarterUnavailableError)return Response.json({error:error.message},{status:409,headers:noStore});
       console.error('The starter production could not be opened:',error);

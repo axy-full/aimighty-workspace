@@ -222,7 +222,7 @@ export function createAstraScene(template: AstraTemplate = "empty"): AstraScene 
     ];
     scene.camera = { position: [4, -6, 3.5], target: [0, 0, 1.2], focalLength: 55 };
   } else if (template !== "empty") {
-    throw new Error("Choose an available Astra template.");
+    throw new Error("Choose an available 3D template.");
   }
   return parseAstraScene(scene);
 }

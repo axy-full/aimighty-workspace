@@ -8,10 +8,19 @@
 #
 # Build context is the repository root (the compositions are in /remotion); see Dockerfile.
 #
-# Network: the service is on `remotion-internal` only, which is `internal: true` (no gateway: no
-# internet). As with the Astra render workers this is the common starting point of the networking
-# decision (ops/render-worker/README.md, "Networking: owner decision"); README.md here says exactly
-# what changes for option (a), (b) or (c). Whatever the option, the egress check is a hard gate.
+# Network (option (c), the relay; ops/render-worker/README.md, "Networking"):
+#  - `remotion-internal` is declared `internal: true`, so Compose creates it with no gateway: nothing on it can reach
+#    the internet.
+#  - The worker is on it through `network_mode: remotion-internal` and on nothing else: no internet, no other network,
+#    no published port. (Coolify adds its own network, which has a gateway, to a service without network_mode.)
+#  - `remotion-relay` is on `remotion-internal` and, because Connect To Predefined Network is on, on the app's network
+#    too. It forwards port 8081 to the worker's 8790 and nothing else, holds no secret, and never reads a connection's
+#    bytes: the worker's own bearer check still guards every request.
+#  - REMOTION_WORKER_URLS names the relay: http://<relay name>:8081.
+# Fail-closed start (server.mjs): before it listens, the worker runs the egress check (ops/render-worker/check-egress.mjs,
+# option c) in its own network and environment; anything but a pass logs the failing lines, waits 30 s and exits non-zero.
+# `restart: unless-stopped` retries it; the 30 s wait is what stops a hot loop. Whatever the layout, the check run by hand
+# (README.md, Verify step 1) is a hard gate before any real export.
 #
 # Secret: REMOTION_WORKER_SECRET, one per worker (at least 32 characters, never in git). The
 # production app holds REMOTION_WORKER_URLS and REMOTION_WORKER_SECRETS (same order) and sends the
@@ -43,7 +52,35 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     stop_grace_period: 15s
+    network_mode: remotion-internal
+    depends_on: [remotion-relay]  # the relay's network is what creates remotion-internal
+    container_name: remotion-1
+
+  remotion-relay:
+    build:
+      context: ../..
+      dockerfile: ops/remotion-worker/Dockerfile
+      target: relay
+    init: true
+    restart: unless-stopped
+    environment:
+      RELAY_TARGET_1: ${RELAY_TARGET_1:-remotion-1}
+    cpus: 0.25
+    cpu_shares: 128
+    mem_limit: 128m
+    memswap_limit: 128m
+    pids_limit: 64
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 5s
     networks: [remotion-internal]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/node", "-e", "require('net').connect(8081, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
 networks:
   remotion-internal:

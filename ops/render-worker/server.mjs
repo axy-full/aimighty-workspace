@@ -621,34 +621,65 @@ export function createRenderWorker(options) {
   };
 }
 
-async function main() {
+/** After a failed start-up egress check the process waits this long before it exits, so a restart policy cannot spin on it. */
+export const EGRESS_RETRY_DELAY_MS = 30_000;
+
+async function defaultGate() {
+  const { startupGate } = await import("./check-egress.mjs");
+  return startupGate();
+}
+
+/**
+ * Starts the worker. Fail-closed: before it listens, the worker runs its own egress check (check-egress.mjs, option c) in its own
+ * network and environment; anything but a pass logs the failing lines (names, never values), waits, exits non-zero and never binds.
+ * `gate` (always used when given), `realGate` (the default check, used unless a test root applies), `exit`, `sleep`, `log` and `signals` are injectable for tests; the test root (tests only) skips the real check.
+ */
+export async function main({ env = process.env, gate, exit = (code) => process.exit(code), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), log = console.log, error = console.error, signals = true, retryDelayMs = EGRESS_RETRY_DELAY_MS, realGate = defaultGate } = {}) {
   // The Dockerfile sets ASTRA_WORKER_CONTAINER=1. ASTRA_WORKER_TEST_ROOT is for
   // tests only: it maps /vercel/sandbox onto a scratch directory and turns off
-  // the /tmp wipe and the stray-process sweep.
-  const testRoot = process.env.ASTRA_WORKER_TEST_ROOT;
-  const secret = process.env.ASTRA_WORKER_SECRET;
+  // the /tmp wipe, the stray-process sweep and the start-up egress check. Inside
+  // the image (ASTRA_WORKER_CONTAINER=1) it is ignored, so none of that, and in
+  // particular the check's skip, can ever apply there.
+  const inContainer = env.ASTRA_WORKER_CONTAINER === "1";
+  const testRoot = inContainer ? undefined : env.ASTRA_WORKER_TEST_ROOT;
+  const secret = env.ASTRA_WORKER_SECRET;
   // Only keeps the secret out of process.env for later code in this process. It
   // does NOT clear /proc/<pid>/environ (the kernel's copy of the start-up
   // environment): any process of the worker user can still read it there.
-  delete process.env.ASTRA_WORKER_SECRET;
+  delete env.ASTRA_WORKER_SECRET;
   let worker;
   try {
     worker = createRenderWorker({
       secret,
       root: testRoot || SANDBOX_ROOT,
       scratchDirs: testRoot ? [] : ["/tmp"],
-      sweepStrays: !testRoot && process.env.ASTRA_WORKER_CONTAINER === "1",
+      sweepStrays: inContainer,
     });
-  } catch (error) {
-    console.error(error.message);
-    process.exit(1);
+  } catch (failure) {
+    error(failure.message);
+    exit(1);
+    return null;
+  }
+  const runGate = gate ?? (testRoot ? null : realGate);
+  if (runGate) {
+    let verdict;
+    try { verdict = await runGate(); } catch (failure) { verdict = { ok: false, failures: [`the egress check could not run: ${String(failure?.message ?? failure).slice(0, 80)}`] }; }
+    if (!verdict?.ok) {
+      error(`render worker not started: its egress check failed (${(verdict?.failures ?? ["no verdict"]).join("; ")}). Retrying in ${Math.round(retryDelayMs / 1000)} s.`);
+      await sleep(retryDelayMs);
+      exit(1);
+      return null;
+    }
   }
   await worker.ready();
-  const port = Number(process.env.PORT ?? 8790);
-  worker.server.listen(port, "0.0.0.0", () => console.log(`render worker listening on ${worker.server.address().port}`));
-  const shutdown = () => { worker.close().finally(() => process.exit(0)); };
-  process.once("SIGTERM", shutdown);
-  process.once("SIGINT", shutdown);
+  const port = Number(env.PORT ?? 8790);
+  worker.server.listen(port, "0.0.0.0", () => log(`render worker listening on ${worker.server.address().port}`));
+  if (signals) {
+    const shutdown = () => { worker.close().finally(() => process.exit(0)); };
+    process.once("SIGTERM", shutdown);
+    process.once("SIGINT", shutdown);
+  }
+  return worker;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

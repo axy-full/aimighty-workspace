@@ -273,6 +273,7 @@ async function routeFixture() {
     "workbenchScopeFor",
     "recoveryRoute",
     "crossOriginProblem",
+    "hideOwnerAccountId",
     compiled,
   )(
     wrapperExports,
@@ -283,6 +284,7 @@ async function routeFixture() {
     workbenchScopeFor,
     (handler: unknown) => handler,
     crossOriginProblem,
+    async (res: Response) => res,
   );
   let checks = 0,
     limited = false;

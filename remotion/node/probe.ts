@@ -37,15 +37,24 @@ export function factsFromFfprobe(json: { format?: { duration?: string }; streams
   };
 }
 
-export function createFfprobe(binary: string, timeoutMs = 30_000): Prober {
+/**
+ * The containers an export input may be: what the app writes (mp4, mov, webm, m4v clips; mp3, wav, m4a, aac, ogg music).
+ * ffprobe is told to read nothing else (`-format_whitelist`) and to open only a local file (`-protocol_whitelist file`), so a
+ * file that is really a playlist or a reference to another place is "not media" and never followed.
+ */
+export const FFPROBE_FORMATS = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,mp3,wav,ogg,aac";
+
+type Run = (file: string, args: string[], options: { timeout: number; maxBuffer: number; env: NodeJS.ProcessEnv }, done: (error: Error | null, stdout: string) => void) => unknown;
+
+export function createFfprobe(binary: string, timeoutMs = 30_000, run: Run = execFile as unknown as Run): Prober {
   return {
     probe(file) {
       return new Promise((resolve, reject) => {
-        execFile(
+        run(
           binary,
-          ["-hide_banner", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-i", file],
+          ["-hide_banner", "-v", "error", "-protocol_whitelist", "file", "-format_whitelist", FFPROBE_FORMATS, "-print_format", "json", "-show_format", "-show_streams", "-i", file],
           { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env: {} as NodeJS.ProcessEnv },
-          (error, stdout) => {
+          (error: Error | null, stdout: string) => {
             if (error) return reject(new Error("could not be read as media"));
             try {
               resolve(factsFromFfprobe(JSON.parse(stdout)));

@@ -6,4 +6,4 @@
  * Internal ids, env vars, API paths and code identifiers keep their names;
  * this is for strings a user can read.
  */
-export { VENDOR_NAMES, vendorNameIn, hasVendorName } from "../vendorNames";
+export { vendorNameIn, hasVendorName } from "../vendorNames";

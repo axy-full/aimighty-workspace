@@ -54,6 +54,12 @@ test("published production â†’ individually approved image/video/audio stages â†
     data: { action: "publish", projectId: project.id, expectedBibleVersion: 0 },
   });
   expect(published.ok(), await published.text()).toBeTruthy();
+  /* A production's published version is read by the people who can read the board (owner, 15 Oct 2026): the collaborator below is a teammate, so the board is shared with the team first. */
+  const sharedWithTeam = await page.request.post("/api/workbench/projects", {
+    headers,
+    data: { action: "team-share", projectId: project.id, shared: true },
+  });
+  expect(sharedWithTeam.ok(), await sharedWithTeam.text()).toBeTruthy();
   const catalog = await page.request
     .get(`/api/pipelines?projectId=${savedBody.productionProjectId}`, {
       // This is the final setup request before cold browser-page compilation.

@@ -247,7 +247,7 @@ export function ReviewTakeCard({ card, data, ctx }: CardProps<TakeCardData>) {
   /* Change with words on a clip: the free quote Seedance Edit's panel asks, read while the take waits (nothing is sent). */
   const editBody = current ? editQuoteBody(current, ctx.project.productionProjectId) : null;
   const editQuote = useStageQuotes(ctx.scope, editBody && !ctx.offline && judgeable(current!) ? { edit: { body: editBody } } : {}).quotes.edit;
-  const editPrice = upTo(editQuote?.credits);
+  const editPrice = upTo(editQuote?.credits, editQuote?.usd);
   if (!current) return null;
   const open = judgeable(current) && !ctx.offline;
   const role = referenceRole(current.media === "image" || current.media === "video" ? current.media : null);

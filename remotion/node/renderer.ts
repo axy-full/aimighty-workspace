@@ -1,7 +1,12 @@
+import { access, constants } from "node:fs/promises";
 import type { CompositionInfo, Renderer } from "./export";
 
 export type RealRendererOptions = {
-  /** A Chrome/Chromium to use; when absent, the one Remotion downloaded into node_modules. */
+  /**
+   * The Chrome Headless Shell to use. In the worker image this is always set (REMOTION_BROWSER_EXECUTABLE) to the exact file
+   * installed at build time: a missing file is an error, and the worker never downloads a browser. Only when it is absent (a
+   * developer machine running the render tests) does Remotion look for, and if need be download, its own.
+   */
   browserExecutable?: string | null;
   /** Hard stop for one frame, ms. */
   frameTimeoutMs?: number;
@@ -31,8 +36,16 @@ export function createRealRenderer(options: RealRendererOptions = {}): Renderer 
   });
   return {
     async prepare() {
+      if (options.browserExecutable) {
+        try {
+          await access(options.browserExecutable, constants.X_OK);
+        } catch {
+          throw new Error(`The browser is missing at ${options.browserExecutable}. This worker never downloads one.`);
+        }
+        return;
+      }
       const { ensureBrowser } = await load();
-      await ensureBrowser({ browserExecutable: options.browserExecutable ?? undefined, chromeMode: "headless-shell" });
+      await ensureBrowser({ chromeMode: "headless-shell" });
     },
     async selectComposition({ serveUrl, id, inputProps }) {
       const { selectComposition } = await load();

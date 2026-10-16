@@ -48,8 +48,8 @@ test("make=change opens Make on the last type with its engine list open; nothing
 
 test("Recent's chips are the master's: All, Takes, Unfiled, Filed", () => {
   expect([...RECENT_CHIPS]).toEqual(["All", "Takes", "Unfiled", "Filed"]);
-  const take = (id: string, shotId: string | null) => ({ take: { kind: "GEN" as const, id }, asset: { origin: "generation" as const, value: { shotId } } });
-  const upload = (id: string) => ({ take: { kind: "UPLOAD" as const, id }, asset: { origin: "upload" as const, value: { filename: `${id}.jpg` } } });
+  const take = (id: string, shotId: string | null) => ({ take: { kind: "generation" as const, id }, asset: { origin: "generation" as const, value: { shotId } } });
+  const upload = (id: string) => ({ take: { kind: "upload" as const, id }, asset: { origin: "upload" as const, value: { filename: `${id}.jpg` } } });
   /* The Library's order, newest first. */
   const items = [take("t3", "shot-a"), upload("u2"), take("t2", null), take("t1", "shot-b"), upload("u1")];
   const ids = (chip: (typeof RECENT_CHIPS)[number]) => recentEntries(items, chip).map((e) => e.take.id);
@@ -58,7 +58,7 @@ test("Recent's chips are the master's: All, Takes, Unfiled, Filed", () => {
   expect(ids("Unfiled")).toEqual(["t2"]);
   expect(ids("Filed")).toEqual(["t3", "t1"]);
   /* A take with no shot field at all reads as unfiled, never filed. */
-  expect(recentEntries([{ take: { kind: "GEN" as const, id: "t0" }, asset: { origin: "generation" as const, value: {} } }], "Unfiled")).toHaveLength(1);
+  expect(recentEntries([{ take: { kind: "generation" as const, id: "t0" }, asset: { origin: "generation" as const, value: {} } }], "Unfiled")).toHaveLength(1);
 });
 
 test("Make's `make` param belongs to the shell, not to the screen registry: listed there, the shell would write it back over a type just picked", () => {

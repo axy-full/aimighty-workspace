@@ -98,10 +98,10 @@ export async function buildFalInput(opts: {
 
   if (task.id === "upscale") {
     if (!source) throw new Error("Upscale needs a finished clip to work on.");
-    if (model.id !== ASTRA_MODEL) throw new Error("Choose the supported Astra upscale engine.");
+    if (model.id !== ASTRA_MODEL) throw new Error("Choose the supported Topaz Astra upscale engine.");
     // Astra may override its requested scale with a model-selected output size.
     // New work is quoted at the 4K tier and always names its output frame rate.
-    if (!params.astra || !params.astraSource) throw new Error("Review the Astra source and output settings before submitting.");
+    if (!params.astra || !params.astraSource) throw new Error("Review the Topaz Astra source and output settings before submitting.");
     return {endpoint:falEndpointFor(model,"upscale",false),input:astraInput(await mediaUrl(source),params.astra,Math.min(params.astraSource.width,params.astraSource.height))};
   }
 
@@ -335,7 +335,7 @@ async function collectFalVideo(gen:Generation,options:{strict?:boolean;store?:St
       output=await inspectOriginalVideo({id:gen.id,kind:"video",role:"reference_video",mime:"video/mp4",ext:"mp4",storedUrl:stored.url,fromGeneration:true},stored.bytes,true);
       const delivered=falVideoCostUsd(gen.model,{...p,resolution:Math.min(output.width,output.height)<=1080?"1080p":"4k",duration:output.seconds,fps60:output.fps!>30.01});
       const quoted=falVideoCostUsd(gen.model,p);
-      if(delivered==null||quoted==null||delivered>quoted+0.000001)throw new Error("Astra's delivered output exceeds the reviewed budget. The existing result is retained for reconciliation; no additional credits were charged.");
+      if(delivered==null||quoted==null||delivered>quoted+0.000001)throw new Error("Topaz Astra's delivered output exceeds the reviewed budget. The existing result is retained for reconciliation; no additional credits were charged.");
       cost=delivered;
     } catch(error) {
       const message=(error as Error).message;

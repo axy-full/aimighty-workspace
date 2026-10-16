@@ -1,5 +1,5 @@
 import { CATEGORIES } from "./studio";
-import { DEFAULT_MODEL_ID } from "./models";
+import { DEFAULT_MODEL_ID, NANO_BANANA_PRO_ID } from "./models";
 
 /**
  * The shot builder's pure half (brief 1.8): the engine a shot should go to,
@@ -8,7 +8,7 @@ import { DEFAULT_MODEL_ID } from "./models";
  * here. The call itself lives in the draft route.
  */
 export type ShotEngine = "seedance" | "kling" | "nano-banana";
-export const ENGINE_MODEL: Record<ShotEngine, string> = { seedance: DEFAULT_MODEL_ID, kling: "fal-ai/kling-video/v3/standard", "nano-banana": "gemini-3-pro-image" };
+export const ENGINE_MODEL: Record<ShotEngine, string> = { seedance: DEFAULT_MODEL_ID, kling: "fal-ai/kling-video/v3/standard", "nano-banana": NANO_BANANA_PRO_ID };
 export const ENGINE_LABEL: Record<ShotEngine, string> = { seedance: "Seedance", kling: "Kling", "nano-banana": "Nano Banana" };
 
 /** The platform's rule (brief 2.5): Kling for water, cloth and physics; Seedance for everything else; a still goes to Nano Banana. */

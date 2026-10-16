@@ -2,7 +2,7 @@ import { textCacheBilling, textCostUsd, type CatalogModel } from './catalog';
 import type { LanguageModelUsage } from 'ai';
 import { vendorKey, type VendorKeyName } from './vendorKeys';
 import { recoveryFetch } from './recovery';
-import type { GatewayReply } from './gateway';
+import type { TextReply as GatewayReply } from './textReply';
 import { textRoute, type TextRoute } from './textRoute';
 
 /**

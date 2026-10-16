@@ -194,7 +194,8 @@ async function uploadRow(id: string, viewer: ExportViewer) {
  * disabled reaches nothing.
  */
 export async function mediaStillReachable(ownerId: string, media: BoundMedia): Promise<boolean> {
-  const person = (await db().execute({ sql: "SELECT role, disabled FROM users WHERE id=?", args: [ownerId] }).catch(() => ({ rows: [] as Record<string, unknown>[] }))).rows[0];
+  /* A database error is not an answer: it throws, and the caller says the files could not be checked (not that they are gone). */
+  const person = (await db().execute({ sql: "SELECT role, disabled FROM users WHERE id=?", args: [ownerId] })).rows[0];
   // Someone missing from this workspace's people (removed, or never mirrored) reaches nothing, and so does a disabled one.
   if (!person || Number(person.disabled) === 1) return false;
   const viewer: ExportViewer = { id: ownerId, ...(person.role ? { role: String(person.role) } : {}) };
