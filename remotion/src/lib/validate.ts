@@ -1,5 +1,7 @@
 import {
   ASPECTS,
+  SILENCE_MODES,
+  type SilenceMode,
   CAPTION_STYLES,
   COMPOSITION_IDS,
   CUTDOWN_TARGETS,
@@ -22,6 +24,7 @@ import {
   type FinalProps,
   type FixtureClipProps,
   type MusicSpec,
+  type VoiceLine,
   type PropsById,
   type Range,
   type ReframeMode,
@@ -58,6 +61,8 @@ export function isSafeInputPath(value: unknown, extensions: string[]): value is 
 
 class Issues {
   readonly list: string[] = [];
+  /** True only for the props the export builds for the renderer (they may carry `offsetSeconds`); never for a request. */
+  constructor(readonly trusted = false) {}
   add(path: string, message: string) {
     if (this.list.length < 25) this.list.push(`${path}: ${message}`);
   }
@@ -159,19 +164,23 @@ function common(rec: Rec, issues: Issues, limits: ExportLimits): { aspect: Aspec
 
 function source(value: unknown, path: string, issues: Issues, limits: ExportLimits): ClipSource {
   const blank: ClipSource = { file: "x.mp4", durationSeconds: 1, width: 2, height: 2, hasAudio: false };
-  const rec = record(value, path, issues, ["file", "durationSeconds", "width", "height", "hasAudio"]);
+  const rec = record(value, path, issues, ["file", "durationSeconds", "width", "height", "hasAudio", "offsetSeconds"]);
   if (!rec) return blank;
   if (!isSafeInputPath(rec.file, VIDEO_EXT)) {
     issues.add(`${path}.file`, "must be a plain relative path to a video file in the input folder");
   }
   const hasAudio = rec.hasAudio === undefined ? true : rec.hasAudio;
   if (typeof hasAudio !== "boolean") issues.add(`${path}.hasAudio`, "must be true or false");
+  const durationSeconds = num(rec.durationSeconds, `${path}.durationSeconds`, issues, 0.1, limits.maxSourceSeconds);
+  if (rec.offsetSeconds !== undefined && !issues.trusted) issues.add(`${path}.offsetSeconds`, "is set by the export itself and cannot be sent");
+  const offsetSeconds = rec.offsetSeconds === undefined || !issues.trusted ? 0 : num(rec.offsetSeconds, `${path}.offsetSeconds`, issues, 0, durationSeconds);
   return {
     file: typeof rec.file === "string" ? rec.file : blank.file,
-    durationSeconds: num(rec.durationSeconds, `${path}.durationSeconds`, issues, 0.1, limits.maxSourceSeconds),
+    durationSeconds,
     width: Math.round(num(rec.width, `${path}.width`, issues, 16, 7680)),
     height: Math.round(num(rec.height, `${path}.height`, issues, 16, 7680)),
     hasAudio: hasAudio === false ? false : true,
+    ...(offsetSeconds > 0 ? { offsetSeconds } : {}),
   };
 }
 
@@ -294,6 +303,27 @@ function music(value: unknown, path: string, issues: Issues): MusicSpec | null {
   };
 }
 
+const MAX_VOICE_LINES = 24;
+
+function voiceover(value: unknown, path: string, issues: Issues, limits: ExportLimits): VoiceLine[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MAX_VOICE_LINES) {
+    issues.add(path, `must be a list of at most ${MAX_VOICE_LINES} voice lines`);
+    return [];
+  }
+  return value.map((item, index) => {
+    const at = `${path}[${index}]`;
+    const rec = record(item, at, issues, ["file", "durationSeconds", "startSeconds", "volume"]) ?? {};
+    if (!isSafeInputPath(rec.file, AUDIO_EXT)) issues.add(`${at}.file`, "must be a plain relative path to an audio file in the input folder");
+    return {
+      file: typeof rec.file === "string" ? rec.file : "x.mp3",
+      durationSeconds: num(rec.durationSeconds, `${at}.durationSeconds`, issues, 0.1, limits.maxSeconds),
+      startSeconds: num(rec.startSeconds, `${at}.startSeconds`, issues, 0, limits.maxSeconds, 0),
+      volume: num(rec.volume, `${at}.volume`, issues, 0, 1, 1),
+    };
+  });
+}
+
 function captionStyle(value: unknown, path: string, issues: Issues, fallback: CaptionStyle): CaptionStyle;
 function captionStyle(value: unknown, path: string, issues: Issues, fallback: null): CaptionStyle | null;
 function captionStyle(value: unknown, path: string, issues: Issues, fallback: CaptionStyle | null): CaptionStyle | null {
@@ -326,7 +356,7 @@ const validators: { [K in CompositionId]: Validator<PropsById[K]> } = {
     return { ...common(rec, issues, limits), clip: clip(rec.clip, "props.clip", issues, limits) } satisfies ReframeProps;
   },
   cutdown: (value, issues, limits) => {
-    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "source", "targetSeconds", "keep", "cues", "captionStyle", "reframe"]) ?? {};
+    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "source", "targetSeconds", "keep", "silence", "cues", "captionStyle", "reframe"]) ?? {};
     const src = source(rec.source, "props.source", issues, limits);
     let keep: Range[] = [];
     if (rec.keep !== undefined && rec.keep !== null) {
@@ -338,13 +368,14 @@ const validators: { [K in CompositionId]: Validator<PropsById[K]> } = {
       source: src,
       targetSeconds: oneOf<CutdownTarget>(rec.targetSeconds, "props.targetSeconds", issues, CUTDOWN_TARGETS),
       keep,
+      silence: rec.silence === undefined || rec.silence === null ? "off" : oneOf<SilenceMode>(rec.silence, "props.silence", issues, SILENCE_MODES),
       cues: cues(rec.cues, "props.cues", issues, limits),
       captionStyle: captionStyle(rec.captionStyle, "props.captionStyle", issues, null),
       reframe: reframe(rec.reframe, "props.reframe", issues),
     } satisfies CutdownProps;
   },
   final: (value, issues, limits) => {
-    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "title", "clips", "captionStyle", "end", "music"]) ?? {};
+    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "title", "clips", "captionStyle", "end", "music", "voiceover", "duck"]) ?? {};
     let clips: ClipItem[] = [];
     if (!Array.isArray(rec.clips) || rec.clips.length === 0 || rec.clips.length > limits.maxClips) {
       issues.add("props.clips", `must be a list of 1 to ${limits.maxClips} clips`);
@@ -358,6 +389,8 @@ const validators: { [K in CompositionId]: Validator<PropsById[K]> } = {
       captionStyle: captionStyle(rec.captionStyle, "props.captionStyle", issues, null),
       end: rec.end ? endCard(rec.end, "props.end", issues, limits) : null,
       music: music(rec.music, "props.music", issues),
+      voiceover: voiceover(rec.voiceover, "props.voiceover", issues, limits),
+      duck: num(rec.duck, "props.duck", issues, 0, 1, 0.3),
     } satisfies FinalProps;
   },
   "fixture-clip": (value, issues, limits) => {
@@ -375,8 +408,9 @@ export function isCompositionId(value: unknown): value is CompositionId {
 }
 
 /** Validate and normalise the props of one composition. Unknown keys are refused. */
-export function validateProps<K extends CompositionId>(id: K, props: unknown, limits: ExportLimits = DEFAULT_LIMITS): Result<PropsById[K]> {
-  const issues = new Issues();
+/** `trusted` is for the renderer's own props only (the export sets `offsetSeconds` on them); a request is never trusted. */
+export function validateProps<K extends CompositionId>(id: K, props: unknown, limits: ExportLimits = DEFAULT_LIMITS, trusted = false): Result<PropsById[K]> {
+  const issues = new Issues(trusted);
   const value = (validators[id] as Validator<PropsById[K]>)(props, issues, limits);
   return issues.list.length ? { ok: false, errors: issues.list } : { ok: true, value };
 }

@@ -12,8 +12,12 @@ export type RunBehaviour = {
   timedOut?: boolean;
   /** What result.json says (a failed run's reasons). */
   result?: { ok: boolean; code?: string; errors?: string[] };
-  /** The bytes of export.mp4 on a successful run; none leaves the file missing. */
+  /** The bytes of the video on a successful run (export.mp4, or export.mov for ProRes); none leaves the file missing. */
   mp4?: Buffer | null;
+  /** The text of each subtitle file the request asked for (by format); a default line otherwise. */
+  subtitles?: Partial<Record<"srt" | "vtt", Buffer | null>>;
+  /** Sent as the video's length when it is read: false leaves the header out, a number states that length whatever the body is. */
+  contentLength?: boolean | number;
   /** Runs inside the run call, before it answers. A promise that does not settle holds the run until the session is deleted. */
   during?: (session: { name: string; spec: Record<string, unknown> | null; files: string[] }) => Promise<void> | void;
   /** Runs when an output is read. */
@@ -79,7 +83,12 @@ export function exportWorkerPool(origins: string[] = EXPORT_WORKER_URLS, secrets
       }
       const exitCode = behaviour.exitCode ?? 0;
       if (exitCode === 0) {
-        if (behaviour.mp4 !== null) held.files.set("output/export.mp4", behaviour.mp4 ?? mp4());
+        const asked = (spec?.output ?? {}) as { format?: string; subtitles?: string[] };
+        if (behaviour.mp4 !== null) held.files.set(asked.format && asked.format !== "h264" ? "output/export.mov" : "output/export.mp4", behaviour.mp4 ?? mp4());
+        for (const format of asked.subtitles ?? []) {
+          const text = behaviour.subtitles?.[format as "srt" | "vtt"];
+          if (text !== null) held.files.set(`output/subtitles.${format}`, text ?? Buffer.from(format === "vtt" ? "WEBVTT\n\n1\n00:00:00.500 --> 00:00:02.500\nEvery great film\n" : "1\n00:00:00,500 --> 00:00:02,500\nEvery great film\n"));
+        }
         held.files.set("output/result.json", Buffer.from(JSON.stringify({ ok: true })));
       } else if (behaviour.result) held.files.set("output/result.json", Buffer.from(JSON.stringify(behaviour.result)));
       return reply(200, { exitCode, stdout: "done", stderr: "", timedOut: behaviour.timedOut === true });
@@ -88,7 +97,7 @@ export function exportWorkerPool(origins: string[] = EXPORT_WORKER_URLS, secrets
       const path = url.searchParams.get("path")!;
       await behaviour.onRead?.(path);
       const file = held.files.get(path.startsWith(root) ? path.slice(root.length) : path);
-      return file ? new Response(new Uint8Array(file), { status: 200 }) : reply(404);
+      return file ? new Response(new Uint8Array(file), { status: 200, headers: behaviour.contentLength === false ? {} : { "content-length": String(typeof behaviour.contentLength === "number" ? behaviour.contentLength : file.length) } }) : reply(404);
     }
     return reply(404);
   };

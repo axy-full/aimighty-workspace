@@ -1,7 +1,7 @@
 import { isEnhancerProvider } from "@/lib/shell/enhancer";
 import { NextResponse } from "next/server";
 import { requireUser, requireAdmin, withTenant } from "@/lib/auth";
-import { allSettings, setSetting, DEFAULTS } from "@/lib/settings";
+import { allSettings, setSetting, memberSettings, DEFAULTS } from "@/lib/settings";
 import { getPlatformLayer } from "@/lib/platform";
 import { resolveModels, modelOfKind } from "@/lib/platformLayer";
 import { settingProblem } from "@/lib/settingValues";
@@ -16,7 +16,8 @@ export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   const [settings, layer] = await Promise.all([allSettings(), getPlatformLayer()]);
-  return NextResponse.json({ settings, defaults: DEFAULTS, models: resolveModels(settings, layer), platformModels: layer.models });
+  /* The models are resolved from every setting; only the member-safe ones are sent (lib/settings.ts INTERNAL_SETTING_KEYS). */
+  return NextResponse.json({ settings: memberSettings(settings), defaults: DEFAULTS, models: resolveModels(settings, layer), platformModels: layer.models });
 });
 
 /** Workspace-wide settings are the admin's to set — they change everyone's files. */

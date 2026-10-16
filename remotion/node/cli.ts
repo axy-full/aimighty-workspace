@@ -21,11 +21,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_LIMITS } from "../src/lib/limits";
 import { runExport } from "./export";
-import { bundledFfprobe } from "./ffprobe-path";
+import { bundledFfmpeg, bundledFfprobe } from "./ffprobe-path";
+import { createFfmpegConformer } from "./conform";
+import { createFfmpegSilenceDetector } from "./silence";
 import { createFfprobe } from "./probe";
 import { createRealRenderer } from "./renderer";
 
-const EXIT = { spec_invalid: 2, too_long: 2, input_missing: 3, input_mismatch: 3, render_failed: 4 } as const;
+const EXIT = { spec_invalid: 2, too_long: 2, input_missing: 3, input_mismatch: 3, render_failed: 4, silence_failed: 5 } as const;
 
 function intEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
@@ -49,7 +51,10 @@ async function main(): Promise<number> {
     return 2;
   }
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const limits = { ...DEFAULT_LIMITS, maxSeconds: Math.min(DEFAULT_LIMITS.maxSeconds, intEnv("REMOTION_MAX_SECONDS", DEFAULT_LIMITS.maxSeconds, 1, 3600)) };
+  const limits = {
+    ...DEFAULT_LIMITS,
+    maxSeconds: Math.min(DEFAULT_LIMITS.maxSeconds, intEnv("REMOTION_MAX_SECONDS", DEFAULT_LIMITS.maxSeconds, 1, 3600)),
+  };
   const result = await runExport({
     spec,
     inputDir: path.join(session, "input"),
@@ -57,6 +62,8 @@ async function main(): Promise<number> {
     bundleDir: process.env.REMOTION_BUNDLE_DIR || path.join(here, "bundle"),
     workDir: path.join(session, "work"),
     prober: createFfprobe(bundledFfprobe()),
+    conformer: createFfmpegConformer(bundledFfmpeg()),
+    silenceDetector: createFfmpegSilenceDetector(bundledFfmpeg()),
     renderer: createRealRenderer({ browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE || null }),
     limits,
     concurrency: intEnv("REMOTION_CONCURRENCY", 2, 1, 8),

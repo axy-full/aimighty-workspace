@@ -69,8 +69,8 @@ export async function bindMedia(
 ): Promise<{ props: Rec; media: BoundMedia[] }> {
   const out = structuredClone(props) as Rec;
   const media = new Map<string, BoundMedia>();
-  const counters = { m: 0, logo: 0, music: 0 };
-  const own = (origin: "upload" | "take", id: string, ext: string, storedUrl: string, bytes: number, prefix: "m" | "logo" | "music"): BoundMedia => {
+  const counters = { m: 0, logo: 0, music: 0, voice: 0 };
+  const own = (origin: "upload" | "take", id: string, ext: string, storedUrl: string, bytes: number, prefix: "m" | "logo" | "music" | "voice"): BoundMedia => {
     const key = `${origin}:${id}`;
     const known = media.get(key);
     if (known) return known;
@@ -122,6 +122,20 @@ export async function bindMedia(
         const found = await resolver.audio(handle as { upload?: string });
         const bound = own("upload", found.id, found.ext, found.storedUrl, found.bytes, "music");
         out.music = { file: bound.file, durationSeconds: found.durationSeconds, ...(handle.volume !== undefined ? { volume: handle.volume } : {}) };
+      }
+      /* Spoken lines of a narrated cut: each names an upload (a voice-over made or recorded earlier; its own paid step ran on its own path) and where it starts. */
+      if (out.voiceover !== undefined && out.voiceover !== null) {
+        if (!Array.isArray(out.voiceover)) throw new ExportError("props.voiceover must be a list of voice lines.");
+        if (out.voiceover.length > 24) throw new ExportError("props.voiceover can have at most 24 voice lines.");
+        const lines: Rec[] = [];
+        for (const [index, item] of out.voiceover.entries()) {
+          const at = `props.voiceover[${index}]`;
+          const handle = handleOf(child(item, at), at, ["upload", "startSeconds", "volume"]);
+          const found = await resolver.audio(handle as { upload?: string });
+          const bound = own("upload", found.id, found.ext, found.storedUrl, found.bytes, "voice");
+          lines.push({ file: bound.file, durationSeconds: found.durationSeconds, ...(handle.startSeconds !== undefined ? { startSeconds: handle.startSeconds } : {}), ...(handle.volume !== undefined ? { volume: handle.volume } : {}) });
+        }
+        out.voiceover = lines;
       }
       break;
     }

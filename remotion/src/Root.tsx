@@ -20,14 +20,15 @@ const DEFAULTS: PropsById = {
   "end-card": { ...COMMON, card: { headline: "Thank you", theme: DEFAULT_THEME, durationSeconds: 3 } },
   captions: { ...COMMON, clip: CLIP, captionStyle: "bold" },
   reframe: { ...COMMON, aspect: "9:16", clip: CLIP },
-  cutdown: { ...COMMON, source: SOURCE, targetSeconds: 6, keep: [], cues: [], captionStyle: null, reframe: FILL },
-  final: { ...COMMON, title: null, clips: [CLIP], captionStyle: null, end: null, music: null },
+  cutdown: { ...COMMON, source: SOURCE, targetSeconds: 6, keep: [], silence: "off", cues: [], captionStyle: null, reframe: FILL },
+  final: { ...COMMON, title: null, clips: [CLIP], captionStyle: null, end: null, music: null, voiceover: [], duck: 0.3 },
   "fixture-clip": { ...COMMON, durationSeconds: 2, label: "SAMPLE" },
 };
 
 function metadata<K extends CompositionId>(id: K): CalculateMetadataFunction<PropsById[K]> {
   return ({ props }) => {
-    const checked = validateProps(id, props);
+    /* These props come from the export itself (it sets offsetSeconds on a windowed copy), never from a request. */
+    const checked = validateProps(id, props, undefined, true);
     if (!checked.ok) throw new Error(`Invalid props for ${id}: ${checked.errors.join("; ")}`);
     const timeline = toTimeline(id, checked.value);
     return { durationInFrames: timeline.durationInFrames, fps: timeline.fps, width: timeline.width, height: timeline.height, props: checked.value };

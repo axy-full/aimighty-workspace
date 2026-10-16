@@ -161,12 +161,16 @@ export const EXPORT_TOOLS: ToolDef[] = [
       "(usually a minute or two), so use get_export to collect it. Name media by handle, never by URL: " +
       '{"take": "<take id>"} or {"upload": "<upload id>"}; a clip may add "hasAudio": true to keep its sound. ' +
       "For example, captions on a cut: composition 'captions', props {aspect:'9:16', clip:{source:{take:'…', hasAudio:true}, cues:[{startMs,endMs,text}]}, captionStyle:'bold'}. " +
-      "Cutdowns are 6, 15 or 30 s ('cutdown', props {aspect, source:{take:'…'}, targetSeconds:15}). Nothing is spent, and a failed export says nothing was billed.",
+      "Cutdowns are 6, 15 or 30 s ('cutdown', props {aspect, source:{take:'…'}, targetSeconds:15}; add silence:'keep-speech' to keep the spoken parts). " +
+      "A narrated cut ('final') takes voiceover:[{upload:'…', startSeconds:2}] and ducks the music and the clips' sound while a line plays. " +
+      "Optional output: {format:'h264' (default) | 'prores-422' | 'prores-422-hq' (at most 1800 frames: 60 s at 30 fps, 30 s at 60 fps; H.265 is not available), subtitles:['srt','vtt'] (written from the cues), conform:'off' (default) | 'auto' (first re-encodes a variable-frame-rate clip, such as a phone recording, to a steady rate)}. H.264 and the ProRes mezzanine are the only formats: DNxHR is not offered for now. " +
+      "Nothing is spent, and a failed export says nothing was billed.",
     inputSchema: {
       type: "object",
       properties: {
         composition: { type: "string", enum: [...EXPORT_COMPOSITIONS], description: "Which template." },
         props: { type: "object", description: "The template's props, with media named by handle (see the description)." },
+        output: { type: "object", description: "Optional: the finished files. format: h264 (default), prores-422 or prores-422-hq (the only formats; no DNxHR for now). subtitles: a list of srt and/or vtt. conform: off (default) or auto." },
         request_id: { type: "string", description: "Optional: any string unique to this export (a UUID is ideal, 8–100 letters, digits, dashes or underscores). Retried with the same request_id, you get the export it started." },
       },
       required: ["composition", "props"],
@@ -187,6 +191,15 @@ export const EXPORT_TOOLS: ToolDef[] = [
 /** The tools this deployment offers: the workspace tools, plus the export tools while REMOTION_EXPORTS is on. */
 export function toolsOffered(env: Readonly<Record<string, string | undefined>> = process.env): ToolDef[] {
   return exportsEnabled(env) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
+}
+
+/**
+ * The tools offered to one workspace: the export tools only when exports are on for it (REMOTION_EXPORTS exactly "1" AND the
+ * house workspace or the site setting `enginesOnWorkspaces`, lib/engineGate.ts). The route still refuses with a 404 if one is called anyway.
+ */
+export async function toolsOfferedFor(workspace: { id: string } | null | undefined): Promise<ToolDef[]> {
+  const { engineEnabled } = await import("./engineGate");
+  return (await engineEnabled("REMOTION_EXPORTS", workspace)) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
 }
 
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
@@ -279,7 +292,7 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
  * spend is reported in credits and the engine's dollars are never named.
  */
 export async function runTool(
-  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
+  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean; /** Exports are on for this workspace (the route says; absent: only the global switch is asked). */ exports?: boolean } = {}
 ): Promise<string> {
   switch (name) {
     case "prepare_shot": {
@@ -434,20 +447,20 @@ export async function runTool(
     }
 
     case "export_video": {
-      if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
       const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
-      const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props } })) as { job: ExportSummary };
+      const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props, ...(args.output ? { output: args.output } : {}) } })) as { job: ExportSummary };
       return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
     }
 
     case "get_export": {
-      if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
       const { job } = (await call(`/api/exports/${encodeURIComponent(String(args.id))}`)) as { job: ExportSummary };
       return exportDescribe(job, origin);
     }
 
     case "cancel_export": {
-      if (!exportsEnabled()) throw new Error(`Unknown tool: ${name}`);
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
       const { job } = (await call(`/api/exports/${encodeURIComponent(String(args.id))}`, { method: "PATCH", body: { action: "cancel" } })) as { job: ExportSummary };
       return exportLine(job);
     }
