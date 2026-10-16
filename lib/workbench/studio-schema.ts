@@ -20,6 +20,11 @@ import { MAX_SCRIPT_CHARS, MAX_SCRIPT_PAGES } from "./screenplay";
 import { CINEMA_STUDIO_CONTROLS } from "../cinemaStudioTypes";
 import { NANO_BANANA_2_ID, NANO_BANANA_PRO_ID } from "../models";
 import { BOARD_DATA_LIMITS, CARD_ID, PERSON_ID, SETTING_KEY, STEP_ID } from "../v12/board/board-data";
+import { CUT_DATA_LIMITS, LANGUAGE_CODE, TAKE_ID } from "../v12/board/cut-data";
+const takeId = z.string().regex(TAKE_ID);
+const cutText = z.string().max(CUT_DATA_LIMITS.text);
+const cardSeconds = z.number().finite().min(1).max(10);
+const unit = z.number().finite().min(0).max(1);
 /** One step's or one card's settings in a board's draft (lib/v12/board/board-data.ts). */
 const settings = z.record(z.string().regex(SETTING_KEY), z.union([z.string().max(BOARD_DATA_LIMITS.text), z.number().finite(), z.boolean()]))
   .refine((v) => Object.keys(v).length <= BOARD_DATA_LIMITS.settings, "Too many settings");
@@ -388,6 +393,24 @@ export const projectSchema = z.object({
   boardSetup: z.object({ agent: stepSetups, director: stepSetups }).strict().optional(),
   boardOverrides: z.record(z.string().regex(CARD_ID), settings).optional()
     .refine((v) => !v || Object.keys(v).length <= BOARD_DATA_LIMITS.cards, "Too many cards"),
+  /* The Edit step: how the cut is dressed, and what each language says (lib/v12/board/cut-data.ts). Additive and optional, draft JSON only. */
+  boardCut: z.object({
+    shots: z.array(z.object({
+      take: takeId,
+      trim: z.object({ startSeconds: z.number().finite().min(0).max(CUT_DATA_LIMITS.seconds), endSeconds: z.number().finite().min(0).max(CUT_DATA_LIMITS.seconds) }).strict().optional(),
+      hasAudio: z.boolean().optional(),
+    }).strict()).max(CUT_DATA_LIMITS.shots).optional(),
+    music: z.object({ take: takeId.optional(), upload: takeId.optional(), volume: unit.optional() }).strict()
+      .refine((m) => (m.take === undefined) !== (m.upload === undefined), "Name exactly one of take or upload").optional(),
+    title: z.object({ title: cutText, subtitle: cutText.optional(), durationSeconds: cardSeconds.optional() }).strict().optional(),
+    end: z.object({ headline: cutText, callToAction: cutText.optional(), line: cutText.optional(), durationSeconds: cardSeconds.optional() }).strict().optional(),
+    captions: z.enum(["bold", "clean", "karaoke"]).nullable().optional(),
+    duck: unit.optional(),
+  }).strict().optional(),
+  boardVoice: z.record(z.string().regex(LANGUAGE_CODE), z.object({
+    lines: z.array(z.object({ take: takeId, startSeconds: z.number().finite().min(0).max(CUT_DATA_LIMITS.seconds), text: cutText, volume: unit.optional() }).strict()).max(CUT_DATA_LIMITS.lines),
+    swap: z.record(takeId, takeId).optional().refine((v) => !v || Object.keys(v).length <= CUT_DATA_LIMITS.swaps, "Too many swaps"),
+  }).strict()).optional().refine((v) => !v || Object.keys(v).length <= CUT_DATA_LIMITS.languages, "Too many languages"),
   /* Client rounds in the new interface (lib/v12/rounds.ts): the approved rounds, what each changed and the take each shot had before. Additive and optional, draft JSON only. */
   boardRounds: z.array(z.object({
     n: z.number().int().min(2).max(99),
