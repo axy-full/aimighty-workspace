@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { openMediaStream, openUploadStream } from "../storage";
 import { inspectOriginalVideo } from "../videoMetadata.server";
+import { findStoredSource, resolveStoredDuration } from "../mediaSource.server";
 import { mayReadTake } from "../draftProject";
 import { uploadOpenableBy } from "../uploadAccess";
 import type { Reference } from "../ark";
@@ -192,21 +193,40 @@ export function createMediaResolver(viewer: ExportViewer, options: { facts?: typ
         if (row.status === "queued" || row.status === "running") throw new ExportError("That take is still being made. Export it when it is ready.", 409);
         if (row.status !== "succeeded" || !row.stored_url) throw gone("That take");
         const bytes = Number(row.bytes);
-        const seconds = row.duration_s == null ? NaN : Number(row.duration_s);
         if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > MAX_MEDIA_BYTES) throw new ExportError("That audio take is too large to export.", 413);
-        if (!Number.isFinite(seconds) || seconds <= 0) throw new ExportError("That audio take has no recorded length, so it cannot be used.", 422);
+        const seconds = await lengthOf(row.duration_s, { genId: String(row.id) });
+        if (seconds == null) throw new ExportError("That audio take has no recorded length, so it cannot be used.", 422);
         return { origin: "take", id: String(row.id), ext: "mp3", storedUrl: String(row.stored_url), bytes, durationSeconds: seconds };
       }
       const row = await uploadRow(handle.upload!, viewer);
       const ext = String(row.ext).toLowerCase();
       if (!String(row.mime).startsWith("audio/") || !AUDIO_EXT.includes(ext)) throw new ExportError("Music must be an MP3, WAV, M4A, AAC or OGG file.", 415);
       const bytes = Number(row.bytes);
-      const seconds = row.duration_s == null ? NaN : Number(row.duration_s);
       if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > MAX_MEDIA_BYTES) throw new ExportError("That music file is too large to export.", 413);
-      if (!Number.isFinite(seconds) || seconds <= 0) throw new ExportError("That music file has no recorded length, so it cannot be used.", 422);
+      const seconds = await lengthOf(row.duration_s, { uploadId: String(row.id) });
+      if (seconds == null) throw new ExportError("That music file has no recorded length, so it cannot be used.", 422);
       return { origin: "upload", id: String(row.id), ext, storedUrl: String(row.stored_url), bytes, durationSeconds: seconds };
     },
   };
+}
+
+/**
+ * An audio file's length in seconds: the recorded one, else measured now from the stored original and written back, by the same
+ * bounded lazy backfill the sound tools use (lib/mediaSource.server.ts). The tools that make a voice or a piece of music record the
+ * length when they settle; this covers one that did not (an older take, an upload from before lengths were kept, another engine's).
+ * It reads only the file's header under the inspection budget and writes only the length column: no price, no ledger row, no
+ * engine. Null when the length cannot be read.
+ */
+async function lengthOf(recorded: unknown, ref: { genId?: string; uploadId?: string }): Promise<number | null> {
+  const seconds = recorded == null ? NaN : Number(recorded);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  try {
+    const source = await findStoredSource(ref);
+    const measured = source ? await resolveStoredDuration(source) : null;
+    return measured?.seconds != null && measured.seconds > 0 ? measured.seconds : null;
+  } catch {
+    return null;
+  }
 }
 
 async function uploadRow(id: string, viewer: ExportViewer) {

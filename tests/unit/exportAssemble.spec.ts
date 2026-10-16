@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
@@ -310,3 +310,33 @@ test("an outside agent runs it over MCP: one POST to the assemble route, free, a
     delete process.env.REMOTION_EXPORTS;
   }
 });
+
+/* An audio take whose tool did not record its length (an older take, an upload from before lengths were kept, another engine's)
+   is measured from its stored original at bind time, by the bounded backfill the sound tools use, and the length is written back. */
+const GENERATIONS = path.join(process.cwd(), ".data", "generations");
+const stamp = `as${Date.now().toString(36)}`;
+const written: string[] = [];
+test.afterAll(() => { for (const file of written) rmSync(file, { force: true }); });
+
+test("an audio take with no recorded length is measured from its stored file, then recorded; one whose file is missing is refused as before", async () => context("assemble-probe", async (m) => {
+  const tone = readFileSync(path.resolve("public/fixtures/tone.mp3"));
+  mkdirSync(GENERATIONS, { recursive: true });
+  const id = `voice_${stamp}`;
+  const file = path.join(GENERATIONS, `${id}.mp3`);
+  writeFileSync(file, tone);
+  written.push(file);
+  const insert = (genId: string) => m.db().execute({ sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,deleted,created_by,project_id,stored_url,bytes,duration_s) VALUES(?,?,?,?,?,1,1,'audio',0,'u_owner',NULL,?,?,NULL)", args: [genId, "elevenlabs", "a line", "{}", "succeeded", `/stored/${genId}.mp3`, tone.byteLength] });
+  await insert(id);
+  await insert(`voice_${stamp}_gone`);
+  const found = await m.resolverFor(OWNER).audio({ take: id });
+  expect(found).toMatchObject({ origin: "take", id, ext: "mp3" });
+  expect(found.durationSeconds).toBeGreaterThan(2.5);
+  expect(found.durationSeconds).toBeLessThan(3.5);
+  expect(Number((await m.db().execute({ sql: "SELECT duration_s FROM generations WHERE id=?", args: [id] })).rows[0].duration_s)).toBeCloseTo(found.durationSeconds, 3);
+  /* Through a whole film: admitted. */
+  const request = assembleToExport(assembleSchema.parse({ ...film({ voice: [{ take: id, startSeconds: 2, text: "from a take with no recorded length" }] }), requestId: "film-request-probe1" }));
+  const created = await m.createExport(request, OWNER, m.deps());
+  expect(created.duplicate).toBe(false);
+  /* No stored file to read: still refused with the same plain words. */
+  await expect(m.resolverFor(OWNER).audio({ take: `voice_${stamp}_gone` })).rejects.toMatchObject({ status: 422 });
+}));

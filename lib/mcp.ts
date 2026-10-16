@@ -183,7 +183,7 @@ export const EXPORT_TOOLS: ToolDef[] = [
       "(the shots, voice and music are made first, on their own tools, at their own prices). Name every file by handle, never by URL: {\"take\": \"<take id>\"} or {\"upload\": \"<upload id>\"}. " +
       "timeline: {aspect:'16:9'|'9:16', shots:[{take|upload, trim:{startSeconds,endSeconds}, hasAudio:false}], voice:[{take|upload, startSeconds, text:'what the line says'}], music:{take|upload, volume}, " +
       "title:{title, subtitle, durationSeconds}, end:{headline, callToAction}, captions:'bold'|'clean'|'karaoke' (burn the lines' words in) or omitted (none), duck:0.3}. " +
-      "Voice lines cannot overlap, and a film is at most 120 s with 24 shots and 24 voice lines. A line's words also go to the subtitle files when output.subtitles is asked for (['srt','vtt']), in any language, Hindi included. " +
+      "Voice lines cannot overlap, and a film is at most 120 s with 24 shots and 24 voice lines. A line's words also go to the subtitle files when output.subtitles is asked for (['srt','vtt']), in Latin, Devanagari (Hindi) and the other scripts the worker's Noto fonts cover; Chinese, Japanese and Korean are not available yet. " +
       "Returns an id immediately; use get_export to collect it. Retried with the same request_id you get the film it started.",
     inputSchema: {
       type: "object",
