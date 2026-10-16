@@ -108,6 +108,8 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   /* FLUX.2 is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/bfl.spec.ts. */
   { dir: "bfl", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
   { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
+  /* The Cast character is off unless FLUX.2 is on for the workspace, so THIS press only proves its door is shut and spends nothing. Its stills are the engines' own admissions; the cap wall with the engine ON is proved in tests/unit/castCharacter.spec.ts. */
+  { dir: "cast-character", body: { name: "Maya", description: "a ship's captain in her fifties", versionId: "cv_door_press", maxCredits: 100000 } },
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
   { dir: "jobs/[id]/release", body: { credits: 10 }, id: "gen_held" },
@@ -411,6 +413,8 @@ const DOOR_MODULE: Record<string, string> = {
   "audio": "lib/audioAdmission.ts",
   "audio/dub": "lib/dubbing.ts",
   "lipsync": "lib/lipSync.ts",
+  /* Every still of a character is FLUX.2's own admission (or Nano Banana's), each reserving in its module; the plan adds no reservation of its own. */
+  "cast-character": "lib/bflImage.ts",
   "sarvam": "lib/sarvamTools.ts",
   "bfl": "lib/bflImage.ts",
   "audio/transcribe": "lib/transcription.ts",

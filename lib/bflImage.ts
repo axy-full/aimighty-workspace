@@ -137,6 +137,17 @@ export function flux3Quote(model: Flux3Model, width: number, height: number): { 
 
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * What a FLUX.2 job would cost BEFORE its references exist (the Cast tool prices a character sheet whose portrait is not made yet): the same arithmetic as the admission's
+ * quote (`bflQuote`, then the margin table by model), with the references' sizes given. A price estimate only: it opens no row, holds nothing and checks no limit; the
+ * admission checks them all when the job is really asked for.
+ */
+export function bflEstimate(model: Flux2Model, width: number, height: number, referenceMps: number[]): { estimatedCredits: number; usd: number } | { error: string } {
+  const priced = bflQuote(model, megapixels(width, height), referenceMps);
+  if ("error" in priced) return priced;
+  return { estimatedCredits: quotedCredits(priced.usd, model), usd: priced.usd };
+}
+
 export const executeBflAdmission = (input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> => admitBfl(input, got, options);
 
 /** The admission. Internal: only the tests and the door import it (tests/unit/bfl.spec.ts says so by reading the source). */

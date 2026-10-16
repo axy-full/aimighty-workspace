@@ -1,6 +1,7 @@
 import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
+import { castCharacterOn } from "./castCharacter";
 import { bflTools, flux3TierOf } from "./bflImage";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
@@ -189,7 +190,33 @@ const FLUX2_EDIT: DirectTool = {
   describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX3_IMAGE, FLUX2_IDENTITY, FLUX2_EDIT];
+/** An AI-made character: portrait, character sheet, cast member and identity under one price. Never a draft (it always asks a person). */
+const CAST_CHARACTER: DirectTool = {
+  def: {
+    name: "cast_character",
+    description:
+      "Make an AI-made character for a production: their portrait, their character sheet, their place in the cast (@Name) and their identity, under ONE price. " +
+      "Priced first as 'up to N cr'; a person approves it in Particl, never you. AI-made characters only: nobody's real face is used, so no consent is asked.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The @name they are cited by: letters, digits and underscores, starting with a letter." },
+        description: { type: "string", description: "Who they are, in a few words (up to 600 characters)." },
+        engine: { type: "string", description: "auto (default), flux2 or nanobanana." },
+        sheet: { type: "boolean", description: "Also make their character sheet. Default true." },
+        project_id: { type: "string", description: "The production. Optional." },
+        request_id: { type: "string" },
+      },
+      required: ["name", "description"],
+    },
+  },
+  present: castCharacterOn,
+  prepared: (b) => `prepared: the character @${String(b.name)}${b.sheet === false ? "" : " with a character sheet"}`,
+  request: (a) => ({ path: "/api/cast-character", body: { name: str(a.name), description: str(a.description), engine: str(a.engine), sheet: typeof a.sheet === "boolean" ? a.sheet : undefined, projectId: str(a.project_id) } }),
+  describe: (out, quote) => `Character made.\n\nid: ${String(out.id)}\nprice: up to ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}`,
+};
+
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX3_IMAGE, FLUX2_IDENTITY, FLUX2_EDIT, CAST_CHARACTER];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {
