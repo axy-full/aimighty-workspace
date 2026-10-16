@@ -4,6 +4,7 @@ import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { PLATFORM_SECTIONS, PLATFORM_SECTION_PARAM, PLATFORM_SHEET_PARAM, readPlatformSection, type PlatformSectionId } from "@/lib/platformConsole";
 import type { ConsoleOverview } from "@/lib/platformConsole.server";
+import { riskAlarm, riskWords } from "@/lib/atRiskWindow";
 import { useAdminRead } from "./api";
 import { Overview } from "./Overview";
 import { Access } from "./Access";
@@ -38,9 +39,9 @@ export function PlatformConsole() {
   const { data: desk, refresh: refreshDesk } = useAdminRead<AdminDesk>(superAdmin && needsDesk ? "/api/admin/invites" : null, 30_000);
   if (!superAdmin) return null;
 
-  const badge = (id: PlatformSectionId): { n: number; tone?: "bad" } | null => {
+  const badge = (id: PlatformSectionId): { n: number | string; tone?: "bad" } | null => {
     if (id === "access") { const n = (counts?.requestsWaiting ?? 0) + (counts?.invitesPending ?? 0); return n ? { n } : null; }
-    if (id === "risk") { const n = counts?.failedSaves ?? 0; return n ? { n, tone: "bad" } : null; }
+    if (id === "risk") { const c = counts?.failedSaves; return c && riskAlarm(c) ? { n: riskWords(c), tone: "bad" } : null; }
     return null;
   };
   const refresh = () => { refreshDesk(); refreshCounts(); };
