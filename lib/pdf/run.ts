@@ -40,7 +40,7 @@ async function filmBoard(request: DeckRequest, viewer: Viewer) {
   return draft.project;
 }
 
-async function source(request: DeckRequest, viewer: Viewer, build: BuildOptions): Promise<DeckDoc> {
+async function source(request: DeckRequest, viewer: Viewer, build: BuildOptions, film: Awaited<ReturnType<typeof filmBoard>> | null): Promise<DeckDoc> {
   if (request.kind === "treatment") {
     if (!request.projectId) throw new PdfError("A treatment needs the production it belongs to (projectId).");
     /* A private board is its owner's and a shared one a teammate's to read; to anyone else it is a production that does not exist. */
@@ -55,7 +55,7 @@ async function source(request: DeckRequest, viewer: Viewer, build: BuildOptions)
     if (!draft) throw new PdfError("That board isn't available in this workspace.", 404);
     return ppmDoc(draft.project, build);
   }
-  if (request.kind === "film") return filmDoc(await filmBoard(request, viewer), { ...build, cover: request.cover ?? "treatment" });
+  if (request.kind === "film" && film) return filmDoc(film, { ...build, cover: request.cover ?? "treatment" });
   if (!request.pitch) throw new PdfError("A pitch deck needs its words (pitch: a logline, an audience and sections).");
   return pitchDoc({ title: request.title ?? "", logline: request.pitch.logline, audience: request.pitch.audience, sections: request.pitch.sections }, build);
 }
@@ -72,14 +72,15 @@ export async function makeDeckPdf(request: DeckRequest, viewer: Viewer, deps: Pd
   if (request.cover && request.kind !== "film") throw new PdfError("A cover is chosen for film decks only.");
   const date = DATE.format((deps.now ?? (() => new Date()))());
   /* A film deck brings the board's own storyboard pictures, after any the caller named. */
-  const pictureRequest = request.kind === "film"
-    ? { ...request, images: [...(request.images ?? []), ...filmPictureHandles(await filmBoard(request, viewer)).slice(0, Math.max(0, Math.min(FILM_PICTURES, MAX_IMAGES - (request.images?.length ?? 0)))).map((h) => ({ ...h, optional: true as const }))] }
+  const film = request.kind === "film" ? await filmBoard(request, viewer) : null;
+  const pictureRequest = film
+    ? { ...request, images: [...(request.images ?? []), ...filmPictureHandles(film).slice(0, Math.max(0, Math.min(FILM_PICTURES, MAX_IMAGES - (request.images?.length ?? 0)))).map((h) => ({ ...h, optional: true as const }))] }
     : request;
   const bound = await bindPictures(pictureRequest, viewer, deps.pictures ?? workspacePictures);
   const size = request.page ?? DEFAULT_PAGE[request.kind];
   let doc: DeckDoc;
   try {
-    doc = await source(request, viewer, { size, bleedMm: request.bleedMm ?? 0, title: request.title, logo: bound.logo, pictures: bound.pictures, date });
+    doc = await source(request, viewer, { size, bleedMm: request.bleedMm ?? 0, title: request.title, logo: bound.logo, pictures: bound.pictures, date }, film);
   } catch (error) {
     if (error instanceof DeckTooLong) throw new PdfError(error.message, 413);
     throw error;
