@@ -1271,3 +1271,16 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 15:38 IST.** **#812** (viewport on whole device pixels, c359f7dd) APPROVED by Opus. Should-fix: a DPR-2 browser check (lane C).
   - **Limit:** it removes softness only at zoom 1 (≤1440, the old board, and a person's own zoom at 100%).
   - **Above 1440, the large-screen zoom (1.2/1.6/1.88) still blurs text and borders** until the layout conversion, which waits for the owner's go.
+- **16 Oct 15:48 IST.** Owner's 15:50 answers dispatched.
+  - **Lane H:** #809 enhancer free on any failure; #807 reworked into the streaming loader (section E) with the owner's tooltip and the exact failure line pinned.
+  - **Lane B:** #800 fix, then batches judged as ONE job against 200 cr (server-trusted, with a new guard test), then the actingViewer follow-up.
+  - **Lane D:** the Cast tool server side (moved from B), then D-6.
+  - **Lane C:**
+    - board zoom conversion and restyling paused for the v26 zip;
+    - #812's 2× test;
+    - #790's "Auto never starts 720p/1080p" test;
+    - the wiring PR.
+  - **Lane F:** create_board added to the WRITES guard (owner's yes) in #806.
+  - **Lane I:** after FLUX Upscale, the resolution control (server list, validation and guard test first, then Make).
+  - **Lane J:** 2560 at 1× and 2×.
+  - **Investigator (private notes):** the public-site report, Dune Studies image sizes, Kling 4.0 on Kling's API, the Remotion Company License price, Polotno needs, TEXT_DIRECT values.
