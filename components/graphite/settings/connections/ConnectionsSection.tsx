@@ -1,10 +1,19 @@
 "use client";
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useShell } from "@/lib/shell/state";
 import { useCompact } from "@/lib/shell/use-compact";
 import { stashGenPreset } from "@/lib/shell/gen-preset";
-import { preparedModelId, preparedSpec, type PreparedJob } from "@/lib/security/prepared-words";
+import { preparedGenerationInput, preparedModelId, preparedSpec, type PreparedJob } from "@/lib/security/prepared-words";
+import { studioRequest } from "@/components/workbench/GenerationDialog";
+import { Price, usePriceTitle } from "@/components/graphite/Price";
+import { creditsText, exact } from "@/lib/shell/price-words";
+import { spendAttrsOf } from "@/lib/spend";
+import { generationRequestBody } from "@/lib/workbench/generation-request";
+import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
+import { dispatchGeneration } from "@/lib/workspace/generate-submit";
+import { neutralCopy } from "@/lib/workspace/rig";
+import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import "@/components/graphite/security/security.css";
 import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
@@ -173,20 +182,32 @@ function TokenDialog({ title, sub, onClose, testId, children }: { title: string;
 }
 
 /**
- * What outside agents prepared (lib/security/prepared-jobs.ts): each waits for a person. Open in Make hands its
- * words and settings to Make, which shows the price; pressing Make there is the approval. Dismiss marks it, and
- * nothing is erased. Nothing here spends.
+ * What outside agents prepared (lib/security/prepared-jobs.ts): each waits for a person, with its whole prompt on view. A person
+ * approves it here: "Approve at N cr" is priced by the server for exactly this job, now, with the person's own session (the quote
+ * is never stored), and one tap sends it through the ordinary paid path at that figure as its ceiling (lib/workspace/generate-submit.ts:
+ * it prices again, sends nothing if the figure moved, and is never sent twice). Open in Make hands the words to Make instead.
+ * Dismiss marks it, and nothing is erased. Only a person can do any of it: the routes refuse a token.
  */
 function Prepared() {
   const shell = useShell();
   const compact = useCompact();
   const router = useRouter();
   const write = useWrite();
+  const session = useSession();
+  const spendOff = useSampleWorkspace();
   const { toast } = useWorkspace();
   const { data, read } = useRead<{ jobs: PreparedJob[] }>("/api/prepared-jobs");
+  const { data: projects } = useRead<{ projects?: { id: string; name: string }[] }>("/api/projects");
   const jobs = data?.jobs ?? [];
   const [busy, setBusy] = useState<string | null>(null);
   if (!jobs.length) return null;
+  const scope = session.signedIn ? (session.requestScope ?? null) : null;
+  /* The project a job names, when exactly one of this workspace's is called that; otherwise it is filed to none. */
+  const projectOf = (job: PreparedJob): string | null => {
+    const want = job.project?.trim().toLowerCase();
+    const same = want ? (projects?.projects ?? []).filter((p) => p.name.trim().toLowerCase() === want) : [];
+    return same.length === 1 ? same[0].id : null;
+  };
   const decide = async (job: PreparedJob, state: "opened" | "dismissed") => {
     setBusy(job.id);
     const { error: refused } = await write(`/api/prepared-jobs/${encodeURIComponent(job.id)}`, "PATCH", { state });
@@ -203,14 +224,93 @@ function Prepared() {
   };
   return (
     <div data-testid="settings-prepared">
-      <Row name="Waiting for a person" line={`${jobs.length} prepared by outside agents · each is priced in Make when you open it`} />
+      <Row name="Waiting for a person" line={`${jobs.length} prepared by outside agents`} />
       {jobs.map((job) => (
-        <Row key={job.id} name={job.prompt.length > 90 ? `${job.prompt.slice(0, 89)}…` : job.prompt} line={[preparedSpec(job), job.project, `from ${job.tokenName ?? "a revoked token"}`].filter(Boolean).join(" · ")} testId="settings-prepared-job">
-          <Btn disabled={busy != null} onClick={() => void decide(job, "dismissed")} testId="settings-prepared-dismiss">Dismiss</Btn>
-          <Btn disabled={busy != null} onClick={() => void decide(job, "opened")} testId="settings-prepared-open">Open in Make</Btn>
-        </Row>
+        <PreparedRow key={job.id} job={job} scope={scope} projectId={projectOf(job)} spendOff={Boolean(spendOff)} busy={busy != null}
+          onApproved={() => void read()} onDismiss={() => void decide(job, "dismissed")} onOpen={() => void decide(job, "opened")} />
       ))}
     </div>
+  );
+}
+
+/** `key` names the job it priced: an answer for another key (the job changed since) is not this job's price. */
+type Estimate = { key: string } & ({ credits: number; usd: number | null } | { error: string });
+
+/** One prepared job: its whole prompt, its settings, and the three things a person can do with it. */
+function PreparedRow({ job, scope, projectId, spendOff, busy, onApproved, onDismiss, onOpen }: {
+  job: PreparedJob; scope: string | null; projectId: string | null; spendOff: boolean; busy: boolean;
+  onApproved: () => void; onDismiss: () => void; onOpen: () => void;
+}) {
+  const write = useWrite();
+  const { toast } = useWorkspace();
+  const [answer, setAnswer] = useState<Estimate | null>(null);
+  const [sending, setSending] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const pressing = useRef(false);
+  /* Keyed by the job's own words and settings, not by the object a re-read hands back, so a refresh does not ask the price again. */
+  const { prompt, model, duration, resolution, ratio, audio } = job;
+  const input = useMemo(() => preparedGenerationInput({ prompt, model, duration, resolution, ratio, audio }, projectId), [prompt, model, duration, resolution, ratio, audio, projectId]);
+  const key = useMemo(() => JSON.stringify(input), [input]);
+  const estimate = answer && answer.key === key ? answer : null;
+  /* The server's price for exactly this job, now: asked again whenever the job, its project or the person's scope changes, and never kept. */
+  useEffect(() => {
+    if (spendOff || !scope) return;
+    let alive = true;
+    (async () => {
+      try {
+        const fresh = await studioRequest<{ estimatedCredits?: unknown; price?: unknown; unit?: unknown }>("/api/generate/quote", {
+          method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify(generationRequestBody(input)),
+        });
+        if (!alive) return;
+        const credits = fresh.estimatedCredits;
+        if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) { setAnswer({ key, error: "The price could not be read. Nothing was sent." }); return; }
+        setAnswer({ key, credits, usd: fresh.unit === "usd" && typeof fresh.price === "number" ? fresh.price : null });
+      } catch (caught) {
+        if (alive) setAnswer({ key, error: neutralCopy(caught instanceof Error ? caught.message : "", "The price could not be read. Nothing was sent.") });
+      }
+    })();
+    return () => { alive = false; };
+  }, [input, key, scope, spendOff]);
+  const price = estimate && "credits" in estimate ? exact(estimate.credits, estimate.usd) : null;
+  const priceTitle = usePriceTitle(price);
+  const approve = async () => {
+    /* One press at a time: a double press is the same press. */
+    if (pressing.current || !scope || !estimate || !("credits" in estimate)) return;
+    pressing.current = true;
+    setSending(true); setNote(null);
+    try {
+      /* Claimed first, so two people cannot both start it. */
+      const url = `/api/prepared-jobs/${encodeURIComponent(job.id)}`;
+      const claim = await write<{ ok?: boolean }>(url, "PATCH", { state: "approved" });
+      if (claim.error || !claim.json?.ok) { toast(claim.error ?? "Someone else has already decided this one."); onApproved(); return; }
+      const outcome = await dispatchGeneration({ scope, storageId: pendingGenerationKey(scope, projectId ?? "unfiled", `prepared:${job.id}`), shown: estimate.credits, request: { endpoint: "/api/generate", input } });
+      if (outcome.state === "queued") {
+        const done = await write(url, "PATCH", { state: "approved", takeId: outcome.jobId });
+        toast(`Started · ${creditsText(outcome.credits)}${done.error ? " · it will show as waiting until you reload" : ""}`);
+        onApproved();
+        return;
+      }
+      /* Nothing started: the claim is let go, so the job waits again with the new price or the refusal said once. */
+      await write(url, "PATCH", { state: "waiting" });
+      if (outcome.state === "repriced") { setAnswer({ key, credits: outcome.credits, usd: null }); setNote(`The price is now ${creditsText(outcome.credits)}. Tap again to approve it.`); }
+      else setNote(outcome.reason);
+      onApproved();
+    } finally { pressing.current = false; setSending(false); }
+  };
+  const name = <span className="gs-prepared-prompt" data-testid="settings-prepared-prompt">{job.prompt}</span>;
+  const line = [preparedSpec(job), job.project, `from ${job.tokenName ?? "a revoked token"}`].filter(Boolean).join(" · ");
+  const failed = estimate && "error" in estimate ? estimate.error : null;
+  return (
+    <Row name={name} line={<>{line}{failed ? <><br /><span data-testid="settings-prepared-note">{failed}</span></> : null}{note ? <><br /><span role="status" data-testid="settings-prepared-note">{note}</span></> : null}</>} testId="settings-prepared-job">
+      <Btn disabled={busy || sending} onClick={onDismiss} testId="settings-prepared-dismiss">Dismiss</Btn>
+      <Btn disabled={busy || sending} onClick={onOpen} testId="settings-prepared-open">Open in Make</Btn>
+      {spendOff ? null : (
+        <button type="button" className="gs-btn" data-hot disabled={busy || sending || !price || undefined} {...spendAttrsOf(price)} title={priceTitle ?? undefined}
+          aria-busy={sending || undefined} onClick={() => void approve()} data-testid="settings-prepared-approve">
+          {sending ? "Approving…" : price ? <>Approve at <Price value={price} /></> : "Approve"}
+        </button>
+      )}
+    </Row>
   );
 }
 
