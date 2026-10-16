@@ -1049,3 +1049,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Merges: none qualify under the standing yes.
   - Lanes: all idle. Slices 1-3 are built except items waiting on owner decisions: Gemini 3.x pricing/routing, the Pro pick shape, an SVG sanitiser or raster-only, DNxHR (needs a different ffmpeg). Slice 4 is "on a client need or bake-off win"; Slice 5 comes after.
   - No paid generation; spend $0. The 10:30 report is built at 09:55.
+- **16 Oct 09:58 IST. 10:30 report published** on the status page (https://claude.ai/artifact/DtnxW74goSK8ic7MonDnt5, version 15; source ~/lead-notes/status-16oct-report.html).
+  - Production: ok at 709497a; 0.17-0.33 s; read-only checks pass; the watcher raised nothing overnight.
+  - Merged: nothing.
+  - Spend: $0, no paid generation ran.
+  - Feedback board: 0 reports.
+  - 9 decisions asked of the owner, each with a recommendation: (1) consent reference source; (2) deploy #5 and #748's two assertions; (3) Slice 1 env names, export_jobs, #766 guards, #768 pin; (4) one enginesOnWorkspaces list; (5) #765 house cap guards; (6) agents' one-tap approval; (7) engine specifics; (8) provider terms; (9) small yes/no.
+  - Ready lists: 9 green on release/1, plus the stacked approved PRs.
+  - Slice 1 measurement repeated; Slices 2-3 built and waiting; Gemini 3.x not built.
