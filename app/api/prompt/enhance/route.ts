@@ -32,7 +32,7 @@ export const maxDuration = 120;
  * meter settles what the provider reports, and nothing is reserved on a quote.
  */
 export const POST = withTenant(async function POST(req: Request) {
-  /* The writer gets the same 8 s the browser waits (ENHANCE_DEADLINE_MS), counted from the request's start: the catalogue read and the claim come out of it. */
+  /* The writer gets 8 s (ENHANCE_DEADLINE_MS; the browser waits 10), counted from the request's start: the catalogue read and the claim come out of it. */
   const deadline = Date.now() + ENHANCE_DEADLINE_MS;
   const got = await requireRender();
   if (got.response) return got.response;
@@ -44,13 +44,13 @@ export const POST = withTenant(async function POST(req: Request) {
     try {
       const body = await req.json().catch(() => ({}));
       const prompt = String(body.prompt ?? "").trim();
-      if (!prompt) return NextResponse.json({ error: "Write a few words first." }, { status: 400 });
-      if (prompt.length > ENHANCE_MAX_PROMPT) return NextResponse.json({ error: "That prompt is too long to enhance. Shorten it." }, { status: 400 });
-      if (isRawPrompt(prompt)) return NextResponse.json({ error: "A raw: prompt is sent as written. Remove raw: to enhance it." }, { status: 400 });
-      if (!isEnhanceMode(body.mode)) return NextResponse.json({ error: "Choose what you are generating first." }, { status: 400 });
-      if (body.provider !== undefined && !isEnhancerProvider(body.provider)) return NextResponse.json({ error: "Choose a supported prompt enhancer." }, { status: 400 });
+      if (!prompt) return NextResponse.json({ error: "Write a few words first.", nothingBilled: true }, { status: 400 });
+      if (prompt.length > ENHANCE_MAX_PROMPT) return NextResponse.json({ error: "That prompt is too long to enhance. Shorten it.", nothingBilled: true }, { status: 400 });
+      if (isRawPrompt(prompt)) return NextResponse.json({ error: "A raw: prompt is sent as written. Remove raw: to enhance it.", nothingBilled: true }, { status: 400 });
+      if (!isEnhanceMode(body.mode)) return NextResponse.json({ error: "Choose what you are generating first.", nothingBilled: true }, { status: 400 });
+      if (body.provider !== undefined && !isEnhancerProvider(body.provider)) return NextResponse.json({ error: "Choose a supported prompt enhancer.", nothingBilled: true }, { status: 400 });
       if (!languageReachable())
-        return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
+        return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it.", nothingBilled: true }, { status: 503 });
 
       const saved = await getSetting("promptEnhancer");
       const provider: EnhancerProvider = isEnhancerProvider(body.provider) ? body.provider : isEnhancerProvider(saved) ? saved : DEFAULT_ENHANCER;
@@ -58,7 +58,7 @@ export const POST = withTenant(async function POST(req: Request) {
       const available = models.map((m) => m.id);
       const routed = provider === "higgsfield" ? textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, "enhance") : null;
       const writer = pickEnhancerModel(provider, available, routed);
-      if (!writer) return NextResponse.json({ error: `${ENHANCER_LABEL[provider]} isn't available to write prompts right now. Choose another enhancer in Workspace › General.` }, { status: 503 });
+      if (!writer) return NextResponse.json({ error: `${ENHANCER_LABEL[provider]} isn't available to write prompts right now. Choose another enhancer in Workspace › General.`, nothingBilled: true }, { status: 503 });
 
       const engine = typeof body.model === "string" && body.model ? displayModelName(body.model.slice(0, 120)) : null;
       const messages = enhancerMessages(prompt, { mode: body.mode, anchored: body.anchored === true, editing: body.editing === true, engine });

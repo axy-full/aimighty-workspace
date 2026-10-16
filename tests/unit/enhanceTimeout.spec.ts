@@ -7,7 +7,7 @@ import ts from "typescript";
 import type { AdmissionActor } from "../../lib/admissionTypes";
 
 /**
- * Enhance ends within 8 s on any host (the owner's note of 16 Oct 2026; the browser gives up at the same 8 s, lib/shell/enhance-press.ts): the
+ * Enhance ends within 8 s on any host (the owner's note of 16 Oct 2026; the browser waits 10 s so an answer at the deadline still arrives, lib/shell/enhance-press.ts): the
  * deadline runs from the route's entry, the provider gets what is left of it, and with under 3 s left the press is refused before anything is
  * reserved. A writer that gives NO answer by then is settled once as failed at zero ("Nothing billed", released, 504): the one change to the money
  * rule, for the enhancer alone (`unansweredIsFree`, lib/paidText.ts). Every other text job keeps the shared rule (a cut-off call is `uncertain`, its
@@ -123,6 +123,7 @@ test("a writer that never answers: failed at zero, Nothing billed, the reservati
     const body = await first.json();
     expect(first.status).toBe(504);
     expect(body.error).toBe("The writer didn't answer in time. Nothing billed.");
+    expect(body.nothingBilled, "the browser is told in a field, not prose").toBe(true);
     expect(timeouts).toHaveLength(1);
     expect(timeouts[0]).toBeLessThanOrEqual(8_000);
     expect(timeouts[0]).toBeGreaterThan(4_000);
@@ -137,6 +138,13 @@ test("a writer that never answers: failed at zero, Nothing billed, the reservati
     expect(Number(settled.meters[0].engine_cost_usd)).toBe(0);
     expect(Number(settled.meters[0].billed_credits)).toBe(0);
     expect(await balanceOf("ws_enhance_stall"), "the whole 1,000 cr grant is still there").toBe(1000);
+    /* The ledger line says what is known: no answer, billing unknown, for the platform admin desk to reconcile against the provider's invoice. */
+    const { platformDb } = await import("../../lib/platform");
+    const line = (await platformDb().execute({ sql: "SELECT provider_outcome FROM meter_events WHERE workspace_id=?", args: ["ws_enhance_stall"] })).rows[0];
+    const outcome = JSON.parse(String(line.provider_outcome));
+    expect(outcome).toMatchObject({ provider: "gateway", stage: "run", code: "no_answer", billing: { state: "unknown", basis: "no-answer" } });
+    const { db } = await import("../../lib/db");
+    expect(Number((await db().execute("SELECT cost_usd FROM atomik_spend")).rows[0].cost_usd), "the platform's own spend row is zeroed with it").toBe(0);
 
     /* The same press again (a retry of the lost reply): answered from its claim, never a second call or charge. */
     const again = await route(press("enhance-stall-1"));
@@ -165,7 +173,10 @@ test("an error status from the provider is an answer: the enhancer keeps the sha
     const down: Submit = async () => ({ ok: false, status: 503, text: "" });
     const out = await enhance(down)(press("enhance-5xx"));
     expect(out.status).toBe(502);
-    expect((await out.json()).error).toMatch(/^The text provider returned an uncertain result\./);
+    const answer = await out.json();
+    expect(answer.error).toMatch(/^The text provider returned an uncertain result\./);
+    expect(answer.heldCredits, "the held estimate is said in credits").toBe(1);
+    expect(answer.nothingBilled).toBeUndefined();
     const settled = await traces("ws_enhance_5xx");
     expect(settled.jobs[0].status).toBe("uncertain");
     expect(Number(settled.meters[0].billed_credits)).toBe(1);
@@ -173,7 +184,9 @@ test("an error status from the provider is an answer: the enhancer keeps the sha
   await inWorkspace("ws_enhance_refused", async () => {
     const declined: Submit = async () => ({ ok: false, status: 400, text: "" });
     const out = await enhance(declined)(press("enhance-refused"));
-    expect((await out.json()).error).toBe("The text provider declined this request (400). No generation credits were charged.");
+    const declined400 = await out.json();
+    expect(declined400.error).toBe("The text provider declined this request (400). No generation credits were charged.");
+    expect(declined400.nothingBilled).toBe(true);
     const settled = await traces("ws_enhance_refused");
     expect(settled.jobs[0].status).toBe("failed");
     expect(Number(settled.meters[0].billed_credits)).toBe(0);
@@ -201,7 +214,9 @@ test("with under 3 s of the deadline left before the provider call, the press is
     const never: Submit = async () => { sent++; throw new Error("The provider must not be called"); };
     const out = await enhance(never, 6_000)(press("enhance-late"));
     expect(out.status).toBe(503);
-    expect((await out.json()).error).toBe("The text provider is slow to answer right now. Nothing was charged; try again in a moment.");
+    const slow = await out.json();
+    expect(slow.error).toBe("The text provider is slow to answer right now. Nothing was charged; try again in a moment.");
+    expect(slow.nothingBilled).toBe(true);
     expect(sent).toBe(0);
     expect(await traces("ws_enhance_late")).toEqual({ jobs: [], meters: [], reservations: 0 });
   });

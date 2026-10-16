@@ -1,4 +1,5 @@
-import { directTextCostUsd, isDirectText, textEngine, textKeyName } from './openai-direct';
+import { directTextCostUsd, isDirectText, textEngine, textKeyName, textVendor } from './openai-direct';
+import { noAnswerOutcome } from './providerOutcome';
 import { TextNotSentError, textRun } from './textDirect';
 import { engineMock } from './mock';
 import { creditsApply } from "./credits";
@@ -25,7 +26,7 @@ import { jobLineNow } from "./shotCap";
 /** The least time a deadline-bound text job must still have for its provider call (runPaidText `deadline`). */
 export const PAID_TEXT_MIN_PROVIDER_MS = 20_000;
 /**
- * The prompt enhancer's own deadline for the provider (the browser gives up at the same 8 s: lib/shell/enhance-press.ts ENHANCE_CLIENT_MS), and the
+ * The prompt enhancer's own deadline for the provider (the browser waits 10 s, lib/shell/enhance-press.ts ENHANCE_CLIENT_MS, so an answer served at this deadline still arrives), and the
  * least of it that must be left to start a call. An enhancement is a few hundred tokens: a writer that has not answered by now is not going to, and the
  * person is better served by their own words at once than by a press that hangs.
  */
@@ -34,10 +35,16 @@ export const ENHANCE_MIN_PROVIDER_MS = 3_000;
 /** The extra output tokens a quick (low-effort) writer may think with on top of the visible answer: enough for a rewrite, never the 4,096 of a planning turn. */
 export const QUICK_REASONING_TOKENS = 1_024;
 
+/**
+ * What a failed text job left on the workspace's bill, as the caller can show it without reading prose: `nothingBilled`, or `heldCredits` (the estimate
+ * billed for now and returned by the cron's pass, 0 on a workspace's own key). Absent where the error says nothing about a charge.
+ */
+export type PaidTextBilling = { nothingBilled: true } | { heldCredits: number };
 export class PaidTextError extends Error {
   constructor(
     message: string,
     public readonly status = 502,
+    public billing?: PaidTextBilling,
   ) {
     super(message);
     this.name = "PaidTextError";
@@ -45,7 +52,7 @@ export class PaidTextError extends Error {
 }
 export function paidTextFailure(error: unknown): Response {
   if (error instanceof PaidTextError || error instanceof SpendReservationError || error instanceof TextNotSentError)
-    return Response.json({ error: error.message }, { status: error.status });
+    return Response.json({ error: error.message, ...(error instanceof PaidTextError ? error.billing : {}) }, { status: error.status });
   throw error;
 }
 const configured = new Map<string, Promise<void>>();
@@ -258,7 +265,9 @@ return await withRecoveryActivity('paid-text', async () => {
   /* The sample workspace spends nothing (lib/demo/spend-guard.server.ts): refused before a job row, a reservation or a call. */
   const sample = await sampleWorkspaceRefusal();
   if (sample) throw new PaidTextError(sample, 409);
-  const { model, estimate, requestBody } = await compilePaidText(input, overrides.model);
+  const { model, estimate, estimateCredits, requestBody } = await compilePaidText(input, overrides.model);
+  /* A job whose estimate stands for now: what is held (credits on the platform's key, none on the workspace's own). */
+  const held: PaidTextBilling = { heldCredits: estimateCredits };
   requestMaxCredits(input.maxCredits, input.effort !== undefined);
   await paidTextReady();
   const id = input.id ?? newId("text");
@@ -272,7 +281,7 @@ return await withRecoveryActivity('paid-text', async () => {
       409,
     );
   if (input.deadline !== undefined && input.deadline - Date.now() < (input.minProviderMs ?? PAID_TEXT_MIN_PROVIDER_MS))
-    throw new PaidTextError("The text provider is slow to answer right now. Nothing was charged; try again in a moment.", 503);
+    throw new PaidTextError("The text provider is slow to answer right now. Nothing was charged; try again in a moment.", 503, { nothingBilled: true });
   const ts = now();
   await db().execute({
     sql: `INSERT INTO paid_text_jobs(id,model,kind,status,estimate_usd,effort,request_body,created_at,updated_at) VALUES(?,?,?,'queued',?,?,?,?,?)`,
@@ -342,6 +351,8 @@ return await withRecoveryActivity('paid-text', async () => {
         rejected
           ? `The text provider declined this request (${response.status}). No generation credits were charged.`
           : `The text provider returned an uncertain result. It will not be sent again, and ${afterwards}.`,
+        502,
+        rejected ? { nothingBilled: true } : held,
       );
     }
     let json: {
@@ -358,6 +369,8 @@ return await withRecoveryActivity('paid-text', async () => {
     } catch {
       throw new PaidTextError(
         `The text provider returned an unreadable result. It will not be sent again, and ${afterwards}.`,
+        502,
+        held,
       );
     }
     const content = json?.choices?.[0]?.message?.content;
@@ -391,7 +404,7 @@ return await withRecoveryActivity('paid-text', async () => {
         await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`, args: [cost, id] });
         await meter({ ...event, status: "failed", engineCostUsd: 0 });
       }
-      throw new PaidTextError(`${verdict.reason} Nothing was charged.`, 502);
+      throw new PaidTextError(`${verdict.reason} Nothing was charged.`, 502, { nothingBilled: true });
     }
     if (!(await settle(`UPDATE paid_text_jobs SET status='succeeded',cost_usd=?,response_json=?,updated_at=? WHERE id=?`, [cost, response.text, now(), id])))
       /* Answered after the cron's pass refunded it: not charged again, and not delivered as if it had been paid for. */
@@ -421,8 +434,10 @@ return await withRecoveryActivity('paid-text', async () => {
         .catch(() => ({ rows: [] }))
     ).rows[0];
     if (error instanceof PaidTextError && record?.status === "running") {
-      if (await settle(`UPDATE paid_text_jobs SET status='uncertain',cost_usd=?,updated_at=? WHERE id=?`, [estimate, now(), id]).catch(() => false))
+      if (await settle(`UPDATE paid_text_jobs SET status='uncertain',cost_usd=?,updated_at=? WHERE id=?`, [estimate, now(), id]).catch(() => false)) {
         await meter({ ...event, status: "failed", engineCostUsd: estimate });
+        error.billing ??= held;
+      }
     }
     /* Already refunded by the cron's pass: nothing here may charge it again. */
     if (!(error instanceof PaidTextError) && record?.status === "refunded")
@@ -430,9 +445,14 @@ return await withRecoveryActivity('paid-text', async () => {
     /* No reply at all, and the caller says that costs nothing (the prompt enhancer): failed at zero, the reservation released, "Nothing billed". */
     if (!(error instanceof PaidTextError) && input.unansweredIsFree && submitted && !answered && record?.status === "running") {
       const moved = await settle(`UPDATE paid_text_jobs SET status='failed',cost_usd=0,updated_at=? WHERE id=?`, [now(), id]).catch(() => false);
-      await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=0 WHERE id=?`, args: [id] }).catch(() => {});
-      if (moved) await meter({ ...event, status: "failed", engineCostUsd: 0 });
-      throw new PaidTextError("The writer didn't answer in time. Nothing billed.", 504);
+      /* Only a job this step settled is zeroed and metered: one the cron's pass already settled is left as it did. The ledger line says what is known: the
+         provider never answered, so whether it billed the platform is unknown, for the platform admin desk to reconcile against the provider's invoice. */
+      if (moved) {
+        await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=0 WHERE id=?`, args: [id] }).catch(() => {});
+        await meter({ ...event, status: "failed", engineCostUsd: 0,
+          providerOutcome: noAnswerOutcome(textVendor(input.model), "run", "The writer did not answer inside the enhancer's deadline. Not billed to the workspace; whether the provider billed the platform is unknown.") });
+      }
+      throw new PaidTextError("The writer didn't answer in time. Nothing billed.", 504, { nothingBilled: true });
     }
     if (!(error instanceof PaidTextError)) {
       const completed = record?.status === "succeeded";
@@ -463,6 +483,8 @@ return await withRecoveryActivity('paid-text', async () => {
           : submitted
             ? `The text request was interrupted after submission. It will not be sent again, and ${afterwards}.`
             : "The text request could not be prepared. No generation credits were spent.",
+        502,
+        completed ? undefined : submitted ? held : { nothingBilled: true },
       );
     }
     throw error;
