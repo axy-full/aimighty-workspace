@@ -27,7 +27,26 @@ test("the stage opens on whole device pixels, and a fractional scroll settles on
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(3.3, 14.7);
   await expect.poll(async () => { const v = await viewport(page); return whole(v) && (v.x !== open.x || v.y !== open.y); }, { timeout: 20_000 }).toBe(true);
-  /* A glide to a card (a centred one) ends on the grid too. */
-  await page.locator('.bd-node[data-card-kind="take"]').nth(5).click();
-  await expect.poll(async () => whole(await viewport(page)), { timeout: 20_000 }).toBe(true);
+  /* A glide ends on the grid too: "Fit to view" (the board menu) glides to a fraction-laden viewport, and it must actually move the view. */
+  const before = await viewport(page);
+  await page.getByTestId("v12-board-menu").click();
+  await page.getByRole("menuitem", { name: "Fit to view" }).click();
+  await expect.poll(async () => { const v = await viewport(page); return whole(v) && (Math.abs(v.x - before.x) > 1 || Math.abs(v.y - before.y) > 1 || Math.abs(v.k - before.k) > 0.01); }, { timeout: 20_000 }).toBe(true);
+});
+
+test("on a 2x screen x and y land on half pixels: twice them are whole numbers", async ({ browser, baseURL }, info) => {
+  test.setTimeout(180_000);
+  const context = await browser.newContext({ deviceScaleFactor: 2, viewport: info.project.use.viewport ?? { width: 1440, height: 900 }, baseURL: baseURL ?? undefined });
+  try {
+    const page = await context.newPage();
+    await openShotsBoard(page, "/suites?view=board&stage=shots");
+    await expect(page.locator('.bd-node[data-card-kind="take"]')).toHaveCount(8, { timeout: 90_000 });
+    expect(await page.evaluate(() => window.devicePixelRatio)).toBe(2);
+    await expect.poll(async () => { const v = await viewport(page); return v.dpr === 2 && Number.isInteger(Math.round(v.x * 2 * 1000) / 1000) && Math.abs(v.x * 2 - Math.round(v.x * 2)) < 0.01 && Math.abs(v.y * 2 - Math.round(v.y * 2)) < 0.01; }, { timeout: 20_000 }).toBe(true);
+    const canvas = page.getByTestId("board-canvas");
+    const box = (await canvas.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(3.3, 14.7);
+    await expect.poll(async () => { const v = await viewport(page); return Math.abs(v.x * 2 - Math.round(v.x * 2)) < 0.01 && Math.abs(v.y * 2 - Math.round(v.y * 2)) < 0.01; }, { timeout: 20_000 }).toBe(true);
+  } finally { await context.close(); }
 });
