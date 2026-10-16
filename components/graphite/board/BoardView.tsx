@@ -82,6 +82,7 @@ import { deckFacts, deckMeta, deckSections, shotRows } from "@/lib/v12/ppm";
 import { DeliverStage } from "@/components/v12/board/DeliverStage";
 import { PpmStage } from "@/components/v12/board/PpmStage";
 import { BriefStage, ScriptStage } from "@/components/v12/board/TextStage";
+import { StoryboardStage } from "@/components/v12/board/StoryboardStage";
 import { ProductStage } from "@/components/v12/board/campaign/ProductStage";
 import { LookStage } from "@/components/v12/board/campaign/LookStage";
 import { FormatsStage } from "@/components/v12/board/campaign/FormatsStage";
@@ -204,10 +205,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
   /* Campaign's Product, Look and Formats are pages from the start: Product is where a campaign begins. */
   const page: StagePageKind | null = pageWanted === "deliver" ? (cutNow && deliverCard ? "deliver" : null) : pageWanted === "ppm" ? (allCards.length > 0 ? "ppm" : null) : pageWanted;
-  /* A client round's share card (redesign P2-c) rides in the page when a page covers the canvas, so it is never hidden behind it. */
-  const roundShare = page ? allCards.find((c) => c.id === "round:deliver") ?? null : null;
+  /* A client round's cards (redesign P2-c) ride in the page when a page covers the canvas, so none is hidden behind it: the share card, and the round's own card of the stage the page stands for (Storyboard's "what changed"). */
+  const roundShares = useMemo(() => (page ? allCards.filter((c) => c.id === "round:deliver" || (c.id.startsWith("round:") && stageOwn.some((o) => o.id === c.id))) : []), [page, allCards, stageOwn]);
   /* The board's free cards (a dropped tile, a note, an upload) show on whichever stage is open, where they were put. */
-  const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards).filter((c) => !(roundShare && c.id === roundShare.id)), [stage, stageOwn, allCards, roundShare]);
+  const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards).filter((c) => !roundShares.some((r) => r.id === c.id)), [stage, stageOwn, allCards, roundShares]);
   /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
      a 24 px gap and its shot cards one size. Off the switch, or on any other stage, today's definitions as they are. */
   /* A large screen scales the canvas up (lib/v12/board/screen-scale.ts); the groups stay as many across as they are at 1440. */
@@ -218,7 +219,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const placed = useMemo(() => placeBoard(cards, layoutDefs, board.bands, project?.aspect ?? "16:9"), [cards, layoutDefs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
-  const empty = !!project && (v12Frame ? allCards.length === 0 : placed.cards.length === 0);
+  /* A board made with its own rail (New project's) is not a blank one: its stages say what goes on each, so the first-run box does not cover its first step. */
+  const empty = !!project && (v12Frame ? allCards.length === 0 && !savedStages?.length : placed.cards.length === 0);
   const stageIsEmpty = v12Frame && !empty && stageOwn.length === 0 && !page;
 
   /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
@@ -813,8 +815,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
                 : page === "formats" ? <FormatsStage ctx={ctx} />
                 : page === "voice" ? <VoiceStage ctx={ctx} />
                 : page === "brief" ? <BriefStage ctx={ctx} />
-                : page === "script" ? <ScriptStage ctx={ctx} /> : null}
-              {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
+                : page === "script" ? <ScriptStage ctx={ctx} />
+                : page === "storyboard" ? <StoryboardStage ctx={ctx} /> : null}
+              {roundShares.map((roundShare) => <div key={roundShare.id} className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div>)}
             </div>
           ) : null}
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}

@@ -1,0 +1,23 @@
+/*
+ * The Storyboard step (components/v12/board/StoryboardStage.tsx; design/particl-prototype-25). A page over the stage's canvas like the other
+ * stage pages (stage-pages.css); its cards are the v25 card (card.css). Under .v12; app/graphite.css tokens only. Above 1440 px the cards are
+ * bigger, with their words, as real layout (card-scale.css, never zoom or transform); the bars and buttons stay.
+ */
+.v12 .v12-sb { padding: 24px 24px 140px; align-content: start; max-width: none; }
+.v12 .v12-sb-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.v12 .v12-sb-grow { flex: 1 1 0; }
+.v12 .v12-sb-pane { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.v12 .v12-sb-big { width: 100%; height: auto; border-radius: var(--gx-r-btn); object-fit: cover; display: block; background: var(--gx-sunken); }
+.v12 .v12-sb-takes { display: flex; gap: 8px; flex-wrap: wrap; }
+.v12 .v12-sb-take { padding: 0; width: 88px; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; overflow: hidden; }
+.v12 .v12-sb-take[aria-pressed="true"] { border-color: var(--gx-accent); }
+.v12 .v12-sb-take:focus-visible { outline: 2px solid var(--gx-text); outline-offset: 2px; }
+.v12 .v12-sb-take img { width: 100%; display: block; }
+.v12 .v12-sb-page { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-pop); background: var(--gx-sunken); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.v12 .v12-sb-page[data-size="4"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.v12 .v12-sb-cell { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.v12 .v12-sb-cell img, .v12 .v12-sb-empty { width: 100%; height: auto; object-fit: cover; display: block; border-radius: 6px; background: var(--gx-card); }
+.v12 .v12-sb-empty { display: grid; place-items: center; color: var(--gx-text-2); font-size: var(--gx-fs-meta); border: 1px dashed var(--gx-hair); }
+.v12 .v12-sb-cell figcaption { font-size: var(--gx-fs-meta); color: var(--gx-text); display: flex; flex-direction: column; gap: 2px; }
+.v12 .v12-sb-cell figcaption span { color: var(--gx-text-2); }
+@media (max-width: 899px) { .v12 .v12-sb-page, .v12 .v12-sb-page[data-size="4"] { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

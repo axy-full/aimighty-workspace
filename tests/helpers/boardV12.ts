@@ -66,14 +66,14 @@ export function filmBoard(): Project {
 }
 
 /** Signs in (switch on unless `on: false`), saves the board, and opens `path` (default: the board). */
-export async function openBoard(page: Page, path = "/suites?view=board", opts: { on?: boolean; project?: Project } = {}) {
+export async function openBoard(page: Page, path = "/suites?view=board", opts: { on?: boolean; project?: Project; /** The mock engine may be sent to (nothing is spent): for a spec that presses a priced button. */ mockSends?: boolean } = {}) {
   const signed = opts.on === false ? await signInLocally(page.request, "Board Tester") : await signInToRedesign(page.request, "Board Tester");
   if (opts.on !== false) await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace?: { newInterface?: boolean } }).workspace?.newInterface ?? false, { timeout: 30_000 }).toBe(true);
   /* The drawn frames' takes are rows in the workspace's own local database (nothing is generated): gaps-l2's seedBoard. */
   const film = opts.project ?? filmBoard();
   const { project, scope } = await seedBoard(page, signed.workspace.id, (base) => ({ ...base, name: film.name, brief: film.brief, ...(film.script ? { script: film.script } : {}), production: film.production, nodes: film.nodes, ...(film.boardKind ? { boardKind: film.boardKind } : {}), ...(film.boardFlavor ? { boardFlavor: film.boardFlavor } : {}), ...(film.boardStages ? { boardStages: film.boardStages } : {}), ...(film.boardLanguages ? { boardLanguages: film.boardLanguages } : {}), ...(film.moleculr ? { moleculr: film.moleculr } : {}) }),
     { generations: [1, 2, 3, 4, 5].map((i) => `gframe${i}`) });
-  await forbidPaidWork(page);
+  if (!opts.mockSends) await forbidPaidWork(page);
   await mockMedia(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
