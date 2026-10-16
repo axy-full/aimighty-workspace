@@ -31,7 +31,8 @@ export type PlanStepSummary = {
   id: string; state: string; step: string; priced: boolean;
   /** The plan's total at the server's prices, and the most it can come to with fixes; absent until every render is priced. */
   total: number | null; ceiling: number | null; approximate: boolean;
-  shots: { title: string; credits: number | null }[];
+  /** The shots in the plan, by title. One price for the plan (`total`); no price per shot. */
+  shots: string[];
   /** Renders that ask on their own (over the per-job line, or for an admin). */
   asks: number;
   /** Why it is not priced or not ready, in words. */
@@ -68,7 +69,7 @@ export async function preparePlanStep(userId: string, input: PlanStepInput, deps
   return {
     id: made.id, state: view.state, step, priced: !!quote,
     total: quote?.total ?? null, ceiling: quote?.ceiling ?? null, approximate: quote?.approximate ?? false,
-    shots: takes.map((p) => ({ title: p.title, credits: p.quote })),
+    shots: takes.map((p) => p.title),
     asks: quote?.asks.length ?? 0,
     reason: quote ? null : view.plan?.blocked ?? view.reason ?? null,
     answers: row?.plan?.setup ?? null,

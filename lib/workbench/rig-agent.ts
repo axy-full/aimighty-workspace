@@ -162,7 +162,30 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
   };
 }
 
+/**
+ * A chips plan has ONE price (owner, 16 Oct 2026): the plan's total, all in, and no per-step breakdown and no engine's name. The server keeps every step's quote on its
+ * record (for the ledger and for the plan's own sum); the client is not told them. Shot titles, states, outcomes and what was charged once a render has settled stay.
+ */
+function onePrice(view: RigAgentRunView): RigAgentRunView {
+  const waiting = (p: RigAgentPaidStepView) => p.state === "waiting" || (p.state === "paused" && (p.pause === "limit" || p.pause === "credits"));
+  return {
+    ...view,
+    /* While the plan waits for its one approval, the run's own note is a step's price and the limit it is not under yet: not the card's to show. */
+    reason: view.state === "needs_you" && view.plan?.quote ? null : view.reason,
+    paid: view.paid.map((p) => {
+      const { quoteUsd: _q, worstUsd: _w, ...rest } = p as RigAgentPaidStepView & { quoteUsd?: number; worstUsd?: number };
+      void _q; void _w;
+      return { ...rest, quote: null, worst: null, reason: waiting(p) ? null : p.reason };
+    }),
+  };
+}
+
 export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger = NO_LEDGER, approval: PlanApprovalRow | null = null): RigAgentRunView {
+  const view = runViewOf(run, steps, viewer, ledger, approval);
+  return run.plan?.kind === "chips" ? onePrice(view) : view;
+}
+
+function runViewOf(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger = NO_LEDGER, approval: PlanApprovalRow | null = null): RigAgentRunView {
   const done = steps.filter((s) => s.state === "done" && s.purpose === "build");
   const outcomes = (step: StepRow): OpOutcome[] => step.result ?? [];
   const cards = done.filter((s) => s.tool === "create").flatMap(outcomes).filter((o) => o.kind === "create" && !o.held).reduce((n, o) => n + o.nodeIds.length, 0);

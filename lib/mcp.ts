@@ -223,7 +223,7 @@ export function makeCaller(origin: string, authorization: string) {
 
 type Call = ReturnType<typeof makeCaller>;
 /** What /api/board-agent/plan answers (lib/workbench/plan-step-tool.ts). */
-type PlanStepReply = { id: string; step: string; priced: boolean; total: number | null; ceiling: number | null; approximate: boolean; shots: { title: string; credits: number | null }[]; asks: number; reason: string | null; replaced?: boolean; needs: string };
+type PlanStepReply = { id: string; step: string; priced: boolean; total: number | null; ceiling: number | null; approximate: boolean; shots: string[]; asks: number; reason: string | null; replaced?: boolean; needs: string };
 type Args = Record<string, string | number | boolean | undefined>;
 
 /**
@@ -267,7 +267,7 @@ export async function runTool(
       const out = (await call("/api/board-agent/plan", { method: "POST", body: { boardId: args.board_id, step: args.step, answers, cards, requestId: args.request_id } })) as { plan: PlanStepReply };
       const p = out.plan;
       const replaced = p.replaced ? "Replaced the plan waiting on the board.\n" : "";
-      const shots = p.shots.map((s) => `- ${s.title}${s.credits != null ? ` · ${s.credits} cr` : ""}`).join("\n");
+      const shots = p.shots.map((title) => `- ${title}`).join("\n");
       if (!p.priced) return `${replaced}Plan ${p.id} made for ${p.step}, not priced yet${p.reason ? `: ${p.reason}` : ""}.\n${shots}\n\n${p.needs}`;
       return `${replaced}Plan ${p.id} · ${p.shots.length} ${p.shots.length === 1 ? "shot" : "shots"} · ${p.approximate ? "up to " : ""}${p.total} cr, at most ${p.ceiling} cr with fixes.\n${shots}${p.asks ? `\n${p.asks} ask${p.asks === 1 ? "s" : ""} on its own (over the per-job line).` : ""}\n\n${p.needs} Nothing was rendered or reserved.`;
     }

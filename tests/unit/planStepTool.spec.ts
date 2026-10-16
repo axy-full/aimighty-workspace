@@ -183,7 +183,9 @@ test("it prepares and prices and nothing more: the server's quote for each shot,
     const out = await preparePlanStep(OWNER, { boardId: "draft-1", answers: { length: 8 } }, deps);
     const a = await credits(0.3), b = await credits(0.45);
     expect(out).toMatchObject({ step: "shots", priced: true, total: a + b, ceiling: 2 * (a + b), state: "needs_you", asks: 0, reason: null, answers: { quality: "draft", length: 8 } });
-    expect(out.shots.map((s) => [s.title, s.credits])).toEqual([["Pier", a], ["Deck", b]]);
+    expect(out.shots).toEqual(["Pier", "Deck"]);
+    /* One price: the plan's total. No shot's price and no engine's name in the reply. */
+    expect(JSON.stringify(out)).not.toMatch(/credits|seedance|kling|veo|flux|banana|gemini|byteplus/i);
     expect(out.needs).toContain("A person approves this plan in Particl");
     expect(r.calls).toEqual([]);
     expect(await reservations(ws)).toBe(0);
@@ -228,11 +230,12 @@ test("it refuses in words: a board that is not the caller's, one with no product
 test("over MCP: one call to the board route as the caller, never an approval; an approval in the arguments is refused; the answer says the person approves it and nothing was rendered", async () => {
   const { runTool } = await import("../../lib/mcp");
   const calls: { path: string; method?: string; body?: Record<string, unknown> }[] = [];
-  const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 12, ceiling: 24, approximate: false, shots: [{ title: "Pier", credits: 5 }, { title: "Deck", credits: 7 }], asks: 0, reason: null, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
+  const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 12, ceiling: 24, approximate: false, shots: ["Pier", "Deck"], asks: 0, reason: null, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
   const call = async (path: string, init: { method?: string; body?: unknown } = {}) => { calls.push({ path, method: init.method, body: init.body as Record<string, unknown> }); return reply; };
   const text = await runTool("plan_step", { board_id: "draft-1", quality: "final", length: 8, cards: "s1, s2", request_id: "r1" }, call as never, "https://example.invalid");
   expect(calls).toEqual([{ path: "/api/board-agent/plan", method: "POST", body: { boardId: "draft-1", step: undefined, answers: { quality: "final", length: 8 }, cards: ["s1", "s2"], requestId: "r1" } }]);
   expect(text).toContain("12 cr, at most 24 cr with fixes");
+  expect(text).not.toMatch(/Pier · \d|Deck · \d/);
   expect(text).toContain("A person approves this plan in Particl");
   expect(text).toContain("Nothing was rendered or reserved");
   for (const bad of [{ maxCredits: 12 }, { max_credits: 12 }, { approve: true }]) await expect(runTool("plan_step", { board_id: "draft-1", ...bad } as never, call as never, "https://example.invalid")).rejects.toThrow(/not yours to approve/);
@@ -274,6 +277,6 @@ test("a tool's plan never replaces a plan waiting on the board; it may replace a
   });
   /* The words an agent reads. */
   const { runTool } = await import("../../lib/mcp");
-  const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 5, ceiling: 10, approximate: false, shots: [{ title: "Pier", credits: 5 }], asks: 0, reason: null, replaced: true, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
+  const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 5, ceiling: 10, approximate: false, shots: ["Pier"], asks: 0, reason: null, replaced: true, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
   expect(await runTool("plan_step", { board_id: "draft-1" }, (async () => reply) as never, "https://example.invalid")).toContain("Replaced the plan waiting on the board.");
 });

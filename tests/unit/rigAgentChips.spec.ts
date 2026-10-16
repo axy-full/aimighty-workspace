@@ -208,9 +208,16 @@ test("a chips plan costs no thinking turn and reserves nothing: priced by the se
     const a = await credits(0.3), b = await credits(0.45);
     const takes = run.paid.filter((p) => p.tool === "render");
     /* The first waits on the run's limit (there is none until a person approves) and keeps its price; the rest are priced ahead, so the card can show the total. */
-    expect(takes.map((p) => [p.title, p.state, p.pause, p.quote])).toEqual([["Pier", "paused", "limit", a], ["Deck", "waiting", null, b]]);
+    expect(takes.map((p) => [p.title, p.state, p.pause])).toEqual([["Pier", "paused", "limit"], ["Deck", "waiting", null]]);
     expect(run.plan?.quote).toMatchObject({ total: a + b, ceiling: 2 * (a + b), asks: [] });
-    expect(run.plan?.quote?.total).toBe(takes.reduce((n, p) => n + (p.quote ?? 0), 0));
+    /* ONE price for the plan (owner, 16 Oct): the client is told the total and no step's price, no step's note about a price, and no engine's name; the server keeps each step's quote on its record, and their sum is the total. */
+    expect(takes.every((p) => p.quote === null && p.worst === null && p.reason === null && !("quoteUsd" in p))).toBe(true);
+    expect(run.reason).toBeNull();
+    expect(JSON.stringify(run)).not.toMatch(/seedance|kling|veo|flux|banana|gemini|byteplus|\bengine\b/i);
+    const { stepsOf } = await import("../../lib/workbench/rig-agent-store");
+    const kept = (await stepsOf((await import("../../lib/db")).db(), asked.id)).filter((s) => s.purpose === "take").map((s) => s.quoteCredits);
+    expect(kept).toEqual([a, b]);
+    expect(run.plan?.quote?.total).toBe(kept.reduce((n: number, q) => n + (q ?? 0), 0));
     /* Nothing was sent, reserved or charged: no planning turn, no render. */
     expect(r.calls).toEqual([]);
     expect(await reservations(ws)).toBe(0);
