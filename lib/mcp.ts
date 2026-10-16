@@ -195,7 +195,7 @@ export const PDF_TOOLS: ToolDef[] = [
     description:
       "Make a PDF deck with Particl's own templates. Free: it costs no credits. " +
       `Kinds: ${DECK_KINDS.join(", ")}. 'treatment' prints a production's saved treatment (projectId); 'ppm' prints a board's pre-production deck with its shot list (board = the board's id); ` +
-      "'pitch' prints the words you write (pitch: {logline, audience, sections:[{heading, paragraphs[], bullets[]}]}). " +
+      "'film' prints a board as one deck with a Treatment cover (the default) or a Pitch cover (cover: 'treatment' | 'pitch'; board = the board's id; the board's own storyboard pictures come with it, in any language the board is written in); 'pitch' prints the words you write (pitch: {logline, audience, sections:[{heading, paragraphs[], bullets[]}]}). " +
       'Pictures go in by handle, never by URL: images:[{"upload":"<id>"} or {"take":"<still take id>"}, caption?] (PNG, JPEG or WebP, at most 24), and logo:{"upload":"<id>"} for the cover. ' +
       "Pages are a 16:9 slide (treatment and pitch) or A4 landscape (ppm) unless page is 'slide', 'a4' or 'letter'; bleedMm is 0 or 3. " +
       "It answers with the PDF's link, page count and name. Nothing is spent, and a failed deck says nothing was billed.",
@@ -205,7 +205,8 @@ export const PDF_TOOLS: ToolDef[] = [
         kind: { type: "string", enum: [...DECK_KINDS], description: "Which deck." },
         title: { type: "string", description: "The deck's title (optional for treatment and ppm)." },
         projectId: { type: "string", description: "treatment: the production." },
-        board: { type: "string", description: "ppm: the board." },
+        board: { type: "string", description: "ppm or film: the board." },
+        cover: { type: "string", enum: ["treatment", "pitch"], description: "film: which cover." },
         pitch: { type: "object", description: "pitch: logline, audience and sections." },
         images: { type: "array", items: { type: "object" }, description: "Pictures by handle." },
         logo: { type: "object", description: 'The cover logo: {"upload":"<id>"}.' },

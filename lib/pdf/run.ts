@@ -10,9 +10,9 @@ import { acquireSlot, releaseSlot } from "../worker-slots";
 import { ExportWorkerBusyError, ExportWorkerRefusedError, ExportWorkerError, openExportSession, type ExportWorkerDeps } from "../exports/worker";
 import { nameStem } from "../v12/deliver";
 import { PDF_COMPOSITION, PDF_HTML_FILE, PDF_OUTPUT_FILE, checkDeckHtml, pdfFacts, type PdfSpec } from "../../remotion/src/lib/pdf";
-import { DeckTooLong, ppmDoc, pitchDoc, treatmentDoc, type BuildOptions } from "./builders";
+import { DeckTooLong, FILM_PICTURES, filmDoc, filmPictureHandles, ppmDoc, pitchDoc, treatmentDoc, type BuildOptions } from "./builders";
 import { PdfError, NOTHING_BILLED, type DeckPdf, type DeckRequest } from "./contract";
-import { DEFAULT_PAGE, PAGE_SIZES, type DeckDoc } from "./deck";
+import { DEFAULT_PAGE, MAX_IMAGES, PAGE_SIZES, type DeckDoc } from "./deck";
 import { deckHtml } from "./html";
 import { bindPictures, workspacePictures, type PictureSource, type Viewer } from "./images";
 
@@ -32,6 +32,14 @@ export type PdfDeps = ExportWorkerDeps & {
 
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
+/** A film deck's board: the caller's own saved draft, or a board that does not exist for them. */
+async function filmBoard(request: DeckRequest, viewer: Viewer) {
+  if (!request.board) throw new PdfError("A film deck needs the board it is made from (board).");
+  const draft = await readDraft(viewer.id, request.board);
+  if (!draft) throw new PdfError("That board isn't available in this workspace.", 404);
+  return draft.project;
+}
+
 async function source(request: DeckRequest, viewer: Viewer, build: BuildOptions): Promise<DeckDoc> {
   if (request.kind === "treatment") {
     if (!request.projectId) throw new PdfError("A treatment needs the production it belongs to (projectId).");
@@ -47,6 +55,7 @@ async function source(request: DeckRequest, viewer: Viewer, build: BuildOptions)
     if (!draft) throw new PdfError("That board isn't available in this workspace.", 404);
     return ppmDoc(draft.project, build);
   }
+  if (request.kind === "film") return filmDoc(await filmBoard(request, viewer), { ...build, cover: request.cover ?? "treatment" });
   if (!request.pitch) throw new PdfError("A pitch deck needs its words (pitch: a logline, an audience and sections).");
   return pitchDoc({ title: request.title ?? "", logline: request.pitch.logline, audience: request.pitch.audience, sections: request.pitch.sections }, build);
 }
@@ -60,8 +69,13 @@ const REFUSALS: Record<number, string> = {
 
 export async function makeDeckPdf(request: DeckRequest, viewer: Viewer, deps: PdfDeps = {}): Promise<DeckPdf> {
   const tenant = requireTenant();
+  if (request.cover && request.kind !== "film") throw new PdfError("A cover is chosen for film decks only.");
   const date = DATE.format((deps.now ?? (() => new Date()))());
-  const bound = await bindPictures(request, viewer, deps.pictures ?? workspacePictures);
+  /* A film deck brings the board's own storyboard pictures, after any the caller named. */
+  const pictureRequest = request.kind === "film"
+    ? { ...request, images: [...(request.images ?? []), ...filmPictureHandles(await filmBoard(request, viewer)).slice(0, Math.max(0, Math.min(FILM_PICTURES, MAX_IMAGES - (request.images?.length ?? 0)))).map((h) => ({ ...h, optional: true as const }))] }
+    : request;
+  const bound = await bindPictures(pictureRequest, viewer, deps.pictures ?? workspacePictures);
   const size = request.page ?? DEFAULT_PAGE[request.kind];
   let doc: DeckDoc;
   try {

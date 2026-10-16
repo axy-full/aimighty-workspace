@@ -1,4 +1,6 @@
 import { SHOT_COLUMNS, deckFacts, deckSections, shotListTitle, shotRows } from "@/lib/v12/ppm";
+import { boardShots } from "@/lib/production/boards";
+import { dubbingLanguageLabel } from "@/lib/workbench/dubbing-options";
 import type { Project } from "@/lib/workbench/studio";
 import { DEFAULT_PAGE, MAX_PAGES, KIND_LABEL, clampCell, oneLine, paginateFacts, paginateItems, paginateRows, paginateText, plain, textBudget, type DeckDoc, type DeckKind, type DeckPage, type PageSize } from "./deck";
 
@@ -131,3 +133,60 @@ export function ppmDoc(project: Pick<Project, "name" | "script" | "scriptVersion
 }
 
 export const kindLabel = (kind: DeckKind) => KIND_LABEL[kind];
+
+/* ── Film deck: one deck, two covers ─────────────────────────────────── */
+
+export const FILM_COVERS = ["treatment", "pitch"] as const;
+export type FilmCover = (typeof FILM_COVERS)[number];
+/** The most pictures a film deck picks for itself, so a caller's own still have room (MAX_IMAGES is 24). */
+export const FILM_PICTURES = 12;
+
+/** The storyboard's own pictures, in shot order: each frame's latest take, as `{ take, caption }`. Which of them the caller may read is decided when they are bound. */
+export function filmPictureHandles(project: Pick<Project, "production">): { take: string; caption: string }[] {
+  const frames = project.production?.boards?.frames ?? {};
+  const out: { take: string; caption: string }[] = [];
+  for (const shot of boardShots(project.production?.beats)) {
+    const take = frames[shot.id]?.takes?.at(-1)?.genId;
+    if (take && /^[A-Za-z0-9_-]{1,120}$/.test(take)) out.push({ take, caption: `Shot ${shot.number} · ${shot.shot.framing}` });
+    if (out.length >= FILM_PICTURES) break;
+  }
+  return out;
+}
+
+/**
+ * A film deck from a board: one deck with a choice of cover. The Treatment cover is quiet and names the draft; the Pitch cover is
+ * bold and names who it is for. Every page after it is the same: the idea, the brief's facts, the script, cast, places and props,
+ * the look and the storyboard, the shot list and the versions the film is made in.
+ */
+export function filmDoc(project: Pick<Project, "name" | "brief" | "script" | "scriptVersions" | "nodes" | "production" | "boardShotList" | "audience" | "deliverables" | "direction" | "aspect" | "fps" | "boardLanguages">, options: BuildOptions & { cover: FilmCover }): DeckDoc {
+  const size = options.size ?? DEFAULT_PAGE.film;
+  const title = oneLine(options.title || project.name || "Untitled film", 100);
+  const rows = shotRows(project.production?.beats, project.boardShotList);
+  const facts = deckFacts(project);
+  const idea = oneLine(project.brief, 220);
+  const cover: DeckPage = options.cover === "pitch"
+    ? { type: "cover", style: "pitch", eyebrow: "Pitch deck", title, subtitle: idea || undefined, meta: [oneLine(project.audience, 120), options.date].filter(Boolean), ...(options.logo ? { logo: options.logo } : {}) }
+    : { type: "cover", style: "treatment", eyebrow: "Treatment", title, subtitle: idea || undefined, meta: [`${rows.length} ${rows.length === 1 ? "shot" : "shots"}`, options.date].filter((x) => !x.startsWith("0 ")), ...(options.logo ? { logo: options.logo } : {}) };
+  const pages: DeckPage[] = [cover];
+  if (project.brief.trim()) pages.push(...prose("The idea", plain(project.brief, 4000).split(/\n{2,}|\n/), size));
+  const languages = ["English", ...(project.boardLanguages ?? []).filter((c) => c !== "en").map((c) => dubbingLanguageLabel(c))];
+  const setup = ([["Audience", project.audience], ["Deliverables", project.deliverables], ["Direction", project.direction], ["Format", `${project.aspect} · ${project.fps} fps`], ["Versions", languages.join(" · ")]] as [string, string][])
+    .map(([k, v]) => [k, oneLine(v, 240)] as [string, string]).filter(([, v]) => v);
+  paginateFacts(setup, size).forEach((chunk, i) => pages.push({ type: "facts", eyebrow: "Brief", heading: i ? "The brief (continued)" : "The brief", rows: chunk }));
+  if (facts.script) {
+    const script = prose("Script", plain(facts.script, 40_000).split(/\n{2,}|\n/), size);
+    pages.push(...script.slice(0, SCRIPT_PAGES_MAX));
+    if (script.length > SCRIPT_PAGES_MAX) pages.push({ type: "text", heading: "Script (cut here)", paragraphs: [`The script goes on for ${script.length - SCRIPT_PAGES_MAX} more pages. It is whole on the board.`] });
+  }
+  const listed = (heading: string, items: string[]) => { if (items.length) pages.push(...bullets(heading, items.map((x) => oneLine(x)), size)); };
+  listed("Cast", facts.cast);
+  listed("Locations", facts.locations);
+  listed("Props", [...facts.wardrobe, ...facts.props]);
+  if (options.pictures?.length) pages.push(...gallery("Look and storyboard", options.pictures));
+  if (rows.length) {
+    const columns = SHOT_COLUMNS.map((c) => ({ label: c.label, pct: PPM_COLUMN_PCT[c.field] ?? 8 }));
+    const cells = rows.map((r) => SHOT_COLUMNS.map((c, i) => (c.field === "shot" ? String(r.index) : clampCell(oneLine(r[c.field], 200), columns[i].pct))));
+    paginateRows(columns, cells, size).forEach((chunk, i) => pages.push({ type: "table", heading: i ? `Shot list (continued) · ${shotListTitle(rows)}` : `Shot list · ${shotListTitle(rows)}`, columns, rows: chunk }));
+  }
+  return finish("film", title, options, pages);
+}
