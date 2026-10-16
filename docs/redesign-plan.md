@@ -1137,3 +1137,28 @@ Recorded by the lead from the owner's 17:05 message.
 - the demo path.
 
 **Draft, for the owner's review:** the steps of each of the ten film types and which engines each needs, marking anything not in the current stack. Report only, no spend.
+
+## Owner, 16 Oct 2026, evening: design reset (v28 brief), product decisions, treatment builder update
+
+Recorded by the lead. Sections 2 to 4 are verbatim; section 1 is verbatim less one private aside. Section 3's text is carried in `docs/plans/deck-editor.md` § 1.4.
+
+**1. v27.** On 16:53 I sent Claude Design a reset brief after rejecting v26 as cluttered. v27 came back; I reviewed it screen by screen and a v28 brief has gone out. v26 stays only as the feature list. Rule from now: FIRST DESIGN, THEN CODE. Pause all restyling/layout work (including the board-zoom-to-layout change) until I approve v28. Keep lane C's whole-pixel fix and lane J's sharpness work as already agreed. Nothing here moves the 31 Oct demo path or the 27 Oct freeze.
+
+**2. Product decisions** (record in docs/redesign-plan.md; build after v28 is approved unless you show me it's safe before the freeze):
+- a) Director mode = full manual control. No "Auto" engine in Director: picker opens empty, Render disabled until an engine is picked. New setting "Takes" (1–4), priced per take by the quote engine, server-validated. Agent routing is unchanged.
+- b) Enhance: Director only (not in Agent). Shown as an Atomik button. My yes to replace the long tooltip with hover label "Enhance prompt" + second line "1 credit · free if it fails". Update v12-enhance.spec.ts to that wording. The full no-charge message in tests/unit/enhanceStableKey.spec.ts stays pinned exactly as I said for #807 — do not weaken it. Writer unchanged and never named.
+- c) The bottom bar is Atomik (our agent name). Top search becomes "Search or go to".
+- d) Batch "Select all shots with <character>" must come from Particl's own record of who was cast in each shot when it was made — never face matching (Rekognition is out). Tell me whether that cast-per-shot record exists today; if it needs a migration, flag it as a migration for after 31 Oct, don't build it now.
+- e) Batch changes: "Try on 1" then "Apply to N · price" = ONE job, one approval, cancelled shots not charged (matches the money guard).
+- f) Agent questions always offer chips + "Other" + "Decide for me"; "Decide for me" picks are shown on the plan card and stay changeable. Max 3 questions per step.
+- g) Never show internal rules in UI copy (v27 printed "no breakdown, no engine names" on the plan card).
+
+**3. Treatment builder spec update** (still built after 31 Oct; Wed 28 / Thu 29 spikes and Fri 30 recommendation unchanged). Verbatim in `docs/plans/deck-editor.md` § 1.4.
+
+**4.** Reply with: which of 2a–2g can land before the 27 Oct freeze without touching the demo path (with a date each), and which wait for after 31 Oct. No new PRs for v28 layouts until I approve the zip.
+
+**Lead's notes:**
+- The 17:05 entry above already records v27; this entry adds the v28 brief and the rule "first design, then code".
+- The board-zoom change was already paused (15:50, A.3); it stays paused until v28 is approved.
+- 2b replaces the #807 tooltip pinned at 15:50 (A.9). The no-charge message A.9 pinned in `tests/unit/enhanceStableKey.spec.ts` stays exactly as pinned.
+- The lead's answer to section 4, and to 2d's question, is in the 17 Oct 10:30 report.

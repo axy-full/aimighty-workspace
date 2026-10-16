@@ -46,9 +46,28 @@ The app-wide version of this is `docs/plans/editing-standard.md`.
 - **Agent mode:** Particl picks engines, plans, writes, designs and checks. No engine names are shown. Each Agent quote is one all-in credit price, shown before approval and charged exactly, with no breakdown.
 - **Director mode:** every feature offers as many engines as we can (text, image, cover/design, video, voice, lip-sync, upscale, music), each with name, strengths, limits and price per unit, on all plans.
 
+### 1.4 The owner's update, 16 Oct 2026 evening (verbatim; `docs/redesign-plan.md`, last section, item 3)
+
+> **3. Treatment builder spec update** (still built after 31 Oct; Wed 28 / Thu 29 spikes and Fri 30 recommendation unchanged). Add to docs/plans:
+> - Opening questions: tone, genre, idea/script/treatment thought; director, client, agency names + logos ("Find it for me", shown for a yes before use).
+> - "How it looks" first: Fable 5.1 writes the design brief from answers/script/brand colours → Recraft makes the opening slide (vector cover, live text). That slide sets font, spacing, header, colours, illustrations for every later slide.
+> - Then "What should the treatment include?" → map the user's words to a section library (Cover, Index, Idea, Logline, Story, Director's note, Structure, Script, Characters, Performance, Wardrobe, World, Look and feel, Mood board, Colour, Lighting, Camera, Edit, Sound, VFX, Graphics, Motion pages incl. GIF and video viewer pages, Deliverables, Timeline, About, End — with synonyms; unmatched → own heading slide) → generate starting with an Index.
+> - "What it says": OpenAI GPT-6 Astra writes from the idea, no invented facts.
+> - Page types Heading / Sub-heading / Content, each styled from the opening slide.
+> - Mood board: template page for the user's own images, drag/arrange or "Arrange for me"; never crop, squeeze or change aspect ratio automatically — crop/resize are manual controls only.
+
+**Where 1.4 changes Part 2 (1.4 wins over 1.1 where they differ):**
+- **Logos (2.9):** the offer is labelled "Find it for me"; a found logo is shown for the person's yes before it is used.
+- **How it looks (2.2 step 2, 2.12):** the design brief is written by Fable 5.1; the opening slide (the cover) is made by Recraft as a vector with live text. The opening slide sets font, spacing, header, colours and **illustrations** for every later slide. In Agent mode these engines are the defaults and are never named in the UI; Director mode still offers the full list.
+- **Contents (2.2 step 3, 2.3):** the question is "What should the treatment include?". The section names are the 26 in 1.4. **(added)** The terms in 1.1's library become synonyms of those names (for example "Synopsis/narrative" → Story, "Palette/grade" → Colour, "Locations/production design" → World, "Typography/supers" → Graphics, "Thank you/pack shot" → End). A word that matches nothing becomes **its own heading slide** (replacing "custom pages"). Generation starts with the Index.
+- **What it says (2.2 step 4, 2.12):** written by OpenAI GPT-6 Astra from the idea; no invented facts (2.8 unchanged).
+- **Page types (2.3):** Heading, Sub-heading and Content, each styled from the opening slide.
+- **Mood board (2.4):** drag to arrange, or "Arrange for me"; crop and resize are manual controls only (unchanged rules).
+- **Open:** whether Fable 5.1 and GPT-6 Astra are both on the direct text path with working keys when the build starts (the deploy's `TEXT_DIRECT` value decides which providers are called direct).
+
 ## Part 2. The buildable spec
 
-**Reconciled with the owner's section 3 (1.1) on 16 Oct.** Where a point below is the owner's own, it cites the item (3a to 3i, library). Points not in his text are marked **(added)**; they are proposals for him to accept or strike. 
+**Reconciled with the owner's section 3 (1.1) on 16 Oct, and with his update (1.4) the same evening.** Where a point below is the owner's own, it cites the item (3a to 3i, library). Points not in his text are marked **(added)**; they are proposals for him to accept or strike. 
 
 Rules that bind every part: tenant isolation (every table carries `workspace_id`, every query filters on it, every file path is prefixed by it); rule 11 (a feature is a tool in the registry before it gets a button); rule 14 (only a person approves spend; the price is on the button); rule 13 (everything saves itself; undo instead of confirmations); rule 15 (readable dark) and the 5K sharpness checklist (`docs/plans/sharpness-5k.md`).
 
