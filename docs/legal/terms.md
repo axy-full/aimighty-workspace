@@ -67,12 +67,12 @@ You promise you have the rights to what you upload, and that your use of it does
 ⚖ LAWYER L-T8: ownership and copyright of generated output under Indian law (a work with no human author may not be protected); wording that "yours" does not over-promise; the licence grant; third-party engine terms that limit commercial use (see `licence-register.md`, engine outputs).
 ⚖ LAWYER L-T8b: the promise is "Particl does not train on customer content; providers may, under their own policies" (owner, 15 Oct 22:15). There is no promise on a provider's behalf, and no no-training gate on wiring a provider. Check the wording, that it is true for each provider in `where-your-data-goes.md`, and that the Privacy Policy section 6 says the same (L-P6, L-W1).
 
-## 6. Real people: faces and voices
+## 6. Real people: faces, voices and likeness
 
-An identity trained from photos needs the consent of the person in them. When you train one you confirm that you have it [D3; live content policy]. Recording that consent is done by a person, never by Atomik or an outside agent [D13]. We do not offer voice cloning now [D10].
-You may not use a real person's likeness to deceive (see the Acceptable Use Policy).
+**Owner's decision, 16 Oct 2026** (`docs/redesign-plan.md`, "Owner, 16 Oct 2026, 10:55 IST", item 1): any likeness or real face in generated content is the **sole responsibility of the person generating it**. Likeness references are for **pre-production and pitching**: storyboards, animatics and pitch decks may name real people as casting references. **Publishing a real person's likeness needs that person's rights.** Sexual content stays prohibited (see the Acceptable Use Policy). Particl does not block or screen prompts for resemblance to real people; each provider's own filters apply, and a provider's refusal is shown as it comes.
+When you upload a photo or video of a real person, you tick "I have this person's permission". You may also attach a permission file (a no-objection certificate, NOC), kept with the asset. **Particl stores the tick and the file and never checks either automatically.** Recording the tick is done by a person, never by Atomik or an outside agent [D13]. We do not offer voice cloning now [D10]. You may not use a real person's likeness to deceive (see the Acceptable Use Policy).
 
-⚖ LAWYER L-T9: face and voice data (biometric): consent wording, what we record, withdrawal, and what we do with the data when consent is withdrawn (D10 counsel list: whether similarity scores must be erased on withdrawal, "against never-delete").
+⚖ LAWYER L-T9: the likeness decision as a clause: sole responsibility of the person generating; pre-production and pitching use of real people's names and likenesses as references; publication needing the person's rights (personality and publicity rights, defamation, deceptive content); that a tick plus an optional unchecked NOC is enough evidence and does not make Particl an intermediary that must screen; whether "never checked automatically" and "does not screen prompts" should be stated to customers; face and voice data held as photos and recordings (DPDP Act notice, consent, withdrawal, retention, transfer to US vendors) [D10].
 
 ## 7. Disclosure: "no AI tag"
 

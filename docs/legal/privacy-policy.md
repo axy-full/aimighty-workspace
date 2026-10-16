@@ -15,7 +15,7 @@ Draft 0.1, 15 Oct 2026. Not live. The live page is `app/(app)/privacy/page.tsx` 
 - **Records:** what was billed, in credits, and the engine's cost behind it, for our own books.
 - **Reports:** what a person sends at /report: a link or take id, what is wrong, and an email if they give one; a salted hash of the sender's IP address (used to limit repeat reports); and, if they are signed in, their account and workspace ids.
 - **Technical logs**, for a short while, to find faults. The product also records timings and ids (for example the time to a first render and where people stop), never prompt text [CLAUDE.md, rule 17].
-- **Faces and voices:** photos for an identity, voice recordings, the consent record, and where used the results of face matching (see section 4).
+- **Faces and voices:** photos for an identity, voice recordings, and the permission record (a tick and an optional permission file, stored with the asset and never checked automatically; see section 4).
 - **Payments:** when online billing is live, the payment processor holds card details; we keep the invoice record. Planned.
 [OWNER DECISION OD-P2: how long technical logs are kept. The live page says "a short while".]
 
@@ -26,9 +26,9 @@ To run the service you asked for; to bill; to keep it safe; to answer reports; t
 
 ## 4. Faces, voices and other special data
 
-Training an identity uses photos of a real person; the person in them must have agreed, and you confirm that when you train one [D3]. Voice work sends audio to the engines named below. Voice cloning is not offered now [D10]. Face matching with AWS Rekognition is planned and off today; the owner wants counsel before any customer switch [D10].
-[OWNER DECISION OD-P3: whether Rekognition's similarity scores are erased when a person withdraws consent. D10 lists this as a question "against never-delete". Options: (a) erase scores on withdrawal; (b) keep and say so.]
-⚖ LAWYER L-P3: face and voice as biometric or sensitive data under Indian law (the DPDP Act has no separate sensitive class; check the IT Act's SPDI rules still in force), consent wording, withdrawal, retention, and transfer to US vendors [D10].
+Training an identity uses photos of a real person; you tick that you have the person's permission when you upload them [D3, D19]. Voice work sends audio to the engines named below. Voice cloning is not offered now [D10]. **No face matching or biometric check is used** (owner's decision, 16 Oct 2026: no face matching anywhere), so no similarity score or face template is made or kept. On an upload of a real person you tick "I have this person's permission" and may attach a permission file (NOC); both are stored with the asset and never checked automatically. Any likeness in generated content is the responsibility of the person generating it (Terms section 6).
+[OWNER DECISION OD-P3: what happens to a stored permission tick and file when the person withdraws permission. Options: (a) hide the asset and keep the record; (b) erase on request; (c) keep and say so.]
+⚖ LAWYER L-P3: face and voice data held as photos and recordings (whether any is sensitive or special data under Indian law (the DPDP Act has no separate sensitive class; check the IT Act's SPDI rules still in force), consent wording, withdrawal, retention, and transfer to US vendors) [D10, D19].
 
 ## 5. Who receives data (vendors)
 
@@ -64,8 +64,9 @@ Each vendor gets only what it needs to do its job, and goes straight to that ven
 | Sarvam | Speech, transcripts and translation in Indian languages | Text and audio | Planned | [link to Sarvam privacy policy] |
 | Black Forest Labs | Stills (FLUX 3, FLUX.2), EU endpoint | Prompts and reference images | Planned | [link to Black Forest Labs privacy policy] |
 | Recraft | Decks, brand assets, vector and storyboard styles | Prompts; an image for vectorize or background removal | Planned | [link to Recraft privacy policy] |
-| AWS Rekognition (Mumbai) | Face matching to check a take against a cast member | Face images | Planned (off until counsel) | [link to AWS privacy notice] |
 | AWS MediaConvert (Mumbai) | Smart Crop reframe of a finished clip | The clip, held in a storage bucket in Mumbai | Planned | [link to AWS privacy notice] |
+
+AWS Rekognition is not used and receives nothing (owner, 16 Oct 2026).
 
 Not used, by decision: an AI gateway [D11]; MiniMax/Hailuo, Suno, Udio, Sora, PlayHT, face-swap engines built on InsightFace, Wav2Lip and self-hosted MMAudio (owner, 15 Oct 22:15). Recraft was "not used" in the 11 Oct record and is now in the stack (owner, 15 Oct 22:15).
 [OWNER DECISION OD-P4a: the final vendor list at launch. The table is drawn from the record on 15 Oct (22:15 stack); the owner confirms which "Planned" vendors are live on the day and removes the rest.]
@@ -84,7 +85,6 @@ What the record says, from our own account settings and written confirmations (n
 | sync.so | No training on our data, confirmed in writing; the letter is with company records, not in the repo (15 Oct 14:25). Published (16 Oct, check before relying): training use and a perpetual, irrevocable licence, with no published opt-out. It receives faces and voices: OD-W1, L-W2 |
 | Sarvam | Retention set to 0 days (15 Oct 14:25). Published (16 Oct, check before relying): trains on content unless you opt out in account settings; default retention 30 days. Training off is an owner action, not yet recorded as done: OD-W2 |
 | ElevenLabs | Account has a training setting; to be switched off (owner action; not yet recorded as done) |
-| AWS (Rekognition) | An AWS Organizations AI-services opt-out is to be set before any customer use (owner action; not yet recorded as done) |
 | Runway | Its terms allow training on inputs and outputs; house workspace only until written terms say otherwise |
 | Topaz | Asked, optional: no training on our uploads, how long it keeps files. Not recorded as answered |
 | Every other vendor | Nothing recorded about training or retention; the vendor's own policy applies. [OWNER DECISION OD-P5: how the page states this. Options: the "providers may, under their own policies" sentence alone; also the table in `where-your-data-goes.md` on the site.] |
