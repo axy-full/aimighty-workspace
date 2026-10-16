@@ -53,7 +53,7 @@ const LIP_SYNC: DirectTool = {
     name: "lip_sync",
     description:
       "Match a clip's mouth to a voice track (sync.so). Priced first; the job is sent at that price as its ceiling, and spends from the workspace's credit with a token " +
-      "made to render. Every face passes the consent gate first: it needs the cast member's live consent, a still of the face, the production and what it is for. " +
+      "made to render. No face or voice is checked by Particl; the provider's own filters apply. " +
       "Returns an id; collect it with get_render.",
     inputSchema: {
       type: "object",
@@ -64,13 +64,10 @@ const LIP_SYNC: DirectTool = {
         audio_take_id: { type: "string" },
         model: { type: "string", description: "lipsync-2, lipsync-2-pro (default) or sync-3." },
         sync_mode: { type: "string", description: "How a length mismatch is handled: bounce (default), loop, cut_off, silence or remap." },
-        cast_member_id: { type: "string", description: "Who is in the clip." },
-        face_frame_upload_id: { type: "string", description: "A still of their face (an image of this workspace)." },
-        project_id: { type: "string", description: "The production." },
-        use: { type: "string", description: "production, ads or social." },
+        project_id: { type: "string", description: "The production (optional)." },
         request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." },
       },
-      required: ["cast_member_id", "face_frame_upload_id", "project_id", "use"],
+      required: [],
     },
   },
   present: async () => (await lipSyncTools()).length > 0,
@@ -78,11 +75,11 @@ const LIP_SYNC: DirectTool = {
     path: "/api/lipsync",
     body: {
       clipUploadId: str(a.clip_upload_id), clipGenId: str(a.clip_take_id), audioUploadId: str(a.audio_upload_id), audioGenId: str(a.audio_take_id),
-      model: str(a.model), syncMode: str(a.sync_mode), castMemberId: str(a.cast_member_id), faceFrameUploadId: str(a.face_frame_upload_id), projectId: str(a.project_id), use: str(a.use),
+      model: str(a.model), syncMode: str(a.sync_mode), projectId: str(a.project_id),
     },
   }),
   draft: (b) => b.model === "lipsync-2",
-  prepared: (b) => `prepared: lip-sync (${String(b.model ?? "lipsync-2-pro")}) of ${String(b.clipUploadId ?? b.clipGenId ?? "a clip")} with ${String(b.audioUploadId ?? b.audioGenId ?? "a voice track")} for production ${String(b.projectId)}`,
+  prepared: (b) => `prepared: lip-sync (${String(b.model ?? "lipsync-2-pro")}) of ${String(b.clipUploadId ?? b.clipGenId ?? "a clip")} with ${String(b.audioUploadId ?? b.audioGenId ?? "a voice track")}${b.projectId ? ` for production ${String(b.projectId)}` : ""}`,
   describe: (out, quote) => `Lip-sync started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
