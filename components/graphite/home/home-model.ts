@@ -9,6 +9,8 @@ import { savedAt } from "@/lib/shell/studio-home";
 import { ago } from "@/lib/workspace/activity";
 import type { ProjectSummary } from "@/lib/workspace/data";
 import type { QueueItem } from "@/lib/control-room/queue";
+import type { Project } from "@/lib/workbench/studio";
+import { newProjectBoard } from "@/lib/v12/board/new-project";
 
 /** A board's kind: the template that started it (stream 3's `BoardKind`, the same three words). */
 export type BoardKind = "studio" | "ads" | "social";
@@ -22,7 +24,7 @@ export const GLYPHS = {
   video: "M2 4h8v8H2zM10 7l4-2v6l-4-2",
 } as const;
 
-export type TemplateId = "film" | "ads" | "social" | "script" | "blank";
+export type TemplateId = "film" | "ads" | "social" | "script" | "blank" | "new-project";
 export type Template = {
   id: TemplateId;
   label: string;
@@ -32,6 +34,8 @@ export type Template = {
   glyph: string;
   /** Start from a script: the board opens where the script is imported. */
   start?: "script";
+  /** A new-interface kind and rail the project is made with (lib/v12/board/new-project.ts). */
+  board?: { boardFlavor: NonNullable<Project["boardFlavor"]>; boardStages: NonNullable<Project["boardStages"]> };
 };
 
 /** Studio, Ads and Social are templates picked on Home, not destinations (README § 1). */
@@ -43,6 +47,8 @@ export const TEMPLATES: readonly Template[] = [
 ];
 /** "+ New project": an empty Studio board. */
 export const BLANK: Template = { id: "blank", label: "New project", kind: "studio", untitled: "Untitled project", glyph: GLYPHS.frame };
+/** "+ New project" in the new interface: a Film board with the demo's steps on its rail (lib/v12/board/new-project.ts). */
+export const NEW_PROJECT: Template = { ...BLANK, id: "new-project", board: newProjectBoard() };
 
 export const ASPECTS = ["16:9", "9:16", "1:1"] as const;
 export const LENGTHS = ["6 s", "15 s", "30 s", "60 s"] as const;
@@ -100,14 +106,14 @@ export function nameFromBrief(text: string, max = 48): string | null {
 }
 
 /** What a new project starts with: everything the box set, so nothing is asked again (README § 0, rule 3). */
-export type HomeSeed = { brief?: string; aspect: string; deliverables: string; boardKind: BoardKind };
+export type HomeSeed = { brief?: string; aspect: string; deliverables: string; boardKind: BoardKind; boardFlavor?: NonNullable<Project["boardFlavor"]>; boardStages?: NonNullable<Project["boardStages"]> };
 
 export function newProjectFor(template: Template, draft: HomeDraft): { name: string; seed: HomeSeed } {
   const brief = draft.text.trim().slice(0, BRIEF_MAX);
   const name = (nameFromBrief(brief) ?? template.untitled).slice(0, NAME_MAX);
   return {
     name,
-    seed: { ...(brief ? { brief } : {}), aspect: draftAspect(draft), deliverables: draftLength(draft), boardKind: template.kind },
+    seed: { ...(brief ? { brief } : {}), aspect: draftAspect(draft), deliverables: draftLength(draft), boardKind: template.kind, ...(template.board ?? {}) },
   };
 }
 

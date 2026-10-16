@@ -12,7 +12,7 @@ import { spendAttrsOf } from "@/lib/spend";
 import { fmtLedgerUsd } from "@/lib/usageLedgerTerms";
 import { pickedBrief, startQuote, startWords, waitingShown, wallRow, type WallTile } from "@/lib/v12/home";
 import { useOverlay } from "@/components/v12/ui/overlay";
-import { ASPECTS, BLANK, BRIEF_MAX, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength } from "@/components/graphite/home/home-model";
+import { ASPECTS, NEW_PROJECT, BRIEF_MAX, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength } from "@/components/graphite/home/home-model";
 import { BriefFileError, briefKind, readBriefFile } from "@/components/graphite/home/brief-file";
 import type { HomeViewProps } from "@/components/graphite/home/HomeView";
 import { useHomeNav } from "@/components/graphite/home/use-home-nav";
@@ -201,7 +201,7 @@ export function V12Home({ scope, projects, status, error, onRetry, onPick, onCre
         <WallMenu scope={scope} tiles={wall.tiles} menu={wallMenu.menu} onClose={wallMenu.close} onChoose={(tile) => setPickedId(tile.id)} onRemix={remix} />
         <div className="v12-hm-lower" data-dim={picked ? "" : undefined}>
           <YourBoards scope={scope} projects={projects} status={status} error={error} onRetry={onRetry} now={now} approvals={approvalsByDraft}
-            disabled={busy} onOpen={s.open} onNew={() => void s.create(BLANK)} />
+            disabled={busy} onOpen={s.open} onNew={() => void s.create(NEW_PROJECT)} />
         </div>
       </div>
       <div className="v12-hm-bar" ref={barBox}>
