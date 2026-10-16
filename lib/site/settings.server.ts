@@ -20,6 +20,21 @@ export async function readSite(): Promise<SiteSettings> {
   }
 }
 
+/**
+ * Fields of the site row that other parts of the platform own and `cleanSite` does not know: the engine list (lib/engineGate.ts `enginesOnWorkspaces`) and the Pro pick
+ * (lib/proPick.ts `proPick`). A change to a switch carries them over untouched; without this, saving one switch would silently empty both.
+ */
+const OWNED_ELSEWHERE = ["enginesOnWorkspaces", "proPick"] as const;
+async function carriedOver(): Promise<Record<string, unknown>> {
+  try {
+    const rs = await platformDb().execute({ sql: `SELECT value FROM platform_layer WHERE key = ?`, args: [SITE_ROW] });
+    const raw = (rs.rows[0] as { value?: unknown } | undefined)?.value;
+    if (typeof raw !== "string") return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Object.fromEntries(OWNED_ELSEWHERE.filter((k) => k in parsed).map((k) => [k, parsed[k]]));
+  } catch { return {}; }
+}
+
 export class SiteSettingsError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
@@ -47,7 +62,7 @@ export async function writeSite(patch: Partial<SiteSettings>, by: string | null)
   const upsert = {
     sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES (?,?,?,?)
           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-    args: [SITE_ROW, JSON.stringify(next), now(), by],
+    args: [SITE_ROW, JSON.stringify({ ...(await carriedOver()), ...next }), now(), by],
   };
   /* A change by a person carries its audit line in the same batch (lib/platformAudit.ts): which switches, and the values they were set to. */
   if (by) {
