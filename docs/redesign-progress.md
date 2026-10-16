@@ -1105,3 +1105,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Docs E: demo-checklist.md, test-scripts/demo-film.md and demo-fallback.md (e7a50c17). Open in those docs: the brief, the machine and the "Duplicate board" behaviour, to rehearse 22 Oct.
   - Weekday fix in the demo plan: 24 Oct is a Saturday and 27 Oct a Tuesday (31 Oct is a Saturday).
   - Lane F started (v25 demo-path screens).
+- **16 Oct 11:52 IST.** Full Opus review: #749 (card) c021c3d3 and #750 (rail) bd738204 APPROVED, no must-fix. Both are reachable only from ENGINE_MOCK test pages; they conflict with each other on one CSS file. They merge after the deploy #5 cut. Should-fixes (text-card scrim, corner tile, aria-expanded, rail props from stages.ts, 44 px "Add step") fold into lane C's path PRs.
