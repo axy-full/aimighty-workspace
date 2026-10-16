@@ -13,7 +13,7 @@ import { runInTenant, type TenantWorkspace, type WorkspaceRole } from "./tenant"
 import { mergeLayer, LAYER_KEYS, type PlatformLayer, type LayerKey } from "./platformLayer";
 import { prepareLocalDatabaseDirectory } from "./localDatabase";
 import { createPlatformDatabaseClient } from "./localDatabaseClient";
-import { HOUSE_NOT_BILLED, isHouseWorkspace } from "./houseWorkspace";
+import { HOUSE_NOT_BILLED, HOUSE_WORKSPACE_ID, isHouseWorkspace } from "./houseWorkspace";
 
 /**
  * The platform: what spans workspaces.
@@ -574,6 +574,18 @@ export async function setWorkspaceAllowance(id: string, usd: number | null): Pro
     sql: `UPDATE workspaces SET allowance_usd = ?, updated_at = ? WHERE id = ?`,
     args: [usd, now(), id],
   });
+}
+
+/**
+ * The house workspace's monthly engine cap (lib/houseCap.ts), set by the platform owner and by no one else: the admin route calls this
+ * after its own platform-owner check. The figure and its history line commit together. null removes the owner's figure, so the default
+ * applies; the house is never left without a cap.
+ */
+export async function setHouseCap(usd: number | null, actorId: string): Promise<void> {
+  await platformDb().batch([
+    { sql: `UPDATE workspaces SET allowance_usd = ?, updated_at = ? WHERE id = ?`, args: [usd, now(), HOUSE_WORKSPACE_ID] },
+    platformAuditStatement({ actorId, action: "housecap.set", targetType: "workspace", targetId: HOUSE_WORKSPACE_ID, workspaceId: HOUSE_WORKSPACE_ID, details: { capUsd: usd } }, true),
+  ], "write");
 }
 
 /** Credits added to a workspace, by management. Negative takes them away. */

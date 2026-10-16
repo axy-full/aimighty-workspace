@@ -1,6 +1,8 @@
 import { platformDb, platformReady, getPlatformLayer, getWorkspace } from "@/lib/platform";
 import { creditStateFor } from "@/lib/credits";
 import { isHouseWorkspace } from "@/lib/houseWorkspace";
+import { houseCapViewFor } from "@/lib/houseCap";
+import type { HouseCapView } from "@/lib/houseCapText";
 import { asPlanId, planById, DEFAULT_PLANS, type PlanDef } from "@/lib/plans";
 import { readPlatformAudit, type PlatformAuditLine } from "@/lib/platformAudit";
 import { deployedCommit } from "@/lib/deployment";
@@ -67,6 +69,8 @@ export type WorkspaceSheet = {
   balance: number | null;
   /** The owner's own changes to this workspace, newest first (lib/platformAudit.ts). */
   changes: PlatformAuditLine[];
+  /** The house's monthly engine cap and this month so far (lib/houseCap.ts); null for every other workspace. */
+  houseCap: HouseCapView | null;
 };
 
 /** One workspace for the console's side sheet, or null when there is none. */
@@ -96,6 +100,7 @@ export async function workspaceSheet(id: string): Promise<WorkspaceSheet | null>
     history: (grants.rows as unknown as Record<string, unknown>[]).map((r) => ({ at: Number(r.created_at), credits: Number(r.credits), kind: String(r.kind), note: String(r.note ?? "") })),
     balance: state ? state.balance : null,
     changes,
+    houseCap: house ? await houseCapViewFor(ws.allowanceUsd).catch(() => null) : null,
   };
 }
 
