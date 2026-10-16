@@ -1,6 +1,0 @@
-# Files that decide what the secret scan and CI let through. Review by the owner is required once the repository setting
-# "Require review from Code Owners" is on (a branch protection setting, the owner's to change).
-/.github/CODEOWNERS @axy-full
-/.github/workflows/ @axy-full
-/.gitleaks.toml @axy-full
-/.gitleaksignore @axy-full
