@@ -30,6 +30,19 @@ Tests: `node --test tests/ops/remotion-worker.test.mjs` (a stand-in for the expo
 
 Tuning of the export command (`REMOTION_CONCURRENCY`, `REMOTION_MAX_SECONDS`) is set in `compose.yaml`, from the measurement below, and never comes from a request.
 
+## Deck PDFs (treatment, pitch deck, PPM deck)
+
+The same fixed command also prints a deck page to PDF with the Chrome Headless Shell the image already carries: the one worker, the one command (`node /opt/remotion/cli.mjs`), no new port, no new secret. A spec with `"composition": "pdf"` (remotion/src/lib/pdf.ts) takes `input/deck.html` (our own page, written by the app from its templates, `lib/pdf/`) and the pictures it names (`i1.png`, `i2.jpg` …, PNG, JPEG or WebP, checked by their bytes) and writes `output/deck.pdf`.
+
+- **Confined by the session and the checker.** The page may hold only an allow-list of tags and attributes, no script, no link, no address, one `<style>` block, and it must open with one fixed head (the doctype, the language, UTF-8 and one Content-Security-Policy, character for character). The policy (`default-src 'none'; img-src file:; font-src file:; style-src 'unsafe-inline'`) stops script, network and frames in the browser itself, but **`img-src file:` and `font-src file:` allow any `file:` URL**, not only the files beside the page. What keeps the browser to the session's own files is (1) one session per container: the worker's filesystem holds only that session and the image, and runs non-root with a read-only root, and (2) the checker, which refuses every address that is not `assets/<a declared file>` or `fonts/<our typeface>` before the browser starts (exit 2). The browser's flags are fixed in `remotion/node/pdf.ts` (`--host-resolver-rules=MAP * ~NOTFOUND`, no remote control, no flag from the spec).
+- **Fonts and pictures are files.** The typeface (Outfit, SIL OFL) is copied from `REMOTION_FONTS_DIR` (`/opt/remotion/fonts`, set by the Dockerfile); pictures come in over the session's file API. The worker has no network to fetch anything else.
+- **Checked on the way out.** The PDF must be a PDF with exactly the page count and the page size (trim plus 2 x bleed) the spec promised, or the run fails (exit 4) and nothing is kept.
+- **Page size and bleed.** 16:9 slide (338.667 x 190.5 mm), A4 or US Letter, landscape; bleed 0 or 3 mm each side (the page grows and the artwork runs to the new edge; no trim box or marks are written).
+- **Limits.** 60 pages, 40 pictures, 20 MB each, 120 MB together, 3 MB of page, `REMOTION_PDF_TIMEOUT_MS` (default 120 s) for the print.
+- **Build check.** The Dockerfile prints a two-page A4 page (`remotion/test/pdf-check/`) as the runtime user at image build; a missing library or font fails the build.
+
+The app side is `POST /api/pdf` and the MCP tool `make_deck_pdf` (`lib/pdf/`): free (0 cr), through the shared engine gate (`lib/engineGate.ts`): off unless `PDF_EXPORTS` is exactly `1`, and then on only for the house workspace and the workspaces listed in the site setting `enginesOnWorkspaces`. It reuses `REMOTION_WORKER_URLS` and `REMOTION_WORKER_SECRETS`; `PDF_EXPORTS` is its own switch, apart from `REMOTION_EXPORTS`. Leave `PDF_EXPORTS` unset until the owner says.
+
 ## Networking: option (c), the relay (the owner's choice for the Astra workers, adopted here)
 
 The reasoning and the Verify step are in `ops/render-worker/README.md`, "Networking: option (c), the relay". Here, in `compose.yaml`:
