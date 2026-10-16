@@ -1132,3 +1132,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #795 Home "+ New project" (lane F) APPROVED. Follow-ups: one word for making a board; adopt #791's removed-step flag; also assert no /api/generate.
   - #796 gitleaks (lane G) NOT APPROVED: a PR could silence its own finding via its own .gitleaks.toml, a .gitleaksignore or inline gitleaks:allow. Fix: base config, an empty ignore path, --ignore-gitleaks-allow, value-specific allowlists, CODEOWNERS (owner enables code-owner review).
   - #762 CI running (38862946581). A queued lane-push run on feat/v25-4-board-data was cancelled.
+- **16 Oct 12:30 IST.**
+  - #796 gitleaks APPROVED at 16c1b90a: base rules, ignores off, value-specific allowlist, CODEOWNERS. CI after #762. Owner to set: `secrets` as a required check; "Require review from Code Owners".
+  - #791 delta NOT APPROVED: a custom stage flagged removed could lift the 24-stage cap to 36; sent to lane D.
+  - CI is slow because GitHub Free caps public repos at 20 concurrent jobs, and stray lane-push runs and the release/1 push run share them.
