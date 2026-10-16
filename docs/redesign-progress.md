@@ -1257,3 +1257,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 15:22 IST.** Opus APPROVED all ten Slice 1 re-merges: #766 f2720d81, #774 27fe0fde, #775 56c01b88, #767 25998944, #803 ce2e7ab0, #793 22777153, #801 91c2a611, #804 d9e65954, #794 faae3b40 and #791 7b7a33b0.
   - Hand resolutions keep both sides; export and deck gates are intact; no guard changed. engineGate.spec is treated as a guard and nothing in it is loosened.
   - **Queued:** chain 2 (#766 → #804) runs after chain 1 (#700, #768–#773); #791 → #794 run after queue 2 (#805, #749). Each chain stops at its first failure.
+- **16 Oct 15:25 IST.** #807 at a84c66fc: the held-line wording is fixed. The enhanceStableKey guard is restored except the one expected value, now an exact `toEqual` of the "Nothing billed." line (owner's word needed).
+  - **Order:** that line comes from #809's `nothingBilled` field, so #807 and #809 merge together, #809 first, once the owner says yes.
+  - **Reruns:** phones (no Enhance control there) and 1440/1920 pass; two flakes passed on a fresh server.
+  - **Memory** is back to 25 GB available.
