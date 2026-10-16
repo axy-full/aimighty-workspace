@@ -59,7 +59,7 @@ test("the gate is the shared engine gate: PDF_EXPORTS exactly 1, and then only t
 
 test("the tool declares what rule 11 asks: id, who may call, key, switch, a price of 0, and names the missing key", async () => {
   const { PDF_TOOL, pdfToolAvailability } = await import("../../lib/pdf/tool");
-  expect(PDF_TOOL).toMatchObject({ id: "make_deck_pdf", kind: "app-action", callers: "render", route: "/api/pdf", switch: "PDF_EXPORTS", priceLabel: "Free", kinds: ["treatment", "pitch", "ppm"] });
+  expect(PDF_TOOL).toMatchObject({ id: "make_deck_pdf", kind: "app-action", callers: "render", route: "/api/pdf", switch: "PDF_EXPORTS", priceLabel: "Free", kinds: ["treatment", "pitch", "ppm", "film"] });
   expect(PDF_TOOL.price()).toEqual({ credits: 0, label: "Free" });
   expect(PDF_TOOL.mock).toBe("tests/unit/remotionWorkerFake.ts");
   expect(pdfToolAvailability({})).toEqual({ available: false, reason: "Deck PDFs are not switched on for this deployment." });

@@ -3,7 +3,7 @@
  * written as HTML (lib/pdf/html.ts) and printed to PDF on the export worker (remotion/node/pdf.ts). Pure: no database, no
  * network. Every word on a page is content, escaped by the HTML writer; nothing in a request can add markup.
  */
-export const DECK_KINDS = ["treatment", "pitch", "ppm"] as const;
+export const DECK_KINDS = ["treatment", "pitch", "ppm", "film"] as const;
 export type DeckKind = (typeof DECK_KINDS)[number];
 
 /** The page sizes decks come in, in millimetres, landscape: a 16:9 slide (13.333 x 7.5 in), A4 and US Letter. */
@@ -14,19 +14,19 @@ export const PAGE_SIZES = Object.freeze({
 });
 export type PageSize = keyof typeof PAGE_SIZES;
 /** Each kind's own page, unless the request names another. */
-export const DEFAULT_PAGE: Record<DeckKind, PageSize> = { treatment: "slide", pitch: "slide", ppm: "a4" };
+export const DEFAULT_PAGE: Record<DeckKind, PageSize> = { treatment: "slide", pitch: "slide", ppm: "a4", film: "slide" };
 /** The bleed a printer may ask for, in millimetres: none, or 3 mm each side (the page grows by twice that; artwork runs to the new edge). */
 export const BLEEDS = [0, 3] as const;
 
 /** The words a person sees for each kind. */
-export const KIND_LABEL: Record<DeckKind, string> = { treatment: "Treatment", pitch: "Pitch deck", ppm: "PPM deck" };
+export const KIND_LABEL: Record<DeckKind, string> = { treatment: "Treatment", pitch: "Pitch deck", ppm: "PPM deck", film: "Film deck" };
 
 export const MAX_PAGES = 60;
 export const MAX_IMAGES = 24;
 export const TEXT_MAX = 1800;
 
 export type DeckPage =
-  | { type: "cover"; title: string; subtitle?: string; meta?: string[]; logo?: string }
+  | { type: "cover"; title: string; subtitle?: string; meta?: string[]; logo?: string; /** The word over the title (default: the kind's own). */ eyebrow?: string; /** A film deck has two covers over the same pages: a quiet Treatment and a bold Pitch. */ style?: "treatment" | "pitch" }
   | { type: "text"; eyebrow?: string; heading: string; paragraphs: string[] }
   | { type: "facts"; eyebrow?: string; heading: string; rows: [string, string][] }
   | { type: "bullets"; eyebrow?: string; heading: string; items: string[] }
