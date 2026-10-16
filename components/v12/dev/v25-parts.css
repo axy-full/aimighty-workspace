@@ -17,3 +17,12 @@
 
 .v12 .v25-parts-btn { height: 32px; padding: 0 12px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); cursor: pointer; }
 @media (pointer: coarse) { .v12 .v25-parts-btn { min-height: var(--gx-touch); } }
+
+
+/* The rail's frames: as tall as the board's canvas (the window less its two 56 and 44 px header rows), dotted ground like the canvas. */
+.v12 .v25-parts-head { height: 100px; box-sizing: border-box; display: grid; place-items: center; border-bottom: 1px solid var(--gx-hair-strong); font-size: var(--gx-fs-label); color: var(--gx-text-sec); }
+.v12 .v25-parts-frame { position: relative; height: 420px; background: radial-gradient(rgba(255, 255, 255, .05) 1px, transparent 1px) 0 0 / 24px 24px; border-bottom: 1px solid var(--gx-hair-strong); }
+.v12 .v25-parts-frame[data-tall] { height: calc(100dvh - 100px); min-height: 360px; }
+.v12 .v25-parts-frame .v25-parts-said { position: absolute; right: var(--gx-sp-16); top: var(--gx-sp-8); margin: 0; }
+.v12 .v25-parts-pair { display: grid; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 700px) { .v12 .v25-parts-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
