@@ -1333,3 +1333,5 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #806 (30ada50f; create_board added to the WRITES guard on the owner's yes; origin and scope checks);
   - **#816 Storyboard** (b0328e41: styles by look with no engine names, the existing priced draw path, the new-project overlay fixed). It deletes one replaced shots-v12 test; Opus checks the deletion.
   - **Open:** board-kinds-v12's kind-cycle toast step fails locally even on release/1, yet CI passed on #749 against release/1, so CI decides #791.
+- **16 Oct 16:51 IST.** **#791 NOT merged:** its queue CI run 38892068833 was cancelled mid-run at 16:50 IST, most likely by a lane cancelling "its" runs by branch. It's re-queued: #791 → #794 → #750 → #811 after #792 and #798.
+  - **New lane rule:** cancel CI only by the run id of your own push; never a queue run.
