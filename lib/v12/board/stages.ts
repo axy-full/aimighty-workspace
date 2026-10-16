@@ -214,6 +214,17 @@ const toSaved = (stages: readonly Stage[]): SavedStage[] => {
   return [...shown, ...builtInStages(flavor).filter((d) => !kept.has(d.id)).map((d) => ({ id: d.id, removed: true as const }))];
 };
 
+/**
+ * A rail to start a board with: the kind's own steps, less the ones a new board leaves out (saved as `{ id, removed: true }`, so a
+ * later read never adds them back) and with the ones it skips marked `skipped`. The saved list a new board's draft keeps as
+ * `boardStages`; lane F's New project writes it with this, never by hand.
+ */
+export function startingRail(flavor: Flavor, plan: { without?: readonly string[]; skipped?: readonly string[] } = {}): SavedStage[] {
+  const gone = new Set(plan.without ?? []);
+  const quiet = new Set(plan.skipped ?? []);
+  return toSaved(stagesOf(flavor, null).filter((s) => !gone.has(s.id)).map((s) => (quiet.has(s.id) ? { ...s, skipped: true } : s)));
+}
+
 export function renameStage(stages: readonly Stage[], id: string, label: string): SavedStage[] {
   const name = cleanLabel(label);
   return toSaved(stages.map((s) => (s.id === id && name ? { ...s, label: name } : s)));

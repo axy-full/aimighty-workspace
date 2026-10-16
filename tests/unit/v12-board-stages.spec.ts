@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { MAX_STAGES, freeCards, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, stageId } from "../../lib/v12/board/stages";
+import { MAX_STAGES, freeCards, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, stageId, startingRail } from "../../lib/v12/board/stages";
 import type { BoardCard } from "../../lib/board/types";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
@@ -294,4 +294,20 @@ test("Pitch, Treatment and Locations have no cards of their own yet: no card of 
     expect(FILM_STAGES.find((d) => d.id === id)!.regions).toEqual([]);
     expect(stageCards({ id, regions: [] }, CARDS, "film")).toEqual([]);
   }
+});
+
+test("a board started with a shorter rail (Treatment and Locations left out, Elements skipped) keeps it, however it is read or edited", () => {
+  const rail = startingRail("film", { without: ["treatment", "locations"], skipped: ["elements"] });
+  expect(rail).toContainEqual({ id: "treatment", removed: true });
+  expect(rail).toContainEqual({ id: "locations", removed: true });
+  expect(rail).toContainEqual({ id: "elements", skipped: true });
+  const want = ["pitch", "brief", "script", "cast", "elements", "storyboard", "shots", "edit", "deliver"];
+  expect(ids("film", rail)).toEqual(want);
+  expect(stagesOf("film", rail).find((s) => s.id === "elements")!.skipped).toBe(true);
+  /* Removing Pitch later does not bring the others back. */
+  const lessPitch = removeStage(stagesOf("film", rail), "pitch");
+  expect(ids("film", lessPitch)).toEqual(want.slice(1));
+  expect(projectSchema.safeParse({ ...newProject("Board"), boardStages: lessPitch }).success).toBe(true);
+  expect(startingRail("film")).toEqual(stagesOf("film", null).map((s) => ({ id: s.id })));
+  expect(startingRail("previs", { without: ["script"] }).map((s) => s.id)).toContain("script");
 });
