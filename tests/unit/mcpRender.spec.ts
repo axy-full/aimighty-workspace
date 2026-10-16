@@ -137,3 +137,30 @@ test("a caller cannot approve: maxCredits (or max_credits) in the arguments is r
     }
   }
 });
+
+test("Auto never starts anything but a 480p take at or under the line: every resolution, model and price, checked together", async () => {
+  /* The owner's condition (16 Oct 2026): a 480p take is the draft; Auto may start a draft at or under the per-job line, and nothing else, ever. */
+  const line = 200;
+  const started: string[] = [], held: string[] = [];
+  for (const model of ["2.5", "2.0"]) {
+    for (const resolution of ["480p", "720p", "1080p"]) {
+      for (const credits of [0, 1, 18, 199, 200, 201, 202, 900, 100000]) {
+        for (const auto of [true, false]) {
+          const api = workspace({ estimatedCredits: credits, price: credits, unit: "cr", fingerprint: FINGERPRINT });
+          const text = await runTool("render_shot", { prompt: "Rain.", model, resolution, request_id: "all-01" }, api.call as never, "", {}, { auto, lineCredits: line });
+          const sent = api.calls.some((c) => c.path === "/api/generate");
+          const label = `${model} ${resolution} ${credits} cr, ${auto ? "Auto" : "Ask"}`;
+          (sent ? started : held).push(label);
+          /* A render starts only where Auto is on, the take is the 480p draft, and its price is at or under the line. */
+          expect(sent, label).toBe(auto && resolution === "480p" && credits <= line);
+          if (sent) expect(api.calls.find((c) => c.path === "/api/generate")?.body, label).toMatchObject({ maxCredits: credits, resolution: "480p" });
+          else expect(text, label).toMatch(/^Priced and prepared, not started\./);
+        }
+      }
+    }
+  }
+  /* The grid is large enough to mean something, and the started ones are exactly the 480p draft at or under the line in Auto. */
+  expect(started.length + held.length).toBe(2 * 3 * 9 * 2);
+  expect(started.length).toBe(2 * 5);
+  expect(started.every((label) => label.includes("480p") && label.includes("Auto"))).toBe(true);
+});
