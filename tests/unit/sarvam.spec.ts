@@ -20,6 +20,7 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 const FX = 0.012; // a sample dollars-per-rupee, for these tests only
+const RATE = FX * 1.03; // what a rupee costs in a quote: the rate plus the 3% buffer
 test.beforeAll(async () => { await alignLedgerUnit(); });
 test.beforeEach(() => { process.env.SARVAM_USD_PER_INR = String(FX); });
 test.afterEach(() => { delete process.env.SARVAM_ENABLED; delete process.env.SARVAM_USD_PER_INR; process.env.ENGINE_MOCK = "1"; });
@@ -85,11 +86,14 @@ test("the rupee rate is the owner's, in the environment: with none, or a bad one
   }
   process.env.SARVAM_USD_PER_INR = String(FX);
   /* 10,000 characters of Bulbul v3 is ₹30; v4-flash ₹20; an hour of speech to text ₹300; 10,000 characters translated ₹20. */
-  expect(sarvamUsd("speech", { chars: 10_000 }, "bulbul:v3")).toBeCloseTo(30 * FX, 6);
-  expect(sarvamUsd("speech", { chars: 10_000 }, "bulbul:v4-flash")).toBeCloseTo(20 * FX, 6);
-  expect(sarvamUsd("transcribe", { seconds: 3600 }, "saaras:v4")).toBeCloseTo(30 * FX, 6);
-  expect(sarvamUsd("transcribe", { seconds: 10 }, "saaras:v4")).toBeCloseTo((10 / 3600) * 30 * FX, 6);
-  expect(sarvamUsd("translate", { chars: 2000 }, "sarvam-translate:v1")).toBeCloseTo(4 * FX, 6);
+  expect(sarvamUsd("speech", { chars: 10_000 }, "bulbul:v3")).toBeCloseTo(30 * RATE, 6);
+  expect(sarvamUsd("speech", { chars: 10_000 }, "bulbul:v4-flash")).toBeCloseTo(20 * RATE, 6);
+  expect(sarvamUsd("transcribe", { seconds: 3600 }, "saaras:v4")).toBeCloseTo(30 * RATE, 6);
+  expect(sarvamUsd("transcribe", { seconds: 10 }, "saaras:v4")).toBeCloseTo((10 / 3600) * 30 * RATE, 6);
+  expect(sarvamUsd("translate", { chars: 2000 }, "sarvam-translate:v1")).toBeCloseTo(4 * RATE, 6);
+  /* The 3% buffer, in plain numbers: ₹30 at $0.012 a rupee is $0.36, and the quote is $0.3708. */
+  expect(SARVAM_RATES.fxBuffer).toBe(1.03);
+  expect(sarvamUsd("speech", { chars: 10_000 }, "bulbul:v3")).toBe(0.3708);
   expect(sarvamUsd("speech", { chars: 100 }, "bulbul:v9")).toBeNull();
   expect(sarvamUsd("speech", { chars: 0 }, "bulbul:v3")).toBeNull();
 });
@@ -124,16 +128,16 @@ test("the quote: each tool in rupees through the owner's rate and the price path
     const text = "a".repeat(5000 / 2);
     const speech = await ask({ tool: "speech", text, language: "hi-IN", quoteOnly: true });
     expect(speech).toMatchObject({ status: 200, body: { tool: "speech", model: "bulbul:v3", chars: 2500, unit: "usd" } });
-    expect(Number(speech.body.price)).toBeCloseTo((2500 / 10_000) * 30 * FX, 6);
+    expect(Number(speech.body.price)).toBeCloseTo((2500 / 10_000) * 30 * RATE, 6);
     const flash = await ask({ tool: "speech", text, language: "ta-IN", model: "bulbul:v4-flash", quoteOnly: true });
-    expect(Number(flash.body.price)).toBeCloseTo((2500 / 10_000) * 20 * FX, 6);
+    expect(Number(flash.body.price)).toBeCloseTo((2500 / 10_000) * 20 * RATE, 6);
     const clip = await upload("clip", "audio", 12);
     const tr = await ask({ tool: "transcribe", sourceUploadId: clip, quoteOnly: true });
     expect(tr).toMatchObject({ status: 200, body: { tool: "transcribe", seconds: 12 } });
-    expect(Number(tr.body.price)).toBeCloseTo((12 / 3600) * 30 * FX, 6);
+    expect(Number(tr.body.price)).toBeCloseTo((12 / 3600) * 30 * RATE, 6);
     const tl = await ask({ tool: "translate", text: "Hello there", source: "en-IN", target: "ta-IN", quoteOnly: true });
     expect(tl).toMatchObject({ status: 200, body: { tool: "translate", model: "sarvam-translate:v1", chars: 11 } });
-    expect(Number(tl.body.price)).toBeCloseTo((11 / 10_000) * 20 * FX, 6);
+    expect(Number(tl.body.price)).toBeCloseTo((11 / 10_000) * 20 * RATE, 6);
     expect((await meterRows()).length).toBe(before);
     /* Every input is refused in words, before anything is reserved. */
     const refused: [Record<string, unknown>, RegExp][] = [
@@ -195,14 +199,14 @@ test("translate and transcribe: one request, reserved first, settled at the real
     const rows = (await meterRows()).slice(before);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ status: "succeeded", kind: "text", workspace_id: "ws_legacy" });
-    expect(Number(rows[0].engine_cost_usd)).toBeCloseTo((11 / 10_000) * 20 * FX, 6);
+    expect(Number(rows[0].engine_cost_usd)).toBeCloseTo((11 / 10_000) * 20 * RATE, 6);
     expect(Number(rows[0].billed_credits ?? 0)).toBe(0);
     const clip = await upload("clip", "audio", 10);
     const heard = await ask({ tool: "transcribe", sourceUploadId: clip, language: "hi-IN", ...approved() }, { transcribe: async (i) => { expect(i.model).toBe("saaras:v4"); expect(i.language).toBe("hi-IN"); expect(i.bytes.length).toBeGreaterThan(0); return { transcript: "namaste", language: "hi-IN" }; } });
     expect(heard).toMatchObject({ status: 200, body: { ok: true, transcript: "namaste", language: "hi-IN", seconds: 10 } });
     const rows2 = (await meterRows()).slice(before);
     expect(rows2[1]).toMatchObject({ status: "succeeded", kind: "audio" });
-    expect(Number(rows2[1].engine_cost_usd)).toBeCloseTo((10 / 3600) * 30 * FX, 6);
+    expect(Number(rows2[1].engine_cost_usd)).toBeCloseTo((10 / 3600) * 30 * RATE, 6);
     /* Neither wrote a take: the text and the transcript are the caller's, returned and kept nowhere here. */
     expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(generations);
     /* A failure: refused before work, and a dropped connection: both are nothing billed, on the ledger as a zero. */
@@ -232,11 +236,11 @@ test("speech: an audio take, stored under the workspace, at the real cost on its
     const take = await gen(id);
     expect(take).toMatchObject({ status: "succeeded", kind: "audio", model: "bulbul:v3", task: "sarvam_speech" });
     expect(String(take.stored_url)).toContain(id);
-    expect(Number(take.cost_usd)).toBeCloseTo((chars(text) / 10_000) * 30 * FX, 6);
+    expect(Number(take.cost_usd)).toBeCloseTo((chars(text) / 10_000) * 30 * RATE, 6);
     const rows = (await meterRows()).slice(before);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ id, status: "succeeded", kind: "audio" });
-    expect(Number(rows[0].engine_cost_usd)).toBeCloseTo((chars(text) / 10_000) * 30 * FX, 6);
+    expect(Number(rows[0].engine_cost_usd)).toBeCloseTo((chars(text) / 10_000) * 30 * RATE, 6);
     expect(Number(rows[0].billed_credits ?? 0)).toBe(0);
     made.push(path.join(process.cwd(), ".data", "generations", `${id}.mp3`));
     /* A refusal before work: the take fails, "Nothing billed", the provider's words and a zero ledger line. */
@@ -368,7 +372,7 @@ test("a customer workspace on the list pays in credits at the margin path, exact
     const row = (await getWorkspace(ws))!;
     await asTenant(row, async () => {
       const text = "a".repeat(2500);
-      const usd = (2500 / 10_000) * 30 * FX;
+      const usd = (2500 / 10_000) * 30 * RATE;
       const expected = billCredits(usd, marginKeyOf("audio", "bulbul:v3"));
       const quote = await ask({ tool: "speech", text, language: "hi-IN", quoteOnly: true });
       expect(quote.body).toMatchObject({ unit: "cr", estimatedCredits: expected });
