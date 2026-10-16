@@ -15,6 +15,8 @@ import { storeAudioBytes } from "./storage";
 import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import { meter, type MeterKind } from "./meter";
+import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
+import { uploadOpenableBy } from "./uploadAccess";
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, inspectAudioBuffer } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
@@ -149,8 +151,11 @@ export async function admitSarvam(input: Record<string, unknown>, got: Admission
     language = typeof body.language === "string" ? body.language : "";
     const uploadId = body.sourceUploadId ? String(body.sourceUploadId) : "", genId = body.sourceGenId ? String(body.sourceGenId) : "";
     if ((!uploadId && !genId) || (uploadId && genId) || (uploadId && !SOURCE_ID.test(uploadId)) || (genId && !SOURCE_ID.test(genId))) return admissionReply({ error: "Pick one audio original to transcribe." }, { status: 400 });
+    /* An upload is read only by a person who may open it: the signed-in person, or an Atomik run's owner. None behind the request, and nothing is read. */
+    const viewer = await actingViewer();
+    if (!viewer) return admissionReply({ error: NO_ACTING_PERSON }, { status: 403 });
     const found = await findStoredSource(uploadId ? { uploadId } : { genId });
-    if (!found || found.mediaKind !== "audio") return admissionReply({ error: "That audio original is not in this workspace." }, { status: 404 });
+    if (!found || found.mediaKind !== "audio" || (found.kind === "upload" && !(await uploadOpenableBy(found.id, viewer)))) return admissionReply({ error: "That audio original is not in this workspace." }, { status: 404 });
     const length = await resolveStoredDuration(found);
     if (length.seconds == null) return admissionReply({ error: `This audio has no measured length, so it cannot be priced${length.reason ? `: ${length.reason}` : "."}` }, { status: 422 });
     if (length.seconds > SARVAM_SHORT_AUDIO_SECONDS) return admissionReply({ error: `Transcription here takes a clip under ${SARVAM_SHORT_AUDIO_SECONDS} seconds; longer audio is a batch job, which is not offered yet.` }, { status: 400 });

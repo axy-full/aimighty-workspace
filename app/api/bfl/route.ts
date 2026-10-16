@@ -11,7 +11,7 @@ export const maxDuration = 300;
 
 /**
  * FLUX.2 through BFL (lib/bflImage.ts): `{ tool: "image" | "edit" }`. Quote with `quoteOnly`, or approve (`maxCredits`) and fund one asynchronous job under an
- * Idempotency-Key. An edit's every reference passes the consent gate first. Not here at all (404) unless the engine is on for the workspace.
+ * Idempotency-Key. No face is checked (owner, 16 Oct 2026). Not here at all (404) unless the engine is on for the workspace.
  */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();

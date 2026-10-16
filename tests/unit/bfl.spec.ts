@@ -41,7 +41,7 @@ const deferred: (() => Promise<unknown>)[] = [];
 const options = (): AdmissionExecution => ({ defer: async (work) => { deferred.push(work); } });
 
 /** An image upload of this workspace, with a measured size. */
-async function image(label: string, width = 1024, height = 1024): Promise<{ id: string; bytes: Buffer }> {
+async function image(label: string, width = 1024, height = 1024, uploader: string | null = null): Promise<{ id: string; bytes: Buffer }> {
   const { db, ready } = await import("../../lib/db");
   const { storeUpload } = await import("../../lib/storage");
   await ready();
@@ -49,7 +49,7 @@ async function image(label: string, width = 1024, height = 1024): Promise<{ id: 
   const bytes = Buffer.from(`sample-image-${id}`);
   await storeUpload(id, "png", bytes, "image/png");
   made.push(path.join(process.cwd(), ".data", "uploads", `${id}.png`));
-  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.png`, "image/png", "png", bytes.length, "x", width, height, `uploads/${id}.png`, Date.now(), "image"] });
+  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind,uploader_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.png`, "image/png", "png", bytes.length, "x", width, height, `uploads/${id}.png`, Date.now(), "image", uploader] });
   return { id, bytes };
 }
 async function project(id: string) {
@@ -403,6 +403,10 @@ test("the shot cap is judged at the quote and the press, before any row is writt
       const TOKEN = { id: "tok_admin", name: "Assistant", scope: "render" as const, capUsd: null };
       const ADMIN_TOKEN: AdmissionActor = { ...OWNER, token: TOKEN };
       const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1" } as AdmissionActor["user"] };
+      /* The run acts for a person (its owner), so the cap is what refuses it. */
+      const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+      await rigAgentReady();
+      await db().execute({ sql: "INSERT OR IGNORE INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_1", "prod_x", "draft_x", "u_runner", "req_cap", "goal", "auto", "finished"] });
       await runInTenant(house(), async () => {
         for (const go of [still, edit]) for (const extra of [{ quoteOnly: true }, {}]) expect(await go(ADMIN_TOKEN, extra), `token ${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
       }, { user: ADMIN_TOKEN.user, token: TOKEN } as never);
@@ -552,6 +556,35 @@ test("an edit: no face is checked and no consent is asked; the references go up 
   } finally {
     if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
   }
+});
+
+test("a reference is read only by a person who may open it: an Atomik run acts as its owner, another person's private upload is not there, and with no person behind the request nothing is read", async () => {
+  const { admitBfl } = await import("../../lib/bflImage");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  const { db, ready } = await import("../../lib/db");
+  process.env.BFL_ENABLED = "1";
+  const agentUser = (runId: string) => ({ ...OWNER.user, id: `agent:${runId}`, role: "member", owner: false }) as AdmissionActor["user"];
+  await runInTenant(house(), async () => {
+    await ready(); await rigAgentReady();
+    await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_bfl_owned", "prod_x", "draft_x", "u_runner", "req_bfl", "goal", "auto", "finished"] });
+    const mine = await image("ref_mine", 1024, 1024, "u_runner"), theirs = await image("ref_theirs", 1024, 1024, "u_other");
+    const ask = (actor: AdmissionActor, id: string) => admitBfl({ tool: "edit", prompt: "swap", references: [{ uploadId: id }], quoteOnly: true }, actor, options());
+    await runInTenant(house(), async () => {
+      expect((await ask({ user: agentUser("run_bfl_owned") }, mine.id)).status).toBe(200);
+      expect(await ask({ user: agentUser("run_bfl_owned") }, theirs.id)).toMatchObject({ status: 404, body: { error: expect.stringMatching(/image uploads/) } });
+    }, { user: agentUser("run_bfl_owned") } as never);
+    await runInTenant(house(), async () => {
+      expect(await ask({ user: agentUser("run_none") }, mine.id)).toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+      /* A still from words reads no upload: it needs no person. */
+      expect((await admitBfl({ tool: "image", prompt: "a tree", quoteOnly: true }, { user: agentUser("run_none") }, options())).status).toBe(200);
+    }, { user: agentUser("run_none") } as never);
+    const person: AdmissionActor = { user: { ...OWNER.user, id: "u_runner", role: "member", owner: false } as AdmissionActor["user"] };
+    await runInTenant(house(), async () => {
+      expect((await ask(person, mine.id)).status).toBe(200);
+      expect((await ask(person, theirs.id)).status).toBe(404);
+    }, { user: person.user } as never);
+  }, OWNER as never);
 });
 
 test("a listed customer workspace pays exactly the quote in credits, once, and a failure refunds it; at its own $0 cap it is refused 429 with nothing held, written or sent", async () => {
