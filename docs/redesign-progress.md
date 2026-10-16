@@ -1164,3 +1164,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Opus 5.5 costs $4/$20 per M tokens vs Sonnet's $2/$10, likely still 1 cr per enhancement after rounding (the PR will show it).
   - Routable only with TEXT_DIRECT including anthropic and ANTHROPIC_API_KEY.
   - Production watcher restarted (12 h, logs commit changes).
+- **16 Oct 13:35 IST.** Lane D:
+  - #791 2320b46d (custom+removed refused); #794 8ae9c19d.
+  - New #801 Edit export (756b7f5e, on #793): export_film, English and Hindi, free, owner-only.
+  - New #803 film deck (d43b83c4, on #767): one deck, Treatment or Pitch cover.
+  - New #804 deck UI plus the demo-path walk spec (25518b3d, on #801).
+  - Opus reviews running.
+  - Droplet: a hung Chromium from lane D's deck screenshots (pid 4036281, 0% CPU) holds a heavy-gate slot. The lead can't kill it (denied); it needs the owner. Lane F's mock next-server (pid 4054300) was at ~10 GB RSS; told to stop it. Production health stayed ok (0.28 s).
