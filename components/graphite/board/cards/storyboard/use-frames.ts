@@ -49,11 +49,17 @@ export type StoryboardDraw = {
   blocked: string | null;
 };
 
-export function useStoryboardDraw(seam: DraftSeam, readOnly: string | null): StoryboardDraw {
+export function useStoryboardDraw(seam: DraftSeam, readOnly: string | null, redo: readonly string[] = []): StoryboardDraw {
   const { scope, project, apply, save } = seam;
   const latest = useRef(project);
   useEffect(() => { latest.current = project; }, [project]);
-  const missing = useMemo(() => (project ? storyboard(project).missing : []), [project]);
+  /* `redo`: frames a person marked ✕ (the new interface's Storyboard step) are drawn again, as a new take, beside the shots with no frame. */
+  const redoKey = redo.join(",");
+  const missing = useMemo(() => {
+    if (!project) return [];
+    const none = storyboard(project).missing;
+    return [...none, ...(redoKey ? redoKey.split(",").filter((id) => !none.includes(id)) : [])];
+  }, [project, redoKey]);
   const requests = useMemo(() => {
     if (!project) return {};
     const boards = project.production?.boards ?? DEFAULT_BOARDS;

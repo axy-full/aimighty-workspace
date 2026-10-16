@@ -82,6 +82,7 @@ import { deckFacts, deckMeta, deckSections, shotRows } from "@/lib/v12/ppm";
 import { DeliverStage } from "@/components/v12/board/DeliverStage";
 import { PpmStage } from "@/components/v12/board/PpmStage";
 import { BriefStage, ScriptStage } from "@/components/v12/board/TextStage";
+import { StoryboardStage } from "@/components/v12/board/StoryboardStage";
 import { ProductStage } from "@/components/v12/board/campaign/ProductStage";
 import { LookStage } from "@/components/v12/board/campaign/LookStage";
 import { FormatsStage } from "@/components/v12/board/campaign/FormatsStage";
@@ -218,7 +219,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const placed = useMemo(() => placeBoard(cards, layoutDefs, board.bands, project?.aspect ?? "16:9"), [cards, layoutDefs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
-  const empty = !!project && (v12Frame ? allCards.length === 0 : placed.cards.length === 0);
+  /* A board made with its own rail (New project's) is not a blank one: its stages say what goes on each, so the first-run box does not cover its first step. */
+  const empty = !!project && (v12Frame ? allCards.length === 0 && !savedStages?.length : placed.cards.length === 0);
   const stageIsEmpty = v12Frame && !empty && stageOwn.length === 0 && !page;
 
   /* A drawer opens from the design's frame letter, or from `drawer=` (Viral's History page is the Social board's History drawer: lib/shell/ads-social.ts). */
@@ -813,7 +815,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
                 : page === "formats" ? <FormatsStage ctx={ctx} />
                 : page === "voice" ? <VoiceStage ctx={ctx} />
                 : page === "brief" ? <BriefStage ctx={ctx} />
-                : page === "script" ? <ScriptStage ctx={ctx} /> : null}
+                : page === "script" ? <ScriptStage ctx={ctx} />
+                : page === "storyboard" ? <StoryboardStage ctx={ctx} /> : null}
               {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
             </div>
           ) : null}

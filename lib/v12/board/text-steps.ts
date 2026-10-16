@@ -47,12 +47,12 @@ const excerptOf = (text: string) => {
 };
 
 /** A mark that still holds: given for these very words. */
-function markFor(marks: Marks | undefined, id: TextStepId, text: string) {
+function markFor(marks: Marks | undefined, id: string, text: string) {
   const mark = marks?.[id];
   return mark && mark.fp === fingerprint(text) ? mark : null;
 }
 
-function statusOf(marks: Marks | undefined, id: TextStepId, text: string): Pick<TextCard, "status" | "reason"> {
+export function statusOf(marks: Marks | undefined, id: string, text: string): Pick<TextCard, "status" | "reason"> {
   if (!text.trim()) return { status: "none" };
   const mark = markFor(marks, id, text);
   if (mark?.s === "approved") return { status: "approved" };
@@ -91,13 +91,13 @@ export function scriptCard(project: Pick<Project, "script" | "scriptVersions" | 
 }
 
 /** The draft's marks with this card's verdict written for these words; a verdict is replaced, never stacked. */
-export function withMark(marks: Marks | undefined, id: TextStepId, text: string, verdict: "approved" | "rejected", at: number, reason?: string): Marks {
+export function withMark(marks: Marks | undefined, id: string, text: string, verdict: "approved" | "rejected", at: number, reason?: string): Marks {
   const clean = reason?.trim().slice(0, 200);
   return { ...(marks ?? {}), [id]: { s: verdict, fp: fingerprint(text), ...(verdict === "rejected" && clean ? { reason: clean } : {}), at } };
 }
 
 /** ✓ again takes the approval back (the card's ✓ toggles). */
-export function withoutMark(marks: Marks | undefined, id: TextStepId): Marks {
+export function withoutMark(marks: Marks | undefined, id: string): Marks {
   const { [id]: _gone, ...rest } = marks ?? {};
   void _gone;
   return rest;
