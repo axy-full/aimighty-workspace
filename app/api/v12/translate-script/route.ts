@@ -19,8 +19,7 @@ export const dynamic = "force-dynamic";
 const MOCK_USD_PER_10K_CHARS = 0.2;
 const chars = (text: string) => [...text].length;
 
-export const POST = withTenant(async function POST(req: Request) {
-  if (!engineMock()) return NextResponse.json({ error: "There is no such tool here." }, { status: 404 });
+const handle = withTenant(async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const run = body.mode === "run";
   /* A quote reserves nothing: anyone signed in may ask. A run is a person's press. */
@@ -41,3 +40,9 @@ export const POST = withTenant(async function POST(req: Request) {
     return NextResponse.json({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });
   return NextResponse.json({ ok: true, tool: "translate", estimatedCredits, text: sampleHindi(text), source: SOURCE_LANGUAGE, target: HINDI });
 });
+
+/** No such tool unless the engine is mocked: answered before the workspace, the session or the body is looked at. */
+export function POST(req: Request, ctx: Parameters<typeof handle>[1]) {
+  if (!engineMock()) return NextResponse.json({ error: "There is no such tool here." }, { status: 404 });
+  return handle(req, ctx);
+}

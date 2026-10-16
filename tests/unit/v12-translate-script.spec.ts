@@ -28,8 +28,23 @@ test("the quote is the server's, exact, in the unit the workspace pays in; the h
 });
 
 test("a failed run says Nothing billed, once, and offers a retry (the caller's)", () => {
-  expect(translateFromResponse(true, { ok: true, text: "नमस्ते", estimatedCredits: 1 })).toEqual({ ok: true, text: "नमस्ते", charged: 1 });
+  expect(translateFromResponse(true, { ok: true, text: "नमस्ते", estimatedCredits: 1 })).toEqual({ ok: true, text: "नमस्ते" });
   expect(translateFromResponse(false, { error: "Sarvam could not do this." })).toEqual({ ok: false, error: "Sarvam could not do this. Nothing billed.", free: true });
   expect(translateFromResponse(false, { error: "Sarvam could not do this. Nothing was billed." })).toMatchObject({ error: "Sarvam could not do this. Nothing was billed." });
   expect(translateFromResponse(false, null)).toMatchObject({ ok: false, error: "The Hindi script could not be made. Nothing billed." });
+});
+
+test("without ENGINE_MOCK the stand-in is no tool at all: 404, whoever asks, before it reads anything", async () => {
+  const before = process.env.ENGINE_MOCK;
+  process.env.ENGINE_MOCK = "";
+  try {
+    const { POST } = await import("../../app/api/v12/translate-script/route");
+    for (const body of [{ mode: "quote", text: "Hello", source: "en-IN", target: "hi-IN" }, { mode: "run", text: "Hello", source: "en-IN", target: "hi-IN", approved: 99 }]) {
+      const reply = await POST(new Request("http://localhost/api/v12/translate-script", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), { params: Promise.resolve({}) } as never);
+      expect(reply.status).toBe(404);
+      expect(await reply.json()).toEqual({ error: "There is no such tool here." });
+    }
+  } finally {
+    if (before === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = before;
+  }
 });

@@ -1,5 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { filmBoard, openBoard } from "./helpers/boardV12";
+import { faintText } from "./helpers/s11-board";
+import { textReadsAtFloor } from "./helpers/gaps-l1";
 
 /**
  * Brief and Script in the new interface (demo plan PR 11; components/v12/board/TextStage.tsx): each step is one text card over the draft's own
@@ -133,6 +135,34 @@ test.describe("desktop, switch on", () => {
     const outside = await page.locator('[data-testid="v12-text-stage"] [data-testid="v12-card"]').evaluateAll((els) => els.filter((el) => el.getBoundingClientRect().right > innerWidth).length);
     expect(outside).toBe(0);
   });
+});
+
+/* What a person reads on the page: each card's title, status and page of text, and the row of buttons. (The card's ✓ ✕ ⋯ show on hover and their screen-reader
+   words are clipped away: they are not words on the page.) */
+const CARD_WORDS = ['[data-testid="v12-text-stage"] .v12-card-body', '[data-testid="v12-text-stage"] .v12-card-page', '[data-testid="v12-text-stage"] .v12-ts-acts'].join(", ");
+
+/* The owner's five sizes (15 Oct 2026, 22:30), through one open board: the cards stay inside the window, nothing scrolls sideways, and every word is
+   at least 12 px and at least 55% white, on the page and in the open preview (rule 15). */
+test("Script at the five desktop sizes: no sideways scroll, cards inside the window, words readable", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(240_000);
+  await openBoard(page, "/suites?view=board&stage=script", { project: board() });
+  const stage = page.getByTestId("v12-text-stage");
+  await expect(stage).toBeVisible({ timeout: 60_000 });
+  for (const [width, height] of [[1280, 800], [1440, 900], [1728, 1117], [1920, 1080], [2560, 1440]] as const) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(400);
+    expect(await noSideways(page), `${width}: no sideways scroll`).toBe(true);
+    const outside = await stage.getByTestId("v12-card").evaluateAll((els) => els.filter((el) => { const r = el.getBoundingClientRect(); return r.right > innerWidth || r.bottom > innerHeight + 1 || r.left < 0; }).length);
+    expect(outside, `${width}: cards inside the window`).toBe(0);
+    expect(await faintText(page, '[data-testid="v12-text-stage"]'), `${width}: words 12 px and 55% white`).toEqual([]);
+    expect(await textReadsAtFloor(page, CARD_WORDS), `${width}: words read on their ground`).toEqual([]);
+  }
+  await stage.locator('[data-card="script"]').click();
+  await page.getByRole("radio", { name: "हिन्दी" }).click();
+  await expect(page.getByTestId("v12-hindi-make")).toBeVisible();
+  expect(await faintText(page, '[data-testid="v12-script-preview"]'), "the preview's words").toEqual([]);
+  expect(await textReadsAtFloor(page, '[data-testid="v12-script-preview"]'), "the preview's words read on their ground").toEqual([]);
 });
 
 test.describe("phones, switch on", () => {

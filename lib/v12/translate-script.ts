@@ -38,12 +38,12 @@ export const quoteBody = ({ text, target = HINDI }: TranslateAsk) => ({ text: te
  */
 export const runBody = (ask: TranslateAsk, approved: number) => ({ ...quoteBody(ask), mode: "run" as const, approved });
 
-export type TranslateResult = { ok: true; text: string; charged: number } | { ok: false; error: string; /** True when nothing was billed. */ free: boolean };
+export type TranslateResult = { ok: true; text: string } | { ok: false; error: string; /** True when nothing was billed. */ free: boolean };
 
 /** A run's reply as the screen reads it. A refusal that cost nothing says so ("Nothing billed"), as every failed step does. */
 export function translateFromResponse(ok: boolean, body: unknown): TranslateResult {
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  if (ok && b.ok === true && typeof b.text === "string") return { ok: true, text: b.text, charged: typeof b.estimatedCredits === "number" ? b.estimatedCredits : 0 };
+  if (ok && b.ok === true && typeof b.text === "string") return { ok: true, text: b.text };
   const said = typeof b.error === "string" && b.error.trim() ? b.error.trim() : "The Hindi script could not be made.";
   return { ok: false, error: /nothing was billed/i.test(said) ? said : `${said} Nothing billed.`, free: true };
 }
