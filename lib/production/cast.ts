@@ -40,7 +40,10 @@ export type CastEntry = {
   soulStrength?: number; soulBatch?: 1 | 4; soulResolution?: "720p" | "1080p";
   /** Its renders in flight, so a reload keeps following them. */
   pending?: CastRender[];
+  /** The new interface's Cast step (lib/v12/board/cast-step.ts): the look it is made in, its wardrobe looks, its character sheet (one still per angle) and its voice. Additive and optional. */
+  look?: string; wardrobe?: string[]; sheet?: CastSheetShot[]; voice?: { id: string; name: string }; voiceLine?: string;
 };
+export type CastSheetShot = { angle: string; genId: string };
 export type CastRender = { jobId: string; at: string; batch: 1 | 4 };
 export type Cast = { entries: CastEntry[]; agentJobId?: string };
 /** A character renders as a 3:4 character sheet. */

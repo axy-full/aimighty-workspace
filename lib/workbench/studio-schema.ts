@@ -282,6 +282,10 @@ export const productionSchema = z.object({
       soulStrength: z.number().gt(0).max(1).optional(), soulBatch: z.union([z.literal(1), z.literal(4)]).optional(),
       soulResolution: z.enum(['720p', '1080p']).optional(),
       pending: z.array(z.object({ jobId: z.string().max(100), at: z.string().datetime(), batch: z.union([z.literal(1), z.literal(4)]) }).strict()).max(10).optional(),
+      /* The new interface's Cast step (lib/v12/board/cast-step.ts): look, wardrobe looks, the character sheet and the voice. Additive and optional, draft JSON only. */
+      look: z.string().max(40).optional(), wardrobe: z.array(z.string().max(120)).max(12).optional(),
+      sheet: z.array(z.object({ angle: z.string().regex(/^[a-z0-9-]{1,30}$/), genId: z.string().max(100) }).strict()).max(8).optional(),
+      voice: z.object({ id: z.string().max(100), name: z.string().max(120) }).strict().optional(), voiceLine: z.string().max(2000).optional(),
     }).strict()).max(100),
     agentJobId: z.string().regex(/^wb_development_[a-f0-9-]+$/).optional(),
   }).strict().optional(),

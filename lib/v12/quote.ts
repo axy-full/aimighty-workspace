@@ -21,6 +21,7 @@ import { heldCredits } from "@/lib/cinemaHold";
 import { batchTotal } from "@/lib/workspace/composer";
 import { UNPRICED, type UnpricedId } from "./unpriced";
 import { TRANSLATE_ENDPOINT, type quoteBody } from "./translate-script";
+import { STILLS_ENDPOINT, type quoteBody as stillsQuoteBody } from "./tools/stills";
 
 /** A price in the unit this workspace pays in: credits, or (the house workspace alone) dollars. */
 export type QuotedPrice =
@@ -81,6 +82,8 @@ export type QuoteSource =
   | { route: "audio"; body: Record<string, unknown> }
   /** The Hindi script (lib/v12/translate-script.ts): one request, priced before it runs. */
   | { route: "translate"; body: ReturnType<typeof quoteBody> }
+  /** Portraits, character sheets and storyboard panels (lib/v12/tools/stills.ts): the stills made in one request, priced before they run. */
+  | { route: "stills"; body: ReturnType<typeof stillsQuoteBody> }
   | { route: "atomik"; body: Record<string, unknown> }
   | { route: "board-start" };
 
@@ -92,6 +95,7 @@ export function quoteRequest(source: QuoteSource): { url: string; init: RequestI
     case "generate": return post("/api/generate/quote", source.body);
     case "audio": return audioRequest(source);
     case "translate": return post(TRANSLATE_ENDPOINT, source.body);
+    case "stills": return post(STILLS_ENDPOINT, source.body);
     case "atomik": return post("/api/atomik", { ...source.body, quoteOnly: true });
     case "board-start": return { url: "/api/workbench/team-canvas?agent=1&board=new", init: { cache: "no-store" } };
     case "engine": return engineRequest(source);
@@ -162,7 +166,8 @@ export function quoteFromResponse(source: QuoteSource, ok: boolean, body: unknow
       const total = credit === null ? null : times(credit);
       return total === null ? errorOf(null) : credits(total, estimate ? "up-to" : "exact");
     }
-    case "translate": {
+    case "translate":
+    case "stills": {
       /* One request, so what is quoted is what is charged: an exact price, never "up to". */
       if (b.unit === "usd") return terms.paysInDollars && figure(b.price) ? dollars(b.price, false) : errorOf(null);
       if (b.unit !== "cr" || terms.paysInDollars) return errorOf(null);

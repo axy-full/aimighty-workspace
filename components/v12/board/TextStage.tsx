@@ -6,10 +6,10 @@ import { Price } from "@/components/v12/ui/Price";
 import { useSession } from "@/lib/session";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { creditRate } from "@/lib/shell/price-words";
-import { spendAttrsOf } from "@/lib/spend";
 import { priceDisplay, type Quote } from "@/lib/v12/quote";
 import { fmtLedgerUsd } from "@/lib/usageLedgerTerms";
 import { useQuote } from "@/lib/v12/useQuote";
+import { approvedFigure, spendAttrsOfQuote } from "@/lib/v12/quote-spend";
 import { TEXT_REASONS, SCRIPT_TABS, beatLines, breakdownLines, briefCard, fingerprint, scriptCard, withMark, withoutMark, type ScriptTab, type TextCard, type TextStepId } from "@/lib/v12/board/text-steps";
 import { quoteBody, runBody, translateFromResponse, translateProblem, TRANSLATE_ENDPOINT } from "@/lib/v12/translate-script";
 import { useScreenScale } from "./use-screen-scale";
@@ -29,15 +29,6 @@ type Props = { ctx: BoardCtx; step: TextStepId };
 
 /** When a verdict was given (kept beside it; read by nothing yet). */
 const clock = () => Date.now();
-
-/** The control's spend marker: the quote's own figure once it has one, else unpriced (and disabled). */
-function spendAttrsOfQuote(quote: Quote, words: (quote: Quote) => string) {
-  if (quote.state === "ready") {
-    const price = quote.price;
-    return price.unit === "cr" ? spendAttrsOf(price.value) : { "data-spend": "priced" as const, "data-spend-price": words(quote) };
-  }
-  return { "data-spend": "unpriced" as const };
-}
 
 export function TextStage({ ctx, step }: Props) {
   const project = ctx.project;
@@ -195,12 +186,4 @@ function HindiScript({ ctx, text, hindi, onHindi, canEdit }: { ctx: BoardCtx; te
       </div>
     </div>
   );
-}
-
-/** What the person approves: the quote's own figure in the unit it is shown in (credits, or the house workspace's dollars), never worked out here. */
-function approvedFigure(quote: Quote): number | null {
-  if (quote.state !== "ready") return null;
-  const price = quote.price;
-  if (price.unit === "usd") return Number.isFinite(price.usd) ? price.usd : null;
-  return price.value.kind === "free" ? 0 : Number.isFinite(price.value.credits) ? price.value.credits : null;
 }
