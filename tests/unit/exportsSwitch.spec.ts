@@ -53,11 +53,11 @@ test("off, the export tools are not offered and cannot be called; on, they are, 
   const { TOOLS, toolsOffered, runTool, EXPORT_TOOLS } = await import("../../lib/mcp");
   expect(toolsOffered({})).toBe(TOOLS);
   expect(toolsOffered({ REMOTION_EXPORTS: "off" }).map((tool) => tool.name)).not.toContain("export_video");
-  expect(toolsOffered({ REMOTION_EXPORTS: "1" }).map((tool) => tool.name)).toEqual([...TOOLS.map((t) => t.name), "export_video", "assemble_film", "get_export", "cancel_export"]);
-  expect(EXPORT_TOOLS.map((tool) => tool.name)).toEqual(["export_video", "assemble_film", "get_export", "cancel_export"]);
+  expect(toolsOffered({ REMOTION_EXPORTS: "1" }).map((tool) => tool.name)).toEqual([...TOOLS.map((t) => t.name), "export_video", "assemble_film", "export_film", "get_export", "cancel_export"]);
+  expect(EXPORT_TOOLS.map((tool) => tool.name)).toEqual(["export_video", "assemble_film", "export_film", "get_export", "cancel_export"]);
   const calls: string[] = [];
   const call = (async (pathname: string) => { calls.push(pathname); return {}; }) as never;
-  for (const name of ["export_video", "assemble_film", "get_export", "cancel_export"]) {
+  for (const name of ["export_video", "assemble_film", "export_film", "get_export", "cancel_export"]) {
     await expect(runTool(name, { composition: "title-card", props: {} as never, id: "x" }, call, "https://app.test")).rejects.toThrow("Unknown tool");
   }
   expect(calls).toEqual([]);
