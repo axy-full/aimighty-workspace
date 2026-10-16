@@ -3,6 +3,8 @@ import { platformAuditStatement } from "@/lib/platformAudit";
 import { runInTenant } from "@/lib/tenant";
 import { db, ready } from "@/lib/db";
 import { findModel } from "@/lib/models";
+import { UNSAVED_SQL, atRiskHorizon, isLostAge, type RiskCounts } from "@/lib/atRiskWindow";
+import { atRiskCounts } from "@/lib/atRisk";
 
 /**
  * Failed saves: renders that finished at the engine but whose file never reached our storage (a `succeeded` generation with no
@@ -13,16 +15,18 @@ import { findModel } from "@/lib/models";
  * (lib/jobs.ts › syncGeneration): it polls the engine for the finished file and stores it. It starts no generation and spends
  * nothing the render had not already been charged; a take that was never charged stays as it was.
  */
-export type FailedSave = { workspaceId: string; workspaceName: string; id: string; engine: string; since: number; lastError: string | null };
+/** `lost`: made more than 72 hours ago (lib/atRisk.ts), so nothing tries to save it any more; the console says "lost (older than 3 days)" instead of "at risk". */
+export type FailedSave = { workspaceId: string; workspaceName: string; id: string; engine: string; since: number; lastError: string | null; lost: boolean };
 export type FailedSaves = { items: FailedSave[]; /** Workspaces whose database could not be read just now. */ unreadable: number };
 
 const PER_WORKSPACE = 50;
 const TOTAL = 200;
 const FRESH_MS = 30_000;
 let cache: { at: number; value: FailedSaves } | null = null;
+let countsCache: { at: number; value: RiskCounts | null } | null = null;
 
 /** Drops the short-lived copy, so the next read is of the databases (after a retry, and in tests). */
-export function forgetFailedSaves(): void { cache = null; }
+export function forgetFailedSaves(): void { cache = null; countsCache = null; }
 
 export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
   if (cache && now - cache.at < FRESH_MS) return cache.value;
@@ -34,7 +38,7 @@ export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
       const rows = await runInTenant(ws, async () => {
         await ready();
         const rs = await db().execute({
-          sql: `SELECT id, model, error, created_at FROM generations WHERE status = 'succeeded' AND stored_url IS NULL AND deleted = 0 ORDER BY created_at DESC LIMIT ?`,
+          sql: `SELECT g.id, g.model, g.error, g.created_at FROM generations g WHERE ${UNSAVED_SQL()} ORDER BY g.created_at DESC LIMIT ?`,
           args: [PER_WORKSPACE],
         });
         return rs.rows as unknown as Record<string, unknown>[];
@@ -42,7 +46,7 @@ export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
       for (const r of rows) {
         items.push({
           workspaceId: ws.id, workspaceName: ws.name, id: String(r.id), engine: findModel(String(r.model))?.label ?? String(r.model),
-          since: Number(r.created_at), lastError: r.error ? String(r.error).slice(0, 300) : null,
+          since: Number(r.created_at), lastError: r.error ? String(r.error).slice(0, 300) : null, lost: isLostAge(Number(r.created_at), now),
         });
       }
     } catch { unreadable++; }
@@ -53,10 +57,27 @@ export async function listFailedSaves(now = Date.now()): Promise<FailedSaves> {
   return value;
 }
 
-/** How many there are, for the console's badge and its Overview tile; null when no workspace could be read. */
-export async function failedSavesCount(): Promise<number | null> {
-  const { items, unreadable } = await listFailedSaves();
-  return unreadable > 0 && items.length === 0 ? null : items.length;
+/**
+ * How many unsaved takes there are across every workspace, at risk and lost, for the console's badge and its Overview tile (owner, 15 Oct 20:45: "show both, e.g. "1 at risk · 2 lost".
+ * Lost takes were paid for and need my decision too."). Counted in each workspace's database, not from the list, so the figures are not cut off at the list's 200. Null when no workspace
+ * could be read.
+ */
+export async function failedSavesCounts(now = Date.now()): Promise<RiskCounts | null> {
+  /* The console polls this every 30 s: the same short copy as the list, dropped by the same forgetFailedSaves(). */
+  if (countsCache && now - countsCache.at < FRESH_MS) return countsCache.value;
+  await platformReady();
+  const total: RiskCounts = { atRisk: 0, lost: 0 };
+  let read = 0, unreadable = 0;
+  const horizon = atRiskHorizon();
+  for (const ws of await listWorkspaces()) {
+    try {
+      const c = await runInTenant(ws, () => atRiskCounts(horizon));
+      total.atRisk += c.atRisk; total.lost += c.lost; read++;
+    } catch { unreadable++; }
+  }
+  const value = unreadable > 0 && read === 0 ? null : total;
+  countsCache = { at: now, value };
+  return value;
 }
 
 export class RetryRefused extends Error { constructor(message: string, readonly status: number) { super(message); } }

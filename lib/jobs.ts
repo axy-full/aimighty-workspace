@@ -45,6 +45,7 @@ import { billedTo, getProvider } from "./providers";
 import { engineFor } from "./engines";
 import { notify } from "./push";
 import { hasRetainedConsumerOriginal, RETAINED_CONSUMER_ORIGINAL_SQL } from "./higgsfield-consumer/video-original";
+import { IN_WINDOW_SQL, atRiskHorizon } from "./atRiskWindow";
 import { uploadReservationsReady } from "./uploadReservations";
 import type { AssetCursor } from "./assetPagination";
 import type { ProviderCreditQuote } from "./providerCreditQuote";
@@ -800,7 +801,13 @@ export function heartbeatSaveDeadline(deadlineAt: number): number {
  */
 export async function syncPending(
   limit = 30,
-  options: { deadlineAt?: number } = {},
+  /** `horizon`: the visit's own (lib/atRisk.ts), so the window the cron counted is the window this chooses by. */
+  options: {
+    deadlineAt?: number;
+    horizon?: number;
+    /** Told, once, how many of the takes this pass chose were at risk (lib/atRisk.ts): succeeded, no stored copy, inside the window. The return value keeps its own shape. */
+    onAtRiskChosen?: (count: number) => void;
+  } = {},
 ): Promise<ReconcileResult & { deferred: number }> {
   await ready();
   await syncCreditReceipts();
@@ -852,14 +859,16 @@ export async function syncPending(
   results.attempted += veos.attempted;
   results.failed += veos.failed;
   results.deferred += veos.deferred;
-  const horizon = now() - 3 * 86400_000;
+  /* The window is lib/atRisk.ts's: the same 72 hours the health counter and the console count a take at risk in. */
+  const horizon = options.horizon ?? atRiskHorizon(now());
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
-      OR (g.status='succeeded' AND g.deleted=0 AND g.created_at > ?
+      OR (g.status='succeeded' AND g.deleted=0 AND ${IN_WINDOW_SQL("g")}
         AND (g.stored_url IS NULL OR g.cost_usd IS NULL) AND NOT (${RETAINED_CONSUMER_ORIGINAL_SQL}))
       ORDER BY g.updated_at,g.created_at,g.id LIMIT ?`,
     args: [horizon, bounded],
   });
+  options.onAtRiskChosen?.(rows(rs).filter((row) => row.status === "succeeded" && row.stored_url == null).length);
   // Oldest checked first, with a persisted check time: failures cannot starve later jobs.
   for (let i = 0; i < rs.rows.length; i += 4) {
     if (options.deadlineAt != null && now() >= options.deadlineAt) {
