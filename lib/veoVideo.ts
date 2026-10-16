@@ -184,7 +184,7 @@ export async function admitVeo(input: Record<string, unknown>, got: AdmissionAct
     const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
-  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool: "video", model, durationSeconds, resolution, aspectRatio, images: imgs.length,  });
+  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool: "video", model, durationSeconds, resolution, aspectRatio, images: imgs.length });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });
   const wall = await allowanceCheck("gemini", usd, model);
