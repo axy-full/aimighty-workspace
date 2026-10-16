@@ -163,14 +163,14 @@ export const EXPORT_TOOLS: ToolDef[] = [
       "For example, captions on a cut: composition 'captions', props {aspect:'9:16', clip:{source:{take:'…', hasAudio:true}, cues:[{startMs,endMs,text}]}, captionStyle:'bold'}. " +
       "Cutdowns are 6, 15 or 30 s ('cutdown', props {aspect, source:{take:'…'}, targetSeconds:15}; add silence:'keep-speech' to keep the spoken parts). " +
       "A narrated cut ('final') takes voiceover:[{upload:'…', startSeconds:2}] and ducks the music and the clips' sound while a line plays. " +
-      "Optional output: {format:'h264' (default) | 'prores-422' | 'prores-422-hq' (at most 1800 frames: 60 s at 30 fps, 30 s at 60 fps; H.265 is not available), subtitles:['srt','vtt'] (written from the cues), conform:'off' (default) | 'auto' (first re-encodes a variable-frame-rate clip, such as a phone recording, to a steady rate)}. " +
+      "Optional output: {format:'h264' (default) | 'prores-422' | 'prores-422-hq' (at most 1800 frames: 60 s at 30 fps, 30 s at 60 fps; H.265 is not available). H.264 and the ProRes mezzanine are the only formats: DNxHR is not offered for now, subtitles:['srt','vtt'] (written from the cues), conform:'off' (default) | 'auto' (first re-encodes a variable-frame-rate clip, such as a phone recording, to a steady rate)}. " +
       "Nothing is spent, and a failed export says nothing was billed.",
     inputSchema: {
       type: "object",
       properties: {
         composition: { type: "string", enum: [...EXPORT_COMPOSITIONS], description: "Which template." },
         props: { type: "object", description: "The template's props, with media named by handle (see the description)." },
-        output: { type: "object", description: "Optional: the finished files. format: h264 (default), prores-422 or prores-422-hq. subtitles: a list of srt and/or vtt. conform: off (default) or auto." },
+        output: { type: "object", description: "Optional: the finished files. format: h264 (default), prores-422 or prores-422-hq (the only formats; no DNxHR for now). subtitles: a list of srt and/or vtt. conform: off (default) or auto." },
         request_id: { type: "string", description: "Optional: any string unique to this export (a UUID is ideal, 8–100 letters, digits, dashes or underscores). Retried with the same request_id, you get the export it started." },
       },
       required: ["composition", "props"],
