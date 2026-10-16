@@ -321,3 +321,10 @@ The Astra worker's session protocol (`ops/render-worker/README.md`, "Protocol"),
 - **No licence key, no events to Remotion** (owner decision, 14 Oct 2026). The renderer is started with no `licenseKey`: server-side with no key it sends nothing, which the Free License allows, and the worker stays sealed (no internet). `tests/unit/remotionLicense.spec.ts` fails if a key, the licensing package or the usage endpoint appears in the code, or if a render call carries a key. Remotion is pinned to 4.x (the same test fails on any other major). Upgrading to Remotion 5.x needs the owner's approval first (NEEDS AKSHAY): 5.0 may require a licence key.
 - **Fonts.** The typeface is bundled (Outfit, Latin and Latin Extended, SIL OFL). Other scripts fall back to Noto from the image (`fonts-noto-core`); CJK is not installed.
 - **Not verified without Docker:** the image build, Chrome's library list on Debian bookworm (the build-time render fails the build if one is missing), tmpfs `uid`/`mode` options, that Coolify keeps `context: ../..` for a compose build, Coolify's handling of this compose file (network names, container names, the extra network; see the networking decision), and the cgroup path inside the container.
+
+## Licence
+
+- We render only our own compositions.
+- Users never upload Remotion code.
+- We pass no licence key. That is fine under Remotion's Free License, which covers companies with a total headcount of 3 or fewer, counting contractors who work on the Remotion project.
+- A 4th person means buying the Company License before they start.
