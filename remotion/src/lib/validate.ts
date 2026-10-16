@@ -1,5 +1,7 @@
 import {
   ASPECTS,
+  SILENCE_MODES,
+  type SilenceMode,
   CAPTION_STYLES,
   COMPOSITION_IDS,
   CUTDOWN_TARGETS,
@@ -354,7 +356,7 @@ const validators: { [K in CompositionId]: Validator<PropsById[K]> } = {
     return { ...common(rec, issues, limits), clip: clip(rec.clip, "props.clip", issues, limits) } satisfies ReframeProps;
   },
   cutdown: (value, issues, limits) => {
-    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "source", "targetSeconds", "keep", "cues", "captionStyle", "reframe"]) ?? {};
+    const rec = record(value, "props", issues, ["aspect", "fps", "scale", "source", "targetSeconds", "keep", "silence", "cues", "captionStyle", "reframe"]) ?? {};
     const src = source(rec.source, "props.source", issues, limits);
     let keep: Range[] = [];
     if (rec.keep !== undefined && rec.keep !== null) {
@@ -366,6 +368,7 @@ const validators: { [K in CompositionId]: Validator<PropsById[K]> } = {
       source: src,
       targetSeconds: oneOf<CutdownTarget>(rec.targetSeconds, "props.targetSeconds", issues, CUTDOWN_TARGETS),
       keep,
+      silence: rec.silence === undefined || rec.silence === null ? "off" : oneOf<SilenceMode>(rec.silence, "props.silence", issues, SILENCE_MODES),
       cues: cues(rec.cues, "props.cues", issues, limits),
       captionStyle: captionStyle(rec.captionStyle, "props.captionStyle", issues, null),
       reframe: reframe(rec.reframe, "props.reframe", issues),

@@ -21,6 +21,9 @@ export const CUTDOWN_TARGETS = [6, 15, 30] as const;
 export type CutdownTarget = (typeof CUTDOWN_TARGETS)[number];
 
 export const CAPTION_STYLES = ["bold", "clean", "karaoke"] as const;
+/** Silence-aware cutdowns: "keep-speech" detects the quiet stretches of the source and keeps the rest (src/lib/silence.ts, node/silence.ts). */
+export const SILENCE_MODES = ["off", "keep-speech"] as const;
+export type SilenceMode = (typeof SILENCE_MODES)[number];
 export type CaptionStyle = (typeof CAPTION_STYLES)[number];
 
 export const REFRAME_MODES = ["fill", "fit"] as const;
@@ -111,6 +114,8 @@ export type CutdownProps = Common & {
   targetSeconds: CutdownTarget;
   /** Moments that must stay in the cut, in source time. */
   keep: Range[];
+  /** Off by default. keep-speech adds the source's spoken stretches to `keep` before the cut is planned. */
+  silence: SilenceMode;
   cues: Cue[];
   captionStyle: CaptionStyle | null;
   reframe: ReframeSpec;

@@ -18,6 +18,9 @@ import { speakableCues, subtitleCuesOf, subtitleText } from "../src/lib/subtitle
 import { isCompositionId, validateProps } from "../src/lib/validate";
 import { CONFORM_BUDGET_MS, CONFORM_FILE_MS, CONFORM_MODES, CONFORM_PAD_SECONDS, DEFAULT_CONFORM, filesToConform, reportInputs, type ConformMode, type ConformWindow, type Conformer, type InputReport } from "./conform";
 import type { MediaFacts, Prober } from "./probe";
+import type { SilenceDetector } from "./silence";
+import { chooseSpeech, mergeKeep, speechRanges } from "../src/lib/silence";
+import type { CutdownProps, Range } from "../src/lib/types";
 
 export type ExportSpec = {
   version: 1;
@@ -36,7 +39,7 @@ export type Renderer = {
   renderStill(args: { serveUrl: string; composition: CompositionInfo; inputProps: Record<string, unknown>; frame: number; outputLocation: string }): Promise<void>;
 };
 
-export type ExportFailure = { ok: false; code: "spec_invalid" | "too_long" | "input_missing" | "input_mismatch" | "render_failed"; errors: string[] };
+export type ExportFailure = { ok: false; code: "spec_invalid" | "too_long" | "input_missing" | "input_mismatch" | "silence_failed" | "render_failed"; errors: string[] };
 export type ExportSuccess = {
   ok: true;
   composition: CompositionId;
@@ -47,6 +50,8 @@ export type ExportSuccess = {
   seconds: number;
   /** One line per picture input: its rate, and whether the render read a constant-rate copy (node/conform.ts). Absent when nothing was rendered. */
   inputs?: InputReport[];
+  /** A silence-aware cutdown: what was found in the source's sound and the ranges the cut was planned to keep. */
+  silence?: { file: string; silentSeconds: number; speech: Range[]; chosen: Range[]; kept: Range[]; fallback?: "no_silence_found" | "all_silent" };
   files: { name: string; kind: "video" | "still" | "subtitle"; bytes: number; frame?: number; format?: VideoFormat | SubtitleFormat; mime?: string }[];
 };
 export type ExportResult = ExportSuccess | ExportFailure;
@@ -61,6 +66,8 @@ export type RunExportArgs = {
   bundleDir: string;
   /** Makes the constant-frame-rate copies of variable-rate pictures (node/conform.ts). Absent: nothing is conformed, and the inputs are only reported. */
   conformer?: Conformer;
+  /** Finds the quiet stretches of a source's sound (node/silence.ts), for a cutdown with `silence: keep-speech`. Absent: such a request is refused. */
+  silenceDetector?: SilenceDetector;
   /** The most the conform pre-pass may take in all (default CONFORM_BUDGET_MS); a test shortens it. */
   conformBudgetMs?: number;
   /** The clock the pre-pass budget is read from (default Date.now); only a test replaces it. */
@@ -303,8 +310,9 @@ async function writeSubtitles(timeline: Timeline, formats: SubtitleFormat[], out
 
 export async function runExport(args: RunExportArgs): Promise<ExportResult> {
   const limits = args.limits ?? DEFAULT_LIMITS;
-  const checked = checkSpec(args.spec, limits);
-  if (!checked.ok) return checked;
+  const first = checkSpec(args.spec, limits);
+  if (!first.ok) return first;
+  let checked = first;
   /* Subtitles alone need no picture: no input file is opened, the renderer is not started, and nothing is probed or served. */
   if (!checked.video && checked.stills.length === 0) {
     await mkdir(args.outputDir, { recursive: true });
@@ -321,6 +329,32 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
   const probed = new Map<string, MediaFacts>();
   const wrong = await contradictions(declaredOf(checked.id, checked.props), args.inputDir, args.prober, probed);
   if (wrong.length) return fail("input_mismatch", wrong);
+
+  /* A silence-aware cutdown: the quiet stretches of the source's sound are found, the spoken ones are added to `keep`, and the cut is planned again from the result. */
+  let silenceReport: ExportSuccess["silence"];
+  if (checked.id === "cutdown" && (checked.props as unknown as CutdownProps).silence === "keep-speech") {
+    const p = checked.props as unknown as CutdownProps;
+    if (!args.silenceDetector) return fail("spec_invalid", ["props.silence: silence detection is not available here"]);
+    if (!p.source.hasAudio) return fail("spec_invalid", ["props.silence: the source has no sound to find silence in"]);
+    let silences: Range[];
+    try {
+      silences = await args.silenceDetector.detect(path.join(args.inputDir, p.source.file), p.source.durationSeconds);
+    } catch (error) {
+      /* Its own code (not "an input is wrong"): the file is fine as far as the request says, the detector could not read its sound. */
+      return fail("silence_failed", [`input/${p.source.file}: ${(error as Error).message}`]);
+    }
+    const speech = speechRanges(silences, p.source.durationSeconds);
+    /* Two fallbacks, both reported: no quiet stretch at all means "speech" would be the whole file, which marks nothing; all quiet means no speech. Either way nothing is added and the cut is planned from the explicit ranges or the even spread. */
+    const fallback: "no_silence_found" | "all_silent" | undefined = silences.length === 0 ? "no_silence_found" : speech.length === 0 ? "all_silent" : undefined;
+    const explicit = mergeKeep(p.keep, []);
+    const room = Math.max(0, p.targetSeconds - explicit.reduce((sum, r) => sum + (r.endSeconds - r.startSeconds), 0));
+    const chosen = fallback ? [] : chooseSpeech(speech, room);
+    const kept = mergeKeep(p.keep, chosen);
+    const next = checkSpec({ ...(args.spec as object), props: { ...checked.props, keep: kept, silence: "off" } }, limits);
+    if (!next.ok) return next;
+    checked = next;
+    silenceReport = { file: p.source.file, silentSeconds: Math.round(silences.reduce((sum, r) => sum + (r.endSeconds - r.startSeconds), 0) * 1000) / 1000, speech: fallback ? [] : speech, chosen, kept, ...(fallback ? { fallback } : {}) };
+  }
 
   await mkdir(args.outputDir, { recursive: true });
   await rm(args.workDir, { recursive: true, force: true });
@@ -381,7 +415,7 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
       files.push({ name, kind: "still", frame, bytes: (await stat(outputLocation)).size });
     }
     await writeSubtitles(t, checked.subtitles, args.outputDir, files);
-    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, inputs: reportInputs(videoInputs, t.fps, conformed, failed, checked.conform), files };
+    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, inputs: reportInputs(videoInputs, t.fps, conformed, failed, checked.conform), ...(silenceReport ? { silence: silenceReport } : {}), files };
     await writeFile(path.join(args.outputDir, "result.json"), JSON.stringify(success, null, 2));
     return success;
   } catch (error) {
