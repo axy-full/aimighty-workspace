@@ -1191,3 +1191,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#807:** the fallback line says "Nothing billed." or what it cost (rule 14); client limit 10 s.
   - **Confirmed:** the free path is the enhancer's only; there is no race with the cron. The test changes are the deliberate default swap plus the one money flip; no guard is loosened.
   - **#809 waits for the owner's yes** on free-on-no-reply.
+- **16 Oct 14:08 IST.** Opus v25 review.
+  - **#795 APPROVED** (2577c773).
+  - **#802 APPROVED** (5ce7023a), with should-fixes: tests for the token refusal and the 404 without ENGINE_MOCK; the readable-text check at 1728 and 2560.
+  - **#806 NOT approved:**
+    - must-fix: `create_board` needs its MCP_TOOL_LINES line;
+    - should-fix: the origin check.
+    - **Owner question (guard):** toolsConnections.spec pins the writing MCP tools to exactly create_project and render_shot. `create_board` writes (render-scope token), so adding it there is a guard edit and needs the owner's word.
+  - **The board-kinds kind-cycle failure** is a stale `toBe(8)` in #791's own feature spec; Film now has 11 steps. Lane F fixes it on #791 (new head, Opus delta) before #791 enters CI.
