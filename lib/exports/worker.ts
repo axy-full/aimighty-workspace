@@ -139,6 +139,7 @@ function sessionOn(config: ExportWorkerConfig, doFetch: Fetch, index: number, na
       const content = typeof bytes === "string" ? Buffer.from(bytes, "utf8") : bytes;
       const response = await call(config, doFetch, index, "PUT", filePath(name, `${REMOTION_ROOT}/${relative(path)}`), { body: content, timeoutMs: FILE_CALL_TIMEOUT_MS });
       await discard(response);
+      if (response.status === 409) throw new ExportWorkerError("An export worker was still busy with this export when a file was sent.");
       if (!response.ok) throw new ExportWorkerError("An export worker did not accept a file.");
     },
     async run(timeoutMs, signal) {
@@ -149,6 +150,8 @@ function sessionOn(config: ExportWorkerConfig, doFetch: Fetch, index: number, na
         timeoutMs: timeoutMs + 5_000,
         signal,
       });
+      /* 409 run_in_progress: a file was still going up. The app sends them one at a time and waits for each, so this should not happen; it is told plainly if it does. */
+      if (response.status === 409) { await discard(response); throw new ExportWorkerError("An export worker was still busy with this export when it was asked to run it."); }
       if (!response.ok) { await discard(response); throw new ExportWorkerError("An export worker did not run the export."); }
       const reply = await readJson(response);
       if (typeof reply.exitCode !== "number" || !Number.isInteger(reply.exitCode)) throw new ExportWorkerError("An export worker sent an invalid run reply.");
