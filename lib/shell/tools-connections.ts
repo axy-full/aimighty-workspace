@@ -55,7 +55,7 @@ export const STATUS_LABEL: Record<ReachStatus, string> = {
 /* ── Particl as an MCP server ─────────────────────────────────────────── */
 
 /** Tools that write: a read-only token is refused them (lib/auth withTenant refuses its non-GET calls). */
-const WRITES = new Set(["render_shot", "create_project"]);
+const WRITES = new Set(["render_shot", "create_project", "create_board"]);
 /** The one tool a prepare token writes with: a job a person approves (lib/security/prepared-jobs.ts). */
 const PREPARES = new Set(["prepare_shot"]);
 /** One line per tool; tests/unit/toolsConnections.spec.ts fails when lib/mcp.ts gains a tool this page does not describe. */
