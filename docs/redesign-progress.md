@@ -1100,3 +1100,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - The env list file (docs/plans/coolify-env-16oct.md) was written but its `git add` was denied by the permission system, the same as docs lane E's earlier. Not worked around; the owner has the list in chat. File left untracked.
   - Docs E: #761 8d134526 (FFmpeg LGPL row in the licence register, lawyer item L-L10; DNxHR back once tested).
   - #762 CI running (run 38858818447).
+- **16 Oct 11:47 IST.** Owner's 12:15 investor-demo note recorded. Demo path plan written: docs/plans/demo-31oct-plan.md (engines live by 24 Oct, screens on the path by 23 Oct, freeze 28 Oct). Off-path work paused until after 31 Oct: DNxHR, Approve-at-N-cr, Gemini 3.x, Runway, MediaConvert, Topaz, Vision, the fixture; render_shot goes up for the owner's answers, then waits.

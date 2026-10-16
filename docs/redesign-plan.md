@@ -966,3 +966,14 @@ Still mine: merging release/1 into main and every deploy (backup first, then I p
 Use the speed: work the 36-PR v25 plan and the engine slices in parallel; give me the dated plan I asked for at 12:00.
 
 **Lead's notes.** Replaces the 15 Oct 22:20 standing yes. Deploy #5 stays the four PRs (#748, #756, #762, #758): its deploy PR is cut from release/1 at the commit after #758, before any other merge. No 12:00 message reached the lead; the dated plan is written from the 12:05 note.
+
+## Owner, 16 Oct 2026, 12:15 IST (verbatim): investor demo
+Owner (Akshay, 16 Oct, 12:15): INVESTOR DEMO, 31 Oct. This now sets priorities.
+Demo story: one 30 s ad, brief to final film, in English AND Hindi, in the new design on the house workspace: Home → new project → board (Pitch, Brief, Script, Cast, Storyboard, Shots) in Agent and Director → lip-synced Hindi version → export MP4 + Treatment/Pitch deck PDF.
+1) Re-order the v25 plan and engine slices around that path. Give me the dated list of PRs on it by 13:00 today; everything off the path waits until after 31 Oct.
+2) Engines on the path: Seedance 2.5, Veo 3.1, Kling 4.0, Nano Banana Pro/2.1, Recraft, BFL identity, ElevenLabs, Sarvam, sync.so, Remotion export, Chromium PDF. These must be live on the house workspace by 24 Oct so the Aimighty team can make the demo film from 24 to 27 Oct.
+3) Feature freeze 28 Oct: fixes only after that. 29 to 30 Oct: rehearsal and fixes. Prepare a demo checklist and a fallback sample project with everything pre-rendered.
+4) Pricing page, credits, project spend and client review links must work in the new design. Checkout in Stripe test mode only if Stripe's invite allows it; otherwise show the pricing page.
+5) Daily at 10:30: progress against this path, risks to 31 Oct, and my questions in one batch.
+
+**Lead's note.** The dated list is docs/plans/demo-31oct-plan.md; it supersedes docs/plans/dated-plan-16oct.md until 31 Oct.
