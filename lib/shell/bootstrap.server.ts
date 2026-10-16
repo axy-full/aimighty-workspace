@@ -4,6 +4,7 @@ import { creditStateFor, creditsApply } from "@/lib/credits";
 import { effectiveModels } from "@/lib/defaultModels";
 import { getPlatformLayer, platformDb, platformReady } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
+import { openGatedModelIds } from "@/lib/modelGate";
 import { runInTenant } from "@/lib/tenant";
 import { accountScopeFor, workbenchScopeFor } from "@/lib/workbench/request-scope";
 import { shellEntryRedirect } from "@/lib/signIn";
@@ -74,7 +75,7 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     credits: credits && newInterface ? { ...credits, ...(await lowCreditBaseFor(ctx.workspace).catch(() => null)) } : credits,
     models: await runInTenant(ctx.workspace, () => effectiveModels()).catch(() => null),
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
-    rates: buildRateTable(creditsApply(ctx.workspace) ? "cr" : "usd"),
+    rates: buildRateTable(creditsApply(ctx.workspace) ? "cr" : "usd", await openGatedModelIds(ctx.workspace)),
   };
   return { scope, session, initialAccount };
 }

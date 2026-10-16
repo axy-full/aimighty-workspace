@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { offeredModels } from "@/lib/models";
+import { openGatedModels } from "@/lib/modelGate";
 import { requireUser, withTenant } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
 import { getSetting, invalidateSettings } from "@/lib/settings";
@@ -24,6 +25,8 @@ export const GET = withTenant(async function GET() {
   // Settings are memoed per function for ten seconds; a person who has just
   // changed the writer must see the change, so this route always re-reads.
   invalidateSettings();
+  /* The models whose own kill switch is open for this workspace are offered beside the others (lib/modelGate.ts). */
+  const gated = await openGatedModels();
   const writer = await activeWriter();
   const creditWorkspace = creditsApply(requireTenant());
   const credits = !creditWorkspace && writer.provider === "gateway" ? await gatewayCredits() : null;
@@ -48,7 +51,9 @@ export const GET = withTenant(async function GET() {
       via: providerVia(p),
       /* Retired models are not offered (lib/models.ts › retired); past jobs still resolve them. */
       models: offeredModels().filter((m) => m.provider === p.id && (!m.soulIdentity || soulCharacterGenerationEnabled()) && (!m.cinemaStudio || cinemaStudioEnabled()))
-        .map((m) => ({ id: m.id, label: m.label, kind: m.kind })),
+        .map((m) => ({ id: m.id, label: m.label, kind: m.kind }))
+        /* The models whose own kill switch is open for this workspace are offered beside the others (lib/modelGate.ts). */
+        .concat(gated.filter((m) => m.provider === p.id).map((m) => ({ id: m.id, label: m.label, kind: m.kind }))),
     })),
   });
 });

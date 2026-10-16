@@ -1,4 +1,5 @@
 import type { TaskId } from "./tasks";
+import { gatedPriceOpen } from "./gatedOpen";
 import { SOUL_CHARACTER_MODEL_ID, MARKETING_IMAGE_MODEL_ID } from "./models";
 import { SOUL_RENDER_MODELS } from "./soulRenderTypes";
 import { CINEMA_STUDIO_MODEL_ID } from "./cinemaStudioTypes";
@@ -234,8 +235,39 @@ export const MARKETING_IMAGE_25_TOKEN_USD = {
   imageOut: 30e-6,
 } as const;
 
-export function ratesFor(modelId: string): VendorRates | null {
-  return VENDOR_RATES[modelId] ?? null;
+/**
+ * The rates of the models that carry their own kill switch (lib/models.ts GATED_MODELS), kept apart from `VENDOR_RATES` (whose keys are the catalogue's, and a test holds it so)
+ * and handed to the browser's rate table only while the switch is open for the workspace (lib/rateTable.server.ts). Every price path reads them through `ratesFor`.
+ */
+export const GATED_VENDOR_RATES: Record<string, VendorRates & { confirmed: boolean }> = {
+  /* Kling 4.0 on fal. **TO CONFIRM, and a PLACEHOLDER: the plan (docs/plans/provider-adapters.md, L1) holds no Kling 4.0 price.** These are Kling 3.0 Pro's figures
+     (in VENDOR_RATES), put here only so the row can be quoted in tests; the lead checks fal's own listing for the real per-second rates before KLING4_ENABLED is set, and this entry
+     changes then (and `confirmed` becomes true). The model is off for every workspace until that switch is open (lib/models.ts gate). */
+  "fal-ai/kling-video/v4/pro": {
+    /* **Kling 4.0 is not on fal as of 16 Oct 2026** (fal lists Kling v3, v3 Turbo and O3; the v4 endpoint's OpenAPI answers 404). Everything about this row is a placeholder, so
+       it is `confirmed: false` and the model cannot be asked for, even with KLING4_ENABLED=1 (lib/modelGate.ts). The lead flips it when fal lists the endpoint and its rates and
+       fields have been read from fal's own page. */
+    confirmed: false,
+    tiers: [],
+    secondRates: [{
+      resolutions: ["1080p"],
+      withoutAudio: 0.112,
+      withAudio: 0.168
+    }]
+  },
+};
+
+/**
+ * The rates of a model, or null. A gated model has a rate to QUOTE only while its switch is open for the request in scope AND its row is confirmed (lib/gatedOpen.ts, recorded by
+ * lib/modelGate.ts; fails closed): otherwise the quote helpers return no price for it. `settle` is for a finished take (lib/falVideo.ts falVideoCostUsd), which prices from the take's
+ * own recorded parameters whatever the switch says now: a take already made is never repriced to nothing.
+ */
+export function ratesFor(modelId: string, settle = false): VendorRates | null {
+  const open = VENDOR_RATES[modelId];
+  if (open) return open;
+  const gated = GATED_VENDOR_RATES[modelId];
+  if (!gated) return null;
+  return settle || (gated.confirmed === true && gatedPriceOpen(modelId)) ? gated : null;
 }
 
 /**

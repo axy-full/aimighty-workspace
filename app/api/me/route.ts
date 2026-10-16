@@ -5,6 +5,7 @@ import { currentTenant } from "@/lib/tenant";
 import { effectiveModels } from "@/lib/defaultModels";
 import { getPlatformLayer } from "@/lib/platform";
 import { buildRateTable } from "@/lib/rateTable.server";
+import { openGatedModelIds } from "@/lib/modelGate";
 import { newInterfaceFor } from "@/lib/newInterface.server";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ export const GET = withTenant(async function GET() {
        engines' dollars, as its layout and shell already do (creditsApply).
        The vendor's dollars and the margin never cross the wire together,
        which is what §2 means by margin never being shown. */
-    rates: buildRateTable(creditsApply(store?.workspace) || !store?.workspace ? "cr" : "usd"),
+    rates: buildRateTable(creditsApply(store?.workspace) || !store?.workspace ? "cr" : "usd", await openGatedModelIds(store?.workspace ?? null)),
     models: store?.workspace ? await effectiveModels().catch(() => null) : null,
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
   });

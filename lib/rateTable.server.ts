@@ -1,4 +1,4 @@
-import { VENDOR_RATES } from "./vendorRates";
+import { GATED_VENDOR_RATES, VENDOR_RATES } from "./vendorRates";
 import { TEXT_RATES } from "./refineGate";
 import { creditUsd, marginFor, margins } from "./creditTerms";
 import type { RateTable, ModelRates, Unit } from "./rateTable";
@@ -17,12 +17,14 @@ import type { RateTable, ModelRates, Unit } from "./rateTable";
  * person is about to be charged. Rounding each rate first would overcharge a
  * three-second clip and undercharge a thirty-second one.
  */
-export function buildRateTable(unit: Unit): RateTable {
+export function buildRateTable(unit: Unit, openGated: readonly string[] = []): RateTable {
   const per = creditUsd();
   const table = margins();
   const models: Record<string, ModelRates> = {};
 
-  for (const [id, r] of Object.entries(VENDOR_RATES)) {
+  /* The catalogue's models, and the gated ones whose switch is open for the workspace this table is for (lib/modelGate.ts). */
+  const entries = [...Object.entries(VENDOR_RATES), ...openGated.flatMap((id): [string, (typeof VENDOR_RATES)[string]][] => (GATED_VENDOR_RATES[id] ? [[id, GATED_VENDOR_RATES[id]]] : []))];
+  for (const [id, r] of entries) {
     /* The margin is the ENGINE's, keyed by model id, so a table built for one
        workspace is right for every engine in it — not one blended rate. */
     const k = unit === "usd" ? 1 : marginFor(id, table) / per;

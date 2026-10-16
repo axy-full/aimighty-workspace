@@ -67,6 +67,7 @@ import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 import { getShot, nextVersion } from "@/lib/shots";
 import { houseStyle, houseStyleBlock } from "@/lib/housestyle";
 import { modelConfigured, billedTo } from "@/lib/providers";
+import { modelGateClosed } from "@/lib/modelGate";
 import { getSetting } from "@/lib/settings";
 import { getTask, hasTrigger, sourceAdvice, sourceProblem } from "@/lib/tasks";
 import { clipDoubt, clipDoubtMessage } from "@/lib/clipTrust";
@@ -552,6 +553,9 @@ export async function executeGenerationAdmission(
        already made are untouched — they are read, collected and settled elsewhere. */
     const retired = retiredReason(modelId);
     if (retired) return admissionReply({ error: retired, code: "engine_retired" }, { status: 410 });
+    /* A model with its own kill switch (lib/modelGate.ts) is not here at all until the switch is open for this workspace: refused before anything is priced, reserved or called. */
+    const gateClosed = await modelGateClosed(modelId);
+    if (gateClosed) return admissionReply({ error: gateClosed, code: "engine_off" }, { status: 404 });
     const genjutsu = isGenjutsuModel(modelId);
     if (genjutsu) {
       if (!options.checkpoint) return admissionReply({ error: "Review a live transform quote before submitting this take." }, { status: 400 });

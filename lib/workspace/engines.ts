@@ -26,6 +26,7 @@ const FIXED: Record<string, EngineLabel> = {
   "dreamina-seedance-2-0-260128": { short: "2.0", long: "Seedance 2.0" },
   "fal-ai/kling-video/v3/standard": { short: "K 3.0", long: "Kling 3.0" },
   "fal-ai/kling-video/v3/pro": { short: "K 3.0 Pro", long: "Kling 3.0 Pro" },
+  "fal-ai/kling-video/v4/pro": { short: "K 4.0", long: "Kling 4.0" },
   "topaz/upscale/video/creative": { short: "Upscale", long: "Topaz Astra 2" },
   "fal-ai/luma-dream-machine/ray-2-flash/reframe": { short: "Reframe", long: "Luma Ray 2" },
   "fal-ai/topaz/upscale/image": { short: "Upscale", long: "Topaz Image Upscale" },
