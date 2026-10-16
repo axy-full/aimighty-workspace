@@ -37,8 +37,8 @@ import {
  * A transcript of a real person's speech, and a translation of what they said, are personal data: they are returned to the caller and written nowhere
  * here (a speech take's text is the take's own prompt, in this workspace's database like any take's).
  *
- * MONEY. Priced in rupees from the plan's recorded rate page (lib/vendorRates.ts SARVAM_RATES, to confirm) and converted ONLY at the owner's own rate,
- * `SARVAM_USD_PER_INR`: with none (or a bad one) nothing is priced, the tools say so and cannot run. A customer's price is the dollars through the margin
+ * MONEY. Priced in rupees from the plan's recorded rate page (lib/vendorRates.ts SARVAM_RATES, to confirm) and converted ONLY at the owner's own rate
+ * `SARVAM_USD_PER_INR` plus a 3% buffer (`SARVAM_RATES.fxBuffer`): with none (or a bad one) nothing is priced, the tools say so and cannot run. A customer's price is the dollars through the margin
  * table (`quotedCredits`, keyed as the reservation keys it); reserved at the quote on the meter and settled at the real cost (one request, so cost = quote);
  * a person approves (`maxCredits`). **Any failure settles at nothing ("Nothing billed")**: Sarvam's pages say nothing about billing a failed call, so the
  * outcome reads "billing unknown" and the platform absorbs it (plan § 2).
@@ -59,7 +59,7 @@ export function usdPerInr(): number | null {
 const micro = (usd: number) => Math.round(usd * 1e6) / 1e6;
 const chars = (text: string) => [...text].length;
 
-/** What a call costs the platform, in dollars, at the owner's rupee rate; null when there is no rate. */
+/** What a call costs the platform, in dollars: the rupee cost at the owner's rupee rate plus the 3% buffer (SARVAM_RATES.fxBuffer); null when there is no rate. */
 export function sarvamUsd(tool: SarvamToolId, units: { chars?: number; seconds?: number }, model: string): number | null {
   const fx = usdPerInr();
   if (fx == null) return null;
@@ -67,7 +67,7 @@ export function sarvamUsd(tool: SarvamToolId, units: { chars?: number; seconds?:
   if (tool === "speech") inr = ((units.chars ?? 0) / 10_000) * (SARVAM_RATES.speechInrPer10kChars[model as SarvamSpeechModel] ?? NaN);
   else if (tool === "translate") inr = ((units.chars ?? 0) / 10_000) * (SARVAM_RATES.translateInrPer10kChars[model as SarvamTranslateModel] ?? NaN);
   else inr = ((units.seconds ?? 0) / 3600) * SARVAM_RATES.transcribeInrPerHour;
-  return Number.isFinite(inr) && inr > 0 ? micro(inr * fx) : null;
+  return Number.isFinite(inr) && inr > 0 ? micro(inr * fx * SARVAM_RATES.fxBuffer) : null;
 }
 
 const kindOf = (tool: SarvamToolId): MeterKind => (tool === "translate" ? "text" : "audio");

@@ -297,6 +297,8 @@ export const SARVAM_RATES = {
   transcribeInrPerHour: 30,
   /** Translation, rupees per 10,000 characters. */
   translateInrPer10kChars: { "sarvam-translate:v1": 20, "mayura:v1": 20 },
+  /* The rupee moves between the monthly review of SARVAM_USD_PER_INR and the invoice: the quote (and so the ledger's cost) is the rupee cost times the rate times this 3% buffer. The lead's recommendation, accepted by the owner. */
+  fxBuffer: 1.03,
   defaultSpeechModel: "bulbul:v3", defaultTranscribeModel: "saaras:v4", defaultTranslateModel: "sarvam-translate:v1",
 } as const;
 export type SarvamSpeechModel = keyof typeof SARVAM_RATES.speechInrPer10kChars;
