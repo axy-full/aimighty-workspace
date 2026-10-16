@@ -13,7 +13,7 @@ process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
-test.afterEach(() => { delete process.env.SYNC_ENABLED; delete process.env.REKOGNITION_ENABLED; });
+test.afterEach(() => { delete process.env.SYNC_ENABLED; });
 
 const tenant = (id: string): TenantWorkspace => ({
   id, slug: id, name: id, legacy: id === "ws_legacy", dbUrl: `file:${path.join(dir, `${id}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true,
@@ -34,9 +34,9 @@ const recorder = (quote: Record<string, unknown> = { estimatedCredits: 5, price:
   };
   return { calls, call };
 };
-const ARGS = { cast_member_id: "cast_a", face_frame_upload_id: "up_face", project_id: "prod_a", use: "production", clip_upload_id: "up_clip", audio_upload_id: "up_voice" };
+const ARGS = { project_id: "prod_a", clip_upload_id: "up_clip", audio_upload_id: "up_voice" };
 
-test("lip_sync is in the list, and callable, only where the engine gate and the face gate let this workspace have it", async () => {
+test("lip_sync is in the list, and callable, only where the engine gate and the house wall let this workspace have it (no face check, no consent record)", async () => {
   const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
   await inTenant(tenant("ws_legacy"), async () => {
     delete process.env.SYNC_ENABLED;
@@ -45,15 +45,13 @@ test("lip_sync is in the list, and callable, only where the engine gate and the 
     await expect(runDirectEngineTool("lip_sync", ARGS, off.call)).rejects.toThrow("There is no such tool here.");
     expect(off.calls).toEqual([]);
     process.env.SYNC_ENABLED = "1";
-    expect(await directEngineMcpTools()).toEqual([]);
-    process.env.REKOGNITION_ENABLED = "1";
     const listed = await directEngineMcpTools();
     expect(listed.map((t) => t.name)).toEqual(["lip_sync"]);
-    expect((listed[0].inputSchema as { required: string[] }).required).toEqual(["cast_member_id", "face_frame_upload_id", "project_id", "use"]);
+    expect((listed[0].inputSchema as { required: string[] }).required).toEqual([]);
+    expect(JSON.stringify(listed[0].inputSchema)).not.toMatch(/face|cast_member|consent/i);
   });
-  /* A customer workspace: not the house, not on the list. */
+  /* A customer workspace: not the house (lip-sync is house-only until counsel answers). */
   process.env.SYNC_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
   await inTenant(tenant("ws_mcp_customer"), async () => {
     expect(await directEngineMcpTools()).toEqual([]);
     await expect(runDirectEngineTool("lip_sync", ARGS, recorder().call)).rejects.toThrow("There is no such tool here.");
@@ -76,7 +74,6 @@ test("only a person approves spending: Ask (the default) returns the priced, pre
   const line = jobApprovalLineCredits(creditUsd());
   expect(line).toBe(200);
   process.env.SYNC_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
   await inTenant(tenant("ws_legacy"), async () => {
     const prepared = /^Priced and prepared, not started\.\n\nprice: \$0\.70[\s\S]*needs a person's approval: nothing was started or spent/;
     /* Ask: the default, and anything but an exact "auto". */
@@ -90,7 +87,7 @@ test("only a person approves spending: Ask (the default) returns the priced, pre
       expect(text, String(mode)).toContain("prepared job: prep_1");
       expect(r.calls.map((c) => c.path), String(mode)).toEqual(["/api/lipsync", "/api/prepared-jobs"]);
       expect(r.calls[0].body).toMatchObject({ quoteOnly: true, model: "sync-3", clipUploadId: "up_clip" });
-      expect(r.calls[1].body).toMatchObject({ engine: "lip_sync", prompt: "prepared: lip-sync (sync-3) of up_clip with up_voice for production prod_a", project: "prod_a", args: { model: "sync-3", clipUploadId: "up_clip", castMemberId: "cast_a" } });
+      expect(r.calls[1].body).toMatchObject({ engine: "lip_sync", prompt: "prepared: lip-sync (sync-3) of up_clip with up_voice for production prod_a", project: "prod_a", args: { model: "sync-3", clipUploadId: "up_clip", audioUploadId: "up_voice" } });
       /* No price, approval or quote flag rides in the filed job. */
       expect(JSON.stringify(r.calls[1].body)).not.toMatch(/maxCredits|quoteOnly|fingerprint/i);
       expect(r.calls.some((c) => "maxCredits" in c.body)).toBe(false);
@@ -139,9 +136,9 @@ test("only a person approves spending: Ask (the default) returns the priced, pre
     await expect(runDirectEngineTool("lip_sync", ARGS, other)).rejects.toThrow("cap was reached");
     const r2 = recorder(); await expect(runDirectEngineTool("lip_sync", { ...ARGS, request_id: "bad id!" }, r2.call)).rejects.toThrow(/request_id/); expect(r2.calls).toEqual([]);
     const r3 = recorder({ price: 1 }); await expect(runDirectEngineTool("lip_sync", ARGS, r3.call)).rejects.toThrow(/could not be priced/); expect(r3.calls).toHaveLength(1);
-    /* A refusal from the route (the consent gate, the cap, a token that may not spend) reaches the agent as it is. */
-    const refuse = async () => { throw new Error("This person's consent has no face reference yet."); };
-    await expect(runDirectEngineTool("lip_sync", ARGS, refuse)).rejects.toThrow("no face reference yet");
+    /* A refusal from the route (the cap, a token that may not spend, the provider's own words) reaches the agent as it is. */
+    const refuse = async () => { throw new Error("sync.so refused the request: the clip is too long"); };
+    await expect(runDirectEngineTool("lip_sync", ARGS, refuse)).rejects.toThrow("the clip is too long");
     expect(await runDirectEngineTool("render_shot", ARGS, recorder().call)).toBeNull();
     await setSpend(null);
   });
@@ -154,17 +151,17 @@ test("an engine job in the prepared-jobs door: filed by a token made to prepare,
   await inTenant(tenant("ws_prepared_engine"), async () => {
     await ready();
     const token = { id: `tok_${Date.now().toString(36)}`, scope: "prepare" };
-    const filed = await jobs.prepareJob({ engine: "lip_sync", prompt: "prepared: lip-sync (sync-3) of up_clip", project: "prod_a", args: { model: "sync-3", clipUploadId: "up_clip", castMemberId: "cast_a", skipped: undefined } }, token);
+    const filed = await jobs.prepareJob({ engine: "lip_sync", prompt: "prepared: lip-sync (sync-3) of up_clip", project: "prod_a", args: { model: "sync-3", clipUploadId: "up_clip", audioUploadId: "up_voice", skipped: undefined } }, token);
     expect(filed).toMatchObject({ engine: { tool: "lip_sync" }, state: "waiting", project: "prod_a", prompt: "prepared: lip-sync (sync-3) of up_clip" });
-    expect(JSON.stringify(filed)).not.toMatch(/clipUploadId|castMemberId|args/);
+    expect(JSON.stringify(filed)).not.toMatch(/clipUploadId|audioUploadId|args/);
     expect(preparedSpec(filed)).toBe("lip sync");
     /* The arguments are kept for the person's approval, in the workspace's own database. */
     const row = (await db().execute({ sql: "SELECT settings_json FROM prepared_jobs WHERE id=?", args: [filed.id] })).rows[0];
-    expect(JSON.parse(String(row.settings_json))).toEqual({ engine: "lip_sync", args: { model: "sync-3", clipUploadId: "up_clip", castMemberId: "cast_a" } });
+    expect(JSON.parse(String(row.settings_json))).toEqual({ engine: "lip_sync", args: { model: "sync-3", clipUploadId: "up_clip", audioUploadId: "up_voice" } });
     /* Lists and groups of ids are kept (an image call names its uploads and people), with no migration: the arguments are JSON in the row that is already there. */
-    const nested = await jobs.prepareJob({ engine: "veo_video", prompt: "prepared: video", args: { prompt: "A crane at dawn, wide", references: [{ uploadId: "up_a", castMemberId: "c1" }, { uploadId: "up_b", castMemberId: "c2" }], firstFrame: { uploadId: "up_f" }, seconds: 8, audio: true } }, token);
+    const nested = await jobs.prepareJob({ engine: "veo_video", prompt: "prepared: video", args: { prompt: "A crane at dawn, wide", references: [{ uploadId: "up_a" }, { uploadId: "up_b" }], firstFrame: { uploadId: "up_f" }, seconds: 8, audio: true } }, token);
     const nestedRow = (await db().execute({ sql: "SELECT settings_json FROM prepared_jobs WHERE id=?", args: [nested.id] })).rows[0];
-    expect(JSON.parse(String(nestedRow.settings_json))).toEqual({ engine: "veo_video", args: { prompt: "A crane at dawn, wide", references: [{ uploadId: "up_a", castMemberId: "c1" }, { uploadId: "up_b", castMemberId: "c2" }], firstFrame: { uploadId: "up_f" }, seconds: 8, audio: true } });
+    expect(JSON.parse(String(nestedRow.settings_json))).toEqual({ engine: "veo_video", args: { prompt: "A crane at dawn, wide", references: [{ uploadId: "up_a" }, { uploadId: "up_b" }], firstFrame: { uploadId: "up_f" }, seconds: 8, audio: true } });
     expect(JSON.stringify(nested)).not.toMatch(/up_a|up_f|references|firstFrame/);
     /* ...but bounded, ids only, and never an approval or file bytes: text or a data address inside a list, a price key at any depth, too deep, too many, too large. */
     const refuse = (args: Record<string, unknown>) => jobs.prepareJob({ engine: "veo_video", prompt: "x", args }, token);

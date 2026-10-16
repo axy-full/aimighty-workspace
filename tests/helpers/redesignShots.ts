@@ -15,7 +15,8 @@ import sharp from "sharp";
 
 /* REDESIGN_PROTOTYPE_DIR points at another round of the prototype; the default is the repo's own design, v15 (v12 is kept beside it as the reference). */
 const ROOT = path.resolve(process.env.REDESIGN_PROTOTYPE_DIR ?? path.join(__dirname, "../../design/particl-prototype-15"));
-const PAGE = "Particl prototype.dc.html";
+/* REDESIGN_PROTOTYPE_PAGE picks the page of that folder: v25 has the app ("Particl prototype.dc.html", the default) and the board ("Particl board.dc.html") as two pages. */
+const PAGE = process.env.REDESIGN_PROTOTYPE_PAGE ?? "Particl prototype.dc.html";
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".webp": "image/webp", ".css": "text/css", ".txt": "text/plain" };
 
 let served: { server: Server; origin: string } | null = null;
@@ -64,7 +65,7 @@ export async function openPrototype(page: Page, query: string): Promise<void> {
   });
   await page.goto(await prototypeUrl(query), { waitUntil: "load" });
   /* The prototype compiles its React source in the page (Babel): wait for the app root to have content. */
-  await page.waitForFunction(() => (document.querySelector("#root, [data-dc-root], body > div")?.textContent ?? "").trim().length > 20, null, { timeout: 30_000 });
+  await page.waitForFunction(() => (document.querySelector("#root, #dc-root, [data-dc-root], body > div")?.textContent ?? "").trim().length > 20, null, { timeout: 30_000 });
   await page.waitForTimeout(800);
 }
 
