@@ -77,7 +77,7 @@ test.describe("desktop, switch on", () => {
     /* Undo puts the kind and the rail back. */
     await page.getByTestId("toast-undo").click();
     await expect(kind).toHaveText("FILM");
-    expect(await rows(page).count()).toBe(8);
+    expect(await rows(page).count()).toBe(11);
 
     /* Round the kinds: Pre-vis, Campaign, Social · narrated, Social · clips. */
     const want: [string, string[]][] = [
