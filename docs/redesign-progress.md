@@ -1284,3 +1284,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Lane I:** after FLUX Upscale, the resolution control (server list, validation and guard test first, then Make).
   - **Lane J:** 2560 at 1× and 2×.
   - **Investigator (private notes):** the public-site report, Dune Studies image sizes, Kling 4.0 on Kling's API, the Remotion Company License price, Polotno needs, TEXT_DIRECT values.
+- **16 Oct 15:56 IST.** **#796** gitleaks: CODEOWNERS removed at the owner's request; Opus APPROVED 86aae968. It's queued after the engine chain. The owner marks `secrets` required after it merges and has run once.
+  - **Public-site report sent to the owner (read-only):**
+    - "/" and "/?guest=1" both serve the old marketing site;
+    - guestHome and openSignup are off;
+    - visitorPages and guestWorkspace can be read only in /admin;
+    - there is no Dune Studies board in code;
+    - the three site Dune images are below 4K (hero 1672×941).
