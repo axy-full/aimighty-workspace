@@ -925,3 +925,13 @@ Owner (Akshay, 16 Oct, 10:55): answers to the overnight report, in one note. Thi
 10) ENV: give me every Coolify name to set, grouped by slice, one list, "set / leave unset" against each, with the two Gemini and three Rekognition names marked "remove / unused".
 
 **Lead's notes.** This replaces the 22:15 rule "every real face passes Rekognition against its consent record before Act-Two, cloning or lip-sync runs": Rekognition is out by the owner's decision of 16 Oct 10:55. The two Gemini names are GEMINI_IMAGE_MODEL and GOOGLE_SAFETY_THRESHOLD (never set in Coolify per the 15 Oct name check).
+
+## Owner, 16 Oct 2026, 11:00 IST (verbatim)
+Owner (Akshay, 16 Oct, 11:00): answers to your four questions.
+1) [Question 1: use your own recommendation.]
+2) #763 and #764: yes, these defaults. #763 ships as is (existing accounts aren't asked; the tick names the Terms, which gain the 18+ line via #761). #764 keeps "Big Buck Bunny © Blender Foundation, CC BY 3.0".
+3) Sample clip: large-screen tests only, as a fixture for the 2560 sharpness checks, never shown to customers. Pick a house take with no real person in it. Big Buck Bunny stays as the starter sample.
+4) Voice consent: same as faces. A tick when a voice is cloned or uploaded ("I have this person's permission") plus an optional NOC, stored with the voice. Never a blocking check in lip-sync (#776) or anywhere else. Stock voices need nothing. ElevenLabs' own verification for Professional clones still applies (theirs, not ours). The person generating is responsible, per the Terms.
+Carry on with my 10:55 note.
+
+**Lead's notes.** Question 1 was the merge timing: Slice 1 and #763/#764 merge after deploy #5 (the recommendation). The lead and lanes have no production data access, so a house take must come from the owner as a file; otherwise the fixture is a generated 1920x1080 test pattern (ours, no person).
