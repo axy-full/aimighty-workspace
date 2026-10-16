@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { filmBoard, openBoard } from "./helpers/boardV12";
 import { withCut } from "./helpers/editV12";
+import { PAID_PATTERNS } from "./helpers/paidRoutes";
 import type { Project } from "../lib/workbench/studio";
 
 /**
@@ -30,7 +31,8 @@ test.describe("desktop, switch on", () => {
     const paid: string[] = [];
     page.on("request", (request) => {
       const url = new URL(request.url());
-      if (request.method() !== "GET" && /\/api\/(generate|audio|credits|billing|plan|stripe|checkout)/.test(url.pathname)) paid.push(`${request.method()} ${url.pathname}`);
+      /* "Paid" is the repo's own list of routes that spend (tests/helpers/paidRoutes.ts), not a pattern of this spec's. */
+      if (request.method() !== "GET" && PAID_PATTERNS.some((route) => new RegExp(route.pattern.source.replace(/\\\{\\\}/g, "[^/]+")).test(url.pathname + url.search))) paid.push(`${request.method()} ${url.pathname}`);
     });
     const films: { language: string; board: string }[] = [];
     await page.route("**/api/exports/film", async (route) => {

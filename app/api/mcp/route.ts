@@ -87,7 +87,7 @@ const workspacePost = withTenant(async function POST(req: Request) {
 
 /** A plain GET makes the endpoint self-describing when someone opens it. */
 export const GET = withTenant(async function GET() {
-    return Response.json({
+  return Response.json({
     name: "particl",
     transport: "mcp/streamable-http",
     usage: "POST JSON-RPC here with an 'Authorization: Bearer aw_…' header.",
