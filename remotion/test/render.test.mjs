@@ -202,6 +202,25 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
     assert.ok(musicAfter / musicBefore > 0.85, `the music is back after the voice: ${musicAfter / musicBefore}`);
   });
 
+  test("narrated captions: a voice line's words are drawn while it plays, on each shot it runs across, and nowhere else", () => {
+    const voice = execFileSync(path.join(compositor, "ffmpeg"), ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=880:duration=2", "-f", "mp3", "-"], { maxBuffer: 1 << 24 });
+    const clip = (from, to) => ({ source: SOURCE, trim: { startSeconds: from, endSeconds: to }, cues: [], reframe: { mode: "fill", focusX: 0.5, focusY: 0.5 } });
+    const film = (text) => ({
+      version: 1, composition: "final", output: stills([30, 105, 135, 210]),
+      props: { aspect: "16:9", fps: 30, scale: 0.5, title: null, end: null, clips: [clip(0, 4), clip(4, 8)], captionStyle: "bold", voiceover: [{ file: "voice.mp3", durationSeconds: 2, startSeconds: 3, volume: 1, ...(text ? { text } : {}) }] },
+    });
+    /* The line runs 3-5 s; the cut between the shots is at 4 s. */
+    const spoken = run("narrated-captions", film("alpha beta gamma delta"), { files: { "voice.mp3": voice } });
+    const silent = run("narrated-captions-none", film(null), { files: { "voice.mp3": voice } });
+    assert.equal(spoken.status, 0, spoken.stderr);
+    assert.equal(silent.status, 0, silent.stderr);
+    for (const [frame, drawn] of [[30, false], [105, true], [135, true], [210, false]]) {
+      const a = stillOf(spoken.dir, frame), b = stillOf(silent.dir, frame);
+      const diff = regionDiff(a, b, bottom(a));
+      assert.ok(drawn ? diff > 3 : diff < 0.5, `frame ${frame}: ${drawn ? "the words are drawn" : "no words"} (diff ${diff})`);
+    }
+  });
+
   test("H.265 is refused before anything renders, whatever it is called", () => {
     const card = { title: "Mezzanine", theme: { background: "#102030", foreground: "#f0e0d0", accent: "#ff6b35" }, durationSeconds: 1 };
     const refused = run("h265-refused", { version: 1, composition: "title-card", props: { aspect: "16:9", scale: 0.25, card }, output: { video: true, format: "h265" } });

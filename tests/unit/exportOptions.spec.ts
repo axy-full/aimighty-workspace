@@ -152,7 +152,7 @@ test("voice lines of a narrated cut are bound like the music: each upload become
   const reject = (voiceover: unknown) => bindMedia("final", { aspect: "16:9", clips: [{ source: { take: "t1" } }], voiceover }, resolver).then(() => null, (error: Error) => error.message);
   expect(await reject("vo.mp3")).toBe("props.voiceover must be a list of voice lines.");
   expect(await reject([{ url: "https://x.test/a.mp3" }])).toContain("props.voiceover[0].url is not allowed here.");
-  expect(await reject([{ upload: "a", take: "b" }])).toContain("props.voiceover[0].take is not allowed here.");
+  expect(await reject([{ upload: "a", take: "b" }])).toContain('props.voiceover[0] must name exactly one of "upload" or "take".');
   expect(await reject([{ startSeconds: 2 }])).toContain('props.voiceover[0] must name exactly one of "upload" or "take".');
   expect(await reject(Array.from({ length: 25 }, () => ({ upload: "u" })))).toBe("props.voiceover can have at most 24 voice lines.");
 });

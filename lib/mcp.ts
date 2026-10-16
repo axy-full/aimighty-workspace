@@ -12,6 +12,7 @@
 import { displayModelName, getModel } from "./models";
 import { EXPORT_COMPOSITIONS } from "./exports/contract";
 import { exportsEnabled } from "./exports/switch";
+import { DECK_KINDS } from "./pdf/deck";
 
 /**
  * The longest wait_for_render may hold its request open. No request stays
@@ -177,6 +178,25 @@ export const EXPORT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "assemble_film",
+    description:
+      "Cut a whole film into one MP4 from media already in Particl: shots in order, spoken lines placed on the film's clock, music, a title and an end card, and the lines' words as captions. Free: it costs no credits " +
+      "(the shots, voice and music are made first, on their own tools, at their own prices). Name every file by handle, never by URL: {\"take\": \"<take id>\"} or {\"upload\": \"<upload id>\"}. " +
+      "timeline: {aspect:'16:9'|'9:16', shots:[{take|upload, trim:{startSeconds,endSeconds}, hasAudio:false}], voice:[{take|upload, startSeconds, text:'what the line says'}], music:{take|upload, volume}, " +
+      "title:{title, subtitle, durationSeconds}, end:{headline, callToAction}, captions:'bold'|'clean'|'karaoke' (burn the lines' words in) or omitted (none), duck:0.3}. " +
+      "Voice lines cannot overlap, and a film is at most 120 s with 24 shots and 24 voice lines. A line's words also go to the subtitle files when output.subtitles is asked for (['srt','vtt']), in Latin, Devanagari (Hindi) and the other scripts the worker's Noto fonts cover; Chinese, Japanese and Korean are not available yet. " +
+      "Returns an id immediately; use get_export to collect it. Retried with the same request_id you get the film it started.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        timeline: { type: "object", description: "The film: aspect, shots, and optionally voice, music, title, end, captions, duck (see the description)." },
+        output: { type: "object", description: "Optional: the finished files, as for export_video (format, subtitles, conform)." },
+        request_id: { type: "string", description: "Optional: any string unique to this film (8–100 letters, digits, dashes or underscores)." },
+      },
+      required: ["timeline"],
+    },
+  },
+  {
     name: "get_export",
     description: "Check an export: queued (with how many are ahead), rendering, saving, ready (with the link to the file), or failed (with why, and that nothing was billed).",
     inputSchema: { type: "object", properties: { id: { type: "string", description: "The export id from export_video." } }, required: ["id"] },
@@ -188,18 +208,52 @@ export const EXPORT_TOOLS: ToolDef[] = [
   },
 ];
 
-/** The tools this deployment offers: the workspace tools, plus the export tools while REMOTION_EXPORTS is on. */
-export function toolsOffered(env: Readonly<Record<string, string | undefined>> = process.env): ToolDef[] {
-  return exportsEnabled(env) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
+/**
+ * The deck PDF tool (lib/pdf/tool.ts): offered only where deck PDFs are on, which the route works out for the workspace (PDF_EXPORTS, and the
+ * house workspace or a listed one). Free: a PDF of a treatment, a board or a pitch the caller writes, made with Particl's own templates.
+ */
+export const PDF_TOOLS: ToolDef[] = [
+  {
+    name: "make_deck_pdf",
+    description:
+      "Make a PDF deck with Particl's own templates. Free: it costs no credits. " +
+      `Kinds: ${DECK_KINDS.join(", ")}. 'treatment' prints a production's saved treatment (projectId); 'ppm' prints a board's pre-production deck with its shot list (board = the board's id); ` +
+      "'pitch' prints the words you write (pitch: {logline, audience, sections:[{heading, paragraphs[], bullets[]}]}). " +
+      'Pictures go in by handle, never by URL: images:[{"upload":"<id>"} or {"take":"<still take id>"}, caption?] (PNG, JPEG or WebP, at most 24), and logo:{"upload":"<id>"} for the cover. ' +
+      "Pages are a 16:9 slide (treatment and pitch) or A4 landscape (ppm) unless page is 'slide', 'a4' or 'letter'; bleedMm is 0 or 3. " +
+      "It answers with the PDF's link, page count and name. Nothing is spent, and a failed deck says nothing was billed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: [...DECK_KINDS], description: "Which deck." },
+        title: { type: "string", description: "The deck's title (optional for treatment and ppm)." },
+        projectId: { type: "string", description: "treatment: the production." },
+        board: { type: "string", description: "ppm: the board." },
+        pitch: { type: "object", description: "pitch: logline, audience and sections." },
+        images: { type: "array", items: { type: "object" }, description: "Pictures by handle." },
+        logo: { type: "object", description: 'The cover logo: {"upload":"<id>"}.' },
+        page: { type: "string", enum: ["slide", "a4", "letter"] },
+        bleedMm: { type: "number", enum: [0, 3] },
+      },
+      required: ["kind"],
+    },
+  },
+];
+
+/** The tools this deployment offers: the workspace tools, plus the export tools while REMOTION_EXPORTS is on, plus the deck tool where `pdf` says so. */
+export function toolsOffered(env: Readonly<Record<string, string | undefined>> = process.env, options: { pdf?: boolean } = {}): ToolDef[] {
+  const more = [...(exportsEnabled(env) ? EXPORT_TOOLS : []), ...(options.pdf ? PDF_TOOLS : [])];
+  return more.length ? [...TOOLS, ...more] : TOOLS;
 }
 
 /**
  * The tools offered to one workspace: the export tools only when exports are on for it (REMOTION_EXPORTS exactly "1" AND the
  * house workspace or the site setting `enginesOnWorkspaces`, lib/engineGate.ts). The route still refuses with a 404 if one is called anyway.
  */
-export async function toolsOfferedFor(workspace: { id: string } | null | undefined): Promise<ToolDef[]> {
+export async function toolsOfferedFor(workspace: { id: string } | null | undefined, options: { pdf?: boolean } = {}): Promise<ToolDef[]> {
   const { engineEnabled } = await import("./engineGate");
-  return (await engineEnabled("REMOTION_EXPORTS", workspace)) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
+  const more = [...((await engineEnabled("REMOTION_EXPORTS", workspace)) ? EXPORT_TOOLS : []), ...(options.pdf ? PDF_TOOLS : [])];
+  return more.length ? [...TOOLS, ...more] : TOOLS;
 }
 
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
@@ -292,7 +346,7 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
  * spend is reported in credits and the engine's dollars are never named.
  */
 export async function runTool(
-  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean; /** Exports are on for this workspace (the route says; absent: only the global switch is asked). */ exports?: boolean } = {}
+  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean; /** Exports are on for this workspace (the route says; absent: only the global switch is asked). */ exports?: boolean } = {}, offered: { pdf?: boolean } = {}
 ): Promise<string> {
   switch (name) {
     case "prepare_shot": {
@@ -451,6 +505,20 @@ export async function runTool(
       const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
       const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props, ...(args.output ? { output: args.output } : {}) } })) as { job: ExportSummary };
       return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
+    }
+
+    case "assemble_film": {
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
+      const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
+      const out = (await call("/api/exports/assemble", { method: "POST", body: { requestId, timeline: args.timeline, ...(args.output ? { output: args.output } : {}) } })) as { job: ExportSummary };
+      return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
+    }
+
+    case "make_deck_pdf": {
+      /* Where this workspace has no deck PDFs the tool is not offered, and it is unknown here too (as get_export is when exports are off). */
+      if (!offered.pdf) throw new Error(`Unknown tool: ${name}`);
+      const out = (await call("/api/pdf", { method: "POST", body: args })) as { deck: { url: string; filename: string; pages: number; bytes: number } };
+      return `${out.deck.filename} · ${out.deck.pages} pages · ${Math.round(out.deck.bytes / 1024)} KB\n\n${origin}${out.deck.url}\n(That link needs the same token — it is not public.)\nprice: Free (0 cr)`;
     }
 
     case "get_export": {

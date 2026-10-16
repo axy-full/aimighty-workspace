@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { openMediaStream, openUploadStream } from "../storage";
 import { inspectOriginalVideo } from "../videoMetadata.server";
+import { findStoredSource, resolveStoredDuration } from "../mediaSource.server";
 import { mayReadTake } from "../draftProject";
 import { uploadOpenableBy } from "../uploadAccess";
 import type { Reference } from "../ark";
@@ -26,6 +27,8 @@ export type BoundMedia = {
   /** The file name inside the worker's `input/` folder. */
   file: string;
   origin: "upload" | "take";
+  /** What a take is: absent means a video (jobs stored before audio takes could be named). */
+  kind?: "video" | "audio";
   id: string;
   ext: string;
   storedUrl: string;
@@ -41,7 +44,7 @@ export type ExportViewer = { id: string; role?: string };
 export type MediaResolver = {
   video(handle: { upload?: string; take?: string }): Promise<{ origin: "upload" | "take"; id: string; ext: string; storedUrl: string; bytes: number } & VideoFacts>;
   image(handle: { upload?: string }): Promise<{ id: string; ext: string; storedUrl: string; bytes: number }>;
-  audio(handle: { upload?: string }): Promise<{ id: string; ext: string; storedUrl: string; bytes: number; durationSeconds: number }>;
+  audio(handle: { upload?: string; take?: string }): Promise<{ origin?: "upload" | "take"; id: string; ext: string; storedUrl: string; bytes: number; durationSeconds: number }>;
 };
 
 type Rec = Record<string, unknown>;
@@ -70,12 +73,12 @@ export async function bindMedia(
   const out = structuredClone(props) as Rec;
   const media = new Map<string, BoundMedia>();
   const counters = { m: 0, logo: 0, music: 0, voice: 0 };
-  const own = (origin: "upload" | "take", id: string, ext: string, storedUrl: string, bytes: number, prefix: "m" | "logo" | "music" | "voice"): BoundMedia => {
+  const own = (origin: "upload" | "take", id: string, ext: string, storedUrl: string, bytes: number, prefix: "m" | "logo" | "music" | "voice", kind?: "audio"): BoundMedia => {
     const key = `${origin}:${id}`;
     const known = media.get(key);
     if (known) return known;
     counters[prefix] += 1;
-    const bound = { file: `${prefix}${counters[prefix]}.${ext}`, origin, id, ext, storedUrl, bytes };
+    const bound: BoundMedia = { file: `${prefix}${counters[prefix]}.${ext}`, origin, id, ext, storedUrl, bytes, ...(kind ? { kind } : {}) };
     media.set(key, bound);
     return bound;
   };
@@ -118,9 +121,9 @@ export async function bindMedia(
       if (isRec(out.end)) await logo(out.end, "props.end");
       if (out.music !== undefined && out.music !== null) {
         const m = child(out.music, "props.music");
-        const handle = handleOf(m, "props.music", ["upload", "volume"]);
-        const found = await resolver.audio(handle as { upload?: string });
-        const bound = own("upload", found.id, found.ext, found.storedUrl, found.bytes, "music");
+        const handle = handleOf(m, "props.music", ["upload", "take", "volume"]);
+        const found = await resolver.audio(handle as { upload?: string; take?: string });
+        const bound = own(found.origin ?? "upload", found.id, found.ext, found.storedUrl, found.bytes, "music", found.origin === "take" ? "audio" : undefined);
         out.music = { file: bound.file, durationSeconds: found.durationSeconds, ...(handle.volume !== undefined ? { volume: handle.volume } : {}) };
       }
       /* Spoken lines of a narrated cut: each names an upload (a voice-over made or recorded earlier; its own paid step ran on its own path) and where it starts. */
@@ -130,10 +133,10 @@ export async function bindMedia(
         const lines: Rec[] = [];
         for (const [index, item] of out.voiceover.entries()) {
           const at = `props.voiceover[${index}]`;
-          const handle = handleOf(child(item, at), at, ["upload", "startSeconds", "volume"]);
-          const found = await resolver.audio(handle as { upload?: string });
-          const bound = own("upload", found.id, found.ext, found.storedUrl, found.bytes, "voice");
-          lines.push({ file: bound.file, durationSeconds: found.durationSeconds, ...(handle.startSeconds !== undefined ? { startSeconds: handle.startSeconds } : {}), ...(handle.volume !== undefined ? { volume: handle.volume } : {}) });
+          const handle = handleOf(child(item, at), at, ["upload", "take", "startSeconds", "volume", "text"]);
+          const found = await resolver.audio(handle as { upload?: string; take?: string });
+          const bound = own(found.origin ?? "upload", found.id, found.ext, found.storedUrl, found.bytes, "voice", found.origin === "take" ? "audio" : undefined);
+          lines.push({ file: bound.file, durationSeconds: found.durationSeconds, ...(handle.startSeconds !== undefined ? { startSeconds: handle.startSeconds } : {}), ...(handle.volume !== undefined ? { volume: handle.volume } : {}), ...(handle.text !== undefined ? { text: handle.text } : {}) });
         }
         out.voiceover = lines;
       }
@@ -184,16 +187,46 @@ export function createMediaResolver(viewer: ExportViewer, options: { facts?: typ
       return { id: String(row.id), ext, storedUrl: String(row.stored_url), bytes };
     },
     async audio(handle) {
+      if (handle.take) {
+        const row = (await db().execute({ sql: "SELECT id,kind,status,stored_url,bytes,duration_s,project_id FROM generations WHERE id=? AND deleted=0", args: [handle.take] })).rows[0];
+        if (!row || row.kind !== "audio" || !(await mayReadTake(viewer, row.project_id == null ? null : String(row.project_id)))) throw gone("That take");
+        if (row.status === "queued" || row.status === "running") throw new ExportError("That take is still being made. Export it when it is ready.", 409);
+        if (row.status !== "succeeded" || !row.stored_url) throw gone("That take");
+        const bytes = Number(row.bytes);
+        if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > MAX_MEDIA_BYTES) throw new ExportError("That audio take is too large to export.", 413);
+        const seconds = await lengthOf(row.duration_s, { genId: String(row.id) });
+        if (seconds == null) throw new ExportError("That audio take has no recorded length, so it cannot be used.", 422);
+        return { origin: "take", id: String(row.id), ext: "mp3", storedUrl: String(row.stored_url), bytes, durationSeconds: seconds };
+      }
       const row = await uploadRow(handle.upload!, viewer);
       const ext = String(row.ext).toLowerCase();
       if (!String(row.mime).startsWith("audio/") || !AUDIO_EXT.includes(ext)) throw new ExportError("Music must be an MP3, WAV, M4A, AAC or OGG file.", 415);
       const bytes = Number(row.bytes);
-      const seconds = row.duration_s == null ? NaN : Number(row.duration_s);
       if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > MAX_MEDIA_BYTES) throw new ExportError("That music file is too large to export.", 413);
-      if (!Number.isFinite(seconds) || seconds <= 0) throw new ExportError("That music file has no recorded length, so it cannot be used.", 422);
-      return { id: String(row.id), ext, storedUrl: String(row.stored_url), bytes, durationSeconds: seconds };
+      const seconds = await lengthOf(row.duration_s, { uploadId: String(row.id) });
+      if (seconds == null) throw new ExportError("That music file has no recorded length, so it cannot be used.", 422);
+      return { origin: "upload", id: String(row.id), ext, storedUrl: String(row.stored_url), bytes, durationSeconds: seconds };
     },
   };
+}
+
+/**
+ * An audio file's length in seconds: the recorded one, else measured now from the stored original and written back, by the same
+ * bounded lazy backfill the sound tools use (lib/mediaSource.server.ts). The tools that make a voice or a piece of music record the
+ * length when they settle; this covers one that did not (an older take, an upload from before lengths were kept, another engine's).
+ * It reads only the file's header under the inspection budget and writes only the length column: no price, no ledger row, no
+ * engine. Null when the length cannot be read.
+ */
+async function lengthOf(recorded: unknown, ref: { genId?: string; uploadId?: string }): Promise<number | null> {
+  const seconds = recorded == null ? NaN : Number(recorded);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  try {
+    const source = await findStoredSource(ref);
+    const measured = source ? await resolveStoredDuration(source) : null;
+    return measured?.seconds != null && measured.seconds > 0 ? measured.seconds : null;
+  } catch {
+    return null;
+  }
 }
 
 async function uploadRow(id: string, viewer: ExportViewer) {
@@ -214,7 +247,7 @@ export async function mediaStillReachable(ownerId: string, media: BoundMedia): P
   if (!person || Number(person.disabled) === 1) return false;
   const viewer: ExportViewer = { id: ownerId, ...(person.role ? { role: String(person.role) } : {}) };
   if (media.origin === "take") {
-    const row = (await db().execute({ sql: "SELECT status,project_id FROM generations WHERE id=? AND deleted=0 AND kind='video'", args: [media.id] })).rows[0];
+    const row = (await db().execute({ sql: "SELECT status,project_id FROM generations WHERE id=? AND deleted=0 AND kind=?", args: [media.id, media.kind === "audio" ? "audio" : "video"] })).rows[0];
     return Boolean(row && row.status === "succeeded" && (await mayReadTake(viewer, row.project_id == null ? null : String(row.project_id))));
   }
   const row = (await db().execute({ sql: "SELECT id FROM uploads WHERE id=?", args: [media.id] })).rows[0];
@@ -255,6 +288,6 @@ async function toBuffer(stream: ReadableStream<Uint8Array>, limit: number): Prom
 export type MediaLoader = (media: BoundMedia) => Promise<Buffer>;
 export const loadMedia: MediaLoader = async (media) => {
   const limit = media.bytes + 1024;
-  if (media.origin === "take") return toBuffer(await openMediaStream(media.id, "video"), limit);
+  if (media.origin === "take") return toBuffer(await openMediaStream(media.id, media.kind === "audio" ? "audio" : "video"), limit);
   return toBuffer((await openUploadStream(media.id, media.ext, null, media.storedUrl)).stream as ReadableStream<Uint8Array>, limit);
 };

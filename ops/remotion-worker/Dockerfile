@@ -55,6 +55,10 @@ COPY --from=runtime-deps /opt/remotion/package.json /opt/remotion/package.json
 COPY --from=runtime-deps /opt/remotion/node_modules /opt/remotion/node_modules
 COPY --from=build /src/remotion/build/cli.mjs /opt/remotion/cli.mjs
 COPY --from=build /src/remotion/build/bundle /opt/remotion/bundle
+# The deck PDF command (remotion/node/pdf.ts) prints with the same Chrome and reads the typeface from here (SIL OFL);
+# the build check is a two-page page of its own.
+COPY --from=build /src/remotion/public/fonts /opt/remotion/fonts
+COPY --from=build /src/remotion/test/pdf-check /opt/remotion/pdf-check
 COPY ops/remotion-worker/server.mjs /app/server.mjs
 # The egress check the worker runs before it listens, and the one the owner runs in a terminal (the same file as the Astra worker's):
 # they hold no secret and read none. See README.md, Verify step 1.
@@ -72,6 +76,7 @@ ENV NODE_ENV=production \
     PORT=8790 \
     REMOTION_WORKER_CONTAINER=1 \
     REMOTION_BUNDLE_DIR=/opt/remotion/bundle \
+    REMOTION_FONTS_DIR=/opt/remotion/fonts \
     REMOTION_RUNTIME_DIR=/opt/remotion \
     REMOTION_BROWSER_EXECUTABLE=/opt/remotion/node_modules/.remotion/chrome-headless-shell/linux64/chrome-headless-shell-linux64/chrome-headless-shell \
     REMOTION_CONCURRENCY=2 \
@@ -89,6 +94,15 @@ RUN set -eu; \
     /opt/remotion/node_modules/@remotion/compositor-linux-x64-gnu/ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 output/export.mp4 | tee probe.txt; \
     grep -q '^h264,192,108$' probe.txt; \
     head -c 8 output/still-30.png | od -An -tx1 | grep -q '89 50 4e 47'; \
+    cd /; rm -rf "$d"
+
+# The same for a deck PDF: two A4 landscape pages through the very command the worker runs; the command itself checks
+# that the PDF is a PDF with that page count and size, so a missing library or font fails the build here.
+RUN set -eu; \
+    d=/tmp/build-check-pdf; mkdir -p "$d/input" "$d/output"; cd "$d"; \
+    cp /opt/remotion/pdf-check/spec.json spec.json; cp /opt/remotion/pdf-check/deck.html input/deck.html; \
+    /usr/local/bin/node /opt/remotion/cli.mjs > out.log 2>&1 || { tail -n 40 out.log; exit 1; }; \
+    head -c 5 output/deck.pdf | grep -q '^%PDF-'; \
     cd /; rm -rf "$d"
 
 WORKDIR /app
