@@ -26,7 +26,7 @@ The owner's 15:05 note carries the treatment builder's flow (items a to i) and t
 > Section library (with synonyms users type): Cover/home page/title · Index/contents/structure · Logline · Synopsis/story/narrative · Concept/big idea · Director's note/intent/vision/approach · Insight/why this film · Beats/structure/timeline · Characters/casting/talent · Performance · Wardrobe/styling · Hair & make-up · Locations/setting/production design/art direction · Props/product · Mood board/references · Tone/look & feel/mood · Palette/colour/grade · Lighting · Camera/lensing/framing/composition · Camera movement · Texture/format · Edit/pacing/rhythm · Transitions · Typography/supers/titles · VFX/CG/animation · GIF page/motion study · Video viewer/animatic/reference film · Sound design · Music/score · Voice-over · Product/hero shots · Brand integration · End frame/pack shot/CTA · Cutdowns/versions/deliverables · Formats/aspect ratios · Production plan/schedule · Crew/credits · About the director/showreel/previous work · Thank you. Teach the models with this library, instructions and 3 example treatments; no fine-tuning.
 > Spike first (1 day each, mocks only): (a) our own editor from the v25 card components + Tiptap + an MIT drag/resize library: 3 pages, text sharpness at 3008×1692 @2×, undo/redo, PDF + PPTX export; (b) Polotno SDK on its trial, same 3 pages, plus a licence quote. Recommend one with evidence.
 
-Part 2 was first written from the flow the lead listed (opening questions, How it looks, Contents mapping with synonyms, Index, What it says, page types, mood-board rules) and **every point in it must be reconciled with the owner's text**; where the two could differ the spec says so ("to reconcile").
+Part 2 is reconciled with this text (16 Oct, after the lead pasted it).
 
 ### 1.2 Section 4, EDITING IS THE CORNERSTONE (verbatim, from `docs/redesign-plan.md`)
 
@@ -48,95 +48,102 @@ The app-wide version of this is `docs/plans/editing-standard.md`.
 
 ## Part 2. The buildable spec
 
+**Reconciled with the owner's section 3 (1.1) on 16 Oct.** Where a point below is the owner's own, it cites the item (3a to 3i, library). Points not in his text are marked **(added)**; they are proposals for him to accept or strike. 
+
 Rules that bind every part: tenant isolation (every table carries `workspace_id`, every query filters on it, every file path is prefixed by it); rule 11 (a feature is a tool in the registry before it gets a button); rule 14 (only a person approves spend; the price is on the button); rule 13 (everything saves itself; undo instead of confirmations); rule 15 (readable dark) and the 5K sharpness checklist (`docs/plans/sharpness-5k.md`).
+
+**What we keep from 2Slides (3, the owner):** "What it says" and "How it looks" per page; a style reference image per deck and per page; a page rail with status; a slideshow; per-page narration exported as video. **What we do differently:** pages are never one image with the text baked in; editing is never "rewrite two prompt boxes and regenerate the whole page"; credits and names are never invented.
 
 ### 2.1 Data model
 
 | Object | Fields (summary) | Notes |
 |---|---|---|
-| **Deck** | id, `workspace_id`, board/project id, kind (`treatment`, `pitch`, `ppm`), cover style (`treatment` or `pitch`), theme id, page order, status, created by, version counter | One deck per board output; a board can hold several |
-| **Theme** | palette, type pair, logo (asset ref), corner radius, spacing scale, mood-image refs | **Derived from the cover** ("How it looks"): the cover's choices become the theme, and every later page inherits it; changing the theme re-flows pages without re-rendering pictures |
-| **Page** | id, deck id, order, page type, title, **two layers**, notes, narration text, motion settings | Page types in 2.3 |
-| **Layer** | `background` and `content` (**to reconcile: the owner's "two layers" are assumed to be a background layer and a content layer**) | Background: picture, colour, mood image; content: text, images, shapes, logo, data |
-| **Element** | id, page id, layer, kind (`text`, `image`, `shape`, `logo`, `chart`, `video`, `colour`, `placeholder`), box (x, y, w, h in page units), z-order, locked, content or asset ref, style, link to a board card, motion | The smallest editable unit. Text is rich text (Tiptap document), not a picture |
-| **Asset** | id, `workspace_id`, storage path, **content hash**, original name, kind, dimensions | **Originals are stored byte-identical**; every crop, scale or compression is a derived rendition that points to the original and its hash |
-| **PageVersion** / **ElementVersion** | id, subject id, number, author, time, snapshot, reason (edit, regenerate, restore, theme change) | Append-only. Restoring writes a new version; nothing is erased |
+| **Deck** | id, `workspace_id`, board/project id, kind (`treatment`, `pitch`, `ppm`) (added), cover style (`treatment` or `pitch`), theme id, style reference (asset), page order, status, created by, version counter | One deck per board output; a board can hold several |
+| **Theme** | fonts, sizes, spacing, header style, colours, ornaments, logo (asset ref), mood-image refs | **Set by the cover** (3b): "fonts, sizes, spacing, header style, colours, ornaments"; every later page inherits it (3e). Changing the theme re-flows live text without re-rendering pictures |
+| **Page** | id, deck id, order, **page type** (heading, sub-heading, content: 3e), library section id (or custom), title, **visual layer**, **text/layout layer**, style reference override (asset), status (the v25 card status: Not started, Making…, Ready, ✓ Approved, ✕ reason: 3h), narration text, motion settings | A page rail shows each page's status |
+| **Visual layer** | one image or frame from **our engines or a board frame** (3h); a mood-board page's visual layer is the arrangement of the person's pictures | A picture, never text. Linked to a board card when it comes from one |
+| **Text/layout layer** | live elements on top of the visual layer: text (DOM, brand fonts), shapes, logo, colour, placeholders, data | **Live text: never baked into the image** (3b) |
+| **Element** | id, page id, layer (`visual` or `text/layout`), kind (`text`, `image`, `shape`, `logo`, `colour`, `placeholder`, `video`, `gif`), box (x, y, w, h in page units), z-order, locked, content or asset ref, style, link to a board card, motion | The smallest editable unit. Text is rich text (Tiptap document) |
+| **Asset** | id, `workspace_id`, storage path, **content hash**, original name, kind, dimensions | **Originals byte-identical, full resolution, uncompressed in exports** (3f); every crop, scale or compression is a derived rendition pointing at the original and its hash |
+| **PageVersion** / **ElementVersion** | id, subject, number, author, time, snapshot, reason (edit, regenerate, restore, theme change, card update) | Append-only; restoring writes a new version; nothing is erased |
 | **Comment** | id, subject (page or element), author, text, resolved | Per page and per element |
-| **CardLink** | element id, board id, card id, card version, mode (`follow` or `pinned`) | Pulls an approved still, shot frame or text from a board card; `follow` offers an update when the card changes, never auto-replaces |
+| **CardLink** | page or element id, board id, card id, card version | **Live links to the board (3h): a re-render or an approval on the card updates the page.** The update writes a new page version, so it is undoable and comparable; a person can pin a link to a version to stop updates. **(added: the pin)** |
 
-IDs, versions and links are plain data in the workspace's own database. A deck saves itself on every change (rule 13). Atomik and outside agents read and write it only through the tools in 2.10.
+A deck saves itself on every change (rule 13). Atomik and outside agents read and write it only through the tools in 2.10.
 
 ### 2.2 The flow
 
-Each screen is one primary action, the next step (rule 13). Agent mode runs the same steps with Atomik asking and filling; Director mode shows the settings. **The screens below follow the flow the lead listed; reconcile each against the owner's items a to i.**
+Each screen has one primary action, the next step (rule 13). Agent mode runs the same steps with Atomik asking and filling; Director mode shows the settings and the engine lists (2.12).
 
-1. **Opening questions.** A few chips, not a form: what the deck is for (treatment or pitch), who it is for, the cover style, length, language. What the brief already says is not asked again.
-2. **How it looks.** Pick or generate the cover; the cover sets the theme (palette, type, logo, mood). A live preview of three sample pages. Logo: 2.9.
-3. **Contents mapping, with synonyms.** The section library (1.1, to be pasted) is matched to the person's own headings: if they call a section "Tone" and the library says "Mood", the synonym table maps one to the other, and unmapped headings become custom pages rather than being dropped. The person sees the mapping and can change any line.
-4. **Index.** The page order as a list the person can reorder, add to, or remove from; this is also the deck's table of contents page.
-5. **What it says.** Per page, the copy: Atomik drafts only from what the brief and the board hold; the person edits in place. **The deck never invents names, credits or facts (2.8).**
-6. **Page types.** Each page uses a type (2.3). Changing a page's type keeps its content where the fields match and flags what no longer fits.
-7. **Review and share.** Preview, comments, a review link, exports (2.6).
+1. **Opening questions (3a).** Tone, genre; the idea, script or treatment thought (optional); director; client and agency names and logos. What the brief already says is not asked again. **Missing logos:** offer to fetch them through a reputable logo service such as Brandfetch, prefer SVG, **the user confirms** (2.9).
+2. **How it looks, first (3b).** The **design engine** turns tone, genre, brand colours and script into a design brief; the **cover-art engine** makes the cover (**Recraft vector/SVG where possible**). Text stays **live on top** (DOM, brand fonts), never baked into the image. **The cover sets the deck's theme**: fonts, sizes, spacing, header style, colours, ornaments. A style reference image can be set per deck and per page.
+3. **Contents (3c).** Ask what the treatment should include; **map the person's words to the section library with synonyms** (the library and its synonyms are in 1.1; unmapped words become custom pages, not dropped); propose an order; the person confirms. Then an **Index page**.
+4. **What it says (3d).** The **text engine** writes each page from the idea and the project data. **It never invents names, credits or facts: unknowns become marked blanks** (2.8). Each page has "What it says" and "How it looks" (kept from 2Slides).
+5. **Page types (3e).** Heading, sub-heading, content; **each inherits the cover's theme**. A section from the library fills a page type with the section's content. Changing a page's type keeps its content where it fits.
+6. **Mood board (3f).** A template page where the person **pastes and arranges their own images**, or says **"arrange it for me"**. Rules in 2.4.
+7. **Motion pages (3g).** GIF page, video viewer, animatic: see 2.5.
+8. **Review and share.** Page rail with status, slideshow (Present mode), comments, review link, exports (2.6), narration film (2.7).
 
-### 2.3 Page types (starting set; replace with the owner's library)
+### 2.3 The section library and page types
 
-Cover, Contents, Logline, Synopsis, Tone and mood board, Characters, Locations, Visual references, Story beats or scenes, Storyboard frames, Look and palette, Sound and music, Schedule, Credits and team, Closing. **To reconcile with the section library.** A page type fixes its layout slots and its default layers; it never fixes the content.
+The **page types** are the owner's three: heading, sub-heading, content (3e). The **sections** a person can choose are the owner's library in 1.1 (Cover/home page/title; Index/contents/structure; Logline; Synopsis; Concept; Director's note; Insight; Beats; Characters; Performance; Wardrobe; Hair & make-up; Locations; Props/product; Mood board; Tone; Palette; Lighting; Camera; Camera movement; Texture/format; Edit/pacing; Transitions; Typography/supers; VFX/CG/animation; GIF page; Video viewer/animatic; Sound design; Music/score; Voice-over; Product/hero shots; Brand integration; End frame/pack shot/CTA; Cutdowns/versions/deliverables; Formats/aspect ratios; Production plan/schedule; Crew/credits; About the director/showreel/previous work; Thank you). A page type fixes layout slots; the section decides what goes in them; neither fixes the content. **Teaching the models:** the library, the instructions and **three example treatments** are given to the models in the prompt; **no fine-tuning** (3 library note).
 
-### 2.4 Mood-board rules (hard rules)
+### 2.4 Mood-board rules (3f, hard rules)
 
-- **Never auto-crop, squeeze or stretch** an image. A picture is placed at its true aspect ratio; fitting is by choice: letterbox, fill-with-crop chosen by the person (the crop is a non-destructive window over the original), or a layout that changes shape around the picture.
-- **Originals are byte-identical** to what was uploaded or generated (stored with a hash); renditions are derived and may be re-made.
-- Pictures are served and exported at least 2× their displayed size, never upscaled past their real pixels (`sharpness-5k.md`).
-- A test uploads a picture, places it in every page type, and asserts the stored original's hash is unchanged and no rendition changes the aspect ratio unless the person set a crop.
+- **Never crop, squeeze, stretch or change the aspect ratio automatically.** **Frames adapt to each image.** **Crop and scale are manual tools**: a crop is a non-destructive window over the original, set by the person.
+- **Originals are byte-identical**, full resolution, and **uncompressed in exports**; renditions are derived and re-makeable.
+- "Arrange it for me" moves frames and sizes them to fit the images, and may reorder; it never alters a picture.
+- A test uploads pictures of mixed aspect ratios, places them in every page type and arranges them automatically, and asserts each stored original's hash is unchanged, no rendition changes an aspect ratio unless the person set a crop, and the PDF and PPTX carry the original resolution.
 
-### 2.5 Motion pages
+### 2.5 Motion pages (3g)
 
-- **Present mode:** full-screen, page by page, arrow keys and touch, with per-element motion (fade, slide, a looped clip) and page transitions, reduced when the viewer asks for reduced motion.
-- **Review link:** the same presentation at a link scoped to the workspace's review rules (signed out, view-only, comments if enabled), never exposing the editor.
-- **PDF:** a motion page prints as a **poster frame** plus a **link and QR code** to the live page (the QR is generated at export; the link is the review link).
-- Motion is data on the element, not baked pixels, so it stays editable.
+- **GIF page, video viewer, animatic** play in **Present mode** and on the **review link**.
+- The **PDF shows a poster frame plus a link and QR code** to the live page (the QR is generated at export; the link is the review link).
+- Present mode is full-screen, page by page, with video playing (3h), arrow keys and touch; motion is data on the element, not baked pixels; reduced motion is respected. The review link is the same presentation at a link scoped to the workspace's review rules (view-only, comments if enabled), never exposing the editor.
 
-### 2.6 Exports
+### 2.6 Exports (3h)
 
 | Output | How | Standard |
 |---|---|---|
-| **PDF** | Chromium PDF on the export worker (the #767 path), from the same page data | Real text, embedded fonts, vector shapes, pictures at ≥2× |
+| **PDF** | Chromium PDF on the export worker (the #767 path), from the same page data | Real text, embedded fonts, vector shapes, pictures at original resolution (3f) |
 | **Editable PPTX** | Native text boxes, images and shapes at their positions (Part 3 decides the writer) | Opens in PowerPoint and LibreOffice with editable text; fonts embedded or named |
-| **Images / film frames** | Per page PNG | Crisp at **3008×1692 @2×** (a 6016×3384 render); text stays vector in the PDF and is rasterised only here |
+| **Page images** | Per page PNG | **Crisp at 5K/6K: 3008×1692 @2×** (a 6016×3384 render); text stays live until a raster export |
 
-Every export is a tool (2.10) with its price from the server (PDF and the Remotion export are free today). A failed export says "Nothing billed" and offers Retry.
+Every export is a tool (2.10) with its price from the server (the PDF and Remotion export are free today). A failed export says "Nothing billed" and offers Retry.
 
-### 2.7 Narration to a treatment film
+### 2.7 Narration to a treatment film (3h)
 
-Each page may carry narration text. A "Make the treatment film" tool turns pages into a film on the Remotion worker: each page for its narration's length, motion applied, voice from the chosen engine (ElevenLabs, or Sarvam for Indian languages), music optional, subtitles from the narration. One plan card with one all-in price in Agent mode; the steps listed in Director mode. The result is a board card the person can review, approve and export like any cut.
+Each page may carry **narration (ElevenLabs, or Sarvam for Indian languages)**, **exported as a treatment film**: each page for its narration's length, motion applied, music optional, subtitles from the narration, assembled on the Remotion worker. One plan card with one all-in price in Agent mode; the steps listed in Director mode. The result is a board card the person can review, approve and export like any cut.
 
-### 2.8 It never invents names, credits or facts
+### 2.8 It never invents names, credits or facts (3d)
 
-Unknowns become **marked blanks**: a visible placeholder chip such as "[Client name]" or "[Director]" on the page, in a colour that cannot be mistaken for content, listed in a "Blanks" panel and in the review link's footer. Atomik drafts only from the brief, the board and what the person typed; where a name, credit, date, number, quote or rights line is not in those, it writes the blank, not a guess. Export lists the blanks and asks whether to export anyway (the person decides; the default is to keep them marked). A test feeds a brief with no names and asserts no name, credit or figure appears that is not in the input.
+Unknowns become **marked blanks**: a visible placeholder chip such as "[Client name]" or "[Director]" on the page, in a colour that cannot be mistaken for content, listed in a "Blanks" panel and in the review link's footer. Atomik writes the blank where a name, credit, date, number, quote or rights line is not in the brief, the board or what the person typed (the owner's complaint about 2Slides: "it invented credits on our cover"). Export lists the blanks and asks whether to export anyway; the default keeps them marked. A test feeds a brief with no names and asserts no name, credit or figure appears that is not in the input.
 
-### 2.9 Logo fetch
+### 2.9 Logo fetch (3a)
 
-A person can ask for a company's logo by its web address. The server looks it up through a reputable logo service such as **Brandfetch** (a proposal; the service's terms and key are the owner's to approve and nothing is called until then), prefers an **SVG**, shows the candidates, and **the person confirms** before any logo enters the deck. The chosen file is stored as an asset with its source noted; trademark use is the person's responsibility (a lawyer item, like likeness in `docs/legal/`). Fetching is a tool (2.10) and its failure leaves the placeholder blank. A new key name would be proposed to the owner before it is read.
+For client and agency names without a logo, the product **offers to fetch** it through a reputable logo service such as **Brandfetch** (a proposal until the owner approves the service's terms and key; nothing is called before), **prefers SVG**, shows the candidates, and **the user confirms** before a logo enters the deck. The chosen file is stored as an asset with its source noted; trademark use is the person's responsibility (a lawyer item, like likeness in `docs/legal/`). A failed fetch leaves a marked blank. Fetching is a tool (2.10).
 
 ### 2.10 Every element is a tool (rule 11)
 
-The registry (A1) gets these before any button: `deck.create`, `deck.set_theme`, `deck.add_page`, `deck.reorder_pages`, `page.set_type`, `page.duplicate`, `element.add`, `element.update` (text, colour, position, size), `element.lock`, `element.regenerate` (one image, one paragraph, one page visual), `deck.change_this` (a selection plus plain words), `version.compare`, `version.restore`, `comment.add`, `deck.export_pdf`, `deck.export_pptx`, `deck.make_film`, `deck.share_review_link`, `brand.fetch_logo`. The button, Make, a board card, Atomik, a saved skill and an outside agent over MCP call the same tool at the same price through the same approval gate; an edit that costs nothing (text, position, colour) has no gate and never costs a render. Each tool has a mocked test proving an agent can run it. Approving spend stays a person's alone.
+The registry (A1) gets these before any button: `deck.create`, `deck.ask_opening_questions`, `deck.design_brief`, `deck.make_cover`, `deck.set_theme`, `deck.map_contents`, `deck.write_page`, `deck.add_page`, `deck.reorder_pages`, `page.set_type`, `page.duplicate`, `page.set_style_reference`, `element.add`, `element.update` (text, colour, position, size), `element.lock`, `element.regenerate` (one image, one paragraph, one page visual), `deck.change_this` (a selection plus plain words), `mood.arrange`, `link.pin`, `version.compare`, `version.restore`, `comment.add`, `deck.present`, `deck.export_pdf`, `deck.export_pptx`, `deck.make_film`, `deck.share_review_link`, `brand.fetch_logo`. The button, Make, a board card, Atomik, a saved skill and an outside agent over MCP call the same tool at the same price through the same approval gate; an edit that costs nothing (text, position, colour) has no gate and never costs a render. Each tool has a mocked test proving an agent can run it. Approving spend stays a person's alone.
 
-### 2.11 Collaboration (Liveblocks)
+### 2.11 Collaboration (Liveblocks, 3h)
 
-Liveblocks is already in the product for live team editing on a shared board. A deck reuses it: presence and cursors per page; text co-edited through Yjs (the Tiptap binding); element locks and selection in Liveblocks storage so two people do not drag the same box; comments and versions saved to our database, not left in the room. Joining needs the workspace's membership (same reach rules as board sharing). If Liveblocks is down the deck stays editable single-user and saves.
+Liveblocks is already in the product for live team editing on a shared board. A deck reuses it: presence and cursors per page; text co-edited through Yjs (the Tiptap binding); element locks and selection in Liveblocks storage; comments and versions saved to our database, not left in the room. Joining needs the workspace's membership (the board-sharing reach rules). If Liveblocks is down the deck stays editable single-user and saves.
 
-### 2.12 Agent and Director engine choice per step
+### 2.12 Agent and Director engine choice per step (3i)
 
-| Step | Agent mode | Director mode |
+| Step | Agent mode ("engines chosen by us") | Director mode ("every step offers the full engine list") |
 |---|---|---|
-| Copy ("What it says") | Atomik writes; no model named; one price | Choose the text engine from the offered list, each with name, strengths, limits and price per unit |
-| Cover and page visuals | Atomik picks the engine and style; no name | Choose the image or cover/design engine (for example the stack's image and design engines) |
-| Regenerate one picture | One all-in price on the button | Engine menu on the same button |
-| Narration voice | Atomik picks the voice engine; no name | Voice engine and voice chosen by name |
-| Film | One plan card, one price | The steps listed |
+| Design brief ("How it looks") | Atomik; no model named; one price | Choose the **design** engine from the list (name, strengths, limits, price per unit) |
+| Cover art | Atomik picks; no name | Choose the **cover-art** engine (for example Recraft) |
+| What it says | Atomik writes; no name | Choose the **text** engine |
+| Page images | Atomik picks; no name | Choose the **image** engine |
+| Regenerate one picture or paragraph | One all-in price on the button | Engine menu on the same button |
+| Narration voice | Atomik picks the voice engine | Voice engine and voice by name |
+| Treatment film | One plan card, one price | The steps listed |
 
-The Agent price and the Agent/Director difference are config on the server (the owner sets the numbers); this document holds none.
+The Agent price and the Agent/Director difference are server config (the owner sets the numbers); this document holds none.
 
 ### 2.13 Editing standard
 
@@ -169,9 +176,9 @@ Built from the v25 card components, Tiptap (MIT core, already adopted for doc ca
 A one-page recommendation with evidence: both spikes' criteria side by side, screenshots at 3008×1692 @2×, the PPTX opened in two apps, the time each took, the licence terms, and the recommended path. **Build from Mon 2 Nov.** The owner decides.
 
 ## Part 4. Open points and UNKNOWN
-- The owner's section 3 a to i and the section library (1.1): pending from the lead.
-- The "two layers" meaning (2.1).
-- Whether the Brandfetch terms permit our use, and the key name (2.9).
+- Whether Brandfetch's terms permit our use, and its key name (2.9).
 - Which MIT drag/resize library (spike a).
-- The Polotno trial key name and licence terms.
-- The deck's price in Director mode and the Agent all-in price: server config, held privately.
+- The Polotno trial key name and licence terms (spike b).
+- The deck's Director-mode prices and the Agent all-in price: server config, held privately.
+- **(added)** points not in the owner's text, for him to accept or strike: the `kind` field (treatment, pitch, ppm); pinning a card link to a version; the "Blanks" panel and export prompt; the tool list names.
+- How "arrange it for me" decides an order (the owner says arrange; the algorithm is open).
