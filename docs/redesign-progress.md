@@ -1036,3 +1036,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Should-fix (sent to lane D): merge the worker's a5e0f445 into #700 and up the stack.
   - Owner question: the run-time reach check uses the workspace users mirror, not platform memberships (predates this delta).
 - **16 Oct 06:13 IST.** #758 (at-risk badge) CI green 24/24 (run 38826553542) at 1c10b1c8, the Opus-approved head. Not merged: the owner's deploy #5 note requires his yes per PR (#748 → #756 → #762, then #758).
+- **16 Oct 06:19 IST.** Lane D merges:
+  - Engines on #778 a95fd177 with shotCapAdmin: #779 828a0632, #783 843fd3d0, #787 7ebd88a9.
+  - Export chain: #700 ca36d823 (worker a5e0f445 merged; 409 wording; DB-error wording), #766 5f9fdf0c, #774 c68dd76a, #775 04d78e0b, #767 438b3dee. Specs pass on each.
+  - Opus confirmations running for these and lane C's (#781 6618a2a9, #786 93376514).
