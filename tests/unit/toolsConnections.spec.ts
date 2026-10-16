@@ -34,7 +34,7 @@ test("every row is Particl's own and opens a Suites page that exists; none reach
 test("Particl's own MCP tools are all described, and the writing ones need a token that can generate", () => {
   expect(Object.keys(MCP_TOOL_LINES).sort()).toEqual(TOOLS.map((t) => t.name).sort());
   const rows = mcpTools();
-  expect(rows.filter((t) => t.token === "generate").map((t) => t.name).sort()).toEqual(["create_project", "render_shot"]);
+  expect(rows.filter((t) => t.token === "generate").map((t) => t.name).sort()).toEqual(["create_board", "create_project", "render_shot"]);
   expect(PARTICL_REACH.find((row) => row.id === "assistant")?.line).toContain(`${TOOLS.length} tools`);
 });
 
