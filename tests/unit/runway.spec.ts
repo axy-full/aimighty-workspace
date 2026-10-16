@@ -41,7 +41,7 @@ const deferred: (() => Promise<unknown>)[] = [];
 const options = (): AdmissionExecution => ({ defer: async (work) => { deferred.push(work); } });
 
 /** One upload of this workspace: a stored original with a known length (a video) or none (an image). */
-async function upload(label: string, mediaKind: "video" | "image", seconds: number | null = null, bytesOver?: number): Promise<string> {
+async function upload(label: string, mediaKind: "video" | "image", seconds: number | null = null, bytesOver?: number, uploader: string | null = null): Promise<string> {
   const { db, ready } = await import("../../lib/db");
   const { storeUpload } = await import("../../lib/storage");
   await ready();
@@ -51,7 +51,7 @@ async function upload(label: string, mediaKind: "video" | "image", seconds: numb
   const bytes = Buffer.from(`sample-${mediaKind}-${id}`);
   await storeUpload(id, ext, bytes, mime);
   made.push(path.join(process.cwd(), ".data", "uploads", `${id}.${ext}`));
-  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s) VALUES(?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytesOver ?? bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds] });
+  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s,uploader_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytesOver ?? bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds, uploader] });
   return id;
 }
 async function project(id: string) {
@@ -407,6 +407,10 @@ test("the shot cap is judged at the quote and the press, before any row is writt
       const TOKEN = { id: "tok_admin", name: "Assistant", scope: "render" as const, capUsd: null };
       const ADMIN_TOKEN: AdmissionActor = { ...OWNER, token: TOKEN };
       const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1" } as AdmissionActor["user"] };
+      /* The run acts for a person (its owner), so the cap is what refuses it. */
+      const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+      await rigAgentReady();
+      await db().execute({ sql: "INSERT OR IGNORE INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_1", "prod_x", "draft_x", "u_runner", "req_cap", "goal", "auto", "finished"] });
       await runInTenant(house(), async () => {
         for (const tool of Object.keys(bodies)) for (const extra of [{ quoteOnly: true }, {}]) expect(await press(tool, ADMIN_TOKEN, extra), `token ${tool} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
       }, { user: ADMIN_TOKEN.user, token: TOKEN } as never);
@@ -428,6 +432,42 @@ test("the shot cap is judged at the quote and the press, before any row is writt
       await run(String(made.body.id), fakeRunway({ costCredits: 60 }).deps, 4);
     } finally { await setRule(null); }
   }, MEMBER as never);
+});
+
+test("an upload is read only by a person who may open it, for every tool: an Atomik run acts as its owner, another person's private upload is not there, and with no person behind the request nothing is read", async () => {
+  const { admitRunway } = await import("../../lib/runwayTools");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  const { db, ready } = await import("../../lib/db");
+  process.env.RUNWAY_ENABLED = "1";
+  const agentUser = (runId: string) => ({ ...OWNER.user, id: `agent:${runId}`, role: "member", owner: false }) as AdmissionActor["user"];
+  await runInTenant(house(), async () => {
+    await ready(); await rigAgentReady();
+    await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_rw_owned", "prod_x", "draft_x", "u_runner", "req_rw", "goal", "auto", "finished"] });
+    const own = { still: await upload("still", "image", null, undefined, "u_runner"), clip: await upload("clip", "video", 5, undefined, "u_runner"), char: await upload("char", "image", null, undefined, "u_runner") };
+    const other = { still: await upload("still", "image", null, undefined, "u_other"), clip: await upload("clip", "video", 5, undefined, "u_other"), char: await upload("char", "image", null, undefined, "u_other") };
+    const bodies = (u: typeof own) => ({
+      video: { tool: "video", startImageUploadId: u.still, prompt: "A crane", duration: 5 },
+      edit: { tool: "edit", clipUploadId: u.clip, prompt: "Make the sky grey" },
+      performance: { tool: "performance", performanceClipUploadId: u.clip, characterUploadId: u.char },
+    });
+    const ask = (actor: AdmissionActor, body: Record<string, unknown>) => admitRunway({ ...body, quoteOnly: true }, actor, options(), {});
+    await runInTenant(house(), async () => {
+      for (const [tool, body] of Object.entries(bodies(own))) expect((await ask({ user: agentUser("run_rw_owned") }, body)).status, `own ${tool}`).toBe(200);
+      for (const [tool, body] of Object.entries(bodies(other))) expect(await ask({ user: agentUser("run_rw_owned") }, body), `other ${tool}`).toMatchObject({ status: 404 });
+      /* One of the two inputs of Act-Two being another person's is enough. */
+      expect((await ask({ user: agentUser("run_rw_owned") }, { ...bodies(own).performance, characterUploadId: other.char })).status).toBe(404);
+      expect((await ask({ user: agentUser("run_rw_owned") }, { ...bodies(own).performance, performanceClipUploadId: other.clip })).status).toBe(404);
+    }, { user: agentUser("run_rw_owned") } as never);
+    await runInTenant(house(), async () => {
+      for (const [tool, body] of Object.entries(bodies(own))) expect(await ask({ user: agentUser("run_none") }, body), tool).toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+    }, { user: agentUser("run_none") } as never);
+    const person: AdmissionActor = { user: { ...OWNER.user, id: "u_runner", role: "member", owner: false } as AdmissionActor["user"] };
+    await runInTenant(house(), async () => {
+      for (const [tool, body] of Object.entries(bodies(own))) expect((await ask(person, body)).status, `person own ${tool}`).toBe(200);
+      for (const [tool, body] of Object.entries(bodies(other))) expect((await ask(person, body)).status, `person other ${tool}`).toBe(404);
+    }, { user: person.user } as never);
+  }, OWNER as never);
 });
 
 test("the output address lives a day: a fetch that fails is retried in time; past the window the clip is lost, recorded at what Runway charged (reported, else the quote), billed to nobody, and said so", async () => {

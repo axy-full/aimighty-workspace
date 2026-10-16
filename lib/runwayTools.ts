@@ -17,7 +17,8 @@ import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, type St
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
 import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
-import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { uploadOpenableBy, type Viewer } from "./uploadAccess";
+import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { engineEnabled } from "./engineGate";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { RUNWAY_RATES, type RunwayModel } from "./vendorRates";
@@ -126,12 +127,13 @@ export function runwayUsd(model: RunwayModel, seconds: number): number {
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 type Found = { source: StoredSource; seconds: number };
-async function resolveClip(uploadId: unknown, genId: unknown): Promise<Found | { error: string; status: number }> {
+async function resolveClip(uploadId: unknown, genId: unknown, viewer: Viewer): Promise<Found | { error: string; status: number }> {
   const up = uploadId ? String(uploadId) : "", gen = genId ? String(genId) : "";
   if ((!up && !gen) || (up && gen)) return { error: "Pick one video original.", status: 400 };
   if ((up && !UPLOAD_ID.test(up)) || (gen && !UPLOAD_ID.test(gen))) return { error: "That source is not valid.", status: 400 };
   const source = await findStoredSource(up ? { uploadId: up } : { genId: gen });
-  if (!source || source.mediaKind !== "video") return { error: "That video original is not in this workspace.", status: 404 };
+  /* An upload is read only by a person who may open it, for an agent run (as its owner) as for a person. */
+  if (!source || source.mediaKind !== "video" || (source.kind === "upload" && !(await uploadOpenableBy(source.id, viewer)))) return { error: "That video original is not in this workspace.", status: 404 };
   if (source.bytes > RUNWAY_VIDEO_LIMIT_BYTES) return { error: "Runway takes a video up to 16 MB here.", status: 400 };
   const length = await resolveStoredDuration(source);
   if (length.seconds == null) return { error: `This video has no measured length, so it cannot be priced per second${length.reason ? `: ${length.reason}` : "."}`, status: 422 };
@@ -139,11 +141,10 @@ async function resolveClip(uploadId: unknown, genId: unknown): Promise<Found | {
 }
 type Upload = { id: string; ext: string; stored: string; mime: string; bytes: number; kind: string };
 /** An upload of this workspace the person may open. */
-async function openUpload(id: unknown): Promise<Upload | null> {
+async function openUpload(id: unknown, viewer: Viewer): Promise<Upload | null> {
   if (typeof id !== "string" || !UPLOAD_ID.test(id)) return null;
   const row = (await db().execute({ sql: "SELECT ext, mime, stored_url, bytes, kind FROM uploads WHERE id=? LIMIT 1", args: [id] })).rows[0];
-  const viewer = currentViewer();
-  if (!row || (viewer && !(await uploadOpenableBy(id, viewer)))) return null;
+  if (!row || !(await uploadOpenableBy(id, viewer))) return null;
   return { id, ext: String(row.ext), stored: String(row.stored_url), mime: String(row.mime ?? ""), bytes: Number(row.bytes), kind: String(row.kind ?? "") };
 }
 
@@ -160,6 +161,9 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   if (tool !== "performance" && tool !== "edit" && tool !== "video") return admissionReply({ error: "Pick performance, edit or video." }, { status: 400 });
   const quoteOnly = body.quoteOnly === true;
   await ready();
+  /* The person this request acts for (the signed-in person, or an Atomik run's owner): none, and nothing is read. */
+  const viewer = await actingViewer();
+  if (!viewer) return admissionReply({ error: NO_ACTING_PERSON }, { status: 403 });
   if (!runwayConfigured()) return admissionReply({ error: "This is not set up: RUNWAY_API_KEY is needed." }, { status: 400 });
   const allowance = await allowanceCheck("runway");
   if (!allowance.ok && allowance.status !== 402) return admissionReply({ error: allowance.error }, { status: allowance.status });
@@ -175,14 +179,13 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   let model: RunwayModel, seconds: number;
   const inputs: RunwayParams["inputs"] = {};
   let bodyControl = false, expressionIntensity = 3;
-  let clipSource: StoredSource | null = null;
   if (tool === "video") {
     model = body.model == null ? RUNWAY_RATES.defaultVideoModel : (body.model as RunwayModel);
     if (model !== "gen4.5" && model !== "gen4_turbo") return bad("Pick gen4.5 or gen4_turbo.");
     const limits = RUNWAY_RATES.models[model];
     seconds = Number(body.duration ?? 5);
     if (!Number.isInteger(seconds) || seconds < limits.minSeconds || seconds > limits.maxSeconds) return bad(`${model} makes ${limits.minSeconds} to ${limits.maxSeconds} seconds.`);
-    const image = await openUpload(body.startImageUploadId);
+    const image = await openUpload(body.startImageUploadId, viewer);
     if (!image || !image.mime.startsWith("image/")) return bad("Pick a start still from this workspace's image uploads.", 404);
     if (image.bytes > RUNWAY_IMAGE_LIMIT_BYTES) return bad("A start still is up to 5 MB here.");
     if (!prompt) return bad("Write what happens.");
@@ -190,23 +193,21 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   } else if (tool === "edit") {
     model = "aleph2";
     if (!prompt) return bad("Write what to change.");
-    const clip = await resolveClip(body.clipUploadId, body.clipGenId);
+    const clip = await resolveClip(body.clipUploadId, body.clipGenId, viewer);
     if ("error" in clip) return bad(clip.error, clip.status);
     const limits = RUNWAY_RATES.models.aleph2;
     if (clip.seconds < limits.minSeconds - 1e-9 || clip.seconds > limits.maxSeconds + 1e-9) return bad(`Aleph 2 takes a clip of ${limits.minSeconds} to ${limits.maxSeconds} seconds.`);
     seconds = Math.ceil(clip.seconds - 1e-9);
-    clipSource = clip.source;
     inputs.clip = { kind: clip.source.kind, id: clip.source.id };
   } else {
     model = "act_two";
     const limits = RUNWAY_RATES.models.act_two;
-    const clip = await resolveClip(body.performanceClipUploadId, body.performanceClipGenId);
+    const clip = await resolveClip(body.performanceClipUploadId, body.performanceClipGenId, viewer);
     if ("error" in clip) return bad(clip.error, clip.status);
     if (clip.seconds < limits.minSeconds - 1e-9 || clip.seconds > limits.maxSeconds + 1e-9) return bad(`Act-Two takes a performance of ${limits.minSeconds} to ${limits.maxSeconds} seconds.`);
     seconds = Math.ceil(clip.seconds - 1e-9);
-    clipSource = clip.source;
     inputs.clip = { kind: clip.source.kind, id: clip.source.id };
-    const character = await openUpload(body.characterUploadId);
+    const character = await openUpload(body.characterUploadId, viewer);
     if (!character || !(character.mime.startsWith("image/") || character.mime.startsWith("video/"))) return bad("Pick the character from this workspace's image or video uploads.", 404);
     const media = character.mime.startsWith("video/") ? "video" : "image";
     if (character.bytes > (media === "image" ? RUNWAY_IMAGE_LIMIT_BYTES : RUNWAY_VIDEO_LIMIT_BYTES)) return bad(`A character ${media} is up to ${media === "image" ? 5 : 16} MB here.`);
@@ -251,7 +252,6 @@ export async function admitRunway(input: Record<string, unknown>, got: Admission
   const stopped = admissionCheckpoint(options, body, got, "video", usd, model, { task: RUNWAY_TASK, tool, model, seconds, prompt, ratio, seed, inputs, bodyControl, expressionIntensity, projectId, shotId }, { engine: "runway" });
   if (stopped) return stopped;
 
-  void clipSource;
 
   const genId = newId("gen"), ts = now();
   const runway: RunwayParams = {

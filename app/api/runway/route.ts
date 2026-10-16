@@ -11,8 +11,7 @@ export const maxDuration = 300;
 
 /**
  * Runway (lib/runwayTools.ts): `{ tool: "performance" | "edit" | "video" }`. Quote with `quoteOnly`, or approve (`maxCredits`) and fund one asynchronous job under an
- * Idempotency-Key. Act-Two's performer and character, and Aleph 2's person, pass the consent gate first. On standby: not here at all (404) except in the house workspace
- * with the engine on.
+ * Idempotency-Key. No face is checked (owner, 16 Oct 2026). On standby: not here at all (404) except in the house workspace with the engine on.
  */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();
