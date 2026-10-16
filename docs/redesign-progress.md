@@ -1248,3 +1248,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Unchanged approved heads:** #700, #768, #769, #770, #772 and #773 go into a chain queue (new `mergechain.sh`: it retargets each PR to release/1 just before its CI and stops at the first failure). The queue starts after queue 1 finishes.
   - **Re-merged heads**, with Opus for delta checks: #766, #774, #775, #767, #803, #793, #801, #804 and #794, plus #791's spec fix.
   - **Agent pricing proposal (private) delivered to the owner:** per-type factors over the Director price, set in the `AGENT_PRICE_RULES` env; decisions D1–D9 for him.
+- **16 Oct 15:14 IST.** Lane B re-merged release/1 into the engine chain.
+  - **Merge:** merge commits; the only conflict was `lib/jobs.ts`. New heads for #776–#788, plus #800's guardrail-4 fix (in code; guardrail4.spec untouched) and #808's should-fix and one-price change.
+  - **Review:** all with the Opus money/security reviewer as deltas. #800's "an agent id with no run row is not asked" is flagged for scrutiny.
+  - **Memory:** lane H's mock server reached 13.7 GB (6 GB available on the droplet). Told to stop it.
+  - **Owner review page:** sent to the owner as a private file (it holds pricing, so not a link and not in the repo).
