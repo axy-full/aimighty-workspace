@@ -1227,3 +1227,15 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Should-fix:** Add step should keep the board's preset menu.
   - **Confirmed:** the Director column and bar match the plan, the #750 items are addressed, the CSS merge is correct, and the judge and preview spec changes are feature specs.
   - **Opus mapped the BoardView wiring** (StepRail, ShotStepCard plus DirectorColumn and DirectorBar on Shots, ShotPreview). Lane C fixes #811, then builds the wiring PR.
+- **16 Oct 15:01 IST.** Owner's 15:05 note.
+  - **Recorded:** in docs/redesign-plan.md, with section 2's pricing policy held privately because the repo is public.
+  - **Docs lane E:** deck-editor.md (the lead pasted section 3 and the library verbatim, a89482f7), editing-standard.md, sharpness-5k.md and bake-offs.md (51b9a01b).
+  - **Research agents (output private):** Director engine lists with prices and model-name checks; the Agent pricing proposal.
+  - **New lanes:** lane I builds FLUX Upscale (house, live by Wed 21); lane J does the sharpness tooling, the `expectSharpMedia` check, image width tiers, the 4K preview and posters.
+  - **Sharpness audit (Opus) finds four gaps:**
+    - board text sits under React Flow's 1.2–1.88× transform;
+    - #802's TextStage uses CSS zoom (must-fix before merge, sent to lane F);
+    - no srcset anywhere;
+    - the preview never shows 4K.
+  - **Lane C:** the viewport rounding PR and the rail borders.
+  - **The layout conversion (2–3 days) waits for the owner's go.**
