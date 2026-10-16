@@ -6,15 +6,27 @@
 
 ## Part 1. The owner's words
 
-### 1.1 Section 3, a to i, and the section library: NOT IN THE REPO
+### 1.1 Section 3, a to i, and the section library (verbatim)
 
-The owner's 15:05 note carries the treatment builder's flow (items a to i) and the section library. The repo's record (`docs/redesign-plan.md`, section 3) says only: "The full flow, section library and spikes are as the owner wrote them; docs/plans/deck-editor.md carries them verbatim." **The verbatim text of a to i and of the library is held privately by the lead and was not given to this lane.** I did not copy it from a private file or reconstruct it from memory.
+The owner's 15:05 note carries the treatment builder's flow (items a to i) and the section library. The repo's record (`docs/redesign-plan.md`, section 3) says only: "The full flow, section library and spikes are as the owner wrote them; docs/plans/deck-editor.md carries them verbatim." The lead pasted the verbatim text below (it holds no pricing policy).
 
-> **`[PASTE HERE, verbatim: the owner's section 3 a to i]`**
+> **3) DECKS: 2SLIDES PARKED, WE BUILD OUR OWN TREATMENT BUILDER (after 31 Oct; spec now in docs/plans/deck-editor.md)**
+> I tested 2Slides hands-on: its premium mode is Nano Banana Pro rendering each page as an image with text baked in; "editing" means rewriting two prompt boxes and regenerating the whole page (~100 credits); it invented credits on our cover; Fast PPT has no editor. So: do NOT wire the 2Slides API; drop it from the env plan. Keep its good ideas: "What it says" + "How it looks" per page, style reference image per deck and per page, page rail with status, slideshow, per-page narration exported as video.
+> Flow:
+>  a. Opening questions: tone, genre, idea/script/treatment thought (optional), director, client and agency names + logos (missing logos: offer to fetch via a reputable logo service such as Brandfetch, prefer SVG, the user confirms).
+>  b. How it looks first: the design engine turns tone, genre, brand colours and script into a design brief; the cover art engine makes the cover (Recraft vector/SVG where possible). Text stays live on top (DOM, brand fonts), never baked into images. The cover sets the deck's theme: fonts, sizes, spacing, header style, colours, ornaments.
+>  c. Contents: ask what the treatment should include; map the user's words to the section library (below) with synonyms; propose an order; confirm. Then an Index page.
+>  d. What it says: the text engine writes each page from the idea and project data; never invents names, credits or facts (unknowns become marked blanks).
+>  e. Page types: heading, sub-heading, content; each inherits the cover's theme.
+>  f. Mood board: a template page to paste and arrange own images, or "arrange it for me". NEVER crop, squeeze, stretch or change aspect ratio automatically; frames adapt to each image; crop/scale are manual tools. Originals byte-identical, full resolution, uncompressed in exports.
+>  g. Motion pages (GIF page, video viewer, animatic): play in Present mode and on the review link; PDF shows a poster frame + link/QR.
+>  h. Two-layer pages (visual layer from our engines or a board frame; live text/layout layer on top); live links to the board (a re-render or approval updates the page); v25 card statuses per page; present mode with video playing; per-page narration (ElevenLabs/Sarvam) exported as a treatment film; PDF + editable PPTX; crisp at 5K/6K; Liveblocks collaboration.
+>  i. Agent mode: engines chosen by us. Director mode: every step (design, cover art, text, images) offers the full engine list.
 >
-> **`[PASTE HERE, verbatim: the owner's section library]`**
+> Section library (with synonyms users type): Cover/home page/title · Index/contents/structure · Logline · Synopsis/story/narrative · Concept/big idea · Director's note/intent/vision/approach · Insight/why this film · Beats/structure/timeline · Characters/casting/talent · Performance · Wardrobe/styling · Hair & make-up · Locations/setting/production design/art direction · Props/product · Mood board/references · Tone/look & feel/mood · Palette/colour/grade · Lighting · Camera/lensing/framing/composition · Camera movement · Texture/format · Edit/pacing/rhythm · Transitions · Typography/supers/titles · VFX/CG/animation · GIF page/motion study · Video viewer/animatic/reference film · Sound design · Music/score · Voice-over · Product/hero shots · Brand integration · End frame/pack shot/CTA · Cutdowns/versions/deliverables · Formats/aspect ratios · Production plan/schedule · Crew/credits · About the director/showreel/previous work · Thank you. Teach the models with this library, instructions and 3 example treatments; no fine-tuning.
+> Spike first (1 day each, mocks only): (a) our own editor from the v25 card components + Tiptap + an MIT drag/resize library: 3 pages, text sharpness at 3008×1692 @2×, undo/redo, PDF + PPTX export; (b) Polotno SDK on its trial, same 3 pages, plus a licence quote. Recommend one with evidence.
 
-Until they are pasted, Part 2 is written from the flow the lead listed (opening questions, How it looks, Contents mapping with synonyms, Index, What it says, page types, mood-board rules) and **every point in it must be reconciled with the owner's text**; where the two could differ the spec says so ("to reconcile").
+Part 2 was first written from the flow the lead listed (opening questions, How it looks, Contents mapping with synonyms, Index, What it says, page types, mood-board rules) and **every point in it must be reconciled with the owner's text**; where the two could differ the spec says so ("to reconcile").
 
 ### 1.2 Section 4, EDITING IS THE CORNERSTONE (verbatim, from `docs/redesign-plan.md`)
 
