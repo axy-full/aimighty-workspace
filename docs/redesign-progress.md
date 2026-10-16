@@ -1254,3 +1254,6 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Memory:** lane H's mock server reached 13.7 GB (6 GB available on the droplet). Told to stop it.
   - **Owner review page:** sent to the owner as a private file (it holds pricing, so not a link and not in the repo).
 - **16 Oct 15:21 IST.** **#811 APPROVED** at 02c536e5 by both Opus reviews (money earlier, UI now). It merges after its bases #798, #791 and #750.
+- **16 Oct 15:22 IST.** Opus APPROVED all ten Slice 1 re-merges: #766 f2720d81, #774 27fe0fde, #775 56c01b88, #767 25998944, #803 ce2e7ab0, #793 22777153, #801 91c2a611, #804 d9e65954, #794 faae3b40 and #791 7b7a33b0.
+  - Hand resolutions keep both sides; export and deck gates are intact; no guard changed. engineGate.spec is treated as a guard and nothing in it is loosened.
+  - **Queued:** chain 2 (#766 → #804) runs after chain 1 (#700, #768–#773); #791 → #794 run after queue 2 (#805, #749). Each chain stops at its first failure.
