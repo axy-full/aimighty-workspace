@@ -1071,3 +1071,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Docs E: #761 likeness terms (2e0ce563), #714 Rekognition and Gemini names unused (d85195bf).
 - Docs E's env list (docs/plans/coolify-env-16oct.md) is written but uncommitted: `git add` was denied by the permission system for that lane; not worked around. Surfaced to the owner.
 - Sarvam: training toggle at Settings → Organisation → General (Owner only; docs.sarvam.ai FAQ); retention at Settings → Workspace → Data retention, "No retention" available; unset means retained indefinitely.
+- **16 Oct 10:34 IST.** Owner's 11:00 answers recorded (eb3413fc).
+  - Merge timing: after deploy #5.
+  - #763/#764: defaults.
+  - Sample clip: large-screen test fixture only. Lane C will use a generated 1920×1080 test pattern, since we have no production data access.
+  - Voice consent: a tick + optional NOC stored with the voice, never blocking; sent to lane B.
+  - Lane C: #781 08b88c5b (24 MP cap; Developer plan confirmed) and #786 1083e90a (consent code removed); now on "Approve at N cr".
+  - CI: #756 running (38853865454), #758 queued behind it.
+  - Docs E's env list file stays uncommitted (its git add was denied); the list was given to the owner in chat.
