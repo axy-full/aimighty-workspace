@@ -22,6 +22,7 @@ import {
 } from "./contract";
 import { bindMedia, createMediaResolver, loadMedia, mediaStillReachable, type BoundMedia, type ExportViewer, type MediaLoader, type MediaResolver } from "./inputs";
 import { exportLimits, exportWorkerSlots, type ExportLimits } from "./limits";
+import { exportsOnHere } from "./access";
 import { exportsEnabled } from "./switch";
 import {
   ExportWorkerBusyError,
@@ -49,7 +50,8 @@ import {
  */
 
 export type ExportDeps = {
-  enabled?: () => boolean;
+  /** The gate: by default exports on for this workspace (lib/exports/access.ts). A test may stand in. */
+  enabled?: () => boolean | Promise<boolean>;
   limits?: () => ExportLimits;
   /** Builds the resolver for the caller; the real one reads the caller's reach (tests substitute it). */
   resolver?: (viewer: ExportViewer) => MediaResolver;
@@ -62,8 +64,8 @@ export type ExportDeps = {
 
 const initialized = new WeakMap<Client, Promise<void>>();
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const gate = (deps: ExportDeps) => {
-  if (!(deps.enabled ?? exportsEnabled)()) throw new ExportError("Not found.", 404);
+const gate = async (deps: ExportDeps) => {
+  if (!(await (deps.enabled ?? exportsOnHere)())) throw new ExportError("Not found.", 404);
 };
 
 export async function exportJobsReady() {
@@ -214,7 +216,7 @@ export async function createExport(
   viewer: ExportViewer,
   deps: ExportDeps = {},
 ): Promise<{ job: ExportJob; scheduled: boolean; duplicate: boolean }> {
-  gate(deps);
+  await gate(deps);
   await exportJobsReady();
   const clock = deps.clock ?? Date.now;
   const limits = (deps.limits ?? exportLimits)();
@@ -273,14 +275,14 @@ export async function createExport(
 }
 
 export async function getExport(owner: string, id: string, deps: ExportDeps = {}): Promise<ExportJob> {
-  gate(deps);
+  await gate(deps);
   const row = await record(id);
   if (!row || row.owner !== owner) throw new ExportError("That export was not found.", 404);
   return publicJob(row);
 }
 
 export async function listExports(owner: string, deps: ExportDeps = {}, limit = 25): Promise<ExportJob[]> {
-  gate(deps);
+  await gate(deps);
   await exportJobsReady();
   const rows = (
     await db().execute({ sql: "SELECT * FROM export_jobs WHERE workspace_id=? AND owner=? ORDER BY created_at DESC LIMIT ?", args: [workspaceId(), owner, Math.max(1, Math.min(limit, 100))] })
@@ -303,7 +305,7 @@ async function end(row: Row, status: "failed" | "cancelled", message: string, cl
 }
 
 export async function cancelExport(owner: string, id: string, deps: ExportDeps = {}): Promise<ExportJob> {
-  gate(deps);
+  await gate(deps);
   const clock = deps.clock ?? Date.now;
   const row = await record(id);
   if (!row || row.owner !== owner) throw new ExportError("That export was not found.", 404);
@@ -321,7 +323,7 @@ export async function cancelExport(owner: string, id: string, deps: ExportDeps =
 /** A failed export goes back to the queue, at most twice more, under the same request. Nothing was billed, so nothing is asked again. */
 export const EXPORT_MAX_ATTEMPTS = 3;
 export async function retryExport(owner: string, id: string, deps: ExportDeps = {}): Promise<ExportJob> {
-  gate(deps);
+  await gate(deps);
   const clock = deps.clock ?? Date.now;
   const row = await record(id);
   if (!row || row.owner !== owner) throw new ExportError("That export was not found.", 404);
@@ -373,7 +375,7 @@ function reasonOf(exitCode: number, timedOut: boolean, resultJson: string | null
  * "waiting" when this workspace already has its share running; either way nothing started and nothing is billed.
  */
 export async function runExport(id: string, deps: ExportDeps = {}): Promise<"busy" | "waiting" | undefined> {
-  if (!(deps.enabled ?? exportsEnabled)()) return undefined;
+  if (!(await (deps.enabled ?? exportsOnHere)())) return undefined;
   const clock = deps.clock ?? Date.now;
   const limits = (deps.limits ?? exportLimits)();
   const row = await record(id);
@@ -494,9 +496,17 @@ async function saveOutput(row: Row, video: Buffer, clock: () => number): Promise
 /** Past this from its claim a run is over, whatever it was doing: the run call's own limit and time to save. */
 export const exportRunCeilingMs = (limits: ExportLimits) => limits.runTimeoutMs + 150_000;
 
+/**
+ * The jobs recovery looks at. It depends on the GLOBAL switch only, not on the per-workspace list: taking a workspace off the list
+ * must still end its stuck runs and stop their worker sessions. A workspace that is not allowed and never made the table is left
+ * alone (no table is made for it).
+ */
 export async function pendingExports(limit = 4, deps: ExportDeps = {}) {
-  if (!(deps.enabled ?? exportsEnabled)()) return [];
-  await exportJobsReady();
+  if (!(deps.enabled ? await deps.enabled() : exportsEnabled())) return [];
+  if (!deps.enabled && !(await exportsOnHere())) {
+    const made = (await db().execute("SELECT name FROM sqlite_master WHERE type='table' AND name='export_jobs'")).rows.length > 0;
+    if (!made) return [];
+  } else await exportJobsReady();
   return (
     await db().execute({
       sql: "SELECT id,status,claimed_at,error,updated_at,runtime_id,created_at FROM export_jobs WHERE workspace_id=? AND status IN ('queued','rendering','saving') ORDER BY created_at LIMIT ?",
@@ -516,12 +526,19 @@ export async function recoverExports(
   const clock = deps.clock ?? Date.now;
   const limits = (deps.limits ?? exportLimits)();
   const jobs = await pendingExports(options.limit ?? 4, deps);
+  const allowed = deps.enabled ? await deps.enabled() : await exportsOnHere();
   const deadlineAt = options.deadlineAt ?? clock() + 250_000;
   let attempted = 0, failed = 0, deferred = 0;
   for (const job of jobs) {
     if (clock() >= deadlineAt) { deferred++; continue; }
     attempted++;
     try {
+      if (job.status === "queued" && !allowed) {
+        /* The workspace was taken off the list while this waited: it does not start now, and it says why instead of waiting for ever. */
+        const row = await record(job.id);
+        if (row) await end(row, "failed", failure("Exports are not switched on for this workspace any more."), clock);
+        continue;
+      }
       if (job.status === "queued") {
         if (job.error === BUSY_MESSAGE && clock() - Number(job.updated_at) < EXPORT_BUSY_BACKOFF_MS) continue;
         const enqueue = deps.enqueue ?? (async (id: string) => (await import("./dispatch")).enqueueExport(id));

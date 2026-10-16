@@ -6,11 +6,11 @@ import { decodeGuestBrief, firstBoard, GUEST_BRIEF_KEY } from "../../lib/guest/b
 import { SAMPLE_TITLE, cleanSampleTitle } from "../../lib/guest/sample";
 
 test("site settings: off by default; only exact booleans and well-formed ids survive", () => {
-  expect(DEFAULT_SITE).toEqual({ openSignup: false, guestHome: false, visitorPages: false, guestWorkspace: null, newInterfaceWorkspaces: [] });
+  expect(DEFAULT_SITE).toEqual({ openSignup: false, guestHome: false, visitorPages: false, guestWorkspace: null, newInterfaceWorkspaces: [], enginesOnWorkspaces: [] });
   expect(cleanSite(null)).toEqual(DEFAULT_SITE);
   expect(cleanSite([true])).toEqual(DEFAULT_SITE);
   expect(cleanSite({ openSignup: "true", guestHome: 1, guestWorkspace: "ws a; drop" })).toEqual(DEFAULT_SITE);
-  expect(cleanSite({ openSignup: true, guestHome: true, guestWorkspace: "ws_123", extra: 1 })).toEqual({ openSignup: true, guestHome: true, visitorPages: false, guestWorkspace: "ws_123", newInterfaceWorkspaces: [] });
+  expect(cleanSite({ openSignup: true, guestHome: true, guestWorkspace: "ws_123", extra: 1 })).toEqual({ openSignup: true, guestHome: true, visitorPages: false, guestWorkspace: "ws_123", newInterfaceWorkspaces: [], enginesOnWorkspaces: [] });
   /* The visitor pages: off by default, on only when stored exactly true, and a change from /admin like the others. */
   expect(cleanSite({ visitorPages: "yes" }).visitorPages).toBe(false);
   expect(cleanSite({ visitorPages: true }).visitorPages).toBe(true);
@@ -61,7 +61,7 @@ const importsOf = (file: string) => [...readFileSync(path.join(ROOT, file), "utf
 test("guest components and the guest reader import only what they are allowed", () => {
   const allowed = new Set([
     "react", "next/link",
-    "@/components/ui/Mark", "../icons",
+    "@/components/ui/Mark", "@/components/ui/BrandLogo", "../icons",
     "../home/BriefBox", "../home/brief-file", "../home/home-model", "../home/TemplateRow", "../home/home.css", "./guest.css",
     "./GuestBox", "./GuestHeader", "./GuestSample", "./SignupSheet", "./RequestAccess",
     "@/lib/guest/brief", "@/components/graphite/home/home-model", "./brief", "./sample",

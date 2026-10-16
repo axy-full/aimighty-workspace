@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { TRAIL } from "@/components/ui/Mark";
+import { BrandLogo } from "@/components/ui/BrandLogo";
 import "@/components/graphite/shell.css";
 import "./fault.css";
 
@@ -33,10 +33,7 @@ export function NoWorkspace({ scope, email }: { scope: string; email?: string | 
     <div className="gx gx-outside" data-view="suite" data-suite="studio" data-testid="no-workspace">
       <header className="gx-header" data-row="header" data-static="true" data-member="false">
         <Link className="gx-brand" href="/" aria-label="particl home">
-          <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
-            {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
-          </svg>
-          <span className="gx-brand-name">particl</span>
+          <BrandLogo />
         </Link>
         <span className="gx-spacer" />
       </header>

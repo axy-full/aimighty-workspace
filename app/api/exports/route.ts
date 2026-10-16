@@ -8,7 +8,9 @@ import { scheduleExport } from "@/lib/exports/schedule";
 
 /**
  * Exports: our own Remotion templates rendered on our own worker. FREE to customers (0 cr). Off unless
- * REMOTION_EXPORTS is on: off, every method answers 404 before anything is read, written or dispatched.
+ * REMOTION_EXPORTS is on: off, every method answers 404 before anything is read, written or dispatched. On, it is
+ * still off for a workspace that is not the house workspace and not listed in the site setting `enginesOnWorkspaces`
+ * (lib/engineGate.ts): that workspace gets the same 404 from the job functions (lib/exports/access.ts).
  * `GET` lists the caller's exports; `POST` admits one and answers 202 with the job.
  */
 export const dynamic = "force-dynamic";

@@ -26,6 +26,12 @@ async function closeDock(page: Page) {
   }, { timeout: 30_000, intervals: [250] }).toBe(true);
 }
 const box = (loc: ReturnType<Page["locator"]>) => loc.evaluate((el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, b: r.bottom, r: r.right }; });
+/*
+ * Large screens (owner, 15 Oct 2026, 22:30): above 1440 px wide the board's canvas is drawn larger (1 at 1440, 1.2 at 1920; lib/v12/board/screen-scale.ts), so a measurement taken on the screen is the
+ * canvas's own figure times k. The factors are written out here, not computed from the production rule. At k = 1 every check is exactly what it always was; at k > 1 a pixel position may round by 1.5.
+ */
+const SCALE: Record<string, number> = { "workbench-1440x900": 1, "workbench-1920x1080": 1.2 };
+const scaleOf = () => SCALE[test.info().project.name] ?? 1;
 const stageOf = (page: Page, n: number) => shots(page).nth(n).getByTestId("v12-render-stage");
 
 test.describe("desktop, switch on", () => {
@@ -54,9 +60,11 @@ test.describe("desktop, switch on", () => {
     for (const n of [3, 4, 5, 6, 7]) {
       const line = shots(page).nth(n).getByTestId("v12-render-line");
       const style = await line.evaluate((el) => { const c = getComputedStyle(el); return { ws: c.whiteSpace, ov: c.textOverflow, h: el.getBoundingClientRect().height, lh: parseFloat(c.lineHeight) || 16 }; });
+      const k = scaleOf();
       expect(style.ws).toBe("nowrap");
       expect(style.ov).toBe("ellipsis");
-      expect(style.h).toBeLessThanOrEqual(style.lh + 1);
+      /* One line: its height on the screen is the line-height drawn at the canvas's scale (a wrapped line would be twice that). */
+      expect(style.h).toBeLessThanOrEqual(style.lh * k + 1);
       expect(await line.getAttribute("title")).toMatch(/usually .* · (\d+:\d\d so far|not started)/);
     }
     await expect(shots(page).nth(4).getByTestId("v12-render-line")).toHaveText(/^Kling 3\.0 · 1–2 min · \d+:\d\d$/);
@@ -132,7 +140,7 @@ test.describe("desktop, switch on", () => {
     expect(new Set(b.map((x) => x.h)).size).toBe(1);
     const ys = [...new Set(b.map((x) => x.y))].sort((p, q) => p - q);
     expect(ys).toHaveLength(2);
-    expect(ys[1] - ys[0] - b[0].h).toBe(24);
+    expect(Math.abs(ys[1] - ys[0] - b[0].h - 24 * scaleOf()), `row gap ${ys[1] - ys[0] - b[0].h}`).toBeLessThanOrEqual(scaleOf() === 1 ? 0 : 1.5);
     expect(await noSideways(page)).toBe(true);
     expect(errors).toEqual([]);
   });
