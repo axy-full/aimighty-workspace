@@ -26,6 +26,24 @@ RUN npm ci --omit=dev --no-audit --no-fund \
  && node --input-type=module -e "const { ensureBrowser } = await import('@remotion/renderer'); await ensureBrowser({ chromeMode: 'headless-shell' });" \
  && test -x node_modules/.remotion/chrome-headless-shell/linux64/chrome-headless-shell-linux64/chrome-headless-shell
 
+# ---- the second print browser, used only when the first one cannot print a deck (remotion/node/pdf.ts, PRINT_FALLBACK): Chrome for
+# Testing's Chrome Headless Shell, pinned by version, downloaded once here over HTTPS, and checked against the SHA-256 of its binary
+# (a different file fails the build). Chromium's code is BSD-3-Clause; the package carries its own LICENSE.headless_shell and Google's
+# notice, kept beside the binary. Nothing here runs unless the first browser hangs, crashes or writes nothing.
+FROM node:22.23.3-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS print-browser
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl unzip \
+ && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+    version=153.0.8010.12; \
+    curl -fsSL --proto '=https' --tlsv1.2 -o /tmp/shell.zip "https://storage.googleapis.com/chrome-for-testing-public/${version}/linux64/chrome-headless-shell-linux64.zip"; \
+    mkdir -p /opt/chrome-print /tmp/shell; \
+    unzip -q /tmp/shell.zip -d /tmp/shell; \
+    cp -r /tmp/shell/chrome-headless-shell-linux64/. /opt/chrome-print/; \
+    echo "ded93a9c9a53a1ae040f08124badcca95c938e9d5015ff340c3b5538c41bf39e  /opt/chrome-print/chrome-headless-shell" | sha256sum -c -; \
+    test -f /opt/chrome-print/LICENSE.headless_shell; \
+    rm -rf /tmp/shell /tmp/shell.zip
+
 # ---- the relay (compose.yaml builds this stage for `remotion-relay`, `target: relay`): a small TCP forwarder that holds no
 # secret and is the only thing on both the internal network and the platform's. Same file as the Astra relay
 # (ops/render-worker/relay.mjs); it forwards port 8081 to remotion-1:8790 and nothing else.
@@ -59,6 +77,7 @@ COPY --from=build /src/remotion/build/bundle /opt/remotion/bundle
 # the build check is a two-page page of its own.
 COPY --from=build /src/remotion/public/fonts /opt/remotion/fonts
 COPY --from=build /src/remotion/test/pdf-check /opt/remotion/pdf-check
+COPY --from=print-browser /opt/chrome-print /opt/chrome-print
 COPY ops/remotion-worker/server.mjs /app/server.mjs
 # The egress check the worker runs before it listens, and the one the owner runs in a terminal (the same file as the Astra worker's):
 # they hold no secret and read none. See README.md, Verify step 1.

@@ -6,7 +6,7 @@
  * the spec promised) before it is kept. The command takes no arguments; the browser's own flags are fixed in this file.
  */
 import { spawn } from "node:child_process";
-import { copyFile, lstat, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, open, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   PDF_FONTS, PDF_HTML_FILE, PDF_LIMITS, PDF_OUTPUT_FILE,
@@ -15,7 +15,7 @@ import {
 } from "../src/lib/pdf";
 
 export type PdfFailure = { ok: false; code: "spec_invalid" | "input_missing" | "input_mismatch" | "render_failed"; errors: string[] };
-export type PdfSuccess = { ok: true; composition: "pdf"; pages: number; bytes: number; files: { name: string; kind: "pdf"; bytes: number }[] };
+export type PdfSuccess = { ok: true; composition: "pdf"; pages: number; bytes: number; files: { name: string; kind: "pdf"; bytes: number }[]; /** Present when the second print browser made the PDF. */ usedFallback?: true };
 export type PdfResult = PdfSuccess | PdfFailure;
 
 export type ChromeRun = { code: number | null; timedOut: boolean; stderr: string };
@@ -32,6 +32,13 @@ export type RunPdfArgs = {
   fontsDir: string;
   /** The Chrome Headless Shell. */
   chrome: string | null;
+  /**
+   * A second print browser, tried only when the first one hangs, crashes or writes nothing (PRINT_FALLBACK: a pinned Chrome for Testing
+   * headless shell kept beside the first in the worker image). Null or absent: the first one's answer is the answer.
+   */
+  fallback?: string | null;
+  /** How long the first browser gets when there is a second to fall back to. */
+  primaryMs?: number;
   run?: ChromeRunner;
   timeoutMs?: number;
 };
@@ -50,7 +57,7 @@ async function head(file: string, n: number): Promise<Buffer> {
 }
 
 /** The browser's fixed flags: no sandbox of its own (the container is the sandbox: non-root, read-only, no network), no GPU, no name resolution. */
-export function chromeArgs(workDir: string, output: string): string[] {
+export function chromeArgs(workDir: string, output: string, profile = "profile"): string[] {
   return [
     "--no-sandbox",
     "--disable-gpu",
@@ -63,22 +70,28 @@ export function chromeArgs(workDir: string, output: string): string[] {
     "--mute-audio",
     "--hide-scrollbars",
     "--host-resolver-rules=MAP * ~NOTFOUND",
-    `--user-data-dir=${path.join(workDir, "profile")}`,
+    `--user-data-dir=${path.join(workDir, profile)}`,
     "--no-pdf-header-footer",
     `--print-to-pdf=${output}`,
     `file://${path.join(workDir, PDF_HTML_FILE)}`,
   ];
 }
 
+/** Where the worker image keeps its second print browser (a pinned Chrome for Testing headless shell and the files it needs), and how long the first gets before the second is tried. Constants, not settings. */
+export const PRINT_FALLBACK = "/opt/chrome-print/chrome-headless-shell";
+export const PRIMARY_PRINT_MS = 30_000;
+
 const realRunner: ChromeRunner = (executable, args, { cwd, timeoutMs }) =>
   new Promise((resolve) => {
-    const child = spawn(executable, args, { cwd, stdio: ["ignore", "ignore", "pipe"], env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: cwd, LANG: "C.UTF-8", NODE_ENV: "production" } });
+    /* A group of its own, so a hung browser's helper processes (zygote, network service, GPU) end with it and none is left to hold the session. */
+    const child = spawn(executable, args, { cwd, detached: true, stdio: ["ignore", "ignore", "pipe"], env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: cwd, LANG: "C.UTF-8", NODE_ENV: "production" } });
     let stderr = "";
     let timedOut = false;
     child.stderr.on("data", (chunk: Buffer) => { if (stderr.length < 8000) stderr += chunk.toString("utf8").slice(0, 8000 - stderr.length); });
-    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeoutMs);
+    const end = () => { try { if (child.pid) process.kill(-child.pid, "SIGKILL"); else child.kill("SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* already gone */ } } };
+    const timer = setTimeout(() => { timedOut = true; end(); }, timeoutMs);
     child.on("error", (error) => { clearTimeout(timer); resolve({ code: null, timedOut, stderr: String(error.message) }); });
-    child.on("close", (code) => { clearTimeout(timer); resolve({ code, timedOut, stderr }); });
+    child.on("close", (code) => { clearTimeout(timer); end(); resolve({ code, timedOut, stderr }); });
   });
 
 export async function runPdf(args: RunPdfArgs): Promise<PdfResult> {
@@ -122,10 +135,23 @@ export async function runPdf(args: RunPdfArgs): Promise<PdfResult> {
 
   await mkdir(args.outputDir, { recursive: true });
   const printed = path.join(args.workDir, PDF_OUTPUT_FILE);
-  const ran = await (args.run ?? realRunner)(args.chrome, chromeArgs(args.workDir, printed), { cwd: args.workDir, timeoutMs: args.timeoutMs ?? 120_000 });
+  const printMs = args.timeoutMs ?? 120_000;
+  const second = args.fallback && args.fallback !== args.chrome ? args.fallback : null;
+  const run = args.run ?? realRunner;
+  const sizeOf = async () => { try { return (await stat(printed)).size; } catch { return 0; } };
+  const started = Date.now();
+  let usedFallback = false;
+  let ran = await run(args.chrome, chromeArgs(args.workDir, printed), { cwd: args.workDir, timeoutMs: second ? Math.min(args.primaryMs ?? PRIMARY_PRINT_MS, printMs) : printMs });
+  let size = await sizeOf();
+  if (second && (ran.timedOut || ran.code !== 0 || size === 0)) {
+    /* The first browser hung, crashed or wrote nothing: print again with the second, in a fresh profile, with what is left of the time. */
+    await rm(printed, { force: true });
+    await mkdir(path.join(args.workDir, "profile-fallback"), { recursive: true });
+    usedFallback = true;
+    ran = await run(second, chromeArgs(args.workDir, printed, "profile-fallback"), { cwd: args.workDir, timeoutMs: Math.max(5_000, printMs - (Date.now() - started)) });
+    size = await sizeOf();
+  }
   if (ran.timedOut) return fail("render_failed", "Printing took too long.");
-  let size = 0;
-  try { size = (await stat(printed)).size; } catch { /* handled below */ }
   if (ran.code !== 0 || size === 0) return fail("render_failed", `The browser did not make a PDF (exit ${ran.code}). ${ran.stderr.replace(/\s+/g, " ").slice(0, 400)}`.trim());
   if (size > PDF_LIMITS.pdfBytes) return fail("render_failed", "The PDF is larger than the limit.");
 
@@ -135,7 +161,7 @@ export async function runPdf(args: RunPdfArgs): Promise<PdfResult> {
   if (facts.pages !== pdf.pages) return fail("render_failed", `The PDF has ${facts.pages} pages; the deck has ${pdf.pages}.`);
   if (!mediaMatches(facts.mediaPt, pdf)) return fail("render_failed", "The PDF's page size is not the size the deck asked for.");
   await writeFile(path.join(args.outputDir, PDF_OUTPUT_FILE), bytes);
-  return { ok: true, composition: "pdf", pages: facts.pages, bytes: bytes.length, files: [{ name: PDF_OUTPUT_FILE, kind: "pdf", bytes: bytes.length }] };
+  return { ok: true, composition: "pdf", pages: facts.pages, bytes: bytes.length, files: [{ name: PDF_OUTPUT_FILE, kind: "pdf", bytes: bytes.length }], ...(usedFallback ? { usedFallback: true as const } : {}) };
 }
 
 /** The Chrome Headless Shell under the runtime folder (where `ensureBrowser` put it at image build), or null. */
