@@ -29,7 +29,7 @@ export const ENHANCE_NO_ANSWER = "The enhancer did not answer. Your prompt is un
 export const ENHANCE_FALLBACK = "Couldn't enhance; used your prompt as written";
 /** With what the server settled (rule 14): nothing billed, or the held estimate in credits. Said only when the server said it. */
 export const ENHANCE_NOTHING_BILLED = `${ENHANCE_FALLBACK}. Nothing billed.`;
-export const enhanceHeldLine = (credits: number): string => `${ENHANCE_FALLBACK}. ${credits} cr held, returned if the writer never answered.`;
+export const enhanceHeldLine = (credits: number): string => `${ENHANCE_FALLBACK}. ${credits} cr held for now; it comes back to your balance automatically, usually within a few hours.`;
 /** The client's patience with the enhancer, a quote or a run: a little longer than the server's own 8 s deadline (lib/paidText.ts ENHANCE_DEADLINE_MS), so an answer served at that deadline still arrives. */
 export const ENHANCE_CLIENT_MS = 10_000;
 

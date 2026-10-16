@@ -15,7 +15,7 @@ test("the client waits 10 s at most, a little past the server's 8 s deadline, an
   expect(ENHANCE_CLIENT_MS).toBe(10_000);
   expect(ENHANCE_FALLBACK).toBe("Couldn't enhance; used your prompt as written");
   expect(ENHANCE_NOTHING_BILLED).toBe("Couldn't enhance; used your prompt as written. Nothing billed.");
-  expect(enhanceHeldLine(1)).toBe("Couldn't enhance; used your prompt as written. 1 cr held, returned if the writer never answered.");
+  expect(enhanceHeldLine(1)).toBe("Couldn't enhance; used your prompt as written. 1 cr held for now; it comes back to your balance automatically, usually within a few hours.");
 });
 
 test("success: the enhanced words, the writer and the signal that lets the press be abandoned", async () => {

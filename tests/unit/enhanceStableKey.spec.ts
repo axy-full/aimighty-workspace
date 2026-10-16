@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import ts from "typescript";
 import type { AdmissionActor } from "../../lib/admissionTypes";
 import {
-  ENHANCE_ABANDONED, ENHANCE_FALLBACK, ENHANCE_KEY_ABANDON_MS, ENHANCE_LOST, ENHANCE_PENDING, EnhanceKeys, EnhanceRuns, enhanceSignature, pressEnhance,
+  ENHANCE_ABANDONED, ENHANCE_KEY_ABANDON_MS, ENHANCE_LOST, ENHANCE_NOTHING_BILLED, ENHANCE_PENDING, EnhanceKeys, EnhanceRuns, enhanceSignature, pressEnhance,
 } from "../../lib/shell/enhance-press";
 
 /**
@@ -169,9 +169,7 @@ test("a saved refusal lets the key go, so the next press is not answered with th
     const press = { scope: SCOPE, body: body("a tree in rain"), credits: 5 };
 
     const refused = await pressEnhance(fetcher, press, keys);
-    /* The person is told the one line whatever the provider said (the server's own words, "No generation credits were charged", are on its saved reply); what this proves is the key. */
-    expect(refused.ok).toBe(false);
-    expect(refused.ok ? "" : refused.error, "the one line, with the bill said when the server said it").toMatch(new RegExp(`^${ENHANCE_FALLBACK}`));
+    expect(refused).toEqual({ ok: false, error: ENHANCE_NOTHING_BILLED });
     declined = false;
     const retried = await pressEnhance(fetcher, press, keys);
     expect(retried.ok).toBe(true);
