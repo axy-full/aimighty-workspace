@@ -14,6 +14,7 @@ import { DEFAULT_LIMITS, type ExportLimits } from "../src/lib/limits";
 import { toTimeline, ExportTooLong } from "../src/lib/timeline";
 import type { CompositionId, Timeline } from "../src/lib/types";
 import { isCompositionId, validateProps } from "../src/lib/validate";
+import type { Prober } from "./probe";
 
 export type ExportSpec = {
   version: 1;
@@ -32,7 +33,7 @@ export type Renderer = {
   renderStill(args: { serveUrl: string; composition: CompositionInfo; inputProps: Record<string, unknown>; frame: number; outputLocation: string }): Promise<void>;
 };
 
-export type ExportFailure = { ok: false; code: "spec_invalid" | "too_long" | "input_missing" | "render_failed"; errors: string[] };
+export type ExportFailure = { ok: false; code: "spec_invalid" | "too_long" | "input_missing" | "input_mismatch" | "render_failed"; errors: string[] };
 export type ExportSuccess = {
   ok: true;
   composition: CompositionId;
@@ -56,12 +57,59 @@ export type RunExportArgs = {
   /** Scratch folder; created, and removed at the end. */
   workDir: string;
   renderer: Renderer;
+  /** Reads what each input file really is; the spec's declared durations and sizes must match it. */
+  prober: Prober;
   limits?: ExportLimits;
   concurrency?: number;
   onProgress?: (done: number, total: number) => void;
 };
 
 const fail = (code: ExportFailure["code"], errors: string[]): ExportFailure => ({ ok: false, code, errors });
+
+/** What the spec declares about each media input, by file: the video clips' length, size and audio, and the music's length. */
+export type Declared = { file: string; kind: "video" | "audio"; durationSeconds: number; width?: number; height?: number; hasAudio?: boolean };
+
+export function declaredOf(id: CompositionId, props: Record<string, unknown>): Declared[] {
+  const out = new Map<string, Declared>();
+  const video = (s: { file: string; durationSeconds: number; width: number; height: number; hasAudio: boolean }) =>
+    out.set(s.file, { file: s.file, kind: "video", durationSeconds: s.durationSeconds, width: s.width, height: s.height, hasAudio: s.hasAudio });
+  const p = props as never as { clip?: { source: Parameters<typeof video>[0] }; source?: Parameters<typeof video>[0]; clips?: { source: Parameters<typeof video>[0] }[]; music?: { file: string; durationSeconds: number } | null };
+  if (id === "captions" || id === "reframe") video(p.clip!.source);
+  if (id === "cutdown") video(p.source!);
+  if (id === "final") {
+    for (const clip of p.clips ?? []) video(clip.source);
+    if (p.music) out.set(p.music.file, { file: p.music.file, kind: "audio", durationSeconds: p.music.durationSeconds });
+  }
+  return [...out.values()];
+}
+
+/** Longest a declared length may differ from the file's. */
+export const DURATION_TOLERANCE_SECONDS = 0.1;
+
+/** Compare every declared fact with the file. Returns one plain reason per contradiction. */
+export async function contradictions(declared: Declared[], inputDir: string, prober: Prober): Promise<string[]> {
+  const reasons: string[] = [];
+  for (const d of declared) {
+    let facts;
+    try {
+      facts = await prober.probe(path.join(inputDir, d.file));
+    } catch (error) {
+      reasons.push(`input/${d.file}: ${(error as Error).message}`);
+      continue;
+    }
+    if (d.kind === "video") {
+      if (!facts.hasVideo) reasons.push(`input/${d.file}: has no picture`);
+      else if (facts.width !== d.width || facts.height !== d.height) reasons.push(`input/${d.file}: is ${facts.width}x${facts.height}, the request says ${d.width}x${d.height}`);
+      // Asking for the sound of a file that has none is a contradiction. Not using the sound of a file that has some is
+      // the request's own choice (it is how a clip is muted), so that is not refused.
+      if (d.hasAudio === true && !facts.hasAudio) reasons.push(`input/${d.file}: has no audio, the request says it has`);
+    } else if (!facts.hasAudio) reasons.push(`input/${d.file}: has no audio`);
+    if (Math.abs(facts.durationSeconds - d.durationSeconds) > DURATION_TOLERANCE_SECONDS) {
+      reasons.push(`input/${d.file}: is ${facts.durationSeconds.toFixed(2)} s, the request says ${d.durationSeconds} s`);
+    }
+  }
+  return reasons;
+}
 
 /** Every input file a timeline needs, once each, as relative paths. */
 export function inputFilesOf(timeline: Timeline): string[] {
@@ -168,6 +216,9 @@ export async function runExport(args: RunExportArgs): Promise<ExportResult> {
   if (!checked.ok) return checked;
   const missing = await missingInputs(args.inputDir, inputFilesOf(checked.timeline));
   if (missing.length) return fail("input_missing", missing.map((file) => `input/${file}: not found`));
+  // A declared length or size the file contradicts is refused, never rendered from.
+  const wrong = await contradictions(declaredOf(checked.id, checked.props), args.inputDir, args.prober);
+  if (wrong.length) return fail("input_mismatch", wrong);
 
   await mkdir(args.outputDir, { recursive: true });
   await rm(args.workDir, { recursive: true, force: true });

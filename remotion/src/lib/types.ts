@@ -46,7 +46,7 @@ export type ClipSource = {
   durationSeconds: number;
   width: number;
   height: number;
-  /** false when the file has no audio track; default true. */
+  /** false = do not use the file's sound (a muted clip, or a file with none); true = use it, and the file must have it. Default true. */
   hasAudio: boolean;
 };
 

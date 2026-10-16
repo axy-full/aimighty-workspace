@@ -2,7 +2,8 @@ import { test, expect } from "@playwright/test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { checkSpec, inputFilesOf, runExport, type CompositionInfo, type Renderer } from "../../remotion/node/export";
+import { checkSpec, contradictions, declaredOf, inputFilesOf, runExport, type CompositionInfo, type Renderer } from "../../remotion/node/export";
+import { factsFromFfprobe, type MediaFacts, type Prober } from "../../remotion/node/probe";
 import { toTimeline, validateProps, type CompositionId } from "../../remotion/src/lib";
 
 /** A renderer that renders nothing: it measures with the same timeline code and writes small stand-in files. */
@@ -40,6 +41,21 @@ function fakeRenderer(opts: { failOn?: "prepare" | "select" | "video" | "still";
   return { renderer, calls, seenFiles };
 }
 
+/** A prober that reports what the tests say the files are (by default: exactly what SOURCE declares). */
+function fakeProber(overrides: Record<string, Partial<MediaFacts> | "unreadable"> = {}) {
+  const calls: string[] = [];
+  const prober: Prober = {
+    async probe(file) {
+      const name = path.relative(path.join(base, "input"), file);
+      calls.push(name);
+      const o = overrides[name];
+      if (o === "unreadable") throw new Error("could not be read as media");
+      return { durationSeconds: 10, width: 1920, height: 1080, hasVideo: true, hasAudio: true, ...o };
+    },
+  };
+  return { prober, calls };
+}
+
 let base: string;
 test.beforeEach(() => {
   base = mkdtempSync(path.join(os.tmpdir(), "remotion-export-"));
@@ -53,6 +69,7 @@ test.beforeEach(() => {
 test.afterEach(() => rmSync(base, { recursive: true, force: true }));
 
 const args = (spec: unknown, renderer: Renderer, extra: Record<string, unknown> = {}) => ({
+  prober: fakeProber().prober,
   spec,
   inputDir: path.join(base, "input"),
   outputDir: path.join(base, "output"),
@@ -163,6 +180,102 @@ test.describe("the export command with a fake renderer", () => {
     await runExport(args(finalSpec(), fakeRenderer().renderer));
     expect(readdirSync(path.join(base, "bundle")).sort()).toEqual(["index.html", "public"]);
     expect(readdirSync(path.join(base, "bundle", "public"))).toEqual(["fonts"]);
+  });
+});
+
+test.describe("declared values are checked against the files", () => {
+  const run = (overrides: Record<string, Partial<MediaFacts> | "unreadable">) => {
+    const { renderer, calls } = fakeRenderer();
+    const { prober, calls: probed } = fakeProber(overrides);
+    return runExport(args(finalSpec(), renderer, { prober })).then((result) => ({ result, calls, probed }));
+  };
+
+  test("a file that matches is probed once and rendered", async () => {
+    const { result, calls, probed } = await run({});
+    expect(result.ok).toBe(true);
+    expect(probed).toEqual(["clips/a.mp4"]);
+    expect(calls.some((c) => c.name === "video")).toBe(true);
+  });
+
+  test("a different length (over 0.1 s), size or audio is refused with the reason, and nothing renders", async () => {
+    const cases: [Partial<MediaFacts> | "unreadable", string][] = [
+      [{ durationSeconds: 9.8 }, "is 9.80 s, the request says 10 s"],
+      [{ durationSeconds: 10.2 }, "is 10.20 s"],
+      [{ width: 1280, height: 720 }, "is 1280x720, the request says 1920x1080"],
+      [{ width: 1921 }, "is 1921x1080"],
+
+      [{ hasVideo: false }, "has no picture"],
+      ["unreadable", "could not be read as media"],
+    ];
+    for (const [override, reason] of cases) {
+      const { result, calls } = await run({ "clips/a.mp4": override });
+      expect(result.ok, JSON.stringify(override)).toBe(false);
+      if (result.ok) continue;
+      expect(result.code).toBe("input_mismatch");
+      expect(result.errors.join(" ")).toContain(reason);
+      expect(calls).toEqual([]);
+    }
+  });
+
+  test("sound: a file with none is refused when the request says it has some; a file with sound the request does not use is muted, not refused", async () => {
+    const { result } = await run({ "clips/a.mp4": { hasAudio: false } });
+    expect(result).toMatchObject({ ok: false, code: "input_mismatch" });
+    if (!result.ok) expect(result.errors.join(" ")).toContain("has no audio, the request says it has");
+    const spec = finalSpec();
+    ((spec.props as { clips: { source: { hasAudio?: boolean } }[] }).clips[0].source).hasAudio = false;
+    const muted = await runExport(args(spec, fakeRenderer().renderer, { prober: fakeProber({ "clips/a.mp4": { hasAudio: true } }).prober }));
+    expect(muted.ok).toBe(true);
+  });
+
+  test("within 0.1 s is accepted", async () => {
+    expect((await run({ "clips/a.mp4": { durationSeconds: 10.09 } })).result.ok).toBe(true);
+    expect((await run({ "clips/a.mp4": { durationSeconds: 9.91 } })).result.ok).toBe(true);
+  });
+
+  test("music is probed too: it must have audio and its stated length", async () => {
+    const spec = finalSpec();
+    (spec.props as Record<string, unknown>).music = { file: "m.mp3", durationSeconds: 6 };
+    writeFileSync(path.join(base, "input", "m.mp3"), "mp3");
+    const ok = await runExport(args(spec, fakeRenderer().renderer, { prober: fakeProber({ "m.mp3": { durationSeconds: 6, hasVideo: false } }).prober }));
+    expect(ok.ok).toBe(true);
+    const bad = await runExport(args(spec, fakeRenderer().renderer, { prober: fakeProber({ "m.mp3": { durationSeconds: 3, hasVideo: false } }).prober }));
+    expect(bad).toMatchObject({ ok: false, code: "input_mismatch" });
+    const silent = await runExport(args(spec, fakeRenderer().renderer, { prober: fakeProber({ "m.mp3": { durationSeconds: 6, hasAudio: false } }).prober }));
+    expect(silent).toMatchObject({ ok: false, code: "input_mismatch" });
+  });
+
+  test("declared facts come from every composition that reads a clip", () => {
+    const src = { file: "a.mp4", durationSeconds: 5, width: 640, height: 360, hasAudio: true };
+    expect(declaredOf("captions", { clip: { source: src } }).map((d) => d.file)).toEqual(["a.mp4"]);
+    expect(declaredOf("reframe", { clip: { source: src } })).toHaveLength(1);
+    expect(declaredOf("cutdown", { source: src })).toHaveLength(1);
+    expect(declaredOf("final", { clips: [{ source: src }, { source: src }, { source: { ...src, file: "b.mp4" } }] }).map((d) => d.file)).toEqual(["a.mp4", "b.mp4"]);
+    expect(declaredOf("title-card", {})).toEqual([]);
+  });
+
+  test("all contradictions are listed together", async () => {
+    const reasons = await contradictions(
+      [{ file: "a.mp4", kind: "video", durationSeconds: 5, width: 640, height: 360, hasAudio: true }],
+      path.join(base, "input"),
+      { probe: async () => ({ durationSeconds: 9, width: 1, height: 2, hasVideo: true, hasAudio: false }) },
+    );
+    expect(reasons).toHaveLength(3);
+  });
+});
+
+test.describe("reading ffprobe's answer", () => {
+  test("size, length and streams", () => {
+    expect(factsFromFfprobe({ format: { duration: "8.000000" }, streams: [{ codec_type: "video", width: 480, height: 270 }, { codec_type: "audio" }] })).toEqual({ durationSeconds: 8, width: 480, height: 270, hasVideo: true, hasAudio: true });
+  });
+  test("a rotation tag of 90 or 270 swaps width and height, from either place it can be", () => {
+    const base = { format: { duration: "3" } };
+    expect(factsFromFfprobe({ ...base, streams: [{ codec_type: "video", width: 1920, height: 1080, tags: { rotate: "90" } }] })).toMatchObject({ width: 1080, height: 1920 });
+    expect(factsFromFfprobe({ ...base, streams: [{ codec_type: "video", width: 1920, height: 1080, side_data_list: [{ rotation: -90 }] }] })).toMatchObject({ width: 1080, height: 1920 });
+    expect(factsFromFfprobe({ ...base, streams: [{ codec_type: "video", width: 1920, height: 1080, side_data_list: [{ rotation: 180 }] }] })).toMatchObject({ width: 1920, height: 1080 });
+  });
+  test("audio only has no picture; garbage has nothing", () => {
+    expect(factsFromFfprobe({ format: { duration: "6.1" }, streams: [{ codec_type: "audio" }] })).toEqual({ durationSeconds: 6.1, width: 0, height: 0, hasVideo: false, hasAudio: true });
+    expect(factsFromFfprobe({})).toEqual({ durationSeconds: 0, width: 0, height: 0, hasVideo: false, hasAudio: false });
   });
 });
 

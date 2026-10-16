@@ -3,7 +3,7 @@
 Particl's own templates for exports: captions on a cut, title and end cards, 16:9 and 9:16 versions, 6/15/30 s cutdowns and the final MP4. Plan: `docs/plans/remotion.md`.
 
 - **Only our templates are rendered.** A request names one composition and passes plain props; nobody uploads a project or code.
-- **Self-hosted only.** Rendering runs on our own worker (no Remotion Lambda, no AWS). Free License, confirmed in writing 13 Oct 2026; at 4 people the Company License must be bought first.
+- **Self-hosted only.** Rendering runs on our own worker (no Remotion Lambda, no AWS). Free License, confirmed in writing 13 Oct 2026; at 4 people the Company License must be bought first. **No licence key and no events are sent to Remotion** (owner decision, 14 Oct 2026): server-side with no key the renderer sends nothing. Pinned to 4.x. Upgrading to Remotion 5.x needs the owner's approval first (NEEDS AKSHAY): 5.0 may require a licence key.
 - **Nothing is fetched.** The typeface is bundled in `public/fonts` (SIL OFL); media and logos are files in the session's `input/`, named by plain relative paths. A unit test fails if browser or command code mentions a URL, `fetch`, a socket or a stylesheet import.
 - **Free to customers**, 0 cr. Paid engine steps inside an export bill through their own paths; nothing here knows about prices.
 - **Own package.** `remotion/` has its own `package.json` and lockfile with pinned versions, so the app's install and build do not carry Remotion, webpack or a browser. The worker image installs it.
@@ -32,7 +32,7 @@ input/     the files the props name
 output/    export.mp4, still-<frame>.png, result.json
 ```
 
-Exit codes: 0 done, 2 spec invalid or too long, 3 an input is missing, 4 the render failed (`output/result.json` says why). Tuning comes only from the worker's environment: `REMOTION_CONCURRENCY` (default 2), `REMOTION_MAX_SECONDS` (default 120, cannot be raised above it), `REMOTION_BROWSER_EXECUTABLE`, `REMOTION_BUNDLE_DIR`. No `licenseKey` is passed: the Free License needs none, and "free-license" makes Remotion call remotion.pro, which the worker must not reach.
+Exit codes: 0 done, 2 spec invalid or too long, 3 an input is missing or is not what the spec says it is (ffprobe reads every clip and music file: a different length by more than 0.1 s, a different size, or sound the request says is there but is not, is refused), 4 the render failed (`output/result.json` says why). Tuning comes only from the worker's environment: `REMOTION_RUNTIME_DIR` (where Remotion's Chrome download lives; the command moves there after reading its session paths, because Remotion looks for Chrome under the working directory's nearest package.json), `REMOTION_CONCURRENCY` (default 2), `REMOTION_MAX_SECONDS` (default 120, cannot be raised above it), `REMOTION_BROWSER_EXECUTABLE`, `REMOTION_BUNDLE_DIR`. No licence key is passed, ever (owner decision, 14 Oct 2026): with none, the renderer sends nothing to Remotion. A test fails if one appears.
 
 ## Layout and commands
 
