@@ -895,3 +895,33 @@ large-screen rules for every v25 screen PR, from #748 on.
 4) Checks at 2560×1440: no stranded cards, no text under 12 px, no dead space below the cards, the three bars centred, no horizontal scroll. Report anything that looks wrong; don't redesign to fix it.
 
 **Lead's note.** Conflict with rule 3: public/brand has the wordmark and lockups as PNG only (the mark is SVG), so #748/#756/#762 draw the wordmark as a bitmap; an SVG wordmark is needed from the owner's brand files (asked). Until then the PNG @4x stays, flagged as a must-fix in each PR.
+
+## Owner, 16 Oct 2026, 10:55 IST (verbatim; replaces his 10:30, 10:40, 10:45 and 10:50 messages)
+Owner (Akshay, 16 Oct, 10:55): answers to the overnight report, in one note. This replaces my 10:30, 10:40, 10:45 and 10:50 messages.
+
+1) CONSENT AND LIKENESS, FINAL
+- Rekognition is OUT. Remove the face check from #771 and from every engine PR. No face matching anywhere, ever; no consent-photo table or migration. REKOGNITION_* keys stay set but are read by nothing; remove them from #714's env table as "not used".
+- Keep only a lightweight consent record on uploaded real faces: a tick ("I have this person's permission") and an optional NOC file, stored with the asset, never checked automatically.
+- Particl does not block or screen prompts for resemblance to real people. Providers' own filters apply and their refusals are shown as they come. Storyboards, animatics and pitch decks may name real people as casting references.
+- Terms (#761): any likeness or real face in generated content is the sole responsibility of the person generating it; likeness references are for pre-production and pitching; publishing a real person's likeness needs that person's rights; sexual content stays prohibited. Record that this was my decision.
+- Re-run Opus on #771, #776, #780 and #785 after the change.
+
+2) DEPLOY #5: order #748 → #756 → #762 → #758. Yes to #748's two assertion changes. Merge #748 into release/1 now; run CI on #756 and #762 in turn; tell me when all four are green. I back up and deploy.
+
+3) SLICE 1: yes to all four (#699 env names; #700 export_jobs table after a backup; #766 guard-type additions; #768 tmpfs 3840). REMOTION_EXPORT_QUEUE_EXPIRY_MS becomes a constant. PDF_EXPORTS and REMOTION_EXPORTS stay unset until the worker runs behind its relay. DNxHR: dropped for now; ProRes mezzanine + H.264 only; say so in the delivery copy.
+
+4) enginesOnWorkspaces: one list, house only, until launch. Split per engine before the first customer is listed.
+
+5) #765 house cap: approve editing the three guards to the cap. UTC month, metered cost, from 1 Oct. The team may see engine dollars. Read allowance_usd before the deploy and tell me the value.
+
+6) AGENTS: build "Approve at N cr" on prepared jobs as the next UI PR; bring render_shot in line; keep prompt text visible.
+
+7) ENGINES: Gemini 3.x: a dated price step as its own PR, then build it (tell me if my key doesn't list 3.8). BFL: let house use settle the megapixel unit. Topaz: Developer plan, $0.10 per credit; cap stills at 24 MP. Recraft: raster-only for now. Sarvam: your buffer recommendation, in the PR. Pro pick: yes to lib/proPick.ts with a site override. Kling 4.0 (#787) stays inert until it's on fal with a real price.
+
+8) PROVIDER TERMS: I send the BFL and sync.so emails today and switch Sarvam training off (tell me where that switch is). Lip-sync and Runway stay house-only until counsel answers.
+
+9) SMALL: #763 and #764 as recommended. Wordmark SVG coming from my brand files. Sample clip: a 1920 px frame from the house workspace. I'll check RUNWAY_API_KEY in Coolify today. pid 610521: leave it; I reboot at the next deploy window.
+
+10) ENV: give me every Coolify name to set, grouped by slice, one list, "set / leave unset" against each, with the two Gemini and three Rekognition names marked "remove / unused".
+
+**Lead's notes.** This replaces the 22:15 rule "every real face passes Rekognition against its consent record before Act-Two, cloning or lip-sync runs": Rekognition is out by the owner's decision of 16 Oct 10:55. The two Gemini names are GEMINI_IMAGE_MODEL and GOOGLE_SAFETY_THRESHOLD (never set in Coolify per the 15 Oct name check).
