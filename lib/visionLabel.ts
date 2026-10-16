@@ -14,7 +14,7 @@ import { noAnswerOutcome } from "./providerOutcome";
 import { platformDb, platformReady } from "./platform";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow, shotCapGate } from "./shotCap";
+import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
 import { getShot } from "./shots";
 import { uploadOpenableBy } from "./uploadAccess";
 import { mayReachProject, mayReadTake } from "./draftProject";
@@ -137,7 +137,7 @@ export async function admitLabelCheck(input: Record<string, unknown>, got: Admis
   const shot = shotId ? await getShot(shotId) : null;
   if (shotId && shot) {
     /* An admin's own press only: the acting person (the run's owner, as a member, for an agent run), not on a token and not an Atomik Auto step (the test jobLineNow applies). */
-    const stop = await shotCapGate({ shotId, code: shot.code, takeUsd: usd, modelId: marginKey, isAdmin: person.role === "admin" && got.token == null && options.run?.auto !== true });
+    const stop = await shotCapGate({ shotId, code: shot.code, takeUsd: usd, modelId: marginKey, isAdmin: shotCapAdmin({ user: person, token: got.token }, options.run?.auto === true) });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", mode, rules, images: 1 });
