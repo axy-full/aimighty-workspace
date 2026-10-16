@@ -272,10 +272,12 @@ async function priceRenderOnce(run: RunRow, step: StepRow, deps: PaidDeps): Prom
   let shotId: string;
   try { shotId = await mapNodeShot(run.owner, project, node.id); }
   catch (error) { return fail(error instanceof Error ? error.message : "This shot could not be saved to the production.", "refused"); }
-  const input = shotRequestInput(project, node, shot, { shotId, productionProjectId: run.productionId }, references);
+  /* A chips plan carries the person's quick answers: the shot's length is theirs for this plan, and Final asks for the full-quality render where Draft asks for the draft. */
+  const setup = run.plan?.setup;
+  const input = shotRequestInput(project, node, setup ? { ...shot, durationS: setup.length } : shot, { shotId, productionProjectId: run.productionId }, references);
   if (!input) return fail(`${stepTitle(run, step)} has no prompt its engine can take. Shorten or condense it, then press Price again.`, "unpriced");
   /* A draft where the engine has one (a separately priced, watermarked take); finals stay a person's. */
-  const drafting = model.kind === "video" && !!model.supportsDraft;
+  const drafting = model.kind === "video" && !!model.supportsDraft && setup?.quality !== "final";
   const body = generationRequestBody({ ...input, ...(drafting ? { draft: true, resolution: DRAFT_RESOLUTION } : {}) });
   const prepared = await (deps.asOwner ?? defaultAsOwner)(run.owner, (actor) => (deps.prepare ?? defaultPrepare)(body, actor));
   if (!prepared.ok) {
