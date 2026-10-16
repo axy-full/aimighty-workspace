@@ -1158,3 +1158,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #798 at 7f8bd736 (tooltip fix, nits), delta check running.
   - Slip, lane C: started a mock server and browser spec when `slot.sh` refused for low memory (34% free < 40%). Nothing failed; lane C won't repeat it. Droplet memory at the check: 10 GB of 31 available.
   - Two cancelled runs had stalled "in progress" holding CI slots; force-cancelled.
+- **16 Oct 13:05 IST.** #798 Preview APPROVED at 7f8bd736 (the tooltip guard is byte-identical to release/1 and passes). Merges after #749 and #792 (stacked).
