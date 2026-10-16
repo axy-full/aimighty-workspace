@@ -1128,3 +1128,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Lane G started: gitleaks CI job (pinned version and checksum, PR range only).
   - #790 render_shot at 0203baf8: a caller's maxCredits is refused explicitly.
   - Reviews: #791 NOT APPROVED (removing the new steps doesn't stick; sent to lane D); #792 APPROVED; #793 APPROVED (Opus question: do audio takes record duration_s? Lane D checking); #794 Edit contract up (on #791).
+- **16 Oct 12:28 IST.**
+  - #795 Home "+ New project" (lane F) APPROVED. Follow-ups: one word for making a board; adopt #791's removed-step flag; also assert no /api/generate.
+  - #796 gitleaks (lane G) NOT APPROVED: a PR could silence its own finding via its own .gitleaks.toml, a .gitleaksignore or inline gitleaks:allow. Fix: base config, an empty ignore path, --ignore-gitleaks-allow, value-specific allowlists, CODEOWNERS (owner enables code-owner review).
+  - #762 CI running (38862946581). A queued lane-push run on feat/v25-4-board-data was cancelled.
