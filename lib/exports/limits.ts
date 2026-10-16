@@ -1,7 +1,7 @@
 /**
  * What the platform sets for exports. None of it is a price: exports are free to customers (0 cr) and
  * nothing here ever becomes one. Read from the platform's environment at run time, bounded, with the owner's
- * starting figures (13 Oct 2026) as defaults.
+ * starting figures (13 Oct 2026) as defaults; the queue's expiry is a constant.
  */
 export type ExportLimits = {
   /** Exports one workspace may have rendering at once. */
@@ -13,6 +13,12 @@ export type ExportLimits = {
   /** A queued export that has not started after this long is ended ("Nothing billed"). */
   queueExpiryMs: number;
 };
+
+/**
+ * How long a queued export waits for a worker before it is ended ("Nothing billed"): a constant, not a setting (owner, 16 Oct 2026: "REMOTION_EXPORT_QUEUE_EXPIRY_MS becomes a constant").
+ * An environment variable of the old name is ignored.
+ */
+export const QUEUE_EXPIRY_MS = 30 * 60_000;
 
 export const EXPORT_PRICE = Object.freeze({ credits: 0, label: "Free" as const });
 
@@ -30,7 +36,7 @@ export function exportLimits(env: Env = process.env): ExportLimits {
     maxRunningPerWorkspace: bounded(env, "REMOTION_EXPORT_MAX_RUNNING", 1, 1, 4),
     maxPerHourPerWorkspace: bounded(env, "REMOTION_EXPORT_MAX_PER_HOUR", 6, 1, 120),
     runTimeoutMs: bounded(env, "REMOTION_EXPORT_RUN_TIMEOUT_MS", 200_000, 30_000, 900_000),
-    queueExpiryMs: bounded(env, "REMOTION_EXPORT_QUEUE_EXPIRY_MS", 30 * 60_000, 60_000, 24 * 3600_000),
+    queueExpiryMs: QUEUE_EXPIRY_MS,
   };
 }
 
