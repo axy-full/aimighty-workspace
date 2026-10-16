@@ -22,6 +22,12 @@ process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 process.env.SUPER_ADMIN_EMAIL = "house-cap-owner@example.test";
 test.beforeAll(async () => { await alignLedgerUnit(); });
+/* The house is one id for every unit file in a worker: what this file left running must not hold the next file's job slots. */
+test.afterAll(async () => {
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  await platformDb().execute("UPDATE meter_events SET status='failed' WHERE workspace_id='ws_legacy' AND status='running' AND id LIKE 'gen_housecap_%'");
+});
 
 const house = (allowanceUsd: number | null = null): TenantWorkspace => ({
   id: "ws_legacy", slug: "house", name: "House", legacy: true, dbUrl: `file:${path.join(dir, "house.db")}`, dbToken: null, keys: {}, usesPlatformKeys: true,
@@ -51,8 +57,8 @@ test("the cap's arithmetic and words: $500 by default, a warning from 80%, a sto
   expect(houseCapState(500, 800)).toMatchObject({ stop: true, pct: 100 });
   /* $0 is a wall, as it is on every other workspace. */
   expect(houseCapState(0, 0)).toMatchObject({ stop: true });
-  expect(houseCapWarning(houseCapState(500, 410))).toBe("82% of this month's $500 used");
-  expect(houseCapWarning(houseCapState(62.5, 50))).toBe("80% of this month's $62.50 used");
+  expect(houseCapWarning(houseCapState(500, 410))).toBe("82% of this month's $500 used ($410)");
+  expect(houseCapWarning(houseCapState(62.5, 50))).toBe("80% of this month's $62.50 used ($50)");
   expect(houseCapUsdText(500)).toBe("$500");
   /* The stored figure: its own, 0 included, else the default; never none. */
   const { houseCapOfStored } = await import("../../lib/houseCap");
@@ -129,9 +135,9 @@ test("the quote: a warning from 80%, a refusal at the cap or for a job that woul
   const quote = (usd: number) => ({ totalCredits: 2, unitCredits: 2, units: 1, usd, lines: [{ key: "k", credits: 2, count: 1, usd, spent: 0, code: "S1", projectId: null, platformPays: false }] });
   const context = { balance: null, allowance: null, caps: {}, warnPct: 80, rule: "anyone" as const, shotCap: 0, isAdmin: true };
   expect(verdictOf(quote(1), { ...context, houseCap: { cap: 500, spent: 100 } })).toMatchObject({ allow: true, notice: "" });
-  expect(verdictOf(quote(1), { ...context, houseCap: { cap: 500, spent: 410 } })).toMatchObject({ allow: true, notice: "82% of this month's $500 used" });
+  expect(verdictOf(quote(1), { ...context, houseCap: { cap: 500, spent: 410 } })).toMatchObject({ allow: true, notice: "82% of this month's $500 used ($411)" });
   /* The job itself carries the month over the line: warned before it starts. */
-  expect(verdictOf(quote(20), { ...context, houseCap: { cap: 500, spent: 385 } })).toMatchObject({ allow: true, notice: "81% of this month's $500 used" });
+  expect(verdictOf(quote(20), { ...context, houseCap: { cap: 500, spent: 385 } })).toMatchObject({ allow: true, notice: "81% of this month's $500 used ($405)" });
   expect(verdictOf(quote(10), { ...context, houseCap: { cap: 500, spent: 495 } })).toMatchObject({ allow: false, gate: "allowance", line: HOUSE_CAP_REACHED });
   expect(verdictOf(quote(0.01), { ...context, houseCap: { cap: 500, spent: 500 } })).toMatchObject({ allow: false, gate: "allowance", line: HOUSE_CAP_REACHED });
   expect(verdictOf(quote(1), { ...context, houseCap: null })).toMatchObject({ allow: true, notice: "" });

@@ -44,10 +44,10 @@ test.describe("the house's monthly cap on Credits & billing", () => {
   test.beforeEach(({}, info) => test.skip(!DESKTOP.includes(info.project.name), "desktop sizes: the screen is not on phones"));
 
   for (const [name, spent, cap, state, words] of [
-    ["well under: the cap and the share used, no warning", 40, null, "ok", /^\$500 · 8% used$/],
-    ["from 80%: the warning, as the quote and the mail word it", 420, null, "warn", /^84% of this month's \$500 used$/],
-    ["the owner's own figure replaces the default", 90, 100, "warn", /^90% of this month's \$100 used$/],
-    ["at the cap: reached", 520, null, "stop", /^Reached · \$500 used$/],
+    ["well under: the cap and the share used, no warning", 40, null, "ok", /^\$40 of \$500 used · 8%$/],
+    ["from 80%: the warning, as the quote and the mail word it", 420, null, "warn", /^84% of this month's \$500 used \(\$420\)$/],
+    ["the owner's own figure replaces the default", 90, 100, "warn", /^90% of this month's \$100 used \(\$90\)$/],
+    ["at the cap: reached", 520, null, "stop", /^Reached · \$520 of \$500 used · 100%$/],
   ] as const) {
     test(name, async ({ page }) => {
       const clean = await seedHouse(spent, cap);

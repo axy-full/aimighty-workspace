@@ -3,7 +3,7 @@
  *
  * The house is never billed in credits (lib/houseWorkspace.ts), so nothing but a dollar cap stands between its jobs and
  * the studio's own engine accounts. The owner's decision of 15 October 2026: "Monthly cap on the house workspace: $500,
- * warning at 80%". The cap is what the engines charge a month, from the 1st (lib/cycle.ts), in dollars. The platform owner
+ * warning at 80%". The cap is what the engines charge a month (the meter's cost, in dollars), from the 1st of the UTC calendar month (lib/cycle.ts). The platform owner
  * can change the figure on /admin; with none set it is HOUSE_CAP_DEFAULT_USD, so the house is never uncapped.
  *
  * Pure, no imports: the browser reads it (lib/houseCap.ts holds the server's half).
@@ -37,8 +37,11 @@ export function houseCapState(capUsd: number, spentUsd: number, source: "own" | 
   return { capUsd, source, spentUsd: spent, pct, stop, warn: stop || spent >= (capUsd * HOUSE_CAP_WARN_PCT) / 100 - 1e-9 };
 }
 
-/** "80% of this month's $500 used": the warning, with the figure as it stands. */
-export const houseCapWarning = (v: Pick<HouseCapView, "capUsd" | "pct">): string => `${v.pct}% of this month's ${usdText(v.capUsd)} used`;
+/** "82% of this month's $500 used ($410)": the warning, with the figure as it stands. The team sees the engines' dollars (owner, 16 Oct 2026). */
+export const houseCapWarning = (v: Pick<HouseCapView, "capUsd" | "pct" | "spentUsd">): string => `${v.pct}% of this month's ${usdText(v.capUsd)} used (${usdText(Math.round(v.spentUsd * 100) / 100)})`;
+
+/** What the month stands at, for the house's own screen: "$40 of $500 used · 8%". */
+export const houseCapSpentText = (v: Pick<HouseCapView, "capUsd" | "pct" | "spentUsd">): string => `${usdText(Math.round(v.spentUsd * 100) / 100)} of ${usdText(v.capUsd)} used · ${v.pct}%`;
 
 /** What a job hears when it would pass the cap. Only the platform owner raises it. */
 export const HOUSE_CAP_REACHED = "The house workspace has reached its monthly engine cap. The platform owner can raise it.";
