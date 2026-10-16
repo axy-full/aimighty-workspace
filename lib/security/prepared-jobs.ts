@@ -11,7 +11,7 @@ import { db, ready, now, id as newId } from "../db";
  *
  * Stored in the workspace's own database, in a table made on first use (additive).
  */
-import type { PreparedJob, PreparedState } from "./prepared-words";
+import { APPROVAL_CLAIM_MS, type PreparedJob, type PreparedState } from "./prepared-words";
 export type { PreparedJob, PreparedState } from "./prepared-words";
 
 const SCHEMA = [
@@ -78,7 +78,9 @@ export async function prepareJob(input: PreparedInput, token: { id: string; scop
 export async function preparedJobs(filter: { state?: PreparedState; tokenId?: string; id?: string } = {}): Promise<PreparedJob[]> {
   await preparedReady();
   const where: string[] = [], args: string[] = [];
-  if (filter.state) { where.push("p.state = ?"); args.push(filter.state); }
+  /* "Waiting" is also a claim an approval left without starting anything, once it is old enough to be let go. */
+  if (filter.state === "waiting") { where.push(`(p.state = 'waiting' OR (p.state = 'approved' AND json_extract(p.settings_json, '$.takeId') IS NULL AND p.decided_at < ?))`); args.push(String(now() - APPROVAL_CLAIM_MS)); }
+  else if (filter.state) { where.push("p.state = ?"); args.push(filter.state); }
   if (filter.tokenId) { where.push("p.token_id = ?"); args.push(filter.tokenId); }
   if (filter.id) { where.push("p.id = ?"); args.push(filter.id); }
   const rs = await db().execute({
@@ -92,16 +94,39 @@ export async function preparedJobs(filter: { state?: PreparedState; tokenId?: st
       id: String(r.id), tokenId: String(r.token_id), tokenName: r.token_name == null ? null : String(r.token_name), prompt: String(r.prompt),
       model: s.model === "2.0" ? "2.0" : "2.5", duration: Number(s.duration ?? 5), resolution: String(s.resolution ?? "1080p"), ratio: String(s.ratio ?? "16:9"),
       audio: s.audio === true, project: r.project == null ? null : String(r.project),
-      state: r.state === "opened" ? "opened" : r.state === "dismissed" ? "dismissed" : "waiting",
+      state: r.state === "opened" ? "opened" : r.state === "dismissed" ? "dismissed" : r.state === "approved" ? "approved" : "waiting",
       createdAt: Number(r.created_at), decidedAt: r.decided_at == null ? null : Number(r.decided_at),
+      takeId: typeof s.takeId === "string" && s.takeId ? s.takeId : null,
     };
   });
 }
 
-/** A person opens it in Make (where they approve it at its price) or dismisses it. Marked, never erased. */
-export async function decidePrepared(id: string, state: unknown, personId: string, at = now()): Promise<boolean> {
-  if (state !== "opened" && state !== "dismissed") throw new PreparedError("Open it in Make, or dismiss it.");
+/**
+ * A person decides a prepared job: opens it in Make or dismisses it (marked, never erased), or APPROVES it (never a token: the route is session-only).
+ * Approving is claimed first, so two people cannot both start it: `approved` with no take claims a waiting job; `approved` with the take it
+ * started finishes it; `waiting` lets a claim go when nothing started. A claim left without a take is let go after APPROVAL_CLAIM_MS.
+ */
+export async function decidePrepared(id: string, state: unknown, personId: string, at = now(), takeId?: unknown): Promise<boolean> {
+  if (state !== "opened" && state !== "dismissed" && state !== "approved" && state !== "waiting") throw new PreparedError("Approve it, open it in Make, or dismiss it.");
   await preparedReady();
+  const claimable = `(state = 'waiting' OR (state = 'approved' AND json_extract(settings_json, '$.takeId') IS NULL AND decided_at < ?))`;
+  if (state === "approved" && takeId == null) {
+    const rs = await db().execute({ sql: `UPDATE prepared_jobs SET state = 'approved', decided_by = ?, decided_at = ? WHERE id = ? AND ${claimable}`, args: [personId, at, id, at - APPROVAL_CLAIM_MS] });
+    return (rs.rowsAffected ?? 0) > 0;
+  }
+  if (state === "approved") {
+    /* Finishing: the take must be this person's own, and the claim theirs. */
+    if (typeof takeId !== "string" || !/^[A-Za-z0-9_.:-]{1,160}$/.test(takeId)) throw new PreparedError("Which take did it start?");
+    const mine = (await db().execute({ sql: "SELECT 1 FROM generations WHERE id = ? AND created_by = ?", args: [takeId, personId] })).rows.length > 0;
+    if (!mine) throw new PreparedError("That take is not yours.", 403);
+    const rs = await db().execute({ sql: `UPDATE prepared_jobs SET settings_json = json_set(settings_json, '$.takeId', ?), decided_at = ? WHERE id = ? AND state = 'approved' AND decided_by = ? AND json_extract(settings_json, '$.takeId') IS NULL`, args: [takeId, at, id, personId] });
+    return (rs.rowsAffected ?? 0) > 0;
+  }
+  if (state === "waiting") {
+    /* Let go: nothing started, so it waits again for whoever decides. Only by the person who claimed it. */
+    const rs = await db().execute({ sql: `UPDATE prepared_jobs SET state = 'waiting', decided_by = NULL, decided_at = NULL WHERE id = ? AND state = 'approved' AND decided_by = ? AND json_extract(settings_json, '$.takeId') IS NULL`, args: [id, personId] });
+    return (rs.rowsAffected ?? 0) > 0;
+  }
   const rs = await db().execute({ sql: `UPDATE prepared_jobs SET state = ?, decided_by = ?, decided_at = ? WHERE id = ? AND state = 'waiting'`, args: [state, personId, at, id] });
   return (rs.rowsAffected ?? 0) > 0;
 }

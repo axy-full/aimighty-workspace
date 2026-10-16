@@ -86,7 +86,9 @@ test("Connections: a token that prepares jobs, shown once; it can't approve, spe
   await expect(job).toHaveCount(1);
   await expect(job).toContainText("A slow push on a quiet street at first light");
   await expect(job).toContainText("Seedance 2.5 · 5 s · 720p · 16:9 · from A script on the studio computer");
-  await expect(job).not.toContainText(/\bcr\b/);
+  /* The price is the Approve button's alone (priced by the server for this job now); the row's own words carry none. */
+  await expect(job.getByTestId("settings-prepared-approve")).toHaveText(/^Approve at \d[\d,.]* cr$/, { timeout: 60_000 });
+  await expect(job.getByTestId("settings-prepared-prompt")).not.toContainText(/\bcr\b/);
   await floors(page, "Connections, prepared job");
   await shot(page, "token-prepared", info);
   await job.getByTestId("settings-prepared-open").click();
