@@ -1147,3 +1147,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - One plan, one person approval, each step at its own price held to the approved total; hero shots lip-synced by default; writes boardVoice.hi.
   - Opus money review running.
   - Lane B next: the findStoredSource private-board check, then the Agent-mode server parts.
+- **16 Oct 12:47 IST.** Lane C: #798 v25 PR 6 Preview with versions and Compare (843bf49f, on #792), Opus reviewing. #790 at 0203baf8. PR 7 Director on Shots next (includes the #749/#750 CSS merge and the rail items).
