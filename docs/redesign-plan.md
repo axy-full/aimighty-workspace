@@ -990,3 +990,13 @@ Owner (Akshay, 16 Oct, 12:20): answers to the demo plan.
 Build slack into the plan: with the answers above, move the feature freeze to 27 Oct, aim for the full path live on 23 Oct, and list what you'd cut first if a day slips (my order: Director-mode polish, then Kling 4.0, then the Pitch cover).
 
 **Lead's notes.** Items 1 and 6 still carry the owner's placeholders (Stripe test keys to be confirmed; invite names and emails to come). The demo plan is re-dated: full path live Fri 23 Oct, team film Sat 24 to Mon 26, freeze Tue 27, rehearsal 28 to 30.
+
+## Owner, 16 Oct 2026, 13:15 IST (verbatim): Enhance bug
+Owner (Akshay, 16 Oct, 13:15): BUG, high priority, on the demo path. The Enhance button for prompts doesn't work on particl.si: either generation doesn't start for a long time ("thinking"/enhancing) or nothing happens at all.
+1) Reproduce on production in the house workspace (Make and the board's generate dock, images and video), signed in, read-only first: time each step, capture the network calls and server logs for /api/enhance (or whatever Enhance calls), the model it uses, the provider response and any error.
+2) Check whether deploy #4 broke it: the gateway removal (#737/#739), Gemini direct (#738), the removed Gemini models, or a missing env name. Say plainly what the cause is.
+3) Fix it so that: Enhance shows a visible "Enhancing…" state; it times out after ~8 s and falls back to the original prompt with a short note ("Couldn't enhance; used your prompt as written"); it never fails silently; pressing Generate never waits on Enhance unless the person pressed Enhance themselves; the enhanced prompt appears in the box before anything is spent so the person can edit it; its cost (if any) is shown and recorded.
+4) Tests for: success, slow provider (timeout + fallback), provider error, missing key. Opus review.
+5) Ship it in the next deploy; auto-merge into release/1 on green as usual. Tell me the cause and the fix in the next report.
+
+**Lead's note.** The lead cannot sign in to production or read its logs (no account, no container access); anonymous POST /api/prompt/enhance answers 401 in 0.15-0.31 s, so auth and routing are up. Diagnosis is from the deployed code (main 709497a); the owner's browser trace confirms it.

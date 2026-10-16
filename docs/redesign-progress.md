@@ -1137,3 +1137,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #791 delta NOT APPROVED: a custom stage flagged removed could lift the 24-stage cap to 36; sent to lane D.
   - CI is slow because GitHub Free caps public repos at 20 concurrent jobs, and stray lane-push runs and the release/1 push run share them.
 - **16 Oct 12:31 IST.** #793 delta APPROVED at 46d6fb01: the audio length is measured and written back only after the reach checks, one column, conditional on NULL, no money field. Nit: seeded demo voice takes with no length still get a 422.
+- **16 Oct 12:32 IST.** Owner's 13:15 Enhance bug recorded. An Opus code-path diagnosis is running against main 709497a (route /api/prompt/enhance; default enhancer "higgsfield"; catalog() may wait on the removed gateway; a 90 s budget). Anonymous POST answers 401 in 0.15-0.31 s. The lead can't sign in or read production logs.
