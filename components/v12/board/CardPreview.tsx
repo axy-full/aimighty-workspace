@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { IconButton } from "../ui";
+import { IconButton, Tooltip } from "../ui";
 import { withOther, rejectReason } from "./card-model";
 import {
   approveLabel, canCompare, clampIndex, compareSides, judgeVersion, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
@@ -85,7 +85,8 @@ export function CardPreview(props: CardPreviewProps) {
         if (reasoning) closeReasons(); else onClose();
         return;
       }
-      if (isField(event.target)) return;
+      /* The arrows are a field's, a tab's, the audio player's and a clip's own when the focus is on them. */
+      if (isField(event.target) || (event.target instanceof HTMLElement && event.target.closest('[role="tab"], [role="slider"], audio, video'))) return;
       if (event.key === "ArrowLeft") { event.preventDefault(); onStep(stepId(ids, openId, -1)); }
       else if (event.key === "ArrowRight") { event.preventDefault(); onStep(stepId(ids, openId, 1)); }
     };
@@ -102,6 +103,7 @@ export function CardPreview(props: CardPreviewProps) {
 
   return (
     <div ref={root} className="v12-pv" data-placement={placement} style={style} role="dialog" aria-label={`Preview: ${item.title}`} tabIndex={-1} data-testid="v12-preview"
+      /* Not aria-modal: the preview covers the board's area but leaves the column and the bar (Director mode) in reach, so the rest of the page is not inert. */
       data-kind={item.kind} data-compare={comparing ? "" : undefined} onClick={(event) => event.stopPropagation()}>
       <div className="v12-pv-head">
         <span className="v12-pv-title" data-testid="v12-preview-title">{item.title}</span>
@@ -114,21 +116,27 @@ export function CardPreview(props: CardPreviewProps) {
               <button type="button" className="v12-pv-btn" data-mark="ok" aria-pressed={version.status === "approved"} data-testid="v12-preview-ok"
                 title={version.status === "approved" && version.approvedBy ? `Approved by ${version.approvedBy}. Press again to undo.` : version.status === "approved" ? "Press again to undo." : "Approve this version"}
                 onClick={() => props.onApprove?.(item, index)}>✓ {approveLabel(item, index)}</button>
-              <button type="button" className="v12-pv-btn" data-mark="no" aria-expanded={reasoning} aria-controls={reasoning ? panelId : undefined} data-testid="v12-preview-no"
-                title="Not right · say why" aria-label="Not right" onClick={() => (reasoning ? closeReasons() : setRs({ key: reasonKey, pick: null, line: "" }))}>✕</button>
+              <Tooltip name="Not right" line="Say why.">
+                <button type="button" className="v12-pv-btn" data-mark="no" aria-expanded={reasoning} aria-controls={reasoning ? panelId : undefined} data-testid="v12-preview-no"
+                  aria-label="Not right" onClick={() => (reasoning ? closeReasons() : setRs({ key: reasonKey, pick: null, line: "" }))}>✕</button>
+              </Tooltip>
             </>
           ) : null}
           {download ? (
-            <a className="v12-pv-btn v12-pv-icon" href={download} download aria-label="Download" title="Download" data-testid="v12-preview-download">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 2v8M5 7l3 3 3-3M3 13h10" /></svg>
-            </a>
+            <Tooltip name="Download" line="The original file.">
+              <a className="v12-pv-btn v12-pv-icon" href={download} download aria-label="Download" data-testid="v12-preview-download">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 2v8M5 7l3 3 3-3M3 13h10" /></svg>
+              </a>
+            </Tooltip>
           ) : null}
           {canCompare(item) ? <button type="button" className="v12-pv-btn" aria-pressed={comparing} data-testid="v12-preview-compare" onClick={() => setCompare((on) => !on)}>Compare</button> : null}
           <IconButton className="v12-pv-x" size="sm" label="Close" tooltip={{ name: "Close", shortcut: "Esc" }} onClick={onClose} data-testid="v12-preview-close">×</IconButton>
         </span>
       </div>
       <div className="v12-pv-stage">
-        <button type="button" className="v12-pv-step" data-side="prev" aria-label="Previous" title="Previous · ←" onClick={() => onStep(stepId(ids, openId, -1))}>‹</button>
+        <Tooltip name="Previous" shortcut="←" side="right">
+          <button type="button" className="v12-pv-step" data-side="prev" aria-label="Previous" onClick={() => onStep(stepId(ids, openId, -1))}>‹</button>
+        </Tooltip>
         {sides ? (
           <div className="v12-pv-compare" data-testid="v12-preview-compare-view">
             {[sides.a, sides.b].map((at, slot) => {
@@ -161,7 +169,9 @@ export function CardPreview(props: CardPreviewProps) {
             {item.kind === "picture" && !version.poster ? <span className="v12-pv-empty">No picture yet</span> : null}
           </div>
         )}
-        <button type="button" className="v12-pv-step" data-side="next" aria-label="Next" title="Next · →" onClick={() => onStep(stepId(ids, openId, 1))}>›</button>
+        <Tooltip name="Next" shortcut="→" side="left">
+          <button type="button" className="v12-pv-step" data-side="next" aria-label="Next" onClick={() => onStep(stepId(ids, openId, 1))}>›</button>
+        </Tooltip>
         {reasoning && judge ? (
           <div id={panelId} className="v12-pv-reasons" data-testid="v12-preview-reasons">
             <span className="v12-pv-reasons-label">What’s wrong{versionOf(item, index) ? ` with ${version.label}` : ""}?</span>
@@ -202,10 +212,16 @@ function Clip({ src, poster }: { src: string | null; poster: string | null }) {
         onTimeUpdate={(event) => setT(event.currentTarget.currentTime)} onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
       <div className="v12-pv-controls">
-        <button type="button" className="v12-pv-ctl v12-pv-play" aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause" : "Play"} data-testid="v12-preview-play"
-          onClick={() => { const el = video.current; if (!el) return; if (el.paused) void el.play().catch(() => {}); else el.pause(); }}>{playing ? "❚❚" : "▶"}</button>
-        <button type="button" className="v12-pv-ctl" aria-label="One frame back" title="One frame back" onClick={() => { video.current?.pause(); set(stepFrame(t, duration, -1)); }}>‹</button>
-        <button type="button" className="v12-pv-ctl" aria-label="One frame forward" title="One frame forward" onClick={() => { video.current?.pause(); set(stepFrame(t, duration, 1)); }}>›</button>
+        <Tooltip name={playing ? "Pause" : "Play"}>
+          <button type="button" className="v12-pv-ctl v12-pv-play" aria-label={playing ? "Pause" : "Play"} data-testid="v12-preview-play"
+            onClick={() => { const el = video.current; if (!el) return; if (el.paused) void el.play().catch(() => {}); else el.pause(); }}>{playing ? "❚❚" : "▶"}</button>
+        </Tooltip>
+        <Tooltip name="One frame back">
+          <button type="button" className="v12-pv-ctl" aria-label="One frame back" onClick={() => { video.current?.pause(); set(stepFrame(t, duration, -1)); }}>‹</button>
+        </Tooltip>
+        <Tooltip name="One frame forward">
+          <button type="button" className="v12-pv-ctl" aria-label="One frame forward" onClick={() => { video.current?.pause(); set(stepFrame(t, duration, 1)); }}>›</button>
+        </Tooltip>
         <input type="range" className="v12-pv-scrub" min={0} max={1000} value={duration > 0 ? Math.round((t / duration) * 1000) : 0} aria-label="Scrub" data-testid="v12-preview-scrub"
           onChange={(event) => { video.current?.pause(); set((Number(event.target.value) / 1000) * duration); }} />
         <span className="v12-pv-time" data-testid="v12-preview-time">{timeLabel(t, duration)}</span>

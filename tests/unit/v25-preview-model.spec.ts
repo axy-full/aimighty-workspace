@@ -50,6 +50,8 @@ test("✓ and ✕ act on the version on screen, only when the card can be judged
   expect(judgeVersion(item([ver(1, "making")]), 0)).toBeNull();
   expect(judgeVersion(item([ver(1, "none")]), 0)).toBeNull();
   expect(judgeVersion(item([ver(1, "ready", { genId: undefined })]), 0)).toBeNull();
+  /* A version with no picture or clip here to look at cannot be judged. */
+  expect(judgeVersion(item([ver(1, "ready", { url: null })]), 0)).toBeNull();
 });
 
 test("a clip's time and frame steps stay inside the clip", () => {
