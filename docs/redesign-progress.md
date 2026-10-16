@@ -1148,3 +1148,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Opus money review running.
   - Lane B next: the findStoredSource private-board check, then the Agent-mode server parts.
 - **16 Oct 12:47 IST.** Lane C: #798 v25 PR 6 Preview with versions and Compare (843bf49f, on #792), Opus reviewing. #790 at 0203baf8. PR 7 Director on Shots next (includes the #749/#750 CSS merge and the rail items).
+- **16 Oct 12:50 IST.** #797 Hindi tool NOT APPROVED: a render/MCP token or an Auto run could approve the whole plan (the person check looked at the user id only). Should-fixes: translation retries could pay twice; a retry's cap covers the remainder; MCP "Nothing was filed" wording. Sent to lane B. Owner question: should a whole plan over 200 cr need an admin, or only each step over the line? Lead recommends per step, as rule 14 reads.
