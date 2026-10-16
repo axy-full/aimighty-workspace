@@ -1092,3 +1092,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Also approved: #779 3f525724, #783 7ab1985f, #788 Pro pick d35da7ce. The writeSite bug is latent in the engine stack, not on release/1.
   - Lead decision sent to lane B: agent/background callers pass the person upload check in BFL/Runway/lip-sync; plus a cleanup of stale prose and dead code.
   - Deploy #5: #756 CI green 24/24 on release/1 cb13ad5c (run 38853925185). #762 retargeted to release/1, CI starting. #758 re-run on the new base running.
+- **16 Oct 11:31 IST.** #758 CI green 24/24 on release/1 cb13ad5c (run 38853990880) at 1c10b1c8. Deploy #5 status: #748 merged; #756 green; #758 green; #762 CI running. #765 at 109fc01a (guards edited to the cap per the owner) under an Opus delta check.
