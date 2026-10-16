@@ -27,12 +27,14 @@ All take `aspect` (`16:9` or `9:16`), `fps` (24, 25, 30, 60; default 30) and `sc
 `node build/cli.mjs`, working directory = the session folder. No arguments.
 
 ```
-spec.json  { "version": 1, "composition": "final", "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45] } }
+spec.json  { "version": 1, "composition": "final", "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"] } }
 input/     the files the props name
-output/    export.mp4 (or export.mov for ProRes), still-<frame>.png, result.json
+output/    export.mp4 (or export.mov for ProRes), still-<frame>.png, subtitles.srt / subtitles.vtt, result.json
 ```
 
 `output.format` is `h264` (the default: `export.mp4`, CRF 20, AAC), `prores-422` or `prores-422-hq` (`export.mov`, 10-bit 4:2:2 with 16-bit PCM sound; at most 1800 frames: 60 s at 30 fps, 30 s at 60 fps; a constant, not a setting). H.265 is refused ("H.265 is not available."): owner, 15 Oct 2026, until his lawyer answers. A ProRes 30 s 1080p file is about 485 MB (422) or 716 MB (422 HQ); `result.json` names each file with its `format` and `mime`. **H.264 and the ProRes mezzanine are the only formats: DNxHR is dropped for now** (owner, 16 Oct 2026; the ffmpeg bundled in Remotion has no DNxHD encoder). Nothing offers or promises it, and `dnxhr` and `dnxhd` are refused like any other unknown name.
+
+`output.subtitles` (`srt` and/or `vtt`) writes sidecar subtitle files from the same cues the captions are burned in from, on the finished video's own clock (a trim moves them, a cut-away caption is not in the file, a cutdown's source-time cues land in the cut). It is plain text: with `output.video: false` and no stills it needs no input file and no renderer. An export with no caption text refuses it (`spec.output.subtitles: the export has no caption text (no cues) to write`). `result.json` lists each file with kind `subtitle`, its format and mime (`application/x-subrip`, `text/vtt`).
 
 Exit codes: 0 done, 2 spec invalid or too long, 3 an input is missing or is not what the spec says it is (ffprobe reads every clip and music file: a different length by more than 0.1 s, a different size, or sound the request says is there but is not, is refused), 4 the render failed (`output/result.json` says why). Tuning comes only from the worker's environment: `REMOTION_RUNTIME_DIR` (where Remotion's Chrome download lives; the command moves there after reading its session paths, because Remotion looks for Chrome under the working directory's nearest package.json), `REMOTION_CONCURRENCY` (default 2), `REMOTION_MAX_SECONDS` (default 120, cannot be raised above it), `REMOTION_BROWSER_EXECUTABLE`, `REMOTION_BUNDLE_DIR`. No licence key is passed, ever (owner decision, 14 Oct 2026): with none, the renderer sends nothing to Remotion. A test fails if one appears.
 

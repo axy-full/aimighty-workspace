@@ -42,7 +42,7 @@ function clipItem(args: {
     srcEndMs: frameToMs(args.srcStartFrame + args.durationInFrames, args.fps),
     outStartMs: 0,
   };
-  const local = args.captionStyle ? normaliseCues(remapCues(args.cues, [segment]), frameToMs(args.durationInFrames, args.fps)) : [];
+  const local = normaliseCues(remapCues(args.cues, [segment]), frameToMs(args.durationInFrames, args.fps));
   return {
     kind: "clip",
     from: args.from,
@@ -53,7 +53,8 @@ function clipItem(args: {
     sourceHeight: args.sourceHeight,
     hasAudio: args.hasAudio,
     reframe: args.reframe,
-    cues: local,
+    cues: args.captionStyle ? local : [],
+    subtitleCues: local,
     captionStyle: args.captionStyle,
   };
 }
