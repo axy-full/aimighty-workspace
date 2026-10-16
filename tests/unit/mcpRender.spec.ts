@@ -127,3 +127,13 @@ test("a token that cannot render is filed for a person unpriced, and a filing th
   expect(out).toContain("A person can make this themselves in Particl");
   expect(out).not.toMatch(/prepared job:|Rendering started/);
 });
+
+test("a caller cannot approve: maxCredits (or max_credits) in the arguments is refused before anything is quoted, filed or sent", async () => {
+  for (const spend of [undefined, AUTO]) {
+    for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }, { maxCredits: 0 }]) {
+      const api = workspace();
+      await expect(runTool("render_shot", { prompt: "Rain.", resolution: "480p", ...bad }, api.call as never, "", {}, spend)).rejects.toThrow("only a person approves spending");
+      expect(api.calls).toEqual([]);
+    }
+  }
+});

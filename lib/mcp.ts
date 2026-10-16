@@ -272,6 +272,8 @@ export async function runTool(
       return `Prepared ${out.job.id}. It waits in Particl › Settings › Connections until a person opens it in Make, sees its price and approves it, or dismisses it. Nothing was rendered or spent.`;
     }
     case "render_shot": {
+      /* Only a person approves spending (rule 14): a price, or an approval, in a caller's arguments is refused, never silently ignored. */
+      if ("maxCredits" in args || "max_credits" in args) throw new Error("The price is not yours to approve: only a person approves spending.");
       const project = await resolveProject(call, args.project as string | undefined, "spend");
       const model = String(args.model ?? "2.5").includes("2.0")
         ? "dreamina-seedance-2-0-260128"
