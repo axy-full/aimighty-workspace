@@ -1,12 +1,12 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { seedHome } from "./helpers/v12Home";
 import { ENHANCE_TIP_LINE } from "../lib/v12/enhance";
-import { ENHANCE_FALLBACK } from "../lib/shell/enhance-press";
+import { ENHANCE_FALLBACK, ENHANCE_NOTHING_BILLED, enhanceHeldLine } from "../lib/shell/enhance-press";
 
 /**
  * Enhance in Make, the new interface (lib/v12/enhance.ts; the owner's note of 16 Oct 2026, 13:15). "Enhance" is a button that wears its price
  * ("Enhance · 1 cr"). Pressing it says "Enhancing…", puts the enhanced words in the prompt box and sends NO take; Make then sends the box as it is.
- * Make never calls the enhancer: only the Enhance press does. After 8 s, or on any error, the typed words stay and one line says so. Each take is
+ * Make never calls the enhancer: only the Enhance press does. After 10 s, or on any error, the typed words stay and one line says so, with what the server settled on the bill. Each take is
  * labelled in the viewer: Enhanced, with its original words one press away, or Raw. Local ENGINE_MOCK server: the enhancer and the render are
  * mock (the failing provider is a route in the browser); nothing real is spent.
  */
@@ -200,7 +200,7 @@ test.describe("desktop", () => {
     expect(((await sent).postDataJSON() as { enhanced?: unknown }).enhanced).toBe(false);
   });
 
-  test("a slow provider: after 8 s the typed words stay, one line says so, and Make still sends them", async ({ page }) => {
+  test("a slow provider: after 10 s the typed words stay, one line says so, and Make still sends them", async ({ page }) => {
     test.setTimeout(300_000);
     await openMake(page);
     const log = watch(page);
@@ -214,9 +214,10 @@ test.describe("desktop", () => {
     const pressed = Date.now();
     await button(page).click();
     await expect(button(page)).toHaveText("Enhancing…");
-    await expect(note(page)).toHaveText(ENHANCE_FALLBACK, { timeout: 15_000 });
-    expect(Date.now() - pressed, "given up on at about 8 s").toBeLessThan(13_000);
-    expect(Date.now() - pressed).toBeGreaterThan(7_000);
+    /* Nothing came back to say what was billed, so the line says no more than it knows. */
+    await expect(note(page)).toHaveText(ENHANCE_FALLBACK, { timeout: 18_000 });
+    expect(Date.now() - pressed, "given up on at about 10 s").toBeLessThan(15_000);
+    expect(Date.now() - pressed).toBeGreaterThan(9_000);
     await expect(note(page)).toHaveAttribute("role", "alert");
     await expect(input(page)).toHaveValue(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · /);
@@ -231,11 +232,11 @@ test.describe("desktop", () => {
   test("a provider error says the one line, never nothing, and leaves the words alone", async ({ page }) => {
     test.setTimeout(300_000);
     await openMake(page);
-    await answerRun(page, (route) => route.fulfill({ status: 502, json: { error: "The writer answered, but not with a prompt." }, headers: { "Idempotency-Status": "complete" } }));
+    await answerRun(page, (route) => route.fulfill({ status: 502, json: { error: "The writer answered, but not with a prompt.", nothingBilled: true }, headers: { "Idempotency-Status": "complete" } }));
     await input(page).fill(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
     await button(page).click();
-    await expect(note(page)).toHaveText(ENHANCE_FALLBACK);
+    await expect(note(page)).toHaveText(ENHANCE_NOTHING_BILLED);
     await expect(input(page)).toHaveValue(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · /);
     /* New words clear the complaint. */
@@ -266,14 +267,26 @@ test.describe("desktop", () => {
   test("a missing key found at the press (the quote was fine): the one line, at once", async ({ page }) => {
     test.setTimeout(300_000);
     await openMake(page);
-    await answerRun(page, (route) => route.fulfill({ status: 503, json: { error: "No text writer is set up for this workspace." }, headers: { "Idempotency-Status": "complete" } }));
+    await answerRun(page, (route) => route.fulfill({ status: 503, json: { error: "No text writer is set up for this workspace.", nothingBilled: true }, headers: { "Idempotency-Status": "complete" } }));
     await input(page).fill(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
     const pressed = Date.now();
     await button(page).click();
-    await expect(note(page)).toHaveText(ENHANCE_FALLBACK);
+    await expect(note(page)).toHaveText(ENHANCE_NOTHING_BILLED);
     expect(Date.now() - pressed).toBeLessThan(5_000);
     await expect(input(page)).toHaveValue(WORDS);
+  });
+
+  test("a charge that stands says what it cost: the server's held credits, in the one line", async ({ page }) => {
+    test.setTimeout(300_000);
+    await openMake(page);
+    await answerRun(page, (route) => route.fulfill({ status: 502, json: { error: "The text provider returned an uncertain result.", heldCredits: 1 }, headers: { "Idempotency-Status": "complete" } }));
+    await input(page).fill(WORDS);
+    await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
+    await button(page).click();
+    await expect(note(page)).toHaveText(enhanceHeldLine(1));
+    await expect(input(page)).toHaveValue(WORDS);
+    await noOverflow(page);
   });
 
   test("the workspace's setting (Settings › Advanced) says whether Make offers the button", async ({ page }) => {

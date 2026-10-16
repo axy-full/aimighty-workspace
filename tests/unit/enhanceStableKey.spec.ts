@@ -170,7 +170,8 @@ test("a saved refusal lets the key go, so the next press is not answered with th
 
     const refused = await pressEnhance(fetcher, press, keys);
     /* The person is told the one line whatever the provider said (the server's own words, "No generation credits were charged", are on its saved reply); what this proves is the key. */
-    expect(refused).toEqual({ ok: false, error: ENHANCE_FALLBACK });
+    expect(refused.ok).toBe(false);
+    expect(refused.ok ? "" : refused.error, "the one line, with the bill said when the server said it").toMatch(new RegExp(`^${ENHANCE_FALLBACK}`));
     declined = false;
     const retried = await pressEnhance(fetcher, press, keys);
     expect(retried.ok).toBe(true);

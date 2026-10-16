@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ENHANCE_CLIENT_MS, ENHANCE_FALLBACK, EnhanceKeys, EnhanceRuns, pressEnhance } from "../../lib/shell/enhance-press";
+import { ENHANCE_CLIENT_MS, ENHANCE_FALLBACK, ENHANCE_NOTHING_BILLED, EnhanceKeys, EnhanceRuns, enhanceHeldLine, pressEnhance } from "../../lib/shell/enhance-press";
 
 /**
  * The Enhance press on the client (lib/shell/enhance-press.ts), the owner's 16 Oct 2026 list: success, a slow provider (the client gives up and
@@ -11,9 +11,11 @@ const reply = (status: number, json: unknown, complete = true) => new Response(J
 let n = 0;
 const keys = () => new EnhanceKeys(() => `k${++n}`);
 
-test("the client waits 8 s at most", () => {
-  expect(ENHANCE_CLIENT_MS).toBe(8_000);
+test("the client waits 10 s at most, a little past the server's 8 s deadline, and the lines are the one line", () => {
+  expect(ENHANCE_CLIENT_MS).toBe(10_000);
   expect(ENHANCE_FALLBACK).toBe("Couldn't enhance; used your prompt as written");
+  expect(ENHANCE_NOTHING_BILLED).toBe("Couldn't enhance; used your prompt as written. Nothing billed.");
+  expect(enhanceHeldLine(1)).toBe("Couldn't enhance; used your prompt as written. 1 cr held, returned if the writer never answered.");
 });
 
 test("success: the enhanced words, the writer and the signal that lets the press be abandoned", async () => {
@@ -48,15 +50,23 @@ test("a reply that stalls while its body is read is given up on too", async () =
   expect(await pressEnhance(stalled, press, keys(), Date.now, 40)).toEqual({ ok: false, error: ENHANCE_FALLBACK });
 });
 
-test("a provider error: the one line, whatever the server said", async () => {
-  const out = await pressEnhance(async () => reply(502, { error: "The writer answered, but not with a prompt." }), press, keys(), Date.now, 50);
-  expect(out).toEqual({ ok: false, error: ENHANCE_FALLBACK });
+test("a provider error: the one line, whatever the server said, with the bill only when the server said it", async () => {
+  /* No word on the bill: the line alone. */
+  expect(await pressEnhance(async () => reply(502, { error: "The writer answered, but not with a prompt." }), press, keys(), Date.now, 50)).toEqual({ ok: false, error: ENHANCE_FALLBACK });
+  /* A refusal, a 504 the writer never answered, a 503: the server settled them at nothing. */
+  for (const status of [400, 502, 503, 504])
+    expect(await pressEnhance(async () => reply(status, { error: "The writer did not answer.", nothingBilled: true }), press, keys(), Date.now, 50), String(status)).toEqual({ ok: false, error: ENHANCE_NOTHING_BILLED });
+  /* A charge that stands (a 5xx the provider answered with): the server's own figure, in credits. */
+  expect(await pressEnhance(async () => reply(502, { error: "uncertain", heldCredits: 1 }), press, keys(), Date.now, 50)).toEqual({ ok: false, error: enhanceHeldLine(1) });
+  expect(await pressEnhance(async () => reply(502, { error: "uncertain", heldCredits: 3 }), press, keys(), Date.now, 50)).toEqual({ ok: false, error: enhanceHeldLine(3) });
+  /* A held figure of zero (the workspace's own key, or the house) says nothing it cannot back. */
+  expect(await pressEnhance(async () => reply(502, { error: "uncertain", heldCredits: 0 }), press, keys(), Date.now, 50)).toEqual({ ok: false, error: ENHANCE_FALLBACK });
 });
 
 test("a missing key (a fast 503): the one line, at once", async () => {
   const started = Date.now();
-  const out = await pressEnhance(async () => reply(503, { error: "No text writer is set up for this workspace." }), press, keys(), Date.now, 50);
-  expect(out).toEqual({ ok: false, error: ENHANCE_FALLBACK });
+  const out = await pressEnhance(async () => reply(503, { error: "No text writer is set up for this workspace.", nothingBilled: true }), press, keys(), Date.now, 50);
+  expect(out).toEqual({ ok: false, error: ENHANCE_NOTHING_BILLED });
   expect(Date.now() - started).toBeLessThan(500);
 });
 
