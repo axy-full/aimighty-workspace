@@ -1,0 +1,203 @@
+/**
+ * The export command, as the worker runs it. A JSON spec in, files out. Nothing here knows about HTTP
+ * or the app: the worker (PR 2) calls the cli, which calls runExport with the real renderer; the tests
+ * call runExport with a fake one.
+ *
+ * Contract (version 1):
+ *   spec.json   { "version": 1, "composition": <id>, "props": {...}, "output": { "video": true, "stills": [0, 45] } }
+ *   input/      the files the props name, as plain relative paths
+ *   output/     export.mp4 (when output.video is not false), still-<frame>.png for each still, result.json
+ */
+import { copyFile, link, lstat, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { DEFAULT_LIMITS, type ExportLimits } from "../src/lib/limits";
+import { toTimeline, ExportTooLong } from "../src/lib/timeline";
+import type { CompositionId, Timeline } from "../src/lib/types";
+import { isCompositionId, validateProps } from "../src/lib/validate";
+
+export type ExportSpec = {
+  version: 1;
+  composition: CompositionId;
+  props: unknown;
+  output?: { video?: boolean; stills?: number[] };
+};
+
+export type CompositionInfo = { id: string; width: number; height: number; fps: number; durationInFrames: number; props: Record<string, unknown> };
+
+/** The slice of @remotion/renderer the export uses; the tests substitute a fake. */
+export type Renderer = {
+  prepare(): Promise<void>;
+  selectComposition(args: { serveUrl: string; id: string; inputProps: Record<string, unknown> }): Promise<CompositionInfo>;
+  renderVideo(args: { serveUrl: string; composition: CompositionInfo; inputProps: Record<string, unknown>; outputLocation: string; concurrency: number; onProgress?: (done: number, total: number) => void }): Promise<void>;
+  renderStill(args: { serveUrl: string; composition: CompositionInfo; inputProps: Record<string, unknown>; frame: number; outputLocation: string }): Promise<void>;
+};
+
+export type ExportFailure = { ok: false; code: "spec_invalid" | "too_long" | "input_missing" | "render_failed"; errors: string[] };
+export type ExportSuccess = {
+  ok: true;
+  composition: CompositionId;
+  width: number;
+  height: number;
+  fps: number;
+  durationInFrames: number;
+  seconds: number;
+  files: { name: string; kind: "video" | "still"; bytes: number; frame?: number }[];
+};
+export type ExportResult = ExportSuccess | ExportFailure;
+
+export type RunExportArgs = {
+  spec: unknown;
+  /** Folder holding the input files. */
+  inputDir: string;
+  /** Folder the outputs are written to; created. */
+  outputDir: string;
+  /** The built bundle (index.html, bundle.js, public/fonts). Never modified. */
+  bundleDir: string;
+  /** Scratch folder; created, and removed at the end. */
+  workDir: string;
+  renderer: Renderer;
+  limits?: ExportLimits;
+  concurrency?: number;
+  onProgress?: (done: number, total: number) => void;
+};
+
+const fail = (code: ExportFailure["code"], errors: string[]): ExportFailure => ({ ok: false, code, errors });
+
+/** Every input file a timeline needs, once each, as relative paths. */
+export function inputFilesOf(timeline: Timeline): string[] {
+  const files = new Set<string>();
+  for (const item of timeline.items) {
+    if (item.kind === "clip") files.add(item.file);
+    else if (item.card.logo) files.add(item.card.logo.file);
+  }
+  if (timeline.music) files.add(timeline.music.file);
+  return [...files];
+}
+
+export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
+  | { ok: true; id: CompositionId; props: Record<string, unknown>; timeline: Timeline; video: boolean; stills: number[] }
+  | ExportFailure {
+  if (typeof spec !== "object" || spec === null || Array.isArray(spec)) return fail("spec_invalid", ["spec: must be an object"]);
+  const rec = spec as Record<string, unknown>;
+  const errors: string[] = [];
+  for (const key of Object.keys(rec)) if (!["version", "composition", "props", "output"].includes(key)) errors.push(`spec.${key}: is not allowed`);
+  if (rec.version !== 1) errors.push("spec.version: must be 1");
+  if (!isCompositionId(rec.composition)) errors.push("spec.composition: unknown composition");
+  let video = true;
+  let stills: number[] = [];
+  if (rec.output !== undefined) {
+    const out = rec.output as Record<string, unknown> | null;
+    if (typeof out !== "object" || out === null || Array.isArray(out)) errors.push("spec.output: must be an object");
+    else {
+      for (const key of Object.keys(out)) if (!["video", "stills"].includes(key)) errors.push(`spec.output.${key}: is not allowed`);
+      if (out.video !== undefined && typeof out.video !== "boolean") errors.push("spec.output.video: must be true or false");
+      if (out.video === false) video = false;
+      if (out.stills !== undefined) {
+        if (!Array.isArray(out.stills) || out.stills.length > limits.maxStills || out.stills.some((n) => !Number.isInteger(n) || n < 0)) {
+          errors.push(`spec.output.stills: must be a list of at most ${limits.maxStills} frame numbers`);
+        } else stills = [...new Set(out.stills as number[])];
+      }
+    }
+  }
+  if (!video && stills.length === 0) errors.push("spec.output: asks for nothing");
+  if (errors.length || !isCompositionId(rec.composition)) return fail("spec_invalid", errors);
+  const id = rec.composition;
+  const checked = validateProps(id, rec.props, limits);
+  if (!checked.ok) return fail("spec_invalid", checked.errors);
+  let timeline: Timeline;
+  try {
+    timeline = toTimeline(id, checked.value as never, limits);
+  } catch (error) {
+    return fail(error instanceof ExportTooLong ? "too_long" : "spec_invalid", [(error as Error).message]);
+  }
+  const outOfRange = stills.filter((frame) => frame >= timeline.durationInFrames);
+  if (outOfRange.length) return fail("spec_invalid", [`spec.output.stills: frame ${outOfRange[0]} is past the end (${timeline.durationInFrames} frames)`]);
+  return { ok: true, id, props: checked.value as unknown as Record<string, unknown>, timeline, video, stills };
+}
+
+/** True when `child` is `parent` or inside it, by real path (a symlink cannot lead out). */
+async function insideReal(parent: string, child: string): Promise<boolean> {
+  const [p, c] = await Promise.all([realpath(parent), realpath(child)]);
+  return c === p || c.startsWith(p + path.sep);
+}
+
+async function missingInputs(inputDir: string, files: string[]): Promise<string[]> {
+  const missing: string[] = [];
+  for (const file of files) {
+    const full = path.join(inputDir, file);
+    try {
+      const info = await lstat(full);
+      if (!info.isFile() || info.size === 0 || !(await insideReal(inputDir, full))) missing.push(file);
+    } catch {
+      missing.push(file);
+    }
+  }
+  return missing;
+}
+
+/** Mirror a folder with hard links (a copy where the folders are on different disks). Symlinks are not followed or made: the renderer's file server answers 404 for them. */
+async function mirror(from: string, to: string): Promise<void> {
+  await mkdir(to, { recursive: true });
+  for (const entry of await readdir(from, { withFileTypes: true })) {
+    const source = path.join(from, entry.name);
+    const target = path.join(to, entry.name);
+    if (entry.isDirectory()) await mirror(source, target);
+    else if (entry.isFile()) {
+      try {
+        await link(source, target);
+      } catch {
+        await copyFile(source, target);
+      }
+    }
+  }
+}
+
+/**
+ * A folder the renderer can serve: the bundle's files, and a `public/` holding the bundled fonts and,
+ * as `input/`, the session's files. Files are hard-linked, so nothing large is copied and the bundle
+ * itself is never written to.
+ */
+export async function prepareServeDir(bundleDir: string, inputDir: string, serveDir: string): Promise<void> {
+  await mirror(bundleDir, serveDir);
+  await mirror(inputDir, path.join(serveDir, "public", "input"));
+}
+
+export async function runExport(args: RunExportArgs): Promise<ExportResult> {
+  const limits = args.limits ?? DEFAULT_LIMITS;
+  const checked = checkSpec(args.spec, limits);
+  if (!checked.ok) return checked;
+  const missing = await missingInputs(args.inputDir, inputFilesOf(checked.timeline));
+  if (missing.length) return fail("input_missing", missing.map((file) => `input/${file}: not found`));
+
+  await mkdir(args.outputDir, { recursive: true });
+  await rm(args.workDir, { recursive: true, force: true });
+  const serveDir = path.join(args.workDir, "serve");
+  try {
+    await prepareServeDir(args.bundleDir, args.inputDir, serveDir);
+    await args.renderer.prepare();
+    const composition = await args.renderer.selectComposition({ serveUrl: serveDir, id: checked.id, inputProps: checked.props });
+    const t = checked.timeline;
+    if (composition.width !== t.width || composition.height !== t.height || composition.fps !== t.fps || composition.durationInFrames !== t.durationInFrames) {
+      return fail("render_failed", [`The composition measured ${composition.width}x${composition.height} @${composition.fps} for ${composition.durationInFrames} frames; the timeline says ${t.width}x${t.height} @${t.fps} for ${t.durationInFrames}.`]);
+    }
+    const files: ExportSuccess["files"] = [];
+    if (checked.video) {
+      const outputLocation = path.join(args.outputDir, "export.mp4");
+      await args.renderer.renderVideo({ serveUrl: serveDir, composition, inputProps: checked.props, outputLocation, concurrency: args.concurrency ?? 2, onProgress: args.onProgress });
+      files.push({ name: "export.mp4", kind: "video", bytes: (await stat(outputLocation)).size });
+    }
+    for (const frame of checked.stills) {
+      const name = `still-${frame}.png`;
+      const outputLocation = path.join(args.outputDir, name);
+      await args.renderer.renderStill({ serveUrl: serveDir, composition, inputProps: checked.props, frame, outputLocation });
+      files.push({ name, kind: "still", frame, bytes: (await stat(outputLocation)).size });
+    }
+    const success: ExportSuccess = { ok: true, composition: checked.id, width: t.width, height: t.height, fps: t.fps, durationInFrames: t.durationInFrames, seconds: t.durationInFrames / t.fps, files };
+    await writeFile(path.join(args.outputDir, "result.json"), JSON.stringify(success, null, 2));
+    return success;
+  } catch (error) {
+    return fail("render_failed", [(error as Error).message.slice(0, 2000)]);
+  } finally {
+    await rm(args.workDir, { recursive: true, force: true });
+  }
+}
