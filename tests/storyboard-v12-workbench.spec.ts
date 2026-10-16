@@ -1,5 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openBoard } from "./helpers/boardV12";
+import { faintText } from "./helpers/s11-board";
+import { textReadsAtFloor } from "./helpers/gaps-l1";
 
 /**
  * Storyboard in the new interface (demo plan PR 18; components/v12/board/StoryboardStage.tsx): one card per shot of the eight-shot film
@@ -99,6 +101,41 @@ test.describe("desktop, switch on", () => {
     await expect(cardOf(page, 7).getByTestId("v12-card-status")).toHaveText("Ready", { timeout: 180_000 });
     await expect(cardOf(page, 8).getByTestId("v12-card-status")).toHaveText("Ready", { timeout: 180_000 });
   });
+});
+
+/* What a person reads on the page: each card's title and status, and the bar's words. (The card's ✓ ✕ ⋯ show on hover and their screen-reader words are
+   clipped away: they are not words on the page.) */
+const PAGE_WORDS = ['[data-testid="v12-storyboard-stage"] .v12-card-body', '[data-testid="v12-storyboard-stage"] .v12-sb-bar'].join(", ");
+
+/* The owner's five sizes (15 Oct 2026, 22:30), and sharp at each (16 Oct): the cards stay inside the window, nothing scrolls sideways, every word is at least
+   12 px and 55% white, and no word is drawn through a zoom or a transform: the cards are bigger by real layout (rule 15). */
+test("Storyboard at the five desktop sizes: inside the window, readable, sharp", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(240_000);
+  await openBoard(page, "/suites?view=board&stage=storyboard");
+  const stage = page.getByTestId("v12-storyboard-stage");
+  await expect(stage.getByTestId("v12-card")).toHaveCount(8, { timeout: 60_000 });
+  for (const [width, height] of [[1280, 800], [1440, 900], [1728, 1117], [1920, 1080], [2560, 1440]] as const) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(400);
+    expect(await noSideways(page), `${width}: no sideways scroll`).toBe(true);
+    const outside = await stage.getByTestId("v12-card").evaluateAll((els) => els.filter((el) => el.getBoundingClientRect().right > innerWidth).length);
+    expect(outside, `${width}: cards inside the window`).toBe(0);
+    expect(await stage.evaluate((root) => {
+      const bad: string[] = [];
+      for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+        if (!Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent ?? "").trim())) continue;
+        for (let up: HTMLElement | null = el; up; up = up.parentElement) {
+          const css = getComputedStyle(up);
+          if (css.zoom !== "1" || css.transform !== "none") { bad.push(`${up.className || up.tagName}: zoom ${css.zoom}, transform ${css.transform}`); break; }
+          if (up === root.parentElement) break;
+        }
+      }
+      return bad.slice(0, 5);
+    }), `${width}: no zoom or transform on any word`).toEqual([]);
+    expect(await faintText(page, '[data-testid="v12-storyboard-stage"]'), `${width}: words 12 px and 55% white`).toEqual([]);
+    expect(await textReadsAtFloor(page, PAGE_WORDS), `${width}: words read on their ground`).toEqual([]);
+  }
 });
 
 test.describe("phones, switch on", () => {

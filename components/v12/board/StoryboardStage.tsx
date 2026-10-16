@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { BoardCtx } from "@/components/graphite/board/cards/types";
 import { useFramePoller, useStoryboardDraw } from "@/components/graphite/board/cards/storyboard/use-frames";
 import { usePriceTitle } from "@/components/graphite/Price";
@@ -11,6 +11,7 @@ import { withMark, withoutMark } from "@/lib/v12/board/text-steps";
 import { useScreenScale } from "./use-screen-scale";
 import { StepCard } from "./StepCard";
 import "./stage-pages.css";
+import "./card-scale.css";
 import "./storyboard-stage.css";
 
 /**
@@ -54,7 +55,7 @@ export function StoryboardStage({ ctx }: { ctx: BoardCtx }) {
   };
 
   return (
-    <div className="v12-sp v12-sb" data-testid="v12-storyboard-stage" style={{ zoom: scale }}>
+    <div className="v12-sp v12-sb" data-testid="v12-storyboard-stage">
       <div className="v12-sb-bar">
         <Segment<string> label="Drawing style" value={styleOf(project)} onChange={(style) => write((p) => withStyle(p, style as ReturnType<typeof styleOf>))}
           options={STYLES.map((s) => ({ id: s.id, label: s.label, tooltip: { name: s.label, line: s.line }, disabled: !canEdit }))} />
@@ -74,7 +75,7 @@ export function StoryboardStage({ ctx }: { ctx: BoardCtx }) {
       {draw.problem ? <p className="v12-sp-why v12-sp-problem" role="alert" data-testid="v12-storyboard-problem">{draw.problem}</p> : null}
       {draw.pricing === "error" && !ctx.exploreOnly ? <p className="v12-sp-why" role="status">The price could not be read.</p> : null}
       {cards.length ? (
-        <div className="v12-sb-grid">
+        <div className="v12-sb-grid v12-scaled" style={{ "--k": scale } as CSSProperties}>
           {cards.map((c) => (
             <StepCard key={c.shotId} id={`frame-${c.shotId}`} title={c.name} status={c.status} version={c.version} reason={c.reason}
               picture={c.genId ? { src: `/api/media/${c.genId}`, ratio: ratioOf(project.aspect || "16:9") } : null}
