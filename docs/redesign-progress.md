@@ -1222,3 +1222,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Lane B fixes the code's order; the guard is untouched. The Opus review missed it and CI caught it.
   - Also failing in that run: demo-s10-phone-make at 360×640, probably unrelated (being checked).
   - Queue 2 moves on to #805 and #749.
+- **16 Oct 14:49 IST.** Opus UI review of #811 (fb393ac4): NOT approved, one must-fix.
+  - **Must-fix (rule 15):** a skipped rail step reads at about 41% white while still pressable.
+  - **Should-fix:** Add step should keep the board's preset menu.
+  - **Confirmed:** the Director column and bar match the plan, the #750 items are addressed, the CSS merge is correct, and the judge and preview spec changes are feature specs.
+  - **Opus mapped the BoardView wiring** (StepRail, ShotStepCard plus DirectorColumn and DirectorBar on Shots, ShotPreview). Lane C fixes #811, then builds the wiring PR.
