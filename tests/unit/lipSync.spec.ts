@@ -20,7 +20,7 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 test.beforeAll(async () => { await alignLedgerUnit(); });
-test.afterEach(() => { delete process.env.SYNC_ENABLED; delete process.env.REKOGNITION_ENABLED; process.env.ENGINE_MOCK = "1"; });
+test.afterEach(() => { delete process.env.SYNC_ENABLED; process.env.ENGINE_MOCK = "1"; });
 
 const tenant = (id: string, over: Partial<TenantWorkspace> = {}): TenantWorkspace => ({
   id, slug: id, name: id, legacy: id === "ws_legacy", dbUrl: `file:${path.join(dir, `${id}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true,
@@ -56,24 +56,11 @@ async function upload(label: string, mediaKind: "video" | "audio" | "image", sec
   await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s) VALUES(?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds] });
   return id;
 }
-async function consent(projectId: string, subjectKey: string, over: { voice?: boolean; revoked?: boolean } = {}): Promise<string> {
-  const { db } = await import("../../lib/db");
-  const { consentsReady } = await import("../../lib/security/consent");
-  await consentsReady();
-  const id = uid("consent");
-  await db().execute({
-    sql: `INSERT INTO identity_consents (id, project_id, subject_key, subject_label, person_name, covers_face, covers_voice, uses_json, other_use, until_at, recording_id, attested, recorded_by, recorded_at, revoked_at)
-          VALUES (?,?,?,?,?,1,?,?,'',?,?,1,'u_test',?,?)`,
-    args: [id, projectId, subjectKey, "", "Sample Person", over.voice ? 1 : 0, JSON.stringify(["production", "ads"]), Date.now() + 86_400_000, "rec_1", Date.now(), over.revoked ? Date.now() : null],
-  });
-  return id;
-}
 async function project(id: string) {
   const { db, ready } = await import("../../lib/db");
   await ready();
   await db().execute({ sql: "INSERT OR IGNORE INTO projects(id,name,created_at) VALUES(?,?,0)", args: [id, id] });
 }
-const passing = (consentId = "consent_seam") => async (_cast: string, face: Buffer) => ({ consentId, similarity: 99, matched: true as const, checkedAt: Date.now(), faceSha256: `sha_${face.length}` });
 async function meterRows() {
   const { platformDb, platformReady } = await import("../../lib/platform");
   await platformReady();
@@ -85,14 +72,13 @@ async function gen(id: string) {
   return { status: r.status, stored_url: r.stored_url, bytes: r.bytes, cost_usd: r.cost_usd, error: r.error, provider_outcome: r.provider_outcome, duration_s: r.duration_s, lip: JSON.parse(String(r.lip)) as import("../../lib/lipSync").LipSyncParams };
 }
 
-type World = { projectId: string; cast: string; consentId: string; clip: string; voice: string; face: string; body: Record<string, unknown> };
-/** A production, a cast member with a live face consent, a 4 s clip, a 5 s voice that is a real person's (an upload), and a still of the face. */
-async function world(seconds = { clip: 4, voice: 5 }, voiceConsent = true): Promise<World> {
-  const projectId = uid("prod"), cast = uid("cast");
+type World = { projectId: string; clip: string; voice: string; body: Record<string, unknown> };
+/** A production, a 4 s clip and a 5 s voice track (an upload). No face, no consent record and no cast member is involved anywhere. */
+async function world(seconds = { clip: 4, voice: 5 }): Promise<World> {
+  const projectId = uid("prod");
   await project(projectId);
-  const consentId = await consent(projectId, cast, { voice: voiceConsent });
-  const clip = await upload("clip", "video", seconds.clip), voice = await upload("voice", "audio", seconds.voice), face = await upload("face", "image");
-  return { projectId, cast, consentId, clip, voice, face, body: { clipUploadId: clip, audioUploadId: voice, castMemberId: cast, faceFrameUploadId: face, projectId, use: "production" } };
+  const clip = await upload("clip", "video", seconds.clip), voice = await upload("voice", "audio", seconds.voice);
+  return { projectId, clip, voice, body: { clipUploadId: clip, audioUploadId: voice, projectId } };
 }
 
 /** The adapter seams: a job that completes on the second poll, recording every call. */
@@ -111,7 +97,7 @@ function fakeVendor(over: { completeAt?: number; outputDuration?: number; failWi
   return { deps, calls };
 }
 
-async function admit(w: World, extra: Record<string, unknown> = {}, seams: { consent?: ReturnType<typeof passing>; voices?: () => Promise<{ id: string; category: string }[]> } = { consent: passing(w.consentId) }) {
+async function admit(w: World, extra: Record<string, unknown> = {}, seams: { houseOnly?: boolean } = {}) {
   const { admitLipSync } = await import("../../lib/lipSync");
   const reply = await admitLipSync({ ...w.body, ...extra }, OWNER, options(), seams);
   return reply;
@@ -148,7 +134,7 @@ test("the quote: the audio's length for cut_off, else the longer track, at the p
     /* The house is judged at cost in dollars: 5 s of lipsync-2-pro, default model. */
     expect(quote.body).toMatchObject({ seconds: 5, model: "lipsync-2-pro", syncMode: "bounce", unit: "usd", estimatedCredits: 5 });
     expect(Number(quote.body.price)).toBeCloseTo(0.416667, 6);
-    expect(quote.body.needs).toEqual(["castMemberId", "faceFrameUploadId", "projectId", "use"]);
+    expect(quote.body).not.toHaveProperty("needs");
     expect(await admit(w, { quoteOnly: true, model: "sync-3", syncMode: "cut_off" })).toMatchObject({ status: 200, body: { seconds: 5, model: "sync-3", syncMode: "cut_off" } });
     /* A quote writes nothing and reserves nothing. */
     expect((await meterRows()).length).toBe(before);
@@ -157,7 +143,7 @@ test("the quote: the audio's length for cut_off, else the longer track, at the p
   });
 });
 
-test("off: with the engine's switch off, or a customer workspace not on the list, there is no tool, no row and nothing metered", async () => {
+test("off: with the engine's switch off, or any workspace but the house (a listed customer too), there is no tool, no row and nothing metered", async () => {
   const { lipSyncTools } = await import("../../lib/lipSync");
   await asTenant(house(), async () => {
     const w = await world();
@@ -167,63 +153,53 @@ test("off: with the engine's switch off, or a customer workspace not on the list
     const off = await admit(w, { maxCredits: 100 });
     expect(off).toMatchObject({ status: 404, body: { error: "There is no such tool here." } });
     expect((await meterRows()).length).toBe(before);
-    /* On, the tool is declared for the house only where the face gate can run: with REKOGNITION_ENABLED off it is not offered. */
+    /* On, the tool is declared for the house (no face check is involved). */
     process.env.SYNC_ENABLED = "1";
-    expect(await lipSyncTools()).toEqual([]);
-    process.env.REKOGNITION_ENABLED = "1";
     expect(await lipSyncTools()).toEqual([expect.objectContaining({ id: "lip_sync", kind: "engine", provider: "syncso", route: "/api/lipsync", models: ["lipsync-2", "lipsync-2-pro", "sync-3"] })]);
   });
-  /* A customer workspace: not the house, not on the list. */
+  /* A customer workspace: not the house. Lip-sync is house-only until counsel answers, so being on the engine list changes nothing. */
   process.env.SYNC_ENABLED = "1";
   await asTenant(tenant("ws_lipsync_customer"), async () => {
     expect(await lipSyncTools()).toEqual([]);
     expect(await admit(await world(), { quoteOnly: true })).toMatchObject({ status: 404 });
   });
+  const { platformReady, platformDb } = await import("../../lib/platform");
+  await platformReady();
+  const site = (await platformDb().execute("SELECT value FROM platform_layer WHERE key='site'")).rows[0]?.value;
+  try {
+    await platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify({ enginesOnWorkspaces: ["ws_lipsync_listed"] })] });
+    await asTenant(tenant("ws_lipsync_listed"), async () => {
+      expect(await lipSyncTools()).toEqual([]);
+      expect(await admit(await world(), { quoteOnly: true })).toMatchObject({ status: 404 });
+      expect(await admit(await world(), { maxCredits: 100000 })).toMatchObject({ status: 404 });
+    });
+  } finally {
+    if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
+  }
 });
 
-test("approval and the consent fields: the price must be approved, and a lip-sync without a production, cast member, use or face still is refused before anything is read or sent", async () => {
+test("approval: the price must be approved, and nothing about a face or a voice is asked for, matched, stored or refused (owner, 16 Oct 2026): an uploaded voice and no cast member go straight through the public door", async () => {
   process.env.SYNC_ENABLED = "1";
   await asTenant(house(), async () => {
     const w = await world();
     const before = (await meterRows()).length;
-    let seamCalls = 0;
-    const seams = { consent: async (...args: Parameters<ReturnType<typeof passing>>) => { seamCalls++; return passing()(...args); } };
-    expect((await admit(w, {}, seams)).status).toBe(409);
-    expect((await admit(w, { maxCredits: 1 }, seams)).status).toBe(409);
-    for (const bad of [{ castMemberId: "" }, { use: "identity" }, { use: undefined }, { faceFrameUploadId: "up_nope" }, { faceFrameUploadId: w.clip }, { projectId: undefined }]) {
-      const reply = await admit(w, { maxCredits: 100, ...bad }, seams);
-      expect(reply.status, JSON.stringify(bad)).toBe(400);
-    }
-    expect(seamCalls).toBe(0);
+    expect((await admit(w, {})).status).toBe(409);
+    expect((await admit(w, { maxCredits: 1 })).status).toBe(409);
     expect((await meterRows()).length).toBe(before);
     expect(deferred.length).toBe(0);
-  });
-});
-
-test("the consent gate: the real gate refuses every lip-sync today (no consent record holds a face reference), nothing is created, and a voice that is not a stock one needs its own consent first", async () => {
-  process.env.SYNC_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
-  await asTenant(house(), async () => {
-    const before = (await meterRows()).length;
-    /* The public admission, no seams: a live face consent exists, and still every check is refused ("no face reference yet"). */
-    const w = await world();
+    /* The public door, no seams: no face still, no cast member, no consent record, an uploaded voice. */
+    expect(w.body).not.toHaveProperty("faceFrameUploadId");
+    expect(w.body).not.toHaveProperty("castMemberId");
     const { executeLipSyncAdmission } = await import("../../lib/lipSync");
     const real = await executeLipSyncAdmission({ ...w.body, maxCredits: 100 }, OWNER, options());
-    expect(real).toMatchObject({ status: 409, body: { code: "no-reference", error: "This person's consent has no face reference yet." } });
-    expect((await meterRows()).length).toBe(before);
-    expect(deferred.length).toBe(0);
-    /* A real person's voice with no voice consent: refused before the face check is even asked. */
-    const noVoice = await world({ clip: 4, voice: 5 }, false);
-    let seamCalls = 0;
-    const reply = await admit(noVoice, { maxCredits: 100 }, { consent: async (...a) => { seamCalls++; return passing()(...a); } });
-    expect(reply).toMatchObject({ status: 409, body: { code: "no-voice-consent" } });
-    expect(seamCalls).toBe(0);
-    /* The face gate's own refusals pass straight through (a withdrawn consent, here: none live). */
-    const withdrawn = await world();
-    const { ConsentMatchError } = await import("../../lib/consentMatch");
-    const refused = await admit(withdrawn, { maxCredits: 100 }, { consent: async () => { throw new ConsentMatchError("no-match", "This face doesn't look like the person who gave consent. A person needs to look at it.", 409); } });
-    expect(refused).toMatchObject({ status: 409, body: { code: "no-match" } });
-    expect((await meterRows()).length).toBe(before);
+    expect(real.status, JSON.stringify(real.body)).toBe(200);
+    const genId = String(real.body.id);
+    expect(deferred.splice(0).length).toBe(1);
+    const { db } = await import("../../lib/db");
+    const row = (await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [genId] })).rows[0];
+    expect(JSON.stringify(JSON.parse(String(row.params)).lipsync)).not.toMatch(/face|sha|similarity|consent|castMember/i);
+    await run(genId, fakeVendor({ outputDuration: 4 }).deps, 4);
+    expect((await meterRows()).length).toBe(before + 1);
   });
 });
 
@@ -255,8 +231,8 @@ test("submit, poll, store, settle, delete: the whole job on mocks, at the real p
     expect(settled[0]).toMatchObject({ id: genId, status: "succeeded" });
     expect(Number(settled[0].engine_cost_usd)).toBeCloseTo((4.2 * 5) / 60, 6);
     expect(Number(settled[0].billed_credits ?? 0)).toBe(0);
-    /* Only ids and figures are on the row: no face image, no frame, no name. The consent is named by id. */
-    expect(take.lip).toMatchObject({ consentId: w.consentId, castMemberId: w.cast, use: "production", model: "lipsync-2-pro", seconds: 5 });
+    /* Only ids and figures are on the row: no face, no frame, no name, no consent. */
+    expect(take.lip).toMatchObject({ model: "lipsync-2-pro", seconds: 5 });
     expect(JSON.stringify(take.lip)).not.toMatch(/Sample Person|base64|http/);
     /* Another step on a finished job does nothing: no second submit, no second delete. */
     const again = fakeVendor();
@@ -342,23 +318,6 @@ test("a lost acknowledgement is never sent again: the job is held for review wit
     await run(genId, again.deps, 3);
     await recoverLipSyncJobs({ limit: 50 }, again.deps);
     expect(again.calls).toEqual([]);
-  });
-});
-
-test("consent withdrawn while the job waited: nothing is sent and nothing is billed", async () => {
-  const { db } = await import("../../lib/db");
-  process.env.SYNC_ENABLED = "1";
-  await asTenant(house(), async () => {
-    const w = await world();
-    /* The seam names a real record, so its withdrawal is what the workflow reads at the moment of sending. */
-    const genId = String((await admit(w, { maxCredits: 100 })).body.id);
-    await db().execute({ sql: "UPDATE identity_consents SET revoked_at=? WHERE id=?", args: [Date.now(), w.consentId] });
-    const vendor = fakeVendor();
-    await run(genId, vendor.deps, 2);
-    expect(vendor.calls).toEqual([]);
-    expect(await gen(genId)).toMatchObject({ status: "failed" });
-    expect(String((await gen(genId)).error)).toMatch(/consent no longer holds/);
-    expect(Number((await gen(genId)).cost_usd)).toBe(0);
   });
 });
 
@@ -578,8 +537,7 @@ test("the shot cap is judged at the quote and the press, before any row is writt
     const shotId = uid("shot");
     await db().execute({ sql: "INSERT INTO shots (id, project_id, code, title, created_at, updated_at) VALUES (?,?,?,?,0,0)", args: [shotId, w.projectId, "S01", "A shot"] });
     const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-    let faceCalls = 0;
-    const seams = { consent: async (...a: Parameters<ReturnType<typeof passing>>) => { faceCalls++; return passing(w.consentId)(...a); } };
+    const seams = {};
     const press = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitLipSync({ ...w.body, shotId, maxCredits: 100000, ...extra }, actor, options(), seams);
     try {
       await setRule("cap", 1);
@@ -589,7 +547,6 @@ test("the shot cap is judged at the quote and the press, before any row is writt
         expect(refused, JSON.stringify(extra)).toMatchObject({ status: 403, body: { needsAdmin: true } });
         expect(String(refused.body.error)).toMatch(/S01/);
       }
-      expect(faceCalls).toBe(0);
       expect(await rows()).toBe(before.rows);
       expect((await meterRows()).length).toBe(before.meter);
       expect(deferred.length).toBe(before.handed);
@@ -641,51 +598,7 @@ test("a claim that never got both inputs up never reached the submit and settles
   });
 });
 
-test("a voice is a stock one of ours only when ElevenLabs lists every voice in it as premade: cloned, professional, generated, unknown, another vendor's, a dub and a voice change need the person's voice consent", async () => {
-  const { db } = await import("../../lib/db");
-  process.env.SYNC_ENABLED = "1";
-  const listed = [{ id: "v_premade", category: "premade" }, { id: "v_premade2", category: "premade" }, { id: "v_cloned", category: "cloned" }, { id: "v_pro", category: "professional" }, { id: "v_gen", category: "generated" }];
-  const voices = async () => listed;
-  await asTenant(house(), async () => {
-    const take = async (over: { provider?: string; task?: string; voiceId?: string; lines?: { voiceId: string }[] }) => {
-      const id = uid("gen_voice");
-      const params = { task: over.task ?? "speech", ...(over.voiceId ? { voiceId: over.voiceId } : {}), ...(over.lines ? { lines: over.lines } : {}) };
-      await db().execute({ sql: "INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at,task,stored_url,bytes,duration_s) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", args: [id, "audio", over.provider ?? "elevenlabs", "m", "line", JSON.stringify(params), "succeeded", Date.now(), Date.now(), "generate", `x/${id}.mp3`, 10, 5] });
-      return id;
-    };
-    const ask = async (audioGenId: string, seams: { voices?: typeof voices } = { voices }) => {
-      const w = await world({ clip: 4, voice: 5 }, false);
-      let faceCalls = 0;
-      const reply = await admit(w, { maxCredits: 100, audioUploadId: undefined, audioGenId }, { consent: async (...a) => { faceCalls++; return passing(w.consentId)(...a); }, ...seams });
-      return { reply, faceCalls };
-    };
-    /* Premade, alone or all of a dialogue: no voice consent asked; the face gate still runs. */
-    for (const id of [await take({ voiceId: "v_premade" }), await take({ task: "dialogue", lines: [{ voiceId: "v_premade" }, { voiceId: "v_premade2" }] })]) {
-      const { reply, faceCalls } = await ask(id);
-      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
-      expect(faceCalls).toBe(1);
-    }
-    /* Everything else is refused for the voice consent, before the face check is even asked. */
-    const refused: [string, string][] = [
-      ["cloned", await take({ voiceId: "v_cloned" })], ["professional", await take({ voiceId: "v_pro" })], ["generated", await take({ voiceId: "v_gen" })],
-      ["unknown voice", await take({ voiceId: "v_not_listed" })], ["no voice id", await take({})],
-      ["one cloned in a dialogue", await take({ task: "dialogue", lines: [{ voiceId: "v_premade" }, { voiceId: "v_cloned" }] })],
-      ["another vendor", await take({ provider: "xai", voiceId: "v_premade" })], ["a dub", await take({ task: "dub", voiceId: "v_premade" })],
-      ["a voice change", await take({ task: "voiceChange", voiceId: "v_premade" })],
-    ];
-    for (const [label, id] of refused) {
-      const { reply, faceCalls } = await ask(id);
-      expect(reply, label).toMatchObject({ status: 409, body: { code: "no-voice-consent" } });
-      expect(faceCalls, label).toBe(0);
-    }
-    /* A voice list that cannot be read fails closed. */
-    const { reply, faceCalls } = await ask(await take({ voiceId: "v_premade" }), { voices: async () => { throw new Error("ElevenLabs is down"); } });
-    expect(reply).toMatchObject({ status: 409, body: { code: "no-voice-consent" } });
-    expect(faceCalls).toBe(0);
-  });
-});
-
-test("engine on, a workspace at its own $0 cap: refused 429 in the cap's words, with nothing held, written or sent, and the face gate never asked", async () => {
+test("engine on, a workspace at its own $0 cap (the house-only wall lifted for the test): refused 429 in the cap's words, with nothing held, written or sent", async () => {
   const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
   const { db } = await import("../../lib/db");
   await platformReady();
@@ -703,12 +616,11 @@ test("engine on, a workspace at its own $0 cap: refused 429 in the cap's words, 
       const w = await world();
       const before = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
       const handedOff = deferred.length;
-      let faceCalls = 0;
-      const reply = await admit(w, { maxCredits: 100000 }, { consent: async (...a) => { faceCalls++; return passing(w.consentId)(...a); } });
+      /* (The house-only wall is lifted for this test, to prove the cap wall.) */
+      const reply = await admit(w, { maxCredits: 100000 }, { houseOnly: false });
       expect(reply.status, JSON.stringify(reply.body)).toBe(429);
       expect(String(reply.body.error)).toMatch(/monthly cap on the platform's engines/);
       expect(String(reply.body.error)).not.toMatch(/\$|\d/);
-      expect(faceCalls).toBe(0);
       expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(before);
       const mine = (await (await platformDb().execute({ sql: "SELECT id FROM meter_events WHERE workspace_id=?", args: [ws] })).rows);
       expect(mine).toEqual([]);
@@ -726,13 +638,13 @@ test("the approval fingerprint names the engine that will be paid, not a guess f
   await asTenant(house(), async () => {
     const w = await world();
     let captured: { compiled: Record<string, unknown> } | null = null;
-    const reply = await admitLipSync({ ...w.body, maxCredits: 100 }, OWNER, { defer: async () => {}, checkpoint: (value) => { captured = value; return admissionReply({ prepared: true }); } }, { consent: passing(w.consentId) });
+    const reply = await admitLipSync({ ...w.body, maxCredits: 100 }, OWNER, { defer: async () => {}, checkpoint: (value) => { captured = value; return admissionReply({ prepared: true }); } }, {});
     expect(reply.body).toEqual({ prepared: true });
     expect((captured!.compiled.funding as { engine: string }).engine).toBe("syncso");
   });
 });
 
-test("what a person reads of a lip-sync take: its state, model, mode and length, and none of the vendor's ids, links, claims, consent ids, face hash or rates", async () => {
+test("what a person reads of a lip-sync take: its state, model, mode and length, and none of the vendor's ids, links, claims, consent ids or rates", async () => {
   const { db } = await import("../../lib/db");
   const { rowToGeneration } = await import("../../lib/jobs");
   const { publicDirectParams } = await import("../../lib/directEnginePublic");
@@ -744,7 +656,7 @@ test("what a person reads of a lip-sync take: its state, model, mode and length,
     const raw = (await db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [genId] })).rows[0];
     const rawParams = JSON.parse(String(raw.params));
     /* The row keeps the workflow's record in full (the proof there is something to hide)... */
-    expect(Object.keys(rawParams.lipsync)).toEqual(expect.arrayContaining(["syncId", "videoAsset", "audioAsset", "consentId", "faceSha256", "rateUsdPerSecond", "pollUntil", "claimedAt"]));
+    expect(Object.keys(rawParams.lipsync)).toEqual(expect.arrayContaining(["syncId", "videoAsset", "audioAsset", "rateUsdPerSecond", "pollUntil", "claimedAt"]));
     expect(rawParams.lipsync.syncId).toBe("job_1");
     /* ...and every read goes through the projection. */
     const read = rowToGeneration({ ...raw, project_name: null }) as unknown as { params: Record<string, unknown> };
@@ -763,17 +675,17 @@ function sourceFiles(): string[] {
   return out;
 }
 
-test("structure: the seams stay internal, the route is the one door, the consent gate is called before any row, and the settings are the plan's names", () => {
+test("structure: the seams stay internal, the route is the one door, no consent is checked, and the settings are the plan's names", () => {
   const reachers = (needle: RegExp) => sourceFiles().filter((f) => needle.test(readFileSync(f, "utf8"))).sort();
   expect(reachers(/\badmitLipSync\b/)).toEqual(["lib/lipSync.ts"]);
   expect(reachers(/\badvanceLipSyncJobWith\b/)).toEqual(["lib/lipSync.ts"]);
   expect(reachers(/@\/lib\/lipSync["']/)).toEqual(["app/api/lipsync/route.ts"]);
   const flow = readFileSync("lib/lipSync.ts", "utf8");
-  /* The face gate and the voice check come before the row is inserted and before anything is reserved. */
+  /* No consent is checked, of a face or a voice (owner, 16 Oct 2026). */
   const at = (needle: string) => flow.indexOf(needle);
-  expect(at("(seams.consent ?? requireConsentMatch)(")).toBeGreaterThan(0);
-  expect(at("(seams.consent ?? requireConsentMatch)(")).toBeLessThan(at("INSERT INTO generations"));
-  expect(at("liveVoiceConsentFor(")).toBeLessThan(at("(seams.consent ?? requireConsentMatch)("));
+  expect(flow.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")).not.toMatch(/consent|rekognition|faceSha256|faceFrame|castMember|voices/i);
+  /* House only: the engine gate and the house wall. */
+  expect(flow).toContain("seams.houseOnly !== false && !isHouseWorkspace(workspace)");
   expect(at("INSERT INTO generations")).toBeLessThan(at("await reserveGenerationSpend("));
   expect(at("await reserveGenerationSpend(")).toBeLessThan(at("await (deps.submit ?? submitLipSync)("));
   /* The consent gate takes no override from the admission's public face. */
