@@ -1057,3 +1057,17 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - 9 decisions asked of the owner, each with a recommendation: (1) consent reference source; (2) deploy #5 and #748's two assertions; (3) Slice 1 env names, export_jobs, #766 guards, #768 pin; (4) one enginesOnWorkspaces list; (5) #765 house cap guards; (6) agents' one-tap approval; (7) engine specifics; (8) provider terms; (9) small yes/no.
   - Ready lists: 9 green on release/1, plus the stacked approved PRs.
   - Slice 1 measurement repeated; Slices 2-3 built and waiting; Gemini 3.x not built.
+- **16 Oct 10:32 IST.** Owner's 10:55 answers recorded verbatim in the plan (56219c45), plus his answers to four follow-up questions:
+  - Slice 1 and #763/#764 merge AFTER deploy #5.
+  - #763 ships as is; #764 keeps "Big Buck Bunny © Blender Foundation, CC BY 3.0".
+  - Voice consent in #776 is dropped too.
+  - The sample-clip question had no answer.
+- **#748 MERGED into release/1** (merge commit cb13ad5c; head 989600d8; Opus APPROVED; CI 38816384718; the owner's yes incl. the two assertion changes).
+- #756 retargeted to release/1, CI running; #758 re-run on the new base.
+- Dispatched:
+  - Lane B: remove Rekognition and every face/voice consent check; a lightweight consent tick + NOC; #765 guards to the cap; Sarvam 3% FX buffer; Gemini dated price step, then Gemini 3.x.
+  - Lane C: Topaz 24 MP cap, consent removal, the "Approve at N cr" UI PR, render_shot in line.
+  - Lane D: queue-expiry constant, DNxHR dropped from copy, consent removal on Veo, Pro pick PR.
+  - Docs E: #761 likeness terms (2e0ce563), #714 Rekognition and Gemini names unused (d85195bf).
+- Docs E's env list (docs/plans/coolify-env-16oct.md) is written but uncommitted: `git add` was denied by the permission system for that lane; not worked around. Surfaced to the owner.
+- Sarvam: training toggle at Settings → Organisation → General (Owner only; docs.sarvam.ai FAQ); retention at Settings → Workspace → Data retention, "No retention" available; unset means retained indefinitely.
