@@ -1314,3 +1314,6 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 16:11 IST.** The worker's render path already has a hard per-render timeout.
   - **How it works:** REMOTION_EXPORT_RUN_TIMEOUT_MS, default 200 s. On timeout the whole process group is killed, strays are swept, and the job records "The export took longer than allowed. Nothing billed." This is covered by tests.
   - **Gap:** the Dockerfile's build-time checks (the fixture render and the deck print) have no timeout. Lane D wraps them in `timeout -k 10s 300s` with a log line, after Cast and once #775 and #767 land.
+- **16 Oct 16:21 IST.** **#749 MERGED** into release/1 (the v25 card, c021c3d3, CI 24/24 run 38885086171). Queue 2 is done (#805, #749; #800 failed earlier and is being fixed).
+  - **Next:** #792 is retargeted to release/1 and queued with #798 after the Slice 1 chains.
+  - **#750** conflicts with release/1 (v25-parts.css); lane C re-merges it.
