@@ -155,6 +155,26 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
     assert.ok(streams.some((s) => s.codec_type === "audio"));
   });
 
+  for (const cover of ["treatment", "pitch"]) {
+    test(`film deck, ${cover} cover: the real browser prints the deck page to a three-page slide PDF`, () => {
+      /* On the build droplet the Remotion-downloaded shell (Chromium 149) hangs on --print-to-pdf (its network service crashes); Playwright's headless shell (REMOTION_BROWSER_EXECUTABLE=~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell) prints the same page. Whether the worker image's own shell prints is checked on its first real deploy. */
+      /* The page is lib/pdf/html.ts's own output for a small film board (three pages: cover, the idea, the brief), saved as a fixture. */
+      const html = readFileSync(path.join(root, "test", "pdf-check", `film-${cover}.html`));
+      /* The worker image keeps the typeface beside its command; here it is the bundle's own public folder. */
+      process.env.REMOTION_FONTS_DIR ??= path.join(root, "public", "fonts");
+      const spec = { version: 1, composition: "pdf", pdf: { pages: 3, trimMm: { width: 338.667, height: 190.5 }, bleedMm: 0, images: [] } };
+      const { dir, status, stderr, result } = run(`film-deck-${cover}`, spec, { withSample: false, files: { "deck.html": html } });
+      assert.equal(status, 0, stderr);
+      assert.equal(result?.ok, true);
+      const pdf = readFileSync(path.join(dir, "output", "deck.pdf"));
+      const text = pdf.toString("latin1");
+      assert.equal(text.slice(0, 5), "%PDF-");
+      assert.equal((text.match(/\/Type\s*\/Page[^s]/g) ?? []).length, 3, "three pages, one for each section of the deck");
+      const box = text.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/);
+      assert.ok(box && Math.abs(Number(box[1]) - (338.667 * 72) / 25.4) < 2 && Math.abs(Number(box[2]) - (190.5 * 72) / 25.4) < 2, `a 16:9 slide, not ${box?.[1]} x ${box?.[2]}`);
+    });
+  }
+
   test("refusals: a bad spec exits 2, a missing file 3, and a path that climbs out is refused before anything runs", () => {
     const bad = run("bad", { version: 1, composition: "title-card", props: { aspect: "4:3", card: {} } });
     assert.equal(bad.status, 2);
