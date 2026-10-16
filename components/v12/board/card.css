@@ -28,7 +28,6 @@
 .v12 .v12-card-tile { display: grid; place-items: center; overflow: hidden; background: var(--gx-selected); border: 1px solid var(--gx-line-control); font-weight: 700; color: var(--gx-text); }
 .v12 .v12-card-tile > img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 70%; display: block; }
 .v12 .v12-card-tile-lg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 44px; height: 44px; border-radius: 10px; font-size: 20px; color: var(--gx-text-strong); }
-.v12 .v12-card-tile-sm { position: absolute; right: 8px; bottom: 8px; z-index: 1; width: 22px; height: 22px; border-radius: var(--gx-r-tab); font-size: var(--gx-fs-label); }
 .v12 .v12-card-tile-xs { flex: none; width: 18px; height: 18px; border-radius: var(--gx-r-xs); font-size: var(--gx-fs-label); line-height: 1; }
 .v12 .v12-card-page { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--gx-sunken); }
 .v12 .v12-card-page-head { flex: none; height: 36px; display: flex; align-items: center; gap: var(--gx-sp-8); padding: 0 var(--gx-sp-10) 0 var(--gx-sp-12); background: linear-gradient(var(--gx-card), var(--gx-sunken)); }
@@ -48,6 +47,9 @@
 .v12 .v12-card-bar > span { display: block; height: 100%; border-radius: 2px; background: var(--gx-accent); transition: width .4s; }
 .v12 .v12-card-by { position: absolute; right: 8px; bottom: 8px; height: 20px; padding: 0 7px; border-radius: 5px; background: rgba(0, 0, 0, .7); font-size: var(--gx-fs-label); color: var(--gx-text); display: flex; align-items: center; }
 .v12 .v12-card-grey { position: absolute; inset: 0; background: var(--gx-scrim); }
+/* A greyed option that is a page of text keeps its words at full strength (rule 15): the scrim is for a picture or a tile; the page only sets back. */
+.v12 .v12-card[data-greyed][data-kind="text"] { border-color: var(--gx-hair); }
+.v12 .v12-card[data-greyed][data-kind="text"] .v12-card-page { background: color-mix(in srgb, var(--gx-sunken) 55%, transparent); }
 
 /* ✓ ✕ ⋯ and the drag handle: on hover or focus, in the title row on a text card (its title steps aside), never over its text */
 .v12 .v12-card-marks { position: absolute; top: 6px; right: 6px; display: flex; gap: var(--gx-sp-4); opacity: 0; pointer-events: none; transition: opacity .12s; }
@@ -63,7 +65,7 @@
 .v12 .v12-card-marks .v12-iconbtn.v12-card-mark[data-mark="ok"] { color: var(--gx-done-text); }
 .v12 .v12-card-marks .v12-iconbtn.v12-card-mark[data-mark="no"] { color: var(--gx-failed-text); }
 .v12 .v12-card-marks .v12-iconbtn.v12-card-mark[aria-pressed="true"][data-mark="ok"] { background: var(--gx-done-tint); }
-.v12 .v12-card-marks .v12-iconbtn.v12-card-mark[aria-pressed="true"][data-mark="no"] { background: color-mix(in srgb, var(--gx-failed) 18%, transparent); }
+.v12 .v12-card-marks .v12-iconbtn.v12-card-mark[data-open][data-mark="no"] { background: color-mix(in srgb, var(--gx-failed) 18%, transparent); }
 /* A touch screen has no hover: the marks are always there, 44 px, and a text card's title row grows to hold them. */
 @media (pointer: coarse) {
   .v12 .v12-card-marks .v12-iconbtn.v12-card-mark { width: var(--gx-touch); height: var(--gx-touch); }
