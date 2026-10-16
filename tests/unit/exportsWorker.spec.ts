@@ -126,3 +126,24 @@ test("the worker route carries the export event: identifiers only, one slot per 
   expect(await run("waiting")).toEqual({ jobId: id, waiting: true });
   expect(seen).toEqual([id, id, id]);
 });
+
+test("a worker that answers 409 while a file is going up or a run is asked for is told plainly (the app sends files one at a time, so this should not happen)", async () => {
+  const { openExportSession } = await import("../../lib/exports/worker");
+  const urls = ["http://remotion-1:8790"];
+  const secrets = { [urls[0]]: "first-secret-0123456789-0123456789-abc" };
+  const pool = exportWorkerPool(urls, secrets);
+  const config = { urls, secrets: urls.map((url) => secrets[url]) };
+  const busy = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const target = String(input);
+    if ((init?.method === "PUT") || target.endsWith("/run")) return new Response(JSON.stringify({ error: "run_in_progress" }), { status: 409, headers: { "content-type": "application/json" } });
+    return pool.fetch(input as never, init as never);
+  }) as typeof fetch;
+  const session = await openExportSession(NAME(), { config, fetch: busy as never });
+  await expect(session.putFile("spec.json", "{}")).rejects.toThrow("An export worker was still busy with this export when a file was sent.");
+  await expect(session.run(120_000)).rejects.toThrow("An export worker was still busy with this export when it was asked to run it.");
+  await session.stop();
+  /* Any other refusal keeps its own words. */
+  const refused = (async (input: RequestInfo | URL, init?: RequestInit) => (init?.method === "PUT" ? new Response("{}", { status: 413 }) : pool.fetch(input as never, init as never))) as typeof fetch;
+  const other = await openExportSession(NAME(), { config, fetch: refused as never });
+  await expect(other.putFile("spec.json", "{}")).rejects.toThrow("An export worker did not accept a file.");
+});
