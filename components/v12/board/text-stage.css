@@ -1,10 +1,9 @@
 /*
  * Brief and Script, the Film board's text steps (components/v12/board/TextStage.tsx; design/particl-prototype-25). The page sits over the stage's
  * canvas like the other stage pages (stage-pages.css); its cards are the v25 card (card.css). Under .v12; app/graphite.css tokens only.
- * Above 1440 px the page scales with the canvas (`zoom`, set from the screen scale); the bars stay.
+ * Above 1440 px the cards are bigger, with their words, as real layout (card-scale.css, never zoom or transform); the bars and buttons stay.
  */
 .v12 .v12-ts { padding: 24px 24px 140px; align-items: start; align-content: start; max-width: none; }
-.v12 .v12-ts-grid { display: grid; grid-template-columns: repeat(auto-fill, 280px); gap: 16px; align-items: start; }
 .v12 .v12-ts-acts { display: flex; gap: 8px; }
 .v12 .v12-ts-pane { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .v12 .v12-ts-tabs { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -18,4 +17,3 @@
 .v12 .v12-ts-lines { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
 .v12 .v12-ts-lines li { padding: 9px 0; border-top: 1px solid var(--gx-hair-soft); font-size: var(--gx-fs-body); overflow-wrap: anywhere; }
 .v12 .v12-ts-hindi { display: flex; flex-direction: column; gap: 12px; }
-@media (max-width: 899px) { .v12 .v12-ts-grid { grid-template-columns: minmax(0, 1fr); } }
