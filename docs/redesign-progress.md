@@ -1318,3 +1318,12 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Next:** #792 is retargeted to release/1 and queued with #798 after the Slice 1 chains.
   - **#750** conflicts with release/1 (v25-parts.css); lane C re-merges it.
 - **16 Oct 16:33 IST.** **#750** re-merge (bf5de6e7) APPROVED by Opus: both stylesheets kept whole; the rail's more specific rule still wins; no guard changed. Queued: #792 → #798, then #750 → #811 (once #791 is in).
+- **16 Oct 16:48 IST.** Lane B's work is with the Opus money reviewer:
+  - #800 fail-closed fix (c0938c42);
+  - **#815** batches judged as ONE job (POST /api/generate/batch; the server prices every member and judges the sum against guardrail 4; one approval; new guard file guardrail4Batch.spec.ts);
+  - #797's Hindi plan total judged as one job (2573994c).
+
+  **Also:**
+  - **Cast:** lane B had already built it (feat/cast-character 75c0694b); lane D builds on that branch (no duplicate PR).
+  - **Memory:** lane J's mock server reached 12.4 GB (31% available), and it was told to stop.
+  - **Lane C:** given the batch shape for the Director bar.
