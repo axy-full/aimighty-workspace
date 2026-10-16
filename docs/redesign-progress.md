@@ -1117,3 +1117,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #762's import-pinning entry is CONFIRMED by Opus: one entry, BrandLogo is two img tags plus a stylesheet, nothing loosened. CI running at f4d6eaab.
   - Opus APPROVED lane B's batch (#771 24369050, #776 8e41a297, #777 ad7e6893, #778 8b0a0603, #780 1eb1eebb, #785 d8ebbd1d): actingViewer can't be spoofed; uploadOpenableBy always applies; the Sarvam buffer settles at the quote; guard edits are additions or field drops only. Merges after the deploy #5 cut.
   - Pre-existing gap queued for lane B after D-2: findStoredSource has no private-board check on source takes.
+- **16 Oct 12:16 IST.** New PRs:
+  - #790 render_shot in line with rule 14 (e5f41f19, NEEDS AKSHAY: 7 test setups changed).
+  - #789 Approve at N cr (9039b8fb, paused).
+  - #792 v25 PR 5 ✓/✕ on takes (9c6047c1, on #749).
+  - #793 v25 PR 21 assemble_film (681549dc, on remotion/10-zip; voice lines carry captions in any script; free).
+  Opus reviews running for #790, #791, #792 and #793. Lane D owns the Edit/Export contract; lane B's Hindi tool writes into lane D's shape.
