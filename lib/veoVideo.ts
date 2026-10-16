@@ -15,8 +15,7 @@ import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./g
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow, shotCapGate } from "./shotCap";
-import { isAgentId } from "./security/people-only";
+import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { VEO_RATES, type VeoAspect, type VeoModel, type VeoResolution } from "./vendorRates";
@@ -192,7 +191,7 @@ export async function admitVeo(input: Record<string, unknown>, got: AdmissionAct
   /* The cost approval rule (brief 2.2), as the fal path judges it: with a cap per shot, a member's take past it needs an admin. Refused, for a quote and a press, before any row is written. */
   if (shotId && shotCode) {
     /* An admin's own press: not a token, an MCP client, an agent or an Atomik Auto step (the same person test jobLineNow applies). */
-    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: got.user.role === "admin" && got.token == null && !isAgentId(got.user.id) && options.run?.auto !== true });
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool: "video", model, durationSeconds, resolution, aspectRatio, images: imgs.length, ...(imgs.length ? { needs: ["castMemberId on each image", "projectId", "use"] } : {}) });
