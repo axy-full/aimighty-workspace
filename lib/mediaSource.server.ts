@@ -187,13 +187,24 @@ function extOf(mime: string): string {
   return /wav/.test(mime) ? "wav" : mime === "audio/ogg" ? "ogg" : mime === "audio/flac" ? "flac" : mime === "audio/mp4" || mime === "audio/aac" ? "m4a" : "mp3";
 }
 
+/** Is the request an Atomik run that exists but has no person to act for? A read that fails counts as yes (closed). */
+async function orphanedRun(): Promise<boolean> {
+  const id = currentTenant()?.user?.id;
+  if (!id || !id.startsWith("agent:")) return false;
+  try {
+    if (!(await db().execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rig_agent_runs'")).rows.length) return false;
+    return (await db().execute({ sql: "SELECT 1 FROM rig_agent_runs WHERE id = ? LIMIT 1", args: [id.slice("agent:".length)] })).rows.length > 0;
+  } catch { return true; }
+}
+
 /** The audio or video original a source reference names, or null when the workspace has no such file. */
 export async function findStoredSource(ref: SourceRef): Promise<StoredSource | null> {
   await ready();
-  /* Who is asking: the signed-in person, or an Atomik run's owner (lib/actingViewer.ts), or nobody (background work, which is not asked). A run whose owner cannot be found is
-     not nobody: it reads nothing, so a missing row can never open another person's private upload or take. */
+  /* Who is asking: the signed-in person, or an Atomik run's owner (lib/actingViewer.ts), or nobody (background work, which is not asked). A run that EXISTS but whose owner
+     cannot be found is not nobody: it reads nothing, so it can never open another person's private upload or take. An agent id with no run behind it at all is minted by no
+     run (a run's identity is made with its row), so it is an internal call and is not asked, as it never was: the doors that take a person's upload ask for one first. */
   const viewer = await actingViewer();
-  if (!viewer && currentTenant()?.user?.id.startsWith("agent:")) return null;
+  if (!viewer && (await orphanedRun())) return null;
   if (ref.uploadId) {
     const row = (await db().execute({
       sql: "SELECT id, filename, mime, ext, bytes, kind, duration_s, stored_url FROM uploads WHERE id=? LIMIT 1",
