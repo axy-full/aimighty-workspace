@@ -1028,3 +1028,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - E: docs/plans/needs-akshay-16oct.md, a per-PR index plus the owner's cross-cutting decisions, for the 10:30 report.
     - B: idle. Nothing left without owner decisions.
   - No paid generation; spend $0.
+- **16 Oct 06:01 IST.** Correction: the six entries stamped "16 Oct 23:15" to "16 Oct 23:59" (lines 692-699) were written on **15 Oct** at those times; the date label was wrong. Docs lane E: docs/plans/needs-akshay-16oct.md (0347b970) indexes 36 open PRs and 21 cross-cutting owner decisions. It notes two unconfirmed points: #700's last Opus approval was at 16032c47 (13 Oct), not its current head c9688f42; and REKOGNITION_ENABLED/RUNWAY_API_KEY set-status conflicts between sources.
