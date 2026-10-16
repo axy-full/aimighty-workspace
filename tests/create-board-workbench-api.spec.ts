@@ -1,5 +1,6 @@
 import { test, expect, request as pwRequest } from "@playwright/test";
-import { signInLocally } from "./helpers/workbenchLocal";
+import { createClient } from "@libsql/client";
+import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 
 /**
  * `create_board` through the real routes on a local ENGINE_MOCK server (lib/v12/tools/create-board.ts; rule 11): a token with the render scope
@@ -11,6 +12,9 @@ const BASE = process.env.PW_BASE_URL || "http://localhost:4551";
 test("an agent with a render token makes a board for free; a read-only token is refused; another workspace sees nothing", async ({ request }) => {
   const account = await signInLocally(request);
   const me = await request.get("/api/me").then((r) => r.json());
+  /* A paid plan, so the workspace may hold more than one board (the Invite plan holds one). */
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try { await platform.execute({ sql: "UPDATE workspaces SET plan_id='studio' WHERE id=?", args: [account.workspace.id] }); } finally { platform.close(); }
   const headers = { "X-Workbench-Scope": `particl-active-${account.workspace.id}-${me.id}` };
   const mint = async (scope: "render" | "read") => {
     const made = await request.post("/api/tokens", { headers, data: { name: `Board ${scope}`, scope } });
@@ -43,6 +47,16 @@ test("an agent with a render token makes a board for free; a read-only token is 
   const refused = await reader.post("/api/boards", { data: { name: "Nope" } });
   expect(refused.ok()).toBe(false);
   expect([401, 403]).toContain(refused.status());
+
+  /* A browser session is checked as the draft's own save is: a foreign origin is refused, and so is a page drawn for another account or workspace. */
+  const foreign = await request.post("/api/boards", { headers: { ...headers, Origin: "https://elsewhere.example" }, data: { name: "Cross-site" } });
+  expect(foreign.status()).toBe(403);
+  const stale = await request.post("/api/boards", { headers: { "X-Workbench-Scope": "particl-active-someone-else" }, data: { name: "Stale page" } });
+  expect(stale.status()).toBe(409);
+  const unscoped = await request.post("/api/boards", { data: { name: "No scope" } });
+  expect(unscoped.status()).toBe(409);
+  const person = await request.post("/api/boards", { headers, data: { name: "By a person" } });
+  expect(person.ok(), await person.text()).toBe(true);
 
   /* Nonsense is refused in words, with nothing made. */
   const bad = await agent.post("/api/boards", { data: { aspect: "3:2" } });

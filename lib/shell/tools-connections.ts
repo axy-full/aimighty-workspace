@@ -67,6 +67,7 @@ export const MCP_TOOL_LINES: Readonly<Record<string, string>> = Object.freeze({
   get_render: "One take, with a link to watch or save it",
   list_projects: "Projects with their counts and spend",
   create_project: "Makes a project to file takes under",
+  create_board: "Makes a film board with the demo's steps; free",
   usage_summary: "Spent, remaining, and what is running now",
 });
 
