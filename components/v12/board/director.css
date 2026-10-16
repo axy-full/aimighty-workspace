@@ -13,7 +13,7 @@
   display: flex; align-items: center; justify-content: space-between; gap: var(--gx-sp-8); min-height: 40px; padding: 0 var(--gx-sp-8); border: 0; border-radius: var(--gx-r-item); background: transparent;
   color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); text-align: left; cursor: pointer;
 }
-button.v12-dircol-row:hover { background: rgba(255, 255, 255, .06); }
+.v12 button.v12-dircol-row:hover { background: rgba(255, 255, 255, .06); }
 .v12 .v12-dircol-row[aria-expanded="true"] { background: var(--gx-selected); }
 .v12 .v12-dircol-model { cursor: default; }
 .v12 .v12-dircol-name { color: var(--gx-text-sec); }

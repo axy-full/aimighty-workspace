@@ -32,6 +32,7 @@ test("the rail is the Film stages: eleven steps, in order, Treatment and Pitch o
   await expect(frame(page).locator(".v12-steprail-step")).toHaveCount(11);
   await step(page, "pitch").hover();
   await expect(page.getByTestId("v12-tooltip")).toContainText("Optional · Not started");
+  /* A skipped step keeps its colour: it can still be pressed, so its words stay at the readable floor (no opacity over the muted colour). */
 });
 
 test("drag a step above another to reorder; Alt+↑ and Alt+↓ do the same from the keyboard", async ({ page }, info) => {
@@ -60,6 +61,7 @@ test("Rename, Skip and Put it back are in a step's menu; a skipped step is muted
   await expect(step(page, "script").locator(".v12-steprail-label")).toHaveText("Story");
   await menu(page, "pitch", "Skip this step");
   await expect(step(page, "pitch")).toHaveAttribute("data-skipped", "");
+  await expect(step(page, "pitch")).toHaveCSS("opacity", "1");
   await expect(step(page, "pitch")).toHaveAttribute("aria-label", "Pitch, skipped");
   await step(page, "pitch").hover();
   await expect(page.getByTestId("v12-tooltip")).toContainText("Optional · Skipped");
@@ -67,7 +69,7 @@ test("Rename, Skip and Put it back are in a step's menu; a skipped step is muted
   await expect(step(page, "pitch")).not.toHaveAttribute("data-skipped", /.*/);
 });
 
-test("Remove takes a step off the rail for good: it stays off through the next edits, and Add step puts a new one after the current step", async ({ page }) => {
+test("Remove takes a step off the rail for good: it stays off through the next edits, and Add step offers the board's presets and puts the pick after the current step", async ({ page }) => {
   await menu(page, "locations", "Remove");
   await expect(order(page)).toHaveText("treatment pitch brief script cast elements storyboard shots edit deliver");
   /* More edits after it: still gone, and nothing else came back. */
@@ -77,10 +79,13 @@ test("Remove takes a step off the rail for good: it stays off through the next e
   await menu(page, "brief", "Skip this step");
   await expect(order(page)).toHaveText("treatment pitch brief script cast elements storyboard shots edit deliver");
   await expect(step(page, "locations")).toHaveCount(0);
-  /* Add step: after the current step (Shots), and it becomes the current one. */
+  /* Add step opens the board's presets and "Custom…"; the pick goes after the current step (Shots) and becomes the current one. */
   await frame(page).getByTestId("v12-steprail-add").click();
+  const presets = page.getByRole("menu", { name: "Add a step" });
+  await expect(presets.getByRole("menuitem")).toHaveText([/Moodboard/, /Recce/, /Client review/, /Animatic/, /Custom/]);
+  await presets.getByRole("menuitem", { name: /Recce/ }).click();
   const added = frame(page).locator(".v12-steprail-step").nth(8);
-  await expect(added.locator(".v12-steprail-label")).toHaveText("New step");
+  await expect(added.locator(".v12-steprail-label")).toHaveText("Recce");
   await expect(added).toHaveAttribute("aria-current", "step");
 });
 

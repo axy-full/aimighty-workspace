@@ -33,7 +33,8 @@
 .v12 .v25-parts-dircol { margin-top: var(--gx-sp-16); }
 .v12 .v25-parts-dirbar { position: absolute; left: var(--gx-sp-16); right: var(--gx-sp-16); bottom: var(--gx-sp-16); display: flex; justify-content: center; }
 .v12 .v25-parts-dirbar .v12-dirbar { max-width: 720px; }
-.v12 .v25-parts-ask { height: 40px; min-width: 0; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: 15px; padding: 0 var(--gx-sp-8); outline: none; }
+.v12 .v25-parts-ask { height: 40px; min-width: 0; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: 15px; padding: 0 var(--gx-sp-8); }
+.v12 .v25-parts-ask:focus-visible { outline: 2px solid var(--gx-text); outline-offset: 2px; }
 .v12 .v25-parts-ask::placeholder { color: var(--gx-placeholder); }
 @media (min-width: 1000px) {
   .v12 .v25-parts-director { padding-right: 268px; min-height: 560px; }

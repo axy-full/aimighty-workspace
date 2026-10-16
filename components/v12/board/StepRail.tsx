@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { ContextMenu, Tooltip, type MenuItem } from "../ui";
-import type { StageEdit } from "@/lib/v12/board/stages";
+import { ContextMenu, Menu, Tooltip, type MenuItem } from "../ui";
+import { STAGE_PRESETS, type StageEdit } from "@/lib/v12/board/stages";
 import { railGeometry, railState, railTip } from "./rail-model";
 import "./rail.css";
 
@@ -35,7 +35,7 @@ export function StepRail({ steps, current, onPick, onAdd, onEdit, readOnly }: {
   steps: readonly RailStep[];
   current: string | null;
   onPick: (id: string) => void;
-  /** "Add step": absent, the button is not drawn (with `onEdit` and no `onAdd`, it adds a step after the current one). */
+  /** "Add step": absent, the button is not drawn. With `onEdit` and no `onAdd` it opens the board's presets (Moodboard, Recce, Client review, Animatic) and "Custom…", and adds the pick after the current step. */
   onAdd?: () => void;
   /**
    * What a person changes on the rail: drag a step (or Alt+↑ / Alt+↓ on it) to reorder, right-click it (or the menu key) to Rename, Skip or Put it back,
@@ -48,6 +48,8 @@ export function StepRail({ steps, current, onPick, onAdd, onEdit, readOnly }: {
   const [over, setOver] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number; pointer?: boolean } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const addAnchor = useRef<HTMLButtonElement>(null);
   const editable = Boolean(onEdit) && !readOnly;
   const move = (id: string, index: number) => { if (editable) onEdit!({ type: "move", id, index: Math.max(0, Math.min(steps.length - 1, index)) }); };
   const drop = (event: DragEvent, index: number) => {
@@ -64,6 +66,10 @@ export function StepRail({ steps, current, onPick, onAdd, onEdit, readOnly }: {
     if (!editable || !event.altKey || event.metaKey || event.ctrlKey) return;
     if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); move(id, index + (event.key === "ArrowUp" ? -1 : 1)); }
   };
+  const addItems: MenuItem[] = [
+    ...STAGE_PRESETS.map((p) => ({ id: p.id, label: p.label, hint: p.line, onSelect: () => onEdit?.({ type: "add", after: current, label: p.label }) })),
+    { id: "custom", label: "Custom…", hint: "name it", onSelect: () => onEdit?.({ type: "add", after: current, label: "New step" }) },
+  ];
   const menuItems = (id: string): MenuItem[] => {
     const step = steps.find((s) => s.id === id);
     if (!step) return [];
@@ -156,7 +162,7 @@ export function StepRail({ steps, current, onPick, onAdd, onEdit, readOnly }: {
           })}
           {onAdd || editable ? (
             <Tooltip name="Add a step" line="Put another step on this board.">
-              <button type="button" className="v12-steprail-add" onClick={() => (onAdd ? onAdd() : onEdit?.({ type: "add", after: current, label: "New step" }))} data-testid="v12-steprail-add" aria-label="Add step" style={{ padding: `${geometry.gap}px 0 2px` }}>
+              <button ref={addAnchor} type="button" className="v12-steprail-add" onClick={() => (onAdd ? onAdd() : setAdding(true))} aria-haspopup={onAdd ? undefined : "menu"} aria-expanded={onAdd ? undefined : adding} data-testid="v12-steprail-add" aria-label="Add step" style={{ padding: `${geometry.gap}px 0 2px` }}>
                 <span className="v12-steprail-line" style={line} aria-hidden="true" />
                 <span className="v12-steprail-circle v12-steprail-plus" style={circle} aria-hidden="true">+</span>
                 {geometry.compact ? null : <span className="v12-steprail-label v12-steprail-addlabel">Add step</span>}
@@ -164,6 +170,7 @@ export function StepRail({ steps, current, onPick, onAdd, onEdit, readOnly }: {
             </Tooltip>
           ) : null}
         </div>
+        {!onAdd ? <Menu open={adding} onClose={() => setAdding(false)} anchor={addAnchor} label="Add a step" items={addItems} side="right" width={240} /> : null}
         <ContextMenu at={menu ? { x: menu.x, y: menu.y, pointer: menu.pointer } : null} onClose={() => setMenu(null)} label={steps.find((x) => x.id === menu?.id)?.label ?? "Step"} items={menu ? menuItems(menu.id) : []} width={200} testId="v12-steprail-menu" />
         {fade.top ? <span className="v12-steprail-fade" data-edge="top" aria-hidden="true" /> : null}
         {fade.bottom ? <span className="v12-steprail-fade" data-edge="bottom" aria-hidden="true" /> : null}

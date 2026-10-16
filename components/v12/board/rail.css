@@ -28,7 +28,7 @@
 .v12 .v12-steprail-line { position: absolute; left: 50%; top: 0; width: 1px; background: var(--gx-line-strong); transform: translateX(-50%); transition: height .2s ease-out; }
 
 .v12 .v12-steprail-circle {
-  position: relative; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--gx-line-control);
+  position: relative; box-sizing: border-box; border-radius: 50%; border: 1px solid var(--gx-line-control);
   display: grid; place-items: center; color: var(--gx-text-half); background: transparent; transition: width .2s ease-out, height .2s ease-out;
 }
 .v12 .v12-steprail-step[data-state="done"] .v12-steprail-circle { border-color: color-mix(in srgb, var(--gx-text) 35%, transparent); color: var(--gx-text); }
@@ -47,7 +47,7 @@
 /* Add step: a dashed circle, then its label (dropped when the circles are small) */
 .v12 .v12-steprail-add { color: var(--gx-text-half); border-radius: var(--gx-r-item); }
 .v12 .v12-steprail-add:hover { color: var(--gx-text); }
-.v12 .v12-steprail-plus { border: 1.5px dashed var(--gx-line-control); font-size: 15px; line-height: 1; color: inherit; }
+.v12 .v12-steprail-plus { border: 1px dashed var(--gx-line-control); font-size: 15px; line-height: 1; color: inherit; }
 
 /* Fades where more is hidden */
 .v12 .v12-steprail-fade { position: absolute; left: 0; right: 0; height: 28px; pointer-events: none; }
@@ -58,8 +58,7 @@
   .v12 .v12-steprail, .v12 .v12-steprail-step, .v12 .v12-steprail-add, .v12 .v12-steprail-line, .v12 .v12-steprail-circle { transition: none; }
 }
 
-/* Editing the rail: a skipped step is muted, a dragged one is lifted, and the line where it would land shows above its target; the rename field is the label's width. */
-.v12 .v12-steprail-step[data-skipped] { opacity: .75; }
+/* Editing the rail: a skipped step keeps its colour (it can still be pressed, so its words stay at the readable floor) and says so by its strike-through, "Skipped" and its name for a screen reader; a dragged one is lifted, and the line where it would land shows above its target; the rename field is the label's width. */
 .v12 .v12-steprail-step[data-skipped] .v12-steprail-label { text-decoration: line-through; text-decoration-thickness: 1px; }
 .v12 .v12-steprail-step[data-dragging] { opacity: .5; }
 .v12 .v12-steprail-step[data-drop]::before { content: ""; position: absolute; left: 8px; right: 8px; top: 0; height: 2px; border-radius: 1px; background: var(--gx-accent); }
