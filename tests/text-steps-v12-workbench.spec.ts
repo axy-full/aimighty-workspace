@@ -155,6 +155,19 @@ test("Script at the five desktop sizes: no sideways scroll, cards inside the win
     expect(await noSideways(page), `${width}: no sideways scroll`).toBe(true);
     const outside = await stage.getByTestId("v12-card").evaluateAll((els) => els.filter((el) => { const r = el.getBoundingClientRect(); return r.right > innerWidth || r.bottom > innerHeight + 1 || r.left < 0; }).length);
     expect(outside, `${width}: cards inside the window`).toBe(0);
+    /* Sharp at every size (owner, 16 Oct): no word is drawn through a zoom or a transform; the cards are bigger by real layout. */
+    expect(await stage.evaluate((root) => {
+      const bad: string[] = [];
+      for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+        if (!Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent ?? "").trim())) continue;
+        for (let up: HTMLElement | null = el; up; up = up.parentElement) {
+          const css = getComputedStyle(up);
+          if (css.zoom !== "1" || css.transform !== "none") { bad.push(`${up.className || up.tagName}: zoom ${css.zoom}, transform ${css.transform}`); break; }
+          if (up === root.parentElement) break;
+        }
+      }
+      return bad.slice(0, 5);
+    }), `${width}: no zoom or transform on any word`).toEqual([]);
     expect(await faintText(page, '[data-testid="v12-text-stage"]'), `${width}: words 12 px and 55% white`).toEqual([]);
     expect(await textReadsAtFloor(page, CARD_WORDS), `${width}: words read on their ground`).toEqual([]);
   }
