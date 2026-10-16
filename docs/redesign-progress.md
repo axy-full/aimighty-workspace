@@ -1239,3 +1239,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - the preview never shows 4K.
   - **Lane C:** the viewport rounding PR and the rail borders.
   - **The layout conversion (2–3 days) waits for the owner's go.**
+- **16 Oct 15:05 IST.** **#697 MERGED** into release/1 (Remotion compositions, 50c92646, CI 24/24 run 38873362700). Queue 1 is on #699; queue 2 on #805.
+  - **Docs lane E** (redesign/integration 1f281733):
+    - deck-editor.md reconciled with the owner's section 3 and library; its additions are marked for him;
+    - sharpness-5k.md now carries the audit;
+    - the demo docs are moved to the Tue 27 freeze.
