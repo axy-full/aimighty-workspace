@@ -1030,3 +1030,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - No paid generation; spend $0.
 - **16 Oct 06:01 IST.** Correction: the six entries stamped "16 Oct 23:15" to "16 Oct 23:59" (lines 692-699) were written on **15 Oct** at those times; the date label was wrong. Docs lane E: docs/plans/needs-akshay-16oct.md (0347b970) indexes 36 open PRs and 21 cross-cutting owner decisions. It notes two unconfirmed points: #700's last Opus approval was at 16032c47 (13 Oct), not its current head c9688f42; and REKOGNITION_ENABLED/RUNWAY_API_KEY set-status conflicts between sources.
 - **16 Oct 06:02 IST.** Lane C housekeeping: #781 6618a2a9 and #786 93376514 now contain #778 a95fd177 and use the shared shotCapAdmin. Behaviour is identical; 73 + 57 specs pass. A quick Opus confirmation is batched with lane D's merges.
+- **16 Oct 06:04 IST.** Opus re-APPROVED #700 at c9688f42 (delta since 16032c47): the only change fails closed for an owner with no users row.
+  - The "migration" is in-code additive DDL (CREATE TABLE IF NOT EXISTS export_jobs + one index; workspace_id NOT NULL). Every query is workspace-scoped; the money guard is unchanged; 41/41 specs.
+  - One env name beyond the list: REMOTION_EXPORT_QUEUE_EXPIRY_MS (owner: approve or make it a constant).
+  - Should-fix (sent to lane D): merge the worker's a5e0f445 into #700 and up the stack.
+  - Owner question: the run-time reach check uses the workspace users mirror, not platform memberships (predates this delta).
