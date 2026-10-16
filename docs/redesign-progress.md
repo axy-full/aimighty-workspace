@@ -1261,3 +1261,10 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Order:** that line comes from #809's `nothingBilled` field, so #807 and #809 merge together, #809 first, once the owner says yes.
   - **Reruns:** phones (no Enhance control there) and 1440/1920 pass; two flakes passed on a fresh server.
   - **Memory** is back to 25 GB available.
+- **16 Oct 15:31 IST.** Opus money/security deltas.
+  - **APPROVED** (engine chain): #776 61639c2e, #777 ce6fa650, #778 2730ae72, #785 c96ef13b, #780 ec5c3872, #782 c7aa4c4c, #779 ffbff236, #783 d97e5951, #781 97433295 and #786 b18e9716; also #808 6c8a4f71.
+  - **Queued:** they merge after #791/#794 as one chain (stops at the first failure).
+  - **Held:** #787 and #788 (the Pro pick needs rethinking under the owner's 15:05 Director rule).
+  - **#800 MUST-FIX (security):** the fix failed open for `agent:*` ids with no run row, and loosened a sourceBoardAccess privacy assertion. Lane B makes it fail closed (an anonymous member) and reverts the assertion.
+  - **Should-fix, as a separate PR:** Recraft, Topaz and Veo source reads adopt `actingViewer()`.
+  - **#807** waits for #809 (owner's yes).
