@@ -1037,3 +1037,76 @@ Apply the same standard to board cards, shots and stills: every output is editab
 - **Google Stitch** is not a deck engine; don't build on it.
 
 **6) Coming today from the owner:** allowance_usd for ws_legacy, whether RUNWAY_API_KEY is set, and the Sarvam switches.
+
+## Owner, 16 Oct 2026, 15:50 IST: answers, advisor findings, v26 design first, resolution, Enhance loader, public site
+
+Recorded by the lead, verbatim except A.8's cost thresholds, which are engine costs and are held privately.
+
+**A. Decisions**
+1. **Agent numbers:** after the private page. Put the Agent proposal, the Director engine lists with prices and the Seedance BytePlus vs Evolink comparison on that one page. "Charged exactly" is NOT needed for the demo; it ships after 31 Oct with Stripe. For the demo, Agent shows one all-in quote on the house workspace.
+2. **Batches:** a multi-shot press and the Hindi plan are each judged as ONE job against the 200 cr line, with one approval that shows the total. Add a guard test proving a batch over the line asks, even when every shot in it is under the line.
+3. **Board zoom:** PAUSE converting the board zoom to real layout, and pause any restyling, until the v26 zip arrives; v26 sets the layout per width.
+4. **The owner's own zoom:** pinch and +/- zoom are exempt while zooming; text must redraw sharp once the zoom stops.
+5. **Screenshots:** 2560×1440 at BOTH 1× and 2×; 3008×1692 at 2×.
+6. **Logo:** wordmark and mark SVGs are coming from the owner. Build lockups from them; never redraw.
+7. **#809:** yes. Free when the writer never answers, times out or errors.
+8. **#809:** yes, Opus 5.5 is the default writer at 1 cr, with Sonnet 5.5 behind it. Report the real cost of the first 50 presses on the house workspace against the owner's thresholds (held privately).
+9. **#807: NO as written.**
+   - Pin the full new message exactly, including the no-charge sentence when the server sends it.
+   - Name the server test that proves a refused press is never billed.
+   - The tooltip, exactly and pinned word for word: "Enhance — Particl rewrites your prompt for the chosen engine (light, camera, detail) and puts it in the box for you to edit. 1 credit per press, free if it fails. Make sends the box exactly as it is."
+10. **create_board:** yes, add it to the list of MCP tools that write (this makes the guard stricter). Merge #806 only after Opus approves it and CI is green.
+11. **#810:** yes to Chrome for Testing as the backup PDF printer. Pin the exact version and verify its checksum in the Dockerfile; 4 → 5 stages is fine. It stays a draft until the Mon 19 worker test decides.
+12. **Polotno:** the owner starts the trial on Mon 26 so it covers Thu 29. Tell him what it needs (key, env name, allowed domain); he sets keys himself, never in chat.
+13. **Deploy #5 (#799):** the owner does backup → merge → Deploy. Run the read-only checks when he says "deployed".
+14. **The two processes:** the owner checks them himself before stopping them.
+15–19. Stripe test keys, invite names, allowance_usd, the Runway key and the Sarvam switches are coming from the owner.
+20. **TEXT_DIRECT and MODEL_CATALOG:** set in the deploy that ships #809, not today. Put both in that deploy PR's "before you press Deploy" list with exact values, and say whether ANTHROPIC_API_KEY must be set.
+21. **secrets:** marked required only after #796 merges and the check has run on one PR. **Code-owner review: NO.** Every PR comes from the owner's account and GitHub won't let him approve his own, so it would block release/1 merges; revisit when a second person reviews.
+22. **#790:** yes, a 480p take is the draft for Seedance. Yes to the listed test changes (setup only, every assertion stayed), as long as a test proves Auto never starts a 720p/1080p take or anything over the line. Merge only on green CI.
+
+**B. The advisor's findings**
+1. **uploads.real_face_consent:** yes, one additive, nullable column, written only by a signed-in person's action, never checked automatically, never blocking. Build it AFTER 31 Oct, and flag it as a migration in that deploy PR.
+2. **Remotion licence:** passing no key is fine; the Free License covers companies with a total headcount of 3 or fewer, counting contractors on the Remotion project. Add a licence note to ops/render-worker/README.md: we render only our own compositions, users never upload Remotion code, and a 4th person means buying the Company License. Report its price (report only).
+3. **The Hindi lip-sync test clip moves from Sat 24 to Tue 20.** Estimate first; it runs only on the owner's yes.
+4. **Kling 4.0:** check whether Kling's own API offers 4.0 today; if so, the price and env name (report only). Kling 3.0 Pro stands in until then.
+
+**C. v26 design comes first.**
+- The owner sends Claude Design a v26 brief: built for 5K/6K; every screen including the visitor pages, with Dune Studies as the sample project; Agent vs Director with engine pickers; a resolution control; the Enhance loader; the treatment builder; a hand-off package (tokens.css, a component sheet, a URL per state, an image-slot list). The zip is the source for the look.
+- Until it arrives, keep going on what design can't do: lane C's whole-pixel fix, srcset and picture widths, the 4K rendition in full-screen preview, posters from the take, the automated image-density check, the screenshot job.
+- When it arrives: estimate which demo-path screens can take the v26 look before the 27 Oct freeze; nothing else moves on the demo path. Make sure the real Dune Studies images are available at 4K for v26's photo slots, and report which are smaller.
+
+**D. Resolution must be a visible choice.**
+- In Make and Director (column, pop-ups), a Resolution control beside Ratio and Length.
+  - Options come from each engine's own list, validated on the server.
+  - Each option is priced by the quote engine.
+  - Options the engine can't do are greyed out with "not on this engine".
+- Draft/Final become presets (Draft = 480p, Final = 1080p); the resolution stays visible and changeable.
+- Native 4K and upscaled 4K are separate options.
+- The resolution shows in every card and take status line, in Preview and on Library tiles.
+- The Agent Brief gets one question: "Deliver at 1080p or 4K?"
+- **Timing:** Make and Shots before the freeze if it fits in a day without moving the demo path; otherwise right after 31 Oct.
+- **Money rules apply:** an Opus money review, and a guard test that the server refuses a resolution the engine doesn't list.
+
+**E. Enhance needs a real loader** (#807/#809, before the freeze).
+- Stream the rewrite into the prompt box word by word; the 8 s limit applies to the first words arriving.
+- **Waiting:**
+  - the button shows the dot-arc loader with "Enhancing…" and is disabled (one press = at most one charge);
+  - the box dims, with a light sweep and a progress line toward 8 s;
+  - at 2 s, "Rewriting for the chosen engine: light, camera, detail" (no engine names in Agent mode).
+- **Done:** briefly highlight the changed words, plus an "Undo enhance" chip that restores the original text.
+- **Cancel and failure:** Esc/Cancel before any words arrive charges nothing. A stream cut off midway counts as failed: restore the original, charge nothing, and show "Couldn't enhance this time. Nothing was charged." with Try again.
+- **Accessibility:** respect reduced motion; announce states to screen readers (aria-busy, a live region).
+- **Tests:** a cancelled or cut-off press is never billed, and a double press charges once.
+- **Screenshots:** every state at 1440 and 3008 @2×. Match v26 when the zip arrives.
+
+**F. The public site still shows the old design.**
+- When the v26 zip arrives, build the visitor pages in the v26 look, reusing today's join, request-access and invite flows unchanged (no sign-in or auth change).
+- Make them what a signed-out visitor sees at "/", behind the existing site switches; the owner flips them after seeing them on staging.
+- Target: live before 31 Oct; estimate when the zip arrives.
+- Report today: which Public site switches are on, which workspace is the sample workspace, and whether its Dune Studies board is complete.
+
+**G. Also**
+- Spikes in freeze week are fine as mocks only.
+- Nothing merges to the demo path after 27 Oct without the owner's yes.
+- The repo stays public until after 31 Oct.
