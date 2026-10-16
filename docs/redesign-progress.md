@@ -1123,3 +1123,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #792 v25 PR 5 ✓/✕ on takes (9c6047c1, on #749).
   - #793 v25 PR 21 assemble_film (681549dc, on remotion/10-zip; voice lines carry captions in any script; free).
   Opus reviews running for #790, #791, #792 and #793. Lane D owns the Edit/Export contract; lane B's Hindi tool writes into lane D's shape.
+- **16 Oct 12:24 IST.**
+  - Owner's 12:40 repo-visibility question answered in docs/plans/repo-private-estimate.md: ~503,000 CI minutes in 30 days (2,323 runs; 300-run sample); standard runners only; private ≈ $3,000/month at $0.006/min; CI-waste cuts would roughly halve it; breaks: Coolify clone (likely), raw screenshot links in 35 PR bodies, branch protection on Free private.
+  - Lane G started: gitleaks CI job (pinned version and checksum, PR range only).
+  - #790 render_shot at 0203baf8: a caller's maxCredits is refused explicitly.
+  - Reviews: #791 NOT APPROVED (removing the new steps doesn't stick; sent to lane D); #792 APPROVED; #793 APPROVED (Opus question: do audio takes record duration_s? Lane D checking); #794 Edit contract up (on #791).
