@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { OverlayProvider, ToastProvider } from "../ui";
 import { StepCard, type StepCardProps } from "../board/StepCard";
+import { ShotStepCard } from "../board/ShotStepCard";
+import type { ShotTakes, ShotVersion } from "@/components/graphite/board/cards/take/take-model";
 import "../v12.css";
 import "./v25-parts.css";
 
@@ -36,6 +38,8 @@ const KINDS: Mock[] = [
   { id: "k-no", title: "Not right", status: "rejected", reason: "Look · warmer", picture: { src: still(0) } },
   { id: "k-text", title: "Director’s note", status: "ready", text: "A camp at the edge of a dry lake. One cold bottle, one warm light, and the people who have been walking since dawn.", tile: { letter: "M" } },
   { id: "k-tile", title: "Brand kit", status: "ready", own: "Brand kit · 3 files", tile: { letter: "M" } },
+  { id: "k-pic-tile", title: "Picture with a brand tile", status: "ready", picture: { src: still(32) }, tile: { letter: "M" } },
+  { id: "k-grey-text", title: "Greyed page", status: "ready", text: "A camp at the edge of a dry lake. One cold bottle, one warm light.", tile: { letter: "M" }, greyed: true },
   { id: "k-sel", title: "Selected", status: "ready", picture: { src: still(210) }, selected: true },
   { id: "k-grey", title: "Greyed option", status: "ready", picture: { src: still(32) }, greyed: true },
   { id: "k-dim", title: "Dimmed", status: "ready", picture: { src: still(28) }, dimmed: true, chips: [{ id: "len", label: "6 s" }] },
@@ -43,6 +47,33 @@ const KINDS: Mock[] = [
   { id: "k-tgt", title: "Targeted", status: "ready", picture: { src: still(200) }, targeted: true },
   { id: "k-diff", title: "Differs from the step", status: "ready", picture: { src: still(36) }, differs: true, chips: [{ id: "look", label: "Firelight" }] },
 ];
+
+/* Shots from takes (PR 5): the card fed by a shot's takes, ✓ and ✕ going through the review trail's own routes (the browser check answers them). Mock rows. */
+const version = (genId: string, n: number, status: ShotVersion["status"], over: Partial<ShotVersion> = {}): ShotVersion => ({
+  id: `generation:${genId}`, genId, version: n, label: `v${n}`, status, stage: null, media: "image", url: still(30 + n * 40), createdAt: n, engine: "Nano Banana Pro · 1K", prompt: "A camp at night",
+  task: "generate", reason: null, charge: null, nothingBilled: false, retry: false, needs: null, approvedBy: null, approvedAt: null, reviewBy: null, updatedAt: n, references: [], entry: {} as never, ...over,
+});
+const shot = (index: number, title: string, versions: ShotVersion[], shown: ShotVersion | null = versions[versions.length - 1] ?? null): ShotTakes => ({
+  nodeId: `shot-${index}`, index, productionShotId: `ps-${index}`, title: `Shot ${index} · ${title}`, name: title, line: "", versions, shown, frame: null, typicalMs: null, anchor: null,
+});
+const ROWS: ShotTakes[] = [
+  shot(1, "Camp at night", [version("gen_s1a", 1, "changes"), version("gen_s1b", 2, "review")]),
+  shot(2, "MAYA arrives", [version("gen_s2", 1, "review")]),
+  shot(3, "At the water", [version("gen_s3", 1, "approved", { approvedBy: "Reviewer One" })]),
+  shot(4, "The drink", [version("gen_s4", 1, "rendering", { url: null })]),
+  shot(5, "Bottle detail", [version("gen_s5", 1, "failed", { url: null })]),
+  shot(6, "Pack on sand", []),
+];
+
+function TakeBoard() {
+  return (
+    <section className="v25-parts-canvas" aria-label="Takes" data-testid="v25-board-takes">
+      <div className="v25-parts-grid">
+        {ROWS.map((row) => <ShotStepCard key={row.nodeId} row={row} scope="particl-active-test" projectId="test-project" />)}
+      </div>
+    </section>
+  );
+}
 
 function Board({ cards, label }: { cards: Mock[]; label: string }) {
   const [state, setState] = useState<Record<string, { status?: StepCardProps["status"]; reason?: string }>>({});
@@ -77,6 +108,8 @@ export function V25CardParts() {
           <Board cards={SHOTS} label="Shots" />
           <h1 className="v25-parts-h">Card · every status and kind (mock data)</h1>
           <Board cards={KINDS} label="Kinds" />
+          <h1 className="v25-parts-h">Card · fed by a shot’s takes (mock rows; ✓ ✕ call the review routes)</h1>
+          <TakeBoard />
         </div>
       </ToastProvider>
     </OverlayProvider>
