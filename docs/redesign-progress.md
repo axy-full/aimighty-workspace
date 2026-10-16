@@ -1159,3 +1159,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Slip, lane C: started a mock server and browser spec when `slot.sh` refused for low memory (34% free < 40%). Nothing failed; lane C won't repeat it. Droplet memory at the check: 10 GB of 31 available.
   - Two cancelled runs had stalled "in progress" holding CI slots; force-cancelled.
 - **16 Oct 13:05 IST.** #798 Preview APPROVED at 7f8bd736 (the tooltip guard is byte-identical to release/1 and passes). Merges after #749 and #792 (stacked).
+- **16 Oct 13:23 IST.** Owner: "I'd rather the default prompt writer be Opus 5.5 for now."
+  - Sent to lane H, folded into the Enhance server PR: DEFAULT_TEXT_MODELS.enhance and the PROMPT_MODELS default become anthropic/claude-opus-5.5; low reasoning to stay inside 8 s.
+  - Opus 5.5 costs $4/$20 per M tokens vs Sonnet's $2/$10, likely still 1 cr per enhancement after rounding (the PR will show it).
+  - Routable only with TEXT_DIRECT including anthropic and ANTHROPIC_API_KEY.
+  - Production watcher restarted (12 h, logs commit changes).
