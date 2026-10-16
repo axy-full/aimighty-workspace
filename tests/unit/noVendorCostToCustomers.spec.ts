@@ -117,6 +117,12 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
           references: [{ uploadId: "up_ref", castMemberId: "cast_margin", consentId: "consent_margin", faceSha256: "b".repeat(64), megapixels: 1 }],
           funded: 1, claimedAt: at, bflId: "vendor-job-flux-1", pollingUrl: "https://api.eu.bfl.ai/v1/get_result?id=vendor-job-flux-1", statedUsd: cost.still, submittedAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1 } }),
         "u_member", at + 7, at + 7, "bfl", 0, null, null, null, "/api/media/g_flux", null] },
+      /* A Recraft take: its params carry the workflow's record, the reserved dollars, what Recraft stated and the source. Nobody reads any of it (lib/directEnginePublic.ts keeps the take's own words). */
+      { sql: take, args: ["g_recraft", "p_margin", null, "image", "recraftv4_1", "A heron at dusk",
+        JSON.stringify({ task: "recraft_image", job: "keyframe", ratio: "1:1", size: "1024x1024", estUsd: cost.still, estCredits: 0, recraft: {
+          status: "done", tool: "image", model: "recraftv4_1", size: "1024x1024", style: null, source: { kind: "upload", id: "up_vendor_src" },
+          reservedUsd: cost.still, estimateCredits: 3, funded: 1, claimedAt: at, sendingAt: at, statedUsd: cost.still, settled: 1, reconcile: 1 } }),
+        "u_member", at + 8, at + 8, "recraft", 0, null, null, null, "/api/media/g_recraft", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
@@ -189,6 +195,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a voice change)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_voice?sync=0", params: { id: "g_voice" } },
   { name: "GET /api/jobs/[id] (a lip-sync take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_lipsync?sync=0", params: { id: "g_lipsync" } },
   { name: "GET /api/jobs/[id] (a Sarvam speech take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_sarvam?sync=0", params: { id: "g_sarvam" } },
+  { name: "GET /api/jobs/[id] (a Recraft take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_recraft?sync=0", params: { id: "g_recraft" } },
   { name: "GET /api/jobs/[id] (a FLUX.2 take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_flux?sync=0", params: { id: "g_flux" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
