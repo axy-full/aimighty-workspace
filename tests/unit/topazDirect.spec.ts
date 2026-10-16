@@ -27,21 +27,18 @@ function stub(answer: (call: Call) => Response | Promise<Response>) {
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 const PNG = Buffer.from(MOCK_TOPAZ_PNG);
 
-test("the table prices at Developer, $0.10 a credit, on the dearer reading everywhere, and says the owner is to confirm it", () => {
-  expect(TOPAZ_RATES).toMatchObject({ plan: "developer", usdPerCredit: 0.1, confirmed: false });
-  expect(TOPAZ_RATES.note).toContain("owner to confirm plan and reading against the first invoice");
-  // Images by the API page's tiers: 24 MP 1 credit, 32 MP 2, 48 MP 3.
-  expect([1, 24, 24.01, 32, 32.01, 48].map(topazImageCredits)).toEqual([1, 1, 2, 2, 3, 3]);
-  // A still is quoted at the HIGHER of the tier table and the docs' linear rule (a credit a started 24 MP), size by size; never the lower.
+test("the table prices at Developer, $0.10 a credit, confirmed by the owner, with stills capped at 24 MP (no 32 or 48 MP tier is offered direct)", () => {
+  expect(TOPAZ_RATES).toMatchObject({ plan: "developer", usdPerCredit: 0.1, confirmed: true });
+  expect(TOPAZ_RATES.note).toContain("confirmed by the owner 16 Oct 2026");
+  expect(TOPAZ_RATES.imageTiers).toEqual([{ maxMegapixels: 24, credits: 1 }]);
+  // Up to 24 MP a still is one credit; over it is refused in words, never priced.
+  expect([0.5, 1, 23.99, 24].map(topazImageCredits)).toEqual([1, 1, 1, 1]);
+  for (const mp of [24.01, 32, 48]) expect(() => topazImageCredits(mp), String(mp)).toThrow(/limited to 24 megapixels here; this one would be [\d.,]+\. Choose a smaller scale\./);
+  // The docs' linear rule (a credit a started 24 MP) agrees at and under the cap.
   expect(TOPAZ_RATES.imageMegapixelsPerCredit).toBe(24);
-  const linear = (mp: number) => Math.ceil(mp / TOPAZ_RATES.imageMegapixelsPerCredit - 1e-9);
-  const tier = (mp: number) => TOPAZ_RATES.imageTiers.find((t) => mp <= t.maxMegapixels)!.credits;
-  for (const mp of [0.5, 8, 23.99, 24, 24.01, 31.99, 32, 32.01, 47.99, 48]) expect(topazImageCredits(mp), String(mp)).toBe(Math.max(tier(mp), linear(mp)));
-  for (const mp of [0.5, 24, 24.01, 32, 32.01, 48]) expect(topazImageCredits(mp), String(mp)).toBeGreaterThanOrEqual(Math.max(tier(mp), linear(mp)));
   expect(() => topazImageCredits(48.01)).toThrow(TopazError);
   expect(() => topazImageCredits(0)).toThrow(TopazError);
   expect(topazImageQuoteUsd(24)).toBe(0.1);
-  expect(topazImageQuoteUsd(48)).toBe(0.3);
   // Astra 2: 4 credits a second at 1080p30 (the family table), 5 at 4K30; 60 fps doubles; 720p is the 1080p tier.
   expect(topazVideoCredits({ seconds: 10, fps: 30, tier: "1080p" })).toBe(40);
   expect(topazVideoCredits({ seconds: 10, fps: 60, tier: "1080p" })).toBe(80);
@@ -104,10 +101,10 @@ test("every request goes to the one fixed address with the key in its header onl
 
 test("a still: the settings are today's presets, the output size is the original's times the scale, the form says so, and an unsupported choice is refused before anything is sent", async () => {
   const s = stub(() => json({ process_id: "p_img_1" }));
-  const out = await submitImageUpscale({ bytes: PNG, filename: "photo.png", mime: "image/png", width: 2000, height: 1000, settings: { model: "Text Refine", factor: 4, faceEnhancement: true, faceStrength: 0.7 } }, { fetch: s.fetch });
-  expect(out).toEqual({ id: "p_img_1", outputMegapixels: 32, credits: 2 });
+  const out = await submitImageUpscale({ bytes: PNG, filename: "photo.png", mime: "image/png", width: 1500, height: 1000, settings: { model: "Text Refine", factor: 4, faceEnhancement: true, faceStrength: 0.7 } }, { fetch: s.fetch });
+  expect(out).toEqual({ id: "p_img_1", outputMegapixels: 24, credits: 1 });
   const form = s.calls[0].body as FormData;
-  expect(Object.fromEntries([...form.entries()].filter(([, v]) => typeof v === "string"))).toEqual({ model: "Text Refine", output_format: "png", output_width: "8000", output_height: "4000", crop_to_fill: "false", face_enhancement: "true", face_enhancement_strength: "0.7", face_enhancement_creativity: "0" });
+  expect(Object.fromEntries([...form.entries()].filter(([, v]) => typeof v === "string"))).toEqual({ model: "Text Refine", output_format: "png", output_width: "6000", output_height: "4000", crop_to_fill: "false", face_enhancement: "true", face_enhancement_strength: "0.7", face_enhancement_creativity: "0" });
   const file = form.get("image") as File;
   expect(file.name).toBe("photo.png");
   expect(file.type).toBe("image/png");
@@ -118,7 +115,7 @@ test("a still: the settings are today's presets, the output size is the original
     await expect(submitImageUpscale({ bytes: PNG, filename: "a.png", mime: "image/png", width: 100, height: 100, settings: settings as never }, { fetch: refused.fetch })).rejects.toThrow();
     expect(refused.calls).toHaveLength(0);
   }
-  // A size the original cannot be made (over 48 MP), or no size, is refused too.
+  // A size the original cannot be made (over 24 MP), or no size, is refused too.
   for (const dims of [[6000, 4000, 2], [0, 100, 1]]) {
     const refused = stub(() => json({}));
     await expect(submitImageUpscale({ bytes: PNG, filename: "a.png", mime: "image/png", width: dims[0], height: dims[1], settings: { ...DEFAULT_TOPAZ_IMAGE, factor: dims[2] as 1 | 2 | 4 } }, { fetch: refused.fetch })).rejects.toThrow();

@@ -154,8 +154,8 @@ test("the quote: the credits of the output size or the output frames at Develope
     await ready();
     const before = (await meterRows()).length;
     const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-    /* A still: 2000 x 1000 at 2x is 8 MP (1 credit, $0.10); 3500 x 2000 at 2x is 28 MP (2 credits); 4000 x 3000 at 2x is 48 MP (3 credits). */
-    for (const [w, h, credits] of [[2000, 1000, 1], [3500, 2000, 2], [4000, 3000, 3]] as const) {
+    /* A still: 2000 x 1000 at 2x is 8 MP (1 credit, $0.10); 3000 x 2000 at 2x is exactly 24 MP (1 credit, the cap). Over the cap it is refused below. */
+    for (const [w, h, credits] of [[2000, 1000, 1], [3000, 2000, 1]] as const) {
       const src = await still("q", w, h);
       const q = await admit({ tool: "image", sourceUploadId: src, topaz: SETTINGS, quoteOnly: true });
       expect(q.status, JSON.stringify(q.body)).toBe(200);
@@ -179,7 +179,11 @@ test("the quote: the credits of the output size or the output frames at Develope
       [{ tool: "image", sourceUploadId: "up_missing", topaz: SETTINGS }, 404, /not in this workspace/],
       [{ tool: "image", sourceUploadId: src }, 400, /supported Topaz model/],
       [{ tool: "image", sourceUploadId: src, topaz: { ...SETTINGS, factor: 3 } }, 400, /supported Topaz model/],
-      [{ tool: "image", sourceUploadId: await still("big", 6000, 4000), topaz: SETTINGS }, 400, /48 megapixels|smaller scale/],
+      [{ tool: "image", sourceUploadId: await still("big", 6000, 4000), topaz: SETTINGS }, 400, /Choose a smaller scale/],
+      /* The owner's cap: 3001 x 2000 at 2x is 24.008 MP, 3500 x 2000 is 28 MP (the old 2-credit tier), 4000 x 3000 is 48 MP (the old 3-credit tier): each refused, none priced. */
+      [{ tool: "image", sourceUploadId: await still("cap24", 3001, 2000), topaz: SETTINGS }, 400, /limited to 24 megapixels here; this one would be 24\.1\./],
+      [{ tool: "image", sourceUploadId: await still("cap28", 3500, 2000), topaz: SETTINGS }, 400, /would be 28\./],
+      [{ tool: "image", sourceUploadId: await still("cap48", 4000, 3000), topaz: SETTINGS }, 400, /would be 48\./],
       [{ tool: "video", sourceUploadId: video }, 400, /30 or 60 fps/],
       [{ tool: "video", sourceUploadId: video, astra: { ...ASTRA, fps: 24 } }, 400, /30 or 60 fps/],
       [{ tool: "video", sourceUploadId: src, astra: ASTRA }, 404, /not in this workspace/],
@@ -393,7 +397,7 @@ test("the shot cap is judged at the press, as the fal path judges it: a member p
     await project("p_topaz_cap");
     const shotId = uid("shot");
     await db().execute({ sql: "INSERT INTO shots(id,project_id,code,created_at,updated_at) VALUES(?,?,'SH010',1,1)", args: [shotId, "p_topaz_cap"] });
-    const src = await still("cap", 4000, 3000);
+    const src = await still("cap", 3000, 2000);
     const member: AdmissionActor = { user: { ...OWNER.user, id: "member_1", role: "member", owner: false } as AdmissionActor["user"] };
     const { runInTenant } = await import("../../lib/tenant");
     const asMember = (fn: () => Promise<void>) => runInTenant(house(), fn, member as never);
