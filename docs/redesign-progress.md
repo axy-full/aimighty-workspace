@@ -1294,3 +1294,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 15:57 IST.** **#805 MERGED** into release/1 (Agent chips plan, 82fa812c, CI 24/24 run 38878859400). The owner merged deploy #5 (#799) into main (62163d76); the read-only checks run when he says "deployed".
   - **CI is slow:** one Verify run at a time in practice, and each release/1 push adds its own run.
   - **The licence note** (ops/remotion-worker/README.md) waits for #699 to merge.
+- **16 Oct 15:58 IST.** **#699 MERGED** into release/1 (the Remotion worker, a5e0f445, CI 24/24 run 38881011980). Queue 1 moves to #765. The docs lane opens the licence-note PR.
