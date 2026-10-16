@@ -4,7 +4,8 @@ import { isHouseWorkspace } from "@/lib/houseWorkspace";
 import { asPlanId, planById, DEFAULT_PLANS, type PlanDef } from "@/lib/plans";
 import { readPlatformAudit, type PlatformAuditLine } from "@/lib/platformAudit";
 import { deployedCommit } from "@/lib/deployment";
-import { failedSavesCount } from "@/lib/platformFailedSaves";
+import { failedSavesCounts } from "@/lib/platformFailedSaves";
+import type { RiskCounts } from "@/lib/atRiskWindow";
 import { staticCatalog, type CatalogModel } from "@/lib/catalog";
 import { TEXT_JOBS, TEXT_JOB_LABELS, TEXT_MODEL_IDS, modelOfKind, type TextJob } from "@/lib/platformLayer";
 import { modelConfigured } from "@/lib/providers";
@@ -28,8 +29,8 @@ export type ConsoleOverview = {
   grantedThisMonth: number;
   invitesPending: number;
   requestsWaiting: number;
-  /** Succeeded renders whose file never reached storage, across every workspace (lib/platformFailedSaves.ts). Null when the count could not be read. */
-  failedSaves: number | null;
+  /** Succeeded renders whose file never reached storage, across every workspace: at risk (made in the last 72 hours) and lost (older), lib/platformFailedSaves.ts. Null when the count could not be read. */
+  failedSaves: RiskCounts | null;
   /** The commit this server runs, short. Null when the deployment names none. */
   commit: string | null;
 };
@@ -45,7 +46,7 @@ export async function consoleOverview(at = Date.now()): Promise<ConsoleOverview>
     p.execute({ sql: `SELECT COALESCE(SUM(credits),0) AS n FROM credit_grants WHERE created_at >= ? AND created_at < ? AND credits > 0 AND kind <> 'purchase'`, args: monthOf(at) }),
     p.execute({ sql: `SELECT COUNT(*) AS n FROM signup_invites WHERE used_at IS NULL AND expires_at > ?`, args: [at] }),
     p.execute(`SELECT COUNT(*) AS n FROM access_requests WHERE handled_at IS NULL`),
-    failedSavesCount().catch(() => null),
+    failedSavesCounts().catch(() => null),
   ]);
   const n = (rs: { rows: unknown[] }) => Number((rs.rows[0] as { n?: unknown } | undefined)?.n ?? 0);
   return {

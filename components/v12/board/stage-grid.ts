@@ -20,7 +20,7 @@ import type { FrameData } from "@/components/graphite/board/cards/plan/derive";
  */
 
 /** The width of the stage's canvas (the new frame's stage column), followed as it changes; null while off. */
-export function useStageColumns(on: boolean): number | null {
+export function useStageColumns(on: boolean, scale = 1): number | null {
   const [width, setWidth] = useState<number | null>(null);
   useEffect(() => {
     if (!on) return;
@@ -37,7 +37,8 @@ export function useStageColumns(on: boolean): number | null {
     attach();
     return () => { cancelAnimationFrame(frame); watch?.disconnect(); };
   }, [on]);
-  return on ? gridColumns(width ?? 0) : null;
+  /* The canvas is drawn `scale` times larger on a large screen, so it holds as many columns as a canvas that many times narrower. */
+  return on ? gridColumns((width ?? 0) / scale) : null;
 }
 
 /** Whether a stage is laid out on the grid. */
