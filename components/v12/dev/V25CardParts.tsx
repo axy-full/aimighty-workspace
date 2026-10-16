@@ -1,8 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { OverlayProvider, ToastProvider } from "../ui";
 import { StepCard, type StepCardProps } from "../board/StepCard";
 import { ShotStepCard } from "../board/ShotStepCard";
+import { ShotPreview } from "../board/ShotPreview";
+import { CardPreview } from "../board/CardPreview";
+import type { PreviewItemView } from "../board/preview-model";
+import { SHOT_REASONS as TAKE_REASONS } from "../board/shot-card";
 import type { ShotTakes, ShotVersion } from "@/components/graphite/board/cards/take/take-model";
 import "../v12.css";
 import "./v25-parts.css";
@@ -63,14 +67,40 @@ const ROWS: ShotTakes[] = [
   shot(4, "The drink", [version("gen_s4", 1, "rendering", { url: null })]),
   shot(5, "Bottle detail", [version("gen_s5", 1, "failed", { url: null })]),
   shot(6, "Pack on sand", []),
+  shot(7, "Three versions", [version("gen_s7a", 1, "changes"), version("gen_s7b", 2, "review"), version("gen_s7c", 3, "review")]),
+  { ...shot(8, "A clip", [version("gen_s8", 1, "review", { media: "video", url: "/fixtures/clip.mp4" })]), frame: { url: still(210), kind: "image" } },
 ];
 
+/* Cards that are not takes: a script (Script · Beats · Breakdown) and a sound, as preview items (mock). */
+const SCRIPT: PreviewItemView = {
+  id: "script", title: "Script", kind: "text", shown: 0, canJudge: false, reasons: TAKE_REASONS,
+  versions: [{ label: "v1", url: null, poster: null, status: "ready" }],
+  tabs: [
+    { id: "script", label: "Script", text: "INT. CAMP — NIGHT\nA cold bottle on a warm table." },
+    { id: "beats", label: "Beats", text: "1. The arrival\n2. The water\n3. The first sip" },
+    { id: "breakdown", label: "Breakdown", text: "Shot 1 camp · Shot 2 arrival · Shot 3 water" },
+  ],
+};
+const SOUND: PreviewItemView = {
+  id: "sound", title: "Voice · line 1", kind: "sound", shown: 0, canJudge: false, reasons: TAKE_REASONS,
+  versions: [{ genId: "gen_voice", label: "v1", url: "/fixtures/tone.mp3", poster: null, status: "ready" }],
+};
+
 function TakeBoard() {
+  const [open, setOpen] = useState<string | null>(null);
+  const [demo, setDemo] = useState<"script" | "sound" | null>(null);
+  const demos = useMemo(() => new Map([[SCRIPT.id, SCRIPT], [SOUND.id, SOUND]]), []);
   return (
     <section className="v25-parts-canvas" aria-label="Takes" data-testid="v25-board-takes">
       <div className="v25-parts-grid">
-        {ROWS.map((row) => <ShotStepCard key={row.nodeId} row={row} scope="particl-active-test" projectId="test-project" />)}
+        {ROWS.map((row) => <ShotStepCard key={row.nodeId} row={row} scope="particl-active-test" projectId="test-project" onOpen={() => setOpen(row.nodeId)} />)}
       </div>
+      <p className="v25-parts-said">
+        <button type="button" className="v25-parts-btn" data-testid="open-script" onClick={() => setDemo("script")}>Preview a script</button>{" "}
+        <button type="button" className="v25-parts-btn" data-testid="open-sound" onClick={() => setDemo("sound")}>Preview a sound</button>
+      </p>
+      {open ? <ShotPreview rows={ROWS} scope="particl-active-test" projectId="test-project" openId={open} onStep={setOpen} onClose={() => setOpen(null)} placement="fixed" note="The column and the bar act on this shot." /> : null}
+      {demo ? <CardPreview items={demos} ids={[demo]} openId={demo} onStep={() => {}} onClose={() => setDemo(null)} placement="fixed" /> : null}
     </section>
   );
 }
