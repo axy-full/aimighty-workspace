@@ -1317,3 +1317,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 16:21 IST.** **#749 MERGED** into release/1 (the v25 card, c021c3d3, CI 24/24 run 38885086171). Queue 2 is done (#805, #749; #800 failed earlier and is being fixed).
   - **Next:** #792 is retargeted to release/1 and queued with #798 after the Slice 1 chains.
   - **#750** conflicts with release/1 (v25-parts.css); lane C re-merges it.
+- **16 Oct 16:33 IST.** **#750** re-merge (bf5de6e7) APPROVED by Opus: both stylesheets kept whole; the rail's more specific rule still wins; no guard changed. Queued: #792 → #798, then #750 → #811 (once #791 is in).
