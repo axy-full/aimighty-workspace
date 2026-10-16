@@ -266,6 +266,76 @@ export const ELEVENLABS_RATES = {
     defaultMode: "v1",
   },
 } as const;
+/**
+ * sync.so lip-sync, direct (lib/syncso.ts, lib/lipSync.ts), in the vendor's own units: dollars per OUTPUT second, the Hobbyist and Creator plans'
+ * public prices as recorded in docs/plans/provider-adapters.md § 1 (the vendor's pricing page, read 14 Oct 2026; the page rounds the per-second figures, so
+ * the per-minute fractions are used). **TO CONFIRM** against the plan the
+ * owner buys: the Scale plan's rates are lower ($0.04, $0.067 and $0.107 a second), and a quote at these is the more cautious. Billing is on output
+ * frames, quoted per second at 25 fps. Server-only like every rate here; a customer's price is these through the margin table (lib/creditTerms.ts).
+ */
+export const SYNC_RATES = {
+  /* sync.so's page shows these rounded ($0.083 and $0.133 a second); the exact per-minute figures ($5 and $8 a minute) are used so that a quote is never under it. */
+  models: { "lipsync-2": 0.05, "lipsync-2-pro": 5 / 60, "sync-3": 8 / 60 },
+  defaultModel: "lipsync-2-pro",
+  syncModes: ["bounce", "loop", "cut_off", "silence", "remap"],
+  defaultSyncMode: "bounce",
+} as const;
+export type SyncModel = keyof typeof SYNC_RATES.models;
+export type SyncMode = (typeof SYNC_RATES.syncModes)[number];
+
+/**
+ * Sarvam, direct (lib/sarvam.ts, lib/sarvamTools.ts), in the vendor's own unit: RUPEES (pay as you go; docs/plans/provider-adapters.md § 2, the vendor's
+ * pricing page as the plan records it, 14 Oct 2026). **TO CONFIRM** against Sarvam's page and the first invoice. Converted to dollars ONLY at the owner's own
+ * rate, `SARVAM_USD_PER_INR` (set in the deployment, reviewed monthly): with none, or one that is not a positive number, nothing is priced and every Sarvam
+ * tool says so and cannot run. Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const SARVAM_RATES = {
+  /** Text to speech, rupees per 10,000 characters. */
+  speechInrPer10kChars: { "bulbul:v3": 30, "bulbul:v4-flash": 20 },
+  /** Speech to text, rupees per hour of audio. Speaker labels (diarization), a batch feature, are not offered yet. */
+  /* The plan records ₹29.40 an hour; Sarvam's own docs table says ₹30. The higher is used so a quote is never under; TO CONFIRM against the first invoice. */
+  transcribeInrPerHour: 30,
+  /** Translation, rupees per 10,000 characters. */
+  translateInrPer10kChars: { "sarvam-translate:v1": 20, "mayura:v1": 20 },
+  /* The rupee moves between the monthly review of SARVAM_USD_PER_INR and the invoice: the quote (and so the ledger's cost) is the rupee cost times the rate times this 3% buffer. The lead's recommendation, accepted by the owner. */
+  fxBuffer: 1.03,
+  defaultSpeechModel: "bulbul:v3", defaultTranscribeModel: "saaras:v4", defaultTranslateModel: "sarvam-translate:v1",
+} as const;
+export type SarvamSpeechModel = keyof typeof SARVAM_RATES.speechInrPer10kChars;
+export type SarvamTranslateModel = keyof typeof SARVAM_RATES.translateInrPer10kChars;
+
+/**
+ * Black Forest Labs FLUX.2, direct (lib/bfl.ts, lib/bflImage.ts), in the vendor's own unit: dollars (BFL credits are $0.01). **Verified against BFL's published
+ * pricing data, 16 Oct 2026; confirm against the first invoice.** Per model, in credits (x $0.01): flux-2-pro 3 for the first output megapixel, 1.5 for each further one
+ * and 1.5 for each megapixel of reference; flux-2-flex 5, 5 and 5; flux-2-max 7, 3 and 3. Output megapixels are rounded UP (BFL's own calculator does), so a quote is
+ * never under. Output up to 4 MP and up to 8 references for all three. Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const BFL_RATES = {
+  creditUsd: 0.01,
+  models: {
+    /** firstMp: the first output megapixel; extraMp: each further one; refMp: each megapixel of reference sent. */
+    "flux-2-pro": { firstMp: 0.03, extraMp: 0.015, refMp: 0.015, maxMp: 4, maxRefs: 8 },
+    "flux-2-flex": { firstMp: 0.05, extraMp: 0.05, refMp: 0.05, maxMp: 4, maxRefs: 8 },
+    "flux-2-max": { firstMp: 0.07, extraMp: 0.03, refMp: 0.03, maxMp: 4, maxRefs: 8 },
+  },
+  defaultModel: "flux-2-pro",
+  /**
+   * FLUX 3 Image (`/v1/flux-3-image`) and FLUX 3 Image Klein (`/v1/flux-3-image-klein`): priced PER IMAGE by size tier, not by megapixel. Credits at $0.01, **verified against
+   * BFL's published pricing data (docs.bfl.ai/quick_start/pricing), 16 Oct 2026; confirm against the first invoice.** FLUX 3 Image: 768 4.1, 1k 4.8, 1.5k 7, 2k 10, 4k 60.7;
+   * Klein: 0.8, 0.9, 1.1, 1.4, 3.6. **Which size a tier covers is not stated: TO CONFIRM.** A size is read two ways, by its LONGEST side (`upTo`, inclusive) and by decimal megapixels
+   * (`upToMp`: 1k is up to 1.0 MP, 1.5k up to 1.5, 2k up to 2.0, 4k above; the 768 tier's 0.6 is a guess), each rounded UP to the next tier, and the DEARER is used, so a quote is never under (1024 x 1024 is 1.05 MP: the 1.5k tier); a side past the last tier is refused. No reference image is priced or sent for these (their docs
+   * are not read for it). FLUX 3 Video exists (t2v 720/1080/1440/2160, v2v, a draft) with its unit unstated: not built here.
+   */
+  tiered: {
+    "flux-3-image": { tiers: [{ upTo: 768, upToMp: 0.6, usd: 0.041 }, { upTo: 1024, upToMp: 1.0, usd: 0.048 }, { upTo: 1536, upToMp: 1.5, usd: 0.07 }, { upTo: 2048, upToMp: 2.0, usd: 0.1 }, { upTo: 4096, upToMp: Infinity, usd: 0.607 }] },
+    "flux-3-image-klein": { tiers: [{ upTo: 768, upToMp: 0.6, usd: 0.008 }, { upTo: 1024, upToMp: 1.0, usd: 0.009 }, { upTo: 1536, upToMp: 1.5, usd: 0.011 }, { upTo: 2048, upToMp: 2.0, usd: 0.014 }, { upTo: 4096, upToMp: Infinity, usd: 0.036 }] },
+  },
+  defaultFlux3Model: "flux-3-image",
+} as const;
+export type Flux2Model = keyof typeof BFL_RATES.models;
+export type Flux3Model = keyof typeof BFL_RATES.tiered;
+export type BflModel = Flux2Model | Flux3Model;
+
 /** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
 export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;
