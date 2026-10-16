@@ -1253,3 +1253,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Review:** all with the Opus money/security reviewer as deltas. #800's "an agent id with no run row is not asked" is flagged for scrutiny.
   - **Memory:** lane H's mock server reached 13.7 GB (6 GB available on the droplet). Told to stop it.
   - **Owner review page:** sent to the owner as a private file (it holds pricing, so not a link and not in the repo).
+- **16 Oct 15:21 IST.** **#811 APPROVED** at 02c536e5 by both Opus reviews (money earlier, UI now). It merges after its bases #798, #791 and #750.
