@@ -1,4 +1,7 @@
-import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { uploadOpenableBy } from "./uploadAccess";
+import { actingViewer } from "./actingViewer";
+import { currentTenant } from "./tenant";
+import { mayReadTake } from "./draftProject";
 import type { Reference } from "./ark";
 import { db, ready, now } from "./db";
 import { INSPECTABLE_AUDIO_EXTS, isAudioMime } from "./audioMeta";
@@ -184,9 +187,28 @@ function extOf(mime: string): string {
   return /wav/.test(mime) ? "wav" : mime === "audio/ogg" ? "ogg" : mime === "audio/flac" ? "flac" : mime === "audio/mp4" || mime === "audio/aac" ? "m4a" : "mp3";
 }
 
+/** For an `agent:*` request: does its run exist (a read that fails counts as yes, closed), or is there no such run? "not-agent" for anyone else. */
+async function agentRun(): Promise<"not-agent" | "exists" | "missing"> {
+  const id = currentTenant()?.user?.id;
+  if (!id || !id.startsWith("agent:")) return "not-agent";
+  try {
+    if (!(await db().execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rig_agent_runs'")).rows.length) return "missing";
+    return (await db().execute({ sql: "SELECT 1 FROM rig_agent_runs WHERE id = ? LIMIT 1", args: [id.slice("agent:".length)] })).rows.length > 0 ? "exists" : "missing";
+  } catch { return "exists"; }
+}
+
 /** The audio or video original a source reference names, or null when the workspace has no such file. */
 export async function findStoredSource(ref: SourceRef): Promise<StoredSource | null> {
   await ready();
+  /* Who is asking: the signed-in person, or an Atomik run's owner (lib/actingViewer.ts), or nobody (background work, which is not asked). A run that EXISTS but whose owner
+     cannot be found reads nothing. An agent id with no run behind it at all is no person's run, and is never trusted with more than an anonymous member may see: unowned
+     uploads and ordinary takes, never a private board's take or another person's private upload. */
+  let viewer = await actingViewer();
+  if (!viewer) {
+    const run = await agentRun();
+    if (run === "exists") return null;
+    if (run === "missing") viewer = { id: "agent:none", role: "member" };
+  }
   if (ref.uploadId) {
     const row = (await db().execute({
       sql: "SELECT id, filename, mime, ext, bytes, kind, duration_s, stored_url FROM uploads WHERE id=? LIMIT 1",
@@ -195,7 +217,6 @@ export async function findStoredSource(ref: SourceRef): Promise<StoredSource | n
     if (!row) return null;
     /* A person's request reads only an upload they may open (lib/uploadAccess.ts): transcription, dubbing and voice change all start here, so none of them can
        use someone else's private upload as a source, or leave a take that names it. Background work with no signed-in person is not asked. */
-    const viewer = currentViewer();
     if (viewer && !(await uploadOpenableBy(String(row.id), viewer))) return null;
     const ext = String(row.ext ?? "").toLowerCase();
     // An .m4a/.m4b stored before its ftyp brand was read as audio carries
@@ -212,10 +233,12 @@ export async function findStoredSource(ref: SourceRef): Promise<StoredSource | n
   }
   if (ref.genId) {
     const row = (await db().execute({
-      sql: "SELECT id, kind, title, prompt, stored_url, bytes, duration_s, params FROM generations WHERE id=? AND deleted=0 AND status='succeeded' AND stored_url IS NOT NULL LIMIT 1",
+      sql: "SELECT id, kind, title, prompt, stored_url, bytes, duration_s, params, project_id FROM generations WHERE id=? AND deleted=0 AND status='succeeded' AND stored_url IS NOT NULL LIMIT 1",
       args: [String(ref.genId)],
-    })).rows[0] as unknown as { id: string; kind: string; title: string | null; prompt: string; stored_url: string; bytes: number | null; duration_s: number | null; params: string } | undefined;
+    })).rows[0] as unknown as { id: string; kind: string; title: string | null; prompt: string; stored_url: string; bytes: number | null; duration_s: number | null; params: string; project_id: string | null } | undefined;
     if (!row || (row.kind !== "audio" && row.kind !== "video")) return null;
+    /* A take filed under a private board is read only by a person who may see that board (lib/draftProject.ts mayReadTake): another person's reads as a take that is not there. */
+    if (viewer && !(await mayReadTake(viewer, row.project_id == null ? null : String(row.project_id)))) return null;
     let params: Record<string, unknown> = {};
     try { params = JSON.parse(row.params || "{}"); } catch { /* unreadable params still name a stored file */ }
     const mime = row.kind === "video" ? "video/mp4" : typeof params.consumerOriginalMime === "string" ? params.consumerOriginalMime : "audio/mpeg";
