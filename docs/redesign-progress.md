@@ -1094,3 +1094,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Deploy #5: #756 CI green 24/24 on release/1 cb13ad5c (run 38853925185). #762 retargeted to release/1, CI starting. #758 re-run on the new base running.
 - **16 Oct 11:31 IST.** #758 CI green 24/24 on release/1 cb13ad5c (run 38853990880) at 1c10b1c8. Deploy #5 status: #748 merged; #756 green; #758 green; #762 CI running. #765 at 109fc01a (guards edited to the cap per the owner) under an Opus delta check.
 - **16 Oct 11:33 IST.** Opus APPROVED #765 at 109fc01a. Since 95e3a363 only wording and specs changed; the cap math files are byte-identical. Each of the three guard edits changes only what the owner reversed; customers are unaffected; the house's own billing row shows dollars. CI runs (it updates its base to cb13ad5c) once a slot frees after #762. Merges after deploy #5 with the owner's allowance_usd value.
+- **16 Oct 11:45 IST.**
+  - Owner's 12:05 standing yes recorded in the plan (97a80239); memory saved.
+  - Dated plan written: docs/plans/dated-plan-16oct.md.
+  - The env list file (docs/plans/coolify-env-16oct.md) was written but its `git add` was denied by the permission system, the same as docs lane E's earlier. Not worked around; the owner has the list in chat. File left untracked.
+  - Docs E: #761 8d134526 (FFmpeg LGPL row in the licence register, lawyer item L-L10; DNxHR back once tested).
+  - #762 CI running (run 38858818447).
