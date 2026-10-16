@@ -1306,3 +1306,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
     - Google start 303 to accounts.google.com;
     - 9 private APIs 401 anonymously.
   - The production watcher keeps running.
+- **16 Oct 16:10 IST.** The owner stopped the hung 4036269/4036281.
+  - **Leftover job stopped:** the lead stopped the background job that had started the next hung run (lane D's deck-screenshot loop, task bkac14upq); nothing from remotion-measure is left.
+  - **New lane rule:** a hard timeout (`timeout -k`) on every Remotion/Chrome run, logged. Lane D is checking the worker's per-render timeout for the Mon 19 test.
+  - **#790 APPROVED** at 5fa70fb1 (the Auto grid proves the owner's condition on the real code path; should-fix: a test of `mcpSpendPolicy()` itself, as a follow-up). Queued after #812.
+  - **Keys:** RUNWAY_API_KEY and ANTHROPIC_API_KEY are set (owner).
