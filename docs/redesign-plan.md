@@ -935,3 +935,22 @@ Owner (Akshay, 16 Oct, 11:00): answers to your four questions.
 Carry on with my 10:55 note.
 
 **Lead's notes.** Question 1 was the merge timing: Slice 1 and #763/#764 merge after deploy #5 (the recommendation). The lead and lanes have no production data access, so a house take must come from the owner as a file; otherwise the fixture is a generated 1920x1080 test pattern (ours, no person).
+
+## Owner, 16 Oct 2026, 11:50 IST (verbatim)
+Owner (Akshay, 16 Oct, 11:50): answers to your 11:35 update, in one note.
+
+1) CONSENT RECORD: keep it. On any uploaded real face and any cloned or uploaded voice, store a tick ("I have this person's permission") and an optional NOC file with the asset. Never checked automatically, never blocks an engine. This is what my 10:55 and 11:00 notes asked for. The Terms still carry the responsibility.
+
+2) AGENT UPLOAD ACCESS: yes to your check before BFL, Runway and lip-sync; good catch. Fix the site-settings save bug in #788 (it dropped the engine workspace list) before #788 merges.
+
+3) KLING 4.0 IS OUT: read the model id and per-second prices (720p, 1080p, 4K, with and without audio) from fal's own Kling 4.0 page, put them in #787 in place of the placeholder, Opus money review. It replaces Kling 3.0 Pro in the Pro pick; keep 3.0 Pro as a fallback in config. If fal doesn't list it yet, tell me and give me the source you found.
+
+4) DNXHR IS BACK: add a full ffmpeg build to the export worker image (pinned version, checksum verified) so we write DNxHR HQ/HQX for Avid and broadcast, alongside H.264 and ProRes. Record its licence in the asset register. Put DNxHR back in the delivery copy once it's tested.
+
+5) ENV LIST: write it into redesign/integration yourself as docs/plans/coolify-env-16oct.md (docs only, no secrets). Leave the refused worktree as is.
+
+6) RENDER_SHOT: put the PR up with every test change listed; I'll answer them together.
+
+7) DEPLOY #5: tell me when #762 is green; I back up and deploy. allowance_usd, RUNWAY_API_KEY and the Sarvam switches are coming from me shortly.
+
+**Lead's notes.** (1) Storing the tick needs one additive column on uploads plus a settings-key map for ElevenLabs clone ids (no new table); taken as the owner's word for that schema change, built as its own NEEDS AKSHAY PR. (2) #788 already carries the writeSite fix (Opus: the bug is latent in the engine stack, not on release/1). (3) Kling 4.0 is not on fal as of 16 Oct ~12:00 IST (v4 OpenAPI 404; fal's Kling pages list v3, v3 Turbo, O3); kling.ai's homepage says "All-New Kling 4.0". #787 stays inert. (4) Pinned build chosen: BtbN FFmpeg-Builds autobuild-2026-09-30-13-08 (a month-end release, kept long-term), ffmpeg-n8.1.3-9-g29e619e767-linux64-lgpl-8.1.tar.xz, sha256 dfa863a00ca81f1bdf58a372b18cff4820f0017e55de32778de8ecd8ed92a02e, LGPL build (has the dnxhd encoder; no GPL parts needed for DNxHR), verified on the droplet in ~/lead-notes/ffmpeg-dl-20261016.
