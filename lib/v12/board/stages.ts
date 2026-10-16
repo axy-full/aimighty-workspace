@@ -255,12 +255,13 @@ export function addStage(stages: readonly Stage[], after: string | null, label: 
  * campaign/*, social/*): Film's Deliver, Pre-vis's PPM deck, Campaign's Product, Look and Formats, and Social · narrated's Voice.
  * Other kinds' stages of those names keep their cards.
  */
-export type StagePageKind = "deliver" | "ppm" | "product" | "look" | "formats" | "voice";
+export type StagePageKind = "deliver" | "ppm" | "product" | "look" | "formats" | "voice" | "brief" | "script";
 const CAMPAIGN_PAGES: readonly string[] = ["product", "look", "formats"];
 export const stagePage = (stageId: string | null | undefined, flavor: Flavor): StagePageKind | null =>
   flavor === "film" && stageId === "deliver" ? "deliver" : flavor === "previs" && stageId === "ppm-deck" ? "ppm"
     : flavor === "campaign" && stageId && CAMPAIGN_PAGES.includes(stageId) ? (stageId as StagePageKind)
-    : flavor === "narrated" && stageId === "voice" ? "voice" : null;
+    : flavor === "narrated" && stageId === "voice" ? "voice"
+    : flavor === "film" && (stageId === "brief" || stageId === "script") ? stageId : null;
 
 /* ── The stage header (§ 6.4) ─────────────────────────────────────────────────────────────────────── */
 

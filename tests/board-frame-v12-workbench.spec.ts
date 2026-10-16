@@ -33,9 +33,9 @@ test.describe("desktop, switch on", () => {
       expect(await page.getByTestId("v12-stage-primary").count(), `${id}: at most one primary`).toBeLessThanOrEqual(1);
       expect(await noSideways(page), `${id}: no sideways scroll`).toBe(true);
     }
-    /* Script has nothing on today's board: it says what goes there. */
+    /* Script has nothing on today's canvas: its page (PR 11) holds the script card and the Hindi script. */
     await page.locator('[data-testid="v12-stage-row"][data-stage="script"] .v12-rail-btn').click();
-    await expect(page.getByTestId("v12-stage-empty")).toBeVisible();
+    await expect(page.getByTestId("v12-text-stage")).toBeVisible();
     /* Edit draws today's cut card: a stage shows what today's board has, nothing invented. */
     await page.locator('[data-testid="v12-stage-row"][data-stage="edit"] .v12-rail-btn').click();
     await expect(page.getByTestId("v12-stage-empty")).toHaveCount(0);
