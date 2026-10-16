@@ -42,7 +42,7 @@ Also on the path: pricing page, credits, project spend and client review links i
 - **#5:** the four PRs, ready today.
 - **#6:** Sat 17 to Sun 18. All engines above plus Slice 1. Migration: `export_jobs`.
 - **#7:** Thu 22. The new-design screens, part 1.
-- **#8:** Fri 24 morning. Path complete.
+- **#8:** Sat 24 morning. Path complete.
 - After 24 Oct: fix deploys only.
 
 ## B. New-design screens on the path (house workspace, behind the new-interface switch)
@@ -80,7 +80,7 @@ Numbers are the v25 plan's (`docs/plans/v25-build-plan.md`); "D-n" items are new
 ## C. Demo readiness (docs lane E and the lead)
 - **Thu 22:** demo checklist (machine, account, workspace, switches, network, each step with its expected screen and time, the fallback at each step).
 - **Thu 22:** the team's demo script: the brief, the 30 s ad's shots, the Hindi lines, who does what from 24 to 27 Oct.
-- **Sun 27:** the fallback sample project. Once the film is made, duplicate the board as "Demo (fallback)" with every take, the Hindi cut, the MP4s and the PDFs already rendered and approved, so the demo can run without one live render. Plus offline copies of both MP4s and the PDF.
+- **Tue 27:** the fallback sample project. Once the film is made, duplicate the board as "Demo (fallback)" with every take, the Hindi cut, the MP4s and the PDFs already rendered and approved, so the demo can run without one live render. Plus offline copies of both MP4s and the PDF.
 - **Daily 10:30:** progress against this list, risks to 31 Oct, the owner's questions in one batch.
 
 ## D. Risks to 31 Oct

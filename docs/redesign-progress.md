@@ -1101,3 +1101,7 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Docs E: #761 8d134526 (FFmpeg LGPL row in the licence register, lawyer item L-L10; DNxHR back once tested).
   - #762 CI running (run 38858818447).
 - **16 Oct 11:47 IST.** Owner's 12:15 investor-demo note recorded. Demo path plan written: docs/plans/demo-31oct-plan.md (engines live by 24 Oct, screens on the path by 23 Oct, freeze 28 Oct). Off-path work paused until after 31 Oct: DNxHR, Approve-at-N-cr, Gemini 3.x, Runway, MediaConvert, Topaz, Vision, the fixture; render_shot goes up for the owner's answers, then waits.
+- **16 Oct 11:51 IST.**
+  - Docs E: demo-checklist.md, test-scripts/demo-film.md and demo-fallback.md (e7a50c17). Open in those docs: the brief, the machine and the "Duplicate board" behaviour, to rehearse 22 Oct.
+  - Weekday fix in the demo plan: 24 Oct is a Saturday and 27 Oct a Tuesday (31 Oct is a Saturday).
+  - Lane F started (v25 demo-path screens).
