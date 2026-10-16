@@ -10,39 +10,32 @@ import { checkCap } from "./caps";
 import { checkLimits, checkQuota } from "./limits";
 import { withRecoveryJob } from "./recovery";
 import { withRetry } from "./providers";
-import { readUploadBytes, storeVideoBytes } from "./storage";
+import { storeVideoBytes } from "./storage";
 import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
 import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
-import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { isHouseWorkspace } from "./houseWorkspace";
 import { engineEnabled } from "./engineGate";
 import { SYNC_RATES, type SyncMode, type SyncModel } from "./vendorRates";
 import { SYNC_SWITCH, SyncError, SyncOutputRefused, deleteAsset, deleteGeneration, downloadOutput, generationStatus, isSyncMode, isSyncModel, submitLipSync, syncConfigured, uploadAsset } from "./syncso";
-import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type ConsentMatch, type ConsentScope } from "./consentMatch";
-import { liveVoiceConsentFor, getConsent } from "./security/consent";
-import { consentLive } from "./security/consent-words";
 
 /**
  * Lip-sync, DIRECT through sync.so (lib/syncso.ts): a clip and a voice track in, the clip with its mouth matched to the words out. An ASYNCHRONOUS
  * vendor job kept as a durable workflow in the take's own row (generations.params.lipsync; no new table), shaped like dubbing (lib/dubbing.ts):
  *
- *   queued      admitted, consent passed, funded (the reservation is the whole price: output seconds x the model's per-second rate)
+ *   queued      admitted, funded (the reservation is the whole price: output seconds x the model's per-second rate)
  *   submitted   the job is with sync.so (an id)
  *   processing  sync.so reports work in progress
  *   done        the clip is downloaded, STORED under the workspace's own prefix, the row settled at the delivered length, and the vendor's copy deleted
  *   failed      refused before work or failed after: settled at NOTHING ("Nothing billed"), the vendor's copy (if any) deleted
  *   uncertain   the submission's acknowledgement was lost. Nothing here ever submits a second time: a lost reply may still be a charged job
  *
- * THE CONSENT GATE. A face image passes `requireConsentMatch` (lib/consentMatch.ts) BEFORE anything is reserved or sent: a still the caller chooses (an image
- * upload of this workspace), with the cast member, the production and the use named. **What is checked is that chosen image against the cast member's consent
- * reference. It is NOT proven to come from the clip**: Particl cannot decode a clip's frames on the server today, so a caller could name a still of one person
- * and a clip of another. That gap is the owner's to close (an extracted frame, or a face check inside the clip); until then it is stated, not hidden. A voice that is not a stock synthesized one (an upload, anything but a
- * speech, dialogue or dub take) also needs a live consent covering the VOICE. Today the face gate refuses every check (no consent record holds a face
- * reference yet, lib/consentReference.ts) and it runs for the house workspace only, so no lip-sync is admitted until the owner chooses that source.
- * Because "real" cannot be known from a clip, there is no "this face is not real" exemption: every lip-sync passes the gate.
+ * CONSENT, FINAL (owner, 16 Oct 2026): there is NO consent check here, of a face or of a voice. Particl matches no face, screens no prompt for resemblance and
+ * checks no uploaded or cloned voice: the person generating is responsible, the provider's own filters apply and their refusals are shown as they come. Lip-sync is
+ * HOUSE-ONLY until counsel answers (owner, 16 Oct item 8): it is on only in the house workspace, whatever the engine list says.
  *
  * MONEY. Quote: the output seconds (the audio's length for cut_off, else the longer track) x the rate in lib/vendorRates.ts SYNC_RATES (the plan's
  * recorded provider prices, to confirm), through the margin table (quotedCredits) as every engine; reserved at the quote on the meter; settled at the
@@ -56,22 +49,16 @@ import { consentLive } from "./security/consent-words";
 export const LIPSYNC_TASK = "lipsync";
 export const LIPSYNC_MAX_SECONDS = 600;
 const SOURCE_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const ENTITY_ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const SUBMIT_GRACE_MS = 10 * 60_000;
 const POLL_LEASE_MS = 120_000;
 export const LIPSYNC_POLL_INTERVAL_MS = 15_000;
 export const CLEANUP_MAX_TRIES = 5;
-/** What a take of Particl's own may be, to be a synthesized stock voice with no real person's: ElevenLabs speech or dialogue, with EVERY voice a `premade` one. */
-const SYNTHETIC_AUDIO_TASKS = ["speech", "dialogue"];
-/** The uses a lip-synced face may be for. */
-const LIPSYNC_USES = ["production", "ads", "social"] as const;
 
 export type LipSyncState = "queued" | "submitted" | "processing" | "done" | "failed" | "uncertain";
 export type LipSyncParams = {
   status: LipSyncState; model: SyncModel; syncMode: SyncMode;
   videoSource: { kind: "upload" | "generation"; id: string }; audioSource: { kind: "upload" | "generation"; id: string };
   seconds: number; audioSeconds: number; rateUsdPerSecond: number; reservedUsd: number; estimateCredits: number;
-  consentId: string; castMemberId: string; use: string; faceSha256: string; voiceConsentId: string | null;
   funded: number; claimedAt: number | null; syncId: string | null; videoAsset: string | null; audioAsset: string | null;
   submittedAt: number | null; lastPolledAt: number | null; pollUntil: number | null; settled: number;
   cleanupDue: number; cleanupTries: number; vendorDeleted: number; reconcile: number;
@@ -123,8 +110,15 @@ export const lipSyncUsd = (seconds: number, model: SyncModel): number => Math.ce
 
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
-/** What the face gate and the admission may be handed in a test. The public admission passes none. */
-export type LipSyncSeams = { consent?: (castMemberId: string, face: Buffer, scope: ConsentScope) => Promise<ConsentMatch>; voices?: () => Promise<{ id: string; category: string }[]> };
+/** What the admission may be handed in a test. The public admission passes none. `houseOnly: false` lets a test run a workspace that is not the house, to prove the cap wall. */
+export type LipSyncSeams = { houseOnly?: boolean };
+
+/** Is lip-sync on here: the engine's switch, and the house workspace only (until counsel answers, owner 16 Oct). */
+export async function lipSyncOnHere(workspace: { id: string } | null | undefined = currentTenant()?.workspace, seams: LipSyncSeams = {}): Promise<boolean> {
+  if (!workspace) return false;
+  if (seams.houseOnly !== false && !isHouseWorkspace(workspace)) return false;
+  return engineEnabled(SYNC_SWITCH, workspace);
+}
 
 type SourceFound = { source: StoredSource; seconds: number };
 async function resolveSource(kind: "video" | "audio", uploadId: unknown, genId: unknown): Promise<SourceFound | { error: string; status: number }> {
@@ -139,36 +133,15 @@ async function resolveSource(kind: "video" | "audio", uploadId: unknown, genId: 
   return { source, seconds: length.seconds };
 }
 
-/**
- * Is the voice a synthesized stock one of Particl's own? Only an ElevenLabs speech or dialogue take whose every voice ElevenLabs lists as `premade`. A cloned,
- * professional or generated voice, any other vendor's take, a dub, a voice change, music, and an upload are a real person's or unknown: they need a live consent
- * covering the voice. Anything that cannot be read (the take, its voices, the voice list) is "not synthetic": fail closed.
- */
-async function audioIsSynthetic(source: StoredSource, voices: NonNullable<LipSyncSeams["voices"]>): Promise<boolean> {
-  if (source.kind !== "generation") return false;
-  const row = (await db().execute({ sql: "SELECT provider, json_extract(params,'$.task') AS task, json_extract(params,'$.voiceId') AS voice, json_extract(params,'$.lines') AS lines FROM generations WHERE id=?", args: [source.id] })).rows[0];
-  /* A Sarvam speech take (lib/sarvamTools.ts) is a stock voice: that engine offers and calls no voice cloning (a test pins it). */
-  if (row?.provider === "sarvam" && row.task === "sarvam_speech") return true;
-  if (!row || row.provider !== "elevenlabs" || !SYNTHETIC_AUDIO_TASKS.includes(String(row.task))) return false;
-  let ids: unknown[] = [];
-  if (row.task === "speech") ids = [row.voice];
-  else { try { ids = (JSON.parse(String(row.lines)) as { voiceId?: unknown }[]).map((l) => l?.voiceId); } catch { return false; } }
-  if (!ids.length || ids.some((id) => typeof id !== "string" || !id)) return false;
-  try {
-    const listed = await voices();
-    return ids.every((id) => listed.find((v) => v.id === id)?.category === "premade");
-  } catch { return false; }
-}
-
-/** Admission: validate, measure, quote, pass the consent gate, and (unless quoteOnly) fund one job and hand it to the worker. */
+/** Admission: validate, measure, quote, and (unless quoteOnly) fund one job and hand it to the worker. */
 export const executeLipSyncAdmission = (input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> => admitLipSync(input, got, options, {});
 
 /** The same with the test seams. Internal: only the tests import it (tests/unit/lipSync.spec.ts says so by reading the source). */
 export async function admitLipSync(input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution, seams: LipSyncSeams): Promise<AdmissionReply> {
   const refusal = assertAdmissionActor(got);
   if (refusal) return refusal;
-  /* Off for this workspace (the switch, or not on the engine list): the tool is simply not here. */
-  if (!(await engineEnabled(SYNC_SWITCH))) return admissionReply({ error: "There is no such tool here." }, { status: 404 });
+  /* Off for this workspace (the switch, or not the house workspace): the tool is simply not here. */
+  if (!(await lipSyncOnHere(undefined, seams))) return admissionReply({ error: "There is no such tool here." }, { status: 404 });
   const body = structuredClone(input) as Record<string, unknown>;
   const quoteOnly = body.quoteOnly === true;
   await ready();
@@ -213,7 +186,7 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
   if (quoteOnly)
-    return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", seconds, model, syncMode, needs: ["castMemberId", "faceFrameUploadId", "projectId", "use"] });
+    return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", seconds, model, syncMode });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the lip-sync estimate is above the approved credit amount." }, { status: 409 });
   const wall = await allowanceCheck("sync", usd, model);
@@ -228,39 +201,12 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   const stopped = admissionCheckpoint(options, body, got, "video", usd, model, compiled, { engine: "syncso" });
   if (stopped) return stopped;
 
-  /* ── The consent gate: every real face, and a real voice, BEFORE a row is written or a cent reserved. ── */
-  const use = typeof body.use === "string" && (LIPSYNC_USES as readonly string[]).includes(body.use) ? (body.use as (typeof LIPSYNC_USES)[number]) : null;
-  const castMemberId = typeof body.castMemberId === "string" ? body.castMemberId : "";
-  if (!projectId || !use || !ENTITY_ID.test(castMemberId)) return admissionReply({ error: "Name the production, the cast member and what it is for (production, ads or social): a lip-sync needs the person's consent on record.", code: "bad-input" }, { status: 400 });
-  const faceUploadId = typeof body.faceFrameUploadId === "string" ? body.faceFrameUploadId : "";
-  const faceRow = SOURCE_ID.test(faceUploadId) ? (await db().execute({ sql: "SELECT ext, mime, stored_url, bytes FROM uploads WHERE id=? LIMIT 1", args: [faceUploadId] })).rows[0] : undefined;
-  /* A person's request reads only an upload they may open (lib/uploadAccess.ts), as the video and the voice are read. */
-  const viewer = currentViewer();
-  const openable = !faceRow || !viewer || (await uploadOpenableBy(faceUploadId, viewer));
-  if (!faceRow || !openable || !String(faceRow.mime ?? "").startsWith("image/")) return admissionReply({ error: "Add a still of the face in the clip (an image from this workspace).", code: "bad-input" }, { status: 400 });
-  /* A real person's voice needs the voice covered; a stock synthesized voice of ours raises no question (docs/plans/provider-adapters.md § 1). */
-  let voiceConsentId: string | null = null;
-  if (!(await audioIsSynthetic(audio.source, seams.voices ?? (async () => (await import("./elevenlabs")).listVoices())))) {
-    const voice = await liveVoiceConsentFor(castMemberId, { projectId, use });
-    if (!voice) return admissionReply({ error: "This voice isn't one of ours, so it needs the person's consent on record, covering the voice. Record it on the Cast card first.", code: "no-voice-consent" }, { status: 409 });
-    voiceConsentId = voice.id;
-  }
-  let match: ConsentMatch;
-  try {
-    const faceBytes = await readUploadBytes(faceUploadId, String(faceRow.ext), String(faceRow.stored_url), 5 * 1024 * 1024);
-    match = await (seams.consent ?? requireConsentMatch)(castMemberId, faceBytes, { projectId, use });
-  } catch (error) {
-    if (error instanceof ConsentMatchError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
-    return admissionReply({ error: "The face check could not be done. Nothing was billed.", code: "unavailable" }, { status: 503 });
-  }
-
   const title = `${video.source.name.replace(/\.[A-Za-z0-9]{1,8}$/, "")} · lip-synced`.slice(0, 80);
   const genId = newId("gen"), ts = now();
   const lip: LipSyncParams = {
     status: "queued", model, syncMode,
     videoSource: { kind: video.source.kind, id: video.source.id }, audioSource: { kind: audio.source.kind, id: audio.source.id },
     seconds, audioSeconds: audio.seconds, rateUsdPerSecond: SYNC_RATES.models[model], reservedUsd: usd, estimateCredits: estimatedCredits,
-    consentId: match.consentId, castMemberId, use, faceSha256: match.faceSha256, voiceConsentId,
     funded: 0, claimedAt: null, syncId: null, videoAsset: null, audioAsset: null, submittedAt: null, lastPolledAt: null, pollUntil: null, settled: 0,
     cleanupDue: 0, cleanupTries: 0, vendorDeleted: 0, reconcile: 0,
   };
@@ -365,12 +311,6 @@ export async function advanceLipSyncJobWith(genId: string, deps: LipSyncDeps): P
       }
       job = (await load(genId))!;
       const { lip, model } = job;
-      /* Consent is judged again at the moment of sending: a record withdrawn or ended while the job waited stops it, and nothing has been sent. */
-      const stillLive = async (id: string | null): Promise<boolean> => { if (!id) return true; const c = await getConsent(id).catch(() => null); return Boolean(c) && consentLive(c!); };
-      if (!(await stillLive(lip.consentId)) || !(await stillLive(lip.voiceConsentId))) {
-        await settleLipSync(genId, "failed", { message: "Nothing was sent: the person's consent no longer holds. Nothing was billed.", costUsd: 0 });
-        return (await load(genId, { any: true }))?.lip ?? null;
-      }
       // The sources are read before anything is sent: a file that cannot be read submits nothing and refunds everything.
       let files: { video: { bytes: Buffer; name: string; mime: string }; audio: { bytes: Buffer; name: string; mime: string } };
       try {
@@ -533,8 +473,8 @@ export async function recoverLipSyncJobs(options: { limit?: number; deadlineAt?:
 
 /**
  * `lip_sync`, declared beside its handler (docs/particl-sow-2026-10-04.md § 4.3). The button, Make, a board card, Atomik, a saved skill and an outside agent
- * over MCP all reach the one route (POST /api/lipsync), at the same price, through the same approval and the same consent gate. Anyone may PREPARE it (a
- * quote); a person approves the price (`maxCredits`); the person's consent is recorded by a person alone and only read here.
+ * over MCP all reach the one route (POST /api/lipsync), at the same price, through the same approval. Anyone may PREPARE it (a
+ * quote); a person approves the price (`maxCredits`). No consent is checked here.
  */
 export const LIP_SYNC_TOOL = {
   id: "lip_sync",
@@ -547,16 +487,15 @@ export const LIP_SYNC_TOOL = {
   inputs: {
     clipUploadId: "a video from this workspace (or clipGenId: one of its takes)", audioUploadId: "a voice track from this workspace (or audioGenId)",
     model: "lipsync-2, lipsync-2-pro (default) or sync-3", syncMode: "bounce (default), loop, cut_off, silence or remap",
-    castMemberId: "who is in the clip", faceFrameUploadId: "a still of the face in the clip", projectId: "the production", use: "production, ads or social", maxCredits: "the approved price",
+    projectId: "the production (optional)", maxCredits: "the approved price",
   },
   /** Priced by the quote route (quoteOnly) through the margin table; never a figure here. */
   price: { quote: "POST /api/lipsync { quoteOnly: true }" },
   who: "prepare: anyone; approve: a person" as const,
-  gate: "a live consent record for the face (lib/consentMatch.ts) and, for a voice that is not a stock one, for the voice",
 };
 
-/** The tools present for a workspace: none unless the engine is on for it AND the face gate can run there (the house workspace today). */
+/** The tools present for a workspace: none unless the engine is on for it and it is the house workspace (until counsel answers). */
 export async function lipSyncTools(workspace: { id: string } | null | undefined = currentTenant()?.workspace): Promise<(typeof LIP_SYNC_TOOL)[]> {
-  return (await engineEnabled(SYNC_SWITCH, workspace)) && (await faceCheckAvailable(workspace)) ? [LIP_SYNC_TOOL] : [];
+  return (await lipSyncOnHere(workspace)) ? [LIP_SYNC_TOOL] : [];
 }
 
