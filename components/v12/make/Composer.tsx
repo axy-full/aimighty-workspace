@@ -6,8 +6,10 @@ import { spendAttrsOf, spendAttrsText } from "@/lib/spend";
 import { TAKES_MAX } from "@/lib/workspace/composer";
 import { useSession } from "@/lib/session";
 import { creditRate } from "@/lib/shell/price-words";
-import { EnhanceSwitch } from "./EnhanceSwitch";
-import { ENHANCE_ASWRITTEN, enhanceKey, enhanceOffered, workspaceEnhance, writeEnhance } from "@/lib/v12/enhance";
+import { EnhanceButton } from "./EnhanceButton";
+import { enhanceOffered, workspaceEnhance } from "@/lib/v12/enhance";
+import { LOADING } from "@/lib/v12/quote";
+import { exact } from "@/lib/shell/price-words";
 import { useRead } from "@/components/graphite/settings/use-settings";
 import { EDIT_OPS, MAKE_MODES, REMIX_NEEDS_SOURCE, REMIX_OPS, houseAbout, makeQuote, modeType, placeholderFor, type MakeMode, type MakeOp, type ResultTile } from "@/lib/v12/make";
 import { Bar, BarChip, type BarMention } from "@/components/v12/bar/Bar";
@@ -59,26 +61,16 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   const money = { dollars: session.rates.unit === "usd", creditUsd: creditRate(session.rates.creditUsd) };
   /* An approximate price in words (Cinema Studio): credits for a credit workspace; for the house the engine's dollars, or no figure when it has none (never the customer price). */
   const aboutOf = (p: { about: string | null; usd?: number | null }) => (!money.dollars ? p.about : typeof p.usd === "number" ? houseAbout(p.usd) : "—");
-  /* Enhance (lib/v12/enhance.ts): this person's own choice, else the workspace's default (Settings › Advanced), else On. The house, which pays in
-     dollars at cost, has it too: its enhancement is priced in the text model's own dollars and added to the button's one figure. */
-  const userId = session.userId ?? null;
-  const workspaceId = session.workspace?.id ?? null;
+  /* Enhance (lib/v12/enhance.ts): a button, pressed by the person. It puts the enhanced words in the box and generates nothing; Make sends the box as written.
+     The workspace's setting (Settings › Advanced) says whether Make offers it; On unless an admin turned it off. The house, which pays in dollars at cost, has it too:
+     its enhancement is priced in the text model's own dollars. */
   const defaults = useRead<{ settings: Record<string, string> }>("/api/settings");
-  const [mineRead, setMineRead] = useState<{ read: boolean; value: boolean | null }>({ read: false, value: null });
-  const mine = mineRead.value;
-  const setMine = (value: boolean | null) => setMineRead({ read: true, value });
-  useEffect(() => {
-    const at = setTimeout(() => { try { const kept = window.localStorage.getItem(enhanceKey(workspaceId, userId)); setMineRead({ read: true, value: kept === "1" ? true : kept === "0" ? false : null }); } catch { setMineRead({ read: true, value: null }); } }, 0);
-    return () => clearTimeout(at);
-  }, [workspaceId, userId]);
-  const enhanceOn = mine ?? workspaceEnhance(defaults.data?.settings.enhanceDefault);
-  const make = useMake({ ...input, onBoard: false, keepOpen: true, enhanceToggle: enhanceOn });
-  const { setAuto } = make.enhancer;
-  /* Shown only once the position is known: this person's own choice, or else the workspace's default (or that it could not be read, which is On). */
-  const enhanceKnown = mineRead.read && (mine !== null || defaults.data !== null || defaults.error !== null);
-  const enhanceShown = enhanceKnown && !make.spendOff && Boolean(make.model) && enhanceOffered(make.state.type);
-  useEffect(() => { setAuto(enhanceOn && enhanceShown); }, [setAuto, enhanceOn, enhanceShown]);
-  const setEnhance = (next: boolean) => { setMine(next); writeEnhance(typeof window === "undefined" ? null : window.localStorage, workspaceId, userId, next); };
+  const make = useMake({ ...input, onBoard: false, keepOpen: true, labelTakes: true });
+  const { enhancer } = make;
+  const offered = workspaceEnhance(defaults.data?.settings.enhanceDefault);
+  /* Shown only once the workspace's setting is known (or that it could not be read, which is On). */
+  const enhanceKnown = defaults.data !== null || defaults.error !== null;
+  const enhanceShown = enhanceKnown && offered && !make.spendOff && Boolean(make.model) && enhanceOffered(make.state.type);
   /* The mode: Remix or Edit when picked here, else the composer's own type once picked, else Auto. */
   const { pickType, unpick, recipe } = make;
   /* A recipe that lands (prompt reuse) is made in its own type: Remix or Edit, picked before it, gives way to it. */
@@ -150,12 +142,25 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   };
   const note = sourceNote ? { tone: "note" as const, text: REMIX_NEEDS_SOURCE }
     : make.wellError ? { tone: "problem" as const, text: make.wellError }
+    : enhanceShown && enhancer.error ? { tone: "problem" as const, text: enhancer.error }
     : make.result ? { tone: "problem" as const, text: make.result }
       : make.short ? { tone: "problem" as const, text: make.short }
+        : enhanceShown && make.enhanced ? { tone: "note" as const, text: <>Enhanced · <Price quote={makeQuote(exact(make.enhanced.credits), money, make.enhanced.usd)} testId="v12-make-enhanced-price" /></>, action: { label: "Undo", onPress: make.undoEnhance, testId: "v12-make-enhance-undo" } }
         : make.notices[0] ? { tone: "note" as const, text: make.notices[0] }
           : make.spendOff ? { tone: "note" as const, text: make.spendOff }
-            : enhanceShown && enhanceOn && make.enhanceAsWritten ? { tone: "note" as const, text: ENHANCE_ASWRITTEN } : null;
+            : null;
   const blocked = ops ? "Pick one of the four first" : make.go.blocked;
+  /* Enhance wears its quote before it is pressed (a read, free): "Enhance · 1 cr"; unread, "…"; unreadable, a dash with the reason on hover. */
+  const words = state.prompt.trim().length > 0;
+  const enhanceQuote = enhancer.credits != null ? makeQuote(exact(enhancer.credits), money, enhancer.usd)
+    : enhancer.unavailable ? { state: "error" as const, message: enhancer.unavailable }
+      : words && !enhancer.blocked?.startsWith("raw:") ? LOADING : null;
+  const enhanceButton = (
+    <EnhanceButton busy={enhancer.busy} disabled={Boolean(enhancer.blocked) || make.submitting} why={enhancer.blocked}
+      price={enhanceQuote ? <Price quote={enhanceQuote} testId="v12-make-enhance-price" /> : null}
+      attrs={enhancer.credits != null ? spendAttrsOf(exact(enhancer.credits)) : { "data-spend": "unpriced" }}
+      onPress={() => void make.pressEnhance()} />
+  );
 
   const head = (
     <div className="v12-mk-head" data-testid="v12-make-head">
@@ -180,7 +185,7 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
         </span>
       ) : null}
       <span className="v12-mk-grow" />
-      {enhanceShown && !ops ? <EnhanceSwitch on={enhanceOn} onChange={setEnhance} /> : null}
+      {enhanceShown && !ops ? enhanceButton : null}
       {chips.map((c) => <Chip key={c.k} {...c} />)}
     </div>
   );

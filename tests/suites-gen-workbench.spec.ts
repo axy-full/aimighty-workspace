@@ -50,7 +50,7 @@ async function open(page: Page) {
   return { errors, enhance };
 }
 
-test("Enhance wears its live price, approves exactly that, and the card offers Use this / Keep mine", async ({ page }, info) => {
+test("Enhance wears its live price, approves exactly that, puts the words in the box, and the card says what it cost and offers Undo", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, enhance } = await open(page);
   const button = page.getByTestId("enhance");
@@ -69,16 +69,16 @@ test("Enhance wears its live price, approves exactly that, and the card offers U
   await button.click();
   const card = page.getByTestId("enhanced-card");
   await expect(card).toContainText("Enhanced · Standard · 1 cr");
-  await expect(card).toContainText("@Image1 a fox crossing a frozen harbour, slow push in, rim light, tack sharp");
+  /* The enhanced words are already in the box (nothing was generated); the charged figure is on the card. */
+  await expect(page.getByTestId("gen-prompt")).toHaveValue("@Image1 a fox crossing a frozen harbour, slow push in, rim light, tack sharp");
   expect(enhance.at(-1)).toMatchObject({ maxCredits: 1, mode: "video" });
   expect(enhance.at(-1)).not.toHaveProperty("quoteOnly");
 
-  /* Keep mine leaves the words alone; Use this replaces them. */
-  await page.getByTestId("enhanced-keep").click();
+  /* Undo puts the typed words back; enhancing again fills the box again. */
+  await page.getByTestId("enhanced-undo").click();
   await expect(card).toHaveCount(0);
   await expect(page.getByTestId("gen-prompt")).toHaveValue("@Image1 a fox crossing a frozen harbour");
   await button.click();
-  await page.getByTestId("enhanced-use").click();
   await expect(page.getByTestId("gen-prompt")).toHaveValue(/slow push in, rim light, tack sharp$/);
   expect(errors).toEqual([]);
 });

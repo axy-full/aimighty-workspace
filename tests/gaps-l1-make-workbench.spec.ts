@@ -49,7 +49,6 @@ test("Advanced as the frames draw it: the brief's chips, shot control, Enhance, 
   await expect(adv.getByTestId("make-from-brief")).toContainText("16:9");
   await expect(adv.getByTestId("make-shot-control")).toBeVisible();
   await expect(adv.getByTestId("gen-film")).toBeVisible();
-  await expect(adv.getByTestId("enhance-auto-state")).toContainText("off");
   /* Enhance now wears the enhancer's own quote, as a marked spending button; pressing nothing sends nothing. */
   const enhance = adv.getByTestId("enhance");
   await expect(enhance).toHaveText(/^Enhance now · \d[\d,]* cr$/, { timeout: 60_000 });
@@ -67,7 +66,7 @@ test("Advanced as the frames draw it: the brief's chips, shot control, Enhance, 
   expect(errors).toEqual([]);
 });
 
-test("Auto enhance is in the figure: Make reads take + enhancement, and the press enhances first and then sends those words", async ({ page }, info) => {
+test("Make never waits on Enhance: its figure is the take alone, Enhance now puts the words in the box and sends nothing, and the next Make press sends them", async ({ page }, info) => {
   test.skip(PHONES.includes(info.project.name), PHONE);
   test.setTimeout(180_000);
   const errors = watchErrors(page);
@@ -93,25 +92,26 @@ test("Auto enhance is in the figure: Make reads take + enhancement, and the pres
   await page.getByTestId("make-advanced-toggle").click();
   const adv = page.getByTestId("make-advanced");
   await expect(adv.getByTestId("enhance")).toHaveText("Enhance now · 1 cr", { timeout: 60_000 });
-  await adv.getByTestId("enhance-auto").click();
-  await expect(adv.getByTestId("enhance-auto-state")).toContainText("on");
-  /* The button's figure now includes the enhancement. */
-  await expect(go).toHaveText(new RegExp(`^Make · ${(take + 1).toLocaleString("en-US")} cr$`));
-  await expect(go).toHaveAttribute("data-spend", "priced");
-  await shoot(page, "make-auto", info.project.name);
-  expect(calls.filter((c) => c.path === "generate" || (c.path === "enhance" && !c.body.quoteOnly)), "nothing paid is sent before the press").toEqual([]);
-  /* Off again: the figure is the take's alone. */
-  await adv.getByTestId("enhance-auto").click();
+  /* Make's figure is the take's alone, with the enhancer's own price on its own button. */
   await expect(go).toHaveText(new RegExp(`^Make · ${take.toLocaleString("en-US")} cr$`));
-  await adv.getByTestId("enhance-auto").click();
-  await expect(go).toHaveText(new RegExp(`^Make · ${(take + 1).toLocaleString("en-US")} cr$`));
+  await expect(go).toHaveAttribute("data-spend", "priced");
+  await expect(adv.getByTestId("enhance-auto")).toHaveCount(0);
+  await shoot(page, "make-enhance", info.project.name);
+  expect(calls.filter((c) => c.path === "generate" || (c.path === "enhance" && !c.body.quoteOnly)), "nothing paid is sent before a press").toEqual([]);
 
-  /* The press: the enhancement is run first, at the 1 cr it quoted, then the take is sent with the enhanced words. */
-  await go.click();
+  /* Enhance now: run at the 1 cr it quoted; the words land in the box and the take is NOT sent. */
+  await adv.getByTestId("enhance").click();
   await expect.poll(() => calls.filter((c) => c.path === "enhance" && !c.body.quoteOnly).length, { timeout: 30_000 }).toBe(1);
   expect(calls.find((c) => c.path === "enhance" && !c.body.quoteOnly)!.body.maxCredits).toBe(1);
+  await expect(page.getByTestId("gen-prompt")).toHaveValue("A slow push toward the stall at golden hour, warm low sun");
+  await expect(adv.getByTestId("enhanced-card")).toContainText("1 cr");
+  expect(calls.filter((c) => c.path === "generate"), "Enhance sends no take").toEqual([]);
+  await expect(go).toHaveText(new RegExp(`^Make · ${take.toLocaleString("en-US")} cr$`));
+  /* The next Make press sends the take with the words in the box, and does not enhance again. */
+  await go.click();
   await expect.poll(() => calls.filter((c) => c.path === "generate").length, { timeout: 30_000 }).toBe(1);
   expect(JSON.stringify(calls.find((c) => c.path === "generate")!.body)).toContain("A slow push toward the stall");
+  expect(calls.filter((c) => c.path === "enhance" && !c.body.quoteOnly), "Make did not enhance again").toHaveLength(1);
   /* The refusal is Result, with Retry at the same figure; nothing about the charge is claimed. */
   const result = page.getByTestId("make-result");
   await expect(result).toContainText("No render is made in this test.", { timeout: 30_000 });

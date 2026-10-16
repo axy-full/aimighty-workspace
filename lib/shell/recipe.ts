@@ -41,7 +41,7 @@ export type GenPreset = {
   enhance?: boolean;
   /**
    * The words a take was typed as, when its own words are the enhancer's (params.enhanced, lib/v12/enhance.ts): the loaded words are already
-   * enhanced, so Make's Enhance switch does not enhance them a second time. Editing them clears it.
+   * enhanced, so Make does not take them for unenhanced words a second time. Editing them clears it.
    */
   enhancedFrom?: string;
   /** The take this recipe came from. */

@@ -21,14 +21,13 @@ const TYPE_WORD = { video: "Video", image: "Image", audio: "Audio" } as const;
  * Advanced, folded: every setting the handoff does not draw (README § 0 rule 2: advanced settings sit folded).
  */
 export function EngineList({ make, id, scope }: { make: MakeModel; id: string; scope: string }) {
-  const { state, model, settings, composer, enhancer } = make;
+  const { state, model, settings, composer } = make;
   const [advanced, setAdvanced] = useState(false);
   /* What a closed Advanced is holding that differs from the plain default, said on its line, so nothing that changes what is made hides. */
   const advancedNotes = [
     !settings.draft && state.count > 1 ? `${state.count} takes` : null,
     settings.draft ? "Draft" : null,
     settings.generateAudio ? "With sound" : null,
-    enhancer.auto ? "Auto enhance" : null,
     make.soundTask === "music" && state.instrumental ? "Instrumental" : null,
   ].filter(Boolean) as string[];
   const lengths = model?.durations ?? [];
@@ -114,7 +113,7 @@ function Row({ name, value, testId }: { name: string; value: React.ReactNode; te
 
 /**
  * Advanced, folded under Change: everything Make can set beyond the words and the engine, in the order the Make details
- * frames draw it (Gaps B): what the brief already set, the shot's film chips, Enhance with Auto, the settings (aspect, draft,
+ * frames draw it (Gaps B): what the brief already set, the shot's film chips, Enhance, the settings (aspect, draft,
  * resolution, length, sound), the number of takes with each total, and for audio the voice, the sound kind and the music length.
  * Each is today's composer setting; nothing here prices anything of its own: the figures are the composer's quote and the enhancer's.
  */
@@ -126,9 +125,6 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
   const soundKinds = SOUND_KINDS.flatMap(({ task, label }) => { const engine = make.offered.find((m) => m.audioTask === task); return engine ? [{ task, label, engine }] : []; });
   const takes = settings.draft ? 1 : state.count;
   const choices = TAKE_CHOICES.includes(takes) ? TAKE_CHOICES : [...TAKE_CHOICES, takes].sort((a, b) => a - b);
-  const enhanceNote = !enhancer.auto ? "off"
-    : make.autoNeeds ? (make.enhanceCredits != null ? <>on · <Price value={exact(make.enhanceCredits)} /> in the figure</> : "on · pricing")
-    : enhancer.enhanced ? "on · uses the enhancement below" : "off here";
   return (
     <div className="gx-mk-advanced" id={id} data-testid="make-advanced">
       {project && (project.aspect || project.fps) ? (
@@ -153,25 +149,19 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
       {/* The sample workspace spends nothing: Enhance is not offered there (the owner's switch). */}
       {make.spendOff ? null : <div className="gx-mk-field" data-testid="make-enhance">
         <span className="gx-mk-eyebrow">Enhance</span>
-        <Row name="Auto · enhance first" value={enhanceNote} testId="enhance-auto-state" />
         <div className="gx-mk-inline">
-          <button type="button" className="gx-toggle" role="switch" aria-checked={enhancer.auto} onClick={() => enhancer.setAuto(!enhancer.auto)} title="With Auto on, Make enhances the words first and the button's figure includes it." data-testid="enhance-auto">
-            <span className="gx-toggle-dot" aria-hidden="true" /><span>Auto</span>
-          </button>
-          <button type="button" className="gx-hbtn" disabled={Boolean(enhancer.blocked) || enhancer.busy} {...(enhancer.credits == null ? {} : spendAttrsOf(exact(enhancer.credits)))} onClick={enhancer.enhance} aria-busy={enhancer.busy || undefined} data-testid="enhance">
+          <button type="button" className="gx-hbtn" disabled={Boolean(enhancer.blocked) || enhancer.busy} {...(enhancer.credits == null ? {} : spendAttrsOf(exact(enhancer.credits)))} onClick={() => void make.pressEnhance()} aria-busy={enhancer.busy || undefined} data-testid="enhance">
             {enhancer.busy ? "Enhancing…" : enhancer.credits == null ? "Enhance now" : <>Enhance now · <Price value={exact(enhancer.credits)} /></>}
           </button>
         </div>
         {/* Its line keeps its height when the reason goes (the price landing), so what sits under it (Takes) does not move under a press. */}
         <p className="gx-mk-line-note" style={{ minHeight: "1.45em" }} data-testid="enhance-reason">{enhancer.blocked}</p>
-        {enhancer.error ? <p className="gx-mk-error" role="alert">{enhancer.error}</p> : null}
-        {enhancer.enhanced ? (
+        {enhancer.error ? <p className="gx-mk-error" role="alert" data-testid="enhance-error">{enhancer.error}</p> : null}
+        {make.enhanced ? (
           <div className="gx-mk-enhanced" data-testid="enhanced-card">
-            <span className="gx-mk-eyebrow">Enhanced · {ENHANCER_LABEL[enhancer.provider ?? DEFAULT_ENHANCER]}{enhancer.charged != null ? <> · <Price value={exact(enhancer.charged)} /></> : null}</span>
-            <p>{enhancer.enhanced}</p>
+            <span className="gx-mk-eyebrow">Enhanced · {ENHANCER_LABEL[make.enhanced.provider ?? DEFAULT_ENHANCER]} · <Price value={exact(make.enhanced.credits)} /></span>
             <div className="gx-mk-inline">
-              <button type="button" className="gx-hbtn" onClick={() => { make.setPrompt(enhancer.enhanced!); enhancer.dismiss(); }} data-testid="enhanced-use">Use this</button>
-              <button type="button" className="gx-hbtn" onClick={enhancer.dismiss} data-testid="enhanced-keep">Keep mine</button>
+              <button type="button" className="gx-hbtn" onClick={make.undoEnhance} data-testid="enhanced-undo">Undo</button>
             </div>
           </div>
         ) : null}

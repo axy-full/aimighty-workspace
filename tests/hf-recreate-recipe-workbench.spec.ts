@@ -296,10 +296,10 @@ test("an enhancement of the words a Recreate replaced is cleared, and Make sends
   });
   const prompt = page.getByTestId("gen-prompt");
   await prompt.fill("my own words");
-  await page.getByRole("switch", { name: "Auto" }).click();
   await expect(page.getByTestId("enhance")).toHaveText("Enhance now · 1 cr");
   await page.getByTestId("enhance").click();
-  await expect(page.getByTestId("enhanced-card")).toContainText("ENHANCED my own words");
+  await expect(prompt).toHaveValue("ENHANCED my own words");
+  await expect(page.getByTestId("enhanced-card")).toContainText("1 cr");
 
   await recreate(page, "gen_harbour");
   await expect(prompt).toHaveValue(RAW);
@@ -307,8 +307,7 @@ test("an enhancement of the words a Recreate replaced is cleared, and Make sends
   await expect(page.getByTestId("enhanced-card")).toHaveCount(0);
   await expect(reference(page, "@Image1", "Plate still")).toHaveCount(1, { timeout: 30_000 });
   const go = page.getByTestId("gen-generate");
-  /* Auto is put off, so what is sent is the take's words exactly (with Auto on, Make enhances the words it holds first, and the figure includes that). */
-  await page.getByTestId("enhance-auto").click();
+  /* Make sends the take's words exactly: it never enhances them. */
   await expect(go).toHaveText("Make · 31 cr", { timeout: 30_000 });
   await go.click();
   /* The price check is where a press first spends: it carries the take's words, not the old enhancement,

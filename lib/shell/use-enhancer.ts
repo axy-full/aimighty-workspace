@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useSession } from "@/lib/session";
-import { ENHANCE_NO_ANSWER, EnhanceRuns } from "./enhance-press";
+import { ENHANCE_CLIENT_MS, ENHANCE_FALLBACK, EnhanceRuns } from "./enhance-press";
 import { isRawPrompt, type EnhanceMode, type EnhancerProvider } from "./enhancer";
 
 /**
@@ -12,6 +12,10 @@ import { isRawPrompt, type EnhanceMode, type EnhancerProvider } from "./enhancer
  * approves exactly that figure, and the run carries it back as `maxCredits`
  * so a price that moved refuses instead of charging more. Nothing here knows
  * a price of its own.
+ *
+ * Enhance runs only when a person presses it: nothing here is ever started by a Make press, and nothing waits on it.
+ * Neither the quote nor the run is waited on past ENHANCE_CLIENT_MS; a run that fails says one line (ENHANCE_FALLBACK)
+ * and leaves the typed words alone.
  */
 export type EnhancerInput = {
   prompt: string; mode: EnhanceMode; model: string | null; anchored: boolean; editing: boolean;
@@ -20,15 +24,13 @@ export type EnhancerInput = {
 };
 
 export type EnhancerHost = {
-  auto: boolean;
-  setAuto: (value: boolean) => void;
   /** The quoted price, or null while it is unknown. */
   credits: number | null;
   /** The house workspace alone (which pays in dollars at cost): the same quote in the text model's own dollars, an estimate the real cost cannot pass. Null for everyone else, and while unknown. */
   usd: number | null;
   /** Why Enhance cannot run right now, said on the control. */
   blocked: string | null;
-  /** The enhancer was asked for a price and could not give one (not "still pricing"): why. The new interface sends the words as written then. */
+  /** The enhancer was asked for a price and could not give one (not "still pricing"): why. */
   unavailable: string | null;
   busy: boolean;
   enhanced: string | null;
@@ -37,7 +39,7 @@ export type EnhancerHost = {
   charged: number | null;
   error: string | null;
   enhance: () => void;
-  /** The same press, awaited: the enhanced words, or null when nothing came back (the error is then on `error`). Auto's press uses it. */
+  /** The same press, awaited: the enhanced words, or null when nothing came back (the error is then on `error`). */
   run: () => Promise<string | null>;
   dismiss: () => void;
 };
@@ -47,11 +49,11 @@ const bodyOf = (input: EnhancerInput) => ({ prompt: input.prompt.trim(), mode: i
 
 export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const scoped = useScopedFetch();
-  const [auto, setAuto] = useState(false);
   const [quote, setQuote] = useState<{ key: string; credits: number | null; usd: number | null; reason: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ prompt: string; provider: EnhancerProvider; charged: number | null; body: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /* A failure is the line for the words it was pressed on: new words are a new press, with no stale complaint. */
+  const [failure, setFailure] = useState<{ body: string; line: string } | null>(null);
 
   /* The house workspace pays in dollars at cost: its enhancement is priced in the text model's own dollars, and a quote without them is no quote. */
   const inDollars = useSession().rates.unit === "usd";
@@ -61,13 +63,18 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const off = input.off ?? null;
   const quotable = Boolean(words) && !raw && !off;
 
-  /* The quote follows the words, debounced; a stale answer is dropped by key. */
+  /* The quote follows the words, debounced; a stale answer is dropped by key. A quote that was not answered in time (or never arrived) is asked once more:
+     the button is dead until it has a price, and a slow first answer should not leave it so. */
   useEffect(() => {
     if (!quotable) return;
     let live = true;
-    const timer = setTimeout(async () => {
+    let attempt: AbortController | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const ask = async (again: boolean) => {
+      const patience = (attempt = new AbortController());
+      const giveUp = setTimeout(() => patience.abort(), ENHANCE_CLIENT_MS);
       try {
-        const response = await scoped("/api/prompt/enhance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...JSON.parse(key), quoteOnly: true }) });
+        const response = await scoped("/api/prompt/enhance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...JSON.parse(key), quoteOnly: true }), signal: patience.signal });
         const json = await response.json().catch(() => null) as { estimateCredits?: number; estimateUsd?: number; error?: string } | null;
         if (!live) return;
         const usd = typeof json?.estimateUsd === "number" && Number.isFinite(json.estimateUsd) && json.estimateUsd >= 0 ? json.estimateUsd : null;
@@ -75,10 +82,15 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
           ? { key, credits: json.estimateCredits, usd: inDollars ? usd : null, reason: null }
           : { key, credits: null, usd: null, reason: json?.error ?? "The enhancer cannot be priced right now." });
       } catch (caught) {
-        if (live) setQuote({ key, credits: null, usd: null, reason: caught instanceof Error ? caught.message : "The enhancer cannot be priced right now." });
+        if (!live) return;
+        if (again) { retry = setTimeout(() => void ask(false), 1_000); return; }
+        setQuote({ key, credits: null, usd: null, reason: patience.signal.aborted ? "The enhancer cannot be priced right now." : caught instanceof Error ? caught.message : "The enhancer cannot be priced right now." });
+      } finally {
+        clearTimeout(giveUp);
       }
-    }, QUOTE_DELAY_MS);
-    return () => { live = false; clearTimeout(timer); };
+    };
+    const timer = setTimeout(() => void ask(true), QUOTE_DELAY_MS);
+    return () => { live = false; clearTimeout(timer); if (retry) clearTimeout(retry); attempt?.abort(); };
   }, [key, quotable, scoped, inDollars]);
 
   const current = quote && quote.key === key ? quote : null;
@@ -107,27 +119,27 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
     const credits = approved.credits;
     const presses = (runs.current ??= new EnhanceRuns());
     setBusy(true);
-    setError(null);
+    setFailure(null);
     try {
       const pressed = await presses.run(scoped, { scope: approved.scope, body: approved.key, credits }, () => ({ scope: live.current.scope, body: live.current.key }));
       if ("stale" in pressed) return null;
-      if (!pressed.ok) { setError(pressed.error); return null; }
+      if (!pressed.ok) { setFailure({ body: approved.key, line: pressed.error }); return null; }
       setResult({ prompt: pressed.prompt, provider: pressed.provider, charged: credits, body: approved.key });
       return pressed.prompt;
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : ENHANCE_NO_ANSWER);
+    } catch {
+      setFailure({ body: approved.key, line: ENHANCE_FALLBACK });
       return null;
     } finally {
       setBusy(presses.busy);
     }
   }, [scoped, off]);
 
-  const dismiss = useCallback(() => { setResult(null); setError(null); }, []);
-  /* An enhancement is offered only for the words it was written from: replaced words never take it (nor does Auto's Make). */
+  const dismiss = useCallback(() => { setResult(null); setFailure(null); }, []);
+  /* An enhancement is offered only for the words it was written from: replaced words never take it. */
   const shown = result && result.body === key ? result : null;
 
   return {
-    auto: auto && !off, setAuto, credits, usd, blocked, unavailable: quotable ? current?.reason ?? null : null, busy, error,
+    credits, usd, blocked, unavailable: quotable ? current?.reason ?? null : null, busy, error: failure && failure.body === key ? failure.line : null,
     enhanced: shown?.prompt ?? null, provider: shown?.provider ?? null, charged: shown?.charged ?? null,
     enhance: () => void enhance(), run: enhance, dismiss,
   };

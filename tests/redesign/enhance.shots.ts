@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { captureBeside, closePrototypeServer } from "../helpers/redesignShots";
 import { seedHome } from "../helpers/v12Home";
 
-/* Make's Enhance switch (the owner's night queue, item 2) beside prototype v14's Make (set REDESIGN_PROTOTYPE_DIR to its folder until it is merged): the composer with it On and its tooltip, and the viewer's Enhanced label with the original words. */
+/* Make's Enhance button (the owner's night queue, item 2; a button since 16 Oct) beside prototype v14's Make (set REDESIGN_PROTOTYPE_DIR to its folder until it is merged): the composer with its price and its tooltip, and the viewer's Enhanced label with the original words. */
 test.afterAll(closePrototypeServer);
 
 async function ready(page: import("@playwright/test").Page) {
@@ -14,7 +14,7 @@ async function ready(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("v12-make-go")).toHaveText(/^Make · \d[\d,]* cr$/, { timeout: 60_000 });
 }
 
-test("Make with Enhance On: one total on the button", async ({ page }) => {
+test("Make with Enhance and its price beside the take's", async ({ page }) => {
   test.setTimeout(240_000);
   await ready(page);
   await page.mouse.move(700, 300);
@@ -32,11 +32,12 @@ test("Make with the ⓘ tooltip pinned open", async ({ page }) => {
   await captureBeside(page, "enhance-tip", "?view=make&tip=enhance");
 });
 
-test("Make with Enhance Off: the take's price alone", async ({ page }) => {
+test("Make after Enhance: the enhanced words in the box and what it cost", async ({ page }) => {
   test.setTimeout(240_000);
   await ready(page);
+  await expect(page.getByTestId("v12-make-enhance")).toHaveText(/^Enhance · \d[\d,]* cr$/, { timeout: 60_000 });
   await page.getByTestId("v12-make-enhance").click();
-  await expect(page.getByTestId("v12-make-enhance")).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("v12-make-bar-note")).toContainText("Enhanced", { timeout: 60_000 });
   await page.mouse.move(700, 300);
   await page.waitForTimeout(800);
   await captureBeside(page, "enhance-off", "?view=make&enhance=off");

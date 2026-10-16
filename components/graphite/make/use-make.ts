@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveGenInput, type GenInputAsset } from "@/lib/genAssetInput";
 import { dropToIds, readDrop } from "@/lib/drop";
 import { displayModelName } from "@/lib/models";
-import { isRawPrompt, type EnhanceMode } from "@/lib/shell/enhancer";
+import type { EnhanceMode, EnhancerProvider } from "@/lib/shell/enhancer";
 import { useGenPresetInbox } from "@/lib/shell/gen-preset";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/draft";
 import { announceDraftWritten } from "@/lib/workspace/draft-written";
@@ -53,10 +53,11 @@ export type MakeInput = {
   /** A seed to repeat, and the engine it was made on (the new interface's "Reuse seed"); sent while that engine is picked. */
   seed?: { value: number; model: string } | null;
   /**
-   * The new interface's Enhance toggle (lib/v12/enhance.ts): true/false is its position, null a screen with none (today's panel). On, the
-   * one press enhances the words first (Auto, below) and the take records that it was; off, or a `raw:` line, it records Raw.
+   * The new interface's labelling of takes (lib/v12/enhance.ts): true records each take as Enhanced (with the typed words it came from) when the box still
+   * holds the words an Enhance press wrote, and Raw otherwise; false, a screen that does not label takes (today's panel). Make always sends the words
+   * in the box: Enhance runs only when it is pressed (`pressEnhance`), and a press of Make never waits on it.
    */
-  enhanceToggle?: boolean | null;
+  labelTakes?: boolean;
 };
 
 /**
@@ -84,7 +85,7 @@ const CINEMA_SOUND_ONLY = "Cinema Studio takes sound references as WAV files upl
 /** How long the words rest before Make infers a type from them. */
 const INFER_AFTER_MS = 350;
 
-export function useMake({ scope, project, projects = "ready", workspaceName, onProject, balance, onBoard = false, listOpen: startOpen = false, keepOpen = false, seed = null, enhanceToggle = null }: MakeInput) {
+export function useMake({ scope, project, projects = "ready", workspaceName, onProject, balance, onBoard = false, listOpen: startOpen = false, keepOpen = false, seed = null, labelTakes = false }: MakeInput) {
   const shell = useShell();
   const session = useSession();
   /* The words survive leaving Make (lib/draft.ts): closing the panel, a reload or Try again on a failed tile unmounts it, and a person
@@ -107,9 +108,9 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   /* The words an enhancement was written from and the words it made: while the box still holds those, the take is Enhanced from the first, and is not enhanced again. */
   const [lastEnhanced, setLastEnhanced] = useState<{ from: string; to: string } | null>(null);
   const enhancedOf = useCallback((prompt: string): false | { from: string } | undefined => {
-    if (enhanceToggle === null) return undefined;
-    return enhanceToggle && lastEnhanced && prompt.trim() === lastEnhanced.to.trim() ? { from: lastEnhanced.from } : false;
-  }, [enhanceToggle, lastEnhanced]);
+    if (!labelTakes) return undefined;
+    return lastEnhanced && prompt.trim() === lastEnhanced.to.trim() ? { from: lastEnhanced.from } : false;
+  }, [labelTakes, lastEnhanced]);
   const composer = useComposer({ scope, open: true, project, projects, onProject, workspaceName, initialType, compose: composeForSend, verb: "Make", madeIn: "make", onSent: sent, hide: hiddenInMake,
     preference: MAKE_MODEL_PREFERENCE, initialPicks: MAKE_PICKS, seed, enhanced: enhancedOf });
   const { state, model, offered, settings, submitting } = composer;
@@ -166,7 +167,10 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     prompt: state.prompt, mode: state.type as EnhanceMode, model: model?.id ?? null,
     anchored, editing: state.type === "image" && state.references.length > 0, off: spendOff,
   });
-  const { dismiss: dismissEnhanced } = enhancer;
+  /* What the last Enhance press wrote into the box, and what it cost: shown (with its Undo) while the box still holds those words. */
+  const [enhancedDone, setEnhancedDone] = useState<{ from: string; to: string; credits: number; usd: number | null; provider: EnhancerProvider | null } | null>(null);
+  const { dismiss: dismissOffer } = enhancer;
+  const dismissEnhanced = useCallback(() => { dismissOffer(); setEnhancedDone(null); }, [dismissOffer]);
   const cinemaModel = model != null && isCinemaStudioModel(model.id);
   const [wellError, setWellError] = useState<string | null>(null);
 
@@ -373,47 +377,34 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     : null;
   const waiting = composer.blocked === EMPTY_PROMPT ? "Say what to make." : composer.blocked;
   const blockedBase = submitting ? waiting : recipeWait ?? waiting;
-  /* Auto (Advanced): with an enhancement on the card, it is what goes. */
-  const pending = useRef(false);
-  useEffect(() => {
-    if (!pending.current) return;
-    pending.current = false;
-    if (!recipeWait) composer.generate();
-  }, [state.prompt, composer, recipeWait]);
-  /* Auto, "enhance first": with it on and no enhancement on the card yet, the press enhances the words (the enhancer's own priced
-     route, at the figure it quoted) and then sends the take. The button's figure is the take plus the enhancement, so the person
-     approves both at once; a raw: line is never enhanced, and a Cinema Studio take, quoted as "about", does not take Auto. */
-  const autoNeeds = enhancer.auto && !enhancer.enhanced && Boolean(state.prompt.trim()) && !isRawPrompt(state.prompt) && !composer.quote?.approximate
-    && state.prompt.trim() !== lastEnhanced?.to.trim()
-    /* The new interface's switch never holds a make hostage to an enhancer that cannot be priced: those words go as written, and say so. */
-    && !(enhanceToggle !== null && enhancer.unavailable);
-  const enhanceCredits = autoNeeds ? enhancer.credits : null;
-  /* The house's enhancement in the text model's own dollars (null for every other workspace, and while unknown). */
-  const enhanceUsd = autoNeeds ? enhancer.usd : null;
-  const blocked = spendOff ?? blockedBase ?? (autoNeeds && enhanceCredits == null ? enhancer.blocked ?? "Pricing the enhancement…" : null);
+  /* Make sends the words in the box as written. Nothing here waits on the enhancer: it runs only when Enhance is pressed (below). */
+  const blocked = spendOff ?? blockedBase;
   const make = useCallback(() => {
     if (recipeWait || spendOff) return;
     if (model && !composer.blocked) used(model.id);
-    if (enhancer.auto && enhancer.enhanced && enhancer.enhanced !== state.prompt && !isRawPrompt(state.prompt)) {
-      pending.current = true;
-      setLastEnhanced({ from: state.prompt, to: enhancer.enhanced });
-      dispatch({ type: "prompt", value: enhancer.enhanced });
-      enhancer.dismiss();
-      return;
-    }
-    if (autoNeeds) {
-      if (enhancer.credits == null || composer.blocked) return;
-      void enhancer.run().then((words) => {
-        if (!words) return;
-        pending.current = true;
-        setLastEnhanced({ from: state.prompt, to: words });
-        dispatch({ type: "prompt", value: words });
-        enhancer.dismiss();
-      });
-      return;
-    }
     composer.generate();
-  }, [recipeWait, spendOff, model, composer, used, enhancer, state.prompt, dispatch, autoNeeds]);
+  }, [recipeWait, spendOff, model, composer, used]);
+
+  /* Enhance, pressed by a person: the enhanced words land in the box and nothing is generated, so they can be read and edited before a Make
+     press spends. The charge is the figure the button wore; Undo puts the typed words back. A press that fails says so (enhancer.error) and leaves the words alone. */
+  const pressEnhance = useCallback(async () => {
+    if (spendOff || recipeWait || submitting || enhancer.busy || enhancer.credits == null || enhancer.blocked) return;
+    const from = state.prompt;
+    const credits = enhancer.credits;
+    const usd = enhancer.usd;
+    const words = await enhancer.run();
+    if (!words) return;
+    setLastEnhanced({ from, to: words });
+    setEnhancedDone({ from, to: words, credits, usd, provider: enhancer.provider });
+    dispatch({ type: "prompt", value: words });
+  }, [spendOff, recipeWait, submitting, enhancer, state.prompt, dispatch]);
+  const undoEnhance = useCallback(() => {
+    if (!enhancedDone) return;
+    dispatch({ type: "prompt", value: enhancedDone.from });
+    setLastEnhanced(null);
+    setEnhancedDone(null);
+  }, [enhancedDone, dispatch]);
+  const enhanced = enhancedDone && state.prompt.trim() === enhancedDone.to.trim() ? enhancedDone : null;
 
   /* ── What the line and the button say ───────────────────────────────── */
   const count = settings.draft ? 1 : Math.max(1, state.count);
@@ -435,14 +426,13 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   const liveUsd = composer.quote && composer.quote.key === composer.quoteKey && composer.quote.state === "ready" && typeof composer.quote.usd === "number" ? composer.quote.usd : null;
   const takeUsd = approximate ? null : liveUsd;
   const linePrice: MakePrice | null = takeCredits == null || priceHeld ? null : approximate ? { value: null, about: aboutOneTake(), credits: shownTotal(composer.quote, composer.quoteKey, 1), usd: liveUsd } : { value: makeQuoteValue(takeCredits, state.type), about: null, usd: takeUsd };
-  /* Auto's enhancement is in the figure: the button reads take + enhancement, and waits (unpriced) while the enhancement is still being priced. */
-  const goPrice: MakePrice | null = spendOff || priceHeld || total == null || (autoNeeds && enhanceCredits == null) ? null
+  const goPrice: MakePrice | null = spendOff || priceHeld || total == null ? null
     : approximate ? { value: null, about: composer.buttonParts.price, credits: total, usd: liveUsd != null && !composer.quote?.takes ? liveUsd * count : null }
-      /* In dollars only when the whole figure is known in dollars (lib/shell/make-price.ts › goFigure): the take's own, plus the enhancement's when one is added. */
-      : { ...goFigure({ total, count, type: state.type, takeUsd, batchRequoted: Boolean(composer.quote?.takes), enhanceCredits, enhanceUsd }), about: null };
+      /* In dollars only when the whole figure is known in dollars (lib/shell/make-price.ts › goFigure): the take's own. */
+      : { ...goFigure({ total, count, type: state.type, takeUsd, batchRequoted: Boolean(composer.quote?.takes), enhanceCredits: null, enhanceUsd: null }), about: null };
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;
   /* Make stays pressable when the balance is short (the take waits, held, until credits arrive): the line only says so. */
-  const short = !spendOff && !approximate && total != null && !submitting ? shortByWords(balanceNow, makeQuoteValue(total + (enhanceCredits ?? 0), state.type)) : null;
+  const short = !spendOff && !approximate && total != null && !submitting ? shortByWords(balanceNow, makeQuoteValue(total, state.type)) : null;
 
   return {
     composer, state, model, settings, offered, tool, recent, submitting,
@@ -469,9 +459,9 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
       missing: recipe.refs.missing, total: recipe.refs.total,
       undo: undoRecipe, hide: hideRecipe,
     } : null,
-    enhancer, soundTask, enhanceCredits, autoNeeds, balance: balanceNow,
-    /** With the Enhance switch on but no price to be had: the reason, the words go as written (the new interface only). */
-    enhanceAsWritten: enhanceToggle !== null && enhancer.auto && !enhancer.enhanced ? enhancer.unavailable : null,
+    enhancer, soundTask, balance: balanceNow,
+    /** Enhance, pressed: the words land in the box, nothing is generated. `enhanced` is what the last press wrote and charged, while the box still holds it. */
+    pressEnhance, undoEnhance, enhanced,
     /** The sample's line in the sample workspace, where nothing spends: Enhance is not offered and Make waits. */
     spendOff,
   };
