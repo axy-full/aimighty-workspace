@@ -21,26 +21,22 @@ import { engineEnabled } from "./engineGate";
 import { VEO_RATES, type VeoAspect, type VeoModel, type VeoResolution } from "./vendorRates";
 import { VEO_REFERENCE_LIMIT_BYTES, VEO_MAX_REFERENCES, VEO_SWITCH, VeoError, fetchResult, isVeoModel, pollVideo, submitVideo, veoConfigured, veoQuoteUsd, veoSettingsError } from "./veo";
 import { billedWholeSeconds, mp4DurationSeconds } from "./mp4Duration";
-import { ConsentMatchError, faceCheckAvailable, requireConsentMatch, type ConsentMatch, type ConsentScope } from "./consentMatch";
-import { getConsent } from "./security/consent";
-import { consentLive } from "./security/consent-words";
 
 /**
  * Veo 3.1 through the Gemini API (lib/veo.ts): `veo_video`, a clip with its sound from words, from words and a first frame, or from words and up to three reference
  * images of this workspace. One door (POST /api/veo) for the button, Make, a board card, Atomik, a saved skill and an outside agent: the same quote, the same approval,
- * the same price, and for any image the same consent gate. An ASYNCHRONOUS vendor job kept as a durable workflow in the take's own row (generations.params.veo; no new
+ * the same price. An ASYNCHRONOUS vendor job kept as a durable workflow in the take's own row (generations.params.veo; no new
  * table, no migration), shaped like FLUX.2 (lib/bflImage.ts) and lip-sync (lib/lipSync.ts):
  *
- *   queued     admitted, consent passed (any image), funded (the reservation is the whole price)
+ *   queued     admitted, funded (the reservation is the whole price)
  *   submitted  the job is with Google (an operation name)
  *   done       the clip is fetched THE MOMENT the operation is done (Google keeps it two days), STORED under the workspace's own prefix, the take settled
  *   failed     refused before work (settled at NOTHING, "Nothing billed"); blocked, failed or never finished after submission: Google charges only for a clip that is
  *              generated, so the workspace is billed nothing and the ledger line records nothing; a clip lost after Google made it is recorded at the quote, unbilled
  *   uncertain  the submission's acknowledgement was lost. Nothing here ever submits a second time: a lost reply may still be a charged job
  *
- * CONSENT. A first frame or a reference may show a real person. Every image therefore carries the cast member it shows and passes `requireConsentMatch` (lib/consentMatch.ts) BEFORE
- * a row is written or a cent reserved, and the consent is judged again at the moment of sending. Today that gate runs for the house workspace only and refuses every check until
- * the owner chooses a reference source, so **a clip from images is refused today**; there is no "this shows nobody" exemption. A clip from words alone has no image and no gate.
+ * IMAGES. A first frame or up to three reference images of this workspace go up as data, with their type. There is no face check: Rekognition is out (owner, 16 Oct 2026), and what Google
+ * says about an image (a refusal, a safety filter) is shown as it comes.
  *
  * MONEY. Quote: the seconds at VEO_RATES (lib/vendorRates.ts, verified against Google's pricing page, 16 Oct 2026; confirm against the first invoice), through the margin table
  * (`quotedCredits`, keyed by the model); reserved at the quote on the meter; Google states no cost, so a clip is settled at its own measured length (read from the stored
@@ -53,7 +49,6 @@ import { consentLive } from "./security/consent-words";
  * inputs and outputs is for counsel before any customer switch.
  */
 export const VEO_TASK = "veo_video";
-const ENTITY_ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const UPLOAD_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const POLL_LEASE_MS = 120_000;
 const SUBMIT_GRACE_MS = 10 * 60_000;
@@ -63,15 +58,14 @@ export const VEO_RESULT_LIFETIME_MS = 2 * 86_400_000;
 const RESULT_MARGIN_MS = 30 * 60_000;
 /** An operation that has not finished in this long is given up on: it never produced a clip we could see, and Google bills only for one it generates. */
 export const VEO_OPERATION_LIMIT_MS = 3 * 3_600_000;
-const USES = ["production", "ads", "social"] as const;
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const OUTPUT_ROOM_BYTES = 64 * 1024 * 1024;
 
 export type VeoState = "queued" | "submitted" | "done" | "failed" | "uncertain";
-export type VeoImage = { role: "first" | "reference"; uploadId: string; castMemberId: string; consentId: string; faceSha256: string };
+export type VeoImage = { role: "first" | "reference"; uploadId: string };
 export type VeoParams = {
   status: VeoState; model: VeoModel; durationSeconds: number; resolution: VeoResolution; aspectRatio: VeoAspect; seed: number | null; negativePrompt: string | null;
-  images: VeoImage[]; reservedUsd: number; estimateCredits: number; use: string | null;
+  images: VeoImage[]; reservedUsd: number; estimateCredits: number;
   funded: number; claimedAt: number | null; operation: string | null;
   submittedAt: number | null; sendingAt: number | null; readyAt: number | null; lastPolledAt: number | null; pollUntil: number | null; settled: number;
   /** 1 when the figure on the ledger line is ours, not Google's (Google states none), or the clip was lost: to be checked against Google's invoice. */
@@ -85,8 +79,6 @@ export type VeoDeps = {
   submit?: typeof submitVideo; poll?: typeof pollVideo; fetchClip?: typeof fetchResult;
   store?: (genId: string, bytes: Buffer) => Promise<{ url: string; bytes: number }>; clock?: () => number;
 };
-/** What the admission may be handed in a test. The public admission passes none. */
-export type VeoSeams = { consent?: (castMemberId: string, face: Buffer, scope: ConsentScope) => Promise<ConsentMatch> };
 
 /* ── The row ────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
@@ -114,10 +106,10 @@ async function patch(genId: string, fields: Partial<VeoParams>, guard?: { sql: s
 
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
-export const executeVeoAdmission = (input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> => admitVeo(input, got, options, {});
+export const executeVeoAdmission = (input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> => admitVeo(input, got, options);
 
 /** The same with the test seams. Internal: only the tests import it (tests/unit/veoVideo.spec.ts says so by reading the source). */
-export async function admitVeo(input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution, seams: VeoSeams): Promise<AdmissionReply> {
+export async function admitVeo(input: Record<string, unknown>, got: AdmissionActor, options: AdmissionExecution): Promise<AdmissionReply> {
   const refusal = assertAdmissionActor(got);
   if (refusal) return refusal;
   /* Off for this workspace (the switch, or not on the engine list): the tool is simply not here. */
@@ -142,20 +134,18 @@ export async function admitVeo(input: Record<string, unknown>, got: AdmissionAct
   let negativePrompt: string | null = null;
   if (body.negativePrompt != null) { if (typeof body.negativePrompt !== "string" || body.negativePrompt.length > 1000) return admissionReply({ error: "What to avoid is up to 1,000 characters." }, { status: 400 }); negativePrompt = body.negativePrompt.trim() || null; }
 
-  /* The images: an optional first frame and up to three references, each of this workspace, openable by this person, a still of a known type, naming the cast member it shows. */
-  type Img = { role: "first" | "reference"; uploadId: string; castMemberId: string; ext: string; stored: string };
+  /* The images: an optional first frame and up to three references, each of this workspace, openable by this person, a still of a known type. */
+  type Img = { role: "first" | "reference"; uploadId: string };
   const imgs: Img[] = [];
   const viewer = currentViewer();
   const takeImage = async (entry: unknown, role: Img["role"]): Promise<AdmissionReply | null> => {
     const uploadId = entry && typeof entry === "object" ? (entry as { uploadId?: unknown }).uploadId : undefined;
-    const cast = entry && typeof entry === "object" ? (entry as { castMemberId?: unknown }).castMemberId : undefined;
     if (typeof uploadId !== "string" || !UPLOAD_ID.test(uploadId)) return admissionReply({ error: "That image is not valid." }, { status: 400 });
     const row = (await db().execute({ sql: "SELECT ext, mime, stored_url, bytes FROM uploads WHERE id=? LIMIT 1", args: [uploadId] })).rows[0];
     const openable = !row || !viewer || (await uploadOpenableBy(uploadId, viewer));
     if (!row || !openable || !IMAGE_MIMES.has(String(row.mime ?? "").toLowerCase())) return admissionReply({ error: "Pick images from this workspace's PNG, JPEG or WebP uploads." }, { status: 404 });
     if (Number(row.bytes) > VEO_REFERENCE_LIMIT_BYTES) return admissionReply({ error: "An image is up to 20 MB." }, { status: 400 });
-    if (typeof cast !== "string" || !ENTITY_ID.test(cast)) return admissionReply({ error: "Say which cast member each image shows: every face needs the person's consent on record.", code: "bad-input" }, { status: 400 });
-    imgs.push({ role, uploadId, castMemberId: cast, ext: String(row.ext), stored: String(row.stored_url) });
+    imgs.push({ role, uploadId });
     return null;
   };
   if (body.references != null) {
@@ -194,7 +184,7 @@ export async function admitVeo(input: Record<string, unknown>, got: AdmissionAct
     const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
-  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool: "video", model, durationSeconds, resolution, aspectRatio, images: imgs.length, ...(imgs.length ? { needs: ["castMemberId on each image", "projectId", "use"] } : {}) });
+  if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool: "video", model, durationSeconds, resolution, aspectRatio, images: imgs.length,  });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });
   const wall = await allowanceCheck("gemini", usd, model);
@@ -208,27 +198,9 @@ export async function admitVeo(input: Record<string, unknown>, got: AdmissionAct
   const stopped = admissionCheckpoint(options, body, got, "video", usd, model, { task: VEO_TASK, tool: "video", model, durationSeconds, resolution, aspectRatio, seed, images: imgs.map((i) => i.uploadId), projectId, shotId }, { engine: "veo" });
   if (stopped) return stopped;
 
-  /* ── The consent gate (any image): every one, BEFORE a row is written or a cent reserved. ── */
-  const use = typeof body.use === "string" && (USES as readonly string[]).includes(body.use) ? (body.use as (typeof USES)[number]) : null;
-  const matched: VeoImage[] = [];
-  if (imgs.length) {
-    if (!projectId || !use) return admissionReply({ error: "Name the production and what it is for (production, ads or social): a clip from a person's image needs their consent on record.", code: "bad-input" }, { status: 400 });
-    try {
-      if (!(await faceCheckAvailable())) throw new ConsentMatchError("off", "The face check isn't on for this workspace, so an image of a real person can't be used here yet.", 403);
-      for (const img of imgs) {
-        const bytes = await readUploadBytes(img.uploadId, img.ext, img.stored, VEO_REFERENCE_LIMIT_BYTES);
-        const match = await (seams.consent ?? requireConsentMatch)(img.castMemberId, bytes, { projectId, use });
-        matched.push({ role: img.role, uploadId: img.uploadId, castMemberId: img.castMemberId, consentId: match.consentId, faceSha256: match.faceSha256 });
-      }
-    } catch (error) {
-      if (error instanceof ConsentMatchError) return admissionReply({ error: error.message, code: error.code }, { status: error.status });
-      return admissionReply({ error: "The face check could not be done. Nothing was billed.", code: "unavailable" }, { status: 503 });
-    }
-  }
-
   const genId = newId("gen"), ts = now();
   const veo: VeoParams = {
-    status: "queued", model, durationSeconds, resolution, aspectRatio, seed, negativePrompt, images: matched, reservedUsd: usd, estimateCredits: estimatedCredits, use,
+    status: "queued", model, durationSeconds, resolution, aspectRatio, seed, negativePrompt, images: imgs.map((i) => ({ role: i.role, uploadId: i.uploadId })), reservedUsd: usd, estimateCredits: estimatedCredits,
     funded: 0, claimedAt: null, operation: null, submittedAt: null, sendingAt: null, readyAt: null, lastPolledAt: null, pollUntil: null, settled: 0, reconcile: 0,
   };
   const params = { task: VEO_TASK, job: shotId ? "shot" : "other", ratio: aspectRatio, resolution, duration: durationSeconds, veo, estUsd: usd, estCredits: 0 };
@@ -326,11 +298,6 @@ export async function advanceVeoJobWith(genId: string, deps: VeoDeps): Promise<V
       }
       job = (await load(genId))!;
       const { veo, row } = job;
-      /* Consent is judged again at the moment of sending: a record withdrawn or ended while the job waited stops it, and nothing has been sent. */
-      for (const img of veo.images) {
-        const c = await getConsent(img.consentId).catch(() => null);
-        if (!c || !consentLive(c)) { await settleVeo(genId, "failed", { message: "Nothing was sent: a person's consent no longer holds. Nothing was billed.", costUsd: 0 }); return (await load(genId, { any: true }))?.veo ?? null; }
-      }
       /* The images are read before anything is sent: one that cannot be read submits nothing and refunds everything. */
       const files: { role: VeoImage["role"]; bytes: Buffer; mime: string }[] = [];
       try {
@@ -454,9 +421,8 @@ export const VEO_TOOLS = [
   {
     provider: "google", kind: "engine" as const, route: "/api/veo", needs: ["GEMINI_API_KEY", "VEO_ENABLED"], who: "prepare: anyone; approve: a person" as const,
     models: Object.keys(VEO_RATES.models) as VeoModel[], id: "veo_video", tool: "video" as const,
-    inputs: { prompt: "what to make", model: "veo-3.1-generate-preview (default) or veo-3.1-fast-generate-preview", durationSeconds: "4, 6 or 8 (default 8)", resolution: "720p (default) or 1080p (8 s only)", aspectRatio: "16:9 (default) or 9:16", firstFrame: "optional { uploadId, castMemberId }", references: "up to three { uploadId, castMemberId }, 8 s", projectId: "the production (required with an image)", use: "production, ads or social (required with an image)", maxCredits: "the approved price" },
+    inputs: { prompt: "what to make", model: "veo-3.1-generate-preview (default) or veo-3.1-fast-generate-preview", durationSeconds: "4, 6 or 8 (default 8)", resolution: "720p (default) or 1080p (8 s only)", aspectRatio: "16:9 (default) or 9:16", firstFrame: "optional { uploadId }", references: "up to three { uploadId }, 8 s", projectId: "optional: the production", maxCredits: "the approved price" },
     output: "a video take, with its sound",
-    gate: "a live consent record for the person each image shows (lib/consentMatch.ts)",
   },
 ];
 

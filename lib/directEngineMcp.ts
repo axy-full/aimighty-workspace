@@ -176,7 +176,7 @@ const VEO_VIDEO: DirectTool = {
     name: "veo_video",
     description:
       "Make a clip with its sound from words (Veo 3.1, Google). Priced first; a person approves it in Particl (or the workspace lets small jobs run). Optional first frame, or up to three reference images (8 s), " +
-      "of this workspace: every image passes the consent gate first (the cast member it shows, the production and what it is for). Returns a video take id; collect it with get_render.",
+      "of this workspace. Google's refusals are shown as they come. Returns a video take id; collect it with get_render.",
     inputSchema: {
       type: "object",
       properties: {
@@ -185,14 +185,11 @@ const VEO_VIDEO: DirectTool = {
         duration_seconds: { type: "number", description: "4, 6 or 8 (default 8)." },
         resolution: { type: "string", description: "720p (default) or 1080p (8 s only)." },
         aspect_ratio: { type: "string", description: "16:9 (default) or 9:16." },
-        first_frame_upload_id: { type: "string", description: "Optional: an image upload of this workspace to start from (with first_frame_cast_member_id)." },
-        first_frame_cast_member_id: { type: "string" },
+        first_frame_upload_id: { type: "string", description: "Optional: an image upload of this workspace to start from." },
         reference_upload_ids: { type: "string", description: "Optional: comma-separated upload ids, up to three (8 s)." },
-        cast_member_ids: { type: "string", description: "Comma-separated cast member ids, one per reference, in the same order." },
         negative_prompt: { type: "string", description: "Optional: what to avoid." },
         seed: { type: "number" },
-        project_id: { type: "string", description: "The production (required with an image)." },
-        use: { type: "string", description: "production, ads or social (required with an image)." },
+        project_id: { type: "string", description: "Optional: the production it is filed under." },
         request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." },
       },
       required: ["prompt"],
@@ -203,17 +200,15 @@ const VEO_VIDEO: DirectTool = {
   draft: (b) => b.model === "veo-3.1-fast-generate-preview",
   prepared: (b) => `prepared: ${String(b.model ?? "veo-3.1-generate-preview")} clip, ${String(b.durationSeconds ?? 8)} s, ${String(b.resolution ?? "720p")}`,
   request: (a) => {
-    const uploads = list(a.reference_upload_ids), cast = list(a.cast_member_ids);
-    if (uploads.length !== cast.length) throw new Error("Give one cast member for each reference, in the same order.");
+    const uploads = list(a.reference_upload_ids);
     const first = str(a.first_frame_upload_id);
-    if (first && !str(a.first_frame_cast_member_id)) throw new Error("Say which cast member the first frame shows.");
     return {
       path: "/api/veo",
       body: {
         tool: "video", prompt: str(a.prompt), model: str(a.model), durationSeconds: num(a.duration_seconds), resolution: str(a.resolution), aspectRatio: str(a.aspect_ratio),
-        negativePrompt: str(a.negative_prompt), seed: num(a.seed), projectId: str(a.project_id), use: str(a.use),
-        firstFrame: first ? { uploadId: first, castMemberId: str(a.first_frame_cast_member_id) } : undefined,
-        references: uploads.length ? uploads.map((uploadId, i) => ({ uploadId, castMemberId: cast[i] })) : undefined,
+        negativePrompt: str(a.negative_prompt), seed: num(a.seed), projectId: str(a.project_id),
+        firstFrame: first ? { uploadId: first } : undefined,
+        references: uploads.length ? uploads.map((uploadId) => ({ uploadId })) : undefined,
       },
     };
   },
