@@ -854,6 +854,11 @@ export async function syncPending(
   results.attempted += bfls.attempted;
   results.failed += bfls.failed;
   results.deferred += bfls.deferred;
+  // Runway tasks: ask after the running; a finished task's output (its address expires in a day or two) is collected at once; the vendor's copy is deleted after. Never resubmit.
+  const runways = await (await import("./runwayTools")).recoverRunwayJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += runways.attempted;
+  results.failed += runways.failed;
+  results.deferred += runways.deferred;
   /* The window is lib/atRisk.ts's: the same 72 hours the health counter and the console count a take at risk in. */
   const horizon = options.horizon ?? atRiskHorizon(now());
   const rs = await db().execute({
@@ -888,6 +893,8 @@ export async function syncPending(
           if (gen.kind === "audio" && params.task === "sarvam_speech") return;
           // A FLUX.2 job's row is advanced by its own workflow above (lib/bflImage.ts); it is neither a render nor an orphan (an orphan sweep would end it as "sent, outcome unknown").
           if (gen.kind === "image" && params.task === "bfl_image") return;
+          // A Runway task's row is advanced by its own workflow above (lib/runwayTools.ts); it is neither a render nor an orphan.
+          if (gen.kind === "video" && params.task === "runway_video") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome
