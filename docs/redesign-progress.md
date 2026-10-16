@@ -1040,3 +1040,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - Engines on #778 a95fd177 with shotCapAdmin: #779 828a0632, #783 843fd3d0, #787 7ebd88a9.
   - Export chain: #700 ca36d823 (worker a5e0f445 merged; 409 wording; DB-error wording), #766 5f9fdf0c, #774 c68dd76a, #775 04d78e0b, #767 438b3dee. Specs pass on each.
   - Opus confirmations running for these and lane C's (#781 6618a2a9, #786 93376514).
+- **16 Oct 06:20 IST.** Opus APPROVED #700 at ca36d823. Downstream merges #766 5f9fdf0c, #774 c68dd76a and #775 04d78e0b are clean (empty remerge-diff); #767 438b3dee's README-only resolution is fine. The money guard only gained a test. Nit: a bare catch at jobs.ts:412 could log ids.
