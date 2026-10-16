@@ -20,7 +20,7 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 test.beforeAll(async () => { await alignLedgerUnit(); });
-test.afterEach(() => { delete process.env.VEO_ENABLED; delete process.env.REKOGNITION_ENABLED; process.env.ENGINE_MOCK = "1"; });
+test.afterEach(() => { delete process.env.VEO_ENABLED; process.env.ENGINE_MOCK = "1"; });
 
 const tenant = (id: string, over: Partial<TenantWorkspace> = {}): TenantWorkspace => ({
   id, slug: id, name: id, legacy: id === "ws_legacy", dbUrl: `file:${path.join(dir, `${id}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true,
@@ -52,18 +52,6 @@ async function image(label: string, width = 1024, height = 1024): Promise<{ id: 
   await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.png`, "image/png", "png", bytes.length, "x", width, height, `uploads/${id}.png`, Date.now(), "image"] });
   return { id, bytes };
 }
-async function consent(projectId: string, subjectKey: string): Promise<string> {
-  const { db } = await import("../../lib/db");
-  const { consentsReady } = await import("../../lib/security/consent");
-  await consentsReady();
-  const id = uid("consent");
-  await db().execute({
-    sql: `INSERT INTO identity_consents (id, project_id, subject_key, subject_label, person_name, covers_face, covers_voice, uses_json, other_use, until_at, recording_id, attested, recorded_by, recorded_at, revoked_at)
-          VALUES (?,?,?,?,?,1,0,?,'',?,?,1,'u_test',?,NULL)`,
-    args: [id, projectId, subjectKey, "", "Sample Person", JSON.stringify(["production", "ads"]), Date.now() + 86_400_000, "rec_1", Date.now()],
-  });
-  return id;
-}
 async function project(id: string) {
   const { db, ready } = await import("../../lib/db");
   await ready();
@@ -79,11 +67,9 @@ async function gen(id: string) {
   const r = (await db().execute({ sql: "SELECT status,stored_url,bytes,cost_usd,error,provider_outcome,json_extract(params,'$.veo') AS veo FROM generations WHERE id=?", args: [id] })).rows[0] as unknown as Record<string, unknown>;
   return { status: r.status, stored_url: r.stored_url, bytes: r.bytes, cost_usd: r.cost_usd, error: r.error, provider_outcome: r.provider_outcome, veo: JSON.parse(String(r.veo)) as import("../../lib/veoVideo").VeoParams };
 }
-const passing = (consentId: string) => async (_cast: string, face: Buffer) => ({ consentId, similarity: 99, matched: true as const, checkedAt: Date.now(), faceSha256: `sha_${face.length}` });
-type Seams = { consent?: ReturnType<typeof passing> };
-async function admit(input: Record<string, unknown>, seams: Seams = {}) {
+async function admit(input: Record<string, unknown>) {
   const { admitVeo } = await import("../../lib/veoVideo");
-  return admitVeo(input, OWNER, options(), seams);
+  return admitVeo(input, OWNER, options());
 }
 const person = (id: string, role: "admin" | "member" = "member", owner = false): AdmissionActor => ({ user: { id, email: `${id}@example.invalid`, name: id, role, owner, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] });
 const approved = { maxCredits: 100000 };
@@ -170,10 +156,10 @@ test("the quote, and every input refused in words before anything is reserved; a
       [{ tool: "video", prompt: "a", seed: -1 }, /seed/],
       [{ tool: "video", prompt: "a", negativePrompt: "x".repeat(1001) }, /1,000 characters/],
       [{ tool: "video", prompt: "a", references: "u1" }, /list/],
-      [{ tool: "video", prompt: "a", references: Array.from({ length: 4 }, (_, i) => ({ uploadId: `u${i}`, castMemberId: "c" })) }, /At most 3/],
-      [{ tool: "video", prompt: "a", firstFrame: { uploadId: "u1", castMemberId: "c" }, references: [{ uploadId: "u2", castMemberId: "c" }] }, /not both/],
-      [{ tool: "video", prompt: "a", firstFrame: { uploadId: "../x", castMemberId: "c" } }, /not valid/],
-      [{ tool: "video", prompt: "a", firstFrame: { uploadId: "up_not_here", castMemberId: "c" } }, /PNG, JPEG or WebP/],
+      [{ tool: "video", prompt: "a", references: Array.from({ length: 4 }, (_, i) => ({ uploadId: `u${i}` })) }, /At most 3/],
+      [{ tool: "video", prompt: "a", firstFrame: { uploadId: "u1" }, references: [{ uploadId: "u2" }] }, /not both/],
+      [{ tool: "video", prompt: "a", firstFrame: { uploadId: "../x" } }, /not valid/],
+      [{ tool: "video", prompt: "a", firstFrame: { uploadId: "up_not_here" } }, /PNG, JPEG or WebP/],
     ];
     for (const [input, words] of refused) {
       const reply = await admit({ ...input, quoteOnly: true });
@@ -181,13 +167,12 @@ test("the quote, and every input refused in words before anything is reserved; a
       expect(String(reply.body.error), JSON.stringify(input)).toMatch(words);
     }
     const ref = await image("ref");
-    expect(await admit({ tool: "video", prompt: "a", firstFrame: { uploadId: ref.id }, quoteOnly: true })).toMatchObject({ status: 400, body: { code: "bad-input" } });
-    expect(await admit({ tool: "video", prompt: "a", firstFrame: { uploadId: ref.id, castMemberId: "cast_a" }, quoteOnly: true })).toMatchObject({ status: 200, body: { images: 1 } });
+    expect(await admit({ tool: "video", prompt: "a", firstFrame: { uploadId: ref.id }, quoteOnly: true })).toMatchObject({ status: 200, body: { images: 1 } });
     /* References need 8 s: a six-second clip from them is refused, an eight-second one is quoted at the same price (a reference costs nothing extra). */
-    const six = await admit({ tool: "video", prompt: "a", durationSeconds: 6, references: [{ uploadId: ref.id, castMemberId: "cast_a" }], quoteOnly: true });
+    const six = await admit({ tool: "video", prompt: "a", durationSeconds: 6, references: [{ uploadId: ref.id }], quoteOnly: true });
     expect(six).toMatchObject({ status: 400 });
     expect(String(six.body.error)).toMatch(/8 seconds/);
-    const refs = await admit({ tool: "video", prompt: "a", aspectRatio: "9:16", references: [{ uploadId: ref.id, castMemberId: "cast_a" }], quoteOnly: true });
+    const refs = await admit({ tool: "video", prompt: "a", aspectRatio: "9:16", references: [{ uploadId: ref.id }], quoteOnly: true });
     expect(refs).toMatchObject({ status: 200, body: { images: 1 } });
     expect(Number(refs.body.price)).toBeCloseTo(PRICE, 6);
     expect((await meterRows()).length).toBe(before);
@@ -214,7 +199,7 @@ test("the cost approval rule: with a cap per shot, a member's clip past the cap 
   const { platformDb } = await import("../../lib/platform");
   process.env.VEO_ENABLED = "1";
   const member: AdmissionActor = { user: { id: "u_member", email: "m@example.invalid", name: "m", role: "member", owner: false, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] };
-  const asMember = (input: Record<string, unknown>) => runInTenant(house(), () => admitVeo(input, member, options(), {}), member as never);
+  const asMember = (input: Record<string, unknown>) => runInTenant(house(), () => admitVeo(input, member, options()), member as never);
   const setting = async (rule: string, cap: number) => {
     await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES('approvalRule',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [rule] });
     await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES('shotCapCredits',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [String(cap)] });
@@ -238,12 +223,12 @@ test("the cost approval rule: with a cap per shot, a member's clip past the cap 
       expect([await gens(), await meters()]).toEqual(before);
       /* An admin's own press is what goes through: an admin's token, an agent run and an Atomik Auto step are machines, held to the cap like a member. */
       const adminToken: AdmissionActor = { ...person("u_admin_tok", "admin", true), token: { id: "tok_admin", name: "agent", scope: "render" as const, capUsd: null } } as never;
-      const tokenReply = await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, adminToken, options(), {}), adminToken as never);
+      const tokenReply = await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, adminToken, options()), adminToken as never);
       expect(tokenReply).toMatchObject({ status: 403, body: { needsAdmin: true } });
-      const autoReply = await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, person("u_admin", "admin", true), { ...options(), run: { auto: true } } as never, {}), person("u_admin", "admin", true) as never);
+      const autoReply = await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, person("u_admin", "admin", true), { ...options(), run: { auto: true } } as never), person("u_admin", "admin", true) as never);
       expect(autoReply).toMatchObject({ status: 403, body: { needsAdmin: true } });
       const agentRun = person("agent:run_x", "admin", true);
-      expect(await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, agentRun, options(), {}), agentRun as never)).toMatchObject({ status: 403, body: { needsAdmin: true } });
+      expect(await runInTenant(house(), () => admitVeo({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true }, agentRun, options()), agentRun as never)).toMatchObject({ status: 403, body: { needsAdmin: true } });
       /* An admin goes through; a clip filed on no shot is not a shot's to cap. */
       expect((await admit({ tool: "video", prompt: "a tree", shotId: tight, quoteOnly: true })).status).toBe(200);
       expect((await asMember({ tool: "video", prompt: "a tree", quoteOnly: true })).status).toBe(200);
@@ -472,34 +457,16 @@ test("two workers at once submit once; a storage failure keeps the job and the n
   });
 });
 
-test("an image: a first frame or reference passes the consent gate before a row or a cent; it goes up as data with its type; the take's record names it by id and by its hash only; a withdrawn consent stops the send", async () => {
+test("an image: a first frame or references go up as data with their type, with no face check; the take's record names them by upload id only; a person reads none of it", async () => {
   const { db } = await import("../../lib/db");
   const { rowToGeneration } = await import("../../lib/jobs");
   process.env.VEO_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
   await asTenant(house(), async () => {
-    const projectId = uid("prod"), cast = uid("cast");
-    await project(projectId);
-    const consentId = await consent(projectId, cast);
     const a = await image("ref_a"), b = await image("ref_b");
-    const refsInput = { tool: "video", prompt: "her, walking", references: [{ uploadId: a.id, castMemberId: cast }, { uploadId: b.id, castMemberId: cast }], projectId, use: "production", ...approved };
-    const frameInput = { tool: "video", prompt: "her, walking", firstFrame: { uploadId: a.id, castMemberId: cast }, projectId, use: "production", ...approved };
-    /* The real gate refuses today (no consent record holds a face reference): nothing is created or reserved, for a frame or for references. */
-    const before = (await meterRows()).length;
-    const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-    for (const input of [refsInput, frameInput]) expect(await admit(input)).toMatchObject({ status: 409, body: { code: "no-reference" } });
-    expect((await meterRows()).length).toBe(before);
-    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
-    /* A missing production or use is refused before the gate. */
-    let faceCalls = 0;
-    const seams = { consent: async (...x: Parameters<ReturnType<typeof passing>>) => { faceCalls++; return passing(consentId)(...x); } };
-    expect((await admit({ ...refsInput, use: undefined }, seams)).status).toBe(400);
-    expect((await admit({ ...refsInput, projectId: undefined }, seams)).status).toBe(400);
-    expect(faceCalls).toBe(0);
-    /* Passing the gate (a seam): both references were checked, then the job runs and sends them as data. */
-    const reply = await admit(refsInput, seams);
+    const refsInput = { tool: "video", prompt: "her, walking", references: [{ uploadId: a.id }, { uploadId: b.id }], ...approved };
+    const frameInput = { tool: "video", prompt: "her, walking", firstFrame: { uploadId: a.id }, ...approved };
+    const reply = await admit(refsInput);
     expect(reply.status, JSON.stringify(reply.body)).toBe(200);
-    expect(faceCalls).toBe(2);
     const genId = String(reply.body.id);
     const vendor = fakeVeo();
     await run(genId, vendor.deps, 4);
@@ -508,10 +475,10 @@ test("an image: a first frame or reference passes the consent gate before a row 
     const take = await gen(genId);
     expect(take.status).toBe("succeeded");
     expect(Number(take.cost_usd)).toBeCloseTo(PRICE, 6);
-    expect(take.veo.images.map((r) => [r.role, r.uploadId, r.castMemberId, r.consentId])).toEqual([["reference", a.id, cast, consentId], ["reference", b.id, cast, consentId]]);
-    expect(JSON.stringify(take.veo)).not.toMatch(/base64|sample-image/);
+    expect(take.veo.images).toEqual([{ role: "reference", uploadId: a.id }, { role: "reference", uploadId: b.id }]);
+    expect(JSON.stringify(take.veo)).not.toMatch(/base64|sample-image|castMember|consent|faceSha/);
     /* A first frame goes as the frame. */
-    const framed = String((await admit(frameInput, seams)).body.id);
+    const framed = String((await admit(frameInput)).body.id);
     const vf = fakeVeo();
     await run(framed, vf.deps, 4);
     expect(vf.sent[0].firstFrame?.bytes.toString()).toBe(a.bytes.toString());
@@ -520,18 +487,17 @@ test("an image: a first frame or reference passes the consent gate before a row 
     const raw = (await db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [genId] })).rows[0];
     const read = rowToGeneration({ ...raw, project_name: null }) as unknown as { params: Record<string, unknown> };
     expect(read.params.veo).toEqual({ status: "done", model: "veo-3.1-generate-preview", durationSeconds: 8, resolution: "720p", aspectRatio: "16:9" });
-    expect(JSON.stringify(read.params.veo)).not.toMatch(/veo_job_1|operation|consent|faceSha|cast_|up_|ref_a|usd|seed|images|negative/i);
-    /* Consent withdrawn while the job waited: nothing is sent, nothing is billed. */
-    const second = String((await admit(refsInput, seams)).body.id);
-    await db().execute({ sql: "UPDATE identity_consents SET revoked_at=? WHERE id=?", args: [Date.now(), consentId] });
-    const idle = fakeVeo();
-    await run(second, idle.deps, 2);
-    expect(idle.calls).toEqual([]);
-    expect(await gen(second)).toMatchObject({ status: "failed" });
-    expect(String((await gen(second)).error)).toMatch(/consent no longer holds/);
-    expect(Number((await gen(second)).cost_usd)).toBe(0);
+    expect(JSON.stringify(read.params.veo)).not.toMatch(/veo_job_1|operation|up_|ref_a|usd|seed|images|negative/i);
+    /* Google's refusal of an image is shown as it comes, and nothing is billed. */
+    const { VeoError } = await import("../../lib/veo");
+    const refused = String((await admit(frameInput)).body.id);
+    await run(refused, fakeVeo({ submitError: new VeoError("Google refused the request: the image shows a person it cannot use", 400, true) }).deps, 2);
+    const shown = await gen(refused);
+    expect(shown.status).toBe("failed");
+    expect(String(shown.error)).toBe("Google refused the request: the image shows a person it cannot use Nothing was billed.");
+    expect(Number(shown.cost_usd)).toBe(0);
   });
-  /* A customer workspace on the list is offered the clip from words, and an image there is refused at the gate (the face check is the house's only). */
+  /* A listed customer workspace may use an image too: there is no house-only face check. */
   const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
   await platformReady();
   const ws = "ws_veo_image_listed";
@@ -541,11 +507,8 @@ test("an image: a first frame or reference passes the consent gate before a row 
   try {
     await platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify({ enginesOnWorkspaces: [ws] })] });
     await asTenant((await getWorkspace(ws))!, async () => {
-      const projectId = uid("prod");
-      await project(projectId);
       const ref = await image("ref_c");
-      const refused = await admit({ tool: "video", prompt: "a", firstFrame: { uploadId: ref.id, castMemberId: "cast_x" }, projectId, use: "production", ...approved });
-      expect(refused).toMatchObject({ status: 403, body: { code: "off" } });
+      expect(await admit({ tool: "video", prompt: "a", firstFrame: { uploadId: ref.id }, ...approved })).toMatchObject({ status: 200 });
     });
   } finally {
     if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
@@ -663,15 +626,15 @@ test("over MCP: veo_video is listed only where the engine is on; Ask files a pre
       }
       /* The images ride as the route's own shape; one cast member for each reference, and one for the first frame. */
       await spend(null); calls.length = 0;
-      await runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1, u2", cast_member_ids: "c1,c2", project_id: "p", use: "production" }, call);
-      expect(calls[0]).toMatchObject({ tool: "video", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }], projectId: "p", use: "production", quoteOnly: true });
-      await runDirectEngineTool("veo_video", { prompt: "go", first_frame_upload_id: "u3", first_frame_cast_member_id: "c3", project_id: "p", use: "ads" }, call);
-      expect(calls.find((x) => x.firstFrame)).toMatchObject({ firstFrame: { uploadId: "u3", castMemberId: "c3" } });
+      await runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1, u2", project_id: "p" }, call);
+      expect(calls[0]).toMatchObject({ tool: "video", references: [{ uploadId: "u1" }, { uploadId: "u2" }], projectId: "p", quoteOnly: true });
+      await runDirectEngineTool("veo_video", { prompt: "go", first_frame_upload_id: "u3", project_id: "p" }, call);
+      expect(calls.find((x) => x.firstFrame)).toMatchObject({ firstFrame: { uploadId: "u3" } });
       /* Ask with images files a prepared job with the ids only: the door takes nested lists and groups of ids (lib/security/prepared-jobs.ts). */
       const { cleanEngineJob } = await import("../../lib/security/prepared-jobs");
       for (const [args, label] of [
-        [{ prompt: "swap", model: FAST, reference_upload_ids: "u1, u2", cast_member_ids: "c1,c2", project_id: "p", use: "production" }, "references"],
-        [{ prompt: "go", first_frame_upload_id: "u3", first_frame_cast_member_id: "c3", project_id: "p", use: "ads" }, "first frame"],
+        [{ prompt: "swap", model: FAST, reference_upload_ids: "u1, u2", project_id: "p" }, "references"],
+        [{ prompt: "go", first_frame_upload_id: "u3", project_id: "p" }, "first frame"],
       ] as const) {
         await spend("ask"); calls.length = 0; paths.length = 0; credits = 32;
         const text = await runDirectEngineTool("veo_video", args, call);
@@ -680,8 +643,8 @@ test("over MCP: veo_video is listed only where the engine is on; Ask files a pre
         expect(paths, label).toEqual(["/api/veo", "/api/prepared-jobs"]);
         const filed = calls[1] as { engine: string; args: Record<string, unknown>; prompt: string };
         expect(filed.engine, label).toBe("veo_video");
-        if (label === "references") expect(filed.args).toMatchObject({ tool: "video", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }] });
-        else expect(filed.args).toMatchObject({ tool: "video", firstFrame: { uploadId: "u3", castMemberId: "c3" } });
+        if (label === "references") expect(filed.args).toMatchObject({ tool: "video", references: [{ uploadId: "u1" }, { uploadId: "u2" }] });
+        else expect(filed.args).toMatchObject({ tool: "video", firstFrame: { uploadId: "u3" } });
         expect(JSON.stringify(filed), label).not.toMatch(/maxCredits|quoteOnly|base64/i);
         /* What was filed is exactly what the real door accepts: ids and settings only, nothing priced or approved. */
         const door = cleanEngineJob({ engine: filed.engine, args: filed.args, prompt: filed.prompt, project: "p" });
@@ -689,11 +652,9 @@ test("over MCP: veo_video is listed only where the engine is on; Ask files a pre
       }
       /* When the door will not take it, the answer says plainly that nothing was filed. */
       const refusing = async (p: string, init: { body?: unknown } = {}) => { if (p === "/api/prepared-jobs") throw new Error("Inside a list or group an argument is an id, not text or a file."); return (await call(p, init)) as Record<string, unknown>; };
-      const unfiled = await runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1", cast_member_ids: "c1", project_id: "p", use: "production" }, refusing);
+      const unfiled = await runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1", project_id: "p" }, refusing);
       expect(unfiled).toMatch(/^Priced, not started\.[\s\S]*Nothing was filed: Inside a list or group an argument is an id[\s\S]*A person can make this themselves in Particl/);
       expect(unfiled).not.toMatch(/prepared job:|waits in Particl|Priced and prepared/);
-      await expect(runDirectEngineTool("veo_video", { prompt: "swap", reference_upload_ids: "u1,u2", cast_member_ids: "c1" }, call)).rejects.toThrow(/one cast member for each reference/);
-      await expect(runDirectEngineTool("veo_video", { prompt: "go", first_frame_upload_id: "u3" }, call)).rejects.toThrow(/which cast member the first frame shows/);
     } finally { await spend(null); }
   });
 });
@@ -729,17 +690,18 @@ function sourceFiles(): string[] {
   return out;
 }
 
-test("structure: the seams stay internal, the route is the one door, consent and the reservation come before the row and the submit, every vendor call is without a redirect, the settings are the plan's names", () => {
+test("structure: the seams stay internal, the route is the one door, the reservation comes before the row and the submit, every vendor call is without a redirect, the settings are the plan's names", () => {
   const reachers = (needle: RegExp) => sourceFiles().filter((f) => needle.test(readFileSync(f, "utf8"))).sort();
   expect(reachers(/\badmitVeo\b/)).toEqual(["lib/veoVideo.ts"]);
   expect(reachers(/\badvanceVeoJobWith\b/)).toEqual(["lib/veoVideo.ts"]);
   expect(reachers(/@\/lib\/veoVideo["']/)).toEqual(["app/api/veo/route.ts"]);
   const flow = readFileSync("lib/veoVideo.ts", "utf8");
   const at = (needle: string) => flow.indexOf(needle);
-  expect(flow).toContain("admitVeo(input, got, options, {})");
-  expect(at("(seams.consent ?? requireConsentMatch)(")).toBeGreaterThan(0);
-  expect(at("(seams.consent ?? requireConsentMatch)(")).toBeLessThan(at("INSERT INTO generations"));
-  expect(at("Approve the price first")).toBeLessThan(at("(seams.consent ?? requireConsentMatch)("));
+  expect(flow).toContain("admitVeo(input, got, options)");
+  /* No face check anywhere: Rekognition is out (owner, 16 Oct 2026). */
+  expect(flow).not.toMatch(/consent|requireConsentMatch|faceCheck|castMember/i);
+  expect(readFileSync("lib/directEngineMcp.ts", "utf8").match(/const VEO_VIDEO[\s\S]*?\nconst REGISTRY/)?.[0] ?? "").not.toMatch(/consent|cast_member|castMember/i);
+  expect(at("Approve the price first")).toBeLessThan(at("INSERT INTO generations"));
   expect(at("await shotCapGate({")).toBeGreaterThan(0);
   expect(at("await shotCapGate({")).toBeLessThan(at("if (quoteOnly)"));
   expect(at("await shotCapGate({")).toBeLessThan(at("INSERT INTO generations"));
