@@ -105,6 +105,9 @@ import {
   type TopazImageSettings,
 } from "@/lib/topaz";
 import { inspectTopazImage } from "@/lib/topazImage.server";
+import { executeTopazAdmission, topazBodyFromGenerate } from "@/lib/topazUpscale";
+import { TOPAZ_SWITCH } from "@/lib/topazDirect";
+import { engineEnabled } from "@/lib/engineGate";
 import { stillToolFor } from "@/lib/stillTools";
 import {
   identityForCast,
@@ -397,6 +400,9 @@ export async function executeGenerationAdmission(
 ): Promise<AdmissionReply> {
   const refusal = assertAdmissionActor(got);
   if (refusal) return refusal;
+  /* Topaz upscale goes DIRECT (lib/topazUpscale.ts) while its engine is on for this workspace: the same quote, approval and price, a different door. Off, this route carries on with fal, unchanged. */
+  const topazDoor = topazBodyFromGenerate(input);
+  if (topazDoor && (await engineEnabled(TOPAZ_SWITCH))) return executeTopazAdmission(topazDoor, got, options);
   // Normalization never mutates an immutable pipeline snapshot or the caller's body.
   // Existing JSON route inputs are deliberately permissive; validation below is authoritative.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

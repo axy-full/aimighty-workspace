@@ -107,6 +107,8 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
      (a listed workspace at its own $0 cap is refused 429 in the cap's words, nothing held, written, reserved or sent). */
   /* FLUX.2 is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/bfl.spec.ts. */
   { dir: "bfl", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
+  /* Topaz upscale is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/topazUpscale.spec.ts. */
+  { dir: "topaz", body: { tool: "image", sourceUploadId: "up_still", topaz: { model: "High Fidelity V2", factor: 2, faceEnhancement: false, faceStrength: 0.5 }, maxCredits: 100000 } },
   { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
@@ -385,6 +387,8 @@ const RESERVERS: Record<string, Reserver> = {
   /* Sarvam: one reservation site (reserveCall), reached before any of its three vendor calls; its speech take, translation and transcription all go through it. */
   /* FLUX.2 (BFL): reserved at admission, before its row is ever advanced; its one vendor call (the submit) is in the advance step, which only runs on a funded row. */
   "lib/bflImage.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.submit ?? submitImage)("] },
+  /* Topaz upscale: reserved at admission, before its row is ever advanced; every paid vendor call (a still's submit; a clip's request, accept, parts and completed upload) is in the advance step, which only runs on a funded row. */
+  "lib/topazUpscale.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.submitImage ?? submitImageUpscale)(", "await (deps.createVideo ?? createVideoRequest)(", "await (deps.accept ?? acceptVideo)(", "await (deps.uploadParts ?? uploadVideoParts)(", "await (deps.complete ?? completeVideoUpload)("] },
   "lib/sarvamTools.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (seams.speak ?? speak)(", "await (seams.translate ?? translate)(", "await (seams.transcribe ?? transcribe)("] },
   "lib/lipSync.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.upload ?? uploadAsset)(", "await (deps.submit ?? submitLipSync)("] },
   "lib/transcription.ts": { reserve: "?? reserveGenerationSpend)(", count: 1, vendor: ["?? grokTranscribe)("] },
@@ -413,6 +417,7 @@ const DOOR_MODULE: Record<string, string> = {
   "lipsync": "lib/lipSync.ts",
   "sarvam": "lib/sarvamTools.ts",
   "bfl": "lib/bflImage.ts",
+  "topaz": "lib/topazUpscale.ts",
   "audio/transcribe": "lib/transcription.ts",
   "jobs/[id]/release": "lib/held.ts",
   /* Taking a step claims it; the step's render is paid through admission. */

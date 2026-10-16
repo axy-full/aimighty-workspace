@@ -2,6 +2,7 @@ import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
 import { bflTools } from "./bflImage";
+import { TOPAZ_DIRECT_TOOLS } from "./topazMcp";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "./approvalRule";
@@ -162,7 +163,8 @@ const FLUX2_EDIT: DirectTool = {
   describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT];
+/* Topaz upscale (lib/topazMcp.ts): declared with no `draft`, so every call asks. */
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT, ...TOPAZ_DIRECT_TOOLS];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

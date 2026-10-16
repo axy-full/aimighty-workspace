@@ -11,6 +11,7 @@
 const KEEP: Record<string, { key: string; fields: string[] }> = {
   lipsync: { key: "lipsync", fields: ["status", "model", "syncMode", "seconds"] },
   bfl_image: { key: "bfl", fields: ["status", "tool", "model", "width", "height", "outputMegapixels"] },
+  topaz_upscale: { key: "topaz", fields: ["status", "tool", "model", "outputWidth", "outputHeight", "outputMegapixels", "seconds", "fps"] },
   sarvam_speech: { key: "sarvam", fields: ["tool", "model", "language", "chars"] },
 };
 

@@ -327,3 +327,21 @@ export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;
 /** The modes the app submits: v2 has no verified request field, so it is priced but not offered. */
 export const OFFERED_DUBBING_MODES: readonly DubbingMode[] = ["v1", "v1-watermark"];
+
+/**
+ * What Topaz charges us, in Topaz credits, and what a credit costs. **Developer plan, $0.10 a credit, and the dearer of every reading Topaz's own pages give, so a quote is never under what
+ * the invoice can be** (docs/plans/topaz-direct-prices.md): images up to 24 MP, 1 credit (the API page's first tier; the 32 and 48 MP tiers are NOT offered direct: the owner capped stills at 24 MP, 16 Oct 2026); Astra 2 video by the family table's 40 credits per 10 s at
+ * 1080p and 30 fps (4 a second) and the Astra 2 page's 5 a second at 4K, both scaling with the frame rate (60 fps doubles them). There is no 720p figure: 720p is priced as 1080p. Every
+ * preset is treated as the Gigapixel family. **The owner confirmed the Developer plan at $0.10 a credit (16 Oct 2026); check each reading against the first invoice**; a change is a change to this table only.
+ */
+export const TOPAZ_RATES = {
+  plan: "developer",
+  usdPerCredit: 0.10,
+  confirmed: true,
+  note: "Developer plan at $0.10 a credit, confirmed by the owner 16 Oct 2026; stills capped at 24 MP; check the readings against the first invoice",
+  imageTiers: [{ maxMegapixels: 24, credits: 1 }],
+  /** The docs' linear reading: one credit a started 24 megapixels. A still is quoted at the HIGHER of this and the tier table above, size by size, so a quote is never under either reading. */
+  imageMegapixelsPerCredit: 24,
+  /** Credits a second at 30 fps, by output tier; a frame rate of F costs F / 30 times as much. 720p is the 1080p tier. */
+  videoCreditsPerSecondAt30: { "1080p": 4, "4k": 5 },
+} as const;
