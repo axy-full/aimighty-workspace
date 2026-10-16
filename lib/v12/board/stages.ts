@@ -297,12 +297,11 @@ const EMPTY: Record<string, StageEmpty> = {
   recce: { title: "Recce", line: "Locations to check before the shoot. Drop photos here." },
   "client-review": { title: "Client review", line: "Share a link; the client approves and comments without signing in." },
   animatic: { title: "Animatic", line: "The storyboard cut to the script’s timings." },
-  /* New project's first step (lib/v12/board/new-project.ts); its contents come with the Pitch stage's own PR. */
+  /* Pitch's contents come with its own PR (the deck, made from the board). */
   pitch: { title: "Pitch", line: "The deck for the film, made from the board." },
 };
 export function stageEmpty(stage: Pick<Stage, "id" | "label" | "custom">): StageEmpty {
   if (stage.custom) {
-    if (stage.id === "pitch") return EMPTY.pitch;
     const preset = STAGE_PRESETS.find((p) => p.label === stage.label);
     if (preset && EMPTY[preset.id]) return EMPTY[preset.id];
     return { title: stage.label, line: "A stage you added. Drop cards here from the Library, or ask for it in the bar.", ask: true };

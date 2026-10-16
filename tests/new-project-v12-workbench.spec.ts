@@ -35,7 +35,7 @@ test("desktop: + New project makes a Film board with the demo's steps and opens 
   const rows = page.getByTestId("v12-stage-row");
   await expect(rows.first()).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId("v12-stage-kind")).toHaveText("FILM");
-  expect(await rows.evaluateAll((els) => els.map((el) => el.getAttribute("data-stage")))).toEqual(["pitch", "brief", "script", "cast", "elements", "storyboard", "shots", "cut", "deliver"]);
+  expect(await rows.evaluateAll((els) => els.map((el) => el.getAttribute("data-stage")))).toEqual(["pitch", "brief", "script", "cast", "elements", "storyboard", "shots", "edit", "deliver"]);
   /* Opens on its first step. */
   await expect(page.locator('[data-testid="v12-stage-row"][data-stage="pitch"] .v12-rail-btn')).toHaveAttribute("aria-current", "step");
   await expect(page.getByTestId("v12-stage-crumb")).toHaveText("Pitch");

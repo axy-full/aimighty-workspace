@@ -1,8 +1,7 @@
 /**
  * What "New project" on Home makes (investor demo, 31 Oct 2026; docs/plans/demo-31oct-plan.md, PR 32 + D-1): a Film board
- * whose rail starts with the demo's steps. THE ONE PLACE the list lives: PR 4 (board data for v25) owns the built-in Film
- * steps, and when it adds a real Pitch step this list is the only thing to edit (an id that has become built-in is read as
- * built-in whatever `custom` says: `stagesOf` in lib/v12/board/stages.ts).
+ * whose rail starts with the demo's steps. The built-in Film steps are PR 4's (lib/v12/board/stages.ts); this file is only
+ * which of them a new project's rail shows, and in what order.
  *
  * Kept as the draft's own `boardStages` (an optional field of the draft JSON), so no database change and no new route.
  * Pure: no React.
@@ -10,19 +9,20 @@
 import type { SavedStage } from "./stages";
 
 /**
- * Pitch, Brief, Script, Cast, Storyboard, Shots, then the Cut and Deliver the film ends in. Elements stays on the rail,
- * skipped: the cards it holds (places and things) keep a stage that draws them, and a person can un-skip it.
- * Pitch is a stage of its own until PR 4 gives it contents, so it is saved as a custom stage under its final id.
+ * Pitch, Brief, Script, Cast, Storyboard, Shots, then the Edit and Deliver the film ends in. Treatment and Locations are left
+ * off (they hold no cards yet, so nothing is lost; a person adds them back from the rail). Elements stays, skipped: the cards
+ * it holds (places and things) keep a stage that draws them, and a person can un-skip it. Ids are the built-in Film stages of
+ * lib/v12/board/stages.ts (PR 4), so this file adds no stage of its own.
  */
 export const NEW_PROJECT_STEPS: readonly SavedStage[] = [
-  { id: "pitch", label: "Pitch", custom: true },
+  { id: "pitch" },
   { id: "brief" },
   { id: "script" },
   { id: "cast" },
   { id: "elements", skipped: true },
   { id: "storyboard" },
   { id: "shots" },
-  { id: "cut" },
+  { id: "edit" },
   { id: "deliver" },
 ];
 
