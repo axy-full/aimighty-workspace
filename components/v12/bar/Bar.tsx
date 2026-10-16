@@ -85,7 +85,7 @@ export type BarProps = {
   /** Above the row, inside the bar. */
   sheet?: ReactNode;
   /** One line under the row: a refusal, or what an attach read. */
-  note?: { tone: "note" | "problem"; text: string } | null;
+  note?: { tone: "note" | "problem"; text: ReactNode; /** One press that goes with the line (Undo). */ action?: { label: string; onPress: () => void; testId?: string } } | null;
   disabled?: boolean;
   maxLength?: number;
   /** Docked in a band (Make's composer) rather than floating over the page: no shadow. */
@@ -229,7 +229,7 @@ export function Bar(props: BarProps) {
           </button>
         </div>
       </div>
-      {note ? <p className={note.tone === "problem" ? "v12-bar-note v12-bar-problem" : "v12-bar-note"} role={note.tone === "problem" ? "alert" : "status"} data-testid={`${testId}-note`}>{note.text}</p> : null}
+      {note ? <p className={note.tone === "problem" ? "v12-bar-note v12-bar-problem" : "v12-bar-note"} role={note.tone === "problem" ? "alert" : "status"} data-testid={`${testId}-note`}>{note.text}{note.action ? <> <button type="button" className="v12-bar-note-action" onClick={note.action.onPress} data-testid={note.action.testId ?? `${testId}-note-action`}>{note.action.label}</button></> : null}</p> : null}
       {skills?.dialogs}
     </div>
   );

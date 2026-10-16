@@ -25,6 +25,10 @@ export const ENHANCE_LOST = "The enhancer's answer did not arrive. Press Enhance
 export const ENHANCE_PENDING = "Your last press is still being answered. Press Enhance again in a moment; it will not be charged twice.";
 export const ENHANCE_ABANDONED = "Your last press did not finish. Press Enhance again to start a new one.";
 export const ENHANCE_NO_ANSWER = "The enhancer did not answer. Your prompt is unchanged.";
+/** The one line every failed Enhance says (timeout, provider error, no key, a lost reply): the typed words stay, and Make sends them as written. */
+export const ENHANCE_FALLBACK = "Couldn't enhance; used your prompt as written";
+/** The client's patience with the enhancer, a quote or a run (the server's own deadline matches it: lib/paidText.ts ENHANCE_DEADLINE_MS). */
+export const ENHANCE_CLIENT_MS = 8_000;
 
 type Held = { signature: string; key: string; firstSentAt: number };
 
@@ -61,30 +65,52 @@ export async function pressEnhance(
   press: { scope: string | null | undefined; body: string; credits: number },
   keys: EnhanceKeys = enhanceKeys,
   clock: () => number = Date.now,
+  timeoutMs: number = ENHANCE_CLIENT_MS,
 ): Promise<EnhancePress> {
   const signature = enhanceSignature(press.scope, press.body, press.credits);
   const key = keys.take(signature, clock());
+  /* Past the client's patience the press is given up on and the words stay as typed. The key is still held: pressed again, the same press
+     collects the server's saved answer instead of paying twice. */
+  const patience = new AbortController();
+  const timer = setTimeout(() => patience.abort(), timeoutMs);
+  try {
+    return await sent(fetcher, press, key, signature, keys, clock, patience.signal);
+  } catch {
+    return { ok: false, error: ENHANCE_FALLBACK };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function sent(
+  fetcher: (url: string, init: RequestInit) => Promise<Response>,
+  press: { scope: string | null | undefined; body: string; credits: number },
+  key: string, signature: string, keys: EnhanceKeys, clock: () => number, signal: AbortSignal,
+): Promise<EnhancePress> {
   let response: Response;
   try {
     response = await fetcher("/api/prompt/enhance", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": key },
       body: JSON.stringify({ ...JSON.parse(press.body), maxCredits: press.credits }),
+      signal,
     });
   } catch {
-    return { ok: false, error: ENHANCE_LOST };
+    /* Given up on past the patience: the one line. Any other break is a lost reply, whose press can be collected again by its key. */
+    return { ok: false, error: signal.aborted ? ENHANCE_FALLBACK : ENHANCE_LOST };
   }
   const json = await response.json().catch(() => null) as { prompt?: string; provider?: EnhancerProvider; error?: string; pending?: boolean } | null;
   if (response.headers.get("Idempotency-Status") === "complete") {
     /* The server's saved answer, read: success or refusal, the next press is a new one. Unread, it is collected by the same key. */
-    if (!json) return { ok: false, error: ENHANCE_LOST };
+    if (!json) return { ok: false, error: ENHANCE_FALLBACK };
     keys.release(signature);
   } else if (response.status === 409 && json?.pending === true) {
     if (!keys.abandoned(signature, clock())) return { ok: false, error: ENHANCE_PENDING };
     keys.release(signature);
     return { ok: false, error: ENHANCE_ABANDONED };
   }
-  if (!response.ok || !json?.prompt || !json.provider) return { ok: false, error: json?.error ?? ENHANCE_NO_ANSWER };
+  /* Whatever the reason (a refusal, a missing key, a writer that answered nothing), the person is told the one line and keeps their words. */
+  if (!response.ok || !json?.prompt || !json.provider) return { ok: false, error: ENHANCE_FALLBACK };
   return { ok: true, prompt: json.prompt, provider: json.provider };
 }
 
@@ -103,7 +129,7 @@ export type EnhanceNow = { scope: string | null | undefined; body: string } | nu
  */
 export class EnhanceRuns {
   private inFlight = new Map<string, Promise<EnhancePress>>();
-  constructor(private readonly keys: EnhanceKeys = enhanceKeys, private readonly clock: () => number = Date.now) {}
+  constructor(private readonly keys: EnhanceKeys = enhanceKeys, private readonly clock: () => number = Date.now, private readonly timeoutMs: number = ENHANCE_CLIENT_MS) {}
   get busy(): boolean { return this.inFlight.size > 0; }
   async run(
     fetcher: (url: string, init: RequestInit) => Promise<Response>,
@@ -113,7 +139,7 @@ export class EnhanceRuns {
     const signature = enhanceSignature(press.scope, press.body, press.credits);
     let pressing = this.inFlight.get(signature);
     if (!pressing) {
-      const started = pressEnhance(fetcher, press, this.keys, this.clock);
+      const started = pressEnhance(fetcher, press, this.keys, this.clock, this.timeoutMs);
       pressing = started;
       this.inFlight.set(signature, started);
       void started.finally(() => { if (this.inFlight.get(signature) === started) this.inFlight.delete(signature); });

@@ -2,7 +2,7 @@ import { db, ready } from "./db";
 import { ENHANCE_MAX_PROMPT, parseEnhanced } from "./shell/enhancer";
 
 /**
- * Whether a paid enhancement really ran for these words in this workspace (Make's Enhance switch, lib/v12/enhance.ts).
+ * Whether a paid enhancement really ran for these words in this workspace (Make's Enhance button, lib/v12/enhance.ts).
  *
  * A take is labelled Enhanced only on this proof, never on the browser's word: the enhancer's own job (POST /api/prompt/enhance,
  * stored in the workspace's own `paid_text_jobs`, kind "enhance") must have succeeded recently with the person's typed words as

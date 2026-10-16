@@ -104,7 +104,7 @@ function Models({ open }: { open: SettingsFold | null }) {
           ))}
         </span>
       </Row>
-      <Row name="Enhance in Make" line="Where Make starts the Enhance switch for people here. Anyone's own choice overrides it." testId="settings-enhance-default">
+      <Row name="Enhance in Make" line="Whether Make offers the Enhance button to people here." testId="settings-enhance-default">
         <span className="gs-choice" role="radiogroup" aria-label="Enhance in Make">
           {ENHANCE_DEFAULT_OPTIONS.map(([id, text]) => (
             <button key={id} type="button" role="radio" aria-checked={(value("enhanceDefault") || "on") === id} className="gs-btn" disabled={!admin || busy || !settings.data}

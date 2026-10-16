@@ -4,11 +4,11 @@ import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { signInToRedesign } from "./helpers/newInterface";
 
 /**
- * Enhance in the house workspace (lib/houseWorkspace.ts), which pays in dollars at cost: the switch is there, and with it On the
- * button reads ONE total in dollars, "up to $N" (the take's own dollars plus the text model's estimate for the enhancement), with
- * "Pays at cost" on hover; the press approves the enhancement at its quoted ceiling and the take at its own. Local ENGINE_MOCK
- * server; the house workspace row is made for this test (a person is made its owner) and removed after, as the other specs that
- * need the house do, so it never stays behind to be mistaken for the real one. Nothing real is spent.
+ * Enhance in the house workspace (lib/houseWorkspace.ts), which pays in dollars at cost: the Enhance button is there and wears the text model's
+ * estimate in dollars ("Enhance · up to $N", "Pays at cost" on hover); pressing it puts the enhanced words in the box and sends no take; Make's own
+ * figure is the take alone, and a later Make press sends the box as it is. Local ENGINE_MOCK server; the house workspace row is made for this test
+ * (a person is made its owner) and removed after, as the other specs that need the house do, so it never stays behind to be mistaken for the real one.
+ * Nothing real is spent.
  */
 const WORDS = "A paper kite over a grey sea";
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
@@ -34,7 +34,7 @@ const isEnhanceCall = (r: { url(): string; method(): string; postDataJSON(): unk
 const isGenerate = (r: { url(): string; method(): string }) => new URL(r.url()).pathname === "/api/generate" && r.method() === "POST";
 const dollarsOf = (text: string) => Number(text.match(/\$([\d,]+(?:\.\d+)?)/)![1].replace(/,/g, ""));
 
-test("the house has the Enhance switch, priced at cost: one total in dollars, up to, hovered Pays at cost", async ({ page }, info) => {
+test("the house has the Enhance button, priced at cost in dollars; pressing it fills the box and sends no take; Make is the take alone", async ({ page }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
   test.setTimeout(300_000);
   const signed = await signInToRedesign(page.request, "House Enhance Tester");
@@ -47,37 +47,40 @@ test("the house has the Enhance switch, priced at cost: one total in dollars, up
     await page.getByRole("radio", { name: "Image" }).click();
     await page.getByTestId("v12-make-chip-count").click();
     await page.getByRole("menuitem", { name: "1" }).click();
-    const toggle = page.getByTestId("v12-make-enhance");
-    await expect(toggle, "the house has the switch").toBeVisible({ timeout: 60_000 });
-    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    const enhance = page.getByTestId("v12-make-enhance");
+    await expect(enhance, "the house has the button").toBeVisible({ timeout: 60_000 });
     const input = page.getByTestId("v12-make-bar-input");
     const go = page.getByTestId("v12-make-go");
     const price = page.getByTestId("v12-make-price");
-    /* Off: the take alone, in its own dollars. */
-    await toggle.click();
-    await input.fill(WORDS);
-    await expect(price).toHaveText(/^\$/, { timeout: 60_000 });
-    const takeOnly = dollarsOf(await price.innerText());
-    expect(takeOnly).toBeGreaterThan(0);
-    /* On: the enhancer's own quote in dollars is added, and the figure is one total, "up to", hovered "Pays at cost". */
     const quoted = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/prompt/enhance" && r.request().method() === "POST" && r.request().postDataJSON()?.quoteOnly === true);
-    await toggle.click();
+    await input.fill(WORDS);
     const quote = (await (await quoted).json()) as { estimateCredits: number; estimateUsd: number };
     expect(typeof quote.estimateUsd).toBe("number");
-    await expect(price).toHaveText(/^up to \$/, { timeout: 60_000 });
+    /* Make's figure is the take alone, in its own dollars, and says "Pays at cost". */
+    await expect(price).toHaveText(/^\$/, { timeout: 60_000 });
     await expect(price).toHaveAttribute("title", "Pays at cost");
-    await expect(go).toContainText("Make");
     expect(await go.innerText()).not.toMatch(/\bcr\b/);
-    const total = dollarsOf(await price.innerText());
-    expect(total).toBeGreaterThanOrEqual(takeOnly);
-    expect(total).toBeCloseTo(takeOnly + quote.estimateUsd, 1);
-    /* The press: the enhancer at its quoted ceiling, then the take; the figure on the button was both. */
+    const takeOnly = dollarsOf(await price.innerText());
+    /* Enhance wears the text model's estimate in dollars, hovered "Pays at cost", before it is pressed. */
+    const figure = page.getByTestId("v12-make-enhance-price");
+    await expect(figure).toHaveText(/^\$|^up to \$/, { timeout: 60_000 });
+    await expect(figure).toHaveAttribute("title", "Pays at cost");
+    expect(await enhance.innerText()).not.toMatch(/\bcr\b/);
+    /* The press: the enhancer at its quoted ceiling, and no take. */
+    const generates: string[] = [];
+    page.on("request", (r) => { if (isGenerate(r)) generates.push(r.url()); });
     const enhanceSent = page.waitForRequest(isEnhanceCall);
-    const generateSent = page.waitForRequest(isGenerate);
-    await go.click();
+    await enhance.click();
     const enhanceBody = (await enhanceSent).postDataJSON() as { maxCredits?: number; prompt?: string };
     expect(enhanceBody.prompt).toBe(WORDS);
     expect(enhanceBody.maxCredits).toBe(quote.estimateCredits);
+    await expect(page.getByTestId("v12-make-bar-note")).toContainText("Enhanced", { timeout: 60_000 });
+    expect(generates, "nothing was generated by Enhance").toEqual([]);
+    /* The take is still its own dollars; the next Make press sends the box, labelled Enhanced from the typed words. */
+    await expect(price).toHaveText(/^\$/, { timeout: 60_000 });
+    expect(dollarsOf(await price.innerText())).toBeCloseTo(takeOnly, 6);
+    const generateSent = page.waitForRequest(isGenerate);
+    await go.click();
     const generateBody = (await generateSent).postDataJSON() as { enhanced?: { from: string } | false };
     expect(generateBody.enhanced).toMatchObject({ from: WORDS });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
