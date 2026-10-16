@@ -1206,3 +1206,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **#807 at 5c1968ed:** one must-fix. The held line must say "N cr held for now; it comes back to your balance automatically, usually within a few hours."; the cron refunds whether or not the writer answered.
   - **Guard edit for the owner:** enhanceStableKey.spec (a guard) changes its expected refusal message to the new exact line. The key-release proof is untouched.
   - **Reruns asked:** phone sizes and the graphite Make specs.
+- **16 Oct 14:34 IST.** Lane D: #767's body now has a "First real deploy, check" section (the PDF print hang). Draft contingency **#810** (52290611, stacked on #767) prints with a second browser if the first hangs for 30 s, and kills the whole process group of a hung browser.
+  - **Second browser:** Chrome for Testing headless shell 153.0.8010.12, SHA-256 pinned in a new Dockerfile stage. No env name.
+  - **Owner questions:** may the Google-branded CfT build (BSD-3 code, Google ToS) be used inside the unpublished worker image? And the guard-like edit to tests/ops/remotion-worker.test.mjs (Dockerfile stage count 4 → 5)?
+  - It stays a draft unless the first real PDF on the worker stack hangs.
+  - Lane D now readies the Slice 1 chain for release/1.
