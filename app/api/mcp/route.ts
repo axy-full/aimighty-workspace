@@ -3,6 +3,7 @@ import { recoveryRoute } from "@/lib/recovery";
 import { requireUser, withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
 import { TOOLS, runTool, makeCaller } from "@/lib/mcp";
+import { mcpSpendPolicy } from "@/lib/mcpSpendPolicy";
 import { currentTenant } from "@/lib/tenant";
 import { linkOrigin } from "@/lib/site";
 
@@ -65,7 +66,7 @@ const workspacePost = withTenant(async function POST(req: Request) {
     /* The tools call this same server at its own address (the bearer never leaves it); the links they hand back use the public one. */
     const call = makeCaller(new URL(req.url).origin, req.headers.get("authorization") ?? "");
     try {
-      const text = await runTool(name, args, call, linkOrigin(req), { credits: creditsApply(currentTenant()?.workspace) });
+      const text = await runTool(name, args, call, linkOrigin(req), { credits: creditsApply(currentTenant()?.workspace) }, await mcpSpendPolicy());
       return ok(id, { content: [{ type: "text", text }] });
     } catch (e) {
       // A refused render or a bad project name is information for the model,

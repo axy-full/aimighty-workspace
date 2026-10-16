@@ -10,6 +10,7 @@
  */
 
 import { displayModelName, getModel } from "./models";
+import { DRAFT_RESOLUTION } from "./draftFinal";
 
 /**
  * The longest wait_for_render may hold its request open. No request stays
@@ -49,7 +50,8 @@ export const TOOLS: ToolDef[] = [
       "Start a video render in Particl. Returns an id immediately — renders take " +
       "roughly one to three minutes — then use wait_for_render to collect it. Every prompt is " +
       "rewritten with Seedance's own prompt recipe before rendering; prefix with 'raw:' to send " +
-      "exact words. This spends real money from the workspace's credit.",
+      "exact words. It is priced first, and only a person approves spending: unless the workspace lets small 480p drafts run without asking, the shot is " +
+      "priced and prepared for a person to approve in Particl, and nothing is rendered or spent.",
     inputSchema: {
       type: "object",
       properties: {
@@ -235,8 +237,30 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
  * `credits`: the workspace pays in credits (lib/credits creditsApply), so
  * spend is reported in credits and the engine's dollars are never named.
  */
+export type SpendPolicy = {
+  /** The workspace allows spending without asking (Settings: `spendWithoutAsking` is exactly "auto"). Anything else is Ask, the default. */
+  auto: boolean;
+  /** The most a call may start without a person, in credits: the Rig's per-job line, never above guardrail 4. */
+  lineCredits: number;
+};
+
+/**
+ * The words of a tool that priced a job and did not start it, in the shape every direct-engine tool uses. `filed` is the prepared job a person finds in
+ * Settings › Connections, or why none was filed (a token made to render cannot file one; a person makes it in Particl).
+ */
+function pricedNotStarted(priceText: string, line: string, filed: { id: string } | { refused: string }): string {
+  const waits = "id" in filed
+    ? `prepared job: ${filed.id}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections, where its price is shown beside Approve.`
+    : `Nothing was filed: ${filed.refused}\n\nThis needs a person's approval: nothing was started or spent. A person can make this themselves in Particl, where its price is shown before they approve it.`;
+  return `${"id" in filed ? "Priced and prepared" : "Priced"}, not started.\n\nprice: ${priceText}\n${line}\n${waits}`;
+}
+
+/**
+ * runTool: the workspace's tools. `credits`: the workspace pays in credits. `spend`: the workspace's spending setting, read by the route
+ * (lib/mcpSpendPolicy.ts, server only: this file is also in the browser's bundle); absent means Ask.
+ */
 export async function runTool(
-  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
+  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}, spend?: SpendPolicy
 ): Promise<string> {
   switch (name) {
     case "prepare_shot": {
@@ -283,12 +307,38 @@ export async function runTool(
         watermark: false,
         projectId: project?.id ?? null,
       };
-      /* Priced first, and sent with that price as its ceiling: it can never bill more than it reports.
-         request_id, when given, is its Idempotency-Key, so a retried call gets back the render it started. */
-      const quote = (await call("/api/generate/quote", { method: "POST", body })) as { estimatedCredits?: unknown; price?: unknown; unit?: unknown; fingerprint?: unknown };
+      /* Priced first. Only a person approves spending (rule 14): this call never writes the approval. What follows is the workspace's own setting. */
+      const prepared = {
+        prompt: args.prompt, project: project?.name, model: model === "dreamina-seedance-2-0-260128" ? "2.0" : "2.5", duration, resolution, ratio, audio: Boolean(args.audio),
+      };
+      const spec = `prepared: ${displayModelName(model)} · ${resolution} · ${ratio} · ${duration}s`;
+      /** Files the job for a person (POST /api/prepared-jobs). It prices, holds and sends nothing; only a token made to prepare may file one. */
+      const fileForPerson = async (): Promise<{ id: string } | { refused: string }> => {
+        try {
+          const out = (await call("/api/prepared-jobs", { method: "POST", body: prepared })) as { job?: { id?: unknown } };
+          return typeof out.job?.id === "string" ? { id: out.job.id } : { refused: "Particl did not take it." };
+        } catch (error) { return { refused: error instanceof Error && error.message ? error.message.slice(0, 160) : "Particl did not take it." }; }
+      };
+      let quote: { estimatedCredits?: unknown; price?: unknown; unit?: unknown; fingerprint?: unknown };
+      try {
+        quote = (await call("/api/generate/quote", { method: "POST", body })) as typeof quote;
+      } catch (error) {
+        /* A token made to prepare jobs cannot ask the paid door anything, not even for a price: its call is filed for a person, unpriced. */
+        if (!(error instanceof Error) || !/This token prepares jobs/.test(error.message)) throw error;
+        const filed = await fileForPerson();
+        if (!("id" in filed)) throw error;
+        return `Prepared, not started.\n\n${spec}\nprepared job: ${filed.id}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections, where its price is shown beside Approve.`;
+      }
       const credits = quote.estimatedCredits, price = quote.price;
       if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || typeof price !== "number" || !Number.isFinite(price))
         throw new Error("This render could not be priced, so nothing was started.");
+      const priceText = quote.unit === "usd" ? `$${price.toFixed(2)}` : `${credits} cr`;
+      /* Ask (the default), or Auto on anything but a draft, or a draft over the per-job line: priced and prepared, not started. A draft is the 480p
+         take (lib/draftFinal.ts); a 720p or 1080p take is the hero take and always asks. */
+      const policy = spend;
+      if (!(policy?.auto === true && resolution === DRAFT_RESOLUTION && credits <= policy.lineCredits)) return pricedNotStarted(priceText, spec, await fileForPerson());
+      /* Auto, a draft, at or under the line: the workspace admin's standing setting approves it, at the price the server just gave and no higher.
+         request_id, when given, is its Idempotency-Key, so a retried call gets back the render it started. */
       const out = (await call("/api/generate", {
         method: "POST",
         body: { ...body, maxCredits: credits, ...(typeof quote.fingerprint === "string" ? { quoteFingerprint: quote.fingerprint } : {}) },
@@ -298,7 +348,7 @@ export async function runTool(
         `Rendering started.\n\nid: ${out.id}\nproject: ${project?.name ?? "Unfiled"}\n` +
         `model: ${displayModelName(model)} · ` +
         `${resolution} · ${ratio} · ${duration}s\n` +
-        `price: ${quote.unit === "usd" ? `$${price.toFixed(2)}` : `${credits} cr`}\n\n` +
+        `price: ${priceText}\n\n` +
         `Call wait_for_render with this id to collect it.`
       );
     }

@@ -135,7 +135,7 @@ test("a render names its project exactly; a partial name is never guessed for a 
   expect(guess.calls.map((c) => c.path)).not.toContain("/api/generate");
 
   const exact = caller(projects, generate);
-  const text = await runTool("render_shot", { prompt: "Rain on glass.", project: "rain" }, exact.call as never, "");
+  const text = await runTool("render_shot", { prompt: "Rain on glass.", project: "rain", resolution: "480p" }, exact.call as never, "", {}, { auto: true, lineCredits: 200 });
   expect(text).toContain("project: Rain");
   expect(exact.calls.find((c) => c.path === "/api/generate")?.body).toMatchObject({ projectId: "p2" });
 
@@ -143,7 +143,7 @@ test("a render names its project exactly; a partial name is never guessed for a 
   await expect(runTool("render_shot", { prompt: "Rain.", project: "monsoon film" }, twins.call as never, "")).rejects.toThrow("Give the project id");
   expect(twins.calls.map((c) => c.path)).not.toContain("/api/generate");
   const byId = caller(projects, generate);
-  await runTool("render_shot", { prompt: "Rain.", project: "p4" }, byId.call as never, "");
+  await runTool("render_shot", { prompt: "Rain.", project: "p4", resolution: "480p" }, byId.call as never, "", {}, { auto: true, lineCredits: 200 });
   expect(byId.calls.find((c) => c.path === "/api/generate")?.body).toMatchObject({ projectId: "p4" });
 
   // Reading may take a partial name that fits exactly one project.
