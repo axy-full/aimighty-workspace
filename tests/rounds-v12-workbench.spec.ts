@@ -135,7 +135,7 @@ test.describe("desktop, switch on", () => {
     const first = (await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied))[0];
     expect(first).toMatch(/^Harbour film · R2 · \d{1,2} \w{3} \d{4}\nWhat changed in round 2:\n• Shot 2: Wide\n• Shot 4: .+\n• Shot 7: .+\nThe other 5 shots are unchanged\.$/);
 
-    await page.getByTestId("v12-stage-rail").getByText("Cut", { exact: true }).click();
+    await page.getByTestId("v12-stage-rail").getByText("Edit", { exact: true }).click();
     await page.locator('[data-card-id="round:cut"]').getByTestId("v12-round-compare").click();
     const compare = page.getByTestId("v12-compare");
     await expect(compare).toBeVisible();

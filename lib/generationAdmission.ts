@@ -1922,7 +1922,7 @@ export async function executeGenerationAdmission(
         // converges on their taste rather than on a generic one.
         const writerRules = rulesBlock(rules, "video", "writer", model.family);
         const style = [
-          houseStyleBlock(await houseStyle(projectIdForCast)),
+          houseStyleBlock(await houseStyle(got.user, projectIdForCast)),
           writerRules ? `THE PLATFORM'S RULES\n${writerRules}` : "",
         ]
           .filter(Boolean)

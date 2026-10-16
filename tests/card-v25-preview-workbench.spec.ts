@@ -23,7 +23,8 @@ async function watch(page: Page) {
     if (req.method() === "POST") { calls.push({ method: "POST", url: new URL(req.url()).pathname, body: req.postDataJSON() as Record<string, unknown> }); return route.fulfill({ json: { ok: true } }); }
     return route.fulfill({ json: { notes: [] } });
   });
-  page.on("request", (r) => { const p = new URL(r.url()).pathname; if (r.method() === "POST" && p.startsWith("/api/generate")) calls.push({ method: "POST", url: p, body: null }); });
+  page.on("request", (r) => { const p = new URL(r.url()).pathname; /* A paid send: not a quote (reading a price is free; the Director board on the same page reads them). */
+    if (r.method() === "POST" && p.startsWith("/api/generate") && !p.endsWith("/quote")) calls.push({ method: "POST", url: p, body: null }); });
   return calls;
 }
 

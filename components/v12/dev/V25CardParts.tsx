@@ -6,6 +6,12 @@ import { ShotStepCard } from "../board/ShotStepCard";
 import { ShotPreview } from "../board/ShotPreview";
 import { CardPreview } from "../board/CardPreview";
 import type { PreviewItemView } from "../board/preview-model";
+import { DirectorColumn } from "../board/DirectorColumn";
+import { DirectorBar } from "../board/DirectorBar";
+import { SHOTS_SETTINGS, cardChips, requestFields, scopeOf, shotSettings, SHOTS_STEP, type BarState } from "../board/director-model";
+import type { DirectorShot } from "../board/use-director-render";
+import { withCardOverride, withStepSetting, type BoardSetup, type CardOverrides, type SettingValue, type Setup } from "@/lib/v12/board/board-data";
+import { stagesOf } from "@/lib/v12/board/stages";
 import { SHOT_REASONS as TAKE_REASONS } from "../board/shot-card";
 import type { ShotTakes, ShotVersion } from "@/components/graphite/board/cards/take/take-model";
 import "../v12.css";
@@ -105,6 +111,53 @@ function TakeBoard() {
   );
 }
 
+/* Director on Shots (PR 7): the column, the scope pill and the bar, on mock shots; the prices and the sends are the real routes' (the browser check answers them). */
+const DIRECTOR_SHOTS = [1, 2, 3, 4].map((n) => ({ id: `d${n}`, name: `Shot ${n}`, title: `Shot ${n} · ${["Camp at night", "MAYA arrives", "At the water", "The drink"][n - 1]}`, hue: [32, 210, 200, 28][n - 1] }));
+
+function DirectorBoard() {
+  const [draft, setDraft] = useState<{ boardSetup: BoardSetup; boardOverrides: CardOverrides }>({ boardSetup: {}, boardOverrides: {} });
+  const [selected, setSelected] = useState<string[]>([]);
+  const [hover, setHover] = useState<string | null>(null);
+  const scope = scopeOf(selected, DIRECTOR_SHOTS);
+  const scopeIds = scope.ids.join(",");
+  const shots: DirectorShot[] = scopeIds.split(",").filter(Boolean).map((id) => {
+    const fields = requestFields(shotSettings(draft, id));
+    const shot = DIRECTOR_SHOTS.find((x) => x.id === id)!;
+    return { id, input: { prompt: `${shot.title}. A slow push in.`, kind: "video", model: { id: "dreamina-seedance-2-5-260628" }, mapping: { productionProjectId: "test-project", shotId: id }, ratio: fields.ratio, resolution: fields.resolution, duration: fields.duration, references: [], firstFrameAssetId: "", generateAudio: fields.generateAudio, ...(fields.draft ? { draft: true } : {}) } };
+  });
+  const [bar, setBar] = useState<{ state: BarState; finished: number; total: number }>({ state: "idle", finished: 0, total: 0 });
+  const stages = useMemo(() => stagesOf("film", null), []);
+  const values: Setup = shotSettings(draft, scope.all ? null : scope.ids[0]);
+  const mixed = new Set<string>();
+  if (!scope.all && scope.ids.length > 1) for (const item of SHOTS_SETTINGS) if (new Set(scope.ids.map((id) => shotSettings(draft, id)[item.id])).size > 1) mixed.add(item.id);
+  const set = (id: string, value: SettingValue) => setDraft((d) => {
+    if (scope.all) return { ...d, boardSetup: withStepSetting(d.boardSetup, "director", SHOTS_STEP, id, value) };
+    let overrides = d.boardOverrides;
+    const step = shotSettings({ boardSetup: d.boardSetup }, null)[id];
+    for (const card of scope.ids) overrides = withCardOverride(overrides, card, id, value === step ? null : value);
+    return { ...d, boardOverrides: overrides };
+  });
+  const differs = (card: string) => hover !== null && cardChips(draft, card).some((c) => c.id === hover);
+  return (
+    <section className="v25-parts-canvas v25-parts-director" aria-label="Director" data-testid="v25-board-director">
+      <div className="v25-parts-dirgrid">
+        {DIRECTOR_SHOTS.map((shot) => (
+          <StepCard key={shot.id} id={shot.id} title={shot.title} status={bar.state === "making" && scope.ids.includes(shot.id) ? "making" : bar.state === "done" && scope.ids.includes(shot.id) ? "ready" : "none"}
+            picture={{ src: still(shot.hue) }} selected={selected.includes(shot.id)} dimmed={hover !== null && !differs(shot.id)} differs={differs(shot.id)} chips={cardChips(draft, shot.id)}
+            onSelect={(event) => setSelected((now) => (event.shiftKey || event.metaKey ? (now.includes(shot.id) ? now.filter((x) => x !== shot.id) : [...now, shot.id]) : now.length === 1 && now[0] === shot.id ? [] : [shot.id]))} />
+        ))}
+      </div>
+      <div className="v25-parts-dircol">
+        <DirectorColumn scope={scope} step="Shots" values={values} mixed={mixed} onSet={set} onHover={setHover} />
+      </div>
+      <div className="v25-parts-dirbar">
+        <DirectorBar scope={scope} scopeKey="particl-active-test" projectKey="test-project" shots={shots} stages={stages} step={SHOTS_STEP} onState={setBar}
+          ask={<input className="v25-parts-ask" aria-label="Ask for a change" placeholder={selected.length ? `Ask about ${scope.label}…` : "Ask about all the shots…"} />} />
+      </div>
+    </section>
+  );
+}
+
 function Board({ cards, label }: { cards: Mock[]; label: string }) {
   const [state, setState] = useState<Record<string, { status?: StepCardProps["status"]; reason?: string }>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -140,6 +193,8 @@ export function V25CardParts() {
           <Board cards={KINDS} label="Kinds" />
           <h1 className="v25-parts-h">Card · fed by a shot’s takes (mock rows; ✓ ✕ call the review routes)</h1>
           <TakeBoard />
+          <h1 className="v25-parts-h">Director · Shots (mock shots; the prices and sends are the routes’)</h1>
+          <DirectorBoard />
         </div>
       </ToastProvider>
     </OverlayProvider>

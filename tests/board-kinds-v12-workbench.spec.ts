@@ -122,7 +122,7 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("board")).toHaveCount(0);
 
     const cases: [string, string, string, string[]][] = [
-      ["film", "Describe the film", "FILM", ["Brief", "Script", "Cast", "Elements", "Storyboard", "Shots", "Cut", "Deliver"]],
+      ["film", "Describe the film", "FILM", ["Treatment", "Pitch", "Brief", "Script", "Cast", "Locations", "Elements", "Storyboard", "Shots", "Edit", "Deliver"]],
       ["previs", "Paste or attach the agency script", "PRE-VIS", ["Brief", "Script", "Cast", "Elements", "Storyboard", "Animatic", "PPM deck"]],
       ["campaign", "Paste the product page link", "CAMPAIGN", ["Product", "Look", "Formats", "Variants", "Deliver"]],
       ["social", "A topic, or a long video link", "SOCIAL · NARRATED", ["Hook", "Script", "Scenes", "Voice", "Captions", "Deliver"]],
