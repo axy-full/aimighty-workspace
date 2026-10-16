@@ -1327,3 +1327,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Cast:** lane B had already built it (feat/cast-character 75c0694b); lane D builds on that branch (no duplicate PR).
   - **Memory:** lane J's mock server reached 12.4 GB (31% available), and it was told to stop.
   - **Lane C:** given the batch shape for the Director bar.
+- **16 Oct 16:49 IST.** Lane F fixes, all with the Opus v25 reviewer:
+  - #795 (b7dd5d98);
+  - #802 (fb700624; zoom removed, now real layout; token 403 and no-mock 404 tests);
+  - #806 (30ada50f; create_board added to the WRITES guard on the owner's yes; origin and scope checks);
+  - **#816 Storyboard** (b0328e41: styles by look with no engine names, the existing priced draw path, the new-project overlay fixed). It deletes one replaced shots-v12 test; Opus checks the deletion.
+  - **Open:** board-kinds-v12's kind-cycle toast step fails locally even on release/1, yet CI passed on #749 against release/1, so CI decides #791.
