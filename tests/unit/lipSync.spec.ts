@@ -43,7 +43,7 @@ const deferred: (() => Promise<unknown>)[] = [];
 const options = (): AdmissionExecution => ({ defer: async (work) => { deferred.push(work); } });
 
 /** One upload of this workspace: a stored original with a known length. */
-async function upload(label: string, mediaKind: "video" | "audio" | "image", seconds: number | null = null): Promise<string> {
+async function upload(label: string, mediaKind: "video" | "audio" | "image", seconds: number | null = null, uploader: string | null = null): Promise<string> {
   const { db, ready } = await import("../../lib/db");
   const { storeUpload } = await import("../../lib/storage");
   await ready();
@@ -53,7 +53,7 @@ async function upload(label: string, mediaKind: "video" | "audio" | "image", sec
   const bytes = Buffer.from(`sample-${mediaKind}-${id}`);
   await storeUpload(id, ext, bytes, mime);
   made.push(path.join(process.cwd(), ".data", "uploads", `${id}.${ext}`));
-  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s) VALUES(?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds] });
+  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s,uploader_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds, uploader] });
   return id;
 }
 async function project(id: string) {
@@ -517,6 +517,39 @@ test("an output address we will not fetch, after the job completed: settled once
   });
 });
 
+test("an upload is read only by a person who may open it, for an Atomik run (as its owner, a member) as for a person; with no person behind the request nothing is read", async () => {
+  const { admitLipSync } = await import("../../lib/lipSync");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  const { db, ready } = await import("../../lib/db");
+  process.env.SYNC_ENABLED = "1";
+  const agentUser = (runId: string) => ({ ...OWNER.user, id: `agent:${runId}`, role: "member", owner: false }) as AdmissionActor["user"];
+  await runInTenant(house(), async () => {
+    await ready(); await rigAgentReady();
+    await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_lip_owned", "prod_x", "draft_x", "u_runner", "req_lip", "goal", "auto", "finished"] });
+    const mine = { clip: await upload("clip", "video", 4, "u_runner"), voice: await upload("voice", "audio", 5, "u_runner") };
+    const theirs = { clip: await upload("clip", "video", 4, "u_other"), voice: await upload("voice", "audio", 5, "u_other") };
+    const ask = (actor: AdmissionActor, clip: string, voice: string) => admitLipSync({ clipUploadId: clip, audioUploadId: voice, quoteOnly: true }, actor, options(), {});
+    const agent = (runId: string): AdmissionActor => ({ user: agentUser(runId) });
+    /* The run acts for the person who started it: their own uploads, yes; another person's private one, no. */
+    await runInTenant(house(), async () => {
+      expect((await ask(agent("run_lip_owned"), mine.clip, mine.voice)).status).toBe(200);
+      for (const [clip, voice] of [[theirs.clip, mine.voice], [mine.clip, theirs.voice]]) expect(await ask(agent("run_lip_owned"), clip, voice), `${clip} ${voice}`).toMatchObject({ status: 404, body: { error: expect.stringMatching(/not in this workspace/) } });
+    }, { user: agentUser("run_lip_owned") } as never);
+    /* No person behind the run (an unknown run), and nothing is read: refused before the sources are looked at. */
+    await runInTenant(house(), async () => {
+      expect(await ask(agent("run_none"), mine.clip, mine.voice)).toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+      expect(await ask(agent("run_none"), "../x", "../y")).toMatchObject({ status: 403 });
+    }, { user: agentUser("run_none") } as never);
+    /* A signed-in person is judged the same way: their own, yes; another person's private upload, no. */
+    const person: AdmissionActor = { user: { ...OWNER.user, id: "u_runner", role: "member", owner: false } as AdmissionActor["user"] };
+    await runInTenant(house(), async () => {
+      expect((await ask(person, mine.clip, mine.voice)).status).toBe(200);
+      expect((await ask(person, theirs.clip, mine.voice)).status).toBe(404);
+    }, { user: person.user } as never);
+  }, OWNER as never);
+});
+
 test("the shot cap is judged at the quote and the press, before any row is written: a member past it is refused 403 (needs an admin) with no take left; an admin, a shot under its cap, no shot, and a rule that is not 'cap' go through", async () => {
   const { admitLipSync } = await import("../../lib/lipSync");
   const { setSetting, invalidateSettings } = await import("../../lib/settings");
@@ -556,6 +589,10 @@ test("the shot cap is judged at the quote and the press, before any row is writt
       const TOKEN = { id: "tok_admin", name: "Assistant", scope: "render" as const, capUsd: null };
       const ADMIN_TOKEN: AdmissionActor = { ...OWNER, token: TOKEN };
       const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1" } as AdmissionActor["user"] };
+      /* The run acts for a person (its owner), so the cap is what refuses it. */
+      const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+      await rigAgentReady();
+      await db().execute({ sql: "INSERT OR IGNORE INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_1", "prod_x", "draft_x", "u_runner", "req_cap", "goal", "auto", "finished"] });
       await runInTenant(house(), async () => {
         for (const extra of [{ quoteOnly: true }, {}]) expect(await press(ADMIN_TOKEN, extra), `token ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
       }, { user: ADMIN_TOKEN.user, token: TOKEN } as never);
@@ -688,7 +725,7 @@ test("structure: the seams stay internal, the route is the one door, no consent 
   expect(flow).toContain("seams.houseOnly !== false && !isHouseWorkspace(workspace)");
   expect(at("INSERT INTO generations")).toBeLessThan(at("await reserveGenerationSpend("));
   expect(at("await reserveGenerationSpend(")).toBeLessThan(at("await (deps.submit ?? submitLipSync)("));
-  /* The consent gate takes no override from the admission's public face. */
+  /* The admission takes no override from the public face. */
   expect(flow).toContain("admitLipSync(input, got, options, {})");
   /* Prices come from the rate table and the margin path: no dollar literal in the workflow. */
   expect(flow).not.toMatch(/0\.0\d+|0\.1\d+/);

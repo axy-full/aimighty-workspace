@@ -41,7 +41,7 @@ async function asTenant(ws: TenantWorkspace, fn: () => Promise<void>): Promise<v
 }
 const options = (): AdmissionExecution => ({ defer: async () => {} });
 
-async function upload(label: string, mediaKind: "video" | "audio", seconds: number | null): Promise<string> {
+async function upload(label: string, mediaKind: "video" | "audio", seconds: number | null, uploader: string | null = null): Promise<string> {
   const { db, ready } = await import("../../lib/db");
   const { storeUpload } = await import("../../lib/storage");
   await ready();
@@ -51,7 +51,7 @@ async function upload(label: string, mediaKind: "video" | "audio", seconds: numb
   const bytes = Buffer.from(`sample-${mediaKind}-${id}`);
   await storeUpload(id, ext, bytes, mime);
   made.push(path.join(process.cwd(), ".data", "uploads", `${id}.${ext}`));
-  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s) VALUES(?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds] });
+  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s,uploader_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.${ext}`, mime, ext, bytes.length, "x", `uploads/${id}.${ext}`, Date.now(), mediaKind, seconds, uploader] });
   return id;
 }
 async function meterRows() {
@@ -318,6 +318,37 @@ test("the shot cap is judged at the quote and the press for speech (the one tool
       expect(await rows()).toBe(before.rows + 1);
     } finally { await setRule(null); }
   }, MEMBER as never);
+});
+
+test("transcription reads an upload only for a person who may open it: an Atomik run acts as its owner, another person's private upload is not there, and with no person behind the request nothing is read", async () => {
+  const { admitSarvam } = await import("../../lib/sarvamTools");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  const { db, ready } = await import("../../lib/db");
+  process.env.SARVAM_ENABLED = "1";
+  const agentUser = (runId: string) => ({ ...OWNER.user, id: `agent:${runId}`, role: "member", owner: false }) as AdmissionActor["user"];
+  await runInTenant(house(), async () => {
+    await ready(); await rigAgentReady();
+    await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_sar_owned", "prod_x", "draft_x", "u_runner", "req_sar", "goal", "auto", "finished"] });
+    const mine = await upload("clip", "audio", 10, "u_runner"), theirs = await upload("clip", "audio", 10, "u_other");
+    const ask = (actor: AdmissionActor, id: string) => admitSarvam({ tool: "transcribe", sourceUploadId: id, quoteOnly: true }, actor, options(), {});
+    await runInTenant(house(), async () => {
+      expect((await ask({ user: agentUser("run_sar_owned") }, mine)).status).toBe(200);
+      expect(await ask({ user: agentUser("run_sar_owned") }, theirs)).toMatchObject({ status: 404, body: { error: expect.stringMatching(/not in this workspace/) } });
+    }, { user: agentUser("run_sar_owned") } as never);
+    await runInTenant(house(), async () => {
+      expect(await ask({ user: agentUser("run_none") }, mine)).toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+    }, { user: agentUser("run_none") } as never);
+    const person: AdmissionActor = { user: { ...OWNER.user, id: "u_runner", role: "member", owner: false } as AdmissionActor["user"] };
+    await runInTenant(house(), async () => {
+      expect((await ask(person, mine)).status).toBe(200);
+      expect((await ask(person, theirs)).status).toBe(404);
+    }, { user: person.user } as never);
+    /* Speech and translation read no upload and need no person. */
+    await runInTenant(house(), async () => {
+      expect((await admitSarvam({ tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", quoteOnly: true }, { user: agentUser("run_none") }, options(), {})).status).toBe(200);
+    }, { user: agentUser("run_none") } as never);
+  }, OWNER as never);
 });
 
 test("a customer workspace on the list pays in credits at the margin path, exactly the quote, once; the house pays none", async () => {
