@@ -1,6 +1,7 @@
 import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
+import { hindiVersionTools } from "./hindiVersion";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "./approvalRule";
@@ -128,7 +129,37 @@ const SARVAM_TRANSLATE: DirectTool = {
   describe: (out) => (out.kept === false ? String(out.note) : String(out.text)),
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE];
+/** The Hindi version: translate, speak and lip-sync a cut's lines under one price. Never a draft (it always asks a person), and its lines are kept nowhere, so it is never filed as a prepared job. */
+const HINDI_VERSION: DirectTool = {
+  def: {
+    name: "hindi_version",
+    description:
+      "Put a cut's lines into Hindi: translate (Sarvam), speak them in a stock voice, and lip-sync the hero shots (sync.so; the rest get the Hindi voice-over alone). " +
+      "Priced as one plan, 'up to N cr'; a person approves it in Particl, never you. Pass the lines as a JSON array in lines_json.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lines_json: { type: "string", description: "A JSON array, up to 24 of { text (English) or hindi (already written), shotId, clipTakeId or clipUploadId (the shot's video, for a synced line), hero (true or false) }." },
+        lip_sync: { type: "string", description: "hero (default: the lines marked hero), all, or none (a Hindi voice-over on every shot)." },
+        voice: { type: "string", description: "A stock voice's name. Optional." },
+        project_id: { type: "string", description: "The production. Optional." },
+        request_id: { type: "string" },
+      },
+      required: ["lines_json"],
+    },
+  },
+  present: async () => (await hindiVersionTools()).length > 0,
+  file: false,
+  prepared: (b) => `prepared: a Hindi version of ${Array.isArray(b.lines) ? b.lines.length : 0} lines (${String(b.lipSync ?? "hero")} lip-synced)`,
+  request: (a) => {
+    let lines: unknown;
+    try { lines = JSON.parse(String(a.lines_json ?? "")); } catch { throw new Error("lines_json must be a JSON array."); }
+    return { path: "/api/hindi-version", body: { lines, lipSync: str(a.lip_sync), voice: str(a.voice), projectId: str(a.project_id) } };
+  },
+  describe: (out, quote) => `Hindi version started.\n\nid: ${String(out.id)}\nprice: up to ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}`,
+};
+
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, HINDI_VERSION];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

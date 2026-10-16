@@ -110,6 +110,27 @@ export const quotedSeconds = (videoSeconds: number, audioSeconds: number, syncMo
 /** Dollars at the model's per-second rate, to the micro-dollar. */
 export const lipSyncUsd = (seconds: number, model: SyncModel): number => Math.ceil(seconds * SYNC_RATES.models[model] * 1e6 - 1e-6) / 1e6;
 
+/**
+ * What a lip-sync would cost BEFORE its voice track exists (the Hindi version tool prices a plan whose voice is not made yet): the same arithmetic as the quote below
+ * (`quotedSeconds`, `lipSyncUsd`, then the margin table by model), with the voice's length given as the most it can be. A price estimate only: it opens no row, holds
+ * nothing and checks no limit; the admission checks them all when the job is really asked for.
+ */
+export async function lipSyncEstimate(input: { clipUploadId?: unknown; clipGenId?: unknown; audioSeconds: number; model?: unknown; syncMode?: unknown }): Promise<{ estimatedCredits: number; usd: number; seconds: number; model: SyncModel; syncMode: SyncMode } | { error: string; status: number }> {
+  await ready();
+  const viewer = await actingViewer();
+  if (!viewer) return { error: NO_ACTING_PERSON, status: 403 };
+  if (input.model != null && !isSyncModel(input.model)) return { error: "Pick lipsync-2, lipsync-2-pro or sync-3.", status: 400 };
+  if (input.syncMode != null && !isSyncMode(input.syncMode)) return { error: "Pick how a length mismatch is handled: bounce, loop, cut_off, silence or remap.", status: 400 };
+  const model: SyncModel = isSyncModel(input.model) ? input.model : SYNC_RATES.defaultModel;
+  const syncMode: SyncMode = isSyncMode(input.syncMode) ? input.syncMode : SYNC_RATES.defaultSyncMode;
+  const video = await resolveSource("video", input.clipUploadId, input.clipGenId, viewer);
+  if ("error" in video) return video;
+  const seconds = quotedSeconds(video.seconds, input.audioSeconds, syncMode);
+  if (!(seconds > 0) || seconds > LIPSYNC_MAX_SECONDS) return { error: `Lip-sync takes up to ${LIPSYNC_MAX_SECONDS / 60} minutes at a time.`, status: 400 };
+  const usd = lipSyncUsd(seconds, model);
+  return { estimatedCredits: quotedCredits(usd, model), usd, seconds, model, syncMode };
+}
+
 /* ── Admission ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 /** What the admission may be handed in a test. The public admission passes none. `houseOnly: false` lets a test run a workspace that is not the house, to prove the cap wall. */

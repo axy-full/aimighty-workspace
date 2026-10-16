@@ -15,6 +15,7 @@ export const PAID_ROUTES: PaidRoute[] = [
   { dir: "audio/dub", spends: "dubbing" },
   { dir: "sarvam", spends: "Sarvam speech, transcription and translation (off unless the engine is on for the workspace)" },
   { dir: "lipsync", spends: "lip-sync (sync.so; off unless the engine is on for the workspace)" },
+  { dir: "hindi-version", spends: "a Hindi version: Sarvam translation and speech, and sync.so lip-sync on the shots chosen (off unless Sarvam is on for the workspace)" },
   { dir: "audio/transcribe", spends: "transcription" },
   { dir: "jobs/[id]/release", spends: "releasing a held take once the balance covers it" },
   { dir: "atomik/steps/[id]/claim", spends: "taking a proposed Atomik step, once, before it is paid for" },
