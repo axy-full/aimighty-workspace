@@ -1,5 +1,6 @@
 "use client";
 import type { ConsoleOverview } from "@/lib/platformConsole.server";
+import { riskAlarm, riskWords } from "@/lib/atRiskWindow";
 import { useAdminRead } from "./api";
 import { Head } from "./parts";
 
@@ -39,7 +40,7 @@ export function Overview() {
   const { data } = useAdminRead<ConsoleOverview>("/api/admin/console", 30_000);
   const { data: health } = useAdminRead<Health>("/api/health", 60_000);
   const n = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("en-US"));
-  const risk = data?.failedSaves ?? 0;
+  const risk = data?.failedSaves ?? null;
   return (
     <>
       <Head title="Overview" line="The platform at a glance." />
@@ -47,7 +48,7 @@ export function Overview() {
         <div className="v12-pc-tile"><span className="v12-pc-tile-name">Workspaces</span><span className="v12-pc-tile-n" data-testid="pc-tile-workspaces">{n(data?.workspaces)}</span></div>
         <div className="v12-pc-tile"><span className="v12-pc-tile-name">People</span><span className="v12-pc-tile-n" data-testid="pc-tile-people">{n(data?.people)}</span><span className="v12-pc-tile-sub">across all workspaces</span></div>
         <div className="v12-pc-tile"><span className="v12-pc-tile-name">Credits granted this month</span><span className="v12-pc-tile-n" data-testid="pc-tile-granted">{n(data?.grantedThisMonth)}</span><span className="v12-pc-tile-sub">given, not bought</span></div>
-        <div className="v12-pc-tile"><span className="v12-pc-tile-name">Failed saves</span><span className="v12-pc-tile-n" data-tone={risk > 0 ? "bad" : undefined} data-testid="pc-tile-risk">{data?.failedSaves == null && data ? "—" : n(data?.failedSaves)}</span><span className="v12-pc-tile-sub">renders with no stored copy</span></div>
+        <div className="v12-pc-tile"><span className="v12-pc-tile-name">Failed saves</span><span className="v12-pc-tile-n" data-tone={risk && riskAlarm(risk) ? "bad" : undefined} data-testid="pc-tile-risk">{data && !risk ? "—" : risk ? riskWords(risk) || "0" : n(null)}</span><span className="v12-pc-tile-sub">renders with no stored copy</span></div>
       </div>
       <h2 className="v12-pc-h2">Health</h2>
       <div className="v12-pc-health" data-testid="pc-health">
