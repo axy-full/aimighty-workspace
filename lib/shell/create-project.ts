@@ -23,6 +23,6 @@ export function seededProject(name: string, seed: CreateSeed = {}): Project {
   if (typeof seed.deliverables === "string" && seed.deliverables.trim()) project.deliverables = seed.deliverables.slice(0, 10_000);
   if (seed.boardKind === "studio" || seed.boardKind === "ads" || seed.boardKind === "social") (project as Project & { boardKind?: BoardKindId }).boardKind = seed.boardKind;
   if (seed.boardFlavor && FLAVORS.includes(seed.boardFlavor)) project.boardFlavor = seed.boardFlavor;
-  if (Array.isArray(seed.boardStages) && seed.boardStages.length) project.boardStages = seed.boardStages.slice(0, 24);
+  if (Array.isArray(seed.boardStages) && seed.boardStages.length) project.boardStages = seed.boardStages.slice(0, 36);
   return project;
 }

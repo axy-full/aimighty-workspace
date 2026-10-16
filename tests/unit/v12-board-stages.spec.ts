@@ -242,15 +242,30 @@ test("a rail saved before v25 keeps what its person did with Cut: a rename, a sk
   expect(ids("film", [{ id: "cut" }, { id: "edit" }, { id: "brief" }]).filter((id) => id === "edit")).toHaveLength(1);
 });
 
-test("a rail saved since v25 is not grown again: what its person removed stays removed", () => {
+test("what a person removed stays removed, every time the rail is read, even all three new steps; a rail saved before them gains them", () => {
   const stages = stagesOf("film", null);
   const withoutTreatment = removeStage(stages, "treatment");
   expect(ids("film", withoutTreatment)).not.toContain("treatment");
   expect(ids("film", withoutTreatment)).toContain("pitch");
-  /* A rail with one of the new stages in it was saved since. */
-  expect(ids("film", [{ id: "brief" }, { id: "locations" }, { id: "edit" }])).toEqual(["brief", "locations", "edit"]);
+  expect(withoutTreatment).toContainEqual({ id: "treatment", removed: true });
+  /* All three removed, then the rail edited again and read again: still gone. */
+  let saved = removeStage(stages, "treatment");
+  saved = removeStage(stagesOf("film", saved), "pitch");
+  saved = removeStage(stagesOf("film", saved), "locations");
+  saved = renameStage(stagesOf("film", saved), "brief", "Idea");
+  for (let reads = 0; reads < 3; reads += 1) expect(ids("film", saved)).toEqual(["brief", "script", "cast", "elements", "storyboard", "shots", "edit", "deliver"]);
+  /* A rail saved before them, with none of the three and none flagged, gains them. */
+  expect(ids("film", [{ id: "brief" }, { id: "cast" }, { id: "cut" }])).toEqual(["treatment", "pitch", "brief", "cast", "locations", "edit"]);
+  /* Flagged ones are not added back, the others are. */
+  expect(ids("film", [{ id: "brief" }, { id: "pitch", removed: true }, { id: "cast" }])).toEqual(["treatment", "brief", "cast", "locations"]);
+  /* The flags are not stages: they do not count toward the rail's 24, but the schema keeps them to the kind's own steps. */
+  expect(projectSchema.safeParse({ ...newProject("Board"), boardStages: saved }).success).toBe(true);
+  expect(saved.filter((s) => s.removed)).toHaveLength(3);
   /* The default rail is unchanged by reading it back. */
   expect(ids("film", skipStage(stages, "brief", false))).toEqual(stages.map((s) => s.id));
+  /* A removed custom stage is simply gone; no flag. */
+  const withCustom = addStage(stages, null, "Mine", () => "m");
+  expect(removeStage(stagesOf("film", withCustom.saved), withCustom.id!).some((s) => s.id === withCustom.id)).toBe(false);
 });
 
 test("the new stages join a rail only up to the most a board holds", () => {
