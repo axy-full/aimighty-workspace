@@ -1086,3 +1086,9 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - The lead updated slice-1.md §4 and remotion.md for DNxHR dropped.
   - Opus reviews next.
 - **16 Oct 11:11 IST.** Opus APPROVED the Slice 1 delta: QUEUE_EXPIRY_MS is a constant and the env var is ignored; the DNxHR changes are wording and tests only; merges are empty or README-only; the money guard is untouched; env names are exactly the six approved. Nit sent to lane D: an MCP description sentence sits inside the format list.
+- **16 Oct 11:30 IST.**
+  - Owner: "No schema change for now" for the consent tick, so no tick is stored; the Terms carry it.
+  - Opus APPROVED the consent removal on #771 b8ebea69 (now only engineGate), #776 fee31565 (house-only), #778 654cc8fa, #780 613c7011 (house-only) and #785 67be4e3e. The money path is unchanged; guard lists are add-only vs base.
+  - Also approved: #779 3f525724, #783 7ab1985f, #788 Pro pick d35da7ce. The writeSite bug is latent in the engine stack, not on release/1.
+  - Lead decision sent to lane B: agent/background callers pass the person upload check in BFL/Runway/lip-sync; plus a cleanup of stale prose and dead code.
+  - Deploy #5: #756 CI green 24/24 on release/1 cb13ad5c (run 38853925185). #762 retargeted to release/1, CI starting. #758 re-run on the new base running.
