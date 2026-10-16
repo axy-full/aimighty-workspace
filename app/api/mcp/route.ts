@@ -5,6 +5,7 @@ import { creditsApply } from "@/lib/credits";
 import { toolsOfferedFor, runTool, makeCaller } from "@/lib/mcp";
 import { engineEnabled } from "@/lib/engineGate";
 import { currentTenant } from "@/lib/tenant";
+import { pdfAllowedFor } from "@/lib/pdf/switch";
 import { linkOrigin } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +59,7 @@ const workspacePost = withTenant(async function POST(req: Request) {
   if (id === undefined || id === null) return new Response(null, { status: 202 });
 
   if (method === "ping") return ok(id, {});
-  if (method === "tools/list") return ok(id, { tools: await toolsOfferedFor(currentTenant()?.workspace) });
+  if (method === "tools/list") return ok(id, { tools: await toolsOfferedFor(currentTenant()?.workspace, { pdf: await pdfAllowedFor(currentTenant()?.workspace) }) });
 
   if (method === "tools/call") {
     const name = String(params?.name ?? "");
@@ -68,7 +69,7 @@ const workspacePost = withTenant(async function POST(req: Request) {
     try {
       const exportsOn = await engineEnabled("REMOTION_EXPORTS", currentTenant()?.workspace);
       const credits = { credits: creditsApply(currentTenant()?.workspace) };
-      const text = await runTool(name, args, call, linkOrigin(req), { ...credits, exports: exportsOn });
+      const text = await runTool(name, args, call, linkOrigin(req), { ...credits, exports: exportsOn }, { pdf: await pdfAllowedFor(currentTenant()?.workspace) });
       return ok(id, { content: [{ type: "text", text }] });
     } catch (e) {
       // A refused render or a bad project name is information for the model,
@@ -86,12 +87,11 @@ const workspacePost = withTenant(async function POST(req: Request) {
 
 /** A plain GET makes the endpoint self-describing when someone opens it. */
 export const GET = withTenant(async function GET() {
-  const offered = await toolsOfferedFor(currentTenant()?.workspace);
   return Response.json({
     name: "particl",
     transport: "mcp/streamable-http",
     usage: "POST JSON-RPC here with an 'Authorization: Bearer aw_…' header.",
-    tools: offered.map((t) => t.name),
+    tools: (await toolsOfferedFor(currentTenant()?.workspace, { pdf: await pdfAllowedFor(currentTenant()?.workspace) })).map((t) => t.name),
   });
 });
 
