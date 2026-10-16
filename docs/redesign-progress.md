@@ -1201,3 +1201,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **The board-kinds kind-cycle failure** is a stale `toBe(8)` in #791's own feature spec; Film now has 11 steps. Lane F fixes it on #791 (new head, Opus delta) before #791 enters CI.
 - **16 Oct 14:18 IST.** Deck covers checked in a real Chromium (Treatment quiet, Pitch bold with a left accent bar; three pages each). Real-render PDF tests added to #803 (1f7e8ae9); #804 at 6fb6643c; both with Opus for a delta check. **Risk found:** Remotion's own Chromium 149 hangs on `--print-to-pdf` on the droplet, while Playwright's headless shell prints fine. Whether the worker image's shell prints in Docker is unproven. The first real PDF on the worker stack (Mon 19) decides; lane D prepares a draft fallback PR (a pinned headless shell, no env name) in case.
 - **16 Oct 14:19 IST.** Opus delta check APPROVED #803 at 1f7e8ae9 (tests and fixtures only, inside the existing real-renderer skip, 240 s bound; CI doesn't run them) and #804 at 6fb6643c (a hand-resolved merge of `render.test.mjs`, keeping both blocks; no guard changed).
+- **16 Oct 14:33 IST.** Enhance delta review.
+  - **#809 APPROVED** at d59f4a13: the no-answer marker, the writes guarded on `moved`, reporting fields in credits only. It waits for the owner's yes on free-on-no-reply.
+  - **#807 at 5c1968ed:** one must-fix. The held line must say "N cr held for now; it comes back to your balance automatically, usually within a few hours."; the cron refunds whether or not the writer answered.
+  - **Guard edit for the owner:** enhanceStableKey.spec (a guard) changes its expected refusal message to the new exact line. The key-release proof is untouched.
+  - **Reruns asked:** phone sizes and the graphite Make specs.
