@@ -16,7 +16,7 @@ import { writeGenerationOutcome, deliverGenerationSettlement } from "./generatio
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
+import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { SYNC_RATES, type SyncMode, type SyncModel } from "./vendorRates";
@@ -189,9 +189,11 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
 
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
+  let shotCode: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
+    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
     projectId ??= shot.projectId;
   }
@@ -205,6 +207,11 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   /* Guardrail 4 at the quote, before any row is written. */
   const over = jobLineNow({ credits: estimatedCredits, usd, key: "sync", actor: got, auto: options.run?.auto === true });
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
+  /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. Refused here, on the quote and the press, before any row is written, so no failed take is left in the Library. */
+  if (shotId && shotCode) {
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
+    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
+  }
   if (quoteOnly)
     return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", seconds, model, syncMode, needs: ["castMemberId", "faceFrameUploadId", "projectId", "use"] });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
