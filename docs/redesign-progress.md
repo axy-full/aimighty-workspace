@@ -1211,3 +1211,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Owner questions:** may the Google-branded CfT build (BSD-3 code, Google ToS) be used inside the unpublished worker image? And the guard-like edit to tests/ops/remotion-worker.test.mjs (Dockerfile stage count 4 → 5)?
   - It stays a draft unless the first real PDF on the worker stack hangs.
   - Lane D now readies the Slice 1 chain for release/1.
+- **16 Oct 14:46 IST.** Lane C.
+  - **#798** (PR 6 Preview) is at its approved head 7f8bd736, with the tooltip-audit must-fix in code; the guard is untouched.
+  - **#811** (PR 7 Director on Shots, fb393ac4, stacked on #798 and merging #791 and #750): the Director column and bar. "Render N shots · N cr" is the sum of the server quotes, each shot is re-priced before any is sent, and the first refusal stops the rest. Plus the #750 rail items. With two Opus reviewers: money (the send path) and UI.
+  - **Gap found:** BoardView doesn't draw the new v25 parts yet. Lane C's next PR wires them (house, behind the new-interface switch), ahead of PR 9 and D-4.
+  - **Slip:** lane C ran one browser spec without a slot.
