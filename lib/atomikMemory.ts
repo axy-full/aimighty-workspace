@@ -1,6 +1,8 @@
 import type { Client, InStatement } from "@libsql/client";
 import { db, ready, now, id as newId } from "./db";
-import { requireTenant } from "./tenant";
+import { currentTenant, requireTenant } from "./tenant";
+import { isSampleProject, mayReachProject, mayReadTake } from "./draftProject";
+import { uploadOpenableBy } from "./uploadAccess";
 import { archiveDeleteStatements, archiveStatement, archiveTransaction } from "./archive";
 import {
   CAST_REF, IMPORT_FROM, KEPT_FROM, LIBRARY_ASSET, MEMORY_ID, MEMORY_LIMITS, PROJECT_ID, SOUL_REF,
@@ -85,6 +87,21 @@ function scoped(projectId: string | null): { sql: string; args: string[] } {
   return projectId ? { sql: "(project_id IS NULL OR project_id = ?)", args: [projectId] } : { sql: "project_id IS NULL", args: [] };
 }
 
+/**
+ * A board's memory belongs to the people who may use the board. READING a project's entries needs the right to read it (`mayReachProject`: their own board, a teammate's shared
+ * board, the sample, any project that is not a private board); WRITING under it (add, keep, import, edit, forget) needs the right to file into it ("admit"). An admin has no
+ * elevation here (an admin's audited read of another member's board is its own path). A project the person may not reach is answered exactly as an unknown project is, so nothing
+ * says whether a private board exists. Workspace-wide memory (no project) is unchanged.
+ */
+async function mayRead(by: string, projectId: string | null): Promise<boolean> {
+  return !projectId || (await mayReachProject({ id: by }, projectId, "read"));
+}
+/** Also not the marked sample, which only its marker and the platform owner write (owner, 13 Oct, the rule the board itself follows: lib/demo/readonly.server.ts › sampleWriteRefusal); everyone else may read it. */
+async function mayWrite(by: string, projectId: string | null): Promise<boolean> {
+  return !projectId || ((await mayReachProject({ id: by }, projectId, "admit")) && !(await isSampleProject(projectId, db(), { id: by })));
+}
+const NOT_THERE = "That project is not in this workspace. Keep it for the whole workspace instead.";
+
 function projectOf(value: unknown): string | null {
   if (value == null || value === "") return null;
   const id = String(value);
@@ -98,17 +115,22 @@ async function projectExists(projectId: string): Promise<boolean> {
 
 const mimeKind = (mime: string) => (/^image\//.test(mime) ? "image" : /^video\//.test(mime) ? "video" : /^audio\//.test(mime) ? "audio" : "file");
 
-/** A Library asset of this workspace's, by its Library id, with the name and kind it is shown by; null when it is not there. */
-async function libraryAsset(assetId: string): Promise<{ label: string; kind: string | null } | null> {
+/**
+ * A Library asset of this workspace's, by its Library id, with the name and kind it is shown by; null when it is not there OR `by` may not open it (a take on someone
+ * else's private board, an upload only its uploader may open): the same answer as an id that does not exist, so a reference never shows a private take's title or prompt
+ * and never confirms the id is there.
+ */
+async function libraryAsset(assetId: string, by: string): Promise<{ label: string; kind: string | null } | null> {
   const m = LIBRARY_ASSET.exec(assetId);
   if (!m) return null;
   if (m[1] === "generation") {
     const r = (await db().execute({ sql: "SELECT * FROM generations WHERE id = ? LIMIT 1", args: [m[2]] })).rows[0] as Row | undefined;
     if (!r || Number(r.deleted ?? 0) === 1) return null;
+    if (!(await mayReadTake({ id: by }, r.project_id == null ? null : String(r.project_id)))) return null;
     return { label: cleanMemoryText(String(r.title || r.prompt || "Untitled take"), 120), kind: r.kind ? String(r.kind) : null };
   }
   const r = (await db().execute({ sql: "SELECT * FROM uploads WHERE id = ? LIMIT 1", args: [m[2]] })).rows[0] as Row | undefined;
-  if (!r) return null;
+  if (!r || !(await uploadOpenableBy(m[2], { id: by }))) return null;
   return { label: cleanMemoryText(String(r.filename ?? "Upload"), 120), kind: r.kind ? String(r.kind) : mimeKind(String(r.mime ?? "")) };
 }
 
@@ -160,7 +182,7 @@ async function soulIdentity(identityId: string, by: string): Promise<{ label: st
  */
 async function element(assetId: string, by: string): Promise<{ label: string; kind: string | null }> {
   if (LIBRARY_ASSET.test(assetId)) {
-    const asset = await libraryAsset(assetId);
+    const asset = await libraryAsset(assetId, by);
     if (!asset) throw new MemoryError("That asset is not in this workspace's Library.", 404);
     return asset;
   }
@@ -187,9 +209,15 @@ async function element(assetId: string, by: string): Promise<{ label: string; ki
  * draft of its production). A Library asset keeps the name it was kept with;
  * only that it is still in the Library is read. Absent: gone, so a planner
  * leaves the entry out.
+ *
+ * Also absent, and listed in `hidden`, is a take or an upload `viewer` may not open (a take on someone else's private board, deleted or not, an upload only its uploader may open: the same
+ * helpers the board uses, mayReadTake and uploadOpenableBy), and a Library reference with no row left to check. An entry kept before the board gate holds that asset's title as it was kept, and must not serve it to them.
+ * `viewer` null: nobody to hide it from (a system read).
  */
-async function refsPresent(ids: string[]): Promise<Map<string, { label: string | null; kind: string | null }>> {
-  const present = new Map<string, { label: string | null; kind: string | null }>();
+type Found = { label: string | null; kind: string | null };
+type Present = Map<string, Found> & { hidden: Set<string> };
+async function refsPresent(ids: string[], viewer: string | null): Promise<Present> {
+  const present = Object.assign(new Map<string, Found>(), { hidden: new Set<string>() }) as Present;
   const byOrigin = { generation: [] as string[], upload: [] as string[] };
   const souls: string[] = [];
   const casts = new Map<string, Set<string>>();
@@ -206,11 +234,23 @@ async function refsPresent(ids: string[]): Promise<Map<string, { label: string |
       const marks = chunk.map(() => "?").join(",");
       const rs = await db().execute({
         sql: origin === "generation"
-          ? `SELECT id FROM generations WHERE id IN (${marks}) AND COALESCE(deleted, 0) = 0`
+          ? `SELECT id, project_id, COALESCE(deleted, 0) AS deleted FROM generations WHERE id IN (${marks})`
           : `SELECT id FROM uploads WHERE id IN (${marks})`,
         args: chunk,
       });
-      for (const r of rs.rows) present.set(`${origin}:${String(r.id)}`, { label: null, kind: null });
+      const seen = new Set<string>();
+      for (const r of rs.rows) {
+        const key = `${origin}:${String(r.id)}`;
+        seen.add(String(r.id));
+        /* Asked of every row, a deleted take's too (restorable, so still its board's): a person who could not open it never gets its title. */
+        const openable = !viewer || (origin === "generation"
+          ? await mayReadTake({ id: viewer }, r.project_id == null ? null : String(r.project_id))
+          : await uploadOpenableBy(String(r.id), { id: viewer }));
+        if (!openable) present.hidden.add(key);
+        else if (!Number(r.deleted ?? 0)) present.set(key, { label: null, kind: null });
+      }
+      /* With a viewer, a reference with no row at all (a removed upload, an id that was never there) cannot be checked against who could open it, so its title is not served either: the same blank as a private one, with no tell. */
+      if (viewer) for (const id of chunk) if (!seen.has(id)) present.hidden.add(`${origin}:${id}`);
     }
   }
   for (let i = 0; i < souls.length; i += 200) {
@@ -237,7 +277,7 @@ async function checked(input: { kind: unknown; text: unknown; projectId: unknown
   const kind = input.kind;
   const words = cleanMemoryText(input.text);
   const projectId = projectOf(input.projectId);
-  if (projectId && !(await projectExists(projectId))) throw new MemoryError("That project is not in this workspace. Keep it for the whole workspace instead.", 404);
+  if (projectId && (!(await projectExists(projectId)) || !(await mayWrite(by, projectId)))) throw new MemoryError(NOT_THERE, 404);
   const assetId = input.assetId == null || input.assetId === "" ? null : String(input.assetId);
   if (kind === "reference" && !assetId) throw new MemoryError("A reference is an asset from the Library: open it there and choose Remember.");
   const source = refSource(assetId);
@@ -353,7 +393,9 @@ export async function importMemory(input: { text: unknown; projectId?: unknown; 
   if (raw.length > MEMORY_LIMITS.importChars) throw new MemoryError(`Paste at most ${MEMORY_LIMITS.importChars.toLocaleString("en-US")} characters at a time.`, 413);
   const from: ImportFrom = typeof input.from === "string" && Object.hasOwn(IMPORT_FROM, input.from) ? input.from as ImportFrom : "other";
   const parsed = parseImport(raw);
-  const made = await proposeMemory(parsed.entries, { source: "import", origin: IMPORT_FROM[from], projectId: projectOf(input.projectId), by });
+  const importedInto = projectOf(input.projectId);
+  if (importedInto && (!(await projectExists(importedInto)) || !(await mayWrite(by, importedInto)))) throw new MemoryError(NOT_THERE, 404);
+  const made = await proposeMemory(parsed.entries, { source: "import", origin: IMPORT_FROM[from], projectId: importedInto, by });
   return {
     entries: made.entries,
     skipped: { money: parsed.skipped.money, duplicates: parsed.skipped.duplicates + made.skipped.duplicates, beyondLimit: parsed.skipped.beyondLimit + made.skipped.beyondLimit, invalid: made.skipped.invalid },
@@ -384,7 +426,7 @@ export async function keepMemory(input: { items: unknown; projectId?: unknown; f
   const workspaceId = requireTenant().id;
   const projectId = projectOf(input.projectId);
   /* A project that is not this workspace's fails every pick alike: said once, before any is kept. */
-  if (projectId && !(await projectExists(projectId))) throw new MemoryError("That project is not in this workspace. Keep it for the whole workspace instead.", 404);
+  if (projectId && (!(await projectExists(projectId)) || !(await mayWrite(by, projectId)))) throw new MemoryError(NOT_THERE, 404);
   const source: MemorySource = from === "brand-kit" ? "person" : "import";
   const skipped = { money: 0, duplicates: 0, beyondLimit: 0, invalid: 0 };
   const kept: MemoryEntry[] = [];
@@ -424,7 +466,8 @@ export async function updateMemory(id: string, patch: { text?: unknown; kind?: u
   await memoryReady();
   const workspaceId = requireTenant().id;
   const current = await entryById(workspaceId, id);
-  if (!current) throw new MemoryError("That memory is gone.", 404);
+  /* An entry under a board its person may not file into is as gone as one that was never there. */
+  if (!current || !(await mayWrite(by, current.projectId))) throw new MemoryError("That memory is gone.", 404);
   if (patch.updatedAt !== undefined && Number(patch.updatedAt) !== current.updatedAt) throw new MemoryError("This memory changed since you opened it. Reload it and try again.", 409);
   const next = await checked({
     kind: patch.kind ?? current.kind,
@@ -460,8 +503,12 @@ export async function forgetMemory(ids: unknown, by: string, reason: "forgotten"
   if (!list.length || list.length > 200 || list.some((id) => !MEMORY_ID.test(id))) throw new MemoryError("Choose what to forget.");
   await memoryReady();
   const workspaceId = requireTenant().id;
+  /* Only entries the person may forget: under a board they may not file into, an entry is as absent as an unknown id (it is not counted, and nothing says it exists). */
+  const allowed: string[] = [];
+  for (const id of list) { const entry = await entryById(workspaceId, id); if (entry && (await mayWrite(by, entry.projectId))) allowed.push(id); }
+  if (!allowed.length) return 0;
   return archiveTransaction(async (tx) => {
-    const statements = await archiveDeleteStatements(tx, list.map((id) => ({ table: TABLE, where: "workspace_id = ? AND id = ?", args: [workspaceId, id], reason, by })));
+    const statements = await archiveDeleteStatements(tx, allowed.map((id) => ({ table: TABLE, where: "workspace_id = ? AND id = ?", args: [workspaceId, id], reason, by })));
     const results = await tx.batch(statements);
     return results.reduce((n, r, i) => n + (i % 2 === 1 ? Number(r.rowsAffected ?? 0) : 0), 0);
   });
@@ -481,7 +528,6 @@ async function scopedEntries(workspaceId: string, projectId: string | null, stat
   return rs.rows.map((r) => ({ ...toEntry(r as Row), byName: text((r as Row).by_name), acceptedByName: text((r as Row).accepted_by_name) }));
 }
 
-type Present = Awaited<ReturnType<typeof refsPresent>>;
 const refsOf = (entries: readonly Pick<MemoryEntry, "assetId">[]) => entries.flatMap((e) => (e.assetId ? [e.assetId] : []));
 /** An entry with the name its element has now, where Memory reads it live (a Soul ID, a Cast & Elements entry). */
 function live<E extends Pick<MemoryEntry, "assetId" | "assetLabel" | "assetKind">>(e: E, present: Present): E {
@@ -489,12 +535,22 @@ function live<E extends Pick<MemoryEntry, "assetId" | "assetLabel" | "assetKind"
   return now?.label ? { ...e, assetLabel: now.label, assetKind: now.kind ?? e.assetKind } : e;
 }
 
-function toView(e: Named, viewer: string, present: Present): MemoryView {
+/** The projects among these entries' that `viewer` may NOT change entries under (a shared board they may only look at, the sample for anyone but its marker): one check per project. */
+async function lockedProjects(viewer: string, entries: readonly Pick<MemoryEntry, "projectId">[]): Promise<Set<string>> {
+  const locked = new Set<string>();
+  for (const id of new Set(entries.flatMap((e) => (e.projectId ? [e.projectId] : [])))) if (!(await mayWrite(viewer, id))) locked.add(id);
+  return locked;
+}
+
+function toView(e: Named, viewer: string, present: Present, locked: ReadonlySet<string>): MemoryView {
   const { createdBy, acceptedBy, byName, acceptedByName, ...rest } = live(e, present);
+  /* A reference to what this person may not open reads as no longer there: the title it was kept with is not theirs to see. */
+  if (e.assetId && present.hidden.has(e.assetId)) { rest.assetLabel = null; rest.assetKind = null; }
   return {
     ...rest, scope: e.projectId ? "project" : "workspace",
     byYou: createdBy === viewer, byName, acceptedByYou: acceptedBy === viewer, acceptedByName,
     available: !e.assetId || present.has(e.assetId),
+    readOnly: !!e.projectId && locked.has(e.projectId),
   };
 }
 
@@ -502,15 +558,17 @@ function toView(e: Named, viewer: string, present: Present): MemoryView {
 export async function listMemory(projectId: string | null, viewer: string): Promise<MemoryView[]> {
   await memoryReady();
   const workspaceId = requireTenant().id;
-  const entries = await scopedEntries(workspaceId, projectOf(projectId));
-  const present = await refsPresent(refsOf(entries));
-  return entries.map((e) => toView(e, viewer, present));
+  const asked = projectOf(projectId);
+  const entries = await scopedEntries(workspaceId, (await mayRead(viewer, asked)) ? asked : null);
+  const present = await refsPresent(refsOf(entries), viewer);
+  const locked = await lockedProjects(viewer, entries);
+  return entries.map((e) => toView(e, viewer, present, locked));
 }
 
 /** One entry as its view, for a route's reply. */
 export async function memoryView(entry: MemoryEntry, viewer: string): Promise<MemoryView> {
-  const present = await refsPresent(refsOf([entry]));
-  return toView({ ...entry, byName: null, acceptedByName: null }, viewer, present);
+  const present = await refsPresent(refsOf([entry]), viewer);
+  return toView({ ...entry, byName: null, acceptedByName: null }, viewer, present, await lockedProjects(viewer, [entry]));
 }
 
 /**
@@ -524,11 +582,13 @@ export async function findForForget(said: unknown, projectId: unknown, viewer: s
   if (!subject) throw new MemoryError("Say what Atomik should forget.");
   await memoryReady();
   const workspaceId = requireTenant().id;
-  const entries = await scopedEntries(workspaceId, projectOf(projectId), "active");
+  const asked = projectOf(projectId);
+  const entries = await scopedEntries(workspaceId, (await mayRead(viewer, asked)) ? asked : null, "active");
   const matches = forgetMatches(subject, entries);
   const byId = new Map(entries.map((e) => [e.id, e]));
-  const present = await refsPresent(refsOf(entries));
-  return { subject, matches: matches.map((m) => ({ ...toView(byId.get(m.id)!, viewer, present), selected: m.selected })) };
+  const present = await refsPresent(refsOf(entries), viewer);
+  const locked = await lockedProjects(viewer, entries);
+  return { subject, matches: matches.map((m) => ({ ...toView(byId.get(m.id)!, viewer, present, locked), selected: m.selected })) };
 }
 
 /**
@@ -537,17 +597,17 @@ export async function findForForget(said: unknown, projectId: unknown, viewer: s
  * proposals, other projects' entries, references whose asset has left the
  * Library and anything about money are never among them.
  */
-export async function plannerMemory(at: { projectId: string | null | undefined; query: string }): Promise<PlannerMemoryItem[]> {
+export async function plannerMemory(at: { projectId: string | null | undefined; query: string; /** Who the turn is for: a reference to what they may not open is left out (refsPresent). Absent: the signed-in user of this request, an agent's included (its id opens nothing private); null: a system read. */ viewer?: string | null }): Promise<PlannerMemoryItem[]> {
   await memoryReady();
   const workspaceId = requireTenant().id;
   const projectId = at.projectId && PROJECT_ID.test(at.projectId) ? at.projectId : null;
   const entries = await scopedEntries(workspaceId, projectId, "active");
-  const present = await refsPresent(refsOf(entries));
+  const present = await refsPresent(refsOf(entries), at.viewer === undefined ? currentTenant()?.user?.id ?? null : at.viewer);
   /* An element that is gone is left out; one that is there is planned with by the name it has now. */
   return rankForPlanner(entries.filter((e) => !e.assetId || present.has(e.assetId)).map((e) => live(e, present)), { projectId, query: at.query });
 }
 
 /** The chat planner's MEMORY section body, or "" when there is nothing to say. */
-export async function plannerMemoryText(at: { projectId: string | null | undefined; query: string }): Promise<string> {
+export async function plannerMemoryText(at: Parameters<typeof plannerMemory>[0]): Promise<string> {
   return memoryLines(await plannerMemory(at));
 }

@@ -6,3 +6,20 @@
 .v12 .v25-parts-frame .v25-parts-said { position: absolute; right: var(--gx-sp-16); top: var(--gx-sp-8); margin: 0; }
 .v12 .v25-parts-pair { display: grid; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 700px) { .v12 .v25-parts-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/*
+ * Test-only frame for the v25 foundation pieces (components/v12/dev/V25CardParts.tsx): a canvas like the board's (v25 "Particl board.dc.html":
+ * dotted ground, 24 px padding, a 16 px grid, 3 / 4 / 5 cards a row at 1280 / 1440 / 1920, room left and right for the rail and the column).
+ */
+.v12.v25-parts { min-height: 100dvh; background: var(--gx-root); color: var(--gx-text); font-family: var(--gx-font); font-size: var(--gx-fs-body); }
+.v12 .v25-parts-h { margin: 0; padding: var(--gx-sp-16) var(--gx-sp-24) 0; font-size: var(--gx-fs-label); font-weight: 600; letter-spacing: var(--gx-ls-eyebrow); text-transform: uppercase; color: var(--gx-eyebrow); }
+.v12 .v25-parts-canvas { padding: var(--gx-sp-24); background: radial-gradient(rgba(255, 255, 255, .05) 1px, transparent 1px) 0 0 / 24px 24px; }
+.v12 .v25-parts-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gx-sp-16); align-items: start; margin: 0 auto; }
+.v12 .v25-parts-said { margin: var(--gx-sp-8) 0 0; min-height: 18px; font-size: var(--gx-fs-label); color: var(--gx-text-sec); }
+@media (min-width: 560px) { .v12 .v25-parts-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1000px) {
+  .v12 .v25-parts-canvas { padding-left: 149px; padding-right: 132px; }
+  .v12 .v25-parts-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1400px) { .v12 .v25-parts-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 1800px) { .v12 .v25-parts-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }

@@ -9,11 +9,12 @@ import { vendorKey } from './vendorKeys';
 import { recoveryFetch } from './recovery';
 import { assertTextProvider, directOpenAIKey, OPENAI_BASE, openAIFetch, openAIModelId, TEXT_PROVIDER_HEADER, usesOpenAIResponses } from './openai-direct';
 import { ANTHROPIC_NO_TOOL_HEADER, DIRECT_BASE_URL, DIRECT_KEY, directFetch, directKey, directModelId, isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
-import { textDirectVendors } from './textDirectVendors';
+import { listedTextDirectVendors } from './textDirectVendors';
 import { geminiSafetyProviderOptions } from './geminiSafety';
-/** A direct door (TEXT_DIRECT) with its key: text that needs neither the gateway nor OpenAI. */
+/** A direct door that TEXT_DIRECT lists, with its key: text that needs neither the gateway nor OpenAI. Gemini is always direct (lib/textDirectVendors.ts) but its key alone does not
+ * make this true: the default writers are Claude, so a Gemini key (also the stills key) must not switch a deployment's default writer to the router. */
 export function directTextReachable() {
-  return [...textDirectVendors()].some(vendor => !!vendorKey(DIRECT_KEY[vendor]));
+  return [...listedTextDirectVendors()].some(vendor => !!vendorKey(DIRECT_KEY[vendor]));
 }
 export function languageReachable() {
   return gatewayReachable() || !!vendorKey('openai') || directTextReachable();

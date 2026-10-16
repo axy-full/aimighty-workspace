@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useShell } from "@/lib/shell/state";
 import { writeAssetDrag } from "@/lib/drop";
 import type { Project } from "@/lib/workbench/studio";
@@ -13,6 +13,9 @@ import { Kbd, Menu, Segment, Tooltip, useOverlay, useOverlayStack, type MenuItem
 import { TrayMenu } from "../menus/TrayMenu";
 import { useMenuAt } from "../menus/menu-items";
 import "./library.css";
+
+/** useLayoutEffect on the client (it runs in the commit, after the DOM is changed), a plain effect where there is no layout to read. */
+const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 /**
  * The Library tray (docs/redesign/inventory.md § 5.10; prototype `?view=board&drawer=Library`): 360 px from the left,
@@ -46,10 +49,12 @@ export function LibraryTray({ project, projects, library }: { project: Project |
     if (!wasOpen.current) returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setOpen((was) => !was);
   }, [setOpen]);
-  useEffect(() => {
+  /* Focus goes back in the same commit that removes the tray (a layout effect), not a frame later: a frame that arrived late (a slow runner at 1920 x 1080)
+     could land after something else had taken focus, and moved it again. It was a requestAnimationFrame, and tests/library-tray-v12-workbench.spec.ts failed on it. */
+  useBeforePaint(() => {
     if (!tray.open && wasOpen.current) {
       const back = returnTo.current;
-      requestAnimationFrame(() => { (back && back.isConnected && back !== document.body ? back : button.current)?.focus(); });
+      (back && back.isConnected && back !== document.body ? back : button.current)?.focus();
     }
     wasOpen.current = tray.open;
   }, [tray.open]);

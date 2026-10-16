@@ -30,6 +30,7 @@ import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
 import { claimVerifyKey, compileVerify, mockVerifyReply, storedVerificationFor, verificationStatements, VerifyError } from './verify-server';
 import { aliasModel } from '../modelAliases';
+import { DEFAULT_TEXT_MODELS } from '../platformLayer';
 import { verifyLikelyTokens, verifyPrompt, type VerifySnapshot } from './verify-judge';
 import { FRAMES_PER_CHUNK, developmentStages, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
 
@@ -417,7 +418,8 @@ const shownPrice = (compiled: { estimateUsd: number; estimateCredits: number; li
   compiled.likely ?? { usd: compiled.estimateUsd, credits: compiled.estimateCredits };
 /* A request naming a dropped id (a page or Make plan from before 8 October) is quoted, saved and run on its
    alias, the nearest model still offered (lib/modelAliases.ts): one model from the quote to the ledger. */
-const onAlias = (input: DevelopmentRequest): DevelopmentRequest => ({ ...input, model: aliasModel(input.model) });
+/* A Gemini id that left the menus reads as Auto (lib/modelAliases.ts); a development step has no Auto of its own, so it runs on the platform's default for ideas. */
+const onAlias = (input: DevelopmentRequest): DevelopmentRequest => { const model = aliasModel(input.model); return { ...input, model: model === 'auto' ? DEFAULT_TEXT_MODELS.idea : model }; };
 export async function quoteDevelopmentJob(request: DevelopmentRequest, owner: string, overrides?: Partial<DevelopmentDependencies>): Promise<DevelopmentQuote> {
   const input = onAlias(request);
   /* A take checked against these masters already: the stored scorecard, free. Nothing is priced or started. */

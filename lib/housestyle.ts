@@ -17,8 +17,17 @@
  *  • Ordered oldest-first and capped, so the block is STABLE between calls —
  *    an unstable prefix would invalidate the prompt cache on every render and
  *    quietly cost full price for something meant to be nearly free.
+ *
+ * And one that is about whose work it is: the examples go into the system
+ * prompt of whoever is rendering, so they come only from takes THAT PERSON may
+ * read, by the one definition the takes list uses (lib/draftProject.ts ›
+ * visibleBoardsOfTakes + visibleTakesClause): another member's private board is
+ * never an example, a shared board's and an unfiled take's are. The workspace is
+ * the tenant database in scope (`db()`), so another workspace's work is never
+ * read, and the memo (lib/memo.ts) is keyed by workspace, person and project.
  */
 import { db, ready } from "@/lib/db";
+import { visibleBoardsOfTakes, visibleTakesClause, type Viewer } from "@/lib/draftProject";
 import { memoGet, memoPut } from "./memo";
 
 export type StyleExample = { prompt: string; shot: string | null };
@@ -31,14 +40,20 @@ const TTL = 60_000;
 
 /**
  * The most recently approved renders for a project, falling back to the
- * workspace's own approved work when a project has none of its own yet.
+ * workspace's own approved work when a project has none of its own yet, in
+ * both cases only what `person` may read (the person rendering; nobody, for
+ * background work, reads as the takes list reads it).
  */
-export async function houseStyle(projectId: string | null): Promise<StyleExample[]> {
-  const key = `house-style:${projectId ?? "*"}`;
+export async function houseStyle(person: Viewer, projectId: string | null): Promise<StyleExample[]> {
+  /* Per person: the same project reads differently to different people, so a block built for one is never handed to another. */
+  const key = `house-style:${person?.id ?? "-"}:${projectId ?? "*"}`;
   const hit = memoGet<StyleExample[]>(key, TTL);
   if (hit) return hit;
 
   await ready();
+  /* The takes list's own rule: a private board's takes only for those who may see them (null: nothing to hide). */
+  const visible = await visibleBoardsOfTakes(person);
+  const readable = visible ? visibleTakesClause(visible) : null;
   const pick = async (scoped: boolean) => {
     const rs = await db().execute({
       sql: `SELECT g.prompt, g.params, s.code AS shot_code
@@ -49,9 +64,10 @@ export async function houseStyle(projectId: string | null): Promise<StyleExample
               AND g.status = 'succeeded'
               AND LENGTH(g.prompt) BETWEEN 40 AND ?
               ${scoped ? "AND g.project_id = ?" : ""}
+              ${readable ? `AND ${readable.sql}` : ""}
             ORDER BY g.reviewed_at DESC
             LIMIT ?`,
-      args: scoped ? [MAX_CHARS, projectId, MAX_EXAMPLES] : [MAX_CHARS, MAX_EXAMPLES],
+      args: [MAX_CHARS, ...(scoped ? [projectId] : []), ...(readable ? readable.args : []), MAX_EXAMPLES] as (string | number | null)[],
     });
     return rs.rows;
   };

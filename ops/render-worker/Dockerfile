@@ -46,6 +46,11 @@ RUN groupadd --system --gid 10001 render \
  && chmod 0700 /vercel/sandbox
 WORKDIR /app
 COPY server.mjs /app/server.mjs
+# The relay (option c in README.md) runs from this same image with `node /app/relay.mjs`: no secret, no Blender use.
+COPY relay.mjs /app/relay.mjs
+# The checks the owner runs in a terminal (README.md, Verify): they hold no secret and read none.
+COPY check-egress.mjs /app/check-egress.mjs
+COPY check-relay.mjs /app/check-relay.mjs
 ENV NODE_ENV=production \
     PORT=8790 \
     ASTRA_WORKER_CONTAINER=1
