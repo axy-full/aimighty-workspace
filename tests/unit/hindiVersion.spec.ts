@@ -456,3 +456,42 @@ test("a stopped line carries its Hindi, and the retry passes it back: a translat
     expect(partial.body).toMatchObject({ status: "partial", retry: expect.stringContaining("approval covers the rest of the plan") });
   });
 });
+
+test("the plan is ONE job against the approval line: each lip-sync is under it and the five together are over it, so a member is told an admin has to start it, at the quote and the press, and nothing starts; an admin's quote clears it", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { jobApprovalLineCredits } = await import("../../lib/approvalRule");
+  const { creditUsd } = await import("../../lib/creditTerms");
+  await asTenant(house(), async () => {
+    const clip = await clipUpload(60);
+    const five = Array.from({ length: 5 }, (_, i) => ({ hindi: `पंक्ति ${i + 1}`, clipUploadId: clip, hero: true }));
+    const member: AdmissionActor = { user: { ...OWNER.user, id: "u_member", role: "member", owner: false } as AdmissionActor["user"] };
+    const f = fakeSarvam();
+    const before = (await meter("sarvam")).length;
+    /* One of them alone is a job under the line, and a member may press it. */
+    await runInTenant(house(), async () => {
+      const alone = await admit({ lines: five.slice(0, 1), quoteOnly: true }, {}, member);
+      expect(alone.status, JSON.stringify(alone.body)).toBe(200);
+      for (const quoteOnly of [true, false]) {
+        const together = await admit({ lines: five, quoteOnly, versionId: stamp(), maxCredits: 100000 }, {}, member);
+        expect(together.status, `quoteOnly ${quoteOnly}`).toBe(403);
+        expect(together.body).toMatchObject({ needsAdmin: true });
+        expect(String(together.body.error)).not.toMatch(/\bcr\b|\d/);
+      }
+    }, { user: member.user } as never);
+    /* The line is a price: the five together cost more than it, one costs less. */
+    const q = await admit({ lines: five, quoteOnly: true });
+    expect(q.status, JSON.stringify(q.body)).toBe(200);
+    expect(Number(q.body.price)).toBeGreaterThan(20);
+    expect(Number((await admit({ lines: five.slice(0, 1), quoteOnly: true })).body.price)).toBeLessThan(20);
+    expect(jobApprovalLineCredits(creditUsd()) * creditUsd()).toBeCloseTo(20, 6);
+    expect(f.calls).toEqual([]);
+    expect((await meter("sarvam")).length).toBe(before);
+    /* A token or an Atomik run can prepare it and never start it, an admin's own token included. */
+    const token = { id: "tok_hv_line", scope: "render" } as never;
+    await runInTenant(house(), async () => {
+      const out = await admit({ lines: five, quoteOnly: true }, {}, { ...OWNER, token });
+      expect(out.status).toBe(403);
+      expect(String(out.body.error)).toMatch(/can prepare it, never start it/);
+    }, { user: OWNER.user, token } as never);
+  });
+});

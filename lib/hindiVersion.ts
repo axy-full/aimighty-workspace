@@ -1,5 +1,6 @@
 import { db, ready } from "./db";
 import { creditsApply } from "./credits";
+import { jobLineNow } from "./shotCap";
 import { requireTenant } from "./tenant";
 import { engineEnabled } from "./engineGate";
 import { isPersonApprover } from "./workbench/plan-approval";
@@ -175,6 +176,10 @@ export async function admitHindiVersion(input: Record<string, unknown>, got: Adm
   const unit = creditsApply(requireTenant()) ? "cr" : "usd";
   const credits = all.reduce((n, s) => n + s.credits, 0);
   const price = all.reduce((n, s) => n + s.price, 0);
+  /* The plan is ONE job against the approval line (SOW §7A guardrail 4; owner, 16 Oct 2026): each step may be under it while the plan is over it. Judged on the total, by the
+     one rule every job is judged by: over the line a member is told an admin has to start it, an admin's own tap clears it, a machine can only prepare it. */
+  const over = jobLineNow({ credits, usd: unit === "usd" ? price : 0, key: "sarvam", actor: got, auto: options.run?.auto === true });
+  if (over) return admissionReply({ error: over, needsAdmin: true, lines: plans.length }, { status: 403 });
   const summary = {
     lines: plans.length, synced: plans.filter((p) => p.synced).length, voiceOnly: plans.filter((p) => !p.synced).length, lipSync: mode, upTo: true as const,
     steps: plans.map((p) => ({ order: p.order, shotId: p.line.shotId, translate: p.translate?.credits ?? 0, voice: p.voice.credits, lipSync: p.lipsync?.credits ?? 0, synced: p.synced })),
