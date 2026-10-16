@@ -1,12 +1,12 @@
 # The fallback project for the 31 Oct demo: how to make it on 27 Oct
 
-**Draft, 16 Oct 2026. Docs only.** `docs/plans/demo-31oct-plan.md` (section C): "Sun 27: the fallback sample project. Once the film is made, duplicate the board as 'Demo (fallback)' with every take, the Hindi cut, the MP4s and the PDFs already rendered and approved, so the demo can run without one live render. Plus offline copies of both MP4s and the PDF." (27 Oct 2026 is a Tuesday; the plan's "Sun" is a weekday slip, so use the date.) The owner's note: "Prepare a demo checklist and a fallback sample project with everything pre-rendered" (`docs/redesign-plan.md`, 16 Oct 12:15). The steps it protects are in `docs/plans/demo-checklist.md` section 6. **Anything not in the repo or the plan is marked UNKNOWN.**
+**Draft, 16 Oct 2026. Docs only.** `docs/plans/demo-31oct-plan.md` (section C): "Sun 27: the fallback sample project. Once the film is made, duplicate the board as 'Demo (fallback)' with every take, the Hindi cut, the MP4s and the PDFs already rendered and approved, so the demo can run without one live render. Plus offline copies of both MP4s and the PDF." (The re-dated plan now says Tue 27 Oct, the freeze day.) The owner's note: "Prepare a demo checklist and a fallback sample project with everything pre-rendered" (`docs/redesign-plan.md`, 16 Oct 12:15). The steps it protects are in `docs/plans/demo-checklist.md` section 6. **Anything not in the repo or the plan is marked UNKNOWN.**
 
 ## What the fallback must hold
 Every card on the path, finished and approved (✓): Pitch, Brief, Script (English and Hindi), Cast (characters and sheet), Storyboard, Shots (every take for the final cut, in Agent and Director views), the Edit cut in English and in Hindi, the exported MP4s (English and Hindi), and the Treatment/Pitch deck PDF. Nothing in it may be Making…, empty, ✕ or waiting.
 
 ## 1. Before duplicating: the film is done
-- The production board is final, the owner has accepted the cut, and feature freeze (28 Oct) is one day away: only blockers change after this.
+- The production board is final, the owner has accepted the cut, and 27 Oct is the feature freeze: only blockers change after this.
 - **Every take is saved.** While signed in as the owner, `/api/health` shows no at-risk takes (`videosAtRisk` 0; after #758 the health page counts "at risk" and "lost (older than 3 days)" separately). A take is "at risk" while its stored copy is missing; do not duplicate until the count is 0.
 - **The Producer's tally** (`test-scripts/demo-film.md`) and the workspace's usage agree; the cap has headroom (the $500 figure is a monthly engine-cost cap, with a warning at 80%).
 
@@ -44,12 +44,12 @@ Anything Ready but not ✓ is approved by a person (the Director), after the Rev
 2. Download: the English MP4, the Hindi MP4 (from the exports or Preview's Download), the Treatment/Pitch deck PDF, and, if the team made them, the key frames and the character sheet. File names follow the product's own naming; add a short README text naming which file is which.
 3. Copy the folder to a second device and a USB stick.
 4. **Verify every file locally:** it opens in a normal player or viewer with the network off; picture, sound and length are right; the PDF text is real text. Record each file's size and a SHA-256 in the README so a corrupted copy is detected (`sha256sum`).
-5. Take the screenshots the checklist's money step needs (credits, project spend, pricing page, review link) on 30 Oct and add them to the folder.
+5. Take the screenshots the checklist's money step needs (credits, project spend, pricing page, review link) on Fri 30 Oct and add them to the folder.
 6. The folder is the last rung: if the app and the network fail, the demo plays the MP4s and PDF from here.
 
 ## 6. Keep it true until the demo
 - After 27 Oct nothing in "Demo (fallback)" changes except by the Director with a note on the test board; no re-rendering.
-- 29 and 30 Oct: open the fallback step by step on the demo machine and on the backup device; replay the offline folder.
+- Wed 28 to Fri 30 Oct (rehearsal): open the fallback step by step on the demo machine and on the backup device; replay the offline folder.
 - 31 Oct, one hour before: open "Demo (fallback)" once, play one take, then close it.
 
 ## UNKNOWN

@@ -4,7 +4,7 @@
 
 **The demo story:** one 30 s ad, brief to final film, in English and Hindi, in the new design on the house workspace: Home → new project → the board in Agent and Director (Pitch, Brief, Script, Cast, Storyboard, Shots) → the lip-synced Hindi version → export the MP4 and the Treatment/Pitch deck PDF. Also on the path: pricing page, credits, project spend and client review links in the new design; Stripe test-mode checkout only if the owner's Stripe account allows it.
 
-**Dates** (the plan's weekday labels disagree with the calendar: 24 Oct 2026 is a Saturday, 27 Oct a Tuesday, 31 Oct a Saturday; this page uses the dates). 24 Oct engines live and the team makes the film (24 to 27 Oct); 27 Oct the fallback project is made; 28 Oct feature freeze; 29 to 30 Oct rehearsal and fixes; 31 Oct the demo.
+**Dates** (as re-dated in `docs/plans/demo-31oct-plan.md` after the owner's 12:20 answers): Fri 23 Oct the full path is live on the house workspace; Sat 24 to Mon 26 Oct the team makes the film (the Hindi test clip first on Sat 24 morning); **Tue 27 Oct feature freeze, fixes only after it, and the fallback project is made**; Wed 28 to Fri 30 Oct rehearsal and fixes; Sat 31 Oct the demo.
 
 ## 1. The machine and the browser (owner fills in)
 
@@ -14,7 +14,7 @@
 | Display | Tested sizes are 1280×800, 1440×900, 1728×1117, 1920×1080 and 2560×1440 (owner's 22:30 rule; the D-6 demo test runs at 1440 and 1920). Pick one and rehearse on it. Above 1440 the board canvas scales up; the bars stay normal size | UNKNOWN which display or projector and its resolution |
 | Browser | A current desktop browser, one profile, extensions off, zoom 100%, signed in a day early. The renders happen on our servers, not in the browser | UNKNOWN which browser (the repo's tests run Chromium) |
 | Files | A local folder with the offline MP4s and PDF (`demo-fallback.md` section 5) and a player that opens them without the network | to be made on 27 Oct |
-| Screen | Mirror or extend decided at the venue; a test run on the actual screen on 30 Oct | UNKNOWN venue |
+| Screen | Mirror or extend decided at the venue; a test run on the actual screen on Fri 30 Oct | UNKNOWN venue |
 
 ## 2. Account and workspace
 
@@ -45,7 +45,7 @@ An engine is on only for the house workspace and any workspace listed in the sit
 
 **Not on the demo path (do not rely on them):** Runway, MediaConvert, Topaz direct, the Cloud Vision label check, Gemini 3.x, DNxHR, the "Approve at N cr" screen, cutdowns and the zip.
 
-Switch check on 28 Oct and 30 Oct: open each step below once on the real workspace and see its engine answer (a price on the button, no "not set up" message).
+Switch check on Wed 28 Oct (the first rehearsal day) and Fri 30 Oct: open each step below once on the real workspace and see its engine answer (a price on the button, no "not set up" message).
 
 ## 4. Network
 

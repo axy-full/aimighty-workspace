@@ -1,8 +1,8 @@
 # Demo film script: the team's plan for 24 to 27 Oct (for the Aimighty team)
 
-**Draft, 16 Oct 2026. Nothing here is live yet.** This applies once the owner has deployed the engines and the new-design screens and tells you the path is complete (`docs/plans/demo-31oct-plan.md`: engines live on the house workspace by 24 Oct, the team makes the film 24 to 27 Oct, feature freeze 28 Oct). You work on particl.si, in the house workspace, signed in through the owner's invite link. Basis: `docs/plans/demo-31oct-plan.md`, `docs/plans/demo-checklist.md` and the Slice 2 and Slice 3 test scripts. **Anything not decided in those is marked UNKNOWN or `[TO DECIDE]`.**
+**Draft, 16 Oct 2026. Nothing here is live yet.** This applies once the owner has deployed the engines and the new-design screens and tells you the path is complete (`docs/plans/demo-31oct-plan.md`: engines live on the house workspace by 24 Oct, the full path is live Fri 23 Oct, the team makes the film Sat 24 to Mon 26 Oct, **feature freeze Tue 27 Oct**). You work on particl.si, in the house workspace, signed in through the owner's invite link. Basis: `docs/plans/demo-31oct-plan.md`, `docs/plans/demo-checklist.md` and the Slice 2 and Slice 3 test scripts. **Anything not decided in those is marked UNKNOWN or `[TO DECIDE]`.**
 
-**The goal:** one 30 s ad, brief to final film, in English and Hindi, with a lip-synced Hindi version, exported as MP4, plus the Treatment/Pitch deck as a PDF. Dates: 24 Oct is a Saturday and 27 Oct a Tuesday (the plan's weekday labels differ; use the dates).
+**The goal:** one 30 s ad, brief to final film, in English and Hindi, with a lip-synced Hindi version, exported as MP4, plus the Treatment/Pitch deck as a PDF. Dates: Fri 23 Oct the full path is live; Sat 24 to Mon 26 Oct the team makes the film; **Tue 27 Oct is the feature freeze and the fallback day**; Wed 28 to Fri 30 Oct rehearsal; Sat 31 Oct the demo.
 
 ## Read this first
 - **Every paid step spends real credits from the house workspace, up to the $500 monthly cap.** This is the first paid use of the new engines. The normal per-step approval in the UI is the approval, and only a person gives it. Nobody retries a paid step to "see if it works now" without saying so on the board.
@@ -60,7 +60,7 @@ Sample prices from the rate card (samples, not quotes): Seedance 2.5 5 s 1080p 4
 15. Export MP4 (English and Hindi): Free; Queue, Rendering, Saving, Ready (about three minutes for a 30 s 1080p export when nothing is ahead, from the 15 Oct measurement; report anything over five). The Treatment/Pitch deck PDF from the board.
 16. Review links: make one client review link from the cut and open it signed out.
 
-**Tue 27 Oct: finish, then the fallback**
+**Tue 27 Oct (freeze day): finish, then the fallback**
 17. Fixes only for what blocks the demo. Everything on the path ✓ approved.
 18. Make the fallback project and the offline copies (`docs/plans/demo-fallback.md`). Reviewer plays every file.
 19. The Producer posts the final tally and the cap position on the test board and to the owner.
@@ -72,7 +72,7 @@ Sample prices from the rate card (samples, not quotes): Seedance 2.5 5 s 1080p 4
 - Nothing is charged that was not approved; every charge is on the tally.
 
 ## How to report
-On **the test board: https://claude.ai/artifact/RwiYcD2sVpLiLw7kGyt4wC**. One card per problem; for a blocker also tell the Director at once. Never paste a password, a key or an invite link. Feature freeze is 28 Oct: after it, fixes only, so file blockers by 27 Oct.
+On **the test board: https://claude.ai/artifact/RwiYcD2sVpLiLw7kGyt4wC**. One card per problem; for a blocker also tell the Director at once. Never paste a password, a key or an invite link. Feature freeze is **Tue 27 Oct**: after it, fixes only, so file blockers by Mon 26 Oct.
 
 ## UNKNOWN or to decide
 The brief, the shots and the Hindi lines; the team names; whether a real person is cast; which bake-offs the owner wants run (a and b); the per-day credit budget; whether the cap warning appears in the new design.
