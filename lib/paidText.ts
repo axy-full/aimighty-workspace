@@ -1,5 +1,5 @@
 import { directTextCostUsd, isDirectText, textEngine, textKeyName, textVendor } from './openai-direct';
-import { noAnswerOutcome } from './providerOutcome';
+import { noAnswerOutcome, silentOutcome, type ProviderOutcome } from './providerOutcome';
 import { TextNotSentError, textRun } from './textDirect';
 import { engineMock } from './mock';
 import { creditsApply } from "./credits";
@@ -211,6 +211,12 @@ export function requestMaxCredits(value: unknown, required = false): number | un
   return value;
 }
 
+/** A settled text job; a held one (`holdSettlement`) also carries the two ways to end it. */
+export type PaidTextResult = {
+  id: string; text: string; costUsd: number; engine: string; credits: number;
+  finish?: () => Promise<PaidTextResult>;
+  abandon?: (why: string) => Promise<PaidTextError>;
+};
 /** One bounded submission. No hidden model repair, provider failover, or transport retry. */
 export async function runPaidText(
   input: {
@@ -238,11 +244,21 @@ export async function runPaidText(
     /** See QuotedTextInput. */
     quick?: boolean;
     /**
-     * A provider that never answered (the call was cut off at the deadline or the connection broke, with no reply of any kind) settles as failed at
-     * zero: nothing is billed, the reservation is released and the message says so. Without it such a call stays uncertain and bills its estimate until
-     * the cron's pass returns it (the default, for every other text job). A reply of any kind, an error status included, is not "no answer".
+     * The prompt enhancer's rule (the owner, 16 Oct 2026): whatever goes wrong, the workspace is not billed. A provider that never answered (cut off at
+     * the deadline, the connection broke, the caller cancelled), one that answered with an error status or an unreadable reply, and an answer the caller
+     * cannot use all settle as failed at zero: the reservation is released, the ledger line carries a provider outcome (billing unknown, for the platform
+     * admin desk to reconcile with the provider's invoice) and the error says "Nothing billed". Without it (every other text job) a cut-off call or a 5xx
+     * stays uncertain and bills its estimate until the cron's pass returns it.
      */
-    unansweredIsFree?: boolean;
+    freeOnFailure?: boolean;
+    /** The caller gave up (a person pressed Cancel): the provider call is dropped, and with `freeOnFailure` nothing is billed. */
+    signal?: AbortSignal;
+    /**
+     * Settle only when the caller says so. A good answer is returned with `finish` (charge it, as a plain success) and `abandon` (free: the caller could
+     * not deliver it, e.g. a stream cut off midway). Until one is called the job stays `running` with its reservation held (the cron returns it if neither
+     * ever is). The prompt enhancer streams its answer to the box and settles when the last word is out.
+     */
+    holdSettlement?: boolean;
     /** Chat messages already keep their own cost row. Failed calls still remain in paid_text_jobs and meter_events. */
     recordSpend?: boolean;
   },
@@ -259,7 +275,7 @@ export async function runPaidText(
      */
     accept?: (text: string) => { ok: true } | { ok: false; reason: string };
   } = {},
-) {
+): Promise<PaidTextResult> {
 return await withRecoveryActivity('paid-text', async () => {
 
   /* The sample workspace spends nothing (lib/demo/spend-guard.server.ts): refused before a job row, a reservation or a call. */
@@ -312,6 +328,17 @@ return await withRecoveryActivity('paid-text', async () => {
      (reconcilePaidTextJobs) is never overwritten or charged again by a request that answers late. */
   const settle = async (sql: string, args: (string | number | null)[]) =>
     (await db().execute({ sql: `${sql} AND status IN ('queued','running')`, args })).rowsAffected > 0;
+  /* The enhancer's free failure (`freeOnFailure`): failed at zero, the reservation released, and the ledger line says what is known: billing unknown. Only a
+     job this step settled is zeroed and metered; one the cron's pass already settled is left as it did. */
+  const writer = textVendor(input.model);
+  const freeFailure = async (outcome: ProviderOutcome, message: string, status = 502): Promise<PaidTextError> => {
+    const moved = await settle(`UPDATE paid_text_jobs SET status='failed',cost_usd=0,updated_at=? WHERE id=?`, [now(), id]).catch(() => false);
+    if (moved) {
+      await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=0 WHERE id=?`, args: [id] }).catch(() => {});
+      await meter({ ...event, status: "failed", engineCostUsd: 0, providerOutcome: outcome });
+    }
+    return new PaidTextError(message, status, { nothingBilled: true });
+  };
   try {
     if (input.recordSpend !== false)
       await db().execute({
@@ -328,6 +355,7 @@ return await withRecoveryActivity('paid-text', async () => {
       body: requestBody,
       auth: input.auth,
       mock: input.mock,
+      signal: input.signal,
       timeoutMs: input.deadline !== undefined
         ? Math.max(1_000, Math.min(input.timeoutMs ?? Infinity, input.deadline - Date.now()))
         : input.timeoutMs ?? 270_000,
@@ -337,6 +365,9 @@ return await withRecoveryActivity('paid-text', async () => {
       const rejected = [400, 401, 402, 403, 404, 422, 429].includes(
         response.status,
       );
+      if (input.freeOnFailure)
+        throw await freeFailure(silentOutcome(writer, "run", rejected ? "rejected" : "provider_error", `The writer answered with HTTP ${response.status}. Not billed to the workspace; whether the provider billed the platform is unknown.`),
+          rejected ? `The text provider declined this request (${response.status}). No generation credits were charged.` : "The writer couldn't answer this time. Nothing billed.");
       const settled = await settle(`UPDATE paid_text_jobs SET status=?,cost_usd=?,updated_at=? WHERE id=?`,
         [rejected ? "failed" : "uncertain", rejected ? 0 : estimate, now(), id]);
       if (settled && rejected) {
@@ -367,6 +398,9 @@ return await withRecoveryActivity('paid-text', async () => {
     try {
       json = JSON.parse(response.text);
     } catch {
+      if (input.freeOnFailure)
+        throw await freeFailure(silentOutcome(writer, "run", "unreadable", "The writer's reply could not be read. Not billed to the workspace; whether the provider billed the platform is unknown."),
+          "The writer's reply couldn't be read. Nothing billed.");
       throw new PaidTextError(
         `The text provider returned an unreadable result. It will not be sent again, and ${afterwards}.`,
         502,
@@ -402,28 +436,38 @@ return await withRecoveryActivity('paid-text', async () => {
       /* Paid to the provider, refused by the caller: saved, settled at zero for the workspace. */
       if (await settle(`UPDATE paid_text_jobs SET status='refused',cost_usd=?,response_json=?,updated_at=? WHERE id=?`, [cost, response.text, now(), id])) {
         await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`, args: [cost, id] });
-        await meter({ ...event, status: "failed", engineCostUsd: 0 });
+        await meter({ ...event, status: "failed", engineCostUsd: 0, ...(input.freeOnFailure ? { providerOutcome: silentOutcome(writer, "run", "unusable", "The writer's answer was not a usable prompt. Not billed to the workspace; the provider's own bill for it is unknown.") } : {}) });
       }
       throw new PaidTextError(`${verdict.reason} Nothing was charged.`, 502, { nothingBilled: true });
     }
-    if (!(await settle(`UPDATE paid_text_jobs SET status='succeeded',cost_usd=?,response_json=?,updated_at=? WHERE id=?`, [cost, response.text, now(), id])))
-      /* Answered after the cron's pass refunded it: not charged again, and not delivered as if it had been paid for. */
-      throw new PaidTextError(`The text provider answered too late; this request had already ended. It will not be sent again, and ${afterwards}.`);
-    await db().execute({
-      sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`,
-      args: [cost, id],
-    });
-    await meter({ ...event, status: "succeeded", engineCostUsd: cost });
-    return {
-      id,
-      text: content as string,
-      costUsd: cost,
-      /* The ledger this job was reserved and settled on (its meter engine), for the caller's own rows. */
-      engine: event.engine,
-      /* What the ledger billed, for the screen that shows it: credits are
-         what a workspace on credits sees, never the vendor's dollars. */
-      credits: await meteredCredits(id, paidByPlatform(textKeyName(input.model)) ? billCredits(cost, "text") : 0),
+    const finish = async (): Promise<PaidTextResult> => {
+      if (!(await settle(`UPDATE paid_text_jobs SET status='succeeded',cost_usd=?,response_json=?,updated_at=? WHERE id=?`, [cost, response.text, now(), id])))
+        /* Answered after the cron's pass refunded it: not charged again, and not delivered as if it had been paid for. */
+        throw new PaidTextError(`The text provider answered too late; this request had already ended. It will not be sent again, and ${afterwards}.`);
+      await db().execute({
+        sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`,
+        args: [cost, id],
+      });
+      await meter({ ...event, status: "succeeded", engineCostUsd: cost });
+      return {
+        id,
+        text: content as string,
+        costUsd: cost,
+        /* The ledger this job was reserved and settled on (its meter engine), for the caller's own rows. */
+        engine: event.engine,
+        /* What the ledger billed, for the screen that shows it: credits are
+           what a workspace on credits sees, never the vendor's dollars. */
+        credits: await meteredCredits(id, paidByPlatform(textKeyName(input.model)) ? billCredits(cost, "text") : 0),
+      };
     };
+    if (!input.holdSettlement) return await finish();
+    /* Held: the answer is in hand and paid to the provider, but the workspace is charged only when the caller has delivered it (`finish`). A caller that
+       could not (a cancelled press, a stream cut off midway) abandons it: failed at zero, "billing unknown" on the platform's own line. */
+    const abandon = async (why: string) => {
+      const error = await freeFailure(silentOutcome(writer, "run", "not_delivered", `${why} Not billed to the workspace; the provider's own bill for the answer is the platform's.`), "The answer wasn't delivered. Nothing billed.", 499);
+      return error;
+    };
+    return { id, text: content as string, costUsd: cost, engine: event.engine, credits: paidByPlatform(textKeyName(input.model)) ? billCredits(cost, "text") : 0, finish, abandon };
   } catch (error) {
     const record = (
       await db()
@@ -433,6 +477,9 @@ return await withRecoveryActivity('paid-text', async () => {
         })
         .catch(() => ({ rows: [] }))
     ).rows[0];
+    /* The enhancer is never billed for a failure of any kind: a refusal of its own that left the job running (a usage figure it could not price) is free too. */
+    if (error instanceof PaidTextError && input.freeOnFailure && record?.status === "running")
+      throw await freeFailure(silentOutcome(writer, "run", "failed", `${error.message.slice(0, 160)} Not billed to the workspace; the provider's own bill is unknown.`), "The writer couldn't answer this time. Nothing billed.", error.status);
     if (error instanceof PaidTextError && record?.status === "running") {
       if (await settle(`UPDATE paid_text_jobs SET status='uncertain',cost_usd=?,updated_at=? WHERE id=?`, [estimate, now(), id]).catch(() => false)) {
         await meter({ ...event, status: "failed", engineCostUsd: estimate });
@@ -443,16 +490,11 @@ return await withRecoveryActivity('paid-text', async () => {
     if (!(error instanceof PaidTextError) && record?.status === "refunded")
       throw new PaidTextError(`The text request was interrupted after submission. It will not be sent again, and ${afterwards}.`);
     /* No reply at all, and the caller says that costs nothing (the prompt enhancer): failed at zero, the reservation released, "Nothing billed". */
-    if (!(error instanceof PaidTextError) && input.unansweredIsFree && submitted && !answered && record?.status === "running") {
-      const moved = await settle(`UPDATE paid_text_jobs SET status='failed',cost_usd=0,updated_at=? WHERE id=?`, [now(), id]).catch(() => false);
-      /* Only a job this step settled is zeroed and metered: one the cron's pass already settled is left as it did. The ledger line says what is known: the
-         provider never answered, so whether it billed the platform is unknown, for the platform admin desk to reconcile against the provider's invoice. */
-      if (moved) {
-        await db().execute({ sql: `UPDATE atomik_spend SET cost_usd=0 WHERE id=?`, args: [id] }).catch(() => {});
-        await meter({ ...event, status: "failed", engineCostUsd: 0,
-          providerOutcome: noAnswerOutcome(textVendor(input.model), "run", "The writer did not answer inside the enhancer's deadline. Not billed to the workspace; whether the provider billed the platform is unknown.") });
-      }
-      throw new PaidTextError("The writer didn't answer in time. Nothing billed.", 504, { nothingBilled: true });
+    if (!(error instanceof PaidTextError) && input.freeOnFailure && submitted && !answered && record?.status === "running") {
+      /* The ledger line says what is known: the provider never answered (or the person cancelled), so whether it billed the platform is unknown, for the platform admin desk to reconcile against the provider's invoice. */
+      const cancelled = input.signal?.aborted === true;
+      throw await freeFailure(noAnswerOutcome(writer, "run", cancelled ? "The person cancelled before the writer answered. Not billed to the workspace; whether the provider billed the platform is unknown." : "The writer did not answer inside the enhancer's deadline. Not billed to the workspace; whether the provider billed the platform is unknown."),
+        cancelled ? "Cancelled. Nothing billed." : "The writer didn't answer in time. Nothing billed.", cancelled ? 499 : 504);
     }
     if (!(error instanceof PaidTextError)) {
       const completed = record?.status === "succeeded";

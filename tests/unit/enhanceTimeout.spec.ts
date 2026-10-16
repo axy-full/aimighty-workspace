@@ -9,10 +9,10 @@ import type { AdmissionActor } from "../../lib/admissionTypes";
 /**
  * Enhance ends within 8 s on any host (the owner's note of 16 Oct 2026; the browser waits 10 s so an answer at the deadline still arrives, lib/shell/enhance-press.ts): the
  * deadline runs from the route's entry, the provider gets what is left of it, and with under 3 s left the press is refused before anything is
- * reserved. A writer that gives NO answer by then is settled once as failed at zero ("Nothing billed", released, 504): the one change to the money
- * rule, for the enhancer alone (`unansweredIsFree`, lib/paidText.ts). Every other text job keeps the shared rule (a cut-off call is `uncertain`, its
- * estimate billed until the cron's pass returns it), and so does an enhancement the provider answered with an error status. The same press sent again
- * never calls the provider a second time.
+ * reserved. Whatever goes wrong for the enhancer (no answer by then, an error status, an unreadable or unusable reply, a cancelled press) is settled once as
+ * failed at zero ("Nothing billed", released) with a billing-unknown outcome on its ledger line: the owner's rule of 16 Oct 2026, for the enhancer alone
+ * (`freeOnFailure`, lib/paidText.ts). Every other text job keeps the shared rule (a cut-off call or a 5xx is `uncertain`, its estimate billed until the
+ * cron's pass returns it). The same press sent again never calls the provider a second time.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "enhance-timeout-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -42,7 +42,7 @@ function load<T>(file: string, overrides: Record<string, unknown>): T {
   return target.exports as T;
 }
 
-type Submit = (request: { timeoutMs?: number; body?: string }) => Promise<{ ok: boolean; status: number; text: string }>;
+type Submit = (request: { timeoutMs?: number; body?: string; signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; text: string }>;
 type Handler = (req: Request) => Promise<Response>;
 /** Time moved on by a slow catalogue read: Date.now runs this far ahead while a test lasts. */
 let skew = 0;
@@ -104,7 +104,7 @@ function press(key: string): Request {
 test("the route's whole answer is budgeted at 8 s from entry, with the provider's unanswered call free", () => {
   const route = readFileSync("app/api/prompt/enhance/route.ts", "utf8");
   expect(route).toContain("const deadline = Date.now() + ENHANCE_DEADLINE_MS;");
-  expect(route).toMatch(/runPaidText\(\{ \.\.\.input, maxCredits: [^}]*deadline, minProviderMs: ENHANCE_MIN_PROVIDER_MS, unansweredIsFree: true \}, \{ model,/);
+  expect(route).toMatch(/runPaidText\(\{ \.\.\.input, maxCredits: [^}]*deadline, minProviderMs: ENHANCE_MIN_PROVIDER_MS, freeOnFailure: true, signal: req\.signal, holdSettlement: stream \}, \{ model,/);
   expect(readFileSync("lib/paidText.ts", "utf8")).toContain("export const ENHANCE_DEADLINE_MS = 8_000;");
   /* Under the route's own limit, so the timeout answers before the host cuts the request. */
   expect(Number(/export const maxDuration = (\d+)/.exec(route)?.[1])).toBeGreaterThan(8);
@@ -168,28 +168,43 @@ test("the shared rule is unchanged for any other text job: a cut-off call is unc
   });
 });
 
-test("an error status from the provider is an answer: the enhancer keeps the shared rule for it (a 5xx is uncertain, a refusal is free)", async () => {
-  await inWorkspace("ws_enhance_5xx", async () => {
-    const down: Submit = async () => ({ ok: false, status: 503, text: "" });
-    const out = await enhance(down)(press("enhance-5xx"));
-    expect(out.status).toBe(502);
-    const answer = await out.json();
-    expect(answer.error).toMatch(/^The text provider returned an uncertain result\./);
-    expect(answer.heldCredits, "the held estimate is said in credits").toBe(1);
-    expect(answer.nothingBilled).toBeUndefined();
-    const settled = await traces("ws_enhance_5xx");
+test("every failure of the enhancer is free: an error status, a refusal, an unreadable reply; each leaves a billing-unknown outcome and the whole balance", async () => {
+  const cases: [string, Submit, number, RegExp][] = [
+    ["5xx", async () => ({ ok: false, status: 503, text: "" }), 502, /^The writer couldn't answer this time\. Nothing billed\.$/],
+    ["declined", async () => ({ ok: false, status: 400, text: "" }), 502, /^The text provider declined this request \(400\)\. No generation credits were charged\.$/],
+    ["unreadable", async () => ({ ok: true, status: 200, text: "<html>gateway error</html>" }), 502, /^The writer's reply couldn't be read\. Nothing billed\.$/],
+  ];
+  for (const [name, submit, status, message] of cases) {
+    const ws = `ws_enhance_free_${name}`;
+    await inWorkspace(ws, async () => {
+      const out = await enhance(submit)(press(`enhance-free-${name}`));
+      const answer = await out.json();
+      expect(out.status, name).toBe(status);
+      expect(answer.error, name).toMatch(message);
+      expect(answer.nothingBilled, name).toBe(true);
+      expect(answer.heldCredits, name).toBeUndefined();
+      const settled = await traces(ws);
+      expect(settled.jobs[0].status, name).toBe("failed");
+      expect(Number(settled.jobs[0].cost_usd), name).toBe(0);
+      expect(Number(settled.meters[0].billed_credits), name).toBe(0);
+      expect(Number(settled.meters[0].engine_cost_usd), name).toBe(0);
+      expect(await balanceOf(ws), name).toBe(1000);
+      const { platformDb } = await import("../../lib/platform");
+      const line = (await platformDb().execute({ sql: "SELECT provider_outcome FROM meter_events WHERE workspace_id=?", args: [ws] })).rows[0];
+      expect(JSON.parse(String(line.provider_outcome)), name).toMatchObject({ stage: "run", billing: { state: "unknown" } });
+    });
+  }
+});
+
+test("every other text job still bills an error status as uncertain (the shared rule)", async () => {
+  await inWorkspace("ws_text_5xx", async () => {
+    const { runPaidText } = await import("../../lib/paidText");
+    const error = await runPaidText({ id: "text-5xx", model: WRITER, messages: [{ role: "user", content: "a tree in rain" }], maxTokens: 400, kind: "plan", mock: "prompt", createdBy: "owner" }, { model: MODEL as never, submit: async () => ({ ok: false, status: 503, text: "" }) }).then(() => null, (e: unknown) => e as Error & { billing?: unknown });
+    expect(error?.message).toMatch(/^The text provider returned an uncertain result\./);
+    expect(error?.billing).toEqual({ heldCredits: 1 });
+    const settled = await traces("ws_text_5xx");
     expect(settled.jobs[0].status).toBe("uncertain");
     expect(Number(settled.meters[0].billed_credits)).toBe(1);
-  });
-  await inWorkspace("ws_enhance_refused", async () => {
-    const declined: Submit = async () => ({ ok: false, status: 400, text: "" });
-    const out = await enhance(declined)(press("enhance-refused"));
-    const declined400 = await out.json();
-    expect(declined400.error).toBe("The text provider declined this request (400). No generation credits were charged.");
-    expect(declined400.nothingBilled).toBe(true);
-    const settled = await traces("ws_enhance_refused");
-    expect(settled.jobs[0].status).toBe("failed");
-    expect(Number(settled.meters[0].billed_credits)).toBe(0);
   });
 });
 
