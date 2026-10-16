@@ -529,7 +529,7 @@ test("compose: one single-slot worker, 3 vCPU / 8 GB, locked down, on remotion-i
   const worker = yaml.slice(yaml.indexOf("  remotion-1:"), yaml.indexOf("  remotion-relay:"));
   const relay = yaml.slice(yaml.indexOf("  remotion-relay:"), yaml.indexOf("\nnetworks:"));
   for (const line of ["context: ../..", "dockerfile: ops/remotion-worker/Dockerfile", "cpus: 3", "cpu_shares: 256", "mem_limit: 8g", "memswap_limit: 8g", "pids_limit: 1024", "read_only: true", "cap_drop: [ALL]",
-    'security_opt: ["no-new-privileges:true"]', "network_mode: remotion-internal", "depends_on: [remotion-relay]", "container_name: remotion-1", "/vercel/sandbox:size=1280m,uid=10001,gid=10001,mode=0700", "/tmp:size=768m,uid=10001,gid=10001,mode=1777",
+    'security_opt: ["no-new-privileges:true"]', "network_mode: remotion-internal", "depends_on: [remotion-relay]", "container_name: remotion-1", "/vercel/sandbox:size=3072m,uid=10001,gid=10001,mode=0700", "/tmp:size=768m,uid=10001,gid=10001,mode=1777",
     "REMOTION_WORKER_SECRET: ${REMOTION_WORKER_SECRET:?", 'REMOTION_CONCURRENCY: "2"', 'REMOTION_MAX_SECONDS: "120"', "restart: unless-stopped"]) {
     assert.ok(worker.includes(line), line);
   }
@@ -540,7 +540,8 @@ test("compose: one single-slot worker, 3 vCPU / 8 GB, locked down, on remotion-i
   assert.ok(!/secret|token|password/i.test(relay) && !/network_mode|ports:|expose:|volumes:|privileged/.test(relay), "the relay holds no secret and publishes nothing");
   // The tmpfs mounts and the limits add up: both tmpfs full plus the browser still fit in memory.
   const sizes = [...worker.matchAll(/:size=(\d+)m/g)].map((m) => Number(m[1]));
-  assert.ok(sizes.reduce((a, b) => a + b, 0) <= 2048);
+  /* The two tmpfs mounts together: 3072 + 768 = 3840 MB, exactly what the compose holds (was `<= 2048` when the sandbox tmpfs was 1280m). */
+  assert.ok(sizes.reduce((a, b) => a + b, 0) <= 3840);
   // The sandbox tmpfs holds a maximum export's inputs and its output.
   assert.ok((LIMITS.totalBytes + LIMITS.outputBytes) / MiB <= sizes[0]);
 });

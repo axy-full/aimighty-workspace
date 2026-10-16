@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useTransition, type CSSProperties, type ReactNode } from "react";
-import { TRAIL } from "@/components/ui/Mark";
+import { BrandLogo } from "@/components/ui/BrandLogo";
 import { HEADER_SEGMENT } from "@/lib/shell/ia";
 import { signInHrefFor } from "@/lib/session";
 import { FIND_HREF, HOME_HREF, STUDIO_HREF, SHOTS_HREF, faultMessage, faultPrimary, faultRef, faultReport, isStaleBuild, segmentHref } from "@/lib/shell/fault";
@@ -35,10 +35,7 @@ export function StaticHeader({ member = true }: { member?: boolean }) {
   return (
     <header ref={header} className="gx-header" data-row="header" data-static="true" data-member={member}>
       <a className="gx-brand" href={member ? STUDIO_HREF : HOME_HREF} aria-label="particl home">
-        <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
-          {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
-        </svg>
-        <span className="gx-brand-name">particl</span>
+        <BrandLogo />
       </a>
       {member ? (<>
         <nav className="gx-seg" aria-label="Suites">

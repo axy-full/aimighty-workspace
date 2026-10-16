@@ -24,7 +24,7 @@ test("the export command never passes a licence key, and nothing in the code can
     const renderer = createRealRenderer({ loadModule: async () => ({ ensureBrowser: record("ensureBrowser"), selectComposition: record("selectComposition"), renderMedia: record("renderMedia"), renderStill: record("renderStill") }) });
     await renderer.prepare();
     const composition = await renderer.selectComposition({ serveUrl: "/serve", id: "title-card", inputProps: {} });
-    await renderer.renderVideo({ serveUrl: "/serve", composition, inputProps: {}, outputLocation: "/out/export.mp4", concurrency: 2 });
+    await renderer.renderVideo({ serveUrl: "/serve", composition, inputProps: {}, outputLocation: "/out/export.mp4", format: "h264", concurrency: 2 });
     await renderer.renderStill({ serveUrl: "/serve", composition, inputProps: {}, frame: 3, outputLocation: "/out/still-3.png" });
   } finally { globalThis.fetch = realFetch; }
   expect(calls.map((c) => c.fn)).toEqual(["ensureBrowser", "selectComposition", "renderMedia", "renderStill"]);
