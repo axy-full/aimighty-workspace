@@ -30,6 +30,8 @@ export const TYPE_LABELS: Record<ComposerType, string> = { image: "Image", video
 
 export type ComposerModel = {
   id: string;
+  /** A Pro pick (lib/proPick.ts): its place in the owner's list, from 1. Set by the engines route, not by the design. */
+  pro?: number;
   /** Display name, from the catalogue. */
   label: string;
   type: ComposerType;
@@ -308,6 +310,8 @@ export type EngineRow = {
   draft?: boolean;
   /** Cinema Studio's Sound switch is offered here: its sound is priced, or this is the house workspace (lib/cinemaSoundPricing.ts). */
   sound?: boolean;
+  /** A Pro pick (lib/proPick.ts): its place in the owner's list, from 1. */
+  pro?: number;
 };
 
 /**
@@ -337,6 +341,7 @@ export function workspaceModels(engines: readonly EngineRow[], audio: NodeAudioS
       ...(engine.rate ? { rate: engine.rate } : {}),
       ...(engine.untestedResolutions?.length ? { untested: engine.untestedResolutions } : {}),
       ...(engine.draft && engine.kind === "video" ? { draft: true as const } : {}),
+      ...(Number.isInteger(engine.pro) && engine.pro! > 0 ? { pro: engine.pro } : {}),
       ...(engine.sound && engine.kind === "video" ? { sound: true as const } : {}),
     }));
   if (audio?.configured) {

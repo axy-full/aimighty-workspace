@@ -32,6 +32,8 @@ function baselineCost(model: ModelDef) {
 }
 /** The gated models open for this workspace (lib/modelGate.ts), for the composer's list to add beside the registry's. */
 export { openGatedModels } from '../modelGate';
+/** The Pro pick for the composer's list (lib/proPick.server.ts). */
+export { markPro, resolveProPick } from '../proPick.server';
 export function workbenchGenerationModels(models: ModelDef[] = MODELS, extra: readonly ModelDef[] = []) {
   /* Soul Standard / Soul 2 / Soul Cinema are live-quoted and rendered from Studio › Cast; the workbench lists only the gated Soul Character engine. */
   return [...models, ...extra].filter(model => (model.soulIdentity ? !isSoulRenderModel(model.id) && soulCharacterGenerationEnabled() : model.cinemaStudio ? cinemaStudioEnabled() : model.marketing || !model.hidden) && !model.stillTask && (model.supportsTasks ?? ['generate']).includes('generate'))

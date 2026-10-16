@@ -1,6 +1,6 @@
 import { withTenant, requireUser } from '@/lib/auth';
 import { modelConfigured } from '@/lib/providers';
-import { MediaQuoteError, openGatedModels, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia, quoteWorkbenchMediaAtCost, rendersSound, workbenchRate, workbenchUse, workbenchAudioRates, NO_REFERENCES, type RateAt, type ReferencePrices } from '@/lib/workbench/media-quote';
+import { MediaQuoteError, markPro, openGatedModels, resolveProPick, workbenchGenerationModels, referencePrices, quoteWorkbenchMedia, quoteWorkbenchMediaAtCost, rendersSound, workbenchRate, workbenchUse, workbenchAudioRates, NO_REFERENCES, type RateAt, type ReferencePrices } from '@/lib/workbench/media-quote';
 import { requireReadySoulIdentity } from '@/lib/soulIdentities';
 import { requireTenant } from '@/lib/tenant';
 import { cinemaSoundOffered } from '@/lib/cinemaSoundPricing';
@@ -12,6 +12,8 @@ export const GET = withTenant(async (req: Request) => {
   const q = new URL(req.url).searchParams;
   /* A model with its own kill switch (Kling 4.0) is listed only where the switch is open for this workspace (lib/modelGate.ts). */
   const configured = workbenchGenerationModels(undefined, await openGatedModels()).filter(model => modelConfigured(model));
+  /* The Pro pick (lib/proPick.ts): the owner's four, as this workspace's composer can reach them; a model entry marks its row, and the list rides beside the models. */
+  const pro = await resolveProPick({ models: new Set(configured.map(model => model.id)) });
   /* Cinema Studio's Sound switch: offered once its sound is priced, and in the house workspace (lib/cinemaSoundPricing.ts). */
   const soundHere = cinemaSoundOffered(requireTenant());
   /* The house workspace is never billed in credits and sees every price at the engine's cost (lib/houseWorkspace.ts): its figures also carry the engine's dollars, the ones admission reserves. Credit workspaces never receive them. */
@@ -38,9 +40,9 @@ export const GET = withTenant(async (req: Request) => {
     const refs = Number(q.get('unresolvedVideoRefs') || 0) > 0 ? null
       : references.length || imageRefs ? await referencePrices(references, imageRefs).catch((error: unknown) => { if (error instanceof MediaQuoteError) return null; throw error; })
       : NO_REFERENCES;
-    return Response.json({ models: listed(at, refs), audio: workbenchAudioRates(Number(q.get('seconds') || 10)), credits: null }, { headers });
+    return Response.json({ models: markPro(listed(at, refs), pro), pro, audio: workbenchAudioRates(Number(q.get('seconds') || 10)), credits: null }, { headers });
   }
-  const models = listed({}, NO_REFERENCES);
+  const models = markPro(listed({}, NO_REFERENCES), pro);
   try {
     const model = configured.find(item => item.id === q.get('model'));
     if (!model) throw new MediaQuoteError('This generation engine is unavailable. Choose a configured engine.');
