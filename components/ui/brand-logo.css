@@ -1,0 +1,6 @@
+/* The brand's mark and wordmark at a header's size (components/ui/BrandLogo.tsx): each picture is cropped by its box to the trail and to the word. Tokens only. */
+.brand-logo { display: inline-flex; align-items: center; gap: var(--gx-sp-10, 10px); flex: none; }
+.brand-logo-mark { display: block; width: 36px; aspect-ratio: 132 / 62; overflow: hidden; flex: none; }
+.brand-logo-mark > img { display: block; width: 151.5%; height: auto; max-width: none; margin: -56% 0 0 -25.8%; }
+.brand-logo-word { display: block; width: 68px; aspect-ratio: 1188 / 395; overflow: hidden; flex: none; }
+.brand-logo-word > img { display: block; width: 100%; height: auto; margin-top: -7.58%; }
