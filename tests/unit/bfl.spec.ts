@@ -20,7 +20,7 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 test.beforeAll(async () => { await alignLedgerUnit(); });
-test.afterEach(() => { delete process.env.BFL_ENABLED; delete process.env.BFL_IDENTITY_ENABLED; delete process.env.REKOGNITION_ENABLED; delete process.env.BFL_BASE_URL; process.env.ENGINE_MOCK = "1"; });
+test.afterEach(() => { delete process.env.BFL_ENABLED; delete process.env.BFL_IDENTITY_ENABLED; delete process.env.BFL_BASE_URL; process.env.ENGINE_MOCK = "1"; });
 
 const tenant = (id: string, over: Partial<TenantWorkspace> = {}): TenantWorkspace => ({
   id, slug: id, name: id, legacy: id === "ws_legacy", dbUrl: `file:${path.join(dir, `${id}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: true,
@@ -52,18 +52,6 @@ async function image(label: string, width = 1024, height = 1024): Promise<{ id: 
   await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.png`, "image/png", "png", bytes.length, "x", width, height, `uploads/${id}.png`, Date.now(), "image"] });
   return { id, bytes };
 }
-async function consent(projectId: string, subjectKey: string): Promise<string> {
-  const { db } = await import("../../lib/db");
-  const { consentsReady } = await import("../../lib/security/consent");
-  await consentsReady();
-  const id = uid("consent");
-  await db().execute({
-    sql: `INSERT INTO identity_consents (id, project_id, subject_key, subject_label, person_name, covers_face, covers_voice, uses_json, other_use, until_at, recording_id, attested, recorded_by, recorded_at, revoked_at)
-          VALUES (?,?,?,?,?,1,0,?,'',?,?,1,'u_test',?,NULL)`,
-    args: [id, projectId, subjectKey, "", "Sample Person", JSON.stringify(["production", "ads"]), Date.now() + 86_400_000, "rec_1", Date.now()],
-  });
-  return id;
-}
 async function project(id: string) {
   const { db, ready } = await import("../../lib/db");
   await ready();
@@ -79,11 +67,9 @@ async function gen(id: string) {
   const r = (await db().execute({ sql: "SELECT status,stored_url,bytes,cost_usd,error,provider_outcome,json_extract(params,'$.bfl') AS bfl FROM generations WHERE id=?", args: [id] })).rows[0] as unknown as Record<string, unknown>;
   return { status: r.status, stored_url: r.stored_url, bytes: r.bytes, cost_usd: r.cost_usd, error: r.error, provider_outcome: r.provider_outcome, bfl: JSON.parse(String(r.bfl)) as import("../../lib/bflImage").BflParams };
 }
-const passing = (consentId: string) => async (_cast: string, face: Buffer) => ({ consentId, similarity: 99, matched: true as const, checkedAt: Date.now(), faceSha256: `sha_${face.length}` });
-type Seams = { consent?: ReturnType<typeof passing> };
-async function admit(input: Record<string, unknown>, seams: Seams = {}) {
+async function admit(input: Record<string, unknown>) {
   const { admitBfl } = await import("../../lib/bflImage");
-  return admitBfl(input, OWNER, options(), seams);
+  return admitBfl(input, OWNER, options());
 }
 const approved = { maxCredits: 100000 };
 
@@ -210,7 +196,7 @@ test("the endpoint is the EU one by default, never the global address; a base ad
   } finally { if (before === undefined) delete process.env.BFL_API_KEY; else process.env.BFL_API_KEY = before; }
 });
 
-test("off: with the switch off, or a workspace not on the list, there is no tool and nothing is metered; a listed customer is offered the still, and the edit only where its face gate can run", async () => {
+test("off: with the switch off, or a workspace not on the list, there is no tool and nothing is metered; a listed customer is offered both tools (no face check gates either)", async () => {
   const { bflTools } = await import("../../lib/bflImage");
   await asTenant(house(), async () => {
     const before = (await meterRows()).length;
@@ -218,8 +204,6 @@ test("off: with the switch off, or a workspace not on the list, there is no tool
     expect(await bflTools()).toEqual([]);
     expect(await admit({ tool: "image", prompt: "a tree", ...approved })).toMatchObject({ status: 404, body: { error: "There is no such tool here." } });
     process.env.BFL_ENABLED = "1";
-    expect((await bflTools()).map((t) => t.id)).toEqual(["flux2_image", "flux3_image"]);
-    process.env.REKOGNITION_ENABLED = "1";
     const on = await bflTools();
     expect(on.map((t) => t.id)).toEqual(["flux2_image", "flux3_image", "flux2_edit"]);
     expect(on.every((t) => t.provider === "bfl" && t.route === "/api/bfl")).toBe(true);
@@ -258,13 +242,13 @@ test("the quote, and every input refused in words before anything is reserved; a
       [{ tool: "image", prompt: "a", width: 32, height: 1024 }, /from 64/],
       [{ tool: "image", prompt: "a", width: 2560, height: 2560 }, /up to 4 megapixels/],
       [{ tool: "image", prompt: "a", model: "flux-2-flex", width: 2560, height: 2560 }, /up to 4 megapixels/],
-      [{ tool: "edit", prompt: "a", model: "flux-2-max", references: Array.from({ length: 9 }, (_, i) => ({ uploadId: `u${i}`, castMemberId: "c" })) }, /up to 8/],
+      [{ tool: "edit", prompt: "a", model: "flux-2-max", references: Array.from({ length: 9 }, (_, i) => ({ uploadId: `u${i}` })) }, /up to 8/],
       [{ tool: "image", prompt: "a", seed: -1 }, /seed/],
-      [{ tool: "image", prompt: "a", references: [{ uploadId: "x", castMemberId: "c" }] }, /takes no references/],
+      [{ tool: "image", prompt: "a", references: [{ uploadId: "x" }] }, /takes no references/],
       [{ tool: "edit", prompt: "a" }, /one to eight reference/],
-      [{ tool: "edit", prompt: "a", references: Array.from({ length: 9 }, (_, i) => ({ uploadId: `u${i}`, castMemberId: "c" })) }, /up to 8/],
-      [{ tool: "edit", prompt: "a", references: [{ uploadId: "../x", castMemberId: "c" }] }, /not valid/],
-      [{ tool: "edit", prompt: "a", references: [{ uploadId: "up_not_here", castMemberId: "c" }] }, /image uploads/],
+      [{ tool: "edit", prompt: "a", references: Array.from({ length: 9 }, (_, i) => ({ uploadId: `u${i}` })) }, /up to 8/],
+      [{ tool: "edit", prompt: "a", references: [{ uploadId: "../x" }] }, /not valid/],
+      [{ tool: "edit", prompt: "a", references: [{ uploadId: "up_not_here" }] }, /image uploads/],
     ];
     for (const [input, words] of refused) {
       const reply = await admit({ ...input, quoteOnly: true });
@@ -272,8 +256,7 @@ test("the quote, and every input refused in words before anything is reserved; a
       expect(String(reply.body.error), JSON.stringify(input)).toMatch(words);
     }
     const ref = await image("ref");
-    expect(await admit({ tool: "edit", prompt: "a", references: [{ uploadId: ref.id }], quoteOnly: true })).toMatchObject({ status: 400, body: { code: "bad-input" } });
-    const ok = await admit({ tool: "edit", prompt: "a", references: [{ uploadId: ref.id, castMemberId: "cast_a" }], quoteOnly: true });
+    const ok = await admit({ tool: "edit", prompt: "a", references: [{ uploadId: ref.id }], quoteOnly: true });
     expect(ok).toMatchObject({ status: 200, body: { tool: "edit", references: 1 } });
     /* 1 reference of 1024 x 1024: two megapixels of it, plus two of output. */
     expect(Number(ok.body.price)).toBeCloseTo(0.03 + 0.015 + 2 * 0.015, 6);
@@ -382,13 +365,12 @@ test("a failure bills nothing: an Error or a moderated job, a refusal before wor
   });
 });
 
-test("the shot cap is judged at the quote and the press, before any face is checked or row written: a member past it is refused 403 (needs an admin) with no take left, for a still and for an edit; an admin, no shot and a rule that is not 'cap' go through", async () => {
+test("the shot cap is judged at the quote and the press, before any row is written: a member past it is refused 403 (needs an admin) with no take left, for a still and for an edit; an admin, no shot and a rule that is not 'cap' go through", async () => {
   const { admitBfl } = await import("../../lib/bflImage");
   const { setSetting, invalidateSettings } = await import("../../lib/settings");
   const { db, ready } = await import("../../lib/db");
   const { runInTenant } = await import("../../lib/tenant");
   process.env.BFL_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
   const MEMBER: AdmissionActor = { user: { ...OWNER.user, id: "member_1", role: "member", owner: false } as AdmissionActor["user"] };
   await runInTenant(house(), async () => {
     await ready();
@@ -398,21 +380,18 @@ test("the shot cap is judged at the quote and the press, before any face is chec
       }
       invalidateSettings();
     };
-    const projectId = uid("prod"), cast = uid("cast"), shotId = uid("shot");
+    const projectId = uid("prod"), shotId = uid("shot");
     await project(projectId);
-    const consentId = await consent(projectId, cast);
     await db().execute({ sql: "INSERT INTO shots (id, project_id, code, title, created_at, updated_at) VALUES (?,?,?,?,0,0)", args: [shotId, projectId, "S01", "A shot"] });
     /* The shot already holds a take (a dollar of an image, ten credits), so even a one-credit line takes it past a cap of one. */
     await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,shot_id,cost_usd,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,0,0)", args: [uid("gen_prior"), "image", "gemini-3.1-flash-image", "A prior still", "{}", "succeeded", shotId, 1] });
     const ref = await image("cap_ref");
-    let faceCalls = 0;
-    const seams = { consent: async (...x: Parameters<ReturnType<typeof passing>>) => { faceCalls++; return passing(consentId)(...x); } };
     const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-    const still = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitBfl({ tool: "image", prompt: "a crane", shotId, ...approved, ...extra }, actor, options(), seams);
-    const edit = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitBfl({ tool: "edit", prompt: "swap", references: [{ uploadId: ref.id, castMemberId: cast }], projectId, use: "production", shotId, ...approved, ...extra }, actor, options(), seams);
+    const still = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitBfl({ tool: "image", prompt: "a crane", shotId, ...approved, ...extra }, actor, options());
+    const edit = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitBfl({ tool: "edit", prompt: "swap", references: [{ uploadId: ref.id }], projectId, shotId, ...approved, ...extra }, actor, options());
     process.env.BFL_IDENTITY_ENABLED = "1";
     const idn = await identityWith(2, { projectId });
-    const identity = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitBfl({ tool: "identity", prompt: "her at dusk", identityId: idn.id, castMemberId: cast, projectId, use: "production", shotId, ...approved, ...extra }, actor, options(), seams);
+    const identity = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitBfl({ tool: "identity", prompt: "her at dusk", identityId: idn.id, projectId, shotId, ...approved, ...extra }, actor, options());
     try {
       await setRule("cap", 1);
       const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
@@ -421,7 +400,6 @@ test("the shot cap is judged at the quote and the press, before any face is chec
         expect(refused, `${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
         expect(String(refused.body.error)).toMatch(/S01/);
       }
-      expect(faceCalls).toBe(0);
       expect(await rows()).toBe(before.rows);
       expect((await meterRows()).length).toBe(before.meter);
       expect(deferred.length).toBe(before.handed);
@@ -437,9 +415,8 @@ test("the shot cap is judged at the quote and the press, before any face is chec
         for (const go of [still, edit, identity]) for (const extra of [{ quoteOnly: true }, {}]) expect(await go(AGENT, extra), `agent ${go.name} ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
       }, AGENT as never);
       await runInTenant(house(), async () => {
-        for (const quoteOnly of [true, undefined]) expect(await admitBfl({ tool: "image", prompt: "a crane", shotId, ...approved, quoteOnly }, OWNER, { ...options(), run: { auto: true } as never }, seams), `auto ${String(quoteOnly)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
+        for (const quoteOnly of [true, undefined]) expect(await admitBfl({ tool: "image", prompt: "a crane", shotId, ...approved, quoteOnly }, OWNER, { ...options(), run: { auto: true } as never }), `auto ${String(quoteOnly)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
       }, OWNER as never);
-      expect(faceCalls).toBe(0);
       expect((await still(MEMBER, { quoteOnly: true, shotId: undefined })).status).toBe(200);
       await setRule("ask");
       expect((await still(MEMBER, { quoteOnly: true })).status).toBe(200);
@@ -449,7 +426,6 @@ test("the shot cap is judged at the quote and the press, before any face is chec
       expect(made.status, JSON.stringify(made.body)).toBe(200);
       const madeEdit = await edit(MEMBER);
       expect(madeEdit.status, JSON.stringify(madeEdit.body)).toBe(200);
-      expect(faceCalls).toBe(1);
       expect(await rows()).toBe(before.rows + 2);
       /* (Both jobs are run to the end, so the cron in a later test finds nothing of ours waiting.) */
       for (const id of [made.body.id, madeEdit.body.id]) await run(String(id), fakeBfl().deps, 4);
@@ -537,34 +513,16 @@ test("two workers at once submit once; a storage failure keeps the job and the n
   });
 });
 
-test("an edit: every reference passes the consent gate before a row or a cent; the references go up as data; the take's record names them by id and by their hash only", async () => {
+test("an edit: no face is checked and no consent is asked; the references go up as data; the take's record names them by upload id only; a listed customer workspace may edit", async () => {
   const { db } = await import("../../lib/db");
   const { rowToGeneration } = await import("../../lib/jobs");
   process.env.BFL_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
   await asTenant(house(), async () => {
-    const projectId = uid("prod"), cast = uid("cast");
-    await project(projectId);
-    const consentId = await consent(projectId, cast);
     const a = await image("ref_a"), b = await image("ref_b", 2000, 1000);
-    const input = { tool: "edit", prompt: "put this product on her", references: [{ uploadId: a.id, castMemberId: cast }, { uploadId: b.id, castMemberId: cast }], projectId, use: "production", ...approved };
-    /* The real gate refuses today (no consent record holds a face reference): nothing is created or reserved. */
-    const before = (await meterRows()).length;
-    const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-    const real = await admit(input);
-    expect(real).toMatchObject({ status: 409, body: { code: "no-reference" } });
-    expect((await meterRows()).length).toBe(before);
-    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
-    /* A missing production or use is refused before the gate. */
-    let faceCalls = 0;
-    const seams = { consent: async (...x: Parameters<ReturnType<typeof passing>>) => { faceCalls++; return passing(consentId)(...x); } };
-    expect((await admit({ ...input, use: undefined }, seams)).status).toBe(400);
-    expect((await admit({ ...input, projectId: undefined }, seams)).status).toBe(400);
-    expect(faceCalls).toBe(0);
-    /* Passing the gate (a seam): both references were checked, then the job runs and sends them as data. */
-    const reply = await admit(input, seams);
+    /* Nothing about a person: not a cast member, a production, a use or a consent record. */
+    const input = { tool: "edit", prompt: "put this product on her", references: [{ uploadId: a.id }, { uploadId: b.id }], ...approved };
+    const reply = await admit(input);
     expect(reply.status, JSON.stringify(reply.body)).toBe(200);
-    expect(faceCalls).toBe(2);
     const genId = String(reply.body.id);
     const vendor = fakeBfl();
     await run(genId, vendor.deps, 4);
@@ -573,24 +531,15 @@ test("an edit: every reference passes the consent gate before a row or a cent; t
     expect(take.status).toBe("succeeded");
     /* Quoted: 2 MP out ((1024x1024 rounds up to 2) + the references at 2 MP and 2 MP: (1024x1024 -> 2, 2000x1000 -> 2)). */
     expect(Number(take.cost_usd)).toBeCloseTo(0.03 + 0.015 + (2 + 2) * 0.015, 6);
-    expect(take.bfl.references.map((r) => [r.uploadId, r.castMemberId, r.consentId])).toEqual([[a.id, cast, consentId], [b.id, cast, consentId]]);
-    expect(JSON.stringify(take.bfl)).not.toMatch(/base64|sample-image/);
+    expect(take.bfl.references.map((r) => r.uploadId)).toEqual([a.id, b.id]);
+    expect(JSON.stringify(take.bfl)).not.toMatch(/base64|sample-image|consent|face|cast/i);
     /* A person reads none of that. */
     const raw = (await db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [genId] })).rows[0];
     const read = rowToGeneration({ ...raw, project_name: null }) as unknown as { params: Record<string, unknown> };
     expect(read.params.bfl).toEqual({ status: "done", tool: "edit", model: "flux-2-pro", width: 1024, height: 1024, outputMegapixels: 2 });
     expect(JSON.stringify(read.params.bfl)).not.toMatch(/bfl_job_1|polling|consent|faceSha|cast_|up_|ref_a|usd|statedUsd|seed|references/i);
-    /* Consent withdrawn while the job waited: nothing is sent, nothing is billed. */
-    const second = String((await admit(input, seams)).body.id);
-    await db().execute({ sql: "UPDATE identity_consents SET revoked_at=? WHERE id=?", args: [Date.now(), consentId] });
-    const idle = fakeBfl();
-    await run(second, idle.deps, 2);
-    expect(idle.calls).toEqual([]);
-    expect(await gen(second)).toMatchObject({ status: "failed" });
-    expect(String((await gen(second)).error)).toMatch(/consent no longer holds/);
-    expect(Number((await gen(second)).cost_usd)).toBe(0);
   });
-  /* A customer workspace on the list is offered the still, and an edit there is refused at the gate (the face check is the house's only). */
+  /* A customer workspace on the list may edit (nothing gates it but the engine list). */
   const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
   await platformReady();
   const ws = "ws_bfl_edit_listed";
@@ -600,11 +549,10 @@ test("an edit: every reference passes the consent gate before a row or a cent; t
   try {
     await platformDb().execute({ sql: `INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, args: [JSON.stringify({ enginesOnWorkspaces: [ws] })] });
     await asTenant((await getWorkspace(ws))!, async () => {
-      const projectId = uid("prod");
-      await project(projectId);
       const ref = await image("ref_c");
-      const refused = await admit({ tool: "edit", prompt: "a", references: [{ uploadId: ref.id, castMemberId: "cast_x" }], projectId, use: "production", ...approved });
-      expect(refused).toMatchObject({ status: 403, body: { code: "off" } });
+      const ok = await admit({ tool: "edit", prompt: "a", references: [{ uploadId: ref.id }], ...approved });
+      expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+      await run(String(ok.body.id), fakeBfl().deps, 4);
     });
   } finally {
     if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
@@ -662,7 +610,7 @@ test("a listed customer workspace pays exactly the quote in credits, once, and a
   }
 });
 
-test("over MCP: flux2_image is listed only where the engine is on, flux2_edit only where its face gate can run; Ask prepares and starts nothing, Auto starts only at or under the per-job line, the caller cannot approve", async () => {
+test("over MCP: flux2_image and flux2_edit are listed only where the engine is on; Ask prepares and starts nothing, Auto starts only at or under the per-job line, the caller cannot approve", async () => {
   const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
   const { setSetting, invalidateSettings } = await import("../../lib/settings");
   const { db, ready } = await import("../../lib/db");
@@ -679,8 +627,7 @@ test("over MCP: flux2_image is listed only where the engine is on, flux2_edit on
     expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("flux2_image");
     await expect(runDirectEngineTool("flux2_image", { prompt: "a tree" }, call)).rejects.toThrow("There is no such tool here.");
     process.env.BFL_ENABLED = "1";
-    expect((await directEngineMcpTools()).map((t) => t.name)).toEqual(expect.arrayContaining(["flux2_image"]));
-    expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("flux2_edit");
+    expect((await directEngineMcpTools()).map((t) => t.name)).toEqual(expect.arrayContaining(["flux2_image", "flux2_edit"]));
     try {
       /* Ask (the default, and anything but an exact "auto"): priced and prepared, nothing sent. */
       for (const mode of [null, "ask", "AUTO"]) {
@@ -718,21 +665,19 @@ test("over MCP: flux2_image is listed only where the engine is on, flux2_edit on
         expect(calls).toEqual([]);
       }
       await spend(null);
-      process.env.REKOGNITION_ENABLED = "1";
-      expect((await directEngineMcpTools()).map((t) => t.name)).toContain("flux2_edit");
       calls.length = 0;
-      const prepared = await runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1, u2", cast_member_ids: "c1,c2", project_id: "p", use: "production" }, call);
-      expect(calls[0]).toMatchObject({ tool: "edit", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }], quoteOnly: true });
-      expect(prepared).toMatch(/prepared: flux-2-pro edit of 2 reference\(s\) for production p/);
+      const prepared = await runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1, u2" }, call);
+      expect(calls[0]).toMatchObject({ tool: "edit", references: [{ uploadId: "u1" }, { uploadId: "u2" }], quoteOnly: true });
+      expect(JSON.stringify(calls[0])).not.toMatch(/castMember|consent|face/i);
+      expect(prepared).toMatch(/prepared: flux-2-pro edit of 2 reference\(s\)/);
       /* The references (ids only) are kept in the filed job: nested lists are taken by the prepared-jobs door. */
       expect(prepared).toContain("prepared job: prep_f1");
-      expect(calls.find((c) => c.engine === "flux2_edit")).toMatchObject({ args: { tool: "edit", references: [{ uploadId: "u1", castMemberId: "c1" }, { uploadId: "u2", castMemberId: "c2" }] } });
+      expect(calls.find((c) => c.engine === "flux2_edit")).toMatchObject({ args: { tool: "edit", references: [{ uploadId: "u1" }, { uploadId: "u2" }] } });
       /* When the door will not take it, the answer says plainly that nothing was filed. */
       const refusing = async (_p: string, init: { body?: unknown } = {}) => { if (_p === "/api/prepared-jobs") throw new Error("Inside a list or group an argument is an id, not text or a file."); return (await call(_p, init)) as Record<string, unknown>; };
-      const unfiled = await runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1", cast_member_ids: "c1", project_id: "p", use: "production" }, refusing);
+      const unfiled = await runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1" }, refusing);
       expect(unfiled).toMatch(/^Priced, not started\.[\s\S]*Nothing was filed: Inside a list or group an argument is an id[\s\S]*A person can make this themselves in Particl/);
       expect(unfiled).not.toMatch(/prepared job:|waits in Particl/);
-      await expect(runDirectEngineTool("flux2_edit", { prompt: "swap", reference_upload_ids: "u1,u2", cast_member_ids: "c1", project_id: "p", use: "production" }, call)).rejects.toThrow(/one cast member for each reference/);
     } finally { await spend(null); }
   });
 });
@@ -783,9 +728,9 @@ test("FLUX 3 Image and Klein: priced per image by size tier (BFL's table, verifi
     /* No megapixel rule for FLUX 3 (the size is the tier), and nothing past 4096 a side. */
     for (const [input, words] of [
       [{ tool: "image", prompt: "a", model: "flux-3-image", width: 4112, height: 1024 }, /up to 4096 pixels on a side/],
-      [{ tool: "edit", prompt: "a", model: "flux-3-image", references: [{ uploadId: "u1", castMemberId: "c" }] }, /use FLUX\.2 for an edit or an identity/],
-      [{ tool: "identity", prompt: "a", model: "flux-3-image-klein", identityId: "idn", castMemberId: "c" }, /no such tool|use FLUX\.2/],
-      [{ tool: "image", prompt: "a", model: "flux-3-image", references: [{ uploadId: "u1", castMemberId: "c" }] }, /takes no references/],
+      [{ tool: "edit", prompt: "a", model: "flux-3-image", references: [{ uploadId: "u1" }] }, /use FLUX\.2 for an edit or an identity/],
+      [{ tool: "identity", prompt: "a", model: "flux-3-image-klein", identityId: "idn" }, /no such tool|use FLUX\.2/],
+      [{ tool: "image", prompt: "a", model: "flux-3-image", references: [{ uploadId: "u1" }] }, /takes no references/],
     ] as [Record<string, unknown>, RegExp][]) {
       const reply = await admit({ ...input, quoteOnly: true });
       expect(reply.status, JSON.stringify(input)).toBeGreaterThanOrEqual(400);
@@ -826,18 +771,16 @@ async function identityWith(photoCount: number, over: { noPhotos?: boolean; proj
   return { id, photos };
 }
 
-test("FLUX.2 identity: an identity's own photos are the references, every one through the consent gate, behind a switch of its own; the fal LoRA path is not touched", async () => {
+test("FLUX.2 identity: an identity's own photos are the references, no face is checked, behind a switch of its own; scoped to its production and the person's reach; the fal LoRA path is not touched", async () => {
   const { db } = await import("../../lib/db");
   const { bflTools } = await import("../../lib/bflImage");
   const { rowToGeneration } = await import("../../lib/jobs");
   process.env.BFL_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
   await asTenant(house(), async () => {
-    const projectId = uid("prod"), cast = uid("cast");
+    const projectId = uid("prod");
     await project(projectId);
-    const consentId = await consent(projectId, cast);
     const idn = await identityWith(3);
-    const input = { tool: "identity", prompt: "her on a train platform at dusk", identityId: idn.id, castMemberId: cast, projectId, use: "production", ...approved };
+    const input = { tool: "identity", prompt: "her on a train platform at dusk", identityId: idn.id, projectId, ...approved };
     /* Its own switch: off, the tool is not here and not listed, whatever BFL_ENABLED says. */
     delete process.env.BFL_IDENTITY_ENABLED;
     expect(await admit(input)).toMatchObject({ status: 404, body: { error: "There is no such tool here." } });
@@ -845,36 +788,21 @@ test("FLUX.2 identity: an identity's own photos are the references, every one th
     for (const value of ["0", "true", "yes", ""]) { process.env.BFL_IDENTITY_ENABLED = value; expect((await admit(input)).status, value).toBe(404); }
     process.env.BFL_IDENTITY_ENABLED = "1";
     expect((await bflTools()).map((t) => t.id)).toContain("flux2_identity");
-    delete process.env.REKOGNITION_ENABLED;
-    expect((await bflTools()).map((t) => t.id)).not.toContain("flux2_identity");
-    process.env.REKOGNITION_ENABLED = "1";
     const before = (await meterRows()).length;
-    const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-    /* The real gate refuses today (no consent record holds a face reference): nothing is created or reserved. */
-    expect(await admit(input)).toMatchObject({ status: 409, body: { code: "no-reference" } });
-    expect((await meterRows()).length).toBe(before);
-    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
-    /* Words first: no identity, no cast member, no production or use, a hand-supplied reference list, an unknown or empty identity. */
-    let faceCalls = 0;
-    const seen: string[] = [];
-    const seams = { consent: async (c: string, face: Buffer) => { faceCalls++; seen.push(c); return passing(consentId)(c, face); } };
-    for (const bad of [{ identityId: undefined }, { identityId: "../x" }, { castMemberId: undefined }, { use: undefined }, { projectId: undefined }, { references: [{ uploadId: idn.photos[0].id, castMemberId: cast }] }]) {
-      expect((await admit({ ...input, ...bad }, seams)).status, JSON.stringify(bad)).toBe(400);
-    }
-    expect(await admit({ ...input, identityId: "idn_not_here" }, seams)).toMatchObject({ status: 404 });
+    /* Words first: no identity, a hand-supplied reference list, an unknown or empty identity. */
+    for (const bad of [{ identityId: undefined }, { identityId: "../x" }, { references: [{ uploadId: idn.photos[0].id }] }]) expect((await admit({ ...input, ...bad })).status, JSON.stringify(bad)).toBe(400);
+    expect(await admit({ ...input, identityId: "idn_not_here" })).toMatchObject({ status: 404 });
     const empty = await identityWith(0, { noPhotos: true });
-    expect(await admit({ ...input, identityId: empty.id }, seams)).toMatchObject({ status: 404 });
-    expect(faceCalls).toBe(0);
-    /* The quote is an edit's: the identity's photos are the references. */
+    expect(await admit({ ...input, identityId: empty.id })).toMatchObject({ status: 404 });
+    /* The quote is an edit's: the identity's photos are the references. No cast member, use or consent is needed. */
     const quote = await admit({ ...input, quoteOnly: true });
-    expect(quote).toMatchObject({ status: 200, body: { tool: "identity", references: 3, needs: ["castMemberId", "projectId", "use"] } });
+    expect(quote).toMatchObject({ status: 200, body: { tool: "identity", references: 3 } });
+    expect(quote.body).not.toHaveProperty("needs");
     expect(Number(quote.body.price)).toBeCloseTo(0.03 + 0.015 + 3 * 2 * 0.015, 6);
     expect((await meterRows()).length).toBe(before);
-    /* Passing the gate: EVERY photo was checked, for the cast member named, then the photos go up as data in the identity's order. */
-    const reply = await admit(input, seams);
+    /* The job runs: the photos go up as data in the identity's order. */
+    const reply = await admit(input);
     expect(reply.status, JSON.stringify(reply.body)).toBe(200);
-    expect(faceCalls).toBe(3);
-    expect(seen).toEqual([cast, cast, cast]);
     const genId = String(reply.body.id);
     const vendor = fakeBfl();
     await run(genId, vendor.deps, 4);
@@ -882,25 +810,24 @@ test("FLUX.2 identity: an identity's own photos are the references, every one th
     const take = await gen(genId);
     expect(take.status).toBe("succeeded");
     expect(take.bfl).toMatchObject({ tool: "edit", identityId: idn.id });
-    expect(take.bfl.references.map((r) => [r.uploadId, r.castMemberId, r.consentId])).toEqual(idn.photos.map((p) => [p.id, cast, consentId]));
-    /* A person reads none of it: not the identity, the photos, the cast or the consent. */
+    expect(take.bfl.references.map((r) => r.uploadId)).toEqual(idn.photos.map((p) => p.id));
+    expect(JSON.stringify(take.bfl)).not.toMatch(/consent|face|cast/i);
+    /* A person reads none of it: not the identity, the photos or anything else. */
     const raw = (await db().execute({ sql: "SELECT * FROM generations WHERE id=?", args: [genId] })).rows[0];
     const read = rowToGeneration({ ...raw, project_name: null }) as unknown as { params: Record<string, unknown> };
     expect(read.params.bfl).toEqual({ status: "done", tool: "edit", model: "flux-2-pro", width: 1024, height: 1024, outputMegapixels: 2 });
     expect(JSON.stringify(read.params.bfl)).not.toMatch(/idn_|identityId|up_|photo_|cast_|consent/i);
-    /* At most eight photos are used, cover first. */
+    /* At most eight photos are used. */
     const big = await identityWith(11);
-    faceCalls = 0;
-    const eight = await admit({ ...input, identityId: big.id }, seams);
+    const eight = await admit({ ...input, identityId: big.id });
     expect(eight.status, JSON.stringify(eight.body)).toBe(200);
-    expect(faceCalls).toBe(8);
     const v2 = fakeBfl();
     await run(String(eight.body.id), v2.deps, 4);
     expect(v2.sent[0].references.map((r) => r.toString())).toEqual(big.photos.slice(0, 8).map((p) => p.bytes.toString()));
     /* The cover first, as its comment says, then the rest in order. */
     const covered = await identityWith(4, { cover: 2 });
     const cv = fakeBfl();
-    const coveredReply = await admit({ ...input, identityId: covered.id }, seams);
+    const coveredReply = await admit({ ...input, identityId: covered.id });
     expect(coveredReply.status, JSON.stringify(coveredReply.body)).toBe(200);
     await run(String(coveredReply.body.id), cv.deps, 4);
     expect(cv.sent[0].references.map((r) => r.toString())).toEqual([2, 0, 1, 3].map((i) => covered.photos[i].bytes.toString()));
@@ -908,41 +835,26 @@ test("FLUX.2 identity: an identity's own photos are the references, every one th
     const { mappedId, DRAFT_PROJECT_PREFIX } = await import("../../lib/draftProject");
     const other = uid("prod");
     await project(other);
-    const reads: string[] = [];
-    const watching = { consent: async (c: string, face: Buffer) => { reads.push(c); return passing(consentId)(c, face); } };
     const mine = await identityWith(2, { projectId });
-    expect((await admit({ ...input, identityId: mine.id }, watching)).status).toBe(200);
+    expect((await admit({ ...input, identityId: mine.id })).status).toBe(200);
     const elsewhere = await identityWith(2, { projectId: other });
-    reads.length = 0;
-    expect(await admit({ ...input, identityId: elsewhere.id }, watching)).toMatchObject({ status: 404 });
-    expect(reads).toEqual([]);
+    expect(await admit({ ...input, identityId: elsewhere.id })).toMatchObject({ status: 404 });
     const unfiled = await identityWith(2, { projectId: null });
-    expect((await admit({ ...input, identityId: unfiled.id }, watching)).status).toBe(200);
+    expect((await admit({ ...input, identityId: unfiled.id })).status).toBe(200);
     /* A private board of someone else's is refused, an identity of theirs too; the answer is the same as for an identity that is none. */
     const theirs = mappedId(DRAFT_PROJECT_PREFIX, "ws_legacy", "someone_else", "d1");
     await project(theirs);
     const theirIdentity = await identityWith(2, { projectId: theirs });
-    reads.length = 0;
     const boardInput = { ...input, projectId: theirs };
-    const notMine = await admit({ ...boardInput, identityId: theirIdentity.id }, watching);
+    const notMine = await admit({ ...boardInput, identityId: theirIdentity.id });
     expect(notMine).toMatchObject({ status: 404, body: { error: "That identity is not in this workspace, or has no photos." } });
-    expect(await admit({ ...boardInput, identityId: unfiled.id }, watching)).toMatchObject({ status: 404, body: { error: notMine.body.error } });
-    expect(await admit({ ...input, identityId: "idn_none" }, watching)).toMatchObject({ status: 404, body: { error: notMine.body.error } });
-    expect(reads).toEqual([]);
-    expect((await meterRows()).length).toBeGreaterThan(0);
-    /* A photo the gate refuses stops everything: no row, no reservation. */
-    const { ConsentMatchError } = await import("../../lib/consentMatch");
-    const rowsNow = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-    const meterNow = (await meterRows()).length;
-    let n = 0;
-    const second = { consent: async (c: string, face: Buffer) => { if (++n === 2) throw new ConsentMatchError("no-match", "This face doesn't look like the person who gave consent. A person needs to look at it.", 409); return passing(consentId)(c, face); } };
-    expect(await admit(input, second)).toMatchObject({ status: 409, body: { code: "no-match" } });
-    expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(rowsNow);
-    expect((await meterRows()).length).toBe(meterNow);
+    expect(await admit({ ...boardInput, identityId: unfiled.id })).toMatchObject({ status: 404, body: { error: notMine.body.error } });
+    expect(await admit({ ...input, identityId: "idn_none" })).toMatchObject({ status: 404, body: { error: notMine.body.error } });
   });
   /* The fal LoRA identity path is untouched: this PR adds no reference to it. */
   const flow = readFileSync("lib/bflImage.ts", "utf8");
   expect(flow).not.toMatch(/from "\.\/identities"|from "\.\/fal"|flux-lora|loraUrl/);
+  expect(flow.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")).not.toMatch(/consent|rekognition|faceSha|castMember/i);
   expect(flow).toContain('"SELECT photos, cover_upload_id FROM identities WHERE id=? LIMIT 1"');
   expect(flow.indexOf('SELECT project_id FROM identities')).toBeLessThan(flow.indexOf('SELECT photos, cover_upload_id FROM identities'));
   expect(flow.indexOf('mayReachProject(got.user, projectId')).toBeLessThan(flow.indexOf('SELECT photos, cover_upload_id FROM identities'));
@@ -959,10 +871,8 @@ test("over MCP: flux3_image (Klein is the draft, flux-3-image always asks) and f
   await asTenant(house(), async () => {
     await ready();
     const names = async () => (await directEngineMcpTools()).map((t) => t.name);
-    delete process.env.REKOGNITION_ENABLED; delete process.env.BFL_IDENTITY_ENABLED;
-    expect(await names()).toEqual(expect.arrayContaining(["flux2_image", "flux3_image"]));
-    expect(await names()).not.toContain("flux2_identity");
-    process.env.REKOGNITION_ENABLED = "1";
+    delete process.env.BFL_IDENTITY_ENABLED;
+    expect(await names()).toEqual(expect.arrayContaining(["flux2_image", "flux3_image", "flux2_edit"]));
     expect(await names()).not.toContain("flux2_identity");
     process.env.BFL_IDENTITY_ENABLED = "1";
     expect(await names()).toContain("flux2_identity");
@@ -986,9 +896,9 @@ test("over MCP: flux3_image (Klein is the draft, flux-3-image always asks) and f
       expect(calls[0]).toMatchObject({ model: "flux-3-image" });
       await spend("ask");
       calls.length = 0;
-      const text = await runDirectEngineTool("flux2_identity", { prompt: "her at dusk", identity_id: "idn_1", cast_member_id: "c1", project_id: "p", use: "production" }, call);
-      expect(text).toMatch(/prepared: flux-2-pro still of identity idn_1 for production p[\s\S]*prepared job: prep_f3/);
-      expect(calls[0]).toMatchObject({ tool: "identity", identityId: "idn_1", castMemberId: "c1", projectId: "p", use: "production", quoteOnly: true });
+      const text = await runDirectEngineTool("flux2_identity", { prompt: "her at dusk", identity_id: "idn_1", project_id: "p" }, call);
+      expect(text).toMatch(/prepared: flux-2-pro still of identity idn_1[\s\S]*prepared job: prep_f3/);
+      expect(calls[0]).toMatchObject({ tool: "identity", identityId: "idn_1", projectId: "p", quoteOnly: true });
       expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
     } finally { await spend(null); }
   });
@@ -1021,17 +931,16 @@ function sourceFiles(): string[] {
   return out;
 }
 
-test("structure: the seams stay internal, the route is the one door, consent and the reservation come before the row and the submit, the settings are the plan's names", () => {
+test("structure: the seams stay internal, the route is the one door, no consent code, the reservation comes before the row and the submit, the settings are the plan's names", () => {
   const reachers = (needle: RegExp) => sourceFiles().filter((f) => needle.test(readFileSync(f, "utf8"))).sort();
   expect(reachers(/\badmitBfl\b/)).toEqual(["lib/bflImage.ts"]);
   expect(reachers(/\badvanceBflJobWith\b/)).toEqual(["lib/bflImage.ts"]);
   expect(reachers(/@\/lib\/bflImage["']/)).toEqual(["app/api/bfl/route.ts"]);
   const flow = readFileSync("lib/bflImage.ts", "utf8");
   const at = (needle: string) => flow.indexOf(needle);
-  expect(flow).toContain("admitBfl(input, got, options, {})");
-  expect(at("(seams.consent ?? requireConsentMatch)(")).toBeGreaterThan(0);
-  expect(at("(seams.consent ?? requireConsentMatch)(")).toBeLessThan(at("INSERT INTO generations"));
-  expect(at("Approve the price first")).toBeLessThan(at("(seams.consent ?? requireConsentMatch)("));
+  expect(flow).toContain("admitBfl(input, got, options)");
+  /* No face check, no consent record (owner, 16 Oct 2026). */
+  expect(flow.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")).not.toMatch(/consent|rekognition|faceSha|castMember|faceCheck/i);
   expect(at("INSERT INTO generations")).toBeLessThan(at("await reserveGenerationSpend("));
   expect(at("await reserveGenerationSpend(")).toBeLessThan(at("await (deps.submit ?? submitImage)("));
   /* The image is fetched, stored and settled in that order; settled never above the quote. */
