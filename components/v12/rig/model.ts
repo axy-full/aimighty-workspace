@@ -50,7 +50,7 @@ export type RigShot = {
   row: ShotTakes;
 };
 
-export type RigOutput = { id: "takes" | "cut" | "masters"; name: string; meta: string; stage: "shots" | "cut" | "deliver" };
+export type RigOutput = { id: "takes" | "cut" | "masters"; name: string; meta: string; stage: "shots" | "edit" | "deliver" };
 export type RigModel = { inputs: RigInput[]; shots: RigShot[]; outputs: RigOutput[]; heading: string };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -112,7 +112,7 @@ export function rigModel(args: { cards: readonly BoardCard[]; project: Project; 
   const deliver = cards.find((c) => c.id === DELIVER_CARD);
   const outputs: RigOutput[] = [
     { id: "takes", name: "Takes", meta: `${plural(rows.length, "shot")} · ${plural(made.length, "take")}`, stage: "shots" },
-    { id: "cut", name: "The cut", meta: cut?.summary ?? "Nothing yet", stage: "cut" },
+    { id: "cut", name: "The cut", meta: cut?.summary ?? "Nothing yet", stage: "edit" },
     { id: "masters", name: "Masters", meta: [project.aspect, deliver?.summary].filter(Boolean).join(" · "), stage: "deliver" },
   ];
   return { inputs, shots, outputs, heading: `The work · ${plural(rows.length, "shot")}` };
