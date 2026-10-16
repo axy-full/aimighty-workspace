@@ -75,3 +75,25 @@
 
 /* A client round's share card inside a page (redesign P2-c): one card's width, under the page's own content. */
 .v12 .v12-stage-round { width: min(100%, 320px); height: 190px; margin: 0 24px 24px; }
+
+/* Edit: the cut, how it is dressed, and one MP4 per language (components/v12/board/EditStage.tsx) */
+.v12 .v12-es { grid-template-columns: minmax(0, 1fr); }
+@container (min-width: 1100px) {
+  .v12 .v12-es { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); grid-template-areas: "c f" "c l"; }
+  .v12 .v12-es > [data-testid="v12-edit-cut"] { grid-area: c; }
+  .v12 .v12-es > [data-testid="v12-edit-film"] { grid-area: f; }
+  .v12 .v12-es > [data-testid="v12-edit-languages"] { grid-area: l; }
+}
+.v12 .v12-es-cut { padding: 0; overflow: hidden; align-items: stretch; }
+.v12 .v12-es-cut .gx-cut { width: 100%; max-width: none; height: auto; min-height: 280px; }
+.v12 .v12-es-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.v12 .v12-es-field { display: grid; gap: 4px; font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.v12 .v12-es-input { height: 32px; padding: 0 10px; border-radius: var(--gx-r-btn); border: 1px solid var(--gx-btn-border); background: var(--gx-input); color: var(--gx-text); font: inherit; font-size: var(--gx-fs-body); min-width: 0; }
+.v12 .v12-es-rows { display: flex; flex-direction: column; }
+.v12 .v12-es-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--gx-hair-soft); }
+.v12 .v12-es-who { display: grid; gap: 2px; min-width: 0; }
+.v12 .v12-es-name { font-size: var(--gx-fs-body); font-weight: 600; }
+.v12 .v12-es-facts, .v12 .v12-es-line { font-size: var(--gx-fs-meta); color: var(--gx-text-2); }
+.v12 .v12-es-act, .v12 .v12-es-done, .v12 .v12-es-fail { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.v12 .v12-es-link { color: var(--gx-accent); font-size: var(--gx-fs-body); text-decoration: underline; text-underline-offset: 3px; }
+.v12 .v12-es-link:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }

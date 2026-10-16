@@ -80,6 +80,7 @@ import { cleanLanguages } from "@/lib/v12/deliver";
 import { isDubbingLanguage } from "@/lib/workbench/dubbing-options";
 import { deckFacts, deckMeta, deckSections, shotRows } from "@/lib/v12/ppm";
 import { DeliverStage } from "@/components/v12/board/DeliverStage";
+import { EditStage } from "@/components/v12/board/EditStage";
 import { PpmStage } from "@/components/v12/board/PpmStage";
 import { ProductStage } from "@/components/v12/board/campaign/ProductStage";
 import { LookStage } from "@/components/v12/board/campaign/LookStage";
@@ -202,9 +203,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const deliverCard = allCards.find((c) => c.kind === "deliver");
   const cutNow = (deliverCard?.data as CutCardData | undefined)?.cut ?? null;
   /* Campaign's Product, Look and Formats are pages from the start: Product is where a campaign begins. */
-  const page: StagePageKind | null = pageWanted === "deliver" ? (cutNow && deliverCard ? "deliver" : null) : pageWanted === "ppm" ? (allCards.length > 0 ? "ppm" : null) : pageWanted;
+  /* Film's Edit is a page once there is a cut: the cut card itself, how it is dressed, and an MP4 for each language. */
+  const cutCardNow = allCards.find((c) => c.kind === "cut") ?? null;
+  const page: StagePageKind | null = pageWanted === "deliver" ? (cutNow && deliverCard ? "deliver" : null) : pageWanted === "edit" ? (cutCardNow ? "edit" : null) : pageWanted === "ppm" ? (allCards.length > 0 ? "ppm" : null) : pageWanted;
   /* A client round's share card (redesign P2-c) rides in the page when a page covers the canvas, so it is never hidden behind it. */
-  const roundShare = page ? allCards.find((c) => c.id === "round:deliver") ?? null : null;
+  const roundShare = page ? allCards.find((c) => c.id === (page === "edit" ? "round:cut" : "round:deliver")) ?? null : null;
   /* The board's free cards (a dropped tile, a note, an upload) show on whichever stage is open, where they were put. */
   const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards).filter((c) => !(roundShare && c.id === roundShare.id)), [stage, stageOwn, allCards, roundShare]);
   /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
@@ -806,6 +809,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             <div className="v12-stage-page gx-scroll" data-testid="v12-stage-page" data-page={page}>
               {page === "deliver" && cutNow && deliverCard
                 ? <DeliverStage cut={cutNow} cardId={deliverCard.id} ctx={ctx} languages={cleanLanguages(project.boardLanguages, isDubbingLanguage)} onLanguages={(next) => rig.apply((p) => ({ ...p, boardLanguages: next }))} />
+                : page === "edit" && cutCardNow ? <EditStage cutCard={cutCardNow as BoardCard<CutCardData>} ctx={ctx} languages={cleanLanguages(project.boardLanguages, isDubbingLanguage)} />
                 : page === "ppm" ? <PpmStage ctx={ctx} />
                 : page === "product" ? <ProductStage ctx={ctx} />
                 : page === "look" ? <LookStage ctx={ctx} />

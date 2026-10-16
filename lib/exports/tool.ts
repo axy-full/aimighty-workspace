@@ -47,6 +47,24 @@ export const ASSEMBLE_TOOL = Object.freeze({
   mock: EXPORT_TOOL.mock,
 });
 
+/**
+ * The film export, declared once (rule 11): a board's film in one language, started from the board's own draft. The Edit step's
+ * button, Make, a board card, Atomik, a saved skill and an outside agent over MCP (`export_film`) all call it through the same route,
+ * at the same price (free), through the same gate as `assemble_film`, which it asks (lib/exports/film.ts).
+ */
+export const FILM_TOOL = Object.freeze({
+  id: "export_film",
+  kind: "app-action" as const,
+  callers: "render" as const,
+  provider: EXPORT_TOOL.provider,
+  keys: EXPORT_TOOL.keys,
+  route: "/api/exports/film",
+  asks: "assemble_film" as const,
+  price: EXPORT_TOOL.price,
+  priceLabel: EXPORT_PRICE_LABEL,
+  mock: EXPORT_TOOL.mock,
+});
+
 /** Whether the tool can run now, and when it cannot, why (naming the missing setting, never its value). */
 export function exportToolAvailability(env: Readonly<Record<string, string | undefined>> = process.env): { available: boolean; reason: string | null } {
   if (!exportsEnabled(env)) return { available: false, reason: "Exports are not switched on for this deployment." };

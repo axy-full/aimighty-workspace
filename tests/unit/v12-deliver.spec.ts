@@ -72,8 +72,11 @@ test.describe("Deliver", () => {
     expect(MANDATORIES).toEqual(["Logo", "End packshot", "Legal line", "Fonts · colours", "VO tagline"]);
   });
 
-  test("Film's Deliver and Pre-vis's PPM deck are pages; no other stage is", () => {
+  test("Film's Edit and Deliver and Pre-vis's PPM deck are pages; no other Film or Pre-vis stage is", () => {
     expect(stagePage("deliver", "film")).toBe("deliver");
+    expect(stagePage("edit", "film")).toBe("edit");
+    expect(stagePage("edit", "previs")).toBeNull();
+    expect(stagePage("shots", "film")).toBeNull();
     expect(stagePage("ppm-deck", "previs")).toBe("ppm");
     expect(stagePage("deliver", "previs")).toBeNull();
     expect(stagePage("deliver", "campaign")).toBeNull();

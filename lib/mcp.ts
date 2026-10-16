@@ -197,6 +197,22 @@ export const EXPORT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "export_film",
+    description:
+      "Export a board's film as one MP4 in one language, from the board itself: its shots in order, the language's voice lines (their words as captions and subtitle files), the music, the title and end cards. " +
+      "Free: it costs no credits (the shots and voices are made first, on their own tools). language is 'en' (the film as made) or the code of a version the board holds, such as 'hi' for Hindi; a language with no voice lines yet is refused with why. " +
+      "board is the board's id (the one in its address). Returns an id immediately; use get_export to collect it. Retried with the same request_id you get the film it started.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        board: { type: "string", description: "The board's id." },
+        language: { type: "string", description: "'en', 'hi', ... (two or three lowercase letters)." },
+        request_id: { type: "string", description: "Optional: any string unique to this export (8–100 letters, digits, dashes or underscores)." },
+      },
+      required: ["board", "language"],
+    },
+  },
+  {
     name: "get_export",
     description: "Check an export: queued (with how many are ahead), rendering, saving, ready (with the link to the file), or failed (with why, and that nothing was billed).",
     inputSchema: { type: "object", properties: { id: { type: "string", description: "The export id from export_video." } }, required: ["id"] },
@@ -511,6 +527,13 @@ export async function runTool(
       if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
       const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
       const out = (await call("/api/exports/assemble", { method: "POST", body: { requestId, timeline: args.timeline, ...(args.output ? { output: args.output } : {}) } })) as { job: ExportSummary };
+      return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
+    }
+
+    case "export_film": {
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
+      const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
+      const out = (await call("/api/exports/film", { method: "POST", body: { board: args.board, language: args.language, requestId } })) as { job: ExportSummary };
       return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
     }
 
