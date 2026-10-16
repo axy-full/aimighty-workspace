@@ -353,14 +353,15 @@ test("ANTHROPIC_API_KEY set with TEXT_DIRECT empty: paid text, the meter, the le
   const withKey = await run(true);
   expect(withKey).toEqual(without);
   expect(without.out).toMatchObject({ cost: 0.0004, engine: "vercel", meterEngine: "vercel", ledger: "vercel", route: "gateway", refineProvider: "gateway",
-    writer: { provider: "gateway", model: "anthropic/claude-sonnet-5", via: "Model gateway (API key)", configured: true }, refined: { ledger: "vercel", costUsd: 0.0004 }, configured: false, via: null, adapter: false });
+    writer: { provider: "gateway", model: "anthropic/claude-opus-5.5", via: "Model gateway (API key)", configured: true }, refined: { ledger: "vercel", costUsd: 0.0004 }, configured: false, via: null, adapter: false });
   // Both calls went to the gateway, on the gateway's key.
   expect(without.sent.map((s) => [new URL(s.url).host, s.auth])).toEqual([["ai-gateway.vercel.sh", `Bearer ${KEYS.AI_GATEWAY_API_KEY}`], ["ai-gateway.vercel.sh", `Bearer ${KEYS.AI_GATEWAY_API_KEY}`]]);
 });
 
 test("the writer's model list is PROMPT_MODELS, still reading GATEWAY_PROMPT_MODELS; the legacy Claude call only when REFINE_PROVIDER forces it", async () => {
   const { PROMPT_MODELS, refineProvider } = await import("../../lib/enhance");
-  expect(PROMPT_MODELS()).toEqual(["anthropic/claude-sonnet-5.5", "anthropic/claude-sonnet-5"]);
+  /* Owner, 16 Oct 2026: Opus 5.5 first, Sonnet 5.5 behind it. */
+  expect(PROMPT_MODELS()).toEqual(["anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5.5"]);
   process.env.GATEWAY_PROMPT_MODELS = "anthropic/claude-haiku-4.5";
   expect(PROMPT_MODELS()).toEqual(["anthropic/claude-haiku-4.5"]);
   process.env.PROMPT_MODELS = "google/gemini-2.5-flash, anthropic/claude-sonnet-4.6";
@@ -379,12 +380,12 @@ test("the inline writer on a direct door: priced at usage × snapshot, on the ve
   await inWorkspace(async () => {
     const { enhancePrompt, activeWriter } = await import("../../lib/enhance");
     // The platform's enhance writer (DEFAULT_TEXT_MODELS), now on Anthropic's own API.
-    expect(await activeWriter()).toMatchObject({ provider: "gateway", model: "anthropic/claude-sonnet-5.5", via: "Model provider, direct", configured: true });
+    expect(await activeWriter()).toMatchObject({ provider: "gateway", model: "anthropic/claude-opus-5.5", via: "Model provider, direct", configured: true });
     const refined = await enhancePrompt({ prompt: "A tree in rain.", citations: [], provider: "gateway" });
     expect(transport.urls).toHaveLength(1);
-    expect(refined).toMatchObject({ text: "A lone tree in steady rain.", move: "static", ledger: "anthropic", model: "anthropic/claude-sonnet-5.5" });
-    // Claude Sonnet 5.5 at its list price (provider-priced): 100 × $2/M + 60 reads × $0.10/M + 40 writes × $2.50/M + 25 out × $10/M.
-    expect(refined.costUsd).toBeCloseTo(100 * 0.000002 + 60 * 0.0000001 + 40 * 0.0000025 + 25 * 0.00001, 15);
+    expect(refined).toMatchObject({ text: "A lone tree in steady rain.", move: "static", ledger: "anthropic", model: "anthropic/claude-opus-5.5" });
+    // Claude Opus 5.5 at its list price (lib/modelCatalog.json): 100 × $4/M + 60 reads × $0.20/M + 40 writes × $5/M + 25 out × $20/M.
+    expect(refined.costUsd).toBeCloseTo(100 * 0.000004 + 60 * 0.0000002 + 40 * 0.000005 + 25 * 0.00002, 15);
   });
 });
 

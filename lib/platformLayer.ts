@@ -106,7 +106,7 @@ export const TEXT_JOBS: TextJob[] = ["enhance", "idea", "shot"];
 export const TEXT_JOB_LABELS: Record<TextJob, string> = { enhance: "Prompt enhancement", idea: "Ideas and treatments", shot: "Shot lists" };
 export type TextModels = Record<TextJob, string>;
 /** Owner, 11 Oct 2026: enhancement on Sonnet 5.5, ideas and shots on Opus 5.5. */
-export const DEFAULT_TEXT_MODELS: TextModels = { enhance: "anthropic/claude-sonnet-5.5", idea: "anthropic/claude-opus-5.5", shot: "anthropic/claude-opus-5.5" };
+export const DEFAULT_TEXT_MODELS: TextModels = { enhance: "anthropic/claude-opus-5.5", idea: "anthropic/claude-opus-5.5", shot: "anthropic/claude-opus-5.5" };
 /** The text models a console may name: the verified text catalogue. Which of them it offers is the server's
  *  (routableTextModelIds, lib/catalog.ts): those with a working route and a price. */
 export const TEXT_MODEL_IDS: string[] = [...VERIFIED_TEXT_MODEL_IDS];
