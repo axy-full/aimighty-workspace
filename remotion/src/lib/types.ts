@@ -101,7 +101,11 @@ export type ClipItem = {
 
 export type MusicSpec = { file: string; durationSeconds: number; volume: number };
 /** One spoken line of a narrated cut: an audio file placed on the finished video's clock. */
-export type VoiceLine = { file: string; durationSeconds: number; startSeconds: number; volume: number };
+export type VoiceLine = {
+  file: string; durationSeconds: number; startSeconds: number; volume: number;
+  /** What the line says. With it, the line is also a caption (and a subtitle) for as long as it plays, on whichever clips it overlaps. */
+  text?: string;
+};
 
 type Common = { aspect: Aspect; fps: number; scale: number };
 

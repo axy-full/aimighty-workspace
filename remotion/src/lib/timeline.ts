@@ -1,4 +1,5 @@
 import { frameToMs, normaliseCues, remapCues, type Segment } from "./captions";
+import { splitLineAcrossClips } from "./voicecues";
 import { planCutdown } from "./cutdown";
 import { evenPx, DEFAULT_LIMITS, type ExportLimits } from "./limits";
 import {
@@ -181,6 +182,22 @@ export function toTimeline<K extends CompositionId>(id: K, props: PropsById[K], 
           throw new RangeError(`props.voiceover[${line.index}] overlaps props.voiceover[${before.index}]: two voice lines cannot play at once (one starts at ${(line.line.from / p.fps).toFixed(2)} s, the other runs until ${((before.line.from + before.line.durationInFrames) / p.fps).toFixed(2)} s)`);
         }
       }
+      /* A voice line with its words is a caption for as long as it plays, on each clip it overlaps (a title or end card has none). */
+      p.voiceover.forEach((line, index) => {
+        if (!line.text) return;
+        const placedLine = timeline.voiceover[index];
+        const windows = timeline.items.map((item) => ({ startMs: frameToMs(item.from, p.fps), endMs: frameToMs(item.from + item.durationInFrames, p.fps) }));
+        const clipWindows = windows.map((w, i) => (timeline.items[i].kind === "clip" ? w : { startMs: -1, endMs: -1 }));
+        const pieces = splitLineAcrossClips({ startMs: frameToMs(placedLine.from, p.fps), endMs: frameToMs(placedLine.from + placedLine.durationInFrames, p.fps), text: line.text }, clipWindows);
+        pieces.forEach((piece, i) => {
+          const item = timeline.items[i];
+          if (!piece || item.kind !== "clip") return;
+          const total = frameToMs(item.durationInFrames, p.fps);
+          const merged = normaliseCues([...item.subtitleCues, piece], total);
+          item.subtitleCues = merged;
+          item.cues = item.captionStyle ? merged : [];
+        });
+      });
       if (p.music) {
         timeline.music = {
           file: p.music.file,

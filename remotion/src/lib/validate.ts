@@ -313,13 +313,14 @@ function voiceover(value: unknown, path: string, issues: Issues, limits: ExportL
   }
   return value.map((item, index) => {
     const at = `${path}[${index}]`;
-    const rec = record(item, at, issues, ["file", "durationSeconds", "startSeconds", "volume"]) ?? {};
+    const rec = record(item, at, issues, ["file", "durationSeconds", "startSeconds", "volume", "text"]) ?? {};
     if (!isSafeInputPath(rec.file, AUDIO_EXT)) issues.add(`${at}.file`, "must be a plain relative path to an audio file in the input folder");
     return {
       file: typeof rec.file === "string" ? rec.file : "x.mp3",
       durationSeconds: num(rec.durationSeconds, `${at}.durationSeconds`, issues, 0.1, limits.maxSeconds),
       startSeconds: num(rec.startSeconds, `${at}.startSeconds`, issues, 0, limits.maxSeconds, 0),
       volume: num(rec.volume, `${at}.volume`, issues, 0, 1, 1),
+      ...(rec.text !== undefined && rec.text !== null ? { text: text(rec.text, `${at}.text`, issues, limits.maxTextChars, { optional: true }) } : {}),
     };
   });
 }

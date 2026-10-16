@@ -114,7 +114,7 @@ test("the MCP tools follow it: the export tools are listed to the house and to a
   const names = (list: { name: string }[]) => list.map((tool) => tool.name);
   process.env.REMOTION_EXPORTS = "1";
   await listSite(["ws_cust"]);
-  expect(names(await toolsOfferedFor({ id: "ws_legacy" }))).toEqual([...names(TOOLS), "export_video", "get_export", "cancel_export"]);
+  expect(names(await toolsOfferedFor({ id: "ws_legacy" }))).toEqual([...names(TOOLS), "export_video", "assemble_film", "get_export", "cancel_export"]);
   expect(names(await toolsOfferedFor({ id: "ws_cust" }))).toContain("export_video");
   expect(await toolsOfferedFor({ id: "ws_other" })).toBe(TOOLS);
   expect(await toolsOfferedFor(null)).toBe(TOOLS);
@@ -122,7 +122,7 @@ test("the MCP tools follow it: the export tools are listed to the house and to a
   const { runTool } = await import("../../lib/mcp");
   const calls: string[] = [];
   const call = (async (pathname: string) => { calls.push(pathname); return { job: { id: "export_" + "b".repeat(32), status: "queued", queueLine: null, error: null, outputs: [] } }; }) as never;
-  for (const tool of ["export_video", "get_export", "cancel_export"]) {
+  for (const tool of ["export_video", "assemble_film", "get_export", "cancel_export"]) {
     await expect(runTool(tool, { composition: "title-card", props: {} as never, id: "x" }, call, "https://app.test", { exports: false })).rejects.toThrow("Unknown tool");
   }
   expect(calls).toEqual([]);

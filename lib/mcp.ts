@@ -177,6 +177,25 @@ export const EXPORT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "assemble_film",
+    description:
+      "Cut a whole film into one MP4 from media already in Particl: shots in order, spoken lines placed on the film's clock, music, a title and an end card, and the lines' words as captions. Free: it costs no credits " +
+      "(the shots, voice and music are made first, on their own tools, at their own prices). Name every file by handle, never by URL: {\"take\": \"<take id>\"} or {\"upload\": \"<upload id>\"}. " +
+      "timeline: {aspect:'16:9'|'9:16', shots:[{take|upload, trim:{startSeconds,endSeconds}, hasAudio:false}], voice:[{take|upload, startSeconds, text:'what the line says'}], music:{take|upload, volume}, " +
+      "title:{title, subtitle, durationSeconds}, end:{headline, callToAction}, captions:'bold'|'clean'|'karaoke' (burn the lines' words in) or omitted (none), duck:0.3}. " +
+      "Voice lines cannot overlap, and a film is at most 120 s with 24 shots and 24 voice lines. A line's words also go to the subtitle files when output.subtitles is asked for (['srt','vtt']), in any language, Hindi included. " +
+      "Returns an id immediately; use get_export to collect it. Retried with the same request_id you get the film it started.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        timeline: { type: "object", description: "The film: aspect, shots, and optionally voice, music, title, end, captions, duck (see the description)." },
+        output: { type: "object", description: "Optional: the finished files, as for export_video (format, subtitles, conform)." },
+        request_id: { type: "string", description: "Optional: any string unique to this film (8–100 letters, digits, dashes or underscores)." },
+      },
+      required: ["timeline"],
+    },
+  },
+  {
     name: "get_export",
     description: "Check an export: queued (with how many are ahead), rendering, saving, ready (with the link to the file), or failed (with why, and that nothing was billed).",
     inputSchema: { type: "object", properties: { id: { type: "string", description: "The export id from export_video." } }, required: ["id"] },
@@ -450,6 +469,13 @@ export async function runTool(
       if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
       const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
       const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props, ...(args.output ? { output: args.output } : {}) } })) as { job: ExportSummary };
+      return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
+    }
+
+    case "assemble_film": {
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
+      const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
+      const out = (await call("/api/exports/assemble", { method: "POST", body: { requestId, timeline: args.timeline, ...(args.output ? { output: args.output } : {}) } })) as { job: ExportSummary };
       return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
     }
 
