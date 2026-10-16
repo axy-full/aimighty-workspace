@@ -311,3 +311,16 @@ test("a board started with a shorter rail (Treatment and Locations left out, Ele
   expect(startingRail("film")).toEqual(stagesOf("film", null).map((s) => ({ id: s.id })));
   expect(startingRail("previs", { without: ["script"] }).map((s) => s.id)).toContain("script");
 });
+
+test("a removed flag is only for the kind's own stages: the schema refuses it on a custom stage, and a rail never draws more than it holds", () => {
+  const project = newProject("Board");
+  expect(projectSchema.safeParse({ ...project, boardStages: [{ id: "custom-a", custom: true, removed: true }] }).success).toBe(false);
+  expect(projectSchema.safeParse({ ...project, boardStages: [{ id: "treatment", removed: true }] }).success).toBe(true);
+  /* The shape that would have drawn 36: 24 custom stages and 12 flagged ones (read from a draft that never went through the schema). */
+  const custom = Array.from({ length: 24 }, (_, i) => ({ id: `custom-${i}`, label: `Extra ${i}`, custom: true }));
+  const flagged = Array.from({ length: 12 }, (_, i) => ({ id: `custom-gone${i}`, label: `Gone ${i}`, custom: true, removed: true }));
+  const drawn = stagesOf("film", [...custom, ...flagged]);
+  expect(drawn.length).toBeLessThanOrEqual(MAX_STAGES);
+  expect(drawn.some((s) => s.id.startsWith("custom-gone"))).toBe(false);
+  expect(projectSchema.safeParse({ ...project, boardStages: [...custom, ...flagged] }).success).toBe(false);
+});
