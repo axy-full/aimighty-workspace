@@ -1136,3 +1136,4 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #796 gitleaks APPROVED at 16c1b90a: base rules, ignores off, value-specific allowlist, CODEOWNERS. CI after #762. Owner to set: `secrets` as a required check; "Require review from Code Owners".
   - #791 delta NOT APPROVED: a custom stage flagged removed could lift the 24-stage cap to 36; sent to lane D.
   - CI is slow because GitHub Free caps public repos at 20 concurrent jobs, and stray lane-push runs and the release/1 push run share them.
+- **16 Oct 12:31 IST.** #793 delta APPROVED at 46d6fb01: the audio length is measured and written back only after the reach checks, one column, conditional on NULL, no money field. Nit: seeded demo voice takes with no length still get a 422.
