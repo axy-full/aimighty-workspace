@@ -121,7 +121,7 @@
     margin: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left));
     padding: 3px 6px; border: 1px solid var(--gx-pop-border); border-radius: 22px; background: var(--gx-panel);
   }
-  .gx .gx-header > .gx-brand > .gx-brand-name, .gx .gx-header > .gx-brand .brand-logo-word { display: none; }
+  .gx .gx-header > .gx-brand .brand-logo-word { display: none; }
   .gx .gx-header > .gx-bar { order: 0; flex: 1 1 0; }
   .gx .gx-header > .gx-spacer { display: none; }
   .gx .gx-header > .gx-jobs, .gx .gx-header > .gx-credits, .gx .gx-header > .gx-avatar { order: 1; flex-shrink: 0; }
