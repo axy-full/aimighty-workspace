@@ -824,6 +824,11 @@ export async function syncPending(
   results.attempted += native.attempted;
   results.failed += native.failed;
   results.deferred += native.deferred;
+  // Remotion exports (off unless REMOTION_EXPORTS is on): hand queued ones to the worker route, end a stuck run.
+  const exportsPass = await (await import("./exports/jobs")).recoverExports({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += exportsPass.attempted;
+  results.failed += exportsPass.failed;
+  results.deferred += exportsPass.deferred;
   // Dubbing projects: submit the queued, ask after the submitted, collect the finished. Never resubmit.
   const dubs = await (await import("./dubbing")).recoverDubbingJobs({ limit: 4, deadlineAt: options.deadlineAt });
   results.attempted += dubs.attempted;

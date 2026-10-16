@@ -10,6 +10,8 @@
  */
 
 import { displayModelName, getModel } from "./models";
+import { EXPORT_COMPOSITIONS } from "./exports/contract";
+import { exportsEnabled } from "./exports/switch";
 
 /**
  * The longest wait_for_render may hold its request open. No request stays
@@ -146,6 +148,79 @@ export const TOOLS: ToolDef[] = [
   },
 ];
 
+/**
+ * The export tools (lib/exports/tool.ts): offered only while REMOTION_EXPORTS is on. Exports are FREE (0 cr); they
+ * make a finished file from takes and uploads the workspace already holds, with our own templates.
+ */
+export const EXPORT_TOOLS: ToolDef[] = [
+  {
+    name: "export_video",
+    description:
+      "Make a finished file from media already in Particl, with Particl's own templates. Free: it costs no credits. " +
+      `Templates: ${EXPORT_COMPOSITIONS.join(", ")}. Returns an id immediately; the export is queued, then rendered and saved ` +
+      "(usually a minute or two), so use get_export to collect it. Name media by handle, never by URL: " +
+      '{"take": "<take id>"} or {"upload": "<upload id>"}; a clip may add "hasAudio": true to keep its sound. ' +
+      "For example, captions on a cut: composition 'captions', props {aspect:'9:16', clip:{source:{take:'…', hasAudio:true}, cues:[{startMs,endMs,text}]}, captionStyle:'bold'}. " +
+      "Cutdowns are 6, 15 or 30 s ('cutdown', props {aspect, source:{take:'…'}, targetSeconds:15}; add silence:'keep-speech' to keep the spoken parts). " +
+      "A narrated cut ('final') takes voiceover:[{upload:'…', startSeconds:2}] and ducks the music and the clips' sound while a line plays. " +
+      "Optional output: {format:'h264' (default) | 'prores-422' | 'prores-422-hq' (at most 1800 frames: 60 s at 30 fps, 30 s at 60 fps; H.265 is not available), subtitles:['srt','vtt'] (written from the cues), conform:'off' (default) | 'auto' (first re-encodes a variable-frame-rate clip, such as a phone recording, to a steady rate)}. H.264 and the ProRes mezzanine are the only formats: DNxHR is not offered for now. " +
+      "Nothing is spent, and a failed export says nothing was billed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        composition: { type: "string", enum: [...EXPORT_COMPOSITIONS], description: "Which template." },
+        props: { type: "object", description: "The template's props, with media named by handle (see the description)." },
+        output: { type: "object", description: "Optional: the finished files. format: h264 (default), prores-422 or prores-422-hq (the only formats; no DNxHR for now). subtitles: a list of srt and/or vtt. conform: off (default) or auto." },
+        request_id: { type: "string", description: "Optional: any string unique to this export (a UUID is ideal, 8–100 letters, digits, dashes or underscores). Retried with the same request_id, you get the export it started." },
+      },
+      required: ["composition", "props"],
+    },
+  },
+  {
+    name: "assemble_film",
+    description:
+      "Cut a whole film into one MP4 from media already in Particl: shots in order, spoken lines placed on the film's clock, music, a title and an end card, and the lines' words as captions. Free: it costs no credits " +
+      "(the shots, voice and music are made first, on their own tools, at their own prices). Name every file by handle, never by URL: {\"take\": \"<take id>\"} or {\"upload\": \"<upload id>\"}. " +
+      "timeline: {aspect:'16:9'|'9:16', shots:[{take|upload, trim:{startSeconds,endSeconds}, hasAudio:false}], voice:[{take|upload, startSeconds, text:'what the line says'}], music:{take|upload, volume}, " +
+      "title:{title, subtitle, durationSeconds}, end:{headline, callToAction}, captions:'bold'|'clean'|'karaoke' (burn the lines' words in) or omitted (none), duck:0.3}. " +
+      "Voice lines cannot overlap, and a film is at most 120 s with 24 shots and 24 voice lines. A line's words also go to the subtitle files when output.subtitles is asked for (['srt','vtt']), in Latin, Devanagari (Hindi) and the other scripts the worker's Noto fonts cover; Chinese, Japanese and Korean are not available yet. " +
+      "Returns an id immediately; use get_export to collect it. Retried with the same request_id you get the film it started.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        timeline: { type: "object", description: "The film: aspect, shots, and optionally voice, music, title, end, captions, duck (see the description)." },
+        output: { type: "object", description: "Optional: the finished files, as for export_video (format, subtitles, conform)." },
+        request_id: { type: "string", description: "Optional: any string unique to this film (8–100 letters, digits, dashes or underscores)." },
+      },
+      required: ["timeline"],
+    },
+  },
+  {
+    name: "get_export",
+    description: "Check an export: queued (with how many are ahead), rendering, saving, ready (with the link to the file), or failed (with why, and that nothing was billed).",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The export id from export_video." } }, required: ["id"] },
+  },
+  {
+    name: "cancel_export",
+    description: "Stop an export that is queued or rendering. Nothing is billed.",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "The export id." } }, required: ["id"] },
+  },
+];
+
+/** The tools this deployment offers: the workspace tools, plus the export tools while REMOTION_EXPORTS is on. */
+export function toolsOffered(env: Readonly<Record<string, string | undefined>> = process.env): ToolDef[] {
+  return exportsEnabled(env) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
+}
+
+/**
+ * The tools offered to one workspace: the export tools only when exports are on for it (REMOTION_EXPORTS exactly "1" AND the
+ * house workspace or the site setting `enginesOnWorkspaces`, lib/engineGate.ts). The route still refuses with a 404 if one is called anyway.
+ */
+export async function toolsOfferedFor(workspace: { id: string } | null | undefined): Promise<ToolDef[]> {
+  const { engineEnabled } = await import("./engineGate");
+  return (await engineEnabled("REMOTION_EXPORTS", workspace)) ? [...TOOLS, ...EXPORT_TOOLS] : TOOLS;
+}
+
 const usd = (n: number | null | undefined) => (n == null ? "—" : `$${Number(n).toFixed(2)}`);
 const cr = (n: number | null | undefined) => `${Math.round(Number(n ?? 0)).toLocaleString("en-US")} cr`;
 
@@ -236,7 +311,7 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
  * spend is reported in credits and the engine's dollars are never named.
  */
 export async function runTool(
-  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
+  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean; /** Exports are on for this workspace (the route says; absent: only the global switch is asked). */ exports?: boolean } = {}
 ): Promise<string> {
   switch (name) {
     case "prepare_shot": {
@@ -390,7 +465,41 @@ export async function runTool(
       );
     }
 
+    case "export_video": {
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
+      const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
+      const out = (await call("/api/exports", { method: "POST", body: { requestId, composition: args.composition, props: args.props, ...(args.output ? { output: args.output } : {}) } })) as { job: ExportSummary };
+      return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
+    }
+
+    case "assemble_film": {
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
+      const requestId = args.request_id ?? `mcp-${crypto.randomUUID()}`;
+      const out = (await call("/api/exports/assemble", { method: "POST", body: { requestId, timeline: args.timeline, ...(args.output ? { output: args.output } : {}) } })) as { job: ExportSummary };
+      return `${exportLine(out.job)}\n\nid: ${out.job.id}\nprice: Free (0 cr)\n\nCall get_export with this id to collect it.`;
+    }
+
+    case "get_export": {
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
+      const { job } = (await call(`/api/exports/${encodeURIComponent(String(args.id))}`)) as { job: ExportSummary };
+      return exportDescribe(job, origin);
+    }
+
+    case "cancel_export": {
+      if (!exportsEnabled() || options.exports === false) throw new Error(`Unknown tool: ${name}`);
+      const { job } = (await call(`/api/exports/${encodeURIComponent(String(args.id))}`, { method: "PATCH", body: { action: "cancel" } })) as { job: ExportSummary };
+      return exportLine(job);
+    }
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
+}
+
+type ExportSummary = { id: string; status: string; queueLine: string | null; error: string | null; outputs: { url: string; filename: string }[] };
+const EXPORT_WORDS: Record<string, string> = { queued: "In queue", rendering: "Rendering", saving: "Saving", ready: "Ready", failed: "Failed", cancelled: "Cancelled" };
+const exportLine = (job: ExportSummary) => job.queueLine ?? `${EXPORT_WORDS[job.status] ?? job.status}${job.error ? ` — ${job.error}` : ""}`;
+function exportDescribe(job: ExportSummary, origin: string): string {
+  const files = job.outputs.map((o) => `${o.filename}: ${origin}${o.url}\n(That link needs the same token — it is not public.)`).join("\n");
+  return `${job.id} · ${exportLine(job)}${files ? `\n\n${files}` : ""}`;
 }

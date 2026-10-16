@@ -558,6 +558,48 @@ return await withRecoveryActivity('storage', async () => {
 });
 }
 
+/**
+ * Stores an upload from a stream without holding it: parts go to the object store as they arrive (multipart in the cloud, an
+ * appending write stream on disk locally) while a running sha256 and byte count are kept. `maxBytes` ends it. For finished
+ * exports (a ProRes file can be over a gigabyte); small files use `storeUpload`.
+ */
+export async function storeUploadStream(
+  uploadId: string, ext: string, body: ReadableStream<Uint8Array>, contentType: string, maxBytes: number,
+): Promise<{ url: string; sha256: string; bytes: number }> {
+return await withRecoveryActivity('storage', async () => {
+
+  const { createHash } = await import("node:crypto");
+  const hash = createHash("sha256");
+  let total = 0;
+  async function* chunks(): AsyncGenerator<Buffer> {
+    const reader = body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) throw new Error("A file exceeds its size limit.");
+        const buf = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+        hash.update(buf);
+        yield buf;
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+  }
+  if (usingCloud()) {
+    await cloudBackend().put(uploadPath(uploadId, ext), Readable.from(chunks()), { contentType, overwrite: true, multipart: true });
+  } else {
+    await mkdir(UPLOAD_DIR, { recursive: true });
+    const { createWriteStream } = await import("node:fs");
+    const { pipeline } = await import("node:stream/promises");
+    await pipeline(Readable.from(chunks()), createWriteStream(path.join(UPLOAD_DIR, `${uploadId}.${ext}`)));
+  }
+  return { url: uploadPath(uploadId, ext), sha256: hash.digest("hex"), bytes: total };
+
+});
+}
+
 /** The largest reference upload accepted (MAX_REFERENCE_BYTES in
  *  lib/uploadReservations.ts, which imports this module); a public read past it
  *  is not one of our uploads. */

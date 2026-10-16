@@ -1,0 +1,65 @@
+# Export templates (Remotion)
+
+Particl's own templates for exports: captions on a cut, title and end cards, 16:9 and 9:16 versions, 6/15/30 s cutdowns and the final MP4. Plan: `docs/plans/remotion.md`.
+
+- **Only our templates are rendered.** A request names one composition and passes plain props; nobody uploads a project or code.
+- **Self-hosted only.** Rendering runs on our own worker (no Remotion Lambda, no AWS). Free License, confirmed in writing 13 Oct 2026; at 4 people the Company License must be bought first. **No licence key and no events are sent to Remotion** (owner decision, 14 Oct 2026): server-side with no key the renderer sends nothing. Pinned to 4.x. Upgrading to Remotion 5.x needs the owner's approval first (NEEDS AKSHAY): 5.0 may require a licence key.
+- **Nothing is fetched.** The typeface is bundled in `public/fonts` (SIL OFL); media and logos are files in the session's `input/`, named by plain relative paths. A unit test fails if browser or command code mentions a URL, `fetch`, a socket or a stylesheet import.
+- **Free to customers**, 0 cr. Paid engine steps inside an export bill through their own paths; nothing here knows about prices.
+- **Own package.** `remotion/` has its own `package.json` and lockfile with pinned versions, so the app's install and build do not carry Remotion, webpack or a browser. The worker image installs it.
+
+## Compositions
+
+| id | what | props |
+|---|---|---|
+| `title-card` | title, subtitle, accent bar, optional logo | `card` |
+| `end-card` | headline, call-to-action pill, line, optional logo | `card` |
+| `captions` | one clip with burned-in captions (`bold`, `clean`, `karaoke`) | `clip`, `captionStyle` |
+| `reframe` | one clip as 16:9 or 9:16: `fill` (crop on a focus point) or `fit` (whole picture, blurred backdrop) | `clip` |
+| `cutdown` | 6, 15 or 30 s from one source: marked moments (by hand or from the speech) or an even spread; frame-exact | `source`, `targetSeconds`, `keep`, `silence`, `cues` |
+| `final` | title, clips (trimmed, reframed, captioned), end card, music, and spoken lines (a narrated assembly) | `title`, `clips`, `end`, `music`, `voiceover`, `duck` |
+| `fixture-clip` | our own sample picture, for tests and timing | `durationSeconds`, `label` |
+
+All take `aspect` (`16:9` or `9:16`), `fps` (24, 25, 30, 60; default 30) and `scale` (0.1 to 1; default 1 = 1920x1080 or 1080x1920; smaller is for previews and tests). Props are checked by `src/lib/validate.ts`: unknown keys, URLs, absolute paths, `..`, over-long text, too many clips or cues are refused. A source needs its `durationSeconds`, `width` and `height` (the app knows them); a declared length longer than the file would fail a render, so the worker's export command can probe and correct it.
+
+### Silence-aware cutdowns (`cutdown`: `silence`)
+
+`silence` is `off` (the default) or `keep-speech`. With `keep-speech` the export first finds the quiet stretches of the source's sound with the bundled ffmpeg's `silencedetect` (quieter than -35 dB for at least 0.6 s), keeps everything else, padded by 0.15 s each side so no word is clipped, and drops blips shorter than 0.3 s. It then **chooses whole spoken stretches for the cut**: none under 1 s (unless nothing is longer), longest first, until the target length (less anything you marked in `keep`) is used; a stretch is never shrunk to make room, and when even the longest is over the target the planner trims that one from its tail. The chosen stretches are added to your `keep` ranges, which **always survive** (at most 12 ranges in all; the speech that does not fit is dropped first), and the 6, 15 or 30 s cut is planned from that (`src/lib/silence.ts`, `node/silence.ts`). The render gets the final `keep` ranges and `silence: "off"`. `result.json` has `silence`: the file, the seconds of silence found, all the spoken stretches, the ones chosen, and the ranges the cut was planned to keep. Two fallbacks are named there under `fallback`: **`no_silence_found`** (no quiet stretch at all, so "speech" would be the whole file and marks nothing) and **`all_silent`** (no speech); either way nothing is added and the cut is the even spread (or your own `keep`). When the chosen speech adds up to less than the target, the cut is padded with the neighbouring footage (forward first, then backward), as for any `keep` that falls short. A source with no sound, or a worker with no detector, refuses it as a bad spec; a detector that cannot read the file fails with its own code, `silence_failed`, and exit code 5.
+
+### Narrated assembly (`final`: `voiceover`, `duck`)
+
+`voiceover` is a list of up to 24 spoken lines, each `{ file, durationSeconds, startSeconds, volume }` (an audio file in `input/`, its length, where it starts on the finished video's clock in seconds, 0 to 1; start defaults to 0, volume to 1). A line may not start after the end of the cut; one that runs past it is cut at the end. **While any line plays, the music and the clips' own sound drop to `duck` of their level** (0 to 1, default 0.3; 1 = no ducking), with a straight 0.2 s ramp down before the voice starts and back up after it stops (`src/lib/ducking.ts`, pure frame maths). The voice files are checked like the music: they must exist, have sound and be as long as the request says. Measured on a real render: the music and the clip sound sit at 0.3 of their level during a line and are back to above 0.85 after it, and the voice is heard only where it is placed.
+
+A line may also carry `text` (what it says, at most 160 characters; Latin, Devanagari and the other scripts the image's Noto fonts cover, CJK not yet). With it the line is a caption for as long as it plays, in the style of `captionStyle`, and a subtitle in the `.srt` / `.vtt` files either way: the words are shared out over the line by letters and split between the shots it runs across (`src/lib/voicecues.ts`). A title or end card under a line has none. Measured on a real render: the words are drawn on both shots of a line that runs across a cut, and nowhere else. Devanagari and other covered scripts come from the image's Noto fonts (`fonts-noto-core`), as for any caption; the image has no CJK font.
+
+## The export command (what the worker runs)
+
+`node build/cli.mjs`, working directory = the session folder. No arguments.
+
+```
+spec.json  { "version": 1, "composition": "final", "props": {...}, "output": { "video": true, "format": "h264", "stills": [0, 45], "subtitles": ["srt", "vtt"], "conform": "auto" } }
+input/     the files the props name
+output/    export.mp4 (or export.mov for ProRes), still-<frame>.png, subtitles.srt / subtitles.vtt, result.json
+```
+
+`output.format` is `h264` (the default: `export.mp4`, CRF 20, AAC), `prores-422` or `prores-422-hq` (`export.mov`, 10-bit 4:2:2 with 16-bit PCM sound; at most 1800 frames: 60 s at 30 fps, 30 s at 60 fps; a constant, not a setting). H.265 is refused ("H.265 is not available."): owner, 15 Oct 2026, until his lawyer answers. A ProRes 30 s 1080p file is about 485 MB (422) or 716 MB (422 HQ); `result.json` names each file with its `format` and `mime`. **H.264 and the ProRes mezzanine are the only formats: DNxHR is dropped for now** (owner, 16 Oct 2026; the ffmpeg bundled in Remotion has no DNxHD encoder). Nothing offers or promises it, and `dnxhr` and `dnxhd` are refused like any other unknown name.
+
+`output.subtitles` (`srt` and/or `vtt`) writes sidecar subtitle files from the same cues the captions are burned in from, on the finished video's own clock (a trim moves them, a cut-away caption is not in the file, a cutdown's source-time cues land in the cut). It is plain text: with `output.video: false` and no stills it needs no input file and no renderer. An export with no caption text refuses it (`spec.output.subtitles: the export has no caption text (no cues) to write`). `result.json` lists each file with kind `subtitle`, its format and mime (`application/x-subrip`, `text/vtt`).
+
+`output.conform` is `off` (the default) or `auto`. Every picture input is probed for its frame rate and codec; with `auto`, a **variable-frame-rate** file (its nominal and average rates differ by more than 2%, as phone clips and screen recordings often do) is re-encoded once, before the render, to a **constant rate equal to the export's own** (x264 CRF 14, sound re-encoded as AAC) with the bundled ffmpeg, **only for the stretch of it the export uses** (padded 0.25 s; a file used twice is covered from its earliest point to its latest), stored as a copy that starts at zero (the render is told where in the source it starts, through `offsetSeconds` on that source, set by the export itself; a request that carries it is refused, so trims and cues are unchanged and the sound stays in step), and the render reads that copy (moved into place, not copied); the original in `input/` is never changed. A **ProRes, DNxHD, 10-bit or alpha** source is never flattened to 8-bit 4:2:0: it is left alone and reported `skipped`. A file already at a constant rate is never touched, even at another rate (the render resamples it by time, as before); it is only reported. The whole pre-pass has a time budget of 300 s (150 s a file, and each file gets what is left); a file that finds none left, or whose copy fails, is read as the original, its partial copy is removed, and `conformFailed` says so. `result.json` has `inputs`: one line per picture with `fps`, `variableFrameRate`, `targetFps`, `conformed`, `resampled` and, where it applies, `conformFailed` or `skipped`. Cover art in an audio file is not a picture.
+
+Exit codes: 0 done, 2 spec invalid or too long, 3 an input is missing or is not what the spec says it is (ffprobe reads every clip and music file: a different length by more than 0.1 s, a different size, or sound the request says is there but is not, is refused), 4 the render failed (`output/result.json` says why), 5 the silence detector could not read the source's sound (`silence: keep-speech` only). Tuning comes only from the worker's environment: `REMOTION_RUNTIME_DIR` (where Remotion's Chrome download lives; the command moves there after reading its session paths, because Remotion looks for Chrome under the working directory's nearest package.json), `REMOTION_CONCURRENCY` (default 2), `REMOTION_MAX_SECONDS` (default 120, cannot be raised above it), `REMOTION_BROWSER_EXECUTABLE`, `REMOTION_BUNDLE_DIR`. No licence key is passed, ever (owner decision, 14 Oct 2026): with none, the renderer sends nothing to Remotion. A test fails if one appears.
+
+## Layout and commands
+
+- `src/lib/` plain TypeScript, no Remotion or React: props, validation, frame maths, captions, cutdown, reframe, timeline. Unit tests: `tests/unit/remotion*.spec.ts`.
+- `src/*.tsx` the compositions; each renders a timeline from `src/lib/timeline.ts`.
+- `node/` the export command (`export.ts`, `cli.ts`, `renderer.ts`) and the build (`bundle.mjs`).
+
+```sh
+cd remotion && npm ci && npm run typecheck && npm run bundle    # build/bundle and build/cli.mjs
+# Real renders, a few small frames and clips on CPU (about 100 s):
+~/ops/heavy.sh nice -n 10 node --test --test-concurrency=1 remotion/test/render.test.mjs
+```
+
+The first real render downloads Remotion's pinned Chrome Headless Shell into `node_modules/.remotion` (about 90 MB, from remotion.media). The worker image does that at build time instead (PR 2).

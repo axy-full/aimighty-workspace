@@ -1,0 +1,60 @@
+import { EXPORT_COMPOSITIONS, EXPORT_PRICE_LABEL } from "./contract";
+import { EXPORT_PRICE, exportWorkerConfig } from "./limits";
+import { exportsEnabled } from "./switch";
+
+/**
+ * The export tool, declared once (rule 11, the registry's shape: id, kind, inputs, provider, key, price, mock,
+ * who may call). The button (screens come with Claude Design), Make, a board card, Atomik, a saved skill and an
+ * outside agent over MCP all call this tool through the same route (POST /api/exports), at the same price, through the
+ * same gate. Nothing about it is a person's alone: it spends nothing, so any caller with a render-scope token or a
+ * signed-in person may run it. A paid step an export depends on is a different tool, priced and approved on its own
+ * path before the export is asked for.
+ */
+export const EXPORT_TOOL = Object.freeze({
+  id: "export_video",
+  kind: "app-action" as const,
+  /** Anyone who can render in the workspace; never an admin-only or people-only action. */
+  callers: "render" as const,
+  provider: "Remotion on our own export worker (our own templates only)",
+  /** The settings it needs; a tool without them names them. */
+  keys: ["REMOTION_WORKER_URLS", "REMOTION_WORKER_SECRETS"] as const,
+  route: "/api/exports",
+  compositions: EXPORT_COMPOSITIONS,
+  /** The price of an export: always 0 cr, "Free". There is no quote to fetch and nothing to approve. */
+  price: (): typeof EXPORT_PRICE => EXPORT_PRICE,
+  priceLabel: EXPORT_PRICE_LABEL,
+  /** The mock: the same tool against an in-memory worker (tests/unit/remotionWorkerFake.ts); no render, no network. */
+  mock: "tests/unit/remotionWorkerFake.ts",
+});
+
+/**
+ * The assembly tool, declared once (rule 11): one timeline of shots, voice lines, music, titles and words cut into an MP4 on the
+ * export worker (lib/exports/assemble.ts). The Edit step's button, Make, a board card, Atomik, a saved skill and an outside agent
+ * over MCP all call it through the same route, at the same price (free), through the same gate as `export_video`: it is that tool's
+ * `final` template, asked for by what a film is made of. It makes nothing that costs; the shots, the voice and the music are made
+ * first on their own tools, at their own prices and approvals.
+ */
+export const ASSEMBLE_TOOL = Object.freeze({
+  id: "assemble_film",
+  kind: "app-action" as const,
+  callers: "render" as const,
+  provider: EXPORT_TOOL.provider,
+  keys: EXPORT_TOOL.keys,
+  route: "/api/exports/assemble",
+  composition: "final" as const,
+  price: EXPORT_TOOL.price,
+  priceLabel: EXPORT_PRICE_LABEL,
+  mock: EXPORT_TOOL.mock,
+});
+
+/** Whether the tool can run now, and when it cannot, why (naming the missing setting, never its value). */
+export function exportToolAvailability(env: Readonly<Record<string, string | undefined>> = process.env): { available: boolean; reason: string | null } {
+  if (!exportsEnabled(env)) return { available: false, reason: "Exports are not switched on for this deployment." };
+  if (!exportWorkerConfig(env)) return { available: false, reason: `Exports need ${EXPORT_TOOL.keys.join(" and ")}: one to three worker addresses and a secret for each.` };
+  return { available: true, reason: null };
+}
+
+/** The total of a plan that includes an export: the export adds nothing; paid steps are summed at their own prices. */
+export function planTotalCredits(paidStepCredits: readonly number[]): number {
+  return paidStepCredits.reduce((sum, credits) => sum + credits, EXPORT_TOOL.price().credits);
+}

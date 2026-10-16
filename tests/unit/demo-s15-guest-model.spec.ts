@@ -6,11 +6,11 @@ import { decodeGuestBrief, firstBoard, GUEST_BRIEF_KEY } from "../../lib/guest/b
 import { SAMPLE_TITLE, cleanSampleTitle } from "../../lib/guest/sample";
 
 test("site settings: off by default; only exact booleans and well-formed ids survive", () => {
-  expect(DEFAULT_SITE).toEqual({ openSignup: false, guestHome: false, visitorPages: false, guestWorkspace: null, newInterfaceWorkspaces: [] });
+  expect(DEFAULT_SITE).toEqual({ openSignup: false, guestHome: false, visitorPages: false, guestWorkspace: null, newInterfaceWorkspaces: [], enginesOnWorkspaces: [] });
   expect(cleanSite(null)).toEqual(DEFAULT_SITE);
   expect(cleanSite([true])).toEqual(DEFAULT_SITE);
   expect(cleanSite({ openSignup: "true", guestHome: 1, guestWorkspace: "ws a; drop" })).toEqual(DEFAULT_SITE);
-  expect(cleanSite({ openSignup: true, guestHome: true, guestWorkspace: "ws_123", extra: 1 })).toEqual({ openSignup: true, guestHome: true, visitorPages: false, guestWorkspace: "ws_123", newInterfaceWorkspaces: [] });
+  expect(cleanSite({ openSignup: true, guestHome: true, guestWorkspace: "ws_123", extra: 1 })).toEqual({ openSignup: true, guestHome: true, visitorPages: false, guestWorkspace: "ws_123", newInterfaceWorkspaces: [], enginesOnWorkspaces: [] });
   /* The visitor pages: off by default, on only when stored exactly true, and a change from /admin like the others. */
   expect(cleanSite({ visitorPages: "yes" }).visitorPages).toBe(false);
   expect(cleanSite({ visitorPages: true }).visitorPages).toBe(true);
