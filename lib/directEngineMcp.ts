@@ -12,7 +12,7 @@ import { creditUsd } from "./creditTerms";
  * card, Atomik, a saved skill and an outside agent call the same tool, at the same price, through the same approval).
  *
  * - **Behind the same engine gate as the route.** A tool is listed, and callable, only where its own `*Tools()` says it is present for this workspace
- *   (its switch is on and the workspace is the house or on the engine list, and for lip-sync where its face gate can run). Anywhere else it is not in the list
+ *   (its switch is on and the workspace is the house or on the engine list; lip-sync and Runway are the house's only). Anywhere else it is not in the list
  *   and a call says there is no such tool.
  * - **The same door and the same price.** A call goes to the engine's own route as the caller (lib/mcp.ts makeCaller: the workspace's own token, its scope and its
  *   monthly ceiling) and asks the route for the quote (`quoteOnly`).
@@ -21,7 +21,7 @@ import { creditUsd } from "./creditTerms";
  *   rig-agent-limits.ts): in **Ask** the call returns the priced, prepared job and says it needs a person's approval, and nothing is started or spent; in **Auto** it may start the
  *   job only when its price is at or under the per-job line (the Rig's line, and never above guardrail 4, SOW 7A: 200 cr at $0.10 a credit), the approval then being the workspace
  *   admin's standing choice, not the caller's; above the line it is prepared and asks a person. Nothing in the app yet lets an admin switch the setting to Auto (that screen is
- *   U1's), so until it does every MCP call here is Ask. A token that may not spend is refused by the route (requireRender); consent is only ever read by these tools.
+ *   U1's), so until it does every MCP call here is Ask. A token that may not spend is refused by the route (requireRender). No face or voice is checked anywhere (owner, 16 Oct 2026).
  * - Declared once beside each engine's handler (`LIP_SYNC_TOOL`, ...); this file only maps them to MCP's shape. Names are the registry's tool ids.
  */
 type Args = Record<string, string | number | boolean | undefined>;
@@ -151,18 +151,14 @@ const FLUX2_EDIT: DirectTool = {
   def: {
     name: "flux2_edit",
     description:
-      "Edit from one to eight reference images of this workspace (FLUX.2, Black Forest Labs). Priced first. Every reference passes the consent gate first: it needs the cast member each one shows, the production " +
-      "and what it is for. Returns an image take id; collect it with get_render.",
-    inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to change." }, reference_upload_ids: { type: "string", description: "Comma-separated upload ids, one to eight." }, cast_member_ids: { type: "string", description: "Comma-separated cast member ids, one per reference, in the same order." }, ...SIZE, use: { type: "string", description: "production, ads or social." }, seed: { type: "number" }, ...BFL_COMMON }, required: ["prompt", "reference_upload_ids", "cast_member_ids", "project_id", "use"] },
+      "Edit from one to eight reference images of this workspace (FLUX.2, Black Forest Labs). Priced first. No face is checked by Particl; the provider's own filters apply. " +
+      "Returns an image take id; collect it with get_render.",
+    inputSchema: { type: "object", properties: { prompt: { type: "string", description: "What to change." }, reference_upload_ids: { type: "string", description: "Comma-separated upload ids, one to eight." }, ...SIZE, seed: { type: "number" }, ...BFL_COMMON }, required: ["prompt", "reference_upload_ids"] },
   },
   present: bflPresent("flux2_edit"),
   draft: (b) => (b.model ?? "flux-2-pro") === "flux-2-pro",
-  prepared: (b) => `prepared: ${String(b.model ?? "flux-2-pro")} edit of ${Array.isArray(b.references) ? b.references.length : 0} reference(s) for production ${String(b.projectId)}`,
-  request: (a) => {
-    const uploads = list(a.reference_upload_ids), cast = list(a.cast_member_ids);
-    if (uploads.length !== cast.length) throw new Error("Give one cast member for each reference, in the same order.");
-    return { path: "/api/bfl", body: { tool: "edit", prompt: str(a.prompt), model: str(a.model), width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id), use: str(a.use), references: uploads.map((uploadId, i) => ({ uploadId, castMemberId: cast[i] })) } };
-  },
+  prepared: (b) => `prepared: ${String(b.model ?? "flux-2-pro")} edit of ${Array.isArray(b.references) ? b.references.length : 0} reference(s)`,
+  request: (a) => ({ path: "/api/bfl", body: { tool: "edit", prompt: str(a.prompt), model: str(a.model), width: num(a.width), height: num(a.height), seed: num(a.seed), projectId: str(a.project_id), references: list(a.reference_upload_ids).map((uploadId) => ({ uploadId })) } }),
   describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
