@@ -1311,3 +1311,6 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **New lane rule:** a hard timeout (`timeout -k`) on every Remotion/Chrome run, logged. Lane D is checking the worker's per-render timeout for the Mon 19 test.
   - **#790 APPROVED** at 5fa70fb1 (the Auto grid proves the owner's condition on the real code path; should-fix: a test of `mcpSpendPolicy()` itself, as a follow-up). Queued after #812.
   - **Keys:** RUNWAY_API_KEY and ANTHROPIC_API_KEY are set (owner).
+- **16 Oct 16:11 IST.** The worker's render path already has a hard per-render timeout.
+  - **How it works:** REMOTION_EXPORT_RUN_TIMEOUT_MS, default 200 s. On timeout the whole process group is killed, strays are swept, and the job records "The export took longer than allowed. Nothing billed." This is covered by tests.
+  - **Gap:** the Dockerfile's build-time checks (the fixture render and the deck print) have no timeout. Lane D wraps them in `timeout -k 10s 300s` with a log line, after Cast and once #775 and #767 land.
