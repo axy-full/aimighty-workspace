@@ -8,7 +8,7 @@
 | `privacy-policy.md` | Privacy Policy, with the list of vendors that receive data |
 | `refund-policy.md` | Refund Policy |
 | `acceptable-use-policy.md` | Acceptable Use Policy |
-| `licence-register.md` | Fonts and assets rendered into customer outputs, with licences; UI-only fonts apart |
+| `licence-register.md` | Fonts and assets rendered into customer outputs, with licences; UI-only fonts apart. Includes the FFmpeg lgpl build used for DNxHR (L-L10) |
 | `unknown-assets.md` | Every font and asset marked UNKNOWN: where it is used (file and line), which outputs it can reach, how to clear or replace it |
 | `where-your-data-goes.md` | One page, one table: every provider, what is sent, how long it keeps it, what it does about training, and whether training is switched off on our account. Source for the public page on the site |
 | `vendor-requests.md` | Drafts of the emails asking BytePlus, Google, OpenAI, ElevenLabs, Topaz, Bria and Runway for written data terms, plus a BFL "Training Opt Out" and a Sync Labs request (sections 8 and 9), and an owner action for Sarvam. Optional information requests, not a condition of wiring a vendor (owner, 15 Oct 22:15). Nothing is sent |
@@ -80,3 +80,7 @@ Owner, 15 Oct 22:15: switch off training or "improve the models" on every accoun
 - [ ] **Check, nothing recorded either way** (the repo has no record of whether the account offers such a setting): OpenAI, Anthropic, Google (Gemini API), xAI, BytePlus, fal, Higgsfield, Topaz, Bria, Recraft, Google Cloud Vision (its page says it does not train on content sent; check for a setting anyway). Open each account's data or privacy settings; if one offers a training or "improve the models" switch, turn it off and record the date and who.
 - [ ] **Add the provider links:** replace each `[LINK: ...]` in `where-your-data-goes.md` and each `[link to ... privacy policy]` in `privacy-policy.md` with that provider's own policy page.
 - [ ] **The optional emails** (`vendor-requests.md`) are information requests: send any you want answers from; nothing waits on them.
+
+## Delivery formats
+
+**DNxHR is back as a delivery format** (owner, 16 Oct 2026, 11:50), once lane D's PR is tested; ProRes mezzanine and H.264 stay. The encoder is the BtbN FFmpeg "lgpl" build (LGPL-2.1-or-later), used only inside the export worker image and not distributed to customers: see `licence-register.md` section A4 and ⚖ L-L10. It is written on our own worker and sends nothing to any provider (`where-your-data-goes.md`).

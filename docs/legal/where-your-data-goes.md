@@ -81,6 +81,8 @@ These are what each provider's **own pages said when fetched on 16 Oct 2026**, q
 - ⚖ LAWYER L-W3: that an email opt-out to BFL (and the dashboard setting) is enough, who may rely on it, whether the written copy is kept, and the transfer terms (standard contractual clauses, BFL GmbH as controller) for the notice.
 - ⚖ LAWYER L-W4: Sarvam's published transfers to the US and the EU against "stays in India" wording; whether Indian users' sensitive data "where feasible" is enough for our notice; and the processing agreement (L-P3b).
 
+**Delivery formats (16 Oct 2026, owner 11:50):** **DNxHR is back as a delivery format** (HQ and HQX mezzanine, alongside ProRes and H.264), once lane D's PR is tested. It is written on our own export worker; no provider receives anything for it, so it adds no row to the tables above. Its encoder's licence is in `licence-register.md` (section A4, L-L10).
+
 ## Record of switches (fill in; date and who)
 
 When someone switches off training, "improve the models" or a retention setting in a provider's console, add the line here the same day. Who = the role or initials, never a secret.
