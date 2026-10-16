@@ -157,7 +157,7 @@ describe("Remotion compositions (real renderer)", { skip }, () => {
 
   for (const cover of ["treatment", "pitch"]) {
     test(`film deck, ${cover} cover: the real browser prints the deck page to a three-page slide PDF`, () => {
-      /* On the build droplet the Remotion-downloaded shell (Chromium 149) hangs on --print-to-pdf (its network service crashes); Playwright's headless shell (REMOTION_BROWSER_EXECUTABLE=~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell) prints the same page. Whether the worker image's own shell prints is checked on its first real deploy. */
+      /* On the build droplet the Remotion-downloaded shell (Chromium 149) hangs on --print-to-pdf (its network service crashes); Playwright's headless shell (REMOTION_BROWSER_EXECUTABLE set to the chrome-headless-shell inside Playwright's chromium_headless_shell folder) prints the same page. Whether the worker image's own shell prints is checked on its first real deploy. */
       /* The page is lib/pdf/html.ts's own output for a small film board (three pages: cover, the idea, the brief), saved as a fixture. */
       const html = readFileSync(path.join(root, "test", "pdf-check", `film-${cover}.html`));
       /* The worker image keeps the typeface beside its command; here it is the bundle's own public folder. */
