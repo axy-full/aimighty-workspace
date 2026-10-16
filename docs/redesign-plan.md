@@ -1000,3 +1000,40 @@ Owner (Akshay, 16 Oct, 13:15): BUG, high priority, on the demo path. The Enhance
 5) Ship it in the next deploy; auto-merge into release/1 on green as usual. Tell me the cause and the fix in the next report.
 
 **Lead's note.** The lead cannot sign in to production or read its logs (no account, no container access); anonymous POST /api/prompt/enhance answers 401 in 0.15-0.31 s, so auth and routing are up. Diagnosis is from the deployed code (main 709497a); the owner's browser trace confirms it.
+
+## Owner, 16 Oct 2026, 15:05 IST: sharpness, Agent and Director, decks, editing, carry-overs
+
+Recorded by the lead. Sections 1 and 3 to 6 are verbatim. Section 2 sets pricing and sourcing policy, which CLAUDE.md § Pricing keeps out of this repo; the lead holds it verbatim privately. What follows for section 2 is only what the product says or does in the open.
+
+**1) SHARPNESS TARGET: APPLE 5K/6K.** Screenshots for every v25/v26 screen PR at 1280×800, 1440×900, 1728×1117, 1920×1080, 2560×1440 and 3008×1692, the last two with deviceScaleFactor 2 (Studio Display, Pro Display XDR). Canvas scaling uses real layout sizes, never CSS transform/zoom on text (if #748 uses zoom, convert it). All UI and the logo vector; borders snapped to device pixels; every image served at ≥2× its displayed size via srcset; full-screen preview uses the 4K rendition when one exists; video posters at the same density. Any soft text, blurry border or upscaled image in those screenshots is a must-fix. Add an automated check that fails when an <img> is displayed larger than its natural size ÷ 2.
+
+**2) AGENT vs DIRECTOR (public part).**
+- **Agent mode:** Particl picks engines, plans, writes, designs and checks. No engine names are shown. Each Agent quote is ONE all-in credit price, shown before approval and charged exactly, with no breakdown. The pricing page says only that Agent mode jobs use more credits than Director mode because Particl directs the work end to end. The rule is server-side, in config; the owner sets the numbers.
+- **Director mode:** every feature offers as many engines as we can (text, image, cover/design, video, voice, lip-sync, upscale, music…), each with name, strengths, limits and price per unit, on all plans. This replaces "Pro pick admins only" and "models named only in Pro pick". Director breadth comes through aggregators (fal, Runway API, Replicate, OpenRouter for text).
+- **The 31 Oct demo runs in Agent mode on the house workspace.** Director engine breadth comes after the demo unless it's already wired.
+
+**3) DECKS: 2SLIDES PARKED, WE BUILD OUR OWN TREATMENT BUILDER** (after 31 Oct; spec in docs/plans/deck-editor.md). Do NOT wire the 2Slides API; drop it from the env plan. The full flow, section library and spikes are as the owner wrote them; docs/plans/deck-editor.md carries them verbatim.
+
+**4) EDITING IS THE CORNERSTONE** (deck first, then every output in the app)
+- Click any element to edit it (text, image, colour, position, size); a text change never costs a render.
+- Regenerate one thing only (one image, one paragraph, one page visual), never the whole deck.
+- "Change this…" on any selection in plain words, using the mode's engine choice.
+- Version history per page and per element: compare side by side, restore any.
+- Unlimited undo/redo, lock elements, comments, duplicate a page to try an alternative.
+
+Apply the same standard to board cards, shots and stills: every output is editable at the smallest unit.
+
+**5) CARRY-OVERS**
+- **BFL FLUX Upscale beside Topaz Astra 2:**
+  - Same BFL_API_KEY. Precise is the default; Creative only by explicit choice, with a "faces and products may change" note.
+  - Live on the house workspace by Wed 21 Oct.
+  - **UPSCALE BAKE-OFF Thu 22 Oct:** 3 house clips (face close-up, product, wide), 5 s each, both engines at 2× and 4K, ~$30–40. Exact estimate first, and run only on the owner's yes. A side-by-side page with zoomed crops, cost and time; the owner picks the default.
+- **Bake-off list** with dates, estimates and owners: storyboard (Recraft / GPT Image 2.5 / Nano Banana Pro and 2.1, 8 panels, two characters, three styles), 10-brief video, Hindi lip-sync test clip, upscale.
+- **Evolink vs BytePlus:** we stay direct with BytePlus for Seedance 2.5; Evolink resells it about 25–30% higher. Confirm the BytePlus rates from its own price page and compare video-reference/edit rates. Report only.
+- **Repo:**
+  - A full-history gitleaks scan found no secrets. Add gitleaks to CI as a required check.
+  - Estimate only: going private (Actions minutes, what breaks, a self-hosted option).
+  - The owner updates the repo description himself.
+- **Google Stitch** is not a deck engine; don't build on it.
+
+**6) Coming today from the owner:** allowance_usd for ws_legacy, whether RUNWAY_API_KEY is set, and the Sarvam switches.
