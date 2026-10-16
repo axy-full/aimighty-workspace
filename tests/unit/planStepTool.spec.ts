@@ -241,3 +241,39 @@ test("over MCP: one call to the board route as the caller, never an approval; an
   const unpriced = async () => ({ plan: { ...reply.plan, priced: false, total: null, ceiling: null, reason: "Pier is not priced yet." } });
   expect(await runTool("plan_step", { board_id: "draft-1" }, unpriced as never, "https://example.invalid")).toContain("not priced yet: Pier is not priced yet.");
 });
+
+test("a tool's plan never replaces a plan waiting on the board; it may replace an earlier tool-made one, and says so; a person's own plan replaces either", async () => {
+  await inRun("pstep-replace", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { preparePlanStep } = await import("../../lib/workbench/plan-step-tool");
+    const { db } = await import("../../lib/db");
+    const r = renders(ws, () => 0.3);
+    const deps = await depsFor(ws, r);
+    const state = async (id: string) => String((await db().execute({ sql: "SELECT state FROM rig_agent_runs WHERE id=?", args: [id] })).rows[0].state);
+    /* A plan the person made on the board, waiting for their approval. */
+    const mine = await agent.planRigAgentStep({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: "req-pstep-board", step: "shots" });
+    await agent.advanceRigAgentRun(mine.id, deps);
+    expect(await state(mine.id)).toBe("needs_you");
+    await expect(preparePlanStep(OWNER, { boardId: "draft-1" }, deps)).rejects.toMatchObject({ status: 409, message: "A plan is waiting for approval on the board." });
+    expect(await state(mine.id)).toBe("needs_you");
+    /* A person's own new plan replaces theirs; then a tool's plan is the one waiting. */
+    const next = await agent.planRigAgentStep({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: "req-pstep-board-2", step: "shots" });
+    expect(await state(mine.id)).toBe("stopped");
+    await agent.stopRigAgent({ productionId: "prod-1", runId: next.id, userId: OWNER });
+    const first = await preparePlanStep(OWNER, { boardId: "draft-1" }, deps);
+    expect(first.replaced).toBe(false);
+    /* A tool's plan replaces an earlier tool's, and says it did. */
+    const second = await preparePlanStep(OWNER, { boardId: "draft-1", cards: ["s1"] }, deps);
+    expect(second).toMatchObject({ replaced: true, priced: true });
+    expect(second.id).not.toBe(first.id);
+    expect(await state(first.id)).toBe("stopped");
+    /* The person's own plan replaces the tool's. */
+    const board = await agent.planRigAgentStep({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: "req-pstep-board-3", step: "shots" });
+    expect(board.replaced).toBeUndefined();
+    expect(await state(second.id)).toBe("stopped");
+  });
+  /* The words an agent reads. */
+  const { runTool } = await import("../../lib/mcp");
+  const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 5, ceiling: 10, approximate: false, shots: [{ title: "Pier", credits: 5 }], asks: 0, reason: null, replaced: true, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
+  expect(await runTool("plan_step", { board_id: "draft-1" }, (async () => reply) as never, "https://example.invalid")).toContain("Replaced the plan waiting on the board.");
+});

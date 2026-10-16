@@ -37,6 +37,8 @@ export type PlanStepSummary = {
   /** Why it is not priced or not ready, in words. */
   reason: string | null;
   answers: { quality: string; length: number } | null;
+  /** It replaced an earlier plan a tool made that was still waiting; never one a person made. */
+  replaced: boolean;
   needs: "A person approves this plan in Particl. Nothing is spent until they do.";
 };
 
@@ -54,7 +56,7 @@ export async function preparePlanStep(userId: string, input: PlanStepInput, deps
   if (!draft) throw new RigAgentError("That board is not yours, or has not been opened in Particl yet.", 404);
   const productionId = draft.project.productionProjectId;
   if (!productionId) throw new RigAgentError("Open this board once in Particl first, so it is saved to a production.", 409);
-  const made = await planRigAgentStep({ productionId, draftId: input.boardId, userId, requestId: (input.requestId as string | undefined) ?? `mcp-plan-${randomUUID()}`, step, answers: input.answers, cards });
+  const made = await planRigAgentStep({ productionId, draftId: input.boardId, userId, requestId: (input.requestId as string | undefined) ?? `mcp-plan-${randomUUID()}`, step, answers: input.answers, cards, byTool: true });
   /* Pricing is free and repeatable: one bounded drive asks the server's quote for each render. The run has no limit until a person approves, so nothing can be sent. */
   await driveRigAgent(made.id, { ...deps, budgetMs: deps.budgetMs ?? 20_000 }).catch(() => undefined);
   await rigAgentReady();
@@ -70,6 +72,7 @@ export async function preparePlanStep(userId: string, input: PlanStepInput, deps
     asks: quote?.asks.length ?? 0,
     reason: quote ? null : view.plan?.blocked ?? view.reason ?? null,
     answers: row?.plan?.setup ?? null,
+    replaced: made.replaced === true,
     needs: "A person approves this plan in Particl. Nothing is spent until they do.",
   };
 }

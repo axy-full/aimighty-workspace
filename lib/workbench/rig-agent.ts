@@ -402,7 +402,7 @@ export async function askRigAgent(input: { productionId: string; draftId: string
  * (the sum of its steps' quotes) until the person who asked approves the plan once (`approveRigAgentPlan`: people only, the limit becomes the plan's ceiling, two fixes
  * a shot). A newer chips plan replaces one still waiting for that approval. `cards` narrows the plan to those shot cards.
  */
-export async function planRigAgentStep(input: { productionId: string; draftId: string; userId: string; requestId: string; step: string; answers?: unknown; cards?: readonly string[] }): Promise<RigAgentRunView> {
+export async function planRigAgentStep(input: { productionId: string; draftId: string; userId: string; requestId: string; step: string; answers?: unknown; cards?: readonly string[]; /** Made by a tool for the person (an outside agent over MCP): it never replaces a plan the person made on the board. */ byTool?: boolean }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
   if (!isPersonApprover(input.userId)) throw new RigAgentError(PEOPLE_ONLY, 403);
   if (!chipsOf(input.step) || input.step !== SHOTS_STEP) throw new RigAgentError("Atomik has no quick plan for that step yet.", 400);
@@ -431,6 +431,7 @@ export async function planRigAgentStep(input: { productionId: string; draftId: s
   if (chosen.length > PLAN_LIMITS.next) throw new RigAgentError(`A plan renders up to ${PLAN_LIMITS.next} shots at a time. Pick some.`, 409);
   const jobCeiling = await rigJobCeiling();
   const at = now();
+  let replaced = false;
   const run = await workbenchTransaction(async (tx) => {
     const again = await runByRequest(tx, input.userId, input.requestId);
     if (again) {
@@ -443,6 +444,9 @@ export async function planRigAgentStep(input: { productionId: string; draftId: s
     if (active) {
       const unapprovedChips = active.plan?.kind === "chips" && active.state === "needs_you" && !(await planApprovalOf(tx, active.id));
       if (active.state !== "awaiting_approval" && !unapprovedChips) throw new RigAgentError("Atomik is already working on this board. Stop that build, or wait for it to finish.", 409);
+      /* A tool's plan never replaces what a person made on the board (their plan or Atomik's proposal): only an earlier tool-made plan. */
+      if (input.byTool && !(unapprovedChips && active.plan?.madeBy === "tool")) throw new RigAgentError("A plan is waiting for approval on the board.", 409);
+      replaced = input.byTool === true;
       await patchRun(tx, active.id, { state: "stopped", reason: "A newer plan replaced this one.", finished_at: at, wake_at: null }, ["awaiting_approval", "needs_you"]);
       await setSteps(tx, active.id, "proposed", "skipped");
       await closePaidSteps(tx, active.id, "A newer plan replaced this one. Nothing was charged.");
@@ -453,7 +457,7 @@ export async function planRigAgentStep(input: { productionId: string; draftId: s
         { cards: [], wires: [], tidy: false, next: chosen.map((card) => ({ what: "render" as const, card })) },
         { runId: id, title: `Render ${chosen.length === 1 ? "1 shot" : `${chosen.length} shots`}`, summary: "", existing: nodes, assets: new Map([...draft.project.assets, ...(draft.project.sharedAssets ?? []), ...canvasAssets].map((a) => [a.id, a])) },
       ),
-      kind: "chips" as const, step: input.step, setup: answers,
+      kind: "chips" as const, step: input.step, setup: answers, ...(input.byTool ? { madeBy: "tool" as const } : {}),
     };
     const fingerprint = createHash("sha256").update(planFingerprintText(plan)).digest("hex");
     await insertRun(tx, { id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: plan.title, model: "auto", at, limit: { credits: 0, mode: "ask", jobCeiling } });
@@ -463,7 +467,7 @@ export async function planRigAgentStep(input: { productionId: string; draftId: s
     return { run: (await getRun(tx, id))!, made: true };
   });
   if (run.made) await dispatchRigAgent(run.run, "build");
-  return viewOf(run.run.id, input.userId);
+  return replaced && run.made ? { ...(await viewOf(run.run.id, input.userId)), replaced: true } : viewOf(run.run.id, input.userId);
 }
 
 /** What a person's ask or press on a run needs of its production. In the sample it is READ: the ask and its presses write no board row themselves (the run does, as an agent), and the sample's own spend guard answers them; every other board needs write. */
