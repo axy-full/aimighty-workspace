@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import type { BoardCtx } from "@/components/graphite/board/cards/types";
 import { Dialog, Segment } from "@/components/v12/ui";
 import { Price } from "@/components/v12/ui/Price";
@@ -15,6 +15,7 @@ import { quoteBody, runBody, translateFromResponse, translateProblem, TRANSLATE_
 import { useScreenScale } from "./use-screen-scale";
 import { StepCard } from "./StepCard";
 import "./stage-pages.css";
+import "./card-scale.css";
 import "./text-stage.css";
 
 /**
@@ -72,8 +73,8 @@ export function TextStage({ ctx, step }: Props) {
   );
 
   return (
-    <div className="v12-sp v12-ts" data-testid="v12-text-stage" data-step={step} style={{ zoom: scale }}>
-      <div className="v12-ts-grid">
+    <div className="v12-sp v12-ts" data-testid="v12-text-stage" data-step={step}>
+      <div className="v12-ts-grid v12-scaled" style={{ "--k": scale } as CSSProperties}>
         {step === "brief" ? draw(brief) : (
           <>
             {draw(script)}
