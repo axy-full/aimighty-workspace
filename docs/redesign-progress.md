@@ -1336,3 +1336,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 16:51 IST.** **#791 NOT merged:** its queue CI run 38892068833 was cancelled mid-run at 16:50 IST, most likely by a lane cancelling "its" runs by branch. It's re-queued: #791 → #794 → #750 → #811 after #792 and #798.
   - **New lane rule:** cancel CI only by the run id of your own push; never a queue run.
 - **16 Oct 16:52 IST.** **Slip (lane F):** its cleanup loop cancelled every unfinished run on feat/v25-4-board-data by branch, including the lead's queue run for #791. It now cancels only by its own pushed SHA's run id. While it waits for the Cast shape, lane F adds the Agent Brief's "Deliver at 1080p or 4K?" question (a setup record only; no pricing change).
+- **16 Oct 16:53 IST.** **OWNER: "pause all work."** Everything is stopped:
+  - **Merge queues:** all background queue and chain tasks are stopped (none left running). Queue CI run 38888808678 (#765) and a stray #809 run 38890977956 were cancelled. Nothing merged after #749.
+  - **Lanes and reviewers:** every lane (B, C, D, F, H, I, J) and both Opus reviewers were told to stop, stop servers, release slots, report their state and wait.
+  - **Still running:** the production watcher (read-only health checks) and release/1's own post-merge CI run.
+  - **Merged today:** #771, #697, #699, #805, #749. Deploy #5 is live at 62163d7.
