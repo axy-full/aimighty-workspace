@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import * as zod from "zod";
@@ -113,6 +113,10 @@ test("worker settings: one to three origins, one secret each, nothing else accep
   }
   expect(exportWorkerSlots({})).toBe(1);
   expect(exportLimits({})).toEqual({ maxRunningPerWorkspace: 1, maxPerHourPerWorkspace: 6, runTimeoutMs: 200_000, queueExpiryMs: 1_800_000 });
+  /* The queue's expiry is a constant: the old setting's name changes nothing. */
+  expect(exportLimits({ REMOTION_EXPORT_QUEUE_EXPIRY_MS: "60000" }).queueExpiryMs).toBe(1_800_000);
+  expect(exportLimits({ REMOTION_EXPORT_QUEUE_EXPIRY_MS: "86400000" }).queueExpiryMs).toBe(30 * 60_000);
+  expect(readFileSync("lib/exports/limits.ts", "utf8")).not.toMatch(/bounded\(env, "REMOTION_EXPORT_QUEUE_EXPIRY_MS"/);
   expect(exportLimits({ REMOTION_EXPORT_MAX_RUNNING: "2", REMOTION_EXPORT_MAX_PER_HOUR: "12", REMOTION_EXPORT_RUN_TIMEOUT_MS: "600000" })).toMatchObject({ maxRunningPerWorkspace: 2, maxPerHourPerWorkspace: 12, runTimeoutMs: 600_000 });
   // Out of range or not a whole number: the default, never a surprise.
   expect(exportLimits({ REMOTION_EXPORT_MAX_RUNNING: "50", REMOTION_EXPORT_MAX_PER_HOUR: "0", REMOTION_EXPORT_RUN_TIMEOUT_MS: "x" })).toMatchObject({ maxRunningPerWorkspace: 1, maxPerHourPerWorkspace: 6, runTimeoutMs: 200_000 });
