@@ -74,7 +74,6 @@ test("only a person approves spending: Ask (the default) returns the priced, pre
   const line = jobApprovalLineCredits(creditUsd());
   expect(line).toBe(200);
   process.env.SYNC_ENABLED = "1";
-  process.env.REKOGNITION_ENABLED = "1";
   await inTenant(tenant("ws_legacy"), async () => {
     const prepared = /^Priced and prepared, not started\.\n\nprice: \$0\.70[\s\S]*needs a person's approval: nothing was started or spent/;
     /* Ask: the default, and anything but an exact "auto". */

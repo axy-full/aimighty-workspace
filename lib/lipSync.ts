@@ -13,6 +13,8 @@ import { withRetry } from "./providers";
 import { storeVideoBytes } from "./storage";
 import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./generationRequests";
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
+import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
+import { uploadOpenableBy, type Viewer } from "./uploadAccess";
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
@@ -121,12 +123,13 @@ export async function lipSyncOnHere(workspace: { id: string } | null | undefined
 }
 
 type SourceFound = { source: StoredSource; seconds: number };
-async function resolveSource(kind: "video" | "audio", uploadId: unknown, genId: unknown): Promise<SourceFound | { error: string; status: number }> {
+async function resolveSource(kind: "video" | "audio", uploadId: unknown, genId: unknown, viewer: Viewer): Promise<SourceFound | { error: string; status: number }> {
   const up = uploadId ? String(uploadId) : "", gen = genId ? String(genId) : "";
   if ((!up && !gen) || (up && gen)) return { error: `Pick one ${kind} original.`, status: 400 };
   if ((up && !SOURCE_ID.test(up)) || (gen && !SOURCE_ID.test(gen))) return { error: "That source is not valid.", status: 400 };
   const source = await findStoredSource(up ? { uploadId: up } : { genId: gen });
-  if (!source || source.mediaKind !== kind) return { error: `That ${kind} original is not in this workspace.`, status: 404 };
+  /* An upload is read only by a person who may open it (lib/uploadAccess.ts): another person's private one answers as one that is not there, for an agent run as for a person. */
+  if (!source || source.mediaKind !== kind || (source.kind === "upload" && !(await uploadOpenableBy(source.id, viewer)))) return { error: `That ${kind} original is not in this workspace.`, status: 404 };
   if (source.bytes > SOURCE_BYTES_LIMIT) return { error: "Lip-sync takes sources up to 100 MB each.", status: 400 };
   const length = await resolveStoredDuration(source);
   if (length.seconds == null) return { error: `This ${kind} has no measured length, so it cannot be priced per second${length.reason ? `: ${length.reason}` : "."}`, status: 422 };
@@ -145,6 +148,9 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   const body = structuredClone(input) as Record<string, unknown>;
   const quoteOnly = body.quoteOnly === true;
   await ready();
+  /* The person this request acts for (the signed-in person, or an Atomik run's owner): none, and nothing is read. */
+  const viewer = await actingViewer();
+  if (!viewer) return admissionReply({ error: NO_ACTING_PERSON }, { status: 403 });
   if (!syncConfigured()) return admissionReply({ error: "Lip-sync is not set up: SYNC_API_KEY is needed." }, { status: 400 });
   const allowance = await allowanceCheck("sync");
   if (!allowance.ok && allowance.status !== 402) return admissionReply({ error: allowance.error }, { status: allowance.status });
@@ -153,9 +159,9 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   if (body.syncMode != null && !isSyncMode(body.syncMode)) return admissionReply({ error: "Pick how a length mismatch is handled: bounce, loop, cut_off, silence or remap." }, { status: 400 });
   const model: SyncModel = isSyncModel(body.model) ? body.model : SYNC_RATES.defaultModel;
   const syncMode: SyncMode = isSyncMode(body.syncMode) ? body.syncMode : SYNC_RATES.defaultSyncMode;
-  const video = await resolveSource("video", body.clipUploadId, body.clipGenId);
+  const video = await resolveSource("video", body.clipUploadId, body.clipGenId, viewer);
   if ("error" in video) return admissionReply({ error: video.error }, { status: video.status });
-  const audio = await resolveSource("audio", body.audioUploadId, body.audioGenId);
+  const audio = await resolveSource("audio", body.audioUploadId, body.audioGenId, viewer);
   if ("error" in audio) return admissionReply({ error: audio.error }, { status: audio.status });
   const seconds = quotedSeconds(video.seconds, audio.seconds, syncMode);
   if (!(seconds > 0) || seconds > LIPSYNC_MAX_SECONDS) return admissionReply({ error: `Lip-sync takes up to ${LIPSYNC_MAX_SECONDS / 60} minutes at a time.` }, { status: 400 });
