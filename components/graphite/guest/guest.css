@@ -116,7 +116,10 @@
 @media (max-width: 767px) {
   /* The frame's phone header (P1, P2): a plain bar, not the signed-in shell's floating island. */
   .gx .gx-gh-header { gap: 8px; padding: 0 12px; margin: 0; border: 0; border-bottom: 1px solid var(--gx-hair-strong); border-radius: 0; background: var(--gx-root); }
-  .gx .gx-gh-seg, .gx .gx-gh-search, .gx-gh-header .gx-brand svg, .gx-gh-header .gx-brand-name, .gx-gh-mark { display: none; }
+  .gx .gx-gh-seg, .gx .gx-gh-search, .gx-gh-mark { display: none; }
+  .gx-guest[data-view="sample"] .gx-gh-header .brand-logo { display: none; }
+  /* The guest header names the front page with the logo, wordmark included, where the app header shows the mark alone. */
+  .gx .gx-gh-header .gx-brand .brand-logo-word { display: block; }
   .gx-gh-title { display: inline; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
   .gx-guest[data-view="sample"] .gx-gh-back { display: grid; place-items: center; width: 44px; height: 44px; margin-left: -10px; font-size: 24px; color: var(--gx-accent-text); }
   .gx .gx-gh-signin { border-color: transparent; padding: 0 10px; }
