@@ -49,7 +49,10 @@ async function main(): Promise<number> {
     return 2;
   }
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const limits = { ...DEFAULT_LIMITS, maxSeconds: Math.min(DEFAULT_LIMITS.maxSeconds, intEnv("REMOTION_MAX_SECONDS", DEFAULT_LIMITS.maxSeconds, 1, 3600)) };
+  const limits = {
+    ...DEFAULT_LIMITS,
+    maxSeconds: Math.min(DEFAULT_LIMITS.maxSeconds, intEnv("REMOTION_MAX_SECONDS", DEFAULT_LIMITS.maxSeconds, 1, 3600)),
+  };
   const result = await runExport({
     spec,
     inputDir: path.join(session, "input"),

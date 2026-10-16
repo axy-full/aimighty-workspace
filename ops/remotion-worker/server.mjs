@@ -39,7 +39,7 @@ export const LIMITS = Object.freeze({
   files: 80,
   fileBytes: 200 * MiB,
   totalBytes: 600 * MiB,
-  outputBytes: 320 * MiB,
+  outputBytes: 2000 * MiB,
   streamTailBytes: 64 * 1024,
   // One export's render deadline: a 120 s export is about 650 s of CPU (README, Limits); 15 minutes
   // covers it on a machine that is giving this container only one core.

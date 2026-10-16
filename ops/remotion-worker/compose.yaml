@@ -26,8 +26,10 @@
 # production app holds REMOTION_WORKER_URLS and REMOTION_WORKER_SECRETS (same order) and sends the
 # worker its own secret as `Authorization: Bearer <secret>`.
 #
-# Memory: tmpfs counts against mem_limit. The two tmpfs mounts are at most 1.25 GB + 0.75 GB when full;
-# that is why they are sized here and why 8 GB is the starting figure.
+# Memory: tmpfs counts against mem_limit. The two tmpfs mounts are at most 3 GB + 0.75 GB when full;
+# that is why they are sized here and why 8 GB is the starting figure. The session tmpfs holds a maximum upload
+# (600 MiB) and one output: a 60 s ProRes 422 HQ file is about 1.4 GB (measured 716 MB for 30 s), an H.264 one far less.
+# A render itself peaked near 1.8 GiB (measured, 15 Oct 2026).
 
 services:
   remotion-1:
@@ -47,7 +49,7 @@ services:
     pids_limit: 1024            # Chrome and its helpers, the compositor and ffmpeg
     read_only: true
     tmpfs:
-      - /vercel/sandbox:size=1280m,uid=10001,gid=10001,mode=0700
+      - /vercel/sandbox:size=3072m,uid=10001,gid=10001,mode=0700
       - /tmp:size=768m,uid=10001,gid=10001,mode=1777
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
