@@ -854,6 +854,11 @@ export async function syncPending(
   results.attempted += bfls.attempted;
   results.failed += bfls.failed;
   results.deferred += bfls.deferred;
+  // FLUX Upscale jobs (BFL): ask after the running; a Ready clip is collected at once, inside its hour. Never resubmit.
+  const bflUps = await (await import("./bflUpscale")).recoverBflUpscaleJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += bflUps.attempted;
+  results.failed += bflUps.failed;
+  results.deferred += bflUps.deferred;
   /* The window is lib/atRisk.ts's: the same 72 hours the health counter and the console count a take at risk in. */
   const horizon = options.horizon ?? atRiskHorizon(now());
   const rs = await db().execute({
@@ -888,6 +893,8 @@ export async function syncPending(
           if (gen.kind === "audio" && params.task === "sarvam_speech") return;
           // A FLUX.2 job's row is advanced by its own workflow above (lib/bflImage.ts); it is neither a render nor an orphan (an orphan sweep would end it as "sent, outcome unknown").
           if (gen.kind === "image" && params.task === "bfl_image") return;
+          // A FLUX Upscale job's row is advanced by its own workflow above (lib/bflUpscale.ts); it is neither a render nor an orphan.
+          if (gen.kind === "video" && params.task === "bfl_upscale") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome

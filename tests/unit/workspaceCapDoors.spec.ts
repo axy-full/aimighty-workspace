@@ -385,6 +385,8 @@ const RESERVERS: Record<string, Reserver> = {
   /* Sarvam: one reservation site (reserveCall), reached before any of its three vendor calls; its speech take, translation and transcription all go through it. */
   /* FLUX.2 (BFL): reserved at admission, before its row is ever advanced; its one vendor call (the submit) is in the advance step, which only runs on a funded row. */
   "lib/bflImage.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.submit ?? submitImage)("] },
+  /* FLUX Video Upscale (BFL), the same door (/api/bfl) as FLUX.2: reserved at admission, before its row is ever advanced; its one vendor call (the submit) is in the advance step, which only runs on a funded row. */
+  "lib/bflUpscale.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.submit ?? submitUpscale)("] },
   "lib/sarvamTools.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (seams.speak ?? speak)(", "await (seams.translate ?? translate)(", "await (seams.transcribe ?? transcribe)("] },
   "lib/lipSync.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.upload ?? uploadAsset)(", "await (deps.submit ?? submitLipSync)("] },
   "lib/transcription.ts": { reserve: "?? reserveGenerationSpend)(", count: 1, vendor: ["?? grokTranscribe)("] },

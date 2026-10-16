@@ -1,6 +1,6 @@
 import { engineMock } from "./mock";
 import { recoveryFetch } from "./recovery";
-import { BFL_RATES, type BflModel } from "./vendorRates";
+import { BFL_RATES, BFL_UPSCALE_RATES, type BflModel, type BflUpscaleMode } from "./vendorRates";
 
 /**
  * Black Forest Labs FLUX.2, DIRECT (the owner: "Black Forest Labs (FLUX 3 and FLUX.2 identity, replacing fal flux-lora)"): stills from words, and edits from up
@@ -23,6 +23,11 @@ const TIMEOUT_MS = 30_000;
 export const BFL_RESULT_LIFETIME_MS = 10 * 60_000;
 export const BFL_OUTPUT_LIMIT_BYTES = 64 * 1024 * 1024;
 export const BFL_REFERENCE_LIMIT_BYTES = 20 * 1024 * 1024;
+/** FLUX Video Upscale's result address lives about an hour (BFL: "Download your video within this timeframe"); the video it delivers is capped like every stored original. */
+export const BFL_VIDEO_RESULT_LIFETIME_MS = 60 * 60_000;
+export const BFL_VIDEO_OUTPUT_LIMIT_BYTES = 100 * 1024 * 1024;
+/** A clip goes up as data in one request: longer than a still's. */
+const UPSCALE_SUBMIT_TIMEOUT_MS = 180_000;
 
 export const bflConfigured = (): boolean => Boolean(process.env.BFL_API_KEY) || engineMock();
 export const isBflModel = (v: unknown): v is BflModel => typeof v === "string" && Object.hasOwn(BFL_RATES.models, v);
@@ -56,7 +61,7 @@ function key(): string {
 }
 
 type Deps = { fetch?: typeof fetch };
-async function call(method: "GET" | "POST", url: string, body: unknown, deps: Deps): Promise<{ status: number; json: Record<string, unknown> }> {
+async function call(method: "GET" | "POST", url: string, body: unknown, deps: Deps, timeoutMs = TIMEOUT_MS): Promise<{ status: number; json: Record<string, unknown> }> {
   let res: Response;
   try {
     res = await (deps.fetch ?? recoveryFetch)(url, {
@@ -65,7 +70,7 @@ async function call(method: "GET" | "POST", url: string, body: unknown, deps: De
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       /* The key is a header and undici forwards custom headers across an origin: a redirect is a failure, never followed. */
       redirect: "error",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     if (error instanceof BflError) throw error;
@@ -113,7 +118,7 @@ export type BflState = { status: "pending" | "ready" | "failed"; resultUrl?: str
 const FAILED = new Set(["error", "failed", "request moderated", "content moderated", "task not found"]);
 
 /** One poll, at the address BFL named for this job. A status we do not know is "pending": never a verdict from a word we do not know. */
-export async function pollImage(job: { id: string; pollingUrl: string }, deps: Deps = {}): Promise<BflState> {
+export async function pollImage(job: { id: string; pollingUrl: string }, deps: Deps = {}, what = "image"): Promise<BflState> {
   if (engineMock()) {
     const j = mockJobs.get(job.id);
     if (!j) throw new BflError("BFL has no such job.", 404, true);
@@ -127,9 +132,9 @@ export async function pollImage(job: { id: string; pollingUrl: string }, deps: D
   if (word === "ready") {
     const sample = json.result && typeof json.result === "object" ? (json.result as { sample?: unknown }).sample : undefined;
     const result = bflHostUrl(sample);
-    return result ? { status: "ready", resultUrl: result.href } : { status: "failed", failure: "BFL's result named no image we can fetch." };
+    return result ? { status: "ready", resultUrl: result.href } : { status: "failed", failure: `BFL's result named no ${what} we can fetch.` };
   }
-  if (FAILED.has(word)) return { status: "failed", failure: word === "request moderated" || word === "content moderated" ? "BFL's moderation stopped this." : "BFL could not make this image." };
+  if (FAILED.has(word)) return { status: "failed", failure: word === "request moderated" || word === "content moderated" ? "BFL's moderation stopped this." : `BFL could not make this ${what}.` };
   return { status: "pending" };
 }
 
@@ -145,5 +150,53 @@ export async function fetchResult(resultUrl: string, deps: Deps = {}): Promise<B
   if (Number(res.headers.get("content-length") ?? 0) > BFL_OUTPUT_LIMIT_BYTES) throw new BflError("The image is larger than Particl keeps.");
   const bytes = Buffer.from(await res.arrayBuffer());
   if (!bytes.length || bytes.length > BFL_OUTPUT_LIMIT_BYTES) throw new BflError("The image came back empty or too large.");
+  return bytes;
+}
+
+/* ── FLUX Video Upscale ─────────────────────────────────────────────────────────────────────────────────────────────────────── */
+
+/** A 24-byte MP4 header: the fixture's "video" (nothing plays it). */
+const MOCK_MP4 = Buffer.from("00000018667479706d703432000000006d70343269736f6d", "hex");
+
+export type BflUpscaleRequest = { video: Buffer; mode: BflUpscaleMode; factor: number; prompt?: string };
+
+/**
+ * Starts one video upscale: `POST /v1/flux-tools/video-upscale-v1` with `input_video` (the clip's bytes, base64), `creativity` (0 Precise, 1 Creative: **always sent, because BFL's own default is
+ * Creative**), `upscale_factor` and, when given, `prompt`. No `safety_tolerance` (BFL's default) and no webhook (we poll). The reply is `id`, `polling_url` and, per BFL's schema, `cost` (BFL credits),
+ * `input_mp` and `output_mp`: `statedUsd` is `cost` at $0.01 a credit when the reply carries it (TO CONFIRM that it does), else null. The caller holds the reservation; this is the one paid request and it
+ * is never repeated for the same job. Poll it with `pollImage(job, deps, "video")`.
+ */
+export async function submitUpscale(input: BflUpscaleRequest, deps: Deps = {}): Promise<BflSubmitted> {
+  if (engineMock()) {
+    if ((input.prompt ?? "").startsWith("[[mock-refuse]]")) throw new BflError("BFL refused the request: mock refusal.", 422, true);
+    const id = `mock_bfl_up_${++mockSeq}`;
+    mockJobs.set(id, { polls: 0 });
+    return { id, pollingUrl: `${BFL_DEFAULT_BASE}/v1/get_result?id=${id}`, statedUsd: null };
+  }
+  const body: Record<string, unknown> = {
+    input_video: input.video.toString("base64"),
+    creativity: BFL_UPSCALE_RATES.modes[input.mode].creativity,
+    upscale_factor: input.factor,
+    ...(input.prompt ? { prompt: input.prompt } : {}),
+  };
+  const { json, status } = await call("POST", `${bflBase()}/v1/flux-tools/video-upscale-v1`, body, deps, UPSCALE_SUBMIT_TIMEOUT_MS);
+  const pollingUrl = bflHostUrl(json.polling_url);
+  if (typeof json.id !== "string" || !json.id || !pollingUrl) throw new BflError("BFL's reply named no job to poll.", status);
+  const cost = Number(json.cost);
+  return { id: json.id, pollingUrl: pollingUrl.href, statedUsd: json.cost != null && Number.isFinite(cost) && cost >= 0 ? Math.round(cost * BFL_RATES.creditUsd * 1e6) / 1e6 : null };
+}
+
+/** The finished video, from the bfl.ai address in the poll (never with our key), capped. Nothing is stored here. */
+export async function fetchVideoResult(resultUrl: string, deps: Deps = {}): Promise<Buffer> {
+  if (engineMock()) return Buffer.from(MOCK_MP4);
+  const url = bflHostUrl(resultUrl);
+  if (!url) throw new BflError("BFL's result address is not one we fetch.");
+  let res: Response;
+  try { res = await (deps.fetch ?? recoveryFetch)(url.href, { method: "GET", redirect: "error", signal: AbortSignal.timeout(300_000) }); }
+  catch { throw new BflError("The video could not be fetched from BFL."); }
+  if (!res.ok) throw new BflError(`The video could not be fetched from BFL (${res.status}).`, res.status);
+  if (Number(res.headers.get("content-length") ?? 0) > BFL_VIDEO_OUTPUT_LIMIT_BYTES) throw new BflError("The video is larger than Particl keeps.");
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (!bytes.length || bytes.length > BFL_VIDEO_OUTPUT_LIMIT_BYTES) throw new BflError("The video came back empty or too large.");
   return bytes;
 }

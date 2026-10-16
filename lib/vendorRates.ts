@@ -322,6 +322,34 @@ export const BFL_RATES = {
 } as const;
 export type BflModel = keyof typeof BFL_RATES.models;
 
+/**
+ * Black Forest Labs FLUX Video Upscale, direct (lib/bfl.ts `submitUpscale`, lib/bflUpscale.ts): **video only** (BFL's public API names no image upscale; docs.bfl.ml index, 16 Oct 2026),
+ * `POST /v1/flux-tools/video-upscale-v1`, in the vendor's own unit: dollars, per megapixel-second of DELIVERED output (megapixels per output frame x output seconds; a megapixel is 1,048,576
+ * pixels; "Rates apply at the standard 24 fps; higher frame rates scale proportionally"; input resolution, the factor, a prompt and audio are not charged; a rejected clip is not charged).
+ * **Precise $0.07 and Creative $0.10 a megapixel-second (BFL credits at $0.01: 7 and 10)**: read from Replicate's and the pricing aggregators' copies of BFL's page and consistent with the
+ * worked example on BFL's pricing page (10 s at 1080p, about 19.8 MP-s: $1.39 and $1.98). BFL's own pages render the rates from a live component, so **TO CONFIRM against BFL's pricing page and the
+ * first invoice**. Limits (BFL docs): a clip of 20 s or less, a file of 50 MB or less, frames within 2560 x 1440, a factor of 1.5 to 3, output capped at 13.75 MP (about 14.4 million pixels)
+ * a frame, 24 fps. Server-only like every rate here; a customer's price is these through the margin table.
+ */
+export const BFL_UPSCALE_RATES = {
+  creditUsd: BFL_RATES.creditUsd,
+  /** Dollars per megapixel-second of output, by mode. `creativity` is the number BFL's field takes: 0 is Precise, 1 Creative (and BFL's own default is Creative, so it is always sent). */
+  modes: {
+    precise: { usdPerMpSecond: 0.07, creativity: 0 },
+    creative: { usdPerMpSecond: 0.10, creativity: 1 },
+  },
+  defaultMode: "precise",
+  pixelsPerMp: 1_048_576,
+  standardFps: 24,
+  maxSeconds: 20,
+  maxSourceBytes: 50 * 1024 * 1024,
+  maxInputWidth: 2560,
+  maxInputHeight: 1440,
+  maxOutputMp: 13.75,
+  factor: { min: 1.5, max: 3, default: 2 },
+} as const;
+export type BflUpscaleMode = keyof typeof BFL_UPSCALE_RATES.modes;
+
 /** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
 export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;

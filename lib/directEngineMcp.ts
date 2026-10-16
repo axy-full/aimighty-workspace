@@ -2,6 +2,7 @@ import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
 import { bflTools } from "./bflImage";
+import { bflUpscaleTools, BFL_UPSCALE_TOOL_ID, CREATIVE_NOTE } from "./bflUpscale";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "./approvalRule";
@@ -162,7 +163,33 @@ const FLUX2_EDIT: DirectTool = {
   describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT];
+/* FLUX Video Upscale (BFL): a clip in, the same clip larger out. Declared with no `draft`: an upscale is a finishing step, so in Ask and in Auto alike a call is priced and prepared for a person, never started on its own. */
+const FLUX_UPSCALE: DirectTool = {
+  def: {
+    name: BFL_UPSCALE_TOOL_ID,
+    description:
+      "Upscale an MP4 clip of this workspace, 20 seconds or less (FLUX Video Upscale, Black Forest Labs; video only). Precise (the default) keeps the source and sharpens it. " +
+      `Creative is an explicit choice only: ${CREATIVE_NOTE} Priced first; a person approves it in Particl. Returns a video take id; collect it with get_render.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        source_upload_id: { type: "string", description: "An MP4 upload of this workspace (or source_take_id: one of its takes)." },
+        source_take_id: { type: "string" },
+        mode: { type: "string", description: `precise (default) or creative. ${CREATIVE_NOTE}` },
+        factor: { type: "number", description: "1.5 to 3, default 2." },
+        prompt: { type: "string", description: "Optional: what the clip shows, to guide the added detail." },
+        ...SARVAM_PROJECT, request_id: { type: "string", description: "Optional: unique to this job; a retried call with it gets back the job it started." },
+      },
+      required: [],
+    },
+  },
+  present: async () => (await bflUpscaleTools()).some((t) => t.id === BFL_UPSCALE_TOOL_ID),
+  prepared: (b) => `prepared: FLUX Upscale (${String(b.mode ?? "precise")}, ${String(b.factor ?? 2)}x) of ${String(b.sourceUploadId ?? b.sourceGenId ?? "a clip")}`,
+  request: (a) => ({ path: "/api/bfl", body: { tool: "upscale", sourceUploadId: str(a.source_upload_id), sourceGenId: str(a.source_take_id), mode: str(a.mode), factor: num(a.factor), prompt: str(a.prompt), projectId: str(a.project_id) } }),
+  describe: (out, quote) => `Upscale started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
+};
+
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX2_EDIT, FLUX_UPSCALE];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

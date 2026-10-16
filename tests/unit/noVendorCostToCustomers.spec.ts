@@ -117,6 +117,15 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
           references: [{ uploadId: "up_ref", castMemberId: "cast_margin", consentId: "consent_margin", faceSha256: "b".repeat(64), megapixels: 1 }],
           funded: 1, claimedAt: at, bflId: "vendor-job-flux-1", pollingUrl: "https://api.eu.bfl.ai/v1/get_result?id=vendor-job-flux-1", statedUsd: cost.still, submittedAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1 } }),
         "u_member", at + 7, at + 7, "bfl", 0, null, null, null, "/api/media/g_flux", null] },
+      /* A FLUX Upscale take (BFL): its params carry the workflow's record, the reserved dollars, what BFL stated, its job id and polling address, the source ids and the steering text.
+         Nobody reads any of it (lib/directEnginePublic.ts keeps the take's own words). */
+      { sql: take, args: ["g_fluxup", "p_margin", null, "video", "bfl/flux-upscale/precise", "Upscale · harbour",
+        JSON.stringify({ task: "bfl_upscale", job: "fix", sourceGenId: "g_take", estUsd: cost.take, estCredits: 0, bflUpscale: {
+          status: "done", mode: "precise", model: "bfl/flux-upscale/precise", factor: 2, steer: "a harbour at dawn", source: { kind: "generation", id: "g_take" },
+          inputWidth: 1920, inputHeight: 1080, outputWidth: 3840, outputHeight: 2160, outputMegapixels: 7.91, seconds: 5, sourceFps: 24, megapixelSeconds: 39.55,
+          reservedUsd: cost.take, estimateCredits: 28, funded: 1, claimedAt: at, sendingAt: at, bflId: "vendor-job-fluxup-1", pollingUrl: "https://api.eu.bfl.ai/v1/get_result?id=vendor-job-fluxup-1", statedUsd: cost.take,
+          submittedAt: at, readyAt: at, lastPolledAt: at, pollUntil: at, settled: 1, reconcile: 1 } }),
+        "u_member", at + 9, at + 9, "bfl", 0, null, null, null, "/api/media/g_fluxup", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
@@ -190,6 +199,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a lip-sync take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_lipsync?sync=0", params: { id: "g_lipsync" } },
   { name: "GET /api/jobs/[id] (a Sarvam speech take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_sarvam?sync=0", params: { id: "g_sarvam" } },
   { name: "GET /api/jobs/[id] (a FLUX.2 take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_flux?sync=0", params: { id: "g_flux" } },
+  { name: "GET /api/jobs/[id] (a FLUX Upscale take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_fluxup?sync=0", params: { id: "g_fluxup" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },
