@@ -20,6 +20,8 @@ test("desktop: + New project makes a Film board with the demo's steps and opens 
   page.on("pageerror", (error) => errors.push(error.message));
   await seedHome(page, { takes: 0 });
   const asks: string[] = [];
+  const generates: string[] = [];
+  page.on("request", (r) => { if (r.method() === "POST" && /\/api\/generate$/.test(r.url())) generates.push(r.url()); });
   await page.route((url) => url.pathname === "/api/workbench/team-canvas", (route) => {
     if (route.request().method() === "POST") { asks.push(route.request().postData() ?? ""); return route.fulfill({ status: 409, json: { error: "Not in this test." } }); }
     return route.fallback();
@@ -41,6 +43,7 @@ test("desktop: + New project makes a Film board with the demo's steps and opens 
   await expect(page.getByTestId("v12-stage-crumb")).toHaveText("Pitch");
   /* Free: Atomik was not asked, so nothing was billed. */
   expect(asks).toEqual([]);
+  expect(generates).toEqual([]);
   await noOverflow(page);
   expect(errors).toEqual([]);
 });

@@ -115,7 +115,7 @@ test.describe("desktop, switch on", () => {
     const nb = page.getByTestId("v12-newboard");
     await expect(nb).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId("v12-newboard-title")).toHaveText("What are we making?");
-    await expect(page.getByTestId("v12-board-crumb")).toHaveText("New board");
+    await expect(page.getByTestId("v12-board-crumb")).toHaveText("New project");
     await expect(page.getByTestId("v12-stage-primary")).toHaveCount(0);
     await expect(page.getByTestId("v12-board-menu")).toHaveCount(0);
     await expect(page.getByTestId("v12-stage-rail")).toHaveAttribute("data-dim", "true");
