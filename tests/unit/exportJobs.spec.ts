@@ -222,6 +222,20 @@ test("a timeout, a missing file and an unreachable worker all end the job as fai
   expect(await m.count("uploads")).toBe(0);
 }));
 
+test("a file that cannot be checked at run time (a database error) says so in its own words, not that it is gone; a file that really is gone says that; both are Nothing billed and no worker is asked", async () => context("reach", async (m) => {
+  const before = m.pool.calls.length;
+  const broken = await m.createExport(request("request-reach-0001"), { id: "u_test" }, m.deps());
+  await m.runExport(broken.job.id, m.deps({ reach: async () => { throw new Error("SQLITE_BUSY: database is locked"); } }));
+  const brokenJob = await m.getExport("u_test", broken.job.id, m.deps());
+  expect(brokenJob).toMatchObject({ status: "failed", error: "The files in this export could not be checked just now. Try the export again. Nothing billed." });
+  expect(brokenJob.error).not.toContain("not available any more");
+  const gone = await m.createExport(request("request-reach-0002"), { id: "u_test" }, m.deps());
+  await m.runExport(gone.job.id, m.deps({ reach: async () => false }));
+  expect(await m.getExport("u_test", gone.job.id, m.deps())).toMatchObject({ status: "failed", error: "A file in the export is not available any more. Nothing billed." });
+  expect(m.pool.calls.length).toBe(before);
+  expect(await m.count("uploads")).toBe(0);
+}));
+
 test("cancel: a queued export ends at once; a rendering one stops its worker session; both say Nothing billed", async () => context("cancel", async (m) => {
   const queued = await m.createExport(request("request-cancel-0001"), { id: "u_test" }, m.deps());
   const cancelled = await m.cancelExport("u_test", queued.job.id, m.deps());
