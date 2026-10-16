@@ -550,7 +550,7 @@ test("Dockerfile: base pinned by digest, Chrome pinned by the lockfile, build-ti
   const dockerfile = readFileSync(new URL("../../ops/remotion-worker/Dockerfile", import.meta.url), "utf8");
   const code = dockerfile.replace(/^#.*$/gm, "");
   const froms = [...code.matchAll(/^FROM (\S+)/gm)].map((m) => m[1]);
-  assert.equal(froms.length, 4, "build, runtime-deps, relay, run");
+  assert.equal(froms.length, 5, "build, runtime-deps, print-browser, relay, run");
   for (const from of froms) assert.match(from, /^node:22\.[\d.]+-bookworm-slim@sha256:[0-9a-f]{64}$/);
   assert.equal(new Set(froms).size, 1, "one pinned base for every stage");
   assert.match(code, /npm ci --no-audit/);
