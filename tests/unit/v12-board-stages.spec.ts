@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { MAX_STAGES, freeCards, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus } from "../../lib/v12/board/stages";
+import { MAX_STAGES, freeCards, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, stageId, startingRail } from "../../lib/v12/board/stages";
 import type { BoardCard } from "../../lib/board/types";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
@@ -25,9 +25,9 @@ const CARDS: BoardCard[] = [
   card("note:1", null, { kind: "note", at: { x: 0, y: 0 } }),
 ];
 
-test("a Studio board is a Film board: Brief · Script · Cast · Elements · Storyboard · Shots · Cut · Deliver, opening on Storyboard", () => {
+test("a Studio board is a Film board: Treatment · Pitch · Brief · Script · Cast · Locations · Elements · Storyboard · Shots · Edit · Deliver, opening on Storyboard", () => {
   const stages = stagesOf("film", null);
-  expect(stages.map((s) => s.label)).toEqual(["Brief", "Script", "Cast", "Elements", "Storyboard", "Shots", "Cut", "Deliver"]);
+  expect(stages.map((s) => s.label)).toEqual(["Treatment", "Pitch", "Brief", "Script", "Cast", "Locations", "Elements", "Storyboard", "Shots", "Edit", "Deliver"]);
   expect(KIND_LABEL.film).toBe("Film");
   expect(currentStage(stages, null, "film")!.id).toBe("storyboard");
   expect(currentStage(stages, "cast", "film")!.id).toBe("cast");
@@ -45,29 +45,29 @@ test("each stage draws a slice of today's cards: Cast the people, Elements the p
   /* A free card belongs to no stage. */
   for (const s of FILM_STAGES) expect(ids(s.id)).not.toContain("note:1");
   /* Markers: Cast needs a person (its card, not its group frame), Elements has nothing waiting. */
-  expect(stageStatus(FILM_STAGES[2], CARDS, "film").state).toBe("needs");
-  expect(stageStatus(FILM_STAGES[3], CARDS, "film").state).not.toBe("needs");
+  expect(stageStatus(FILM_STAGES.find((s) => s.id === "cast")!, CARDS, "film").state).toBe("needs");
+  expect(stageStatus(FILM_STAGES.find((s) => s.id === "elements")!, CARDS, "film").state).not.toBe("needs");
 });
 
 test("rail edits are the whole saved list: rename, skip, remove, move, add; unknown or duplicate ids are dropped on read", () => {
   const stages = stagesOf("film", null);
-  const renamed = renameStage(stages, "cut", "  Edit  ");
-  expect(renamed.find((s) => s.id === "cut")).toEqual({ id: "cut", label: "Edit" });
+  const renamed = renameStage(stages, "edit", "  Final cut  ");
+  expect(renamed.find((s) => s.id === "edit")).toEqual({ id: "edit", label: "Final cut" });
   expect(renamed.find((s) => s.id === "brief")).toEqual({ id: "brief" });
-  expect(renameStage(stages, "cut", "   ").find((s) => s.id === "cut")).toEqual({ id: "cut" });
+  expect(renameStage(stages, "edit", "   ").find((s) => s.id === "edit")).toEqual({ id: "edit" });
   const skipped = stagesOf("film", skipStage(stages, "script", true));
   expect(skipped.find((s) => s.id === "script")!.skipped).toBe(true);
   expect(stagesOf("film", removeStage(stages, "script")).map((s) => s.id)).not.toContain("script");
   expect(stagesOf("film", moveStage(stages, "deliver", 0))[0].id).toBe("deliver");
   const added = addStage(stages, "storyboard", "Animatic", () => "abc");
   const after = stagesOf("film", added.saved);
-  expect(after.map((s) => s.id).slice(4, 6)).toEqual(["storyboard", "custom-abc"]);
-  expect(after[5]).toMatchObject({ label: "Animatic", custom: true });
-  expect(stagesOf("film", [{ id: "brief" }, { id: "brief" }, { id: "gone" }, { id: "custom-x", custom: true }]).map((s) => s.id)).toEqual(["brief", "custom-x"]);
+  expect(after.map((s) => s.id).slice(7, 9)).toEqual(["storyboard", "custom-abc"]);
+  expect(after[8]).toMatchObject({ label: "Animatic", custom: true });
+  expect(stagesOf("film", [{ id: "brief" }, { id: "brief" }, { id: "gone" }, { id: "custom-x", custom: true }]).map((s) => s.id)).toEqual(["treatment", "pitch", "brief", "locations", "custom-x"]);
 });
 
 test("the rail's arrangement is part of the draft JSON: the project schema takes it and refuses nonsense", () => {
-  const project = { ...newProject("Board"), boardStages: renameStage(stagesOf("film", null), "cut", "Edit") };
+  const project = { ...newProject("Board"), boardStages: renameStage(stagesOf("film", null), "edit", "Final cut") };
   expect(projectSchema.safeParse(project).success).toBe(true);
   expect(projectSchema.safeParse({ ...project, boardStages: [{ id: "bad id!" }] }).success).toBe(false);
   expect(projectSchema.safeParse({ ...project, boardStages: [{ id: "brief", colour: "red" }] }).success).toBe(false);
@@ -85,7 +85,7 @@ test("one primary, only on the stage that owns its action; it never spends", () 
   expect(stagePrimary(stage("storyboard"), shotsPlan, "film")).toBeNull();
   /* Never more than one stage carries a primary for the plan, and no other stage has one. */
   for (const cards of [CARDS, shotsPlan]) expect(FILM_STAGES.filter((s) => s.id !== "cast" && stagePrimary(s, cards, "film")).length).toBe(1);
-  for (const id of ["brief", "script", "elements", "cut", "deliver"]) expect(stagePrimary(stage(id), CARDS, "film")).toBeNull();
+  for (const id of ["treatment", "pitch", "brief", "script", "locations", "elements", "edit", "deliver"]) expect(stagePrimary(stage(id), CARDS, "film")).toBeNull();
   expect(stagePrimary(stage("cast"), CARDS.filter((c) => c.id !== "cast:a"), "film")).toBeNull();
   expect(stagePrimary(stage("cast"), CARDS, "campaign")).toBeNull();
 });
@@ -95,7 +95,7 @@ test("a board's rail holds at most as many stages as the draft's schema takes; t
   expect(stageLimit(23)).toBeNull();
   expect(stageLimit(24)).toBe("A board holds up to 24 stages. Remove one to add another.");
   let saved = stagesOf("film", null);
-  for (let i = 0; i < 16; i++) saved = stagesOf("film", addStage(saved, null, `Extra ${i}`, () => `x${i}`).saved);
+  for (let i = 0; i < 13; i++) saved = stagesOf("film", addStage(saved, null, `Extra ${i}`, () => `x${i}`).saved);
   expect(saved).toHaveLength(24);
   const refused = addStage(saved, "brief", "One too many", () => "over");
   expect(refused.id).toBeNull();
@@ -108,7 +108,7 @@ test("a board's rail holds at most as many stages as the draft's schema takes; t
 });
 
 test("the empty stage and the selection crumb", () => {
-  expect(stageEmpty({ id: "cut", label: "Cut", custom: false }).title).toBe("Nothing to cut yet");
+  expect(stageEmpty({ id: "edit", label: "Edit", custom: false }).title).toBe("Nothing to cut yet");
   expect(stageEmpty({ id: "custom-1", label: "Animatic", custom: true }).title).toBe("Animatic");
   expect(stageEmpty({ id: "custom-2", label: "Grading", custom: true })).toEqual({ title: "Grading", line: "A stage you added. Drop cards here from the Library, or ask for it in the bar.", ask: true });
   expect(selectionCrumb([])).toBeNull();
@@ -120,7 +120,7 @@ test("the empty stage and the selection crumb", () => {
 
 test("the five kinds and their rails, in the prototype's words, each opening where the prototype opens", () => {
   const labels = (flavor: (typeof FLAVORS)[number]) => stagesOf(flavor, null).map((s) => s.label);
-  expect(labels("film")).toEqual(["Brief", "Script", "Cast", "Elements", "Storyboard", "Shots", "Cut", "Deliver"]);
+  expect(labels("film")).toEqual(["Treatment", "Pitch", "Brief", "Script", "Cast", "Locations", "Elements", "Storyboard", "Shots", "Edit", "Deliver"]);
   expect(labels("previs")).toEqual(["Brief", "Script", "Cast", "Elements", "Storyboard", "Animatic", "PPM deck"]);
   expect(labels("campaign")).toEqual(["Product", "Look", "Formats", "Variants", "Deliver"]);
   expect(labels("narrated")).toEqual(["Hook", "Script", "Scenes", "Voice", "Captions", "Deliver"]);
@@ -207,4 +207,120 @@ test("a free card (a dropped tile, a note, an upload) is no stage's own, yet is 
   /* No stage owns it, so no stage's status or empty state counts it; every stage can draw it. */
   for (const s of FILM_STAGES) expect(stageCards(s, CARDS, "film").map((c) => c.id)).not.toContain("note:1");
   expect(freeCards([card("shot:1", "shots")])).toEqual([]);
+});
+
+/* ── v25: Film's steps, and rails saved before them (docs/plans/v25-build-plan.md, PR 4, risk 1) ─────── */
+
+const ids = (flavor: "film" | "previs", saved: Parameters<typeof stagesOf>[1]) => stagesOf(flavor, saved).map((s) => s.id);
+
+test("a rail saved before v25 opens with Edit where Cut was and gains Treatment, Pitch and Locations at their usual places; nothing is rewritten", () => {
+  /* The eight stages Film had, the person's own rename and a stage they added kept as they were. */
+  const old = [
+    { id: "brief" }, { id: "script" }, { id: "cast" }, { id: "elements", label: "Props" }, { id: "custom-a", label: "Recce", custom: true },
+    { id: "storyboard" }, { id: "shots" }, { id: "cut" }, { id: "deliver" },
+  ];
+  const copy = JSON.parse(JSON.stringify(old));
+  const stages = stagesOf("film", old);
+  expect(stages.map((s) => s.id)).toEqual(["treatment", "pitch", "brief", "script", "cast", "locations", "elements", "custom-a", "storyboard", "shots", "edit", "deliver"]);
+  expect(stages.find((s) => s.id === "edit")).toMatchObject({ label: "Edit", builtIn: "Edit", custom: false, regions: ["cut"] });
+  expect(stages.find((s) => s.id === "elements")!.label).toBe("Props");
+  expect(old).toEqual(copy);
+  /* The next edit saves the list as shown, so the rail is upgraded once and then stands. */
+  const saved = renameStage(stages, "brief", "Idea");
+  expect(saved.map((s) => s.id)).toContain("edit");
+  expect(saved.map((s) => s.id)).not.toContain("cut");
+  expect(ids("film", saved)).toEqual(stages.map((s) => s.id));
+});
+
+test("a rail saved before v25 keeps what its person did with Cut: a rename, a skip, its place, or its removal", () => {
+  const renamed = stagesOf("film", [{ id: "brief" }, { id: "cut", label: "Final" }, { id: "deliver" }]);
+  expect(renamed.find((s) => s.id === "edit")).toMatchObject({ label: "Final", builtIn: "Edit" });
+  expect(stagesOf("film", [{ id: "brief" }, { id: "cut", skipped: true }, { id: "deliver" }]).find((s) => s.id === "edit")!.skipped).toBe(true);
+  expect(ids("film", [{ id: "cut" }, { id: "brief" }, { id: "deliver" }]).filter((id) => id === "edit" || id === "brief" || id === "deliver")).toEqual(["edit", "brief", "deliver"]);
+  expect(ids("film", [{ id: "brief" }, { id: "deliver" }])).not.toContain("edit");
+  /* Both ids saved: the first one is the stage, never two. */
+  expect(ids("film", [{ id: "cut" }, { id: "edit" }, { id: "brief" }]).filter((id) => id === "edit")).toHaveLength(1);
+});
+
+test("what a person removed stays removed, every time the rail is read, even all three new steps; a rail saved before them gains them", () => {
+  const stages = stagesOf("film", null);
+  const withoutTreatment = removeStage(stages, "treatment");
+  expect(ids("film", withoutTreatment)).not.toContain("treatment");
+  expect(ids("film", withoutTreatment)).toContain("pitch");
+  expect(withoutTreatment).toContainEqual({ id: "treatment", removed: true });
+  /* All three removed, then the rail edited again and read again: still gone. */
+  let saved = removeStage(stages, "treatment");
+  saved = removeStage(stagesOf("film", saved), "pitch");
+  saved = removeStage(stagesOf("film", saved), "locations");
+  saved = renameStage(stagesOf("film", saved), "brief", "Idea");
+  for (let reads = 0; reads < 3; reads += 1) expect(ids("film", saved)).toEqual(["brief", "script", "cast", "elements", "storyboard", "shots", "edit", "deliver"]);
+  /* A rail saved before them, with none of the three and none flagged, gains them. */
+  expect(ids("film", [{ id: "brief" }, { id: "cast" }, { id: "cut" }])).toEqual(["treatment", "pitch", "brief", "cast", "locations", "edit"]);
+  /* Flagged ones are not added back, the others are. */
+  expect(ids("film", [{ id: "brief" }, { id: "pitch", removed: true }, { id: "cast" }])).toEqual(["treatment", "brief", "cast", "locations"]);
+  /* The flags are not stages: they do not count toward the rail's 24, but the schema keeps them to the kind's own steps. */
+  expect(projectSchema.safeParse({ ...newProject("Board"), boardStages: saved }).success).toBe(true);
+  expect(saved.filter((s) => s.removed)).toHaveLength(3);
+  /* The default rail is unchanged by reading it back. */
+  expect(ids("film", skipStage(stages, "brief", false))).toEqual(stages.map((s) => s.id));
+  /* A removed custom stage is simply gone; no flag. */
+  const withCustom = addStage(stages, null, "Mine", () => "m");
+  expect(removeStage(stagesOf("film", withCustom.saved), withCustom.id!).some((s) => s.id === withCustom.id)).toBe(false);
+});
+
+test("the new stages join a rail only up to the most a board holds", () => {
+  const custom = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `custom-${i}`, label: `Extra ${i}`, custom: true }));
+  expect(stagesOf("film", [{ id: "brief" }, ...custom(23)])).toHaveLength(MAX_STAGES);
+  expect(stagesOf("film", [{ id: "brief" }, ...custom(23)]).map((s) => s.id)).not.toContain("treatment");
+  const room = stagesOf("film", [{ id: "brief" }, ...custom(22)]).map((s) => s.id);
+  expect(room).toHaveLength(MAX_STAGES);
+  expect(room.slice(0, 2)).toEqual(["treatment", "brief"]);
+});
+
+test("the address ?stage=cut still opens Edit; other kinds are untouched", () => {
+  const stages = stagesOf("film", null);
+  expect(currentStage(stages, "cut", "film")!.id).toBe("edit");
+  expect(currentStage(stages, "edit", "film")!.id).toBe("edit");
+  expect(stageId("film", "cut")).toBe("edit");
+  expect(stageId("campaign", "cut")).toBe("cut");
+  expect(ids("previs", null)).toEqual(["brief", "script", "cast", "elements", "storyboard", "animatic", "ppm-deck"]);
+  expect(ids("previs", [{ id: "brief" }, { id: "cast" }])).toEqual(["brief", "cast"]);
+});
+
+test("Pitch, Treatment and Locations have no cards of their own yet: no card of today's board disappears", () => {
+  const every = new Set(FILM_STAGES.flatMap((d) => d.regions));
+  for (const r of ["brief", "looks", "storyboard", "shots", "cast", "cut", "deliver", "next", "made"] as const) expect(every.has(r)).toBe(true);
+  for (const id of ["treatment", "pitch", "locations"]) {
+    expect(FILM_STAGES.find((d) => d.id === id)!.regions).toEqual([]);
+    expect(stageCards({ id, regions: [] }, CARDS, "film")).toEqual([]);
+  }
+});
+
+test("a board started with a shorter rail (Treatment and Locations left out, Elements skipped) keeps it, however it is read or edited", () => {
+  const rail = startingRail("film", { without: ["treatment", "locations"], skipped: ["elements"] });
+  expect(rail).toContainEqual({ id: "treatment", removed: true });
+  expect(rail).toContainEqual({ id: "locations", removed: true });
+  expect(rail).toContainEqual({ id: "elements", skipped: true });
+  const want = ["pitch", "brief", "script", "cast", "elements", "storyboard", "shots", "edit", "deliver"];
+  expect(ids("film", rail)).toEqual(want);
+  expect(stagesOf("film", rail).find((s) => s.id === "elements")!.skipped).toBe(true);
+  /* Removing Pitch later does not bring the others back. */
+  const lessPitch = removeStage(stagesOf("film", rail), "pitch");
+  expect(ids("film", lessPitch)).toEqual(want.slice(1));
+  expect(projectSchema.safeParse({ ...newProject("Board"), boardStages: lessPitch }).success).toBe(true);
+  expect(startingRail("film")).toEqual(stagesOf("film", null).map((s) => ({ id: s.id })));
+  expect(startingRail("previs", { without: ["script"] }).map((s) => s.id)).toContain("script");
+});
+
+test("a removed flag is only for the kind's own stages: the schema refuses it on a custom stage, and a rail never draws more than it holds", () => {
+  const project = newProject("Board");
+  expect(projectSchema.safeParse({ ...project, boardStages: [{ id: "custom-a", custom: true, removed: true }] }).success).toBe(false);
+  expect(projectSchema.safeParse({ ...project, boardStages: [{ id: "treatment", removed: true }] }).success).toBe(true);
+  /* The shape that would have drawn 36: 24 custom stages and 12 flagged ones (read from a draft that never went through the schema). */
+  const custom = Array.from({ length: 24 }, (_, i) => ({ id: `custom-${i}`, label: `Extra ${i}`, custom: true }));
+  const flagged = Array.from({ length: 12 }, (_, i) => ({ id: `custom-gone${i}`, label: `Gone ${i}`, custom: true, removed: true }));
+  const drawn = stagesOf("film", [...custom, ...flagged]);
+  expect(drawn.length).toBeLessThanOrEqual(MAX_STAGES);
+  expect(drawn.some((s) => s.id.startsWith("custom-gone"))).toBe(false);
+  expect(projectSchema.safeParse({ ...project, boardStages: [...custom, ...flagged] }).success).toBe(false);
 });

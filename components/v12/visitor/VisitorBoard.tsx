@@ -58,7 +58,7 @@ const has = (board: GuestBoard | null, id: string): boolean => {
     case "cast": return board.cast.length > 0;
     case "storyboard": return board.shots.length > 0;
     case "shots": return Boolean(board.plan);
-    case "cut": return board.cut.approved > 0 || board.cut.waiting > 0;
+    case "edit": return board.cut.approved > 0 || board.cut.waiting > 0;
     case "deliver": return board.deliver.length > 0;
     default: return false;
   }
@@ -99,7 +99,7 @@ function Stage({ stage, board, gate }: { stage: Stage; board: GuestBoard | null;
           {board.review ? <Card title={board.review.name} meta={board.review.meta ?? "Waits for review"}><Actions gate={gate} approve /></Card> : null}
         </div>
       );
-    case "cut":
+    case "edit":
       return <div className="v12-vcards"><Card title={`Cut · ${board.cut.seconds}`} meta={board.cut.line}><div className="v12-vcard-acts"><button type="button" className="v12-vbtn" onClick={() => gate("download")}>Download</button></div></Card></div>;
     case "deliver":
       return <div className="v12-vcards"><Card title="Delivery" meta="Spec check">{board.deliver.map((d) => <p key={d.label} className="v12-vcard-text"><span className="v12-vmono">{d.label}</span> {d.value}</p>)}<div className="v12-vcard-acts"><button type="button" className="v12-vbtn" onClick={() => gate("download")}>Download</button></div></Card></div>;

@@ -65,7 +65,7 @@ test("round · Round 2 on Storyboard and Cut, the list, Compare", async ({ page 
   await settle(page);
   await expect(page.locator('[data-card-id="round:changed"]')).toBeVisible({ timeout: 30_000 });
   await captureBeside(page, "round-storyboard", "?view=board&round=2&stage=Storyboard");
-  await stage(page, "Cut");
+  await stage(page, "Edit");
   await expect(page.locator('[data-card-id="round:cut"]')).toBeVisible({ timeout: 30_000 });
   await page.mouse.move(700, 120);
   await page.waitForTimeout(800);

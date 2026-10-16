@@ -21,14 +21,28 @@ import type { BoardCard, RegionId } from "@/lib/board/types";
 import { FLAVOR_BOARD, FLAVOR_LABEL, type Flavor } from "./kinds";
 
 /** One stage as saved in the draft. Absent list: the kind's own rail. */
-export type SavedStage = { id: string; label?: string; skipped?: boolean; custom?: boolean };
+export type SavedStage = {
+  id: string; label?: string; skipped?: boolean; custom?: boolean;
+  /** A built-in stage the person removed: kept in the list so it is never added back, and not drawn on the rail. */
+  removed?: boolean;
+};
 
 /** A stage as the rail draws it. */
 /** `builtIn`: the kind's own name for the stage (null for one a person added); a label that differs is a rename. */
-export type Stage = { id: string; label: string; builtIn: string | null; skipped: boolean; custom: boolean; regions: readonly RegionId[] };
+export type Stage = {
+  id: string; label: string; builtIn: string | null; skipped: boolean; custom: boolean; regions: readonly RegionId[];
+  /** The kind the rail belongs to: an edit uses it to keep the built-in stages the person removed (`removed`) out of the rail for good. */
+  flavor?: Flavor;
+};
 
 /** What a built-in stage draws: the regions its cards sit in, and for a shared region which of them. */
-type StageDef = { id: string; label: string; regions: readonly RegionId[]; holds?: (card: BoardCard) => boolean };
+type StageDef = {
+  id: string; label: string; regions: readonly RegionId[]; holds?: (card: BoardCard) => boolean;
+  /** Ids this stage was saved under before: a rail saved with one of them opens with this stage in its place. */
+  was?: readonly string[];
+  /** Added to the kind's rail after rails were first saved (v25): a rail saved before then gains it (see `stagesOf`). */
+  added?: true;
+};
 
 const variantOf = (card: BoardCard) => (card.data as { variant?: unknown } | null)?.variant;
 const castVariant = (card: BoardCard, want: "people" | "things") => {
@@ -37,22 +51,29 @@ const castVariant = (card: BoardCard, want: "people" | "things") => {
   return want === "people" ? v === "cast" : v === "environment" || v === "element";
 };
 
-/** Film's rail (§ 6.1) over today's Studio regions. Looks travel with the Brief, as references. */
+/**
+ * Film's rail (§ 6.1; v25): Treatment · Pitch · Brief · Script · Cast · Locations · Elements · Storyboard · Shots · Edit · Deliver,
+ * over today's Studio regions. Looks travel with the Brief, as references. Treatment, Pitch and Locations have no region on
+ * today's board (their contents are built with their screens), and the places stay in Elements until Locations has cards of its own.
+ */
 export const FILM_STAGES: readonly StageDef[] = [
+  { id: "treatment", label: "Treatment", regions: [], added: true },
+  { id: "pitch", label: "Pitch", regions: [], added: true },
   { id: "brief", label: "Brief", regions: ["brief", "looks"] },
   /* Nothing on today's board draws the script (it is read in the brief's tools); the stage is empty until P2's stage contents. */
   { id: "script", label: "Script", regions: [] },
   { id: "cast", label: "Cast", regions: ["cast"], holds: (card) => castVariant(card, "people") },
+  { id: "locations", label: "Locations", regions: [], added: true },
   { id: "elements", label: "Elements", regions: ["cast"], holds: (card) => castVariant(card, "things") },
   { id: "storyboard", label: "Storyboard", regions: ["storyboard"] },
   { id: "shots", label: "Shots", regions: ["shots", "next", "made"] },
-  { id: "cut", label: "Cut", regions: ["cut"] },
+  { id: "edit", label: "Edit", regions: ["cut"], was: ["cut"] },
   { id: "deliver", label: "Deliver", regions: ["deliver"] },
 ];
 
 /** Pre-vis: the same data as Film up to the storyboard; the animatic is the timed shots and cut, the PPM deck the delivery. */
 export const PREVIS_STAGES: readonly StageDef[] = [
-  ...FILM_STAGES.slice(0, 5),
+  ...FILM_STAGES.filter((d) => ["brief", "script", "cast", "elements", "storyboard"].includes(d.id)),
   { id: "animatic", label: "Animatic", regions: ["shots", "next", "made", "cut"] },
   { id: "ppm-deck", label: "PPM deck", regions: ["deliver"] },
 ];
@@ -110,19 +131,48 @@ const cleanLabel = (label: unknown): string | null => {
   return text || null;
 };
 
-/** The rail: the saved list when there is one (unknown built-in ids dropped), else the kind's own. */
+/** The id a rail knows a stage by: a stage saved under its old id (Cut, now Edit) is the same stage. */
+export function stageId(flavor: Flavor, id: string | null | undefined): string | null {
+  if (!id) return null;
+  return builtInStages(flavor).find((d) => d.id === id || d.was?.includes(id))?.id ?? id;
+}
+
+/**
+ * The rail: the saved list when there is one, else the kind's own. Reading changes what is shown, never what is saved:
+ *  - a stage saved under its old id (Cut) is read as the new one (Edit), in the same place;
+ *  - unknown built-in ids are dropped, and so are built-in stages flagged `removed` (they stay removed);
+ *  - a stage added to the kind after rails were first saved (Treatment, Pitch, Locations) that a saved rail neither holds nor
+ *    flags as removed is a rail saved before it: it is added at its usual place, after the stage before it in the kind's list,
+ *    or before the stage after it when nothing before is there. A rail is never grown past `MAX_STAGES`.
+ * The next edit of the rail saves the list as shown, with a flag for every built-in stage that is not on it.
+ * One limit of that: a rail saved before v25 that already holds 24 stages has no room for the new ones, so they are not shown, and
+ * its next edit saves them flagged removed though the person never removed them. They can be added back with "+ Stage".
+ */
 export function stagesOf(flavor: Flavor, saved: readonly SavedStage[] | null | undefined): Stage[] {
   const defs = builtInStages(flavor);
   const byId = new Map(defs.map((d) => [d.id, d]));
-  if (!saved?.length) return defs.map((d) => ({ id: d.id, label: d.label, builtIn: d.label, skipped: false, custom: false, regions: d.regions }));
+  for (const d of defs) for (const old of d.was ?? []) if (!byId.has(old)) byId.set(old, d);
+  if (!saved?.length) return defs.map((d) => ({ id: d.id, label: d.label, builtIn: d.label, skipped: false, custom: false, regions: d.regions, flavor }));
   const seen = new Set<string>();
   const out: Stage[] = [];
   for (const s of saved) {
-    if (!s || typeof s.id !== "string" || seen.has(s.id)) continue;
+    if (!s || typeof s.id !== "string") continue;
     const def = byId.get(s.id);
+    const id = def?.id ?? s.id;
+    if (seen.has(id)) continue;
     if (!def && !s.custom) continue;
-    seen.add(s.id);
-    out.push({ id: s.id, label: cleanLabel(s.label) ?? def?.label ?? "New stage", builtIn: def?.label ?? null, skipped: Boolean(s.skipped), custom: !def, regions: def?.regions ?? [] });
+    seen.add(id);
+    /* A removed flag hides the stage whatever else it says, so a flag on a custom stage can never draw more than the rail holds. */
+    if (s.removed) continue;
+    out.push({ id, label: cleanLabel(s.label) ?? def?.label ?? "New stage", builtIn: def?.label ?? null, skipped: Boolean(s.skipped), custom: !def, regions: def?.regions ?? [], flavor });
+  }
+  for (const d of defs) {
+    if (!d.added || seen.has(d.id) || out.length >= MAX_STAGES) continue;
+    const at = defs.indexOf(d);
+    const before = defs.slice(0, at).map((x) => out.findIndex((s) => s.id === x.id)).filter((i) => i >= 0);
+    const after = defs.slice(at + 1).map((x) => out.findIndex((s) => s.id === x.id)).filter((i) => i >= 0);
+    const index = before.length ? Math.max(...before) + 1 : after.length ? Math.min(...after) : out.length;
+    out.splice(index, 0, { id: d.id, label: d.label, builtIn: d.label, skipped: false, custom: false, regions: d.regions, flavor });
   }
   return out;
 }
@@ -152,13 +202,31 @@ export function stageStatus(stage: Pick<Stage, "id" | "regions">, cards: readonl
 
 /** The stage to show: the address's, if the rail has it; else the kind's opening stage; else the first. */
 export function currentStage(stages: readonly Stage[], asked: string | null | undefined, flavor: Flavor): Stage | null {
-  return stages.find((s) => s.id === asked) ?? stages.find((s) => s.id === OPENS_ON[flavor]) ?? stages[0] ?? null;
+  const want = stageId(flavor, asked);
+  return stages.find((s) => s.id === want) ?? stages.find((s) => s.id === OPENS_ON[flavor]) ?? stages[0] ?? null;
 }
 
 /* ── Rail edits: each returns the whole saved list, which the draft keeps ─────────────────────────── */
 
-const toSaved = (stages: readonly Stage[]): SavedStage[] =>
-  stages.map((s) => ({ id: s.id, ...(s.custom || s.label !== s.builtIn ? { label: s.label } : {}), ...(s.skipped ? { skipped: true } : {}), ...(s.custom ? { custom: true } : {}) }));
+/** The list an edit saves: the stages as shown, then a `removed` flag for each of the kind's built-in stages that is not on the rail. */
+const toSaved = (stages: readonly Stage[]): SavedStage[] => {
+  const shown: SavedStage[] = stages.map((s) => ({ id: s.id, ...(s.custom || s.label !== s.builtIn ? { label: s.label } : {}), ...(s.skipped ? { skipped: true } : {}), ...(s.custom ? { custom: true } : {}) }));
+  const flavor = stages.find((s) => s.flavor)?.flavor;
+  if (!flavor) return shown;
+  const kept = new Set(stages.map((s) => s.id));
+  return [...shown, ...builtInStages(flavor).filter((d) => !kept.has(d.id)).map((d) => ({ id: d.id, removed: true as const }))];
+};
+
+/**
+ * A rail to start a board with: the kind's own steps, less the ones a new board leaves out (saved as `{ id, removed: true }`, so a
+ * later read never adds them back) and with the ones it skips marked `skipped`. The saved list a new board's draft keeps as
+ * `boardStages`; lane F's New project writes it with this, never by hand.
+ */
+export function startingRail(flavor: Flavor, plan: { without?: readonly string[]; skipped?: readonly string[] } = {}): SavedStage[] {
+  const gone = new Set(plan.without ?? []);
+  const quiet = new Set(plan.skipped ?? []);
+  return toSaved(stagesOf(flavor, null).filter((s) => !gone.has(s.id)).map((s) => (quiet.has(s.id) ? { ...s, skipped: true } : s)));
+}
 
 export function renameStage(stages: readonly Stage[], id: string, label: string): SavedStage[] {
   const name = cleanLabel(label);
@@ -190,7 +258,7 @@ export const stageLimit = (count: number): string | null => (count >= MAX_STAGES
 export function addStage(stages: readonly Stage[], after: string | null, label: string, makeId: () => string): { saved: SavedStage[]; id: string | null } {
   if (stageLimit(stages.length)) return { saved: toSaved(stages), id: null };
   const id = `custom-${makeId()}`;
-  const fresh: Stage = { id, label: cleanLabel(label) ?? "New stage", builtIn: null, skipped: false, custom: true, regions: [] };
+  const fresh: Stage = { id, label: cleanLabel(label) ?? "New stage", builtIn: null, skipped: false, custom: true, regions: [], flavor: stages.find((s) => s.flavor)?.flavor };
   const at = after ? stages.findIndex((s) => s.id === after) + 1 : stages.length;
   const next = [...stages.slice(0, at > 0 ? at : stages.length), fresh, ...stages.slice(at > 0 ? at : stages.length)];
   return { saved: toSaved(next), id };
@@ -245,7 +313,7 @@ export function selectionCrumb(titles: readonly string[]): string | null {
 /** The empty stage (prototype L616, verbatim where the stage has one). `ask`: the custom stage's one action. */
 export type StageEmpty = { title: string; line: string; ask?: true };
 const EMPTY: Record<string, StageEmpty> = {
-  cut: { title: "Nothing to cut yet", line: "Approved takes land here in order, with a timeline, music, voice and captions." },
+  edit: { title: "Nothing to cut yet", line: "Approved takes land here in order, with a timeline, music, voice and captions." },
   deliver: { title: "Nothing to deliver yet", line: "The spec check and the master appear once there is a cut. Rendering is free." },
   "ppm-deck": { title: "Nothing to put in the deck yet", line: "The PPM deck gathers script, cast, locations, boards and the shot list as they are approved." },
   moments: { title: "No moments yet", line: "Find the moments worth clipping in the source, and they are listed here with reasons." },

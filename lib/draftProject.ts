@@ -150,6 +150,24 @@ export async function mayReachProject(person: { id: string } | null, projectId: 
   return access === "read" && (await draftIsTeamShared(projectId!, ex));
 }
 
+/**
+ * `projectId` when `person` may FILE into it ("admit": their own board, the sample, or any project that is not a private board), else null, no project. The one rule a chat's project
+ * lives by (chat create and PATCH, skills, the turn): a private board of someone else's and an id that is none give the same null, so nothing says whether one exists.
+ */
+export async function admittedProjectOr(person: { id: string } | null, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
+  if (projectId == null || projectId === "") return null;
+  return (await mayReachProject(person, projectId, "admit", ex)) ? projectId : null;
+}
+
+/**
+ * `projectId` when `person` may READ it (their own board, the sample, a teammate's SHARED board, any project that is not a private board), else null. No admin elevation: an admin
+ * reads another member's private board through the audited admin read, not here. This feeds Atomik's CONTEXT only; spending, step filing and memory writes need `admittedProjectOr`.
+ */
+export async function contextProjectOr(person: { id: string } | null, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
+  if (projectId == null || projectId === "") return null;
+  return (await mayReachProject(person, projectId, "read", ex)) ? projectId : null;
+}
+
 /** A filter for lists of projects: what `person` may see among them (reading). One read of the person's drafts, of shared boards and of the sample mark, then a set lookup per row. */
 /**
  * The boards a teammate may look at, by the one definition: every draft its author has shared with the team (`teamShared`), and the marked sample
@@ -251,8 +269,3 @@ export async function takeLister(viewer: Viewer, ex: Exec = db()): Promise<(proj
   return projectLister(viewer, ex);
 }
 
-/** `projectId` when `viewer` may READ that project (its owner, an admin of the workspace, anyone for a shared board or the sample), else null, no project: what a route that feeds a project's takes, titles or prompts to a model runs on, so nothing of a private board is read and no record (a meter line, a reservation, a memory) is ever written against it or against a placeholder id. */
-export async function readableProjectOr(viewer: Viewer, projectId: string | null | undefined, ex: Exec = db()): Promise<string | null> {
-  if (projectId == null) return null;
-  return seesEveryBoard(viewer) || (await mayReachProject(viewer, projectId, "read", ex)) ? projectId : null;
-}
