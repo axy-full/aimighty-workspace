@@ -15,8 +15,7 @@ import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./g
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow, shotCapGate } from "./shotCap";
-import { isAgentId } from "./security/people-only";
+import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
 import { currentViewer, uploadOpenableBy } from "./uploadAccess";
 import { engineEnabled } from "./engineGate";
 import { RECRAFT_RATES, type RecraftModel } from "./vendorRates";
@@ -204,7 +203,7 @@ export async function admitRecraft(input: Record<string, unknown>, got: Admissio
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   /* The cost approval rule (brief 2.2), as the fal path judges it: with a cap per shot, a take past it needs an admin who is a person: a token, an agent identity or an Atomik Auto run is never one (the same test as jobLineNow's). Refused before a row is written. */
   if (shotId && shotCode) {
-    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: marginKey, isAdmin: got.user.role === "admin" && got.token == null && !isAgentId(got.user.id) && options.run?.auto !== true });
+    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: marginKey, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
   }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model: marginKey, size });
