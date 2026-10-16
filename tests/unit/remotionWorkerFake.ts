@@ -18,11 +18,23 @@ export type RunBehaviour = {
   subtitles?: Partial<Record<"srt" | "vtt", Buffer | null>>;
   /** Sent as the video's length when it is read: false leaves the header out, a number states that length whatever the body is. */
   contentLength?: boolean | number;
+  /** The bytes of deck.pdf on a successful deck run (a spec whose composition is "pdf"); none leaves the file missing; unset makes a plain PDF of the spec's page count and size. */
+  pdf?: Buffer | null;
   /** Runs inside the run call, before it answers. A promise that does not settle holds the run until the session is deleted. */
   during?: (session: { name: string; spec: Record<string, unknown> | null; files: string[] }) => Promise<void> | void;
   /** Runs when an output is read. */
   onRead?: (path: string) => Promise<void> | void;
 };
+
+/** A plain PDF 1.4 of `pages` pages, each `widthMm` x `heightMm`, written the way Chrome writes one (a page object each, no object streams). */
+export function fakePdf(pages: number, widthMm: number, heightMm: number): Buffer {
+  const w = ((widthMm * 72) / 25.4).toFixed(2);
+  const h = ((heightMm * 72) / 25.4).toFixed(2);
+  const objects = [`<< /Type /Catalog /Pages 2 0 R >>`, `<< /Type /Pages /Kids [${Array.from({ length: pages }, (_, i) => `${3 + i} 0 R`).join(" ")}] /Count ${pages} >>`];
+  for (let i = 0; i < pages; i += 1) objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] >>`);
+  const body = objects.map((o, i) => `${i + 1} 0 obj\n${o}\nendobj\n`).join("");
+  return Buffer.from(`%PDF-1.4\n${body}trailer\n<< /Root 1 0 R >>\n%%EOF\n`, "latin1");
+}
 
 const mp4 = () => Buffer.concat([Buffer.alloc(4), Buffer.from("ftypisom"), Buffer.alloc(64, 7)]);
 
@@ -82,7 +94,12 @@ export function exportWorkerPool(origins: string[] = EXPORT_WORKER_URLS, secrets
         if ((await Promise.race([finished, released])) === "released") return reply(200, { exitCode: 137, stdout: "", stderr: "", timedOut: false });
       }
       const exitCode = behaviour.exitCode ?? 0;
-      if (exitCode === 0) {
+      const deck = spec?.composition === "pdf" ? (spec.pdf as { pages: number; trimMm: { width: number; height: number }; bleedMm: number }) : null;
+      if (exitCode === 0 && deck) {
+        const pdf = behaviour.pdf === undefined ? fakePdf(deck.pages, deck.trimMm.width + 2 * deck.bleedMm, deck.trimMm.height + 2 * deck.bleedMm) : behaviour.pdf;
+        if (pdf !== null) held.files.set("output/deck.pdf", pdf);
+        held.files.set("output/result.json", Buffer.from(JSON.stringify({ ok: true })));
+      } else if (exitCode === 0) {
         const asked = (spec?.output ?? {}) as { format?: string; subtitles?: string[] };
         if (behaviour.mp4 !== null) held.files.set(asked.format && asked.format !== "h264" ? "output/export.mov" : "output/export.mp4", behaviour.mp4 ?? mp4());
         for (const format of asked.subtitles ?? []) {

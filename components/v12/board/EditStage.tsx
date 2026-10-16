@@ -8,6 +8,7 @@ import { CutCard } from "@/components/graphite/board/cards/cut/CutCard";
 import type { CutCardData } from "@/components/graphite/board/cards/cut/cut-model";
 import type { BoardCard } from "@/lib/board/types";
 import type { BoardCtx } from "@/components/graphite/board/cards/types";
+import { useDeckPdf, type DeckCover } from "./deck-pdf";
 import { useFilmExport } from "./film-export";
 import "./stage-pages.css";
 
@@ -49,6 +50,35 @@ function Row({ board, language, lines, swaps, ready, why, saving }: { board: str
               {busy ? "Making…" : <>Export MP4 · <Price quote={FREE_QUOTE} /></>}
             </button>
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const COVERS: { cover: DeckCover; name: string; line: string }[] = [
+  { cover: "treatment", name: "Treatment", line: "quiet cover" },
+  { cover: "pitch", name: "Pitch", line: "bold cover" },
+];
+
+function DeckRow({ board, cover, name, line, ready, saving }: { board: string; cover: DeckCover; name: string; line: string; ready: boolean; saving: boolean }) {
+  const { state, start, reset } = useDeckPdf(board, cover);
+  const busy = state.phase === "working";
+  return (
+    <div className="v12-es-row" data-testid="v12-edit-deck" data-cover={cover} data-phase={state.phase}>
+      <div className="v12-es-who"><span className="v12-es-name">{name}</span><span className="v12-es-facts">{line}</span></div>
+      <div className="v12-es-act">
+        {state.phase === "ready" ? (
+          <span className="v12-es-done" role="status" data-testid="v12-deck-ready">
+            <a className="v12-es-link" href={state.url} download={state.filename}>Download PDF · {state.pages} pages</a>
+            <button type="button" className="v12-sp-btn" onClick={reset}>Start again</button>
+          </span>
+        ) : state.phase === "failed" ? (
+          <span className="v12-es-fail" role="alert" data-testid="v12-deck-failed"><span className="v12-sp-problem">{state.error}</span><button type="button" className="v12-sp-btn" onClick={start}>Retry</button></span>
+        ) : (
+          <button type="button" className="v12-sp-btn" disabled={busy || saving || !ready} title={!ready ? "Add takes to the cut first." : saving ? "Saving the board first" : "Free: nothing is charged."} onClick={start} data-testid="v12-deck-export">
+            {busy ? "Printing…" : <>Export PDF · <Price quote={FREE_QUOTE} /></>}
+          </button>
         )}
       </div>
     </div>
@@ -107,6 +137,12 @@ export function EditStage({ cutCard, ctx, languages }: { cutCard: BoardCard<CutC
           {codes.map((code) => { const voice = voiceOf(project.boardVoice, code); return <Row key={code} board={project.id} language={code} lines={voice.lines.length} swaps={Object.keys(voice.swap ?? {}).length} ready={ready} why={why} saving={saving} />; })}
         </div>
         {!ctx.offline ? null : <p className="v12-sp-why">Offline · exports start when you are back online.</p>}
+      </section>
+      <section className="v12-sp-card" aria-labelledby="v12-es-deck-h" data-testid="v12-edit-decks">
+        <header className="v12-sp-head"><h2 className="v12-sp-title" id="v12-es-deck-h">Deck</h2><span className="v12-sp-state">One deck, two covers</span></header>
+        <div className="v12-es-rows">
+          {COVERS.map((c) => <DeckRow key={c.cover} board={project.id} cover={c.cover} name={c.name} line={c.line} ready={true} saving={saving} />)}
+        </div>
       </section>
     </div>
   );

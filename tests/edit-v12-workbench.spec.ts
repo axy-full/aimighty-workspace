@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { filmBoard, openBoard } from "./helpers/boardV12";
 import type { Project } from "../lib/workbench/studio";
+import { withCut } from "./helpers/editV12";
 
 /**
  * The Edit stage in the new interface (components/v12/board/EditStage.tsx; v25 plan PR 22/23-lite): the cut, how it is dressed, and
@@ -13,24 +14,6 @@ const SIZES: [number, number][] = [[1280, 800], [1440, 900], [1728, 1117], [1920
 const noSideways = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
 const HINDI = "हर अच्छी फ़िल्म";
 const JOB = "export_" + "a".repeat(32);
-
-/** The edit's sequence as the browser reads it (the server refuses a draft that names a take it does not hold, and no engine runs here). */
-async function withCut(page: Page, patch: Record<string, unknown>) {
-  const asset = (id: string, generationId: string) => ({ id, name: id, kind: "video", category: "Video", url: `/api/media/${generationId}`, description: "", prompt: "", status: "Selected", locked: false, version: 1, refs: [], generationId, seconds: 5 });
-  await page.route(/\/api\/workbench\/projects\?id=/, async (route) => {
-    if (route.request().method() !== "GET") return route.continue();
-    try {
-      const response = await route.fetch();
-      const body = await response.json() as { project?: Record<string, unknown> };
-      if (body.project) Object.assign(body.project, {
-        assets: [asset("clip-a1", "tk-s1"), asset("clip-a2", "tk-s2")],
-        shots: [{ id: "cut-1", name: "Opening wide", assetId: "clip-a1", duration: 120, sourceIn: 0, note: "" }, { id: "cut-2", name: "The walk", assetId: "clip-a2", duration: 120, sourceIn: 0, note: "" }],
-        ...patch,
-      });
-      await route.fulfill({ response, json: body });
-    } catch { /* the test ended while this read was in flight */ }
-  });
-}
 
 test.describe("desktop, switch on", () => {
   test.beforeEach(({}, info) => test.skip(!DESKTOP.includes(info.project.name), "desktop sizes"));
@@ -96,6 +79,31 @@ test.describe("desktop, switch on", () => {
     expect(asked[0].board).toMatch(/^[A-Za-z0-9_-]+$/);
     /* English is its own row, untouched. */
     await expect(page.locator('[data-testid="v12-edit-language"][data-code="en"]').getByTestId("v12-edit-export")).toBeEnabled();
+  });
+
+  test("the deck is one PDF with a Treatment or a Pitch cover: asked for the board by cover, offered as a download; a refusal says why and retries", async ({ page }) => {
+    const asked: { kind?: string; board?: string; cover?: string }[] = [];
+    await page.route("**/api/pdf", async (route) => {
+      const body = route.request().postDataJSON() as { kind: string; board: string; cover: string };
+      asked.push(body);
+      if (asked.length === 1) return route.fulfill({ status: 404, json: { error: "Not found." } });
+      await route.fulfill({ json: { deck: { url: "/api/uploads/pdf_deck", filename: "monsoon_film.pdf", pages: 9, bytes: 1000, kind: "film", mime: "application/pdf", price: { credits: 0, label: "Free" } } } });
+    });
+    await openBoard(page, "/suites?view=board&stage=edit", { project: filmBoard() as Project });
+    const decks = page.getByTestId("v12-edit-decks");
+    await expect(decks).toBeVisible({ timeout: 60_000 });
+    const rows = decks.getByTestId("v12-edit-deck");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText("Treatment");
+    await expect(rows.nth(1)).toContainText("Pitch");
+    await expect(rows.nth(1).getByTestId("v12-deck-export")).toHaveText("Export PDF · free");
+    await rows.nth(1).getByTestId("v12-deck-export").click();
+    await expect(rows.nth(1).getByTestId("v12-deck-failed")).toContainText("Deck PDFs aren't switched on");
+    await rows.nth(1).getByRole("button", { name: "Retry" }).click();
+    await expect(rows.nth(1).getByTestId("v12-deck-ready")).toBeVisible({ timeout: 30_000 });
+    await expect(rows.nth(1).getByRole("link", { name: /Download PDF/ })).toHaveAttribute("href", "/api/uploads/pdf_deck");
+    expect(asked.map((a) => [a.kind, a.cover])).toEqual([["film", "pitch"], ["film", "pitch"]]);
+    expect(asked[0].board).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 
   test("a cut with no takes cannot be exported, and says why; captions and the title card are the board's, kept in its draft", async ({ page }) => {
