@@ -140,6 +140,19 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "create_board",
+    description: "Make a new film board, as Home's New project does: its rail starts with the demo's steps (Pitch, Brief, Script, Cast, Storyboard, Shots, Edit, Deliver). Free: nothing is billed. The board is yours; open it in Particl.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Board name. Optional: the brief names it when there is none." },
+        brief: { type: "string", description: "What the film is. Optional." },
+        aspect: { type: "string", description: "16:9, 9:16, 1:1 or 4:5. Optional." },
+        length: { type: "string", description: "A length such as 30 s. Optional." },
+      },
+    },
+  },
+  {
     name: "usage_summary",
     description: "What the workspace has spent, what credit remains, and how many renders are in flight.",
     inputSchema: { type: "object", properties: {} },
@@ -377,6 +390,11 @@ export async function runTool(
     case "create_project": {
       const out = (await call("/api/projects", { method: "POST", body: { name: args.name } })) as { name: string };
       return `Created project "${out.name}".`;
+    }
+
+    case "create_board": {
+      const out = (await call("/api/boards", { method: "POST", body: { kind: "film", name: args.name, brief: args.brief, aspect: args.aspect, length: args.length } })) as { id: string; name: string };
+      return `Made the board "${out.name}" (${out.id}). Its steps start at Pitch. Nothing was billed.`;
     }
 
     case "usage_summary": {
