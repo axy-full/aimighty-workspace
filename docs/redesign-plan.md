@@ -1110,3 +1110,30 @@ Recorded by the lead, verbatim except A.8's cost thresholds, which are engine co
 - Spikes in freeze week are fine as mocks only.
 - Nothing merges to the demo path after 27 Oct without the owner's yes.
 - The repo stays public until after 31 Oct.
+
+## Owner, 16 Oct 2026, 17:05 IST: design reset (v26 rejected, v27 with Claude Design)
+
+Recorded by the lead from the owner's 17:05 message.
+
+**v26 from Claude Design is REJECTED as cluttered.** It stays only as the feature list.
+
+**v27 is a reset, now with Claude Design:**
+- Home in the InVideo shape: one prompt box, then tabs for Film types, Projects, Engines and Showcase.
+- Boards stay ours.
+- Both side rails become hover docks: 48 px icons that expand on hover.
+- Nothing shows until it's touched.
+- Space opens Quick Look on any card, everywhere.
+- One floating command bar at the bottom of every screen: Agent chat and the Director action both live there.
+- Cards are a full-bleed picture with one line and a status dot.
+- The treatment page fills the screen, with a filmstrip at the bottom.
+
+**The + opens ten film types**, each with its own steps and model stack: Feature film · Ad film · UGC · Product video · Music video · Short film · Microdrama · Pre-vis/animatic · Trend clip · Social.
+
+**Pause all restyling until the v27 zip arrives.** Keep going on:
+- lane C's whole-pixel fix;
+- lane J (srcset, 4K preview, posters from the take, the image-size check, the screenshot job);
+- the resolution control logic;
+- the Enhance loader behaviour;
+- the demo path.
+
+**Draft, for the owner's review:** the steps of each of the ten film types and which engines each needs, marking anything not in the current stack. Report only, no spend.
