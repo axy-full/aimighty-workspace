@@ -1298,3 +1298,11 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
 - **16 Oct 16:00 IST.** **#813** (Remotion licence note, d53e03f3) APPROVED by Opus and queued after #796.
   - The qualifier "contractors who work on the Remotion project" is the owner's own wording (15:50 B.2), so it is kept.
   - **Owner note:** CLAUDE.md says the Company License is bought "before the next release" at 4 people; the READMEs say before the 4th person starts.
+- **16 Oct 16:06 IST.** **DEPLOY #5 LIVE: 62163d7, stable on 5 hits** (0.16–0.27 s). Ships #757, #760, #748, #756, #762 and #758; rollback point main 709497a7.
+  - **Read-only checks pass:**
+    - health 200;
+    - readiness 401 anonymously;
+    - /, /login, /pricing and /privacy all 200 (the one "moleculr" match on /privacy is the existing suite-tab link, as at deploy #4);
+    - Google start 303 to accounts.google.com;
+    - 9 private APIs 401 anonymously.
+  - The production watcher keeps running.
