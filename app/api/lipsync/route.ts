@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * Lip-sync through sync.so (lib/lipSync.ts): quote with `quoteOnly`, or fund one asynchronous job under an Idempotency-Key. Every real face passes the
- * consent gate first. Not here at all (404) unless the engine is on for the workspace.
+ * Lip-sync through sync.so (lib/lipSync.ts): quote with `quoteOnly`, or fund one asynchronous job under an Idempotency-Key. No face or voice is checked (owner,
+ * 16 Oct 2026). House-only until counsel answers: not here at all (404) unless the engine is on and this is the house workspace.
  */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();
