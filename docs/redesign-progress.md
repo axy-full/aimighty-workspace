@@ -1019,3 +1019,12 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - #750 (v25 rail) CI green 24/24 (run 38821582430) at bd738204.
   - #758 (at-risk badge) CI FAILED (run 38821617668): generationSettlement.spec.ts:296. syncPending now returns an extra `atRiskTried` field and breaks the exact shape. The test is not touched; lane C is fixing the code to keep syncPending's shape.
 - **16 Oct 05:26 IST.** #758 delta APPROVED at 1c10b1c8. generationSettlement.spec.ts is byte-identical to release/1; syncPending's shape is restored; the count goes out via a callback; no money behaviour change. Readiness CI started.
+- **16 Oct 05:57 IST. Check-in.**
+  - Production: health ok at 709497a; watcher quiet; df 14%.
+  - CI: #758 (1c10b1c8) running; one slot free.
+  - Merges: none qualify under the standing yes.
+  - Lanes:
+    - C and D: housekeeping. Merge #778's head a95fd177 (shared shotCapAdmin) into Topaz, Recraft, Veo, Vision and Kling.
+    - E: docs/plans/needs-akshay-16oct.md, a per-PR index plus the owner's cross-cutting decisions, for the 10:30 report.
+    - B: idle. Nothing left without owner decisions.
+  - No paid generation; spend $0.
