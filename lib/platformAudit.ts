@@ -48,6 +48,8 @@ export type PlatformAuditDetails = {
   guestWorkspace?: "set" | "cleared";
   /** How many workspaces now see the new interface by list. */
   newInterfaceWorkspaces?: number;
+  /** How many workspaces may now use the engines by list. */
+  enginesOnWorkspaces?: number;
   /** Which platform-layer part was saved or reset. */
   part?: "setup" | "starter" | "rules" | "caps" | "models" | "plans";
   /** A failed save was tried again, and how it went. */
@@ -87,7 +89,7 @@ export function platformAuditStatement(input: PlatformAuditInput, changedOnly = 
       : key === "kind" ? value === "manual"
       : key === "openSignup" || key === "visitorPages" || key === "guestHome" || key === "saved" || key === "sent" ? typeof value === "boolean"
       : key === "guestWorkspace" ? value === "set" || value === "cleared"
-      : key === "newInterfaceWorkspaces" ? typeof value === "number" && Number.isInteger(value) && value >= 0
+      : key === "newInterfaceWorkspaces" || key === "enginesOnWorkspaces" ? typeof value === "number" && Number.isInteger(value) && value >= 0
       : key === "part" ? PARTS.includes(String(value))
       : false;
     if (!valid) throw new Error("Invalid platform history detail");

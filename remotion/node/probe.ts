@@ -8,6 +8,13 @@ export type MediaFacts = {
   height: number;
   hasVideo: boolean;
   hasAudio: boolean;
+  /** Frames per second of the picture (its average rate), when the file says; absent for audio or an unreadable rate. */
+  fps?: number;
+  /** True when the file's nominal rate and its average rate disagree by more than 2%: frames are not evenly spaced. */
+  variableFrameRate?: boolean;
+  /** The picture's codec and pixel format, when the file has a picture (the pre-pass leaves high-quality sources alone). */
+  videoCodec?: string;
+  pixFmt?: string;
 };
 
 export type Prober = { probe(absoluteFile: string): Promise<MediaFacts> };
@@ -17,13 +24,39 @@ type FfprobeStream = {
   width?: number;
   height?: number;
   duration?: string;
+  r_frame_rate?: string;
+  avg_frame_rate?: string;
+  codec_name?: string;
+  pix_fmt?: string;
+  /** `attached_pic` is cover art in an audio file: a picture stream that is not a video. */
+  disposition?: { attached_pic?: number };
   tags?: { rotate?: string };
   side_data_list?: { rotation?: number }[];
 };
 
+/** "30000/1001" to 29.97; "0/0", "" or anything else to null. */
+export function parseRate(value: string | undefined): number | null {
+  const m = /^(\d{1,9})\/(\d{1,9})$/.exec(value ?? "");
+  if (!m || Number(m[2]) === 0) return null;
+  const rate = Number(m[1]) / Number(m[2]);
+  return rate > 0 && rate <= 1000 ? rate : null;
+}
+
+/** The rates differ by more than this share of the average: the file is variable frame rate. */
+export const VFR_TOLERANCE = 0.02;
+
+function videoRate(video: FfprobeStream | undefined): { fps?: number; variableFrameRate?: boolean } {
+  if (!video) return {};
+  const average = parseRate(video.avg_frame_rate);
+  const nominal = parseRate(video.r_frame_rate);
+  const fps = average ?? nominal;
+  if (fps === null) return {};
+  return { fps: Math.round(fps * 1000) / 1000, variableFrameRate: average !== null && nominal !== null && Math.abs(nominal - average) / average > VFR_TOLERANCE };
+}
+
 export function factsFromFfprobe(json: { format?: { duration?: string }; streams?: FfprobeStream[] }): MediaFacts {
   const streams = json.streams ?? [];
-  const video = streams.find((s) => s.codec_type === "video" && (s.width ?? 0) > 0);
+  const video = streams.find((s) => s.codec_type === "video" && (s.width ?? 0) > 0 && s.disposition?.attached_pic !== 1);
   const audio = streams.find((s) => s.codec_type === "audio");
   const rotation = Math.abs(Number(video?.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ?? video?.tags?.rotate ?? 0)) % 360;
   const swap = rotation === 90 || rotation === 270;
@@ -34,6 +67,9 @@ export function factsFromFfprobe(json: { format?: { duration?: string }; streams
     height: swap ? (video?.width ?? 0) : (video?.height ?? 0),
     hasVideo: Boolean(video),
     hasAudio: Boolean(audio),
+    ...videoRate(video),
+    ...(video?.codec_name ? { videoCodec: video.codec_name } : {}),
+    ...(video?.pix_fmt ? { pixFmt: video.pix_fmt } : {}),
   };
 }
 

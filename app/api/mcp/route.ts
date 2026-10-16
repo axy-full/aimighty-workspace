@@ -2,7 +2,8 @@ import { handleCrewMcp, isCrewMcpRequest } from "@/lib/crew/mcp";
 import { recoveryRoute } from "@/lib/recovery";
 import { requireUser, withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
-import { toolsOffered, runTool, makeCaller } from "@/lib/mcp";
+import { toolsOfferedFor, runTool, makeCaller } from "@/lib/mcp";
+import { engineEnabled } from "@/lib/engineGate";
 import { currentTenant } from "@/lib/tenant";
 import { pdfAllowedFor } from "@/lib/pdf/switch";
 import { linkOrigin } from "@/lib/site";
@@ -58,7 +59,7 @@ const workspacePost = withTenant(async function POST(req: Request) {
   if (id === undefined || id === null) return new Response(null, { status: 202 });
 
   if (method === "ping") return ok(id, {});
-  if (method === "tools/list") return ok(id, { tools: toolsOffered(process.env, { pdf: await pdfAllowedFor(currentTenant()?.workspace) }) });
+  if (method === "tools/list") return ok(id, { tools: await toolsOfferedFor(currentTenant()?.workspace, { pdf: await pdfAllowedFor(currentTenant()?.workspace) }) });
 
   if (method === "tools/call") {
     const name = String(params?.name ?? "");
@@ -66,7 +67,9 @@ const workspacePost = withTenant(async function POST(req: Request) {
     /* The tools call this same server at its own address (the bearer never leaves it); the links they hand back use the public one. */
     const call = makeCaller(new URL(req.url).origin, req.headers.get("authorization") ?? "");
     try {
-      const text = await runTool(name, args, call, linkOrigin(req), { credits: creditsApply(currentTenant()?.workspace) }, { pdf: await pdfAllowedFor(currentTenant()?.workspace) });
+      const exportsOn = await engineEnabled("REMOTION_EXPORTS", currentTenant()?.workspace);
+      const credits = { credits: creditsApply(currentTenant()?.workspace) };
+      const text = await runTool(name, args, call, linkOrigin(req), { ...credits, exports: exportsOn }, { pdf: await pdfAllowedFor(currentTenant()?.workspace) });
       return ok(id, { content: [{ type: "text", text }] });
     } catch (e) {
       // A refused render or a bad project name is information for the model,
@@ -88,7 +91,7 @@ export const GET = withTenant(async function GET() {
     name: "particl",
     transport: "mcp/streamable-http",
     usage: "POST JSON-RPC here with an 'Authorization: Bearer aw_…' header.",
-    tools: toolsOffered(process.env, { pdf: await pdfAllowedFor(currentTenant()?.workspace) }).map((t) => t.name),
+    tools: (await toolsOfferedFor(currentTenant()?.workspace, { pdf: await pdfAllowedFor(currentTenant()?.workspace) })).map((t) => t.name),
   });
 });
 

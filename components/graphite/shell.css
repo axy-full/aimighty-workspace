@@ -31,7 +31,6 @@
 /* ── Header (56px) ─────────────────────────────────────────────────────── */
 .gx-header { height: 56px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 14px; min-width: 0; border-bottom: 1px solid var(--gx-hair-strong); }
 .gx-brand { display: flex; align-items: center; gap: 8px; flex: none; }
-.gx-brand-name { font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
 .gx-brand-mark { font-family: var(--gx-mono); font-size: 12px; letter-spacing: .08em; color: var(--gx-text-3); text-transform: uppercase; }
 .gx-seg { display: inline-flex; padding: 3px; border-radius: 6px; background: var(--gx-track); border: 1px solid var(--gx-hair); flex: none; }
 .gx-seg--fill { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
@@ -1431,7 +1430,7 @@
 @media (max-width: 767px) {
   .gx-header { gap: 8px; }
   .gx-brand-mark { display: inline-flex; font-size: 12px; }
-  .gx-brand-name { display: none; }
+  .gx-brand .brand-logo-word { display: none; }
   .gx-search { flex: 0 0 44px; min-width: 44px; padding: 0; justify-content: center; }
   .gx-search .gx-search-label { display: none; }
 }
