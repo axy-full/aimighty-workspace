@@ -55,8 +55,21 @@ test("findStoredSource: a take of a private board is read by its owner and an ad
     await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_orphan", "prod_x", "draft_x", "agent:run_a", "req_orphan", "goal", "auto", "finished"] });
     expect(await read(person("agent:run_orphan"), secret)).toBe("missing");
     expect(await read(person("agent:run_orphan"), plain)).toBe("missing");
-    /* An agent id with no run behind it at all is no person's run: it is an internal call, not asked (the engine doors ask for a person first). */
-    expect(await read(person("agent:run_missing"), secret)).toBe("found");
+    /* An agent id with no run behind it at all is an anonymous member: ordinary takes, never a private board's. */
+    expect(await read(person("agent:run_missing"), secret)).toBe("missing");
+    expect(await read(person("agent:run_missing"), plain)).toBe("found");
+    /* Uploads: another person's private one is missing to an agent id with no run; one nobody owns is found. */
+    for (const [uid, who] of [["up_private_a", "u_a"], ["up_unowned", null]] as const)
+      await db().execute({ sql: "INSERT OR IGNORE INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,created_at,kind,duration_s,uploader_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [uid, `${uid}.mp3`, "audio/mpeg", "mp3", 10, "x", `uploads/${uid}.mp3`, Date.now(), "audio", 5, who] });
+    const readUpload = async (user: ReturnType<typeof person>, uploadId: string) => {
+      let out: unknown;
+      await runInTenant(ws, async () => { out = await findStoredSource({ uploadId }); }, { user } as never);
+      return out ? "found" : "missing";
+    };
+    expect(await readUpload(person("agent:run_missing"), "up_private_a")).toBe("missing");
+    expect(await readUpload(person("agent:run_missing"), "up_unowned")).toBe("found");
+    expect(await readUpload(person("u_a"), "up_private_a")).toBe("found");
+    expect(await readUpload(person("u_b"), "up_private_a")).toBe("missing");
     /* Ordinary and unfiled takes are anyone's in the workspace. */
     for (const id of [plain, loose]) { expect(await read(person("u_b"), id)).toBe("found"); expect(await read(person("agent:run_b"), id)).toBe("found"); }
     /* Background work with no person is not asked (as for uploads). */
