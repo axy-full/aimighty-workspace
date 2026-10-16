@@ -1217,3 +1217,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Gap found:** BoardView doesn't draw the new v25 parts yet. Lane C's next PR wires them (house, behind the new-interface switch), ahead of PR 9 and D-4.
   - **Slip:** lane C ran one browser spec without a slot.
 - **16 Oct 14:48 IST.** Opus money review APPROVED #811's send path at fb393ac4: totals are the server's quotes for the exact bodies sent; everything is re-priced before any send; one send per shot with its own ceiling, fingerprint and recovery key; the first refusal stops the rest; no guard file changed. The UI review is pending. **Owner question (joins the open question 8):** one press of 8 shots × 43 cr = 344 cr on a member's tap with no admin, because no single job crosses 200 cr. Should a multi-shot press, and the Hindi plan, be judged as a whole against the 200 cr line?
+- **16 Oct 14:49 IST.** **#800 FAILED CI** (run 38872965215), not merged.
+  - **The failure is a money guard:** guardrail4.spec.ts:584 (dubbing, a machine on an over-line job) expects 403 needsAdmin and gets 404, because the new private-board source check answers "not found" first.
+  - Lane B fixes the code's order; the guard is untouched. The Opus review missed it and CI caught it.
+  - Also failing in that run: demo-s10-phone-make at 360×640, probably unrelated (being checked).
+  - Queue 2 moves on to #805 and #749.
