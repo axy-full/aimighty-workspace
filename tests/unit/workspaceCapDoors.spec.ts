@@ -109,6 +109,8 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   { dir: "bfl", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
   /* Veo is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/veoVideo.spec.ts. */
   { dir: "veo", body: { tool: "video", prompt: "A tree in rain", maxCredits: 100000 } },
+  /* The label check is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/visionLabel.spec.ts. */
+  { dir: "label-check", body: { takeId: "gen_none", expected: "ACME", maxCredits: 100000 } },
   { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
@@ -388,6 +390,8 @@ const RESERVERS: Record<string, Reserver> = {
   /* FLUX.2 (BFL): reserved at admission, before its row is ever advanced; its one vendor call (the submit) is in the advance step, which only runs on a funded row. */
   "lib/bflImage.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.submit ?? submitImage)("] },
   /* Veo (Google): reserved at admission, before its row is ever advanced; its one vendor call (the submit) is in the advance step, which only runs on a funded row. */
+  /* The label check (Cloud Vision): reserved on the meter before its one vendor call (the read), in the same request; there is no row to advance. */
+  "lib/visionLabel.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (seams.detect ?? detectText)("] },
   "lib/veoVideo.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.submit ?? submitVideo)("] },
   "lib/sarvamTools.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (seams.speak ?? speak)(", "await (seams.translate ?? translate)(", "await (seams.transcribe ?? transcribe)("] },
   "lib/lipSync.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.upload ?? uploadAsset)(", "await (deps.submit ?? submitLipSync)("] },
@@ -418,6 +422,7 @@ const DOOR_MODULE: Record<string, string> = {
   "sarvam": "lib/sarvamTools.ts",
   "bfl": "lib/bflImage.ts",
   "veo": "lib/veoVideo.ts",
+  "label-check": "lib/visionLabel.ts",
   "audio/transcribe": "lib/transcription.ts",
   "jobs/[id]/release": "lib/held.ts",
   /* Taking a step claims it; the step's render is paid through admission. */

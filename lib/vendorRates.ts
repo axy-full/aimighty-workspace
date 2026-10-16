@@ -343,6 +343,18 @@ export type VeoModel = keyof typeof VEO_RATES.models;
 export type VeoResolution = (typeof VEO_RATES.resolutions)[number];
 export type VeoAspect = (typeof VEO_RATES.aspects)[number];
 
+/**
+ * Google Cloud Vision text detection, direct (lib/vision.ts, lib/visionLabel.ts), in the vendor's own unit: dollars per image analysed. **Verified against Google's pricing
+ * page (cloud.google.com/vision/pricing), 16 Oct 2026; confirm against the first invoice:** $1.50 per 1,000 units after the first 1,000 a month (free), a unit being one feature
+ * on one image, which is $0.0015 an image. The free tier is ignored on purpose: a quote is never under, and the platform pays the difference when the month's first thousand are free.
+ * One image a request, one feature a request, one request a check. Server-only like every rate here; a customer's price is this through the margin table (the plan's sample: 1 cr on its own).
+ */
+export const VISION_RATES = {
+  textDetectionUsdPerImage: 0.0015,
+  /** The margin key of a check (lib/creditTerms.ts marginKeyOf keys an image job by its model). */
+  model: "vision-text-detection",
+} as const;
+
 /** The largest source either per-minute endpoint is sent, and the largest dubbed track read back. */
 export const ELEVENLABS_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 export type DubbingMode = keyof typeof ELEVENLABS_RATES.dubbing.modes;

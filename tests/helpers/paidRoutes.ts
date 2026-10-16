@@ -14,6 +14,7 @@ export const PAID_ROUTES: PaidRoute[] = [
   { dir: "audio", spends: "speech, sound effects and music" },
   { dir: "audio/dub", spends: "dubbing" },
   { dir: "bfl", spends: "FLUX.2 stills and edits (BFL; off unless the engine is on for the workspace)" },
+  { dir: "label-check", spends: "the label check: Cloud Vision reads the text in a still (off unless the engine is on for the workspace)" },
   { dir: "veo", spends: "Veo 3.1 clips with sound (Google; off unless the engine is on for the workspace)" },
   { dir: "sarvam", spends: "Sarvam speech, transcription and translation (off unless the engine is on for the workspace)" },
   { dir: "lipsync", spends: "lip-sync (sync.so; off unless the engine is on for the workspace)" },

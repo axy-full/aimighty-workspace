@@ -10,7 +10,7 @@ export type VendorKeyName = "ark" | "gemini" | "gateway" | "openai" | "anthropic
  * no workspace key and have no key screen, so they are not VendorKeyNames: the gates read no vendor name today beyond "does the platform pay", and
  * these two name what is asking.
  */
-export type EngineVendor = VendorKeyName | "sync" | "sarvam" | "bfl";
+export type EngineVendor = VendorKeyName | "sync" | "sarvam" | "bfl" | "vision";
 
 const ENV: Record<VendorKeyName, string> = {
   ark: "ARK_API_KEY", gemini: "GEMINI_API_KEY", gateway: "AI_GATEWAY_API_KEY", openai: "OPENAI_API_KEY", anthropic: "ANTHROPIC_API_KEY",
