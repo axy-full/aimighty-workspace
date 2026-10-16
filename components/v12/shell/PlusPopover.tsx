@@ -64,8 +64,8 @@ export function PlusPopover({ open, onClose, anchor, projects, closed, onOpen }:
             {closedRows.map((p) => <ClosedRow key={p.id} project={p} visible={open} onOpen={() => go(p.id)} />)}
           </section>
         ) : null}
-        <section aria-label="New board">
-          <div className="v12-plus-label">New board</div>
+        <section aria-label="New project">
+          <div className="v12-plus-label">New project</div>
           <div className="v12-plus-kinds">
             {KINDS.map((k) => (
               <button key={k.id} type="button" className="v12-plus-kind" onClick={() => make(k)} data-testid={`v12-new-${k.id}`}>

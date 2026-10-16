@@ -323,6 +323,8 @@ const EMPTY: Record<string, StageEmpty> = {
   recce: { title: "Recce", line: "Locations to check before the shoot. Drop photos here." },
   "client-review": { title: "Client review", line: "Share a link; the client approves and comments without signing in." },
   animatic: { title: "Animatic", line: "The storyboard cut to the script’s timings." },
+  /* Pitch's contents come with its own PR (the deck, made from the board). */
+  pitch: { title: "Pitch", line: "The deck for the film, made from the board." },
 };
 export function stageEmpty(stage: Pick<Stage, "id" | "label" | "custom">): StageEmpty {
   if (stage.custom) {

@@ -180,7 +180,7 @@ test.describe("desktop", () => {
     await page.getByTestId("v12-tab-plus").click();
     const plus = page.getByTestId("v12-plus");
     await expect(plus.getByTestId("v12-plus-find")).toBeFocused();
-    await expect(plus.getByText("New board")).toBeVisible();
+    await expect(plus.getByText("New project")).toBeVisible();
     await expect(plus.getByTestId(/^v12-new-/)).toHaveText([/Film/, /Pre-vis/, /Campaign/, /Social/]);
     await page.keyboard.type("launch");
     await expect(plus.getByTestId("v12-plus-board")).toHaveCount(1);

@@ -136,7 +136,7 @@ export function NewBoard({ scope, onCreate, initialKind }: { scope: string; onCr
       <StageRail kindLabel={KIND_LABEL[flavor]} dim stages={stages} current={null} status={() => ({ state: "empty", count: 0, summary: "Nothing yet", cards: 0 })}
         readOnly={null} onPick={() => {}} onEdit={edit} addBlocked={stageLimit(stages.length)} />
       <div className="v12-newboard-main">
-        <StageHeader board="New board" stage={null} meta={null} selection={null} primary={null} menu={null} />
+        <StageHeader board="New project" stage={null} meta={null} selection={null} primary={null} menu={null} />
         <div className="v12-newboard-body">
           <div className="v12-newboard-col">
             <h1 className="v12-newboard-title" data-testid="v12-newboard-title">{composer.title}</h1>
