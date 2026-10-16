@@ -81,15 +81,18 @@ const fail = (code: ExportFailure["code"], errors: string[]): ExportFailure => (
 export type Declared = { file: string; kind: "video" | "audio"; durationSeconds: number; width?: number; height?: number; hasAudio?: boolean };
 
 export function declaredOf(id: CompositionId, props: Record<string, unknown>): Declared[] {
+  /* Keyed by what is declared as well as the file, so one file named by the music and by a voice line (or twice with two lengths) has each claim checked. */
   const out = new Map<string, Declared>();
+  const audio = (file: string, durationSeconds: number) => out.set(`audio:${file}:${durationSeconds}`, { file, kind: "audio", durationSeconds });
   const video = (s: { file: string; durationSeconds: number; width: number; height: number; hasAudio: boolean }) =>
-    out.set(s.file, { file: s.file, kind: "video", durationSeconds: s.durationSeconds, width: s.width, height: s.height, hasAudio: s.hasAudio });
-  const p = props as never as { clip?: { source: Parameters<typeof video>[0] }; source?: Parameters<typeof video>[0]; clips?: { source: Parameters<typeof video>[0] }[]; music?: { file: string; durationSeconds: number } | null };
+    out.set(`video:${s.file}:${s.durationSeconds}:${s.width}x${s.height}:${s.hasAudio}`, { file: s.file, kind: "video", durationSeconds: s.durationSeconds, width: s.width, height: s.height, hasAudio: s.hasAudio });
+  const p = props as never as { clip?: { source: Parameters<typeof video>[0] }; source?: Parameters<typeof video>[0]; clips?: { source: Parameters<typeof video>[0] }[]; music?: { file: string; durationSeconds: number } | null; voiceover?: { file: string; durationSeconds: number }[] };
   if (id === "captions" || id === "reframe") video(p.clip!.source);
   if (id === "cutdown") video(p.source!);
   if (id === "final") {
     for (const clip of p.clips ?? []) video(clip.source);
-    if (p.music) out.set(p.music.file, { file: p.music.file, kind: "audio", durationSeconds: p.music.durationSeconds });
+    if (p.music) audio(p.music.file, p.music.durationSeconds);
+    for (const line of p.voiceover ?? []) audio(line.file, line.durationSeconds);
   }
   return [...out.values()];
 }
@@ -165,6 +168,7 @@ export function inputFilesOf(timeline: Timeline): string[] {
     else if (item.card.logo) files.add(item.card.logo.file);
   }
   if (timeline.music) files.add(timeline.music.file);
+  for (const line of timeline.voiceover) files.add(line.file);
   return [...files];
 }
 

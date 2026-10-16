@@ -97,6 +97,8 @@ export type ClipItem = {
 };
 
 export type MusicSpec = { file: string; durationSeconds: number; volume: number };
+/** One spoken line of a narrated cut: an audio file placed on the finished video's clock. */
+export type VoiceLine = { file: string; durationSeconds: number; startSeconds: number; volume: number };
 
 type Common = { aspect: Aspect; fps: number; scale: number };
 
@@ -119,6 +121,10 @@ export type FinalProps = Common & {
   captionStyle: CaptionStyle | null;
   end: EndCardSpec | null;
   music: MusicSpec | null;
+  /** Spoken lines laid over the cut (a narrated assembly). Empty: none. */
+  voiceover: VoiceLine[];
+  /** The share of its level the music and the clips' own sound keep while a voice line plays: 1 = no ducking. Default 0.3. */
+  duck: number;
 };
 export type FixtureClipProps = Common & { durationSeconds: number; label: string };
 
@@ -162,6 +168,10 @@ export type Timeline = {
   durationInFrames: number;
   items: TimelineItem[];
   music: { file: string; volume: number; durationInFrames: number } | null;
+  /** Voice lines in frames, clipped to the end of the cut. */
+  voiceover: { file: string; from: number; durationInFrames: number; volume: number }[];
+  /** See FinalProps.duck. */
+  duck: number;
   /** Set only by the fixture clip. */
   fixture: { label: string } | null;
 };
