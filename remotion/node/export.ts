@@ -11,9 +11,9 @@
  */
 import { copyFile, link, lstat, mkdir, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_LIMITS, PRORES_MAX_FRAMES, type ExportLimits } from "../src/lib/limits";
+import { DEFAULT_LIMITS, DNXHR_MAX_FRAMES, PRORES_MAX_FRAMES, maxFramesOf, type ExportLimits } from "../src/lib/limits";
 import { toTimeline, ExportTooLong } from "../src/lib/timeline";
-import { FORMAT_FILE, H265_NAMES, SUBTITLE_FILE, SUBTITLE_FORMATS, VIDEO_FORMATS, isProRes, type CompositionId, type SubtitleFormat, type Timeline, type VideoFormat } from "../src/lib/types";
+import { FORMAT_FILE, H265_NAMES, SUBTITLE_FILE, SUBTITLE_FORMATS, VIDEO_FORMATS, isDnxhr, type CompositionId, type SubtitleFormat, type Timeline, type VideoFormat } from "../src/lib/types";
 import { speakableCues, subtitleCuesOf, subtitleText } from "../src/lib/subtitles";
 import { isCompositionId, validateProps } from "../src/lib/validate";
 import { CONFORM_BUDGET_MS, CONFORM_FILE_MS, CONFORM_MODES, CONFORM_PAD_SECONDS, DEFAULT_CONFORM, filesToConform, reportInputs, type ConformMode, type ConformWindow, type Conformer, type InputReport } from "./conform";
@@ -235,9 +235,12 @@ export function checkSpec(spec: unknown, limits: ExportLimits = DEFAULT_LIMITS):
   } catch (error) {
     return fail(error instanceof ExportTooLong ? "too_long" : "spec_invalid", [(error as Error).message]);
   }
-  if (video && isProRes(format) && timeline.durationInFrames > PRORES_MAX_FRAMES) {
+  const frameLimit = maxFramesOf(format);
+  if (video && frameLimit !== null && timeline.durationInFrames > frameLimit) {
     const seconds = timeline.durationInFrames / timeline.fps;
-    return fail("too_long", [`A ProRes export can be at most ${PRORES_MAX_FRAMES} frames (60 s at 30 fps, 30 s at 60 fps); this one is ${timeline.durationInFrames} frames (${seconds.toFixed(1)} s at ${timeline.fps} fps). Use H.264 for a longer one.`]);
+    const what = isDnxhr(format) ? "A DNxHR" : "A ProRes";
+    const rate = isDnxhr(format) ? `${DNXHR_MAX_FRAMES / 30} s at 30 fps, ${DNXHR_MAX_FRAMES / 60} s at 60 fps` : `${PRORES_MAX_FRAMES / 30} s at 30 fps, ${PRORES_MAX_FRAMES / 60} s at 60 fps`;
+    return fail("too_long", [`${what} export can be at most ${frameLimit} frames (${rate}); this one is ${timeline.durationInFrames} frames (${seconds.toFixed(1)} s at ${timeline.fps} fps). Use H.264 for a longer one.`]);
   }
   if (subtitles.length && subtitleCuesOf(timeline).length === 0) {
     return fail("spec_invalid", ["spec.output.subtitles: the export has no caption text (no cues) to write"]);

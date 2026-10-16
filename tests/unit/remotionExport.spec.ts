@@ -6,7 +6,7 @@ import { checkSpec, contradictions, declaredOf, inputFilesOf, runExport, type Co
 import { encodingFor } from "../../remotion/node/renderer";
 import { factsFromFfprobe, type MediaFacts, type Prober } from "../../remotion/node/probe";
 import { toTimeline, validateProps, type CompositionId } from "../../remotion/src/lib";
-import { PRORES_MAX_FRAMES } from "../../remotion/src/lib/limits";
+import { DNXHR_FRAME_BYTES, DNXHR_MAX_FRAMES, PRORES_MAX_FRAMES, maxFramesOf } from "../../remotion/src/lib/limits";
 
 /** A renderer that renders nothing: it measures with the same timeline code and writes small stand-in files. */
 function fakeRenderer(opts: { failOn?: "prepare" | "select" | "video" | "still"; lie?: boolean } = {}) {
@@ -89,7 +89,7 @@ const finalSpec = (output?: unknown) => ({
   ...(output ? { output } : {}),
 });
 
-test.describe("output formats: H.264 by default, ProRes 422 and 422 HQ, never H.265", () => {
+test.describe("output formats: H.264 by default, ProRes 422 and 422 HQ, DNxHR HQ and HQX, never H.265", () => {
   test("H.264 is the default: export.mp4, video/mp4, and the renderer is told h264", async () => {
     const { renderer, calls } = fakeRenderer();
     const result = await runExport(args(finalSpec(), renderer));
@@ -122,7 +122,7 @@ test.describe("output formats: H.264 by default, ProRes 422 and 422 HQ, never H.
       expect(result).toEqual({ ok: false, code: "spec_invalid", errors: ["spec.output.format: H.265 is not available."] });
       expect(calls).toEqual([]);
     }
-    for (const name of ["vp9", "gif", "prores", "prores-4444", "dnxhr", "dnxhd", "DNxHR", "dnxhr-hqx", "", 5, null, "h264 "]) {
+    for (const name of ["vp9", "gif", "prores", "prores-4444", "dnxhr", "dnxhd", "DNxHR", "dnxhr-sq", "dnxhr-lb", "dnxhr-444", "dnxhd-36", "", 5, null, "h264 "]) {
       const { renderer, calls } = fakeRenderer();
       const result = await runExport(args(finalSpec({ format: name }), renderer));
       if (name === "h264 ") { expect(result).toMatchObject({ ok: true }); continue; }
@@ -132,12 +132,46 @@ test.describe("output formats: H.264 by default, ProRes 422 and 422 HQ, never H.
     }
   });
 
-  test("DNxHR is dropped for now (owner, 16 Oct 2026): the formats are H.264 and the ProRes mezzanine, and no README promises another", () => {
+  test("DNxHR is back (owner, 16 Oct 2026): HQ (8-bit) and HQX (10-bit) in a .mov, beside H.264 and ProRes, made by the pinned full ffmpeg; the READMEs say so and name the limits", () => {
     const readme = readFileSync("remotion/README.md", "utf8");
-    expect(readme).toMatch(/H\.264 and the ProRes mezzanine are the only formats: DNxHR is dropped for now/);
-    expect(readFileSync("ops/remotion-worker/README.md", "utf8")).toMatch(/H\.264 and the ProRes mezzanine only; DNxHR is dropped for now/);
-    /* The only places the word appears are the dropped-for-now sentences and the source-codec list that decides what is never flattened to 8 bits. */
-    for (const file of ["remotion/README.md", "ops/remotion-worker/README.md"]) for (const line of readFileSync(file, "utf8").split("\n")) if (/dnxhr/i.test(line)) expect(line, file).toMatch(/dropped for now|DNxHD|refused/);
+    expect(readme).toMatch(/`dnxhr-hq` \(8-bit 4:2:2\) or `dnxhr-hqx` \(10-bit 4:2:2\)/);
+    expect(readme).toMatch(/at most 1200 frames: 40 s at 30 fps, 20 s at 60 fps/);
+    expect(readme).not.toMatch(/DNxHR is dropped for now/);
+    const worker = readFileSync("ops/remotion-worker/README.md", "utf8");
+    expect(worker).toMatch(/`dnxhr-hq` and `dnxhr-hqx`/);
+    expect(worker).not.toMatch(/DNxHR is dropped for now/);
+  });
+
+  test("DNxHR HQ and HQX: export.mov, video/quicktime, the renderer is told the format; a profile that is not offered (SQ, LB, 444, DNxHD) is refused", async () => {
+    for (const format of ["dnxhr-hq", "dnxhr-hqx"] as const) {
+      const { renderer, calls } = fakeRenderer();
+      const result = await runExport(args(finalSpec({ format }), renderer));
+      expect(result).toMatchObject({ ok: true, files: [{ name: "export.mov", kind: "video", format, mime: "video/quicktime" }] });
+      expect(calls.find((c) => c.name === "video")!.args.format).toBe(format);
+    }
+    expect(checkSpec({ ...finalSpec({ format: "DNXHR-HQX" }) })).toMatchObject({ ok: true, format: "dnxhr-hqx" });
+  });
+
+  test("DNxHR is held to 1200 frames (40 s at 30 fps, 20 s at 60 fps), a constant that nothing can raise; the file and its intermediate fit the session disk with room to spare", () => {
+    const long = (seconds: number, fps = 30, format = "dnxhr-hq") => ({ version: 1, composition: "final", props: { aspect: "16:9", fps, scale: 0.25, title: null, clips: [{ source: { ...SOURCE, durationSeconds: seconds }, trim: { startSeconds: 0, endSeconds: seconds }, cues: [], reframe: { mode: "fill", focusX: 0.5, focusY: 0.5 } }], captionStyle: null, end: null, music: null }, output: { format } });
+    expect(DNXHR_MAX_FRAMES).toBe(1200);
+    expect(maxFramesOf("dnxhr-hq")).toBe(1200);
+    expect(maxFramesOf("dnxhr-hqx")).toBe(1200);
+    expect(maxFramesOf("prores-422")).toBe(1800);
+    expect(maxFramesOf("h264")).toBeNull();
+    expect(checkSpec(long(40))).toMatchObject({ ok: true });
+    expect(checkSpec(long(20, 60, "dnxhr-hqx"))).toMatchObject({ ok: true });
+    expect(checkSpec(long(45))).toEqual({ ok: false, code: "too_long", errors: ["A DNxHR export can be at most 1200 frames (40 s at 30 fps, 20 s at 60 fps); this one is 1350 frames (45.0 s at 30 fps). Use H.264 for a longer one."] });
+    expect(checkSpec(long(30, 60, "dnxhr-hqx"))).toMatchObject({ ok: false, code: "too_long" });
+    expect(checkSpec({ ...long(45), output: { format: "h264" } })).toMatchObject({ ok: true });
+    /* The arithmetic behind the cap, from the figures measured at 1080p: a maximum upload (600 MiB), the ProRes intermediate and the DNxHR file at the cap, in the session's 3072 MiB. */
+    const MiB = 1024 * 1024;
+    const used = 600 * MiB + DNXHR_MAX_FRAMES * (DNXHR_FRAME_BYTES.file + DNXHR_FRAME_BYTES.intermediate);
+    expect(used / MiB).toBeLessThan(3072 - 500);
+    /* 1500 frames would not leave a margin; the cap is not the most that fits. */
+    expect((600 * MiB + 1500 * (DNXHR_FRAME_BYTES.file + DNXHR_FRAME_BYTES.intermediate)) / MiB).toBeGreaterThan(3072 - 200);
+    /* Its file is under the worker's own output cap (2000 MiB) with the sound. */
+    expect((DNXHR_MAX_FRAMES * DNXHR_FRAME_BYTES.file + 40 * 0.2e6) / MiB).toBeLessThan(2000);
   });
 
   test("a format needs the video: output.video false with a format is refused", async () => {

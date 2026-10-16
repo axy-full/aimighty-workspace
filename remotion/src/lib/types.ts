@@ -185,16 +185,24 @@ export type Box = { x: number; y: number; width: number; height: number };
 
 /**
  * The finished video's format (spec.output.format). H.264 is the default delivery file; ProRes 422 and ProRes 422 HQ
- * are mezzanine files for editing. H.265 is refused (owner, 15 Oct 2026: "H.265 stays off until my lawyer answers").
+ * are mezzanine files for editing; DNxHR HQ (8-bit 4:2:2) and DNxHR HQX (10-bit 4:2:2), in a .mov, are the Avid and broadcast ones (owner, 16 Oct 2026:
+ * "DNXHR IS BACK"; written by a separate, pinned full ffmpeg build, because the ffmpeg inside Remotion has no DNxHD encoder). H.265 is refused
+ * (owner, 15 Oct 2026: "H.265 stays off until my lawyer answers").
  */
-export const VIDEO_FORMATS = ["h264", "prores-422", "prores-422-hq"] as const;
+export const VIDEO_FORMATS = ["h264", "prores-422", "prores-422-hq", "dnxhr-hq", "dnxhr-hqx"] as const;
 export type VideoFormat = (typeof VIDEO_FORMATS)[number];
-export const isProRes = (format: VideoFormat): boolean => format !== "h264";
+export const isProRes = (format: VideoFormat): boolean => format === "prores-422" || format === "prores-422-hq";
+export const isDnxhr = (format: VideoFormat): boolean => format === "dnxhr-hq" || format === "dnxhr-hqx";
+/** Not H.264: a large editing or broadcast file, held to a frame limit (lib/limits.ts maxFramesOf). */
+export const isMezzanine = (format: VideoFormat): boolean => format !== "h264";
 /** The file a format is written to, and its media type. */
 export const FORMAT_FILE: Record<VideoFormat, { name: string; mime: string }> = {
   h264: { name: "export.mp4", mime: "video/mp4" },
   "prores-422": { name: "export.mov", mime: "video/quicktime" },
   "prores-422-hq": { name: "export.mov", mime: "video/quicktime" },
+  /* DNxHR in a .mov. MXF is not offered: it would need its own file name, media type and delivery path through the app for no gain here. */
+  "dnxhr-hq": { name: "export.mov", mime: "video/quicktime" },
+  "dnxhr-hqx": { name: "export.mov", mime: "video/quicktime" },
 };
 /** Names a person or an agent might ask for that mean H.265. Refused with a plain reason, never guessed at. */
 export const H265_NAMES: readonly string[] = ["h265", "h.265", "hevc", "h265-mp4", "x265"];

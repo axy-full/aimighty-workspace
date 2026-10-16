@@ -9,6 +9,8 @@
  *   REMOTION_CONCURRENCY         frames rendered at once (default 2)
  *   REMOTION_MAX_SECONDS         longest export (default 120)
  *   REMOTION_BROWSER_EXECUTABLE  a specific Chrome (default: the one downloaded at image build)
+ *   REMOTION_DNX_FFMPEG          the full ffmpeg build that writes DNxHR (default /opt/ffmpeg-dnx/ffmpeg, where the image puts it). A developer's render tests name another;
+ *                                the worker's own environment never sets it.
  *   REMOTION_RUNTIME_DIR         the folder holding package.json and node_modules/.remotion (the Chrome download).
  *                                Remotion looks for its Chrome under the working directory's nearest package.json,
  *                                and the working directory here is the session folder, so the command moves to this
@@ -64,7 +66,7 @@ async function main(): Promise<number> {
     prober: createFfprobe(bundledFfprobe()),
     conformer: createFfmpegConformer(bundledFfmpeg()),
     silenceDetector: createFfmpegSilenceDetector(bundledFfmpeg()),
-    renderer: createRealRenderer({ browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE || null }),
+    renderer: createRealRenderer({ browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE || null, dnxFfmpeg: process.env.REMOTION_DNX_FFMPEG || null }),
     limits,
     concurrency: intEnv("REMOTION_CONCURRENCY", 2, 1, 8),
     onProgress: (done, total) => {

@@ -33,3 +33,17 @@ export const evenPx = (value: number): number => Math.max(2, Math.round(value / 
  * the worker's session disk holds beside a maximum upload. A constant, not a setting: nothing can raise it.
  */
 export const PRORES_MAX_FRAMES = 60 * 30;
+
+/**
+ * The longest DNxHR export, in FRAMES for the same reason: 40 s at 30 fps is 1200 frames, and so is 20 s at 60 fps. A DNxHR HQ or HQX frame is a fixed size at a size of picture
+ * (measured 16 Oct 2026: 0.92 MB at 1920x1080, the same for HQ and HQX, plus 0.2 MB a second of PCM sound), and the file is made from a ProRes 422 intermediate (about 0.54 MB a frame
+ * measured, 0.7 held) that exists beside it while ffmpeg writes it. At the cap, the session disk (3072 MiB) holds a maximum upload (600 MiB) + the intermediate + the file with
+ * about 600 MiB to spare; 1500 frames would leave 140. A constant, not a setting: nothing can raise it.
+ */
+export const DNXHR_MAX_FRAMES = 40 * 30;
+/** The figures behind DNXHR_MAX_FRAMES, in bytes a frame at 1080p, held by a test so the cap cannot drift from them. */
+export const DNXHR_FRAME_BYTES = { file: 0.93e6, intermediate: 0.7e6 } as const;
+
+/** The frame limit of a format, or null for H.264 (held to the export's seconds only). */
+export const maxFramesOf = (format: "h264" | "prores-422" | "prores-422-hq" | "dnxhr-hq" | "dnxhr-hqx"): number | null =>
+  format === "h264" ? null : format.startsWith("dnxhr") ? DNXHR_MAX_FRAMES : PRORES_MAX_FRAMES;
