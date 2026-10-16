@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { TRAIL } from "@/components/ui/Mark";
+import { HeaderLogo } from "./Logo";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { isLanded } from "@/lib/shell/screens";
@@ -12,17 +12,21 @@ import { IconButton, Tooltip, useToast, Menu, type MenuItem } from "../ui";
 import { LowCreditChip } from "./LowCreditChip";
 import { ActivityPill } from "./Activity";
 import { AccountMenu } from "./AccountMenu";
-import { PlusPopover } from "./PlusPopover";
+import dynamic from "next/dynamic";
 import { boardStates } from "./activity";
 import { boardRings } from "@/lib/v12/boardRing";
 import { useTick } from "../render/use-render";
-import { MAX_BOARD_TABS, afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, visibleTabs } from "./tabs";
+import { MAX_BOARD_TABS, afterClose, closeOthers, closeTab, headerKey, openTab, restoreTab, tabInitial, visibleTabs } from "./tabs";
 import { useTabFit } from "./use-tab-fit";
 import { useBoardTabs } from "./use-board-tabs";
 import { copyBoardLink } from "../menus/menu-items";
 import { keyOf } from "@/lib/v12/keymap";
+import { toggleAtomikDock } from "@/lib/v12/atomik-dock";
 import "./header.css";
 import "../render/render.css";
+
+/** The "+" popover is drawn only once it has been opened: its code is fetched on first use, not with every screen (a v25 speed-budget cut, owner 15 Oct). */
+const PlusPopover = dynamic(() => import("./PlusPopover").then((m) => m.PlusPopover), { ssr: false });
 
 /** The most boards GET /api/workbench/projects returns (app/api/workbench/projects/route.ts). */
 const PROJECTS_LIST_LIMIT = 100;
@@ -95,7 +99,10 @@ export function V12Header({ account, project, projects, onPick }: {
     else goHome();
   };
   const atomikOpen = shell.atomik !== null;
+  /* A board on screen has its own Atomik dock (the rail at its right edge), and ⌘J opens that; the bar's button is for the app's other screens (v25: none on the board). */
+  const boardShown = activeBoard !== null;
   const toggleAtomik = () => {
+    if (boardShown) { toggleAtomikDock(); return; }
     if (!isLanded("atomik")) { shell.goSuite("atomik"); return; }
     if (atomikOpen) shell.closeAtomik(); else shell.openAtomik();
   };
@@ -149,6 +156,8 @@ export function V12Header({ account, project, projects, onPick }: {
   const [more, setMore] = useState(false);
   const plusAnchor = useRef<HTMLButtonElement>(null);
   const [plus, setPlus] = useState(false);
+  const [plusUsed, setPlusUsed] = useState(false);
+  const openPlus = (open: boolean | ((was: boolean) => boolean)) => { setPlusUsed(true); setPlus(open); };
 
   const copyLink = (id: string) => copyBoardLink(id, toast);
   const tabItems: MenuItem[] = tabMenu ? [
@@ -161,20 +170,13 @@ export function V12Header({ account, project, projects, onPick }: {
   const moreItems: MenuItem[] = [
     ...hidden.map((id) => ({ id, label: nameOf(id), onSelect: () => goBoard(id) })),
     { id: "sep", separator: true },
-    { id: "new", label: "+ New board", onSelect: () => setPlus(true) },
+    { id: "new", label: "+ New board", onSelect: () => openPlus(true) },
   ];
 
   const ordinal = (i: number) => (i + 3 <= 9 ? keyOf(`tab-${i + 3}`) : undefined);
   return (
     <header ref={headerRef} className="v12-header" data-testid="v12-header" data-row="header">
-      <Tooltip name="Home" shortcut={[keyOf("home-seq"), keyOf("home")]}>
-        <button type="button" className="v12-logo" onClick={goHome} aria-label="particl, Home" data-testid="v12-logo">
-          <svg width="30" height="14" viewBox="30 68 140 64" fill="currentColor" aria-hidden="true">
-            {TRAIL.map(([cx, cy, r], i) => <circle key={i} cx={cx} cy={cy} r={r} />)}
-          </svg>
-          <span className="v12-logo-name">particl</span>
-        </button>
-      </Tooltip>
+      <HeaderLogo onClick={goHome} testId="v12-logo" shortcut={[keyOf("home-seq"), keyOf("home")]} />
 
       <nav className="v12-tabs" aria-label="Tabs" data-testid="v12-tabs">
         <div className="v12-tab" data-active={shell.screen === "home" && !shell.make ? "" : undefined} data-testid="v12-tab-home">
@@ -204,9 +206,10 @@ export function V12Header({ account, project, projects, onPick }: {
               onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); tabAnchor.current = e.currentTarget; setTabMenu(id); }}>
               <Tooltip name={name} line={ring ? `${ring.words}.` : stateWord === "open" ? undefined : `${stateWord[0].toUpperCase()}${stateWord.slice(1)}.`} shortcut={ordinal(i)}>
                 <button type="button" className="v12-tab-main" onClick={() => goBoard(id)} aria-current={active ? "page" : undefined}>
+                  <span className="v12-tab-tile" aria-hidden="true">{tabInitial(name)}</span>
+                  <span className="v12-tab-label">{name}</span>
                   {ring ? <span className="v12-tab-ring" style={{ "--p": `${Math.round(ring.pct * 100)}%` } as CSSProperties} data-testid="v12-tab-ring" aria-hidden="true" />
                     : <span className="v12-tab-dot" data-state={state ?? "idle"} aria-hidden="true" />}
-                  <span className="v12-tab-label">{name}</span>
                 </button>
               </Tooltip>
               <IconButton tooltip={{ name: "Close tab" }} label={`Close ${name}`} size="sm" className="v12-tab-x" onClick={() => close(id)} data-testid="v12-tab-close">
@@ -219,8 +222,9 @@ export function V12Header({ account, project, projects, onPick }: {
           <div className="v12-tab" data-board="" data-active={shell.make ? undefined : ""} data-testid="v12-tab-new-board">
             <Tooltip name="New board" line="Pick a kind and say what to make.">
               <button type="button" className="v12-tab-main" aria-current={shell.make ? undefined : "page"} onClick={() => shell.goBoard({ newBoard: shell.params.pick ?? true, closeMake: true })}>
-                <span className="v12-tab-dot" data-state="idle" aria-hidden="true" />
+                <span className="v12-tab-tile" aria-hidden="true">N</span>
                 <span className="v12-tab-label">New board</span>
+                <span className="v12-tab-dot" data-state="idle" aria-hidden="true" />
               </button>
             </Tooltip>
             <IconButton tooltip={{ name: "Close tab" }} label="Close New board" size="sm" className="v12-tab-x" onClick={closeNewBoard} data-testid="v12-tab-new-board-close">
@@ -235,22 +239,25 @@ export function V12Header({ account, project, projects, onPick }: {
             </button>
           </Tooltip>
         ) : null}
-        <IconButton ref={plusAnchor} tooltip={{ name: "New tab · boards and kinds" }} label="New tab" className="v12-tab-plus" pressed={plus} aria-haspopup="dialog" onClick={() => setPlus((v) => !v)} data-testid="v12-tab-plus">
+        <IconButton ref={plusAnchor} tooltip={{ name: "New tab · boards and kinds" }} label="New tab" className="v12-tab-plus" pressed={plus} aria-haspopup="dialog" onClick={() => openPlus((v) => !v)} data-testid="v12-tab-plus">
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
         </IconButton>
       </nav>
 
-      <div className="v12-field" data-open={atomikOpen ? "" : undefined} data-testid="v12-atomik-field">
+      <span className="v12-spacer" aria-hidden="true" />
+      {/* The ⌘K bar: on the right, directly left of the Activity pill, a fixed width that widens on focus (v25). On app screens the Atomik panel's button is inside it; on a board there is none (owner, 15 Oct), the board's own dock rail is the visible control and ⌘J opens it. */}
+      <div className="v12-field" data-open={atomikOpen ? "" : undefined} data-panel={boardShown ? undefined : ""} data-testid="v12-atomik-field">
         <Tooltip name="Ask Atomik, search or go to" line="Ask a question, find a board, stage, card or library item, or run an action." shortcut={keyOf("palette")}>
           <button type="button" className="v12-field-ask" onClick={() => shell.setPalette(true)} aria-keyshortcuts="Meta+K" data-testid="v12-ask">
             <span className="v12-field-mark" aria-hidden="true">◆</span>
-            <span className="v12-field-text">Ask Atomik, search or go to · {keyOf("palette")}</span>
+            <span className="v12-field-text">Ask Atomik, search or go to</span>
+            <span className="v12-field-key" aria-hidden="true">{keyOf("palette")}</span>
           </button>
         </Tooltip>
-        <IconButton className="v12-field-panel" pressed={atomikOpen} onClick={toggleAtomik} aria-keyshortcuts="Meta+J" data-testid="v12-atomik-panel"
+        {boardShown ? null : <IconButton className="v12-field-panel" pressed={atomikOpen} onClick={toggleAtomik} aria-keyshortcuts="Meta+J" data-testid="v12-atomik-panel"
           tooltip={{ name: "Atomik panel", line: atomikOpen ? "Close the conversation panel." : "Open the conversation: plans, questions and approvals.", shortcut: keyOf("atomik-panel") }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" /><path d="M10 3v10" /></svg>
-        </IconButton>
+        </IconButton>}
       </div>
 
       {/* The right group is pinned to the edge at every width: nothing in the header pushes it. */}
@@ -263,7 +270,7 @@ export function V12Header({ account, project, projects, onPick }: {
       <div className="v12-tabs-measure" aria-hidden="true">
         {tabs.state.open.map((id) => (
           <div key={id} className="v12-tab" data-board="" data-m={id}>
-            <span className="v12-tab-main"><span className="v12-tab-dot" /><span className="v12-tab-label">{nameOf(id)}</span></span>
+            <span className="v12-tab-main"><span className="v12-tab-tile" /><span className="v12-tab-label">{nameOf(id)}</span><span className="v12-tab-dot" /></span>
             <span className="v12-tab-xspace" />
           </div>
         ))}
@@ -271,8 +278,10 @@ export function V12Header({ account, project, projects, onPick }: {
 
       <Menu open={tabMenu !== null} onClose={() => setTabMenu(null)} anchor={tabAnchor} label="Tab" items={tabItems} width={200} testId="v12-tab-menu" />
       <Menu open={more} onClose={() => setMore(false)} anchor={moreAnchor} label="More boards" items={moreItems} width={280} testId="v12-more-menu" />
-      <PlusPopover open={plus} onClose={() => setPlus(false)} anchor={plusAnchor} projects={projects} closed={tabs.state.closed}
-        onOpen={(id) => { setPlus(false); goBoard(id); }} />
+      {plusUsed ? (
+        <PlusPopover open={plus} onClose={() => setPlus(false)} anchor={plusAnchor} projects={projects} closed={tabs.state.closed}
+          onOpen={(id) => { setPlus(false); goBoard(id); }} />
+      ) : null}
     </header>
   );
 }
