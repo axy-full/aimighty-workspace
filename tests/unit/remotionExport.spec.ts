@@ -122,7 +122,7 @@ test.describe("output formats: H.264 by default, ProRes 422 and 422 HQ, never H.
       expect(result).toEqual({ ok: false, code: "spec_invalid", errors: ["spec.output.format: H.265 is not available."] });
       expect(calls).toEqual([]);
     }
-    for (const name of ["vp9", "gif", "prores", "prores-4444", "", 5, null, "h264 "]) {
+    for (const name of ["vp9", "gif", "prores", "prores-4444", "dnxhr", "dnxhd", "DNxHR", "dnxhr-hqx", "", 5, null, "h264 "]) {
       const { renderer, calls } = fakeRenderer();
       const result = await runExport(args(finalSpec({ format: name }), renderer));
       if (name === "h264 ") { expect(result).toMatchObject({ ok: true }); continue; }
@@ -130,6 +130,14 @@ test.describe("output formats: H.264 by default, ProRes 422 and 422 HQ, never H.
       expect((result as { errors: string[] }).errors[0]).toMatch(/spec\.output\.format: must be one of h264, prores-422, prores-422-hq/);
       expect(calls).toEqual([]);
     }
+  });
+
+  test("DNxHR is dropped for now (owner, 16 Oct 2026): the formats are H.264 and the ProRes mezzanine, and no README promises another", () => {
+    const readme = readFileSync("remotion/README.md", "utf8");
+    expect(readme).toMatch(/H\.264 and the ProRes mezzanine are the only formats: DNxHR is dropped for now/);
+    expect(readFileSync("ops/remotion-worker/README.md", "utf8")).toMatch(/H\.264 and the ProRes mezzanine only; DNxHR is dropped for now/);
+    /* The only places the word appears are the dropped-for-now sentences and the source-codec list that decides what is never flattened to 8 bits. */
+    for (const file of ["remotion/README.md", "ops/remotion-worker/README.md"]) for (const line of readFileSync(file, "utf8").split("\n")) if (/dnxhr/i.test(line)) expect(line, file).toMatch(/dropped for now|DNxHD|refused/);
   });
 
   test("a format needs the video: output.video false with a format is refused", async () => {
