@@ -8,8 +8,8 @@ import { CardPreview } from "../board/CardPreview";
 import type { PreviewItemView } from "../board/preview-model";
 import { DirectorColumn } from "../board/DirectorColumn";
 import { DirectorBar } from "../board/DirectorBar";
-import { SHOTS_SETTINGS, cardChips, nextStepLabel, requestFields, scopeOf, shotSettings, SHOTS_STEP } from "../board/director-model";
-import { useDirectorRender, type DirectorShot } from "../board/use-director-render";
+import { SHOTS_SETTINGS, cardChips, requestFields, scopeOf, shotSettings, SHOTS_STEP, type BarState } from "../board/director-model";
+import type { DirectorShot } from "../board/use-director-render";
 import { withCardOverride, withStepSetting, type BoardSetup, type CardOverrides, type SettingValue, type Setup } from "@/lib/v12/board/board-data";
 import { stagesOf } from "@/lib/v12/board/stages";
 import { SHOT_REASONS as TAKE_REASONS } from "../board/shot-card";
@@ -125,9 +125,8 @@ function DirectorBoard() {
     const shot = DIRECTOR_SHOTS.find((x) => x.id === id)!;
     return { id, input: { prompt: `${shot.title}. A slow push in.`, kind: "video", model: { id: "dreamina-seedance-2-5-260628" }, mapping: { productionProjectId: "test-project", shotId: id }, ratio: fields.ratio, resolution: fields.resolution, duration: fields.duration, references: [], firstFrameAssetId: "", generateAudio: fields.generateAudio, ...(fields.draft ? { draft: true } : {}) } };
   });
-  const render = useDirectorRender({ scope: "particl-active-test", projectKey: "test-project", shots });
+  const [bar, setBar] = useState<{ state: BarState; finished: number; total: number }>({ state: "idle", finished: 0, total: 0 });
   const stages = useMemo(() => stagesOf("film", null), []);
-  const next = nextStepLabel(stages, SHOTS_STEP);
   const values: Setup = shotSettings(draft, scope.all ? null : scope.ids[0]);
   const mixed = new Set<string>();
   if (!scope.all && scope.ids.length > 1) for (const item of SHOTS_SETTINGS) if (new Set(scope.ids.map((id) => shotSettings(draft, id)[item.id])).size > 1) mixed.add(item.id);
@@ -143,7 +142,7 @@ function DirectorBoard() {
     <section className="v25-parts-canvas v25-parts-director" aria-label="Director" data-testid="v25-board-director">
       <div className="v25-parts-dirgrid">
         {DIRECTOR_SHOTS.map((shot) => (
-          <StepCard key={shot.id} id={shot.id} title={shot.title} status={render.state === "making" && scope.ids.includes(shot.id) ? "making" : render.state === "done" && scope.ids.includes(shot.id) ? "ready" : "none"}
+          <StepCard key={shot.id} id={shot.id} title={shot.title} status={bar.state === "making" && scope.ids.includes(shot.id) ? "making" : bar.state === "done" && scope.ids.includes(shot.id) ? "ready" : "none"}
             picture={{ src: still(shot.hue) }} selected={selected.includes(shot.id)} dimmed={hover !== null && !differs(shot.id)} differs={differs(shot.id)} chips={cardChips(draft, shot.id)}
             onSelect={(event) => setSelected((now) => (event.shiftKey || event.metaKey ? (now.includes(shot.id) ? now.filter((x) => x !== shot.id) : [...now, shot.id]) : now.length === 1 && now[0] === shot.id ? [] : [shot.id]))} />
         ))}
@@ -152,8 +151,7 @@ function DirectorBoard() {
         <DirectorColumn scope={scope} step="Shots" values={values} mixed={mixed} onSet={set} onHover={setHover} />
       </div>
       <div className="v25-parts-dirbar">
-        <DirectorBar scope={scope} state={render.state} price={render.price} pricing={render.pricing} next={next} progress={{ finished: render.finished, total: render.total }}
-          problem={render.problem} canCancel={render.canCancel} onRender={() => void render.press()} onCancel={() => void render.cancel()} onNext={render.reset} onTryAgain={render.tryAgain}
+        <DirectorBar scope={scope} scopeKey="particl-active-test" projectKey="test-project" shots={shots} stages={stages} step={SHOTS_STEP} onState={setBar}
           ask={<input className="v25-parts-ask" aria-label="Ask for a change" placeholder={selected.length ? `Ask about ${scope.label}…` : "Ask about all the shots…"} />} />
       </div>
     </section>

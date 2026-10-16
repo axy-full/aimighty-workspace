@@ -1,7 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { OverlayProvider, ToastProvider } from "../ui";
 import { StepRail, type RailStep } from "../board/StepRail";
+import { railStepsOf } from "../board/rail-stages";
+import { applyStageEdit, stagesOf, type SavedStage, type StageEdit } from "@/lib/v12/board/stages";
 import { railIcon } from "../board/rail-icons";
 import "../v12.css";
 import "./v25-parts.css";
@@ -54,6 +56,26 @@ function Frame({ label, initial, current, tall, addable }: { label: string; init
   );
 }
 
+/* The rail as the board will draw it: the Film stages (lib/v12/board/stages.ts) with the person's edits kept as the draft keeps them. Mock statuses. */
+function EditableFrame() {
+  const [saved, setSaved] = useState<SavedStage[] | null>(null);
+  const [now, setNow] = useState("shots");
+  const counter = useRef(0);
+  const stages = useMemo(() => stagesOf("film", saved), [saved]);
+  const steps = useMemo(() => railStepsOf(stages, { status: (id) => (id === "shots" ? "3 of 8 ready · 1 in work" : "Not started"), done: (id) => ["brief", "script", "cast"].includes(id) }), [stages]);
+  const edit = (change: StageEdit) => {
+    const out = applyStageEdit(stages, change, () => `step${++counter.current}`);
+    setSaved(out.saved);
+    if (out.go) setNow(out.go);
+  };
+  return (
+    <section className="v25-parts-frame" data-tall="" aria-label="Editable" data-testid="v25-rail-editable">
+      <StepRail steps={steps} current={now} onPick={setNow} onEdit={edit} />
+      <p className="v25-parts-said" data-testid="v25-rail-order">{stages.map((s) => s.id).join(" ")}</p>
+    </section>
+  );
+}
+
 export function V25RailParts() {
   return (
     <OverlayProvider>
@@ -61,6 +83,8 @@ export function V25RailParts() {
         <div className="v12 v25-parts">
           <div className="v25-parts-head" aria-hidden="true">The board&apos;s two header rows stand here (mock)</div>
           <Frame label="Film" initial={FILM} current="shots" tall addable />
+          <h1 className="v25-parts-h">Rail · edited by the person: drag, rename, skip, remove (mock statuses)</h1>
+          <EditableFrame />
           <h1 className="v25-parts-h">Rail · five steps (Social clips) · fifteen steps, which scroll (mock data)</h1>
           <div className="v25-parts-pair">
             <Frame label="Clips" initial={CLIPS} current="moments" />

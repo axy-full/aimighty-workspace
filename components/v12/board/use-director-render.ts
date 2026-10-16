@@ -126,7 +126,8 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
     return () => { alive = false; clearInterval(timer); controller.abort(); };
   }, [watching, scope]);
   const finished = jobs.filter((j) => settled[j.jobId]).length;
-  useEffect(() => { if (state === "making" && jobs.length && finished === jobs.length) setState("done"); }, [state, jobs.length, finished]);
+  /* Done is derived, not stored: every take this press made has settled. */
+  const done = state === "making" && jobs.length > 0 && finished === jobs.length;
 
   const cancel = useCallback(async () => {
     const queued = jobs.filter((j) => statuses[j.jobId] === "queued" && !settled[j.jobId]);
@@ -143,11 +144,11 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
 
   const total = jobs.length;
   return {
-    state, price: price ?? (reading ? last : null),
+    state: done ? "done" : state, price: price ?? (reading ? last : null),
     pricing: !ids.length ? "none" : price ? "ready" : failed.length ? "error" : "loading",
     tryAgain: () => { for (const id of failed) pricing.tryAgain(id); },
     sent, finished, total, problem,
-    canCancel: state === "making" && cancellable(Object.entries(statuses).filter(([id]) => !settled[id]).map(([, s]) => s)),
+    canCancel: state === "making" && !done && cancellable(Object.entries(statuses).filter(([id]) => !settled[id]).map(([, s]) => s)),
     press, cancel,
     reset: () => { setState("idle"); setJobs([]); setSettled({}); setStatuses({}); setProblem(null); setSent(0); },
   };
