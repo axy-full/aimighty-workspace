@@ -81,6 +81,7 @@ import { isDubbingLanguage } from "@/lib/workbench/dubbing-options";
 import { deckFacts, deckMeta, deckSections, shotRows } from "@/lib/v12/ppm";
 import { DeliverStage } from "@/components/v12/board/DeliverStage";
 import { PpmStage } from "@/components/v12/board/PpmStage";
+import { BriefStage, ScriptStage } from "@/components/v12/board/TextStage";
 import { ProductStage } from "@/components/v12/board/campaign/ProductStage";
 import { LookStage } from "@/components/v12/board/campaign/LookStage";
 import { FormatsStage } from "@/components/v12/board/campaign/FormatsStage";
@@ -810,7 +811,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
                 : page === "product" ? <ProductStage ctx={ctx} />
                 : page === "look" ? <LookStage ctx={ctx} />
                 : page === "formats" ? <FormatsStage ctx={ctx} />
-                : page === "voice" ? <VoiceStage ctx={ctx} /> : null}
+                : page === "voice" ? <VoiceStage ctx={ctx} />
+                : page === "brief" ? <BriefStage ctx={ctx} />
+                : page === "script" ? <ScriptStage ctx={ctx} /> : null}
               {roundShare ? <div className="v12-stage-round" data-card-id={roundShare.id}><RoundCard card={roundShare as BoardCard<RoundCardData>} data={roundShare.data as RoundCardData} selected={false} ctx={ctx} /></div> : null}
             </div>
           ) : null}
