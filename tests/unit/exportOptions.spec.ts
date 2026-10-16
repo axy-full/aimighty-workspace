@@ -190,6 +190,11 @@ test("an outside agent can ask for the options over MCP: output goes to the same
   expect(tool.description).toMatch(/H\.265 is not available/);
   expect(tool.description).toMatch(/voiceover/);
   expect(tool.description).toMatch(/keep-speech/);
+  /* The formats are H.264 and the ProRes mezzanine; DNxHR is dropped for now (owner, 16 Oct 2026) and the copy says so. */
+  expect(tool.description).toMatch(/H\.264 and the ProRes mezzanine are the only formats: DNxHR is not offered for now/);
+  expect(JSON.stringify(tool.inputSchema)).toMatch(/the only formats; no DNxHR for now/);
+  expect(parseOutputOptions({ format: "dnxhr" })).toMatchObject({ ok: false });
+  expect(parseOutputOptions({ format: "DNxHD" })).toMatchObject({ ok: false });
 });
 
 test("the ProRes limit is the worker's: 1800 frames, so the same words, 60 s at 30 fps and 30 s at 60 fps, and a higher frame rate cannot get round it", async () => context("frames", async (m) => {
