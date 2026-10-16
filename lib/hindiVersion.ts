@@ -3,6 +3,7 @@ import { creditsApply } from "./credits";
 import { requireTenant } from "./tenant";
 import { engineEnabled } from "./engineGate";
 import { isPersonApprover } from "./workbench/plan-approval";
+import { isAgentId } from "./security/people-only";
 import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { executeSarvamAdmission, sarvamTools, usdPerInr } from "./sarvamTools";
 import { SARVAM_SWITCH } from "./sarvam";
@@ -24,6 +25,10 @@ import { CUT_DATA_LIMITS, withLanguageVoice, type LanguageVoice, type VoiceLine 
  * WHICH SHOTS ARE SYNCED. `lipSync`: "hero" (the default: the lines marked `hero`), "all", or "none" (a Hindi voice-over on every shot). The owner's call, 16 Oct
  * 2026: hero shots only, to be confirmed after the first Hindi test clip. Lip-sync is house-only (lib/lipSync.ts); a plan with no synced shot needs only Sarvam.
  *
+ * RETRY. A version that stops (a step past the approved total, a failure, a cap) is finished by asking again with the same `versionId`: that is one more approval, for
+ * the REST of the plan, up to the `maxCredits` the person gives that time. What is made is skipped. A translation is paid before it is spoken and is kept nowhere, so a stopped
+ * line's reply carries its Hindi (`hindi`): the retry passes it back as the line's `hindi`, and it is never translated, or paid for, twice.
+ *
  * MONEY (CLAUDE.md rule 14). A quote is "up to N cr": a line whose Hindi is not written yet is priced at HINDI_EXPANSION times its English, and a voice's length is not
  * known until it is spoken, so a lip-sync is priced at the longer of the clip and the voice's estimated length. A person approves that total (`maxCredits`). Each step is
  * then quoted exactly by its own tool just before it runs and asked at that figure; a step that would take the plan past the approved total is not run ("asks again"),
@@ -44,6 +49,8 @@ export const HINDI_BOARD_LANGUAGE = "hi";
 const SOURCE_LANGUAGE = "en-IN";
 const ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 const VERSION_ID = /^[A-Za-z0-9_.:-]{6,64}$/;
+/** What a stopped version tells the person: a retry is one more approval, for the rest of the plan. */
+export const RETRY_NOTE = "To go on, ask again with the same versionId and the Hindi of any stopped line that was translated (it is in its line). What is already made is not bought again; your approval covers the rest of the plan, up to the amount you approve this time.";
 const PEOPLE_ONLY = "Only a person approves spending. Atomik, outside agents and tokens can prepare this, never approve it.";
 const MODES = ["hero", "all", "none"] as const;
 export type HindiLipSyncMode = (typeof MODES)[number];
@@ -175,7 +182,8 @@ export async function admitHindiVersion(input: Record<string, unknown>, got: Adm
   if (quoteOnly) return admissionReply({ estimatedCredits: credits, price: unit === "cr" ? credits : Math.round(price * 1e6) / 1e6, unit, ...summary });
 
   /* ── The approval: one person, once, for the whole plan ── */
-  if (!isPersonApprover(got.user.id)) return admissionReply({ error: PEOPLE_ONLY }, { status: 403 });
+  /* A machine never approves: an agent's identity, a token (the API's and MCP's callers act as their owner), or a step Atomik's Auto approved (the same test as shotCapAdmin). */
+  if (!isPersonApprover(got.user.id) || isAgentId(got.user.id) || got.token != null || options.run?.auto === true) return admissionReply({ error: PEOPLE_ONLY }, { status: 403 });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || credits > (body.maxCredits as number))
     return admissionReply({ error: "Approve the price first: the estimate is above the approved credit amount." }, { status: 409 });
   const max = body.maxCredits as number;
@@ -203,7 +211,10 @@ export async function admitHindiVersion(input: Record<string, unknown>, got: Adm
     const first = results[0] as { reason?: string; status?: number };
     return admissionReply({ error: first.reason ?? "Nothing could be started.", versionId, lines: results.map(publicLine), spent: budget.spent }, { status: first.status ?? 502 });
   }
-  return admissionReply({ id: versionId, versionId, status: stopped ? "partial" : "running", estimatedCredits: credits, spent: budget.spent, stopped, lines: results.map(publicLine), ...(placed ? { draft: placed } : {}) });
+  return admissionReply({
+    id: versionId, versionId, status: stopped ? "partial" : "running", estimatedCredits: credits, spent: budget.spent, stopped, lines: results.map(publicLine), ...(placed ? { draft: placed } : {}),
+    ...(stopped ? { retry: RETRY_NOTE } : {}),
+  });
 }
 
 const publicLine = (r: Record<string, unknown>) => { const { made: _m, status: _s, noLength: _n, ...rest } = r; void _m; void _s; void _n; return rest; };

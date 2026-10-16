@@ -71,7 +71,7 @@ async function gen(id: string) {
 }
 
 /** Sarvam's network, stubbed: translate answers the English wrapped in Hindi, speech answers a WAV of the given length; a text containing `failTranslateOn` is refused 422. */
-function fakeSarvam(over: { speechSeconds?: number; failTranslateOn?: string } = {}) {
+function fakeSarvam(over: { speechSeconds?: number; failTranslateOn?: string; failSpeech?: boolean } = {}) {
   const calls: string[] = [];
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url), body = JSON.parse(String(init?.body ?? "{}")) as Record<string, string>;
@@ -80,7 +80,7 @@ function fakeSarvam(over: { speechSeconds?: number; failTranslateOn?: string } =
       if (over.failTranslateOn && body.input.includes(over.failTranslateOn)) return new Response(JSON.stringify({ message: "Sarvam is down" }), { status: 422 });
       return Response.json({ translated_text: `हिंदी ${body.input}` });
     }
-    if (u.endsWith("/text-to-speech")) { calls.push(`speak:${body.text}`); return Response.json({ audios: [wav(over.speechSeconds ?? 3).toString("base64")] }); }
+    if (u.endsWith("/text-to-speech")) { calls.push(`speak:${body.text}`); if (over.failSpeech) return new Response(JSON.stringify({ message: "No voice" }), { status: 422 }); return Response.json({ audios: [wav(over.speechSeconds ?? 3).toString("base64")] }); }
     throw new Error(`The network is closed: ${u}`);
   }) as typeof fetch;
   return { seams: {} as import("../../lib/hindiVersion").HindiSeams, calls };
@@ -94,9 +94,9 @@ function fakeSync() {
     deleteJob: async () => true, deleteAsset: async () => true,
   };
 }
-async function admit(body: Record<string, unknown>, seams: import("../../lib/hindiVersion").HindiSeams = {}, actor: AdmissionActor = OWNER) {
+async function admit(body: Record<string, unknown>, seams: import("../../lib/hindiVersion").HindiSeams = {}, actor: AdmissionActor = OWNER, execution: AdmissionExecution = options()) {
   const { admitHindiVersion } = await import("../../lib/hindiVersion");
-  return admitHindiVersion(body, actor, options(), seams);
+  return admitHindiVersion(body, actor, execution, seams);
 }
 const lines = (clip: string) => [
   { text: "Meet the new Particl.", shotId: undefined, clipUploadId: clip, hero: true },
@@ -288,6 +288,7 @@ test("the reply the claim keeps has no Hindi in it; the tool is declared beside 
     };
     const said = await runDirectEngineTool("hindi_version", { lines_json: JSON.stringify([{ text: "Hello" }]), lip_sync: "none" }, call as never);
     expect(said).toMatch(/Priced, not started/);
+    expect(said).toMatch(/Nothing was filed/);
     expect(said).toMatch(/12 cr/);
     expect(calls.map((c) => [c.path, c.body.quoteOnly === true])).toEqual([["/api/hindi-version", true]]);
     expect(calls.some((c) => "maxCredits" in c.body)).toBe(false);
@@ -406,4 +407,52 @@ test("a customer workspace on the list pays in credits what each step quotes, on
   } finally {
     if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
   }
+});
+
+test("a machine never approves: a token (API or MCP caller, acting as its owner) and an Auto run are refused 403 with nothing asked of any tool; a person's own approval still runs", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  await asTenant(house(), async () => {
+    const clip = await clipUpload(4);
+    const total = Number((await admit({ lines: lines(clip), quoteOnly: true })).body.estimatedCredits);
+    const f = fakeSarvam();
+    const before = (await meter("sarvam")).length;
+    const token = { id: "tok_hindi", scope: "render" } as never;
+    await runInTenant(house(), async () => {
+      expect(await admit({ lines: lines(clip), versionId: stamp(), maxCredits: total }, {}, { ...OWNER, token })).toMatchObject({ status: 403, body: { error: expect.stringMatching(/Only a person approves/) } });
+      /* A token may still ask the price. */
+      expect((await admit({ lines: lines(clip), quoteOnly: true }, {}, { ...OWNER, token })).status).toBe(200);
+    }, { user: OWNER.user, token } as never);
+    /* A step Atomik's Auto approved is a machine's approval. */
+    const auto: AdmissionExecution = { ...options(), run: { auto: true } as never };
+    expect(await admit({ lines: lines(clip), versionId: stamp(), maxCredits: total }, {}, OWNER, auto)).toMatchObject({ status: 403, body: { error: expect.stringMatching(/Only a person approves/) } });
+    expect(f.calls).toEqual([]);
+    expect((await meter("sarvam")).length).toBe(before);
+    expect((await admit({ lines: lines(clip), versionId: stamp(), maxCredits: total })).status).toBe(200);
+  });
+});
+
+test("a stopped line carries its Hindi, and the retry passes it back: a translation is never paid for twice; the reply says the retry covers the rest of the plan", async () => {
+  await asTenant(house(), async () => {
+    const one = [{ text: "Make it in minutes." }];
+    const total = Number((await admit({ lines: one, lipSync: "none", quoteOnly: true })).body.estimatedCredits);
+    const version = stamp();
+    const down = fakeSarvam({ failSpeech: true });
+    const first = await admit({ lines: one, lipSync: "none", versionId: version, maxCredits: total });
+    /* The translation was paid and the voice was refused: a partial answer, not an error, so the Hindi comes back. */
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ status: "partial", stopped: 1, retry: expect.stringContaining("same versionId") });
+    expect(first.body.lines).toEqual([expect.objectContaining({ order: 0, stopped: true, hindi: "हिंदी Make it in minutes." })]);
+    expect(down.calls).toEqual(["translate:Make it in minutes.", "speak:हिंदी Make it in minutes."]);
+    /* The retry names the Hindi it was given: nothing is translated again. */
+    const up = fakeSarvam();
+    const hindi = ((first.body.lines as { hindi: string }[])[0]).hindi;
+    const second = await admit({ lines: [{ text: "Make it in minutes.", hindi }], lipSync: "none", versionId: version, maxCredits: total });
+    expect(second.status, JSON.stringify(second.body)).toBe(200);
+    expect(up.calls).toEqual([`speak:${hindi}`]);
+    /* A partial reply says what a retry is. */
+    const gone = fakeSarvam({ failTranslateOn: "Two" });
+    const partial = await admit({ lines: [{ text: "One" }, { text: "Two" }], lipSync: "none", versionId: stamp(), maxCredits: 100000 });
+    expect(gone.calls.length).toBeGreaterThan(0);
+    expect(partial.body).toMatchObject({ status: "partial", retry: expect.stringContaining("approval covers the rest of the plan") });
+  });
 });
