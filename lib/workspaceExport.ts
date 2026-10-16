@@ -3,6 +3,7 @@ import { requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
 import { creditsApply } from "./credits";
 import { withoutVendorDollars } from "./analyticsRedact";
+import { publicDirectParams } from "./directEnginePublic";
 import { PipelineStore } from "./pipeline/store";
 import { publicRun } from "./pipeline/public";
 import type { CompiledPipeline } from "./pipeline/schema";
@@ -61,6 +62,7 @@ function generation(row: Row, creditWorkspace: boolean) {
     delete params.higgsfieldVideoPollUntil;
     delete params.higgsfieldVideoPollToken;
     delete params.genjutsuOriginal;
+    params = publicDirectParams(params);
     /* The working figures in a take's params are what vendors charge (lib/jobs.ts rowToGeneration
        reads them the same way): a workspace billed in credits exports none of them. */
     if (creditWorkspace) {
