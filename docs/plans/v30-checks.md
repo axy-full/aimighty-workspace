@@ -83,39 +83,39 @@ The page carries no "last updated" date.
 
 | | Free | Pro | Team | Enterprise |
 |---|---|---|---|---|
-| Price as shown (annual billing) | Free, "No credit card required" | $25 per month billed annually ("Save 17%") | $500 per month billed annually ("Save 17%", "Save $100") | Custom |
-| Monthly credits | "Free monthly credits" | "$30 monthly credits" | "$600 monthly credits" | custom |
+| Price | [pricing page](https://liveblocks.io/pricing); figures with the lead (private) | | | Custom |
+| Monthly credits | "Free monthly credits" | monthly credits (figure with the lead (private)) | monthly credits (figure with the lead (private)) | custom |
 | Products | Sync, Comments, Notifications | same | same | same |
 | Simultaneous connections per room | 10 | 10 | 50 | 100 |
 | Presence (avatar stack, live cursors, live selection) | Included | Included | Included | Included |
 | Storage: CRDT, multiplayer undo/redo, offline | Included | Included | Included | Included |
 | Sync engines: Liveblocks Storage; **Yjs** | Included | Included | Included | Included |
-| Realtime collaboration minutes | 3,000 included | $0.002 per minute | $0.002 per minute | Custom |
-| Realtime data storage updates | 3M included | $1 per 1M updates | $1 per 1M updates | Custom |
-| Realtime data stored | 1 GB included | $0.15 per GB | $0.15 per GB | Custom |
+| Realtime collaboration minutes | 3,000 included | metered per minute | metered per minute | Custom |
+| Realtime data storage updates | 3M included | metered per update | metered per update | Custom |
+| Realtime data stored | 1 GB included | metered per GB | metered per GB | Custom |
 | Data stored per room | 10 MB | 10 MB | 50 MB | Custom |
 | Version history | 24 hours | 30 days | 90 days | Custom |
 | **Comments**: threads, reactions, metadata, mentions (user, group, AI) | Included | Included | Included | Included |
 | Comments: public/private comments | Not included | Not included | Included | Included |
-| Comments created | 200 included | $0.01 per comment | $0.01 per comment | Custom |
+| Comments created | 200 included | metered per comment | metered per comment | Custom |
 | **Notifications**: collaboration notifications | Unlimited | Unlimited | Unlimited | Unlimited |
-| Notifications: custom notifications | 200 included | $0.005 per event | $0.005 per event | Custom |
+| Notifications: custom notifications | 200 included | metered per event | metered per event | Custom |
 | Channels: in-app, email, Slack, Teams, web push, webhook | Included | Included | Included | Included |
 | AI Copilots (agent presence, multiplayer agent editing, …) | Included | Included | Included | Included |
 | "Remove Liveblocks branding" | Not included | Included | Included | Included |
-| Dashboard seats | 3 | 3 | 10, then $10 per seat | Custom |
+| Dashboard seats | 3 | 3 | 10, then paid per seat | Custom |
 | Projects | 10 | 10 | 10 | Custom |
 | SOC 2 report, SAML SSO | Not included | Not included | Included | Included |
-| HIPAA BAA | Not included | Not included | $350/month | Included |
+| HIPAA BAA | Not included | Not included | paid add-on | Included |
 
-Monthly (not annual) prices are not in the page's static HTML. The 17% saving implies about $30 (Pro) and $600 (Team) a month billed monthly, matching the credit amounts; I have not seen those figures printed.
-`https://liveblocks.io/docs/pricing/plans` (read 17 Oct 2026) adds that "Credits are denominated in US dollars" and that they "reset at the start of each billing cycle and do not roll over"; on Free, hitting a cap pauses the feature.
+Prices: see https://liveblocks.io/pricing; figures with the lead (private). The metered rows say "metered" where the page gives a per-unit price beyond the included amount.
+`https://liveblocks.io/docs/pricing/plans` (read 17 Oct 2026) adds that credits "reset at the start of each billing cycle and do not roll over"; on Free, hitting a cap pauses the feature.
 
 **The page has no separate "Text editor" product or row.** Text editor is listed under the menu as a use case ("Edit documents together"), not as a product.
 It is built from Sync (Storage/LiveText or Yjs) plus Comments, all on every current plan. On today's public plans, then, **text editor and comments are included on every plan**, metered by collaboration minutes, storage updates and comments created.
 What none of the plans includes: public/private comments below Team; more than 10 connections per room below Team; SOC 2 / SAML below Team.
 
-**Caveat: this describes the plans sold today. Our account may be on an older plan**, which would have a different name and would not list "monthly credits". The handover (`docs/handover-2026-10-05.md:1123`) says Particl "already pays for" Liveblocks' Yjs support, and `docs/particl-sow.md:167` says "Free or Pro $25/mo (yearly)". Neither is evidence of the account's plan. Only the dashboard can answer it (steps below).
+**Caveat: this describes the plans sold today. Our account may be on an older plan**, which would have a different name and would not list "monthly credits". The handover (`docs/handover-2026-10-05.md:1123`) says Particl "already pays for" Liveblocks' Yjs support, and `docs/particl-sow.md:167` names "Free or Pro" with a price. Neither is evidence of the account's plan. Only the dashboard can answer it (steps below).
 
 ### Steps for the owner: read the plan name and included products (no key needed)
 
@@ -127,7 +127,7 @@ If a label below differs, go by the URL.
 3. Open **https://liveblocks.io/dashboard/billing** (the team's Billing page). Write down:
    - the **plan name** exactly as shown (Free / Pro / Team / Enterprise, or an older name);
    - **monthly or annual** billing, and the renewal date;
-   - the **monthly credits** line, if there is one (for example "$30 monthly credits"). If there is none, it is an older plan: note every add-on line, especially anything named Comments, Text Editor, Notifications or Yjs.
+   - the **monthly credits** line, if there is one. If there is none, it is an older plan: note every add-on line, especially anything named Comments, Text Editor, Notifications or Yjs.
 4. Open **https://liveblocks.io/dashboard/usage**. Note this month's collaboration minutes, storage updates, comments created and the credits left, if shown.
 5. Optional: on the Billing page, open the latest **invoice** and note its line items. They name exactly what is billed.
 6. Send the lead the plan name, the credit line or add-on lines, and a screenshot of the Billing page with card details cropped out. No keys.
