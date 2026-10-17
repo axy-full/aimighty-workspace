@@ -5,23 +5,25 @@
  * device pixel. The bars, the buttons and the dialogs around the cards stay their own size: only a grid of cards is `.v12-scaled`.
  * Under .v12; app/graphite.css tokens only.
  */
-.v12 .v12-scaled {
-  --gx-fs-label: calc(12px * var(--k, 1)); --gx-fs-meta: calc(13px * var(--k, 1)); --gx-fs-body: calc(14px * var(--k, 1));
-  --gx-fs-card: calc(15px * var(--k, 1)); --gx-fs-eyebrow: calc(12px * var(--k, 1));
-  --gx-sp-4: calc(4px * var(--k, 1)); --gx-sp-6: calc(6px * var(--k, 1)); --gx-sp-8: calc(8px * var(--k, 1)); --gx-sp-10: calc(10px * var(--k, 1));
-  --gx-sp-12: calc(12px * var(--k, 1));
-  display: grid; grid-template-columns: repeat(auto-fill, calc(280px * var(--k, 1))); gap: calc(16px * var(--k, 1)); align-items: start;
-}
+.v12 .v12-scaled { display: grid; grid-template-columns: repeat(auto-fill, calc(280px * var(--k, 1))); gap: calc(16px * var(--k, 1)); align-items: start; }
+/* Every size card.css reads from a token is that token times --k here. The tokens themselves are app/graphite.css's and are never redefined. */
+.v12 .v12-scaled :is(.v12-card-tile-sm, .v12-card-tile-xs, .v12-card-page-title, .v12-card-page-text, .v12-card-play, .v12-card-by, .v12-card-handle, .v12-card-status,
+  .v12-card-reasons-label, .v12-card-reason, .v12-card-chip, .v12-card-note) { font-size: calc(var(--gx-fs-label) * var(--k, 1)); }
+.v12 .v12-scaled .v12-card-title { font-size: calc(var(--gx-fs-meta) * var(--k, 1)); }
+.v12 .v12-scaled :is(.v12-card-marks, .v12-card-reasons-list, .v12-card-chips) { gap: calc(var(--gx-sp-4) * var(--k, 1)); }
+.v12 .v12-scaled :is(.v12-card-body, .v12-card-titlerow, .v12-card-status, .v12-card-reasons) { gap: calc(var(--gx-sp-6) * var(--k, 1)); }
+.v12 .v12-scaled .v12-card-body { padding: calc(var(--gx-sp-10) * var(--k, 1)) calc(var(--gx-sp-12) * var(--k, 1)) calc(var(--gx-sp-12) * var(--k, 1)); }
+.v12 .v12-scaled .v12-card-reasons { padding: calc(var(--gx-sp-8) * var(--k, 1)); }
 /* The big letter tile is centred by its margins, not by a transform: a word is never drawn through one (owner, 16 Oct 2026). */
 .v12 .v12-scaled .v12-card-tile-lg { inset: 0; margin: auto; transform: none; width: calc(44px * var(--k, 1)); height: calc(44px * var(--k, 1)); font-size: calc(20px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-tile-sm { width: calc(22px * var(--k, 1)); height: calc(22px * var(--k, 1)); right: calc(8px * var(--k, 1)); bottom: calc(8px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-tile-xs { width: calc(18px * var(--k, 1)); height: calc(18px * var(--k, 1)); }
-.v12 .v12-scaled .v12-card-page-head { height: calc(36px * var(--k, 1)); }
-.v12 .v12-scaled .v12-card-page-text { padding-left: calc(14px * var(--k, 1)); padding-right: calc(14px * var(--k, 1)); }
+.v12 .v12-scaled .v12-card-page-head { height: calc(36px * var(--k, 1)); gap: calc(var(--gx-sp-8) * var(--k, 1)); padding: 0 calc(var(--gx-sp-10) * var(--k, 1)) 0 calc(var(--gx-sp-12) * var(--k, 1)); }
+.v12 .v12-scaled .v12-card-page-text { padding-top: calc(var(--gx-sp-4) * var(--k, 1)); padding-bottom: calc(var(--gx-sp-10) * var(--k, 1)); padding-left: calc(14px * var(--k, 1)); padding-right: calc(14px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-dot { width: calc(6px * var(--k, 1)); height: calc(6px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-reason { height: calc(26px * var(--k, 1)); padding: 0 calc(9px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-chip { height: calc(24px * var(--k, 1)); padding: 0 calc(8px * var(--k, 1)); }
-.v12 .v12-scaled .v12-card-note { height: calc(28px * var(--k, 1)); }
+.v12 .v12-scaled .v12-card-note { height: calc(28px * var(--k, 1)); padding: 0 calc(var(--gx-sp-8) * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-handle { width: calc(22px * var(--k, 1)); height: calc(22px * var(--k, 1)); top: calc(6px * var(--k, 1)); left: calc(6px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-marks .v12-iconbtn.v12-card-mark { width: calc(28px * var(--k, 1)); height: calc(28px * var(--k, 1)); font-size: calc(14px * var(--k, 1)); }
 .v12 .v12-scaled .v12-card-bar { height: calc(4px * var(--k, 1)); left: calc(10px * var(--k, 1)); right: calc(10px * var(--k, 1)); bottom: calc(10px * var(--k, 1)); }
