@@ -53,8 +53,8 @@ async function withFlag<T>(value: string | undefined, fn: () => Promise<T>): Pro
   try { return await fn(); } finally { if (was === undefined) delete process.env[FLAG]; else process.env[FLAG] = was; }
 }
 
-/** Lists workspaces on the new interface (the platform owner's site setting), merged into the row and put back afterwards. */
-async function listed<T>(ids: string[], fn: () => Promise<T>): Promise<T> {
+/** Lists workspaces on the new interface (the platform owner's site setting), merged into the row; returns what puts it back. */
+async function listOn(ids: string[]): Promise<() => Promise<void>> {
   const { platformDb, platformReady } = await import("../../lib/platform");
   await platformReady();
   const previous = (await platformDb().execute("SELECT value, updated_at, updated_by FROM platform_layer WHERE key='site'")).rows[0];
@@ -65,11 +65,27 @@ async function listed<T>(ids: string[], fn: () => Promise<T>): Promise<T> {
           ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at, updated_by=excluded.updated_by`,
     args: [JSON.stringify({ ...site, newInterfaceWorkspaces: [...ids, ...had.filter((id) => !ids.includes(id))] }), Date.now()],
   });
-  try { return await fn(); } finally {
+  return async () => {
     if (previous) await platformDb().execute({ sql: "UPDATE platform_layer SET value=?, updated_at=?, updated_by=? WHERE key='site'", args: [previous.value, previous.updated_at, previous.updated_by] });
     else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
-  }
+  };
 }
+async function listed<T>(ids: string[], fn: () => Promise<T>): Promise<T> {
+  const restore = await listOn(ids);
+  try { return await fn(); } finally { await restore(); }
+}
+
+/*
+ * The workspaces the switch is on for in these tests, besides the house: listed on the new interface for the whole
+ * file and put back afterwards. Not the house, whose cap is in dollars and which refuses the credit limit.
+ */
+const ON_NAMES = ["defaults", "audit", "race_two", "race_mixed", "race_stale", "damaged", "who", "iso_a", "month", "owner"] as const;
+const on = (name: (typeof ON_NAMES)[number]) => workspace(`ws_spend_${name}_${run}`);
+/* The route's workspace: its tokens are `pk_<id>_…`, so its id is letters and digits after `ws_` (lib/auth.ts workspaceForToken). */
+const ROUTE_ID = `ws_spendroute${run}`;
+let restoreSite: (() => Promise<void>) | null = null;
+test.beforeAll(async () => { restoreSite = await listOn([...ON_NAMES.map((n) => on(n).id), ROUTE_ID]); });
+test.afterAll(async () => { await restoreSite?.(); });
 
 const refusal = async (fn: () => Promise<unknown>) => { try { await fn(); } catch (e) { return e as Error & { status?: number }; } return null; };
 
@@ -78,10 +94,10 @@ test("the values: defaults, the stored forms, a strict change, and the month a l
   const { tokenMonthStart } = await import("../../lib/cycle");
   /* Defaults: no limit, running, and ask before every take OFF (owner, 17 Oct, item 3). */
   expect(s.SPEND_SETTINGS_DEFAULT).toEqual({ monthlyLimitCredits: null, pause: null, askBeforeEveryTake: false });
-  expect(s.spendSettingsFrom({})).toEqual(s.SPEND_SETTINGS_DEFAULT);
+  expect(s.spendSettingsFrom({}, Date.now())).toEqual(s.SPEND_SETTINGS_DEFAULT);
   /* Stored forms round-trip. Synthetic figures. */
   const limit = 4321, pause = { at: 1_700_000_000_000, by: "u_admin", reason: "admin" as const };
-  expect(s.spendSettingsFrom({ monthlySpendLimitCredits: s.limitValue(limit), spendPause: s.pauseValue(pause), askBeforeEveryTake: s.askValue(true) }))
+  expect(s.spendSettingsFrom({ monthlySpendLimitCredits: s.limitValue(limit), spendPause: s.pauseValue(pause), askBeforeEveryTake: s.askValue(true) }, pause.at + 1))
     .toEqual({ monthlyLimitCredits: limit, pause, askBeforeEveryTake: true });
   expect(s.storedPause(s.pauseValue({ at: 5, by: null, reason: "limit" }))).toEqual({ at: 5, by: null, reason: "limit" });
   /* A stored value that is not one the writer makes reads as the default. */
@@ -112,6 +128,19 @@ test("the values: defaults, the stored forms, a strict change, and the month a l
   expect(s.spendLimitPeriod(end - 1)).toEqual({ start, end });
   expect(s.spendLimitPeriod(Date.UTC(2026, 11, 31, 23, 59))).toEqual({ start: Date.UTC(2026, 11, 1), end: Date.UTC(2027, 0, 1) });
   expect(s.spendLimitPeriod(mid).start).toBe(tokenMonthStart(mid));
+  /* A limit pause lifts at the first moment of the next UTC month; a person's pause and an unreadable row never do. */
+  const nov = Date.UTC(2026, 10, 1), lastOct = nov - 1;
+  const limitPause = { at: Date.UTC(2026, 9, 20), by: null, reason: "limit" as const };
+  expect(s.pauseLifted(limitPause, lastOct)).toBe(false);
+  expect(s.pauseLifted(limitPause, nov)).toBe(true);
+  expect(s.pauseLifted({ ...limitPause, reason: "admin" }, nov + 86_400_000 * 90)).toBe(false);
+  expect(s.pauseLifted({ ...s.UNREADABLE_PAUSE }, nov)).toBe(false);
+  expect(s.pauseLifted(null, nov)).toBe(false);
+  expect(s.spendSettingsFrom({ spendPause: s.pauseValue(limitPause) }, nov).pause).toBeNull();
+  expect(s.spendSettingsFrom({ spendPause: s.pauseValue(limitPause) }, lastOct).pause).toEqual(limitPause);
+  /* Raising: a higher number, or no limit where there was one. A first limit and a lower one are not raises. */
+  for (const [from, to, raises] of [[null, 500, false], [500, 400, false], [500, 500, false], [500, 501, true], [500, null, true], [null, null, false]] as const)
+    expect(s.raisesLimit(from, to), `${from} -> ${to}`).toBe(raises);
   /* The switch is exactly "1". */
   for (const v of [undefined, "", "0", "true", "on", " 1", "1 "]) expect(s.spendSettingsSwitchOn({ [FLAG]: v }), String(v)).toBe(false);
   expect(s.spendSettingsSwitchOn({ [FLAG]: "1" })).toBe(true);
@@ -154,18 +183,21 @@ test("defaults on a workspace that never set them, with the month they count in"
   const store = await import("../../lib/spendSettings.server");
   const at = Date.UTC(2026, 1, 14, 9);
   await withFlag("1", async () => {
-    const ws = workspace(HOUSE, `house-defaults-${run}`);
+    const ws = on("defaults");
     expect(await inWs(ws, () => store.readSpendSettings(at), person("u_member", "member"))).toEqual({
-      monthlyLimitCredits: null, pause: null, askBeforeEveryTake: false, period: { start: Date.UTC(2026, 1, 1), end: Date.UTC(2026, 2, 1) },
+      monthlyLimitCredits: null, pause: null, askBeforeEveryTake: false, period: { start: Date.UTC(2026, 1, 1), end: Date.UTC(2026, 2, 1) }, creditLimitApplies: true,
     });
     expect(await settingRows(ws)).toEqual([]);
+    /* In the house the credit limit does not apply. */
+    expect((await inWs(workspace(HOUSE, `house-defaults-${run}`), () => store.readSpendSettings(at), person("u_member", "member"))).creditLimitApplies).toBe(false);
   });
 });
 
 test("an admin's every change writes one audit line in the same batch; a value that does not change writes neither; a failed audit line rolls the change back", async () => {
   const store = await import("../../lib/spendSettings.server");
-  const admin = person("u_admin", "admin");
-  const ws = workspace(HOUSE, `house-audit-${run}`);
+  /* The owner: raising and removing the limit are among these changes. */
+  const admin = person("u_admin", "admin", { owner: true });
+  const ws = on("audit");
   const change = (patch: Parameters<typeof store.changeSpendSettings>[0], at: number) => inWs(ws, () => store.changeSpendSettings(patch, at), admin);
   await withFlag("1", async () => {
     const LIMIT = 777, HIGHER = 888;
@@ -195,7 +227,7 @@ test("an admin's every change writes one audit line in the same batch; a value t
     /* The server's own pause on reaching the limit (no caller yet): reason "limit", no person; once only. */
     expect(await inWs(ws, () => store.recordLimitPause(2000))).toBe(true);
     expect(await inWs(ws, () => store.recordLimitPause(2001))).toBe(false);
-    expect((await inWs(ws, () => store.readSpendSettings())).pause).toEqual({ at: 2000, by: null, reason: "limit" });
+    expect((await inWs(ws, () => store.readSpendSettings(2001))).pause).toEqual({ at: 2000, by: null, reason: "limit" });
     expect((await auditRows(ws)).at(-1)).toMatchObject({ action: "spend.paused", actor_id: null, details: JSON.stringify({ reason: "limit" }) });
     /* An admin's resume clears the limit's pause too. */
     expect((await change({ paused: false }, 2002)).changed).toEqual(["paused"]);
@@ -215,7 +247,7 @@ test("races: two pauses at once, or a person's pause beside the server's, write 
   const pauses = async (ws: TenantWorkspace) => (await settingRows(ws)).filter((r) => r.key === "spendPause");
   await withFlag("1", async () => {
     /* Two admins press Pause at the same moment. */
-    const two = workspace(HOUSE, `house-race-two-${run}`);
+    const two = on("race_two");
     const [one, other] = await Promise.all([
       inWs(two, () => store.changeSpendSettings({ paused: true }, 5000), adminA),
       inWs(two, () => store.changeSpendSettings({ paused: true }, 5001), adminB),
@@ -229,7 +261,7 @@ test("races: two pauses at once, or a person's pause beside the server's, write 
     expect(one.settings.pause).toEqual(other.settings.pause);
 
     /* A person's pause beside the server's limit pause. */
-    const mixed = workspace(HOUSE, `house-race-mixed-${run}`);
+    const mixed = on("race_mixed");
     const [byPerson, byServer] = await Promise.all([
       inWs(mixed, () => store.changeSpendSettings({ paused: true }, 6000), adminA),
       inWs(mixed, () => store.recordLimitPause(6001)),
@@ -241,7 +273,7 @@ test("races: two pauses at once, or a person's pause beside the server's, write 
     expect(lines[0]).toMatchObject(byServer ? { action: "spend.paused", actor_id: null, details: '{"reason":"limit"}' } : { action: "spend.paused", actor_id: adminA.id, details: '{"reason":"admin"}' });
 
     /* A stale read: the row says paused, the read says running. Pausing again writes nothing and says so. */
-    const stale = workspace(HOUSE, `house-race-stale-${run}`);
+    const stale = on("race_stale");
     await inWs(stale, () => store.changeSpendSettings({ paused: true }, 7000), adminA);
     const seeded = { settings: await settingRows(stale), audit: await auditRows(stale) };
     const running = { monthlyLimitCredits: null, pause: null, askBeforeEveryTake: false };
@@ -270,7 +302,7 @@ test("races: two pauses at once, or a person's pause beside the server's, write 
 test("a damaged pause row fails closed: it reads as paused, the server's limit pause does not overwrite it, and an admin's resume clears it with one line", async () => {
   const store = await import("../../lib/spendSettings.server");
   const admin = person("u_admin", "admin");
-  const ws = workspace(HOUSE, `house-damaged-${run}`);
+  const ws = on("damaged");
   await withFlag("1", async () => {
     await rows(ws, "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('spendPause','not a pause','fixture',0)");
     expect((await inWs(ws, () => store.readSpendSettings(), person("u_member", "member"))).pause).toEqual({ at: 0, by: null, reason: "unreadable" });
@@ -284,10 +316,123 @@ test("a damaged pause row fails closed: it reads as paused, the server's limit p
   });
 });
 
+test("the house workspace: the credit limit is refused there with a plain line, nothing is written and its dollar cap is untouched; its pause and ask are stored as anywhere", async () => {
+  const store = await import("../../lib/spendSettings.server");
+  const { HOUSE_LIMIT_REFUSAL } = await import("../../lib/spendSettings");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  const house = workspace(HOUSE, `house-limit-${run}`);
+  const owner = person("u_house_owner", "admin", { owner: true });
+  const cap = async () => ({
+    workspace: (await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [HOUSE] })).rows.map((r) => ({ ...r })),
+    layer: (await platformDb().execute("SELECT key, value FROM platform_layer WHERE key <> 'site' ORDER BY key")).rows.map((r) => ({ ...r })),
+  });
+  await withFlag("1", async () => {
+    const before = await cap();
+    for (const limit of [500, null]) {
+      const e = await refusal(() => inWs(house, () => store.changeSpendSettings({ monthlyLimitCredits: limit, paused: true }), owner));
+      expect(e, String(limit)).toBeInstanceOf(store.SpendSettingsError);
+      expect(e!.status).toBe(409);
+      expect(e!.message).toBe(HOUSE_LIMIT_REFUSAL);
+      expect(e!.message).toBe("The house workspace's cap is in dollars and is set by the platform owner.");
+    }
+    /* Refused whole: the pause sent with it was not written either. */
+    expect(await settingRows(house)).toEqual([]);
+    expect(await auditRows(house)).toEqual([]);
+    expect(await cap()).toEqual(before);
+    /* The pause and ask before every take are the house's like any workspace's. */
+    expect((await inWs(house, () => store.changeSpendSettings({ paused: true, askBeforeEveryTake: true }), owner)).changed).toEqual(["paused", "askBeforeEveryTake"]);
+    expect(await cap()).toEqual(before);
+  });
+});
+
+test("only the workspace owner raises the monthly limit or removes it; any admin sets a first limit or lowers it; a stale read cannot turn a lowering into a raise", async () => {
+  const store = await import("../../lib/spendSettings.server");
+  const ws = on("owner");
+  const admin = person("u_plain_admin", "admin"), owner = person("u_ws_owner", "admin", { owner: true });
+  const as = (user: TenantUser, patch: Parameters<typeof store.changeSpendSettings>[0]) => inWs(ws, () => store.changeSpendSettings(patch, 9000), user);
+  const limitNow = async () => (await inWs(ws, () => store.readSpendSettings(9000))).monthlyLimitCredits;
+  await withFlag("1", async () => {
+    /* A first limit, then a lower one: any admin. */
+    expect((await as(admin, { monthlyLimitCredits: 500 })).changed).toEqual(["monthlyLimitCredits"]);
+    expect((await as(admin, { monthlyLimitCredits: 400 })).changed).toEqual(["monthlyLimitCredits"]);
+    /* Higher, or none: refused, and nothing in the same change is written. */
+    const linesBefore = await auditRows(ws);
+    for (const to of [401, 5000, null]) {
+      const e = await refusal(() => as(admin, { monthlyLimitCredits: to, askBeforeEveryTake: true }));
+      expect(e, String(to)).toBeInstanceOf(store.SpendSettingsError);
+      expect(e!.status).toBe(403);
+      expect(e!.message).toBe("Only the workspace owner can raise the monthly limit or remove it.");
+    }
+    expect(await limitNow()).toBe(400);
+    expect((await inWs(ws, () => store.readSpendSettings(9000))).askBeforeEveryTake).toBe(false);
+    expect(await auditRows(ws)).toEqual(linesBefore);
+    /* The owner raises, and removes. */
+    expect((await as(owner, { monthlyLimitCredits: 900 })).changed).toEqual(["monthlyLimitCredits"]);
+    expect(await limitNow()).toBe(900);
+    /* A stale read: the admin's read says no limit (a first limit), but 300 stands; 800 would raise it. Nothing is written. */
+    expect((await as(owner, { monthlyLimitCredits: 300 })).changed).toEqual(["monthlyLimitCredits"]);
+    const settled = { settings: await settingRows(ws), audit: await auditRows(ws) };
+    const noLimit = { monthlyLimitCredits: null, pause: null, askBeforeEveryTake: false };
+    const stale = await inWs(ws, () => store.changeSpendSettingsFromReadForTests({ monthlyLimitCredits: 800 }, noLimit, 9001), admin);
+    expect(stale.changed).toEqual([]);
+    expect(stale.settings.monthlyLimitCredits).toBe(300);
+    expect({ settings: await settingRows(ws), audit: await auditRows(ws) }).toEqual(settled);
+    /* And a stale read that says 1000 when 300 stands: lowering to 500 would raise it. Nothing is written. */
+    const staleHigh = await inWs(ws, () => store.changeSpendSettingsFromReadForTests({ monthlyLimitCredits: 500 }, { ...noLimit, monthlyLimitCredits: 1000 }, 9002), admin);
+    expect(staleHigh.changed).toEqual([]);
+    expect({ settings: await settingRows(ws), audit: await auditRows(ws) }).toEqual(settled);
+    expect((await as(owner, { monthlyLimitCredits: null })).changed).toEqual(["monthlyLimitCredits"]);
+    expect(await limitNow()).toBeNull();
+    /* The audit lines are the same lines as before: one spend_limit.set per change, by whoever made it. */
+    expect((await auditRows(ws)).map((l) => [l.action, l.actor_id, JSON.parse(l.details)])).toEqual([
+      ["spend_limit.set", admin.id, { limitCredits: 500 }],
+      ["spend_limit.set", admin.id, { limitCredits: 400 }],
+      ["spend_limit.set", owner.id, { limitCredits: 900 }],
+      ["spend_limit.set", owner.id, { limitCredits: 300 }],
+      ["spend_limit.set", owner.id, { limitCredits: null }],
+    ]);
+  });
+});
+
+test("the month turning (UTC): a limit pause reads as running from the first moment of the next month; a person's pause does not lift; stored state only", async () => {
+  const store = await import("../../lib/spendSettings.server");
+  const ws = on("month");
+  const admin = person("u_admin", "admin");
+  const nov = Date.UTC(2026, 10, 1), lastMsOfOct = nov - 1, oct20 = Date.UTC(2026, 9, 20);
+  const read = (at: number) => inWs(ws, () => store.readSpendSettings(at));
+  await withFlag("1", async () => {
+    expect(await inWs(ws, () => store.recordLimitPause(oct20))).toBe(true);
+    expect((await read(lastMsOfOct)).pause).toEqual({ at: oct20, by: null, reason: "limit" });
+    expect((await read(nov)).pause).toBeNull();
+    expect((await read(nov)).period).toEqual({ start: nov, end: Date.UTC(2026, 11, 1) });
+    /* Nothing is written by the month turning: the row still holds October's pause. */
+    expect(JSON.parse((await settingRows(ws)).find((r) => r.key === "spendPause")!.value)).toEqual({ at: oct20, by: null, reason: "limit" });
+    /* In November the server may pause again on reaching the limit, over the lifted row: one new line. */
+    const lines = (await auditRows(ws)).length;
+    expect(await inWs(ws, () => store.recordLimitPause(nov + 5))).toBe(true);
+    expect((await read(nov + 6)).pause).toEqual({ at: nov + 5, by: null, reason: "limit" });
+    expect(await auditRows(ws)).toHaveLength(lines + 1);
+    /* A stale resume of October's pause in December, when it has already lifted: nothing written. */
+    const dec = Date.UTC(2026, 11, 1);
+    const before = { settings: await settingRows(ws), audit: await auditRows(ws) };
+    const staleResume = await inWs(ws, () => store.changeSpendSettingsFromReadForTests({ paused: false },
+      { monthlyLimitCredits: null, pause: { at: nov + 5, by: null, reason: "limit" }, askBeforeEveryTake: false }, dec), admin);
+    expect(staleResume.changed).toEqual([]);
+    expect({ settings: await settingRows(ws), audit: await auditRows(ws) }).toEqual(before);
+    /* A person's pause over the lifted row, in December: written, and it does not lift in January. */
+    expect((await inWs(ws, () => store.changeSpendSettings({ paused: true }, dec + 10), admin)).changed).toEqual(["paused"]);
+    expect((await read(Date.UTC(2027, 0, 1))).pause).toEqual({ at: dec + 10, by: admin.id, reason: "admin" });
+    expect((await read(Date.UTC(2027, 5, 1))).pause).toEqual({ at: dec + 10, by: admin.id, reason: "admin" });
+    /* The server's limit pause does not overwrite a person's pause. */
+    expect(await inWs(ws, () => store.recordLimitPause(Date.UTC(2027, 0, 2)))).toBe(false);
+  });
+});
+
 test("only an admin who is a person changes them: a member, a disabled admin, an agent identity and any API or MCP token are refused, and nothing is written", async () => {
   const store = await import("../../lib/spendSettings.server");
   const { PeopleOnlyError } = await import("../../lib/security/people-only");
-  const ws = workspace(HOUSE, `house-who-${run}`);
+  const ws = on("who");
   const patch = { monthlyLimitCredits: 55, paused: true, askBeforeEveryTake: true };
   await withFlag("1", async () => {
     const member = await refusal(() => inWs(ws, () => store.changeSpendSettings(patch), person("u_member", "member")));
@@ -318,7 +463,7 @@ test("tenant isolation: each workspace's settings and audit lines stay in its ow
   const store = await import("../../lib/spendSettings.server");
   const { readWorkspaceSecurityHistory } = await import("../../lib/securityAudit");
   const { createClient } = await import("@libsql/client");
-  const a = workspace(HOUSE, `iso-a-${run}`), b = workspace(`ws_iso_b_${run}`);
+  const a = on("iso_a"), b = workspace(`ws_iso_b_${run}`);
   const adminA = person("u_admin_a", "admin"), adminB = person("u_admin_b", "admin");
   await withFlag("1", () => listed([b.id], async () => {
     await inWs(a, () => store.changeSpendSettings({ monthlyLimitCredits: 111, paused: true, askBeforeEveryTake: true }), adminA);
@@ -346,11 +491,10 @@ test("tenant isolation: each workspace's settings and audit lines stay in its ow
 
 /* ---- The route, through the real withTenant and auth (platform session lookups stubbed, as tests/unit/demo-gaps-l4-people-only.spec.ts does). ---- */
 
-const RWS = workspace(HOUSE, `route-${run}`);
-/* The house workspace's tokens are the `aw_` kind (lib/auth.ts workspaceForToken). */
-const RAW = `aw_${"5".repeat(48)}`;
-let mode: "admin" | "member" | "token" = "admin";
-const userIdOf = () => (mode === "member" ? "rmem" : "radmin");
+const RWS = workspace(ROUTE_ID);
+const RAW = `pk_${ROUTE_ID.slice(3)}_${"5".repeat(48)}`;
+let mode: "admin" | "owner" | "member" | "token" = "admin";
+const userIdOf = () => (mode === "member" ? "rmem" : mode === "owner" ? "rowner" : "radmin");
 
 function load<T>(file: string, deps: Record<string, unknown>): T {
   const filename = path.resolve(file), req = createRequire(filename);
@@ -385,9 +529,9 @@ async function routes() {
     },
     "./platform": {
       sessionLookup: async () => ({ account: { id: userIdOf(), name: userIdOf(), email: `${userIdOf()}@example.invalid`, mfa_enabled: 1 }, workspaceId: RWS.id }),
-      workspacesFor: async () => [{ workspace: RWS, role: mode === "member" ? "member" : "admin" }],
+      workspacesFor: async () => [{ workspace: RWS, role: mode === "member" ? "member" : mode === "owner" ? "owner" : "admin" }],
       getWorkspace: async (id: string) => (id === RWS.id ? RWS : null),
-      legacyWorkspace: async () => RWS,
+      legacyWorkspace: async () => null,
       platformReady: async () => {},
       platformDb: () => ({ execute: async () => ({ rows: [{ role: "admin" }] }) }),
     },
@@ -409,6 +553,7 @@ async function seedRoute() {
     await db().batch([
       "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('radmin','radmin@example.invalid','Route admin','x','admin',0)",
       "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('rmem','rmem@example.invalid','Route member','x','member',0)",
+      "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES('rowner','rowner@example.invalid','Route owner','x','admin',0)",
       /* The admin's own token, render scope: the strongest a token gets. */
       { sql: "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,created_at) VALUES('tok_spend',?,'outside agent','radmin','render',0)", args: [tokenHash(RAW)] },
     ], "write");
@@ -458,6 +603,15 @@ test("the route: off, every caller withTenant lets through gets a 404 and nothin
     expect(ok.status, await ok.clone().text()).toBe(200);
     expect(await ok.json()).toMatchObject({ changed: ["monthlyLimitCredits", "askBeforeEveryTake"], settings: { monthlyLimitCredits: LIMIT, askBeforeEveryTake: true } });
     expect((await auditRows(RWS)).map((l) => [l.action, l.actor_id])).toEqual([["spend_limit.set", "radmin"], ["spend.ask_every_take_on", "radmin"]]);
+    /* Raising the limit: an admin who is not the owner is refused; the owner may. */
+    const raiseByAdmin = await call(api, api.spend.PATCH, "/api/settings/spend", "PATCH", { monthlyLimitCredits: LIMIT + 1 });
+    expect(raiseByAdmin.status).toBe(403);
+    expect((await raiseByAdmin.json()).error).toBe("Only the workspace owner can raise the monthly limit or remove it.");
+    mode = "owner";
+    const raiseByOwner = await call(api, api.spend.PATCH, "/api/settings/spend", "PATCH", { monthlyLimitCredits: LIMIT + 1 });
+    expect(raiseByOwner.status, await raiseByOwner.clone().text()).toBe(200);
+    expect((await auditRows(RWS)).at(-1)).toMatchObject({ action: "spend_limit.set", actor_id: "rowner", details: JSON.stringify({ limitCredits: LIMIT + 1 }) });
+    mode = "admin";
     /* Who paused is an account id: an admin is sent it, a member is not. */
     expect((await call(api, api.spend.PATCH, "/api/settings/spend", "PATCH", { paused: true })).status).toBe(200);
     const adminView = (await (await call(api, api.spend.GET, "/api/settings/spend", "GET")).json()).settings;
@@ -471,7 +625,7 @@ test("the route: off, every caller withTenant lets through gets a 404 and nothin
     /* The general settings route: it does not accept these keys from an admin, and does not send them to a member. */
     const general = await call(api, api.settings.PATCH, "/api/settings", "PATCH", { monthlySpendLimitCredits: "1", spendPause: "{}", askBeforeEveryTake: "off" });
     expect(general.status).toBe(400);
-    expect((await settingRows(RWS)).map((r) => [r.key, r.value])).toEqual([["askBeforeEveryTake", "on"], ["monthlySpendLimitCredits", String(LIMIT)], ["spendPause", ""]]);
+    expect((await settingRows(RWS)).map((r) => [r.key, r.value])).toEqual([["askBeforeEveryTake", "on"], ["monthlySpendLimitCredits", String(LIMIT + 1)], ["spendPause", ""]]);
     mode = "member";
     const sent = await (await call(api, api.settings.GET, "/api/settings", "GET")).json();
     for (const key of ["monthlySpendLimitCredits", "spendPause", "askBeforeEveryTake"]) {

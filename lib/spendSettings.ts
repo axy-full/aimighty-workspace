@@ -9,6 +9,10 @@ import { cycleBounds } from "./cycle";
  *     limit).
  *   - **Ask before every take**: on or off; off unless a workspace turns it on (owner, 17 Oct, item 3).
  *
+ * From the owner's update two (17 Oct, item 5): the house keeps its cap in dollars as today, so this credit limit is
+ * refused there; only the workspace's owner raises the limit (or removes it); and a limit pause lifts when the next
+ * calendar month starts, UTC (`pauseLifted`). All three are stored state only.
+ *
  * STORED ONLY. Nothing in today's quote, admission, reservation, metering or Ask/Auto reads these, and a test keeps it
  * so (tests/unit/spendSettings.spec.ts). They are the workspace admin's own choice, in credits, and are not the
  * platform owner's walls: not `workspaces.allowance_usd` (lib/allowance.ts, the platform's monthly dollar ceiling on
@@ -32,6 +36,9 @@ export const SPEND_SETTING_KEYS = {
   ask: "askBeforeEveryTake",
 } as const;
 export const SPEND_SETTING_STORE_KEYS: readonly string[] = Object.values(SPEND_SETTING_KEYS);
+
+/** What the house workspace is told: its cap is the platform owner's, in dollars (lib/allowance.ts), not this credit limit. */
+export const HOUSE_LIMIT_REFUSAL = "The house workspace's cap is in dollars and is set by the platform owner.";
 
 /** A limit is a whole number of credits in this range. */
 export const SPEND_LIMIT_MIN_CREDITS = 1;
@@ -87,13 +94,32 @@ export function storedPause(raw: string | undefined): SpendPause | null {
 
 export const storedAsk = (raw: string | undefined): boolean => raw === "on";
 
-/** The settings as stored, each key read on its own; a key never written reads as its default. */
-export function spendSettingsFrom(stored: Record<string, string | undefined>): SpendSettings {
+/**
+ * A pause the server made on reaching the limit lasts until the month turns (owner, 17 Oct, update two, item 5): one
+ * recorded in an earlier calendar month (UTC) than `at` reads as running from the first moment of the new month. A
+ * person's pause, and an unreadable row, never lift by themselves. Stored state only: nothing that spends reads it.
+ */
+export function pauseLifted(pause: SpendPause | null, at: number): boolean {
+  return pause?.reason === "limit" && pause.at < spendLimitPeriod(at).start;
+}
+
+/** The settings as stored at `at`, each key read on its own; a key never written reads as its default. */
+export function spendSettingsFrom(stored: Record<string, string | undefined>, at: number): SpendSettings {
+  const pause = storedPause(stored[SPEND_SETTING_KEYS.pause]);
   return {
     monthlyLimitCredits: storedLimit(stored[SPEND_SETTING_KEYS.limit]),
-    pause: storedPause(stored[SPEND_SETTING_KEYS.pause]),
+    pause: pauseLifted(pause, at) ? null : pause,
     askBeforeEveryTake: storedAsk(stored[SPEND_SETTING_KEYS.ask]),
   };
+}
+
+/**
+ * Whether a change of limit RAISES it, which only the workspace's owner may do (owner, update two, item 5): a higher
+ * number, or no limit where there was one. A first limit (none before) and a lower one are any admin's.
+ */
+export function raisesLimit(from: number | null, to: number | null): boolean {
+  if (to === null) return from !== null;
+  return from !== null && to > from;
 }
 
 export const limitValue = (n: number | null): string => (n == null ? "" : String(n));
