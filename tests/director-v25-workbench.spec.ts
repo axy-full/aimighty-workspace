@@ -9,6 +9,12 @@ import { isCompact } from "./helpers/shellMode";
  * each shot is sent once at its own quote as its ceiling, "Making…" until the takes settle, "Cancel" only while one is still queued, then "Next: Edit →".
  * Nothing real is spent.
  */
+/* The test page's stand-in pick, centred first: on a phone Director's bar is fixed at the bottom and would lie over it. */
+async function pickEngine(page: Page) {
+  const button = page.getByTestId("v25-parts-pick-engine");
+  await button.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await button.click();
+}
 type Sent = { body: Record<string, unknown>; key: string | undefined };
 async function routes(page: Page, opts: { credits?: (body: Record<string, unknown>) => number; engine?: boolean } = {}) {
   const quotes: Record<string, unknown>[] = [], sent: Sent[] = [], cancels: string[] = [];
@@ -37,7 +43,7 @@ async function routes(page: Page, opts: { credits?: (body: Record<string, unknow
     await route.fulfill({ json: { status: "cancelled" } });
   });
   /* Director opens with no engine (owner, 16 Oct 2026, 2a); the test page's stand-in pick sets one, as PR 9's pop-up will. */
-  if (opts.engine !== false) await page.getByTestId("v25-parts-pick-engine").click();
+  if (opts.engine !== false) await pickEngine(page);
   return { quotes, sent, cancels, state };
 }
 
@@ -64,7 +70,7 @@ test("Director opens with no engine: the model line reads None, nothing is price
   await expect(page.getByTestId("v12-director-model")).not.toContainText("Auto");
   await expect(go(page)).toHaveText("Render 4 shots");
   await expect(go(page)).toBeDisabled();
-  await expect(go(page)).not.toHaveAttribute("data-spend", /.*/);
+  await expect(go(page)).toHaveAttribute("data-spend", "unpriced");
   await expect(page.getByTestId("v12-director-note")).toHaveText("Pick an engine first.");
   await page.waitForTimeout(1500);
   expect(net.quotes, "nothing is priced before an engine is picked").toEqual([]);
@@ -72,7 +78,7 @@ test("Director opens with no engine: the model line reads None, nothing is price
   await go(page).click({ force: true });
   expect(net.sent).toEqual([]);
   /* Picked: the model line names it, the price is read and Render turns on. */
-  await page.getByTestId("v25-parts-pick-engine").click();
+  await pickEngine(page);
   await expect(page.getByTestId("v12-director-model")).toContainText("Seedance 2.5");
   await expect(page.getByTestId("v12-director-model")).not.toHaveAttribute("data-empty", /.*/);
   await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
