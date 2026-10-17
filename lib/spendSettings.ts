@@ -28,7 +28,7 @@ export const spendSettingsSwitchOn = (env: Record<string, string | undefined> = 
  * Where each one is kept: keys in the workspace's own `settings` table (one database per workspace). They are not in
  * lib/settings.ts DEFAULTS, so the general settings route neither sends nor accepts them; lib/settings.ts lists them
  * in INTERNAL_SETTING_KEYS so that a stored value is never sent by it either. Only lib/spendSettings.server.ts writes
- * them, with an audit line in the same batch.
+ * them, with an audit line in the same write transaction.
  */
 export const SPEND_SETTING_KEYS = {
   limit: "monthlySpendLimitCredits",

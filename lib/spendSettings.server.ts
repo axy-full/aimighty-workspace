@@ -8,7 +8,7 @@ import { securityAuditStatement, type SecurityAuditInput } from "./securityAudit
 import { assertPerson } from "./security/people-only";
 import {
   SPEND_SETTING_KEYS, SPEND_SETTING_STORE_KEYS, HOUSE_LIMIT_REFUSAL, spendSettingsFrom, spendSettingsSwitchOn, spendLimitPeriod,
-  raisesLimit, limitValue, pauseValue, askValue, type SpendSettings, type SpendSettingsPatch, type WrittenPause,
+  raisesLimit, storedLimit, limitValue, pauseValue, askValue, type SpendSettings, type SpendSettingsPatch, type WrittenPause,
 } from "./spendSettings";
 
 /**
@@ -105,13 +105,23 @@ function write(key: string, value: string, by: string | null, at: number, guard?
  * read of it: whatever that read calls paused, a resume clears; whatever it calls running, a pause covers.
  */
 const asRead = (raw: string | undefined) => ({ sql: `settings.value IS ?`, args: [raw ?? null] });
+/**
+ * A resume holds over any stored value but blank (the only value that reads as running without a month's lift). It is
+ * not bound to the value read: a row the binding cannot match exactly (a BLOB, or text holding a NUL) still reads as
+ * paused, and binding it would leave a pause no person can clear. A resume writes blank, so at worst it also clears a
+ * pause made after its read, which is what the person asked for.
+ */
+const NOT_BLANK = { sql: `settings.value <> ''`, args: [] as InValue[] };
 /** For an admin who is not the owner: the stored limit is blank (a first limit) or above the new one (a lowering). */
 const whenNotRaising = (to: number) => ({ sql: `(settings.value = '' OR (settings.value GLOB '[0-9]*' AND CAST(settings.value AS INTEGER) > ?))`, args: [to] });
 
 const STALE_LIMIT = "The monthly limit changed before this was saved. Only the workspace owner can raise it; look again and choose a lower limit.";
+/** The stored limit is a value no writer makes (it reads as no limit): only the owner may replace it. */
+const ODD_LIMIT = "Only the workspace owner can change this limit.";
 
+/* Written only after its upsert wrote (checked in code), so unconditionally: the line can never hang on `changes()`. */
 function audit(workspaceId: string, actorId: string | null, action: SecurityAuditInput["action"], details: SecurityAuditInput["details"] = {}): InStatement {
-  return securityAuditStatement({ workspaceId, actorId, action, targetType: "workspace", targetId: workspaceId, details }, true);
+  return securityAuditStatement({ workspaceId, actorId, action, targetType: "workspace", targetId: workspaceId, details }, false);
 }
 
 /**
@@ -159,14 +169,17 @@ async function change(patch: SpendSettingsPatch, at: number, staleRaw: Raw | nul
         audit(ws.id, user.id, "spend_limit.set", { limitCredits: limitTo }));
       /* Refused against the row as it stands (it moved since the read, or holds a value no writer makes): say so, and
          nothing in this change is written. The same value already there is not a refusal. */
-      if (!wrote && !owner && (await storedRaw(tx))[SPEND_SETTING_KEYS.limit] !== limitValue(limitTo)) throw new SpendSettingsError(STALE_LIMIT, 409);
+      if (!wrote && !owner) {
+        const standing = (await storedRaw(tx))[SPEND_SETTING_KEYS.limit];
+        if (standing !== limitValue(limitTo)) throw new SpendSettingsError(standing && storedLimit(standing) === null ? ODD_LIMIT : STALE_LIMIT, 409);
+      }
     }
     const rawPause = raw[SPEND_SETTING_KEYS.pause];
     if (patch.paused === true && !was.pause)
       await step("paused", write(SPEND_SETTING_KEYS.pause, pauseValue({ at, by: user.id, reason: "admin" }), user.id, at, asRead(rawPause)),
         audit(ws.id, user.id, "spend.paused", { reason: "admin" }));
     else if (patch.paused === false && was.pause)
-      await step("paused", write(SPEND_SETTING_KEYS.pause, pauseValue(null), user.id, at, asRead(rawPause)), audit(ws.id, user.id, "spend.resumed"));
+      await step("paused", write(SPEND_SETTING_KEYS.pause, pauseValue(null), user.id, at, NOT_BLANK), audit(ws.id, user.id, "spend.resumed"));
     if (patch.askBeforeEveryTake !== undefined && patch.askBeforeEveryTake !== was.askBeforeEveryTake)
       await step("askBeforeEveryTake", write(SPEND_SETTING_KEYS.ask, askValue(patch.askBeforeEveryTake), user.id, at),
         audit(ws.id, user.id, patch.askBeforeEveryTake ? "spend.ask_every_take_on" : "spend.ask_every_take_off"));

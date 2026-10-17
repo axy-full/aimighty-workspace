@@ -329,8 +329,12 @@ test("every damaged pause row reads as paused, and an admin's resume clears it w
     '{"by":7}', '{"at":5,"by":"u_someone","reason":"limit"}', '{"at":5,"by":null,"reason":"limit","reason":"admin"}', '{"at":5,"by":null,"reason":"limit","at":-1}', "not a pause",
   ];
   await withFlag("1", async () => {
-    for (const shape of SHAPES) {
-      await rows(ws, "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('spendPause',?,'fixture',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [shape]);
+    /* Values the read cannot match by binding: BLOBs (an empty object's bytes, and no bytes) and text holding a NUL. */
+    const RAW_SQL: Record<string, string> = { "blob {}": "x'7b7d'", "blob empty": "x''", "text with NUL": "'{' || char(0) || '}'" };
+    for (const shape of [...SHAPES, ...Object.keys(RAW_SQL)]) {
+      if (shape in RAW_SQL) await rows(ws, `INSERT INTO settings(key,value,updated_by,updated_at) VALUES('spendPause',${RAW_SQL[shape]},'fixture',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`);
+      else await rows(ws, "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('spendPause',?,'fixture',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [shape]);
+      if (shape in RAW_SQL) expect(String((await rows<{ t: string }>(ws, "SELECT typeof(value) AS t FROM settings WHERE key='spendPause'"))[0].t), shape).toBe(shape.startsWith("blob") ? "blob" : "text");
       const lines = (await auditRows(ws)).length;
       expect((await inWs(ws, () => store.readSpendSettings(), person("u_member", "member"))).pause, shape).not.toBeNull();
       const resumed = await inWs(ws, () => store.changeSpendSettings({ paused: false }), admin);
@@ -346,7 +350,7 @@ test("every damaged pause row reads as paused, and an admin's resume clears it w
     expect((await inWs(ws, () => store.readSpendSettings())).monthlyLimitCredits).toBeNull();
     const odd = await refusal(() => inWs(ws, () => store.changeSpendSettings({ monthlyLimitCredits: 100 }), admin));
     expect(odd?.status).toBe(409);
-    expect(odd?.message).toMatch(/Only the workspace owner can raise it/);
+    expect(odd?.message).toBe("Only the workspace owner can change this limit.");
     expect((await settingRows(ws)).find((r) => r.key === "monthlySpendLimitCredits")?.value).toBe("abc");
     /* The owner can set it. */
     expect((await inWs(ws, () => store.changeSpendSettings({ monthlyLimitCredits: 100 }), person("u_owner", "admin", { owner: true }))).changed).toEqual(["monthlyLimitCredits"]);
