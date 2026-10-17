@@ -216,6 +216,12 @@ for (const who of ["house", "credit"] as const) {
       expect((await store.recipe(ids.agentFamily))!.prompt).toBe("");
       expect(m.recreateRecipe({ decider: "agent", engine: familyModelId, take_prompt: `${family.toUpperCase()}-style light` }).prompt).toBe("");
       expect(m.recreateRecipe({ decider: "agent", engine: familyModelId, take_prompt: `${family}ish light` }).prompt).toBe(`${family}ish light`);
+      // The same for the other two real models' leading words (today "Seedance" and, served by fal, "Kling").
+      for (const id of [realModelId, falModelId]) {
+        const word = m.findModel(id)!.label.split(/\s+/)[0];
+        expect(m.recreateRecipe({ decider: "agent", engine: id, take_prompt: `In the ${word} look` }).prompt, word).toBe("");
+        expect(m.recreateRecipe({ decider: "director", engine: id, take_prompt: `In the ${word} look` }).prompt, word).toBe(`In the ${word} look`);
+      }
 
       // The Director job: everything it chose. Still no vendor cost and no credential.
       const director = await store.get(ids.director);
