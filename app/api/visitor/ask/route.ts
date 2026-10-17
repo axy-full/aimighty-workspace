@@ -3,8 +3,8 @@ import { recoveryRoute } from "@/lib/recovery";
 import { clientIp } from "@/lib/clientIp";
 import { crossOriginProblem } from "@/lib/requestOrigin";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
-import { askVisitorBar, cleanQuestion, visitorBarEnabled, VISITOR_BAR_MAX_QUESTION } from "@/lib/visitor/bar";
-import { addressBucket, admitShared, VisitorLimiter } from "@/lib/visitor/limits";
+import { askVisitorBar, cleanQuestion, visitorBarDoor, visitorBarEnabled, VISITOR_BAR_MAX_QUESTION } from "@/lib/visitor/bar";
+import { addressBucket, admitShared, networkBucket, VisitorLimiter } from "@/lib/visitor/limits";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +17,9 @@ export const dynamic = "force-dynamic";
  * runs: no body read, no cookie, no database (the switch is read before the recovery wrapper opens its activity).
  * No session, no workspace, no credits: the bar charges nobody, and its cost is bounded by the platform-wide hourly
  * cap (lib/visitor/limits.ts). In order: the switch, the origin, a 4 KB body, a question of at most 500 characters,
- * the answers in flight, the per-visitor limit (this process), the per-address and platform limits (shared, in the
- * platform database), then the model and the screen.
+ * the answers in flight, the model's door and the bar's own key (a misconfigured bar counts nothing and writes nothing),
+ * the per-visitor limit (this process), the per-address, per-/48 and platform limits (shared, in the platform
+ * database), then the model and the screen.
  *
  * The log line carries ids, outcomes, timings and token counts only, never the question or the answer (CLAUDE.md
  * rule 17).
@@ -80,6 +81,12 @@ const ask = recoveryRoute(async function ask(req: Request): Promise<Response> {
     log({ id, outcome: `limited:${scope}`, ms: Date.now() - started });
     return reply({ error: "That's all the questions for now. Try again later, or use Request access." }, 429, { "Retry-After": String(retryAfterSeconds) });
   };
+  /* Misconfigured (a model off the list, no direct door, no key of the bar's own): nothing is counted or sent. */
+  const door = visitorBarDoor();
+  if (!door.ok) {
+    log({ id, outcome: door.reason, ms: Date.now() - started });
+    return noAnswer();
+  }
   const visitor = hashed("visitor", cookie.id);
   const mine = limiter.check(visitor);
   if (!mine.ok) return limited(mine.scope, mine.retryAfterSeconds);
@@ -87,7 +94,8 @@ const ask = recoveryRoute(async function ask(req: Request): Promise<Response> {
   inFlight++;
   try {
     let shared: Awaited<ReturnType<typeof admitShared>>;
-    try { shared = await admitShared(hashed("address", addressBucket(clientIp(req)))); }
+    const ip = clientIp(req), network = networkBucket(ip);
+    try { shared = await admitShared(hashed("address", addressBucket(ip)), network ? hashed("network", network) : null); }
     catch {
       /* The shared limits could not be read or written: refused, never let through. */
       log({ id, outcome: "limits_unavailable", ms: Date.now() - started });
