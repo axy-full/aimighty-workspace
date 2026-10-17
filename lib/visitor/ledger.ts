@@ -8,15 +8,16 @@ import { directVendorOf } from "../textRoute";
  * MONEY. The visitor bar's spend on the ledger (owner, 17 Oct 2026: "Its usage goes in the ledger as house spend,
  * marked 'visitor'").
  *
- * Each paid call (the model replied, whether the screen showed the reply, held it, or the reply carried no answer; or
- * the call was sent and never answered, at an unknown cost) is written once through
+ * Each paid call (the model replied, whether the screen showed the reply, held it, or the reply carried no answer or
+ * was blocked by Google's safety filter; or the call was sent and never answered, at an unknown cost) is written once
+ * through
  * the one ledger writer every engine call uses, `meter()` (lib/meter.ts), exactly as house spend is written today:
  *  - on the house workspace (lib/houseWorkspace.ts), which is never billed in credits: written outside any request's
  *    tenant, so `paidByPlatformEngine` reads it as not paid by the platform for a customer, and `unbilled` as well, so
  *    `billed_credits` is 0 (NULL when the cost cannot be priced: the meter leaves an unknown bill unknown) and no
  *    balance moves; the meter's own zero-credit receipt row (meter_credit_receipts) is written as for any house job;
  *  - kind `text`, the engine the call took (the bar takes only direct doors, so its text ledger is the model's vendor:
- *    `anthropic` or `google`), the model, status `succeeded`;
+ *    `anthropic` or `google`), the model, status `succeeded` for an answer and `failed` for a call that gave none;
  *  - `engine_cost_usd`: the provider's usage at the checked-in price snapshot (`directTextCostUsd`, as the direct text
  *    paths price it), or null when there is no usage or it cannot be priced (the row is still written, so the call is
  *    counted);
@@ -31,7 +32,8 @@ import { directVendorOf } from "../textRoute";
 
 export const VISITOR_MARK = "visitor";
 
-export type VisitorSpend = { id: string; model: string; usage: Record<string, unknown> | null };
+/** One paid call. `answered` false: it cost something but gave no answer (empty, unreadable, blocked or lost). */
+export type VisitorSpend = { id: string; model: string; usage: Record<string, unknown> | null; answered?: boolean };
 type Writer = typeof meter;
 
 /** The cost of one answer, in the vendor's dollars at the price snapshot; null when it cannot be priced. */
@@ -56,7 +58,9 @@ export async function recordVisitorSpend(spend: VisitorSpend, write: Writer = me
       kind: "text",
       engine,
       model: spend.model,
-      status: "succeeded",
+      /* A call that gave no answer is a failed job on the meter, so engine health counts it as one; its bill stays as
+         priced (0 at a known cost, NULL at an unknown one). */
+      status: spend.answered === false ? "failed" : "succeeded",
       engineCostUsd: costUsd,
       createdBy: VISITOR_MARK,
       unbilled: true,

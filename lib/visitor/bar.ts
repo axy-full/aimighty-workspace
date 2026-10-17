@@ -2,6 +2,7 @@ import { textPost } from "../textDirect";
 import type { TextReply } from "../textReply";
 import { DIRECT_MODEL_IDS, directVendorOf, isDirectRoute, textRoute, type DirectVendor } from "../textRoute";
 import { engineMock } from "../mock";
+import { TEXT_SAFETY_BLOCK_MESSAGE } from "../geminiSafety";
 import { VISITOR_INSTRUCTIONS } from "./instructions";
 import { screenVisitorAnswer, type ScreenReason } from "./screen";
 
@@ -109,10 +110,19 @@ export type VisitorBarResult =
   /**
    * No answer. `paid` is set when the call may have cost something although nothing could be shown, so the route
    * still puts it on the ledger: a reply that arrived (its usage, when it carried one), or a call that was sent and
-   * never answered (a timeout, a dropped connection: cost unknown). A provider's refusal (an error status) carries
-   * no `paid`: the vendor answered that it did not do the work.
+   * never answered (a timeout, a dropped connection: cost unknown), or a reply Google's safety filter blocked (the
+   * model ran; the text client turns it into a refusal, lib/textDirect.ts, and gives no usage: cost unknown). Any other
+   * refusal (an error status, or a request the text client never sent) carries no `paid`.
    */
   | { ok: false; reason: "model" | "door" | "key" | "failed"; paid?: { model: string; usage: Record<string, unknown> | null } };
+
+/** Google's safety filter blocked the reply: the text client's own refusal for it (lib/textDirect.ts), by its words. */
+function safetyBlocked(reply: TextReply): boolean {
+  try {
+    const body = JSON.parse(reply.text) as { provider?: unknown; error?: { message?: unknown } } | null;
+    return reply.status === 422 && body?.provider === "google" && body.error?.message === TEXT_SAFETY_BLOCK_MESSAGE;
+  } catch { return false; }
+}
 
 const count = (value: unknown) => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null);
 
@@ -130,9 +140,11 @@ export async function askVisitorBar(question: string, deps: { send?: VisitorBarS
     /* The text client throws only for a call that was sent and got no readable answer: it may have been billed. */
     return { ok: false, reason: "failed", paid: { model: door.model, usage: null } };
   }
-  if (!reply.ok) return { ok: false, reason: "failed" };
-  let parsed: { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]; usage?: unknown };
+  if (!reply.ok) return safetyBlocked(reply) ? { ok: false, reason: "failed", paid: { model: door.model, usage: null } } : { ok: false, reason: "failed" };
+  let parsed: { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]; usage?: unknown } | null;
   try { parsed = JSON.parse(reply.text); } catch { return { ok: false, reason: "failed", paid: { model: door.model, usage: null } }; }
+  /* A JSON body that is not an object (null, a number, a list) is as unreadable as no JSON at all. */
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ok: false, reason: "failed", paid: { model: door.model, usage: null } };
   /* The provider's usage, as the text client returns it, for the ledger (lib/visitor/ledger.ts): what this call cost. */
   const usage = parsed.usage && typeof parsed.usage === "object" && !Array.isArray(parsed.usage) ? parsed.usage as Record<string, unknown> : null;
   const content = parsed.choices?.[0]?.message?.content;

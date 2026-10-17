@@ -106,9 +106,10 @@ const ask = recoveryRoute(async function ask(req: Request): Promise<Response> {
 
     const result = await askVisitorBar(asked.question);
     if (!result.ok) {
-      /* MONEY: no answer to show, but the call may still have cost something (a reply with no answer, a call that
-         timed out after it was sent): on the ledger as well, at its usage or at an unknown cost. */
-      const ledger = result.paid ? await recordVisitorSpend({ id, model: result.paid.model, usage: result.paid.usage }) : null;
+      /* MONEY: no answer to show, but the call may still have cost something (a reply with no answer, a reply the safety
+         filter blocked, a call that timed out after it was sent): on the ledger as a failed job, at its usage or at an
+         unknown cost. */
+      const ledger = result.paid ? await recordVisitorSpend({ id, model: result.paid.model, usage: result.paid.usage, answered: false }) : null;
       log({ id, outcome: result.reason, ms: Date.now() - started, ...(ledger ? { ledger: ledger.recorded ? "recorded" : "not_recorded" } : {}) });
       return noAnswer();
     }
