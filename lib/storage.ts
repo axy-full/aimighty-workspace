@@ -10,6 +10,7 @@ import { readBodyCapped } from "./boundedBody";
 import type { ByteRange } from './mediaRange';
 import { cloudBackend, r2Backend, resolveStored, usingCloud, type ResolvedObject, type StorageBackend } from "./storage/backend";
 import { transferLimiter, TransferQueueTimeoutError } from "./storage/transfers";
+import { outputMetadataMode, prepareOutput } from "./storage/outputMetadata";
 
 export { backendKind, usingCloud, type StorageBackendKind } from "./storage/backend";
 
@@ -94,7 +95,8 @@ function assertWorkspaceKey(key: string) {
 /* ── Provider → storage, streamed ─────────────────────────────────────────
  * A finished render's file flows from the provider's URL straight into the
  * store: R2/Blob as a multipart upload, local disk through a write stream.
- * It is never held whole in memory; at most one part buffer (8 MiB on R2) and
+ * At the output-metadata switch's default (keep, lib/storage/outputMetadata.ts)
+ * it is never held whole in memory; at most one part buffer (8 MiB on R2) and
  * the sockets' own buffers are. Bytes are counted as they pass, and a file
  * past MAX_PROVIDER_VIDEO_BYTES (default 1 GiB) stops the transfer: the
  * multipart upload is aborted, so no object is left behind.
@@ -213,7 +215,7 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 
 async function saveVideo(genId: string, sourceUrl: string, options: StoreVideoOptions): Promise<{ url: string; bytes: number }> {
   if (isFixtureUrl(sourceUrl)) {
-    const buf = await fetchBytes(sourceUrl);
+    const buf = prepareOutput("video", await fetchBytes(sourceUrl), { id: genId }).bytes;
     return await withRecoveryActivity('storage', async () => {
       if (usingCloud()) {
         await cloudBackend().put(videoPath(genId), buf, { contentType: "video/mp4", overwrite: true });
@@ -321,19 +323,34 @@ async function streamVideo(genId: string, sourceUrl: string, options: StoreVideo
     }
   }
 
+  /* At the output-metadata switch's default (keep) the provider's bytes flow
+     straight through, never held whole. At marker or strip the file is
+     gathered (still under the cap above), rewritten once by the seam and
+     sent on in 8 MiB slices; `stored` is then the rewritten length. */
+  let stored: number | null = null;
+  const REWRITTEN_SLICE = 8 * 1024 * 1024;
+  async function* rewritten(): AsyncGenerator<Buffer> {
+    const parts: Buffer[] = [];
+    for await (const chunk of counted()) parts.push(chunk);
+    const prepared = prepareOutput("video", Buffer.concat(parts, bytes), { id: genId }).bytes;
+    stored = prepared.length;
+    for (let at = 0; at < prepared.length; at += REWRITTEN_SLICE) yield prepared.subarray(at, at + REWRITTEN_SLICE);
+  }
+  const source = outputMetadataMode(process.env) === "keep" ? counted : rewritten;
+
   try {
     if (usingCloud()) {
       // Saves are retried by every poll until they stick. Without overwrite, a
       // partial first attempt leaves an object behind and every retry then dies
       // on "already exists" — the video never records as saved.
-      await cloudBackend().put(videoPath(genId), counted(), { contentType: "video/mp4", overwrite: true, multipart: true, signal });
+      await cloudBackend().put(videoPath(genId), source(), { contentType: "video/mp4", overwrite: true, multipart: true, signal });
     } else {
       await mkdir(LOCAL_DIR, { recursive: true });
       const destination = path.join(LOCAL_DIR, `${genId}.mp4`), temporary = path.join(LOCAL_DIR, `.${genId}.${randomUUID()}.tmp`);
       const { createWriteStream } = await import("node:fs");
       const { pipeline } = await import("node:stream/promises");
       try {
-        await pipeline(Readable.from(counted()), createWriteStream(temporary), { signal });
+        await pipeline(Readable.from(source()), createWriteStream(temporary), { signal });
         await rename(temporary, destination);
       } finally { await unlink(temporary).catch(() => {}); }
     }
@@ -342,7 +359,7 @@ async function streamVideo(genId: string, sourceUrl: string, options: StoreVideo
     throw explain(error);
   }
   // Persist the stable object key; response serializers expose authenticated routes.
-  return { url: originalPath("video", genId), bytes };
+  return { url: originalPath("video", genId), bytes: stored ?? bytes };
 }
 
 /** Reads a private object back as bytes, from the active backend or the one a stored URL names. */
@@ -392,9 +409,11 @@ export async function readOriginalBytesLimited(kind: OriginalKind, genId: string
   } finally { void reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-/** Store an already validated MP4 without changing a byte. Unlike mutable render
+/** Store an already validated MP4 without changing a byte (at the output-metadata
+ * switch's default; elsewhere the seam's rewrite is what is stored). Unlike mutable render
  * storage, this never overwrites a prior original: repeats must match its hash. */
-export const storeVideoBytes = (genId: string, bytes: Buffer) => storeOriginalBytes("video", genId, bytes, "video/mp4");
+export const storeVideoBytes = (genId: string, bytes: Buffer) =>
+  storeOriginalBytes("video", genId, prepareOutput("video", bytes, { id: genId }).bytes, "video/mp4");
 /** Immutable original storage for every connected-account output kind. The
  * content type is what the provider served; the object path is fixed per kind. */
 export async function storeOriginalBytes(kind: OriginalKind, genId: string, bytes: Buffer, contentType: string): Promise<{url: string; bytes: number; sha256: string}> {
@@ -426,7 +445,8 @@ export async function storeOriginalBytes(kind: OriginalKind, genId: string, byte
 /* ── Image renders (Nano Banana) — bytes arrive in the API response, not at
  * a downloadable URL, so they're stored directly. Same privacy rules. ── */
 
-export async function storeImageBytes(genId: string, buf: Buffer): Promise<{ url: string; bytes: number }> {
+export async function storeImageBytes(genId: string, delivered: Buffer): Promise<{ url: string; bytes: number }> {
+  const buf = prepareOutput("image", delivered, { id: genId }).bytes;
 return await withRecoveryActivity('storage', async () => {
 
   if (usingCloud()) {
@@ -448,7 +468,8 @@ export async function readImageBytes(genId: string): Promise<Buffer> {
 
 /* ── Audio renders (ElevenLabs) — MP3 bytes arrive in the response body. ── */
 
-export async function storeAudioBytes(genId: string, buf: Buffer): Promise<{ url: string; bytes: number }> {
+export async function storeAudioBytes(genId: string, delivered: Buffer): Promise<{ url: string; bytes: number }> {
+  const buf = prepareOutput("audio", delivered, { id: genId }).bytes;
 return await withRecoveryActivity('storage', async () => {
 
   if (usingCloud()) {
