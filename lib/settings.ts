@@ -107,7 +107,11 @@ export function invalidateSettings(): void {
  * Settings that are the server's own bookkeeping, not anyone's choice: kept in the same table but never sent to a member (GET /api/settings answers every signed-in member).
  * `atRiskUnsavableLogged` holds take ids (lib/atRisk.ts), which may be other members' private takes. Add a key here when a setting carries ids or other workings.
  */
-export const INTERNAL_SETTING_KEYS: readonly string[] = ["atRiskUnsavableLogged"];
+export const INTERNAL_SETTING_KEYS: readonly string[] = [
+  "atRiskUnsavableLogged",
+  /* A workspace's own spend settings (lib/spendSettings.ts, v30 A4): served and changed by their own route only; the pause carries an account id. */
+  "monthlySpendLimitCredits", "spendPause", "askBeforeEveryTake",
+];
 /** The settings a member may be sent: every one but the internal ones. */
 export function memberSettings(all: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(all).filter(([key]) => !INTERNAL_SETTING_KEYS.includes(key)));

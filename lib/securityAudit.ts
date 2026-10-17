@@ -21,6 +21,8 @@ const actions = [
   "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed", "workspace.mfa_required", "workspace.mfa_optional", "workspace.restored",
   "api_token.created", "api_token.revoked", "review_link.created", "review_link.revoked",
   "identity_consent.recorded", "identity_consent.withdrawn",
+  /* A workspace's own spend settings (lib/spendSettings.server.ts; v30 A4). */
+  "spend_limit.set", "spend.paused", "spend.resumed", "spend.ask_every_take_on", "spend.ask_every_take_off",
 ] as const;
 export type SecurityAction = (typeof actions)[number];
 type Target = "account" | "member" | "workspace" | "vendor" | "api_token" | "review_link" | "identity_consent";
@@ -31,6 +33,10 @@ type Details = {
   mode?: "platform" | "own";
   scope?: "read" | "render" | "prepare";
   expiresAt?: number;
+  /** spend_limit.set: the new monthly limit in whole credits, or null for none. */
+  limitCredits?: number | null;
+  /** spend.paused: a person paused it, or the server did on reaching the limit. */
+  reason?: "admin" | "limit";
 };
 export type SecurityAuditInput = {
   workspaceId: string | null;
@@ -59,6 +65,8 @@ export function securityAuditStatement(input: SecurityAuditInput, changedOnly = 
       : key === "scope" ? ["read", "render", "prepare"].includes(String(value))
       : key === "disabled" || key === "unlocked" ? typeof value === "boolean"
       : key === "expiresAt" ? typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+      : key === "limitCredits" ? value === null || (typeof value === "number" && Number.isSafeInteger(value) && value >= 1)
+      : key === "reason" ? value === "admin" || value === "limit"
       : false;
     if (!valid) throw new Error("Invalid security history detail");
   }
