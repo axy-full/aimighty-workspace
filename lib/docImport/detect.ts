@@ -45,6 +45,18 @@ const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
   tiff: "image/tiff",
 };
 
+const isCfb = (bytes: Buffer) =>
+  bytes.length >= 8 && bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0 &&
+  bytes[4] === 0xa1 && bytes[5] === 0xb1 && bytes[6] === 0x1a && bytes[7] === 0xe1;
+
+/** The head of a text file as a string: UTF-16 when it starts with a BOM, UTF-8 otherwise. Never throws. */
+function headText(bytes: Buffer, length: number): string {
+  const head = bytes.subarray(0, length);
+  if (head[0] === 0xff && head[1] === 0xfe) return new TextDecoder("utf-16le").decode(head.subarray(2));
+  if (head[0] === 0xfe && head[1] === 0xff) return new TextDecoder("utf-16be").decode(head.subarray(2));
+  return new TextDecoder("utf-8").decode(head);
+}
+
 export function extensionOf(filename: string): string {
   const base = filename.split(/[\\/]/).pop() ?? "";
   const dot = base.lastIndexOf(".");
@@ -58,8 +70,8 @@ export function describeBytes(bytes: Buffer): string | null {
   const image = identifyImage(bytes);
   if (image) return `a ${image.ext.toUpperCase()} image`;
   if (bytes[0] === 0x1f && bytes[1] === 0x8b) return "a compressed (gzip) file";
-  if (bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) return "an older Office file";
-  const head = bytes.subarray(0, 4096).toString("utf8");
+  if (isCfb(bytes)) return "an older Office file";
+  const head = headText(bytes, 4096);
   const root = rootElementName(head);
   if (root === "FinalDraft") return "a Final Draft file";
   if (root && root.replace(/^.*:/, "") === "svg") return "an SVG image";
@@ -96,6 +108,13 @@ export function detectDocument(filename: string, bytes: Buffer): Detected {
     case "docx":
     case "pptx":
     case "xlsx":
+      // A password-protected .docx/.pptx/.xlsx is not a zip: Office wraps it,
+      // encrypted, in the older compound-file container.
+      if (isCfb(bytes))
+        throw new DocImportError(
+          "encrypted",
+          `This file is password protected (or an older Office file renamed). Save an unprotected .${extension} copy and retry.`,
+        );
       if (!isZip(bytes)) mismatch(extension, bytes);
       return { kind, extension };
     case "pdf":
@@ -109,7 +128,7 @@ export function detectDocument(filename: string, bytes: Buffer): Detected {
     case "fdx":
     case "svg": {
       if (bytes[0] === 0x1f && bytes[1] === 0x8b) mismatch(extension, bytes);
-      const root = rootElementName(bytes.subarray(0, 64 * 1024).toString("utf8"));
+      const root = rootElementName(headText(bytes, 64 * 1024));
       const expected = kind === "fdx" ? "FinalDraft" : "svg";
       if (!root || root.replace(/^.*:/, "") !== expected) mismatch(extension, bytes);
       return { kind, extension, mime: kind === "svg" ? "image/svg+xml" : "application/xml" };

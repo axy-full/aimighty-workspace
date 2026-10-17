@@ -59,7 +59,9 @@ export async function extractDocument(filename: string, bytes: Buffer, options: 
     return { ...result, warnings: warnings.list() };
   } catch (error) {
     if (error instanceof DocImportError) throw error;
-    // Never pass a parser's own message on: it can quote the file.
+    // Never pass a parser's own message on, nor log it: it can quote the
+    // file. The error's class name is enough to find the parser at fault.
+    console.warn(JSON.stringify({ event: "doc_import_unexpected_error", kind: detected.kind, error: error instanceof Error ? error.name : typeof error }));
     throw new DocImportError("damaged", "This file could not be read. Nothing was imported.");
   } finally {
     clearTimeout(timer);
