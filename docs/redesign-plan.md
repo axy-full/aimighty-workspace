@@ -1293,3 +1293,15 @@ Recorded by the lead, verbatim. Four brackets were unfilled when sent; item 1 (t
 > 7. Uploads: never skip a limit. A file whose size can't be read is converted first (HEIC to JPEG on the server) and then checked; if it still can't be read, it's refused with a plain message.
 >
 > Also: "Images" on the Make row is fine [Akshay: or "Image"]. The droplet plan is fine — lower the agent allowance while both workers run, and tell me the number you set it to.
+
+## Owner, 17 Oct 2026, ~18:00 IST: answers to the 17:54 update (verbatim)
+
+> 1. YES — the 31 Oct demo is on. The five money PRs (#765, #815, #809, #814, #800) merge under the standing yes, and the demo build lanes restart now. [Akshay: change to NO if that's wrong]
+> 2. Uploads: after 31 Oct, and in this order — HEIC conversion first, the never-skip rule only once conversion exists. Nothing refuses an iPhone photo in demo week; today's behaviour stays until then.
+> 3. Yes: removing the spend limit counts as raising it. Owner only.
+> 4. Agreed, not yet. A refunded failure shows 0 cr on the receipt and the word refund never appears; vendor refunds stay internal.
+> 5. Mine: the visitor bar's key with a hard monthly limit, set in Coolify as VISITOR_BAR_ANTHROPIC_API_KEY, tonight or tomorrow; the Liveblocks plan name tomorrow; the export worker and relay by Monday 19 from your steps; the five scanned briefs by Monday evening.
+>
+> One more: #750 — one line on what it changes, before it merges.
+
+**Lead's notes:** the five money PRs merge only on CI 24/24, a fresh Opus approval and a done money review (#765 and #800 have both; #815 has a must-fix in progress; #809 and #814 are under money review). Demo lanes B, C, D, F and H restarted 17 Oct evening; I and J follow when capacity allows.
