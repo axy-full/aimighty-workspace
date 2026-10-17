@@ -150,21 +150,44 @@ async function completeUnadmitted(userId: string, key: string): Promise<Response
   return new Response(json, { status: 409, headers: { "Content-Type": "application/json", "Idempotency-Status": "complete" } });
 }
 
-/** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
-export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>, options: GenerationRequestOptions = {}): Promise<Response> {
+/**
+ * What every paid request is checked for before its key is used: the workbench scope it was prepared in, the person and workspace it
+ * was prepared for, and a well-formed Idempotency-Key. The refusal, or the key the request names (null when it sent none).
+ */
+export function generationRequestKey(req: Request, userId: string): { response: Response } | { key: string | null } {
   const scopeError = workbenchScopeProblem(req, requireTenant().id, userId);
-  if (scopeError) return Response.json({ error: scopeError }, { status: 409 });
+  if (scopeError) return { response: Response.json({ error: scopeError }, { status: 409 }) };
   const expectedActor = req.headers.get("X-Actor-Email");
-  if (expectedActor && expectedActor.toLowerCase() !== currentTenant()?.user?.email.toLowerCase()) return Response.json({ error: "Sign in with the account that prepared this request before recovering it." }, { status: 409 });
+  if (expectedActor && expectedActor.toLowerCase() !== currentTenant()?.user?.email.toLowerCase()) return { response: Response.json({ error: "Sign in with the account that prepared this request before recovering it." }, { status: 409 }) };
   const expectedWorkspace = req.headers.get("X-Workspace-Id");
-  if (expectedWorkspace && expectedWorkspace !== requireTenant().id) return Response.json({ error: "Return to the workspace where this request was prepared before recovering it." }, { status: 409 });
+  if (expectedWorkspace && expectedWorkspace !== requireTenant().id) return { response: Response.json({ error: "Return to the workspace where this request was prepared before recovering it." }, { status: 409 }) };
   const supplied = req.headers.get("Idempotency-Key");
   if (supplied != null && !/^[A-Za-z0-9._:-]{8,160}$/.test(supplied)) {
-    return Response.json({ error: "Idempotency-Key must contain 8–160 letters, digits, dots, colons, dashes or underscores." }, { status: 400 });
+    return { response: Response.json({ error: "Idempotency-Key must contain 8–160 letters, digits, dots, colons, dashes or underscores." }, { status: 400 }) };
   }
-  const key = supplied ?? randomUUID();
+  return { key: supplied };
+}
+
+/** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
+export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>, options: GenerationRequestOptions = {}): Promise<Response> {
+  const checked = generationRequestKey(req, userId);
+  if ("response" in checked) return checked.response;
+  const key = checked.key ?? randomUUID();
   const fingerprint = generationFingerprint({ method: req.method, path: new URL(req.url).pathname, body: await req.clone().json().catch(() => ({})) });
   return withGenerationRequestData({ userId, key, fingerprint }, run, options);
+}
+
+/**
+ * A claim with no reply and no job, made longer ago than any request can run (STALE_CLAIM_MS), by a route that binds its job in
+ * the same write as the row (atomic binding): the request that made it is gone and made no job, so nothing was reserved or sent.
+ * It is completed with that answer, as a replay under its key would complete it. True when this call completed it. For a caller
+ * that keeps its own attempts under keys of its own (lib/batchPress.ts) and must know an attempt is over before making the next.
+ */
+export async function settleStaleClaim(userId: string, key: string): Promise<boolean> {
+  await generationRequestsReady();
+  const row = (await db().execute({ sql: `SELECT created_at FROM generation_requests WHERE user_id=? AND request_key=? AND generation_id IS NULL AND response_json IS NULL`, args: [userId, key] })).rows[0];
+  if (!row || Number(row.created_at) >= now() - STALE_CLAIM_MS) return false;
+  return (await completeUnadmitted(userId, key)) != null;
 }
 
 /** Server-side admission uses the same durable claim without making an HTTP request.
