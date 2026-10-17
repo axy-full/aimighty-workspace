@@ -86,7 +86,7 @@ test("the avatar menu: the person's name, then 'workspace · role', then the fiv
   await expect(menu).toBeHidden();
 });
 
-const PALETTE = ["Home", "Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver", "Ads", "Social", "Video", "Image", "Audio", "Motion transfer", "Object swap", "Atomik", "Team", "Plan & credits", "Spending rules", "Connections", "Advanced"];
+const PALETTE = ["Home", "Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver", "Ads", "Social", "Make", "Video", "Images", "Audio", "Motion transfer", "Object swap", "Atomik", "Team", "Plan & credits", "Spending rules", "Connections", "Advanced"];
 
 test("⌘K lists exactly the design's places (Home, the board's rail, Ads, Social, Make's types and tools, Atomik, Settings' five) and opens by key and by the header", async ({ page }, info) => {
   const { project } = await openBoard(page);
