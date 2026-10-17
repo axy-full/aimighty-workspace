@@ -4,6 +4,7 @@ import { inngest, inngestConfigured } from "@/lib/inngest";
 import { dispatchMode } from "@/lib/dispatch";
 import { functions } from "@/lib/workers";
 import { developmentWorker } from "@/lib/workbench/development-worker";
+import { docImportFunctions } from "@/lib/docImport/worker";
 
 /**
  * The whole Inngest integration surface: one route, three verbs.
@@ -23,7 +24,8 @@ export const dynamic = "force-dynamic";
 // A worker gets the same ceiling as the routes whose work it will take over.
 export const maxDuration = 300;
 
-const handler = serve({ client: inngest, functions: [...functions, developmentWorker] });
+// Document import (lib/docImport/worker.ts) is served only while DOC_IMPORT_ENABLED is on.
+const handler = serve({ client: inngest, functions: [...functions, developmentWorker, ...docImportFunctions()] });
 
 function notConfigured(): Response {
   return Response.json(
