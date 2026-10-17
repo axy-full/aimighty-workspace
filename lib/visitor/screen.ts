@@ -37,7 +37,10 @@ export const INDUSTRY_NAMES: readonly string[] = [
   "Hailuo", "MiniMax", "Vidu", "Shengshu", "PixVerse", "Haiper", "Hunyuan", "HunyuanVideo", "Genmo Mochi", "Genmo", "LTX Video", "LTXV", "Lightricks",
   "CogVideoX", "CogVideo", "Hotshot-XL", "Stable Video", "Stable Video Diffusion", "Moonvalley", "Marey", "Kaiber", "Hedra", "Synthesia",
   "HeyGen", "D-ID", "Lumiere", "Phenaki", "Emu Video", "SkyReels", "Wan2.1", "Wan2.2", "Wan-AI", "Grok Imagine",
-  piece("Higgs", "field"), piece("Ge", "njutsu"), piece("So", "ul ID"), piece("So", "ul Character"), "Cinema Studio", "hf-soul", "Supercomputer",
+  piece("Higgs", "field"), piece("Ge", "njutsu"), piece("So", "ul ID"), piece("So", "ul Character"), piece("So", "ul Standard"), piece("So", "ul Cinema"),
+  /* The vendor's own product name for its video tool. Kept: without it the registry test fails on Particl's "cinema studio"
+     family (reported to the lead, 17 Oct). */
+  "Cinema Studio",
   /* Images. */
   "Nano Banana", "Imagen", "GPT Image", "DALL-E", "DALL·E", "Midjourney", "Stable Diffusion", "SDXL", "Stability AI", "Flux", "Black Forest Labs",
   "Ideogram", "Recraft", "Leonardo", "Leonardo.Ai", "Freepik", "Firefly", "Adobe Firefly", "Playground AI", "Seedream", "Bria",
@@ -64,7 +67,7 @@ export const INDUSTRY_NAMES: readonly string[] = [
 ];
 
 /** Names that are ordinary words alone and a model's name only with a version after them ("Haiku 5.5", "Eleven v3"). */
-const VERSIONED: readonly string[] = ["Opus", "Sonnet", "Haiku", "Fable", "Banana", piece("As", "tra"), "OSS", "Ray", "Wan", "Phi", "Nova", "Titan", "Yi", "Mochi", "Hotshot", "Playground", "Granite"];
+const VERSIONED: readonly string[] = ["Opus", "Sonnet", "Haiku", "Fable", "Banana", piece("As", "tra"), "OSS", "Ray", "Wan", "Phi", "Nova", "Titan", "Yi", "Mochi", "Hotshot", "Playground", "Granite", piece("So", "ul")];
 const VERSIONED_V: readonly string[] = ["Eleven"];
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
