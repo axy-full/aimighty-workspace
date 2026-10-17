@@ -21,7 +21,8 @@ import { createPlatformDatabaseClient } from "../localDatabaseClient";
  *
  * Per process, in memory: only the answers in flight at once (the route's).
  *
- * The table holds day numbers, counts and salted hashes: no workspace, no person, no question.
+ * The table holds day numbers, counts and salted hashes: no workspace, no person, no question. It holds only today's
+ * rows, and only rows that counted a question: at most one per visitor, address and /48 admitted today, plus the site's.
  */
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -136,7 +137,9 @@ async function ready(client: Client): Promise<void> {
  * Counts one question against the visitor's, the address's, the network's (IPv6 only) and the site's allowance for
  * this UTC day, all or none, in one write: the site's row is raised only while every one of them has room, then each
  * other row only when the row before it was (SQLite's `changes()`: the statement just before, in the same batch).
- * Earlier days are pruned in the same write.
+ * Earlier days are pruned in the same write, and so are this request's own rows when it was refused and they still
+ * count nothing: a refused request (a cookieless script, say) leaves no row behind, so the table holds only what was
+ * actually counted today.
  */
 export async function admitShared(keys: { visitor: string; address: string; network: string | null }, config: VisitorLimitConfig = visitorLimitConfig(), at = Date.now(), client: Client = visitorDatabase()): Promise<VisitorAdmission> {
   await ready(client);
@@ -154,9 +157,16 @@ export async function admitShared(keys: { visitor: string; address: string; netw
       args: [bucket, config.platformDay, bucket, keys.visitor, config.perVisitorDay, bucket, keys.address, config.perAddressDay, net, bucket, net, config.perNetworkDay],
     },
     ...rows.map(([scope, key]) => ({ sql: `UPDATE visitor_bar_hits SET count = count + 1 WHERE scope = ? AND bucket = ? AND key = ? AND changes() = 1`, args: [scope, bucket, key] })),
+    /* Refused: this request's own rows that still count nothing go again (by primary key), the site's row included. */
+    {
+      sql: `DELETE FROM visitor_bar_hits WHERE bucket = ? AND count = 0
+              AND ((scope = 'platform' AND key = '') OR (scope = 'visitor' AND key = ?) OR (scope = 'address' AND key = ?) OR (scope = 'network' AND key = ?))`,
+      args: [bucket, keys.visitor, keys.address, net],
+    },
     { sql: `SELECT ${count("platform")} AS platform, ${count("visitor")} AS visitor, ${count("network")} AS network`, args: [bucket, "", bucket, keys.visitor, bucket, net] },
   ], "write");
-  const raised = results.slice(2 + rows.length, -1);
+  /* The site's raise and each scope row's: the statements after the inserts, before the clean-up and the read. */
+  const raised = results.slice(2 + rows.length, 3 + 2 * rows.length);
   if (raised.every((result) => result.rowsAffected === 1)) return { ok: true };
   const counts = results[results.length - 1].rows[0] ?? {};
   const scope: VisitorLimitScope = Number(counts.platform ?? 0) >= config.platformDay ? "platform"
