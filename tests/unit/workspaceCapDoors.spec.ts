@@ -97,9 +97,10 @@ function door(dirName: string, actor: AdmissionActor = OWNER): Handler {
 
 /** One request per paid door, a body each would accept far enough to spend (as tests/unit/demo-s12-sample-workspace-off.spec.ts). */
 const DIGEST = "a".repeat(64);
-const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
+const DOORS: { dir: string; body: Record<string, unknown>; id?: string; quote?: true }[] = [
   { dir: "generate", body: { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" } },
-  { dir: "generate/batch", body: { members: [{ model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }, { model: "dreamina-seedance-2-0-260128", prompt: "A tree in sun", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }], fingerprint: "0".repeat(64), maxCredits: 100000 } },
+  /* Quoted first, then pressed with the quote's own approval, so the press reaches the hold (not a fingerprint that stops it before). */
+  { dir: "generate/batch", quote: true, body: { members: [{ model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }, { model: "dreamina-seedance-2-0-260128", prompt: "A tree in sun", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }] } },
   { dir: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 5, projectId: "film" } },
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
@@ -128,7 +129,7 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
    earlier, at a missing row, an unconnected engine or a text model with no price while the catalogue is offline, and
    are covered by the reservation itself, below: every one of them reserves through it). Listed so
    the harness cannot quietly stop reaching them: each must hold uncapped, and be refused at the cap. */
-const REACHES_THE_HOLD = ["generate", "audio"];
+const REACHES_THE_HOLD = ["generate", "generate/batch", "audio"];
 
 let n = 0;
 const name = (what: string) => `cap-${what}-${++n}`.replace(/[^a-z0-9-]/gi, "-");
@@ -195,11 +196,22 @@ async function spent() {
 const NOTHING = { holds: 0, reservations: 0, provider: 0, balance: 10000 };
 
 async function press(entry: (typeof DOORS)[number], key: string): Promise<{ status: number; body: Record<string, unknown> }> {
+  /* A door that approves a quote (`quote`): its quote first, and the press carries that quote's fingerprint and total. A quote refused (at a cap) leaves the press nothing to approve with but a stand-in, which the door must refuse as well. */
+  let body = entry.body;
+  if (entry.quote) {
+    const quoted = await post(entry, `${key}-quote`, { ...entry.body, quoteOnly: true });
+    body = quoted.status === 200
+      ? { ...entry.body, fingerprint: quoted.body.fingerprint, maxCredits: quoted.body.ceilingCredits ?? quoted.body.estimatedCredits }
+      : { ...entry.body, fingerprint: "0".repeat(64), maxCredits: 100000 };
+  }
+  return post(entry, key, body);
+}
+async function post(entry: (typeof DOORS)[number], key: string, payload: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
   const { requireTenant } = mod<typeof import("../../lib/tenant")>("lib/tenant");
   const req = new Request(`http://localhost/api/${entry.dir.replace("[id]", entry.id ?? "x")}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": key.replace(/[^A-Za-z0-9.:_-]/g, "-"), "X-Workbench-Scope": `particl-active-${requireTenant().id}-owner` },
-    body: JSON.stringify(entry.body),
+    body: JSON.stringify(payload),
   });
   const res = await door(entry.dir)(req, { params: Promise.resolve({ id: entry.id ?? "x" }) });
   const text = await res.text();
