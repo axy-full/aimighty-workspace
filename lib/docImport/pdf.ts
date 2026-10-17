@@ -10,13 +10,14 @@ import { DocImportError, type Deadline, type DocSection, type ExtractedDocument,
  * pages and a warning.
  *
  * Settings, each on purpose: `data` is the bytes (no URL, so no range or
- * stream requests); `isEvalSupported: false` (fonts are never compiled to
- * JavaScript); `enableXfa: false` (no XFA forms); `disableFontFace` and
+ * stream requests); `enableXfa: false` (no XFA forms); `disableFontFace` and
  * `useSystemFonts: false` (nothing installed or loaded from the system);
  * `useWasm: false`; `stopAtErrors: true` (a damaged file is refused, not
  * half-read); cMaps come from the package's own folder on disk. Embedded
  * JavaScript and PDF actions are never run: text extraction does not
- * execute them, and no scripting sandbox is created.
+ * execute them, and no scripting sandbox is created. pdfjs-dist 6 no longer
+ * compiles fonts to JavaScript at all (its Node build contains no eval or
+ * new Function; the old isEvalSupported switch is gone with it).
  */
 
 type PdfJs = typeof import("pdfjs-dist");
@@ -31,11 +32,11 @@ function pdfjsRoot(): string {
 async function pdfjs(): Promise<PdfJs> {
   loaded ??= (async () => {
     const root = pdfjsRoot();
-    const module = (await import(
+    const lib = (await import(
       /* webpackIgnore: true */ pathToFileURL(path.join(root, "legacy/build/pdf.mjs")).href
     )) as PdfJs;
-    module.GlobalWorkerOptions.workerSrc = pathToFileURL(path.join(root, "legacy/build/pdf.worker.mjs")).href;
-    return module;
+    lib.GlobalWorkerOptions.workerSrc = pathToFileURL(path.join(root, "legacy/build/pdf.worker.mjs")).href;
+    return lib;
   })();
   return loaded;
 }
@@ -48,7 +49,6 @@ export async function extractPdf(bytes: Buffer, deadline: Deadline, warnings: Wa
     data: new Uint8Array(bytes),
     cMapUrl: path.join(pdfjsRoot(), "cmaps") + path.sep,
     cMapPacked: true,
-    isEvalSupported: false,
     enableXfa: false,
     disableFontFace: true,
     useSystemFonts: false,
