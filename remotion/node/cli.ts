@@ -9,16 +9,23 @@
  *   REMOTION_CONCURRENCY         frames rendered at once (default 2)
  *   REMOTION_MAX_SECONDS         longest export (default 120)
  *   REMOTION_BROWSER_EXECUTABLE  a specific Chrome (default: the one downloaded at image build)
- * Exit codes: 0 done, 2 spec invalid or too long, 3 an input file is missing, 4 the render failed.
+ *   REMOTION_RUNTIME_DIR         the folder holding package.json and node_modules/.remotion (the Chrome download).
+ *                                Remotion looks for its Chrome under the working directory's nearest package.json,
+ *                                and the working directory here is the session folder, so the command moves to this
+ *                                folder once it has read its session paths (all of them are absolute).
+ * Exit codes: 0 done, 2 spec invalid or too long, 3 an input file is missing or is not what the spec says it is
+ * (ffprobe reads every clip and music file; a different length (over 0.1 s), a different size, or sound the request says is there but is not, is refused), 4 the render failed.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_LIMITS } from "../src/lib/limits";
 import { runExport } from "./export";
+import { bundledFfprobe } from "./ffprobe-path";
+import { createFfprobe } from "./probe";
 import { createRealRenderer } from "./renderer";
 
-const EXIT = { spec_invalid: 2, too_long: 2, input_missing: 3, render_failed: 4 } as const;
+const EXIT = { spec_invalid: 2, too_long: 2, input_missing: 3, input_mismatch: 3, render_failed: 4 } as const;
 
 function intEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
@@ -29,6 +36,7 @@ function intEnv(name: string, fallback: number, min: number, max: number): numbe
 
 async function main(): Promise<number> {
   const session = process.cwd();
+  if (process.env.REMOTION_RUNTIME_DIR) process.chdir(process.env.REMOTION_RUNTIME_DIR);
   const outputDir = path.join(session, "output");
   await mkdir(outputDir, { recursive: true });
   let spec: unknown;
@@ -48,6 +56,7 @@ async function main(): Promise<number> {
     outputDir,
     bundleDir: process.env.REMOTION_BUNDLE_DIR || path.join(here, "bundle"),
     workDir: path.join(session, "work"),
+    prober: createFfprobe(bundledFfprobe()),
     renderer: createRealRenderer({ browserExecutable: process.env.REMOTION_BROWSER_EXECUTABLE || null }),
     limits,
     concurrency: intEnv("REMOTION_CONCURRENCY", 2, 1, 8),
