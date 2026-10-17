@@ -106,6 +106,7 @@ import {
 } from "@/lib/topaz";
 import { inspectTopazImage } from "@/lib/topazImage.server";
 import { stillToolFor } from "@/lib/stillTools";
+import { defaultResolution, pickResolution } from "@/lib/resolutions";
 import {
   identityForCast,
   startIdentityStill,
@@ -945,13 +946,18 @@ export async function executeGenerationAdmission(
       }
     }
 
+    /* Resolution is a visible choice and the engine's list is the server's (lib/resolutions.ts): a size this engine does not list is refused here, for a quote as for a press,
+       before anything is priced or held. Naming none is the engine's default. A draft is 480p and a final its draft's size, both fixed above. */
+    let pickedResolution = defaultResolution(model);
+    if (!final && !draft) {
+      const picked = pickResolution(model, body.resolution);
+      /* (Product images and Soul renders refuse an unlisted size in their own words, further down.) */
+      if ("error" in picked && !model.marketing && !soulRender) return admissionReply({ error: picked.error, resolutions: picked.resolutions }, { status: 400 });
+      if ("resolution" in picked) pickedResolution = picked.resolution;
+    }
     const params: VideoParams = final ? { ...final.params } : {
       ratio: model.ratios.includes(body.ratio) ? body.ratio : model.ratios[0],
-      resolution: draft
-        ? DRAFT_RESOLUTION
-        : model.resolutions.includes(body.resolution)
-          ? body.resolution
-          : model.resolutions[0],
+      resolution: draft ? DRAFT_RESOLUTION : pickedResolution,
       duration:
         task.forceDuration === "source"
           ? (sourceSeconds ?? model.durations[0] ?? 5)
@@ -1356,9 +1362,8 @@ export async function executeGenerationAdmission(
       const ratio = model.ratios.includes(body.ratio)
         ? String(body.ratio)
         : model.ratios[0];
-      let size = model.resolutions.includes(body.resolution)
-        ? String(body.resolution)
-        : model.resolutions[0];
+      /* (An unlisted size was refused where the take's settings were read, above.) */
+      let size = pickedResolution;
       const isRaw = /^raw:/i.test(castPrompt);
       const stillRules =
         isRaw || model.stillTask
