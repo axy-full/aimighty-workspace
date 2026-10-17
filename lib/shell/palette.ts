@@ -56,7 +56,7 @@ export const SETTINGS_SECTIONS: readonly { section: SettingsSection; label: stri
 ];
 
 /**
- * The new interface's index, in the master's order: Home; the board's rail; Make; Atomik (with the control room's
+ * The new interface's index, in the master's order: Home; the board's rail; Make, then its types and tools; Atomik (with the control room's
  * places); Settings' sections; then models and assets from live data. With nothing typed the first twelve show.
  */
 export function newPaletteIndex(input: {
@@ -69,8 +69,9 @@ export function newPaletteIndex(input: {
     ...input.rail.map((r): PaletteRow => ({ group: "Board", label: r.label, hint: "", run: { type: "region", region: r.id } })),
     { group: "Board", label: "Ads", hint: "", run: { type: "board", kind: "ads" } },
     { group: "Board", label: "Social", hint: "", run: { type: "board", kind: "social" } },
+    { group: "Make", label: "Make", hint: "", run: { type: "gen" } },
     { group: "Make", label: "Video", hint: "Make", run: { type: "gen", tool: "video" } },
-    { group: "Make", label: "Image", hint: "Make", run: { type: "gen", tool: "image" } },
+    { group: "Make", label: "Images", hint: "Make", run: { type: "gen", tool: "image" } },
     { group: "Make", label: "Audio", hint: "Make", run: { type: "gen", tool: "audio" } },
     { group: "Make", label: "Motion transfer", hint: "One source video and references", run: { type: "gen", tool: "motion" } },
     { group: "Make", label: "Object swap", hint: "One element replaced", run: { type: "gen", tool: "swap" } },
