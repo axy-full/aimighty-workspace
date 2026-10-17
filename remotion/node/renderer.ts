@@ -1,23 +1,31 @@
+import { access, constants } from "node:fs/promises";
 import type { CompositionInfo, Renderer } from "./export";
 
 export type RealRendererOptions = {
-  /** A Chrome/Chromium to use; when absent, the one Remotion downloaded into node_modules. */
+  /**
+   * The Chrome Headless Shell to use. In the worker image this is always set (REMOTION_BROWSER_EXECUTABLE) to the exact file
+   * installed at build time: a missing file is an error, and the worker never downloads a browser. Only when it is absent (a
+   * developer machine running the render tests) does Remotion look for, and if need be download, its own.
+   */
   browserExecutable?: string | null;
   /** Hard stop for one frame, ms. */
   frameTimeoutMs?: number;
   /** Cache for video frames, bytes. */
   offthreadVideoCacheSizeInBytes?: number;
+  /** Loads the renderer module; only tests substitute it. */
+  loadModule?: () => Promise<unknown>;
 };
 
 /**
  * @remotion/renderer, loaded lazily so the tests (and the app) never need it installed.
- * No licenseKey is passed: the Free License needs none, and passing "free-license" would make
- * the renderer call remotion.pro, which the worker cannot reach and must not try to.
+ * NO licenseKey and NO apiKey is ever passed (owner decision, 14 Oct 2026): server-side with no key the
+ * renderer sends nothing to Remotion, which is allowed under the Free License. The worker stays sealed (no
+ * internet). tests/unit/remotionLicense.spec.ts fails if a key or a usage call appears here.
  */
 export function createRealRenderer(options: RealRendererOptions = {}): Renderer {
   const moduleName = "@remotion/renderer";
   let mod: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
-  const load = async () => (mod ??= await import(/* @vite-ignore */ moduleName));
+  const load = async () => (mod ??= await (options.loadModule ? options.loadModule() : import(/* @vite-ignore */ moduleName)));
   const common = () => ({
     browserExecutable: options.browserExecutable ?? undefined,
     chromeMode: "headless-shell" as const,
@@ -28,8 +36,16 @@ export function createRealRenderer(options: RealRendererOptions = {}): Renderer 
   });
   return {
     async prepare() {
+      if (options.browserExecutable) {
+        try {
+          await access(options.browserExecutable, constants.X_OK);
+        } catch {
+          throw new Error(`The browser is missing at ${options.browserExecutable}. This worker never downloads one.`);
+        }
+        return;
+      }
       const { ensureBrowser } = await load();
-      await ensureBrowser({ browserExecutable: options.browserExecutable ?? undefined, chromeMode: "headless-shell" });
+      await ensureBrowser({ chromeMode: "headless-shell" });
     },
     async selectComposition({ serveUrl, id, inputProps }) {
       const { selectComposition } = await load();
