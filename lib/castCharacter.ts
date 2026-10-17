@@ -36,8 +36,8 @@ export const CAST_ENGINES = ["auto", "flux2", "nanobanana"] as const;
 export type CastEngine = (typeof CAST_ENGINES)[number];
 type Engine = "flux2" | "nanobanana";
 const FLUX2_MODEL = "flux-2-pro" as const;
-/** Sizes in whole sixteens, each under one megapixel so each is priced at the first tier: a portrait (3:4) and a sheet (4:3). */
-export const PORTRAIT_SIZE = { width: 832, height: 1088 } as const;
+/** Sizes in whole sixteens, each under one megapixel so each is priced at the first tier: a portrait (exactly 3:4, as Nano Banana is asked and a board draws a character) and a sheet (4:3). */
+export const PORTRAIT_SIZE = { width: 768, height: 1024 } as const;
 export const SHEET_SIZE = { width: 1152, height: 864 } as const;
 const ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 const VERSION_ID = /^[A-Za-z0-9_.:-]{6,64}$/;
@@ -174,7 +174,11 @@ export async function admitCastCharacter(input: Record<string, unknown>, got: Ad
     if (done) {
       let photos: string[] = [];
       try { photos = JSON.parse(String(done.photos)); } catch { /* unreadable */ }
-      return admissionReply({ id: body.versionId, versionId: body.versionId, status: "done", spent: 0, castId: done.cast_id == null ? null : String(done.cast_id), identityId: String(done.id), name, portraitUploadId: portraitUp, ...(photos[1] ? { sheetUploadId: photos[1] } : {}) });
+      const portraitTake = await existing(body.versionId, "portrait"), sheetTake = photos[1] ? await existing(body.versionId, "sheet") : null;
+      return admissionReply({
+        id: body.versionId, versionId: body.versionId, status: "done", spent: 0, castId: done.cast_id == null ? null : String(done.cast_id), identityId: String(done.id), name, portraitUploadId: portraitUp,
+        ...(portraitTake ? { portraitTakeId: portraitTake.id } : {}), ...(photos[1] ? { sheetUploadId: photos[1] } : {}), ...(sheetTake ? { sheetTakeId: sheetTake.id } : {}),
+      });
     }
   }
   /* Asked now, so a name taken is said before anything is bought. */
@@ -224,7 +228,7 @@ export async function admitCastCharacter(input: Record<string, unknown>, got: Ad
     admissionReply({ error: reason, versionId, spent: budget.spent, retry: RETRY_NOTE, ...extra }, { status });
 
   /* One still: made on the engine at its exact quote, held to the approved total, awaited, kept as an upload. */
-  const still = async (s: StillStep, reference: string | null): Promise<{ upload: string } | { stop: string; status: number }> => {
+  const still = async (s: StillStep, reference: string | null): Promise<{ upload: string; take: string } | { stop: string; status: number }> => {
     const have = await existing(versionId, s.role);
     let genId = have?.id ?? null;
     if (!genId) {
@@ -261,16 +265,17 @@ export async function admitCastCharacter(input: Record<string, unknown>, got: Ad
     if (!here.ok) return { stop: `The ${s.role}: ${here.reason}`, status: 502 };
     const kept = await keepStill(versionId, s.role, genId, viewer.id);
     if ("error" in kept) return { stop: kept.error, status: kept.status };
-    return { upload: kept.id };
+    return { upload: kept.id, take: genId };
   };
 
   const portrait = await still(steps[0], null);
   if ("stop" in portrait) return stopped(portrait.stop, portrait.status);
-  let sheetUpload: string | null = null;
+  let sheetUpload: string | null = null, sheetTake: string | null = null;
   if (withSheet) {
     const sheet = await still(steps[1], portrait.upload);
-    if ("stop" in sheet) return stopped(sheet.stop, sheet.status, { portraitUploadId: portrait.upload });
+    if ("stop" in sheet) return stopped(sheet.stop, sheet.status, { portraitUploadId: portrait.upload, portraitTakeId: portrait.take });
     sheetUpload = sheet.upload;
+    sheetTake = sheet.take;
   }
 
   /* The cast member and the identity together, or neither. Retried under the same version, the one already made is returned. */
@@ -291,10 +296,12 @@ export async function admitCastCharacter(input: Record<string, unknown>, got: Ad
     });
     return { identityId, castId };
   });
-  if ("error" in made) return stopped(String(made.error), 409, { portraitUploadId: portrait.upload, ...(sheetUpload ? { sheetUploadId: sheetUpload } : {}) });
+  if ("error" in made) return stopped(String(made.error), 409, { portraitUploadId: portrait.upload, portraitTakeId: portrait.take, ...(sheetUpload ? { sheetUploadId: sheetUpload, sheetTakeId: sheetTake } : {}) });
+  /* The takes (generation ids, `/api/media/<id>`) are what a board's Cast entry holds; the uploads are the Library's copies the cast member and the identity hold. */
   return admissionReply({
     id: versionId, versionId, status: "done", estimatedCredits: credits, spent: budget.spent,
-    castId: made.castId, identityId: made.identityId, name, portraitUploadId: portrait.upload, ...(sheetUpload ? { sheetUploadId: sheetUpload } : {}),
+    castId: made.castId, identityId: made.identityId, name, portraitUploadId: portrait.upload, portraitTakeId: portrait.take,
+    ...(sheetUpload ? { sheetUploadId: sheetUpload, sheetTakeId: sheetTake } : {}),
   });
 }
 
