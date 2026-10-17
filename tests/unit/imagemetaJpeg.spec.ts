@@ -35,7 +35,7 @@ function app1With(length: number, startsAt: number, fakeAt: number, fake: number
 test("fill bytes are fill: a real 10,000 × 10,000 frame cannot hide behind one, with a fake 100 × 100 frame inside an APP1 payload", () => {
   // FF D8 | FF (fill) | real SOF0 | APP1 (64 KB) whose payload holds, where the
   // old reader landed after taking "FF FF" as a marker with length 0xC000, a
-  // fake 100 × 100 SOF | DQT DHT SOS data EOI: a file a decoder really opens at 10,000 × 10,000.
+  // fake 100 × 100 SOF | DQT DHT SOS data EOI: the shape of a file a decoder opens at 10,000 × 10,000.
   const head = [0xff, 0xd8, 0xff, ...SOF0(10_000, 10_000)];
   const bytes = Buffer.from([...head, ...app1With(0xffff, head.length, 2 + 2 + 0xc000, SOF0(100, 100)), ...DQT, ...DHT, ...SOS, 1, 2, 3, ...EOI]);
   const meta = identifyImage(bytes);
@@ -45,7 +45,7 @@ test("fill bytes are fill: a real 10,000 × 10,000 frame cannot hide behind one,
 
 test("FF 00 at the top level is a stuffed byte, not a marker: the same bypass one byte different is closed", () => {
   // FF D8 | FF 00 01 00 | real SOF0 10,000 × 10,000 | APP1 (0x200) with a fake 1,000 × 1,000 SOF where
-  // the old reader landed after reading "01 00" as a length | DQT DHT SOS data EOI.
+  // the old reader landed after reading "01 00" as a length | DQT DHT SOS data EOI: a decoder opens it at 10,000 × 10,000.
   const head = [0xff, 0xd8, 0xff, 0x00, 0x01, 0x00, ...SOF0(10_000, 10_000)];
   const bytes = Buffer.from([...head, ...app1With(0x0200, head.length, 2 + 2 + 0x0100, SOF0(1_000, 1_000)), ...DQT, ...DHT, ...SOS, 1, 2, 3, ...EOI]);
   const meta = identifyImage(bytes);
@@ -70,4 +70,31 @@ test("a JPEG that reaches its first scan, or its end, before any frame header is
 test("nothing after SOS is read: a SOF-shaped run inside scan data is not a frame header", () => {
   const bytes = jpeg(APP0, SOS, SOF0(100, 100), EOI, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   expect(identifyImage(bytes)).toBeNull();
+});
+
+test("a segment length under 2, which no encoder writes and libjpeg steps over, is refused rather than left unsized", () => {
+  // FF D8 | FF E1 00 00 | DQT | SOF0 10,000 × 10,000 | DHT | SOS … EOI: the old walk stopped at the bad length (size unknown,
+  // so the upload route skipped its pixel checks) while a decoder opens the frame after it.
+  expect(identifyImage(jpeg([0xff, 0xe1, 0x00, 0x00], DQT, SOF0(10_000, 10_000), DHT, SOS, [1, 2, 3], EOI))).toBeNull();
+  expect(identifyImage(jpeg([0xff, 0xfe, 0x00, 0x01], DQT, SOF0(10_000, 10_000), DHT, SOS, [1, 2, 3], EOI))).toBeNull();
+  expect(identifyImage(jpeg([0xff, 0xe0, 0x00, 0x00], DQT, SOF0(10_000, 10_000), DHT, SOS, [1, 2, 3], EOI))).toBeNull();
+});
+
+test("the header is read to the first scan: a second frame header is refused, whichever comes first", () => {
+  expect(identifyImage(jpeg(APP0, SOF0(640, 480), DQT, SOF0(10_000, 10_000), DHT, SOS, [1, 2, 3], EOI))).toBeNull();
+  expect(identifyImage(jpeg(APP0, SOF0(10_000, 10_000), SOF0(640, 480), SOS, [1, 2, 3], EOI))).toBeNull();
+  // One frame, then tables, then the scan: sized from that frame.
+  expect(identifyImage(jpeg(APP0, SOF0(640, 480), DQT, DHT, SOS, [1, 2, 3], EOI))).toMatchObject({ width: 640, height: 480 });
+  // A frame and then the end of the image with no scan at all is not an image a decoder opens.
+  expect(identifyImage(jpeg(APP0, SOF0(640, 480), DQT, EOI, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))).toBeNull();
+});
+
+test("markers libjpeg refuses (C8 JPG, DE DHP, DF EXP, F0-FD JPGn) are refused, wherever they sit in the header", () => {
+  for (const marker of [0xc8, 0xde, 0xdf, 0xf0, 0xf7, 0xfd]) {
+    const segment = [0xff, marker, 0x00, 0x04, 0, 0];
+    expect(identifyImage(jpeg(APP0, segment, SOF0(640, 480), SOS, EOI)), `before the frame: ${marker.toString(16)}`).toBeNull();
+    expect(identifyImage(jpeg(APP0, SOF0(640, 480), segment, SOS, EOI)), `after the frame: ${marker.toString(16)}`).toBeNull();
+  }
+  // APPn (E0-EF) and COM (FE) are ordinary segments.
+  expect(identifyImage(jpeg([0xff, 0xef, 0x00, 0x04, 0, 0], [0xff, 0xfe, 0x00, 0x04, 0x41, 0x42], SOF0(640, 480), SOS, EOI))).toMatchObject({ width: 640 });
 });
