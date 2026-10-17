@@ -420,6 +420,8 @@ test("guard (new, strict): only the A4 files name the stored keys or the switch,
   /* Who imports the modules: the store imports the pure one; the route imports both; nothing else does. */
   expect(named(/from\s+["'][^"']*spendSettings\.server["']|import\(["'][^"']*spendSettings\.server["']\)/)).toEqual(["app/api/settings/spend/route.ts"]);
   expect(named(/from\s+["'][^"']*\/spendSettings["']|import\(["'][^"']*\/spendSettings["']\)/)).toEqual(["app/api/settings/spend/route.ts", "lib/spendSettings.server.ts"]);
+  /* The server's own pause has no caller yet: the route never names it. */
+  expect(named(/recordLimitPause/)).toEqual(["lib/spendSettings.server.ts"]);
   /* The audit actions are written by the store alone. */
   expect(named(/spend_limit\.set|spend\.paused|spend\.resumed|spend\.ask_every_take_/)).toEqual(["lib/securityAudit.ts", "lib/spendSettings.server.ts"]);
 });
