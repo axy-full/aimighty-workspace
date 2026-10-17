@@ -27,6 +27,8 @@ export const MAX_SLIDES = 300;
 export const MAX_SHEETS = 50;
 /** Cells read across all sheets of a workbook. */
 export const MAX_CELLS = 200_000;
+/** One cell's text: Excel's own maximum. A longer shared or inline string is refused. */
+export const MAX_CELL_CHARS = 32_767;
 /** Columns read per row; a cell further right is skipped with a warning. */
 export const MAX_COLUMNS = 256;
 /** Embedded images listed and stored per document. */
@@ -51,6 +53,13 @@ export const MAX_XML_PART_BYTES = 32 * MiB;
 /** Compression ratio allowed for an entry larger than RATIO_FLOOR_BYTES. Deflate tops out near 1032:1; real XML sits far below 100:1. */
 export const MAX_ZIP_RATIO = 200;
 export const RATIO_FLOOR_BYTES = 1 * MiB;
+
+/* ── .docx: what mammoth is handed ───────────────────────────────────── */
+
+/** XML events across every part handed to mammoth (its DOM is far larger than our scan). */
+export const MAX_DOCX_XML_EVENTS = 1_000_000;
+/** Bytes of XML handed to mammoth, all parts together. */
+export const MAX_DOCX_XML_BYTES = 16 * MiB;
 
 /* ── XML ──────────────────────────────────────────────────────────────── */
 

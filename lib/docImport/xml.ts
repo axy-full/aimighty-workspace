@@ -32,6 +32,8 @@ export type XmlOptions = {
   label?: string;
   maxDepth?: number;
   maxEvents?: number;
+  /** Shared across several parts: every event of every part draws from it. */
+  eventBudget?: { remaining: number };
   deadline?: Deadline;
 };
 
@@ -170,7 +172,7 @@ export function scanXml(source: string, onEvent: (event: XmlEvent) => void, opti
   let skippedDoctype = false;
   let events = 0;
   const emit = (event: XmlEvent) => {
-    if (++events > maxEvents)
+    if (++events > maxEvents || (options.eventBudget && --options.eventBudget.remaining < 0))
       throw new DocImportError("limit", `${label} has more structure than the importer reads. Nothing was imported.`);
     if (events % 4096 === 0) options.deadline?.check();
     onEvent(event);
