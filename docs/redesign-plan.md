@@ -1230,3 +1230,50 @@ Recorded by the lead, verbatim less one aside about who signs off money changes 
 >
 > REPORTING
 > A short note each evening: what landed (real PR numbers), what's next, what's blocked. Nothing invented. Questions go to Akshay in plain language; where an answer changes money or security, wait for it.
+
+## Owner, 17 Oct 2026, ~16:50 IST: answers to the Phase A update
+
+Recorded by the lead, verbatim less the asides about who signs off money changes (marked […]). Three brackets were unfilled when sent (items 1, 2 and 21); the lead holds the money-changing PRs in item 1 until the owner confirms it.
+
+> Answers to the Phase A update. Numbered as you numbered them.
+> BLOCKING NOW
+>
+> 1. [Akshay: yes/no] The 31 Oct demo is on. The approved PRs keep merging under the standing yes of 16 Oct: CI 24/24, fresh Opus approval, money review done on #765, #815, #809, #814 and #800, nothing weakened.
+> 2. Yes, open the ⌘K fix as a PR. Yes, delete the expired waiver — removing a waiver restores the guard, it doesn't weaken one. Make's switch says "Image". [Akshay: or "Images"]
+>
+> MONEY OR SECURITY
+> 3. Ask before every take: off by default. Approval happens once per step, on the quote; that is the person approving spend. The per-take ask stays as a setting a workspace can turn on.
+> 4. Yes: store the refund status on every job now; keep today's billing behaviour until […] signs off.
+> 5. Metadata: build the strip behind a switch with a second position that keeps one standard marker, default strip. The owner's decision is that nothing says generated; counsel will look at Article 50 and the vendor terms. For that, list which vendors' terms say what about provenance, with the clause quoted and linked — no paraphrase.
+> 6. Yes: vendor prices in a server-only file set on Coolify; today's rate file and its tests untouched until sign-off. Margins are per service and arrive later as config, never in code.
+> 7. Yes: the catalogue-only rule on every new v30 endpoint now; the old screens in Phase B, listed.
+> 8. Atomik's planning turn is free in v30: questions, the approach, the quote. Build it behind a switch, leave today's billing on until […] signs off — a charge going away is still a money change.
+> 9. Scanned PDFs go to the multimodal model as a billed Reading job (the OCR band), once import runs in its own container. Until then, refuse them with a plain message.
+> 10. Yes, one conversion-and-import container, no network, two jobs at a time, 1.5 GB, 120 s per document, killed on timeout. Write Akshay the click-by-click Coolify steps, and state the droplet's total memory and today's headroom in the same note, since the droplet is also production.
+> PRODUCT
+> 11. Ten film types. Steps, in order:
+> Ad film: Pitch deck · Brief · Script · Breakdown · Look · Elements · Storyboard · Shots · Edit · Deliver
+> Feature: Brief · Script · Breakdown · Look · Elements · Storyboard · Shots · Edit · Deliver (board grouped by scene; a representative scene before scaling)
+> Short film: Brief · Script · Breakdown · Look · Elements · Storyboard · Sound · Shots · Edit · Deliver
+> UGC: Brief · Creator · Hook · Script · Shots · Captions · Deliver
+> Product video: Brief · Product · Look · Storyboard · Shots · Edit · Deliver
+> Music video: Track · Beat map · Look · Elements · Storyboard · Animatic · Shots · Edit · Deliver
+> Microdrama: Series bible · Episodes · Elements · Storyboard · Shots · Edit · Deliver
+> Pre-vis: Brief · Breakdown · Set map · Elements · Storyboard · Animatic · Shots · Handoff
+> Trend clip: Source · Format breakdown · Swap-ins · Copy · Shots · Captions · Deliver
+> Social: Deliverables · Hook · Copy · Design · Visuals · Captions · Deliver
+> Brief and Script are document steps; Deliver is a table; the rest are canvas steps. Keep them in server config as you have them.
+> 12. Kept means the user pressed Keep on a take. Picked is choosing among options and is a step on the way; approved is not a separate state.
+> 13. Yes, one beat can become several shots; a shot belongs to one beat.
+> 14. The Brief is new: a document step for the client's material. Today's treatment stays as the deck inside Look.
+> 15. Yes, History includes earlier work: backfill from the meter records; rows missing a field show "before History".
+> 16. Reference, in the Look pack. Not wardrobe.
+> 17. Calendar month, UTC, like the house cap. Reaching it finishes the running job, starts nothing new, and shows Paused with Continue (owner raises the limit) and Stop.
+> 18. After 31 Oct, as you recommend.
+> 19. Refuse old .xls with "save as .xlsx". State your proposed import limits in one line; they're fine unless they block a 100-page brand book.
+> INPUTS
+> 20. Five scanned briefs, two in Hindi, by Monday evening. Make the typed transcripts with the multimodal model first; Akshay corrects them.
+> 21. Liveblocks plan name: Akshay reads it from the dashboard with your steps. [Akshay: plan name]
+> 22. Export worker on Coolify by Mon 19, with your click-by-click steps.
+> FREEZE PRIORITY
+> With two CI runs an hour, order the queue: the demo-path PRs first, then Phase A in this order — steps and frames (#818), Library (#820), jobs with quotes and refund status, spend-limit settings, the visitor bar backend, History read models. Document import, search and Liveblocks changes wait for after the 31st; import needs the container anyway. Deploy #8 on Fri 23 stays the last feature deploy. Keep the evening note going: landed with real numbers, next, blocked.
