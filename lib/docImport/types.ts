@@ -1,4 +1,4 @@
-import { MAX_WARNINGS } from "./limits";
+import { MAX_TEXT_CHARS, MAX_WARNINGS } from "./limits";
 
 /** The source formats the importer reads. `image` is .jpg/.jpeg/.png/.tif/.tiff through OCR. */
 export type DocKind = "docx" | "pdf" | "fdx" | "pptx" | "xlsx" | "image" | "svg";
@@ -91,5 +91,19 @@ export class Deadline {
   }
   remainingMs(): number {
     return Math.max(0, this.at - this.clock());
+  }
+}
+
+/**
+ * A running count of the text an import has produced, so the character
+ * limit refuses the moment it is passed, before the text is ever joined.
+ */
+export class TextBudget {
+  private used = 0;
+  constructor(private readonly label: string, private readonly max = MAX_TEXT_CHARS) {}
+  add(characters: number) {
+    this.used += characters;
+    if (this.used > this.max)
+      throw new DocImportError("limit", `${this.label} has more than one million characters of text. Nothing was imported.`);
   }
 }

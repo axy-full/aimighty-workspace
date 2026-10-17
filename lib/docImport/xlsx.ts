@@ -1,11 +1,14 @@
-import { MAX_CELLS, MAX_COLUMNS, MAX_SHEETS, MAX_TEXT_CHARS } from "./limits";
+import { MAX_CELL_CHARS, MAX_CELLS, MAX_COLUMNS, MAX_SHEETS } from "./limits";
 import { mediaImages, openOffice, relationships, scanPart } from "./ooxml";
-import { DocImportError, type Deadline, type DocSection, type ExtractedDocument, type Warnings } from "./types";
+import { DocImportError, TextBudget, type Deadline, type DocSection, type ExtractedDocument, type Warnings } from "./types";
 import { attr, localName } from "./xml";
 import type { ZipArchive } from "./zip";
 
 const LABEL = "This workbook";
 const WORKSHEET = /\/relationships\/worksheet$/;
+
+const tooLong = () =>
+  new DocImportError("limit", `This workbook has a cell longer than ${MAX_CELL_CHARS} characters, more than Excel allows. Nothing was imported.`);
 
 /** Shared strings: each <si>'s text runs joined, phonetic guides (<rPh>) left out. */
 function sharedStrings(zip: ZipArchive, part: string | null, deadline: Deadline, warnings: Warnings): string[] {
@@ -17,7 +20,10 @@ function sharedStrings(zip: ZipArchive, part: string | null, deadline: Deadline,
   let inText = 0;
   scanPart(zip, part, LABEL, (event) => {
     if (event.type === "text") {
-      if (inItem && inText && !inPhonetic) current += event.text;
+      if (inItem && inText && !inPhonetic) {
+        current += event.text;
+        if (current.length > MAX_CELL_CHARS) throw tooLong();
+      }
       return;
     }
     const name = localName(event.name);
@@ -50,7 +56,11 @@ function columnOf(reference: string | undefined): number {
 /**
  * .xlsx: sheets in workbook order, each as tab-separated rows of the values
  * Excel last calculated (formulas are never evaluated), and the pictures in
- * xl/media. Limits: MAX_SHEETS sheets, MAX_CELLS cells, MAX_COLUMNS columns.
+ * xl/media. Limits: MAX_SHEETS sheets, MAX_CELLS cells, MAX_COLUMNS columns,
+ * MAX_CELL_CHARS per cell, and a running count of every character placed in
+ * a row, so one long shared string referenced by many cells is refused the
+ * moment the total would pass MAX_TEXT_CHARS, before any row is joined.
+ * A worksheet part is read at most once, however many sheets name it.
  */
 export async function extractXlsx(bytes: Buffer, deadline: Deadline, warnings: Warnings): Promise<ExtractedDocument> {
   const zip = openOffice("xlsx", bytes);
@@ -73,6 +83,8 @@ export async function extractXlsx(bytes: Buffer, deadline: Deadline, warnings: W
 
   let cells = 0;
   let text = "";
+  const budget = new TextBudget(LABEL);
+  const visited = new Set<string>();
   const sections: DocSection[] = [];
   let index = 0;
   for (const sheet of sheets) {
@@ -83,6 +95,11 @@ export async function extractXlsx(bytes: Buffer, deadline: Deadline, warnings: W
       else warnings.add(`A sheet listed by the workbook is missing and was skipped.`);
       continue;
     }
+    if (visited.has(rel.target)) {
+      warnings.add("A sheet listed twice by the workbook was read once.");
+      continue;
+    }
+    visited.add(rel.target);
     if (sheet.hidden) warnings.add(`"${sheet.name}" is a hidden sheet; its cells were read too.`);
     index++;
     const rows: string[] = [];
@@ -96,6 +113,7 @@ export async function extractXlsx(bytes: Buffer, deadline: Deadline, warnings: W
         if (!cell) return;
         if (inValue) cell.value += event.text;
         else if (inInline) cell.inline += event.text;
+        if (cell.value.length > MAX_CELL_CHARS || cell.inline.length > MAX_CELL_CHARS) throw tooLong();
         return;
       }
       const name = localName(event.name);
@@ -120,21 +138,25 @@ export async function extractXlsx(bytes: Buffer, deadline: Deadline, warnings: W
         const column = cell.column < 0 ? row.length : cell.column;
         if (column >= MAX_COLUMNS) wide = true;
         else if (value !== "") {
+          // Counted before it is placed: a row is never built past the limit.
+          budget.add(value.length + Math.max(1, column - row.length + 1));
           while (row.length < column) row.push("");
           row[column] = value.replace(/[\t\r\n]+/g, " ");
         }
         cell = null;
       } else if (name === "row") {
-        if (row.some((value) => value !== "")) rows.push(row.join("\t").trimEnd());
+        if (row.some((value) => value !== "")) {
+          budget.add(1);
+          rows.push(row.join("\t").trimEnd());
+        }
       }
     }, deadline, warnings);
     if (wide) warnings.add(`"${sheet.name}" has cells past column ${MAX_COLUMNS}; those were skipped.`);
+    budget.add(2);
     if (text) text += "\n\n";
     const start = text.length;
     text += rows.join("\n");
     sections.push({ kind: "sheet", index, title: sheet.name || `Sheet ${index}`, start, end: text.length });
-    if (text.length > MAX_TEXT_CHARS)
-      throw new DocImportError("limit", "This workbook has more than one million characters of text. Nothing was imported.");
   }
   return {
     kind: "xlsx",
