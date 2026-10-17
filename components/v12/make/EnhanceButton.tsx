@@ -1,7 +1,23 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Tooltip } from "../ui";
-import { ENHANCE_LABEL, ENHANCE_TIP_LINE, ENHANCE_TIP_NAME } from "@/lib/v12/enhance";
+import { ENHANCE_LABEL, ENHANCE_TIP_LINE, ENHANCE_TIP_NAME, ENHANCE_WORKING } from "@/lib/v12/enhance";
+
+/**
+ * The dot-arc loader: eight dots on three quarters of a circle, each fading in turn. Only shapes and `currentColor`: a new look changes the paint (and the
+ * `v12-arc` keyframes in make.css), not this drawing. Reduced motion holds it still, the dots at their steps of brightness.
+ */
+export function DotArc({ size = 16 }: { size?: number }) {
+  const dots = Array.from({ length: 8 }, (_, i) => {
+    const angle = (-90 + i * (270 / 7)) * (Math.PI / 180);
+    return { x: 8 + 5.6 * Math.cos(angle), y: 8 + 5.6 * Math.sin(angle), i };
+  });
+  return (
+    <svg className="v12-arc" width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" focusable="false" data-testid="v12-arc">
+      {dots.map((d) => <circle key={d.i} className="v12-arc-dot" cx={d.x} cy={d.y} r="1.35" style={{ animationDelay: `${d.i * 0.11}s`, opacity: 0.25 + d.i * 0.1 }} fill="currentColor" />)}
+    </svg>
+  );
+}
 
 /**
  * The Enhance button (prototype v14), with a separate ⓘ whose tooltip opens on hover, on keyboard focus, and on a tap or click, which pins
@@ -37,7 +53,7 @@ export function EnhanceButton({ price, attrs, busy, disabled, why, onPress, test
     <span className="v12-mk-enhance-group" data-testid={`${testId}-group`}>
       <button type="button" className="v12-mk-enhance" aria-disabled={off || undefined} aria-busy={busy || undefined} title={!busy && disabled ? why ?? undefined : undefined}
         onClick={() => { if (!off) onPress(); }} data-testid={testId} {...attrs}>
-        {busy ? <span>Enhancing…</span> : <span>{ENHANCE_LABEL}{price ? <> · {price}</> : null}</span>}
+        {busy ? <span className="v12-mk-enhance-working"><DotArc />{ENHANCE_WORKING}</span> : <span>{ENHANCE_LABEL}{price ? <> · {price}</> : null}</span>}
       </button>
       <Tooltip name={ENHANCE_TIP_NAME} line={ENHANCE_TIP_LINE} side={side} pinned={pinned}>
         <button ref={info} type="button" className="v12-mk-enhance-info" aria-label="About Enhance" aria-expanded={pinned} onClick={() => setPinned((v) => !v)} data-testid={`${testId}-info`}>ⓘ</button>

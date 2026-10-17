@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ENHANCE_TIP_LINE, ENHANCE_TIP_NAME, enhanceOffered, takeEnhance, workspaceEnhance } from "../../lib/v12/enhance";
+import { ENHANCE_HINT, ENHANCE_HINT_AFTER_MS, ENHANCE_MARK_MS, ENHANCE_PROGRESS_MS, ENHANCE_TIP_LINE, ENHANCE_TIP_NAME, ENHANCE_UNDO, ENHANCE_WORKING, changedWords, enhanceOffered, takeEnhance, workspaceEnhance } from "../../lib/v12/enhance";
 import { ENHANCE_DEFAULT_OPTIONS, settingProblem } from "../../lib/settingValues";
 import { generationRequestBody } from "../../lib/workbench/generation-request";
 import { DEFAULTS } from "../../lib/settings";
@@ -7,8 +7,28 @@ import { recreatePreset } from "../../lib/shell/recipe";
 
 /** Make's Enhance button as data (lib/v12/enhance.ts): where it applies, whether the workspace offers it, what a take records. */
 
-test("the tooltip says what the button does: the words go in the box, and Make sends the box as it is", () => {
-  expect(`${ENHANCE_TIP_NAME} — ${ENHANCE_TIP_LINE}`).toBe("Enhance — Particl rewrites your prompt for the chosen engine (light, camera, detail) and puts it in the box, so you can edit it. Make sends the box exactly as it is.");
+test("the owner's tooltip, word for word (16 Oct 2026)", () => {
+  expect(`${ENHANCE_TIP_NAME} — ${ENHANCE_TIP_LINE}`).toBe("Enhance — Particl rewrites your prompt for the chosen engine (light, camera, detail) and puts it in the box for you to edit. 1 credit per press, free if it fails. Make sends the box exactly as it is.");
+});
+
+test("the loader's words and timings: the hint at 2 s names no engine, the progress runs toward 8 s, the marks last a moment", () => {
+  expect(ENHANCE_WORKING).toBe("Enhancing…");
+  expect(ENHANCE_HINT).toBe("Rewriting for the chosen engine: light, camera, detail");
+  expect(ENHANCE_HINT).not.toMatch(/seedance|kling|veo|banana|runway|nano/i);
+  expect(ENHANCE_HINT_AFTER_MS).toBe(2_000);
+  expect(ENHANCE_PROGRESS_MS).toBe(8_000);
+  expect(ENHANCE_UNDO).toBe("Undo enhance");
+  expect(ENHANCE_MARK_MS).toBeGreaterThan(1_000);
+});
+
+test("the changed words are the ones the typed words did not have; case and edge punctuation are not changes", () => {
+  const pieces = changedWords("a kite over a grey sea", "A paper kite, drifting over a grey sea at dusk.");
+  expect(pieces.map((p) => p.text).join("")).toBe("A paper kite, drifting over a grey sea at dusk.");
+  expect(pieces.filter((p) => p.changed).map((p) => p.text.trim())).toEqual(["paper", "drifting", "at", "dusk."]);
+  /* A word used twice in the rewrite but once in the original: the second is new. */
+  expect(changedWords("kite", "kite kite").map((p) => p.changed)).toEqual([false, true]);
+  expect(changedWords("", "A kite").every((p) => p.changed)).toBe(true);
+  expect(changedWords("@Image1 a fox", "@Image1 a red fox").filter((p) => p.changed).map((p) => p.text.trim())).toEqual(["red"]);
 });
 
 test("it applies to stills and clips; sound and a spoken line go as written", () => {

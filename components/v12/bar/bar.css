@@ -19,6 +19,20 @@
   font: inherit; font-size: 15px; padding: 0 8px; outline: none;
 }
 .v12-bar-input::placeholder { color: var(--gx-placeholder); }
+/* The words, with what may sit over them while something writes them (Enhance, lib/v12/enhance.ts): a sweep and a progress line toward 8 s, then the changed words marked for a moment. Shapes only: the colours are tokens, so a new look swaps them in one place. */
+.v12-bar-field { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; overflow: hidden; border-radius: 8px; }
+.v12-bar-field .v12-bar-input { width: 100%; }
+.v12-bar-field[data-working] .v12-bar-input { opacity: 0.55; cursor: progress; }
+.v12-bar-field[data-marked] .v12-bar-input { color: transparent; }
+.v12-bar-sweep { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 0%, var(--v12-sweep, rgba(255, 255, 255, 0.14)) 45%, transparent 90%); transform: translateX(-100%); animation: v12-sweep 1.6s ease-in-out infinite; }
+@keyframes v12-sweep { to { transform: translateX(100%); } }
+.v12-bar-progress { position: absolute; left: 1px; right: 1px; bottom: 0; height: 2px; border-radius: 0 0 13px 13px; overflow: hidden; pointer-events: none; }
+.v12-bar-progress::after { content: ""; display: block; height: 100%; width: 100%; background: var(--gx-accent); transform-origin: left; transform: scaleX(0); animation: v12-progress var(--v12-enhance-wait, 8s) linear forwards; }
+@keyframes v12-progress { to { transform: scaleX(1); } }
+.v12-bar-card { position: relative; }
+.v12-bar-mirror { position: absolute; inset: 0; display: block; line-height: 40px; padding: 0 8px; font: inherit; font-size: 15px; color: var(--gx-text); white-space: pre; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.v12-bar-mirror mark { background: var(--v12-mark, rgba(10, 132, 255, 0.34)); color: inherit; border-radius: 3px; animation: v12-mark 2.4s ease-out forwards; }
+@keyframes v12-mark { 0%, 60% { background-color: var(--v12-mark, rgba(10, 132, 255, 0.34)); } 100% { background-color: transparent; } }
 .v12-bar-send {
   flex: none; height: 40px; padding: 0 16px; border-radius: 10px; border: 0; background: var(--gx-accent);
   color: var(--gx-on-accent); font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer;
@@ -85,6 +99,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .v12-bar-card { transition: none; }
+  /* Reduced motion: no sweep, no run along the card; the dimmed words and a still line say the same. */
+  .v12-bar-sweep { animation: none; display: none; }
+  .v12-bar-progress::after { animation: none; transform: scaleX(1); opacity: 0.35; }
+  .v12-bar-mirror mark { animation: none; }
 }
 
 /* The "/" skills list (inventory § 10.4): above the bar, a header and a two-column grid of rows, command and price. */

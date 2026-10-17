@@ -13,6 +13,7 @@ import { cites, nearestSetting, recipeChips, referenceTags, retagRecipe, type Ge
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
 import { useEnhancer } from "@/lib/shell/use-enhancer";
+import { ENHANCE_HINT_AFTER_MS, ENHANCE_MARK_MS, ENHANCE_WORKING } from "@/lib/v12/enhance";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { useSession } from "@/lib/session";
 import { cleanCinemaControls, isCinemaStudioAudioMime, isCinemaStudioModel } from "@/lib/cinemaStudioTypes";
@@ -377,32 +378,57 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     : null;
   const waiting = composer.blocked === EMPTY_PROMPT ? "Say what to make." : composer.blocked;
   const blockedBase = submitting ? waiting : recipeWait ?? waiting;
+  /* Enhance (pressed by a person) is working: the box is the rewrite's, and Make waits for it to end (one press is at most one charge). */
+  const enhancing = enhancer.phase !== "idle";
   /* Make sends the words in the box as written. Nothing here waits on the enhancer: it runs only when Enhance is pressed (below). */
-  const blocked = spendOff ?? blockedBase;
+  const blocked = spendOff ?? (enhancing ? ENHANCE_WORKING : blockedBase);
   const make = useCallback(() => {
-    if (recipeWait || spendOff) return;
+    if (recipeWait || spendOff || enhancing) return;
     if (model && !composer.blocked) used(model.id);
     composer.generate();
-  }, [recipeWait, spendOff, model, composer, used]);
+  }, [recipeWait, spendOff, enhancing, model, composer, used]);
 
-  /* Enhance, pressed by a person: the enhanced words land in the box and nothing is generated, so they can be read and edited before a Make
-     press spends. The charge is the figure the button wore; Undo puts the typed words back. A press that fails says so (enhancer.error) and leaves the words alone. */
+  /* Enhance, pressed by a person (the owner's loader, 16 Oct 2026). The rewrite streams into the box word by word and nothing is generated, so it can be read
+     and edited before a Make press spends; the workspace is charged when the last word is in, at the figure the button wore. Cancelling, a failure or a cut-off
+     stream puts the typed words back and charges nothing; "Undo enhance" puts them back after. */
+  const [marked, setMarked] = useState<{ original: string; enhanced: string } | null>(null);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (enhancer.phase !== "waiting") return;
+    const at = setTimeout(() => setSlow(true), ENHANCE_HINT_AFTER_MS);
+    return () => clearTimeout(at);
+  }, [enhancer.phase]);
+  useEffect(() => {
+    if (!marked) return;
+    const at = setTimeout(() => setMarked(null), ENHANCE_MARK_MS);
+    return () => clearTimeout(at);
+  }, [marked]);
+  /* Typing in the box ends the marks. */
+  const marksNow = marked && state.prompt.trim() === marked.enhanced.trim() ? marked : null;
   const pressEnhance = useCallback(async () => {
     if (spendOff || recipeWait || submitting || enhancer.busy || enhancer.credits == null || enhancer.blocked) return;
     const from = state.prompt;
     const credits = enhancer.credits;
     const usd = enhancer.usd;
-    const words = await enhancer.run();
-    if (!words) return;
+    setMarked(null);
+    setSlow(false);
+    const words = await enhancer.run((soFar) => dispatch({ type: "prompt", value: soFar }));
+    if (!words) {
+      /* Cancelled, failed or cut off: the typed words are back, and nothing was charged. */
+      dispatch({ type: "prompt", value: from });
+      return;
+    }
     setLastEnhanced({ from, to: words });
     setEnhancedDone({ from, to: words, credits, usd, provider: enhancer.provider });
     dispatch({ type: "prompt", value: words });
+    setMarked({ original: from, enhanced: words });
   }, [spendOff, recipeWait, submitting, enhancer, state.prompt, dispatch]);
   const undoEnhance = useCallback(() => {
     if (!enhancedDone) return;
     dispatch({ type: "prompt", value: enhancedDone.from });
     setLastEnhanced(null);
     setEnhancedDone(null);
+    setMarked(null);
   }, [enhancedDone, dispatch]);
   const enhanced = enhancedDone && state.prompt.trim() === enhancedDone.to.trim() ? enhancedDone : null;
 
@@ -462,6 +488,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     enhancer, soundTask, balance: balanceNow,
     /** Enhance, pressed: the words land in the box, nothing is generated. `enhanced` is what the last press wrote and charged, while the box still holds it. */
     pressEnhance, undoEnhance, enhanced,
+    /** The press in flight: what the screen shows while the rewrite arrives (the loader's states), the line for a failed one, and the changed words to mark once it is in. */
+    enhanceState: { phase: enhancer.phase, hint: slow && enhancer.phase === "waiting", failure: enhancer.error, marked: marksNow, cancel: enhancer.cancel },
     /** The sample's line in the sample workspace, where nothing spends: Enhance is not offered and Make waits. */
     spendOff,
   };

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useSession } from "@/lib/session";
-import { ENHANCE_CLIENT_MS, ENHANCE_FALLBACK, EnhanceRuns } from "./enhance-press";
+import { ENHANCE_CLIENT_MS, ENHANCE_FAILED, EnhanceRuns } from "./enhance-press";
 import { isRawPrompt, type EnhanceMode, type EnhancerProvider } from "./enhancer";
 
 /**
@@ -14,8 +14,8 @@ import { isRawPrompt, type EnhanceMode, type EnhancerProvider } from "./enhancer
  * a price of its own.
  *
  * Enhance runs only when a person presses it: nothing here is ever started by a Make press, and nothing waits on it.
- * Neither the quote nor the run is waited on past ENHANCE_CLIENT_MS; a run that fails says one line (ENHANCE_FALLBACK)
- * and leaves the typed words alone.
+ * The rewrite streams back word by word (`onWords`); the first words are waited for ENHANCE_CLIENT_MS at most, and a
+ * press can be stopped (`cancel`) until it is done. A run that fails says ENHANCE_FAILED; the screen restores the typed words.
  */
 export type EnhancerInput = {
   prompt: string; mode: EnhanceMode; model: string | null; anchored: boolean; editing: boolean;
@@ -33,14 +33,18 @@ export type EnhancerHost = {
   /** The enhancer was asked for a price and could not give one (not "still pricing"): why. */
   unavailable: string | null;
   busy: boolean;
+  /** Where a press is: waiting for the first words, or receiving them. */
+  phase: "idle" | "waiting" | "streaming";
+  /** Stops a press that is on its way: nothing is charged, and `run` answers null with no error. */
+  cancel: () => void;
   enhanced: string | null;
   provider: EnhancerProvider | null;
   /** What the last enhancement was approved at. */
   charged: number | null;
   error: string | null;
   enhance: () => void;
-  /** The same press, awaited: the enhanced words, or null when nothing came back (the error is then on `error`). */
-  run: () => Promise<string | null>;
+  /** The same press, awaited: the enhanced words, or null when nothing came back (the error is then on `error`; none when cancelled). `onWords` is told the rewrite so far. */
+  run: (onWords?: (soFar: string) => void) => Promise<string | null>;
   dismiss: () => void;
 };
 
@@ -51,6 +55,7 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const scoped = useScopedFetch();
   const [quote, setQuote] = useState<{ key: string; credits: number | null; usd: number | null; reason: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"waiting" | "streaming" | null>(null);
   const [result, setResult] = useState<{ prompt: string; provider: EnhancerProvider; charged: number | null; body: string } | null>(null);
   /* A failure is the line for the words it was pressed on: new words are a new press, with no stale complaint. */
   const [failure, setFailure] = useState<{ body: string; line: string } | null>(null);
@@ -61,7 +66,7 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const raw = isRawPrompt(input.prompt);
   const key = JSON.stringify(bodyOf(input));
   const off = input.off ?? null;
-  const quotable = Boolean(words) && !raw && !off;
+  const quotable = Boolean(words) && !raw && !off && !busy;
 
   /* The quote follows the words, debounced; a stale answer is dropped by key. A quote that was not answered in time (or never arrived) is asked once more:
      the button is dead until it has a price, and a slow first answer should not leave it so. */
@@ -108,28 +113,40 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   const session = useSession();
   const scope = session.signedIn ? session.requestScope ?? null : null;
   const live = useRef({ key, credits, scope });
-  useEffect(() => { live.current = { key, credits, scope }; });
+  /* While a press is on its way the box fills with its words: the press is still for the words it was made from. */
+  const pressing = useRef<{ scope: string | null; body: string } | null>(null);
+  useEffect(() => { live.current = pressing.current ? { key: pressing.current.body, credits, scope: pressing.current.scope } : { key, credits, scope }; });
 
   /* A press while the same press is on its way shares its answer; a press for other words is its own, and an
      answer that arrives after the words were replaced is dropped (EnhanceRuns), never applied over them. */
   const runs = useRef<EnhanceRuns | null>(null);
-  const enhance = useCallback(async (): Promise<string | null> => {
+  const wish = useRef<AbortController | null>(null);
+  const cancel = useCallback(() => wish.current?.abort(), []);
+  const enhance = useCallback(async (onWords?: (soFar: string) => void): Promise<string | null> => {
     const approved = live.current;
-    if (approved.credits == null || off) return null;
+    if (approved.credits == null || off || pressing.current) return null;
     const credits = approved.credits;
     const presses = (runs.current ??= new EnhanceRuns());
+    pressing.current = { scope: approved.scope, body: approved.key };
+    const controller = (wish.current = new AbortController());
     setBusy(true);
+    setPhase("waiting");
     setFailure(null);
     try {
+      presses.attach({ signal: controller.signal, onWords: (soFar) => { setPhase("streaming"); onWords?.(soFar); } });
       const pressed = await presses.run(scoped, { scope: approved.scope, body: approved.key, credits }, () => ({ scope: live.current.scope, body: live.current.key }));
       if ("stale" in pressed) return null;
-      if (!pressed.ok) { setFailure({ body: approved.key, line: pressed.error }); return null; }
+      if (!pressed.ok) { if (!pressed.cancelled) setFailure({ body: approved.key, line: pressed.error }); return null; }
       setResult({ prompt: pressed.prompt, provider: pressed.provider, charged: credits, body: approved.key });
       return pressed.prompt;
     } catch {
-      setFailure({ body: approved.key, line: ENHANCE_FALLBACK });
+      setFailure({ body: approved.key, line: ENHANCE_FAILED });
       return null;
     } finally {
+      presses.attach({});
+      pressing.current = null;
+      wish.current = null;
+      setPhase(null);
       setBusy(presses.busy);
     }
   }, [scoped, off]);
@@ -141,6 +158,6 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
   return {
     credits, usd, blocked, unavailable: quotable ? current?.reason ?? null : null, busy, error: failure && failure.body === key ? failure.line : null,
     enhanced: shown?.prompt ?? null, provider: shown?.provider ?? null, charged: shown?.charged ?? null,
-    enhance: () => void enhance(), run: enhance, dismiss,
+    phase: phase ?? "idle", cancel, enhance: () => void enhance(), run: enhance, dismiss,
   };
 }

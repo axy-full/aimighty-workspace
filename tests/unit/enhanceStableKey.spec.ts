@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import ts from "typescript";
 import type { AdmissionActor } from "../../lib/admissionTypes";
 import {
-  ENHANCE_ABANDONED, ENHANCE_KEY_ABANDON_MS, ENHANCE_LOST, ENHANCE_NOTHING_BILLED, ENHANCE_PENDING, EnhanceKeys, EnhanceRuns, enhanceSignature, pressEnhance,
+  ENHANCE_ABANDONED, ENHANCE_KEY_ABANDON_MS, ENHANCE_LOST, ENHANCE_PENDING, EnhanceKeys, EnhanceRuns, enhanceSignature, pressEnhance,
 } from "../../lib/shell/enhance-press";
 
 /**
@@ -169,7 +169,7 @@ test("a saved refusal lets the key go, so the next press is not answered with th
     const press = { scope: SCOPE, body: body("a tree in rain"), credits: 5 };
 
     const refused = await pressEnhance(fetcher, press, keys);
-    expect(refused).toEqual({ ok: false, error: ENHANCE_NOTHING_BILLED });
+    expect(refused).toEqual({ ok: false, error: "Couldn't enhance this time. Nothing was charged." });
     declined = false;
     const retried = await pressEnhance(fetcher, press, keys);
     expect(retried.ok).toBe(true);

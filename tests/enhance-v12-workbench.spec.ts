@@ -1,14 +1,15 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { seedHome } from "./helpers/v12Home";
-import { ENHANCE_TIP_LINE } from "../lib/v12/enhance";
-import { ENHANCE_FALLBACK, ENHANCE_NOTHING_BILLED, enhanceHeldLine } from "../lib/shell/enhance-press";
+import { ENHANCE_HINT, ENHANCE_TIP_LINE } from "../lib/v12/enhance";
+import { ENHANCE_FAILED } from "../lib/shell/enhance-press";
 
 /**
- * Enhance in Make, the new interface (lib/v12/enhance.ts; the owner's note of 16 Oct 2026, 13:15). "Enhance" is a button that wears its price
- * ("Enhance · 1 cr"). Pressing it says "Enhancing…", puts the enhanced words in the prompt box and sends NO take; Make then sends the box as it is.
- * Make never calls the enhancer: only the Enhance press does. After 10 s, or on any error, the typed words stay and one line says so, with what the server settled on the bill. Each take is
- * labelled in the viewer: Enhanced, with its original words one press away, or Raw. Local ENGINE_MOCK server: the enhancer and the render are
- * mock (the failing provider is a route in the browser); nothing real is spent.
+ * Enhance in Make, the new interface (lib/v12/enhance.ts; the owner's loader of 16 Oct 2026). "Enhance" is a button that wears its price ("Enhance · 1 cr").
+ * Pressing it shows the loader (the dot-arc, a dimmed box under a sweep, a progress line, the hint at 2 s), streams the rewrite into the box word by word,
+ * marks the changed words for a moment, and leaves "Undo enhance"; it sends NO take, and Make then sends the box as it is. Make never calls the enhancer.
+ * Cancel or Esc before any word, a stream cut off midway, no word by 10 s, or any error: the typed words are back and "Couldn't enhance this time. Nothing
+ * was charged." says so, with Try again. Each take is labelled in the viewer: Enhanced, with its original words one press away, or Raw. Local ENGINE_MOCK
+ * server: the enhancer and the render are mock (a failing provider is a route in the browser); nothing real is spent.
  */
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
 const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -20,6 +21,7 @@ const info = (page: Page) => page.getByTestId("v12-make-enhance-info");
 const note = (page: Page) => page.getByTestId("v12-make-bar-note");
 const input = (page: Page) => page.getByTestId("v12-make-bar-input");
 const go = (page: Page) => page.getByTestId("v12-make-go");
+const live = (page: Page) => page.getByTestId("v12-make-enhance-live");
 const isQuote = (r: { postDataJSON(): unknown }) => (r.postDataJSON() as { quoteOnly?: boolean } | null)?.quoteOnly === true;
 const isEnhanceRoute = (r: { url(): string; method(): string }) => new URL(r.url()).pathname === "/api/prompt/enhance" && r.method() === "POST";
 const isEnhanceRun = (r: { url(): string; method(): string; postDataJSON(): unknown }) => isEnhanceRoute(r) && !isQuote(r);
@@ -52,6 +54,24 @@ async function answerRun(page: Page, then: (route: Route) => Promise<void>) {
     if (request.method() !== "POST" || isQuote(request)) return route.fallback();
     try { await then(route); } catch { /* the page gave up first: nothing to answer */ }
   });
+}
+
+/** The enhancer's run held back for `ms`, then let through to the real mock server (which streams). Returns a function that lets it go at once. */
+function holdRuns(page: Page, ms: number): () => void {
+  let release: () => void = () => undefined;
+  const open = new Promise<void>((resolve) => { release = resolve; setTimeout(resolve, ms); });
+  void page.route("**/api/prompt/enhance", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST" || isQuote(request)) return route.fallback();
+    await open;
+    await route.fallback();
+  });
+  return release;
+}
+/** A streamed answer made by the test: one line per piece, then the last line. */
+function ndjson(route: Route, pieces: string[], prompt: string) {
+  const body = [...pieces.map((t) => JSON.stringify({ t })), JSON.stringify({ done: true, prompt, provider: "claude", writer: "test" })].join("\n") + "\n";
+  return route.fulfill({ status: 200, headers: { "Content-Type": "application/x-ndjson" }, body });
 }
 
 test.describe("desktop", () => {
@@ -128,7 +148,7 @@ test.describe("desktop", () => {
     }, { timeout: 60_000 }).toBe(2);
   });
 
-  test("pressing Enhance: Enhancing…, the enhanced words land in the box, its cost is on the line, and nothing is generated until Make", async ({ page }) => {
+  test("pressing Enhance: the loader states, the words stream into the box, the changed words are marked, Undo enhance, and nothing is generated until Make", async ({ page }) => {
     test.setTimeout(300_000);
     const seeded = await openMake(page);
     const log = watch(page);
@@ -137,30 +157,58 @@ test.describe("desktop", () => {
     await expect(go(page)).toHaveText(/^Make · [\d,]+ cr$/, { timeout: 60_000 });
     const take = Number((await go(page).innerText()).match(/· ([\d,]+) cr$/)![1].replace(/,/g, ""));
     const quoted = Number((await button(page).innerText()).match(/· ([\d,]+) cr$/)![1].replace(/,/g, ""));
-    /* A short hold on the server's reply, so the pressed state can be seen. */
-    let release: () => void = () => undefined;
-    const held = new Promise<void>((resolve) => { release = resolve; });
-    await page.route("**/api/prompt/enhance", async (route) => {
-      const request = route.request();
-      if (request.method() !== "POST" || isQuote(request)) return route.fallback();
-      await held;
-      await route.fallback();
-    });
+    /* The server's reply is held for 2.6 s, so the waiting states (and the hint at 2 s) can be seen; then it streams for real. */
+    const hold = holdRuns(page, 2_600);
     const enhanceSent = page.waitForRequest(isEnhanceRun);
-    const enhanceReply = page.waitForResponse((r) => isEnhanceRun(r.request()));
+    const streamed = page.waitForResponse((r) => isEnhanceRun(r.request()));
+    /* The words seen in the box as they arrive: more than one value means it streamed. */
+    await page.evaluate(() => {
+      const box = document.querySelector<HTMLInputElement>('[data-testid="v12-make-bar-input"]')!;
+      (window as unknown as { seen: string[] }).seen = [];
+      const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!;
+      Object.defineProperty(box, "value", { configurable: true, get() { return proto.get!.call(this); }, set(v: string) { (window as unknown as { seen: string[] }).seen.push(v); proto.set!.call(this, v); } });
+    });
     await button(page).click();
+    /* Waiting: the button wears the dot-arc loader and is disabled; the box dims under a sweep; a progress line runs; Make waits. */
     await expect(button(page)).toHaveText("Enhancing…");
     await expect(button(page)).toHaveAttribute("aria-busy", "true");
-    release();
-    const enhanceBody = (await enhanceSent).postDataJSON() as { maxCredits?: number; prompt?: string };
+    await expect(button(page)).toHaveAttribute("aria-disabled", "true");
+    await expect(button(page).getByTestId("v12-arc")).toBeVisible();
+    await expect(input(page)).toHaveAttribute("readonly", "");
+    await expect(input(page)).toHaveAttribute("aria-busy", "true");
+    await expect(page.getByTestId("v12-make-bar-sweep")).toBeVisible();
+    await expect(page.getByTestId("v12-make-bar-progress")).toBeVisible();
+    await expect(page.locator(".v12-bar-field")).toHaveAttribute("data-working", "");
+    expect(Number(await input(page).evaluate((el) => getComputedStyle(el).opacity)), "the box is dimmed").toBeLessThan(0.9);
+    await expect(note(page)).toContainText("Enhancing…");
+    await expect(live(page)).toHaveText("Enhancing…");
+    await expect(go(page)).toBeDisabled();
+    /* At 2 s: what it is doing, with no engine named. */
+    await expect(note(page)).toHaveText(new RegExp(`^${ENHANCE_HINT}\\s*Cancel$`), { timeout: 10_000 });
+    await expect(live(page)).toHaveText(ENHANCE_HINT);
+    /* A second press while it works is not another press. */
+    await button(page).click({ force: true });
+    hold();
+    const enhanceBody = (await enhanceSent).postDataJSON() as { maxCredits?: number; prompt?: string; stream?: boolean };
     expect(enhanceBody.prompt).toBe(WORDS);
+    expect(enhanceBody.stream).toBe(true);
     expect(enhanceBody.maxCredits, "approved at the figure on the button").toBe(quoted);
-    const written = ((await (await enhanceReply).json()) as { prompt: string }).prompt;
-    /* The words are in the box, the charged figure is on the line, and no take was sent. */
-    await expect(input(page)).toHaveValue(written, { timeout: 30_000 });
-    await expect(note(page)).toContainText(/^Enhanced · [\d,]+ cr/);
+    const reply = await streamed;
+    expect(reply.headers()["content-type"]).toMatch(/ndjson/);
+    /* Done: the words are in the box (they arrived in pieces), the changed ones are marked for a moment, and the line says what it cost with Undo enhance. */
+    await expect(note(page)).toContainText(/^Enhanced · [\d,]+ cr/, { timeout: 30_000 });
+    const written = await input(page).inputValue();
+    expect(written.length).toBeGreaterThan(WORDS.length - 1);
+    const seen = await page.evaluate(() => (window as unknown as { seen: string[] }).seen);
+    expect(new Set(seen.filter((v) => v !== WORDS && v !== written)).size, "the words arrived one by one, not all at once").toBeGreaterThan(1);
+    expect(seen.at(-1)).toBe(written);
+    await expect(page.getByTestId("v12-make-bar-marked")).toBeVisible();
+    await expect(page.getByTestId("v12-make-bar-marked")).toHaveCount(0, { timeout: 10_000 });
+    await expect(live(page)).toHaveText(/^Enhanced\. Undo enhance is available\.$/);
+    await expect(page.getByTestId("v12-make-enhance-undo")).toHaveText("Undo enhance");
     await expect(button(page)).toHaveText(/^Enhance · /);
-    expect(log, "Enhance alone sends no take").toEqual(["enhance"]);
+    await expect(input(page)).not.toHaveAttribute("readonly", "");
+    expect(log, "Enhance alone sends no take, and one press sent one request").toEqual(["enhance"]);
     await expect(go(page)).toHaveText(/^Make · [\d,]+ cr$/);
     /* The next Make press spends: the take at its own figure, with the words in the box, labelled Enhanced from the typed ones. */
     const generateSent = page.waitForRequest(isGenerate);
@@ -178,10 +226,10 @@ test.describe("desktop", () => {
     await noOverflow(page);
   });
 
-  test("Undo puts the typed words back, and editing the enhanced words makes the take Raw", async ({ page }) => {
+  test("Undo enhance puts the typed words back, and editing the enhanced words makes the take Raw", async ({ page }) => {
     test.setTimeout(300_000);
     await openMake(page);
-    await answerRun(page, (route) => route.fulfill({ json: { prompt: "A paper kite, low sun over a grey sea, slow dolly.", provider: "claude" }, headers: { "Idempotency-Status": "complete" } }));
+    await answerRun(page, (route) => ndjson(route, ["A paper kite, ", "low sun over ", "a grey sea, slow dolly."], "A paper kite, low sun over a grey sea, slow dolly."));
     await input(page).fill(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
     await button(page).click();
@@ -200,22 +248,69 @@ test.describe("desktop", () => {
     expect(((await sent).postDataJSON() as { enhanced?: unknown }).enhanced).toBe(false);
   });
 
-  test("a slow provider: after 10 s the typed words stay, one line says so, and Make still sends them", async ({ page }) => {
+  test("Cancel (and Esc) before any word charges nothing: the request is dropped, the typed words stay, nothing is said", async ({ page }) => {
+    test.setTimeout(300_000);
+    await openMake(page);
+    const log = watch(page);
+    let dropped = 0;
+    await answerRun(page, async () => { await new Promise((resolve) => setTimeout(resolve, 30_000)); });
+    page.on("requestfailed", (r) => { if (isEnhanceRun(r)) dropped++; });
+    await input(page).fill(WORDS);
+    await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
+    for (const how of ["button", "esc"] as const) {
+      await button(page).click();
+      await expect(button(page)).toHaveText("Enhancing…");
+      if (how === "button") await page.getByTestId("v12-make-enhance-cancel").click();
+      else await page.keyboard.press("Escape");
+      await expect(button(page)).toHaveText(/^Enhance · /);
+      await expect(input(page)).toHaveValue(WORDS);
+      await expect(input(page)).not.toHaveAttribute("readonly", "");
+      await expect(note(page)).toHaveCount(0);
+    }
+    await expect.poll(() => dropped, { timeout: 10_000 }).toBe(2);
+    expect(log).toEqual(["enhance", "enhance"]);
+    await expect(go(page)).toHaveText(/^Make · [\d,]+ cr$/);
+    await noOverflow(page);
+  });
+
+  test("a stream cut off midway restores the typed words, charges nothing, and says so with Try again, which works", async ({ page }) => {
+    test.setTimeout(300_000);
+    await openMake(page);
+    let first = true;
+    await page.route("**/api/prompt/enhance", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST" || isQuote(request)) return route.fallback();
+      if (!first) return route.fallback();
+      first = false;
+      /* Two words, then the stream ends with no last line. */
+      await route.fulfill({ status: 200, headers: { "Content-Type": "application/x-ndjson" }, body: '{"t":"A paper "}\n{"t":"kite, "}\n' });
+    });
+    await input(page).fill(WORDS);
+    await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
+    await button(page).click();
+    await expect(note(page)).toContainText(ENHANCE_FAILED);
+    await expect(note(page)).toHaveText(`${ENHANCE_FAILED} Try again`);
+    await expect(note(page)).toHaveAttribute("role", "alert");
+    await expect(live(page)).toHaveText(ENHANCE_FAILED);
+    await expect(input(page), "the original text is back").toHaveValue(WORDS);
+    await expect(button(page)).toHaveText(/^Enhance · /);
+    await page.getByTestId("v12-make-enhance-again").click();
+    await expect(note(page)).toContainText(/^Enhanced · /, { timeout: 30_000 });
+    await expect(input(page)).not.toHaveValue(WORDS);
+  });
+
+  test("a slow provider: no word by 10 s, the typed words stay, the one line says so, and Make still sends them", async ({ page }) => {
     test.setTimeout(300_000);
     await openMake(page);
     const log = watch(page);
     /* The provider takes far longer than the client will wait. */
-    await answerRun(page, async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 20_000));
-      await route.fulfill({ json: { prompt: "too late", provider: "claude" } });
-    });
+    await answerRun(page, async () => { await new Promise((resolve) => setTimeout(resolve, 20_000)); });
     await input(page).fill(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
     const pressed = Date.now();
     await button(page).click();
     await expect(button(page)).toHaveText("Enhancing…");
-    /* Nothing came back to say what was billed, so the line says no more than it knows. */
-    await expect(note(page)).toHaveText(ENHANCE_FALLBACK, { timeout: 18_000 });
+    await expect(note(page)).toHaveText(`${ENHANCE_FAILED} Try again`, { timeout: 18_000 });
     expect(Date.now() - pressed, "given up on at about 10 s").toBeLessThan(15_000);
     expect(Date.now() - pressed).toBeGreaterThan(9_000);
     await expect(note(page)).toHaveAttribute("role", "alert");
@@ -236,7 +331,7 @@ test.describe("desktop", () => {
     await input(page).fill(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
     await button(page).click();
-    await expect(note(page)).toHaveText(ENHANCE_NOTHING_BILLED);
+    await expect(note(page)).toHaveText(`${ENHANCE_FAILED} Try again`);
     await expect(input(page)).toHaveValue(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · /);
     /* New words clear the complaint. */
@@ -272,21 +367,26 @@ test.describe("desktop", () => {
     await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
     const pressed = Date.now();
     await button(page).click();
-    await expect(note(page)).toHaveText(ENHANCE_NOTHING_BILLED);
+    await expect(note(page)).toHaveText(`${ENHANCE_FAILED} Try again`);
     expect(Date.now() - pressed).toBeLessThan(5_000);
     await expect(input(page)).toHaveValue(WORDS);
   });
 
-  test("a charge that stands says what it cost: the server's held credits, in the one line", async ({ page }) => {
+  test("reduced motion: no sweep, no run along the card, the loader holds still, and the states are still said", async ({ page }) => {
     test.setTimeout(300_000);
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await openMake(page);
-    await answerRun(page, (route) => route.fulfill({ status: 502, json: { error: "The text provider returned an uncertain result.", heldCredits: 1 }, headers: { "Idempotency-Status": "complete" } }));
+    const hold = holdRuns(page, 1_500);
     await input(page).fill(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
     await button(page).click();
-    await expect(note(page)).toHaveText(enhanceHeldLine(1));
-    await expect(input(page)).toHaveValue(WORDS);
-    await noOverflow(page);
+    await expect(button(page)).toHaveText("Enhancing…");
+    expect(await page.getByTestId("v12-make-bar-sweep").evaluate((el) => getComputedStyle(el).display), "no sweep").toBe("none");
+    expect(await page.locator(".v12-bar-progress").evaluate((el) => getComputedStyle(el, "::after").animationName), "no run along the card").toBe("none");
+    expect(await page.locator(".v12-arc-dot").first().evaluate((el) => getComputedStyle(el).animationName), "the loader holds still").toBe("none");
+    await expect(live(page)).toHaveText("Enhancing…");
+    hold();
+    await expect(note(page)).toContainText(/^Enhanced · /, { timeout: 30_000 });
   });
 
   test("the workspace's setting (Settings › Advanced) says whether Make offers the button", async ({ page }) => {

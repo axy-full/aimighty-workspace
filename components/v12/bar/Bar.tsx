@@ -87,6 +87,14 @@ export type BarProps = {
   /** One line under the row: a refusal, or what an attach read. */
   note?: { tone: "note" | "problem"; text: ReactNode; /** One press that goes with the line (Undo). */ action?: { label: string; onPress: () => void; testId?: string } } | null;
   disabled?: boolean;
+  /**
+   * Something is writing the words (Enhance): the input is read-only and busy, dims under a light sweep, and a progress line runs along the card. Esc
+   * calls `onCancel` while it lasts.
+   */
+  working?: boolean;
+  onCancel?: () => void;
+  /** The words as marked pieces, shown over the input for a moment (the changed words of a rewrite); the input's own text hides meanwhile. */
+  marked?: ReactNode | null;
   maxLength?: number;
   /** Docked in a band (Make's composer) rather than floating over the page: no shadow. */
   docked?: boolean;
@@ -94,7 +102,7 @@ export type BarProps = {
 };
 
 export function Bar(props: BarProps) {
-  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, onAttachPress, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, skills, chips, sheet, note, disabled, maxLength, docked, testId = "v12-bar" } = props;
+  const { value, onChange, onSubmit, placeholder, label = "Prompt", send, onAttach, onAttachPress, attachAccept, attachTitle = "Attach a file — Upload a file from your computer.", mentions, mentionsTitle = "From the library", onMention, skills, chips, sheet, note, disabled, working, onCancel, marked, maxLength, docked, testId = "v12-bar" } = props;
   const input = useRef<HTMLInputElement>(null);
   const files = useRef<HTMLInputElement>(null);
   const pop = useRef<HTMLDivElement>(null);
@@ -151,6 +159,13 @@ export function Bar(props: BarProps) {
     }
   };
   const canSend = !send.disabled && !send.busy && !disabled;
+  /* Esc stops what is writing the words, wherever the focus is. */
+  useEffect(() => {
+    if (!working || !onCancel) return;
+    const esc = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); onCancel(); } };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [working, onCancel]);
 
   return (
     <div className={docked ? "v12-bar v12-bar-docked" : "v12-bar"} data-testid={testId}>
@@ -197,7 +212,8 @@ export function Bar(props: BarProps) {
           </div>
         </div>
       ) : null}
-      <div className="v12-bar-card" data-disabled={disabled ? "" : undefined}>
+      <div className="v12-bar-card" data-disabled={disabled ? "" : undefined} data-working={working ? "" : undefined}>
+        {working ? <span className="v12-bar-progress" aria-hidden="true" data-testid={`${testId}-progress`} /> : null}
         {sheet}
         <div className="v12-bar-row">
           {onAttach ? (
@@ -218,11 +234,15 @@ export function Bar(props: BarProps) {
             </Tooltip>
           ) : null}
           {chips}
-          <input ref={input} className="v12-bar-input" value={value} placeholder={placeholder} aria-label={label} maxLength={maxLength} disabled={disabled}
+          <div className="v12-bar-field" data-working={working ? "" : undefined} data-marked={marked ? "" : undefined}>
+          <input ref={input} className="v12-bar-input" readOnly={working || undefined} aria-busy={working || undefined} value={value} placeholder={placeholder} aria-label={label} maxLength={maxLength} disabled={disabled}
             role={mentions || slashOpen ? "combobox" : undefined} aria-expanded={mentions || slashOpen ? listOpen || slashOpen : undefined} aria-controls={listOpen ? listId : slashOpen ? skillsId : undefined}
             aria-activedescendant={listOpen ? `${listId}-${current}` : slashOpen && listed.length ? `${skillsId}-${skillCurrent}` : undefined} aria-autocomplete={mentions || slashOpen ? "list" : undefined}
             onChange={(e) => { const next = e.target.value; onChange(next); setSlashOff(false); setSkillActive(0); if (mentions?.length && /(^|\s)@$/.test(next)) openList(); }}
             onKeyDown={onKey} data-testid={`${testId}-input`} />
+          {marked ? <div className="v12-bar-mirror" aria-hidden="true" data-testid={`${testId}-marked`}>{marked}</div> : null}
+          {working ? <span className="v12-bar-sweep" aria-hidden="true" data-testid={`${testId}-sweep`} /> : null}
+          </div>
           <button type="button" className={send.variant === "outlined" ? "v12-bar-send v12-bar-send-outlined" : send.variant === "quiet" ? "v12-bar-send v12-bar-send-quiet" : "v12-bar-send"} onClick={() => canSend && onSubmit()}
             disabled={!canSend} aria-busy={send.busy || undefined} title={send.title} data-testid={send.testId ?? `${testId}-send`} {...send.attrs}>
             {send.busy ? (send.busyLabel ?? `${send.label}…`) : send.price ? <span>{send.label} · {send.price}</span> : send.label}

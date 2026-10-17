@@ -112,8 +112,14 @@
   height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text);
   font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; cursor: pointer;
 }
+.v12-mk-enhance-working { display: inline-flex; align-items: center; gap: 8px; }
+.v12-arc { flex: none; display: block; }
+.v12-arc-dot { animation: v12-arc 1.1s linear infinite; }
+@keyframes v12-arc { 0%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .v12-arc-dot { animation: none; } }
 .v12-mk-enhance:hover:not([aria-disabled="true"]) { border-color: var(--gx-hover-border); }
 .v12-mk-enhance[aria-disabled="true"] { color: var(--gx-text-2); cursor: default; }
+.v12-mk-enhance[aria-busy="true"] { color: var(--gx-text); cursor: progress; }
 /* The button and its ⓘ are two controls side by side (prototype v14); the ⓘ's tooltip opens on hover, focus and a click that pins it. */
 .v12-mk-enhance-group { display: inline-flex; align-items: center; gap: 2px; flex: none; }
 .v12-mk-enhance-info { width: 28px; height: 30px; border: 0; background: transparent; color: var(--gx-text-2); font-size: 14px; line-height: 1; padding: 0; border-radius: 999px; cursor: pointer; }

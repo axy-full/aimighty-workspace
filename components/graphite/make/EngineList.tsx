@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL } from "@/lib/shell/enhancer";
+import { ENHANCE_HINT } from "@/lib/v12/enhance";
 import { exact } from "@/lib/shell/price-words";
 import { cinemaPriceWords } from "@/lib/cinemaHold";
 import { spendAttrsOf } from "@/lib/spend";
@@ -153,15 +154,18 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
           <button type="button" className="gx-hbtn" disabled={Boolean(enhancer.blocked) || enhancer.busy} {...(enhancer.credits == null ? {} : spendAttrsOf(exact(enhancer.credits)))} onClick={() => void make.pressEnhance()} aria-busy={enhancer.busy || undefined} data-testid="enhance">
             {enhancer.busy ? "Enhancing…" : enhancer.credits == null ? "Enhance now" : <>Enhance now · <Price value={exact(enhancer.credits)} /></>}
           </button>
+          {enhancer.busy ? <button type="button" className="gx-hbtn" onClick={make.enhanceState.cancel} data-testid="enhance-cancel">Cancel</button> : null}
         </div>
         {/* Its line keeps its height when the reason goes (the price landing), so what sits under it (Takes) does not move under a press. */}
-        <p className="gx-mk-line-note" style={{ minHeight: "1.45em" }} data-testid="enhance-reason">{enhancer.blocked}</p>
-        {enhancer.error ? <p className="gx-mk-error" role="alert" data-testid="enhance-error">{enhancer.error}</p> : null}
+        <p className="gx-mk-line-note" style={{ minHeight: "1.45em" }} data-testid="enhance-reason">{enhancer.busy ? (make.enhanceState.hint ? ENHANCE_HINT : "") : enhancer.blocked}</p>
+        {enhancer.error ? (
+          <p className="gx-mk-error" role="alert" data-testid="enhance-error">{enhancer.error} <button type="button" className="gx-hbtn" onClick={() => void make.pressEnhance()} data-testid="enhance-again">Try again</button></p>
+        ) : null}
         {make.enhanced ? (
           <div className="gx-mk-enhanced" data-testid="enhanced-card">
             <span className="gx-mk-eyebrow">Enhanced · {ENHANCER_LABEL[make.enhanced.provider ?? DEFAULT_ENHANCER]} · <Price value={exact(make.enhanced.credits)} /></span>
             <div className="gx-mk-inline">
-              <button type="button" className="gx-hbtn" onClick={make.undoEnhance} data-testid="enhanced-undo">Undo</button>
+              <button type="button" className="gx-hbtn" onClick={make.undoEnhance} data-testid="enhanced-undo">Undo enhance</button>
             </div>
           </div>
         ) : null}

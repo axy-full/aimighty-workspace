@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useMake, type MakeInput } from "@/components/graphite/make/use-make";
 import { useShell } from "@/lib/shell/state";
 import { spendAttrsOf, spendAttrsText } from "@/lib/spend";
@@ -7,7 +7,7 @@ import { TAKES_MAX } from "@/lib/workspace/composer";
 import { useSession } from "@/lib/session";
 import { creditRate } from "@/lib/shell/price-words";
 import { EnhanceButton } from "./EnhanceButton";
-import { enhanceOffered, workspaceEnhance } from "@/lib/v12/enhance";
+import { ENHANCE_AGAIN, ENHANCE_HINT, ENHANCE_PROGRESS_MS, ENHANCE_UNDO, ENHANCE_WORKING, changedWords, enhanceOffered, workspaceEnhance } from "@/lib/v12/enhance";
 import { LOADING } from "@/lib/v12/quote";
 import { exact } from "@/lib/shell/price-words";
 import { useRead } from "@/components/graphite/settings/use-settings";
@@ -142,10 +142,11 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   };
   const note = sourceNote ? { tone: "note" as const, text: REMIX_NEEDS_SOURCE }
     : make.wellError ? { tone: "problem" as const, text: make.wellError }
-    : enhanceShown && enhancer.error ? { tone: "problem" as const, text: enhancer.error }
+    : enhanceShown && make.enhanceState.phase !== "idle" ? { tone: "note" as const, text: make.enhanceState.hint ? ENHANCE_HINT : ENHANCE_WORKING, action: { label: "Cancel", onPress: make.enhanceState.cancel, testId: "v12-make-enhance-cancel" } }
+    : enhanceShown && enhancer.error ? { tone: "problem" as const, text: enhancer.error, action: { label: ENHANCE_AGAIN, onPress: () => void make.pressEnhance(), testId: "v12-make-enhance-again" } }
     : make.result ? { tone: "problem" as const, text: make.result }
       : make.short ? { tone: "problem" as const, text: make.short }
-        : enhanceShown && make.enhanced ? { tone: "note" as const, text: <>Enhanced · <Price quote={makeQuote(exact(make.enhanced.credits), money, make.enhanced.usd)} testId="v12-make-enhanced-price" /></>, action: { label: "Undo", onPress: make.undoEnhance, testId: "v12-make-enhance-undo" } }
+        : enhanceShown && make.enhanced ? { tone: "note" as const, text: <>Enhanced · <Price quote={makeQuote(exact(make.enhanced.credits), money, make.enhanced.usd)} testId="v12-make-enhanced-price" /></>, action: { label: ENHANCE_UNDO, onPress: make.undoEnhance, testId: "v12-make-enhance-undo" } }
         : make.notices[0] ? { tone: "note" as const, text: make.notices[0] }
           : make.spendOff ? { tone: "note" as const, text: make.spendOff }
             : null;
@@ -155,6 +156,12 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   const enhanceQuote = enhancer.credits != null ? makeQuote(exact(enhancer.credits), money, enhancer.usd)
     : enhancer.unavailable ? { state: "error" as const, message: enhancer.unavailable }
       : words && !enhancer.blocked?.startsWith("raw:") ? LOADING : null;
+  const working = enhanceShown && make.enhanceState.phase !== "idle";
+  const marks = make.enhanceState.marked ? changedWords(make.enhanceState.marked.original, make.enhanceState.marked.enhanced) : null;
+  /* What a screen reader is told as the press goes (a polite live region; the button and the box carry aria-busy). */
+  const announce = working ? (make.enhanceState.hint ? ENHANCE_HINT : ENHANCE_WORKING)
+    : enhancer.error ? enhancer.error
+      : make.enhanced ? `Enhanced. ${ENHANCE_UNDO} is available.` : "";
   const enhanceButton = (
     <EnhanceButton busy={enhancer.busy} disabled={Boolean(enhancer.blocked) || make.submitting} why={enhancer.blocked}
       price={enhanceQuote ? <Price quote={enhanceQuote} testId="v12-make-enhance-price" /> : null}
@@ -216,7 +223,8 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
 
   const skills = useBarSkills(state.prompt, make.setPrompt);
   return (
-    <div className="v12-mk-composer" data-testid="v12-make-composer" data-mode={mode}>
+    <div className="v12-mk-composer" data-testid="v12-make-composer" data-mode={mode} style={{ "--v12-enhance-wait": `${ENHANCE_PROGRESS_MS}ms` } as CSSProperties}>
+      <span className="v12-sr" role="status" aria-live="polite" data-testid="v12-make-enhance-live">{announce}</span>
       <Bar
         docked
         skills={skills}
@@ -232,6 +240,9 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
         mentionsTitle="From your results"
         onMention={make.takesReferences ? (m) => void make.addReference(/^(upload|generation):/.test(m.id) ? m.id : `generation:${m.id}`) : undefined}
         note={note}
+        working={working}
+        onCancel={make.enhanceState.cancel}
+        marked={marks ? <>{marks.map((m, i) => (m.changed ? <mark key={i}>{m.text}</mark> : <span key={i}>{m.text}</span>))}</> : null}
         send={{
           label: ops ? "Pick what to do" : composer.buttonParts.action || "Make",
           price: ops ? undefined : priceNode,

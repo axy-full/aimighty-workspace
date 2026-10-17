@@ -77,7 +77,7 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
       ) : null}
 
       <div className="gx-mk-words" data-filled={state.prompt.trim() ? "" : undefined}>
-        <textarea ref={box} className="gx-mk-text" aria-label="What to make" rows={3} placeholder="make shot 2 at golden hour" value={state.prompt}
+        <textarea ref={box} className="gx-mk-text" aria-label="What to make" rows={3} placeholder="make shot 2 at golden hour" value={state.prompt} readOnly={make.enhancer.busy || undefined} aria-busy={make.enhancer.busy || undefined}
           onChange={(e) => { make.setPrompt(e.target.value); typeahead.track(e.target); }} {...typeahead.inputProps} data-testid="gen-prompt" />
         {typeahead.list}
         <div className="gx-mk-typerow">

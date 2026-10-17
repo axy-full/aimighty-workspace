@@ -16,10 +16,34 @@ export function enhanceOffered(type: string): boolean {
   return type === "image" || type === "video";
 }
 
-/** The label and its tooltip: the name, then the line after the dash. The cost is on the button itself. */
+/** The label and its tooltip: the name, then the line after the dash (the owner's words, 16 Oct 2026, pinned in tests/unit/v12-enhance.spec.ts). */
 export const ENHANCE_LABEL = "Enhance";
 export const ENHANCE_TIP_NAME = "Enhance";
-export const ENHANCE_TIP_LINE = "Particl rewrites your prompt for the chosen engine (light, camera, detail) and puts it in the box, so you can edit it. Make sends the box exactly as it is.";
+export const ENHANCE_TIP_LINE = "Particl rewrites your prompt for the chosen engine (light, camera, detail) and puts it in the box for you to edit. 1 credit per press, free if it fails. Make sends the box exactly as it is.";
+
+/** What a press says while it waits and when it ends. The hint comes at 2 s; it names no engine, so it is right in Agent mode too. */
+export const ENHANCE_WORKING = "Enhancing…";
+export const ENHANCE_HINT = "Rewriting for the chosen engine: light, camera, detail";
+export const ENHANCE_HINT_AFTER_MS = 2_000;
+/** The progress line runs toward this: the time the first words may take. */
+export const ENHANCE_PROGRESS_MS = 8_000;
+/** How long the changed words stay marked once the rewrite is in. */
+export const ENHANCE_MARK_MS = 2_400;
+export const ENHANCE_UNDO = "Undo enhance";
+export const ENHANCE_AGAIN = "Try again";
+
+/** The rewrite as pieces, each marked when it says something the typed words did not (a word the original lacks), for the brief highlight once a rewrite lands. Case and edge punctuation do not count as a change. */
+export function changedWords(original: string, enhanced: string): { text: string; changed: boolean }[] {
+  const bare = (word: string) => word.toLowerCase().replace(/^[^\p{L}\p{N}@]+|[^\p{L}\p{N}]+$/gu, "");
+  const had = new Map<string, number>();
+  for (const word of original.split(/\s+/)) { const key = bare(word); if (key) had.set(key, (had.get(key) ?? 0) + 1); }
+  return (enhanced.match(/\S+\s*/g) ?? []).map((piece) => {
+    const key = bare(piece.trim());
+    const left = key ? had.get(key) ?? 0 : 0;
+    if (left > 0) { had.set(key, left - 1); return { text: piece, changed: false }; }
+    return { text: piece, changed: Boolean(key) };
+  });
+}
 
 /** What a take records of it (generations.params, from the request's `enhanced`, once the enhancer's own job is proved: lib/enhanceProof.ts): `enhanced: true` with the typed words in `enhancedFrom` (`rawPrompt` keeps its old meaning), or `false`. */
 export type TakeEnhance = { label: "Enhanced"; original: string | null } | { label: "Raw" } | null;
