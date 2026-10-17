@@ -324,3 +324,10 @@
 @media (max-width: 767px), (pointer: coarse) { .gx .vr-frame { width: 88px; min-height: 44px; } .gx .vr-ref-x { width: 32px; height: 32px; } }
 /* A disabled control in the panel still reads at the floor (55% white): the reason beside it says why it waits. */
 .gx .gx-make .gx-hbtn:disabled, .gx .gx-make .gx-hbtn[aria-disabled="true"], .gx .gx-make .gx-chip:disabled { color: var(--gx-text-2); opacity: 1; }
+/* Resolution (owner, 16 Oct 2026, § D): the presets, the engine's sizes and the upscaled 4K, each row wrapping; a size the engine cannot do is greyed
+   (a dashed hairline, not a box) and says why, at the floor for disabled text. */
+.gx-mk-res { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gx .gx-mk-res .gx-chip { height: auto; min-height: 28px; padding-block: 3px; white-space: normal; }
+.gx .gx-mk-res-off { display: inline-flex; align-items: center; border-style: dashed; color: var(--gx-text-2); cursor: default; font-weight: 400; }
+.gx-mk-res-why { font-weight: 400; color: var(--gx-text-2); }
+@media (max-width: 767px), (pointer: coarse) { .gx .gx-mk-res .gx-chip { min-height: 44px; } }

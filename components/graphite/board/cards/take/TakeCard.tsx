@@ -29,7 +29,7 @@ import { shotReferenceDrop } from "../accepts";
 import { defineCard, type BoardCtx, type CardProps } from "../types";
 import type { TakeCardData } from "./shots-derive";
 import {
-  ESTIMATE_CAP, estimateWords, inFlight, judgeable, needsReview, renderEstimate, verifyNote,
+  ESTIMATE_CAP, estimateWords, inFlight, judgeable, needsReview, renderEstimate, takeResolution, verifyNote,
   type ShotTakes, type ShotVersion,
 } from "./take-model";
 import { useJudge } from "./use-judge";
@@ -210,7 +210,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
       </div>
       <div className="gx-take-foot">
         <div className="gx-take-name">{row.title}</div>
-        <div className={data.grid && v ? "gx-take-line gx-take-line--engine" : "gx-take-line"} data-testid={data.grid && v ? "take-engine-line" : undefined}>{data.grid && v ? engineAndPrice(v, dollars) : row.line}</div>
+        <div className={data.grid && v ? "gx-take-line gx-take-line--engine" : "gx-take-line"} data-testid={data.grid && v ? "take-engine-line" : undefined}>{data.grid && v ? engineAndPrice(v, dollars) : [row.line, v ? takeResolution(v) : ""].filter(Boolean).join(" · ")}</div>
         {v && hasStatus(v) ? <StatusLine version={v} ctx={ctx} /> : null}
         {data.blocking ? <ShotBlockingStrip ctx={ctx} nodeId={row.nodeId} index={row.index} view={data.blocking} /> : null}
         {judging && v ? <GridActions row={row} version={v} ctx={ctx} /> : null}

@@ -277,6 +277,17 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     if (size !== undefined || seconds !== undefined) dispatch({ type: "pick", value: { ...(size !== undefined ? { resolution: size } : {}), ...(seconds !== undefined ? { duration: seconds } : {}) } });
   }, [wantedSize, wantedSeconds, heldSize, heldSeconds, sizes, lengths, dispatch]);
 
+  /* ── Resolution (owner, 16 Oct 2026, § D) ───────────────────────────── */
+  /* The upscaled 4K is a render at the engine's top size and then an upscale of that take, each priced and approved on its own
+     (lib/resolutions.ts): picking it sends the render's size, and the line says the upscale follows. It holds only while the engine and
+     the size it was picked at are still the composer's. */
+  const [upscaleAt, setUpscaleAt] = useState<{ model: string; from: string } | null>(null);
+  const upscale = Boolean(upscaleAt && model && upscaleAt.model === model.id && upscaleAt.from === settings.resolution && !settings.draft && state.type === "video");
+  const pickResolution = useCallback((pick: { resolution: string; upscale: boolean }) => {
+    dispatch({ type: "pick", value: { resolution: pick.resolution } });
+    setUpscaleAt(pick.upscale && model ? { model: model.id, from: pick.resolution } : null);
+  }, [dispatch, model]);
+
   /* ── Auto: the type from the words, after they rest ─────────────────── */
   const inferred = picked || recipe ? null : inferType(state.prompt, { references: state.references.length });
   useEffect(() => {
@@ -428,7 +439,7 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   const line = (state.type === "audio"
     ? [model?.label, model?.audioTask === "speech" ? composer.voice?.name : soundTask ? `${composer.seconds} s` : null]
     : state.type === "image" ? [model?.label, settings.resolution]
-    : [model?.label, settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter((part): part is string => Boolean(part));
+    : [model?.label, upscale ? `4K upscaled from ${settings.resolution}` : settings.resolution, model?.durations?.length ? `${settings.duration} s` : null]).filter((part): part is string => Boolean(part));
   /* A sound is a live estimate: "up to N cr" (lib/shell/make-price.ts › makeQuoteValue); a still or a clip is its card figure. */
   /* While a recreated take's references are still being read, the figure on hand is the quote without them: not what the take will cost, so no price shows. */
   /* The house workspace's figure in the engine's dollars (the same the reservation holds and the meter settles at): one take, from the live quote. */
@@ -447,6 +458,8 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   return {
     composer, state, model, settings, offered, tool, recent, submitting,
     picked, pickType,
+    /** The upscaled 4K is the pick: the take is made at `settings.resolution`, and its upscale is asked for on its own once it is made. */
+    upscale, pickResolution,
     /** Back to Auto: the type follows the words again (the new interface's Auto mode). */
     unpick,
     typeNote: tool ? null : typeNote(state.prompt, picked),
