@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { SHOTS_SETTINGS, barButton, cancellable, cardChips, nextStepLabel, requestFields, scopeOf, shotSettings, valueWords } from "../../components/v12/board/director-model";
+import { NO_ENGINE_NOTE, SHOTS_SETTINGS, barButton, modelWords, cancellable, cardChips, nextStepLabel, requestFields, scopeOf, shotSettings, valueWords } from "../../components/v12/board/director-model";
 import { stagesOf } from "../../lib/v12/board/stages";
 
 /* v25 PR 7: Director on Shots (components/v12/board/director-model.ts). Pure. */
@@ -70,4 +70,12 @@ test("Cancel is offered only while a take is still queued at the provider", () =
   expect(cancellable(["running"])).toBe(false);
   expect(cancellable(["running", "queued"])).toBe(true);
   expect(cancellable(["succeeded", "failed"])).toBe(false);
+});
+
+test("Director never picks an engine: the model line reads None until the person picks one (owner, 16 Oct 2026, 2a)", () => {
+  expect(modelWords(null)).toBe("None");
+  expect(modelWords(undefined)).toBe("None");
+  expect(modelWords({ id: "x", label: "Seedance 2.5" })).toBe("Seedance 2.5");
+  expect(modelWords(null)).not.toMatch(/auto/i);
+  expect(NO_ENGINE_NOTE).toBe("Pick an engine first.");
 });

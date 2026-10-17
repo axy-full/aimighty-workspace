@@ -4,7 +4,7 @@ import { spendAttrsOf } from "@/lib/spend";
 import { Price } from "../ui/Price";
 import { knownQuote } from "@/lib/v12/quote";
 import { useEffect } from "react";
-import { barButton, nextStepLabel, type Scope } from "./director-model";
+import { NO_ENGINE_NOTE, barButton, nextStepLabel, type Scope } from "./director-model";
 import { useDirectorRender, type DirectorRender, type DirectorShot } from "./use-director-render";
 import "./director.css";
 
@@ -16,15 +16,20 @@ import "./director.css";
  *   making   "Making…"                   disabled, with "3 of 8 ready"; "Cancel" beside it only while a take is still queued at the provider
  *   done     "Next: Edit →"              the way on; not a spend, so no price
  *
- * A price that is not yet read leaves the button disabled with the last one shown. Everything it says in words comes from director-model.ts.
+ * A price that is not yet read leaves the button disabled with the last one shown. Until an engine is picked (`engine` null: Director never picks one,
+ * owner 16 Oct 2026, 2a) nothing is priced and the button is off. Everything it says in words comes from director-model.ts.
  */
-export function DirectorBar({ scope, scopeKey, projectKey, shots, stages, step, readOnly, ask, onState, onNext }: {
+const NONE: readonly DirectorShot[] = [];
+
+export function DirectorBar({ scope, scopeKey, projectKey, shots, engine = null, stages, step, readOnly, ask, onState, onNext }: {
   scope: Scope;
   /** The request scope (the signed-in person's workspace), as every paid send carries it. */
   scopeKey: string;
   projectKey: string;
   /** Exactly the requests a press will send, one per shot in the scope (the board builds them from its shots' settings). */
   shots: readonly DirectorShot[];
+  /** The engine the person picked for the step (its id), or null: nothing is priced or sent until there is one. */
+  engine?: string | null;
   /** The board's stages and the open one: "Next: …" is the stage after it that is not skipped. */
   stages: readonly { id: string; label: string; skipped: boolean }[];
   step: string;
@@ -37,7 +42,7 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, stages, step, 
   /** After "Next: …" is pressed: the board opens the next step. */
   onNext?: (nextLabel: string | null) => void;
 }) {
-  const render = useDirectorRender({ scope: scopeKey, projectKey, shots, readOnly });
+  const render = useDirectorRender({ scope: scopeKey, projectKey, shots: engine ? shots : NONE, readOnly: readOnly ?? (engine ? null : NO_ENGINE_NOTE) });
   const next = nextStepLabel(stages, step);
   useEffect(() => { onState?.({ state: render.state, finished: render.finished, total: render.total }); }, [onState, render.state, render.finished, render.total]);
   const { state, price, pricing, problem, canCancel } = render;
@@ -49,8 +54,8 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, stages, step, 
   const label = barButton({ state, scope, next });
   const making = state === "sending" || state === "making";
   const priced = state === "idle" && price !== null;
-  const off = readOnly != null || (state === "idle" && (pricing !== "ready" || !scope.ids.length));
-  const note = problem ?? (pricing === "error" && state === "idle" ? "A price could not be read. Nothing was sent." : readOnly ?? null);
+  const off = readOnly != null || !engine || (state === "idle" && (pricing !== "ready" || !scope.ids.length));
+  const note = problem ?? (pricing === "error" && state === "idle" ? "A price could not be read. Nothing was sent." : readOnly ?? (engine ? null : NO_ENGINE_NOTE));
   return (
     <div className="v12-dirbar" data-testid="v12-director-bar" data-state={state}>
       <span className="v12-dirbar-pill" data-testid="v12-director-scope">{scope.label}</span>
