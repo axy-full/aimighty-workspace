@@ -4,7 +4,7 @@ import { db, id as newId, now, ready } from "../db";
 import { failureCopy } from "../errors";
 import { jobCsv, jobErrorLine, publicCommand, publicJob, recreateRecipe, type PublicCommand, type PublicJob, type Recipe, type ViewOptions } from "../jobView";
 import { parseOutcome, type ProviderOutcome } from "../providerOutcome";
-import { ceilTenths } from "../runLimit";
+import { isRunLimitAmount, toTenths } from "../runLimit";
 import { assertPerson, PeopleOnlyError, type Caller } from "../security/people-only";
 import { requireTenant } from "../tenant";
 import { isPersonApprover } from "../workbench/plan-approval";
@@ -108,6 +108,8 @@ export const QUOTED_JOBS_SCHEMA: string[] = [
      PRIMARY KEY(workspace_id,id))`,
   `CREATE INDEX IF NOT EXISTS idx_agent_commands_production ON agent_commands(workspace_id,production_id,created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_agent_commands_member ON agent_commands(workspace_id,created_by,created_at)`,
+  /* One plan approval approves one command: it is never drawn on twice. */
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_commands_approval ON agent_commands(workspace_id,approval_ref) WHERE approval_ref IS NOT NULL`,
   `CREATE TRIGGER IF NOT EXISTS agent_commands_fixed BEFORE UPDATE ON agent_commands
      WHEN NEW.workspace_id IS NOT OLD.workspace_id OR NEW.id IS NOT OLD.id OR NEW.production_id IS NOT OLD.production_id
        OR NEW.step_id IS NOT OLD.step_id OR NEW.instruction IS NOT OLD.instruction OR NEW.quote_tenths IS NOT OLD.quote_tenths
@@ -183,12 +185,15 @@ function cleanBy(by: unknown): string {
   return by;
 }
 
-/** A quote in credits, as whole tenths rounded up (the lib/runLimit.ts idiom: a price is never read below itself). */
+/** The largest quote a row may hold, in credits: the same bound as an Atomik run's limit (lib/workbench/rig-agent.ts MAX_RUN_LIMIT). A bound, not a price. */
+export const MAX_QUOTE_CREDITS = 1_000_000;
+
+/** A quote in credits: free (0), or a positive amount in whole tenths up to MAX_QUOTE_CREDITS (lib/runLimit.ts isRunLimitAmount). */
 function quoteTenths(input: QuoteInput): number {
   const q = input as Partial<Record<string, unknown>> | null;
   const keys = q && typeof q === "object" ? Object.keys(q) : [];
-  if (q && keys.length === 1 && keys[0] === "credits" && typeof q.credits === "number" && Number.isFinite(q.credits) && q.credits >= 0)
-    return ceilTenths(q.credits);
+  if (q && keys.length === 1 && keys[0] === "credits" && (q.credits === 0 || isRunLimitAmount(q.credits, MAX_QUOTE_CREDITS)))
+    return toTenths(q.credits as number);
   throw new QuotedJobError("A job is written only with its quote, in credits.", 400);
 }
 
@@ -294,8 +299,10 @@ class JobStore {
   /**
    * Point a command at the approval a person gave. Approving spend is a person's alone (CLAUDE.md rules 11 and 14):
    * Atomik, an MCP client, an API token and any machine id are refused (assertPerson, then plan-approval.ts
-   * isPersonApprover). The approval must be a `rig_plan_approvals` row of the same production, still open, given by a
-   * person, whose total covers the command's quote.
+   * isPersonApprover). The approval must be a `rig_plan_approvals` row of the same production, still open, given by
+   * THIS person, whose total is at least the command's quote, and not already drawn on by another command (one
+   * approval, one command; a unique index holds it too). The command takes the approval's run as its run.
+   * `rig_plan_approvals` has no workspace_id column: it is scoped by the workspace's own database, like `projects`.
    */
   async approveCommand(commandId: string, approvalRef: string, caller: Caller): Promise<PublicCommand> {
     const view = this.#scoped();
@@ -308,16 +315,20 @@ class JobStore {
       if (row.state !== "quoted") throw new QuotedJobError("That instruction is not waiting for approval.", 409);
       const table = await tx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rig_plan_approvals'");
       const approval = table.rows.length
-        ? (await tx.execute({ sql: "SELECT production_id, approved_by, total_tenths, expires_at, closed_at FROM rig_plan_approvals WHERE id=?", args: [ref] })).rows[0]
+        ? (await tx.execute({ sql: "SELECT run_id, production_id, approved_by, total_tenths, expires_at, closed_at FROM rig_plan_approvals WHERE id=?", args: [ref] })).rows[0]
         : undefined;
       if (!approval || row.production_id === null || String(approval.production_id) !== String(row.production_id))
         throw new QuotedJobError(NO_APPROVAL, 404);
       if (!isPersonApprover(approval.approved_by)) throw new PeopleOnlyError();
+      /* The person recording it is the person who approved: nobody draws on someone else's approval. */
+      if (String(approval.approved_by) !== caller.user?.id) throw new QuotedJobError("That approval was given by someone else.", 403);
       if (approval.closed_at !== null || Number(approval.expires_at) <= now()) throw new QuotedJobError("That approval is closed.", 409);
-      if (Number(approval.total_tenths) < Number(row.quote_tenths)) throw new QuotedJobError("That approval does not cover this instruction's quote.", 409);
+      if (Number(approval.total_tenths) < Number(row.quote_tenths)) throw new QuotedJobError("That approval's total is below this instruction's quote.", 409);
+      const used = await tx.execute({ sql: "SELECT 1 FROM agent_commands WHERE workspace_id=? AND approval_ref=?", args: [this.workspaceId, ref] });
+      if (used.rows.length) throw new QuotedJobError("That approval already approved another instruction.", 409);
       await tx.execute({
-        sql: "UPDATE agent_commands SET state='approved', approval_ref=?, updated_at=? WHERE workspace_id=? AND id=? AND state='quoted'",
-        args: [ref, now(), this.workspaceId, commandId],
+        sql: "UPDATE agent_commands SET state='approved', approval_ref=?, run_ref=?, updated_at=? WHERE workspace_id=? AND id=? AND state='quoted'",
+        args: [ref, String(approval.run_id), now(), this.workspaceId, commandId],
       });
       return publicCommand(await this.#commandRow(tx, commandId), view);
     });
@@ -333,6 +344,9 @@ class JobStore {
       const row = await this.#commandRow(tx, commandId);
       const from = String(row.state) as CommandState;
       if (!COMMAND_MOVES[from]?.includes(state)) throw new QuotedJobError(`An instruction that is ${from} cannot become ${state}.`, 409);
+      /* Its run is the approval's: another run cannot carry it on. */
+      if (runRef && row.run_ref !== null && row.run_ref !== undefined && String(row.run_ref) !== runRef)
+        throw new QuotedJobError("That instruction belongs to another run.", 409);
       await tx.execute({
         sql: "UPDATE agent_commands SET state=?, run_ref=COALESCE(run_ref,?), updated_at=? WHERE workspace_id=? AND id=? AND state=?",
         args: [state, runRef, now(), this.workspaceId, commandId, from],

@@ -170,42 +170,78 @@ function quoteOf(tenths: unknown): JobQuote | null {
  * Words in a model's own name that are plain English or Particl's own product names, never an engine's: they are not
  * matched on their own (a prompt about a product, a motion or a cinema keeps its words). The full name still is.
  */
-const NOT_ENGINE_WORDS = new Set(["the", "engine", "image", "video", "audio", "model", "standard", "pro", "cinema", "studio", "identity", "motion", "object", "product", "upscale"]);
-const leading = (text: string) => text.trim().split(/[\s/_-]+/)[0] ?? "";
+const NOT_ENGINE_WORDS = new Set([
+  "the", "engine", "image", "video", "audio", "model", "standard", "pro", "cinema", "studio", "identity", "motion", "object", "product",
+  "upscale", "cutout", "expand", "transform", "marketing", "still", "render", "character", "creative", "background", "remove", "reframe",
+]);
+/** Particl's own names for a feature (lib/uiNames.ts and the registry's labels), not an engine's: not matched as names. */
+const NOT_ENGINE_PHRASES = new Set(["product image", "identity render", "motion transfer", "object swap", "cinema 4"]);
+const genericNeedle = (needle: string): boolean =>
+  NOT_ENGINE_WORDS.has(needle) || NOT_ENGINE_PHRASES.has(needle) || /^(?:identity|id) /.test(needle) || !/\p{L}{2,}/u.test(needle);
+/** A name's tier or version words at its end ("Seedance 2.5", "Nano Banana Pro", "Cinema Studio 4.0"): stripped to get the brand. */
+const TRAILING = /^(?:v?\d+(?:\.\d+)*[a-z]?|pro|standard|std|fast|mini|lite|turbo|max|plus|hd|preview|flash)$/i;
+const SEPARATORS = /[\s_-]+/;
+const leading = (text: string) => text.trim().split(/[\s/_.-]+/)[0] ?? "";
+function unversioned(label: string): string {
+  const words = label.trim().split(/\s+/);
+  while (words.length > 1 && TRAILING.test(words[words.length - 1])) words.pop();
+  return words.join(" ");
+}
 
-/** Everything that names this job's engine, as whole words: ids, names, a name's leading word, family, provider. */
+/**
+ * Everything that names this job's engine: each id and its leading segment ("dreamina"), each name with and without its
+ * trailing version or tier ("Nano Banana"), the name's leading word ("Seedance"), the short name, the family and its
+ * first word, and the provider, for the job's engine, the take's model and the recorded engine, model and provider.
+ */
 export function engineNeedles(row: StoredJob): string[] {
   const recorded = record(json(row.take_recorded));
   const outcome = parseOutcome(row.take_outcome);
   const ids = [str(row.engine), str(row.take_model), str(recorded?.engine), str(recorded?.model), str(recorded?.provider)].filter((x): x is string => !!x);
   const names: string[] = [];
   for (const id of ids) {
+    names.push(leading(id));
     const label = displayModelName(id);
-    names.push(label, leading(label));
+    names.push(label, unversioned(label), leading(label));
     const provider = providerOf(id);
     if (provider) names.push(provider);
     const model = findModel(id);
-    if (model) names.push(model.label, leading(model.label), model.short, leading(model.short), model.family, leading(model.family));
+    if (model)
+      names.push(model.label, unversioned(model.label), leading(model.label), model.short, unversioned(model.short), leading(model.short), model.family, leading(model.family));
   }
   if (outcome) names.push(outcome.provider, PROVIDER_NAME[outcome.provider]);
-  return [...new Set([...ids, ...names].map((n) => String(n ?? "").trim().toLowerCase()).filter((n) => n.length >= 3 && n !== "the engine" && !NOT_ENGINE_WORDS.has(n)))];
+  return [...new Set([...ids, ...names].map((n) => String(n ?? "").trim().toLowerCase().split(SEPARATORS).join(" ")).filter((n) => n.length >= 3 && n !== "the engine" && !genericNeedle(n)))];
 }
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** The last layer for an Agent output: a free-text value naming the engine, as a whole word, is dropped, never sent. */
+/**
+ * One needle as a pattern. It always starts a word ("fal" is never found in "waterfall", "kling" never in "sparkling").
+ * Inside it, a space, "_" or "-" may be any of them or nothing ("Nano Banana", "nano-banana", "NanoBanana"). After it,
+ * a digit may follow any needle ("Kling3", "Nano2"); a needle of five letters or more may also run on into letters
+ * ("KlingAI", "SeedanceV2"), while a shorter one may not, so "false" and "Falguni" keep their words.
+ */
+function needlePattern(needle: string): string {
+  const body = needle.split(SEPARATORS).map(escape).join("[\\s_-]*");
+  const letters = (needle.match(/\p{L}/gu) ?? []).length;
+  return `(?<![\\p{L}\\p{N}])${body}${letters >= 5 ? "" : "(?!\\p{L})"}`;
+}
+
+const DROP = Symbol("drop");
+
+/** The last layer for an Agent output: a free-text value naming the engine is removed (its key with it), never sent. */
 function scrub<T>(value: T, needles: string[]): T {
   if (!needles.length) return value;
-  /* A whole word: not touching another letter or digit on either side ("fal" is in "fal-ai", never in "waterfall"). */
-  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${needles.map(escape).join("|")})(?![\\p{L}\\p{N}])`, "iu");
+  const pattern = new RegExp(needles.map(needlePattern).join("|"), "iu");
   const names = (s: string) => pattern.test(s);
   const walk = (v: unknown): unknown => {
-    if (typeof v === "string") return names(v) ? null : v;
-    if (Array.isArray(v)) return v.map(walk).filter((x) => x !== null);
-    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).filter(([k]) => !names(k)).map(([k, x]) => [k, walk(x)]));
+    if (typeof v === "string") return names(v) ? DROP : v;
+    if (Array.isArray(v)) return v.map(walk).filter((x) => x !== DROP);
+    if (v && typeof v === "object")
+      return Object.fromEntries(Object.entries(v).filter(([k]) => !names(k)).map(([k, x]) => [k, walk(x)] as const).filter(([, x]) => x !== DROP));
     return v;
   };
-  return walk(value) as T;
+  const out = walk(value);
+  return (out === DROP ? null : out) as T;
 }
 
 /* ── the views ────────────────────────────────────────────────────────── */
