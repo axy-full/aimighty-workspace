@@ -369,8 +369,10 @@ test("the request: a short budget, two messages, no tools; a failed or empty rep
   expect(sent!.max_tokens).toBeLessThanOrEqual(200);
   expect(sent!.messages).toEqual([{ role: "system", content: instructions.VISITOR_INSTRUCTIONS }, { role: "user", content: "What is Particl?" }]);
   expect(await bar.askVisitorBar("Hi", { send: async () => ({ ok: false, status: 429, text: '{"error":{"message":"rate limit on the vendor key"}}' }) })).toEqual({ ok: false, reason: "failed" });
-  expect(await bar.askVisitorBar("Hi", { send: async () => says("  ") })).toEqual({ ok: false, reason: "failed" });
-  expect(await bar.askVisitorBar("Hi", { send: async () => { throw new Error("socket closed"); } })).toEqual({ ok: false, reason: "failed" });
+  /* No answer to show, but a reply arrived (its usage) or the call was sent and lost (cost unknown): marked as paid, for the ledger. */
+  expect(await bar.askVisitorBar("Hi", { send: async () => says("  ") })).toEqual({ ok: false, reason: "failed", paid: { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: { prompt_tokens: 300, completion_tokens: 40 } } });
+  expect(await bar.askVisitorBar("Hi", { send: async () => ({ ok: true, status: 200, text: "not json" }) })).toEqual({ ok: false, reason: "failed", paid: { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null } });
+  expect(await bar.askVisitorBar("Hi", { send: async () => { throw new Error("socket closed"); } })).toEqual({ ok: false, reason: "failed", paid: { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null } });
 });
 
 /**
@@ -583,11 +585,40 @@ test("3d. the shared limits count in UTC-day buckets, all or none, and prune the
   expect(await admit("v3", "a2")).toEqual({ ok: true });
   expect(await admit("v4", "a3")).toEqual({ ok: false, scope: "platform", retryAfterSeconds: sixHours });
   /* A refusal took nothing: the refused visitors and addresses have no count, and the site is at its cap, not past it. */
-  const rows = async () => (await client.execute("SELECT scope, key, count FROM visitor_bar_hits WHERE count > 0 ORDER BY scope, key")).rows.map((r) => `${r.scope}:${r.key}:${r.count}`);
+  /* Every row, zero counts included: a refused request leaves none of its own behind. */
+  const rows = async () => (await client.execute("SELECT scope, key, count FROM visitor_bar_hits ORDER BY scope, key")).rows.map((r) => `${r.scope}:${r.key}:${r.count}`);
   expect(await rows()).toEqual(["address:a1:3", "address:a2:1", "platform::4", "visitor:v1:2", "visitor:v2:1", "visitor:v3:1"]);
   /* The next UTC day: everything has room again, and the past day is gone. */
   expect(await admit("v1", "a1", at + sixHours * 1000)).toEqual({ ok: true });
   expect(await rows()).toEqual(["address:a1:1", "platform::1", "visitor:v1:1"]);
+});
+
+test("3d1. refused cookieless requests leave no rows: the table grows only with what it counted", async () => {
+  process.env.SELFHOST_BEHIND_PROXY = "1";
+  process.env.VISITOR_BAR_PER_ADDRESS_DAY = "1";
+  process.env.VISITOR_BAR_PLATFORM_DAY = "3";
+  const r = await route(async () => says("A production tool."));
+  const { limits } = await lib();
+  const client = limits.visitorDatabase();
+  const rows = async () => Number((await client.execute("SELECT COUNT(*) AS n FROM visitor_bar_hits")).rows[0]?.n ?? 0);
+  /* One admitted question from one address: the site's row, its visitor's and its address's. */
+  expect((await ask(r, { question: "Q" }, from("203.0.113.1"))).status).toBe(200);
+  expect(await rows()).toBe(3);
+  /* A script without cookies, from the same address, 50 times: refused each time (the address's limit), no new row. */
+  const statuses = new Set<number>();
+  for (let i = 0; i < 50; i++) statuses.add((await ask(r, { question: "Q" }, from("203.0.113.1"))).status);
+  expect([...statuses]).toEqual([429]);
+  expect(await rows()).toBe(3);
+  /* Fill the site's cap, then a script without cookies from 50 new addresses and /48s: refused, no new row. */
+  expect((await ask(r, { question: "Q" }, from("203.0.113.2"))).status).toBe(200);
+  expect((await ask(r, { question: "Q" }, from("2001:db8:cc:1::1"))).status).toBe(200);
+  const before = await rows();
+  expect(before).toBe(3 + 2 + 3);
+  statuses.clear();
+  for (let i = 0; i < 25; i++) statuses.add((await ask(r, { question: "Q" }, from(`198.51.100.${i + 10}`))).status);
+  for (let i = 0; i < 25; i++) statuses.add((await ask(r, { question: "Q" }, from(`2001:db8:${(0xd00 + i).toString(16)}:1::1`))).status);
+  expect([...statuses]).toEqual([429]);
+  expect(await rows()).toBe(before);
 });
 
 test("3d2. two separate database clients on one file, many admissions in flight at once: the cap is never passed", async () => {
@@ -959,6 +990,31 @@ test("MONEY: nothing is recorded when no model was called (a limit, a refused mo
   process.env.VISITOR_BAR_MODEL = "anthropic/claude-sonnet-5";
   expect((await ask(await route(), { question: "Four" })).status).toBe(503);
   expect(ledgerRecords.length).toBe(1);
+});
+
+test("MONEY: a call that cost something but gave no answer is still on the ledger: an empty reply at its usage, a lost call at an unknown cost", async () => {
+  unlimited();
+  const usage = { prompt_tokens: 1_200, completion_tokens: 0, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 } };
+  const empty = await route(async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { role: "assistant", content: "" } }], usage }) }));
+  const lost = await route(async () => { throw new Error("timed out after it was sent"); });
+  const refused = await route(async () => ({ ok: false, status: 400, text: "{}" }));
+  const lines = await consoleLines(async () => {
+    expect((await ask(empty, { question: "Q1" })).status).toBe(503);
+    expect((await ask(lost, { question: "Q2" })).status).toBe(503);
+    expect((await ask(refused, { question: "Q3" })).status).toBe(503);
+  });
+  const { bar } = await lib();
+  expect(ledgerRecords.map((record) => ({ model: record.model, usage: record.usage }))).toEqual([{ model: bar.VISITOR_BAR_DEFAULT_MODEL, usage }, { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null }]);
+  /* A provider's refusal (an error status) is not a paid call: nothing recorded, and its log line says no ledger. */
+  expect(lines.map((line) => (JSON.parse(line) as { ledger?: string }).ledger)).toEqual(["recorded", "recorded", undefined]);
+  /* On the real meter, an unknown cost is an unknown bill: engine_cost_usd and billed_credits are NULL, no credit moves. */
+  const ledger = await import("../../lib/visitor/ledger");
+  expect(await ledger.recordVisitorSpend({ id: "lost-call-fixture", model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null })).toEqual({ recorded: true, costUsd: null });
+  const { platformDb } = await import("../../lib/platform");
+  const row = (await platformDb().execute({ sql: "SELECT engine_cost_usd, billed_credits, paid_by_platform, created_by FROM meter_events WHERE id = ?", args: ["visitor_lost-call-fixture"] })).rows[0];
+  expect({ cost: row?.engine_cost_usd, billed: row?.billed_credits, paid: Number(row?.paid_by_platform), by: row?.created_by }).toEqual({ cost: null, billed: null, paid: 0, by: "visitor" });
+  const debited = (await platformDb().execute({ sql: "SELECT COALESCE(SUM(credits), 0) AS n FROM billing_debits WHERE event_id = ?", args: ["visitor_lost-call-fixture"] })).rows[0];
+  expect(Number(debited?.n ?? 0)).toBe(0);
 });
 
 test("MONEY: a failure to record never fails the answer, and says so in the log", async () => {
