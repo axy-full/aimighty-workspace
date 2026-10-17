@@ -48,5 +48,17 @@ test("on a 2x screen x and y land on half pixels: twice them are whole numbers",
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(3.3, 14.7);
     await expect.poll(async () => { const v = await viewport(page); return Math.abs(v.x * 2 - Math.round(v.x * 2)) < 0.01 && Math.abs(v.y * 2 - Math.round(v.y * 2)) < 0.01; }, { timeout: 20_000 }).toBe(true);
+    /*
+     * The half pixel is kept, not rounded away: a sideways scroll of one wheel pixel pans the canvas by half a CSS pixel (React Flow's pan-on-scroll speed),
+     * which is one device pixel at 2×. Snapped to the 2× grid the view moves by exactly 0.5 each time; snapped to whole CSS pixels (the 1× grid) one of two
+     * such scrolls in a row would be rounded to no move at all. So both must move it by 0.5.
+     */
+    for (const step of [1, 2]) {
+      const before = await viewport(page);
+      await page.mouse.wheel(1, 0);
+      await expect.poll(async () => Math.round((before.x - (await viewport(page)).x) * 1000) / 1000, { timeout: 20_000, message: `scroll ${step}: the view moves by half a pixel` }).toBe(0.5);
+      const after = await viewport(page);
+      expect(after.y, `scroll ${step}: y unchanged`).toBe(before.y);
+    }
   } finally { await context.close(); }
 });
