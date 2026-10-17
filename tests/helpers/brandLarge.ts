@@ -1,12 +1,16 @@
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import { noOverflow } from "./visitorV12";
+import { OWNER_WINDOWS } from "./ownerSizes";
 
 /**
  * Large screens (owner, 15 Oct 2026, 22:30), for the logo wherever it is drawn: a vector mark, a wordmark with at least the pixels it is drawn with (it is PNG only in
- * public/brand today: the owner is to supply an SVG wordmark), at the five sizes the owner reviews and at a pixel ratio of 1 and of 2; its own size at every screen size; its
+ * public/brand today: the owner is to supply an SVG wordmark), at the sizes the owner reviews and at a pixel ratio of 1 and of 2; its own size at every screen size; its
  * header spans the window; nothing scrolls sideways. Local ENGINE_MOCK server only.
+ * The sizes are the owner's seven captures (tests/helpers/ownerSizes.ts, 16 Oct 2026); the logo is walked at a pixel ratio of 1 and of 2 at every one of them, a superset of the
+ * pixel ratio each size is reviewed at.
  */
-export const SIZES = [[1280, 800], [1440, 900], [1728, 1117], [1920, 1080], [2560, 1440]] as const;
+/* One entry per window size: 2560x1440 is reviewed at two ratios, and both are walked below. */
+export const SIZES = OWNER_WINDOWS;
 
 export async function logoFacts(logo: Locator, ratio: number) {
   return logo.evaluate((el, r) => {

@@ -4,14 +4,14 @@ import { openAsTabs, redesignWithBoards } from "../helpers/v12Header";
 import { openShotsBoard } from "../helpers/shotsV12";
 
 /*
- * The v25 frame at the five sizes the owner reviews (1280x800, 1440x900, 1728x1117, 1920x1080, 2560x1440; owner, 15 Oct 2026, 22:30):
+ * The v25 frame at the sizes the owner reviews (1280x800, 1440x900, 1728x1117, 1920x1080, 2560x1440@2x, 3008x1692@2x; owner, 16 Oct 2026, 15:05; tests/helpers/ownerSizes.ts):
  * Home and a board on its Shots stage (the prototype's eight shots: three finished, two rendering, three not started), each beside the prototype.
  * Home:  REDESIGN_PROTOTYPE_DIR=design/particl-prototype-25 REDESIGN_PROTOTYPE_PAGE="Particl app v25.html" ... -g "Home"
  * Board: REDESIGN_PROTOTYPE_DIR=design/particl-prototype-25 REDESIGN_PROTOTYPE_PAGE="Particl board v25.html" ... -g "board"
  */
 test.afterAll(closePrototypeServer);
 
-test("v25 Home at the five sizes", async ({ page }) => {
+test("v25 Home at the owner's sizes", async ({ page }) => {
   const { ids } = await redesignWithBoards(page, ["Harbour film · 30 s ad", "Harbour film · social cut"]);
   await openAsTabs(page, ids);
   await page.mouse.move(700, 600);
@@ -19,7 +19,7 @@ test("v25 Home at the five sizes", async ({ page }) => {
   await captureBeside(page, "v25-large-home", "");
 });
 
-test("v25 board on its Shots stage at the five sizes", async ({ page }) => {
+test("v25 board on its Shots stage at the owner's sizes", async ({ page }) => {
   /* The prototype's board: eight shots in mixed states (three finished, two rendering, three not started), Atomik's dock folded as the prototype draws it. */
   await openShotsBoard(page, "/suites?view=board&stage=shots");
   await expect(page.locator('.bd-node[data-card-kind="take"]')).toHaveCount(8, { timeout: 90_000 });

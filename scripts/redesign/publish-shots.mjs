@@ -6,11 +6,13 @@
  *
  * The images go to the `redesign-screenshots` branch (images only, never merged), under pr-<n>/<screen>/, through a
  * worktree at ../shots-branch, so no PNG ever lands in release/1. Each screen gets a table: the build and the
- * prototype URL beside it, at every size captured.
+ * prototype URL beside it, at every size captured. A size at a pixel ratio of 2 is tagged `2560x1440@2x`; the table shows the
+ * downscaled WebPs and links each to its full-size PNG.
  */
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
+import { SHOT_FILE, tableFor, tagsOf } from "./shot-files.mjs";
 
 const args = process.argv.slice(2);
 const pr = args[args.indexOf("--pr") + 1];
@@ -44,17 +46,16 @@ for (const from of froms) {
   const screen = path.basename(path.resolve(from));
   const dest = path.join(tree, `pr-${pr}`, screen);
   mkdirSync(dest, { recursive: true });
-  /* Only the tool's own output: the PNGs and their JSON notes, top level, nothing else from --from. */
-  const picked = readdirSync(from, { withFileTypes: true }).filter((e) => e.isFile() && /^\d+x\d+(-(app|proto|beside))?\.(png|json)$/.test(e.name));
+  /* Only the tool's own output: the PNGs, WebPs and their JSON notes, top level, nothing else from --from. */
+  const picked = readdirSync(from, { withFileTypes: true }).filter((e) => e.isFile() && SHOT_FILE.test(e.name));
   if (!picked.length) throw new Error(`${from} holds no screenshots.`);
   for (const e of picked) copyFileSync(path.join(from, e.name), path.join(dest, e.name));
-  const metas = readdirSync(dest).filter((f) => f.endsWith(".json")).sort().reverse();
+  const files = readdirSync(dest);
   lines.push(`#### ${screen}`, "");
-  for (const meta of metas) {
-    const info = JSON.parse(readFileSync(path.join(dest, meta), "utf8"));
-    const tag = meta.replace(/\.json$/, "");
-    const raw = (f) => `https://raw.githubusercontent.com/${REPO}/${BRANCH}/pr-${pr}/${encodeURIComponent(screen)}/${f}`;
-    lines.push(`**${tag}** · build \`${info.app}\` · prototype \`${info.prototype}\``, "", `| Build | Prototype |`, `|---|---|`, `| ![build ${tag}](${raw(`${tag}-app.png`)}) | ![prototype ${tag}](${raw(`${tag}-proto.png`)}) |`, "");
+  for (const tag of tagsOf(files).reverse()) {
+    const info = JSON.parse(readFileSync(path.join(dest, `${tag}.json`), "utf8"));
+    const raw = (f) => `https://raw.githubusercontent.com/${REPO}/${BRANCH}/pr-${pr}/${encodeURIComponent(screen)}/${encodeURIComponent(f)}`;
+    lines.push(...tableFor({ tag, info, files, raw }));
   }
 }
 git("add", "--", `pr-${pr}`);

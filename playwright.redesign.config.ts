@@ -1,18 +1,12 @@
 import { defineConfig } from "@playwright/test";
+import { sizeProjects } from "./tests/helpers/ownerSizes";
 
 /*
  * The redesign's screenshot runs (docs/redesign-plan.md › "Screenshots"): each built screen beside its prototype URL
- * at the two desktop sizes the owner reviews. Needs a local ENGINE_MOCK=1 server at PW_BASE_URL, like the workbench
+ * at the seven captures the owner reviews (tests/helpers/ownerSizes.ts; 2560x1440 at a pixel ratio of 1 and of 2, 3008x1692 at 2, as
+ * `redesign-2560x1440`, `redesign-2560x1440@2x` and `redesign-3008x1692@2x`). Needs a local ENGINE_MOCK=1 server at PW_BASE_URL, like the workbench
  * suite. Not part of CI: the lead runs it per PR and attaches the images.
  */
-/* The owner's five desktop sizes (15 Oct 2026, 22:30): 13-inch laptop, the reference, 16-inch MacBook Pro, full HD, and 27-inch or scaled 4K. */
-const sizes = [
-  [1280, 800],
-  [1440, 900],
-  [1728, 1117],
-  [1920, 1080],
-  [2560, 1440],
-];
 export default defineConfig({
   testDir: "tests/redesign",
   testMatch: /\.shots\.ts$/,
@@ -26,8 +20,5 @@ export default defineConfig({
     baseURL: process.env.PW_BASE_URL || "http://localhost:4561",
     ...(process.env.PW_EXECUTABLE_PATH ? { launchOptions: { executablePath: process.env.PW_EXECUTABLE_PATH } } : {}),
   },
-  projects: sizes.map(([width, height]) => ({
-    name: `redesign-${width}x${height}`,
-    use: { browserName: "chromium" as const, viewport: { width, height } },
-  })),
+  projects: sizeProjects("redesign"),
 });
