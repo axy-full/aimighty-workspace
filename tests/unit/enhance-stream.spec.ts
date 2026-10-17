@@ -86,13 +86,6 @@ async function inWorkspace(ws: string, fn: () => Promise<void>) {
   await runInTenant(row, async () => { await ready(); await fn(); }, OWNER);
 }
 
-function press(key: string): Request {
-  return new Request("http://localhost/api/prompt/enhance", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": key },
-    body: JSON.stringify({ prompt: "a tree in rain", mode: "video", provider: "claude", maxCredits: 5 }),
-  });
-}
 
 
 type Line = { t?: string; done?: boolean; prompt?: string; error?: string; nothingBilled?: boolean };
