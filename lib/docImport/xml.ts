@@ -171,10 +171,13 @@ export function scanXml(source: string, onEvent: (event: XmlEvent) => void, opti
   let rootClosed = false;
   let skippedDoctype = false;
   let events = 0;
-  const emit = (event: XmlEvent) => {
+  const count = () => {
     if (++events > maxEvents || (options.eventBudget && --options.eventBudget.remaining < 0))
       throw new DocImportError("limit", `${label} has more structure than the importer reads. Nothing was imported.`);
     if (events % 4096 === 0) options.deadline?.check();
+  };
+  const emit = (event: XmlEvent) => {
+    count();
     onEvent(event);
   };
   let i = source.charCodeAt(0) === 0xfeff ? 1 : 0;
@@ -190,10 +193,14 @@ export function scanXml(source: string, onEvent: (event: XmlEvent) => void, opti
     if (source.startsWith("<?", lt)) {
       const end = source.indexOf("?>", lt + 2);
       if (end === -1) malformed(label);
+      // Comments and processing instructions emit nothing, but a DOM keeps a
+      // node for each: they count against the limits like any event.
+      count();
       i = end + 2;
     } else if (source.startsWith("<!--", lt)) {
       const end = source.indexOf("-->", lt + 4);
       if (end === -1) malformed(label);
+      count();
       i = end + 3;
     } else if (source.startsWith("<![CDATA[", lt)) {
       const end = source.indexOf("]]>", lt + 9);

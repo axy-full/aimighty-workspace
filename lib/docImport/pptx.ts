@@ -57,13 +57,15 @@ export async function extractPptx(bytes: Buffer, deadline: Deadline, warnings: W
       // <p:sldId id="256" r:id="rId2"/>: the prefixed id names the relationship.
       const key = Object.keys(event.attrs).find((name) => name.includes(":") && localName(name) === "id");
       if (key) order.push(event.attrs[key]);
+      // Refused as soon as the list passes the limit, not after reading all of it.
+      if (order.length > MAX_SLIDES)
+        throw new DocImportError("limit", `This presentation has more than ${MAX_SLIDES} slides. Nothing was imported.`);
     }
   }, deadline, warnings);
-  if (order.length > MAX_SLIDES)
-    throw new DocImportError("limit", `This presentation has ${order.length} slides; the import limit is ${MAX_SLIDES}. Nothing was imported.`);
 
   const budget = new TextBudget(LABEL);
-  const visited = new Set<string>();
+  // The parts already read count as visited: a slide or notes target naming one is not read again.
+  const visited = new Set<string>([main, "ppt/_rels/presentation.xml.rels"]);
   let text = "";
   const sections: DocSection[] = [];
   let index = 0;
@@ -76,7 +78,7 @@ export async function extractPptx(bytes: Buffer, deadline: Deadline, warnings: W
       continue;
     }
     if (visited.has(rel.target)) {
-      warnings.add("A slide listed twice by the presentation was read once.");
+      warnings.add("A slide listed twice (or naming a part already read) was read once.");
       continue;
     }
     visited.add(rel.target);

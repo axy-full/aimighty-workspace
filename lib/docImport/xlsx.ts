@@ -75,16 +75,17 @@ export async function extractXlsx(bytes: Buffer, deadline: Deadline, warnings: W
       rid: key ? event.attrs[key] : "",
       hidden: (attr(event.attrs, "state") ?? "visible") !== "visible",
     });
+    if (sheets.length > MAX_SHEETS)
+      throw new DocImportError("limit", `This workbook has more than ${MAX_SHEETS} sheets. Nothing was imported.`);
   }, deadline, warnings);
-  if (sheets.length > MAX_SHEETS)
-    throw new DocImportError("limit", `This workbook has ${sheets.length} sheets; the import limit is ${MAX_SHEETS}. Nothing was imported.`);
   const sharedPart = [...rels.values()].find((rel) => /\/relationships\/sharedStrings$/.test(rel.type))?.target ?? null;
   const shared = sharedStrings(zip, sharedPart, deadline, warnings);
 
   let cells = 0;
   let text = "";
   const budget = new TextBudget(LABEL);
-  const visited = new Set<string>();
+  // The parts already read count as visited: a sheet target naming one is not read again.
+  const visited = new Set<string>([main, "xl/_rels/workbook.xml.rels", ...(sharedPart ? [sharedPart] : [])]);
   const sections: DocSection[] = [];
   let index = 0;
   for (const sheet of sheets) {
@@ -96,7 +97,7 @@ export async function extractXlsx(bytes: Buffer, deadline: Deadline, warnings: W
       continue;
     }
     if (visited.has(rel.target)) {
-      warnings.add("A sheet listed twice by the workbook was read once.");
+      warnings.add("A sheet listed twice (or naming a part already read) was read once.");
       continue;
     }
     visited.add(rel.target);
