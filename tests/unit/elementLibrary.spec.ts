@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -387,6 +387,9 @@ test("the switch: off writes and reads nothing; on, only the house workspace (or
         { id: "el_h_maya", projectId: "p1", name: "Maya", handle: "maya", libraryKind: "character", origin: "uploaded", status: "active" },
         { id: "el_h_dock", projectId: null, name: "Dock", handle: "dock", libraryKind: "environment", origin: "uploaded", status: "active" },
       ]);
+      // The switch on: the fill runs (and, listLibrary having filled everything, finds nothing left to write).
+      expect(await fillLibrary()).not.toBeNull();
+      expect(await fillLibrary()).toEqual({ handles: 0, kinds: 0, origins: 0, statuses: 0 });
     });
   } finally {
     if (prior === undefined) delete process.env.V30_LIBRARY;
@@ -408,16 +411,26 @@ test("source: the Library writer never writes kind, the cast, or anything a pric
 });
 
 test("source: the unchecked fill is for tests only", () => {
+  /* Every source file in the repository (scripts/, mcp/, ops/, proxy.ts, instrumentation.ts as well as lib/, app/ and
+     components/), except tests and what is installed or built. Symlinks are not followed; only code files are read. */
+  const SKIP = new Set(["node_modules", ".next", ".git", "tests", "test-results", "playwright-report", "out", "dist", "build", "coverage"]);
+  const root = path.resolve(".");
   const files: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
       const full = path.join(dir, name);
-      if (statSync(full).isDirectory()) { if (name !== "node_modules") walk(full); } else if (/\.(ts|tsx|mjs|js)$/.test(name)) files.push(full);
+      const info = lstatSync(full);
+      if (info.isSymbolicLink()) continue;
+      if (info.isDirectory()) {
+        if (!SKIP.has(name) && path.relative(root, full) !== path.join("public", "vendor")) walk(full);
+      } else if (/\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(name)) files.push(full);
     }
   };
-  for (const root of ["lib", "app", "components"]) walk(path.resolve(root));
+  walk(root);
+  expect(files.length).toBeGreaterThan(100);
+  for (const must of ["proxy.ts", "instrumentation.ts", "lib/elementLibrary.server.ts"]) expect(files.map((f) => path.relative(root, f))).toContain(must);
   const users = files.filter((f) => readFileSync(f, "utf8").includes("fillLibraryForTests"));
-  expect(users.map((f) => path.relative(process.cwd(), f))).toEqual(["lib/elementLibrary.server.ts"]);
+  expect(users.map((f) => path.relative(root, f))).toEqual(["lib/elementLibrary.server.ts"]);
 });
 
 /* ── A real conflict between the fill's read and its write ──────────────── */
@@ -452,40 +465,43 @@ test("a handle another fill commits between this fill's read and its write: the 
     `INSERT INTO elements (id, project_id, kind, name, created_at, updated_at) VALUES ('el_r_late', 'p1', 'character', 'Maya', 2, 2)`,
     `INSERT INTO elements (id, project_id, kind, name, created_at, updated_at) VALUES ('el_r_later', 'p1', 'character', 'Maya', 3, 3)`,
   ], "write");
-  let raced = 0;
-  const batches: string[][] = [];
-  const client = new Proxy(mine, {
-    get(target, prop) {
-      if (prop === "batch") return async (stmts: (InStatement | string)[], mode?: never) => {
-        batches.push(stmts.map(sqlOf));
-        /* The first write only: just before it lands, another fill gives @maya_2 to the later Maya, the handle this
-           fill read as free and planned for the earlier one. */
-        if (!raced && stmts.some((s) => /UPDATE elements SET handle/i.test(sqlOf(s)))) {
-          raced++;
-          await other.execute(`UPDATE elements SET handle = 'maya_2' WHERE id = 'el_r_later' AND handle IS NULL`);
-        }
-        return target.batch(stmts as never, mode);
-      };
-      const value = Reflect.get(target, prop);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  }) as Client;
+  try {
+    let raced = 0;
+    const batches: string[][] = [];
+    const client = new Proxy(mine, {
+      get(target, prop) {
+        if (prop === "batch") return async (stmts: (InStatement | string)[], mode?: never) => {
+          batches.push(stmts.map(sqlOf));
+          /* The first write only: just before it lands, another fill gives @maya_2 to the later Maya, the handle this
+             fill read as free and planned for the earlier one. */
+          if (!raced && stmts.some((s) => /UPDATE elements SET handle/i.test(sqlOf(s)))) {
+            raced++;
+            await other.execute(`UPDATE elements SET handle = 'maya_2' WHERE id = 'el_r_later' AND handle IS NULL`);
+          }
+          return target.batch(stmts as never, mode);
+        };
+        const value = Reflect.get(target, prop);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as Client;
 
-  const library = load<typeof import("../../lib/elementLibrary.server")>("lib/elementLibrary.server.ts", {
-    "./db": { db: () => client, ready: async () => {} },
-    "./newInterface.server": { newInterfaceFor: async () => true },
-    "./tenant": await import("../../lib/tenant"),
-    "./elementLibrary": await import("../../lib/elementLibrary"),
-  });
-  const filled = await library.fillLibraryForTests();
+    const library = load<typeof import("../../lib/elementLibrary.server")>("lib/elementLibrary.server.ts", {
+      "./db": { db: () => client, ready: async () => {} },
+      "./newInterface.server": { newInterfaceFor: async () => true },
+      "./tenant": await import("../../lib/tenant"),
+      "./elementLibrary": await import("../../lib/elementLibrary"),
+    });
+    const filled = await library.fillLibraryForTests();
 
-  expect(raced).toBe(1);
-  // The first write was refused whole, and the fill read again and wrote once more.
-  expect(batches.filter((b) => b.some((s) => /UPDATE elements/i.test(s)))).toHaveLength(2);
-  const handles = Object.fromEntries((await mine.execute(`SELECT id, handle FROM elements ORDER BY id`)).rows.map((r) => [String(r.id), r.handle]));
-  expect(handles).toEqual({ el_r_maya: "maya", el_r_later: "maya_2", el_r_late: "maya_3" });
-  // Only what this fill wrote is counted: the late Maya's handle, not the one the other fill wrote.
-  expect(filled.handles).toBe(1);
-  expect(filled.kinds).toBe(2);
-  mine.close(); other.close();
+    expect(raced).toBe(1);
+    // The first write was refused whole, and the fill read again and wrote once more.
+    expect(batches.filter((b) => b.some((s) => /UPDATE elements/i.test(s)))).toHaveLength(2);
+    const handles = Object.fromEntries((await mine.execute(`SELECT id, handle FROM elements ORDER BY id`)).rows.map((r) => [String(r.id), r.handle]));
+    expect(handles).toEqual({ el_r_maya: "maya", el_r_later: "maya_2", el_r_late: "maya_3" });
+    // Only what this fill wrote is counted: the late Maya's handle, not the one the other fill wrote.
+    expect(filled.handles).toBe(1);
+    expect(filled.kinds).toBe(2);
+  } finally {
+    mine.close(); other.close();
+  }
 });

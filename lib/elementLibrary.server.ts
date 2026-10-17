@@ -91,8 +91,8 @@ async function fillOnce(): Promise<LibraryFill> {
 
   /* One update per missing column, each only where that column is still NULL: a column someone else filled since the
      read keeps its value, and nothing already written is rewritten. A handle another fill gave a different row in the
-     meantime fails the unique index, the whole write rolls back, and fillLibrary reads again. updated_at is left
-     alone: filing is not an edit. */
+     meantime fails the unique index, the whole write rolls back, and fillUnchecked reads again, once. updated_at is
+     left alone: filing is not an edit. */
   const planned: { column: (typeof COLUMNS)[number]; sql: string; args: string[] }[] = [];
   for (const r of pending) {
     const value: Record<(typeof COLUMNS)[number], string | null> = {
