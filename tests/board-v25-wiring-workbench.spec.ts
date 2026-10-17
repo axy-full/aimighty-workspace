@@ -106,7 +106,7 @@ test.describe("desktop, v25 on", () => {
     await expect(page.getByTestId("v12-director-model")).toContainText("None");
     await expect(page.getByTestId("v12-director-model")).not.toContainText("Auto");
     await expect(page.getByTestId("v12-director-go")).toBeDisabled();
-    await expect(page.getByTestId("v12-director-go")).not.toHaveAttribute("data-spend", /.*/);
+    await expect(page.getByTestId("v12-director-go")).toHaveAttribute("data-spend", "unpriced");
     await expect(page.getByTestId("v12-director-scope")).toHaveText("All 8 shots");
     await expect(page.getByTestId("v12-director-column-scope")).toHaveText("All 8 shots");
     /* The ask bar sits inside Director's bar beside its one filled button. */
@@ -156,15 +156,17 @@ test.describe("phones", () => {
 });
 
 test.describe("the large screens", () => {
-  test("1728×1117 and 2560×1440: the grid gains columns, the rail and the bar are inside the window, nothing is scaled", async ({ page }, info) => {
+  test("1280×800 to 2560×1440: the grid gains columns, the rail and the bar are inside the window, nothing is scaled", async ({ page }, info) => {
     test.skip(info.project.name !== "workbench-1920x1080", "the large sizes are set here, once");
     test.setTimeout(240_000);
     await open(page);
     await page.getByTestId("v12-mode-switch").getByRole("radio", { name: "Director" }).click();
     await expect(page.getByTestId("v12-director-bar")).toBeVisible();
-    for (const [width, height, columns] of [[1728, 1117, 4], [2560, 1440, 6]] as const) {
+    /* The five large-screen sizes of the v25 screen PRs (owner, 15 Oct 2026); each one's screenshot is attached to the run. */
+    for (const [width, height, columns] of [[1280, 800, 3], [1440, 900, 3], [1728, 1117, 4], [1920, 1080, 5], [2560, 1440, 6]] as const) {
       await page.setViewportSize({ width, height });
       await expect(cards(page)).toHaveCount(8);
+      await info.attach(`director-shots-${width}x${height}.png`, { body: await page.screenshot(), contentType: "image/png" });
       const across = await cards(page).evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().left))).size);
       expect(across, `${width}: columns`).toBeGreaterThanOrEqual(columns - 1);
       for (const id of ["v12-steprail", "v12-director-column", "v12-director-go"]) {
