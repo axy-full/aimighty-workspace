@@ -170,7 +170,7 @@ export function V12Header({ account, project, projects, onPick }: {
   const moreItems: MenuItem[] = [
     ...hidden.map((id) => ({ id, label: nameOf(id), onSelect: () => goBoard(id) })),
     { id: "sep", separator: true },
-    { id: "new", label: "+ New board", onSelect: () => openPlus(true) },
+    { id: "new", label: "+ New project", onSelect: () => openPlus(true) },
   ];
 
   const ordinal = (i: number) => (i + 3 <= 9 ? keyOf(`tab-${i + 3}`) : undefined);
@@ -220,14 +220,14 @@ export function V12Header({ account, project, projects, onPick }: {
         })}
         {newBoardOpen ? (
           <div className="v12-tab" data-board="" data-active={shell.make ? undefined : ""} data-testid="v12-tab-new-board">
-            <Tooltip name="New board" line="Pick a kind and say what to make.">
+            <Tooltip name="New project" line="Pick a kind and say what to make.">
               <button type="button" className="v12-tab-main" aria-current={shell.make ? undefined : "page"} onClick={() => shell.goBoard({ newBoard: shell.params.pick ?? true, closeMake: true })}>
                 <span className="v12-tab-tile" aria-hidden="true">N</span>
-                <span className="v12-tab-label">New board</span>
+                <span className="v12-tab-label">New project</span>
                 <span className="v12-tab-dot" data-state="idle" aria-hidden="true" />
               </button>
             </Tooltip>
-            <IconButton tooltip={{ name: "Close tab" }} label="Close New board" size="sm" className="v12-tab-x" onClick={closeNewBoard} data-testid="v12-tab-new-board-close">
+            <IconButton tooltip={{ name: "Close tab" }} label="Close New project" size="sm" className="v12-tab-x" onClick={closeNewBoard} data-testid="v12-tab-new-board-close">
               <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
             </IconButton>
           </div>

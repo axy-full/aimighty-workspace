@@ -96,6 +96,6 @@ export const FIRST_LINE: Record<Flavor, string> = {
 /** A new board's name: the first four words of what was typed (links dropped), then the kind. */
 export function boardName(text: string, flavor: Flavor): string {
   const words = text.replace(/https?:\S+/g, "").trim().split(/\s+/).filter(Boolean).slice(0, 4).join(" ").replace(/[.,;:]+$/, "");
-  const head = words ? words.charAt(0).toUpperCase() + words.slice(1) : "New board";
+  const head = words ? words.charAt(0).toUpperCase() + words.slice(1) : "New project";
   return `${head} · ${flavor === "previs" ? "pre-vis" : flavor === "narrated" || flavor === "clips" ? "social" : flavor}`;
 }

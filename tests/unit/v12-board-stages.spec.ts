@@ -184,7 +184,7 @@ test("the new-board words: four cards, the composer by kind, the kind the words 
   expect(flavorForCard("social", "A video topic")).toBe("narrated");
   expect(flavorForCard("previs", "anything")).toBe("previs");
   expect(boardName("a harbour wakes up before the gulls do.", "film")).toBe("A harbour wakes up · film");
-  expect(boardName("https://example.com/x", "campaign")).toBe("New board · campaign");
+  expect(boardName("https://example.com/x", "campaign")).toBe("New project · campaign");
   expect(boardName("Why tides turn", "clips")).toBe("Why tides turn · social");
 });
 

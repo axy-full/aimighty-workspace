@@ -54,8 +54,8 @@ function BoardCard({ scope, card, disabled, onOpen, onMenu }: { scope: string; c
 
 /**
  * Your boards (docs/redesign/inventory.md § 5.9 · 3): this person's boards, newest save first, with kind filters (All ·
- * Films · Campaigns · Social), each card its picture, name and what waits in it; "+ New board" makes an empty one on
- * today's create path.
+ * Films · Campaigns · Social), each card its picture, name and what waits in it; "+ New project" makes a Film board with the demo's steps on
+ * today's create path (lib/v12/board/new-project.ts).
  */
 export function YourBoards({ scope, projects, status, error, onRetry, now, approvals, disabled, onOpen, onNew }: {
   scope: string;
@@ -111,7 +111,7 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
           ))}
         </span>
         <span className="v12-hm-grow" />
-        <button type="button" className="v12-hm-link" onClick={onNew} disabled={disabled} data-testid="v12-home-new-board">+ New board</button>
+        <button type="button" className="v12-hm-link" onClick={onNew} disabled={disabled} data-testid="v12-home-new-project">+ New project</button>
       </div>
       <div className="v12-hm-boards-body">
         {status === "error" ? (
@@ -119,7 +119,7 @@ export function YourBoards({ scope, projects, status, error, onRetry, now, appro
         ) : status === "loading" && !projects.length ? (
           <p className="v12-hm-quiet">Reading your boards…</p>
         ) : !shown.length ? (
-          <p className="v12-hm-quiet" data-testid="v12-home-boards-empty">{filter === "all" ? "No boards yet. Start one with the bar below, or make an empty one with + New board." : "No boards of this kind yet."}</p>
+          <p className="v12-hm-quiet" data-testid="v12-home-boards-empty">{filter === "all" ? "No boards yet. Start one with the bar below, or make one with + New project." : "No boards of this kind yet."}</p>
         ) : (
           <ul className="v12-hm-board-grid">
             {shown.map((card) => <BoardCard key={card.id} scope={scope} card={card} disabled={disabled} onOpen={onOpen} onMenu={boardMenu.open} />)}
