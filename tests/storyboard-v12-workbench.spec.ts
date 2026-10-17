@@ -151,6 +151,30 @@ test("Storyboard at the five desktop sizes: inside the window, readable, sharp",
   }
 });
 
+/* The frame dialog draws the take no wider than its own pixels allow at the screen's density (owner, 15 Oct 2026, 22:30, rule 3), on a 1× and a 2× screen. */
+test("the frame dialog never stretches a still past its own pixels, at 1× and 2×", async ({ browser }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop sizes");
+  test.setTimeout(240_000);
+  for (const deviceScaleFactor of [1, 2]) {
+    const context = await browser.newContext({ viewport: { width: 1728, height: 1117 }, deviceScaleFactor, baseURL: test.info().project.use.baseURL });
+    const page = await context.newPage();
+    await openBoard(page, "/suites?view=board&stage=storyboard");
+    await expect(page.getByTestId("v12-storyboard-stage").getByTestId("v12-card")).toHaveCount(8, { timeout: 60_000 });
+    await cardOf(page, 1).click();
+    const picture = page.getByTestId("v12-frame-picture");
+    await expect(picture).toHaveAttribute("data-sharp", "", { timeout: 30_000 });
+    const drawn = await picture.evaluate((img: HTMLImageElement) => {
+      const box = img.getBoundingClientRect();
+      /* Cropped to fill: the scale is the larger of the two sides'. */
+      const scale = Math.max(box.width / img.naturalWidth, box.height / img.naturalHeight) * devicePixelRatio;
+      return { scale, width: box.width, natural: img.naturalWidth };
+    });
+    expect(drawn.width, `${deviceScaleFactor}×: the picture is shown`).toBeGreaterThan(0);
+    expect(drawn.scale, `${deviceScaleFactor}×: ${drawn.natural} px drawn at ${drawn.width} CSS px`).toBeLessThanOrEqual(1.01);
+    await context.close();
+  }
+});
+
 test.describe("phones, switch on", () => {
   test.beforeEach(({}, info) => test.skip(!PHONE.includes(info.project.name), "phone sizes"));
   test("the phone app keeps today's board: no storyboard page", async ({ page }) => {
