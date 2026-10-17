@@ -31,3 +31,18 @@ export const u32be = (value: number): Buffer => { const b = Buffer.alloc(4); b.w
 export const u32le = (value: number): Buffer => { const b = Buffer.alloc(4); b.writeUInt32LE(value >>> 0); return b; };
 export const u16be = (value: number): Buffer => { const b = Buffer.alloc(2); b.writeUInt16BE(value); return b; };
 export const latin1 = (text: string): Buffer => Buffer.from(text, "latin1");
+
+/** The rewritten file did not read back the same media as the delivered one; the delivered file is stored instead. */
+export class UnverifiedRewriteError extends Error {
+  constructor(what: string) { super(`Rewrite not verified: ${what}`); this.name = "UnverifiedRewriteError"; }
+}
+
+/** The most boxes, segments or chunks one rewrite will walk. A real render has hundreds; past this the file is refused (stored as delivered). */
+export const MAX_PARTS = 100_000;
+/** Counts parts walked during one rewrite and refuses past MAX_PARTS. */
+export class PartBudget {
+  private used = 0;
+  take(what: string): void {
+    if (++this.used > MAX_PARTS) throw new UnsupportedStructureError(`more than ${MAX_PARTS} ${what}`);
+  }
+}

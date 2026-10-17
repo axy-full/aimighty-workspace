@@ -1,6 +1,10 @@
 import { cleanJpeg, cleanPng } from "./metadataStills";
 import { cleanMp3, cleanMp4, cleanWav } from "./metadataMedia";
-import { UnsupportedStructureError } from "./metadataBytes";
+import { UnsupportedStructureError, UnverifiedRewriteError } from "./metadataBytes";
+
+/* Server only. The repo has no "server-only" package to import (and none can
+   be installed in this change), so the module refuses a browser itself. */
+if (typeof window !== "undefined") throw new Error("lib/storage/outputMetadata.ts is server-only.");
 
 /**
  * What happens to a finished output's embedded metadata before it reaches
@@ -39,6 +43,41 @@ export function outputMetadataMode(env: Record<string, string | undefined> = pro
   return raw === "marker" || raw === "strip" ? raw : DEFAULT_OUTPUT_METADATA_MODE;
 }
 
+/** The largest file the seam rewrites: OUTPUT_METADATA_MAX_BYTES, default 256 MiB. A larger one is stored as delivered (outcome too_large). */
+export const DEFAULT_OUTPUT_METADATA_MAX_BYTES = 256 * 1024 * 1024;
+export function outputMetadataMaxBytes(env: Record<string, string | undefined> = process.env): number {
+  const value = Number(env.OUTPUT_METADATA_MAX_BYTES?.trim() || NaN);
+  return Number.isSafeInteger(value) && value > 0 ? value : DEFAULT_OUTPUT_METADATA_MAX_BYTES;
+}
+
+/**
+ * At most one streamed file is gathered and rewritten at a time in this
+ * process, so the memory a rewrite holds is one file (under the ceiling
+ * above), not one per save in flight. The buffer paths need no slot: their
+ * rewrite is synchronous, so two never run at once.
+ */
+let slotBusy = false;
+const slotQueue: (() => void)[] = [];
+export async function rewriteSlot(signal?: AbortSignal): Promise<() => void> {
+  if (signal?.aborted) throw signal.reason;
+  if (slotBusy) {
+    await new Promise<void>((resolve, reject) => {
+      const turn = () => { signal?.removeEventListener("abort", onAbort); resolve(); };
+      const onAbort = () => { const at = slotQueue.indexOf(turn); if (at >= 0) slotQueue.splice(at, 1); reject(signal!.reason); };
+      slotQueue.push(turn);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+  slotBusy = true;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = slotQueue.shift();
+    if (next) next(); else slotBusy = false;
+  };
+}
+
 /** IPTC NewsCodes Digital Source Type for media made by a trained model with no captured content in it. */
 export const DIGITAL_SOURCE_TYPE = "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia";
 const IPTC_EXT_NS = "http://iptc.org/std/Iptc4xmpExt/2008-02-29/";
@@ -74,13 +113,16 @@ export function sniffOutputFormat(bytes: Buffer): OutputFormat | null {
 }
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
+export type DeliveredOutcome = "unrecognised" | "unsupported" | "malformed" | "unverified" | "too_large";
 export type PreparedOutput = {
   bytes: Buffer;
   mode: OutputMetadataMode;
   format: OutputFormat | null;
   /** keep: the switch is at keep. cleaned: the metadata was removed (and the marker written, at marker).
-   *  unrecognised / unsupported / malformed: the file was stored exactly as delivered; see the log line. */
-  outcome: "keep" | "cleaned" | "unrecognised" | "unsupported" | "malformed";
+   *  Any other outcome: the file was stored exactly as delivered, and a warning was logged
+   *  (unrecognised format, unsupported structure, malformed file, a rewrite that did not read back
+   *  the same media, or a file over OUTPUT_METADATA_MAX_BYTES). */
+  outcome: "keep" | "cleaned" | DeliveredOutcome;
 };
 
 /** Removes the metadata of one file in the given position. Throws on a file it cannot rewrite safely. */
@@ -112,19 +154,29 @@ export function prepareOutput(
   if (mode === "keep") return { bytes, mode, format: null, outcome: "keep" };
   const format = sniffOutputFormat(bytes);
   let prepared: PreparedOutput;
-  if (!format) prepared = { bytes, mode, format, outcome: "unrecognised" };
+  if (bytes.length > outputMetadataMaxBytes(context.env ?? process.env)) prepared = { bytes, mode, format, outcome: "too_large" };
+  else if (!format) prepared = { bytes, mode, format, outcome: "unrecognised" };
   else {
     try { prepared = { bytes: cleanOutputBytes(bytes, mode, format), mode, format, outcome: "cleaned" }; }
-    catch (error) { prepared = { bytes, mode, format, outcome: error instanceof UnsupportedStructureError ? "unsupported" : "malformed" }; }
+    catch (error) {
+      prepared = { bytes, mode, format, outcome: error instanceof UnsupportedStructureError ? "unsupported" : error instanceof UnverifiedRewriteError ? "unverified" : "malformed" };
+    }
   }
   logOutputMetadata(kind, context.id, prepared, bytes.length);
   return prepared;
 }
 
-function logOutputMetadata(kind: OutputKind, id: string | undefined, prepared: PreparedOutput, before: number): void {
+/**
+ * One storage.output_metadata line (ids and sizes only). Anything but
+ * "cleaned" is a warning with `alert: true`: once counsel requires marker or
+ * strip, every file stored as delivered is a compliance miss, and the
+ * operator's log alerting should page on it.
+ */
+export function logOutputMetadata(kind: OutputKind, id: string | undefined, prepared: Pick<PreparedOutput, "mode" | "format" | "outcome"> & { bytes: { length: number } }, before: number): void {
   try {
     const line = { level: prepared.outcome === "cleaned" ? "info" : "warn", event: "storage.output_metadata", kind, id, mode: prepared.mode,
-      format: prepared.format, outcome: prepared.outcome, bytesBefore: before, bytesAfter: prepared.bytes.length };
+      format: prepared.format, outcome: prepared.outcome, bytesBefore: before, bytesAfter: prepared.bytes.length,
+      ...(prepared.outcome === "cleaned" ? {} : { alert: true }) };
     if (prepared.outcome === "cleaned") console.info(JSON.stringify(line)); else console.warn(JSON.stringify(line));
   } catch { /* a log line is not worth a save */ }
 }

@@ -1,4 +1,4 @@
-import { crc32, latin1, MalformedFileError, u16be, u32be } from "./metadataBytes";
+import { crc32, latin1, MalformedFileError, PartBudget, u16be, u32be } from "./metadataBytes";
 
 /*
  * Stills: JPEG and PNG, rewritten segment by segment / chunk by chunk. The
@@ -37,7 +37,9 @@ export function cleanJpeg(bytes: Buffer, marker: Buffer | null): Buffer {
     out.push(Buffer.from([0xff, 0xe1]), u16be(body.length + 2), body);
   }
   let pos = 2;
+  const budget = new PartBudget();
   for (;;) {
+    budget.take("JPEG segments");
     if (pos + 1 >= bytes.length) throw new MalformedFileError("no end-of-image marker");
     if (bytes[pos] !== 0xff) throw new MalformedFileError("expected a marker");
     while (pos + 1 < bytes.length && bytes[pos + 1] === 0xff) pos++; // fill bytes before a marker
@@ -89,7 +91,9 @@ export function cleanPng(bytes: Buffer, marker: Buffer | null): Buffer {
   if (bytes.length < 8 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) throw new MalformedFileError("no PNG signature");
   const out: Buffer[] = [PNG_SIGNATURE];
   let pos = 8, ended = false, first = true;
+  const budget = new PartBudget();
   while (pos < bytes.length) {
+    budget.take("PNG chunks");
     if (pos + 12 > bytes.length) throw new MalformedFileError("truncated chunk");
     const length = bytes.readUInt32BE(pos);
     const type = bytes.toString("latin1", pos + 4, pos + 8);

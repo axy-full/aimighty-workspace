@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -8,10 +8,11 @@ import path from "node:path";
 import sharp from "sharp";
 import { loadIsolated } from "./storageSeam";
 import {
-  cleanOutputBytes, DIGITAL_SOURCE_TYPE, MARKER_XMP, outputMetadataMode, prepareOutput, sniffOutputFormat,
+  cleanOutputBytes, DIGITAL_SOURCE_TYPE, MARKER_XMP, outputMetadataMaxBytes, outputMetadataMode, prepareOutput, rewriteSlot, sniffOutputFormat,
   type OutputFormat, type OutputMetadataMode,
 } from "../../lib/storage/outputMetadata";
-import { crc32 } from "../../lib/storage/metadataBytes";
+import { crc32, MAX_PARTS } from "../../lib/storage/metadataBytes";
+import { start as startFakeS3 } from "../helpers/fake-s3-server.mjs";
 
 /*
  * The output-metadata switch (lib/storage/outputMetadata.ts) and its one seam
@@ -92,7 +93,16 @@ const box = (type: string, ...parts: Buffer[]) => { const body = Buffer.concat(p
 const fullBox = (type: string, version: number, flags: number, ...parts: Buffer[]) => box(type, Buffer.from([version, (flags >> 16) & 255, (flags >> 8) & 255, flags & 255]), ...parts);
 const C2PA_UUID = Buffer.from("d8fec3d61b0e483c92975828877ec481", "hex");
 
-type TrackSpec = { handler: "vide" | "soun" | "meta"; samples: Buffer[]; wide: boolean };
+type TrackSpec = {
+  handler: "vide" | "soun" | "meta"; samples: Buffer[]; wide: boolean;
+  /** One stsc run per chunk instead of one run for all (the same layout, a much longer table). */
+  runPerChunk?: boolean;
+  /** Replaces the computed chunk offsets (given this track's and every track's). */
+  offsets?: (own: number[], all: number[][]) => number[];
+  /** Replace the stsz and stsc boxes. */
+  stsz?: Buffer;
+  stsc?: Buffer;
+};
 function sampleEntry(handler: TrackSpec["handler"]): Buffer {
   if (handler === "vide") {
     const name = Buffer.alloc(32); name[0] = VENDOR.length; name.write(VENDOR, 1, "latin1");
@@ -102,14 +112,18 @@ function sampleEntry(handler: TrackSpec["handler"]): Buffer {
   if (handler === "soun") return box("mp4a", Buffer.alloc(6), u16(1), u16(0), u16(0), latin("vndr"), u16(2), u16(16), u16(0), u16(0), u32(48000 << 16), box("esds", Buffer.alloc(4)));
   return box("mett", Buffer.alloc(6), u16(1), latin(`${VENDOR}\0`), latin("text/plain\0"));
 }
-function trakBox(spec: TrackSpec, id: number, offsets: number[]): Buffer {
+function trakBox(spec: TrackSpec, id: number, computed: number[], all: number[][]): Buffer {
+  const offsets = spec.offsets ? spec.offsets(computed, all) : computed;
+  const stsc = spec.stsc ?? (spec.runPerChunk
+    ? fullBox("stsc", 0, 0, u32(offsets.length), Buffer.concat(offsets.flatMap((_, i) => [u32(i + 1), u32(1), u32(1)])))
+    : fullBox("stsc", 0, 0, u32(1), u32(1), u32(1), u32(1)));
   const header = spec.handler === "vide" ? fullBox("vmhd", 0, 1, Buffer.alloc(8)) : spec.handler === "soun" ? fullBox("smhd", 0, 0, Buffer.alloc(4)) : fullBox("nmhd", 0, 0);
   const stbl = box("stbl",
     fullBox("stsd", 0, 0, u32(1), sampleEntry(spec.handler)),
     fullBox("stts", 0, 0, u32(1), u32(spec.samples.length), u32(1000)),
-    fullBox("stsc", 0, 0, u32(1), u32(1), u32(1), u32(1)),
-    fullBox("stsz", 0, 0, u32(0), u32(spec.samples.length), ...spec.samples.map((s) => u32(s.length))),
-    spec.wide ? fullBox("co64", 0, 0, u32(offsets.length), ...offsets.map(u64)) : fullBox("stco", 0, 0, u32(offsets.length), ...offsets.map(u32)),
+    stsc,
+    spec.stsz ?? fullBox("stsz", 0, 0, u32(0), u32(spec.samples.length), Buffer.concat(spec.samples.map((s) => u32(s.length)))),
+    spec.wide ? fullBox("co64", 0, 0, u32(offsets.length), Buffer.concat(offsets.map(u64))) : fullBox("stco", 0, 0, u32(offsets.length), Buffer.concat(offsets.map(u32))),
   );
   return box("trak",
     fullBox("tkhd", 0, 3, u32(3_900_000_000), u32(3_900_000_001), u32(id), u32(0), u32(3000), Buffer.alloc(8), Buffer.alloc(8), Buffer.alloc(36), u32(PICTURE.width << 16), u32(PICTURE.height << 16)),
@@ -125,20 +139,20 @@ function moovBox(tracks: TrackSpec[], offsets: number[][]): Buffer {
   const ilst = box("ilst", box("\xa9too", box("data", u32(1), u32(0), latin(`${VENDOR} encoder`))), box("\xa9cmt", box("data", u32(1), u32(0), latin("AI generated"))));
   return box("moov",
     fullBox("mvhd", 0, 0, u32(3_900_000_000), u32(3_900_000_001), u32(1000), u32(3000), u32(0x10000), u16(0x100), Buffer.alloc(10), Buffer.alloc(36), Buffer.alloc(24), u32(tracks.length + 1)),
-    ...tracks.map((t, i) => trakBox(t, i + 1, offsets[i])),
+    ...tracks.map((t, i) => trakBox(t, i + 1, offsets[i], offsets)),
     box("udta", fullBox("meta", 0, 0, fullBox("hdlr", 0, 0, u32(0), latin("mdir"), latin("appl"), Buffer.alloc(8), Buffer.from([0])), ilst)),
     box("uuid", Buffer.from("be7acfcb97a942e89c71999491e3afac", "hex"), latin(VENDOR_XMP)),
     box("free", latin(VENDOR)),
   );
 }
 /** A complete MP4: ftyp, a C2PA-style uuid box, padding, moov and mdat, with moov first or last. Sample bytes are a pattern with no text. */
-function mp4Fixture(moovFirst: boolean): Buffer {
-  const pattern = (seed: number, n: number) => { const b = Buffer.alloc(n); for (let i = 0; i < n; i++) b[i] = (seed * 31 + i * 7) & 0x7f | 0x80; return b; };
-  const tracks: TrackSpec[] = [
-    { handler: "vide", samples: [pattern(1, 301), pattern(2, 97), pattern(3, 211)], wide: false },
-    { handler: "soun", samples: [pattern(4, 64), pattern(5, 65)], wide: true },
-    { handler: "meta", samples: [latin(`${VENDOR} timed note`)], wide: false },
-  ];
+const pattern = (seed: number, n: number) => { const b = Buffer.alloc(n); for (let i = 0; i < n; i++) b[i] = (seed * 31 + i * 7) & 0x7f | 0x80; return b; };
+const defaultTracks = (bigVideoSample = 0): TrackSpec[] => [
+  { handler: "vide", samples: [pattern(1, bigVideoSample || 301), pattern(2, 97), pattern(3, 211)], wide: false },
+  { handler: "soun", samples: [pattern(4, 64), pattern(5, 65)], wide: true },
+  { handler: "meta", samples: [latin(`${VENDOR} timed note`)], wide: false },
+];
+function mp4Fixture(moovFirst: boolean, tracks: TrackSpec[] = defaultTracks()): Buffer {
   const before = Buffer.concat([
     box("ftyp", latin("isom"), u32(0x200), latin("isomiso2avc1mp41")),
     box("uuid", C2PA_UUID, latin(`c2pa manifest store ${VENDOR}`)),
@@ -146,7 +160,7 @@ function mp4Fixture(moovFirst: boolean): Buffer {
     box("free", latin(`${VENDOR} padding`)),
   ]);
   const samples = tracks.flatMap((t) => t.samples);
-  const mdat = box("mdat", ...samples);
+  const mdat = box("mdat", Buffer.concat(samples));
   const offsetsAt = (mdatStart: number) => {
     let at = mdatStart + 8;
     return tracks.map((t) => t.samples.map((s) => { const o = at; at += s.length; return o; }));
@@ -491,8 +505,14 @@ function localStorage(settings: Record<string, string>): { storage: Storage; dir
 }
 const storedFile = (dir: string, name: string) => readFileSync(path.join(dir, ".data", "generations", name));
 
-async function serve(bytes: Buffer): Promise<{ url: string; close: () => Promise<void> }> {
-  const server: Server = createServer((_, res) => { res.writeHead(200, { "content-type": "video/mp4", "content-length": String(bytes.length) }); res.end(bytes); });
+/** Serves one file, with its Content-Length or (declare false) chunked in 1,000-byte writes. */
+async function serve(bytes: Buffer, declare = true): Promise<{ url: string; close: () => Promise<void> }> {
+  const server: Server = createServer((_, res) => {
+    if (declare) { res.writeHead(200, { "content-type": "video/mp4", "content-length": String(bytes.length) }); res.end(bytes); return; }
+    res.writeHead(200, { "content-type": "video/mp4" });
+    for (let at = 0; at < bytes.length; at += 1000) res.write(bytes.subarray(at, at + 1000));
+    res.end();
+  });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   return { url: `http://127.0.0.1:${port}/render.mp4`, close: () => new Promise((resolve) => server.close(() => resolve())) };
@@ -565,6 +585,162 @@ test("one seam: every store of a finished render in lib/storage.ts goes through 
   expect(body("saveVideo")).toContain('prepareOutput("video"');
   expect(body("streamVideo")).toContain('prepareOutput("video"');
   // The streamed save writes whatever `source` yields; at keep that is the untouched stream.
-  expect(body("streamVideo")).toMatch(/outputMetadataMode\(process\.env\) === "keep" \? counted : rewritten/);
+  expect(body("streamVideo")).toMatch(/const mode = outputMetadataMode\(process\.env\);/);
+  expect(body("streamVideo")).toMatch(/const source = mode === "keep" \? counted : rewritten;/);
   expect(body("streamVideo")).not.toMatch(/put\(videoPath\(genId\), counted\(\)/);
+});
+
+/* ── Bounds: size ceiling, one rewrite at a time, hostile files ──────── */
+
+const MiB = 1024 * 1024;
+
+test("the rewrite ceiling is OUTPUT_METADATA_MAX_BYTES (default 256 MiB); a larger file is stored as delivered", () => {
+  expect(outputMetadataMaxBytes({})).toBe(256 * MiB);
+  for (const value of ["", "0", "-5", "abc", "1.5", "1e400"]) expect(outputMetadataMaxBytes({ OUTPUT_METADATA_MAX_BYTES: value }), value).toBe(256 * MiB);
+  expect(outputMetadataMaxBytes({ OUTPUT_METADATA_MAX_BYTES: " 1000 " })).toBe(1000);
+  const input = mp4Fixture(true);
+  const over = prepareOutput("video", input, { env: { OUTPUT_METADATA: "strip", OUTPUT_METADATA_MAX_BYTES: String(input.length - 1) } });
+  expect(over.bytes).toBe(input);
+  expect(over.outcome).toBe("too_large");
+  expect(prepareOutput("video", input, { env: { OUTPUT_METADATA: "strip", OUTPUT_METADATA_MAX_BYTES: String(input.length) } }).outcome).toBe("cleaned");
+});
+
+test("one streamed rewrite at a time: the next waits for the slot, and one aborted while waiting gives up", async () => {
+  const first = await rewriteSlot();
+  let granted = false;
+  const second = rewriteSlot().then((release) => { granted = true; return release; });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(granted).toBe(false);
+  const gaveUp = new AbortController();
+  const third = rewriteSlot(gaveUp.signal);
+  gaveUp.abort(new Error("gave up waiting"));
+  await expect(third).rejects.toThrow("gave up waiting");
+  first();
+  first(); // releasing twice is harmless
+  const release = await second;
+  expect(granted).toBe(true);
+  release();
+  (await rewriteSlot())(); // free again: nothing is left waiting on the aborted turn
+});
+
+test("hostile files are refused quickly and stored exactly as delivered", async () => {
+  const png = await pngFixture(), jpeg = await jpegFixture();
+  const ihdrEnd = 8 + 12 + png.readUInt32BE(8);
+  const many = (n: number, make: () => Buffer) => Buffer.concat(Array.from({ length: n }, make));
+  const N = MAX_PARTS + 10;
+  const wavChunk = (id: string, data: Buffer) => Buffer.concat([latin(id), u32le(data.length), data]);
+  const wavBody = Buffer.concat([wavChunk("fmt ", Buffer.concat([Buffer.from([1, 0, 1, 0]), u32le(8000), u32le(16000), Buffer.from([2, 0, 16, 0])])), many(N, () => wavChunk("junk", Buffer.alloc(0))), wavChunk("data", Buffer.alloc(16))]);
+  const withoutMeta = defaultTracks().filter((t) => t.handler !== "meta");
+  const cases: [string, Buffer, string][] = [
+    ["MP4 with too many boxes", Buffer.concat([box("ftyp", latin("isom")), many(N, () => box("free")), box("moov"), box("mdat")]), "unsupported"],
+    ["PNG with too many chunks", Buffer.concat([png.subarray(0, ihdrEnd), many(N, () => pngChunk("prVt", Buffer.alloc(0))), png.subarray(ihdrEnd)]), "unsupported"],
+    ["JPEG with too many segments", Buffer.concat([jpeg.subarray(0, 2), many(N, () => jpegSegment(0xfe, latin("x"))), jpeg.subarray(2)]), "unsupported"],
+    ["WAV with too many chunks", Buffer.concat([latin("RIFF"), u32le(4 + wavBody.length), latin("WAVE"), wavBody]), "unsupported"],
+    ["a fixed sample size with a huge count", mp4Fixture(true, [...withoutMeta, { handler: "meta", samples: [latin("x")], wide: false,
+      stsz: fullBox("stsz", 0, 0, u32(1), u32(0xffffffff)), stsc: fullBox("stsc", 0, 0, u32(1), u32(1), u32(0xffffffff), u32(1)) }]), "malformed"],
+    ["a timed-metadata chunk on a kept track's samples", mp4Fixture(true, [...withoutMeta, { handler: "meta", samples: [latin("x")], wide: false, offsets: (_, all) => [all[0][1]] }]), "unsupported"],
+    ["a timed-metadata chunk on an mdat header", mp4Fixture(true, [...withoutMeta, { handler: "meta", samples: [latin("x")], wide: false, offsets: (_, all) => [all[0][0] - 8] }]), "unsupported"],
+    ["a kept chunk running past its mdat (cannot read back the same)", mp4Fixture(false, [withoutMeta[0], { ...withoutMeta[1],
+      stsz: fullBox("stsz", 0, 0, u32(0), u32(2), u32(64), u32(65 + 20)) }]), "unverified"],
+  ];
+  for (const mode of ["strip", "marker"] as const) {
+    for (const [name, input, outcome] of cases) {
+      const started = Date.now();
+      const out = prepareOutput("video", input, { env: env(mode) });
+      expect(out.outcome, `${mode}: ${name}`).toBe(outcome);
+      expect(out.bytes, name).toBe(input);
+      expect(Date.now() - started, name).toBeLessThan(5_000);
+    }
+  }
+});
+
+test("long sample tables are walked in linear time (90,000 chunks a track, one stsc run per chunk)", () => {
+  const n = 90_000;
+  const samples = (seed: number) => Array.from({ length: n }, (_, i) => Buffer.from([0x80 | ((i * seed) & 0x7f)]));
+  const input = mp4Fixture(true, [
+    { handler: "vide", samples: samples(3), wide: false, runPerChunk: true },
+    { handler: "meta", samples: samples(5), wide: true, runPerChunk: true },
+  ]);
+  const started = Date.now();
+  const out = prepareOutput("video", input, { env: env("strip") });
+  expect(out.outcome).toBe("cleaned");
+  expect(Date.now() - started).toBeLessThan(10_000); // a quadratic walk would take minutes
+  expect(out.bytes.includes(latin(VENDOR))).toBe(false);
+});
+
+/* ── Through storage: R2 multipart, marker, the ceiling ──────────────── */
+
+test("storage on R2 (fake S3 multipart) at strip and marker: the stored object is the rewrite", async () => {
+  const s3 = await startFakeS3({ dir: mkdtempSync(path.join(tmpdir(), "output-metadata-s3-")), port: 0 });
+  const bucket = "particl-output-metadata-test";
+  try {
+    const input = mp4Fixture(true, defaultTracks(20 * MiB)); // three 8 MiB parts
+    for (const mode of ["strip", "marker"] as const) {
+      const isolated = Object.create(process, { env: { value: { PATH: process.env.PATH ?? "", NODE_ENV: "test", OUTPUT_METADATA: mode,
+        STORAGE_BACKEND: "r2", R2_ACCOUNT_ID: "0123456789abcdef", R2_ACCESS_KEY_ID: "AKIAFAKEMETADATATEST", R2_SECRET_ACCESS_KEY: "fake-secret-never-real",
+        R2_BUCKET: bucket, R2_ENDPOINT: s3.endpoint } } });
+      const storage = loadIsolated<Storage>("lib/storage.ts", {}, { process: isolated });
+      const provider = await serve(input);
+      try {
+        const saved = await storage.storeVideo(`r2-${mode}`, provider.url);
+        const expected = cleanOutputBytes(input, mode, "mp4");
+        const object = s3.object(`generations/r2-${mode}.mp4`, bucket);
+        expect(object?.size).toBe(expected.length);
+        expect(object?.sha256).toBe(sha(expected));
+        expect(object?.etag).toMatch(/-3"$/);
+        expect(saved.bytes).toBe(expected.length);
+      } finally { await provider.close(); }
+    }
+  } finally { await s3.close(); }
+});
+
+test("storage at marker: stills, voice, originals and streamed video store the marker rewrite", async () => {
+  const all = await fixtures();
+  const { storage, dir } = localStorage(env("marker"));
+  const expected = (bytes: Buffer, format: OutputFormat) => cleanOutputBytes(bytes, "marker", format);
+  await storage.storeImageBytes("still1", all.jpeg);
+  expect(storedFile(dir, "still1.png").equals(expected(all.jpeg, "jpeg"))).toBe(true);
+  expect(Buffer.from((await sharp(storedFile(dir, "still1.png")).metadata()).xmp!).equals(MARKER_XMP)).toBe(true);
+  await storage.storeAudioBytes("voice1", all.mp3);
+  expect(storedFile(dir, "voice1.mp3").equals(expected(all.mp3, "mp3"))).toBe(true);
+  await storage.storeVideoBytes("orig1", all.mp4);
+  expect(storedFile(dir, "orig1.mp4").equals(expected(all.mp4, "mp4"))).toBe(true);
+  const provider = await serve(all.mp4, false);
+  try {
+    const saved = await storage.storeVideo("streamed1", provider.url);
+    expect(storedFile(dir, "streamed1.mp4").equals(expected(all.mp4, "mp4"))).toBe(true);
+    expect(saved.bytes).toBe(expected(all.mp4, "mp4").length);
+  } finally { await provider.close(); }
+});
+
+test("storage at strip: a streamed video over the ceiling is stored as delivered, whether its length is declared or counted", async () => {
+  const input = mp4Fixture(true, defaultTracks(64 * 1024));
+  const { storage, dir } = localStorage({ OUTPUT_METADATA: "strip", OUTPUT_METADATA_MAX_BYTES: "4096" });
+  for (const declare of [true, false]) {
+    const provider = await serve(input, declare);
+    try {
+      const saved = await storage.storeVideo(`big-${declare}`, provider.url);
+      expect(saved.bytes).toBe(input.length);
+      expect(storedFile(dir, `big-${declare}.mp4`).equals(input), `declared ${declare}`).toBe(true);
+    } finally { await provider.close(); }
+  }
+  // Under the ceiling the same file is rewritten.
+  const roomy = localStorage({ OUTPUT_METADATA: "strip", OUTPUT_METADATA_MAX_BYTES: String(input.length) });
+  const provider = await serve(input, false);
+  try {
+    await roomy.storage.storeVideo("fits", provider.url);
+    expect(storedFile(roomy.dir, "fits.mp4").equals(cleanOutputBytes(input, "strip", "mp4"))).toBe(true);
+  } finally { await provider.close(); }
+});
+
+test("storeOriginalBytes is called directly only by lib/storage.ts and the retired connected-account path", () => {
+  const callers: string[] = [];
+  for (const root of ["lib", "app", "components", "mcp"]) {
+    for (const file of readdirSync(root, { recursive: true }) as string[]) {
+      if (!/\.(ts|tsx|mjs|js)$/.test(file)) continue;
+      const full = path.join(root, file);
+      if (/\bstoreOriginalBytes\(/.test(readFileSync(full, "utf8"))) callers.push(full);
+    }
+  }
+  expect(callers.sort()).toEqual(["lib/higgsfield-consumer/video-original.ts", "lib/storage.ts"]);
 });

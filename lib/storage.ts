@@ -10,7 +10,7 @@ import { readBodyCapped } from "./boundedBody";
 import type { ByteRange } from './mediaRange';
 import { cloudBackend, r2Backend, resolveStored, usingCloud, type ResolvedObject, type StorageBackend } from "./storage/backend";
 import { transferLimiter, TransferQueueTimeoutError } from "./storage/transfers";
-import { outputMetadataMode, prepareOutput } from "./storage/outputMetadata";
+import { logOutputMetadata, outputMetadataMaxBytes, outputMetadataMode, prepareOutput, rewriteSlot } from "./storage/outputMetadata";
 
 export { backendKind, usingCloud, type StorageBackendKind } from "./storage/backend";
 
@@ -325,18 +325,43 @@ async function streamVideo(genId: string, sourceUrl: string, options: StoreVideo
 
   /* At the output-metadata switch's default (keep) the provider's bytes flow
      straight through, never held whole. At marker or strip the file is
-     gathered (still under the cap above), rewritten once by the seam and
-     sent on in 8 MiB slices; `stored` is then the rewritten length. */
+     gathered, one file at a time in this process (rewriteSlot), rewritten
+     once by the seam and sent on in 8 MiB slices; `stored` is then the
+     rewritten length. A file over OUTPUT_METADATA_MAX_BYTES (declared, or
+     counted while gathering) is not rewritten: what was gathered is sent on
+     and the rest streams through as delivered (logged too_large). */
   let stored: number | null = null;
   const REWRITTEN_SLICE = 8 * 1024 * 1024;
+  const mode = outputMetadataMode(process.env);
+  const tooLarge = (size: number) => logOutputMetadata("video", genId, { mode, format: "mp4", outcome: "too_large", bytes: { length: size } }, size);
   async function* rewritten(): AsyncGenerator<Buffer> {
-    const parts: Buffer[] = [];
-    for await (const chunk of counted()) parts.push(chunk);
-    const prepared = prepareOutput("video", Buffer.concat(parts, bytes), { id: genId }).bytes;
-    stored = prepared.length;
-    for (let at = 0; at < prepared.length; at += REWRITTEN_SLICE) yield prepared.subarray(at, at + REWRITTEN_SLICE);
+    const ceiling = outputMetadataMaxBytes(process.env);
+    if (declared != null && declared > ceiling) { tooLarge(declared); yield* counted(); return; }
+    const release = await rewriteSlot(signal);
+    try {
+      const flowing = counted();
+      const parts: Buffer[] = [];
+      let gathered = 0;
+      for (let next = await flowing.next(); !next.done; next = await flowing.next()) {
+        parts.push(next.value);
+        gathered += next.value.length;
+        if (gathered > ceiling) {
+          const held = parts.splice(0);
+          release();
+          tooLarge(gathered);
+          yield* held;
+          yield* flowing;
+          return;
+        }
+      }
+      const whole = Buffer.concat(parts, gathered);
+      parts.length = 0;
+      const prepared = prepareOutput("video", whole, { id: genId }).bytes;
+      stored = prepared.length;
+      for (let at = 0; at < prepared.length; at += REWRITTEN_SLICE) yield prepared.subarray(at, at + REWRITTEN_SLICE);
+    } finally { release(); }
   }
-  const source = outputMetadataMode(process.env) === "keep" ? counted : rewritten;
+  const source = mode === "keep" ? counted : rewritten;
 
   try {
     if (usingCloud()) {
