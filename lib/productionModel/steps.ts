@@ -8,10 +8,13 @@ import { ProductionModelOffError, productionModelOn } from "./flag";
 /**
  * A v30 production's steps, and the frame of each canvas step (docs/plans/v30-data-model.md § 2.1, 2.2; PR A1).
  *
- * Where it lives: the workspace's OWN database (lib/db.ts: one database per workspace). Every row also carries
- * `workspace_id`, first in its key and in every index, and every query here filters on the store's own workspace
- * (the lib/pipeline/store.ts idiom), so a store built for one workspace never reads or writes another's row, even
- * pointed at the wrong database.
+ * Where it lives: the workspace's OWN database (lib/db.ts: one database per workspace). How each table is scoped:
+ *   - `production_steps`: every row carries `workspace_id`, first in its key and in every index, and every query here
+ *     filters on the store's own workspace (the lib/pipeline/store.ts idiom);
+ *   - `projects` has no `workspace_id`: its reads and writes here are scoped by the DATABASE alone, as everywhere else.
+ * Every public method first checks that the store's workspace is the one in scope (`requireTenant().id`), and a
+ * production whose steps are held under another workspace's id is answered as not found, so a store pointed at the
+ * wrong database neither reads nor writes the other workspace's steps or its production's film type.
  *
  * What it adds (all additive, all created lazily by `ready()`, which only flag-on code reaches):
  *   - `projects.film_type` (nullable): the film type a v30 production was made as; NULL for every production before v30;
@@ -80,6 +83,7 @@ export const PRODUCTION_STEPS_SCHEMA: string[] = [
 ];
 
 const boots = new WeakMap<Client, Promise<void>>();
+const OTHER_SCOPE = "This store is not for the workspace in scope.";
 
 function stepOf(row: Row): ProductionStep {
   const hasFrame = row.frame_x !== null && row.frame_x !== undefined;
@@ -128,8 +132,14 @@ export class ProductionStepStore {
     if (!workspaceId) throw new ProductionStepError("Steps need a workspace.", 401);
   }
 
+  /** Every read and write path starts here: the store answers only for the workspace in scope. */
+  private scoped(): void {
+    if (requireTenant().id !== this.workspaceId) throw new ProductionStepError(OTHER_SCOPE, 403);
+  }
+
   /** The two `projects` columns and the steps table. Safe to run on any database any number of times. */
   async ready(): Promise<void> {
+    this.scoped();
     let pending = boots.get(this.client);
     if (!pending) {
       pending = (async () => {
@@ -165,6 +175,10 @@ export class ProductionStepStore {
     if (!ID.test(productionId)) throw new ProductionStepError(NOT_HERE, 404);
     const row = (await tx.execute({ sql: "SELECT film_type FROM projects WHERE id=?", args: [productionId] })).rows[0];
     if (!row) throw new ProductionStepError(NOT_HERE, 404);
+    /* `projects` is scoped by its database only. Steps of this production held under another workspace's id mean this
+       store is pointed at a database that is not its own: answered as not found, before anything is written. */
+    const foreign = await tx.execute({ sql: "SELECT 1 FROM production_steps WHERE production_id=? AND workspace_id<>? LIMIT 1", args: [productionId, this.workspaceId] });
+    if (foreign.rows.length) throw new ProductionStepError(NOT_HERE, 404);
     return { filmType: row.film_type === null || row.film_type === undefined ? null : String(row.film_type) };
   }
 
@@ -200,6 +214,7 @@ export class ProductionStepStore {
    * nothing new and its steps back, so running this twice, or from two windows at once, makes one set.
    */
   async ensureSteps(productionId: string, filmType: string, by: string): Promise<ProductionStep[]> {
+    this.scoped();
     if (!STEP_KIND.test(filmType)) throw new ProductionStepError("That film type is not on the list.", 400);
     const steps = filmTypeSteps(filmType, this.env);
     if (!steps) throw new ProductionStepError("That film type is not on the list.", 400);
@@ -210,16 +225,18 @@ export class ProductionStepStore {
       const existing = await this.rows(tx, productionId, true);
       if (existing.length) return existing.filter((s) => s.removedAt === null);
       const at = now();
+      const writes: InStatement[] = [];
       if (!production.filmType)
-        await tx.execute({ sql: "UPDATE projects SET film_type=? WHERE id=? AND film_type IS NULL", args: [filmType, productionId] });
+        writes.push({ sql: "UPDATE projects SET film_type=? WHERE id=? AND film_type IS NULL", args: [filmType, productionId] });
       const taken: string[] = [];
       let canvasIndex = 0;
       for (const [position, step] of steps.entries()) {
         const pageId = nextPageId(step.kind, taken);
         taken.push(pageId);
         const frame = step.surface === "canvas" ? { x: canvasIndex++ * (DEFAULT_FRAME.w + DEFAULT_FRAME.gap), y: 0, w: DEFAULT_FRAME.w, h: DEFAULT_FRAME.h } : null;
-        await tx.execute(this.insert(newId("pstep"), productionId, step, pageId, position, frame, by, at));
+        writes.push(this.insert(newId("pstep"), productionId, step, pageId, position, frame, by, at));
       }
+      await tx.batch(writes);
       return this.rows(tx, productionId, false);
     });
   }
@@ -270,8 +287,10 @@ export class ProductionStepStore {
       if (stepIds.length !== live.length || new Set(stepIds).size !== stepIds.length || !stepIds.every((s) => ids.has(s)))
         throw new ProductionStepError("The order must list each of the project's steps once.", 409);
       const at = now();
-      for (const [position, stepId] of stepIds.entries())
-        await tx.execute({ sql: "UPDATE production_steps SET position=?, updated_at=? WHERE workspace_id=? AND id=?", args: [position, at, this.workspaceId, stepId] });
+      await tx.batch(stepIds.map((stepId, position) => ({
+        sql: "UPDATE production_steps SET position=?, updated_at=? WHERE workspace_id=? AND id=?",
+        args: [position, at, this.workspaceId, stepId],
+      })));
       return this.rows(tx, productionId, false);
     });
   }
@@ -321,13 +340,16 @@ export class ProductionStepStore {
     });
   }
 
-  /** Undo a removal. */
+  /** Undo a removal: the step comes back at the end of the rail, after every live step. */
   async restore(stepId: string): Promise<ProductionStep> {
     return this.write(async (tx) => {
-      await this.step(tx, stepId);
+      const step = await this.step(tx, stepId);
+      if (step.removedAt === null) return step;
+      const live = await this.rows(tx, step.productionId, false);
+      const position = live.reduce((max, s) => Math.max(max, s.position), -1) + 1;
       await tx.execute({
-        sql: "UPDATE production_steps SET removed_at=NULL, removed_by=NULL, updated_at=? WHERE workspace_id=? AND id=?",
-        args: [now(), this.workspaceId, stepId],
+        sql: "UPDATE production_steps SET removed_at=NULL, removed_by=NULL, position=?, updated_at=? WHERE workspace_id=? AND id=?",
+        args: [position, now(), this.workspaceId, stepId],
       });
       return this.step(tx, stepId);
     });
@@ -342,6 +364,7 @@ export class ProductionStepStore {
 export async function productionSteps(): Promise<ProductionStepStore> {
   const workspace = requireTenant();
   if (!(await productionModelOn(workspace))) throw new ProductionModelOffError();
+  /* A setting that is set but unreadable is refused here, before the database is touched. */
   filmTypeConfig();
   await ready();
   return new ProductionStepStore(db(), workspace.id);

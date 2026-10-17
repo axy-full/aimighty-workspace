@@ -7,7 +7,11 @@ import { z } from "zod";
  * file names a film type or lists a step. The list is the platform's default, the same for every workspace, and names no
  * workspace, client or person (ground rule 3).
  *
- * The owner has not yet given the film types or their step lists (plan question Q1). Until he does:
+ * INTERIM SOURCE. This setting is where the list lives only until the owner gives the film types (plan Q1). A later PR
+ * moves it to a platform-layer default (lib/platformLayer.ts) with a per-workspace override (rule 3); that is not done
+ * here because adding a layer key changes the admin platform-layer response, which no Phase A PR may change.
+ *
+ * Until the owner answers:
  *   - the deployment's `V30_FILM_TYPES` setting (JSON, the shape of `filmTypeConfigSchema`) is the list when it is set;
  *   - otherwise the list is `FILM_TYPES_PLACEHOLDER`, ONE sample type, flagged `placeholder: true`, so nothing can read
  *     it as the owner's.
@@ -23,21 +27,27 @@ export const FILM_TYPES_SETTING = "V30_FILM_TYPES";
 /** A step's kind and a film type's id: the same grammar, so a kind is safe as the start of a page id. */
 export const STEP_KIND = /^[a-z][a-z0-9_]{0,31}$/;
 
-const stepSchema = z.object({
+/** A name as a person reads it: trimmed, inner runs of space collapsed (as the store's own rename does), 1 to 60 characters. */
+const labelSchema = z
+  .string()
+  .transform((s) => s.trim().replace(/\s+/g, " "))
+  .pipe(z.string().min(1).max(60));
+
+const stepSchema = z.strictObject({
   kind: z.string().regex(STEP_KIND),
-  label: z.string().trim().min(1).max(60),
+  label: labelSchema,
   /** A document step (Brief, Script) is read and edited in the document reader and has no frame; a canvas step is one frame. */
   surface: z.enum(["document", "canvas"]),
 });
 
-const filmTypeSchema = z.object({
+const filmTypeSchema = z.strictObject({
   id: z.string().regex(STEP_KIND),
-  label: z.string().trim().min(1).max(60),
+  label: labelSchema,
   steps: z.array(stepSchema).min(1).max(24),
 });
 
 export const filmTypeConfigSchema = z
-  .object({
+  .strictObject({
     /** True only for the stand-in list below. The owner's list sets it false (or leaves it out). */
     placeholder: z.boolean().default(false),
     filmTypes: z.array(filmTypeSchema).min(1).max(24),
@@ -45,14 +55,14 @@ export const filmTypeConfigSchema = z
   .superRefine((config, ctx) => {
     const ids = new Set<string>();
     for (const type of config.filmTypes) {
-      if (ids.has(type.id)) ctx.addIssue({ code: "custom", message: `Film type ${type.id} is listed twice.` });
+      if (ids.has(type.id)) ctx.addIssue({ code: "custom", path: ["filmTypes", config.filmTypes.indexOf(type)], message: "A film type is listed twice." });
       ids.add(type.id);
     }
   });
 
-export type FilmTypeStep = z.infer<typeof stepSchema>;
-export type FilmType = z.infer<typeof filmTypeSchema>;
-export type FilmTypeConfig = z.infer<typeof filmTypeConfigSchema> & { source: "setting" | "placeholder" };
+export type FilmTypeStep = z.output<typeof stepSchema>;
+export type FilmType = z.output<typeof filmTypeSchema>;
+export type FilmTypeConfig = z.output<typeof filmTypeConfigSchema> & { source: "setting" | "placeholder" };
 
 /**
  * PLACEHOLDER, not the owner's list (plan Q1). One sample film type whose steps are the ones the 17 Oct brief names
@@ -78,9 +88,10 @@ export const FILM_TYPES_PLACEHOLDER = {
   ],
 } as const satisfies z.input<typeof filmTypeConfigSchema>;
 
+/** What is wrong with the setting: where (`path`, e.g. `filmTypes.0.steps.2.surface`), never the value it holds. */
 export class FilmTypeConfigError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, readonly path: string | null = null) {
+    super(path ? `${message} (at ${path})` : message);
     this.name = "FilmTypeConfigError";
   }
 }
@@ -98,7 +109,12 @@ export function filmTypeConfig(env: Record<string, string | undefined> = process
     throw new FilmTypeConfigError(`${FILM_TYPES_SETTING} is set but is not JSON.`);
   }
   const result = filmTypeConfigSchema.safeParse(parsed);
-  if (!result.success) throw new FilmTypeConfigError(`${FILM_TYPES_SETTING} is set but does not read as a list of film types.`);
+  if (!result.success) {
+    /* Only the issue's path: schema keys and list indexes. Never a value, nor an unknown key's own text. */
+    const issue = result.error.issues[0];
+    const where = issue ? issue.path.map(String) : [];
+    throw new FilmTypeConfigError(`${FILM_TYPES_SETTING} is set but does not read as a list of film types.`, where.length ? where.join(".") : "(root)");
+  }
   return { ...result.data, source: "setting" };
 }
 
