@@ -59,7 +59,7 @@ The brief's words are kept in the interface. Table and column names avoid words 
 | `film_type TEXT` | Closed list (owner question Q1). NULL means a production from before v30. It is separate from `kind` (free text, "30s car spot") and from `category` (genre). |
 | `canvas_store TEXT` | `team` (NULL reads as `team`) or `v30`. This says **which store is the truth for this production's canvas** (see 2.4). |
 
-- **Step lists by film type** are a **platform-layer** key (`platform_layer`, `lib/platformLayer.ts`). A workspace can override it through its settings (rule 3). They are not a table: they are defaults, and no workspace or client name appears in them.
+- **Step lists by film type** are defaults, not a table, and no workspace or client name appears in them. **Interim (lead, 17 Oct):** until the owner gives the film types (Q1), A1 reads them from server config (`V30_FILM_TYPES`, with a flagged placeholder), the same for every workspace. They move to a **platform-layer** key (`platform_layer`, `lib/platformLayer.ts`) with a workspace override (rule 3) in a later PR, because adding a layer key changes the admin platform-layer response, which Phase A must not.
 - `projects.step` (0–5 on the six old steps) is left alone. It keeps meaning what it means for productions from before v30.
 
 ### 2.2 Steps and frames: new `production_steps`
@@ -439,7 +439,7 @@ None of these PRs changes the interface, so the rule-7 viewport runs do not appl
 
 | PR | Concern | Size | Needs | Flag | Opus money review | Tests beyond isolation |
 |---|---|---|---|---|---|---|
-| **A1** | Steps and frames: M1, M2, film-type step lists in the platform layer, the store, `page_id` | S | — | `V30_PRODUCTION_MODEL` | no | `page_id` is stable across rename, reorder and removal; one frame per canvas step |
+| **A1** | Steps and frames: M1, M2, film-type step lists from server config (interim; platform layer later), the store, `page_id` | S | — | `V30_PRODUCTION_MODEL` | no | `page_id` is stable across rename, reorder and removal; one frame per canvas step |
 | **A2** | Nodes and plate inputs: M3, M4, `nodeStatusOf`, the `bindings` pairing | M | A1 | `V30_PRODUCTION_MODEL` | no | status derivation table; the plate-input and binding rows are written together or not at all; role → slot map |
 | **A3** | Jobs and commands: M7, the store, `lib/jobView.ts`, the engine guard | M | — | `V30_JOBS` | **yes** | the response test and the source guard (4.4); the refund-status mapping; no charge path touched |
 | **A4** | Spend limit, pause, ask-before-every-take: M8, admin-only writes, audit actions | S | — | `V30_SPEND_LIMIT` | **yes** | member, `agent:*`, MCP and token writes are refused; admin writes are audited; no reservation reads the keys |
@@ -464,7 +464,7 @@ None of these PRs changes the interface, so the rule-7 viewport runs do not appl
 
 | # | Question | Why it matters | Until you answer |
 |---|---|---|---|
-| Q1 | Which film types are there, and what is each one's step list? | It sets up the steps of every new production. | A1 ships the mechanism with one sample list in the platform layer, flag off. |
+| Q1 | Which film types are there, and what is each one's step list? | It sets up the steps of every new production. | A1 ships the mechanism with one flagged sample list from server config, flag off; the platform layer and workspace override follow. |
 | Q2 | Is a "kept" card one that was **picked**, or one that was **approved**? | Draft → picked → approved stays; "kept" has to mean one of them. | `kept` = picked. |
 | Q3 | Can one script beat become more than one shot? | It decides whether a beat is a shot or a group of shots. | One beat = one shot. |
 | Q4 | Is the Brief a new document, or is today's treatment the Brief? | It avoids two Briefs. | A new document; treatments untouched. |
