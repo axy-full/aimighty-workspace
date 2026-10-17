@@ -73,21 +73,23 @@ const PRICE = [/\d\s*(?:cr|credits?|cents?|dollars?|usd)\b/i, /[$€£₹]\s*\d/
 const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
 
 /** Everything an answer must not carry, as one list of problems (plain checks, one expect: a few hundred answers are checked). */
-let forbidden: { names: [string, RegExp][]; notes: string[] } | null = null;
+let forbidden: { names: [string, RegExp][]; rules: string[][] } | null = null;
 async function problemsIn(answer: string): Promise<string[]> {
   if (!forbidden) {
     const { screen, instructions, bar } = await lib();
     const names = [...new Set([...TYPED_NAMES, ...screen.registryNames(), bar.visitorBarModel()])];
-    forbidden = { names: names.map((name) => [name, new RegExp(`(?<![A-Za-z0-9])${escape(name)}(?![A-Za-z0-9])`, "i")]), notes: words(instructions.VISITOR_INSTRUCTIONS) };
+    forbidden = { names: names.map((name) => [name, new RegExp(`(?<![A-Za-z0-9])${escape(name)}(?![A-Za-z0-9])`, "i")]), rules: instructions.VISITOR_RULES.map(words) };
   }
   const out: string[] = [];
   for (const [name, pattern] of forbidden.names) if (pattern.test(answer)) out.push(`names ${name}`);
   for (const pattern of PRICE) if (pattern.test(answer)) out.push(`a price (${pattern})`);
-  /* No five words in a row from the instructions, and not their marker. */
+  /* No five words in a row from any of the instructions' rules (the facts are the public page's), and not their marker. */
   const asked = ` ${words(answer).join(" ")} `;
-  for (let i = 0; i + 5 <= forbidden.notes.length; i++) {
-    const run = forbidden.notes.slice(i, i + 5).join(" ");
-    if (asked.includes(` ${run} `)) out.push(`repeats the instructions: "${run}"`);
+  for (const rule of forbidden.rules) {
+    for (let i = 0; i + 5 <= rule.length; i++) {
+      const run = rule.slice(i, i + 5).join(" ");
+      if (asked.includes(` ${run} `)) out.push(`repeats the instructions: "${run}"`);
+    }
   }
   if (/PVB|4417/i.test(answer)) out.push("the instructions' marker");
   return out;
@@ -145,6 +147,13 @@ async function leaks(): Promise<string[]> {
     `0x${Buffer.from("Seedance").toString("hex")}${Buffer.from("Kling Pro").toString("hex")}`,
   ];
 }
+
+test("the instructions are their facts and their rules, and an answer may repeat a fact", async () => {
+  const { instructions, screen } = await lib();
+  expect(instructions.VISITOR_INSTRUCTIONS.split("\n").sort()).toEqual([...instructions.VISITOR_FACTS, ...instructions.VISITOR_RULES].sort());
+  for (const fact of instructions.VISITOR_FACTS) expect(screen.screenReason(fact), fact).toBeNull();
+  for (const rule of instructions.VISITOR_RULES) expect(screen.screenReason(rule), rule).toBe("instructions");
+});
 
 test("1. a mock model that echoes its instructions and every engine name: the visitor reads none of it", async () => {
   const { instructions } = await lib();
@@ -221,10 +230,10 @@ test("the instructions say nothing about engines, vendors, models or prices", as
 test("the request: the default model is the cheapest wired Claude, a short budget, two messages, no tools", async () => {
   const { bar, instructions } = await lib();
   const { DIRECT_MODEL_IDS } = await import("../../lib/textRoute");
-  const catalog = (await import("../../lib/modelCatalog.json")).default as unknown as { models: { id: string; pricing?: { input?: string; output?: string } }[] };
+  const catalog = JSON.parse(readFileSync(path.join(ROOT, "lib/modelCatalog.json"), "utf8")) as Record<"models" | "providerPriced", { id: string; pricing?: { input?: string; output?: string } }[]>;
   /* The cheapest Claude with a direct door, by the checked-in snapshot (read here, never typed). */
   const claude = Object.keys(DIRECT_MODEL_IDS).filter((id) => id.startsWith("anthropic/"));
-  const cost = (id: string) => { const p = catalog.models.find((m) => m.id === id)?.pricing; return p ? Number(p.input) + Number(p.output) : Infinity; };
+  const cost = (id: string) => { const p = [...catalog.models, ...(catalog.providerPriced ?? [])].find((m) => m.id === id)?.pricing; return p ? Number(p.input) + Number(p.output) : Infinity; };
   const cheapest = [...claude].sort((a, b) => cost(a) - cost(b))[0];
   expect(bar.VISITOR_BAR_DEFAULT_MODEL).toBe(cheapest);
   expect(Number.isFinite(cost(cheapest))).toBe(true);
@@ -443,8 +452,8 @@ test("nothing the route loads, however deep, is a generation, engine, money or w
   ];
   const reached = [...files].filter((file) => file !== ROUTE).flatMap((file) => FORBIDDEN.filter(([, pattern]) => pattern.test(file)).map(([what]) => `${file} is ${what}`));
   expect(reached).toEqual([]);
-  /* Packages: the text client's own SDKs and the database client the recovery fence reads, nothing that renders. */
-  const ALLOWED = /^(?:node:\w+|ai|@ai-sdk\/(?:anthropic|google|openai|xai|gateway|provider)|@libsql\/client)$/;
+  /* Packages: the text client's own SDKs (and the gateway's credential reader), and the database client the recovery fence reads; nothing that renders. */
+  const ALLOWED = /^(?:node:\w+|ai|@ai-sdk\/(?:anthropic|google|openai|xai|gateway|provider)|@vercel\/oidc|@libsql\/client)$/;
   for (const name of packages) expect(ALLOWED.test(name), `the route loads the package ${name}`).toBe(true);
 });
 

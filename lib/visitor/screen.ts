@@ -2,7 +2,7 @@ import { AUDIO_LABELS, MODELS, thinkingModelDisplayName } from "../models";
 import { PROVIDER_DISPLAY_NAMES, VENDOR_NAME_PATTERN, connectedFamilyNameIn } from "../vendorNames";
 import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS } from "../textRoute";
 import modelCatalogJson from "../modelCatalog.json";
-import { HELD_ANSWER, HELD_PRICE_ANSWER, INSTRUCTIONS_MARKER, VISITOR_INSTRUCTIONS } from "./instructions";
+import { HELD_ANSWER, HELD_PRICE_ANSWER, INSTRUCTIONS_MARKER, VISITOR_RULES } from "./instructions";
 
 /**
  * The visitor bar's second line of defence (v30 Phase A, item 9). The instructions already say nothing worth taking;
@@ -13,7 +13,8 @@ import { HELD_ANSWER, HELD_PRICE_ANSWER, INSTRUCTIONS_MARKER, VISITOR_INSTRUCTIO
  *    vendor-name rules in lib/vendorNames.ts, the text routes in lib/textRoute.ts, the text catalogue snapshot), never
  *    typed here, so a name added to a registry is screened from the day it is added;
  *  - carries a price: a figure next to credits, a currency, cents, a month, or a percentage off;
- *  - repeats the instructions: any run of six words from them, or their marker;
+ *  - repeats the instructions' rules (how it must answer): any run of six words from one of them, or their marker. The
+ *    facts in them are the public page's own and are meant to be repeated;
  *  - hides any of that: reversed, in rot13, spaced out letter by letter, or as a long encoded run (base64, hex).
  *
  * A held answer is replaced whole by a fixed one (no half-redacted sentence with a version number left behind).
@@ -120,7 +121,8 @@ function shingles(list: string[]): Set<string> {
 }
 function repeatsInstructions(text: string): boolean {
   if (INSTRUCTIONS_MARKER.test(text)) return true;
-  instructionShingles ??= shingles(normal(VISITOR_INSTRUCTIONS));
+  /* Each rule on its own: a run across two rules is not text of either. The facts are the public page's and may be repeated. */
+  instructionShingles ??= new Set(VISITOR_RULES.flatMap((rule) => [...shingles(normal(rule))]));
   for (const shingle of shingles(normal(text))) if (instructionShingles.has(shingle)) return true;
   return false;
 }
