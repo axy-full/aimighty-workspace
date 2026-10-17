@@ -74,7 +74,7 @@ export function visitorBarDoor(env: Env = process.env): VisitorBarDoor {
 }
 
 /** Control characters, zero-width and direction marks (the Arabic letter mark included), and the invisible tag characters. */
-const INVISIBLE = new RegExp(String.raw`[\u0000-\u0008\u000b-\u001f\u007f-\u009f؜​-‏‪-‮⁠-⁩﻿\u{e0000}-\u{e007f}]`, "gu");
+const INVISIBLE = new RegExp(String.raw`[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff\u{e0000}-\u{e007f}]`, "gu");
 
 /** A question as asked, made one line of plain text (invisible characters out); a problem when nothing is left or it is too long. */
 export function cleanQuestion(value: unknown): { question: string } | { problem: "empty" | "long" } {
