@@ -37,8 +37,8 @@ export const VISITOR_BAR_KEYS: Readonly<Partial<Record<DirectVendor, string>>> =
 };
 /** The answer's budget, in output tokens: three short sentences. */
 export const VISITOR_BAR_MAX_TOKENS = 200;
-/** The longest question accepted, in characters. */
-export const VISITOR_BAR_MAX_QUESTION = 500;
+/** The longest question accepted, in characters (the owner's figure, 17 Oct 2026). */
+export const VISITOR_BAR_MAX_QUESTION = 400;
 const TIMEOUT_MS = 20_000;
 
 type Env = Record<string, string | undefined>;
@@ -105,7 +105,7 @@ export const plainFetch: typeof fetch = (input, init) => globalThis.fetch(input,
 const send: VisitorBarSend = (body, opts) => textPost(body, { timeoutMs: opts.timeoutMs, mock: "prompt", fetch: plainFetch, apiKey: opts.apiKey });
 
 export type VisitorBarResult =
-  | { ok: true; answer: string; held: ScreenReason | null; inTokens: number | null; outTokens: number | null }
+  | { ok: true; answer: string; held: ScreenReason | null; inTokens: number | null; outTokens: number | null; model: string; usage: Record<string, unknown> | null }
   | { ok: false; reason: "model" | "door" | "key" | "failed" };
 
 const count = (value: unknown) => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null);
@@ -124,12 +124,14 @@ export async function askVisitorBar(question: string, deps: { send?: VisitorBarS
     return { ok: false, reason: "failed" };
   }
   if (!reply.ok) return { ok: false, reason: "failed" };
-  let parsed: { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]; usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } };
+  let parsed: { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]; usage?: Record<string, unknown> & { prompt_tokens?: unknown; completion_tokens?: unknown } };
   try { parsed = JSON.parse(reply.text); } catch { return { ok: false, reason: "failed" }; }
   const content = parsed.choices?.[0]?.message?.content;
   /* The budget bounds it already; the slice is a backstop against a provider that ignores it. */
   const text = typeof content === "string" ? content.trim().slice(0, 2000) : "";
   if (!text) return { ok: false, reason: "failed" };
   const { answer, held } = screenVisitorAnswer(text);
-  return { ok: true, answer, held, inTokens: count(parsed.usage?.prompt_tokens), outTokens: count(parsed.usage?.completion_tokens) };
+  /* The provider's usage, as the text client returns it, for the ledger (lib/visitor/ledger.ts): what this answer cost. */
+  const usage = parsed.usage && typeof parsed.usage === "object" ? parsed.usage : null;
+  return { ok: true, answer, held, inTokens: count(usage?.prompt_tokens), outTokens: count(usage?.completion_tokens), model: door.model, usage };
 }
