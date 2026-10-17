@@ -50,7 +50,7 @@ type Route = { POST: (req: Request) => Promise<Response> };
  * the real shared limits; `send` swaps the model for a fake one. The recovery wrapper is a pass-through here, except
  * with `recovery: "real"`.
  */
-let ledgerRecords: { id: string; model: string; usage: Record<string, unknown> | null }[] = [];
+let ledgerRecords: { id: string; model: string; usage: Record<string, unknown> | null; answered?: boolean }[] = [];
 test.beforeEach(() => { ledgerRecords = []; });
 async function route(send?: Send, options: { recovery?: "real"; ledger?: "real" } = {}): Promise<Route> {
   const bar = await import("../../lib/visitor/bar");
@@ -373,6 +373,14 @@ test("the request: a short budget, two messages, no tools; a failed or empty rep
   expect(await bar.askVisitorBar("Hi", { send: async () => says("  ") })).toEqual({ ok: false, reason: "failed", paid: { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: { prompt_tokens: 300, completion_tokens: 40 } } });
   expect(await bar.askVisitorBar("Hi", { send: async () => ({ ok: true, status: 200, text: "not json" }) })).toEqual({ ok: false, reason: "failed", paid: { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null } });
   expect(await bar.askVisitorBar("Hi", { send: async () => { throw new Error("socket closed"); } })).toEqual({ ok: false, reason: "failed", paid: { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null } });
+  /* A JSON body that is not an object is unreadable too; it never throws. */
+  for (const text of ["null", "7", "[]"]) expect(await bar.askVisitorBar("Hi", { send: async () => ({ ok: true, status: 200, text }) }), text).toEqual({ ok: false, reason: "failed", paid: { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null } });
+  /* Google's safety filter blocked the reply: the model ran, so it is a paid call at an unknown cost. Any other refusal is not. */
+  const { TEXT_SAFETY_BLOCK_MESSAGE } = await import("../../lib/geminiSafety");
+  const blocked = { ok: false, status: 422, text: JSON.stringify({ provider: "google", error: { message: TEXT_SAFETY_BLOCK_MESSAGE } }) };
+  expect(await bar.askVisitorBar("Hi", { send: async () => blocked })).toEqual({ ok: false, reason: "failed", paid: { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null } });
+  const notSent = { ok: false, status: 422, text: JSON.stringify({ provider: "google", error: { message: "The direct language request needs max_tokens." } }) };
+  expect(await bar.askVisitorBar("Hi", { send: async () => notSent })).toEqual({ ok: false, reason: "failed" });
 });
 
 /**
@@ -792,7 +800,7 @@ test("the route and the bar import only what they are pinned to", () => {
   const PINNED: Record<string, string[]> = {
     [ROUTE]: ["node:crypto", "@/lib/recovery", "@/lib/clientIp", "@/lib/requestOrigin", "@/lib/requestBody", "@/lib/visitor/bar", "@/lib/visitor/limits", "@/lib/visitor/ledger"],
     "lib/visitor/ledger.ts": ["../meter", "../houseWorkspace", "../catalog", "../openai-direct", "../textRoute"],
-    "lib/visitor/bar.ts": ["../textDirect", "../textRoute", "../mock", "./instructions", "./screen"],
+    "lib/visitor/bar.ts": ["../textDirect", "../textRoute", "../mock", "../geminiSafety", "./instructions", "./screen"],
     "lib/visitor/screen.ts": ["./instructions"],
     "lib/visitor/limits.ts": ["node:net", "../localDatabaseClient"],
     "lib/visitor/instructions.ts": [],
@@ -998,21 +1006,29 @@ test("MONEY: a call that cost something but gave no answer is still on the ledge
   const empty = await route(async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { role: "assistant", content: "" } }], usage }) }));
   const lost = await route(async () => { throw new Error("timed out after it was sent"); });
   const refused = await route(async () => ({ ok: false, status: 400, text: "{}" }));
+  const { TEXT_SAFETY_BLOCK_MESSAGE } = await import("../../lib/geminiSafety");
+  const blocked = await route(async () => ({ ok: false, status: 422, text: JSON.stringify({ provider: "google", error: { message: TEXT_SAFETY_BLOCK_MESSAGE } }) }));
   const lines = await consoleLines(async () => {
     expect((await ask(empty, { question: "Q1" })).status).toBe(503);
     expect((await ask(lost, { question: "Q2" })).status).toBe(503);
     expect((await ask(refused, { question: "Q3" })).status).toBe(503);
+    expect((await ask(blocked, { question: "Q4" })).status).toBe(503);
   });
   const { bar } = await lib();
-  expect(ledgerRecords.map((record) => ({ model: record.model, usage: record.usage }))).toEqual([{ model: bar.VISITOR_BAR_DEFAULT_MODEL, usage }, { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null }]);
-  /* A provider's refusal (an error status) is not a paid call: nothing recorded, and its log line says no ledger. */
-  expect(lines.map((line) => (JSON.parse(line) as { ledger?: string }).ledger)).toEqual(["recorded", "recorded", undefined]);
+  expect(ledgerRecords.map((record) => ({ model: record.model, usage: record.usage, answered: record.answered }))).toEqual([
+    { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage, answered: false },
+    { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null, answered: false },
+    { model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null, answered: false },
+  ]);
+  /* A provider's refusal (an error status) is not a paid call: nothing recorded, and its log line says no ledger. A safety block is. */
+  expect(lines.map((line) => (JSON.parse(line) as { ledger?: string }).ledger)).toEqual(["recorded", "recorded", undefined, "recorded"]);
   /* On the real meter, an unknown cost is an unknown bill: engine_cost_usd and billed_credits are NULL, no credit moves. */
   const ledger = await import("../../lib/visitor/ledger");
-  expect(await ledger.recordVisitorSpend({ id: "lost-call-fixture", model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null })).toEqual({ recorded: true, costUsd: null });
+  expect(await ledger.recordVisitorSpend({ id: "lost-call-fixture", model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: null, answered: false })).toEqual({ recorded: true, costUsd: null });
   const { platformDb } = await import("../../lib/platform");
-  const row = (await platformDb().execute({ sql: "SELECT engine_cost_usd, billed_credits, paid_by_platform, created_by FROM meter_events WHERE id = ?", args: ["visitor_lost-call-fixture"] })).rows[0];
-  expect({ cost: row?.engine_cost_usd, billed: row?.billed_credits, paid: Number(row?.paid_by_platform), by: row?.created_by }).toEqual({ cost: null, billed: null, paid: 0, by: "visitor" });
+  const row = (await platformDb().execute({ sql: "SELECT status, engine_cost_usd, billed_credits, paid_by_platform, created_by FROM meter_events WHERE id = ?", args: ["visitor_lost-call-fixture"] })).rows[0];
+  /* A failed job on the meter (engine health counts it as one), at an unknown cost and an unknown bill. */
+  expect({ status: row?.status, cost: row?.engine_cost_usd, billed: row?.billed_credits, paid: Number(row?.paid_by_platform), by: row?.created_by }).toEqual({ status: "failed", cost: null, billed: null, paid: 0, by: "visitor" });
   const debited = (await platformDb().execute({ sql: "SELECT COALESCE(SUM(credits), 0) AS n FROM billing_debits WHERE event_id = ?", args: ["visitor_lost-call-fixture"] })).rows[0];
   expect(Number(debited?.n ?? 0)).toBe(0);
 });
@@ -1053,4 +1069,8 @@ test("MONEY: the record's shape, exactly: the house workspace, unbilled, marked 
   expect(await ledger.recordVisitorSpend({ id: "ghi", model: "nonsense", usage }, async (...args) => { none.push(args); })).toEqual({ recorded: false, costUsd: null });
   expect(none).toEqual([]);
   expect(ledger.VISITOR_MARK).toBe("visitor");
+  /* A call that gave no answer is written as a failed job. */
+  const failed: unknown[] = [];
+  await ledger.recordVisitorSpend({ id: "jkl", model: "anthropic/claude-haiku-5.5", usage: null, answered: false }, async (...args) => { failed.push(args); });
+  expect((failed[0] as [{ status: string; engineCostUsd: unknown }])[0]).toMatchObject({ status: "failed", engineCostUsd: null });
 });
