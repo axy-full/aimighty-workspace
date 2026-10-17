@@ -32,7 +32,8 @@ export const VISITOR_INSTRUCTIONS = [VISITOR_RULES[0], ...VISITOR_FACTS, ...VISI
 /** A marker in the notes above, so a repeat of them in any wording that keeps it is caught. */
 export const INSTRUCTIONS_MARKER = /P\W*V\W*B\W*4\W*4\W*1\W*7/i;
 
-/** What a visitor reads when an answer was held back. Plain, and pointing at the next step. */
-export const HELD_ANSWER = "I can help with general questions about Particl. If you would like to try it, use Request access.";
-/** The same for a question that drew a figure: the figures are on the pricing page. */
-export const HELD_PRICE_ANSWER = "Plans and credit prices are on the pricing page. If you would like to try Particl, use Request access.";
+/**
+ * What a visitor reads when an answer was held back, whatever it was held for: one fixed answer, so the reply cannot
+ * tell a visitor whether a name, a price or the notes tripped it.
+ */
+export const HELD_ANSWER = "I can help with general questions about Particl. Plans and prices are on the pricing page, and Request access lets you try it.";

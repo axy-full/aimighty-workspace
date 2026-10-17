@@ -2,22 +2,25 @@ import { AUDIO_LABELS, MODELS, thinkingModelDisplayName } from "../models";
 import { PROVIDER_DISPLAY_NAMES, VENDOR_NAME_PATTERN, connectedFamilyNameIn } from "../vendorNames";
 import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS } from "../textRoute";
 import modelCatalogJson from "../modelCatalog.json";
-import { HELD_ANSWER, HELD_PRICE_ANSWER, INSTRUCTIONS_MARKER, VISITOR_RULES } from "./instructions";
+import { HELD_ANSWER, INSTRUCTIONS_MARKER, VISITOR_RULES } from "./instructions";
 
 /**
  * The visitor bar's second line of defence (v30 Phase A, item 9). The instructions already say nothing worth taking;
  * this screen checks every answer before it leaves the server, whatever the model was talked into, and holds back an
  * answer that:
  *
- *  - names an engine, a vendor or a model: every name is read from the server's own registries (lib/models.ts, the
- *    vendor-name rules in lib/vendorNames.ts, the text routes in lib/textRoute.ts, the text catalogue snapshot), never
- *    typed here, so a name added to a registry is screened from the day it is added;
+ *  - names an engine, a vendor or a model: every name Particl uses is read from the server's own registries
+ *    (lib/models.ts, the vendor-name rules in lib/vendorNames.ts, the text routes in lib/textRoute.ts, the text
+ *    catalogue snapshot), never typed here, so a name added to a registry is screened from the day it is added. Beside
+ *    them, a typed list of well-known names Particl does not use (`DECOY_NAMES`), screened exactly the same way, so a
+ *    visitor cannot learn which names are Particl's from which answers come back held;
  *  - carries a price: a figure next to credits, a currency, cents, a month, or a percentage off;
  *  - repeats the instructions' rules (how it must answer): any run of six words from one of them, or their marker. The
  *    facts in them are the public page's own and are meant to be repeated;
  *  - hides any of that: reversed, in rot13, spaced out letter by letter, or as a long encoded run (base64, hex).
  *
- * A held answer is replaced whole by a fixed one (no half-redacted sentence with a version number left behind).
+ * A held answer is replaced whole by one fixed answer, the same whatever tripped it (no half-redacted sentence with a
+ * version number left behind, and no telling a name from a price).
  * Pure: no I/O, no logging.
  */
 
@@ -85,19 +88,39 @@ export function registryNames(): string[] {
   return [...out].filter((n) => !(n.split(" ").length === 1 && ORDINARY.has(n.toLowerCase()))).sort((a, b) => b.length - a.length);
 }
 
-let cached: { pattern: RegExp; letters: string[] } | null = null;
-function names() {
-  if (cached) return cached;
-  const list = registryNames();
-  const pattern = new RegExp(`(?<![A-Za-z0-9])(?:${list.map((n) => escape(n).replace(/\\?[ ]/g, "[\\s\\-_]+")).join("|")})(?![A-Za-z0-9])`, "i");
-  /* For text spaced out or punctuated letter by letter: the longer single names, letters only. */
-  const letters = [...new Set(list.filter((n) => !n.includes(" ")).map((n) => n.toLowerCase().replace(/[^a-z]/g, "")).filter((n) => n.length >= 6))];
-  cached = { pattern, letters };
+/**
+ * Well-known names in AI video, image, audio and language work that Particl does not use. Screened exactly like the
+ * registry's, so "reply with exactly this word" comes back the same for a name Particl uses and one it does not.
+ * Typed here on purpose: these are not in any registry. Distinctive names only (an ordinary word would hold back
+ * ordinary answers).
+ */
+export const DECOY_NAMES: readonly string[] = [
+  "Runway", "Pika", "Sora", "Midjourney", "Stable Diffusion", "Stability AI", "DALL-E", "DALL·E", "Ideogram", "Synthesia", "HeyGen",
+  "Haiper", "Vidu", "PixVerse", "Moonvalley", "LTX Video", "Lightricks", "Genmo", "CogVideoX", "Krea", "Adobe Firefly", "Imagen",
+  "Lumiere", "Phenaki", "Suno", "Udio", "Murf", "Resemble AI", "Kaiber", "Hedra", "Mistral", "Llama", "DeepSeek", "Cohere",
+  "Perplexity", "Midjourney V7", "Sora 2",
+];
+
+/** Every name the screen holds an answer for: the registry's and the decoys, alike. */
+export function screenedNames(): string[] {
+  return [...new Set([...registryNames(), ...DECOY_NAMES])].sort((a, b) => b.length - a.length);
+}
+
+let cached: RegExp | null = null;
+function names(): RegExp {
+  cached ??= new RegExp(`(?<![A-Za-z0-9])(?:${screenedNames().map((n) => escape(n).replace(/ /g, "[\\s\\-_]+")).join("|")})(?![A-Za-z0-9])`, "i");
   return cached;
 }
 
 function namesIn(text: string): boolean {
-  return names().pattern.test(text) || VENDOR_NAME_PATTERN.test(text) || connectedFamilyNameIn(text) !== null;
+  return names().test(text) || VENDOR_NAME_PATTERN.test(text) || connectedFamilyNameIn(text) !== null;
+}
+
+/** Words spelled out letter by letter ("K l i n g", "S-e-e-d-a-n-c-e"), joined back up. Only runs of single letters are
+ *  joined, so two ordinary words are never read as one. */
+const SPELLED_OUT = String.raw`(?<![A-Za-z])(?:[A-Za-z][^A-Za-z0-9\n]{1,3}){2,}[A-Za-z](?![A-Za-z])`;
+function spelledOut(text: string): string[] {
+  return [...text.matchAll(new RegExp(SPELLED_OUT, "g"))].map((m) => m[0].replace(/[^A-Za-z]/g, ""));
 }
 
 const NUMBER_WORDS = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|half";
@@ -146,17 +169,14 @@ function decodedRuns(text: string): string[] {
 export function screenReason(text: string): ScreenReason | null {
   const variants = [text, reversed(text), rot13(text), reversed(rot13(text)), ...decodedRuns(text)];
   if (variants.some(repeatsInstructions)) return "instructions";
-  if (variants.some(namesIn)) return "name";
-  const spaced = text.toLowerCase().replace(/[^a-z]/g, "");
-  if (names().letters.some((n) => spaced.includes(n) || reversed(spaced).includes(n))) return "name";
+  if ([...variants, ...variants.flatMap(spelledOut)].some(namesIn)) return "name";
   if (priceIn(text) || decodedRuns(text).some(priceIn)) return "price";
   if (ENCODED_RUN.test(text)) return "encoded";
   return null;
 }
 
-/** The answer a visitor may read: the model's own when it passes, else the fixed one for the reason. */
+/** The answer a visitor may read: the model's own when it passes, else the one fixed answer. `held` is for the log. */
 export function screenVisitorAnswer(text: string): Screened {
   const held = screenReason(text);
-  if (!held) return { answer: text, held: null };
-  return { answer: held === "price" ? HELD_PRICE_ANSWER : HELD_ANSWER, held };
+  return held ? { answer: HELD_ANSWER, held } : { answer: text, held: null };
 }
