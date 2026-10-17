@@ -5,6 +5,7 @@ import "@xyflow/react/dist/base.css";
 import { BOARD_DOTS } from "@/lib/board/layout";
 import type { ReorderSlot } from "@/lib/board/reorder";
 import { dropPlace, type FreeMove } from "@/lib/board/snap";
+import { deviceRatio, snapViewport } from "@/lib/board/viewport-pixels";
 import type { BoardPoint } from "@/lib/board/types";
 import { BoardNode, type BoardFlowNode } from "./BoardNode";
 import type { BoardSelection } from "./cards/types";
@@ -156,7 +157,12 @@ export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly
     setDrag((was) => { const next = new Map(was); for (const node of dragged) next.delete(node.id); return next; });
   }, [drag, onFreeMoved, onPresence, placed.boxes, placed.byId, reorder]);
 
-  const handleMoveEnd = useCallback<OnMoveEnd>((_event, viewport) => onMoveEnd(viewport), [onMoveEnd]);
+  /* A pan or a pinch can end between two device pixels (a trackpad's scroll is fractional): the canvas settles on the pixel grid, so its borders are drawn sharp. */
+  const handleMoveEnd = useCallback<OnMoveEnd>((_event, viewport) => {
+    const whole = snapViewport(viewport, deviceRatio());
+    if (whole !== viewport) void flow.setViewport(whole);
+    onMoveEnd(whole);
+  }, [flow, onMoveEnd]);
 
   return (
     <ReactFlow<BoardFlowNode>
