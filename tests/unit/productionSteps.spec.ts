@@ -101,8 +101,8 @@ test("creation is idempotent on an existing database: run twice, again from a ne
   const otherConnection = m.createPlatformDatabaseClient({ url: ws.dbUrl });
   try {
     await m.runInTenant(ws, async () => {
-      const store = new m.ProductionStepStore(client, ws.id, SYNTHETIC_ENV);
-      const again = new m.ProductionStepStore(otherConnection, ws.id, SYNTHETIC_ENV);
+      const store = m.stepStoreForTests(client, ws.id, SYNTHETIC_ENV);
+      const again = m.stepStoreForTests(otherConnection, ws.id, SYNTHETIC_ENV);
       await store.ready();
       await store.ready();
       await again.ready();
@@ -144,7 +144,7 @@ test("page_id is stable across rename, reorder and removal, is never reused, and
   const ws = workspace("stable");
   const client = await existingDatabase(ws);
   await m.runInTenant(ws, async () => {
-    const store = new m.ProductionStepStore(client, ws.id, SYNTHETIC_ENV);
+    const store = m.stepStoreForTests(client, ws.id, SYNTHETIC_ENV);
     const steps = await store.ensureSteps("prj_one", "synthetic_spot", "person_a");
     expect(steps.map((s) => s.pageId)).toEqual(["brief", "frames_a", "frames_b"]);
     const pageOf = new Map(steps.map((s) => [s.id, s.pageId]));
@@ -182,7 +182,7 @@ test("one frame per canvas step, none on a document step", async () => {
   const ws = workspace("frames");
   const client = await existingDatabase(ws);
   const canvas = await m.runInTenant(ws, async () => {
-    const store = new m.ProductionStepStore(client, ws.id, SYNTHETIC_ENV);
+    const store = m.stepStoreForTests(client, ws.id, SYNTHETIC_ENV);
     const steps = await store.ensureSteps("prj_one", "synthetic_spot", "person_a");
     expect(steps[0]).toMatchObject({ surface: "document", frame: null });
     const canvas = steps.filter((s) => s.surface === "canvas");
@@ -212,7 +212,7 @@ test("steps come back in rail order; a reorder must name each live step once; a 
   const client = await existingDatabase(ws);
   await existingDatabase(ws, "prj_two");
   await m.runInTenant(ws, async () => {
-    const store = new m.ProductionStepStore(client, ws.id, SYNTHETIC_ENV);
+    const store = m.stepStoreForTests(client, ws.id, SYNTHETIC_ENV);
     const steps = await store.ensureSteps("prj_one", "synthetic_spot", "person_a");
     expect(steps.map((s) => [s.kind, s.position])).toEqual([["brief", 0], ["frames_a", 1], ["frames_b", 2]]);
     const [a, b, c] = steps.map((s) => s.id);
@@ -257,7 +257,7 @@ test("the step list comes from config: the setting when set, else the flagged pl
   const client = await existingDatabase(ws);
   await existingDatabase(ws, "prj_two");
   await m.runInTenant(ws, async () => {
-    const steps = await new m.ProductionStepStore(client, ws.id, SYNTHETIC_ENV).ensureSteps("prj_one", "synthetic_spot", "person_a");
+    const steps = await m.stepStoreForTests(client, ws.id, SYNTHETIC_ENV).ensureSteps("prj_one", "synthetic_spot", "person_a");
     expect(steps.map((s) => ({ kind: s.kind, label: s.label, surface: s.surface }))).toEqual(SYNTHETIC_TYPES.filmTypes[0].steps);
 
     // A setting that is set but unreadable is refused, never swapped for the placeholder, and nothing is written.
@@ -283,7 +283,7 @@ test("the step list comes from config: the setting when set, else the flagged pl
       expect(error, bad).toBeInstanceOf(m.FilmTypeConfigError);
       expect((error as InstanceType<typeof m.FilmTypeConfigError>).path, bad).toBe(where);
       expect((error as Error).message).not.toContain(SECRET);
-      await expect(new m.ProductionStepStore(client, ws.id, { V30_FILM_TYPES: bad }).ensureSteps("prj_two", "synthetic_spot", "p")).rejects.toThrow(m.FilmTypeConfigError);
+      await expect(m.stepStoreForTests(client, ws.id, { V30_FILM_TYPES: bad }).ensureSteps("prj_two", "synthetic_spot", "p")).rejects.toThrow(m.FilmTypeConfigError);
     }
   });
   expect(await count(client, "production_id='prj_two'")).toBe(0);
@@ -296,7 +296,7 @@ test("the step list comes from config: the setting when set, else the flagged pl
   expect(naming("INSERT INTO production_steps")).toEqual([path.join("lib", "productionModel", "steps.ts")]);
 });
 
-test("flag off: refused before the workspace database is opened; nothing in the app reaches the store", async () => {
+test("flag off: refused before the workspace database is opened; nothing in the app reaches the store or the test-only builder", async () => {
   const m = await mods();
   // A workspace whose database file does not exist yet: with the flag off, the entry point never creates or opens it.
   const fresh = workspace(HOUSE, "house-never-opened");
@@ -325,6 +325,23 @@ test("flag off: refused before the workspace database is opened; nothing in the 
     expect(await m.productionModelOn(null)).toBe(false);
     expect(await m.productionModelOn(fresh)).toBe(true);
   });
+
+  // The test-only builder: no source file in the repository, outside tests/ and build output, names it but the store's own
+  // (lib/, app/, components/, scripts/, mcp/, ops/, remotion/, proxy.ts, instrumentation.ts, configs: everything).
+  const SKIP = new Set(["node_modules", ".next", ".git", "tests", "test-results", "coverage", "out", "build", "dist", ".vercel", ".data"]);
+  const everything = (root: string): string[] =>
+    readdirSync(root).flatMap((name) => {
+      const full = root === "." ? name : path.join(root, name);
+      if (statSync(full).isDirectory()) return SKIP.has(name) || full === path.join("public", "vendor") ? [] : everything(full);
+      return /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(name) ? [full] : [];
+    });
+  const scanned = everything(".");
+  for (const covered of ["proxy.ts", "instrumentation.ts", path.join("scripts", "ci-select.mjs")]) expect(scanned).toContain(covered);
+  expect(scanned.some((f) => f.startsWith("mcp" + path.sep))).toBe(true);
+  const builder = scanned.filter((f) => readFileSync(f, "utf8").includes("stepStoreForTests"));
+  expect(builder).toEqual([path.join("lib", "productionModel", "steps.ts")]);
+  // The store class itself is not exported: the factory (db() with requireTenant().id) is the only way in.
+  expect(Object.keys(m)).not.toContain("ProductionStepStore");
 
   // No route, screen or component imports the production model yet (A1 adds no route and no behaviour).
   const importers = [...walk("app"), ...walk("components"), ...walk("lib").filter((f) => !f.startsWith(path.join("lib", "productionModel")))]
@@ -397,7 +414,7 @@ test("tenant isolation: workspace B cannot read or write workspace A's steps by 
   const [live, , removed] = (await clientA.execute("SELECT id, page_id FROM production_steps ORDER BY position")).rows.map((r) => ({ id: String(r.id), pageId: String(r.page_id) }));
 
   // A store built for B but pointed at A's database: in B's scope it sees none of A's rows and writes nothing.
-  const crossed = new m.ProductionStepStore(clientA, b.id, SYNTHETIC_ENV);
+  const crossed = m.stepStoreForTests(clientA, b.id, SYNTHETIC_ENV);
   await m.runInTenant(b, async () => {
     expect(await crossed.get(live.id)).toBeNull();
     expect(await crossed.list("prj_a")).toEqual([]);

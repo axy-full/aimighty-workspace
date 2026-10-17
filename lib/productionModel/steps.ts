@@ -123,7 +123,9 @@ export function nextPageId(kind: string, taken: Iterable<string>): string {
   for (let n = 2; ; n++) if (!used.has(`${kind}-${n}`)) return `${kind}-${n}`;
 }
 
-export class ProductionStepStore {
+/* Not exported: the store is reachable only through `productionSteps()`, which always pairs db() with requireTenant().id
+   (and, for the crossed-database tests alone, `stepStoreForTests`). The per-path tenant check below is a second layer. */
+class StepStore {
   constructor(
     private client: Client,
     readonly workspaceId: string,
@@ -361,11 +363,22 @@ export class ProductionStepStore {
  * With the flag off this refuses before touching the database, so no workspace database gains a column or a table.
  * Who may reach a production (lib/draftProject.ts mayReachProject) is the caller's question, as for the team canvas.
  */
+export type ProductionStepStore = StepStore;
+
 export async function productionSteps(): Promise<ProductionStepStore> {
   const workspace = requireTenant();
   if (!(await productionModelOn(workspace))) throw new ProductionModelOffError();
   /* A setting that is set but unreadable is refused here, before the database is touched. */
   filmTypeConfig();
   await ready();
-  return new ProductionStepStore(db(), workspace.id);
+  return new StepStore(db(), workspace.id);
+}
+
+/**
+ * TESTS ONLY. A store on any client for any workspace id, so the tests can point one at the wrong database and prove it
+ * still reads and writes nothing there. Nothing in lib/, app/ or components/ but this file may name it
+ * (tests/unit/productionSteps.spec.ts guards that).
+ */
+export function stepStoreForTests(client: Client, workspaceId: string, env: Record<string, string | undefined> = process.env): ProductionStepStore {
+  return new StepStore(client, workspaceId, env);
 }
