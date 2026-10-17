@@ -2,7 +2,7 @@ import type { Client, InStatement, Row, Transaction } from "@libsql/client";
 import { db, id as newId, now, ready } from "../db";
 import { columnInstaller } from "../schemaInitialization";
 import { requireTenant } from "../tenant";
-import { filmTypeConfig, filmTypeSteps, STEP_KIND, type FilmTypeStep } from "./filmTypes";
+import { filmTypeConfig, filmTypeSteps, STEP_KIND, type FilmTypeStep, type StepSurface } from "./filmTypes";
 import { ProductionModelOffError, productionModelOn } from "./flag";
 
 /**
@@ -24,11 +24,11 @@ import { ProductionModelOffError, productionModelOn } from "./flag";
  *   - `production_steps`: one row per step. `page_id` is made once from the step's kind (`shots`, then `shots-2` …),
  *     unique in its production, never reused, and never changed: a trigger refuses any update to it, so a rename or a
  *     reorder cannot move it. A canvas step's frame is its four `frame_*` columns, so there is exactly one frame per
- *     canvas step by construction (CHECKs: a canvas step always has one, a document step never does).
+ *     canvas step by construction (CHECKs: a canvas step always has one; a document or table step never does).
  * Nothing is erased (rule 13): removing a step stamps `removed_at`/`removed_by`, and restoring clears them.
  */
 
-export type StepSurface = "document" | "canvas";
+export type { StepSurface };
 export type StepFrame = { x: number; y: number; w: number; h: number };
 export type ProductionStep = {
   id: string;
@@ -67,13 +67,13 @@ export const PRODUCTION_STEPS_SCHEMA: string[] = [
   `CREATE TABLE IF NOT EXISTS production_steps(
      workspace_id TEXT NOT NULL, id TEXT NOT NULL, production_id TEXT NOT NULL,
      page_id TEXT NOT NULL, kind TEXT NOT NULL,
-     surface TEXT NOT NULL CHECK(surface IN ('document','canvas')),
+     surface TEXT NOT NULL CHECK(surface IN ('document','canvas','table')),
      label TEXT NOT NULL, position INTEGER NOT NULL,
      frame_x REAL, frame_y REAL, frame_w REAL, frame_h REAL,
      created_by TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
      removed_at INTEGER, removed_by TEXT,
      CHECK(surface='canvas' OR (frame_x IS NULL AND frame_y IS NULL AND frame_w IS NULL AND frame_h IS NULL)),
-     CHECK(surface='document' OR (frame_x IS NOT NULL AND frame_y IS NOT NULL AND COALESCE(frame_w,0) > 0 AND COALESCE(frame_h,0) > 0)),
+     CHECK(surface<>'canvas' OR (frame_x IS NOT NULL AND frame_y IS NOT NULL AND COALESCE(frame_w,0) > 0 AND COALESCE(frame_h,0) > 0)),
      PRIMARY KEY(workspace_id,id),
      UNIQUE(workspace_id,production_id,page_id))`,
   `CREATE INDEX IF NOT EXISTS idx_production_steps_order ON production_steps(workspace_id,production_id,position)`,
@@ -93,7 +93,7 @@ function stepOf(row: Row): ProductionStep {
     productionId: String(row.production_id),
     pageId: String(row.page_id),
     kind: String(row.kind),
-    surface: row.surface === "document" ? "document" : "canvas",
+    surface: row.surface === "document" || row.surface === "table" ? row.surface : "canvas",
     label: String(row.label),
     position: Number(row.position),
     frame: hasFrame ? { x: Number(row.frame_x), y: Number(row.frame_y), w: Number(row.frame_w), h: Number(row.frame_h) } : null,
@@ -316,12 +316,12 @@ class StepStore {
     });
   }
 
-  /** Move or resize a canvas step's frame. A document step has none. */
+  /** Move or resize a canvas step's frame. A document or table step has none. */
   async moveFrame(stepId: string, frame: StepFrame): Promise<ProductionStep> {
     const next = cleanFrame(frame);
     return this.write(async (tx) => {
       const step = await this.step(tx, stepId);
-      if (step.surface !== "canvas") throw new ProductionStepError("A document step has no frame.", 409);
+      if (step.surface !== "canvas") throw new ProductionStepError("Only a canvas step has a frame.", 409);
       await tx.execute({
         sql: "UPDATE production_steps SET frame_x=?, frame_y=?, frame_w=?, frame_h=?, updated_at=? WHERE workspace_id=? AND id=?",
         args: [next.x, next.y, next.w, next.h, now(), this.workspaceId, stepId],

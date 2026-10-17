@@ -39,6 +39,7 @@ const SYNTHETIC_TYPES = {
       steps: [
         { kind: "script", label: "Synthetic script", surface: "document" },
         { kind: "board", label: "Synthetic board", surface: "canvas" },
+        { kind: "sheet", label: "Synthetic table", surface: "table" },
       ],
     },
   ],
@@ -182,10 +183,11 @@ test("page_id is stable across rename, reorder and removal, is never reused, and
   await expect(client.execute({ sql: "INSERT INTO production_steps(workspace_id,id,production_id,page_id,kind,surface,label,position,frame_x,frame_y,frame_w,frame_h,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", args: [ws.id, "dup", "prj_one", "brief", "brief", "document", "Again", 9, null, null, null, null, 1, 1] })).rejects.toThrow(/UNIQUE/i);
 });
 
-test("one frame per canvas step, none on a document step", async () => {
+test("one frame per canvas step, none on a document or table step", async () => {
   const m = await mods();
   const ws = workspace("frames");
   const client = await existingDatabase(ws);
+  await existingDatabase(ws, "prj_two");
   const canvas = await m.runInTenant(ws, async () => {
     const store = m.stepStoreForTests(client, ws.id, SYNTHETIC_ENV);
     const steps = await store.ensureSteps("prj_one", "synthetic_spot", "person_a");
@@ -200,14 +202,22 @@ test("one frame per canvas step, none on a document step", async () => {
     await expect(store.moveFrame(steps[0].id, { x: 0, y: 0, w: 10, h: 10 })).rejects.toMatchObject({ status: 409 });
     await expect(store.moveFrame(canvas[0].id, { x: 0, y: 0, w: 0, h: 10 })).rejects.toMatchObject({ status: 400 });
     await expect(store.moveFrame(canvas[0].id, { x: Number.NaN, y: 0, w: 10, h: 10 })).rejects.toMatchObject({ status: 400 });
+
+    // A table step (Deliver's surface) has no frame either.
+    const short = await store.ensureSteps("prj_two", "synthetic_short", "person_a");
+    expect(short.map((s) => [s.surface, s.frame === null])).toEqual([["document", true], ["canvas", false], ["table", true]]);
+    await expect(store.moveFrame(short[2].id, { x: 0, y: 0, w: 10, h: 10 })).rejects.toMatchObject({ status: 409, message: "Only a canvas step has a frame." });
     return canvas;
   });
 
-  // The table holds it too: a canvas step without a frame, or a document step with one, is refused.
+  // The table holds it too: a canvas step without a frame, or a document or table step with one, is refused.
   const insert = (pageId: string, surface: string, frame: (number | null)[]) =>
     client.execute({ sql: "INSERT INTO production_steps(workspace_id,id,production_id,page_id,kind,surface,label,position,frame_x,frame_y,frame_w,frame_h,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", args: [ws.id, pageId, "prj_one", pageId, "brief", surface, "x", 9, ...frame, 1, 1] });
   await expect(insert("canvas_no_frame", "canvas", [null, null, null, null])).rejects.toThrow(/CHECK/i);
   await expect(insert("document_framed", "document", [0, 0, 10, 10])).rejects.toThrow(/CHECK/i);
+  await expect(insert("table_framed", "table", [0, 0, 10, 10])).rejects.toThrow(/CHECK/i);
+  await expect(insert("table_half_framed", "table", [0, null, null, null])).rejects.toThrow(/CHECK/i);
+  await expect(insert("other_surface", "wall", [null, null, null, null])).rejects.toThrow(/CHECK/i);
   await expect(client.execute({ sql: "UPDATE production_steps SET frame_w=NULL WHERE id=?", args: [canvas[1].id] })).rejects.toThrow(/CHECK/i);
 });
 
@@ -247,15 +257,16 @@ test("steps come back in rail order; a reorder must name each live step once; a 
   });
 });
 
-test("the step list comes from config: the setting when set, else the flagged placeholder; the placeholder id and the setting's name appear only in the config file, and only the store writes step rows", async () => {
+test("the step list comes from config: the setting when set, else the owner's default; the default's ids and the setting's name appear only in the config file, and only the store writes step rows", async () => {
   const m = await mods();
-  // Unset: the placeholder, flagged as one.
+  // Unset: the owner's default.
   const fallback = m.filmTypeConfig({});
-  expect(fallback).toMatchObject({ source: "placeholder", placeholder: true });
-  expect(fallback.filmTypes.map((t) => t.id)).toEqual(m.FILM_TYPES_PLACEHOLDER.filmTypes.map((t) => t.id));
+  expect(fallback.source).toBe("default");
+  expect(fallback.filmTypes.map((t) => t.id)).toEqual(m.FILM_TYPES_DEFAULT.filmTypes.map((t) => t.id));
   // Set: exactly the setting's list, and the store makes exactly those steps.
-  expect(m.filmTypeConfig(SYNTHETIC_ENV)).toMatchObject({ source: "setting", placeholder: false });
-  expect(m.filmTypeSteps(m.FILM_TYPES_PLACEHOLDER.filmTypes[0].id, SYNTHETIC_ENV)).toBeNull();
+  expect(m.filmTypeConfig(SYNTHETIC_ENV).source).toBe("setting");
+  expect(m.filmTypeSteps("ad_film", SYNTHETIC_ENV)).toBeNull();
+  expect(m.filmTypeSteps("synthetic_spot", {})).toBeNull();
   const spaced = { filmTypes: [{ id: "spaced", label: "  Two   words ", steps: [{ kind: "brief", label: " A \n brief ", surface: "document" }] }] };
   expect(m.filmTypeConfig({ V30_FILM_TYPES: JSON.stringify(spaced) }).filmTypes[0]).toMatchObject({ label: "Two words", steps: [{ label: "A brief" }] });
   const ws = workspace("config");
@@ -265,7 +276,7 @@ test("the step list comes from config: the setting when set, else the flagged pl
     const steps = await m.stepStoreForTests(client, ws.id, SYNTHETIC_ENV).ensureSteps("prj_one", "synthetic_spot", "person_a");
     expect(steps.map((s) => ({ kind: s.kind, label: s.label, surface: s.surface }))).toEqual(SYNTHETIC_TYPES.filmTypes[0].steps);
 
-    // A setting that is set but unreadable is refused, never swapped for the placeholder, and nothing is written.
+    // A setting that is set but unreadable is refused, never swapped for the default, and nothing is written.
     // The error says where (the issue's path), never what the setting holds.
     const SECRET = "synthetic-value-never-echoed";
     const one = SYNTHETIC_TYPES.filmTypes[0];
@@ -277,6 +288,9 @@ test("the step list comes from config: the setting when set, else the flagged pl
       [JSON.stringify({ filmTypes: [one], [SECRET]: true }), "(root)"],
       [JSON.stringify({ filmTypes: [{ ...one, [SECRET]: 1 }] }), "filmTypes.0"],
       [JSON.stringify({ filmTypes: [one, one] }), "filmTypes.1"],
+      [JSON.stringify({ filmTypes: [{ ...one, steps: [one.steps[0], { ...one.steps[1], kind: one.steps[0].kind }] }] }), "filmTypes.0.steps.1.kind"],
+      // The retired placeholder flag is not part of the shape any more.
+      [JSON.stringify({ placeholder: true, filmTypes: [one] }), "(root)"],
     ];
     for (const [bad, where] of cases) {
       let error: unknown = null;
@@ -296,9 +310,56 @@ test("the step list comes from config: the setting when set, else the flagged pl
   const sources = ["lib", "app", "components"].flatMap((root) => walk(root));
   const naming = (needle: string) => sources.filter((f) => readFileSync(f, "utf8").includes(needle));
   const config = path.join("lib", "productionModel", "filmTypes.ts");
-  expect(naming(m.FILM_TYPES_PLACEHOLDER.filmTypes[0].id)).toEqual([config]);
+  // The default's distinctive ids (the plain-word ones, such as feature or social, are ordinary words elsewhere).
+  for (const id of ["ad_film", "short_film", "music_video", "microdrama", "pre_vis", "trend_clip"]) expect(naming(id), id).toEqual([config]);
   expect(naming(`"${m.FILM_TYPES_SETTING}"`)).toEqual([config]);
   expect(naming("INSERT INTO production_steps")).toEqual([path.join("lib", "productionModel", "steps.ts")]);
+});
+
+/* The owner's film types and steps, exactly as he gave them (17 Oct 2026). */
+const OWNER_TABLE: [string, string, string[]][] = [
+  ["ad_film", "Ad film", ["Pitch deck", "Brief", "Script", "Breakdown", "Look", "Elements", "Storyboard", "Shots", "Edit", "Deliver"]],
+  ["feature", "Feature", ["Brief", "Script", "Breakdown", "Look", "Elements", "Storyboard", "Shots", "Edit", "Deliver"]],
+  ["short_film", "Short film", ["Brief", "Script", "Breakdown", "Look", "Elements", "Storyboard", "Sound", "Shots", "Edit", "Deliver"]],
+  ["ugc", "UGC", ["Brief", "Creator", "Hook", "Script", "Shots", "Captions", "Deliver"]],
+  ["product_video", "Product video", ["Brief", "Product", "Look", "Storyboard", "Shots", "Edit", "Deliver"]],
+  ["music_video", "Music video", ["Track", "Beat map", "Look", "Elements", "Storyboard", "Animatic", "Shots", "Edit", "Deliver"]],
+  ["microdrama", "Microdrama", ["Series bible", "Episodes", "Elements", "Storyboard", "Shots", "Edit", "Deliver"]],
+  ["pre_vis", "Pre-vis", ["Brief", "Breakdown", "Set map", "Elements", "Storyboard", "Animatic", "Shots", "Handoff"]],
+  ["trend_clip", "Trend clip", ["Source", "Format breakdown", "Swap-ins", "Copy", "Shots", "Captions", "Deliver"]],
+  ["social", "Social", ["Deliverables", "Hook", "Copy", "Design", "Visuals", "Captions", "Deliver"]],
+];
+/* Written out here, not derived, so a change to how the config makes kinds is caught. */
+const KINDS: Record<string, string> = {
+  "Pitch deck": "pitch_deck", "Beat map": "beat_map", "Series bible": "series_bible", "Set map": "set_map",
+  "Format breakdown": "format_breakdown", "Swap-ins": "swap_ins",
+};
+const SURFACES: Record<string, string> = { Brief: "document", Script: "document", Deliver: "table" };
+
+test("the default is the owner's ten film types, each with exactly his steps in his order: Brief and Script documents, Deliver a table, the rest canvas", async () => {
+  const m = await mods();
+  const config = m.filmTypeConfig({});
+  expect(config.filmTypes).toHaveLength(10);
+  expect(config.filmTypes.map((t) => ({ id: t.id, label: t.label, steps: t.steps }))).toEqual(
+    OWNER_TABLE.map(([id, label, steps]) => ({
+      id,
+      label,
+      steps: steps.map((step) => ({ kind: KINDS[step] ?? step.toLowerCase(), label: step, surface: SURFACES[step] ?? "canvas" })),
+    })),
+  );
+  for (const type of config.filmTypes) {
+    expect(new Set(type.steps.map((s) => s.kind)).size, type.id).toBe(type.steps.length);
+    for (const s of type.steps) expect(s.kind).toMatch(m.STEP_KIND);
+  }
+  // Through the store, with no setting: one type's steps, frames only on its canvas steps, page ids from the kinds.
+  const ws = workspace("owner-default");
+  const client = await existingDatabase(ws);
+  await m.runInTenant(ws, async () => {
+    const steps = await m.stepStoreForTests(client, ws.id, {}).ensureSteps("prj_one", "ad_film", "person_a");
+    expect(steps.map((s) => s.pageId)).toEqual(["pitch_deck", "brief", "script", "breakdown", "look", "elements", "storyboard", "shots", "edit", "deliver"]);
+    expect(steps.filter((s) => s.frame === null).map((s) => [s.label, s.surface])).toEqual([["Brief", "document"], ["Script", "document"], ["Deliver", "table"]]);
+    expect(steps.filter((s) => s.frame !== null)).toHaveLength(7);
+  });
 });
 
 test("flag off: refused before the workspace database is opened; nothing in the app reaches the store or the test-only builder", async () => {
