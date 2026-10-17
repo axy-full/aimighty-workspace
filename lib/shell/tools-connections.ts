@@ -60,7 +60,7 @@ const WRITES = new Set(["render_shot", "create_project"]);
 const PREPARES = new Set(["prepare_shot"]);
 /** One line per tool; tests/unit/toolsConnections.spec.ts fails when lib/mcp.ts gains a tool this page does not describe. */
 export const MCP_TOOL_LINES: Readonly<Record<string, string>> = Object.freeze({
-  render_shot: "Starts a video take and returns its id",
+  render_shot: "Prices a video take; a person approves it in Particl, unless a small draft is set to run alone",
   prepare_shot: "Prepares a video take; a person approves it in Particl",
   wait_for_render: "Waits for a take, then reports what it cost",
   list_renders: "Recent takes, by project, status or prompt",

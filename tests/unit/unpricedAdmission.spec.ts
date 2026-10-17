@@ -245,11 +245,11 @@ test("the MCP render tool is refused by its own quote and never sends an unprice
       if (!response.ok) throw new Error(String(json.error ?? response.status));
       return json;
     };
-    const args = { prompt: "A lighthouse at dusk", resolution: "720p", duration: 5 };
+    const args = { prompt: "A lighthouse at dusk", resolution: "480p", duration: 5 };
     await expect(runTool("render_shot", { ...args, ratio: "adaptive" }, call, "http://localhost", { credits: true })).rejects.toThrow(NO_PRICE);
     expect(sent).toEqual(["/api/generate/quote"]);
     expect(await rows()).toHaveLength(0);
-    const started = await runTool("render_shot", { ...args, ratio: "16:9", request_id: "mcp-priced" }, call, "http://localhost", { credits: true });
+    const started = await runTool("render_shot", { ...args, ratio: "16:9", request_id: "mcp-priced" }, call, "http://localhost", { credits: true }, { auto: true, lineCredits: 200 });
     expect(started).toMatch(/^Rendering started\./);
     expect(sent).toEqual(["/api/generate/quote", "/api/generate/quote", "/api/generate"]);
     expect(dispatched).toHaveLength(1);
