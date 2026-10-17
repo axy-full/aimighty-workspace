@@ -301,22 +301,19 @@ INDEX (workspace_id, production_id, created_at)   INDEX (workspace_id, created_b
 - **Its test:** the same fixtures run with the flag on and off produce identical meter rows, reservations, balances and refusals.
 
 ### 4.6 Monthly spend limit and paused state (workspace settings; no behaviour in Phase A)
-New keys in the workspace's `settings` table (`lib/settings.ts DEFAULTS`):
+**As built in A4, with the owner's 17 Oct answers (items 3 and 17).** Three keys in the workspace's own `settings` table, **not** in `lib/settings.ts DEFAULTS`: `GET /api/settings` sends `DEFAULTS` to every member, and the general admin PATCH accepts any `DEFAULTS` key with no audit line. They have their own route, `app/api/settings/spend`, and are listed in `INTERNAL_SETTING_KEYS`.
 
 | Key | Values | Default |
 |---|---|---|
-| `monthlySpendLimitCredits` | whole credits; `''` = no limit | `''` |
+| `monthlySpendLimitCredits` | whole credits; `''` = no limit; the period is the calendar month in UTC, like the house cap | `''` |
 | `spendPause` | `''` = running, else JSON `{at, by, reason: 'admin'\|'limit'}` | `''` |
-| `askBeforeEveryTake` | `'on'` \| `'off'`; `''` = not set, today's Ask/Auto applies | `''` |
+| `askBeforeEveryTake` | `'on'` \| `'off'` | `'off'` (owner: approval happens once per step, on the quote) |
 
-- **Admin-only.** The settings route already reserves workspace-wide keys for admins (`app/api/settings/route.ts:23`). These keys also refuse `agent:*`, MCP callers and API tokens: setting spend limits is a person's alone (rules 11 and 14).
-- **Each change writes an audit line** in the same batch. Three new actions go on `lib/securityAudit.ts`'s list: `spend_limit.set`, `spend.paused`, `spend.resumed`. That is an additive change to the closed list.
-- **This is not the platform's walls.** `workspaces.allowance_usd` is the platform owner's dollar wall on its keys (`lib/allowance.ts`). `workspaces.suspended_at` is the platform owner's pause (`lib/platform.ts:347`). The new keys are the workspace's own choice, in credits, set by its admin. A pause reason of `limit` is written by the server; `admin` is written by a person.
-- **Enforcement is a later money PR.** The reservation would read the keys inside its own write (`freshSettings()`, as it does for caps), with an Opus money review and sign-off. Guardrail 4 (the per-job approval line, `lib/approvalRule.ts`) applies whatever these say.
-- **`askBeforeEveryTake` ships with no behaviour**, and its default is deliberately "not set" (owner question Q6). The three sources disagree:
-  - the 17 Oct brief: "ask_before_every_take defaulting to off";
-  - the owner on 16 Oct: "ask_before_generating (on)";
-  - CLAUDE.md rule 14: Ask is the default today (`atomik_chats.agent_mode` and `rig_agent_runs.mode` default `'ask'`).
+- **Admin-only, a person's alone.** Members, API and MCP tokens, `agent:*`, `server`, disabled users and no user are refused on the server (rules 11 and 14).
+- **Each change writes an audit line** in the same batch. Five new actions on `lib/securityAudit.ts`'s closed list (the limit, pause, resume, and ask on and off).
+- **This is not the platform's walls.** `workspaces.allowance_usd` (`lib/allowance.ts`) and `workspaces.suspended_at` (`lib/platform.ts`) are the platform owner's. These keys are the workspace's own, in credits, set by its admin. A pause reason of `limit` is written by the server; `admin` by a person.
+- **Enforcement is a later money PR** (owner item 17): reaching the limit finishes the running job, starts nothing new, and shows Paused with Continue (the limit is raised) and Stop. The reservation would read the keys inside its own write, with an Opus money review and sign-off. Guardrail 4 applies whatever these say.
+- **CLAUDE.md rule 14 says Ask is the default today.** When `askBeforeEveryTake` gets behaviour, the rule's text (and the SOW) must be amended to the owner's 17 Oct answer.
 
 ---
 
