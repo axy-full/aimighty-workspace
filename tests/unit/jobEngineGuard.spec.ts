@@ -9,9 +9,16 @@ import ts from "typescript";
  * `quoted_jobs` table may not read its engine column, by name or through `*`, so no read model can send an Agent job's
  * engine without going through the serializer (owner's brief, rule 1).
  *
- * And, while v30 jobs are behind their switch with no route: nothing in app/, components/ or the rest of lib/ imports the
- * store or the serializer, and only the store names its test-only builder.
+ * And: only the files on IMPORTERS below may import the store or the serializer (none yet: v30 jobs have no route), and
+ * only the store names its test-only builder.
  */
+
+/**
+ * The files allowed to import lib/quotedJobs/* or lib/jobView.ts from outside them. EMPTY while v30 jobs have no route.
+ * PR A9 (History read models) is planned to add its route here: a named, owner-visible addition in its own PR body,
+ * which must keep going through lib/jobView.ts. An entry that no longer imports them fails, so the list cannot go stale.
+ */
+const IMPORTERS: readonly string[] = [];
 
 const STORE = path.join("lib", "quotedJobs", "store.ts");
 const VIEW = path.join("lib", "jobView.ts");
@@ -98,13 +105,13 @@ test("no file but the store and lib/jobView.ts reads a v30 job's engine column",
   expect(readFileSync(STORE, "utf8")).toMatch(/\bengine TEXT\b/);
 });
 
-test("while v30 jobs have no route: nothing in app/, components/ or the rest of lib/ imports the store or the serializer, and only the store names its test-only builder", async () => {
+test("only the listed importers (none yet) import the store or the serializer, and only the store names its test-only builder", async () => {
   const files = scanned();
   const ours = (f: string) => f === VIEW || f.startsWith(path.join("lib", "quotedJobs") + path.sep);
   const importers = files
     .filter((f) => !ours(f))
     .filter((f) => /(quotedJobs|jobView)(["'/]|\.ts)/.test(readFileSync(f, "utf8")));
-  expect(importers).toEqual([]);
+  expect(importers).toEqual([...IMPORTERS]);
   expect(files.filter((f) => readFileSync(f, "utf8").includes("jobStoreForTests"))).toEqual([STORE]);
 
   // The store's class is not exported under any name: the factory (db() with requireTenant().id) is the only way in.
@@ -122,6 +129,8 @@ test("while v30 jobs have no route: nothing in app/, components/ or the rest of 
   expect(text).not.toMatch(/export\s*\{[^}]*\bJobStore\b/);
   expect(text).not.toMatch(/export\s+default\b/);
   // Every read the store offers returns the serializer's output, never a raw row.
-  expect(text).not.toMatch(/async\s+(?!jobRow\b|commandRow\b|read\b|rows\b)\w+\([^)]*\)[^{]*Promise<Row/);
-  expect(text).toMatch(/private async read\(/);
+  // Its reads of raw rows are #private (runtime-private, not only to the type checker); no public method returns one.
+  expect(text).not.toMatch(/async\s+\w+\([^)]*\)[^{]*Promise<Row/);
+  for (const name of ["read", "rows", "jobRow", "commandRow", "scoped", "write", "client"]) expect(text, name).toMatch(new RegExp(`#${name}\\b`));
+  expect(text).not.toMatch(/\bprivate\s/);
 });
