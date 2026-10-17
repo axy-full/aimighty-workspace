@@ -106,7 +106,13 @@ const send: VisitorBarSend = (body, opts) => textPost(body, { timeoutMs: opts.ti
 
 export type VisitorBarResult =
   | { ok: true; answer: string; held: ScreenReason | null; inTokens: number | null; outTokens: number | null; model: string; usage: Record<string, unknown> | null }
-  | { ok: false; reason: "model" | "door" | "key" | "failed" };
+  /**
+   * No answer. `paid` is set when the call may have cost something although nothing could be shown, so the route
+   * still puts it on the ledger: a reply that arrived (its usage, when it carried one), or a call that was sent and
+   * never answered (a timeout, a dropped connection: cost unknown). A provider's refusal (an error status) carries
+   * no `paid`: the vendor answered that it did not do the work.
+   */
+  | { ok: false; reason: "model" | "door" | "key" | "failed"; paid?: { model: string; usage: Record<string, unknown> | null } };
 
 const count = (value: unknown) => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null);
 
@@ -121,17 +127,18 @@ export async function askVisitorBar(question: string, deps: { send?: VisitorBarS
   try {
     reply = await (deps.send ?? send)(JSON.stringify(visitorBarRequest(question, door.model)), { timeoutMs: TIMEOUT_MS, apiKey: door.apiKey });
   } catch {
-    return { ok: false, reason: "failed" };
+    /* The text client throws only for a call that was sent and got no readable answer: it may have been billed. */
+    return { ok: false, reason: "failed", paid: { model: door.model, usage: null } };
   }
   if (!reply.ok) return { ok: false, reason: "failed" };
-  let parsed: { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]; usage?: Record<string, unknown> & { prompt_tokens?: unknown; completion_tokens?: unknown } };
-  try { parsed = JSON.parse(reply.text); } catch { return { ok: false, reason: "failed" }; }
+  let parsed: { choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]; usage?: unknown };
+  try { parsed = JSON.parse(reply.text); } catch { return { ok: false, reason: "failed", paid: { model: door.model, usage: null } }; }
+  /* The provider's usage, as the text client returns it, for the ledger (lib/visitor/ledger.ts): what this call cost. */
+  const usage = parsed.usage && typeof parsed.usage === "object" && !Array.isArray(parsed.usage) ? parsed.usage as Record<string, unknown> : null;
   const content = parsed.choices?.[0]?.message?.content;
   /* The budget bounds it already; the slice is a backstop against a provider that ignores it. */
   const text = typeof content === "string" ? content.trim().slice(0, 2000) : "";
-  if (!text) return { ok: false, reason: "failed" };
+  if (!text) return { ok: false, reason: "failed", paid: { model: door.model, usage } };
   const { answer, held } = screenVisitorAnswer(text);
-  /* The provider's usage, as the text client returns it, for the ledger (lib/visitor/ledger.ts): what this answer cost. */
-  const usage = parsed.usage && typeof parsed.usage === "object" ? parsed.usage : null;
   return { ok: true, answer, held, inTokens: count(usage?.prompt_tokens), outTokens: count(usage?.completion_tokens), model: door.model, usage };
 }
