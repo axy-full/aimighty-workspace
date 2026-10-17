@@ -61,7 +61,7 @@ const WHO = { name: "Maya", description: "a ship's captain in her fifties, weath
 const FLUX_NAMES = /flux|bfl|banana|gemini|google/i;
 
 /** Nano Banana's stand-in: priced from a table, and a finished still written for each admitted job; the sheet (with its reference) costs more, as a reference does. */
-function fakeNano(over: { failSheet?: boolean; sheetExtra?: number } = {}) {
+function fakeNano(over: { failSheet?: boolean; failPortrait?: boolean; sheetExtra?: number } = {}) {
   const calls: string[] = [];
   const prepare = async (body: Record<string, unknown>, actor: AdmissionActor) => {
     const { billCredits } = await import("../../lib/creditTerms");
@@ -79,6 +79,7 @@ function fakeNano(over: { failSheet?: boolean; sheetExtra?: number } = {}) {
     calls.push(o.requestKey);
     const refs = (prepared.request.references as unknown[] | undefined) ?? [];
     if (over.failSheet && refs.length) return { status: 422, body: { error: "The picture was refused. Nothing was billed." } };
+    if (over.failPortrait && !refs.length) return { status: 422, body: { error: "The picture was refused. Nothing was billed." } };
     const genId = id("gen");
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
     const stored = await storeImageBytes(genId, png);
@@ -321,4 +322,136 @@ test("a listed customer workspace pays in credits what the character costs, once
   } finally {
     if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
   }
+});
+
+/* ── Carried over from lane D's first version of the tool (feat/v25-15-cast-tool), retargeted to this one ── */
+
+test("the gate: off, the tool is simply not here (404, nothing read, priced or asked, on either engine); not listed over MCP; a customer workspace is off until it is listed", async () => {
+  const { castCharacterOn } = await import("../../lib/castCharacter");
+  const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
+  const nb = fakeNano();
+  const call = (async () => { throw new Error("nothing may be asked"); }) as never;
+  await asTenant(house(), async () => {
+    expect(await castCharacterOn()).toBe(true);
+    delete process.env.BFL_ENABLED;
+    const before = { gens: await count("generations"), meters: (await meter("bfl")).length, ups: await count("uploads") };
+    expect(await castCharacterOn()).toBe(false);
+    expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("cast_character");
+    await expect(runDirectEngineTool("cast_character", { name: "Maya", description: "a ship's captain" }, call)).rejects.toThrow(/no such tool/i);
+    /* Nano Banana is the tool's other engine, never a door of its own: asked for by name, it is just as shut. */
+    for (const engine of [undefined, "flux2", "nanobanana"]) {
+      expect(await admit({ ...WHO, ...(engine ? { engine } : {}), quoteOnly: true }, nb.seams)).toMatchObject({ status: 404, body: { error: "There is no such tool here." } });
+      expect((await admit({ ...WHO, ...(engine ? { engine } : {}), versionId: stamp(), maxCredits: 100000 }, nb.seams)).status).toBe(404);
+    }
+    expect(nb.calls).toEqual([]);
+    expect({ gens: await count("generations"), meters: (await meter("bfl")).length, ups: await count("uploads") }).toEqual(before);
+  });
+  /* Switch on, but a customer workspace that is not on the engine list: not here either. */
+  process.env.BFL_ENABLED = "1";
+  await asTenant(tenant("ws_cast_unlisted"), async () => {
+    expect(await castCharacterOn()).toBe(false);
+    expect((await directEngineMcpTools()).map((t) => t.name)).not.toContain("cast_character");
+    expect((await admit({ ...WHO, engine: "nanobanana", quoteOnly: true }, nb.seams)).status).toBe(404);
+  });
+  expect(nb.calls).toEqual([]);
+  /* An outside agent's approval is refused in either spelling, before anything is asked. */
+  await asTenant(house(), async () => {
+    await expect(runDirectEngineTool("cast_character", { name: "Maya", description: "x", max_credits: 5 }, call)).rejects.toThrow(/only a person approves/i);
+  });
+});
+
+test("a refused portrait costs nothing and makes nothing: no sheet asked, no upload, no cast member, no identity; Nano Banana's run never calls FLUX.2", async () => {
+  await asTenant(house(), async () => {
+    const nb = fakeNano({ failPortrait: true });
+    const total = Number((await admit({ ...WHO, name: "Otto", engine: "nanobanana", quoteOnly: true }, nb.seams)).body.estimatedCredits);
+    const before = { cast: await count("cast_members"), ids: await count("identities"), ups: await count("uploads"), meters: (await meter("bfl")).length };
+    const version = stamp();
+    const r = await admit({ ...WHO, name: "Otto", engine: "nanobanana", versionId: version, maxCredits: total }, nb.seams);
+    expect(r.status).toBe(422);
+    expect(r.body).toMatchObject({ error: expect.stringContaining("The portrait: The picture was refused. Nothing was billed."), versionId: version, spent: 0, retry: expect.stringContaining("same versionId") });
+    expect(nb.calls).toEqual([`cast:${version}:portrait`]);
+    expect({ cast: await count("cast_members"), ids: await count("identities"), ups: await count("uploads"), meters: (await meter("bfl")).length }).toEqual(before);
+    expect((await rows("SELECT COUNT(*) AS n FROM generations WHERE json_extract(params,'$.cast.version')=?", [version]))[0].n).toBe(0);
+  });
+});
+
+test("the reply names the takes a board's Cast holds (portrait and sheet), the same on a retry that buys nothing", async () => {
+  await asTenant(house(), async () => {
+    const nb = fakeNano();
+    const total = Number((await admit({ ...WHO, name: "Wren", engine: "nanobanana", quoteOnly: true }, nb.seams)).body.estimatedCredits);
+    const version = stamp();
+    const r = await admit({ ...WHO, name: "Wren", engine: "nanobanana", versionId: version, maxCredits: total }, nb.seams);
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    await track();
+    const takes = await rows("SELECT id, json_extract(params,'$.cast.role') AS role FROM generations WHERE json_extract(params,'$.cast.version')=? ORDER BY created_at", [version]);
+    expect(takes.map((t) => t.role)).toEqual(["portrait", "sheet"]);
+    expect(r.body).toMatchObject({ portraitTakeId: String(takes[0].id), sheetTakeId: String(takes[1].id) });
+    expect(JSON.stringify(r.body)).not.toMatch(FLUX_NAMES);
+    const again = await admit({ ...WHO, name: "Wren", engine: "nanobanana", versionId: version, maxCredits: total }, nb.seams);
+    expect(again.body).toMatchObject({ status: "done", spent: 0, portraitTakeId: String(takes[0].id), sheetTakeId: String(takes[1].id), castId: r.body.castId, identityId: r.body.identityId });
+    expect(nb.calls).toEqual([`cast:${version}:portrait`, `cast:${version}:sheet`]);
+  });
+});
+
+test("tenant isolation: a name, a versionId, its stills, cast member and identity belong to one workspace; another neither collides with them nor finds them", async () => {
+  const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
+  const { castCharacterStatus } = await import("../../lib/castCharacter");
+  await platformReady();
+  const id = "ws_cast_other";
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour,allowance_usd) VALUES(?,?,?,?,1,'owner',0,0,20,200,NULL)", args: [id, id, id, `file:${path.join(dir, id + ".db")}`] });
+  await grantCredits(id, 500, "Test", "owner", "manual");
+  const other = (await getWorkspace(id))!;
+  const site = (await platformDb().execute("SELECT value FROM platform_layer WHERE key='site'")).rows[0]?.value;
+  const setSite = (v: unknown) => platformDb().execute({ sql: "INSERT INTO platform_layer (key, value, updated_at, updated_by) VALUES ('site', ?, 0, NULL) ON CONFLICT(key) DO UPDATE SET value = excluded.value", args: [JSON.stringify(v)] });
+  const version = stamp();
+  let houseMade: AdmissionReply["body"] = {};
+  try {
+    await asTenant(house(), async () => {
+      const total = Number((await admit({ ...WHO, name: "Zed", quoteOnly: true })).body.estimatedCredits);
+      const r = await admit({ ...WHO, name: "Zed", versionId: version, maxCredits: total });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      houseMade = r.body;
+      await track();
+      expect(await castCharacterStatus(version, "owner")).toMatchObject({ done: true });
+    });
+    await setSite({ enginesOnWorkspaces: [id] });
+    await asTenant(other, async () => {
+      /* It finds nothing of the house's: not the version, not the name, not the takes. */
+      expect(await castCharacterStatus(version, "owner")).toBeNull();
+      expect(await count("cast_members")).toBe(0);
+      expect(await count("identities")).toBe(0);
+      const q = await admit({ ...WHO, name: "Zed", quoteOnly: true });
+      expect(q.status, JSON.stringify(q.body)).toBe(200);
+      /* The same versionId here is its own character, made from nothing and billed here, never answered from the house's. */
+      const mine = (await meter("bfl")).filter((m) => m.workspace_id === id).length;
+      const r = await admit({ ...WHO, name: "Zed", versionId: version, maxCredits: Number(q.body.estimatedCredits) });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      expect(Number(r.body.spent)).toBeGreaterThan(0);
+      expect((await meter("bfl")).filter((m) => m.workspace_id === id).length - mine).toBe(2);
+      for (const key of ["castId", "identityId", "portraitUploadId", "sheetUploadId", "portraitTakeId", "sheetTakeId"]) expect(r.body[key], key).not.toBe(houseMade[key]);
+      await track();
+    });
+    /* And the house's character is as it was. */
+    await asTenant(house(), async () => {
+      const idn = (await rows("SELECT photos FROM identities WHERE id=?", [String(houseMade.identityId)]))[0];
+      expect(JSON.parse(String(idn.photos))).toEqual([houseMade.portraitUploadId, houseMade.sheetUploadId]);
+    });
+  } finally {
+    if (typeof site === "string") await platformDb().execute({ sql: "UPDATE platform_layer SET value=? WHERE key='site'", args: [site] }); else await platformDb().execute("DELETE FROM platform_layer WHERE key='site'");
+  }
+});
+
+test("the words are the character's: the portrait and sheet prompts name no engine, and both sizes are whole sixteens under one megapixel, 3:4 and 4:3", async () => {
+  const { portraitPrompt, sheetPrompt, PORTRAIT_SIZE, SHEET_SIZE, CAST_ENGINES } = await import("../../lib/castCharacter");
+  expect([...CAST_ENGINES]).toEqual(["auto", "flux2", "nanobanana"]);
+  for (const words of [portraitPrompt(WHO.description), sheetPrompt(WHO.description)]) {
+    expect(words).toContain(WHO.description);
+    expect(words).not.toMatch(FLUX_NAMES);
+  }
+  for (const size of [PORTRAIT_SIZE, SHEET_SIZE]) {
+    expect(size.width % 16 === 0 && size.height % 16 === 0).toBe(true);
+    expect(size.width * size.height).toBeLessThan(1_000_000);
+  }
+  expect(PORTRAIT_SIZE.width * 4).toBe(PORTRAIT_SIZE.height * 3);
+  expect(SHEET_SIZE.width * 3).toBe(SHEET_SIZE.height * 4);
 });
