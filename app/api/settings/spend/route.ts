@@ -1,13 +1,15 @@
 import { requireAdmin, requireSession, withTenant } from "@/lib/auth";
 import { currentTenant } from "@/lib/tenant";
-import { parseSpendPatch } from "@/lib/spendSettings";
+import { forMember, parseSpendPatch } from "@/lib/spendSettings";
 import { SpendSettingsError, changeSpendSettings, readSpendSettings, spendSettingsOn } from "@/lib/spendSettings.server";
 import { PeopleOnlyError } from "@/lib/security/people-only";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
 
-/* With the switch off this route answers as if it did not exist, before anything else is read. */
+/* With the switch off this route answers 404 before it reads anything of its own. withTenant's own checks (a read-only
+   or prepare token's write, a stale request scope, required two-step sign-in) answer first, as on every route; nothing
+   is read from or written to the spend settings either way. */
 const notFound = () => Response.json({ error: "Not found." }, { status: 404, headers });
 
 function refused(error: unknown): Response {
@@ -19,8 +21,9 @@ function refused(error: unknown): Response {
  * A workspace's own spend settings (lib/spendSettings.ts; v30 A4, behind V30_SPEND_LIMIT, off): the monthly spend
  * limit in credits, the paused state, and ask before every take. Stored only: nothing that spends reads them yet.
  *
- * Read: any signed-in member of the workspace. Change: an admin who is a person; an API or MCP token, of any scope,
- * is refused on both (requireSession), and the store refuses an `agent:` identity too. The workspace is the
+ * Read: any signed-in member of the workspace; who paused (an account id) is sent to admins only. Change: an admin
+ * who is a person. An API or MCP token, of any scope, is refused on both (requireSession), and the store refuses an
+ * `agent:` identity too. The workspace is the
  * session's: no workspace id is taken from the request.
  */
 export const GET = withTenant(async () => {
@@ -28,7 +31,8 @@ export const GET = withTenant(async () => {
   const got = await requireSession();
   if (got.response) return got.response;
   try {
-    return Response.json({ settings: await readSpendSettings() }, { headers });
+    const settings = await readSpendSettings();
+    return Response.json({ settings: got.user.role === "admin" ? settings : forMember(settings) }, { headers });
   } catch (error) { return refused(error); }
 });
 

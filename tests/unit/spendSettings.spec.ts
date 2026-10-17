@@ -86,7 +86,16 @@ test("the values: defaults, the stored forms, a strict change, and the month a l
   expect(s.storedPause(s.pauseValue({ at: 5, by: null, reason: "limit" }))).toEqual({ at: 5, by: null, reason: "limit" });
   /* A stored value that is not one the writer makes reads as the default. */
   for (const raw of ["", " ", "0", "-3", "1.5", "abc", "99999999", String(s.SPEND_LIMIT_MAX_CREDITS + 1)]) expect(s.storedLimit(raw), raw).toBeNull();
-  for (const raw of ["", "{}", "[]", "nope", '{"at":1,"by":"u","reason":"other"}', '{"at":-1,"by":"u","reason":"admin"}', '{"at":1,"by":"a b","reason":"admin"}']) expect(s.storedPause(raw), raw).toBeNull();
+  /* A pause: blank is running; anything else this writer never makes FAILS CLOSED, read as paused ("unreadable"). */
+  expect(s.storedPause("")).toBeNull();
+  expect(s.storedPause(undefined)).toBeNull();
+  for (const raw of ["{}", "[]", "nope", "null", "0", '{"at":1,"by":"u","reason":"other"}', '{"at":-1,"by":"u","reason":"admin"}', '{"at":1,"by":"a b","reason":"admin"}'])
+    expect(s.storedPause(raw), raw).toEqual({ at: 0, by: null, reason: "unreadable" });
+  /* A member's view drops who paused; the rest is the same. */
+  const full = { monthlyLimitCredits: limit, pause, askBeforeEveryTake: true };
+  expect(s.forMember(full)).toEqual({ monthlyLimitCredits: limit, pause: { at: pause.at, reason: "admin" }, askBeforeEveryTake: true });
+  expect(JSON.stringify(s.forMember(full))).not.toContain("u_admin");
+  expect(s.forMember(s.SPEND_SETTINGS_DEFAULT)).toEqual(s.SPEND_SETTINGS_DEFAULT);
   for (const raw of ["", "off", "ON", "1", "true"]) expect(s.storedAsk(raw), raw).toBe(false);
   /* A change is strict: one bad key or value refuses all of it. */
   expect(s.parseSpendPatch({ monthlyLimitCredits: limit, paused: true, askBeforeEveryTake: false })).toEqual({ patch: { monthlyLimitCredits: limit, paused: true, askBeforeEveryTake: false } });
@@ -197,6 +206,81 @@ test("an admin's every change writes one audit line in the same batch; a value t
       expect((await refusal(() => change({ monthlyLimitCredits: 999, paused: true, askBeforeEveryTake: true }, 3000)))?.message).toMatch(/spend receipt unavailable/);
       expect({ settings: await settingRows(ws), audit: await auditRows(ws) }).toEqual(before);
     } finally { await rows(ws, "DROP TRIGGER reject_spend_audit"); }
+  });
+});
+
+test("races: two pauses at once, or a person's pause beside the server's, write one pause and one audit line; a stale read changes nothing; `changed` is right on every call", async () => {
+  const store = await import("../../lib/spendSettings.server");
+  const adminA = person("u_admin_one", "admin"), adminB = person("u_admin_two", "admin");
+  const pauses = async (ws: TenantWorkspace) => (await settingRows(ws)).filter((r) => r.key === "spendPause");
+  await withFlag("1", async () => {
+    /* Two admins press Pause at the same moment. */
+    const two = workspace(HOUSE, `house-race-two-${run}`);
+    const [one, other] = await Promise.all([
+      inWs(two, () => store.changeSpendSettings({ paused: true }, 5000), adminA),
+      inWs(two, () => store.changeSpendSettings({ paused: true }, 5001), adminB),
+    ]);
+    expect([one.changed, other.changed].sort((a, b) => a.length - b.length)).toEqual([[], ["paused"]]);
+    const winner = one.changed.length ? adminA : adminB;
+    expect(await pauses(two)).toHaveLength(1);
+    expect(JSON.parse((await pauses(two))[0].value)).toMatchObject({ by: winner.id, reason: "admin" });
+    expect((await auditRows(two)).map((l) => [l.action, l.actor_id])).toEqual([["spend.paused", winner.id]]);
+    /* Both answers show the one pause that stands. */
+    expect(one.settings.pause).toEqual(other.settings.pause);
+
+    /* A person's pause beside the server's limit pause. */
+    const mixed = workspace(HOUSE, `house-race-mixed-${run}`);
+    const [byPerson, byServer] = await Promise.all([
+      inWs(mixed, () => store.changeSpendSettings({ paused: true }, 6000), adminA),
+      inWs(mixed, () => store.recordLimitPause(6001)),
+    ]);
+    expect(Number(byPerson.changed.length) + Number(byServer)).toBe(1);
+    expect(await pauses(mixed)).toHaveLength(1);
+    const lines = await auditRows(mixed);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject(byServer ? { action: "spend.paused", actor_id: null, details: '{"reason":"limit"}' } : { action: "spend.paused", actor_id: adminA.id, details: '{"reason":"admin"}' });
+
+    /* A stale read: the row says paused, the read says running. Pausing again writes nothing and says so. */
+    const stale = workspace(HOUSE, `house-race-stale-${run}`);
+    await inWs(stale, () => store.changeSpendSettings({ paused: true }, 7000), adminA);
+    const seeded = { settings: await settingRows(stale), audit: await auditRows(stale) };
+    const running = { monthlyLimitCredits: null, pause: null, askBeforeEveryTake: false };
+    const again = await inWs(stale, () => store.changeSpendSettingsFromReadForTests({ paused: true }, running, 7001), adminB);
+    expect(again.changed).toEqual([]);
+    expect(again.settings.pause).toEqual({ at: 7000, by: adminA.id, reason: "admin" });
+    expect({ settings: await settingRows(stale), audit: await auditRows(stale) }).toEqual(seeded);
+    /* And the other way: the row says running, a stale read says paused. Resuming writes nothing and says so. */
+    await inWs(stale, () => store.changeSpendSettings({ paused: false }, 7002), adminA);
+    const resumed = { settings: await settingRows(stale), audit: await auditRows(stale) };
+    const paused = { ...running, pause: { at: 7000, by: adminA.id, reason: "admin" as const } };
+    const resumeAgain = await inWs(stale, () => store.changeSpendSettingsFromReadForTests({ paused: false }, paused, 7003), adminB);
+    expect(resumeAgain.changed).toEqual([]);
+    expect({ settings: await settingRows(stale), audit: await auditRows(stale) }).toEqual(resumed);
+    /* A stale limit read: the limit is already the value asked for, so nothing is written. */
+    await inWs(stale, () => store.changeSpendSettings({ monthlyLimitCredits: 444 }, 7004), adminA);
+    const limited = { settings: await settingRows(stale), audit: await auditRows(stale) };
+    const sameLimit = await inWs(stale, () => store.changeSpendSettingsFromReadForTests({ monthlyLimitCredits: 444 }, running, 7005), adminB);
+    expect(sameLimit.changed).toEqual([]);
+    expect({ settings: await settingRows(stale), audit: await auditRows(stale) }).toEqual(limited);
+    /* The test-only entry still refuses a member. */
+    expect((await refusal(() => inWs(stale, () => store.changeSpendSettingsFromReadForTests({ paused: true }, running), person("u_member", "member"))))?.status).toBe(403);
+  });
+});
+
+test("a damaged pause row fails closed: it reads as paused, the server's limit pause does not overwrite it, and an admin's resume clears it with one line", async () => {
+  const store = await import("../../lib/spendSettings.server");
+  const admin = person("u_admin", "admin");
+  const ws = workspace(HOUSE, `house-damaged-${run}`);
+  await withFlag("1", async () => {
+    await rows(ws, "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('spendPause','not a pause','fixture',0)");
+    expect((await inWs(ws, () => store.readSpendSettings(), person("u_member", "member"))).pause).toEqual({ at: 0, by: null, reason: "unreadable" });
+    expect(await inWs(ws, () => store.recordLimitPause(8000))).toBe(false);
+    expect((await inWs(ws, () => store.changeSpendSettings({ paused: true }, 8001), admin)).changed).toEqual([]);
+    expect(await auditRows(ws)).toEqual([]);
+    const resumed = await inWs(ws, () => store.changeSpendSettings({ paused: false }, 8002), admin);
+    expect(resumed.changed).toEqual(["paused"]);
+    expect(resumed.settings.pause).toBeNull();
+    expect((await auditRows(ws)).map((l) => [l.action, l.actor_id])).toEqual([["spend.resumed", admin.id]]);
   });
 });
 
@@ -336,7 +420,7 @@ const call = async (api: Awaited<ReturnType<typeof routes>>, handler: Handler, u
   body: body === undefined ? undefined : JSON.stringify(body),
 }), undefined);
 
-test("the route: off answers 404 for everyone; on, an admin's session changes them, a member and an admin's own token are refused, and the general settings route neither takes nor sends them", async () => {
+test("the route: off, every caller withTenant lets through gets a 404 and nothing is read or written; on, an admin's session changes them, a member and an admin's own token are refused, and the general settings route neither takes nor sends them", async () => {
   await seedRoute();
   const api = await routes();
   const LIMIT = 321;
@@ -374,10 +458,20 @@ test("the route: off answers 404 for everyone; on, an admin's session changes th
     expect(ok.status, await ok.clone().text()).toBe(200);
     expect(await ok.json()).toMatchObject({ changed: ["monthlyLimitCredits", "askBeforeEveryTake"], settings: { monthlyLimitCredits: LIMIT, askBeforeEveryTake: true } });
     expect((await auditRows(RWS)).map((l) => [l.action, l.actor_id])).toEqual([["spend_limit.set", "radmin"], ["spend.ask_every_take_on", "radmin"]]);
+    /* Who paused is an account id: an admin is sent it, a member is not. */
+    expect((await call(api, api.spend.PATCH, "/api/settings/spend", "PATCH", { paused: true })).status).toBe(200);
+    const adminView = (await (await call(api, api.spend.GET, "/api/settings/spend", "GET")).json()).settings;
+    expect(adminView.pause).toMatchObject({ by: "radmin", reason: "admin" });
+    mode = "member";
+    const memberView = (await (await call(api, api.spend.GET, "/api/settings/spend", "GET")).json()).settings;
+    expect(memberView.pause).toEqual({ at: adminView.pause.at, reason: "admin" });
+    expect(JSON.stringify(memberView)).not.toContain("radmin");
+    mode = "admin";
+    expect((await call(api, api.spend.PATCH, "/api/settings/spend", "PATCH", { paused: false })).status).toBe(200);
     /* The general settings route: it does not accept these keys from an admin, and does not send them to a member. */
     const general = await call(api, api.settings.PATCH, "/api/settings", "PATCH", { monthlySpendLimitCredits: "1", spendPause: "{}", askBeforeEveryTake: "off" });
     expect(general.status).toBe(400);
-    expect((await settingRows(RWS)).map((r) => [r.key, r.value])).toEqual([["askBeforeEveryTake", "on"], ["monthlySpendLimitCredits", String(LIMIT)]]);
+    expect((await settingRows(RWS)).map((r) => [r.key, r.value])).toEqual([["askBeforeEveryTake", "on"], ["monthlySpendLimitCredits", String(LIMIT)], ["spendPause", ""]]);
     mode = "member";
     const sent = await (await call(api, api.settings.GET, "/api/settings", "GET")).json();
     for (const key of ["monthlySpendLimitCredits", "spendPause", "askBeforeEveryTake"]) {
@@ -418,8 +512,10 @@ test("guard (new, strict): only the A4 files name the stored keys or the switch,
   expect(settingsSource.replace(internal, "").match(/monthlySpendLimitCredits|spendPause|askBeforeEveryTake/g)).toBeNull();
   expect(named(/V30_SPEND_LIMIT/)).toEqual(["app/api/settings/spend/route.ts", "lib/spendSettings.server.ts", "lib/spendSettings.ts"]);
   /* Who imports the modules: the store imports the pure one; the route imports both; nothing else does. */
-  expect(named(/from\s+["'][^"']*spendSettings\.server["']|import\(["'][^"']*spendSettings\.server["']\)/)).toEqual(["app/api/settings/spend/route.ts"]);
-  expect(named(/from\s+["'][^"']*\/spendSettings["']|import\(["'][^"']*\/spendSettings["']\)/)).toEqual(["app/api/settings/spend/route.ts", "lib/spendSettings.server.ts"]);
+  expect(named(/from\s+["'][^"']*spendSettings\.server["']|(?:import|require)\(\s*["'][^"']*spendSettings\.server["']\s*\)/)).toEqual(["app/api/settings/spend/route.ts"]);
+  expect(named(/from\s+["'][^"']*\/spendSettings["']|(?:import|require)\(\s*["'][^"']*\/spendSettings["']\s*\)/)).toEqual(["app/api/settings/spend/route.ts", "lib/spendSettings.server.ts"]);
+  /* The stale-read entry is for the tests alone. */
+  expect(named(/changeSpendSettingsFromReadForTests/)).toEqual(["lib/spendSettings.server.ts"]);
   /* The server's own pause has no caller yet: the route never names it. */
   expect(named(/recordLimitPause/)).toEqual(["lib/spendSettings.server.ts"]);
   /* The audit actions are written by the store alone. */

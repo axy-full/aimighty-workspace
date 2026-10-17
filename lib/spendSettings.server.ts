@@ -7,7 +7,7 @@ import { securityAuditStatement, type SecurityAuditInput } from "./securityAudit
 import { assertPerson } from "./security/people-only";
 import {
   SPEND_SETTING_KEYS, SPEND_SETTING_STORE_KEYS, spendSettingsFrom, spendSettingsSwitchOn, spendLimitPeriod,
-  limitValue, pauseValue, askValue, type SpendSettings, type SpendSettingsPatch, type SpendPause,
+  limitValue, pauseValue, askValue, type SpendSettings, type SpendSettingsPatch, type WrittenPause,
 } from "./spendSettings";
 
 /**
@@ -82,12 +82,25 @@ function audit(workspaceId: string, actorId: string | null, action: SecurityAudi
  * is always the person's (`admin`); a resume clears a pause whatever made it.
  */
 export async function changeSpendSettings(patch: SpendSettingsPatch, at = now()): Promise<{ settings: SpendSettingsView; changed: string[] }> {
+  return change(patch, at, stored);
+}
+
+/**
+ * TESTS ONLY: the same change, deciding from a read the test supplies (a stale one), to prove the upserts' own
+ * conditions hold when the read is out of date. Every check above still runs; a guard keeps every other source file
+ * from naming it (tests/unit/spendSettings.spec.ts).
+ */
+export async function changeSpendSettingsFromReadForTests(patch: SpendSettingsPatch, was: SpendSettings, at = now()): Promise<{ settings: SpendSettingsView; changed: string[] }> {
+  return change(patch, at, async () => was);
+}
+
+async function change(patch: SpendSettingsPatch, at: number, read: () => Promise<SpendSettings>): Promise<{ settings: SpendSettingsView; changed: string[] }> {
   const ws = await requireOn();
   const store = currentTenant();
   assertPerson({ user: store?.user, token: store?.token });
   const user = store!.user!;
   if (user.role !== "admin") throw new SpendSettingsError("Only an admin can change the spend limit and its settings.", 403);
-  const was = await stored();
+  const was = await read();
   /* Each change is its upsert then its audit line; what changed is read back from the upserts' own counts. */
   const steps: { name: string; upsert: InStatement; line: InStatement }[] = [];
   if (patch.monthlyLimitCredits !== undefined && patch.monthlyLimitCredits !== was.monthlyLimitCredits)
@@ -117,7 +130,7 @@ export async function changeSpendSettings(patch: SpendSettingsPatch, at = now())
 export async function recordLimitPause(at = now()): Promise<boolean> {
   const ws = await requireOn();
   if ((await stored()).pause) return false;
-  const pause: SpendPause = { at, by: null, reason: "limit" };
+  const pause: WrittenPause = { at, by: null, reason: "limit" };
   const [done] = await db().batch([write(SPEND_SETTING_KEYS.pause, pauseValue(pause), null, at, "running"), audit(ws.id, null, "spend.paused", { reason: "limit" })], "write");
   invalidateSettings();
   return (done?.rowsAffected ?? 0) > 0;

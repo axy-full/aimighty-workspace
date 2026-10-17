@@ -37,8 +37,11 @@ export const SPEND_SETTING_STORE_KEYS: readonly string[] = Object.values(SPEND_S
 export const SPEND_LIMIT_MIN_CREDITS = 1;
 export const SPEND_LIMIT_MAX_CREDITS = 10_000_000;
 
+/** Who or what paused: a person (`admin`) or the server on reaching the limit (`limit`). The only reasons ever written. */
 export type SpendPauseReason = "admin" | "limit";
-export type SpendPause = { at: number; by: string | null; reason: SpendPauseReason };
+/** As read: also `unreadable`, a stored value this writer never makes, read as paused (fail closed). */
+export type SpendPause = { at: number; by: string | null; reason: SpendPauseReason | "unreadable" };
+export type WrittenPause = { at: number; by: string | null; reason: SpendPauseReason };
 export type SpendSettings = {
   /** Whole credits a month; null is no limit. */
   monthlyLimitCredits: number | null;
@@ -63,18 +66,22 @@ export function storedLimit(raw: string | undefined): number | null {
   return validLimit(n) ? n : null;
 }
 
-/** The stored pause: blank is running; a value that is not a well-formed pause is also read as running. */
+/**
+ * The stored pause: blank is running. A value that is not blank but is not a pause this writer makes FAILS CLOSED:
+ * it reads as paused, reason `unreadable`, so a damaged row can never read as running. An admin's resume clears it.
+ */
+export const UNREADABLE_PAUSE: Readonly<SpendPause> = Object.freeze({ at: 0, by: null, reason: "unreadable" });
 export function storedPause(raw: string | undefined): SpendPause | null {
   if (!raw) return null;
   try {
     const v = JSON.parse(raw) as Record<string, unknown>;
-    if (!v || typeof v !== "object" || Array.isArray(v)) return null;
-    if (!Number.isSafeInteger(v.at) || (v.at as number) < 0) return null;
-    if (v.reason !== "admin" && v.reason !== "limit") return null;
-    if (v.by !== null && !(typeof v.by === "string" && ID.test(v.by))) return null;
+    if (!v || typeof v !== "object" || Array.isArray(v)) return { ...UNREADABLE_PAUSE };
+    if (!Number.isSafeInteger(v.at) || (v.at as number) < 0) return { ...UNREADABLE_PAUSE };
+    if (v.reason !== "admin" && v.reason !== "limit") return { ...UNREADABLE_PAUSE };
+    if (v.by !== null && !(typeof v.by === "string" && ID.test(v.by))) return { ...UNREADABLE_PAUSE };
     return { at: v.at as number, by: v.by as string | null, reason: v.reason };
   } catch {
-    return null;
+    return { ...UNREADABLE_PAUSE };
   }
 }
 
@@ -90,8 +97,14 @@ export function spendSettingsFrom(stored: Record<string, string | undefined>): S
 }
 
 export const limitValue = (n: number | null): string => (n == null ? "" : String(n));
-export const pauseValue = (p: SpendPause | null): string => (p == null ? "" : JSON.stringify({ at: p.at, by: p.by, reason: p.reason }));
+export const pauseValue = (p: WrittenPause | null): string => (p == null ? "" : JSON.stringify({ at: p.at, by: p.by, reason: p.reason }));
 export const askValue = (on: boolean): string => (on ? "on" : "off");
+
+/** The settings as a member who is not an admin is sent them: the pause without the account id of whoever paused. */
+export type MemberSpendPause = Omit<SpendPause, "by">;
+export function forMember<T extends SpendSettings>(settings: T): Omit<T, "pause"> & { pause: MemberSpendPause | null } {
+  return { ...settings, pause: settings.pause ? { at: settings.pause.at, reason: settings.pause.reason } : null };
+}
 
 /** The month a limit counts in: the calendar month in UTC that `at` falls in, `[start, end)`. */
 export function spendLimitPeriod(at: number): { start: number; end: number } {
