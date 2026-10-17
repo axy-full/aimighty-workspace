@@ -39,7 +39,8 @@ import {
  *     `rig_plan_approvals`; a command points at it, after this store has checked it.
  *
  * Money: nothing here reserves, meters, settles, refunds or charges anything, and no paid path calls this store (that
- * is PR A10, after the freeze). `refund_status` records what the vendor did; it changes no bill.
+ * is PR A10, after the freeze). `refund_status` records what the vendor did; it changes no bill, and it is internal:
+ * no view sends it or the word "refund" (owner, 17 Oct: "vendor refunds stay internal"; lib/jobView.ts).
  *
  * States move forward only: THIS STORE enforces the moves (vocabulary.ts JOB_MOVES, COMMAND_MOVES). The tables add
  * what a second writer could break: a quote is required, the fixed fields never change, the pointers are set once, a

@@ -46,7 +46,7 @@ const mods = async () => ({
 /** The vendor's failure, naming the engine in its own words, on the workspace's own key (so the most is visible). */
 const vendorFailure = (): ProviderOutcome => ({
   v: 1, provider: "byteplus", stage: "run", code: "SentinelVendorCode", kind: "content_filter",
-  message: `Model ${SENTINEL_ENGINE} refused the request.`, billing: { state: "not_charged", basis: "ark-success-only" }, funding: "own", at: 1,
+  message: `Model ${SENTINEL_ENGINE} refused the request; your credits were refunded.`, billing: { state: "refunded", basis: "hf-ledger" }, funding: "own", at: 1,
 });
 
 /** A person's plan approval (synthetic), as lib/workbench/plan-approval.ts stores it, for a command to point at. */
@@ -238,11 +238,23 @@ for (const who of ["house", "credit"] as const) {
       // Money in the views: one unit, credits, for every workspace (the house's at cost). A credit workspace reads its
       // receipts and never the vendor's billing state; the house reads the refund status and has no credit receipts.
       expect(csv).not.toMatch(/usd/i);
+
+      // Refunds stay internal (owner, 17 Oct): every job here was refunded by the vendor, in its reply and its words,
+      // and still no output, for either decider or workspace, carries the status or the word.
+      expect(Number((await client.execute("SELECT COUNT(*) AS n FROM quoted_jobs WHERE refund_status='refunded'")).rows[0].n)).toBe(agentIds.length + 1);
+      const everything = [
+        ...outputs.map((o) => o.value), director, await store.recipe(ids.director), await store.errorLine(ids.director), csv,
+        await store.list(), await store.getCommand(ids.command), m.publicJobs(rows, { credits: true }), m.publicJobs(rows, { credits: false }),
+        ...rows.map((row) => m.jobErrorLine({ ...row, decider: "director" }, { credits: false })),
+      ];
+      for (const value of everything) expect(JSON.stringify(value)).not.toMatch(/refund/i);
+      // The failure line still says what happened and what to do.
+      expect(await store.errorLine(ids.director)).toMatchObject({ what: "Refused by the content filter", charge: null, detail: null });
       if (who === "credit") {
-        expect(director).toMatchObject({ quote: { credits: SYNTHETIC_CREDITS }, actual: { credits: SYNTHETIC_RECEIPT }, refundStatus: null });
+        expect(director).toMatchObject({ quote: { credits: SYNTHETIC_CREDITS }, actual: { credits: SYNTHETIC_RECEIPT } });
         expect(await store.getCommand(ids.command)).toMatchObject({ total: { credits: SYNTHETIC_RECEIPT } });
       } else {
-        expect(director).toMatchObject({ quote: { credits: SYNTHETIC_CREDITS }, actual: null, refundStatus: "not_charged" });
+        expect(director).toMatchObject({ quote: { credits: SYNTHETIC_CREDITS }, actual: null });
         expect(await store.getCommand(ids.command)).toMatchObject({ total: null });
       }
     });
@@ -256,6 +268,10 @@ test("brand spellings are caught for an Agent job and kept for a Director job; p
   const seedance = byFamily("seedance-2");
   const nano = byFamily("nano-banana");
   const cinema = byFamily("cinema-studio");
+  const luma = byFamily("luma-ray-2");
+  const bria = byFamily("bria");
+  const soul = byFamily("soul");
+  const marketing = byFamily("higgsfield-marketing");
   const recipe = (decider: "agent" | "director", engine: string, prompt: string) =>
     m.recreateRecipe({ decider, engine, take_prompt: prompt }).prompt;
 
@@ -263,7 +279,9 @@ test("brand spellings are caught for an Agent job and kept for a Director job; p
     [kling, "Kling3 look"], [kling, "in the KlingAI style"], [kling, "kling-3 motion"],
     [seedance, "Seedance2 grade"], [seedance, "a SeedanceV2 pass"], [seedance, "made with Dreamina"], [seedance, "seedance_2.5 light"],
     [nano, "Nano2 still"], [nano, "a NanoBanana frame"], [nano, "nano-banana pro look"],
-    [cinema, "Cinema Studio framing"], [cinema, "cinema-studio grade"], [cinema, "CinemaStudio grade"],
+    [cinema, "Cinema Studio framing"], [cinema, "cinema-studio grade"], [cinema, "CinemaStudio grade"], [cinema, "shot on Cinema 4"],
+    [luma, "a LumaAI pass"], [luma, "Luma Labs depth"], [bria, "cut out with BriaAI"], [kling, "rendered on FalAI"], [kling, "fal.ai queue"],
+    [soul, "keep the SoulID face"], [marketing, "a Marketing Studio poster"], [marketing, "marketing-studio layout"], [marketing, "MarketingStudio card"],
   ];
   for (const [engine, prompt] of named) {
     expect(recipe("agent", engine, prompt), `${engine}: ${prompt}`).toBe("");
@@ -275,6 +293,8 @@ test("brand spellings are caught for an Agent job and kept for a Director job; p
     [nano, "measured in nanoseconds"],
     [cinema, "a cinema scene under studio light"],
     [seedance, "a seed and a dance"],
+    [bria, "Brian walks in"], [soul, "a soulful song"], [kling, "Falguni is not false"], [luma, "luminous light"],
+    [cinema, "a Cinema 4K master"], [cinema, "modelled in Cinema 4D"], [marketing, "a marketing meeting"],
   ];
   for (const [engine, prompt] of safe) expect(recipe("agent", engine, prompt), `${engine}: ${prompt}`).toBe(prompt);
 

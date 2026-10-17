@@ -47,6 +47,7 @@ export const COMMAND_MOVES: Readonly<Record<CommandState, readonly CommandState[
  * A job's refund status: the provider's own billing state, the same four values (lib/providerOutcome.ts BILLING_STATES).
  * It records what the vendor did. It does not decide what the workspace is charged: today's billing of failed and
  * cancelled jobs is unchanged (owner, 17 Oct: "store the refund status on every job now; keep today's billing behaviour").
+ * It is internal: no view sends it (owner, 17 Oct: "the word refund never appears; vendor refunds stay internal").
  */
 export const REFUND_STATUSES = BILLING_STATES;
 export type RefundStatus = BillingState;

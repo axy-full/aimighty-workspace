@@ -4,8 +4,8 @@ import { displayModelName, findModel, providerOf } from "./models";
 import { PROVIDER_NAME, parseOutcome, takeFailure } from "./providerOutcome";
 import { fromTenths } from "./runLimit";
 import {
-  COMMAND_STATES, DECIDERS, JOB_STATUSES, PRODUCTS, REFUND_STATUSES,
-  type CommandState, type Decider, type JobProduct, type JobStatus, type RefundStatus,
+  COMMAND_STATES, DECIDERS, JOB_STATUSES, PRODUCTS,
+  type CommandState, type Decider, type JobProduct, type JobStatus,
 } from "./quotedJobs/vocabulary";
 
 /**
@@ -30,6 +30,10 @@ import {
  * one unit for every workspace (the house's at cost, as quotedCredits() counts it). The actual is the meter's, through
  * its workspace replica `credit_receipts` (lib/creditReceipts.ts): never stored here.
  *
+ * Refunds (owner, 17 Oct): "A refunded failure shows 0 cr on the receipt and the word refund never appears; vendor
+ * refunds stay internal." So `refund_status` is stored on every failed or cancelled job and NO output here carries it,
+ * nor the word "refund", for any workspace (the house included). The receipt line is the meter's charge (`actual`).
+ *
  * Pure: no database. The store (lib/quotedJobs/store.ts) reads the rows and hands them here.
  */
 
@@ -39,7 +43,7 @@ export type StoredJob = Record<string, unknown>;
 export type StoredCommand = Record<string, unknown>;
 
 export type ViewOptions = {
-  /** Does the viewing workspace pay in credits (lib/credits.ts creditsApply)? Then no vendor billing state is sent, and its receipts are read. */
+  /** Does the viewing workspace pay in credits (lib/credits.ts creditsApply)? Then its receipts are read. */
   credits: boolean;
 };
 
@@ -59,8 +63,6 @@ export type PublicJob = {
   quote: JobQuote | null;
   /** What was charged, from the meter's receipt; null until there is one. */
   actual: { credits: number } | null;
-  /** What the vendor did with a failed or cancelled job. Null for a workspace that pays in credits (see below) and until it fails. */
-  refundStatus: RefundStatus | null;
   takeId: string | null;
   /** Our own sentence for a failure; never a vendor's words. */
   error: string | null;
@@ -175,7 +177,7 @@ const NOT_ENGINE_WORDS = new Set([
   "upscale", "cutout", "expand", "transform", "marketing", "still", "render", "character", "creative", "background", "remove", "reframe",
 ]);
 /** Particl's own names for a feature (lib/uiNames.ts and the registry's labels), not an engine's: not matched as names. */
-const NOT_ENGINE_PHRASES = new Set(["product image", "identity render", "motion transfer", "object swap", "cinema 4"]);
+const NOT_ENGINE_PHRASES = new Set(["product image", "identity render", "motion transfer", "object swap"]);
 const genericNeedle = (needle: string): boolean =>
   NOT_ENGINE_WORDS.has(needle) || NOT_ENGINE_PHRASES.has(needle) || /^(?:identity|id) /.test(needle) || !/\p{L}{2,}/u.test(needle);
 /** A name's tier or version words at its end ("Seedance 2.5", "Nano Banana Pro", "Cinema Studio 4.0"): stripped to get the brand. */
@@ -200,6 +202,9 @@ export function engineNeedles(row: StoredJob): string[] {
   const names: string[] = [];
   for (const id of ids) {
     names.push(leading(id));
+    /* Each `/` segment of an id, and the same without a trailing image/video/audio word ("higgsfield/marketing-studio-image"
+       gives "marketing studio"). Segments are not cut by version: "ray-2-flash" stays itself. */
+    for (const segment of id.split("/")) names.push(segment, segment.replace(/[\s_-]+(?:image|video|audio)$/i, ""));
     const label = displayModelName(id);
     names.push(label, unversioned(label), leading(label));
     const provider = providerOf(id);
@@ -214,16 +219,25 @@ export function engineNeedles(row: StoredJob): string[] {
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** A brand's own suffixes a short name may run on into ("LumaAI", "FalAI", "SoulID", "… Labs"). */
+const BRAND_SUFFIX = "(?:ai|labs|id)";
+
 /**
  * One needle as a pattern. It always starts a word ("fal" is never found in "waterfall", "kling" never in "sparkling").
- * Inside it, a space, "_" or "-" may be any of them or nothing ("Nano Banana", "nano-banana", "NanoBanana"). After it,
- * a digit may follow any needle ("Kling3", "Nano2"); a needle of five letters or more may also run on into letters
- * ("KlingAI", "SeedanceV2"), while a shorter one may not, so "false" and "Falguni" keep their words.
+ * Inside it, a space, "_" or "-" may be any of them or nothing ("Nano Banana", "nano-banana", "NanoBanana"). After it:
+ *   - a digit may follow any needle ("Kling3", "Nano2");
+ *   - a needle that ends in a digit never runs on into letters ("cinema 4" is not "Cinema 4K");
+ *   - a needle of five letters or more may run on into letters ("KlingAI", "SeedanceV2");
+ *   - a shorter one may run on only into a brand suffix (ai, labs, id) that ends the word ("LumaAI", "SoulID"), so
+ *     "false", "Falguni", "Brian" and "soulful" keep their words.
  */
 function needlePattern(needle: string): string {
   const body = needle.split(SEPARATORS).map(escape).join("[\\s_-]*");
   const letters = (needle.match(/\p{L}/gu) ?? []).length;
-  return `(?<![\\p{L}\\p{N}])${body}${letters >= 5 ? "" : "(?!\\p{L})"}`;
+  const after = /\p{N}$/u.test(needle) ? "(?!\\p{L})"
+    : letters >= 5 ? ""
+    : `(?:[\\s_-]?${BRAND_SUFFIX}(?!\\p{L})|(?!\\p{L}))`;
+  return `(?<![\\p{L}\\p{N}])${body}${after}`;
 }
 
 const DROP = Symbol("drop");
@@ -252,7 +266,6 @@ export const deciderOf = (row: StoredJob): Decider => oneOf(DECIDERS, row.decide
 export function publicJob(row: StoredJob, opts: ViewOptions): PublicJob {
   const decider = deciderOf(row);
   const receipt = num(row.receipt_credits);
-  const refund = str(row.refund_status);
   const base = {
     id: String(row.id),
     productionId: str(row.production_id),
@@ -264,9 +277,6 @@ export function publicJob(row: StoredJob, opts: ViewOptions): PublicJob {
     status: oneOf(JOB_STATUSES, row.status, "queued"),
     quote: quoteOf(row.quote_tenths),
     actual: opts.credits && receipt !== null ? { credits: receipt } : null,
-    /* What a vendor did with a job on the platform's key stays off a credit workspace's pages, as a take's billing does
-       today (lib/providerOutcome.ts takeFailure): the credits it was charged (`actual`) say what it cost. */
-    refundStatus: !opts.credits && refund && (REFUND_STATUSES as readonly string[]).includes(refund) ? (refund as RefundStatus) : null,
     takeId: str(row.take_id),
     error: str(row.error_public),
     createdBy: String(row.created_by ?? ""),
@@ -291,19 +301,24 @@ export function publicJob(row: StoredJob, opts: ViewOptions): PublicJob {
 
 export const publicJobs = (rows: StoredJob[], opts: ViewOptions): PublicJob[] => rows.map((row) => publicJob(row, opts));
 
+/** Words about a vendor's refund: never in a view (owner, 17 Oct: "the word refund never appears"). */
+const REFUND_WORDS = /refund/i;
+
 /**
- * The failure line for a job whose take failed, from the take's own outcome. An Agent job's line is built with no
- * provider, no provider code and no provider words, so it says "The provider" and our own sentence only.
+ * The failure line for a job whose take failed, from the take's own outcome: what happened and the next step. It never
+ * says what the vendor did with the charge, for any workspace or decider (owner, 17 Oct: "vendor refunds stay
+ * internal"); what the job cost is its receipt (`actual`). An Agent job's line also carries no provider, no provider
+ * code and no provider words, so it is our own sentence only.
  */
 export function jobErrorLine(row: StoredJob, opts: ViewOptions): FailureLine | null {
   const status = oneOf(JOB_STATUSES, row.status, "queued");
   if (status !== "failed" && status !== "cancelled") return null;
-  const failure = takeFailure(parseOutcome(row.take_outcome), { credits: opts.credits });
-  if (deciderOf(row) === "agent") {
-    const line = failureLine({ ...failure, provider: null, code: failure.kind, message: null }, { cancelled: status === "cancelled" });
-    return scrub(line, engineNeedles(row));
-  }
-  return failureLine(failure, { cancelled: status === "cancelled" });
+  const failure = { ...takeFailure(parseOutcome(row.take_outcome), { credits: opts.credits }), billing: null, charge: null };
+  const cancelled = { cancelled: status === "cancelled" };
+  if (deciderOf(row) === "agent") return scrub(failureLine({ ...failure, provider: null, code: failure.kind, message: null }, cancelled), engineNeedles(row));
+  const line = failureLine(failure, cancelled);
+  /* The provider's own words, shown to a Director on its own key, may talk about a refund: then they are not shown. */
+  return line.detail && REFUND_WORDS.test(line.detail) ? { ...line, detail: null } : line;
 }
 
 /** What Recreate starts from. An Agent job hands Director an empty engine (brief rule 6); a Director job its own. */
@@ -316,7 +331,7 @@ export function recreateRecipe(row: StoredJob): Recipe {
 }
 
 /** The CSV of jobs, one row each, every cell through csvCell. The engine column is empty on every Agent row. */
-export const JOB_CSV_HEADER = ["job", "production", "step", "decider", "product", "status", "quote_credits", "credits", "refund_status", "engine", "engine_id", "prompt", "created_at"] as const;
+export const JOB_CSV_HEADER = ["job", "production", "step", "decider", "product", "status", "quote_credits", "credits", "engine", "engine_id", "prompt", "created_at"] as const;
 
 export function jobCsv(rows: StoredJob[], opts: ViewOptions): string {
   const lines = [JOB_CSV_HEADER.join(",")];
@@ -324,7 +339,7 @@ export function jobCsv(rows: StoredJob[], opts: ViewOptions): string {
     const job = publicJob(row, opts);
     lines.push([
       job.id, job.productionId, job.stepId, job.decider, job.product, job.status, job.quote?.credits ?? null, job.actual?.credits ?? null,
-      job.refundStatus, job.engine?.label ?? null, job.engine?.id ?? null, job.prompt, new Date(job.createdAt).toISOString(),
+      job.engine?.label ?? null, job.engine?.id ?? null, job.prompt, new Date(job.createdAt).toISOString(),
     ].map((cell) => csvCell(cell)).join(","));
   }
   return lines.join("\n") + "\n";

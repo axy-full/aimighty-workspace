@@ -169,7 +169,8 @@ test("a job is written only with its quote, keeps its quote, decider and engine,
     expect((await store.createJob({ ...base, quote: { credits: m.MAX_QUOTE_CREDITS } })).quote).toEqual({ credits: m.MAX_QUOTE_CREDITS });
 
     const job = await store.createJob({ ...base, quote: { credits: SYNTHETIC_CREDITS }, sourceRef: "paid_text_jobs:ptj_1" });
-    expect(job).toMatchObject({ status: "queued", quote: { credits: SYNTHETIC_CREDITS }, actual: null, refundStatus: null, error: null, startedAt: null, finishedAt: null });
+    expect(job).toMatchObject({ status: "queued", quote: { credits: SYNTHETIC_CREDITS }, actual: null, error: null, startedAt: null, finishedAt: null });
+    expect(job).not.toHaveProperty("refundStatus");
     expect(job.quotedAt).toBeGreaterThan(0);
     expect(await raw(client, job.id)).toMatchObject({ quote_tenths: SYNTHETIC_CREDITS * 10, workspace_id: credit.id });
 
@@ -180,7 +181,7 @@ test("a job is written only with its quote, keeps its quote, decider and engine,
     expect(running.startedAt).not.toBeNull();
     await expect(store.start(job.id)).rejects.toMatchObject({ status: 409 });
     const done = await store.finish(job.id, "done");
-    expect(done).toMatchObject({ status: "done", refundStatus: null, error: null });
+    expect(done).toMatchObject({ status: "done", error: null });
     expect((await raw(client, job.id)).refund_status).toBeNull();
     for (const next of ["failed", "cancelled", "done"] as const) await expect(store.finish(job.id, next)).rejects.toMatchObject({ status: 409 });
     await expect(store.finish(job.id, "running" as never)).rejects.toMatchObject({ status: 400 });
@@ -217,7 +218,7 @@ test("a job is written only with its quote, keeps its quote, decider and engine,
 async function outcomeFixtures(): Promise<{ name: string; outcome: ProviderOutcome; expected: string }[]> {
   const o = await import("../../lib/providerOutcome");
   const synthetic = (state: "billed" | "refunded" | "not_charged" | "unknown", funding?: "platform" | "own"): ProviderOutcome => ({
-    v: 1, provider: "fal", stage: "run", code: "synthetic_code", kind: "provider_error", message: "Synthetic vendor words: model synthetic-engine-a3 failed.",
+    v: 1, provider: "fal", stage: "run", code: "synthetic_code", kind: "provider_error", message: "Synthetic vendor words: model synthetic-engine-a3 failed; the credits were refunded.",
     billing: { state, basis: "silent" }, ...(funding ? { funding } : {}), at: 1,
   });
   return [
@@ -271,14 +272,17 @@ test("refund status: one mapping from the provider's outcome, the same as the st
         const row = await raw(client, job.id);
         expect(row.refund_status, name).toBe(expected);
         expect(row.status).toBe(status);
-        // The house reads it; a workspace that pays in credits does not (a take's billing today: lib/providerOutcome.ts takeFailure).
-        expect(finished.refundStatus, name).toBe(ws.id === HOUSE ? expected : null);
+        // Stored, never shown (owner, 17 Oct: "the word refund never appears; vendor refunds stay internal"): no view of
+        // the job, for the house or a credit workspace, carries the status or the word.
+        for (const shown of [finished, await store.get(job.id), await store.errorLine(job.id), await store.recipe(job.id)])
+          expect(JSON.stringify(shown), name).not.toMatch(/refund/i);
         // Our words, never the vendor's.
         expect(String(row.error_public)).not.toMatch(/synthetic|memory|overload|engine-a3/i);
         expect(String(row.error_public).length).toBeGreaterThan(0);
       }
       // No outcome, or one that cannot be read: "the provider didn't say". A finished-done job has none.
       for (const value of [null, undefined, "", "not json", JSON.stringify({ v: 2 })]) expect(m.refundStatusOf(value as never)).toBe("unknown");
+      for (const shown of [await store.list(), await store.csv(), await store.listCommands("prj_one")]) expect(JSON.stringify(shown)).not.toMatch(/refund/i);
       const bare = await store.createJob({ productionId: "prj_one", decider: "agent", product: "reading", quote, by: "usr_person" });
       expect((await store.finish(bare.id, "cancelled")).error).toBe("Cancelled");
       expect((await raw(client, bare.id)).refund_status).toBe("unknown");
