@@ -18,6 +18,16 @@ import { DocImportError, type Deadline, type DocSection, type ExtractedDocument,
  * execute them, and no scripting sandbox is created. pdfjs-dist 6 no longer
  * compiles fonts to JavaScript at all (its Node build contains no eval or
  * new Function; the old isEvalSupported switch is gone with it).
+ *
+ * NOT BOUNDED IN-PROCESS. In Node, pdf.js runs its "worker" on this same
+ * thread, so the deadline's timer cannot fire while a page is being parsed:
+ * it is only checked between pages, and the task is destroyed when it does
+ * fire. Inside one page nothing caps the size of a decoded stream (a
+ * FlateDecode content stream can expand without limit) or the fan-out of
+ * form XObjects drawn by other XObjects. The page and character limits bound
+ * the number of pages, not the work per page. This extractor must run in a
+ * separate process with an OS memory and CPU cap, killed on time-out, before
+ * DOC_IMPORT_ENABLED goes on anywhere (see the PR's "Before" list).
  */
 
 type PdfJs = typeof import("pdfjs-dist");

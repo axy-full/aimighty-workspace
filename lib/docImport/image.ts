@@ -42,9 +42,15 @@ const localRequire = createRequire(path.join(process.cwd(), "package.json"));
 export function ocrDataDir(env: Record<string, string | undefined> = process.env): string {
   const configured = env.DOC_IMPORT_OCR_DATA_DIR?.trim();
   const dir = configured || path.join(path.dirname(localRequire.resolve("@tesseract.js-data/eng/package.json")), "4.0.0_best_int");
-  if (!path.isAbsolute(dir) || /^[a-z][a-z0-9+.-]*:/i.test(dir) || dir.includes("\0"))
+  // "//host/x" is absolute to the path module and protocol-relative to a URL parser: refused too.
+  if (!path.isAbsolute(dir) || dir.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(dir) || dir.includes("\0"))
     throw new DocImportError("language_unavailable", "OCR is not set up on this server. Nothing was imported.");
   return path.resolve(dir);
+}
+
+/** The options every tesseract.js worker is created with: local data, no cache, no logging. */
+export function tesseractWorkerOptions(langPath: string) {
+  return { langPath, cacheMethod: "none", gzip: true, logger: () => {}, errorHandler: () => {} } as const;
 }
 
 /** Every requested language's data must already be on disk. Never a download. */
@@ -77,13 +83,7 @@ export const tesseractOcr: OcrEngine = async (image, { languages, timeoutMs, sig
   let finished = false;
   try {
     // OEM 1 is the LSTM engine the installed "best_int" data is built for.
-    const starting = createWorker(languages.join("+"), 1, {
-      langPath,
-      cacheMethod: "none",
-      gzip: true,
-      logger: () => {},
-      errorHandler: () => {},
-    }).then((started) => {
+    const starting = createWorker(languages.join("+"), 1, tesseractWorkerOptions(langPath)).then((started) => {
       // A worker that finishes starting after the deadline is ended at once.
       if (finished) void started.terminate().catch(() => {});
       else worker = started;
@@ -99,6 +99,32 @@ export const tesseractOcr: OcrEngine = async (image, { languages, timeoutMs, sig
   }
 };
 
+/**
+ * A TIFF's first directory must name its width and its height once each. The
+ * header sniffer keeps the last value it sees and a decoder may keep the
+ * first, so a file that names them twice could pass the size check with one
+ * size and be decoded at another.
+ */
+export function checkTiffSize(bytes: Buffer) {
+  const le = bytes[0] === 0x49;
+  const read16 = (at: number) => (le ? bytes.readUInt16LE(at) : bytes.readUInt16BE(at));
+  const read32 = (at: number) => (le ? bytes.readUInt32LE(at) : bytes.readUInt32BE(at));
+  let seen = { width: 0, height: 0 };
+  try {
+    const ifd = read32(4);
+    const count = read16(ifd);
+    for (let i = 0; i < count; i++) {
+      const tag = read16(ifd + 2 + i * 12);
+      if (tag === 256) seen = { ...seen, width: seen.width + 1 };
+      if (tag === 257) seen = { ...seen, height: seen.height + 1 };
+    }
+  } catch {
+    throw new DocImportError("damaged", "This picture's size cannot be read from its header. Nothing was imported.");
+  }
+  if (seen.width !== 1 || seen.height !== 1)
+    throw new DocImportError("unsafe", "This picture names its size more than once (or not at all). Nothing was imported.");
+}
+
 export type ImageOptions = { ocr?: OcrEngine; languages?: OcrLanguage[]; signal?: AbortSignal };
 
 export async function extractImage(
@@ -110,6 +136,7 @@ export async function extractImage(
   const meta = identifyImage(bytes);
   if (!meta || meta.kind !== "image")
     throw new DocImportError("type_mismatch", "This file is not a picture the importer reads. Nothing was imported.");
+  if (meta.mime === "image/tiff") checkTiffSize(bytes);
   const { width, height } = meta;
   if (!width || !height)
     throw new DocImportError("damaged", "This picture's size cannot be read from its header. Nothing was imported.");
