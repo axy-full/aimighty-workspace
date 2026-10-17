@@ -33,6 +33,8 @@ export const MAX_COLUMNS = 256;
 export const MAX_IMAGES = 200;
 /** One embedded image's size. */
 export const MAX_IMAGE_BYTES = 25 * MiB;
+/** All embedded images kept from one document; past it the rest are skipped with a warning. */
+export const MAX_IMAGES_TOTAL_BYTES = 100 * MiB;
 /** Warnings kept per import; the rest are counted in one closing line. */
 export const MAX_WARNINGS = 50;
 
