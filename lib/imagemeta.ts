@@ -141,6 +141,11 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
       // byte. Reading the fill as a marker with a length used to skip a real
       // SOF and take a later, fake one; decoders take the real one.
       if (marker === 0xff) { off++; continue; }
+      // FF 00 is a stuffed byte, not a marker: it carries no length. Reading
+      // one there was the same bypass as fill, one byte different.
+      if (marker === 0x00) { off += 2; continue; }
+      // 02-BF are reserved; libjpeg refuses them, so they are not sized either.
+      if (marker >= 0x02 && marker <= 0xbf) return null;
       // The frame header always precedes the first scan (and the end of the
       // image). Reaching either without one is not a JPEG we can size: past
       // SOS is entropy-coded data, where a "SOF" would be invented.

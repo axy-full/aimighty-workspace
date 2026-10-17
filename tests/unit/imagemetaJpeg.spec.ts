@@ -19,16 +19,43 @@ test("a plain JPEG is sized from its frame header", () => {
   expect(identifyImage(jpeg(APP0, SOF0(640, 480), SOS, [1, 2, 3], EOI))).toMatchObject({ mime: "image/jpeg", width: 640, height: 480 });
 });
 
-test("fill bytes before a marker are fill: a real 10,000 × 10,000 frame cannot hide behind them and a fake small one", () => {
-  // FF D8 | FF (fill) FF C0 <real SOF> ... and, where the old reader landed
-  // after taking "FF FF" as a marker with length 0xC000, a fake 100 × 100 SOF.
-  const head = jpeg([0xff], SOF0(10_000, 10_000));
-  const fakeAt = 2 + 2 + 0xc000;
-  const bytes = Buffer.concat([head, Buffer.alloc(fakeAt - head.length, 0), Buffer.from(SOF0(100, 100)), Buffer.from(SOS), Buffer.from(EOI)]);
+const DQT = [0xff, 0xdb, 0x00, 0x43, 0x00, ...Array.from({ length: 64 }, () => 1)];
+const DHT = [0xff, 0xc4, 0x00, 0x1f, 0x00, 0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, ...Array.from({ length: 12 }, (_, i) => i)];
+
+/** An APP1 segment of `length` (its own two bytes included) whose payload carries a fake SOF at `fakeAt` (an absolute file offset). */
+function app1With(length: number, startsAt: number, fakeAt: number, fake: number[]) {
+  const segment = Buffer.alloc(2 + length, 0);
+  segment[0] = 0xff;
+  segment[1] = 0xe1;
+  segment.writeUInt16BE(length, 2);
+  Buffer.from(fake).copy(segment, fakeAt - startsAt);
+  return [...segment];
+}
+
+test("fill bytes are fill: a real 10,000 × 10,000 frame cannot hide behind one, with a fake 100 × 100 frame inside an APP1 payload", () => {
+  // FF D8 | FF (fill) | real SOF0 | APP1 (64 KB) whose payload holds, where the
+  // old reader landed after taking "FF FF" as a marker with length 0xC000, a
+  // fake 100 × 100 SOF | DQT DHT SOS data EOI: a file a decoder really opens at 10,000 × 10,000.
+  const head = [0xff, 0xd8, 0xff, ...SOF0(10_000, 10_000)];
+  const bytes = Buffer.from([...head, ...app1With(0xffff, head.length, 2 + 2 + 0xc000, SOF0(100, 100)), ...DQT, ...DHT, ...SOS, 1, 2, 3, ...EOI]);
   const meta = identifyImage(bytes);
   expect(meta).toMatchObject({ mime: "image/jpeg", width: 10_000, height: 10_000 });
-  // So its real size meets the limits: 100 megapixels, past the upload route's 6000 px side.
   expect(validateImage(meta!, bytes.length)).toMatch(/10000×10000 exceeds/);
+});
+
+test("FF 00 at the top level is a stuffed byte, not a marker: the same bypass one byte different is closed", () => {
+  // FF D8 | FF 00 01 00 | real SOF0 10,000 × 10,000 | APP1 (0x200) with a fake 1,000 × 1,000 SOF where
+  // the old reader landed after reading "01 00" as a length | DQT DHT SOS data EOI.
+  const head = [0xff, 0xd8, 0xff, 0x00, 0x01, 0x00, ...SOF0(10_000, 10_000)];
+  const bytes = Buffer.from([...head, ...app1With(0x0200, head.length, 2 + 2 + 0x0100, SOF0(1_000, 1_000)), ...DQT, ...DHT, ...SOS, 1, 2, 3, ...EOI]);
+  const meta = identifyImage(bytes);
+  expect(meta).toMatchObject({ mime: "image/jpeg", width: 10_000, height: 10_000 });
+  expect(validateImage(meta!, bytes.length)).toMatch(/10000×10000 exceeds/);
+});
+
+test("a reserved marker (02-BF), which libjpeg refuses, is not sized", () => {
+  for (const marker of [0x02, 0x4f, 0xbf])
+    expect(identifyImage(jpeg(APP0, [0xff, marker, 0x00, 0x04, 0, 0], SOF0(640, 480), SOS, EOI)), marker.toString(16)).toBeNull();
 });
 
 test("several fill bytes in a row are all skipped", () => {
