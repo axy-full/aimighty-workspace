@@ -6,6 +6,7 @@ import { CLAIM_DEFERRED_HEADER, completeDeferredRequest, withGenerationRequest, 
 import { displayModelName } from "@/lib/models";
 import { isVerifiedTextModel } from "@/lib/atomikModelPolicy";
 import { ENHANCE_DEADLINE_MS, ENHANCE_MIN_PROVIDER_MS, type PaidTextResult, paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure, quotePaidText, requestMaxCredits, runPaidText } from "@/lib/paidText";
+import { enhanceStream } from "@/lib/enhanceStream";
 import { getPlatformLayer } from "@/lib/platform";
 import { textModelFor } from "@/lib/platformLayer";
 import { getSetting } from "@/lib/settings";
@@ -85,53 +86,21 @@ export const POST = withTenant(async function POST(req: Request) {
         await result.abandon?.("The answer was not a prompt.");
         return NextResponse.json({ error: parsed.reason, nothingBilled: true }, { status: 502 });
       }
-      if (stream && result.finish && result.abandon) return streamAnswer({ result, prompt: parsed.prompt, provider, writer, claim: claim! });
+      if (stream && result.finish && result.abandon) return streamAnswer({ result, prompt: parsed.prompt, provider, writer, claim: claim!, signal: req.signal });
       return NextResponse.json({ prompt: parsed.prompt, provider, writer }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);
 });
 
-/**
- * The answer, word by word (the owner, 16 Oct 2026): one JSON line per word, `{"t":"word "}`, paced to finish inside about a second, then the settlement,
- * then `{"done":true,"prompt","provider","writer"}`. The workspace is charged only when the last word is out. A reader that goes away midway (Cancel, a dropped
- * connection) cancels the stream, which abandons the answer: failed at zero, never charged, and the key replays that. The claim is ended here, not from the
- * body (lib/generationRequests.ts CLAIM_DEFERRED_HEADER).
- */
-function streamAnswer(o: { result: PaidTextResult; prompt: string; provider: EnhancerProvider; writer: string; claim: GenerationRequest }): Response {
-  const words = o.prompt.match(/\S+\s*/g) ?? [o.prompt];
-  const gap = Math.max(6, Math.min(40, Math.floor(1_200 / words.length)));
-  const encoder = new TextEncoder();
-  const line = (value: unknown) => encoder.encode(`${JSON.stringify(value)}\n`);
-  let over = false;
-  const end = async (status: number, body: unknown) => { over = true; await completeDeferredRequest(o.claim, status, JSON.stringify(body)).catch(() => {}); };
-  const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        for (const word of words) {
-          if (over) return;
-          controller.enqueue(line({ t: word }));
-          await new Promise((resolve) => setTimeout(resolve, gap));
-        }
-        if (over) return;
-        await o.result.finish!();
-        const answer = { prompt: o.prompt, provider: o.provider, writer: o.writer };
-        await end(200, answer);
-        controller.enqueue(line({ done: true, ...answer }));
-        controller.close();
-      } catch (error) {
-        if (over) return;
-        const message = error instanceof Error ? error.message : "The answer couldn't be delivered.";
-        await end(502, { error: message, nothingBilled: true });
-        try { controller.enqueue(line({ error: message, nothingBilled: true })); controller.close(); } catch { /* the reader is gone */ }
-      }
-    },
-    async cancel() {
-      if (over) return;
-      over = true;
-      await o.result.abandon!("The stream was cut off before the last word.").catch(() => {});
-      await completeDeferredRequest(o.claim, 499, JSON.stringify({ error: "Cancelled. Nothing billed.", nothingBilled: true })).catch(() => {});
-    },
+/** The answer, word by word, in its own module (lib/enhanceStream.ts: the phases, and what the claim replays for each). */
+function streamAnswer(o: { result: PaidTextResult; prompt: string; provider: EnhancerProvider; writer: string; claim: GenerationRequest; signal: AbortSignal }): Response {
+  const body = enhanceStream({
+    answer: { prompt: o.prompt, provider: o.provider, writer: o.writer },
+    finish: () => o.result.finish!(),
+    abandon: (why) => o.result.abandon!(why),
+    complete: (status, json) => completeDeferredRequest(o.claim, status, json),
+    signal: o.signal,
   });
   return new Response(body, { status: 200, headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no", [CLAIM_DEFERRED_HEADER]: "1" } });
 }
