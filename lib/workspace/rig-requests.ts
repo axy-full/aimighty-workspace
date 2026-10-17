@@ -45,6 +45,25 @@ export function shotRequestInput(
 export type NamedShotBody = { name: string; body: Record<string, unknown> };
 
 /**
+ * The request one ready shot would send: the same body the Rig's Generate builds, or null when the shot cannot be priced without a side effect (no production
+ * mapping yet, a reference not saved, no engine). `rigPlanRequests` is this for every ready shot; Director mode's bar (components/v12/board/director-shots.ts)
+ * is this for the shots in its scope, with its own settings laid over it.
+ */
+export function rigShotInput(project: Project, shot: RigShot): GenerationBodyInput | null {
+  if (shot.status !== "ready") return null;
+  const node = project.nodes.find((n) => n.id === shot.id);
+  const shotId = project.shotMappings?.[shot.id];
+  if (!node || !shotId || !project.productionProjectId) return null;
+  const refs = shotReferenceAssets(project, node);
+  const references = refs.flatMap((asset) => {
+    const identity = mediaReferenceIdentity(asset);
+    return identity ? [{ ...identity, role: shotReferenceRole(node)(asset) }] : [];
+  });
+  if (references.length !== refs.length) return null;
+  return shotRequestInput(project, node, shot, { shotId, productionProjectId: project.productionProjectId }, references);
+}
+
+/**
  * Bodies for every ready shot that can be priced without a side effect:
  * it already has a production mapping and every bound reference is already
  * saved (an upload or a generation). Shots that still need either are left
@@ -54,17 +73,7 @@ export type NamedShotBody = { name: string; body: Record<string, unknown> };
 export function rigPlanRequests(project: Project, shots: readonly RigShot[]): NamedShotBody[] {
   const out: NamedShotBody[] = [];
   for (const shot of shots) {
-    if (shot.status !== "ready") continue;
-    const node = project.nodes.find((n) => n.id === shot.id);
-    const shotId = project.shotMappings?.[shot.id];
-    if (!node || !shotId || !project.productionProjectId) continue;
-    const refs = shotReferenceAssets(project, node);
-    const references = refs.flatMap((asset) => {
-      const identity = mediaReferenceIdentity(asset);
-      return identity ? [{ ...identity, role: shotReferenceRole(node)(asset) }] : [];
-    });
-    if (references.length !== refs.length) continue;
-    const input = shotRequestInput(project, node, shot, { shotId, productionProjectId: project.productionProjectId }, references);
+    const input = rigShotInput(project, shot);
     if (input) out.push({ name: shot.name, body: generationRequestBody(input) });
   }
   return out;

@@ -1,0 +1,31 @@
+/*
+ * The Shots step on a v25 board (components/v12/board/V25ShotsStage.tsx; design/particl-prototype-25). Under the .v12 root only; app/graphite.css tokens only.
+ * Real layout sizes: the grid gains columns with the window and nothing is scaled, so text and borders are drawn at their own size on any screen.
+ * No transform on anything with text: the dock is centred by flex.
+ */
+.v12 .v25-shots { position: absolute; inset: 0; z-index: 22; background: var(--gx-root); overflow: auto; container-type: inline-size; }
+.v12 .v25-shots-grid {
+  display: grid; gap: var(--gx-sp-16); align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: var(--gx-sp-24) var(--gx-sp-24) 160px 149px; box-sizing: border-box; min-height: 100%;
+}
+.v12 .v25-shots[data-mode="director"] .v25-shots-grid { padding-right: 268px; }
+@container (min-width: 760px) { .v12 .v25-shots-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (min-width: 1040px) { .v12 .v25-shots-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (min-width: 1400px) { .v12 .v25-shots-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@container (min-width: 1800px) { .v12 .v25-shots-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+
+.v12 .v25-shots-col { position: fixed; right: var(--gx-sp-16); top: 140px; z-index: 24; }
+.v12 .v25-shots-dock { position: fixed; bottom: 20px; left: 149px; right: 268px; z-index: 24; display: flex; justify-content: center; pointer-events: none; padding: 0 var(--gx-sp-16); box-sizing: border-box; }
+.v12 .v25-shots-dock > * { pointer-events: auto; width: 100%; max-width: 720px; }
+.v12 .v12-dirbar-ask .v12-bd-bar { position: static; transform: none; width: 100%; left: auto; bottom: auto; }
+
+/* A narrow window: the grid keeps its two columns under the rail; the column folds above it and the dock spans the width. */
+@media (max-width: 899px) {
+  .v12 .v25-shots-grid { padding: var(--gx-sp-16) var(--gx-sp-16) 220px 108px; }
+  .v12 .v25-shots[data-mode="director"] .v25-shots-grid { padding-right: var(--gx-sp-16); }
+  .v12 .v25-shots-col { position: static; padding: var(--gx-sp-16) var(--gx-sp-16) 0 108px; }
+  .v12 .v25-shots-dock { left: 0; right: 0; }
+}
+
+/* The earlier ask bar (Agent mode) stays reachable over the grid. */
+.v12 .v12-stage-canvas:has(.v25-shots) .v12-bd-bar { z-index: 24; }

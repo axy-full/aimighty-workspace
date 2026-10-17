@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState, type ReactNode } from "react";
-import { Menu, MoreDots, Tooltip, type MenuItem } from "@/components/v12/ui";
+import { Menu, MoreDots, Segment, Tooltip, type MenuItem } from "@/components/v12/ui";
+import type { BoardMode } from "@/lib/v12/board/board-data";
 
 /**
  * The stage header (docs/redesign/inventory.md § 6.4; prototype L270–L272): 44 px; breadcrumbs board › stage ›
@@ -8,7 +9,7 @@ import { Menu, MoreDots, Tooltip, type MenuItem } from "@/components/v12/ui";
  * action lives, and ⋯ (Board menu). `primary` is null on every other stage: what needs a person elsewhere shows in
  * the rail's markers.
  */
-export function StageHeader({ board, stage, meta, selection, primary, menu, badge, viewOnly, onBoard, onStage }: {
+export function StageHeader({ board, stage, meta, selection, primary, menu, badge, viewOnly, mode, onBoard, onStage }: {
   board: string;
   stage: string | null;
   meta: string | null;
@@ -20,6 +21,11 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, badg
   badge?: ReactNode;
   /** A teammate's board, to look at: whose it is ("<name>'s board · view only"), said in the header; such a header has no primary. */
   viewOnly?: string | null;
+  /**
+   * The v25 boards' mode switch, Agent or Director, kept per person (lib/v12/board/board-data.ts): Agent asks Atomik and approves a plan; Director sets the step and
+   * presses its button. Absent on the earlier boards. `why` turns it off (a teammate's board, the sample).
+   */
+  mode?: { value: BoardMode; onChange: (mode: BoardMode) => void; why?: string | null };
   /** The board name: back to the first stage. */
   onBoard?: () => void;
   /** The stage name: clears the selection. */
@@ -40,6 +46,15 @@ export function StageHeader({ board, stage, meta, selection, primary, menu, badg
         {viewOnly ? <span className="v12-stagehead-view" data-testid="v12-view-only" role="status">{viewOnly}</span> : null}
       </span>
       <span className="v12-stagehead-right">
+        {mode ? (
+          <span className="v12-stagehead-mode" data-testid="v12-mode-switch" title={mode.why ?? undefined}>
+            <Segment<BoardMode> label="Mode" size="sm" value={mode.value} onChange={(next) => { if (!mode.why) mode.onChange(next); }}
+              options={[
+                { id: "agent", label: "Agent", disabled: Boolean(mode.why), tooltip: { name: "Agent", line: "Tell Atomik what you want; approve the plan." } },
+                { id: "director", label: "Director", disabled: Boolean(mode.why), tooltip: { name: "Director", line: "Set the step yourself; press its button." } },
+              ]} />
+          </span>
+        ) : null}
         {primary ? <button type="button" className="v12-primary" onClick={primary.run} data-testid="v12-stage-primary">{primary.label}</button> : null}
         {menu ? <><Tooltip name="Board menu">
           <button ref={anchor} type="button" className="v12-stagehead-menu" aria-label="Board menu" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} data-testid="v12-board-menu"><MoreDots /></button>

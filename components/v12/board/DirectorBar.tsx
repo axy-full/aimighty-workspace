@@ -4,7 +4,7 @@ import { spendAttrsOf } from "@/lib/spend";
 import { Price } from "../ui/Price";
 import { knownQuote } from "@/lib/v12/quote";
 import { useEffect } from "react";
-import { barButton, nextStepLabel, type Scope } from "./director-model";
+import { barButton, nextStepOf, type Scope } from "./director-model";
 import { useDirectorRender, type DirectorRender, type DirectorShot } from "./use-director-render";
 import "./director.css";
 
@@ -35,10 +35,10 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, stages, step, 
   /** The bar's state and progress as they change, for the cards ("Making…") and the column. */
   onState?: (render: Pick<DirectorRender, "state" | "finished" | "total">) => void;
   /** After "Next: …" is pressed: the board opens the next step. */
-  onNext?: (nextLabel: string | null) => void;
+  onNext?: (next: { id: string; label: string } | null) => void;
 }) {
   const render = useDirectorRender({ scope: scopeKey, projectKey, shots, readOnly });
-  const next = nextStepLabel(stages, step);
+  const next = nextStepOf(stages, step);
   useEffect(() => { onState?.({ state: render.state, finished: render.finished, total: render.total }); }, [onState, render.state, render.finished, render.total]);
   const { state, price, pricing, problem, canCancel } = render;
   const progress = { finished: render.finished, total: render.total };
@@ -46,7 +46,7 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, stages, step, 
   const onCancel = () => void render.cancel();
   const onTryAgain = render.tryAgain;
   const goNext = () => { onNext?.(next); render.reset(); };
-  const label = barButton({ state, scope, next });
+  const label = barButton({ state, scope, next: next?.label ?? null });
   const making = state === "sending" || state === "making";
   const priced = state === "idle" && price !== null;
   const off = readOnly != null || (state === "idle" && (pricing !== "ready" || !scope.ids.length));

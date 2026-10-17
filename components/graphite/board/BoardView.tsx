@@ -75,6 +75,12 @@ import { BoardBar } from "@/components/v12/board/BoardBar";
 import { useOverlay } from "@/components/v12/ui/overlay";
 import { StageRail, type StageEdit } from "@/components/v12/board/StageRail";
 import { StageHeader } from "@/components/v12/board/StageHeader";
+import { StepRail } from "@/components/v12/board/StepRail";
+import { railStepsOf } from "@/components/v12/board/rail-stages";
+import { V25ShotsStage } from "@/components/v12/board/V25ShotsStage";
+import { v25BoardOn } from "@/lib/v12/board/v25";
+import { modeOf, withMode, type BoardMode } from "@/lib/v12/board/board-data";
+import { shotTakes } from "./cards/take/take-model";
 import { StageEmpty } from "@/components/v12/board/StageEmpty";
 import { cleanLanguages } from "@/lib/v12/deliver";
 import { isDubbingLanguage } from "@/lib/workbench/dubbing-options";
@@ -188,6 +194,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const madeHere = useMemo<MadeEntry[]>(() => madeNow.filter((m) => m.projectId === project?.id).map((m) => ({ nodeId: m.nodeId })), [madeNow, project?.id]);
   /* The new interface (docs/redesign-plan.md P2-a): one stage at a time, each a slice of today's cards (lib/v12/board/stages.ts). */
   const v12Frame = v12 && !compact;
+  /* The v25 parts (the stepper rail, the v25 card, the preview and Director on Shots) on the boards behind the switch that opt in: the house, for now (lib/v12/board/v25.ts). */
+  const session = useSession();
+  const v25 = v25BoardOn({ newInterface: v12Frame, workspaceId: session.workspace?.id ?? null, param: shell.params.v25 ?? null });
   /* A client round's cards (redesign P2-c) belong to the new frame alone: today's board, and the compact one, never show them. */
   const allCards = useMemo(() => (src ? [...roundCardsFor(registry.derive(src), v12Frame), ...madeCards(src, madeHere)] : []), [madeHere, registry, src, v12Frame]);
   const savedStages = project?.boardStages;
@@ -216,6 +225,11 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const layoutDefs = useMemo(() => (gridAcross ? gridDefs(registry.defs, cards, project?.aspect ?? "16:9", gridAcross) : registry.defs), [gridAcross, registry.defs, cards, project?.aspect]);
   const placed = useMemo(() => placeBoard(cards, layoutDefs, board.bands, project?.aspect ?? "16:9"), [cards, layoutDefs, board.bands, project?.aspect]);
   const status = useMemo(() => railStatus(board.rail, placed.cards), [board.rail, placed.cards]);
+  /* The v25 rail's steps are the board's stages (renames, order, skipped; a removed one is not there), each with the words its status already has. */
+  const railSteps = useMemo(() => railStepsOf(stages, {
+    status: (id) => { const st = stages.find((x) => x.id === id); return st ? stageStatus(st, allCards, flavor).summary : ""; },
+    done: (id) => { const st = stages.find((x) => x.id === id); return st ? stageStatus(st, allCards, flavor).state === "done" : false; },
+  }), [stages, allCards, flavor]);
   /* A fresh board (nothing on any stage) keeps today's way in; a stage with nothing on it says what goes there. */
   const empty = !!project && (v12Frame ? allCards.length === 0 : placed.cards.length === 0);
   const stageIsEmpty = v12Frame && !empty && stageOwn.length === 0 && !page;
@@ -248,6 +262,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* The Rig, the new interface's fourth view (components/v12/rig): what feeds what. `v=rig` opens on it. */
   const [rigView, setRigView] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("v") === "rig");
   const rigOn = v12Frame && rigView && !list;
+  /* The Shots step draws the v25 grid once the board has shots; before then the stage keeps its own empty state. */
+  const v25Shots = v25 && stage?.id === "shots" && !list && !rigOn && !page && !!project && shotTakes(project, items).length > 0;
   /* The Rig's reading of the whole board (every stage's cards, not only this stage's). */
   const rigModelNow = useMemo(() => (rigOn && project ? rigModel({ cards: allCards, project, library: items }) : null), [rigOn, allCards, project, items]);
   const glide = useCallback((to: RegionId | { card: string }) => {
@@ -634,7 +650,14 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const dockWidth = DOCK_PANEL && dockOpen ? DOCK_WIDTH.open : DOCK_WIDTH.closed;
   const style = { "--board-dock": `${dockWidth}px`, "--board-make": shell.make ? `${MAKE_WIDTH}px` : "0px" } as CSSProperties;
   /* ── The new interface's stages (lib/v12/board/stages.ts) ── */
-  const { userId } = useSession();
+  const { userId } = session;
+  /* How this person works the board, kept in the draft per person (lib/v12/board/board-data.ts): Agent unless they chose Director. */
+  const boardMode: BoardMode = modeOf(project?.boardMode, userId ?? null);
+  const setMode = useCallback((next: BoardMode) => {
+    if (!userId) return;
+    const refusal = rig.apply((p) => ({ ...p, boardMode: withMode(p.boardMode, userId, next) }));
+    if (refusal) ws.toast(refusal);
+  }, [rig, userId, ws]);
   const goStage = useCallback((id: string) => {
     if (list) setList(false);
     pick(new Set(), null);
@@ -773,6 +796,8 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     ...(v12Frame && blocking ? [{ id: "blocking", label: "3D blocking", onSelect: () => openBlocking(blocking) }] : []),
     { id: "fit", label: "Fit to view", shortcut: "0", onSelect: () => void flow.fitView({ padding: 0.08, duration: GLIDE_MS, ease: glideEase }) },
     ...(freeCards.length && !offline ? [{ id: "tidy", label: "Tidy", onSelect: () => void tidy() }] : []),
+    /* The v25 rail has no kind label to cycle (the earlier rail's top): the kind changes from here. */
+    ...(v25 && !viewing && !offline && !gate.exploreOnly ? [{ id: "kind", label: `Board kind · ${KIND_LABEL[flavor]}`, hint: "Change", onSelect: changeKind }] : []),
     /* Author only: a teammate's board is view-only and a sample is nobody's to share. */
     ...(v12Frame && !viewing && !offline && !gate.exploreOnly ? [{ id: "share-team", label: teamShared ? SHARE_TEAM.stop : SHARE_TEAM.share, tip: SHARE_TEAM.tip, testId: "v12-menu-share-team", onSelect: toggleShare }] : []),
   ];
@@ -780,14 +805,18 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   return (
     <BoardInternalsProvider value={internals}>
       <div className="bd" style={style} data-testid="board" data-board-kind={kind} data-tool={tool} data-offline={offline || undefined} data-sample={gate.exploreOnly ? "1" : undefined} data-v12={v12Frame || undefined} data-stage={stage?.id}>
-        {v12Frame ? (
+        {v12Frame && !v25 ? (
           <StageRail kindLabel={KIND_LABEL[flavor]} onKind={changeKind} stages={stages} current={stage?.id ?? null} status={(st) => stageStatus(st, allCards, flavor)}
             readOnly={offline ? "Offline" : gate.readOnly ?? null} onPick={goStage} onEdit={editStages} addBlocked={stageLimit(stages.length)} />
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">
-          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
+          {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing}
+            mode={v25 ? { value: boardMode, onChange: setMode, why: viewing ? "A teammate's board is view only" : offline ? "Offline" : gate.readOnly ?? gate.exploreOnly ?? null } : undefined} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
             onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
           <StageColumn on={v12Frame}>
+          {v25 ? (
+            <StepRail steps={railSteps} current={stage?.id ?? null} onPick={goStage} onEdit={editStages} readOnly={Boolean(offline || gate.readOnly || gate.exploreOnly)} />
+          ) : null}
           {list ? <List ctx={ctx} cards={placed.cards} /> : (
             <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline || Boolean(viewing)} onMoveEnd={onMoveEnd} zoomBase={scale}
               placing={tool === "note" || tool === "text"} onPlace={place}
@@ -817,12 +846,16 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           {stageIsEmpty && stage && !list ? <StageEmpty empty={stageEmpty(stage)} onAsk={() => ctx.askAtomik(`For the ${stage.label} stage: `)} /> : null}
           {rigOn ? <RigView model={rigModelNow!} project={project} scope={scope} userId={userId ?? null} apply={rig.apply} readOnly={offline || Boolean(gate.readOnly)}
             onStage={(id) => { setRigView(false); goStage(id); }} onAsk={(words) => { setDockOpen(true); window.setTimeout(() => ctx.askAtomik(words), 80); }} /> : null}
-          {v12Frame && !list && !empty ? (
+          {v25Shots ? (
+            <V25ShotsStage ctx={ctx} library={items} mode={boardMode} stages={stages} onNext={goStage}
+              ask={<BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")} onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />} />
+          ) : null}
+          {v12Frame && !list && !empty && !(v25Shots && boardMode === "director") ? (
             <BoardBar ctx={ctx} selection={crumb} onClearSelection={() => pick(new Set(), null)} tool={tool} onDisarm={() => setTool("select")}
               onAttach={(picked) => void upload(picked)} library={items} onAsked={() => setDockOpen(true)} />
           ) : null}
           {batch.offer && !list ? <NotifyAsk onTell={() => void batch.tellMe()} onNotNow={batch.notNow} /> : null}
-          {list || page || rigOn ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline || Boolean(viewing)} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
+          {list || page || rigOn || v25Shots ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline || Boolean(viewing)} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
           <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} base={scale} />
           {v12Frame ? <ViewSwitch view={list ? "list" : rigOn ? "rig" : "canvas"} onView={(v) => { setList(v === "list"); setRigView(v === "rig"); }} /> : null}
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}

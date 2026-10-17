@@ -73,12 +73,14 @@ export function barButton(input: { state: BarState; scope: Scope; next: string |
   return `Render ${input.scope.short}`;
 }
 
-/** The step after the current one on the rail: the next stage not skipped, by its label. Removed stages are not in `stages` (lib/v12/board/stages.ts drops them). */
-export function nextStepLabel(stages: readonly Pick<Stage, "id" | "label" | "skipped">[], current: string): string | null {
+/** The step after the current one on the rail: the next stage not skipped. Removed stages are not in `stages` at all (lib/v12/board/stages.ts drops them). */
+export function nextStepOf(stages: readonly Pick<Stage, "id" | "label" | "skipped">[], current: string): { id: string; label: string } | null {
   const at = stages.findIndex((s) => s.id === current);
   if (at < 0) return null;
-  return stages.slice(at + 1).find((s) => !s.skipped)?.label ?? null;
+  const next = stages.slice(at + 1).find((s) => !s.skipped);
+  return next ? { id: next.id, label: next.label } : null;
 }
+export const nextStepLabel = (stages: readonly Pick<Stage, "id" | "label" | "skipped">[], current: string): string | null => nextStepOf(stages, current)?.label ?? null;
 
 /** Cancel is offered only while a take is still held in the provider's queue: after that the provider has started it and a cancel is not ours to promise. */
 export const cancellable = (statuses: readonly string[]) => statuses.length > 0 && statuses.some((s) => s === "queued");
