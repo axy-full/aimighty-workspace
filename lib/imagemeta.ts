@@ -137,6 +137,14 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
     while (off + 9 < buf.length) {
       if (buf[off] !== 0xff) { off++; continue; }
       const marker = buf[off + 1];
+      // 0xFF after 0xFF is fill (JPEG B.1.1.2): the marker is the next non-0xFF
+      // byte. Reading the fill as a marker with a length used to skip a real
+      // SOF and take a later, fake one; decoders take the real one.
+      if (marker === 0xff) { off++; continue; }
+      // The frame header always precedes the first scan (and the end of the
+      // image). Reaching either without one is not a JPEG we can size: past
+      // SOS is entropy-coded data, where a "SOF" would be invented.
+      if (marker === 0xda || marker === 0xd9) return null;
       // SOF0-3, SOF5-7, SOF9-11, SOF13-15 carry the frame dimensions.
       const isSOF =
         (marker >= 0xc0 && marker <= 0xc3) ||
