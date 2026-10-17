@@ -3,8 +3,9 @@ import { recoveryRoute } from "@/lib/recovery";
 import { clientIp } from "@/lib/clientIp";
 import { crossOriginProblem } from "@/lib/requestOrigin";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
-import { askVisitorBar, cleanQuestion, visitorBarDoor, visitorBarEnabled, VISITOR_BAR_MAX_QUESTION } from "@/lib/visitor/bar";
-import { addressBucket, admitShared, networkBucket, VisitorLimiter } from "@/lib/visitor/limits";
+import { askVisitorBar, cleanQuestion, visitorBarDoor, visitorBarEnabled } from "@/lib/visitor/bar";
+import { addressBucket, admitShared, networkBucket } from "@/lib/visitor/limits";
+import { recordVisitorSpend } from "@/lib/visitor/ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +16,13 @@ export const dynamic = "force-dynamic";
  *
  * Off unless VISITOR_BAR_ENABLED=1. Off, it answers as a switched-off engine does (503, in words) before anything else
  * runs: no body read, no cookie, no database (the switch is read before the recovery wrapper opens its activity).
- * No session, no workspace, no credits: the bar charges nobody, and its cost is bounded by the platform-wide hourly
- * cap (lib/visitor/limits.ts). In order: the switch, the origin, a 4 KB body, a question of at most 500 characters,
- * the answers in flight, the model's door and the bar's own key (a misconfigured bar counts nothing and writes nothing),
- * the per-visitor limit (this process), the per-address, per-/48 and platform limits (shared, in the platform
- * database), then the model and the screen.
+ * No session, no workspace, no credits: the bar charges nobody. Its cost is bounded by the site's daily cap
+ * (lib/visitor/limits.ts) and written on the ledger as house spend marked "visitor" (lib/visitor/ledger.ts). In order:
+ * the switch, the origin, a 4 KB body, a question of at most 400 characters, the answers in flight, the model's door
+ * and the bar's own key (a misconfigured bar counts nothing and writes nothing), the per-visitor, per-address, per-/48
+ * and site limits (each a UTC day, shared, in the platform database), the model and the screen, then the ledger.
+ *
+ * Every limit, when it is reached, answers in the owner's words (17 Oct 2026): LIMIT_REACHED below.
  *
  * The log line carries ids, outcomes, timings and token counts only, never the question or the answer (CLAUDE.md
  * rule 17).
@@ -31,7 +34,8 @@ const BODY_LIMIT = 4096;
 const IN_FLIGHT = 4;
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
-const limiter = new VisitorLimiter();
+/** What the bar says when any limit is reached: the owner's words, exactly. */
+const LIMIT_REACHED = "That's all for today \u2014 request access to continue";
 let inFlight = 0;
 
 /** One-way and salted with the secret and fallbacks the review links and logins use: for counting, never for identifying anyone. */
@@ -61,17 +65,18 @@ const ask = recoveryRoute(async function ask(req: Request): Promise<Response> {
   const cookie = visitorCookie(req);
   const headers: Record<string, string> = { ...NO_STORE, ...(cookie.fresh ? { "Set-Cookie": setCookie(cookie.id, req) } : {}) };
   const reply = (body: Record<string, unknown>, status: number, extra: Record<string, string> = {}) => Response.json(body, { status, headers: { ...headers, ...extra } });
-  const tooLong = `Ask in ${VISITOR_BAR_MAX_QUESTION} characters or fewer.`;
+  /* Longer than VISITOR_BAR_MAX_QUESTION (or a body past 4 KB) is a limit reached too. */
+  const tooLong = () => reply({ error: LIMIT_REACHED }, 413);
   const noAnswer = () => reply({ error: "No answer just now. Try again in a moment." }, 503, { "Retry-After": "30" });
 
   let raw: unknown;
   try { raw = JSON.parse(await readBoundedText(req, BODY_LIMIT)); }
   catch (error) {
-    if (error instanceof RequestBodyError && error.status === 413) return reply({ error: tooLong }, 413);
+    if (error instanceof RequestBodyError && error.status === 413) return tooLong();
     return reply({ error: "Send a question." }, 400);
   }
   const asked = cleanQuestion(raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as { question?: unknown }).question : undefined);
-  if ("problem" in asked) return reply({ error: asked.problem === "long" ? tooLong : "Send a question." }, asked.problem === "long" ? 413 : 400);
+  if ("problem" in asked) return asked.problem === "long" ? tooLong() : reply({ error: "Send a question." }, 400);
 
   if (inFlight >= IN_FLIGHT) {
     log({ id, outcome: "busy", ms: Date.now() - started });
@@ -79,7 +84,7 @@ const ask = recoveryRoute(async function ask(req: Request): Promise<Response> {
   }
   const limited = (scope: string, retryAfterSeconds: number) => {
     log({ id, outcome: `limited:${scope}`, ms: Date.now() - started });
-    return reply({ error: "That's all the questions for now. Try again later, or use Request access." }, 429, { "Retry-After": String(retryAfterSeconds) });
+    return reply({ error: LIMIT_REACHED }, 429, { "Retry-After": String(retryAfterSeconds) });
   };
   /* Misconfigured (a model off the list, no direct door, no key of the bar's own): nothing is counted or sent. */
   const door = visitorBarDoor();
@@ -87,29 +92,26 @@ const ask = recoveryRoute(async function ask(req: Request): Promise<Response> {
     log({ id, outcome: door.reason, ms: Date.now() - started });
     return noAnswer();
   }
-  const visitor = hashed("visitor", cookie.id);
-  const mine = limiter.check(visitor);
-  if (!mine.ok) return limited(mine.scope, mine.retryAfterSeconds);
-
   inFlight++;
   try {
     let shared: Awaited<ReturnType<typeof admitShared>>;
     const ip = clientIp(req), network = networkBucket(ip);
-    try { shared = await admitShared(hashed("address", addressBucket(ip)), network ? hashed("network", network) : null); }
+    try { shared = await admitShared({ visitor: hashed("visitor", cookie.id), address: hashed("address", addressBucket(ip)), network: network ? hashed("network", network) : null }); }
     catch {
       /* The shared limits could not be read or written: refused, never let through. */
       log({ id, outcome: "limits_unavailable", ms: Date.now() - started });
       return noAnswer();
     }
     if (!shared.ok) return limited(shared.scope, shared.retryAfterSeconds);
-    limiter.take(visitor);
 
     const result = await askVisitorBar(asked.question);
     if (!result.ok) {
       log({ id, outcome: result.reason, ms: Date.now() - started });
       return noAnswer();
     }
-    log({ id, outcome: result.held ? `held:${result.held}` : "answered", ms: Date.now() - started, in_tokens: result.inTokens, out_tokens: result.outTokens });
+    /* MONEY: the model replied, so it cost something: house spend, marked "visitor". A miss never costs the visitor the answer. */
+    const ledger = await recordVisitorSpend({ id, model: result.model, usage: result.usage });
+    log({ id, outcome: result.held ? `held:${result.held}` : "answered", ms: Date.now() - started, in_tokens: result.inTokens, out_tokens: result.outTokens, ledger: ledger.recorded ? "recorded" : "not_recorded" });
     return reply({ answer: result.answer }, 200);
   } finally {
     inFlight--;
