@@ -190,7 +190,7 @@ const FLUX2_EDIT: DirectTool = {
   describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-/** An AI-made character: portrait, character sheet, cast member and identity under one price. Never a draft (it always asks a person). */
+/** An AI-made character: portrait, character sheet, cast member and identity under one price. Never a draft (it always asks a person). An outside agent works as Agent mode does: no engine is offered or named (Particl picks it). */
 const CAST_CHARACTER: DirectTool = {
   def: {
     name: "cast_character",
@@ -202,7 +202,6 @@ const CAST_CHARACTER: DirectTool = {
       properties: {
         name: { type: "string", description: "The @name they are cited by: letters, digits and underscores, starting with a letter." },
         description: { type: "string", description: "Who they are, in a few words (up to 600 characters)." },
-        engine: { type: "string", description: "auto (default), flux2 or nanobanana." },
         sheet: { type: "boolean", description: "Also make their character sheet. Default true." },
         project_id: { type: "string", description: "The production. Optional." },
         request_id: { type: "string" },
@@ -212,7 +211,7 @@ const CAST_CHARACTER: DirectTool = {
   },
   present: castCharacterOn,
   prepared: (b) => `prepared: the character @${String(b.name)}${b.sheet === false ? "" : " with a character sheet"}`,
-  request: (a) => ({ path: "/api/cast-character", body: { name: str(a.name), description: str(a.description), engine: str(a.engine), sheet: typeof a.sheet === "boolean" ? a.sheet : undefined, projectId: str(a.project_id) } }),
+  request: (a) => ({ path: "/api/cast-character", body: { name: str(a.name), description: str(a.description), sheet: typeof a.sheet === "boolean" ? a.sheet : undefined, projectId: str(a.project_id) } }),
   describe: (out, quote) => `Character made.\n\nid: ${String(out.id)}\nprice: up to ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}`,
 };
 

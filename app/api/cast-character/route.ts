@@ -12,6 +12,10 @@ export const maxDuration = 300;
 /**
  * An AI-made character (lib/castCharacter.ts): portrait, character sheet, cast member and identity under one price and one approval. Quote with `quoteOnly`, or approve
  * (`maxCredits`) under an Idempotency-Key: the run goes on after the reply when it takes long, and a replay under the key gets its answer. AI-made only: no consent is asked.
+ *
+ * RECOVERY. A run past ANSWER_AFTER_MS is answered 409 `{ pending: true }` ("still being accepted") and goes on. The screen then follows it with GET `?versionId=`
+ * (each still's state, and the cast member and identity once made), and gets the final reply by asking again under the SAME Idempotency-Key. A new press under the same
+ * versionId (another key) is safe too: each still has its own claim (`cast:<version>:<role>:<attempt>`), so what is made or under way is never bought again.
  */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireRender();
