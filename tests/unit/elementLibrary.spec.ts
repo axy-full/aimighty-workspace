@@ -1,7 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import ts from "typescript";
+import { createClient, type Client, type InStatement } from "@libsql/client";
 import type { TenantWorkspace } from "../../lib/tenant";
 import {
   HANDLE_PATTERN, LOOK_LIBRARY_KIND, assignHandles, compatKindOf, cropDerivation, handleBase, isHandle,
@@ -243,8 +246,15 @@ async function rows() {
 test("the backfill fills every element once, and @Name resolves byte-for-byte as before", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   await runInTenant(workspace("ws_lib_a"), async () => {
-    const { fillLibrary } = await import("../../lib/elementLibrary.server");
+    const { fillLibraryForTests: fillLibrary } = await import("../../lib/elementLibrary.server");
     await seed();
+    /* Golden: the roster is real, so "before equals after" cannot pass on an empty one. */
+    const { listCast, expandCast } = await import("../../lib/cast");
+    const golden = expandCast(PROMPTS[0], await listCast("p1"), 0);
+    expect(golden.prompt).toBe("@Image1 walks past @Image2 at dusk; @Image1 looks back.\n\n@Image1 is Maya: Lead, red coat. @Image2 is Harbour: Wet cobbles at dusk.");
+    expect(golden.attach).toEqual(["up_maya1", "up_harbour"]);
+    expect(golden.used.map((m) => m.id)).toEqual(["c_maya1", "c_harbour"]);
+    expect(golden.missing).toEqual([]);
     const castBefore = await expansions();
     const rigBefore = await rigReads();
     const before = await rows();
@@ -277,7 +287,7 @@ test("handles are unique per workspace, case-blind; elements made since are caug
   const { runInTenant } = await import("../../lib/tenant");
   await runInTenant(workspace("ws_lib_a"), async () => {
     const { db } = await import("../../lib/db");
-    const { fillLibrary } = await import("../../lib/elementLibrary.server");
+    const { fillLibraryForTests: fillLibrary } = await import("../../lib/elementLibrary.server");
     // The index the fill created refuses a second @maya in this workspace, in any case.
     await expect(db().execute(`UPDATE elements SET handle = 'MAYA' WHERE id = 'el_rex'`)).rejects.toThrow(/unique|constraint/i);
 
@@ -291,7 +301,8 @@ test("handles are unique per workspace, case-blind; elements made since are caug
       fillLibrary(),
       db().execute(`UPDATE elements SET description = 'edited' WHERE id = 'el_maya1'`),
     ]);
-    expect(a.handles + b.handles).toBeGreaterThanOrEqual(2);
+    // The counts are what was written: the two late handles, once between the two fills.
+    expect(a.handles + b.handles).toBe(2);
     const now = await rows();
     const late = now.find((r) => r.id === "el_late")!;
     const late2 = now.find((r) => r.id === "el_late2")!;
@@ -307,7 +318,7 @@ test("a fill that dies leaves nothing half-written, and the next run finishes it
   const { runInTenant } = await import("../../lib/tenant");
   await runInTenant(workspace("ws_lib_crash"), async () => {
     const { db } = await import("../../lib/db");
-    const { fillLibrary } = await import("../../lib/elementLibrary.server");
+    const { fillLibraryForTests: fillLibrary } = await import("../../lib/elementLibrary.server");
     await seed([...SEEDS, { id: "el_crash", project: "p1", kind: "prop", name: "Crash Here", at: 30 }]);
     // A simulated crash part-way through the write.
     await db().execute(`CREATE TRIGGER fill_crash BEFORE UPDATE OF handle ON elements WHEN NEW.handle = 'crash_here'
@@ -328,7 +339,7 @@ test("a fill that dies leaves nothing half-written, and the next run finishes it
 test("tenant isolation: the same handle lives in two workspaces, and neither reads the other", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   await runInTenant(workspace("ws_lib_b"), async () => {
-    const { fillLibrary } = await import("../../lib/elementLibrary.server");
+    const { fillLibraryForTests: fillLibrary } = await import("../../lib/elementLibrary.server");
     await seed([{ id: "el_b_maya", project: "p1", kind: "character", name: "Maya", at: 1 }]);
     await fillLibrary();
     const b = await rows();
@@ -343,14 +354,14 @@ test("tenant isolation: the same handle lives in two workspaces, and neither rea
     expect((await rows()).map((r) => r.id)).toEqual(["el_b_maya"]);
   });
   // No workspace in scope: no data.
-  const { fillLibrary } = await import("../../lib/elementLibrary.server");
+  const { fillLibraryForTests: fillLibrary } = await import("../../lib/elementLibrary.server");
   await expect(fillLibrary()).rejects.toThrow();
 });
 
 test("the switch: off writes and reads nothing; on, only the house workspace (or a listed one) sees the Library", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
-  const { listLibrary, v30LibraryOn } = await import("../../lib/elementLibrary.server");
+  const { fillLibrary, listLibrary, v30LibraryOn } = await import("../../lib/elementLibrary.server");
   const prior = process.env.V30_LIBRARY;
   try {
     delete process.env.V30_LIBRARY;
@@ -358,7 +369,8 @@ test("the switch: off writes and reads nothing; on, only the house workspace (or
       await seed([{ id: "el_h_maya", project: "p1", kind: "character", name: "Maya", at: 1 }, { id: "el_h_dock", project: null, kind: "location", name: "Dock", at: 2 }]);
       expect(await v30LibraryOn()).toBe(false);
       expect(await listLibrary("p1")).toBeNull();
-      for (const r of await rows()) expect(r.handle).toBeNull();
+      expect(await fillLibrary()).toBeNull();
+      for (const r of await rows()) expect([r.handle, r.library_kind, r.origin, r.library_status]).toEqual([null, null, null, null]);
     });
 
     process.env.V30_LIBRARY = "1";
@@ -366,7 +378,8 @@ test("the switch: off writes and reads nothing; on, only the house workspace (or
       await seed([{ id: "el_c_maya", project: "p1", kind: "character", name: "Maya", at: 1 }]);
       expect(await v30LibraryOn()).toBe(false);
       expect(await listLibrary()).toBeNull();
-      for (const r of await rows()) expect(r.handle).toBeNull();
+      expect(await fillLibrary()).toBeNull();
+      for (const r of await rows()) expect([r.handle, r.library_kind, r.origin, r.library_status]).toEqual([null, null, null, null]);
     });
     await runInTenant(workspace(HOUSE_WORKSPACE_ID), async () => {
       expect(await v30LibraryOn()).toBe(true);
@@ -387,7 +400,92 @@ test("source: the Library writer never writes kind, the cast, or anything a pric
   expect(code).not.toMatch(/cast_members/);
   expect(code).not.toMatch(/\bSET\s+kind\b|,\s*kind\s*=/i);
   expect(code).not.toMatch(/INSERT|DELETE/i);
-  const writes = [...code.matchAll(/UPDATE\s+(\w+)\s+SET([^`]*)/gi)];
+  // One update, on elements, whose column comes from the closed list of the four new columns.
+  const writes = [...code.matchAll(/UPDATE\s+(\w+)\s+SET\s+([^`]*)`/gi)];
   expect(writes.map((w) => w[1])).toEqual(["elements"]);
-  expect(writes[0][2].match(/(\w+)\s*=/g)!.map((s) => s.replace(/\s*=$/, "")).filter((c) => c !== "id")).toEqual(["handle", "library_kind", "origin", "library_status"]);
+  expect(writes[0][2]).toBe("${column} = ? WHERE id = ? AND ${column} IS NULL");
+  expect(code).toContain(`const COLUMNS = ["handle", "library_kind", "origin", "library_status"] as const;`);
+});
+
+test("source: the unchecked fill is for tests only", () => {
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const full = path.join(dir, name);
+      if (statSync(full).isDirectory()) { if (name !== "node_modules") walk(full); } else if (/\.(ts|tsx|mjs|js)$/.test(name)) files.push(full);
+    }
+  };
+  for (const root of ["lib", "app", "components"]) walk(path.resolve(root));
+  const users = files.filter((f) => readFileSync(f, "utf8").includes("fillLibraryForTests"));
+  expect(users.map((f) => path.relative(process.cwd(), f))).toEqual(["lib/elementLibrary.server.ts"]);
+});
+
+/* ── A real conflict between the fill's read and its write ──────────────── */
+
+function load<T>(source: string, deps: Record<string, unknown>): T {
+  const filename = path.resolve(source), req = createRequire(filename);
+  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText;
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", compiled)(
+    (name: string) => (Object.hasOwn(deps, name) ? deps[name] : req(name)),
+    mod, mod.exports,
+  );
+  return mod.exports as T;
+}
+
+const sqlOf = (stmt: InStatement | string) => (typeof stmt === "string" ? stmt : stmt.sql);
+
+test("a handle another fill commits between this fill's read and its write: the write rolls back, and the late row takes the next suffix", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const ws = workspace("ws_lib_race");
+  await runInTenant(ws, async () => {
+    const { fillLibraryForTests } = await import("../../lib/elementLibrary.server");
+    await seed([{ id: "el_r_maya", project: "p1", kind: "character", name: "Maya", at: 1 }]);
+    await fillLibraryForTests();   // @maya, and the unique handle index
+  });
+
+  /* Two connections to one database: this fill's, and the "other process". Both late Mayas are unfilled. */
+  const mine = createClient({ url: ws.dbUrl }), other = createClient({ url: ws.dbUrl });
+  await mine.batch([
+    `INSERT INTO elements (id, project_id, kind, name, created_at, updated_at) VALUES ('el_r_late', 'p1', 'character', 'Maya', 2, 2)`,
+    `INSERT INTO elements (id, project_id, kind, name, created_at, updated_at) VALUES ('el_r_later', 'p1', 'character', 'Maya', 3, 3)`,
+  ], "write");
+  let raced = 0;
+  const batches: string[][] = [];
+  const client = new Proxy(mine, {
+    get(target, prop) {
+      if (prop === "batch") return async (stmts: (InStatement | string)[], mode?: never) => {
+        batches.push(stmts.map(sqlOf));
+        /* The first write only: just before it lands, another fill gives @maya_2 to the later Maya, the handle this
+           fill read as free and planned for the earlier one. */
+        if (!raced && stmts.some((s) => /UPDATE elements SET handle/i.test(sqlOf(s)))) {
+          raced++;
+          await other.execute(`UPDATE elements SET handle = 'maya_2' WHERE id = 'el_r_later' AND handle IS NULL`);
+        }
+        return target.batch(stmts as never, mode);
+      };
+      const value = Reflect.get(target, prop);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as Client;
+
+  const library = load<typeof import("../../lib/elementLibrary.server")>("lib/elementLibrary.server.ts", {
+    "./db": { db: () => client, ready: async () => {} },
+    "./newInterface.server": { newInterfaceFor: async () => true },
+    "./tenant": await import("../../lib/tenant"),
+    "./elementLibrary": await import("../../lib/elementLibrary"),
+  });
+  const filled = await library.fillLibraryForTests();
+
+  expect(raced).toBe(1);
+  // The first write was refused whole, and the fill read again and wrote once more.
+  expect(batches.filter((b) => b.some((s) => /UPDATE elements/i.test(s)))).toHaveLength(2);
+  const handles = Object.fromEntries((await mine.execute(`SELECT id, handle FROM elements ORDER BY id`)).rows.map((r) => [String(r.id), r.handle]));
+  expect(handles).toEqual({ el_r_maya: "maya", el_r_later: "maya_2", el_r_late: "maya_3" });
+  // Only what this fill wrote is counted: the late Maya's handle, not the one the other fill wrote.
+  expect(filled.handles).toBe(1);
+  expect(filled.kinds).toBe(2);
+  mine.close(); other.close();
 });

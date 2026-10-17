@@ -949,7 +949,7 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       await addColumn("attribute_versions", `sha256 TEXT`);
       /* The v30 Library's columns (docs/plans/v30-data-model.md § 6.1, M9): an @handle unique in this workspace, the v30
          kind beside today's `kind` (never rewritten: elementKind() reads a kind it does not know as a character), where it
-         came from, active or draft. Nullable and read by nothing today; lib/elementLibrary.ts fills them, and creates the
+         came from, active or draft. Nullable and read by nothing today; lib/elementLibrary.server.ts fills them, and creates the
          unique handle index after filling, only when V30_LIBRARY is on for the workspace. */
       for (const col of [`handle TEXT`, `library_kind TEXT`, `origin TEXT`, `library_status TEXT`]) {
         await addColumn("elements", col);

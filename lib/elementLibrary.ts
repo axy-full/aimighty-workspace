@@ -58,7 +58,8 @@ export const HANDLE_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
 
 /**
  * The engines' own citations are never a handle: `image<N>` and `video<N>` (which expandCast leaves alone) and
- * `audio<N>` (plan § 6.3). The bare words are reserved too, as the cast's nameProblem() already refuses them.
+ * `audio<N>` (plan § 6.3). The bare words are reserved too: the cast's nameProblem() already refuses bare `image` and
+ * `video` as names, and bare `audio` is held back with them (stricter than the plan).
  */
 export function isReservedHandle(handle: string): boolean {
   return /^(image|video|audio)\d*$/i.test(handle);
@@ -79,7 +80,7 @@ function cut(s: string, max: number): string {
  * usable in it ("माया", "!!!") is its kind alone.
  */
 export function handleBase(name: string, kind: LibraryKind): string {
-  const plain = name.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const plain = name.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
   const base = plain.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   if (!base) return kind;
   return cut(/^[a-z]/.test(base) ? base : `${kind}_${base}`, HANDLE_MAX);
@@ -113,7 +114,11 @@ export function assignHandles(candidates: readonly HandleCandidate[], taken: Ite
 
 /* ── Origin ─────────────────────────────────────────────────────────────
    Written once and never rewritten. Promoted from a take → generated; else what its first version stands on: a photo
-   someone brought → uploaded, a frame the product made or a trained likeness → generated; nothing at all → uploaded. */
+   someone brought → uploaded, a frame the product made or a trained likeness → generated; nothing at all → uploaded.
+
+   The edge case, on purpose: an element filled while it has no version (made by hand, or mirrored from a cast member
+   with no still) is `uploaded`, and stays `uploaded` if its first version is later a generated frame. Origin says
+   how the element came into the Library, decided once; it is not recomputed from versions added afterwards. */
 
 export type FirstVersion = { uploadId: string | null; genId: string | null; identityId: string | null } | null;
 
