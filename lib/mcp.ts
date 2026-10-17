@@ -87,6 +87,25 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "plan_step",
+    description:
+      "Prepare and price Atomik's quick plan for a board's step (Shots: render every shot that is not approved yet). The plan is made and priced by Particl's server " +
+      "from the step's quick answers, with no thinking turn. Nothing is rendered, reserved or spent, and you cannot approve it: the person who owns the board approves " +
+      "the plan once in Particl, at the price you are told. Works with a token made to prepare jobs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        board_id: { type: "string", description: "The board's project id (from create_board or the board's address). It must have been opened once in Particl." },
+        step: { type: "string", description: "The step. Only 'shots' for now (the default)." },
+        quality: { type: "string", description: "'draft' (default) or 'final'." },
+        length: { type: "number", description: "Seconds per shot: 3, 5 (default), 8 or 10." },
+        cards: { type: "string", description: "Comma-separated shot card ids to plan. Optional: every shot not approved yet." },
+        request_id: { type: "string", description: "Optional: unique to this plan; a retried call with it gets back the plan it made." },
+      },
+      required: ["board_id"],
+    },
+  },
+  {
     name: "wait_for_render",
     description:
       "Wait for a render to finish and report what it cost. Returns as soon as it succeeds or " +
@@ -203,6 +222,8 @@ export function makeCaller(origin: string, authorization: string) {
 }
 
 type Call = ReturnType<typeof makeCaller>;
+/** What /api/board-agent/plan answers (lib/workbench/plan-step-tool.ts). */
+type PlanStepReply = { id: string; step: string; priced: boolean; total: number | null; ceiling: number | null; approximate: boolean; shots: string[]; asks: number; reason: string | null; replaced?: boolean; needs: string };
 type Args = Record<string, string | number | boolean | undefined>;
 
 /**
@@ -239,6 +260,17 @@ export async function runTool(
   name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
 ): Promise<string> {
   switch (name) {
+    case "plan_step": {
+      if ("maxCredits" in args || "max_credits" in args || "approve" in args) throw new Error("The plan is not yours to approve: only a person approves spending, in Particl.");
+      const answers = { ...(args.quality !== undefined ? { quality: args.quality } : {}), ...(args.length !== undefined ? { length: args.length } : {}) };
+      const cards = typeof args.cards === "string" && args.cards.trim() ? args.cards.split(",").map((c) => c.trim()).filter(Boolean) : undefined;
+      const out = (await call("/api/board-agent/plan", { method: "POST", body: { boardId: args.board_id, step: args.step, answers, cards, requestId: args.request_id } })) as { plan: PlanStepReply };
+      const p = out.plan;
+      const replaced = p.replaced ? "Replaced the plan waiting on the board.\n" : "";
+      const shots = p.shots.map((title) => `- ${title}`).join("\n");
+      if (!p.priced) return `${replaced}Plan ${p.id} made for ${p.step}, not priced yet${p.reason ? `: ${p.reason}` : ""}.\n${shots}\n\n${p.needs}`;
+      return `${replaced}Plan ${p.id} · ${p.shots.length} ${p.shots.length === 1 ? "shot" : "shots"} · ${p.approximate ? "up to " : ""}${p.total} cr, at most ${p.ceiling} cr with fixes.\n${shots}${p.asks ? `\n${p.asks} ask${p.asks === 1 ? "s" : ""} on its own (over the per-job line).` : ""}\n\n${p.needs} Nothing was rendered or reserved.`;
+    }
     case "prepare_shot": {
       /* Files the job for a person (POST /api/prepared-jobs, a prepare token only); nothing is priced or sent. */
       const out = (await call("/api/prepared-jobs", { method: "POST", body: {
