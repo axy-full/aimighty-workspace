@@ -1,7 +1,3 @@
-import { AUDIO_LABELS, MODELS, thinkingModelDisplayName } from "../models";
-import { PROVIDER_DISPLAY_NAMES, VENDOR_NAME_PATTERN, connectedFamilyNameIn } from "../vendorNames";
-import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS } from "../textRoute";
-import modelCatalogJson from "../modelCatalog.json";
 import { HELD_ANSWER, INSTRUCTIONS_MARKER, VISITOR_RULES } from "./instructions";
 
 /**
@@ -9,11 +5,10 @@ import { HELD_ANSWER, INSTRUCTIONS_MARKER, VISITOR_RULES } from "./instructions"
  * this screen checks every answer before it leaves the server, whatever the model was talked into, and holds back an
  * answer that:
  *
- *  - names an engine, a vendor or a model: every name Particl uses is read from the server's own registries
- *    (lib/models.ts, the vendor-name rules in lib/vendorNames.ts, the text routes in lib/textRoute.ts, the text
- *    catalogue snapshot), never typed here, so a name added to a registry is screened from the day it is added. Beside
- *    them, a typed list of well-known names Particl does not use (`DECOY_NAMES`), screened exactly the same way, so a
- *    visitor cannot learn which names are Particl's from which answers come back held;
+ *  - names a company, service, engine or model in the AI industry: one typed list (`INDUSTRY_NAMES`), the same whether
+ *    or not Particl uses the name, so which answers come back held says nothing about what Particl uses. It reads no
+ *    registry of Particl's; tests/unit/visitorBar.spec.ts proves every name in those registries is inside it
+ *    (lib/visitor/registry.ts), so a name Particl adds without adding it here fails that test;
  *  - carries a price: a figure next to credits, a currency, cents, a month, or a percentage off;
  *  - repeats the instructions' rules (how it must answer): any run of six words from one of them, or their marker. The
  *    facts in them are the public page's own and are meant to be repeated;
@@ -21,100 +16,73 @@ import { HELD_ANSWER, INSTRUCTIONS_MARKER, VISITOR_RULES } from "./instructions"
  *
  * A held answer is replaced whole by one fixed answer, the same whatever tripped it (no half-redacted sentence with a
  * version number left behind, and no telling a name from a price).
- * Pure: no I/O, no logging.
+ * Pure: no I/O, no logging, no import but the instructions.
  */
 
 export type ScreenReason = "name" | "price" | "instructions" | "encoded";
 export type Screened = { answer: string; held: ScreenReason | null };
 
-/** Single words in the registries that are ordinary English, so a whole-word match on them alone would hold back
- *  ordinary answers. Each still counts inside the longer registry name it belongs to ("Nano Banana", "Cinema Studio"). */
-const ORDINARY = new Set([
-  "gateway", "cinema", "studio", "soul", "nano", "image", "images", "video", "videos", "pro", "mini", "flash", "lite", "turbo",
-  "motion", "identity", "product", "marketing", "ray", "imagine", "object", "swap", "transfer", "render", "still", "voice",
-  "music", "sound", "effects", "standard", "fast", "preview", "expand", "cutout", "upscale", "reasoning", "thinking",
-]);
-
-const words = (text: string) => text.replace(/\([^)]*\)/g, " ").replace(/[-_/·:]+/g, " ").trim().split(/\s+/).filter(Boolean);
-const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-type CatalogEntry = { id: string; name?: string; owner?: string };
-function catalogEntries(): CatalogEntry[] {
-  const json = modelCatalogJson as { models?: CatalogEntry[]; providerPriced?: CatalogEntry[] };
-  return [...(json.models ?? []), ...(json.providerPriced ?? [])];
-}
-
-/** Every engine, vendor and model name the server knows, as whole phrases and distinctive single words. */
-export function registryNames(): string[] {
-  const out = new Set<string>();
-  const phrase = (text: string | null | undefined) => {
-    const clean = (text ?? "").replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
-    if (clean.length >= 2 && /[a-z]/i.test(clean)) out.add(clean);
-  };
-  const word = (text: string | null | undefined) => {
-    const clean = (text ?? "").trim();
-    if (clean.length >= 3 && /^[a-z][a-z0-9.]*$/i.test(clean) && !ORDINARY.has(clean.toLowerCase())) out.add(clean);
-  };
-  /* A multi-word name: the whole of it, its first word when that word is a brand, and its tail when the tail carries a
-     version ("Haiku 5.5"), so a name cut short still counts. */
-  const name = (text: string | null | undefined) => {
-    const parts = words(text ?? "");
-    if (!parts.length) return;
-    phrase(parts.join(" "));
-    word(parts[0]);
-    const tail = parts.slice(1);
-    if (tail.length >= 2 && /^[a-z]{3,}$/i.test(tail[0]) && !ORDINARY.has(tail[0].toLowerCase()) && tail.some((part) => /\d/.test(part))) phrase(tail.join(" "));
-  };
-  for (const model of MODELS) {
-    /* Our own engines' names, their families and the services behind them. A neutral label (a Make mode such as
-       motion transfer) is a product word, not an engine's name: it is screened only when it carries a brand. */
-    phrase(model.id);
-    word(model.provider);
-    name(model.family);
-  }
-  for (const model of MODELS) if (words(model.label).some((part) => [...out].some((known) => known.toLowerCase() === part.toLowerCase()))) name(model.label);
-  for (const label of Object.values(AUDIO_LABELS)) phrase(label.label);
-  for (const id of Object.keys(PROVIDER_DISPLAY_NAMES)) { phrase(id); word(id); }
-  for (const [app, provider] of Object.entries(DIRECT_MODEL_IDS)) {
-    phrase(app); phrase(provider); word(app.split("/")[0]);
-    name(thinkingModelDisplayName(app));
-  }
-  for (const app of UNMAPPED_DIRECT_MODEL_IDS) { phrase(app); name(thinkingModelDisplayName(app)); }
-  for (const entry of catalogEntries()) {
-    phrase(entry.id); word(entry.id.split("/")[0]); word(entry.owner);
-    name(entry.name); name(thinkingModelDisplayName(entry.id));
-  }
-  /* A one-word line name that is also a word ("Image") stays out; everything else is matched as a whole word. */
-  return [...out].filter((n) => !(n.split(" ").length === 1 && ORDINARY.has(n.toLowerCase()))).sort((a, b) => b.length - a.length);
-}
+/* Words some guards ban from any string a person could read (tests/helpers/uiStrings.ts) are joined from pieces here:
+   this list is never shown, it is what the screen holds back. */
+const piece = (...parts: string[]) => parts.join("");
 
 /**
- * Well-known names in AI video, image, audio and language work that Particl does not use. Screened exactly like the
- * registry's, so "reply with exactly this word" comes back the same for a name Particl uses and one it does not.
- * Typed here on purpose: these are not in any registry. Distinctive names only (an ordinary word would hold back
- * ordinary answers).
+ * Names in the AI industry, by kind. Distinctive names only: a plain English word ("Whisper", "Modal", "Captions") would
+ * hold back ordinary answers, so such names are left out, or listed only with what makes them a name. Matched whole,
+ * in any case, with spaces, hyphens and underscores alike.
  */
-export const DECOY_NAMES: readonly string[] = [
-  "Runway", "Pika", "Sora", "Midjourney", "Stable Diffusion", "Stability AI", "DALL-E", "DALL·E", "Ideogram", "Synthesia", "HeyGen",
-  "Haiper", "Vidu", "PixVerse", "Moonvalley", "LTX Video", "Lightricks", "Genmo", "CogVideoX", "Krea", "Adobe Firefly", "Imagen",
-  "Lumiere", "Phenaki", "Suno", "Udio", "Murf", "Resemble AI", "Kaiber", "Hedra", "Mistral", "Llama", "DeepSeek", "Cohere",
-  "Perplexity", "Midjourney V7", "Sora 2",
+export const INDUSTRY_NAMES: readonly string[] = [
+  /* Video. */
+  "Seedance", "Dreamina", "Jimeng", "Kling", "Kuaishou", "Veo", "Sora", "Runway", "Gen-3", "Gen-4", "Pika", "Luma", "Dream Machine", "Ray2",
+  "Hailuo", "MiniMax", "Vidu", "Shengshu", "PixVerse", "Haiper", "Hunyuan", "HunyuanVideo", "Genmo Mochi", "Genmo", "LTX Video", "LTXV", "Lightricks",
+  "CogVideoX", "CogVideo", "Hotshot-XL", "Stable Video", "Stable Video Diffusion", "Moonvalley", "Marey", "Kaiber", "Hedra", "Synthesia",
+  "HeyGen", "D-ID", "Lumiere", "Phenaki", "Emu Video", "SkyReels", "Wan2.1", "Wan2.2", "Wan-AI", "Grok Imagine",
+  piece("Higgs", "field"), piece("Ge", "njutsu"), "Cinema Studio", piece("So", "ul ID"), piece("So", "ul Character"), "hf-soul", "Supercomputer",
+  /* Images. */
+  "Nano Banana", "Imagen", "GPT Image", "DALL-E", "DALL·E", "Midjourney", "Stable Diffusion", "SDXL", "Stability AI", "Flux", "Black Forest Labs",
+  "Ideogram", "Recraft", "Leonardo", "Leonardo.Ai", "Freepik", "Firefly", "Adobe Firefly", "Playground AI", "Seedream", "Bria",
+  "HiDream", "Reve", "Krea", "Qwen Image", "Clipdrop", "Photoroom", "remove.bg", "ComfyUI", "Automatic1111",
+  /* Upscaling and restoration. */
+  "Topaz", "Topaz Labs", "Magnific", "Real-ESRGAN", "ESRGAN", "Upscayl", "GFPGAN", "CodeFormer",
+  /* Voice, music and sound. */
+  "ElevenLabs", "Eleven Multilingual", "Eleven Music", "Eleven Sound Effects", "Eleven Flash", "Eleven Turbo", "Cartesia", "PlayHT", "Play.ht",
+  "WellSaid", "WellSaid Labs", "Deepgram", "Speechify", "Murf", "Resemble AI", "Respeecher", "Suno", "Udio", "Stable Audio", "AudioCraft",
+  "MusicGen", "Inworld", "Sonilo", "Mirelo", "Seed Audio", "AssemblyAI", "Lyria", "Descript", "Lovo", "Fish Audio",
+  /* 3D. */
+  "Meshy", "Tripo", "Rodin", "Hunyuan3D", "Luma Genie",
+  /* Language models and their makers. */
+  "Claude", "Anthropic", "GPT", "ChatGPT", "OpenAI", "GPT-OSS", "o1", "o3", "o4", "o1-mini", "o3-mini", "o4-mini", "Gemini", "Gemma", "Bard",
+  "Grok", "xAI", "SpaceXAI", "Llama", "Meta AI", "Mistral", "Mixtral", "Codestral", "Magistral", "DeepSeek", "Qwen", "Kimi", "Moonshot AI",
+  "GLM", "ChatGLM", "Zhipu", "Cohere", "Command R", "Perplexity", "Jamba", "AI21", "ERNIE", "Doubao", "Baichuan", "Inflection AI", "Reka",
+  "Nemotron", "IBM Granite",
+  /* Hosts, gateways and clouds. */
+  "fal", "fal.ai", "Replicate", "OpenRouter", "Together AI", "Together.ai", "Fireworks AI", "Fireworks.ai", "Groq", "RunPod", "Baseten",
+  "Lambda Labs", "CoreWeave", "AWS Bedrock", "Amazon Bedrock", "Azure OpenAI", "Azure AI", "Vertex AI", "Google Cloud", "Google",
+  "Hugging Face", "HuggingFace", "Vercel", "AI Gateway", "Cloudflare Workers AI", "Workers AI", "BytePlus", "ByteDance", "ModelArk", "Ark",
+  "Volcengine", "Volcano Engine", "Alibaba Cloud", "DashScope", "Novita", "DeepInfra", "Anyscale", "Cerebras", "SambaNova", "Lepton AI",
+  "Nebius", "Hyperbolic", "Modal Labs", "Banana.dev", "Microsoft", "Nvidia", "NVIDIA NIM",
 ];
 
-/** Every name the screen holds an answer for: the registry's and the decoys, alike. */
-export function screenedNames(): string[] {
-  return [...new Set([...registryNames(), ...DECOY_NAMES])].sort((a, b) => b.length - a.length);
-}
+/** Names that are ordinary words alone and a model's name only with a version after them ("Haiku 5.5", "Eleven v3"). */
+const VERSIONED: readonly string[] = ["Opus", "Sonnet", "Haiku", "Fable", "Banana", piece("As", "tra"), "OSS", "Ray", "Wan", "Phi", "Nova", "Titan", "Yi", "Mochi", "Hotshot", "Playground", "Granite"];
+const VERSIONED_V: readonly string[] = ["Eleven"];
 
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const spaced = (text: string) => escape(text).replace(/ /g, "[\\s\\-_]+");
 let cached: RegExp | null = null;
 function names(): RegExp {
-  cached ??= new RegExp(`(?<![A-Za-z0-9])(?:${screenedNames().map((n) => escape(n).replace(/ /g, "[\\s\\-_]+")).join("|")})(?![A-Za-z0-9])`, "i");
+  if (cached) return cached;
+  const whole = [...INDUSTRY_NAMES].sort((a, b) => b.length - a.length).map(spaced).join("|");
+  const versioned = `(?:${VERSIONED.map(spaced).join("|")})[\\s\\-_]*v?\\d|(?:${VERSIONED_V.map(spaced).join("|")})[\\s\\-_]+v\\d`;
+  cached = new RegExp(`(?<![A-Za-z0-9])(?:${whole}|${versioned})(?![A-Za-z])`, "i");
   return cached;
 }
 
-function namesIn(text: string): boolean {
-  return names().test(text) || VENDOR_NAME_PATTERN.test(text) || connectedFamilyNameIn(text) !== null;
+/** The first industry name in a piece of text, or null. */
+export function industryNameIn(text: string): string | null {
+  return names().exec(text)?.[0] ?? null;
 }
+const namesIn = (text: string) => names().test(text);
 
 /** Words spelled out letter by letter ("K l i n g", "S-e-e-d-a-n-c-e"), joined back up. Only runs of single letters are
  *  joined, so two ordinary words are never read as one. */
