@@ -284,7 +284,8 @@ INDEX (workspace_id, production_id, created_at)   INDEX (workspace_id, created_b
   - the provenance card;
   - `lib/errors.ts` `billingSentence` (it names the provider);
   - the jobs tray;
-  - Usage `byEngine`.
+  - Usage `byEngine`;
+  - `lib/workspaceExport.ts` (it exports `generations.*`, model included, and `take_provenance.recorded` with engine, model and provider for every take). Must use the serializer before A10 (A3 review, 17 Oct).
 
 ### 4.5 Which existing paths would write a job row (later, flag `V30_JOB_WIRING`, OFF)
 
