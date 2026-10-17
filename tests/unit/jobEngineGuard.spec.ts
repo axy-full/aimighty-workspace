@@ -14,11 +14,13 @@ import ts from "typescript";
  */
 
 /**
- * The files allowed to import lib/quotedJobs/* or lib/jobView.ts from outside them. EMPTY while v30 jobs have no route.
- * PR A9 (History read models) is planned to add its route here: a named, owner-visible addition in its own PR body,
- * which must keep going through lib/jobView.ts. An entry that no longer imports them fails, so the list cannot go stale.
+ * The files allowed to import lib/quotedJobs/* or lib/jobView.ts from outside them. An entry that no longer imports them
+ * fails, so the list cannot go stale.
+ *   - lib/history/read.ts: PR A9, the History read models, named in its PR body for the owner. It reads jobs and
+ *     instructions only through the store, whose every read is lib/jobView.ts output, and its route
+ *     (app/api/history/route.ts) imports it, not the store or the serializer.
  */
-const IMPORTERS: readonly string[] = [];
+const IMPORTERS: readonly string[] = [path.join("lib", "history", "read.ts")];
 
 const STORE = path.join("lib", "quotedJobs", "store.ts");
 const VIEW = path.join("lib", "jobView.ts");

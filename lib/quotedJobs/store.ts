@@ -1,6 +1,7 @@
 import type { Client, InStatement, Row, Transaction } from "@libsql/client";
 import { creditsApply } from "../credits";
 import { db, id as newId, now, ready } from "../db";
+import { DRAFT_PROJECT_PREFIX } from "../draftProject";
 import { failureCopy } from "../errors";
 import { jobCsv, jobErrorLine, publicCommand, publicJob, recreateRecipe, type PublicCommand, type PublicJob, type Recipe, type ViewOptions } from "../jobView";
 import { parseOutcome, type ProviderOutcome } from "../providerOutcome";
@@ -86,7 +87,75 @@ export type NewJob = {
   by: string;
 };
 
-export type JobFilter = { productionId?: string; stepId?: string; commandId?: string; limit?: number };
+export type JobFilter = {
+  productionId?: string;
+  stepId?: string;
+  commandId?: string;
+  limit?: number;
+  /* What v30 History (PR A9) filters on. Each narrows; none widens past the store's own workspace. */
+  /** The jobs of these instructions (at most 1,000 ids). */
+  commandIds?: readonly string[];
+  decider?: Decider;
+  /** Only the jobs that belong to no instruction. */
+  withoutCommand?: boolean;
+  /** Who asked for it. */
+  createdBy?: string;
+  /** `created_at` in [from, to), in ms. */
+  from?: number;
+  to?: number;
+  /**
+   * The viewer's private boards (lib/draftProject.ts, `prj_wb_…`): when given, a job of any OTHER private board is left
+   * out in the query, so a board the viewer may not see is never in a page or a count. Omitted: no board is left out.
+   */
+  visibleBoards?: readonly string[];
+  /** The page marker: only rows after this one in the store's order (newest first, then id). */
+  after?: PageMark;
+};
+
+/** One row's place in a list: newest first, then id ascending (the order every list here returns). */
+export type PageMark = { at: number; id: string };
+
+export type CommandFilter = Pick<JobFilter, "productionId" | "createdBy" | "from" | "to" | "visibleBoards" | "after" | "limit">;
+
+const BY = /^[^\u0000-\u001f]{1,200}$/;
+const MAX_IDS = 1000;
+const isTime = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
+/**
+ * The WHERE parts a History filter adds, for the table aliased `alias`, or null when the filter cannot match anything
+ * (a malformed id, an unknown decider): the caller then answers with no rows rather than widening the read.
+ */
+function narrowing(alias: "j" | "c", filter: JobFilter, where: string[], args: (string | number)[]): boolean {
+  if (filter.createdBy !== undefined) {
+    if (typeof filter.createdBy !== "string" || !BY.test(filter.createdBy)) return false;
+    where.push(`${alias}.created_by=?`);
+    args.push(filter.createdBy);
+  }
+  if (filter.from !== undefined) {
+    if (!isTime(filter.from)) return false;
+    where.push(`${alias}.created_at>=?`);
+    args.push(filter.from);
+  }
+  if (filter.to !== undefined) {
+    if (!isTime(filter.to)) return false;
+    where.push(`${alias}.created_at<?`);
+    args.push(filter.to);
+  }
+  if (filter.visibleBoards !== undefined) {
+    const visible = [...filter.visibleBoards];
+    if (visible.length > 10_000 || visible.some((id) => typeof id !== "string")) return false;
+    where.push(`(${alias}.production_id IS NULL OR ${alias}.production_id NOT GLOB ? OR ${alias}.production_id IN (SELECT value FROM json_each(?)))`);
+    args.push(`${DRAFT_PROJECT_PREFIX}*`, JSON.stringify(visible));
+  }
+  if (filter.after !== undefined) {
+    const mark = filter.after;
+    /* Any id the page ended on (a row of another source may be the last one): bound as an argument, never spliced. */
+    if (!mark || !isTime(mark.at) || typeof mark.id !== "string" || !mark.id || mark.id.length > 300) return false;
+    where.push(`(${alias}.created_at<? OR (${alias}.created_at=? AND ${alias}.id>?))`);
+    args.push(mark.at, mark.at, mark.id);
+  }
+  return true;
+}
 
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
 const ENGINE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
@@ -364,6 +433,45 @@ class JobStore {
     return row ? publicCommand(row, view) : null;
   }
 
+  /**
+   * The workspace's instructions for History (PR A9), newest first, narrowed by the filter. Read-only. Every row is the
+   * serializer's output: an instruction carries no engine.
+   */
+  async commands(filter: CommandFilter = {}): Promise<PublicCommand[]> {
+    const view = this.#scoped();
+    await this.ready();
+    const where = ["c.workspace_id=?"];
+    const args: (string | number)[] = [this.workspaceId];
+    if (filter.productionId !== undefined) {
+      if (!ID.test(filter.productionId)) return [];
+      where.push("c.production_id=?");
+      args.push(filter.productionId);
+    }
+    if (!narrowing("c", filter, where, args)) return [];
+    args.push(Math.max(1, Math.min(1000, Math.floor(filter.limit ?? 200))));
+    const rs = await this.#client.execute({ sql: `${COMMAND_READ} WHERE ${where.join(" AND ")} ORDER BY c.created_at DESC, c.id LIMIT ?`, args });
+    return rs.rows.map((row) => publicCommand(row, view));
+  }
+
+  /**
+   * Which of these meter records already belong to a job of this workspace (PR A9: such a record is in History as its
+   * job, never a second time as earlier work). Ids only; reads nothing else.
+   */
+  async claimedMeters(meterIds: readonly string[]): Promise<Set<string>> {
+    this.#scoped();
+    await this.ready();
+    const ids = [...new Set(meterIds)].filter((id) => typeof id === "string" && ID.test(id));
+    const out = new Set<string>();
+    for (let start = 0; start < ids.length; start += MAX_IDS) {
+      const rs = await this.#client.execute({
+        sql: "SELECT meter_id FROM quoted_jobs WHERE workspace_id=? AND meter_id IN (SELECT value FROM json_each(?))",
+        args: [this.workspaceId, JSON.stringify(ids.slice(start, start + MAX_IDS))],
+      });
+      for (const row of rs.rows) out.add(String(row.meter_id));
+    }
+    return out;
+  }
+
   async listCommands(productionId: string, limit = 200): Promise<PublicCommand[]> {
     const view = this.#scoped();
     await this.ready();
@@ -533,6 +641,20 @@ class JobStore {
       where.push(`j.${column}=?`);
       args.push(value);
     }
+    if (filter.commandIds !== undefined) {
+      const ids = [...filter.commandIds];
+      if (!ids.length) return [];
+      if (ids.length > MAX_IDS || ids.some((id) => typeof id !== "string" || !ID.test(id))) return [];
+      where.push("j.command_id IN (SELECT value FROM json_each(?))");
+      args.push(JSON.stringify(ids));
+    }
+    if (filter.decider !== undefined) {
+      if (!DECIDERS.includes(filter.decider)) return [];
+      where.push("j.decider=?");
+      args.push(filter.decider);
+    }
+    if (filter.withoutCommand) where.push("j.command_id IS NULL");
+    if (!narrowing("j", filter, where, args)) return [];
     args.push(Math.max(1, Math.min(1000, Math.floor(filter.limit ?? 200))));
     return (await this.#client.execute({ sql: `${JOB_READ} WHERE ${where.join(" AND ")} ORDER BY j.created_at DESC, j.id LIMIT ?`, args })).rows;
   }
