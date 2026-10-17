@@ -72,16 +72,28 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PRICE = [/\d\s*(?:cr|credits?|cents?|dollars?|usd)\b/i, /[$€£₹]\s*\d/, /\d\s*%/, /\/\s*mo\b/i];
 const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
 
-async function assertClean(answer: string, what: string) {
-  const { screen, instructions, bar } = await lib();
-  for (const name of [...TYPED_NAMES, ...screen.registryNames(), bar.visitorBarModel()]) {
-    expect(new RegExp(`(?<![A-Za-z0-9])${escape(name)}(?![A-Za-z0-9])`, "i").test(answer), `${what}: names ${name}: ${answer}`).toBe(false);
+/** Everything an answer must not carry, as one list of problems (plain checks, one expect: a few hundred answers are checked). */
+let forbidden: { names: [string, RegExp][]; notes: string[] } | null = null;
+async function problemsIn(answer: string): Promise<string[]> {
+  if (!forbidden) {
+    const { screen, instructions, bar } = await lib();
+    const names = [...new Set([...TYPED_NAMES, ...screen.registryNames(), bar.visitorBarModel()])];
+    forbidden = { names: names.map((name) => [name, new RegExp(`(?<![A-Za-z0-9])${escape(name)}(?![A-Za-z0-9])`, "i")]), notes: words(instructions.VISITOR_INSTRUCTIONS) };
   }
-  for (const pattern of PRICE) expect(pattern.test(answer), `${what}: a price (${pattern}): ${answer}`).toBe(false);
+  const out: string[] = [];
+  for (const [name, pattern] of forbidden.names) if (pattern.test(answer)) out.push(`names ${name}`);
+  for (const pattern of PRICE) if (pattern.test(answer)) out.push(`a price (${pattern})`);
   /* No five words in a row from the instructions, and not their marker. */
-  const asked = ` ${words(answer).join(" ")} `, notes = words(instructions.VISITOR_INSTRUCTIONS);
-  for (let i = 0; i + 5 <= notes.length; i++) expect(asked.includes(` ${notes.slice(i, i + 5).join(" ")} `), `${what}: repeats the instructions: ${answer}`).toBe(false);
-  expect(answer, what).not.toMatch(/PVB|4417/i);
+  const asked = ` ${words(answer).join(" ")} `;
+  for (let i = 0; i + 5 <= forbidden.notes.length; i++) {
+    const run = forbidden.notes.slice(i, i + 5).join(" ");
+    if (asked.includes(` ${run} `)) out.push(`repeats the instructions: "${run}"`);
+  }
+  if (/PVB|4417/i.test(answer)) out.push("the instructions' marker");
+  return out;
+}
+async function assertClean(answer: string, what: string) {
+  expect(await problemsIn(answer), `${what}: ${answer}`).toEqual([]);
 }
 
 const rot13 = (text: string) => text.replace(/[a-z]/gi, (c) => String.fromCharCode((c <= "Z" ? 65 : 97) + ((c.toLowerCase().charCodeAt(0) - 97 + 13) % 26)));
@@ -162,13 +174,16 @@ test("2. the usual extraction attempts, on the canned mock and on the worst mode
   const worst: Send = async () => says(all[call++ % all.length]);
   process.env.VISITOR_BAR_PER_VISITOR_HOUR = process.env.VISITOR_BAR_PER_ADDRESS_HOUR = process.env.VISITOR_BAR_PLATFORM_HOUR = "100000";
   const r = await route(worst);
+  const problems: string[] = [];
   for (const question of ATTEMPTS) {
     for (let i = 0; i < all.length; i++) {
       const res = await ask(r, { question });
-      expect(res.status, question).toBe(200);
-      await assertClean((await res.json() as { answer: string }).answer, `worst #${i}: ${question}`);
+      if (res.status !== 200) { problems.push(`worst #${i}: ${question}: status ${res.status}`); continue; }
+      const { answer } = await res.json() as { answer: string };
+      for (const problem of await problemsIn(answer)) problems.push(`worst #${i}: ${question}: ${problem}: ${answer}`);
     }
   }
+  expect(problems).toEqual([]);
   expect(call).toBe(ATTEMPTS.length * all.length);
 });
 
@@ -195,9 +210,8 @@ test("the screen holds back only what it must: an ordinary answer passes unchang
 
 test("the instructions say nothing about engines, vendors, models or prices", async () => {
   const { screen, instructions } = await lib();
-  for (const name of [...TYPED_NAMES, ...screen.registryNames()]) {
-    expect(new RegExp(`(?<![A-Za-z0-9])${escape(name)}(?![A-Za-z0-9])`, "i").test(instructions.VISITOR_INSTRUCTIONS), name).toBe(false);
-  }
+  const named = [...TYPED_NAMES, ...screen.registryNames()].filter((name) => new RegExp(`(?<![A-Za-z0-9])${escape(name)}(?![A-Za-z0-9])`, "i").test(instructions.VISITOR_INSTRUCTIONS));
+  expect(named).toEqual([]);
   for (const pattern of PRICE) expect(instructions.VISITOR_INSTRUCTIONS).not.toMatch(pattern);
   /* No figure at all, apart from the marker's. */
   expect(instructions.VISITOR_INSTRUCTIONS.replace("PVB-4417", "")).not.toMatch(/\d/);
@@ -427,10 +441,8 @@ test("nothing the route loads, however deep, is a generation, engine, money or w
     ["storage and a workspace's data", /^lib\/(?:storage|db|uploadIntake|elements|cast|shots|boards|productions)(?:\.ts$|\/)/],
     ["anything else in app/ or components/", /^(?:app|components)\//],
   ];
-  for (const file of files) {
-    if (file === ROUTE) continue;
-    for (const [what, pattern] of FORBIDDEN) expect(pattern.test(file), `${file} is ${what}`).toBe(false);
-  }
+  const reached = [...files].filter((file) => file !== ROUTE).flatMap((file) => FORBIDDEN.filter(([, pattern]) => pattern.test(file)).map(([what]) => `${file} is ${what}`));
+  expect(reached).toEqual([]);
   /* Packages: the text client's own SDKs and the database client the recovery fence reads, nothing that renders. */
   const ALLOWED = /^(?:node:\w+|ai|@ai-sdk\/(?:anthropic|google|openai|xai|gateway|provider)|@libsql\/client)$/;
   for (const name of packages) expect(ALLOWED.test(name), `the route loads the package ${name}`).toBe(true);
