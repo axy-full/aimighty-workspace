@@ -12,8 +12,12 @@ import { createPlatformDatabaseClient } from "../localDatabaseClient";
  *  - the platform-wide cap, per clock hour;
  *  - the per-address cap, per clock hour, by a salted hash of the address (lib/clientIp.ts decides which address is
  *    true; an unconfigured host puts everyone in one bucket, which fails closed). IPv6 is counted per /64, the block one
- *    subscriber is given, so walking the addresses inside it buys nothing.
- * Counted in hour buckets and pruned in the same write, in the style of `underLimit` (lib/security/review-link.ts).
+ *    subscriber is given, so walking the addresses inside it buys nothing;
+ *  - for IPv6, a cap per /48 as well (a site's block, many /64s), so walking the /64s inside it buys little.
+ * Counted in clock-hour buckets and pruned in the same write, in the style of `underLimit` (lib/security/review-link.ts).
+ * A clock hour, not a sliding one: around the turn of the hour a caller can use one hour's allowance at :59 and the
+ * next at :00, so over any sixty minutes the most that can be asked is twice a cap (the platform's included). The
+ * figures are set with that in mind.
  *
  * Per process, in memory (each process allows this much on its own, so with three processes it is up to three times
  * it, and a restart forgets it):
@@ -27,14 +31,15 @@ import { createPlatformDatabaseClient } from "../localDatabaseClient";
 const HOUR = 60 * 60 * 1000;
 type Env = Record<string, string | undefined>;
 
-export type VisitorLimitConfig = { perVisitorHour: number; perAddressHour: number; platformHour: number; maxKeys: number };
-export type VisitorAdmission = { ok: true } | { ok: false; scope: "visitor" | "address" | "platform"; retryAfterSeconds: number };
+export type VisitorLimitConfig = { perVisitorHour: number; perAddressHour: number; perNetworkHour: number; platformHour: number; maxKeys: number };
+export type VisitorAdmission = { ok: true } | { ok: false; scope: "visitor" | "address" | "network" | "platform"; retryAfterSeconds: number };
 
 /** The defaults, each overridable by its setting's name (a whole number from 1 to 100000; anything else keeps the default). */
-export const VISITOR_LIMIT_DEFAULTS: VisitorLimitConfig = { perVisitorHour: 10, perAddressHour: 30, platformHour: 200, maxKeys: 20_000 };
+export const VISITOR_LIMIT_DEFAULTS: VisitorLimitConfig = { perVisitorHour: 10, perAddressHour: 30, perNetworkHour: 90, platformHour: 200, maxKeys: 20_000 };
 const SETTINGS: Record<Exclude<keyof VisitorLimitConfig, "maxKeys">, string> = {
   perVisitorHour: "VISITOR_BAR_PER_VISITOR_HOUR",
   perAddressHour: "VISITOR_BAR_PER_ADDRESS_HOUR",
+  perNetworkHour: "VISITOR_BAR_PER_NET48_HOUR",
   platformHour: "VISITOR_BAR_PLATFORM_HOUR",
 };
 
@@ -86,6 +91,14 @@ export function addressBucket(ip: string): string {
   return `${parts.slice(0, 4).join(":")}::/64`;
 }
 
+/** The IPv6 /48 an address is in, for the per-network cap; null for IPv4 (and IPv4-mapped) addresses and the fixed buckets. */
+export function networkBucket(ip: string): string | null {
+  if (isIP(ip) !== 6) return null;
+  const counted = addressBucket(ip);
+  if (!counted.endsWith("::/64")) return null;
+  return `${counted.split(":").slice(0, 3).join(":")}::/48`;
+}
+
 /* ── Shared: the platform database ───────────────────────────────────────────────────────────── */
 
 /**
@@ -120,27 +133,35 @@ async function ready(client: Client): Promise<void> {
 }
 
 /**
- * Counts one question against the address's and the platform's allowance for this hour, both or neither, in one write:
- * the platform row is raised only while both have room, and the address row only when the platform row was (SQLite's
- * `changes()`, the statement before it in the same batch). Earlier hours are pruned in the same write.
+ * Counts one question against the address's, the network's (IPv6 only) and the platform's allowance for this hour, all
+ * or none, in one write: the platform row is raised only while every one of them has room, then the address row only
+ * when the platform row was, then the network row only when the address row was (SQLite's `changes()`: the statement
+ * just before, in the same batch). Earlier hours are pruned in the same write.
  */
-export async function admitShared(addressKey: string, config: VisitorLimitConfig = visitorLimitConfig(), at = Date.now(), client: Client = visitorDatabase()): Promise<VisitorAdmission> {
+export async function admitShared(addressKey: string, networkKey: string | null, config: VisitorLimitConfig = visitorLimitConfig(), at = Date.now(), client: Client = visitorDatabase()): Promise<VisitorAdmission> {
   await ready(client);
   const bucket = Math.floor(at / HOUR);
+  const net = networkKey ?? "";
+  const count = (scope: string) => `(SELECT count FROM visitor_bar_hits WHERE scope = '${scope}' AND bucket = ? AND key = ?)`;
   const results = await client.batch([
     { sql: `DELETE FROM visitor_bar_hits WHERE bucket < ?`, args: [bucket] },
     { sql: `INSERT OR IGNORE INTO visitor_bar_hits (scope, bucket, key, count) VALUES ('platform', ?, '', 0), ('address', ?, ?, 0)`, args: [bucket, bucket, addressKey] },
+    ...(networkKey ? [{ sql: `INSERT OR IGNORE INTO visitor_bar_hits (scope, bucket, key, count) VALUES ('network', ?, ?, 0)`, args: [bucket, net] }] : []),
     {
       sql: `UPDATE visitor_bar_hits SET count = count + 1 WHERE scope = 'platform' AND bucket = ? AND key = '' AND count < ?
-              AND (SELECT count FROM visitor_bar_hits WHERE scope = 'address' AND bucket = ? AND key = ?) < ?`,
-      args: [bucket, config.platformHour, bucket, addressKey, config.perAddressHour],
+              AND ${count("address")} < ? AND (? = '' OR ${count("network")} < ?)`,
+      args: [bucket, config.platformHour, bucket, addressKey, config.perAddressHour, net, bucket, net, config.perNetworkHour],
     },
     { sql: `UPDATE visitor_bar_hits SET count = count + 1 WHERE scope = 'address' AND bucket = ? AND key = ? AND changes() = 1`, args: [bucket, addressKey] },
-    { sql: `SELECT count FROM visitor_bar_hits WHERE scope = 'platform' AND bucket = ? AND key = ''`, args: [bucket] },
+    ...(networkKey ? [{ sql: `UPDATE visitor_bar_hits SET count = count + 1 WHERE scope = 'network' AND bucket = ? AND key = ? AND changes() = 1`, args: [bucket, net] }] : []),
+    { sql: `SELECT ${count("platform")} AS platform, ${count("network")} AS network`, args: [bucket, "", bucket, net] },
   ], "write");
-  if (results[2].rowsAffected === 1 && results[3].rowsAffected === 1) return { ok: true };
+  const counts = results[results.length - 1].rows[0] ?? {};
+  const raised = results.slice(networkKey ? 3 : 2, -1).every((result) => result.rowsAffected === 1);
+  if (raised) return { ok: true };
   const retryAfterSeconds = Math.max(1, Math.ceil(((bucket + 1) * HOUR - at) / 1000));
-  return { ok: false, scope: Number(results[4].rows[0]?.count ?? 0) >= config.platformHour ? "platform" : "address", retryAfterSeconds };
+  const scope = Number(counts.platform ?? 0) >= config.platformHour ? "platform" : networkKey && Number(counts.network ?? 0) >= config.perNetworkHour ? "network" : "address";
+  return { ok: false, scope, retryAfterSeconds };
 }
 
 /* ── Per process: the visitor's cookie ───────────────────────────────────────────────────────── */
