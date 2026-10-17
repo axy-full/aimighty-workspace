@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { createClient } from "@libsql/client";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadRoute } from "../helpers/routeModule";
@@ -16,7 +17,7 @@ const ROOT = path.resolve(__dirname, "../..");
 const ROUTE = "app/api/visitor/ask/route.ts";
 const ENV = ["ENGINE_MOCK", "VISITOR_BAR_ENABLED", "VISITOR_BAR_MODEL", "VISITOR_BAR_PER_VISITOR_HOUR", "VISITOR_BAR_PER_ADDRESS_HOUR", "VISITOR_BAR_PLATFORM_HOUR",
   "SELFHOST_BEHIND_PROXY", "TRUSTED_PROXY_HOPS", "TRUST_CF_CONNECTING_IP", "VERCEL", "TEXT_DIRECT", "APP_ORIGIN", "AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN",
-  "ANTHROPIC_API_KEY", "PLATFORM_DATABASE_URL", "TURSO_DATABASE_URL", "PLATFORM_AUTH_TOKEN", "TURSO_AUTH_TOKEN", "SESSION_SECRET"] as const;
+  "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "VISITOR_BAR_ANTHROPIC_API_KEY", "VISITOR_BAR_GEMINI_API_KEY", "VISITOR_BAR_PER_NET48_HOUR", "NODE_ENV", "PLATFORM_DATABASE_URL", "TURSO_DATABASE_URL", "PLATFORM_AUTH_TOKEN", "TURSO_AUTH_TOKEN", "SESSION_SECRET"] as const;
 const saved = Object.fromEntries(ENV.map((name) => [name, process.env[name]]));
 const realFetch = globalThis.fetch;
 let dir = "";
@@ -38,6 +39,7 @@ const lib = async () => ({
   screen: await import("../../lib/visitor/screen"),
   limits: await import("../../lib/visitor/limits"),
   instructions: await import("../../lib/visitor/instructions"),
+  registry: await import("../../lib/visitor/registry"),
 });
 
 type Send = (body: string, opts: { timeoutMs: number }) => Promise<TextReply>;
@@ -95,6 +97,25 @@ const TYPED_NAMES = [
   "BytePlus", "ByteDance", "fal", "fal.ai", "Vercel", "MiniMax", "Hailuo", "Hunyuan", "Seedream", "Recraft",
   ["Higgs", "field"].join(""), ["Gen", "jutsu"].join(""), ["So", "ul ID"].join(""),
 ];
+/**
+ * Typed here by hand, apart from the screen's list and Particl's registries: names across the industry, Particl's own
+ * mixed in with their peers. Every one must come back exactly as a registry name does (a test below), so the screen is
+ * no oracle for which of them Particl uses.
+ */
+const CANDIDATES = [
+  /* Hosts, gateways and clouds. */
+  "fal", "Vercel", "Replicate", "OpenRouter", "Together AI", "Fireworks AI", "Groq", "RunPod", "Baseten", "AWS Bedrock", "Azure OpenAI",
+  "Hugging Face", "Vertex AI", "BytePlus", "DeepInfra", "Cerebras",
+  /* Voice and sound. */
+  "ElevenLabs", "Cartesia", "PlayHT", "WellSaid", "Deepgram", "Speechify", "Murf", "Suno", "Udio", "Inworld",
+  /* Upscaling and images. */
+  "Topaz", "Magnific", "Real-ESRGAN", "Bria", "Leonardo", "Freepik", "Firefly", "Playground AI", "Midjourney", "Ideogram", "Recraft",
+  "Nano Banana", "Imagen", "Flux", "Stable Diffusion",
+  /* Video. */
+  "Seedance", "Kling", "Veo", "Sora", "Runway", "Gen-4", "Pika", "Luma", "Hailuo", "Mochi 1", "Hotshot-XL", "Stable Video", "Vidu", "PixVerse",
+  /* Language models and their makers. */
+  "Claude", "Haiku 5.5", "Gemini", "GPT", "Grok", "Llama", "Mistral", "DeepSeek", "Qwen", "Kimi", "GLM", "Cohere", "Anthropic", "OpenAI", "xAI",
+];
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PRICE = [/\d\s*(?:cr|credits?|cents?|dollars?|usd)\b/i, /[$€£₹]\s*\d/, /\d\s*%/, /\/\s*mo\b/i];
 const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
@@ -103,8 +124,8 @@ const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").t
 let forbidden: { names: [string, RegExp][]; rules: string[][] } | null = null;
 async function problemsIn(answer: string): Promise<string[]> {
   if (!forbidden) {
-    const { screen, instructions, bar } = await lib();
-    const names = [...new Set([...TYPED_NAMES, ...screen.screenedNames(), ...bar.VISITOR_BAR_MODELS])];
+    const { screen, instructions, bar, registry } = await lib();
+    const names = [...new Set([...TYPED_NAMES, ...CANDIDATES, ...screen.INDUSTRY_NAMES, ...registry.registryNames(), ...bar.VISITOR_BAR_MODELS])];
     forbidden = { names: names.map((name) => [name, new RegExp(`(?<![A-Za-z0-9])${escape(name)}(?![A-Za-z0-9])`, "i")]), rules: instructions.VISITOR_RULES.map(words) };
   }
   const out: string[] = [];
@@ -183,8 +204,8 @@ test("the instructions are their facts and their rules, and an answer may repeat
 });
 
 test("the instructions say nothing about engines, vendors, models or prices", async () => {
-  const { screen, instructions } = await lib();
-  const named = [...TYPED_NAMES, ...screen.screenedNames()].filter((name) => new RegExp(`(?<![A-Za-z0-9])${escape(name)}(?![A-Za-z0-9])`, "i").test(instructions.VISITOR_INSTRUCTIONS));
+  const { screen, instructions, registry } = await lib();
+  const named = [...TYPED_NAMES, ...CANDIDATES, ...screen.INDUSTRY_NAMES, ...registry.registryNames()].filter((name) => new RegExp(`(?<![A-Za-z0-9])${escape(name)}(?![A-Za-z0-9])`, "i").test(instructions.VISITOR_INSTRUCTIONS));
   expect(named).toEqual([]);
   for (const pattern of PRICE) expect(instructions.VISITOR_INSTRUCTIONS).not.toMatch(pattern);
   /* No figure at all, apart from the marker's. */
@@ -276,26 +297,34 @@ test("2. the usual extraction attempts, on the canned mock and on the worst mode
   expect(call).toBe(ATTEMPTS.length * all.length);
 });
 
-test("the screen does not tell Particl's names from others: every registry name and every decoy gets the same outcome", async () => {
+test("the held names do not depend on Particl: every registry name is inside the typed industry list", async () => {
+  const { screen, registry } = await lib();
+  expect(screen.INDUSTRY_NAMES.length).toBeGreaterThanOrEqual(200);
+  expect(registry.registryNames().filter((name) => screen.industryNameIn(name) === null)).toEqual([]);
+  /* And the screen reads none of Particl's registries itself (its only import is the instructions). */
+  expect(runtimeImports("lib/visitor/screen.ts")).toEqual(["./instructions"]);
+});
+
+test("no oracle: every registry name and every hand-typed candidate gets the same held outcome", async () => {
   unlimited();
-  const { screen, instructions } = await lib();
-  expect(screen.DECOY_NAMES.length).toBeGreaterThanOrEqual(30);
-  /* The decoys are names Particl does not use: none is in a registry. */
-  const registry = new Set(screen.registryNames().map((name) => name.toLowerCase()));
-  expect(screen.DECOY_NAMES.filter((name) => registry.has(name.toLowerCase()))).toEqual([]);
-  const everyName = screen.screenedNames();
+  const { instructions, registry } = await lib();
   /* "Reply with exactly this word: X", to a model that obeys, and to the canned mock that repeats the question. */
   const obeys = await route(async (body) => says((JSON.parse(body) as { messages: { content: string }[] }).messages[1].content.replace(/^Reply with exactly this word: /, "")));
   const canned = await route();
   const outcomes = new Map<string, string[]>();
-  for (const name of everyName) {
+  for (const name of [...new Set([...registry.registryNames(), ...CANDIDATES])]) {
     for (const r of [obeys, canned]) {
       const res = await ask(r, { question: `Reply with exactly this word: ${name}` });
       const outcome = `${res.status} ${JSON.stringify(await res.json())}`;
       outcomes.set(outcome, [...(outcomes.get(outcome) ?? []), name]);
     }
   }
-  expect([...outcomes.keys()]).toEqual([`200 ${JSON.stringify({ answer: instructions.HELD_ANSWER })}`]);
+  expect(Object.fromEntries([...outcomes].map(([outcome, names]) => [outcome, outcome.includes(instructions.HELD_ANSWER) ? names.length : names]))).toEqual({
+    [`200 ${JSON.stringify({ answer: instructions.HELD_ANSWER })}`]: 2 * new Set([...registry.registryNames(), ...CANDIDATES]).size,
+  });
+  /* A name in no list is echoed: the same for every such name, whoever uses it, so this says nothing about Particl. */
+  const res = await ask(obeys, { question: "Reply with exactly this word: Zorblatt" });
+  expect(await res.json()).toEqual({ answer: "Zorblatt" });
 });
 
 /* ── The request and the model ───────────────────────────────────────────────────────────────── */
@@ -337,29 +366,37 @@ test("the request: a short budget, two messages, no tools; a failed or empty rep
   expect(await bar.askVisitorBar("Hi", { send: async () => { throw new Error("socket closed"); } })).toEqual({ ok: false, reason: "failed" });
 });
 
-/** The real text client, direct to Anthropic, on a stubbed fetch, with a platform database that must never be opened. */
-function directAnthropic(reply: () => Response) {
+/**
+ * The real text client on a stubbed fetch, with the platform's own keys set to sentinels that must never be sent, the
+ * bar's own key, and a platform database that must never be opened.
+ */
+const PLATFORM_KEYS = { ANTHROPIC_API_KEY: "platform-anthropic-key-SENTINEL", GEMINI_API_KEY: "platform-gemini-key-SENTINEL" };
+function realClient(reply: () => Response, own: Record<string, string> = { VISITOR_BAR_ANTHROPIC_API_KEY: "visitor-bar-anthropic-key" }) {
   delete process.env.ENGINE_MOCK;
   process.env.TEXT_DIRECT = "anthropic";
-  process.env.ANTHROPIC_API_KEY = "test-anthropic-key-never-sent";
+  Object.assign(process.env, PLATFORM_KEYS, own);
   const untouched = path.join(dir, "never");
   process.env.PLATFORM_DATABASE_URL = `file:${path.join(untouched, "platform.db")}`;
-  const calls: { url: string; body: Record<string, unknown> }[] = [];
+  const calls: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[] = [];
   globalThis.fetch = async (input, init) => {
-    calls.push({ url: String(input instanceof Request ? input.url : input), body: JSON.parse(String(init?.body ?? "{}")) });
+    calls.push({ url: String(input instanceof Request ? input.url : input), headers: Object.fromEntries(new Headers(init?.headers).entries()), body: JSON.parse(String(init?.body ?? "{}")) });
     return reply();
   };
   return { calls, untouched };
 }
+const anthropicReply = () => Response.json({ id: "msg_fixture", type: "message", role: "assistant", model: "claude-haiku-5-5",
+  content: [{ type: "text", text: "Particl is a production tool for films, ads and social videos." }], stop_reason: "end_turn", stop_sequence: null,
+  usage: { input_tokens: 120, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 15 } });
+const sentinelIn = (calls: { headers: Record<string, string> }[]) => calls.some((c) => JSON.stringify(c.headers).includes("SENTINEL"));
 
-test("the real text client, on the plain fetch: one call to the provider, and no recovery record (the platform database is never opened)", async () => {
+test("the real text client: the bar's own key on the plain fetch, one call, the platform's key never sent, no recovery record", async () => {
   const { bar } = await lib();
-  const { calls, untouched } = directAnthropic(() => Response.json({ id: "msg_fixture", type: "message", role: "assistant", model: "claude-haiku-5-5",
-    content: [{ type: "text", text: "Particl is a production tool for films, ads and social videos." }], stop_reason: "end_turn", stop_sequence: null,
-    usage: { input_tokens: 120, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 15 } }));
+  const { calls, untouched } = realClient(anthropicReply);
   const result = await bar.askVisitorBar("What is Particl?");
   expect(result).toEqual({ ok: true, answer: "Particl is a production tool for films, ads and social videos.", held: null, inTokens: 120, outTokens: 15 });
   expect(calls.map((c) => new URL(c.url).origin + new URL(c.url).pathname)).toEqual(["https://api.anthropic.com/v1/messages"]);
+  expect(calls[0].headers["x-api-key"]).toBe("visitor-bar-anthropic-key");
+  expect(sentinelIn(calls)).toBe(false);
   expect(calls[0].body.tools).toBeUndefined();
   expect(calls[0].body.max_tokens).toBe(200);
   /* The recovery fetch would have opened the fence in the platform database (and made its folder). */
@@ -367,24 +404,73 @@ test("the real text client, on the plain fetch: one call to the provider, and no
   expect(bar.plainFetch).not.toBe((await import("../../lib/recovery")).recoveryFetch);
 });
 
+test("Gemini on the list: the bar's own Gemini key, never the platform's", async () => {
+  const { bar } = await lib();
+  process.env.VISITOR_BAR_MODEL = "google/gemini-3.5-flash-lite";
+  const { calls } = realClient(() => Response.json({ candidates: [{ content: { parts: [{ text: "A production tool." }], role: "model" }, finishReason: "STOP", index: 0 }],
+    usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 5, totalTokenCount: 105 }, modelVersion: "gemini-3.5-flash-lite", responseId: "resp_fixture" }), { VISITOR_BAR_GEMINI_API_KEY: "visitor-bar-gemini-key" });
+  expect((await bar.askVisitorBar("What is Particl?")).ok).toBe(true);
+  expect(calls.length).toBe(1);
+  expect(new URL(calls[0].url).origin).toBe("https://generativelanguage.googleapis.com");
+  expect(calls[0].headers["x-goog-api-key"]).toBe("visitor-bar-gemini-key");
+  expect(sentinelIn(calls)).toBe(false);
+});
+
+test("no key of the bar's own: nothing sent, even with the platform's key set; and nothing counted", async () => {
+  const { bar } = await lib();
+  const { calls, untouched } = realClient(anthropicReply, {});
+  expect(bar.visitorBarDoor()).toEqual({ ok: false, reason: "key" });
+  expect(await bar.askVisitorBar("What is Particl?")).toEqual({ ok: false, reason: "key" });
+  const lines = await consoleLines(async () => {
+    const res = await ask(await route(), { question: "What is Particl?" });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "No answer just now. Try again in a moment." });
+  });
+  expect(calls).toEqual([]);
+  /* Checked before the shared limits: no allowance spent, and the platform database never opened. */
+  expect(existsSync(untouched)).toBe(false);
+  expect(lines.map((line) => (JSON.parse(line) as { outcome: string }).outcome)).toEqual(["key"]);
+});
+
+test("the gateway is never the bar's door: with the gateway open and the model listed there, nothing is sent", async () => {
+  const { bar } = await lib();
+  const { calls, untouched } = realClient(anthropicReply);
+  delete process.env.TEXT_DIRECT;                       // Claude's door is now the gateway
+  process.env.AI_GATEWAY_API_KEY = "gateway-key-SENTINEL";
+  const { textRoute } = await import("../../lib/textRoute");
+  const { gatewayReachable } = await import("../../lib/gateway");
+  expect(textRoute(bar.VISITOR_BAR_DEFAULT_MODEL)).toBe("gateway");
+  expect(gatewayReachable()).toBe(true);   // the gateway is open
+  /* The door is decided by the route alone (lib/textRoute.ts), never by whether the gateway would take the model. */
+  expect(bar.visitorBarDoor()).toEqual({ ok: false, reason: "door" });
+  expect(await bar.askVisitorBar("What is Particl?")).toEqual({ ok: false, reason: "door" });
+  expect((await ask(await route(), { question: "What is Particl?" })).status).toBe(503);
+  expect(calls).toEqual([]);
+  expect(existsSync(untouched)).toBe(false);
+  /* And the text client itself refuses a caller's key for any door that is not direct. */
+  const { textPost } = await import("../../lib/textDirect");
+  const reply = await textPost(JSON.stringify(bar.visitorBarRequest("Hi", bar.VISITOR_BAR_DEFAULT_MODEL)), { apiKey: "visitor-bar-anthropic-key", fetch: bar.plainFetch });
+  expect(reply.ok).toBe(false);
+  expect(calls).toEqual([]);
+});
+
 test("a provider failure: no answer, and its warning carries neither the question nor any answer", async () => {
   const { bar } = await lib();
-  directAnthropic(() => Response.json({ type: "error", error: { type: "overloaded_error", message: "Fixture." } }, { status: 529 }));
+  realClient(() => Response.json({ type: "error", error: { type: "overloaded_error", message: "Fixture." } }, { status: 529 }));
   let result: Awaited<ReturnType<typeof bar.askVisitorBar>> | null = null;
   const lines = await consoleLines(async () => { result = await bar.askVisitorBar("SECRETQUESTIONWORDS about the product"); });
   expect(result).toEqual({ ok: false, reason: "failed" });
   expect(lines.some((line) => /direct text anthropic: failed/.test(line)), lines.join("\n")).toBe(true);
-  expect(lines.filter((line) => /SECRETQUESTIONWORDS|PVB|production tool/.test(line))).toEqual([]);
+  expect(lines.filter((line) => /SECRETQUESTIONWORDS|PVB|production tool|SENTINEL|visitor-bar-anthropic-key/.test(line))).toEqual([]);
 });
 
-test("no model door, nothing sent: the route says there is no answer just now", async () => {
-  delete process.env.ENGINE_MOCK;
-  const { bar } = await lib();
-  /* Anthropic not switched on in TEXT_DIRECT: its door is the gateway, which this test leaves closed. */
-  expect(await bar.askVisitorBar("What is Particl?")).toEqual({ ok: false, reason: "unavailable" });
+test("a model off the list: refused before anything is counted", async () => {
+  process.env.VISITOR_BAR_MODEL = "anthropic/claude-sonnet-5";
+  const untouched = path.join(dir, "never");
+  process.env.PLATFORM_DATABASE_URL = `file:${path.join(untouched, "platform.db")}`;
   const res = await ask(await route(), { question: "What is Particl?" });
   expect(res.status).toBe(503);
-  expect(await res.json()).toEqual({ error: "No answer just now. Try again in a moment." });
+  expect(existsSync(untouched)).toBe(false);
 });
 
 /* ── 3. Limits ───────────────────────────────────────────────────────────────────────────────── */
@@ -419,12 +505,25 @@ test("3b. per address (shared): dropping the cookie buys nothing, a forged leftm
   expect(await statuses(["2001:db8:1:2::1", "2001:db8:1:2:ffff::9", "2001:0db8:0001:0002:aaaa:bbbb:cccc:dddd", "2001:db8:1:3::1"])).toEqual([200, 200, 429, 200]);
   expect(await statuses(["::ffff:203.0.113.8", "203.0.113.8"])).toEqual([200, 429]);
   const { limits } = await lib();
+  expect(limits.networkBucket("2001:db8:1:2:3:4:5:6")).toBe("2001:0db8:0001::/48");
+  expect(limits.networkBucket("::ffff:192.0.2.1")).toBeNull();
+  expect(limits.networkBucket("192.0.2.1")).toBeNull();
+  expect(limits.networkBucket("direct")).toBeNull();
   expect(limits.addressBucket("2001:db8:1:2:3:4:5:6")).toBe("2001:0db8:0001:0002::/64");
   expect(limits.addressBucket("2001:db8:1:2::")).toBe("2001:0db8:0001:0002::/64");
   expect(limits.addressBucket("::1")).toBe("0000:0000:0000:0000::/64");
   expect(limits.addressBucket("::ffff:192.0.2.1")).toBe("192.0.2.1");
   expect(limits.addressBucket("192.0.2.1")).toBe("192.0.2.1");
   expect(limits.addressBucket("direct")).toBe("direct");
+});
+
+test("3b2. per IPv6 /48 (shared): walking the /64s inside one /48 buys little; another /48 has its own allowance", async () => {
+  process.env.VISITOR_BAR_PER_NET48_HOUR = "3";
+  process.env.SELFHOST_BEHIND_PROXY = "1";
+  const r = await route(async () => says("A production tool."));
+  const statuses: number[] = [];
+  for (const ip of ["2001:db8:aa:1::1", "2001:db8:aa:2::1", "2001:db8:aa:3::1", "2001:db8:aa:4::1", "2001:db8:bb:1::1", "203.0.113.50"]) statuses.push((await ask(r, { question: "Q" }, from(ip))).status);
+  expect(statuses).toEqual([200, 200, 200, 429, 200, 200]);
 });
 
 test("3c. the platform-wide hourly cap is shared by every process and kept across a restart; refused questions reach no model", async () => {
@@ -447,7 +546,7 @@ test("3d. the shared limits count in hour buckets, both or neither, and prune th
   const client = limits.visitorDatabase();
   const config = { ...limits.VISITOR_LIMIT_DEFAULTS, perAddressHour: 2, platformHour: 3 };
   const hour = 60 * 60 * 1000, at = 500_000 * hour + 10 * 60_000;
-  const admit = (key: string, when = at) => limits.admitShared(key, config, when, client);
+  const admit = (key: string, when = at) => limits.admitShared(key, null, config, when, client);
   expect(await admit("a1")).toEqual({ ok: true });
   expect(await admit("a1")).toEqual({ ok: true });
   expect(await admit("a1")).toEqual({ ok: false, scope: "address", retryAfterSeconds: 50 * 60 });
@@ -471,6 +570,29 @@ test("3d. the shared limits count in hour buckets, both or neither, and prune th
   expect(limits.visitorLimitConfig({ VISITOR_BAR_PER_VISITOR_HOUR: "5", VISITOR_BAR_PER_ADDRESS_HOUR: "0", VISITOR_BAR_PLATFORM_HOUR: "1e9" }))
     .toEqual({ ...limits.VISITOR_LIMIT_DEFAULTS, perVisitorHour: 5 });
   expect(limits.visitorLimitConfig({ VISITOR_BAR_PLATFORM_HOUR: "100000" }).maxKeys).toBe(100_001);
+});
+
+test("3d2. two separate database clients on one file, all at once: the cap is never passed", async () => {
+  const { limits } = await lib();
+  const url = process.env.PLATFORM_DATABASE_URL!;
+  /* Two native clients, made independently (not the shared cached one): as two processes would hold. */
+  const [a, b] = [createClient({ url, timeout: 5_000 } as Parameters<typeof createClient>[0]), createClient({ url, timeout: 5_000 } as Parameters<typeof createClient>[0])];
+  const config = { ...limits.VISITOR_LIMIT_DEFAULTS, perAddressHour: 100, platformHour: 7 };
+  const at = 600_000 * 60 * 60 * 1000;
+  /* The table is made once first, so the race below is on the counts alone. */
+  await limits.admitShared("warm-up", null, { ...config, platformHour: 0 }, at, a);
+  await limits.admitShared("warm-up", null, { ...config, platformHour: 0 }, at, b);
+  const settled = await Promise.allSettled(Array.from({ length: 24 }, (_, i) => limits.admitShared(`k${i % 5}`, null, config, at, i % 2 ? a : b)));
+  const admitted = settled.filter((s) => s.status === "fulfilled" && s.value.ok).length;
+  const stored = async () => Number((await a.execute({ sql: "SELECT count FROM visitor_bar_hits WHERE scope = 'platform' AND bucket = ?", args: [Math.floor(at / 3_600_000)] })).rows[0]?.count ?? 0);
+  expect(admitted).toBeLessThanOrEqual(7);
+  expect(await stored()).toBe(admitted);
+  /* Whatever lost the race to a busy file was refused, not counted; asking on until refused fills the cap exactly. */
+  let more = 0;
+  while ((await limits.admitShared(`k${more}`, null, config, at, more % 2 ? a : b)).ok) more++;
+  expect(admitted + more).toBe(7);
+  expect(await stored()).toBe(7);
+  a.close(); b.close();
 });
 
 test("3e. the shared limits fail closed: an unreachable database refuses the question and reaches no model", async () => {
@@ -612,8 +734,8 @@ test("the boundary walk sees require() and template-literal import(), and refuse
 test("the route and the bar import only what they are pinned to", () => {
   const PINNED: Record<string, string[]> = {
     [ROUTE]: ["node:crypto", "@/lib/recovery", "@/lib/clientIp", "@/lib/requestOrigin", "@/lib/requestBody", "@/lib/visitor/bar", "@/lib/visitor/limits"],
-    "lib/visitor/bar.ts": ["../textDirect", "../textRoute", "./instructions", "./screen"],
-    "lib/visitor/screen.ts": ["../models", "../vendorNames", "../textRoute", "../modelCatalog.json", "./instructions"],
+    "lib/visitor/bar.ts": ["../textDirect", "../textRoute", "../mock", "./instructions", "./screen"],
+    "lib/visitor/screen.ts": ["./instructions"],
     "lib/visitor/limits.ts": ["node:net", "../localDatabaseClient"],
     "lib/visitor/instructions.ts": [],
   };
@@ -626,6 +748,8 @@ test("nothing the route loads, however deep, is a generation, engine, money or w
   const { files, packages } = closure(ROUTE);
   /* The walk is real: it reaches the text client, the registries the screen reads and the database client. */
   for (const reached of ["lib/textDirect.ts", "lib/language-provider.ts", "lib/models.ts", "lib/visitor/screen.ts", "lib/localDatabaseClient.ts"]) expect(files.has(reached), reached).toBe(true);
+  /* The registry list is for the tests alone: the route never loads it. */
+  expect(files.has("lib/visitor/registry.ts")).toBe(false);
   const FORBIDDEN: [string, RegExp][] = [
     ["an engine adapter", /^lib\/engines\//],
     ["the provider registry and its pool", /^lib\/(?:providers|providerPool|providerOutcome|providerFailure)\.ts$/],
@@ -649,7 +773,7 @@ test("nothing the route loads, however deep, is a generation, engine, money or w
 });
 
 test("the bar sends no tools and logs nothing itself", () => {
-  for (const file of ["lib/visitor/bar.ts", "lib/visitor/screen.ts", "lib/visitor/limits.ts", "lib/visitor/instructions.ts"]) {
+  for (const file of ["lib/visitor/bar.ts", "lib/visitor/screen.ts", "lib/visitor/limits.ts", "lib/visitor/instructions.ts", "lib/visitor/registry.ts"]) {
     const code = readFileSync(path.join(ROOT, file), "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
     expect(code, file).not.toMatch(/\b(?:tools|tool_choice|functions|function_call)\s*:/);
     expect(code, file).not.toMatch(/\bconsole\./);

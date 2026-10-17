@@ -27,6 +27,7 @@ The app was written for many Vercel instances at once, so most state already liv
 | Cron | `/api/cron/sync`, mostly under the `operation_leases` lease (`lib/reconciliation.ts`) | see §2 |
 | Inngest | stateless `serve()`; registered at `https://particl.si/api/inngest` | fine through the load balancer |
 | Worker concurrency, dispatch claims | platform DB (`worker_slots`, `render_dispatches`) | fine |
+| Visitor bar: per-address, per-/48 and platform-wide hourly caps (v30, off by default) | platform DB (`visitor_bar_hits`, counted per clock hour) | fine. Its per-visitor cookie cap and answers-in-flight cap are per process (×`WEB_CONCURRENCY`), by design |
 | In-memory caches (projects 15 s, settings 10 s, catalogues up to 1 h) | each process | another process can be stale for up to the TTL. The spend reservation reads settings fresh (#606). |
 | Ask-an-admin and preset-staleness throttles | `operation_leases` (#606) | fine |
 | `.data/` | scratch only on production | **must stop being a Coolify volume** before stage C (§3.1) |
