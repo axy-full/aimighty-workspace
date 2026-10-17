@@ -1,5 +1,5 @@
 import { identifyImage } from "../imagemeta";
-import { MAX_IMAGE_BYTES, MAX_IMAGES, MAX_XML_PART_BYTES } from "./limits";
+import { MAX_IMAGE_BYTES, MAX_IMAGES, MAX_IMAGES_TOTAL_BYTES, MAX_XML_PART_BYTES } from "./limits";
 import { DocImportError, type Deadline, type ExtractedImage, type Warnings } from "./types";
 import { attr, decodeXmlBytes, localName, scanXml, type XmlEvent } from "./xml";
 import { openZip, resolvePartPath, zipDir, type ZipArchive } from "./zip";
@@ -114,6 +114,7 @@ export function mediaImages(zip: ZipArchive, folder: string, deadline: Deadline,
   const names = [...zip.entries.keys()].filter((name) => name.startsWith(folder) && !name.endsWith("/")).sort();
   const images: ExtractedImage[] = [];
   let skipped = 0;
+  let kept = 0;
   for (const name of names) {
     deadline.check();
     const entry = zip.entries.get(name)!;
@@ -121,8 +122,8 @@ export function mediaImages(zip: ZipArchive, folder: string, deadline: Deadline,
       warnings.add(`An embedded picture larger than ${MAX_IMAGE_BYTES / (1024 * 1024)} MB was skipped.`);
       continue;
     }
-    if (images.length >= MAX_IMAGES) {
-      warnings.add(`Only the first ${MAX_IMAGES} embedded pictures were kept.`);
+    if (images.length >= MAX_IMAGES || kept + entry.size > MAX_IMAGES_TOTAL_BYTES) {
+      warnings.add(`Only the first ${images.length} embedded pictures were kept.`);
       break;
     }
     const bytes = zip.read(name, MAX_IMAGE_BYTES);
@@ -133,6 +134,7 @@ export function mediaImages(zip: ZipArchive, folder: string, deadline: Deadline,
       continue;
     }
     images.push({ name: name.slice(name.lastIndexOf("/") + 1).slice(0, 120), mime: meta.mime, ext, bytes });
+    kept += bytes.length;
   }
   if (skipped) warnings.add(`${skipped} embedded files are in formats the importer does not keep (for example EMF or video).`);
   return images;

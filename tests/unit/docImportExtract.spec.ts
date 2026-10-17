@@ -158,6 +158,12 @@ test("the real Tesseract engine reads a generated picture offline, from the inst
   }
 });
 
+test("the real Tesseract engine refuses a truncated picture as damaged, without hanging", async () => {
+  test.setTimeout(60_000);
+  const picture = textPng("HELLO WORLD");
+  await refused(extractDocument("cut.png", picture.subarray(0, Math.floor(picture.length * 0.6)), { timeoutMs: 30_000 }), "damaged");
+});
+
 test("Hindi OCR is refused as not installed (never downloaded) until its data is on disk", async () => {
   await refused(extractDocument("card.png", textPng("HELLO"), { languages: ["hin"] }), "language_unavailable");
 });
