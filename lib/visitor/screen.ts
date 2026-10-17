@@ -8,7 +8,7 @@ import { HELD_ANSWER, INSTRUCTIONS_MARKER, VISITOR_RULES } from "./instructions"
  *  - names a company, service, engine or model in the AI industry: one typed list (`INDUSTRY_NAMES`), the same whether
  *    or not Particl uses the name, so which answers come back held says nothing about what Particl uses. It reads no
  *    registry of Particl's; tests/unit/visitorBar.spec.ts proves every name in those registries is inside it
- *    (lib/visitor/registry.ts), so a name Particl adds without adding it here fails that test;
+ *    (tests/helpers/visitorRegistry.ts), so a name Particl adds without adding it here fails that test;
  *  - carries a price: a figure next to credits, a currency, cents, a month, or a percentage off;
  *  - repeats the instructions' rules (how it must answer): any run of six words from one of them, or their marker. The
  *    facts in them are the public page's own and are meant to be repeated;
@@ -37,7 +37,7 @@ export const INDUSTRY_NAMES: readonly string[] = [
   "Hailuo", "MiniMax", "Vidu", "Shengshu", "PixVerse", "Haiper", "Hunyuan", "HunyuanVideo", "Genmo Mochi", "Genmo", "LTX Video", "LTXV", "Lightricks",
   "CogVideoX", "CogVideo", "Hotshot-XL", "Stable Video", "Stable Video Diffusion", "Moonvalley", "Marey", "Kaiber", "Hedra", "Synthesia",
   "HeyGen", "D-ID", "Lumiere", "Phenaki", "Emu Video", "SkyReels", "Wan2.1", "Wan2.2", "Wan-AI", "Grok Imagine",
-  piece("Higgs", "field"), piece("Ge", "njutsu"), "Cinema Studio", piece("So", "ul ID"), piece("So", "ul Character"), "hf-soul", "Supercomputer",
+  piece("Higgs", "field"), piece("Ge", "njutsu"), piece("So", "ul ID"), piece("So", "ul Character"), "Cinema Studio", "hf-soul", "Supercomputer",
   /* Images. */
   "Nano Banana", "Imagen", "GPT Image", "DALL-E", "DALL·E", "Midjourney", "Stable Diffusion", "SDXL", "Stability AI", "Flux", "Black Forest Labs",
   "Ideogram", "Recraft", "Leonardo", "Leonardo.Ai", "Freepik", "Firefly", "Adobe Firefly", "Playground AI", "Seedream", "Bria",

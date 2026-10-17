@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { createClient } from "@libsql/client";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,7 +17,7 @@ const ROOT = path.resolve(__dirname, "../..");
 const ROUTE = "app/api/visitor/ask/route.ts";
 const ENV = ["ENGINE_MOCK", "VISITOR_BAR_ENABLED", "VISITOR_BAR_MODEL", "VISITOR_BAR_PER_VISITOR_HOUR", "VISITOR_BAR_PER_ADDRESS_HOUR", "VISITOR_BAR_PLATFORM_HOUR",
   "SELFHOST_BEHIND_PROXY", "TRUSTED_PROXY_HOPS", "TRUST_CF_CONNECTING_IP", "VERCEL", "TEXT_DIRECT", "APP_ORIGIN", "AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN",
-  "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "VISITOR_BAR_ANTHROPIC_API_KEY", "VISITOR_BAR_GEMINI_API_KEY", "VISITOR_BAR_PER_NET48_HOUR", "NODE_ENV", "PLATFORM_DATABASE_URL", "TURSO_DATABASE_URL", "PLATFORM_AUTH_TOKEN", "TURSO_AUTH_TOKEN", "SESSION_SECRET"] as const;
+  "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "VISITOR_BAR_ANTHROPIC_API_KEY", "VISITOR_BAR_GEMINI_API_KEY", "VISITOR_BAR_PER_NET48_HOUR", "NODE_ENV", "PLATFORM_DATABASE_URL", "TURSO_DATABASE_URL", "PLATFORM_AUTH_TOKEN", "TURSO_AUTH_TOKEN", "SESSION_SECRET"] as const;
 const saved = Object.fromEntries(ENV.map((name) => [name, process.env[name]]));
 const realFetch = globalThis.fetch;
 let dir = "";
@@ -39,7 +39,7 @@ const lib = async () => ({
   screen: await import("../../lib/visitor/screen"),
   limits: await import("../../lib/visitor/limits"),
   instructions: await import("../../lib/visitor/instructions"),
-  registry: await import("../../lib/visitor/registry"),
+  registry: await import("../helpers/visitorRegistry"),
 });
 
 type Send = (body: string, opts: { timeoutMs: number }) => Promise<TextReply>;
@@ -251,7 +251,7 @@ test("reversed, spelled out and invisible: the hidden forms are held too", async
   /* Two ordinary words are never read as one. */
   expect(screen.screenReason("A b c d")).toBeNull();
   /* Invisible characters are taken out of the question before the model sees it. */
-  expect(bar.cleanQuestion("What‮ is\u0000 it؜?\u{E0041}\u{E007F}\n")).toEqual({ question: "What is it ?" });
+  expect(bar.cleanQuestion("What\u202e is\u0000 it\u061c?\u{E0041}\u{E007F}\n")).toEqual({ question: "What is it ?" });
 });
 
 /* ── 1 and 2: extraction ──────────────────────────────────────────────────────────────────────── */
@@ -572,10 +572,13 @@ test("3d. the shared limits count in hour buckets, both or neither, and prune th
   expect(limits.visitorLimitConfig({ VISITOR_BAR_PLATFORM_HOUR: "100000" }).maxKeys).toBe(100_001);
 });
 
-test("3d2. two separate database clients on one file, all at once: the cap is never passed", async () => {
+test("3d2. two separate database clients on one file, many admissions in flight at once: the cap is never passed", async () => {
   const { limits } = await lib();
   const url = process.env.PLATFORM_DATABASE_URL!;
-  /* Two native clients, made independently (not the shared cached one): as two processes would hold. */
+  /* Two native clients, made independently (not the shared cached one). Within one process two clients cannot overlap
+     inside a transaction, so this is not a proof of SQLite's locking across processes (that is SQLite's own guarantee,
+     and admitShared does its check and its increment in one batch). What it does catch is a check-then-write split
+     across awaits: many admissions started together, interleaving at every await, must still never pass the cap. */
   const [a, b] = [createClient({ url, timeout: 5_000 } as Parameters<typeof createClient>[0]), createClient({ url, timeout: 5_000 } as Parameters<typeof createClient>[0])];
   const config = { ...limits.VISITOR_LIMIT_DEFAULTS, perAddressHour: 100, platformHour: 7 };
   const at = 600_000 * 60 * 60 * 1000;
@@ -587,7 +590,7 @@ test("3d2. two separate database clients on one file, all at once: the cap is ne
   const stored = async () => Number((await a.execute({ sql: "SELECT count FROM visitor_bar_hits WHERE scope = 'platform' AND bucket = ?", args: [Math.floor(at / 3_600_000)] })).rows[0]?.count ?? 0);
   expect(admitted).toBeLessThanOrEqual(7);
   expect(await stored()).toBe(admitted);
-  /* Whatever lost the race to a busy file was refused, not counted; asking on until refused fills the cap exactly. */
+  /* Any admission that failed (a busy file) was refused, not counted; asking on until refused fills the cap exactly. */
   let more = 0;
   while ((await limits.admitShared(`k${more}`, null, config, at, more % 2 ? a : b)).ok) more++;
   expect(admitted + more).toBe(7);
@@ -633,7 +636,7 @@ test("3g. the question's length is capped, and so is the body", async () => {
   expect(await long.json()).toEqual({ error: "Ask in 500 characters or fewer." });
   expect((await ask(r, JSON.stringify({ question: "x", pad: "y".repeat(5000) }))).status).toBe(413);
   const empty: number[] = [];
-  for (const body of [{}, { question: "   " }, { question: "​\u{E0020}" }, { question: 7 }, "not json", []]) empty.push((await ask(r, body)).status);
+  for (const body of [{}, { question: "   " }, { question: "\u200b\u{E0020}" }, { question: 7 }, "not json", []]) empty.push((await ask(r, body)).status);
   expect(empty).toEqual([400, 400, 400, 400, 400, 400]);
   expect(calls).toBe(1);
 });
@@ -748,8 +751,8 @@ test("nothing the route loads, however deep, is a generation, engine, money or w
   const { files, packages } = closure(ROUTE);
   /* The walk is real: it reaches the text client, the registries the screen reads and the database client. */
   for (const reached of ["lib/textDirect.ts", "lib/language-provider.ts", "lib/models.ts", "lib/visitor/screen.ts", "lib/localDatabaseClient.ts"]) expect(files.has(reached), reached).toBe(true);
-  /* The registry list is for the tests alone: the route never loads it. */
-  expect(files.has("lib/visitor/registry.ts")).toBe(false);
+  /* The registry list lives with the tests: nothing the route loads is under tests/. */
+  expect([...files].filter((file) => file.startsWith("tests/"))).toEqual([]);
   const FORBIDDEN: [string, RegExp][] = [
     ["an engine adapter", /^lib\/engines\//],
     ["the provider registry and its pool", /^lib\/(?:providers|providerPool|providerOutcome|providerFailure)\.ts$/],
@@ -773,7 +776,7 @@ test("nothing the route loads, however deep, is a generation, engine, money or w
 });
 
 test("the bar sends no tools and logs nothing itself", () => {
-  for (const file of ["lib/visitor/bar.ts", "lib/visitor/screen.ts", "lib/visitor/limits.ts", "lib/visitor/instructions.ts", "lib/visitor/registry.ts"]) {
+  for (const file of ["lib/visitor/bar.ts", "lib/visitor/screen.ts", "lib/visitor/limits.ts", "lib/visitor/instructions.ts"]) {
     const code = readFileSync(path.join(ROOT, file), "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
     expect(code, file).not.toMatch(/\b(?:tools|tool_choice|functions|function_call)\s*:/);
     expect(code, file).not.toMatch(/\bconsole\./);
@@ -782,4 +785,77 @@ test("the bar sends no tools and logs nothing itself", () => {
   const source = readFileSync(path.join(ROOT, ROUTE), "utf8");
   expect(source.match(/\bconsole\.\w+/g)).toEqual(["console.info"]);
   expect(source).not.toMatch(/log\(\{[^}]*\b(?:question|answer|asked)\b/);
+});
+
+/* ── Source hygiene ───────────────────────────────────────────────────────────────────────────── */
+
+/** Every .ts file under a folder, at any depth. */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+    const rel = path.join(dir, entry.name);
+    if (entry.isDirectory()) { if (entry.name !== "node_modules" && !entry.name.startsWith(".")) out.push(...sourceFiles(rel)); }
+    else if (/\.(ts|tsx|mts)$/.test(entry.name)) out.push(rel);
+  }
+  return out;
+}
+
+test("no raw invisible or text-direction character in the bar's source (Trojan Source): each is written as an escape", () => {
+  /* Zero-width and direction marks, the Arabic letter mark, word joiners and invisible operators, the byte-order mark,
+     the tag characters, and the line and paragraph separators. Built from code points so this file holds none either. */
+  const ranges = [[0x200b, 0x200f], [0x202a, 0x202e], [0x2060, 0x2069], [0xfeff, 0xfeff], [0x061c, 0x061c], [0x00ad, 0x00ad], [0x2028, 0x2029], [0xe0000, 0xe007f]];
+  const invisible = (c: number) => ranges.some(([from, to]) => c >= from && c <= to);
+  const files = [...sourceFiles("lib/visitor"), ...sourceFiles("app/api/visitor"), "tests/unit/visitorBar.spec.ts", "tests/helpers/visitorRegistry.ts"];
+  expect(files.length).toBeGreaterThanOrEqual(7);
+  const found = files.flatMap((file) => [...readFileSync(path.join(ROOT, file), "utf8")].flatMap((ch, i) => invisible(ch.codePointAt(0)!) ? [`${file}: U+${ch.codePointAt(0)!.toString(16).toUpperCase()} at ${i}`] : []));
+  expect(found).toEqual([]);
+});
+
+test("the screen has one importer: lib/visitor/bar.ts", () => {
+  /* Any import of it, a type-only one included, from anywhere in app/, lib/ or components/. */
+  const target = path.join("lib", "visitor", "screen");
+  const importsScreen = (file: string) => [...readFileSync(path.join(ROOT, file), "utf8").matchAll(/\bfrom\s+["']([^"']+)["']|\b(?:import|require)\(\s*["'`]([^"'`]+)["'`]\s*\)/g)]
+    .map((m) => m[1] ?? m[2])
+    .some((spec) => (spec.startsWith("@/") ? path.normalize(spec.slice(2)) : spec.startsWith(".") ? path.normalize(path.join(path.dirname(file), spec)) : "").replace(/\.tsx?$/, "") === target);
+  expect([...sourceFiles("app"), ...sourceFiles("lib"), ...sourceFiles("components")].filter(importsScreen)).toEqual(["lib/visitor/bar.ts"]);
+});
+
+/* ── The text client's caller key: its two refusals, directly ───────────────────────────────── */
+
+test("languageModel refuses a caller's key for a door that is not direct (OpenAI, the gateway), with nothing sent", async () => {
+  delete process.env.ENGINE_MOCK;
+  let sent = 0;
+  const counting: typeof fetch = async () => { sent++; return new Response("{}"); };
+  const { languageModel } = await import("../../lib/language-provider");
+  const { textRoute } = await import("../../lib/textRoute");
+  process.env.OPENAI_API_KEY = "platform-openai-key-SENTINEL";
+  expect(textRoute("openai/gpt-5")).toBe("openai");
+  expect(() => languageModel("openai/gpt-5", { auth: {}, apiKey: "caller-key", fetch: counting })).toThrow(/direct language door/);
+  process.env.AI_GATEWAY_API_KEY = "gateway-key-SENTINEL";
+  expect(textRoute("anthropic/claude-haiku-5.5")).toBe("gateway");
+  expect(() => languageModel("anthropic/claude-haiku-5.5", { auth: { Authorization: "Bearer gateway-key-SENTINEL" }, apiKey: "caller-key", fetch: counting })).toThrow(/direct language door/);
+  expect(sent).toBe(0);
+});
+
+test("an empty caller key is refused, never read as no key: the platform's key is not used and nothing is sent", async () => {
+  delete process.env.ENGINE_MOCK;
+  process.env.TEXT_DIRECT = "anthropic";
+  process.env.ANTHROPIC_API_KEY = "platform-anthropic-key-SENTINEL";
+  let sent = 0;
+  const counting: typeof fetch = async () => { sent++; return new Response("{}"); };
+  globalThis.fetch = counting;
+  const { languageModel } = await import("../../lib/language-provider");
+  expect(() => languageModel("anthropic/claude-haiku-5.5", { auth: {}, apiKey: "", fetch: counting })).toThrow(/caller key .* is empty/);
+  const { textPost } = await import("../../lib/textDirect");
+  const { visitorBarRequest } = await import("../../lib/visitor/bar");
+  const body = JSON.stringify(visitorBarRequest("Hi", "anthropic/claude-haiku-5.5"));
+  /* Direct door, empty key: refused before the provider is called. */
+  const direct = await textPost(body, { apiKey: "", fetch: counting });
+  expect(direct.ok).toBe(false);
+  expect(direct.text).not.toMatch(/SENTINEL/);
+  /* Gateway door, empty key: refused as any caller key is there. */
+  delete process.env.TEXT_DIRECT;
+  const gateway = await textPost(body, { apiKey: "", fetch: counting });
+  expect(gateway.ok).toBe(false);
+  expect(sent).toBe(0);
 });

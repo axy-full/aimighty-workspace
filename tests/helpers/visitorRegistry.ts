@@ -1,7 +1,7 @@
-import { AUDIO_LABELS, MODELS, thinkingModelDisplayName } from "../models";
-import { PROVIDER_DISPLAY_NAMES } from "../vendorNames";
-import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS } from "../textRoute";
-import modelCatalogJson from "../modelCatalog.json";
+import { AUDIO_LABELS, MODELS, thinkingModelDisplayName } from "../../lib/models";
+import { PROVIDER_DISPLAY_NAMES } from "../../lib/vendorNames";
+import { DIRECT_MODEL_IDS, UNMAPPED_DIRECT_MODEL_IDS } from "../../lib/textRoute";
+import modelCatalogJson from "../../lib/modelCatalog.json";
 
 /**
  * Every engine, vendor and model name Particl's own registries hold (lib/models.ts, lib/vendorNames.ts, lib/textRoute.ts,
