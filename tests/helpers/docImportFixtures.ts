@@ -116,7 +116,10 @@ const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships
 const PKG_REL = 'xmlns="http://schemas.openxmlformats.org/package/2006/relationships"';
 
 /** A minimal .docx. `documentXml` replaces the generated body when given (for hostile parts). */
-export function docx(paragraphs: string[], options: { image?: Buffer; documentXml?: string; extra?: ZipInput[]; stored?: boolean } = {}): Buffer {
+export function docx(
+  paragraphs: string[],
+  options: { image?: Buffer; documentXml?: string; extra?: ZipInput[]; stored?: boolean; documentRels?: string; packageRels?: string } = {},
+): Buffer {
   const body = paragraphs.map((text) => `<w:p><w:r><w:t xml:space="preserve">${esc(text)}</w:t></w:r></w:p>`).join("");
   const drawing = options.image
     ? `<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:blipFill><a:blip r:embed="rIdImg"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
@@ -127,11 +130,11 @@ export function docx(paragraphs: string[], options: { image?: Buffer; documentXm
       name: "[Content_Types].xml",
       data: xml(`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`),
     },
-    { name: "_rels/.rels", data: xml(`<Relationships ${PKG_REL}><Relationship Id="rId1" Type="${REL}/officeDocument" Target="word/document.xml"/></Relationships>`) },
+    { name: "_rels/.rels", data: xml(`<Relationships ${PKG_REL}><Relationship Id="rId1" Type="${REL}/officeDocument" Target="word/document.xml"/>${options.packageRels ?? ""}</Relationships>`) },
     { name: "word/document.xml", data: document, method: options.stored ? 0 : 8 },
     {
       name: "word/_rels/document.xml.rels",
-      data: xml(`<Relationships ${PKG_REL}>${options.image ? `<Relationship Id="rIdImg" Type="${REL}/image" Target="media/image1.png"/>` : ""}</Relationships>`),
+      data: xml(`<Relationships ${PKG_REL}>${options.image ? `<Relationship Id="rIdImg" Type="${REL}/image" Target="media/image1.png"/>` : ""}${options.documentRels ?? ""}</Relationships>`),
     },
     ...(options.image ? [{ name: "word/media/image1.png", data: options.image, method: 0 as const }] : []),
     ...(options.extra ?? []),
@@ -196,7 +199,7 @@ const S = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xml
 
 /** A minimal .xlsx: string cells go through sharedStrings, numbers inline. */
 export function xlsx(
-  sheets: { name: string; rows: (string | number)[][]; hidden?: boolean; rid?: number }[],
+  sheets: { name: string; rows: (string | number)[][]; hidden?: boolean; rid?: number; inline?: boolean }[],
   options: { sharedStringsXml?: string } = {},
 ): Buffer {
   const shared: string[] = [];
@@ -217,7 +220,9 @@ export function xlsx(
     xml(`<worksheet ${S}><sheetData>${sheet.rows.map((row, r) => `<row r="${r + 1}">${row.map((value, c) =>
       typeof value === "number"
         ? `<c r="${col(c)}${r + 1}"><v>${value}</v></c>`
-        : value === "" ? "" : `<c r="${col(c)}${r + 1}" t="s"><v>${indexOf(value)}</v></c>`).join("")}</row>`).join("")}</sheetData></worksheet>`),
+        : value === "" ? ""
+        : sheet.inline ? `<c r="${col(c)}${r + 1}" t="inlineStr"><is><t>${esc(value)}</t></is></c>`
+        : `<c r="${col(c)}${r + 1}" t="s"><v>${indexOf(value)}</v></c>`).join("")}</row>`).join("")}</sheetData></worksheet>`),
   );
   return zip([
     { name: "[Content_Types].xml", data: xml(`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>`) },
@@ -339,15 +344,15 @@ function pngFrom(width: number, height: number, idat: Buffer) {
 }
 
 /** An uncompressed little-endian greyscale TIFF of the given size (white). `repeat` names its size twice: the real one, then this one. */
-export function tiff(width: number, height: number, repeat?: { width: number; height: number }): Buffer {
-  return tiffFrom(width, height, Buffer.alloc(width * height, 255), repeat);
+export function tiff(width: number, height: number, repeat?: { width: number; height: number }, sizeType = 3): Buffer {
+  return tiffFrom(width, height, Buffer.alloc(width * height, 255), repeat, sizeType);
 }
 
-function tiffFrom(width: number, height: number, pixels: Buffer, repeat?: { width: number; height: number }): Buffer {
+function tiffFrom(width: number, height: number, pixels: Buffer, repeat?: { width: number; height: number }, sizeType = 3): Buffer {
   const tags: [number, number, number, number][] = [
-    [256, 3, 1, width],
+    [256, sizeType, 1, width],
     ...(repeat ? [[256, 3, 1, repeat.width] as [number, number, number, number]] : []),
-    [257, 3, 1, height],
+    [257, sizeType, 1, height],
     ...(repeat ? [[257, 3, 1, repeat.height] as [number, number, number, number]] : []),
     [258, 3, 1, 8],
     [259, 3, 1, 1],

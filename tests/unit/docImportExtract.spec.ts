@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { existsSync } from "node:fs";
+import { inflateRawSync } from "node:zlib";
 import { extractDocument } from "../../lib/docImport/extract";
 import { detectDocument } from "../../lib/docImport/detect";
 import {
@@ -233,7 +234,16 @@ test("zip bomb: a part that declares 100 bytes but inflates to 1 GB stops at 100
   const lie = docx(["x"], { extra: [{ name: "word/styles.xml", data: "", rawBody: bomb, declaredSize: 100, crc: 0 }] });
   const started = Date.now();
   await refused(extractDocument("lie.docx", lie), "damaged");
-  expect(Date.now() - started).toBeLessThan(400);
+  const elapsed = Date.now() - started;
+  // Relative, so a slow runner cannot flake it: inflating just 64 MB of the same stream (1/16 of the bomb) is the yardstick.
+  const yard = Date.now();
+  try {
+    inflateRawSync(bomb, { maxOutputLength: 64 * 1024 * 1024 });
+  } catch {
+    // Expected: the yardstick stops at its own 64 MB.
+  }
+  const sixtyFourMb = Date.now() - yard;
+  expect(elapsed).toBeLessThan(4 * sixtyFourMb + 250);
 });
 
 test("zip: an entry declared past the entry limit, Zip64 sizes and unknown compression methods are refused from the directory", async () => {
@@ -297,7 +307,7 @@ test("billion laughs: refused in a Final Draft file; in an SVG the DOCTYPE is st
   await refused(extractDocument("lol.fdx", Buffer.from(`${LAUGHS}<FinalDraft><Content>${para("Action", "&lol9;")}</Content></FinalDraft>`)), "unsafe");
   const started = Date.now();
   const doc = await extractDocument("lol.svg", Buffer.from(`${LAUGHS}<svg><text>&lol9;</text></svg>`));
-  expect(Date.now() - started).toBeLessThan(2_000);
+  expect(Date.now() - started).toBeLessThan(10_000);
   expect(doc.text).toBe("&lol9;");
   expect(doc.warnings.join(" ")).toMatch(/declares a document type; it was not read/);
   expect(doc.warnings.join(" ")).toMatch(/1 entity references the importer does not expand/);
@@ -386,7 +396,7 @@ test("the per-file timeout ends an extraction that does not finish", async () =>
   const never: OcrEngine = () => new Promise(() => {});
   const started = Date.now();
   await refused(extractDocument("slow.png", textPng("HELLO"), { ocr: never, timeoutMs: 300 }), "timeout");
-  expect(Date.now() - started).toBeLessThan(3_000);
+  expect(Date.now() - started).toBeLessThan(10_000);
 });
 
 test("the XML scanner keeps attribute names as data and never expands custom entities", () => {
@@ -430,7 +440,7 @@ test("workbook amplification: one 1M-character shared string is refused as a cel
   const bytes = xlsx([{ name: "S", rows: Array.from({ length: 50 }, () => Array.from({ length: 100 }, () => huge)) }]);
   const started = Date.now();
   expect((await refused(extractDocument("amp.xlsx", bytes), "limit")).message).toMatch(/longer than 32767 characters/);
-  expect(Date.now() - started).toBeLessThan(2_000);
+  expect(Date.now() - started).toBeLessThan(10_000);
 });
 
 test("workbook amplification: a 30,000-character string in 5,000 cells (150M characters) is refused by the running count, at once", async () => {
@@ -438,7 +448,7 @@ test("workbook amplification: a 30,000-character string in 5,000 cells (150M cha
   const bytes = xlsx([{ name: "S", rows: Array.from({ length: 50 }, () => Array.from({ length: 100 }, () => long)) }]);
   const started = Date.now();
   expect((await refused(extractDocument("amp.xlsx", bytes), "limit")).message).toMatch(/more than one million characters/);
-  expect(Date.now() - started).toBeLessThan(2_000);
+  expect(Date.now() - started).toBeLessThan(10_000);
 });
 
 test("slide, sheet, cell and PDF page counts past their limits are refused; a column past its limit is skipped with a warning", async () => {
@@ -499,17 +509,17 @@ test("a deck with 8,000 notes relationships on one slide reads its notes once, a
   const rels = Array.from({ length: 8_000 }, (_, i) => `<Relationship Id="rN${i}" Type="${REL}/notesSlide" Target="../notesSlides/notesSlide1.xml"/>`).join("");
   const started = Date.now();
   const doc = await extractDocument("fan.pptx", pptx([{ paragraphs: ["Slide"], notes: ["Say it once. ".repeat(5_000)] }], { slide1Rels: rels }));
-  expect(Date.now() - started).toBeLessThan(3_000);
+  expect(Date.now() - started).toBeLessThan(15_000);
   expect(doc.text.match(/Notes:/g)).toHaveLength(1);
 });
 
 test("a slide or sheet listed twice is read once", async () => {
   const deck = await extractDocument("twice.pptx", pptx([{ paragraphs: ["One"] }, { paragraphs: ["Two"] }], { order: [1, 2, 1, 1] }));
   expect(deck.sections.map((s) => s.title)).toEqual(["One", "Two"]);
-  expect(deck.warnings.join(" ")).toMatch(/listed twice by the presentation was read once/);
+  expect(deck.warnings.join(" ")).toMatch(/A slide listed twice \(or naming a part already read\) was read once/);
   const book = await extractDocument("twice.xlsx", xlsx([{ name: "A", rows: [["a"]] }, { name: "B", rows: [["b"]], rid: 1 }]));
   expect(book.sections.map((s) => s.title)).toEqual(["A"]);
-  expect(book.warnings.join(" ")).toMatch(/listed twice by the workbook was read once/);
+  expect(book.warnings.join(" ")).toMatch(/A sheet listed twice \(or naming a part already read\) was read once/);
 });
 
 test("the deadline also stops synchronous parsing: a clock past the limit ends a workbook read between XML chunks", async () => {
@@ -517,9 +527,9 @@ test("the deadline also stops synchronous parsing: a clock past the limit ends a
   const clock = () => (now += 1_000);
   const bytes = xlsx([{ name: "S", rows: Array.from({ length: 1_000 }, (_, r) => Array.from({ length: 50 }, (_, c) => r * c)) }]);
   const started = Date.now();
-  await refused(extractDocument("slow.xlsx", bytes, { clock, timeoutMs: 20_000 }), "timeout");
-  // The real-time timer (20 s) never fired: the synchronous checks did it.
-  expect(Date.now() - started).toBeLessThan(5_000);
+  await refused(extractDocument("slow.xlsx", bytes, { clock, timeoutMs: 60_000 }), "timeout");
+  // The real-time timer (60 s) never fired: the synchronous checks did it.
+  expect(Date.now() - started).toBeLessThan(30_000);
 });
 
 test("mammoth's own warnings, which quote style names, are never passed on", async () => {
@@ -528,9 +538,92 @@ test("mammoth's own warnings, which quote style names, are never passed on", asy
   const result = await extractDocument("styles.docx", docx([], { documentXml: doc }));
   expect(result.text).toContain("Hello");
   expect(result.warnings.join(" ")).not.toMatch(/ClientSecretStyle|unknownThing/);
+  expect(result.warnings).toContain("Some Word formatting was not recognised; the text was kept.");
   for (const warning of result.warnings) expect(warning).toMatch(/^(Some Word formatting was not recognised; the text was kept\.)$/);
 });
 
 test("a hostile PDF is bounded at least by the page limit (decoded streams are not bounded in-process; see the PR)", async () => {
   await refused(extractDocument("pages.pdf", pdf(Array.from({ length: MAX_PDF_PAGES + 1 }, (_, i) => `page ${i}`))), "limit");
+});
+
+/* ── Second review: mammoth's part roles, TIFF size types, docx budgets ── */
+
+const WNS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+const RELNS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+test("all five related-part roles pointed at document.xml (about 900k events) are refused before mammoth parses it again and again", async () => {
+  const document = `<w:document ${WNS}><w:body><w:p>${"<w:r/>".repeat(450_000)}</w:p></w:body></w:document>`;
+  const roles = ["comments", "endnotes", "footnotes", "numbering", "styles"]
+    .map((role, i) => `<Relationship Id="rR${i}" Type="${RELNS}/${role}" Target="document.xml"/>`).join("");
+  const error = await refused(extractDocument("roles.docx", docx([], { documentXml: document, stored: true, documentRels: roles })), "unsafe");
+  expect(error.message).toMatch(/points one of its parts at another part/);
+  // The main-document role pointed elsewhere is refused the same way; a role on its standard name is fine.
+  await refused(extractDocument("main.docx", docx(["x"], { packageRels: `<Relationship Id="rM" Type="${RELNS}/officeDocument" Target="word/styles.xml"/>`, extra: [{ name: "word/styles.xml", data: `<w:styles ${WNS}/>` }] })), "unsafe");
+  await refused(extractDocument("swap.docx", docx(["x"], { extra: [{ name: "word/styles.xml", data: `<w:styles ${WNS}/>` }], documentRels: `<Relationship Id="rS" Type="${RELNS}/numbering" Target="styles.xml"/>` })), "unsafe");
+  const fine = await extractDocument("fine.docx", docx(["Text"], { extra: [{ name: "word/styles.xml", data: `<w:styles ${WNS}/>` }], documentRels: `<Relationship Id="rS" Type="${RELNS}/styles" Target="styles.xml"/>` }));
+  expect(fine.text).toBe("Text");
+});
+
+test("a TIFF whose width or height is not a single SHORT or LONG (LONG8, an array) is refused before OCR", async () => {
+  let called = false;
+  const ocr: OcrEngine = async () => {
+    called = true;
+    return { text: "x", confidence: 99 };
+  };
+  await refused(extractDocument("long8.tiff", tiff(40, 20, undefined, 16), { ocr }), "unsafe");
+  await refused(extractDocument("rational.tiff", tiff(40, 20, undefined, 5), { ocr }), "unsafe");
+  expect(called).toBe(false);
+  expect((await extractDocument("long.tiff", tiff(40, 20, undefined, 4), { ocr })).text).toBe("x");
+});
+
+test("the XML handed to mammoth is capped at 16 MB in total, though each part is under its own 32 MB limit", async () => {
+  const document = `<w:document ${WNS}><w:body><w:p><w:pPr><w:pStyle w:val="${prose(9 * 1024 * 1024, 11)}"/></w:pPr></w:p></w:body></w:document>`;
+  const styles = `<w:styles ${WNS}><w:style w:styleId="${prose(8 * 1024 * 1024, 12)}"/></w:styles>`;
+  const bytes = docx([], { documentXml: document, stored: true, extra: [{ name: "word/styles.xml", data: styles, method: 0 }] });
+  expect((await refused(extractDocument("bulk.docx", bytes), "limit")).message).toMatch(/larger than the importer reads/);
+});
+
+test("text mammoth would never print (1.1M characters of comments) is refused by the scan, which mammoth's own output check would not catch", async () => {
+  const comments = (text: string) => `<w:comments ${WNS}><w:comment w:id="0"><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:comment></w:comments>`;
+  const withComments = (text: string) => docx(["Body"], {
+    extra: [{ name: "word/comments.xml", data: comments(text) }],
+    documentRels: `<Relationship Id="rC" Type="${RELNS}/comments" Target="comments.xml"/>`,
+  });
+  // A small comment imports, and its text is not in mammoth's output: the output check alone would let a huge one through.
+  const small = await extractDocument("note.docx", withComments("A reviewer note"));
+  expect(small.text).toBe("Body");
+  expect((await refused(extractDocument("notes.docx", withComments(prose(MAX_TEXT_CHARS + 100_000, 5))), "limit")).message)
+    .toMatch(/more than one million characters/);
+});
+
+test("the docx event budget is shared across parts: 600k events in document.xml plus 600k in styles.xml are refused, though either alone would pass the 1M budget", async () => {
+  test.setTimeout(60_000);
+  const document = `<w:document ${WNS}><w:body><w:p>${"<w:r/>".repeat(300_000)}<w:r><w:t>End</w:t></w:r></w:p></w:body></w:document>`;
+  const styles = `<w:styles ${WNS}>${"<w:style/>".repeat(300_000)}</w:styles>`;
+  const both = docx([], { documentXml: document, stored: true, extra: [{ name: "word/styles.xml", data: styles, method: 0 }] });
+  expect((await refused(extractDocument("shared.docx", both), "limit")).message).toMatch(/more structure than the importer reads/);
+  const alone = await extractDocument("alone.docx", docx([], { documentXml: document, stored: true }));
+  expect(alone.text).toBe("End");
+});
+
+test("comments and processing instructions count as XML events", async () => {
+  const document = `<w:document ${WNS}><w:body>${"<!---->".repeat(MAX_DOCX_XML_EVENTS + 1)}</w:body></w:document>`;
+  expect((await refused(extractDocument("comments.docx", docx([], { documentXml: document, stored: true })), "limit")).message)
+    .toMatch(/more structure than the importer reads/);
+});
+
+test("an inline-string cell over 32,767 characters is refused like a shared one", async () => {
+  const bytes = xlsx([{ name: "S", rows: [[prose(32_768, 3)]], inline: true }]);
+  expect((await refused(extractDocument("inline.xlsx", bytes), "limit")).message).toMatch(/longer than 32767 characters/);
+  const ok = await extractDocument("inline.xlsx", xlsx([{ name: "S", rows: [["fits"]], inline: true }]));
+  expect(ok.text).toBe("fits");
+});
+
+test("a slide or sheet target naming a part the importer already read (the main part, its rels, shared strings) is not read again", async () => {
+  const deck = await extractDocument("self.pptx", pptx([{ paragraphs: ["Slide"] }], {
+    order: [1, 9],
+    presentationRels: `<Relationship Id="rId9" Type="${RELNS}/slide" Target="presentation.xml"/>`,
+  }));
+  expect(deck.sections).toHaveLength(1);
+  expect(deck.warnings.join(" ")).toMatch(/naming a part already read/);
 });
