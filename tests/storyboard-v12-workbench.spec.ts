@@ -6,8 +6,8 @@ import { textReadsAtFloor } from "./helpers/gaps-l1";
 /**
  * Storyboard in the new interface (demo plan PR 18; components/v12/board/StoryboardStage.tsx): one card per shot of the eight-shot film
  * (five drawn, one drawing, two not started), the style, ✓ and ✕, the board sheet, and drawing on the path that has always drawn frames:
- * each priced by the server, sent by one person's press at the figure on the button. Local ENGINE_MOCK server: a send goes to the mock
- * engine, which moves no money. At phone sizes the phone app is unchanged with the switch on.
+ * each priced by the server, sent by one person's press at the figure on the button. Paid work stays forbidden (forbidPaidWork): the one
+ * test that presses Draw answers its sends itself. At phone sizes the phone app is unchanged with the switch on.
  */
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
 const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
@@ -80,9 +80,20 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("v12-frame-words")).toHaveValue("A wide of the harbour at first light, boats still tied up.");
   });
 
-  test("one press draws the missing frames at the shown price and a ✕ frame as a new take (the mock engine; nothing is spent)", async ({ page }) => {
+  test("one press draws the missing frames at the shown price and a ✕ frame as a new take (sends mocked here; nothing is spent)", async ({ page }) => {
     test.setTimeout(240_000);
-    await openBoard(page, "/suites?view=board&stage=storyboard", { mockSends: true });
+    await openBoard(page, "/suites?view=board&stage=storyboard");
+    /* Paid work stays forbidden (openBoard's forbidPaidWork): the sends are answered here, each as a queued job that lands on its next read. */
+    const bodies: { maxCredits?: unknown }[] = [];
+    await page.route(/\/api\/generate$/, (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      bodies.push(JSON.parse(route.request().postData() ?? "{}"));
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: `sbjob${bodies.length}`, status: "queued" }) });
+    });
+    await page.route(/\/api\/jobs\/sbjob\d+$/, (route) => {
+      const id = new URL(route.request().url()).pathname.split("/").pop()!;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ generation: { id: `sbdrawn${id.slice(5)}`, status: "succeeded" } }) });
+    });
     const stage = page.getByTestId("v12-storyboard-stage");
     await expect(stage.getByTestId("v12-card")).toHaveCount(8, { timeout: 60_000 });
     const second = cardOf(page, 2);
@@ -94,8 +105,10 @@ test.describe("desktop, switch on", () => {
     const sent: string[] = [];
     page.on("request", (r) => { if (r.method() === "POST" && /\/api\/generate$/.test(r.url())) sent.push(r.url()); });
     await draw.click();
-    /* One send each for the two shots with no frame and the frame to draw again. */
+    /* One send each for the two shots with no frame and the frame to draw again, each at the figure the server quoted for it. */
     await expect.poll(() => sent.length, { timeout: 60_000 }).toBe(3);
+    expect(bodies).toHaveLength(3);
+    for (const body of bodies) expect(body.maxCredits).toEqual(expect.any(Number));
     /* They land as pictures: the frame drawn again has a second version and no longer says ✕. */
     await expect(cardOf(page, 2).getByTestId("v12-card-status")).toHaveText("Ready · v2", { timeout: 180_000 });
     await expect(cardOf(page, 7).getByTestId("v12-card-status")).toHaveText("Ready", { timeout: 180_000 });
