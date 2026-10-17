@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Client } from "@libsql/client";
@@ -71,12 +71,16 @@ const tables = async (client: Client) =>
 const count = async (client: Client, where = "1") =>
   Number((await client.execute(`SELECT COUNT(*) AS n FROM production_steps WHERE ${where}`)).rows[0].n);
 
-/** Every source file under the app's own roots. */
-const walk = (root: string): string[] =>
-  readdirSync(root).flatMap((name) => {
-    const full = path.join(root, name);
-    if (statSync(full).isDirectory()) return name === "node_modules" ? [] : walk(full);
-    return /\.(ts|tsx|mjs|js)$/.test(name) ? [full] : [];
+/** Source files under a root. Never follows a symbolic link; node_modules and .git are skipped at any depth, and
+ *  `skipHere` names directories skipped directly under this root only. */
+const ALWAYS_SKIP = new Set(["node_modules", ".git"]);
+const SOURCE = /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/;
+const walk = (root: string, skipHere: ReadonlySet<string> = new Set()): string[] =>
+  readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.isSymbolicLink()) return [];
+    const full = root === "." ? entry.name : path.join(root, entry.name);
+    if (entry.isDirectory()) return ALWAYS_SKIP.has(entry.name) || skipHere.has(entry.name) ? [] : walk(full);
+    return entry.isFile() && SOURCE.test(entry.name) ? [full] : [];
   });
 
 async function withEnv<T>(name: string, value: string | undefined, fn: () => Promise<T>): Promise<T> {
@@ -92,12 +96,13 @@ async function withEnv<T>(name: string, value: string | undefined, fn: () => Pro
 }
 const withFlag = <T>(value: string | undefined, fn: () => Promise<T>) => withEnv("V30_PRODUCTION_MODEL", value, fn);
 
-test("creation is idempotent on an existing database: run twice, again from a new connection, and from two at once", async () => {
+test("creation is idempotent on an existing database: run twice, again through a second client object, and three at once", async () => {
   const m = await mods();
   const ws = workspace("idempotent");
   const client = await existingDatabase(ws);
   expect(await columns(client, "projects")).not.toContain("film_type");
-  // A second process: its own connection to the same file, so nothing is memoised.
+  // A second client object on the same in-process connection (the local client is cached per file): ready()'s memo is
+  // per client object, so through it every statement runs again on a database that already has them.
   const otherConnection = m.createPlatformDatabaseClient({ url: ws.dbUrl });
   try {
     await m.runInTenant(ws, async () => {
@@ -115,7 +120,7 @@ test("creation is idempotent on an existing database: run twice, again from a ne
       expect(m.canvasStoreOf(before.canvas_store)).toBe("team");
       await expect(client.execute("UPDATE projects SET canvas_store='other' WHERE id='prj_one'")).rejects.toThrow(/CHECK/i);
 
-      // Two at once (two windows: the same process; two processes: two connections), then once more: one set.
+      // Three at once (two through one client object, one through the other), then once more: one set.
       const settled = await Promise.all([
         store.ensureSteps("prj_one", "synthetic_spot", "person_a"),
         store.ensureSteps("prj_one", "synthetic_spot", "person_b"),
@@ -288,7 +293,7 @@ test("the step list comes from config: the setting when set, else the flagged pl
   });
   expect(await count(client, "production_id='prj_two'")).toBe(0);
 
-  const sources = ["lib", "app", "components"].flatMap(walk);
+  const sources = ["lib", "app", "components"].flatMap((root) => walk(root));
   const naming = (needle: string) => sources.filter((f) => readFileSync(f, "utf8").includes(needle));
   const config = path.join("lib", "productionModel", "filmTypes.ts");
   expect(naming(m.FILM_TYPES_PLACEHOLDER.filmTypes[0].id)).toEqual([config]);
@@ -328,24 +333,27 @@ test("flag off: refused before the workspace database is opened; nothing in the 
 
   // The test-only builder: no source file in the repository, outside tests/ and build output, names it but the store's own
   // (lib/, app/, components/, scripts/, mcp/, ops/, remotion/, proxy.ts, instrumentation.ts, configs: everything).
-  const SKIP = new Set(["node_modules", ".next", ".git", "tests", "test-results", "coverage", "out", "build", "dist", ".vercel", ".data"]);
-  const everything = (root: string): string[] =>
-    readdirSync(root).flatMap((name) => {
-      const full = root === "." ? name : path.join(root, name);
-      if (statSync(full).isDirectory()) return SKIP.has(name) || full === path.join("public", "vendor") ? [] : everything(full);
-      return /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(name) ? [full] : [];
-    });
-  const scanned = everything(".");
+  const ROOT_SKIP = new Set([".next", ".claude", "tests", "test-results", "coverage", "out", "build", "dist", ".vercel", ".data"]);
+  const vendor = path.join("public", "vendor") + path.sep;
+  const scanned = walk(".", ROOT_SKIP).filter((f) => !f.startsWith(vendor));
   for (const covered of ["proxy.ts", "instrumentation.ts", path.join("scripts", "ci-select.mjs")]) expect(scanned).toContain(covered);
   expect(scanned.some((f) => f.startsWith("mcp" + path.sep))).toBe(true);
   const builder = scanned.filter((f) => readFileSync(f, "utf8").includes("stepStoreForTests"));
   expect(builder).toEqual([path.join("lib", "productionModel", "steps.ts")]);
-  // The store class itself is not exported: the factory (db() with requireTenant().id) is the only way in.
-  expect(Object.keys(m)).not.toContain("ProductionStepStore");
+  // The store class itself is not exported under any name: the factory (db() with requireTenant().id) is the only way in.
+  // By identity, so a rename, an alias or a default export is caught; then, as a second layer, by the file's text.
+  const StoreClass = m.stepStoreForTests(client, "ws_identity_probe").constructor;
+  const stepsModule: Record<string, unknown> = await import("../../lib/productionModel/steps");
+  expect(Object.values(stepsModule)).not.toContain(StoreClass);
+  const stepsSource = readFileSync(path.join("lib", "productionModel", "steps.ts"), "utf8");
+  // The only class the file exports is its error; the store's class is never on the list.
+  expect([...stepsSource.matchAll(/export\s+(?:default\s+)?(?:abstract\s+)?class\s+(\w+)/g)].map((x) => x[1])).toEqual(["ProductionStepError"]);
+  expect(stepsSource).not.toMatch(/export\s*\{[^}]*\bStepStore\b/);
+  expect(stepsSource).not.toMatch(/export\s+default\b/);
 
   // No route, screen or component imports the production model yet (A1 adds no route and no behaviour).
   const importers = [...walk("app"), ...walk("components"), ...walk("lib").filter((f) => !f.startsWith(path.join("lib", "productionModel")))]
-    .filter((f) => /productionModel\//.test(readFileSync(f, "utf8")));
+    .filter((f) => /productionModel/.test(readFileSync(f, "utf8")));
   expect(importers).toEqual([]);
 });
 

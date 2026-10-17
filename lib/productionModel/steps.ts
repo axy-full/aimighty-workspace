@@ -12,9 +12,10 @@ import { ProductionModelOffError, productionModelOn } from "./flag";
  *   - `production_steps`: every row carries `workspace_id`, first in its key and in every index, and every query here
  *     filters on the store's own workspace (the lib/pipeline/store.ts idiom);
  *   - `projects` has no `workspace_id`: its reads and writes here are scoped by the DATABASE alone, as everywhere else.
- * Every public method first checks that the store's workspace is the one in scope (`requireTenant().id`), and a
- * production whose steps are held under another workspace's id is answered as not found, so a store pointed at the
- * wrong database neither reads nor writes the other workspace's steps or its production's film type.
+ * The primary defence is the factory: the store is built only by `productionSteps()`, which always pairs db() with
+ * requireTenant().id, so product code cannot point a store at another workspace's database. Two checks sit behind it:
+ * every public method refuses unless the store's workspace is the one in scope, and a production whose steps are already
+ * held under another workspace's id is answered as not found.
  *
  * What it adds (all additive, all created lazily by `ready()`, which only flag-on code reaches):
  *   - `projects.film_type` (nullable): the film type a v30 production was made as; NULL for every production before v30;
@@ -376,8 +377,8 @@ export async function productionSteps(): Promise<ProductionStepStore> {
 
 /**
  * TESTS ONLY. A store on any client for any workspace id, so the tests can point one at the wrong database and prove it
- * still reads and writes nothing there. Nothing in lib/, app/ or components/ but this file may name it
- * (tests/unit/productionSteps.spec.ts guards that).
+ * still reads and writes nothing there. No source file in the repository outside tests/ and build output, other than
+ * this one, may name it (tests/unit/productionSteps.spec.ts guards that).
  */
 export function stepStoreForTests(client: Client, workspaceId: string, env: Record<string, string | undefined> = process.env): ProductionStepStore {
   return new StepStore(client, workspaceId, env);
