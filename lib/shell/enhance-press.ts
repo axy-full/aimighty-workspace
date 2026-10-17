@@ -24,16 +24,24 @@ export const ENHANCE_KEY_ABANDON_MS = 10 * 60_000;
 export const ENHANCE_LOST = "The enhancer's answer did not arrive. Press Enhance again to collect it; it will not be charged twice.";
 export const ENHANCE_PENDING = "Your last press is still being answered. Press Enhance again in a moment; it will not be charged twice.";
 export const ENHANCE_ABANDONED = "Your last press did not finish. Press Enhance again to start a new one.";
+/** What a failed Enhance says first, whatever went wrong (the owner's words, 16 Oct 2026). */
+export const ENHANCE_COULDNT = "Couldn't enhance this time.";
 /**
- * What a failed Enhance says, whatever went wrong (a timeout, a provider error, a missing key, a stream cut off): the owner's words, 16 Oct 2026. They
- * are true because the server settles every failed press at nothing (lib/paidText.ts `freeOnFailure`) and the typed words come back untouched. A reply
- * that never arrived is the one case the client cannot vouch for: that says ENHANCE_LOST.
+ * The whole line when the press is known to have cost nothing: the server said so (`nothingBilled`, which every enhancer failure carries, lib/paidText.ts
+ * `freeOnFailure`), or a press cut off or timed out was collected again by its key and the server's saved ending said so. The no-charge sentence is never
+ * said on the client's own guess (pinned word for word in tests/unit/enhanceStableKey.spec.ts and tests/unit/enhance-client.spec.ts).
  */
-export const ENHANCE_FAILED = "Couldn't enhance this time. Nothing was charged.";
+export const ENHANCE_FAILED = `${ENHANCE_COULDNT} Nothing was charged.`;
+/** A failure whose estimate the server says it holds for now (a charge it cannot yet settle): its own figure, never one of ours. */
+export const enhanceHeldLine = (credits: number): string => `${ENHANCE_COULDNT} ${credits} cr held for now; it comes back to your balance automatically, usually within a few hours.`;
 /** How long the first words may take to arrive (a little past the server's own 8 s deadline, lib/paidText.ts ENHANCE_DEADLINE_MS, so words served at that deadline still arrive). */
 export const ENHANCE_CLIENT_MS = 10_000;
 /** Once words are coming, the longest the stream may go quiet before it counts as cut off. */
 export const ENHANCE_IDLE_MS = 5_000;
+/** A press that ended without its answer (cut off, quiet, timed out, a lost reply) is asked for again under its key: how long that asking may take, and how often a claim still being settled is asked again. */
+export const ENHANCE_COLLECT_MS = 3_000;
+export const ENHANCE_COLLECT_TRIES = 6;
+export const ENHANCE_COLLECT_GAP_MS = 400;
 
 type Held = { signature: string; key: string; firstSentAt: number };
 
@@ -66,99 +74,133 @@ export function enhanceSignature(scope: string | null | undefined, body: string,
 export type EnhancePress = { ok: true; prompt: string; provider: EnhancerProvider } | { ok: false; error: string; cancelled?: true };
 /** What a press tells its screen as it goes: the words so far (the whole rewrite so far, not the latest word), and the person's wish to stop. */
 export type EnhanceHooks = { onWords?: (soFar: string) => void; signal?: AbortSignal };
-type Timing = number | { firstMs: number; idleMs: number };
-type Line = { t?: unknown; done?: unknown; prompt?: unknown; provider?: unknown; error?: unknown };
+type Timing = number | { firstMs: number; idleMs: number; collectMs?: number; collectGapMs?: number };
+type Line = { t?: unknown; done?: unknown; prompt?: unknown; provider?: unknown; error?: unknown; nothingBilled?: unknown; heldCredits?: unknown };
+type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
+type Press = { scope: string | null | undefined; body: string; credits: number };
 
+/** The line for a failed press, with the server's own word on the bill when it gave one (never a guess or a figure of ours). */
+function failureLine(said: { nothingBilled?: unknown; heldCredits?: unknown } | null | undefined): string {
+  if (said?.nothingBilled === true) return ENHANCE_FAILED;
+  if (typeof said?.heldCredits === "number" && Number.isFinite(said.heldCredits) && said.heldCredits > 0) return enhanceHeldLine(said.heldCredits);
+  return ENHANCE_COULDNT;
+}
+
+/**
+ * One press. The rewrite streams back (`stream: true` when the screen shows words as they come, `hooks.onWords`); the first words are waited for
+ * `firstMs`, a quiet stream `idleMs`. Cancel (`hooks.signal`) ends it at once, says nothing, and keeps the key: the server settles a press it never
+ * finished delivering at nothing (lib/enhanceStream.ts).
+ *
+ * A streamed press that ends without its answer and without the person stopping it (cut off midway, gone quiet, no first word in time, a reply nobody
+ * could read) is not guessed at: it is sent once more under the same key, which never runs or charges anything twice, and what the server settled is
+ * what is said. A saved answer is the rewrite (paid once, delivered now); a saved free ending is "Nothing was charged."; a claim still being settled is
+ * asked again a few times (then ENHANCE_PENDING); anything else is ENHANCE_LOST, and the key is kept for the next press to collect.
+ *
+ * A press that asks for the whole answer (no `onWords`) is charged as soon as the writer answers, so it is never asked again on its own: a lost reply
+ * says ENHANCE_LOST and the next press collects it by the key.
+ */
 export async function pressEnhance(
-  fetcher: (url: string, init: RequestInit) => Promise<Response>,
-  press: { scope: string | null | undefined; body: string; credits: number },
+  fetcher: Fetcher,
+  press: Press,
   keys: EnhanceKeys = enhanceKeys,
   clock: () => number = Date.now,
   timing: Timing = { firstMs: ENHANCE_CLIENT_MS, idleMs: ENHANCE_IDLE_MS },
   hooks: EnhanceHooks = {},
 ): Promise<EnhancePress> {
   const signature = enhanceSignature(press.scope, press.body, press.credits);
-  const key = keys.take(signature, clock());
-  const { firstMs, idleMs } = typeof timing === "number" ? { firstMs: timing, idleMs: timing } : timing;
-  /* Past the client's patience the press is given up on and the words stay as typed. The key is still held: pressed again, the same press
-     collects the server's saved answer instead of paying twice. */
+  const t = typeof timing === "number" ? { firstMs: timing, idleMs: timing } : timing;
+  const collectMs = t.collectMs ?? ENHANCE_COLLECT_MS;
+  const gapMs = t.collectGapMs ?? ENHANCE_COLLECT_GAP_MS;
+  const cancelled = (): EnhancePress | null => hooks.signal?.aborted ? { ok: false, error: "", cancelled: true } : null;
+  const go = (key: string, collecting: boolean) => attempt(fetcher, press, key, signature, keys, clock, hooks, collecting ? collectMs : t.firstMs, t.idleMs);
+  const unsure = (pending?: true): EnhancePress => cancelled() ?? { ok: false, error: pending ? ENHANCE_PENDING : ENHANCE_LOST };
+  try {
+    let out = await go(keys.take(signature, clock()), false);
+    /* The key replayed a press of these words that ended free (cancelled, cut off): that press is over, so this one is made, once, under a fresh key. */
+    if (out.kind === "replayed-free") { keys.release(signature); out = await go(keys.take(signature, clock()), false); }
+    if (out.kind === "done") return out.press;
+    if (out.kind === "replayed-free") { keys.release(signature); return { ok: false, error: ENHANCE_FAILED }; }
+    if (!hooks.onWords) return unsure(out.pending);
+    /* A streamed press ended without its answer: what did the server settle? Asked under the same key; a claim still being settled is asked again. */
+    let pending = out.pending;
+    for (let i = 0; i < ENHANCE_COLLECT_TRIES; i++) {
+      if (cancelled()) return unsure();
+      if (i > 0 || pending) await new Promise((resolve) => setTimeout(resolve, gapMs));
+      const again = await go(keys.take(signature, clock()), true);
+      if (again.kind === "done") return again.press;
+      if (again.kind === "replayed-free") { keys.release(signature); return { ok: false, error: ENHANCE_FAILED }; }
+      pending = again.pending;
+      if (!pending) break;
+    }
+    return unsure(pending);
+  } catch {
+    return unsure();
+  }
+}
+
+/** One request under a key: its answer (`done`), a replay of a free ending (`replayed-free`), or no answer to go by (`unsure`; `pending` while the claim is being settled). */
+type Attempt = { kind: "done"; press: EnhancePress } | { kind: "replayed-free" } | { kind: "unsure"; pending?: true };
+
+async function attempt(
+  fetcher: Fetcher, press: Press, key: string, signature: string, keys: EnhanceKeys, clock: () => number, hooks: EnhanceHooks, firstMs: number, idleMs: number,
+): Promise<Attempt> {
   const patience = new AbortController();
   let timer = setTimeout(() => patience.abort(), firstMs);
-  const patient = (ms: number) => { clearTimeout(timer); timer = setTimeout(() => patience.abort(), ms); };
+  const patient = () => { clearTimeout(timer); timer = setTimeout(() => patience.abort(), idleMs); };
   const signal = hooks.signal ? AbortSignal.any([patience.signal, hooks.signal]) : patience.signal;
+  const stopped = (): Attempt => hooks.signal?.aborted ? { kind: "done", press: { ok: false, error: "", cancelled: true } } : { kind: "unsure" };
   try {
-    return await sent(fetcher, press, key, signature, keys, clock, false, { signal, wished: hooks.signal, patience: patience.signal, patient, idleMs, onWords: hooks.onWords });
-  } catch {
-    return hooks.signal?.aborted ? { ok: false, error: "", cancelled: true } : { ok: false, error: ENHANCE_FAILED };
+    let response: Response;
+    try {
+      response = await fetcher("/api/prompt/enhance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+        /* A screen that shows the words as they come asks for the stream (and the server then charges only once the last word is out); one that only wants the answer gets it whole. */
+        body: JSON.stringify({ ...JSON.parse(press.body), maxCredits: press.credits, ...(hooks.onWords ? { stream: true } : {}) }),
+        signal,
+      });
+    } catch {
+      return stopped();
+    }
+    if (response.ok && /ndjson/i.test(response.headers.get("Content-Type") ?? "")) return await readStream(response, signature, keys, signal, patient, hooks, stopped);
+    const json = await response.json().catch(() => null) as ({ prompt?: string; provider?: EnhancerProvider; error?: string; pending?: boolean } & Line) | null;
+    if (hooks.signal?.aborted) return stopped();
+    if (response.status === 409 && json?.pending === true && response.headers.get("Idempotency-Status") !== "complete") {
+      if (response.headers.get("Idempotency-Replayed") !== "true") return { kind: "unsure", pending: true };
+      if (!keys.abandoned(signature, clock())) return { kind: "unsure", pending: true };
+      keys.release(signature);
+      return { kind: "done", press: { ok: false, error: ENHANCE_ABANDONED } };
+    }
+    /* No readable answer (a host's error page, a body cut short): unsure, and the key is kept. */
+    if (!json) return { kind: "unsure" };
+    const complete = response.headers.get("Idempotency-Status") === "complete";
+    if (complete && response.headers.get("Idempotency-Replayed") === "true" && !response.ok && json.nothingBilled === true) return { kind: "replayed-free" };
+    /* The server's saved answer, read: success or refusal, the next press is a new one. */
+    if (complete) keys.release(signature);
+    if (response.ok && json.prompt && json.provider) return { kind: "done", press: { ok: true, prompt: json.prompt, provider: json.provider } };
+    return { kind: "done", press: { ok: false, error: failureLine(json) } };
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function sent(
-  fetcher: (url: string, init: RequestInit) => Promise<Response>,
-  press: { scope: string | null | undefined; body: string; credits: number },
-  key: string, signature: string, keys: EnhanceKeys, clock: () => number, retried: boolean,
-  how: { signal: AbortSignal; wished?: AbortSignal; patience: AbortSignal; patient: (ms: number) => void; idleMs: number; onWords?: (soFar: string) => void },
-): Promise<EnhancePress> {
-  const stopped = (): EnhancePress => how.wished?.aborted ? { ok: false, error: "", cancelled: true } : how.patience.aborted ? { ok: false, error: ENHANCE_FAILED } : { ok: false, error: ENHANCE_LOST };
-  let response: Response;
-  try {
-    response = await fetcher("/api/prompt/enhance", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
-      /* A screen that shows the words as they come asks for the stream; one that only wants the answer gets it whole. */
-      body: JSON.stringify({ ...JSON.parse(press.body), maxCredits: press.credits, ...(how.onWords ? { stream: true } : {}) }),
-      signal: how.signal,
-    });
-  } catch {
-    /* Cancelled by the person, or given up on past the patience: the key stays held (the press is collected again by it). Any other break is a lost reply. */
-    return stopped();
-  }
-  if (response.ok && /ndjson/i.test(response.headers.get("Content-Type") ?? "")) return await readStream(response, press, signature, keys, how, stopped);
-  const json = await response.json().catch(() => null) as { prompt?: string; provider?: EnhancerProvider; error?: string; pending?: boolean } | null;
-  if (response.headers.get("Idempotency-Status") === "complete") {
-    /* The server's saved answer, read: success or refusal, the next press is a new one. Unread, it is collected by the same key. */
-    if (!json) return how.signal.aborted ? stopped() : { ok: false, error: ENHANCE_LOST };
-    keys.release(signature);
-  } else if (response.status === 409 && json?.pending === true) {
-    if (!keys.abandoned(signature, clock())) return { ok: false, error: ENHANCE_PENDING };
-    keys.release(signature);
-    return { ok: false, error: ENHANCE_ABANDONED };
-  }
-  if (how.signal.aborted) return stopped();
-  /* The key replayed a press that was cut off or cancelled and was settled at nothing: that press is over, so this one is made again, once, under a fresh key. */
-  if (!retried && response.headers.get("Idempotency-Replayed") === "true" && !response.ok && (json as { nothingBilled?: unknown } | null)?.nothingBilled === true) {
-    keys.release(signature);
-    return sent(fetcher, press, keys.take(signature, clock()), signature, keys, clock, true, how);
-  }
-  if (response.ok && json?.prompt && json.provider) return { ok: true, prompt: json.prompt, provider: json.provider };
-  /* An answer from the server that is not an enhancement (a refusal, a missing key, a writer that answered nothing): the server settled it at nothing. A reply with no readable answer is a lost one. */
-  return json ? { ok: false, error: ENHANCE_FAILED } : { ok: false, error: ENHANCE_LOST };
-}
-
-/** The words, one JSON line each (`{"t":"word "}`), then `{"done":true,"prompt","provider"}` once the workspace has been charged; or `{"error"}`. A stream that ends otherwise was cut off. */
+/** The words, one JSON line each (`{"t":"word "}`), then `{"done":true,"prompt","provider"}` once the workspace has been charged; or `{"error"}`. A stream that ends otherwise ended without its answer. */
 async function readStream(
-  response: Response,
-  press: { scope: string | null | undefined; body: string; credits: number },
-  signature: string, keys: EnhanceKeys,
-  how: { signal: AbortSignal; patient: (ms: number) => void; idleMs: number; onWords?: (soFar: string) => void },
-  stopped: () => EnhancePress,
-): Promise<EnhancePress> {
-  void press;
+  response: Response, signature: string, keys: EnhanceKeys, signal: AbortSignal, patient: () => void, hooks: EnhanceHooks, stopped: () => Attempt,
+): Promise<Attempt> {
   const reader = response.body?.getReader();
-  if (!reader) return { ok: false, error: ENHANCE_FAILED };
+  if (!reader) return { kind: "unsure" };
   const decoder = new TextDecoder();
   let buffer = "";
   let soFar = "";
   /* Cancel, or the patience running out, ends the read whatever the transport does with the body. */
   const onAbort = () => { void reader.cancel().catch(() => {}); };
-  how.signal.addEventListener("abort", onAbort, { once: true });
+  signal.addEventListener("abort", onAbort, { once: true });
   try {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
-      how.patient(how.idleMs);
+      patient();
       buffer += decoder.decode(value, { stream: true });
       let at: number;
       while ((at = buffer.indexOf("\n")) >= 0) {
@@ -167,20 +209,19 @@ async function readStream(
         if (!raw) continue;
         let line: Line;
         try { line = JSON.parse(raw) as Line; } catch { continue; }
-        if (typeof line.t === "string") { soFar += line.t; how.onWords?.(soFar); }
-        else if (line.done === true && typeof line.prompt === "string" && typeof line.provider === "string") { keys.release(signature); return { ok: true, prompt: line.prompt, provider: line.provider as EnhancerProvider }; }
-        else if (typeof line.error === "string") { keys.release(signature); return { ok: false, error: ENHANCE_FAILED }; }
+        if (typeof line.t === "string") { soFar += line.t; hooks.onWords?.(soFar); }
+        else if (line.done === true && typeof line.prompt === "string" && typeof line.provider === "string") { keys.release(signature); return { kind: "done", press: { ok: true, prompt: line.prompt, provider: line.provider as EnhancerProvider } }; }
+        else if (typeof line.error === "string") { keys.release(signature); return { kind: "done", press: { ok: false, error: failureLine(line) } }; }
       }
     }
   } catch {
-    /* A break after words have come is a stream cut off (the server abandons it at nothing); before any word it is a lost reply, collected again by the key. */
-    return soFar && !how.signal.aborted ? { ok: false, error: ENHANCE_FAILED } : stopped();
+    return stopped();
   } finally {
-    how.signal.removeEventListener("abort", onAbort);
+    signal.removeEventListener("abort", onAbort);
     reader.cancel().catch(() => {});
   }
-  /* The stream ended without its last line: cut off. The server abandons such an answer at nothing; the key replays that. */
-  return how.signal.aborted ? stopped() : { ok: false, error: ENHANCE_FAILED };
+  /* The stream ended without its last line. */
+  return stopped();
 }
 
 /** A press whose words, settings or account changed while it was on its way: its answer is for words no longer there. */

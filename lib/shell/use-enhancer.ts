@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useSession } from "@/lib/session";
-import { ENHANCE_CLIENT_MS, ENHANCE_FAILED, EnhanceRuns } from "./enhance-press";
+import { ENHANCE_CLIENT_MS, ENHANCE_COULDNT, EnhanceRuns } from "./enhance-press";
 import { isRawPrompt, type EnhanceMode, type EnhancerProvider } from "./enhancer";
 
 /**
@@ -15,7 +15,7 @@ import { isRawPrompt, type EnhanceMode, type EnhancerProvider } from "./enhancer
  *
  * Enhance runs only when a person presses it: nothing here is ever started by a Make press, and nothing waits on it.
  * The rewrite streams back word by word (`onWords`); the first words are waited for ENHANCE_CLIENT_MS at most, and a
- * press can be stopped (`cancel`) until it is done. A run that fails says ENHANCE_FAILED; the screen restores the typed words.
+ * press can be stopped (`cancel`) until it is done. A run that fails says what the server settled (lib/shell/enhance-press.ts); the screen restores the typed words.
  */
 export type EnhancerInput = {
   prompt: string; mode: EnhanceMode; model: string | null; anchored: boolean; editing: boolean;
@@ -140,7 +140,8 @@ export function useEnhancer(input: EnhancerInput): EnhancerHost {
       setResult({ prompt: pressed.prompt, provider: pressed.provider, charged: credits, body: approved.key });
       return pressed.prompt;
     } catch {
-      setFailure({ body: approved.key, line: ENHANCE_FAILED });
+      /* Nothing the server said: the plain line, with no word on the bill. */
+      setFailure({ body: approved.key, line: ENHANCE_COULDNT });
       return null;
     } finally {
       presses.attach({});
