@@ -85,12 +85,20 @@ ENV NODE_ENV=production \
 # A tiny render at build time, as the runtime user and through the very command the worker runs:
 # a 2-second sample at 192x108 (video and one still), checked with the bundled ffprobe. A missing
 # library or a broken bundle fails the build here, not in production. Costs nothing, uses no media.
+# Each build-time run has a hard limit (owner, 16 Oct 2026): `timeout -k 10s 300s` ends the whole process group (Chrome
+# included) and the build fails; the build log prints a line naming the run when it starts and when it ends, with the limit
+# and the time (UTC), and which way it ended.
 USER 10001:10001
 RUN test -x "$REMOTION_BROWSER_EXECUTABLE"
 RUN set -eu; \
     d=/tmp/build-check; mkdir -p "$d/output"; cd "$d"; \
     printf '%s' '{"version":1,"composition":"fixture-clip","props":{"aspect":"16:9","fps":30,"scale":0.1,"durationSeconds":2,"label":"BUILD"},"output":{"video":true,"stills":[30]}}' > spec.json; \
-    REMOTION_CONCURRENCY=1 /usr/local/bin/node /opt/remotion/cli.mjs > out.log 2>&1 || { tail -n 40 out.log; exit 1; }; \
+    echo "build-check fixture-clip: start $(date -u +%Y-%m-%dT%H:%M:%SZ), limit 300 s"; \
+    rc=0; REMOTION_CONCURRENCY=1 timeout -k 10s 300s /usr/local/bin/node /opt/remotion/cli.mjs > out.log 2>&1 || rc=$?; \
+    if [ "$rc" -ne 0 ]; then tail -n 40 out.log; \
+      if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then echo "build-check fixture-clip: ended by the 300 s limit at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+      else echo "build-check fixture-clip: failed (exit $rc) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi; exit 1; fi; \
+    echo "build-check fixture-clip: rendered $(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
     /opt/remotion/node_modules/@remotion/compositor-linux-x64-gnu/ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 output/export.mp4 | tee probe.txt; \
     grep -q '^h264,192,108$' probe.txt; \
     head -c 8 output/still-30.png | od -An -tx1 | grep -q '89 50 4e 47'; \
@@ -101,7 +109,12 @@ RUN set -eu; \
 RUN set -eu; \
     d=/tmp/build-check-pdf; mkdir -p "$d/input" "$d/output"; cd "$d"; \
     cp /opt/remotion/pdf-check/spec.json spec.json; cp /opt/remotion/pdf-check/deck.html input/deck.html; \
-    /usr/local/bin/node /opt/remotion/cli.mjs > out.log 2>&1 || { tail -n 40 out.log; exit 1; }; \
+    echo "build-check deck-pdf: start $(date -u +%Y-%m-%dT%H:%M:%SZ), limit 300 s"; \
+    rc=0; timeout -k 10s 300s /usr/local/bin/node /opt/remotion/cli.mjs > out.log 2>&1 || rc=$?; \
+    if [ "$rc" -ne 0 ]; then tail -n 40 out.log; \
+      if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then echo "build-check deck-pdf: ended by the 300 s limit at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+      else echo "build-check deck-pdf: failed (exit $rc) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"; fi; exit 1; fi; \
+    echo "build-check deck-pdf: printed $(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
     head -c 5 output/deck.pdf | grep -q '^%PDF-'; \
     cd /; rm -rf "$d"
 
