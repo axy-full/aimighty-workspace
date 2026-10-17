@@ -1,4 +1,4 @@
-import type { InStatement, InValue } from "@libsql/client";
+import type { InStatement, InValue, Transaction } from "@libsql/client";
 import { db, ready, now } from "./db";
 import { currentTenant } from "./tenant";
 import { newInterfaceFor } from "./newInterface.server";
@@ -29,8 +29,9 @@ import {
  *   like any workspace's.
  * - **A limit pause lifts when the month turns** (UTC): read as running from the first moment of the next month. A
  *   person's pause does not lift by itself.
- * - **Audited.** Each change and its audit line (lib/securityAudit.ts) commit in one batch; a value that does not
- *   change writes neither.
+ * - **Audited.** Each change and its audit line (lib/securityAudit.ts) commit in one write transaction, with the read
+ *   the change was decided from; a value that does not change writes neither. A pause or resume writes only over the
+ *   exact stored value it was decided from, so the SQL never judges the row and cannot disagree with the read.
  */
 
 export class SpendSettingsError extends Error {
@@ -52,11 +53,29 @@ async function requireOn(): Promise<{ id: string }> {
   return ws;
 }
 
+type Raw = Record<string, string | undefined>;
+type Exec = Pick<Transaction, "execute">;
+
+/** The three rows exactly as stored; a key never written is absent. */
+async function storedRaw(on: Exec): Promise<Raw> {
+  const marks = SPEND_SETTING_STORE_KEYS.map(() => "?").join(",");
+  const rs = await on.execute({ sql: `SELECT key, value FROM settings WHERE key IN (${marks})`, args: [...SPEND_SETTING_STORE_KEYS] });
+  return Object.fromEntries(rs.rows.map((r) => [String(r.key), String(r.value)]));
+}
+
 async function stored(at: number): Promise<SpendSettings> {
   await ready();
-  const marks = SPEND_SETTING_STORE_KEYS.map(() => "?").join(",");
-  const rs = await db().execute({ sql: `SELECT key, value FROM settings WHERE key IN (${marks})`, args: [...SPEND_SETTING_STORE_KEYS] });
-  return spendSettingsFrom(Object.fromEntries(rs.rows.map((r) => [String(r.key), String(r.value)])), at);
+  return spendSettingsFrom(await storedRaw(db()), at);
+}
+
+/* One write transaction on the workspace's database (the lib/caps.ts inWrite idiom): the read a change decides from
+   and its writes and audit lines land together, or not at all (SQLite serialises writers). */
+async function inWrite<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
+  await ready();
+  const tx = await db().transaction("write");
+  try { const value = await fn(tx); await tx.commit(); return value; }
+  catch (error) { await tx.rollback().catch(() => {}); throw error; }
+  finally { tx.close(); }
 }
 
 /** `creditLimitApplies` is false in the house, whose cap is in dollars and the platform owner's. */
@@ -69,16 +88,8 @@ export async function readSpendSettings(at = now()): Promise<SpendSettingsView> 
 }
 
 /**
- * SQL on the stored pause, true when it reads as running at the month starting `monthStart`: blank, or a limit pause
- * from an earlier month (the read in lib/spendSettings.ts pauseLifted, the same rule). An unreadable row is not running.
- */
-const RUNNING = `(settings.value = '' OR (CASE WHEN json_valid(settings.value)
-  THEN json_extract(settings.value, '$.reason') = 'limit' AND json_extract(settings.value, '$.at') < ? ELSE 0 END))`;
-
-/**
  * The upsert of one key. It is a no-op when the stored value is already this one, or when `guard` (a condition on the
- * stored value) does not hold, so `changes()` is 0 and the audit line after it is skipped: two pauses at once write one
- * pause and one line, and a decision made from a stale read writes nothing.
+ * stored value) does not hold; the caller then writes no audit line.
  */
 function write(key: string, value: string, by: string | null, at: number, guard?: { sql: string; args: InValue[] }): InStatement {
   return {
@@ -88,10 +99,16 @@ function write(key: string, value: string, by: string | null, at: number, guard?
     args: [key, value, by ?? "server", at, ...(guard?.args ?? [])],
   };
 }
-const whenRunning = (at: number) => ({ sql: RUNNING, args: [spendLimitPeriod(at).start] });
-const whenPaused = (at: number) => ({ sql: `NOT ${RUNNING}`, args: [spendLimitPeriod(at).start] });
+/**
+ * A pause or a resume holds only over the exact value its decision was read from (absent reads as NULL, which a stored
+ * row never is). The SQL therefore never judges the row itself, and can never disagree with lib/spendSettings.ts's
+ * read of it: whatever that read calls paused, a resume clears; whatever it calls running, a pause covers.
+ */
+const asRead = (raw: string | undefined) => ({ sql: `settings.value IS ?`, args: [raw ?? null] });
 /** For an admin who is not the owner: the stored limit is blank (a first limit) or above the new one (a lowering). */
 const whenNotRaising = (to: number) => ({ sql: `(settings.value = '' OR (settings.value GLOB '[0-9]*' AND CAST(settings.value AS INTEGER) > ?))`, args: [to] });
+
+const STALE_LIMIT = "The monthly limit changed before this was saved. Only the workspace owner can raise it; look again and choose a lower limit.";
 
 function audit(workspaceId: string, actorId: string | null, action: SecurityAuditInput["action"], details: SecurityAuditInput["details"] = {}): InStatement {
   return securityAuditStatement({ workspaceId, actorId, action, targetType: "workspace", targetId: workspaceId, details }, true);
@@ -102,19 +119,19 @@ function audit(workspaceId: string, actorId: string | null, action: SecurityAudi
  * is always the person's (`admin`); a resume clears a pause whatever made it.
  */
 export async function changeSpendSettings(patch: SpendSettingsPatch, at = now()): Promise<{ settings: SpendSettingsView; changed: string[] }> {
-  return change(patch, at, stored);
+  return change(patch, at, null);
 }
 
 /**
- * TESTS ONLY: the same change, deciding from a read the test supplies (a stale one), to prove the upserts' own
+ * TESTS ONLY: the same change, deciding from stored rows the test supplies (a stale read), to prove the writes' own
  * conditions hold when the read is out of date. Every check above still runs; a guard keeps every other source file
  * from naming it (tests/unit/spendSettings.spec.ts).
  */
-export async function changeSpendSettingsFromReadForTests(patch: SpendSettingsPatch, was: SpendSettings, at = now()): Promise<{ settings: SpendSettingsView; changed: string[] }> {
-  return change(patch, at, async () => was);
+export async function changeSpendSettingsFromReadForTests(patch: SpendSettingsPatch, raw: Record<string, string | undefined>, at = now()): Promise<{ settings: SpendSettingsView; changed: string[] }> {
+  return change(patch, at, raw);
 }
 
-async function change(patch: SpendSettingsPatch, at: number, read: (at: number) => Promise<SpendSettings>): Promise<{ settings: SpendSettingsView; changed: string[] }> {
+async function change(patch: SpendSettingsPatch, at: number, staleRaw: Raw | null): Promise<{ settings: SpendSettingsView; changed: string[] }> {
   const ws = await requireOn();
   const store = currentTenant();
   assertPerson({ user: store?.user, token: store?.token });
@@ -122,31 +139,40 @@ async function change(patch: SpendSettingsPatch, at: number, read: (at: number) 
   if (user.role !== "admin") throw new SpendSettingsError("Only an admin can change the spend limit and its settings.", 403);
   if (patch.monthlyLimitCredits !== undefined && isHouseWorkspace(ws)) throw new SpendSettingsError(HOUSE_LIMIT_REFUSAL, 409);
   const owner = user.owner === true;
-  const was = await read(at);
-  const limitTo = patch.monthlyLimitCredits;
-  if (limitTo !== undefined && !owner && raisesLimit(was.monthlyLimitCredits, limitTo))
-    throw new SpendSettingsError("Only the workspace owner can raise the monthly limit or remove it.", 403);
-  /* Each change is its upsert then its audit line; what changed is read back from the upserts' own counts. */
-  const steps: { name: string; upsert: InStatement; line: InStatement }[] = [];
-  if (limitTo !== undefined && limitTo !== was.monthlyLimitCredits)
-    steps.push({ name: "monthlyLimitCredits",
-      /* A non-owner's write holds only if it still lowers (or is a first limit) against the row as it stands. */
-      upsert: write(SPEND_SETTING_KEYS.limit, limitValue(limitTo), user.id, at, owner || limitTo === null ? undefined : whenNotRaising(limitTo)),
-      line: audit(ws.id, user.id, "spend_limit.set", { limitCredits: limitTo }) });
-  if (patch.paused === true && !was.pause)
-    steps.push({ name: "paused", upsert: write(SPEND_SETTING_KEYS.pause, pauseValue({ at, by: user.id, reason: "admin" }), user.id, at, whenRunning(at)),
-      line: audit(ws.id, user.id, "spend.paused", { reason: "admin" }) });
-  else if (patch.paused === false && was.pause)
-    steps.push({ name: "paused", upsert: write(SPEND_SETTING_KEYS.pause, pauseValue(null), user.id, at, whenPaused(at)), line: audit(ws.id, user.id, "spend.resumed") });
-  if (patch.askBeforeEveryTake !== undefined && patch.askBeforeEveryTake !== was.askBeforeEveryTake)
-    steps.push({ name: "askBeforeEveryTake", upsert: write(SPEND_SETTING_KEYS.ask, askValue(patch.askBeforeEveryTake), user.id, at),
-      line: audit(ws.id, user.id, patch.askBeforeEveryTake ? "spend.ask_every_take_on" : "spend.ask_every_take_off") });
-  let changed: string[] = [];
-  if (steps.length) {
-    const results = await db().batch(steps.flatMap((step) => [step.upsert, step.line]), "write");
-    changed = steps.filter((_, i) => (results[i * 2]?.rowsAffected ?? 0) > 0).map((step) => step.name);
-    invalidateSettings();
-  }
+  const changed = await inWrite(async (tx) => {
+    const raw = staleRaw ?? await storedRaw(tx);
+    const was = spendSettingsFrom(raw, at);
+    const limitTo = patch.monthlyLimitCredits;
+    if (limitTo !== undefined && !owner && raisesLimit(was.monthlyLimitCredits, limitTo))
+      throw new SpendSettingsError("Only the workspace owner can raise the monthly limit or remove it.", 403);
+    const done: string[] = [];
+    /* Each change is its upsert, then its audit line only if the upsert wrote. */
+    const step = async (name: string, upsert: InStatement, line: InStatement): Promise<boolean> => {
+      const wrote = ((await tx.execute(upsert)).rowsAffected ?? 0) > 0;
+      if (wrote) { await tx.execute(line); done.push(name); }
+      return wrote;
+    };
+    if (limitTo !== undefined && limitTo !== was.monthlyLimitCredits) {
+      const wrote = await step("monthlyLimitCredits",
+        /* A non-owner's write holds only if it still lowers (or is a first limit) against the row as it stands. */
+        write(SPEND_SETTING_KEYS.limit, limitValue(limitTo), user.id, at, owner || limitTo === null ? undefined : whenNotRaising(limitTo)),
+        audit(ws.id, user.id, "spend_limit.set", { limitCredits: limitTo }));
+      /* Refused against the row as it stands (it moved since the read, or holds a value no writer makes): say so, and
+         nothing in this change is written. The same value already there is not a refusal. */
+      if (!wrote && !owner && (await storedRaw(tx))[SPEND_SETTING_KEYS.limit] !== limitValue(limitTo)) throw new SpendSettingsError(STALE_LIMIT, 409);
+    }
+    const rawPause = raw[SPEND_SETTING_KEYS.pause];
+    if (patch.paused === true && !was.pause)
+      await step("paused", write(SPEND_SETTING_KEYS.pause, pauseValue({ at, by: user.id, reason: "admin" }), user.id, at, asRead(rawPause)),
+        audit(ws.id, user.id, "spend.paused", { reason: "admin" }));
+    else if (patch.paused === false && was.pause)
+      await step("paused", write(SPEND_SETTING_KEYS.pause, pauseValue(null), user.id, at, asRead(rawPause)), audit(ws.id, user.id, "spend.resumed"));
+    if (patch.askBeforeEveryTake !== undefined && patch.askBeforeEveryTake !== was.askBeforeEveryTake)
+      await step("askBeforeEveryTake", write(SPEND_SETTING_KEYS.ask, askValue(patch.askBeforeEveryTake), user.id, at),
+        audit(ws.id, user.id, patch.askBeforeEveryTake ? "spend.ask_every_take_on" : "spend.ask_every_take_off"));
+    return done;
+  });
+  if (changed.length) invalidateSettings();
   return { settings: await readSpendSettings(at), changed };
 }
 
@@ -156,9 +182,14 @@ async function change(patch: SpendSettingsPatch, at: number, read: (at: number) 
  */
 export async function recordLimitPause(at = now()): Promise<boolean> {
   const ws = await requireOn();
-  if ((await stored(at)).pause) return false;
   const pause: WrittenPause = { at, by: null, reason: "limit" };
-  const [done] = await db().batch([write(SPEND_SETTING_KEYS.pause, pauseValue(pause), null, at, whenRunning(at)), audit(ws.id, null, "spend.paused", { reason: "limit" })], "write");
-  invalidateSettings();
-  return (done?.rowsAffected ?? 0) > 0;
+  const wrote = await inWrite(async (tx) => {
+    const raw = await storedRaw(tx);
+    if (spendSettingsFrom(raw, at).pause) return false;
+    if (((await tx.execute(write(SPEND_SETTING_KEYS.pause, pauseValue(pause), null, at, asRead(raw[SPEND_SETTING_KEYS.pause])))).rowsAffected ?? 0) === 0) return false;
+    await tx.execute(audit(ws.id, null, "spend.paused", { reason: "limit" }));
+    return true;
+  });
+  if (wrote) invalidateSettings();
+  return wrote;
 }

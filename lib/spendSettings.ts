@@ -97,10 +97,12 @@ export const storedAsk = (raw: string | undefined): boolean => raw === "on";
 /**
  * A pause the server made on reaching the limit lasts until the month turns (owner, 17 Oct, update two, item 5): one
  * recorded in an earlier calendar month (UTC) than `at` reads as running from the first moment of the new month. A
- * person's pause, and an unreadable row, never lift by themselves. Stored state only: nothing that spends reads it.
+ * person's pause, and an unreadable row, never lift by themselves; nor does a "limit" pause naming a person, which the
+ * writer never makes (its limit pause is always `by: null`). Read-only: lifting writes nothing and leaves no resume
+ * line. Stored state only: nothing that spends reads it.
  */
 export function pauseLifted(pause: SpendPause | null, at: number): boolean {
-  return pause?.reason === "limit" && pause.at < spendLimitPeriod(at).start;
+  return pause?.reason === "limit" && pause.by === null && pause.at < spendLimitPeriod(at).start;
 }
 
 /** The settings as stored at `at`, each key read on its own; a key never written reads as its default. */

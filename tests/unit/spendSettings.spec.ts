@@ -136,6 +136,8 @@ test("the values: defaults, the stored forms, a strict change, and the month a l
   expect(s.pauseLifted({ ...limitPause, reason: "admin" }, nov + 86_400_000 * 90)).toBe(false);
   expect(s.pauseLifted({ ...s.UNREADABLE_PAUSE }, nov)).toBe(false);
   expect(s.pauseLifted(null, nov)).toBe(false);
+  /* A "limit" pause naming a person is not one the writer makes: it does not lift. */
+  expect(s.pauseLifted({ ...limitPause, by: "u_someone" }, nov)).toBe(false);
   expect(s.spendSettingsFrom({ spendPause: s.pauseValue(limitPause) }, nov).pause).toBeNull();
   expect(s.spendSettingsFrom({ spendPause: s.pauseValue(limitPause) }, lastOct).pause).toEqual(limitPause);
   /* Raising: a higher number, or no limit where there was one. A first limit and a lower one are not raises. */
@@ -193,7 +195,7 @@ test("defaults on a workspace that never set them, with the month they count in"
   });
 });
 
-test("an admin's every change writes one audit line in the same batch; a value that does not change writes neither; a failed audit line rolls the change back", async () => {
+test("an admin's every change writes one audit line in the same transaction; a value that does not change writes neither; a failed audit line rolls the change back", async () => {
   const store = await import("../../lib/spendSettings.server");
   /* The owner: raising and removing the limit are among these changes. */
   const admin = person("u_admin", "admin", { owner: true });
@@ -276,7 +278,8 @@ test("races: two pauses at once, or a person's pause beside the server's, write 
     const stale = on("race_stale");
     await inWs(stale, () => store.changeSpendSettings({ paused: true }, 7000), adminA);
     const seeded = { settings: await settingRows(stale), audit: await auditRows(stale) };
-    const running = { monthlyLimitCredits: null, pause: null, askBeforeEveryTake: false };
+    /* A stale read is the stored rows as they were: here, no pause row at all. */
+    const running: Record<string, string> = {};
     const again = await inWs(stale, () => store.changeSpendSettingsFromReadForTests({ paused: true }, running, 7001), adminB);
     expect(again.changed).toEqual([]);
     expect(again.settings.pause).toEqual({ at: 7000, by: adminA.id, reason: "admin" });
@@ -284,7 +287,8 @@ test("races: two pauses at once, or a person's pause beside the server's, write 
     /* And the other way: the row says running, a stale read says paused. Resuming writes nothing and says so. */
     await inWs(stale, () => store.changeSpendSettings({ paused: false }, 7002), adminA);
     const resumed = { settings: await settingRows(stale), audit: await auditRows(stale) };
-    const paused = { ...running, pause: { at: 7000, by: adminA.id, reason: "admin" as const } };
+    const { pauseValue } = await import("../../lib/spendSettings");
+    const paused = { spendPause: pauseValue({ at: 7000, by: adminA.id, reason: "admin" }) };
     const resumeAgain = await inWs(stale, () => store.changeSpendSettingsFromReadForTests({ paused: false }, paused, 7003), adminB);
     expect(resumeAgain.changed).toEqual([]);
     expect({ settings: await settingRows(stale), audit: await auditRows(stale) }).toEqual(resumed);
@@ -313,6 +317,39 @@ test("a damaged pause row fails closed: it reads as paused, the server's limit p
     expect(resumed.changed).toEqual(["paused"]);
     expect(resumed.settings.pause).toBeNull();
     expect((await auditRows(ws)).map((l) => [l.action, l.actor_id])).toEqual([["spend.resumed", admin.id]]);
+  });
+});
+
+test("every damaged pause row reads as paused, and an admin's resume clears it with exactly one spend.resumed line; an odd stored limit refuses a non-owner plainly", async () => {
+  const store = await import("../../lib/spendSettings.server");
+  const admin = person("u_admin", "admin");
+  const ws = on("damaged");
+  const SHAPES = [
+    "null", "5", "[]", '"x"', "x", '{"at":5}', '{"reason":"limit"}', '{"at":-5,"by":null,"reason":"limit"}', '{"at":5.5,"by":null,"reason":"admin"}',
+    '{"by":7}', '{"at":5,"by":"u_someone","reason":"limit"}', '{"at":5,"by":null,"reason":"limit","reason":"admin"}', '{"at":5,"by":null,"reason":"limit","at":-1}', "not a pause",
+  ];
+  await withFlag("1", async () => {
+    for (const shape of SHAPES) {
+      await rows(ws, "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('spendPause',?,'fixture',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [shape]);
+      const lines = (await auditRows(ws)).length;
+      expect((await inWs(ws, () => store.readSpendSettings(), person("u_member", "member"))).pause, shape).not.toBeNull();
+      const resumed = await inWs(ws, () => store.changeSpendSettings({ paused: false }), admin);
+      expect(resumed.changed, shape).toEqual(["paused"]);
+      expect(resumed.settings.pause, shape).toBeNull();
+      expect((await settingRows(ws)).find((r) => r.key === "spendPause")?.value, shape).toBe("");
+      const after = await auditRows(ws);
+      expect(after.length, shape).toBe(lines + 1);
+      expect(after.at(-1), shape).toMatchObject({ action: "spend.resumed", actor_id: admin.id });
+    }
+    /* A limit no writer makes: it reads as none, and a non-owner's "first limit" over it is refused plainly. */
+    await rows(ws, "INSERT INTO settings(key,value,updated_by,updated_at) VALUES('monthlySpendLimitCredits','abc','fixture',0)");
+    expect((await inWs(ws, () => store.readSpendSettings())).monthlyLimitCredits).toBeNull();
+    const odd = await refusal(() => inWs(ws, () => store.changeSpendSettings({ monthlyLimitCredits: 100 }), admin));
+    expect(odd?.status).toBe(409);
+    expect(odd?.message).toMatch(/Only the workspace owner can raise it/);
+    expect((await settingRows(ws)).find((r) => r.key === "monthlySpendLimitCredits")?.value).toBe("abc");
+    /* The owner can set it. */
+    expect((await inWs(ws, () => store.changeSpendSettings({ monthlyLimitCredits: 100 }), person("u_owner", "admin", { owner: true }))).changed).toEqual(["monthlyLimitCredits"]);
   });
 });
 
@@ -373,14 +410,21 @@ test("only the workspace owner raises the monthly limit or removes it; any admin
     /* A stale read: the admin's read says no limit (a first limit), but 300 stands; 800 would raise it. Nothing is written. */
     expect((await as(owner, { monthlyLimitCredits: 300 })).changed).toEqual(["monthlyLimitCredits"]);
     const settled = { settings: await settingRows(ws), audit: await auditRows(ws) };
-    const noLimit = { monthlyLimitCredits: null, pause: null, askBeforeEveryTake: false };
-    const stale = await inWs(ws, () => store.changeSpendSettingsFromReadForTests({ monthlyLimitCredits: 800 }, noLimit, 9001), admin);
-    expect(stale.changed).toEqual([]);
-    expect(stale.settings.monthlyLimitCredits).toBe(300);
+    /* Refused with a plain line, and nothing in the same change (the ask sent with it) is written. */
+    const STALE = "The monthly limit changed before this was saved. Only the workspace owner can raise it; look again and choose a lower limit.";
+    const stale = await refusal(() => inWs(ws, () => store.changeSpendSettingsFromReadForTests({ monthlyLimitCredits: 800, askBeforeEveryTake: true }, {}, 9001), admin));
+    expect(stale).toBeInstanceOf(store.SpendSettingsError);
+    expect(stale!.status).toBe(409);
+    expect(stale!.message).toBe(STALE);
+    expect(await limitNow()).toBe(300);
     expect({ settings: await settingRows(ws), audit: await auditRows(ws) }).toEqual(settled);
-    /* And a stale read that says 1000 when 300 stands: lowering to 500 would raise it. Nothing is written. */
-    const staleHigh = await inWs(ws, () => store.changeSpendSettingsFromReadForTests({ monthlyLimitCredits: 500 }, { ...noLimit, monthlyLimitCredits: 1000 }, 9002), admin);
-    expect(staleHigh.changed).toEqual([]);
+    /* And a stale read that says 1000 when 300 stands: lowering to 500 would raise it. Refused the same way. */
+    const staleHigh = await refusal(() => inWs(ws, () => store.changeSpendSettingsFromReadForTests({ monthlyLimitCredits: 500 }, { monthlySpendLimitCredits: "1000" }, 9002), admin));
+    expect(staleHigh?.status).toBe(409);
+    expect(staleHigh?.message).toBe(STALE);
+    expect({ settings: await settingRows(ws), audit: await auditRows(ws) }).toEqual(settled);
+    /* A stale read that asks for the value already standing is no change, not a refusal. */
+    expect((await inWs(ws, () => store.changeSpendSettingsFromReadForTests({ monthlyLimitCredits: 300 }, {}, 9003), admin)).changed).toEqual([]);
     expect({ settings: await settingRows(ws), audit: await auditRows(ws) }).toEqual(settled);
     expect((await as(owner, { monthlyLimitCredits: null })).changed).toEqual(["monthlyLimitCredits"]);
     expect(await limitNow()).toBeNull();
@@ -413,11 +457,13 @@ test("the month turning (UTC): a limit pause reads as running from the first mom
     expect(await inWs(ws, () => store.recordLimitPause(nov + 5))).toBe(true);
     expect((await read(nov + 6)).pause).toEqual({ at: nov + 5, by: null, reason: "limit" });
     expect(await auditRows(ws)).toHaveLength(lines + 1);
-    /* A stale resume of October's pause in December, when it has already lifted: nothing written. */
+    /* A resume in December, decided from November's row, which has lifted by then: nothing to resume, nothing written
+       (the lift itself is read-only and leaves no resume line). */
     const dec = Date.UTC(2026, 11, 1);
     const before = { settings: await settingRows(ws), audit: await auditRows(ws) };
+    const { pauseValue } = await import("../../lib/spendSettings");
     const staleResume = await inWs(ws, () => store.changeSpendSettingsFromReadForTests({ paused: false },
-      { monthlyLimitCredits: null, pause: { at: nov + 5, by: null, reason: "limit" }, askBeforeEveryTake: false }, dec), admin);
+      { spendPause: pauseValue({ at: nov + 5, by: null, reason: "limit" }) }, dec), admin);
     expect(staleResume.changed).toEqual([]);
     expect({ settings: await settingRows(ws), audit: await auditRows(ws) }).toEqual(before);
     /* A person's pause over the lifted row, in December: written, and it does not lift in January. */
