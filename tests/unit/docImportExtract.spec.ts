@@ -1,20 +1,52 @@
 import { test, expect } from "@playwright/test";
+import { existsSync } from "node:fs";
 import { extractDocument } from "../../lib/docImport/extract";
 import { detectDocument } from "../../lib/docImport/detect";
-import { MAX_SOURCE_BYTES, MAX_ZIP_ENTRIES } from "../../lib/docImport/limits";
-import { openZip } from "../../lib/docImport/zip";
+import {
+  MAX_CELLS,
+  MAX_COLUMNS,
+  MAX_DOCX_XML_EVENTS,
+  MAX_IMAGES,
+  MAX_PDF_PAGES,
+  MAX_SHEETS,
+  MAX_SLIDES,
+  MAX_SOURCE_BYTES,
+  MAX_TEXT_CHARS,
+  MAX_XML_EVENTS,
+  MAX_XML_PART_BYTES,
+  MAX_ZIP_ENTRIES,
+  MAX_ZIP_ENTRY_BYTES,
+} from "../../lib/docImport/limits";
+import { openZip, resolvePartPath } from "../../lib/docImport/zip";
 import { scanXml } from "../../lib/docImport/xml";
 import { DocImportError, type DocImportErrorCode } from "../../lib/docImport/types";
-import type { OcrEngine } from "../../lib/docImport/image";
-import { declaredPng, docx, fdx, overlappingZip, para, pdf, pptx, textPng, tiff, xlsx, zip } from "../helpers/docImportFixtures";
+import { ocrDataDir, tesseractWorkerOptions, type OcrEngine } from "../../lib/docImport/image";
+import {
+  compoundFile,
+  declaredPng,
+  deflateBomb,
+  docx,
+  fdx,
+  overlappingZip,
+  para,
+  pdf,
+  pptx,
+  prose,
+  lowEntropy,
+  textPng,
+  textTiff,
+  tiff,
+  xlsx,
+  zip,
+} from "../helpers/docImportFixtures";
 
 /**
  * The document importer's extractors (v30 Phase A item 2, part 1): every
  * format to the one normalized shape, and every hostile input refused with a
  * plain DocImportError before it can cost memory, time or a file read.
  * Every fixture is synthetic and built here. No model is called; the OCR
- * engine is a fake except in the two tests that prove the real one runs
- * offline.
+ * engine is a fake except in the tests that run the real one on generated
+ * pictures. Each limit has a test that fails if the limit is removed.
  */
 
 async function refused(promise: Promise<unknown>, code: DocImportErrorCode): Promise<DocImportError> {
@@ -141,21 +173,31 @@ test("pictures go through the OCR engine with English by default; Hindi is an op
   expect(low.warnings.join(" ")).toMatch(/OCR confidence is low \(31%\)/);
 });
 
-test("the real Tesseract engine reads a generated picture offline, from the installed English data", async () => {
+test("the real Tesseract engine reads generated PNG and TIFF pictures from the installed English data", async () => {
   test.setTimeout(60_000);
-  const before = globalThis.fetch;
-  let fetched = 0;
-  globalThis.fetch = (async () => {
-    fetched++;
-    throw new Error("no network in the importer");
-  }) as typeof fetch;
-  try {
-    const doc = await extractDocument("card.png", textPng("HELLO WORLD"));
-    expect(doc.text).toContain("HELLO");
-    expect(fetched).toBe(0);
-  } finally {
-    globalThis.fetch = before;
-  }
+  expect((await extractDocument("card.png", textPng("HELLO WORLD"))).text).toContain("HELLO");
+  expect((await extractDocument("card.tiff", textTiff("HELLO WORLD"))).text).toContain("HELLO");
+});
+
+test("OCR data comes from a local absolute directory only, with no cache and no logging; anything URL-shaped is refused", () => {
+  const dir = ocrDataDir({});
+  expect(dir).toMatch(/node_modules\/@tesseract\.js-data\/eng\/4\.0\.0_best_int$/);
+  expect(existsSync(`${dir}/eng.traineddata.gz`)).toBe(true);
+  for (const bad of ["https://cdn.example/tessdata", "http://x", "file:///tmp/x", "//cdn.example/tessdata", "relative/dir", "C:\\data"])
+    expect(() => ocrDataDir({ DOC_IMPORT_OCR_DATA_DIR: bad }), bad).toThrow(/OCR is not set up/);
+  expect(ocrDataDir({ DOC_IMPORT_OCR_DATA_DIR: "/srv/ocr/" })).toBe("/srv/ocr");
+  expect(tesseractWorkerOptions(dir)).toMatchObject({ langPath: dir, cacheMethod: "none", gzip: true });
+  expect(Object.keys(tesseractWorkerOptions(dir)).sort()).toEqual(["cacheMethod", "errorHandler", "gzip", "langPath", "logger"]);
+});
+
+test("a TIFF that names its width or height twice is refused before OCR", async () => {
+  let called = false;
+  const ocr: OcrEngine = async () => {
+    called = true;
+    return { text: "x", confidence: 99 };
+  };
+  await refused(extractDocument("two.tiff", tiff(40, 20, { width: 40_000, height: 40_000 }), { ocr }), "unsafe");
+  expect(called).toBe(false);
 });
 
 test("the real Tesseract engine refuses a truncated picture as damaged, without hanging", async () => {
@@ -185,14 +227,32 @@ test("zip bomb: an entry that expands past the ratio limit is refused from the d
   expect(error.message).toMatch(/expands far more than a real document/);
 });
 
-test("zip bomb: a part that lies about its size stops at the declared size and is refused as damaged", async () => {
-  const lie = docx(["x"], { extra: [{ name: "word/styles.xml", data: Buffer.alloc(4 * 1024 * 1024, 0x20), declaredSize: 100 }] });
+test("zip bomb: a part that declares 100 bytes but inflates to 1 GB stops at 100 bytes, refused at once", async () => {
+  // A raw deflate stream for 1 GiB of zeros (6.7 MB). Without maxOutputLength it inflates for over a second into a 1 GB buffer.
+  const bomb = deflateBomb(2 ** 30);
+  const lie = docx(["x"], { extra: [{ name: "word/styles.xml", data: "", rawBody: bomb, declaredSize: 100, crc: 0 }] });
   const started = Date.now();
   await refused(extractDocument("lie.docx", lie), "damaged");
-  expect(Date.now() - started).toBeLessThan(5_000);
-  // The same lie inside a deck is refused the same way when the part is read.
-  const archive = openZip(lie, "This package");
-  expect(() => archive.read("word/styles.xml")).toThrow(/damaged or incomplete/);
+  expect(Date.now() - started).toBeLessThan(400);
+});
+
+test("zip: an entry declared past the entry limit, Zip64 sizes and unknown compression methods are refused from the directory", async () => {
+  expect((await refused(extractDocument("big.docx", zip([{ name: "word/document.xml", data: "x", declaredSize: MAX_ZIP_ENTRY_BYTES + 1, rawMethod: 0 }])), "limit")).message)
+    .toMatch(/a part larger than the importer reads/);
+  await refused(extractDocument("z64.docx", zip([{ name: "word/document.xml", data: "x", declaredSize: 0xffffffff }])), "unsupported");
+  await refused(extractDocument("bz2.docx", zip([{ name: "word/document.xml", data: "x", rawMethod: 12 }])), "unsupported");
+});
+
+test("zip: an XML part past its own limit is refused when read, even stored uncompressed", async () => {
+  const slide = Buffer.alloc(MAX_XML_PART_BYTES + 1, 0x20);
+  const error = await refused(
+    extractDocument("big.pptx", zip([
+      { name: "[Content_Types].xml", data: "<Types/>" },
+      { name: "ppt/presentation.xml", data: slide, method: 0 },
+    ])),
+    "limit",
+  );
+  expect(error.message).toMatch(/a part larger than the importer reads/);
 });
 
 test("zip bomb: a directory whose declared total passes the limit is refused before any part is read", async () => {
@@ -211,8 +271,13 @@ test("zip bomb: two parts that share the same compressed bytes (overlapping file
   expect(() => openZip(overlappingZip("a.xml", "b.xml", "<a/>"), "This package")).toThrow(/reuses the same data/);
 });
 
-test("an encrypted package and a duplicate or path-like part name are refused", async () => {
-  await refused(extractDocument("locked.docx", zip([{ name: "word/document.xml", data: "<a/>", flags: 1 }])), "encrypted");
+test("a password-protected Office file (a compound file under an Office extension) is refused as encrypted", async () => {
+  for (const name of ["locked.docx", "locked.pptx", "locked.xlsx"])
+    expect((await refused(extractDocument(name, compoundFile()), "encrypted")).message).toMatch(/password protected/);
+});
+
+test("a zip entry with zip's own encryption flag, and a duplicate or path-like part name, are refused", async () => {
+  await refused(extractDocument("zipcrypto.docx", zip([{ name: "word/document.xml", data: "<a/>", flags: 1 }])), "encrypted");
   await refused(extractDocument("twice.docx", zip([{ name: "a.xml", data: "<a/>" }, { name: "a.xml", data: "<a/>" }])), "unsafe");
   await refused(extractDocument("escape.docx", zip([{ name: "../../etc/passwd", data: "x" }])), "unsafe");
 });
@@ -271,6 +336,17 @@ test("an SVG's script, foreignObject, styles and external references are never r
 test("an oversized file is refused before it is read", async () => {
   await refused(extractDocument("big.svg", Buffer.alloc(MAX_SOURCE_BYTES.svg + 1, 0x20)), "too_large");
   await refused(extractDocument("big.fdx", Buffer.alloc(MAX_SOURCE_BYTES.fdx + 1, 0x20)), "too_large");
+});
+
+test("a picture inside the side limit but past the area limit (10,000 × 10,000) is refused; so is one past the side limit alone", async () => {
+  let called = 0;
+  const ocr: OcrEngine = async () => {
+    called++;
+    return { text: "", confidence: 0 };
+  };
+  expect((await refused(extractDocument("area.png", declaredPng(10_000, 10_000), { ocr }), "limit")).message).toMatch(/10000 × 10000 pixels/);
+  expect((await refused(extractDocument("side.png", declaredPng(13_000, 10), { ocr }), "limit")).message).toMatch(/13000 × 10 pixels/);
+  expect(called).toBe(0);
 });
 
 test("a picture whose header declares an enormous canvas is refused before OCR decodes it", async () => {
@@ -334,4 +410,127 @@ test("a deflate stream that is not valid is refused as damaged, never thrown raw
   // Same sizes, same CRC in the directory; the compressed bytes themselves are garbage.
   broken.fill(0xff, entry.dataStart, entry.dataStart + entry.compressedSize);
   await refused(extractDocument("broken.docx", broken), "damaged");
+});
+
+/* ── Every limit, past its edge ──────────────────────────────────────── */
+
+const over = prose(MAX_TEXT_CHARS + 10);
+
+test("the one-million-character limit refuses in every format that can produce that much text", async () => {
+  await refused(extractDocument("long.fdx", fdx(para("Action", over))), "limit");
+  await refused(extractDocument("long.svg", Buffer.from(`<svg><text>${over}</text></svg>`)), "limit");
+  await refused(extractDocument("long.docx", docx([over])), "limit");
+  await refused(extractDocument("long.pptx", pptx([{ paragraphs: [over] }])), "limit");
+  await refused(extractDocument("long.xlsx", xlsx([{ name: "S", rows: Array.from({ length: 40 }, (_, r) => [prose(30_000, r + 1)]) }])), "limit");
+  await refused(extractDocument("long.png", textPng("HELLO"), { ocr: fakeOcr(over) }), "limit");
+});
+
+test("workbook amplification: one 1M-character shared string is refused as a cell longer than Excel allows, at once", async () => {
+  const huge = "z".repeat(1_000_000);
+  const bytes = xlsx([{ name: "S", rows: Array.from({ length: 50 }, () => Array.from({ length: 100 }, () => huge)) }]);
+  const started = Date.now();
+  expect((await refused(extractDocument("amp.xlsx", bytes), "limit")).message).toMatch(/longer than 32767 characters/);
+  expect(Date.now() - started).toBeLessThan(2_000);
+});
+
+test("workbook amplification: a 30,000-character string in 5,000 cells (150M characters) is refused by the running count, at once", async () => {
+  const long = "z".repeat(30_000);
+  const bytes = xlsx([{ name: "S", rows: Array.from({ length: 50 }, () => Array.from({ length: 100 }, () => long)) }]);
+  const started = Date.now();
+  expect((await refused(extractDocument("amp.xlsx", bytes), "limit")).message).toMatch(/more than one million characters/);
+  expect(Date.now() - started).toBeLessThan(2_000);
+});
+
+test("slide, sheet, cell and PDF page counts past their limits are refused; a column past its limit is skipped with a warning", async () => {
+  await refused(extractDocument("many.pptx", pptx(Array.from({ length: MAX_SLIDES + 1 }, () => ({ paragraphs: ["a"] })))), "limit");
+  await refused(extractDocument("many.xlsx", xlsx(Array.from({ length: MAX_SHEETS + 1 }, (_, i) => ({ name: `S${i}`, rows: [["a"]] })))), "limit");
+  await refused(extractDocument("cells.xlsx", xlsx([{ name: "S", rows: Array.from({ length: MAX_CELLS / 100 + 1 }, () => Array.from({ length: 100 }, () => 1)) }])), "limit");
+  await refused(extractDocument("pages.pdf", pdf(Array.from({ length: MAX_PDF_PAGES + 1 }, () => "p"))), "limit");
+  const wide = await extractDocument("wide.xlsx", xlsx([{ name: "S", rows: [[...Array.from({ length: MAX_COLUMNS }, () => ""), "far right"], ["near"]] }]));
+  expect(wide.text).toBe("near");
+  expect(wide.warnings.join(" ")).toMatch(/cells past column 256/);
+});
+
+test("embedded pictures past the count limit, or past the total-size limit, are skipped with a warning", async () => {
+  test.setTimeout(60_000);
+  const small = textPng("HELLO", 1);
+  const many = await extractDocument("pics.pptx", pptx([{ paragraphs: ["a"] }], { images: Array.from({ length: MAX_IMAGES + 1 }, (_, i) => ({ name: `i${String(i).padStart(3, "0")}.png`, data: small })) }));
+  expect(many.images).toHaveLength(MAX_IMAGES);
+  expect(many.warnings.join(" ")).toMatch(/Only the first 200 embedded pictures were kept/);
+  // Five 21 MB pictures: 105 MB, past the 100 MB total. The first four are kept. (Compressed about 4:1, so the deck stays under 50 MB.)
+  const big = Buffer.concat([small, lowEntropy(21 * 1024 * 1024)]);
+  const heavy = await extractDocument("heavy.pptx", pptx([{ paragraphs: ["a"] }], { images: Array.from({ length: 5 }, (_, i) => ({ name: `b${i}.png`, data: big, deflate: true })) }));
+  expect(heavy.images).toHaveLength(4);
+  expect(heavy.warnings.join(" ")).toMatch(/Only the first 4 embedded pictures were kept/);
+});
+
+test("XML structure past the event limit is refused: 5M events in a slide, and 2M across the parts mammoth would read", async () => {
+  test.setTimeout(60_000);
+  const events = (n: number) => "<a:br/>".repeat(Math.ceil(n / 2));
+  const P = 'xmlns:a="a" xmlns:p="p"';
+  expect((await refused(extractDocument("deep.pptx", pptx([{ paragraphs: [] }], { stored: true, slideXml: `<p:sld ${P}>${events(MAX_XML_EVENTS + 2)}</p:sld>` })), "limit")).message)
+    .toMatch(/more structure than the importer reads/);
+  const W = 'xmlns:w="w"';
+  const doc = `<w:document ${W}><w:body><w:p>${"<w:r/>".repeat(MAX_DOCX_XML_EVENTS / 2 + 1)}</w:p></w:body></w:document>`;
+  expect((await refused(extractDocument("deep.docx", docx([], { documentXml: doc, stored: true })), "limit")).message).toMatch(/more structure than the importer reads/);
+});
+
+test("relationship targets outside the package, or marked External, are never followed", async () => {
+  expect(resolvePartPath("ppt/slides", "../../../etc/passwd")).toBeNull();
+  expect(resolvePartPath("ppt/slides", "%2e%2e/%2e%2e/%2e%2e/etc/passwd")).toBeNull();
+  expect(resolvePartPath("ppt/slides", "https://attacker.invalid/x.xml")).toBeNull();
+  expect(resolvePartPath("ppt/slides", "file:///etc/passwd")).toBeNull();
+  expect(resolvePartPath("ppt/slides", "..\\..\\x")).toBeNull();
+  expect(resolvePartPath("ppt/slides", "../notesSlides/n1.xml")).toBe("ppt/notesSlides/n1.xml");
+  expect(resolvePartPath("ppt/slides", "/ppt/media/a.png")).toBe("ppt/media/a.png");
+  const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const doc = await extractDocument("links.pptx", pptx([{ paragraphs: ["Slide"] }], {
+    order: [1, 7, 8],
+    presentationRels: `<Relationship Id="rId7" Type="${REL}/slide" Target="../../../../etc/passwd"/><Relationship Id="rId8" Type="${REL}/slide" Target="https://attacker.invalid/s.xml" TargetMode="External"/>`,
+    slide1Rels: `<Relationship Id="rIdX" Type="${REL}/notesSlide" Target="https://attacker.invalid/n.xml" TargetMode="External"/>`,
+  }));
+  expect(doc.text).toBe("Slide");
+  expect(doc.warnings.join(" ")).toMatch(/missing and was skipped/);
+  expect(doc.warnings.join(" ")).toMatch(/links to something outside the file; it was not followed/);
+});
+
+test("a deck with 8,000 notes relationships on one slide reads its notes once, at once", async () => {
+  const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const rels = Array.from({ length: 8_000 }, (_, i) => `<Relationship Id="rN${i}" Type="${REL}/notesSlide" Target="../notesSlides/notesSlide1.xml"/>`).join("");
+  const started = Date.now();
+  const doc = await extractDocument("fan.pptx", pptx([{ paragraphs: ["Slide"], notes: ["Say it once. ".repeat(5_000)] }], { slide1Rels: rels }));
+  expect(Date.now() - started).toBeLessThan(3_000);
+  expect(doc.text.match(/Notes:/g)).toHaveLength(1);
+});
+
+test("a slide or sheet listed twice is read once", async () => {
+  const deck = await extractDocument("twice.pptx", pptx([{ paragraphs: ["One"] }, { paragraphs: ["Two"] }], { order: [1, 2, 1, 1] }));
+  expect(deck.sections.map((s) => s.title)).toEqual(["One", "Two"]);
+  expect(deck.warnings.join(" ")).toMatch(/listed twice by the presentation was read once/);
+  const book = await extractDocument("twice.xlsx", xlsx([{ name: "A", rows: [["a"]] }, { name: "B", rows: [["b"]], rid: 1 }]));
+  expect(book.sections.map((s) => s.title)).toEqual(["A"]);
+  expect(book.warnings.join(" ")).toMatch(/listed twice by the workbook was read once/);
+});
+
+test("the deadline also stops synchronous parsing: a clock past the limit ends a workbook read between XML chunks", async () => {
+  let now = 0;
+  const clock = () => (now += 1_000);
+  const bytes = xlsx([{ name: "S", rows: Array.from({ length: 1_000 }, (_, r) => Array.from({ length: 50 }, (_, c) => r * c)) }]);
+  const started = Date.now();
+  await refused(extractDocument("slow.xlsx", bytes, { clock, timeoutMs: 20_000 }), "timeout");
+  // The real-time timer (20 s) never fired: the synchronous checks did it.
+  expect(Date.now() - started).toBeLessThan(5_000);
+});
+
+test("mammoth's own warnings, which quote style names, are never passed on", async () => {
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const doc = `<w:document ${W}><w:body><w:p><w:pPr><w:pStyle w:val="ClientSecretStyle"/></w:pPr><w:r><w:t>Hello</w:t></w:r></w:p><w:p><w:r><w:unknownThing/><w:t>There</w:t></w:r></w:p></w:body></w:document>`;
+  const result = await extractDocument("styles.docx", docx([], { documentXml: doc }));
+  expect(result.text).toContain("Hello");
+  expect(result.warnings.join(" ")).not.toMatch(/ClientSecretStyle|unknownThing/);
+  for (const warning of result.warnings) expect(warning).toMatch(/^(Some Word formatting was not recognised; the text was kept\.)$/);
+});
+
+test("a hostile PDF is bounded at least by the page limit (decoded streams are not bounded in-process; see the PR)", async () => {
+  await refused(extractDocument("pages.pdf", pdf(Array.from({ length: MAX_PDF_PAGES + 1 }, (_, i) => `page ${i}`))), "limit");
 });

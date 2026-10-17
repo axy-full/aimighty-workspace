@@ -15,6 +15,11 @@ export type ZipInput = {
   declaredSize?: number;
   /** Extra general-purpose flags (0x1 marks the entry encrypted). */
   flags?: number;
+  /** Write this compression method number instead (the data is stored as given). */
+  rawMethod?: number;
+  /** Write these bytes as the entry's compressed data, untouched (with `crc` and `declaredSize`). */
+  rawBody?: Buffer;
+  crc?: number;
 };
 
 type Written = { name: Buffer; method: number; flags: number; crc: number; csize: number; size: number; offset: number };
@@ -63,14 +68,14 @@ export function zip(inputs: ZipInput[]): Buffer {
   let offset = 0;
   for (const input of inputs) {
     const raw = Buffer.isBuffer(input.data) ? input.data : Buffer.from(input.data, "utf8");
-    const method = input.method ?? 8;
-    const body = method === 8 ? deflateRawSync(raw) : raw;
+    const method = input.rawMethod ?? (input.rawBody ? 8 : (input.method ?? 8));
+    const body = input.rawBody ?? (method === 8 ? deflateRawSync(raw) : raw);
     const name = Buffer.from(input.name, "utf8");
     const entry: Written = {
       name,
       method,
       flags: input.flags ?? 0,
-      crc: crc32(raw),
+      crc: input.crc ?? crc32(raw),
       csize: body.length,
       size: input.declaredSize ?? raw.length,
       offset,
@@ -111,7 +116,7 @@ const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships
 const PKG_REL = 'xmlns="http://schemas.openxmlformats.org/package/2006/relationships"';
 
 /** A minimal .docx. `documentXml` replaces the generated body when given (for hostile parts). */
-export function docx(paragraphs: string[], options: { image?: Buffer; documentXml?: string; extra?: ZipInput[] } = {}): Buffer {
+export function docx(paragraphs: string[], options: { image?: Buffer; documentXml?: string; extra?: ZipInput[]; stored?: boolean } = {}): Buffer {
   const body = paragraphs.map((text) => `<w:p><w:r><w:t xml:space="preserve">${esc(text)}</w:t></w:r></w:p>`).join("");
   const drawing = options.image
     ? `<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:blipFill><a:blip r:embed="rIdImg"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
@@ -123,7 +128,7 @@ export function docx(paragraphs: string[], options: { image?: Buffer; documentXm
       data: xml(`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`),
     },
     { name: "_rels/.rels", data: xml(`<Relationships ${PKG_REL}><Relationship Id="rId1" Type="${REL}/officeDocument" Target="word/document.xml"/></Relationships>`) },
-    { name: "word/document.xml", data: document },
+    { name: "word/document.xml", data: document, method: options.stored ? 0 : 8 },
     {
       name: "word/_rels/document.xml.rels",
       data: xml(`<Relationships ${PKG_REL}>${options.image ? `<Relationship Id="rIdImg" Type="${REL}/image" Target="media/image1.png"/>` : ""}</Relationships>`),
@@ -136,29 +141,46 @@ export function docx(paragraphs: string[], options: { image?: Buffer; documentXm
 const P = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"';
 
 /** A minimal .pptx: slides of paragraphs, optional speaker notes, optional pictures in ppt/media. */
-export function pptx(slides: { paragraphs: string[]; notes?: string[] }[], options: { images?: { name: string; data: Buffer }[]; slideXml?: string } = {}): Buffer {
+export function pptx(
+  slides: { paragraphs: string[]; notes?: string[] }[],
+  options: {
+    images?: { name: string; data: Buffer; deflate?: boolean }[];
+    slideXml?: string;
+    /** Store slide parts uncompressed (for parts too repetitive to pass the ratio check). */
+    stored?: boolean;
+    /** Slide numbers (1-based) presentation.xml lists, in order; repeats allowed. Default: each once. */
+    order?: number[];
+    /** Extra <Relationship> markup for slide 1's rels. */
+    slide1Rels?: string;
+    /** Extra <Relationship> markup for presentation.xml's rels. */
+    presentationRels?: string;
+  } = {},
+): Buffer {
+  const order = options.order ?? slides.map((_, i) => i + 1);
   const entries: ZipInput[] = [
     { name: "[Content_Types].xml", data: xml(`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>`) },
     { name: "_rels/.rels", data: xml(`<Relationships ${PKG_REL}><Relationship Id="rId1" Type="${REL}/officeDocument" Target="ppt/presentation.xml"/></Relationships>`) },
     {
       name: "ppt/presentation.xml",
-      data: xml(`<p:presentation ${P}><p:sldIdLst>${slides.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`).join("")}</p:sldIdLst></p:presentation>`),
+      data: xml(`<p:presentation ${P}><p:sldIdLst>${order.map((n, i) => `<p:sldId id="${256 + i}" r:id="rId${n}"/>`).join("")}</p:sldIdLst></p:presentation>`),
     },
     {
       name: "ppt/_rels/presentation.xml.rels",
-      data: xml(`<Relationships ${PKG_REL}>${slides.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${REL}/slide" Target="slides/slide${i + 1}.xml"/>`).join("")}</Relationships>`),
+      data: xml(`<Relationships ${PKG_REL}>${slides.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${REL}/slide" Target="slides/slide${i + 1}.xml"/>`).join("")}${options.presentationRels ?? ""}</Relationships>`),
     },
   ];
   const para = (text: string) => `<a:p><a:r><a:t>${esc(text)}</a:t></a:r></a:p>`;
   slides.forEach((slide, i) => {
     entries.push({
       name: `ppt/slides/slide${i + 1}.xml`,
+      method: options.stored ? 0 : 8,
       data: i === 0 && options.slideXml ? options.slideXml : xml(`<p:sld ${P}><p:cSld><p:spTree><p:sp><p:txBody>${slide.paragraphs.map(para).join("")}</p:txBody></p:sp></p:spTree></p:cSld></p:sld>`),
     });
     const rels = [
       ...(slide.notes ? [`<Relationship Id="rIdN" Type="${REL}/notesSlide" Target="../notesSlides/notesSlide${i + 1}.xml"/>`] : []),
       ...(options.images ?? []).map((image, n) => `<Relationship Id="rIdI${n}" Type="${REL}/image" Target="../media/${image.name}"/>`),
     ];
+    if (i === 0 && options.slide1Rels) rels.push(options.slide1Rels);
     entries.push({ name: `ppt/slides/_rels/slide${i + 1}.xml.rels`, data: xml(`<Relationships ${PKG_REL}>${rels.join("")}</Relationships>`) });
     if (slide.notes)
       entries.push({
@@ -166,18 +188,23 @@ export function pptx(slides: { paragraphs: string[]; notes?: string[] }[], optio
         data: xml(`<p:notes ${P}><p:cSld><p:spTree><p:sp><p:txBody>${slide.notes.map(para).join("")}${para(String(i + 1))}</p:txBody></p:sp></p:spTree></p:cSld></p:notes>`),
       });
   });
-  for (const image of options.images ?? []) entries.push({ name: `ppt/media/${image.name}`, data: image.data, method: 0 });
+  for (const image of options.images ?? []) entries.push({ name: `ppt/media/${image.name}`, data: image.data, method: image.deflate ? 8 : 0 });
   return zip(entries);
 }
 
 const S = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
 
 /** A minimal .xlsx: string cells go through sharedStrings, numbers inline. */
-export function xlsx(sheets: { name: string; rows: (string | number)[][]; hidden?: boolean }[], options: { sharedStringsXml?: string } = {}): Buffer {
+export function xlsx(
+  sheets: { name: string; rows: (string | number)[][]; hidden?: boolean; rid?: number }[],
+  options: { sharedStringsXml?: string } = {},
+): Buffer {
   const shared: string[] = [];
+  const positions = new Map<string, number>();
   const indexOf = (text: string) => {
-    const at = shared.indexOf(text);
-    if (at !== -1) return at;
+    const at = positions.get(text);
+    if (at !== undefined) return at;
+    positions.set(text, shared.length);
     shared.push(text);
     return shared.length - 1;
   };
@@ -197,7 +224,7 @@ export function xlsx(sheets: { name: string; rows: (string | number)[][]; hidden
     { name: "_rels/.rels", data: xml(`<Relationships ${PKG_REL}><Relationship Id="rId1" Type="${REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`) },
     {
       name: "xl/workbook.xml",
-      data: xml(`<workbook ${S}><sheets>${sheets.map((sheet, i) => `<sheet name="${esc(sheet.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"${sheet.hidden ? ' state="hidden"' : ""}/>`).join("")}</sheets></workbook>`),
+      data: xml(`<workbook ${S}><sheets>${sheets.map((sheet, i) => `<sheet name="${esc(sheet.name)}" sheetId="${i + 1}" r:id="rId${sheet.rid ?? i + 1}"${sheet.hidden ? ' state="hidden"' : ""}/>`).join("")}</sheets></workbook>`),
     },
     {
       name: "xl/_rels/workbook.xml.rels",
@@ -260,8 +287,8 @@ function chunk(type: string, data: Buffer) {
   return Buffer.concat([length, typed, crc]);
 }
 
-/** A greyscale PNG of block capitals (H E L O W R D and space), large enough for OCR. */
-export function textPng(text: string, scale = 6): Buffer {
+/** Greyscale pixels of block capitals (H E L O W R D and space), large enough for OCR. */
+function textPixels(text: string, scale: number) {
   const cell = 6;
   const width = (text.length * cell + 4) * scale;
   const height = 11 * scale;
@@ -275,9 +302,21 @@ export function textPng(text: string, scale = 6): Buffer {
       }),
     ),
   );
+  return { width, height, pixels };
+}
+
+/** A greyscale PNG of block capitals (H E L O W R D and space), large enough for OCR. */
+export function textPng(text: string, scale = 6): Buffer {
+  const { width, height, pixels } = textPixels(text, scale);
   const raw = Buffer.alloc((width + 1) * height);
   for (let y = 0; y < height; y++) pixels.copy(raw, y * (width + 1) + 1, y * width, (y + 1) * width);
   return pngFrom(width, height, deflateSync(raw));
+}
+
+/** The same block capitals as an uncompressed greyscale TIFF. */
+export function textTiff(text: string, scale = 6): Buffer {
+  const { width, height, pixels } = textPixels(text, scale);
+  return tiffFrom(width, height, pixels);
 }
 
 /** A PNG header that declares any size, with a token pixel stream: the "pixel bomb" shape. */
@@ -299,12 +338,17 @@ function pngFrom(width: number, height: number, idat: Buffer) {
   ]);
 }
 
-/** An uncompressed little-endian greyscale TIFF of the given size (white). */
-export function tiff(width: number, height: number): Buffer {
-  const pixels = Buffer.alloc(width * height, 255);
+/** An uncompressed little-endian greyscale TIFF of the given size (white). `repeat` names its size twice: the real one, then this one. */
+export function tiff(width: number, height: number, repeat?: { width: number; height: number }): Buffer {
+  return tiffFrom(width, height, Buffer.alloc(width * height, 255), repeat);
+}
+
+function tiffFrom(width: number, height: number, pixels: Buffer, repeat?: { width: number; height: number }): Buffer {
   const tags: [number, number, number, number][] = [
     [256, 3, 1, width],
+    ...(repeat ? [[256, 3, 1, repeat.width] as [number, number, number, number]] : []),
     [257, 3, 1, height],
+    ...(repeat ? [[257, 3, 1, repeat.height] as [number, number, number, number]] : []),
     [258, 3, 1, 8],
     [259, 3, 1, 1],
     [262, 3, 1, 1],
@@ -329,4 +373,61 @@ export function tiff(width: number, height: number): Buffer {
   head.writeUInt16LE(42, 2);
   head.writeUInt32LE(ifdOffset, 4);
   return Buffer.concat([head, pixels, ifd]);
+}
+
+/** The compound-file header Office uses for password-protected .docx/.pptx/.xlsx (and the older binary formats). */
+export function compoundFile(): Buffer {
+  return Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(504)]);
+}
+
+/**
+ * A raw deflate stream that inflates to `bytes` zero bytes (one literal, then
+ * length-258 matches at distance 1), written directly in fixed Huffman codes
+ * so a gigabyte bomb costs a few megabytes and a few milliseconds to build.
+ */
+export function deflateBomb(bytes: number): Buffer {
+  const out: number[] = [];
+  let acc = 0;
+  let bits = 0;
+  const put = (value: number, count: number) => {
+    acc |= value << bits;
+    bits += count;
+    while (bits >= 8) {
+      out.push(acc & 0xff);
+      acc >>>= 8;
+      bits -= 8;
+    }
+  };
+  put(0b011, 3); // final block, fixed Huffman
+  put(0x0c, 8); // literal 0x00 (code 00110000, bit-reversed)
+  for (let left = bytes - 1; left >= 258; left -= 258) put(0xa3, 13); // length 258 (code 11000101 reversed), distance 1 (00000)
+  put(0, 7); // end of block
+  if (bits) out.push(acc & 0xff);
+  return Buffer.from(out);
+}
+
+/** Deterministic pseudo-random text (a–z), which compresses like prose rather than like a bomb. */
+export function prose(length: number, seed = 1): string {
+  let x = seed >>> 0 || 1;
+  const out = Buffer.alloc(length);
+  for (let i = 0; i < length; i++) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    out[i] = 97 + ((x >>> 0) % 26);
+  }
+  return out.toString("latin1");
+}
+
+/** Deterministic bytes from a four-value alphabet: about 4:1 under deflate. */
+export function lowEntropy(length: number, seed = 7): Buffer {
+  let x = seed >>> 0 || 1;
+  const out = Buffer.alloc(length);
+  for (let i = 0; i < length; i++) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    out[i] = (x >>> 0) & 3;
+  }
+  return out;
 }
