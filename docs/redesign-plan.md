@@ -1277,3 +1277,19 @@ Recorded by the lead, verbatim less the asides about who signs off money changes
 > 22. Export worker on Coolify by Mon 19, with your click-by-click steps.
 > FREEZE PRIORITY
 > With two CI runs an hour, order the queue: the demo-path PRs first, then Phase A in this order — steps and frames (#818), Library (#820), jobs with quotes and refund status, spend-limit settings, the visitor bar backend, History read models. Document import, search and Liveblocks changes wait for after the 31st; import needs the container anyway. Deploy #8 on Fri 23 stays the last feature deploy. Keep the evening note going: landed with real numbers, next, blocked.
+
+## Owner, 17 Oct 2026, ~17:45 IST: answers to update two
+
+Recorded by the lead, verbatim. Four brackets were unfilled when sent; item 1 (the demo yes or no) is held for the owner's own answer.
+
+> Answers to update two.
+>
+> 1. [Akshay: YES or NO] The 31 Oct demo is on. The five money PRs (#765, #815, #809, #814, #800) merge under the standing yes, and the demo build lanes restart now.
+> 2. [Akshay] #750: tell me in one line which plan its title refers to and what it changes; if it's the v25 plan already approved, edit the title and merge; if not, hold.
+> 3. Yes: add the visitor bar's screen file to the never-shown list, the same way lib/vendorNames.ts is declared. That extends a guard; it doesn't weaken one.
+> 4. Visitor bar: [Akshay] I will create its own Anthropic key with a hard monthly limit and set it in Coolify; tell me the exact env var name. Its usage goes in the ledger as house spend, marked "visitor". Limits: 20 messages per visitor per day, 400 characters per message, 2,000 messages a day across the site; the bar says "That's all for today — request access to continue" when a limit is hit.
+> 5. Spend settings: the house limit stays in dollars as it is today. Only the workspace owner may raise the monthly limit. A pause lifts automatically when the new calendar month starts, UTC.
+> 6. Metadata: build the switch, keep it on "don't strip" by default until counsel has read the note. No vendor metadata is removed from any output until then. Send the note to Akshay for counsel, with the three unreachable documents listed so counsel reads them directly.
+> 7. Uploads: never skip a limit. A file whose size can't be read is converted first (HEIC to JPEG on the server) and then checked; if it still can't be read, it's refused with a plain message.
+>
+> Also: "Images" on the Make row is fine [Akshay: or "Image"]. The droplet plan is fine — lower the agent allowance while both workers run, and tell me the number you set it to.
