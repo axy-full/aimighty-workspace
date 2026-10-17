@@ -248,3 +248,38 @@ for (const who of ["house", "credit"] as const) {
     });
   });
 }
+
+test("brand spellings are caught for an Agent job and kept for a Director job; plain words that contain a short name are kept", async () => {
+  const m = await mods();
+  const byFamily = (family: string, provider?: string) => m.MODELS.find((x) => x.family === family && (!provider || x.provider === provider))!.id;
+  const kling = byFamily("kling-3", "fal");
+  const seedance = byFamily("seedance-2");
+  const nano = byFamily("nano-banana");
+  const cinema = byFamily("cinema-studio");
+  const recipe = (decider: "agent" | "director", engine: string, prompt: string) =>
+    m.recreateRecipe({ decider, engine, take_prompt: prompt }).prompt;
+
+  const named: [string, string][] = [
+    [kling, "Kling3 look"], [kling, "in the KlingAI style"], [kling, "kling-3 motion"],
+    [seedance, "Seedance2 grade"], [seedance, "a SeedanceV2 pass"], [seedance, "made with Dreamina"], [seedance, "seedance_2.5 light"],
+    [nano, "Nano2 still"], [nano, "a NanoBanana frame"], [nano, "nano-banana pro look"],
+    [cinema, "Cinema Studio framing"], [cinema, "cinema-studio grade"], [cinema, "CinemaStudio grade"],
+  ];
+  for (const [engine, prompt] of named) {
+    expect(recipe("agent", engine, prompt), `${engine}: ${prompt}`).toBe("");
+    expect(recipe("director", engine, prompt), `${engine}: ${prompt}`).toBe(prompt);
+  }
+
+  const safe: [string, string][] = [
+    [kling, "A waterfall, nothing false, Falguni on sparkling water"],
+    [nano, "measured in nanoseconds"],
+    [cinema, "a cinema scene under studio light"],
+    [seedance, "a seed and a dance"],
+  ];
+  for (const [engine, prompt] of safe) expect(recipe("agent", engine, prompt), `${engine}: ${prompt}`).toBe(prompt);
+
+  // A value that names the engine leaves with its key: the key is removed, never sent as null.
+  const settings = m.recreateRecipe({ decider: "agent", engine: kling, take_params: JSON.stringify({ ratio: "16:9", resolution: "KlingAI-1080" }) }).settings;
+  expect(settings).toEqual({ ratio: "16:9" });
+  expect(Object.keys(settings)).not.toContain("resolution");
+});

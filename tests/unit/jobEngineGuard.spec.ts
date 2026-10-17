@@ -110,7 +110,8 @@ test("only the listed importers (none yet) import the store or the serializer, a
   const ours = (f: string) => f === VIEW || f.startsWith(path.join("lib", "quotedJobs") + path.sep);
   const importers = files
     .filter((f) => !ours(f))
-    .filter((f) => /(quotedJobs|jobView)(["'/]|\.ts)/.test(readFileSync(f, "utf8")));
+    /* Any module path naming them: a quote, a slash, or any extension (.ts, .js, .mjs …) after the name. */
+    .filter((f) => /(quotedJobs|jobView)(["'`/]|\.[A-Za-z0-9]+)/.test(readFileSync(f, "utf8")));
   expect(importers).toEqual([...IMPORTERS]);
   expect(files.filter((f) => readFileSync(f, "utf8").includes("jobStoreForTests"))).toEqual([STORE]);
 

@@ -72,14 +72,14 @@ async function snapshot(client: Client): Promise<string> {
 }
 
 /** A person's plan approval (synthetic), as lib/workbench/plan-approval.ts stores it, for a command to point at. */
-async function approval(client: Client, id: string, productionId: string, totalTenths: number, opts: { closed?: boolean; expiresAt?: number } = {}) {
+async function approval(client: Client, id: string, productionId: string, totalTenths: number, opts: { closed?: boolean; expiresAt?: number; approvedBy?: string } = {}) {
   const { PLAN_APPROVAL_SCHEMA, PLAN_APPROVAL_GUARDS } = await import("../../lib/workbench/plan-approval");
   await client.batch([PLAN_APPROVAL_SCHEMA, ...PLAN_APPROVAL_GUARDS], "write");
   const at = Date.now();
   await client.execute({
     sql: `INSERT INTO rig_plan_approvals(id,run_id,production_id,approved_by,approved_at,expires_at,fingerprint,steps,total_tenths,ceiling_tenths,limit_credits,closed_at,closed_reason,created_at)
-          VALUES(?,?,?,'usr_person',?,?,'synthetic','[]',?,?,?,?,?,?)`,
-    args: [id, `run_${id}`, productionId, at, opts.expiresAt ?? at + 86_400_000, totalTenths, totalTenths, totalTenths / 10,
+          VALUES(?,?,?,?,?,?,'synthetic','[]',?,?,?,?,?,?)`,
+    args: [id, `run_${id}`, productionId, opts.approvedBy ?? "usr_person", at, opts.expiresAt ?? at + 86_400_000, totalTenths, totalTenths, totalTenths / 10,
       opts.closed ? at : null, opts.closed ? "synthetic" : null, at],
   });
 }
@@ -158,12 +158,15 @@ test("a job is written only with its quote, keeps its quote, decider and engine,
     const store = m.jobStoreForTests(client, credit.id);
     const base = { productionId: "prj_one", decider: "director" as const, product: "generation" as const, engine: SYNTHETIC_ENGINE, by: "usr_person" };
     // No quote, two quotes, a negative one, or dollars on a workspace that pays in credits: refused, nothing written.
-    for (const quote of [undefined, null, {}, { credits: -1 }, { credits: Number.NaN }, { credits: SYNTHETIC_CREDITS, usd: SYNTHETIC_USD }, { usd: SYNTHETIC_USD }, { credits: "4" }])
+    for (const quote of [undefined, null, {}, { credits: -1 }, { credits: Number.NaN }, { credits: SYNTHETIC_CREDITS, usd: SYNTHETIC_USD }, { usd: SYNTHETIC_USD }, { credits: "4" }, { credits: 4.55 }, { credits: Number.POSITIVE_INFINITY }, { credits: 1_000_000.1 }, { credits: 1e12 }])
       await expect(store.createJob({ ...base, quote: quote as never })).rejects.toMatchObject({ status: 400 });
     for (const bad of [{ decider: "mode" }, { product: "panel" }, { engine: "has spaces" }, { sourceRef: "no-colon" }, { productionId: "../x" }, { by: "" }])
       await expect(store.createJob({ ...base, quote: { credits: SYNTHETIC_CREDITS }, ...(bad as object) } as never)).rejects.toMatchObject({ status: 400 });
     await expect(store.createJob({ ...base, productionId: "prj_missing", quote: { credits: SYNTHETIC_CREDITS } })).rejects.toMatchObject({ status: 404 });
     expect(Number((await client.execute("SELECT COUNT(*) AS n FROM quoted_jobs")).rows[0].n)).toBe(0);
+    // Free is a quote; so is the bound itself (the same bound as an Atomik run's limit), in whole tenths.
+    expect((await store.createJob({ ...base, quote: { credits: 0 } })).quote).toEqual({ credits: 0 });
+    expect((await store.createJob({ ...base, quote: { credits: m.MAX_QUOTE_CREDITS } })).quote).toEqual({ credits: m.MAX_QUOTE_CREDITS });
 
     const job = await store.createJob({ ...base, quote: { credits: SYNTHETIC_CREDITS }, sourceRef: "paid_text_jobs:ptj_1" });
     expect(job).toMatchObject({ status: "queued", quote: { credits: SYNTHETIC_CREDITS }, actual: null, refundStatus: null, error: null, startedAt: null, finishedAt: null });
@@ -296,7 +299,7 @@ test("nothing billed changes: a job's whole life writes no row anywhere but the 
     const store = m.jobStoreForTests(client, ws.id);
     const command = await store.createCommand({ productionId: "prj_one", instruction: "Synthetic instruction", quote: { credits: SYNTHETIC_CREDITS }, by: "usr_person" });
     await store.approveCommand(command.id, "rpa_synthetic", PERSON);
-    await store.moveCommand(command.id, "running", { runRef: "run_synthetic" });
+    await store.moveCommand(command.id, "running", { runRef: "run_rpa_synthetic" });
     const made = await store.createJob({ productionId: "prj_one", commandId: command.id, decider: "agent", product: "generation", engine: SYNTHETIC_ENGINE, quote: { credits: SYNTHETIC_CREDITS }, by: "usr_person" });
     await store.start(made.id);
     await store.attach(made.id, { meterId: "gen_money", takeId: "gen_money" });
@@ -361,9 +364,19 @@ test("commands: written with their quote, approved by a person against a real ap
     await expect(store.moveCommand(command.id, "approved" as never)).rejects.toMatchObject({ status: 400 });
     expect((await store.getCommand(command.id))?.state).toBe("quoted");
     await expect(client.execute({ sql: "UPDATE agent_commands SET state='running' WHERE id=?", args: [command.id] })).rejects.toThrow(/CHECK/i);
+    // Someone else's approval is refused, even for a person.
+    await approval(client, "rpa_someone_else", "prj_one", quoteTenths, { approvedBy: "usr_other" });
+    await expect(store.approveCommand(command.id, "rpa_someone_else", PERSON)).rejects.toMatchObject({ status: 403 });
     const approved = await store.approveCommand(command.id, "rpa_1", PERSON);
     expect(approved.state).toBe("approved");
     await expect(store.approveCommand(command.id, "rpa_1", PERSON)).rejects.toMatchObject({ status: 409 });
+    // One approval approves one command: a second command on the same approval is refused, by the store and the table.
+    const second = await store.createCommand({ productionId: "prj_one", instruction: "Synthetic: the same plan again", quote: { credits: QUOTE }, by: "usr_person" });
+    await expect(store.approveCommand(second.id, "rpa_1", PERSON)).rejects.toMatchObject({ status: 409 });
+    await expect(client.execute({ sql: "UPDATE agent_commands SET state='approved', approval_ref='rpa_1' WHERE id=?", args: [second.id] })).rejects.toThrow(/UNIQUE/i);
+    expect((await store.getCommand(second.id))?.state).toBe("quoted");
+    // The command takes the approval's run; another run cannot carry it on.
+    expect((await client.execute({ sql: "SELECT run_ref FROM agent_commands WHERE id=?", args: [command.id] })).rows[0].run_ref).toBe("run_rpa_1");
     await expect(client.execute({ sql: "UPDATE agent_commands SET approval_ref='rpa_other' WHERE id=?", args: [command.id] })).rejects.toThrow(/keeps its words/);
     await expect(client.execute({ sql: "UPDATE agent_commands SET quote_tenths=1 WHERE id=?", args: [command.id] })).rejects.toThrow(/keeps its words/);
 
@@ -373,7 +386,10 @@ test("commands: written with their quote, approved by a person against a real ap
     await expect(job(1, "acmd_missing")).rejects.toMatchObject({ status: 404 });
     await expect(job(QUOTE + 0.1)).rejects.toMatchObject({ status: 409 });
     const one = await job(SYNTHETIC_CREDITS);
-    await store.moveCommand(command.id, "running", { runRef: "run_1" });
+    await expect(store.moveCommand(command.id, "running", { runRef: "run_other" })).rejects.toMatchObject({ status: 409 });
+    expect((await store.getCommand(command.id))?.state).toBe("approved");
+    await expect(client.execute({ sql: "UPDATE agent_commands SET run_ref='run_other' WHERE id=?", args: [command.id] })).rejects.toThrow(/keeps its words/);
+    await store.moveCommand(command.id, "running", { runRef: "run_rpa_1" });
     const two = await job(SYNTHETIC_CREDITS_B);
     const three = await job(SYNTHETIC_CREDITS_B);
     // The three fill the quote exactly: one more, however small, does not fit.
@@ -386,7 +402,7 @@ test("commands: written with their quote, approved by a person against a real ap
       await client.execute({ sql: "INSERT INTO credit_receipts(event_id,credits,revision) VALUES(?,?,1)", args: [event, credits] });
     const read = await store.getCommand(command.id);
     expect(read).toMatchObject({ jobs: 3, total: { credits: SYNTHETIC_RECEIPT + SYNTHETIC_RECEIPT_B }, quote: { credits: QUOTE } });
-    expect((await store.listCommands("prj_one")).map((c) => c.id)).toEqual([command.id]);
+    expect((await store.listCommands("prj_one")).map((c) => c.id).sort()).toEqual([command.id, second.id].sort());
     expect((await store.list({ commandId: command.id })).map((j) => j.id).sort()).toEqual([one.id, two.id, three.id].sort());
     const done = await store.moveCommand(command.id, "done");
     expect(done.state).toBe("done");
@@ -473,7 +489,7 @@ test("tenant isolation: workspace B cannot read or write workspace A's jobs or c
         expect(store.workspaceId).toBe(a.id);
         const created = await store.createCommand({ productionId: "prj_a", instruction: "Synthetic A", quote: { credits: SYNTHETIC_CREDITS }, by: "usr_a" });
         await approval(clientA, "rpa_iso_a", "prj_a", SYNTHETIC_CREDITS * 10);
-        const command = await store.approveCommand(created.id, "rpa_iso_a", { user: { id: "usr_a" } });
+        const command = await store.approveCommand(created.id, "rpa_iso_a", { user: { id: "usr_person" } });
         const job = await store.createJob({ productionId: "prj_a", commandId: command.id, decider: "agent", product: "generation", engine: SYNTHETIC_ENGINE, quote: { credits: SYNTHETIC_CREDITS }, by: "usr_a" });
         const queued = await store.createJob({ productionId: "prj_a", decider: "director", product: "reading", engine: SYNTHETIC_ENGINE, quote: { credits: SYNTHETIC_CREDITS }, by: "usr_a" });
         await store.attach(job.id, { meterId: "gen_iso_a" });
