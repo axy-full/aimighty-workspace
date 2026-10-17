@@ -6,10 +6,17 @@ import type { Stage } from "@/lib/v12/board/stages";
  * (tests/unit/v25-director-model.spec.ts). The settings are PR 4's board data (lib/v12/board/board-data.ts): the step's setup in Director mode, and a card's
  * own overrides on top; a card shows a chip only for a setting that differs from its step's.
  *
- * The model is Auto and is shown as one line (rule 13); its pop-up, and the Pro pick, are PR 9's. Prices are never here: the server quotes the exact requests
- * (POST /api/generate/quote) and the bar shows their sum.
+ * Director is full manual control (owner, 16 Oct 2026, 2a): no "Auto" engine. The model line opens empty and Render stays off until the person picks an engine;
+ * the picker itself is PR 9's. Prices are never here: the server quotes the exact requests (POST /api/generate/quote) and the bar shows their sum.
  */
 export const SHOTS_STEP = "shots";
+
+/** The engine the person picked for the step, or null: Director never picks one for them. */
+export type PickedEngine = { id: string; label: string };
+/** The model line's words: the picked engine's name, else "None". */
+export const modelWords = (engine: PickedEngine | null | undefined): string => engine?.label ?? "None";
+/** The bar's words while no engine is picked: Render is off until one is. */
+export const NO_ENGINE_NOTE = "Pick an engine first.";
 
 export type SettingChoice = { value: SettingValue; label: string };
 export type SettingItem = { id: string; label: string; choices: readonly SettingChoice[]; default: SettingValue };

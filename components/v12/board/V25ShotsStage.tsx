@@ -19,7 +19,8 @@ import "./v25-shots.css";
  * It is drawn over the stage's canvas, as the Deliver and PPM pages are, once the board has shots; before then the stage keeps its own empty state.
  *
  * Agent mode names no engine anywhere on this screen (owner, 16 Oct 2026): a card says its status and nothing about what made it. The board's own ask bar stays
- * as it is (BoardView draws it); here is only the grid and the preview. Director mode keeps what Director shows: the column, whose model line is "Auto".
+ * as it is (BoardView draws it); here is only the grid and the preview. Director mode keeps what Director shows: the column, whose model line opens empty
+ * ("None") with Render off until the person picks an engine (owner, 16 Oct 2026, 2a; the pick is PR 9's pop-up).
  * Selection is the board's own (`ctx.selection`), so the header's crumb, Esc and the ask bar's chip all say the same.
  */
 export function V25ShotsStage({ ctx, library, mode, stages, ask, onNext }: {
@@ -90,9 +91,9 @@ export function V25ShotsStage({ ctx, library, mode, stages, ask, onNext }: {
       </div>
       {director ? (
         <>
-          <div className="v25-shots-col"><DirectorColumn scope={scope} step="Shots" values={values} mixed={mixed} onSet={setSetting} onHover={setHover} /></div>
+          <div className="v25-shots-col"><DirectorColumn scope={scope} step="Shots" values={values} mixed={mixed} onSet={setSetting} onHover={setHover} engine={null} /></div>
           <div className="v25-shots-dock" ref={dock}>
-            <DirectorBar scope={scope} scopeKey={ctx.scope} projectKey={ctx.project.id} shots={shots} stages={stages} step={SHOTS_STEP} readOnly={readOnly ?? (shots.length ? null : note ?? "No shot can be priced yet.")}
+            <DirectorBar scope={scope} scopeKey={ctx.scope} projectKey={ctx.project.id} shots={shots} engine={null} stages={stages} step={SHOTS_STEP} readOnly={readOnly ?? (shots.length ? null : note ?? "No shot can be priced yet.")}
               ask={ask} onState={(s) => setSent((now) => (now.state === s.state && now.finished === s.finished && now.total === s.total ? now : s))}
               onNext={(next) => { if (next) onNext(next.id); }} />
           </div>

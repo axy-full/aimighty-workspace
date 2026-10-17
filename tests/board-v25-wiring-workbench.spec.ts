@@ -102,7 +102,11 @@ test.describe("desktop, v25 on", () => {
     await page.getByTestId("v12-mode-switch").getByRole("radio", { name: "Director" }).click();
     const column = page.getByTestId("v12-director-column");
     await expect(column).toBeVisible();
-    await expect(page.getByTestId("v12-director-model")).toContainText("Auto");
+    /* Owner, 16 Oct 2026, 2a: no Auto engine in Director; the model line opens empty and Render stays off until one is picked (PR 9's pop-up). */
+    await expect(page.getByTestId("v12-director-model")).toContainText("None");
+    await expect(page.getByTestId("v12-director-model")).not.toContainText("Auto");
+    await expect(page.getByTestId("v12-director-go")).toBeDisabled();
+    await expect(page.getByTestId("v12-director-go")).not.toHaveAttribute("data-spend", /.*/);
     await expect(page.getByTestId("v12-director-scope")).toHaveText("All 8 shots");
     await expect(page.getByTestId("v12-director-column-scope")).toHaveText("All 8 shots");
     /* The ask bar sits inside Director's bar beside its one filled button. */
@@ -122,7 +126,7 @@ test.describe("desktop, v25 on", () => {
     await expect(page.getByTestId("v25-shots-stage")).toBeVisible({ timeout: 90_000 });
     await expect(page.getByTestId("v12-mode-switch").getByRole("radio", { name: "Director" })).toHaveAttribute("aria-checked", "true", { timeout: 30_000 });
     await expect(cards(page).nth(1).locator(".v12-card-chip")).toHaveText(["Draft"], { timeout: 30_000 });
-    /* Director may show the model line and the preview's note; it is the mode that names the column's "Auto". */
+    /* Director shows the preview's note. */
     await cards(page).nth(0).dblclick();
     await expect(page.getByTestId("v12-preview")).toBeVisible();
     await expect(page.getByTestId("v12-preview")).toContainText("The column and the bar act on this shot.");

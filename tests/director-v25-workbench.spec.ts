@@ -10,7 +10,7 @@ import { isCompact } from "./helpers/shellMode";
  * Nothing real is spent.
  */
 type Sent = { body: Record<string, unknown>; key: string | undefined };
-async function routes(page: Page, opts: { credits?: (body: Record<string, unknown>) => number } = {}) {
+async function routes(page: Page, opts: { credits?: (body: Record<string, unknown>) => number; engine?: boolean } = {}) {
   const quotes: Record<string, unknown>[] = [], sent: Sent[] = [], cancels: string[] = [];
   const state = { phase: "queued" as "queued" | "running" | "succeeded", bump: 0 };
   const priceOf = opts.credits ?? ((b) => (b.resolution === "480p" ? 7 : 43));
@@ -36,6 +36,8 @@ async function routes(page: Page, opts: { credits?: (body: Record<string, unknow
     cancels.push(new URL(route.request().url()).pathname.split("/").slice(-2)[0]);
     await route.fulfill({ json: { status: "cancelled" } });
   });
+  /* Director opens with no engine (owner, 16 Oct 2026, 2a); the test page's stand-in pick sets one, as PR 9's pop-up will. */
+  if (opts.engine !== false) await page.getByTestId("v25-parts-pick-engine").click();
   return { quotes, sent, cancels, state };
 }
 
@@ -55,11 +57,34 @@ async function pick(page: Page, setting: string, choice: string) {
   await page.getByTestId("v12-director-popup").getByRole("radio", { name: choice, exact: true }).click();
 }
 
+test("Director opens with no engine: the model line reads None, nothing is priced, and Render is off until one is picked", async ({ page }) => {
+  const net = await routes(page, { engine: false });
+  await expect(page.getByTestId("v12-director-model")).toContainText("None");
+  await expect(page.getByTestId("v12-director-model")).toHaveAttribute("data-empty", "");
+  await expect(page.getByTestId("v12-director-model")).not.toContainText("Auto");
+  await expect(go(page)).toHaveText("Render 4 shots");
+  await expect(go(page)).toBeDisabled();
+  await expect(go(page)).not.toHaveAttribute("data-spend", /.*/);
+  await expect(page.getByTestId("v12-director-note")).toHaveText("Pick an engine first.");
+  await page.waitForTimeout(1500);
+  expect(net.quotes, "nothing is priced before an engine is picked").toEqual([]);
+  /* A press on the disabled button sends nothing. */
+  await go(page).click({ force: true });
+  expect(net.sent).toEqual([]);
+  /* Picked: the model line names it, the price is read and Render turns on. */
+  await page.getByTestId("v25-parts-pick-engine").click();
+  await expect(page.getByTestId("v12-director-model")).toContainText("Seedance 2.5");
+  await expect(page.getByTestId("v12-director-model")).not.toHaveAttribute("data-empty", /.*/);
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await expect(go(page)).toBeEnabled();
+  await expect(page.getByTestId("v12-director-note")).toHaveCount(0);
+});
+
 test("the column, the pill and the button say the same words; the price is the sum of the server's quotes; one filled button", async ({ page }) => {
   await routes(page);
   await expect(pill(page)).toHaveText("All 4 shots");
   await expect(colHead(page)).toHaveText("All 4 shots");
-  await expect(page.getByTestId("v12-director-model")).toContainText("Auto");
+  await expect(page.getByTestId("v12-director-model")).toContainText("Seedance 2.5");
   await expect(page.getByTestId("v12-director-quality")).toContainText("Final");
   await expect(page.getByTestId("v12-director-length")).toContainText("5 s");
   await expect(page.getByTestId("v12-director-ratio")).toContainText("16:9");
