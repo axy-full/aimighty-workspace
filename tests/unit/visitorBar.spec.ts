@@ -15,9 +15,9 @@ import type { TextReply } from "../../lib/textReply";
 
 const ROOT = path.resolve(__dirname, "../..");
 const ROUTE = "app/api/visitor/ask/route.ts";
-const ENV = ["ENGINE_MOCK", "VISITOR_BAR_ENABLED", "VISITOR_BAR_MODEL", "VISITOR_BAR_PER_VISITOR_HOUR", "VISITOR_BAR_PER_ADDRESS_HOUR", "VISITOR_BAR_PLATFORM_HOUR",
+const ENV = ["ENGINE_MOCK", "VISITOR_BAR_ENABLED", "VISITOR_BAR_MODEL", "VISITOR_BAR_PER_VISITOR_DAY", "VISITOR_BAR_PER_ADDRESS_DAY", "VISITOR_BAR_PLATFORM_DAY",
   "SELFHOST_BEHIND_PROXY", "TRUSTED_PROXY_HOPS", "TRUST_CF_CONNECTING_IP", "VERCEL", "TEXT_DIRECT", "APP_ORIGIN", "AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN",
-  "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "VISITOR_BAR_ANTHROPIC_API_KEY", "VISITOR_BAR_GEMINI_API_KEY", "VISITOR_BAR_PER_NET48_HOUR", "NODE_ENV", "PLATFORM_DATABASE_URL", "TURSO_DATABASE_URL", "PLATFORM_AUTH_TOKEN", "TURSO_AUTH_TOKEN", "SESSION_SECRET"] as const;
+  "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "VISITOR_BAR_ANTHROPIC_API_KEY", "VISITOR_BAR_GEMINI_API_KEY", "VISITOR_BAR_PER_NET48_DAY", "NODE_ENV", "PLATFORM_DATABASE_URL", "TURSO_DATABASE_URL", "PLATFORM_AUTH_TOKEN", "TURSO_AUTH_TOKEN", "SESSION_SECRET"] as const;
 const saved = Object.fromEntries(ENV.map((name) => [name, process.env[name]]));
 const realFetch = globalThis.fetch;
 let dir = "";
@@ -50,8 +50,11 @@ type Route = { POST: (req: Request) => Promise<Response> };
  * the real shared limits; `send` swaps the model for a fake one. The recovery wrapper is a pass-through here, except
  * with `recovery: "real"`.
  */
-async function route(send?: Send, options: { recovery?: "real" } = {}): Promise<Route> {
+let ledgerRecords: { id: string; model: string; usage: Record<string, unknown> | null }[] = [];
+test.beforeEach(() => { ledgerRecords = []; });
+async function route(send?: Send, options: { recovery?: "real"; ledger?: "real" } = {}): Promise<Route> {
   const bar = await import("../../lib/visitor/bar");
+  const ledger = await import("../../lib/visitor/ledger");
   return loadRoute<Route>(ROUTE, {
     "@/lib/recovery": options.recovery === "real" ? await import("../../lib/recovery") : { recoveryRoute: <T>(handler: T) => handler },
     "@/lib/clientIp": await import("../../lib/clientIp"),
@@ -59,6 +62,8 @@ async function route(send?: Send, options: { recovery?: "real" } = {}): Promise<
     "@/lib/requestBody": await import("../../lib/requestBody"),
     "@/lib/visitor/bar": send ? { ...bar, askVisitorBar: (question: string) => bar.askVisitorBar(question, { send }) } : bar,
     "@/lib/visitor/limits": await import("../../lib/visitor/limits"),
+    /* The real ledger writer where a test asks for it; elsewhere a recorder (the meter's own tests cover the writer). */
+    "@/lib/visitor/ledger": options.ledger === "real" ? ledger : { ...ledger, recordVisitorSpend: async (spend: (typeof ledgerRecords)[number]) => { ledgerRecords.push(spend); return { recorded: true, costUsd: null }; } },
   });
 }
 
@@ -69,7 +74,9 @@ function ask(r: Route, body: unknown, headers: Record<string, string> = {}) {
 }
 const cookieOf = (res: Response) => res.headers.get("set-cookie")?.split(";")[0] ?? null;
 const from = (ip: string) => ({ "x-forwarded-for": ip });
-const unlimited = () => { process.env.VISITOR_BAR_PER_VISITOR_HOUR = process.env.VISITOR_BAR_PER_ADDRESS_HOUR = process.env.VISITOR_BAR_PLATFORM_HOUR = "100000"; };
+const unlimited = () => { process.env.VISITOR_BAR_PER_VISITOR_DAY = process.env.VISITOR_BAR_PER_ADDRESS_DAY = process.env.VISITOR_BAR_PER_NET48_DAY = process.env.VISITOR_BAR_PLATFORM_DAY = "1000000"; };
+/** What the bar says when any limit is reached: the owner's words (17 Oct 2026), exactly, em dash and all. */
+const LIMIT_REACHED = "That's all for today \u2014 request access to continue";
 
 /** A model reply in the text client's shape. */
 const says = (content: string): TextReply => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { role: "assistant", content } }], usage: { prompt_tokens: 300, completion_tokens: 40 } }) });
@@ -356,7 +363,7 @@ test("the request: a short budget, two messages, no tools; a failed or empty rep
   const { bar, instructions } = await lib();
   let sent: Record<string, unknown> | null = null;
   const result = await bar.askVisitorBar("What is Particl?", { send: async (body) => { sent = JSON.parse(body); return says("A production tool for films, ads and social videos."); } });
-  expect(result).toEqual({ ok: true, answer: "A production tool for films, ads and social videos.", held: null, inTokens: 300, outTokens: 40 });
+  expect(result).toEqual({ ok: true, answer: "A production tool for films, ads and social videos.", held: null, inTokens: 300, outTokens: 40, model: bar.VISITOR_BAR_DEFAULT_MODEL, usage: { prompt_tokens: 300, completion_tokens: 40 } });
   expect(Object.keys(sent!).sort()).toEqual(["max_tokens", "messages", "model", "temperature"]);
   expect(sent!.model).toBe(bar.VISITOR_BAR_DEFAULT_MODEL);
   expect(sent!.max_tokens).toBeLessThanOrEqual(200);
@@ -393,7 +400,10 @@ test("the real text client: the bar's own key on the plain fetch, one call, the 
   const { bar } = await lib();
   const { calls, untouched } = realClient(anthropicReply);
   const result = await bar.askVisitorBar("What is Particl?");
-  expect(result).toEqual({ ok: true, answer: "Particl is a production tool for films, ads and social videos.", held: null, inTokens: 120, outTokens: 15 });
+  expect(result).toMatchObject({ ok: true, answer: "Particl is a production tool for films, ads and social videos.", held: null, inTokens: 120, outTokens: 15, model: bar.VISITOR_BAR_DEFAULT_MODEL });
+  /* The provider's usage comes back for the ledger, priced by the snapshot. */
+  const ledger = await import("../../lib/visitor/ledger");
+  expect(ledger.visitorCostUsd(bar.VISITOR_BAR_DEFAULT_MODEL, (result as { usage: Record<string, unknown> }).usage)).toBeGreaterThan(0);
   expect(calls.map((c) => new URL(c.url).origin + new URL(c.url).pathname)).toEqual(["https://api.anthropic.com/v1/messages"]);
   expect(calls[0].headers["x-api-key"]).toBe("visitor-bar-anthropic-key");
   expect(sentinelIn(calls)).toBe(false);
@@ -473,10 +483,10 @@ test("a model off the list: refused before anything is counted", async () => {
   expect(existsSync(untouched)).toBe(false);
 });
 
-/* ── 3. Limits ───────────────────────────────────────────────────────────────────────────────── */
+/* ── 3. Limits (the owner's, 17 Oct 2026: per UTC day) ───────────────────────────────────────── */
 
-test("3a. per visitor (this process): the cookie's allowance runs out; a new cookie on the same address still has the address's", async () => {
-  process.env.VISITOR_BAR_PER_VISITOR_HOUR = "2";
+test("3a. per visitor: the cookie's daily allowance runs out, in the owner's words; a new cookie on the same address still has the address's", async () => {
+  process.env.VISITOR_BAR_PER_VISITOR_DAY = "2";
   const r = await route(async () => says("A production tool."));
   const first = await ask(r, { question: "What is Particl?" });
   expect(first.status).toBe(200);
@@ -488,15 +498,31 @@ test("3a. per visitor (this process): the cookie's allowance runs out; a new coo
   const second = await ask(r, { question: "Again?" }, { cookie });
   expect(second.status).toBe(200);
   expect(second.headers.get("set-cookie")).toBeNull();
-  const third = await ask(r, { question: "Once more?" }, { cookie });
+  /* Another process (a fresh copy of the route) sees the same count: it lives in the platform database. */
+  const third = await ask(await route(async () => says("A production tool.")), { question: "Once more?" }, { cookie });
   expect(third.status).toBe(429);
-  expect(Number(third.headers.get("retry-after"))).toBeGreaterThan(3500);
-  expect(await third.json()).toEqual({ error: "That's all the questions for now. Try again later, or use Request access." });
+  const { limits } = await lib();
+  expect(Math.abs(Number(third.headers.get("retry-after")) - limits.secondsToNextDay(Date.now()))).toBeLessThanOrEqual(1);
+  expect(await third.json()).toEqual({ error: LIMIT_REACHED });
   expect((await ask(r, { question: "And now?" })).status).toBe(200);
 });
 
+test("the owner's figures are the defaults: 20 per visitor, 2,000 for the site, 400 characters; 60 per address and 180 per /48 proposed", async () => {
+  const { limits, bar } = await lib();
+  expect(limits.VISITOR_LIMIT_DEFAULTS).toEqual({ perVisitorDay: 20, perAddressDay: 60, perNetworkDay: 180, platformDay: 2000 });
+  expect(bar.VISITOR_BAR_MAX_QUESTION).toBe(400);
+  expect(limits.visitorLimitConfig({})).toEqual(limits.VISITOR_LIMIT_DEFAULTS);
+  /* Each setting by name: a whole number from 1 to 1000000, anything else the default. */
+  expect(limits.visitorLimitConfig({ VISITOR_BAR_PER_VISITOR_DAY: "5", VISITOR_BAR_PER_ADDRESS_DAY: "0", VISITOR_BAR_PLATFORM_DAY: "1e9", VISITOR_BAR_PER_NET48_DAY: "-3" }))
+    .toEqual({ ...limits.VISITOR_LIMIT_DEFAULTS, perVisitorDay: 5 });
+  /* The day is the UTC calendar day: the allowance starts again at midnight UTC. */
+  const noonUtc = Date.UTC(2026, 9, 17, 12, 0, 0);
+  expect(limits.secondsToNextDay(noonUtc)).toBe(12 * 3600);
+  expect(limits.secondsToNextDay(Date.UTC(2026, 9, 17, 23, 59, 59))).toBe(1);
+});
+
 test("3b. per address (shared): dropping the cookie buys nothing, a forged leftmost entry buys nothing, IPv6 is counted per /64", async () => {
-  process.env.VISITOR_BAR_PER_ADDRESS_HOUR = "2";
+  process.env.VISITOR_BAR_PER_ADDRESS_DAY = "2";
   process.env.SELFHOST_BEHIND_PROXY = "1";
   const r = await route(async () => says("A production tool."));
   const statuses = async (ips: string[]) => { const out: number[] = []; for (const ip of ips) out.push((await ask(r, { question: "Q" }, from(ip))).status); return out; };
@@ -518,7 +544,7 @@ test("3b. per address (shared): dropping the cookie buys nothing, a forged leftm
 });
 
 test("3b2. per IPv6 /48 (shared): walking the /64s inside one /48 buys little; another /48 has its own allowance", async () => {
-  process.env.VISITOR_BAR_PER_NET48_HOUR = "3";
+  process.env.VISITOR_BAR_PER_NET48_DAY = "3";
   process.env.SELFHOST_BEHIND_PROXY = "1";
   const r = await route(async () => says("A production tool."));
   const statuses: number[] = [];
@@ -526,50 +552,42 @@ test("3b2. per IPv6 /48 (shared): walking the /64s inside one /48 buys little; a
   expect(statuses).toEqual([200, 200, 200, 429, 200, 200]);
 });
 
-test("3c. the platform-wide hourly cap is shared by every process and kept across a restart; refused questions reach no model", async () => {
-  process.env.VISITOR_BAR_PLATFORM_HOUR = "3";
+test("3c. the site's daily cap is shared by every process and kept across a restart; refused questions reach no model", async () => {
+  process.env.VISITOR_BAR_PLATFORM_DAY = "3";
   process.env.SELFHOST_BEHIND_PROXY = "1";
   let calls = 0;
   const model: Send = async () => { calls++; return says("A production tool."); };
   /* Three copies of the route: three app processes, each with its own memory. */
   const processes = [await route(model), await route(model), await route(model)];
-  const statuses: number[] = [];
-  for (let i = 1; i <= 6; i++) statuses.push((await ask(processes[i % 3], { question: `Q${i}` }, from(`203.0.113.${i}`))).status);
-  expect(statuses).toEqual([200, 200, 200, 429, 429, 429]);
+  const replies: string[] = [];
+  for (let i = 1; i <= 6; i++) { const res = await ask(processes[i % 3], { question: `Q${i}` }, from(`203.0.113.${i}`)); replies.push(`${res.status} ${JSON.stringify(await res.json())}`); }
+  expect(replies.slice(0, 3).every((reply) => reply.startsWith("200 "))).toBe(true);
+  expect(replies.slice(3)).toEqual(Array(3).fill(`429 ${JSON.stringify({ error: LIMIT_REACHED })}`));
   /* A restart (a fresh copy) starts with nothing in memory, and the cap still holds. */
   expect((await ask(await route(model), { question: "After a restart" }, from("203.0.113.99"))).status).toBe(429);
   expect(calls).toBe(3);
 });
 
-test("3d. the shared limits count in hour buckets, both or neither, and prune the past in the same write", async () => {
+test("3d. the shared limits count in UTC-day buckets, all or none, and prune the past in the same write", async () => {
   const { limits } = await lib();
   const client = limits.visitorDatabase();
-  const config = { ...limits.VISITOR_LIMIT_DEFAULTS, perAddressHour: 2, platformHour: 3 };
-  const hour = 60 * 60 * 1000, at = 500_000 * hour + 10 * 60_000;
-  const admit = (key: string, when = at) => limits.admitShared(key, null, config, when, client);
-  expect(await admit("a1")).toEqual({ ok: true });
-  expect(await admit("a1")).toEqual({ ok: true });
-  expect(await admit("a1")).toEqual({ ok: false, scope: "address", retryAfterSeconds: 50 * 60 });
-  expect(await admit("a2")).toEqual({ ok: true });
-  expect(await admit("a3")).toEqual({ ok: false, scope: "platform", retryAfterSeconds: 50 * 60 });
-  /* A refusal took nothing: a3 has no count, and the platform is still at its cap, not past it. */
-  const rows = async () => (await client.execute("SELECT scope, bucket, key, count FROM visitor_bar_hits ORDER BY scope, key")).rows.map((r) => `${r.scope}:${r.key}:${r.count}`);
-  expect(await rows()).toEqual(["address:a1:2", "address:a2:1", "address:a3:0", "platform::3"]);
-  /* The next hour: everything has room again, and the past hour is gone. */
-  expect(await admit("a1", at + hour)).toEqual({ ok: true });
-  expect(await rows()).toEqual(["address:a1:1", "platform::1"]);
-  /* The per-visitor limit (in memory) is a sliding hour. */
-  let now = at;
-  const visitors = new limits.VisitorLimiter(() => ({ ...config, perVisitorHour: 2 }), () => now);
-  visitors.take("v1"); now += 10 * 60_000; visitors.take("v1");
-  expect(visitors.check("v1")).toEqual({ ok: false, scope: "visitor", retryAfterSeconds: 50 * 60 });
-  expect(visitors.check("v2")).toEqual({ ok: true });
-  now += 50 * 60_000 + 1;
-  expect(visitors.check("v1")).toEqual({ ok: true });
-  /* Each setting by name: a whole number from 1 to 100000, anything else the default; the visitor map never smaller than the cap. */
-  expect(limits.visitorLimitConfig({ VISITOR_BAR_PER_VISITOR_HOUR: "5", VISITOR_BAR_PER_ADDRESS_HOUR: "0", VISITOR_BAR_PLATFORM_HOUR: "1e9" }))
-    .toEqual({ ...limits.VISITOR_LIMIT_DEFAULTS, perVisitorHour: 5 });
-  expect(limits.visitorLimitConfig({ VISITOR_BAR_PLATFORM_HOUR: "100000" }).maxKeys).toBe(100_001);
+  const config = { ...limits.VISITOR_LIMIT_DEFAULTS, perVisitorDay: 2, perAddressDay: 3, platformDay: 4 };
+  const day = 24 * 60 * 60 * 1000, at = 20_000 * day + 18 * 60 * 60 * 1000;   // 18:00 UTC
+  const admit = (visitor: string, address: string, when = at) => limits.admitShared({ visitor, address, network: null }, config, when, client);
+  const sixHours = 6 * 60 * 60;
+  expect(await admit("v1", "a1")).toEqual({ ok: true });
+  expect(await admit("v1", "a1")).toEqual({ ok: true });
+  expect(await admit("v1", "a1")).toEqual({ ok: false, scope: "visitor", retryAfterSeconds: sixHours });
+  expect(await admit("v2", "a1")).toEqual({ ok: true });
+  expect(await admit("v3", "a1")).toEqual({ ok: false, scope: "address", retryAfterSeconds: sixHours });
+  expect(await admit("v3", "a2")).toEqual({ ok: true });
+  expect(await admit("v4", "a3")).toEqual({ ok: false, scope: "platform", retryAfterSeconds: sixHours });
+  /* A refusal took nothing: the refused visitors and addresses have no count, and the site is at its cap, not past it. */
+  const rows = async () => (await client.execute("SELECT scope, key, count FROM visitor_bar_hits WHERE count > 0 ORDER BY scope, key")).rows.map((r) => `${r.scope}:${r.key}:${r.count}`);
+  expect(await rows()).toEqual(["address:a1:3", "address:a2:1", "platform::4", "visitor:v1:2", "visitor:v2:1", "visitor:v3:1"]);
+  /* The next UTC day: everything has room again, and the past day is gone. */
+  expect(await admit("v1", "a1", at + sixHours * 1000)).toEqual({ ok: true });
+  expect(await rows()).toEqual(["address:a1:1", "platform::1", "visitor:v1:1"]);
 });
 
 test("3d2. two separate database clients on one file, many admissions in flight at once: the cap is never passed", async () => {
@@ -580,19 +598,20 @@ test("3d2. two separate database clients on one file, many admissions in flight 
      and admitShared does its check and its increment in one batch). What it does catch is a check-then-write split
      across awaits: many admissions started together, interleaving at every await, must still never pass the cap. */
   const [a, b] = [createClient({ url, timeout: 5_000 } as Parameters<typeof createClient>[0]), createClient({ url, timeout: 5_000 } as Parameters<typeof createClient>[0])];
-  const config = { ...limits.VISITOR_LIMIT_DEFAULTS, perAddressHour: 100, platformHour: 7 };
-  const at = 600_000 * 60 * 60 * 1000;
+  const config = { ...limits.VISITOR_LIMIT_DEFAULTS, perVisitorDay: 1000, perAddressDay: 1000, platformDay: 7 };
+  const at = 25_000 * 24 * 60 * 60 * 1000;
+  const keys = (i: number) => ({ visitor: `v${i % 3}`, address: `k${i % 5}`, network: null });
   /* The table is made once first, so the race below is on the counts alone. */
-  await limits.admitShared("warm-up", null, { ...config, platformHour: 0 }, at, a);
-  await limits.admitShared("warm-up", null, { ...config, platformHour: 0 }, at, b);
-  const settled = await Promise.allSettled(Array.from({ length: 24 }, (_, i) => limits.admitShared(`k${i % 5}`, null, config, at, i % 2 ? a : b)));
+  await limits.admitShared(keys(0), { ...config, platformDay: 0 }, at, a);
+  await limits.admitShared(keys(0), { ...config, platformDay: 0 }, at, b);
+  const settled = await Promise.allSettled(Array.from({ length: 24 }, (_, i) => limits.admitShared(keys(i), config, at, i % 2 ? a : b)));
   const admitted = settled.filter((s) => s.status === "fulfilled" && s.value.ok).length;
-  const stored = async () => Number((await a.execute({ sql: "SELECT count FROM visitor_bar_hits WHERE scope = 'platform' AND bucket = ?", args: [Math.floor(at / 3_600_000)] })).rows[0]?.count ?? 0);
+  const stored = async () => Number((await a.execute({ sql: "SELECT count FROM visitor_bar_hits WHERE scope = 'platform' AND bucket = ?", args: [Math.floor(at / 86_400_000)] })).rows[0]?.count ?? 0);
   expect(admitted).toBeLessThanOrEqual(7);
   expect(await stored()).toBe(admitted);
   /* Any admission that failed (a busy file) was refused, not counted; asking on until refused fills the cap exactly. */
   let more = 0;
-  while ((await limits.admitShared(`k${more}`, null, config, at, more % 2 ? a : b)).ok) more++;
+  while ((await limits.admitShared(keys(more), config, at, more % 2 ? a : b)).ok) more++;
   expect(admitted + more).toBe(7);
   expect(await stored()).toBe(7);
   a.close(); b.close();
@@ -627,14 +646,16 @@ test("3f. at most four answers in flight in a process; the fifth is told to try 
   expect((await ask(r, { question: "Q6" })).status).toBe(200);
 });
 
-test("3g. the question's length is capped, and so is the body", async () => {
+test("3g. 400 characters per message (the owner's limit, answered in the owner's words), and the body is capped too", async () => {
   let calls = 0;
   const r = await route(async () => { calls++; return says("A production tool."); });
-  expect((await ask(r, { question: "x".repeat(500) })).status).toBe(200);
-  const long = await ask(r, { question: "x".repeat(501) });
+  expect((await ask(r, { question: "x".repeat(400) })).status).toBe(200);
+  const long = await ask(r, { question: "x".repeat(401) });
   expect(long.status).toBe(413);
-  expect(await long.json()).toEqual({ error: "Ask in 500 characters or fewer." });
-  expect((await ask(r, JSON.stringify({ question: "x", pad: "y".repeat(5000) }))).status).toBe(413);
+  expect(await long.json()).toEqual({ error: LIMIT_REACHED });
+  const body = await ask(r, JSON.stringify({ question: "x", pad: "y".repeat(5000) }));
+  expect(body.status).toBe(413);
+  expect(await body.json()).toEqual({ error: LIMIT_REACHED });
   const empty: number[] = [];
   for (const body of [{}, { question: "   " }, { question: "\u200b\u{E0020}" }, { question: 7 }, "not json", []]) empty.push((await ask(r, body)).status);
   expect(empty).toEqual([400, 400, 400, 400, 400, 400]);
@@ -649,7 +670,7 @@ test("a cross-site post is refused before anything is read", async () => {
 });
 
 test("ids and timings only: no question or answer text in any log line", async () => {
-  process.env.VISITOR_BAR_PER_VISITOR_HOUR = "1";
+  process.env.VISITOR_BAR_PER_VISITOR_DAY = "1";
   const lines = await consoleLines(async () => {
     const r = await route(async () => says("SECRETANSWERWORDS about the product."));
     const first = await ask(r, { question: "SECRETQUESTIONWORDS one" });
@@ -658,7 +679,7 @@ test("ids and timings only: no question or answer text in any log line", async (
   });
   expect(lines.filter((line) => /SECRET(?:QUESTION|ANSWER)WORDS/.test(line))).toEqual([]);
   const parsed = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(parsed.filter((line) => !Object.keys(line).every((key) => ["event", "id", "outcome", "ms", "in_tokens", "out_tokens"].includes(key)))).toEqual([]);
+  expect(parsed.filter((line) => !Object.keys(line).every((key) => ["event", "id", "outcome", "ms", "in_tokens", "out_tokens", "ledger"].includes(key)))).toEqual([]);
   expect(parsed.map((line) => line.outcome)).toEqual(["answered", "limited:visitor", "answered"]);
 });
 
@@ -708,7 +729,8 @@ function resolveImport(from: string, spec: string): string | null {
   }
   throw new Error(`${from}: cannot resolve ${spec}`);
 }
-function closure(start: string): { files: Set<string>; packages: Set<string> } {
+/** Every module `start` loads at run time, however deep; `cut` names imports of the start file that are walked on their own. */
+function closure(start: string, cut: readonly string[] = []): { files: Set<string>; packages: Set<string> } {
   const files = new Set<string>(), packages = new Set<string>(), queue = [start];
   while (queue.length) {
     const file = queue.pop()!;
@@ -716,6 +738,7 @@ function closure(start: string): { files: Set<string>; packages: Set<string> } {
     files.add(file);
     if (file.endsWith(".json")) continue;
     for (const spec of runtimeImports(file)) {
+      if (file === start && cut.includes(spec)) continue;
       const next = resolveImport(file, spec);
       if (next) queue.push(next); else packages.add(spec);
     }
@@ -736,7 +759,8 @@ test("the boundary walk sees require() and template-literal import(), and refuse
 
 test("the route and the bar import only what they are pinned to", () => {
   const PINNED: Record<string, string[]> = {
-    [ROUTE]: ["node:crypto", "@/lib/recovery", "@/lib/clientIp", "@/lib/requestOrigin", "@/lib/requestBody", "@/lib/visitor/bar", "@/lib/visitor/limits"],
+    [ROUTE]: ["node:crypto", "@/lib/recovery", "@/lib/clientIp", "@/lib/requestOrigin", "@/lib/requestBody", "@/lib/visitor/bar", "@/lib/visitor/limits", "@/lib/visitor/ledger"],
+    "lib/visitor/ledger.ts": ["../meter", "../houseWorkspace", "../catalog", "../openai-direct", "../textRoute"],
     "lib/visitor/bar.ts": ["../textDirect", "../textRoute", "../mock", "./instructions", "./screen"],
     "lib/visitor/screen.ts": ["./instructions"],
     "lib/visitor/limits.ts": ["node:net", "../localDatabaseClient"],
@@ -747,8 +771,9 @@ test("the route and the bar import only what they are pinned to", () => {
   expect(wrong).toEqual([]);
 });
 
-test("nothing the route loads, however deep, is a generation, engine, money or workspace module", () => {
-  const { files, packages } = closure(ROUTE);
+test("the answer path: nothing it loads, however deep, is a generation, engine, money or workspace module", () => {
+  /* The route's one money import, the ledger writer, is walked on its own below: the answer itself never reaches it. */
+  const { files, packages } = closure(ROUTE, ["@/lib/visitor/ledger"]);
   /* The walk is real: it reaches the text client, the registries the screen reads and the database client. */
   for (const reached of ["lib/textDirect.ts", "lib/language-provider.ts", "lib/models.ts", "lib/visitor/screen.ts", "lib/localDatabaseClient.ts"]) expect(files.has(reached), reached).toBe(true);
   /* The registry list lives with the tests: nothing the route loads is under tests/. */
@@ -773,10 +798,32 @@ test("nothing the route loads, however deep, is a generation, engine, money or w
   /* lib/tenant.ts is reached (lib/vendorKeys.ts reads the request's tenant to pick a key): with no tenant in scope, as here,
      it answers the platform's own key. Nothing reached opens a workspace's database (lib/db.ts is forbidden above). */
   expect(files.has("lib/tenant.ts")).toBe(true);
+  /* The answer path's own modules never import the ledger or the meter: only the route does, after the answer. */
+  for (const file of ["lib/visitor/bar.ts", "lib/visitor/screen.ts", "lib/visitor/limits.ts", "lib/visitor/instructions.ts"]) {
+    expect(runtimeImports(file).filter((spec) => /ledger|meter/.test(spec)), file).toEqual([]);
+  }
+});
+
+test("the ledger path (MONEY): it reaches the one ledger writer, and still no engine, generation or vendor module", () => {
+  const { files } = closure("lib/visitor/ledger.ts");
+  for (const reached of ["lib/meter.ts", "lib/billingLedger.ts", "lib/houseWorkspace.ts"]) expect(files.has(reached), reached).toBe(true);
+  const FORBIDDEN: [string, RegExp][] = [
+    ["an engine adapter", /^lib\/engines\//],
+    ["generation admission, requests and settlement", /^lib\/(?:generation\w*|generate\w*|submitVideo|renderDispatch|renderWork|dispatch|takeJob|jobs|draftFinal)\.ts$/],
+    ["a vendor's own module", /^lib\/(?:ark|fal\w*|gemini|elevenlabs|dubbing|astra|cinemaStudio|grokVoiceModel|identities|identityTraining|soulRender|soulIdentities|genjutsu|genjutsuRequest|genjutsuVideo|higgsfield\w*)\.ts$|^lib\/higgsfield-consumer\//],
+    ["the background worker", /^lib\/inngest/],
+    ["the text client (the ledger sends nothing)", /^lib\/(?:textDirect|language-provider|paidText)\.ts$/],
+    ["anything in app/ or components/", /^(?:app|components)\//],
+  ];
+  const reached = [...files].flatMap((file) => FORBIDDEN.filter(([, pattern]) => pattern.test(file)).map(([what]) => `${file} is ${what}`));
+  expect(reached).toEqual([]);
+  /* What it does load beyond the meter's own money modules, for the record: the 3D render backend's engine names (a
+     list, read by lib/platformSpend.ts) and the provider registry (lib/providers.ts, read for who pays). */
+  expect(files.has("lib/astra-blender/backend.ts")).toBe(true);
 });
 
 test("the bar sends no tools and logs nothing itself", () => {
-  for (const file of ["lib/visitor/bar.ts", "lib/visitor/screen.ts", "lib/visitor/limits.ts", "lib/visitor/instructions.ts"]) {
+  for (const file of ["lib/visitor/bar.ts", "lib/visitor/screen.ts", "lib/visitor/limits.ts", "lib/visitor/instructions.ts", "lib/visitor/ledger.ts"]) {
     const code = readFileSync(path.join(ROOT, file), "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
     expect(code, file).not.toMatch(/\b(?:tools|tool_choice|functions|function_call)\s*:/);
     expect(code, file).not.toMatch(/\bconsole\./);
@@ -858,4 +905,96 @@ test("an empty caller key is refused, never read as no key: the platform's key i
   const gateway = await textPost(body, { apiKey: "", fetch: counting });
   expect(gateway.ok).toBe(false);
   expect(sent).toBe(0);
+});
+
+/* ── MONEY: the visitor's spend on the ledger, as house spend marked "visitor" ────────────────── */
+
+/** A reply as the direct text client returns it, with the cache counts the price snapshot needs. */
+const pricedReply = (content: string): TextReply => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { role: "assistant", content } }],
+  usage: { prompt_tokens: 1_200, completion_tokens: 60, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 } } }) });
+
+test("MONEY: an answered question is one meter row on the house workspace, marked visitor, at the snapshot's cost, billed nothing", async () => {
+  unlimited();
+  const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
+  const { ledger, bar } = { ledger: await import("../../lib/visitor/ledger"), bar: await import("../../lib/visitor/bar") };
+  const r = await route(async () => pricedReply("A production tool for films, ads and social videos."), { ledger: "real" });
+  const lines = await consoleLines(async () => {
+    expect((await ask(r, { question: "What is Particl?" })).status).toBe(200);
+    /* A held answer was still a paid call: recorded too. */
+    const held = await route(async () => pricedReply("Seedance makes them."), { ledger: "real" });
+    expect(await (await ask(held, { question: "Which engine?" })).json()).toEqual({ answer: (await lib()).instructions.HELD_ANSWER });
+  });
+  /* Read through the platform's own client, the one meter() wrote with (it is opened once per process). */
+  const { platformDb } = await import("../../lib/platform");
+  const db = platformDb();
+  const ids = lines.filter((line) => line.startsWith("{")).map((line) => `visitor_${(JSON.parse(line) as { id: string }).id}`);
+  expect(ids.length).toBe(2);
+  const rows = (await db.execute({ sql: `SELECT * FROM meter_events WHERE id IN (?, ?) ORDER BY created_at`, args: ids })).rows;
+  expect(rows.length).toBe(2);
+  const cost = ledger.visitorCostUsd(bar.VISITOR_BAR_DEFAULT_MODEL, { prompt_tokens: 1_200, completion_tokens: 60, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 } });
+  expect(cost).not.toBeNull();
+  expect(cost!).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(String(row.id)).toMatch(/^visitor_[0-9a-f-]{36}$/);
+    expect({ workspace: row.workspace_id, kind: row.kind, engine: row.engine, model: row.model, status: row.status, by: row.created_by, billed: Number(row.billed_credits), paid: Number(row.paid_by_platform) })
+      .toEqual({ workspace: HOUSE_WORKSPACE_ID, kind: "text", engine: "anthropic", model: bar.VISITOR_BAR_DEFAULT_MODEL, status: "succeeded", by: "visitor", billed: 0, paid: 0 });
+    expect(Number(row.engine_cost_usd)).toBeCloseTo(cost!, 12);
+  }
+  /* No balance moved anywhere: no credit debited for these rows, and every visitor row is the house's. */
+  const debited = (await db.execute({ sql: "SELECT COALESCE(SUM(credits), 0) AS n FROM billing_debits WHERE event_id IN (?, ?)", args: ids })).rows[0];
+  expect(Number(debited?.n ?? 0)).toBe(0);
+  expect((await db.execute("SELECT DISTINCT workspace_id FROM meter_events WHERE created_by = 'visitor'")).rows.map((row) => row.workspace_id)).toEqual([HOUSE_WORKSPACE_ID]);
+  const logged = lines.filter((line) => line.startsWith("{")).map((line) => JSON.parse(line) as { ledger?: string });
+  expect(logged.map((line) => line.ledger)).toEqual(["recorded", "recorded"]);
+});
+
+test("MONEY: nothing is recorded when no model was called (a limit, a refused model, a provider failure)", async () => {
+  process.env.VISITOR_BAR_PER_VISITOR_DAY = "1";
+  const r = await route(async () => pricedReply("A production tool."));
+  const first = await ask(r, { question: "One" });
+  expect(first.status).toBe(200);
+  expect(ledgerRecords.length).toBe(1);
+  expect((await ask(r, { question: "Two" }, { cookie: cookieOf(first)! })).status).toBe(429);
+  expect((await ask(await route(async () => ({ ok: false, status: 529, text: "{}" })), { question: "Three" })).status).toBe(503);
+  process.env.VISITOR_BAR_MODEL = "anthropic/claude-sonnet-5";
+  expect((await ask(await route(), { question: "Four" })).status).toBe(503);
+  expect(ledgerRecords.length).toBe(1);
+});
+
+test("MONEY: a failure to record never fails the answer, and says so in the log", async () => {
+  unlimited();
+  const ledger = await import("../../lib/visitor/ledger");
+  const bar = await import("../../lib/visitor/bar");
+  const r = loadRoute<Route>(ROUTE, {
+    "@/lib/recovery": { recoveryRoute: <T>(handler: T) => handler },
+    "@/lib/clientIp": await import("../../lib/clientIp"),
+    "@/lib/requestOrigin": await import("../../lib/requestOrigin"),
+    "@/lib/requestBody": await import("../../lib/requestBody"),
+    "@/lib/visitor/bar": { ...bar, askVisitorBar: (question: string) => bar.askVisitorBar(question, { send: async () => pricedReply("A production tool.") }) },
+    "@/lib/visitor/limits": await import("../../lib/visitor/limits"),
+    "@/lib/visitor/ledger": { ...ledger, recordVisitorSpend: (spend: Parameters<typeof ledger.recordVisitorSpend>[0]) => ledger.recordVisitorSpend(spend, async () => { throw new Error("the platform database is down"); }) },
+  });
+  let res: Response | null = null;
+  const lines = await consoleLines(async () => { res = await ask(r, { question: "What is Particl?" }); });
+  expect(res!.status).toBe(200);
+  expect(await res!.json()).toEqual({ answer: "A production tool." });
+  expect(lines.map((line) => (JSON.parse(line) as { ledger?: string }).ledger)).toEqual(["not_recorded"]);
+});
+
+test("MONEY: the record's shape, exactly: the house workspace, unbilled, marked visitor, a critical write; no guessed engine", async () => {
+  const ledger = await import("../../lib/visitor/ledger");
+  const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
+  const written: unknown[] = [];
+  const usage = { prompt_tokens: 100, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 } };
+  const result = await ledger.recordVisitorSpend({ id: "abc", model: "google/gemini-3.5-flash-lite", usage }, async (...args) => { written.push(args); });
+  expect(result.recorded).toBe(true);
+  expect(written).toEqual([[{ id: "visitor_abc", workspaceId: HOUSE_WORKSPACE_ID, kind: "text", engine: "google", model: "google/gemini-3.5-flash-lite", status: "succeeded",
+    engineCostUsd: result.costUsd, createdBy: "visitor", unbilled: true }, { critical: true }]]);
+  expect(result.costUsd).toBeGreaterThan(0);
+  /* Usage that cannot be priced is still written, with no cost; a model with no vendor is not written at all. */
+  expect((await ledger.recordVisitorSpend({ id: "def", model: "anthropic/claude-haiku-5.5", usage: null }, async () => {})).costUsd).toBeNull();
+  const none: unknown[] = [];
+  expect(await ledger.recordVisitorSpend({ id: "ghi", model: "nonsense", usage }, async (...args) => { none.push(args); })).toEqual({ recorded: false, costUsd: null });
+  expect(none).toEqual([]);
+  expect(ledger.VISITOR_MARK).toBe("visitor");
 });
