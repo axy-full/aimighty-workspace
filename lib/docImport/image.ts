@@ -103,7 +103,9 @@ export const tesseractOcr: OcrEngine = async (image, { languages, timeoutMs, sig
  * A TIFF's first directory must name its width and its height once each. The
  * header sniffer keeps the last value it sees and a decoder may keep the
  * first, so a file that names them twice could pass the size check with one
- * size and be decoded at another.
+ * size and be decoded at another. Each must also be a single SHORT (3) or
+ * LONG (4): the sniffer reads any other type (LONG8, RATIONAL, an array) as
+ * if it were one of those, which is a second way to report a false size.
  */
 export function checkTiffSize(bytes: Buffer) {
   const le = bytes[0] === 0x49;
@@ -114,11 +116,17 @@ export function checkTiffSize(bytes: Buffer) {
     const ifd = read32(4);
     const count = read16(ifd);
     for (let i = 0; i < count; i++) {
-      const tag = read16(ifd + 2 + i * 12);
+      const entry = ifd + 2 + i * 12;
+      const tag = read16(entry);
+      if (tag !== 256 && tag !== 257) continue;
+      const type = read16(entry + 2);
+      if ((type !== 3 && type !== 4) || read32(entry + 4) !== 1)
+        throw new DocImportError("unsafe", "This picture states its size in a form the importer does not read. Nothing was imported.");
       if (tag === 256) seen = { ...seen, width: seen.width + 1 };
-      if (tag === 257) seen = { ...seen, height: seen.height + 1 };
+      else seen = { ...seen, height: seen.height + 1 };
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof DocImportError) throw error;
     throw new DocImportError("damaged", "This picture's size cannot be read from its header. Nothing was imported.");
   }
   if (seen.width !== 1 || seen.height !== 1)
