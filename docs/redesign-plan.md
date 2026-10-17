@@ -1184,3 +1184,49 @@ Recorded by the lead, verbatim less one aside about who decides pricing.
 > By Friday, tell me which of 1 to 6 you can land before the 27th, with real PR numbers once they exist.
 
 **Lead's note:** v29 replaces the v28 brief in the entry above as the design to wait for. Every item there that waits "until v28 is approved" now waits for the v29 zip.
+
+## Owner, 17 Oct 2026: Particl v30, the build starts (Phase A before the freeze, Phase B after the v30 zip)
+
+Recorded by the lead, verbatim less one aside about who signs off money changes (marked […]). This replaces the 16 Oct late-evening six-item list: its items are inside Phase A below.
+
+> Particl v30 — the build starts now. Read all of this before you open a branch.
+>
+> WHAT IS CHANGING
+> Particl keeps its shell (Studio · Gen · Workspace, the project selector, the step rail, one canvas, a right-hand inspector) and loses the left column. Underneath, the product becomes: one production per film type with a step list; an infinite canvas with one frame per canvas step; cards (stills, clips, audio, text) and plates (empty cards that take inputs and become a storyboard sheet or a shot); links between them; two document steps (Brief, Script) with an in-app reader and editor; two modes, Agent and Director, that share the data and differ in who decides; and a money model where talking is free, making is quoted before it runs and billed as it is made. The approved v30 prototype arrives from Claude Design this week; the interface is built from that zip, not from this message. What you build now is everything under the interface.
+>
+> GROUND RULES (unchanged from the handover)
+> - Branch from release/1, PR into release/1, small PRs, one concern each. CI must be 24/24. A fresh Opus approval on every PR; a money review on anything that touches credits, quotes, receipts or limits. Never weaken a guard or security test. You never touch main, deploys, DNS, Coolify or Cloudflare; when a step needs Akshay, write it click by click.
+> - No secrets in chat, code, PRs or the repo (the repo is public). Every key is set by Akshay in Coolify; you read config only. The engine routing table and all vendor prices live in server config, never in a client bundle, never in a migration, never in a test fixture.
+> - No rm -rf, no recursive deletes, no git clean, no forced worktree removal. Never invent PR numbers, commits or results; report real ones or say "not yet".
+> - Money behaviour that exists today stays exactly as it is until […] signs off: the 200 cr per-job line, 480p drafts first, the $500 house cap, credit = US$0.10. Margins are per service and will come from Akshay's cost sheet; until then every margin is a named placeholder in config, flagged, never a number typed into code.
+>
+> RULES THE CODE MUST ENFORCE
+> 1. Agent jobs never expose an engine: not in the API, not in History, not in receipts, not in exports, not in error messages. Director jobs expose everything they chose. A test asserts both.
+> 2. Nothing in a delivered file says it was generated: strip all metadata from every output before it reaches storage (ffmpeg -map_metadata -1 for video and audio, exiftool -all= for stills); a test asserts no metadata remains. Engines that visibly mark paid output are never in the routing table.
+> 3. Talking is free, making is charged. A quote is computed and stored before any job runs; the actual is stored when it finishes; both appear on the receipt. A failed or cancelled job is 0 when the vendor refunds it and its cost plus margin when the vendor bills us; the refund status is a field, not a guess. Uploads and the user's own edits are never billed. Reading any imported document for understanding is a billed job.
+> 4. Every spend shows its price before it runs; the API refuses a spending action that has no quote attached.
+> 5. Director mode offers the full catalogue of wired engines, alphabetical, with prices, none pre-selected, none flagged; the catalogue endpoint is the only place engine names leave the server, and only for Director requests.
+> 6. Switching modes loses nothing. Recreate on an Agent take hands Director an empty engine.
+>
+> PHASE A — LAND BEFORE THE 27 OCT FREEZE (no visible interface changes; everything behind flags)
+> 1. Production model. Tables for productions (type, step list by type), frames (one per canvas step, position, order), nodes (kind: still · clip · audio · text · document · plate · detail · element; frame, position, status draft · final · 4k · kept · failed; takes as versions), links (from node to plate with a role: cast, frame, angle, camera move, environment, prop, brand, product, look), and detail nodes with typed values (angle, camera move, lighting, action, note). Beats belong to a breakdown table and are the source for plates: a beat creates a dashed plate in Storyboard and Shots; the two stay linked.
+> 2. Documents. Brief and Script as documents with versions; Fountain as the internal format for scripts; selections with Atomik edits as tracked changes we diff ourselves. Import pipeline on Inngest: .docx (mammoth), .pdf (text layer), .fdx/.fdxt (XML), .pptx and .xls/.xlsx (text and images), images (.jpg .png .svg .tiff) through Tesseract OCR. Viewing conversions through LibreOffice headless — spike first: can the droplet carry it, or do we need a conversion service.
+> 3. Jobs and money. A jobs table: production, step, node, command, mode, product (generation · reading · research · analysis · writing · layers · enhance · render · upscale), engine (private), quote, actual, vendor cost, refund status, status queued · running · done · failed · cancelled, timestamps. A commands table for Agent mode: one row per instruction with its quote and total. Receipts per step. The monthly spend limit per workspace with a paused state, and ask_before_every_take defaulting to off.
+> 4. Pricing engine. A product-and-cost table in config (engine × resolution × length for generations; pages, sources and minutes bands for reading, research, analysis and writing; layers; enhance; renders) with cost and margin columns; quotes computed from it; the sheet from Akshay fills the numbers later. Nothing about it reaches the client except credit prices.
+> 5. History read models. Agent: one row per command — instruction, production, step, date, total credits, the cards it made. Director: itemised with engine, settings, inputs, prompt. Aggregate by production, member and month, with CSV export. Every row links to its card.
+> 6. Library. Elements with an @handle unique per workspace, kind (character · environment · prop · wardrobe · brand · product · reference · audio), origin (generated · uploaded), active/draft, the original stored untouched and any crop as a separate derived file. A links table so any gen can be linked to any production and step, before, during or after it is made, many to many.
+> 7. Search. One endpoint behind ⌘F over productions, cards, prompts, handles, library and history — FTS in Turso — returning matches on the current canvas first.
+> 8. Collaboration. Liveblocks rooms per production with presence for named cursors. Check our plan covers the text-editor and comments products; report what it does and doesn't.
+> 9. Visitor bar backend. A separate endpoint with its own limited instructions that contain nothing about routing or prices; a cheap model; short answers; rate limit per visitor; it never calls a generation engine. Add a test that feeds it the usual extraction attempts and asserts nothing about engines leaks.
+> 10. Carry-overs. Soul ID client stub behind a flag (Higgsfield API, key auth, no spend). The export worker is still due Monday 19.
+>
+> THREE CHECKS TO REPORT BY FRIDAY, WITH EVIDENCE
+> - Liveblocks: which products our plan includes.
+> - LibreOffice headless on the droplet: memory and time for a 40-page .pptx and a 20-sheet .xlsx, or the case for a conversion service.
+> - Tesseract: accuracy on five real scanned briefs Akshay gives you, two of them in Hindi; where it fails, the fallback is the multimodal model we already pay for.
+>
+> PHASE B — AFTER THE V30 ZIP IS APPROVED (from 2 Nov, in this order, one PR per item)
+> Shell (top bar, rail, mode switch) → canvas, frames and cards with wires on selection and Show rig → the bar: Agent card states and Director tiles → Space and i → the Library drawer → the document editor on TipTap with Atomik selections → Breakdown cards and list → Add node and plates → Look and the treatment builder (Polotno if the 26 Oct trial holds) → Deliver table and exports → Gen → Workspace → visitor page with its bar → phone.
+>
+> REPORTING
+> A short note each evening: what landed (real PR numbers), what's next, what's blocked. Nothing invented. Questions go to Akshay in plain language; where an answer changes money or security, wait for it.
