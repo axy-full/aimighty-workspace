@@ -248,19 +248,27 @@ test("a double press charges once: the same key while the first is on its way is
 });
 
 test("a refused press is never billed: an answer that is not a prompt, one that drops a citation, and one with nothing in it settle at zero", async () => {
-  const cases: [string, Submit, number][] = [
-    ["not a prompt", async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ prompt: "" }) } }], usage: { cost: 0.0004 } }) }), 502],
-    ["no text", async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "" } }], usage: { cost: 0.0004 } }) }), 502],
+  const cases: [string, Submit, number, string][] = [
+    ["not a prompt", async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ prompt: "" }) } }], usage: { cost: 0.0004 } }) }), 502, "a tree in rain"],
+    ["no text", async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "" } }], usage: { cost: 0.0004 } }) }), 502, "a tree in rain"],
+    /* The typed words cite @Image1; the rewrite leaves it out. */
+    ["dropped citation", answers("A lone tree in steady rain, slow push-in."), 502, "@Image1 a tree in rain"],
   ];
-  for (const [name, submit, status] of cases) {
+  for (const [name, submit, status, prompt] of cases) {
     const ws = `ws_refused_${name.replace(/\W/g, "_")}`;
     await inWorkspace(ws, async () => {
       for (const streamed of [false, true]) {
         const slug = name.replace(/\W/g, "-");
-        const request = streamed ? stream(`refused-${streamed}-${slug}`) : press(`refused-${streamed}-${slug}`);
+        const request = new Request("http://localhost/api/prompt/enhance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Idempotency-Key": `refused-${streamed}-${slug}` },
+          body: JSON.stringify({ prompt, mode: "video", provider: "claude", maxCredits: 5, ...(streamed ? { stream: true } : {}) }),
+        });
         const out = await enhance(submit)(request);
         expect(out.status, name).toBe(status);
-        expect((await out.json()).nothingBilled, name).toBe(true);
+        const said = await out.json();
+        expect(said.nothingBilled, name).toBe(true);
+        if (name === "dropped citation") expect(said.error).toMatch(/@Image1/);
       }
       const t = await traces(ws);
       expect(t.meters.every((m) => Number(m.billed_credits) === 0), name).toBe(true);
@@ -268,4 +276,68 @@ test("a refused press is never billed: an answer that is not a prompt, one that 
       expect(await balanceOf(ws), `${name}: the whole grant is still there`).toBe(1000);
     });
   }
+});
+
+/* The stream's phases on their own (lib/enhanceStream.ts), with the settlement and the claim as stubs: what is charged and what the key replays never disagree. */
+async function phases(o: { finishGate?: Promise<void>; finishFails?: Error; signal?: AbortSignal } = {}) {
+  const { enhanceStream } = await import("../../lib/enhanceStream");
+  const calls: string[] = [];
+  const claims: { status: number; body: Record<string, unknown> }[] = [];
+  let finishing = false;
+  const body = enhanceStream({
+    answer: { prompt: "A lone tree in steady rain.", provider: "claude", writer: WRITER },
+    finish: async () => { finishing = true; calls.push("finish"); await o.finishGate; if (o.finishFails) throw o.finishFails; calls.push("charged"); },
+    abandon: async () => { calls.push("abandon"); },
+    complete: async (status, json) => { claims.push({ status, body: JSON.parse(json) }); },
+    signal: o.signal,
+    gapMs: 0,
+  });
+  return { reader: body.getReader(), calls, claims, finishing: () => finishing };
+}
+const until = async (ok: () => boolean) => { for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 5)); expect(ok()).toBe(true); };
+
+test("the stream's phases: a reader gone while words go out abandons (free) and finish is never called; the claim says Nothing billed", async () => {
+  const p = await phases();
+  await p.reader.read();
+  await p.reader.cancel();
+  await until(() => p.claims.length > 0);
+  expect(p.calls).toEqual(["abandon"]);
+  expect(p.claims).toEqual([{ status: 499, body: { error: "Cancelled. Nothing billed.", nothingBilled: true } }]);
+  /* The request's own signal ending (a dropped connection) is the same. */
+  const gone = new AbortController();
+  const q = await phases({ signal: gone.signal });
+  await q.reader.read();
+  gone.abort();
+  await until(() => q.claims.length > 0);
+  expect(q.calls).toEqual(["abandon"]);
+  expect(q.claims.map((c) => c.status)).toEqual([499]);
+});
+
+test("the stream's phases: a reader gone while the charge is being made changes nothing; the charge stands once and the key replays the answer, never Nothing billed", async () => {
+  let open: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { open = resolve; });
+  const gone = new AbortController();
+  const p = await phases({ finishGate: gate, signal: gone.signal });
+  /* Every word is out (unread, queued) and the charge is being made. */
+  await until(() => p.finishing());
+  /* Mid-settlement: Cancel, and the connection drops too. */
+  void p.reader.cancel().catch(() => {});
+  gone.abort();
+  open();
+  await until(() => p.claims.length > 0);
+  await new Promise((r) => setTimeout(r, 30));
+  expect(p.calls).toEqual(["finish", "charged"]);
+  expect(p.claims).toEqual([{ status: 200, body: { prompt: "A lone tree in steady rain.", provider: "claude", writer: WRITER } }]);
+});
+
+test("the stream's phases: a finish refused by paid text is said as Nothing billed; any other failure claims nothing about the bill", async () => {
+  const { PaidTextError } = await import("../../lib/paidText");
+  const refused = await phases({ finishFails: new PaidTextError("The text provider answered too late; this request had already ended.") });
+  const lines: string[] = [];
+  for (;;) { const { value, done } = await refused.reader.read(); if (done) break; lines.push(...new TextDecoder().decode(value).split("\n").filter(Boolean)); }
+  expect(JSON.parse(lines.at(-1)!)).toMatchObject({ nothingBilled: true });
+  expect(refused.claims).toEqual([{ status: 502, body: { error: "The text provider answered too late; this request had already ended.", nothingBilled: true } }]);
+  const broken = await phases({ finishFails: new Error("database is locked") });
+  for (;;) { const { done } = await broken.reader.read(); if (done) break; }
+  expect(broken.claims).toEqual([{ status: 502, body: { error: "The answer couldn't be delivered." } }]);
 });
