@@ -5,6 +5,7 @@ import { BOARD_TEXT_LIMITS } from "@/lib/workspace/rig-board";
 import { useBoardInternals } from "../../BoardContext";
 import type { GroupData } from "@/lib/board/types";
 import type { CardProps } from "../types";
+import TieredImg from "@/components/TieredImg";
 
 /*
  * Stream 3's plain cards: today's canvas nodes drawn simply, so a production
@@ -40,8 +41,8 @@ export function NodeCardShell({ data, children }: { data: NodeCardData; children
       {data.well ? (
         <span className="bd-card-well" style={{ height: data.well }}>
           {data.preview?.video ? <LazyMedia url={data.preview.url} kind="video" preview={false} />
-            /* eslint-disable-next-line @next/next/no-img-element */
-            : data.preview ? <img src={data.preview.url} alt="" loading="lazy" decoding="async" draggable={false} /> : null}
+            /* In width tiers at the size it is drawn (components/TieredImg.tsx), never the 640 px thumbnail stretched. */
+            : data.preview ? <TieredImg src={data.preview.url} alt="" loading="lazy" decoding="async" draggable={false} /> : null}
         </span>
       ) : null}
       <span className="bd-card-body">

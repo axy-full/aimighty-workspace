@@ -6,6 +6,7 @@ import { roundDate } from "@/lib/v12/rounds";
 import { deriveRounds, type CompareShot, type RoundCardData } from "./round-derive";
 import { useCopyWhatChanged } from "./RoundBadge";
 import "./rounds.css";
+import TieredImg from "@/components/TieredImg";
 
 /*
  * The client round on the board (redesign P2-c; prototype L571, L577, L578; docs/redesign/inventory.md § 6.7). Client approval
@@ -23,8 +24,8 @@ function Side({ label, side, empty }: { label: string; side: CompareShot["r1"]; 
       <div className="v12-rd-media">
         {side ? (side.media === "video"
           ? <video src={side.url} controls playsInline preload="metadata" />
-          // eslint-disable-next-line @next/next/no-img-element -- Particl's own media route, already sized
-          : <img src={side.url} alt="" />) : <span className="v12-rd-empty">{empty}</span>}
+          /* Particl's own media route, in width tiers at the size it is drawn (components/TieredImg.tsx). */
+          : <TieredImg src={side.url} alt="" />) : <span className="v12-rd-empty">{empty}</span>}
       </div>
       <div className="v12-rd-side-meta"><strong>{label}</strong><span>{side ? `${side.label} · ${side.engine}` : ""}</span></div>
     </div>

@@ -13,6 +13,7 @@ import { takesSeed } from "@/lib/workspace/composer";
 import { Price } from "@/components/v12/ui/Price";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { keyOf } from "@/lib/v12/keymap";
+import TieredImg from "@/components/TieredImg";
 
 /** Why "Reuse seed" can't be pressed here: this engine takes no seed (today only Seedance does). */
 export const SEED_LATER = "This engine doesn't repeat a seed. Variations puts these words and settings in the composer.";
@@ -72,8 +73,8 @@ export function Viewer({ tiles, index, onIndex, onClose, onReuse, onReuseSeed, o
       <div ref={panel} role="dialog" aria-modal="true" aria-label={`${tile.type}: ${tile.prompt}`} tabIndex={-1} className="v12-mk-viewer">
         <div className="v12-mk-viewer-media">
           {tile.kind === "image" && tile.url ? (
-            // eslint-disable-next-line @next/next/no-img-element -- Particl's own media route, shown whole
-            <img src={tile.url} alt="" data-testid="v12-make-viewer-media" />
+            /* Particl's own media route, shown whole, in width tiers at the size it is drawn (components/TieredImg.tsx). */
+            <TieredImg src={tile.url} alt="" data-testid="v12-make-viewer-media" />
           ) : tile.url ? (
             <video src={tile.url} controls playsInline preload="metadata" data-testid="v12-make-viewer-media" />
           ) : null}

@@ -3,6 +3,7 @@ import { useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEve
 import { IconButton, MoreDots } from "../ui";
 import { canJudge, rejectReason, statusLine, withOther, type CardStatus } from "./card-model";
 import "./card.css";
+import TieredImg from "@/components/TieredImg";
 
 /** A chip on a card: only where the card differs from its step's setting (v24 change 5). */
 export type CardChip = { id: string; label: string };
@@ -57,10 +58,9 @@ export type StepCardProps = {
   onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
 };
 
-/** A picture of the board's own (a take, a brand-kit logo): a plain image, as the rest of the new interface draws them. */
+/** A picture of the board's own (a take, a brand-kit logo): in width tiers at the size it is drawn when it is a Particl still (components/TieredImg.tsx). */
 function Img({ src, className, style, draggable }: { src: string; className?: string; style?: CSSProperties; draggable?: boolean }) {
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt="" loading="lazy" className={className} style={style} draggable={draggable} />;
+  return <TieredImg src={src} alt="" loading="lazy" className={className} style={style} draggable={draggable} />;
 }
 
 const letterTile = (tile: CardTile, className: string) => (
