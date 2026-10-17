@@ -244,8 +244,8 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
   expect(await textIds()).toEqual([]);
 });
 
-test('defaults: enhancement on Sonnet 5.5, ideas and shots on Opus 5.5; Auto tries Sonnet 5.5, then Opus 5.5', () => {
-  expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-sonnet-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
+test('defaults: enhancement, ideas and shots on Opus 5.5 (the owner, 16 Oct 2026, for enhancement); Auto tries Sonnet 5.5, then Opus 5.5', () => {
+  expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-opus-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
   expect(ATOMIK_AUTO_MODEL_IDS.slice(0, 2)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5']);
   expect(selectAtomikModel('auto', ['anthropic/claude-opus-5.5', 'openai/gpt-5.5'])).toBe('anthropic/claude-opus-5.5');
   expect(selectAtomikModel('auto', ['anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-5', 'openai/gpt-5.5'])).toBe('anthropic/claude-sonnet-5');
