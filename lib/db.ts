@@ -947,6 +947,18 @@ async function bootstrap(c: Client, opts: { legacy: boolean }): Promise<void> {
       // The sha256 of a version's source, recorded the first time a master lock
       // froze it (lib/masters.ts): null until then, never rewritten after.
       await addColumn("attribute_versions", `sha256 TEXT`);
+      /* The v30 Library's columns (docs/plans/v30-data-model.md § 6.1, M9): an @handle unique in this workspace, the v30
+         kind beside today's `kind` (never rewritten: elementKind() reads a kind it does not know as a character), where it
+         came from, active or draft. Nullable and read by nothing today; lib/elementLibrary.ts fills them, and creates the
+         unique handle index after filling, only when V30_LIBRARY is on for the workspace. */
+      for (const col of [`handle TEXT`, `library_kind TEXT`, `origin TEXT`, `library_status TEXT`]) {
+        await addColumn("elements", col);
+      }
+      /* A crop is its own upload (§ 6.4, M10): the upload or take it was cut from (exactly one) and how
+         (lib/elementLibrary.ts › cropDerivation). The original is never rewritten; derivative_url keeps its meaning. */
+      for (const col of [`derived_from_upload TEXT`, `derived_from_gen TEXT`, `derivation TEXT`]) {
+        await addColumn("uploads", col);
+      }
       // What a person handed the agent with a message, and what a step carries forward.
       await addColumn("atomik_messages", `attachments TEXT`);
       await addColumn("atomik_messages", `effort TEXT`);
