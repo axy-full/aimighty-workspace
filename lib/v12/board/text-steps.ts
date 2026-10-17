@@ -90,10 +90,29 @@ export function scriptCard(project: Pick<Project, "script" | "scriptVersions" | 
   };
 }
 
-/** The draft's marks with this card's verdict written for these words; a verdict is replaced, never stacked. */
-export function withMark(marks: Marks | undefined, id: string, text: string, verdict: "approved" | "rejected", at: number, reason?: string): Marks {
+/** The most marks a draft keeps (lib/workbench/studio-schema.ts refuses a draft with more, so a mark past it would stop the whole draft saving). */
+export const MAX_MARKS = 40;
+/** The text steps' own marks: never the ones pushed out to make room. */
+const TEXT_IDS: readonly string[] = ["brief", "script"];
+
+/**
+ * The draft's marks with this card's verdict written for these words; a verdict is replaced, never stacked. Never more than MAX_MARKS:
+ * to make room, marks that no longer hold go first (`holds`, when the caller can tell: a frame drawn again, a shot that is gone), then the
+ * oldest, and never this card's own or the text steps'.
+ */
+export function withMark(marks: Marks | undefined, id: string, text: string, verdict: "approved" | "rejected", at: number, reason?: string, holds?: (id: string, mark: Marks[string]) => boolean): Marks {
   const clean = reason?.trim().slice(0, 200);
-  return { ...(marks ?? {}), [id]: { s: verdict, fp: fingerprint(text), ...(verdict === "rejected" && clean ? { reason: clean } : {}), at } };
+  const next: Marks = { ...(marks ?? {}), [id]: { s: verdict, fp: fingerprint(text), ...(verdict === "rejected" && clean ? { reason: clean } : {}), at } };
+  let over = Object.keys(next).length - MAX_MARKS;
+  if (over <= 0) return next;
+  const spare = Object.entries(next).filter(([key]) => key !== id && !TEXT_IDS.includes(key));
+  const stale = holds ? spare.filter(([key, mark]) => !holds(key, mark)) : [];
+  const live = spare.filter((entry) => !stale.includes(entry)).sort(([, a], [, b]) => a.at - b.at);
+  for (const [key] of [...stale.sort(([, a], [, b]) => a.at - b.at), ...live]) {
+    if (over-- <= 0) break;
+    delete next[key];
+  }
+  return next;
 }
 
 /** ✓ again takes the approval back (the card's ✓ toggles). */

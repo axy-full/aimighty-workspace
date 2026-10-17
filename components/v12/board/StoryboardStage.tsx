@@ -3,11 +3,11 @@ import { useState, type CSSProperties } from "react";
 import type { BoardCtx } from "@/components/graphite/board/cards/types";
 import { useFramePoller, useStoryboardDraw } from "@/components/graphite/board/cards/storyboard/use-frames";
 import { usePriceTitle } from "@/components/graphite/Price";
-import { Dialog, Segment } from "@/components/v12/ui";
+import { Dialog, Segment, Tooltip } from "@/components/v12/ui";
 import { priceWords } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
-import { FRAME_REASONS, SHEET_SIZES, DEFAULT_SHEET_SIZE, STYLES, frameCards, redoShots, sheetPages, storyboardLine, styleOf, takesOf, withFramePrompt, withPick, withStyle, type FrameCardModel, type SheetSize } from "@/lib/v12/board/storyboard-step";
-import { withMark, withoutMark } from "@/lib/v12/board/text-steps";
+import { FRAME_REASONS, SHEET_SIZES, DEFAULT_SHEET_SIZE, STYLES, frameCards, ratioNumber, redoShots, sharpWidth, sheetPages, storyboardLine, styleOf, takesOf, withFrameMark, withFramePrompt, withPick, withStyle, type FrameCardModel, type SheetSize } from "@/lib/v12/board/storyboard-step";
+import { withoutMark } from "@/lib/v12/board/text-steps";
 import { useScreenScale } from "./use-screen-scale";
 import { StepCard } from "./StepCard";
 import "./stage-pages.css";
@@ -48,10 +48,10 @@ export function StoryboardStage({ ctx }: { ctx: BoardCtx }) {
   const toggleApprove = (c: FrameCardModel) => {
     if (!c.genId) return;
     if (c.status === "approved") write((p) => ({ ...p, boardMarks: withoutMark(p.boardMarks, c.shotId) }));
-    else write((p) => ({ ...p, boardMarks: withMark(p.boardMarks, c.shotId, c.genId!, "approved", clock()) }));
+    else write((p) => withFrameMark(p, c.shotId, c.genId!, "approved", clock()));
   };
   const reject = (c: FrameCardModel, reason: string) => {
-    if (c.genId) write((p) => ({ ...p, boardMarks: withMark(p.boardMarks, c.shotId, c.genId!, "rejected", clock(), reason) }));
+    if (c.genId) write((p) => withFrameMark(p, c.shotId, c.genId!, "rejected", clock(), reason));
   };
 
   return (
@@ -95,23 +95,32 @@ export function StoryboardStage({ ctx }: { ctx: BoardCtx }) {
 
 function FrameDialog({ ctx, card, canEdit, onClose, write }: { ctx: BoardCtx; card: FrameCardModel | undefined; canEdit: boolean; onClose: () => void; write: (change: (p: BoardCtx["project"]) => BoardCtx["project"]) => void }) {
   const [text, setText] = useState(card?.prompt ?? "");
+  /* The picture is never drawn past its own pixels: once it has loaded, as wide as they allow at this screen's density, centred. */
+  const [natural, setNatural] = useState<{ src: string; width: number; height: number } | null>(null);
   if (!card) return null;
   const takes = takesOf(ctx.project, card.shotId);
+  const src = card.genId ? `/api/media/${card.genId}` : null;
+  const aspect = ctx.project.aspect || "16:9";
+  const widest = natural && natural.src === src ? sharpWidth(natural, ratioNumber(aspect), typeof window === "undefined" ? 1 : window.devicePixelRatio || 1) : 0;
   return (
     <Dialog open onClose={onClose} label={card.name} title={card.name} width={720} testId="v12-frame-preview">
       <div className="v12-sb-pane">
         {card.genId ? (
           // eslint-disable-next-line @next/next/no-img-element -- the board's own take, served by its own route
-          <img className="v12-sb-big" src={`/api/media/${card.genId}`} alt={card.name} style={{ aspectRatio: ratioOf(ctx.project.aspect || "16:9") }} />
+          <img className="v12-sb-big" src={src!} alt={card.name} data-testid="v12-frame-picture" data-sharp={widest ? "" : undefined}
+            onLoad={(e) => { const img = e.currentTarget; setNatural({ src: src!, width: img.naturalWidth, height: img.naturalHeight }); }}
+            style={{ aspectRatio: ratioOf(aspect), ...(widest ? { maxWidth: widest } : { visibility: "hidden" }) }} />
         ) : <p className="v12-sp-why">Not drawn yet. Draw the storyboard to make this frame.</p>}
         <p className="v12-sp-why">{card.line}</p>
         {takes.length > 1 ? (
           <div className="v12-sb-takes" role="group" aria-label="Versions">
             {takes.map((id, i) => (
-              <button key={id} type="button" className="v12-sb-take" aria-pressed={id === card.genId} disabled={!canEdit} onClick={() => write((p) => withPick(p, card.shotId, id))} data-testid="v12-frame-take">
-                {/* eslint-disable-next-line @next/next/no-img-element -- the board's own take */}
-                <img src={`/api/media/${id}`} alt={`Version ${takes.length - i}`} />
-              </button>
+              <Tooltip key={id} name={`Version ${takes.length - i}`} named>
+                <button type="button" className="v12-sb-take" aria-pressed={id === card.genId} disabled={!canEdit} onClick={() => write((p) => withPick(p, card.shotId, id))} data-testid="v12-frame-take">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- the board's own take */}
+                  <img src={`/api/media/${id}`} alt={`Version ${takes.length - i}`} />
+                </button>
+              </Tooltip>
             ))}
           </div>
         ) : null}

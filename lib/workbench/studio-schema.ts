@@ -394,7 +394,7 @@ export const projectSchema = z.object({
   /* A text card's ✓ or ✕ in the new interface (lib/v12/board/text-steps.ts): by card id, with a fingerprint of the words it was given for, so an edit since makes it stale. Additive and optional, draft JSON only. */
   boardMarks: z.record(z.string().regex(/^[A-Za-z0-9_-]{1,80}$/), z.object({
     s: z.enum(["approved", "rejected"]), fp: z.string().regex(/^[a-z0-9]{1,16}$/), reason: z.string().max(200).optional(), at: z.number().int().min(0),
-  }).strict()).optional().refine((v) => !v || Object.keys(v).length <= 40, "Too many marks"),
+  }).strict()).optional().refine((v) => !v || Object.keys(v).length <= 40, "Too many marks"), /* lib/v12/board/text-steps.ts › MAX_MARKS: withMark never writes more. */
   /* Client rounds in the new interface (lib/v12/rounds.ts): the approved rounds, what each changed and the take each shot had before. Additive and optional, draft JSON only. */
   boardRounds: z.array(z.object({
     n: z.number().int().min(2).max(99),

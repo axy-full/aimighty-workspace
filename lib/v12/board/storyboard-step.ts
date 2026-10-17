@@ -11,7 +11,7 @@
 import type { CardStatus } from "@/components/v12/board/card-model";
 import { framePicture, storyboard } from "@/components/graphite/board/cards/storyboard/model";
 import { BOARD_STYLES, DEFAULT_BOARDS, emptyFrame, type BoardStyle, type Boards } from "@/lib/production/boards";
-import { statusOf } from "@/lib/v12/board/text-steps";
+import { fingerprint, statusOf, withMark, type Marks } from "@/lib/v12/board/text-steps";
 import type { Project } from "@/lib/workbench/studio";
 
 /** ✕'s reasons on a frame (the card adds "Other"). */
@@ -53,6 +53,36 @@ export function frameCards(project: Project): FrameCardModel[] {
 export function redoShots(project: Project): string[] {
   return frameCards(project).filter((c) => c.status === "rejected").map((c) => c.shotId);
 }
+
+/**
+ * The draft with a frame's ✓ or ✕, for the picture it shows. The marks stay within what a draft keeps (text-steps.ts › MAX_MARKS): a frame's mark
+ * for a picture it no longer shows, or for a shot that is gone, makes room first.
+ */
+export function withFrameMark(project: Project, shotId: string, genId: string, verdict: "approved" | "rejected", at: number, reason?: string): Project {
+  const shown = new Map(frameCards(project).map((c) => [c.shotId, c.genId]));
+  const holds = (id: string, mark: Marks[string]) => {
+    if (!shown.has(id)) return id === "brief" || id === "script";
+    const genId = shown.get(id);
+    return Boolean(genId) && mark.fp === fingerprint(genId!);
+  };
+  return { ...project, boardMarks: withMark(project.boardMarks, shotId, genId, verdict, at, reason, holds) };
+}
+
+/**
+ * How wide (CSS px) a picture of `natural` pixels may be drawn in a box of `ratio` (width over height, cropped to fill) on a screen of `dpr`
+ * device pixels per CSS pixel, without a pixel of it being stretched: never past its real pixels (owner, 15 Oct 2026, 22:30, rule 3).
+ */
+export function sharpWidth(natural: { width: number; height: number }, ratio: number, dpr: number): number {
+  if (!(natural.width > 0 && natural.height > 0 && ratio > 0)) return 0;
+  /* Cropped to fill: a picture wider than the box is held by its height, a taller one by its width. */
+  return Math.floor(Math.min(natural.width, natural.height * ratio) / Math.max(1, dpr));
+}
+
+/** "16:9" → 16 / 9. */
+export const ratioNumber = (aspect: string): number => {
+  const [w, h] = aspect.split(":").map(Number);
+  return w > 0 && h > 0 ? w / h : 16 / 9;
+};
 
 /** The drawing style of the board, and its words. */
 export const styleOf = (project: Pick<Project, "production">): BoardStyle => boardsOf(project).style;

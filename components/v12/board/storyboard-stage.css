@@ -7,7 +7,8 @@
 .v12 .v12-sb-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .v12 .v12-sb-grow { flex: 1 1 0; }
 .v12 .v12-sb-pane { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.v12 .v12-sb-big { width: 100%; height: auto; border-radius: var(--gx-r-btn); object-fit: cover; display: block; background: var(--gx-sunken); }
+/* As wide as the pane, but never past the picture's own pixels (StoryboardStage.tsx sets max-width once it has loaded): centred when narrower. */
+.v12 .v12-sb-big { width: 100%; height: auto; margin-inline: auto; border-radius: var(--gx-r-btn); object-fit: cover; display: block; background: var(--gx-sunken); }
 .v12 .v12-sb-takes { display: flex; gap: 8px; flex-wrap: wrap; }
 .v12 .v12-sb-take { padding: 0; width: 88px; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; overflow: hidden; }
 .v12 .v12-sb-take[aria-pressed="true"] { border-color: var(--gx-accent); }
