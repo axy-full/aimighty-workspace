@@ -67,6 +67,11 @@ const nextConfig: NextConfig = {
   // CI's browser jobs only: Turbopack's source maps double the native memory
   // each compiled route holds in `next dev` (see verify.yml).
   ...(process.env.CI_DEV_SOURCE_MAPS === "off" ? { experimental: { turbopackSourceMaps: false } } : {}),
+  // The document importer (lib/docImport, off unless DOC_IMPORT_ENABLED) runs
+  // these on the server through Node's own require: pdfjs-dist's Node build,
+  // tesseract.js's worker-thread script and mammoth find their files relative
+  // to their own folders, which bundling would move.
+  serverExternalPackages: ["pdfjs-dist", "tesseract.js", "mammoth"],
   async headers() {
     // Only the dedicated movie document can create the bundled AAC WASM worker.
     // Every other page retains the policy above; production never enables general eval.
