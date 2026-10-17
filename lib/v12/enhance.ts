@@ -16,10 +16,31 @@ export function enhanceOffered(type: string): boolean {
   return type === "image" || type === "video";
 }
 
-/** The label and its tooltip: the name, then the line after the dash (the owner's words, 16 Oct 2026, pinned in tests/unit/v12-enhance.spec.ts). */
+/**
+ * Enhance is a Director tool, not an Agent one (the owner, 16 Oct 2026, decision 2b): it is offered where the person has picked what to make (Image or
+ * Video, and the engine with it), never in Auto, where Atomik picks the model and settings.
+ */
+export function enhanceInMode(mode: string): boolean {
+  return mode === "image" || mode === "video";
+}
+
+/** The button's own label. */
 export const ENHANCE_LABEL = "Enhance";
-export const ENHANCE_TIP_NAME = "Enhance";
-export const ENHANCE_TIP_LINE = "Particl rewrites your prompt for the chosen engine (light, camera, detail) and puts it in the box for you to edit. 1 credit per press, free if it fails. Make sends the box exactly as it is.";
+/**
+ * Its hover label (decision 2b, replacing the long tooltip of 15:50): "Enhance prompt", then one line with the press's price and "free if it fails". The
+ * price is the server's quote for this press, never typed: "1 credit" where the workspace pays in credits, the text model's own dollars where it pays in
+ * dollars (the house), and only "Free if it fails" until the quote is in. The writer is never named.
+ */
+export const ENHANCE_TIP_NAME = "Enhance prompt";
+export const ENHANCE_TIP_FREE = "free if it fails";
+export function enhanceTipLine(price: { credits: number | null; usd: number | null; dollars: boolean }, fmtUsd: (usd: number) => string): string {
+  const figure = price.dollars
+    ? (typeof price.usd === "number" && Number.isFinite(price.usd) && price.usd >= 0 ? fmtUsd(price.usd) : null)
+    : (typeof price.credits === "number" && Number.isFinite(price.credits) && price.credits >= 0
+      ? `${price.credits.toLocaleString("en-US", { maximumFractionDigits: 1 })} ${price.credits === 1 ? "credit" : "credits"}`
+      : null);
+  return figure ? `${figure} · ${ENHANCE_TIP_FREE}` : `${ENHANCE_TIP_FREE[0].toUpperCase()}${ENHANCE_TIP_FREE.slice(1)}`;
+}
 
 /** What a press says while it waits and when it ends. The hint comes at 2 s; it names no engine, so it is right in Agent mode too. */
 export const ENHANCE_WORKING = "Enhancing…";

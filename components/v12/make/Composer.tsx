@@ -7,7 +7,8 @@ import { TAKES_MAX } from "@/lib/workspace/composer";
 import { useSession } from "@/lib/session";
 import { creditRate } from "@/lib/shell/price-words";
 import { EnhanceButton } from "./EnhanceButton";
-import { ENHANCE_AGAIN, ENHANCE_HINT, ENHANCE_PROGRESS_MS, ENHANCE_UNDO, ENHANCE_WORKING, changedWords, enhanceOffered, workspaceEnhance } from "@/lib/v12/enhance";
+import { ENHANCE_AGAIN, ENHANCE_HINT, ENHANCE_PROGRESS_MS, ENHANCE_UNDO, ENHANCE_WORKING, changedWords, enhanceInMode, enhanceOffered, enhanceTipLine, workspaceEnhance } from "@/lib/v12/enhance";
+import { fmtLedgerUsd } from "@/lib/usageLedgerTerms";
 import { LOADING } from "@/lib/v12/quote";
 import { exact } from "@/lib/shell/price-words";
 import { useRead } from "@/components/graphite/settings/use-settings";
@@ -70,7 +71,6 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   const offered = workspaceEnhance(defaults.data?.settings.enhanceDefault);
   /* Shown only once the workspace's setting is known (or that it could not be read, which is On). */
   const enhanceKnown = defaults.data !== null || defaults.error !== null;
-  const enhanceShown = enhanceKnown && offered && !make.spendOff && Boolean(make.model) && enhanceOffered(make.state.type);
   /* The mode: Remix or Edit when picked here, else the composer's own type once picked, else Auto. */
   const { pickType, unpick, recipe } = make;
   /* A recipe that lands (prompt reuse) is made in its own type: Remix or Edit, picked before it, gives way to it. */
@@ -83,6 +83,8 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
     else if (asked === "auto") unpick();
   }, [asked, pickType, unpick]);
   const mode: MakeMode = extra ?? (make.picked ? make.state.type : "auto");
+  /* Enhance is the person's own tool (Director): offered once they pick Image or Video, never in Auto, where Atomik picks (decision 2b). */
+  const enhanceShown = enhanceKnown && offered && !make.spendOff && Boolean(make.model) && enhanceOffered(make.state.type) && enhanceInMode(mode);
   const [sourceAsked, setSourceAsked] = useState(false);
   const onMode = useCallback((next: MakeMode) => {
     setSourceAsked(false);
@@ -165,6 +167,7 @@ export function Composer({ input, asked, mentions, onClearSeed }: {
   const enhanceButton = (
     <EnhanceButton busy={enhancer.busy} disabled={Boolean(enhancer.blocked) || make.submitting} why={enhancer.blocked}
       price={enhanceQuote ? <Price quote={enhanceQuote} testId="v12-make-enhance-price" /> : null}
+      tip={enhanceTipLine({ credits: enhancer.credits, usd: enhancer.usd, dollars: money.dollars }, fmtLedgerUsd)}
       attrs={enhancer.credits != null ? spendAttrsOf(exact(enhancer.credits)) : { "data-spend": "unpriced" }}
       onPress={() => void make.pressEnhance()} />
   );

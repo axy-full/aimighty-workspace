@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ENHANCE_HINT, ENHANCE_HINT_AFTER_MS, ENHANCE_MARK_MS, ENHANCE_PROGRESS_MS, ENHANCE_TIP_LINE, ENHANCE_TIP_NAME, ENHANCE_UNDO, ENHANCE_WORKING, changedWords, enhanceOffered, takeEnhance, workspaceEnhance } from "../../lib/v12/enhance";
+import { ENHANCE_HINT, ENHANCE_HINT_AFTER_MS, ENHANCE_MARK_MS, ENHANCE_LABEL, ENHANCE_PROGRESS_MS, ENHANCE_TIP_NAME, ENHANCE_UNDO, ENHANCE_WORKING, changedWords, enhanceInMode, enhanceOffered, enhanceTipLine, takeEnhance, workspaceEnhance } from "../../lib/v12/enhance";
 import { ENHANCE_DEFAULT_OPTIONS, settingProblem } from "../../lib/settingValues";
 import { generationRequestBody } from "../../lib/workbench/generation-request";
 import { DEFAULTS } from "../../lib/settings";
@@ -7,8 +7,27 @@ import { recreatePreset } from "../../lib/shell/recipe";
 
 /** Make's Enhance button as data (lib/v12/enhance.ts): where it applies, whether the workspace offers it, what a take records. */
 
-test("the owner's tooltip, word for word (16 Oct 2026)", () => {
-  expect(`${ENHANCE_TIP_NAME} — ${ENHANCE_TIP_LINE}`).toBe("Enhance — Particl rewrites your prompt for the chosen engine (light, camera, detail) and puts it in the box for you to edit. 1 credit per press, free if it fails. Make sends the box exactly as it is.");
+test("the owner's hover label, word for word (16 Oct 2026, decision 2b): \"Enhance prompt\", then \"1 credit · free if it fails\" from the server's price", () => {
+  const usd = (n: number) => `$${n.toFixed(3)}`;
+  expect(ENHANCE_LABEL).toBe("Enhance");
+  expect(ENHANCE_TIP_NAME).toBe("Enhance prompt");
+  /* A customer workspace, the server quoting 1 credit. */
+  expect(enhanceTipLine({ credits: 1, usd: null, dollars: false }, usd)).toBe("1 credit · free if it fails");
+  /* The figure is the server's, never typed: another quote reads as it is. */
+  expect(enhanceTipLine({ credits: 2, usd: null, dollars: false }, usd)).toBe("2 credits · free if it fails");
+  /* The house pays in dollars: the text model's own dollars, as every house price reads; never credits turned into dollars. */
+  expect(enhanceTipLine({ credits: 1, usd: 0.0123, dollars: true }, usd)).toBe("$0.012 · free if it fails");
+  expect(enhanceTipLine({ credits: 1, usd: null, dollars: true }, usd)).toBe("Free if it fails");
+  /* Before the quote is in: no figure at all. */
+  expect(enhanceTipLine({ credits: null, usd: null, dollars: false }, usd)).toBe("Free if it fails");
+  /* The writer is never named, and nothing in the label says which engine. */
+  for (const line of [ENHANCE_TIP_NAME, enhanceTipLine({ credits: 1, usd: null, dollars: false }, usd)]) expect(line).not.toMatch(/opus|sonnet|claude|anthropic|gpt|openai|gemini|writer|model/i);
+});
+
+test("Enhance is a Director tool: offered in Image and Video, never in Auto (where Atomik picks), nor Audio, Remix or Edit", () => {
+  expect(enhanceInMode("image")).toBe(true);
+  expect(enhanceInMode("video")).toBe(true);
+  for (const mode of ["auto", "audio", "remix", "edit", ""]) expect(enhanceInMode(mode), mode).toBe(false);
 });
 
 test("the loader's words and timings: the hint at 2 s names no engine, the progress runs toward 8 s, the marks last a moment", () => {

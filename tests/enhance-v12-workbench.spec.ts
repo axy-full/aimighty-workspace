@@ -1,14 +1,15 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { seedHome } from "./helpers/v12Home";
-import { ENHANCE_HINT, ENHANCE_TIP_LINE } from "../lib/v12/enhance";
-import { ENHANCE_FAILED } from "../lib/shell/enhance-press";
+import { ENHANCE_HINT, ENHANCE_TIP_NAME } from "../lib/v12/enhance";
+import { ENHANCE_COULDNT, ENHANCE_FAILED } from "../lib/shell/enhance-press";
 
 /**
  * Enhance in Make, the new interface (lib/v12/enhance.ts; the owner's loader of 16 Oct 2026). "Enhance" is a button that wears its price ("Enhance · 1 cr").
  * Pressing it shows the loader (the dot-arc, a dimmed box under a sweep, a progress line, the hint at 2 s), streams the rewrite into the box word by word,
  * marks the changed words for a moment, and leaves "Undo enhance"; it sends NO take, and Make then sends the box as it is. Make never calls the enhancer.
- * Cancel or Esc before any word, a stream cut off midway, no word by 10 s, or any error: the typed words are back and "Couldn't enhance this time. Nothing
- * was charged." says so, with Try again. Each take is labelled in the viewer: Enhanced, with its original words one press away, or Raw. Local ENGINE_MOCK
+ * Cancel or Esc before any word puts the typed words back and says nothing. A stream cut off midway, or no word by 10 s, is asked again under its key, and
+ * the server's saved ending is what is said: free, "Couldn't enhance this time. Nothing was charged.", with Try again (the no-charge sentence only ever on
+ * the server's word); paid, the words it paid for. Enhance is offered in Image and Video (Director), never in Auto (decision 2b). Each take is labelled in the viewer: Enhanced, with its original words one press away, or Raw. Local ENGINE_MOCK
  * server: the enhancer and the render are mock (a failing provider is a route in the browser); nothing real is spent.
  */
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
@@ -68,6 +69,9 @@ function holdRuns(page: Page, ms: number): () => void {
   });
   return release;
 }
+/** The server's saved free ending for a press's key, as its claim replays it (a cut-off or cancelled stream, lib/enhanceStream.ts). */
+const FREE_REPLAY = { status: 499, json: { error: "Cancelled. Nothing billed.", nothingBilled: true }, headers: { "Idempotency-Status": "complete", "Idempotency-Replayed": "true" } };
+const keyOf = (route: Route) => route.request().headers()["idempotency-key"] ?? "";
 /** A streamed answer made by the test: one line per piece, then the last line. */
 function ndjson(route: Route, pieces: string[], prompt: string) {
   const body = [...pieces.map((t) => JSON.stringify({ t })), JSON.stringify({ done: true, prompt, provider: "claude", writer: "test" })].join("\n") + "\n";
@@ -77,7 +81,7 @@ function ndjson(route: Route, pieces: string[], prompt: string) {
 test.describe("desktop", () => {
   test.beforeEach(({}, testInfo) => test.skip(!DESKTOP.includes(testInfo.project.name), "desktop sizes"));
 
-  test("Enhance wears its price before it is pressed, ⓘ says what it does, and there is nothing to switch", async ({ page }) => {
+  test("Enhance wears its price before it is pressed, its hover label carries the server's price, it is offered only where the person picks (not Auto), and there is nothing to switch", async ({ page }) => {
     test.setTimeout(300_000);
     await openMake(page);
     await expect(button(page)).toHaveText(/^Enhance$/);
@@ -86,6 +90,12 @@ test.describe("desktop", () => {
     /* Sound is not offered it: its request carries no label, so it goes as written. */
     await page.getByRole("radio", { name: "Audio" }).click();
     await expect(button(page)).toHaveCount(0);
+    /* Auto, where Atomik picks the model and settings, is not where Enhance lives: it is the person's own (Director) tool. */
+    await page.getByRole("radio", { name: "Auto" }).click();
+    await expect(page.getByTestId("v12-make-auto")).toBeVisible();
+    await expect(button(page)).toHaveCount(0);
+    await page.getByRole("radio", { name: "Video" }).click();
+    await expect(button(page)).toBeVisible();
     await page.getByRole("radio", { name: "Image" }).click();
     await expect(button(page)).toBeVisible();
     await input(page).fill(WORDS);
@@ -95,12 +105,17 @@ test.describe("desktop", () => {
     await expect(button(page)).toHaveAttribute("data-spend", "priced");
     await expect(go(page)).toHaveText(/^Make · [\d,]+ cr$/, { timeout: 60_000 });
     const makeFigure = await go(page).innerText();
+    const credits = Number((await button(page).innerText()).match(/· ([\d,]+) cr$/)![1].replace(/,/g, ""));
     /* The ⓘ is its own control: the tooltip opens on hover, on focus, and a tap or click pins it until a click elsewhere or Esc. */
     const tip = page.getByTestId("v12-tooltip");
     await info(page).hover();
     await expect(tip).toBeVisible();
-    await expect(tip.locator(".v12-tip-name")).toHaveText("Enhance");
-    await expect(tip.locator(".v12-tip-line")).toHaveText(ENHANCE_TIP_LINE);
+    /* The owner's words (decision 2b): "Enhance prompt", then "1 credit · free if it fails", the figure being the server's quote on the button. */
+    await expect(tip.locator(".v12-tip-name")).toHaveText(ENHANCE_TIP_NAME);
+    await expect(tip.locator(".v12-tip-name")).toHaveText("Enhance prompt");
+    await expect(tip.locator(".v12-tip-line")).toHaveText(`${credits} ${credits === 1 ? "credit" : "credits"} · free if it fails`);
+    if (credits === 1) await expect(tip.locator(".v12-tip-line")).toHaveText("1 credit · free if it fails");
+    await expect(tip).not.toContainText(/opus|sonnet|claude|anthropic|writer/i);
     await page.mouse.move(700, 600);
     await expect(tip).toHaveCount(0);
     await button(page).focus();
@@ -276,12 +291,17 @@ test.describe("desktop", () => {
   test("a stream cut off midway restores the typed words, charges nothing, and says so with Try again, which works", async ({ page }) => {
     test.setTimeout(300_000);
     await openMake(page);
-    let first = true;
+    let cutKey: string | null = null;
+    const sent: string[] = [];
     await page.route("**/api/prompt/enhance", async (route) => {
       const request = route.request();
       if (request.method() !== "POST" || isQuote(request)) return route.fallback();
-      if (!first) return route.fallback();
-      first = false;
+      const key = keyOf(route);
+      sent.push(key);
+      /* Asked again under the cut press's key: the server's saved ending for it, free. */
+      if (key === cutKey) return route.fulfill(FREE_REPLAY);
+      if (cutKey) return route.fallback();
+      cutKey = key;
       /* Two words, then the stream ends with no last line. */
       await route.fulfill({ status: 200, headers: { "Content-Type": "application/x-ndjson" }, body: '{"t":"A paper "}\n{"t":"kite, "}\n' });
     });
@@ -294,17 +314,55 @@ test.describe("desktop", () => {
     await expect(live(page)).toHaveText(ENHANCE_FAILED);
     await expect(input(page), "the original text is back").toHaveValue(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · /);
+    expect(sent, "the cut press, then its key asked once").toEqual([cutKey, cutKey]);
     await page.getByTestId("v12-make-enhance-again").click();
     await expect(note(page)).toContainText(/^Enhanced · /, { timeout: 30_000 });
     await expect(input(page)).not.toHaveValue(WORDS);
+    expect(sent.at(-1), "Try again is a new press, under a fresh key").not.toBe(cutKey);
+  });
+
+  test("a stream whose last line is lost after the server charged it: asked again under its key, the words it paid for land, once, and nothing says it was free", async ({ page }) => {
+    test.setTimeout(300_000);
+    await openMake(page);
+    const runs: { key: string; replayed: boolean }[] = [];
+    let first: string | null = null;
+    await page.route("**/api/prompt/enhance", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST" || isQuote(request)) return route.fallback();
+      const key = keyOf(route);
+      /* The real mock server streams the whole answer and charges it; the page is handed the words without the last line. */
+      const reply = await route.fetch();
+      const body = await reply.text();
+      runs.push({ key, replayed: reply.headers()["idempotency-replayed"] === "true" });
+      if (first === null) {
+        first = key;
+        const lines = body.split("\n").filter((l) => l.trim() && !l.includes('"done"'));
+        return route.fulfill({ status: 200, headers: { "Content-Type": "application/x-ndjson" }, body: lines.join("\n") + "\n" });
+      }
+      return route.fulfill({ response: reply, body });
+    });
+    await input(page).fill(WORDS);
+    await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
+    await button(page).click();
+    await expect(note(page)).toContainText(/^Enhanced · [\d,]+ cr/, { timeout: 30_000 });
+    await expect(input(page)).not.toHaveValue(WORDS);
+    await expect(note(page)).not.toContainText(ENHANCE_COULDNT);
+    /* One run at the server; the second request was its saved answer, read back under the same key. */
+    expect(runs).toEqual([{ key: first, replayed: false }, { key: first, replayed: true }]);
   });
 
   test("a slow provider: no word by 10 s, the typed words stay, the one line says so, and Make still sends them", async ({ page }) => {
     test.setTimeout(300_000);
     await openMake(page);
     const log = watch(page);
-    /* The provider takes far longer than the client will wait. */
-    await answerRun(page, async () => { await new Promise((resolve) => setTimeout(resolve, 20_000)); });
+    /* The provider takes far longer than the client will wait; by then the server has ended the press at its own 8 s deadline, free, and that is what its key replays. */
+    const seen = new Set<string>();
+    await answerRun(page, async (route) => {
+      const key = keyOf(route);
+      if (seen.has(key)) return route.fulfill({ status: 504, json: { error: "The writer didn't answer in time. Nothing billed.", nothingBilled: true }, headers: { "Idempotency-Status": "complete", "Idempotency-Replayed": "true" } });
+      seen.add(key);
+      await new Promise((resolve) => setTimeout(resolve, 20_000));
+    });
     await input(page).fill(WORDS);
     await expect(button(page)).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
     const pressed = Date.now();
@@ -320,7 +378,7 @@ test.describe("desktop", () => {
     const sent = page.waitForRequest(isGenerate);
     await go(page).click();
     expect(((await sent).postDataJSON() as { prompt?: string; enhanced?: unknown })).toMatchObject({ prompt: WORDS, enhanced: false });
-    expect(log).toEqual(["enhance", "generate"]);
+    expect(log, "the press, its key asked once, then Make").toEqual(["enhance", "enhance", "generate"]);
     await noOverflow(page);
   });
 

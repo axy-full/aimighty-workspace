@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { seedHome } from "../helpers/v12Home";
 
 /**
- * The Enhance loader, every state, as pictures (the owner's note of 16 Oct 2026, section E): idle with its price, waiting, the 2 s hint, the words arriving,
+ * The Enhance loader, every state, as pictures (the owner's note of 16 Oct 2026, section E): idle with its price, the hover label (decision 2b), waiting, the 2 s hint, the words arriving,
  * the changed words marked, done with Undo enhance, and a failure with Try again; at 1440×900 and at 3008×1692 @2×. Local ENGINE_MOCK server, nothing
  * real is spent. The pictures go to ENHANCE_SHOTS (a new dated folder per run; nothing is cleaned), named `<state>-<size>.png`. They are for the owner's
  * eyes, not assertions: the states themselves are asserted in tests/enhance-v12-workbench.spec.ts; run with playwright.redesign.config.ts --project=redesign-1440x900.
@@ -41,6 +41,11 @@ for (const size of SIZES) {
       await expect(button).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });
       await quiet();
       await shot("1-idle");
+      /* The hover label (decision 2b): "Enhance prompt", then the server's price and "free if it fails". */
+      await page.getByTestId("v12-make-enhance-info").hover();
+      await expect(page.getByTestId("v12-tooltip")).toBeVisible();
+      await shot("1b-hover-label");
+      await quiet();
 
       /* Waiting, then the hint at 2 s (the reply is held 4.5 s so both can be taken). */
       let release: () => void = () => undefined;
@@ -67,11 +72,15 @@ for (const size of SIZES) {
       await quiet();
       await shot("6-done-undo-enhance");
 
-      /* A failure: the stream is cut off; the typed words are back, with Try again. */
+      /* A failure: the stream is cut off; asked again under its key, the server's saved ending is free (as the route replays it); the typed words are back, with Try again. */
       await page.getByTestId("v12-make-enhance-undo").click();
       await page.unroute("**/api/prompt/enhance");
+      const cutKeys = new Set<string>();
       await page.route("**/api/prompt/enhance", async (route) => {
         if (route.request().method() !== "POST" || isQuote(route.request())) return route.fallback();
+        const key = route.request().headers()["idempotency-key"] ?? "";
+        if (cutKeys.has(key)) return route.fulfill({ status: 499, json: { error: "Cancelled. Nothing billed.", nothingBilled: true }, headers: { "Idempotency-Status": "complete", "Idempotency-Replayed": "true" } });
+        cutKeys.add(key);
         await route.fulfill({ status: 200, headers: { "Content-Type": "application/x-ndjson" }, body: '{"t":"A paper "}\n' });
       });
       await expect(button).toHaveText(/^Enhance · [\d,]+ cr$/, { timeout: 60_000 });

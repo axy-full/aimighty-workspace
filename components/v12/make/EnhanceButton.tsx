@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Tooltip } from "../ui";
-import { ENHANCE_LABEL, ENHANCE_TIP_LINE, ENHANCE_TIP_NAME, ENHANCE_WORKING } from "@/lib/v12/enhance";
+import { ENHANCE_LABEL, ENHANCE_TIP_NAME, ENHANCE_WORKING } from "@/lib/v12/enhance";
 
 /**
  * The dot-arc loader: eight dots on three quarters of a circle, each fading in turn. Only shapes and `currentColor`: a new look changes the paint (and the
@@ -25,9 +25,11 @@ export function DotArc({ size = 16 }: { size?: number }) {
  * enhancer works. It does one thing: the enhanced words land in the prompt box, and nothing is generated (components/graphite/make/use-make.ts
  * › pressEnhance). It is `aria-disabled`, not disabled, so its hover (the price's reason) still opens.
  */
-export function EnhanceButton({ price, attrs, busy, disabled, why, onPress, testId = "v12-make-enhance", side = "top" }: {
+export function EnhanceButton({ price, tip, attrs, busy, disabled, why, onPress, testId = "v12-make-enhance", side = "top" }: {
   /** The quoted price, drawn by the caller (a Price), or nothing while there are no words. */
   price: ReactNode;
+  /** The hover label's second line, with the server's price for this press (lib/v12/enhance.ts enhanceTipLine). */
+  tip: string;
   /** The spend marks of the figure on the button (lib/spend.ts). */
   attrs?: object;
   busy: boolean;
@@ -55,7 +57,7 @@ export function EnhanceButton({ price, attrs, busy, disabled, why, onPress, test
         onClick={() => { if (!off) onPress(); }} data-testid={testId} {...attrs}>
         {busy ? <span className="v12-mk-enhance-working"><DotArc />{ENHANCE_WORKING}</span> : <span>{ENHANCE_LABEL}{price ? <> · {price}</> : null}</span>}
       </button>
-      <Tooltip name={ENHANCE_TIP_NAME} line={ENHANCE_TIP_LINE} side={side} pinned={pinned}>
+      <Tooltip name={ENHANCE_TIP_NAME} line={tip} side={side} pinned={pinned}>
         <button ref={info} type="button" className="v12-mk-enhance-info" aria-label="About Enhance" aria-expanded={pinned} onClick={() => setPinned((v) => !v)} data-testid={`${testId}-info`}>ⓘ</button>
       </Tooltip>
     </span>
