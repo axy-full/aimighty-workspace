@@ -67,25 +67,35 @@ export const tesseractOcr: OcrEngine = async (image, { languages, timeoutMs, sig
   const langPath = ocrDataDir();
   await checkOcrLanguages(languages, langPath);
   const { createWorker } = await import("tesseract.js");
-  // OEM 1 is the LSTM engine the installed "best_int" data is built for.
-  const worker = await createWorker(languages.join("+"), 1, {
-    langPath,
-    cacheMethod: "none",
-    gzip: true,
-    logger: () => {},
-    errorHandler: () => {},
-  });
+  // The clock starts before the worker does, so a stalled start is cut off too.
   let timer: ReturnType<typeof setTimeout> | undefined;
   const stopped = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new DocImportError("timeout", "Reading this picture took too long. Nothing was imported.")), timeoutMs);
     signal?.addEventListener("abort", () => reject(new DocImportError("timeout", "The import was cancelled.")), { once: true });
   });
+  let worker: Awaited<ReturnType<typeof createWorker>> | undefined;
+  let finished = false;
   try {
-    const result = await Promise.race([worker.recognize(image), stopped]);
+    // OEM 1 is the LSTM engine the installed "best_int" data is built for.
+    const starting = createWorker(languages.join("+"), 1, {
+      langPath,
+      cacheMethod: "none",
+      gzip: true,
+      logger: () => {},
+      errorHandler: () => {},
+    }).then((started) => {
+      // A worker that finishes starting after the deadline is ended at once.
+      if (finished) void started.terminate().catch(() => {});
+      else worker = started;
+      return started;
+    });
+    const ready = await Promise.race([starting, stopped]);
+    const result = await Promise.race([ready.recognize(image), stopped]);
     return { text: result.data.text ?? "", confidence: result.data.confidence ?? 0 };
   } finally {
+    finished = true;
     clearTimeout(timer);
-    await worker.terminate().catch(() => {});
+    await worker?.terminate().catch(() => {});
   }
 };
 
