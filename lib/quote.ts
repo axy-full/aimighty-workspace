@@ -3,6 +3,7 @@ import { capVerdict, type CapRule, type CapUnit } from "./caps";
 import { jobLineVerdict, shotCapVerdict, ruleLine, type ApprovalRule } from "./approvalRule";
 import { heldMessage } from "./held";
 import { ALLOWANCE_REACHED } from "./allowance";
+import { HOUSE_CAP_REACHED, houseCapState, houseCapWarning } from "./houseCapText";
 
 /**
  * The quote engine (brief 3): what a thing costs, resolved before the button
@@ -205,6 +206,8 @@ export type Context = {
   balance: number | null;
   /** The monthly ceiling on the platform's engines, in dollars, or null. */
   allowance: { cap: number; spent: number } | null;
+  /** The house workspace's monthly engine cap and what it has spent this month (lib/houseCap.ts), in dollars; null for every other workspace. */
+  houseCap?: { cap: number; spent: number } | null;
   /** The cap of each production the quote touches, keyed by its id. */
   caps: Record<string, Cap>;
   warnPct: number;
@@ -275,6 +278,14 @@ export function verdictOf(q: Quote, c: Context): Verdict {
      answering it with one cap would let a run through that the press refuses
      halfway. */
   let notice = "";
+  /* The house's own monthly cap: a wall at the cap, a warning from 80% (the figures are the studio's own dollars, so the words may name them). */
+  if (c.houseCap) {
+    const needs = q.lines.reduce((n, l) => n + l.usd, 0);
+    const now = houseCapState(c.houseCap.cap, c.houseCap.spent);
+    const after = houseCapState(c.houseCap.cap, c.houseCap.spent + needs);
+    if (now.stop || c.houseCap.spent + needs > c.houseCap.cap + 1e-9) return { allow: false, gate: "allowance", notice: "", line: HOUSE_CAP_REACHED };
+    if (after.warn) notice = houseCapWarning(after);
+  }
   const byProject = new Map<string, number>();
   for (const l of q.lines) {
     const key = l.projectId ?? "";
