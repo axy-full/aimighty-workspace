@@ -12,6 +12,8 @@ import { fmtLedgerUsd } from "@/lib/usageLedgerTerms";
 import { useQuote } from "@/lib/v12/useQuote";
 import { TEXT_REASONS, SCRIPT_TABS, beatLines, breakdownLines, briefCard, fingerprint, scriptCard, withMark, withoutMark, type ScriptTab, type TextCard, type TextStepId } from "@/lib/v12/board/text-steps";
 import { quoteBody, runBody, translateFromResponse, translateProblem, TRANSLATE_ENDPOINT } from "@/lib/v12/translate-script";
+import { useSession } from "@/lib/session";
+import { DELIVERY_QUESTION, RESOLUTIONS, asksResolution, resolutionOf, withResolution, type DeliveryResolution } from "@/lib/v12/board/brief-question";
 import { useScreenScale } from "./use-screen-scale";
 import { StepCard } from "./StepCard";
 import "./stage-pages.css";
@@ -44,6 +46,7 @@ export function TextStage({ ctx, step }: Props) {
   const project = ctx.project;
   const canEdit = !ctx.offline && !ctx.readOnly;
   const scale = useScreenScale(true);
+  const { userId } = useSession();
   const [open, setOpen] = useState<TextStepId | null>(null);
   /* The Hindi card opens the Script on its Hindi view. */
   const [inHindi, setInHindi] = useState(false);
@@ -83,6 +86,17 @@ export function TextStage({ ctx, step }: Props) {
           </>
         )}
       </div>
+      {step === "brief" && asksResolution(project, userId) ? (
+        <div className="v12-ts-ask" role="group" aria-label={DELIVERY_QUESTION} data-testid="v12-brief-resolution">
+          <span className="v12-ts-ask-q">{DELIVERY_QUESTION}</span>
+          <span className="v12-ts-ask-chips">
+            {RESOLUTIONS.map((r) => (
+              <button key={r.id} type="button" className="v12-chip" aria-pressed={resolutionOf(project) === r.id} data-on={resolutionOf(project) === r.id || undefined} disabled={!canEdit}
+                onClick={() => write((p) => withResolution(p, r.id as DeliveryResolution))} data-testid="v12-brief-resolution-chip" data-value={r.id}>{r.label}</button>
+            ))}
+          </span>
+        </div>
+      ) : null}
       <div className="v12-ts-acts">
         <button type="button" className="v12-sp-btn" onClick={() => ctx.askAtomik(step === "brief" ? "Write the brief for this film: " : "Write the script from the brief: ")} data-testid="v12-text-ask">Ask Atomik</button>
       </div>

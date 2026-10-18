@@ -19,6 +19,51 @@ const board = () => ({ ...filmBoard(), script: SCRIPT });
 test.describe("desktop, switch on", () => {
   test.beforeEach(({}, info) => test.skip(!DESKTOP.includes(info.project.name), "desktop sizes"));
 
+  test("Brief, Agent mode: one question, Deliver at 1080p or 4K?; the answer is kept in the board's Agent setup; it prices nothing and sends nothing; Director does not ask it", async ({ page }) => {
+    const generates: string[] = [];
+    page.on("request", (r) => { if (r.method() === "POST" && /\/api\/(generate|audio|v12\/translate-script)$/.test(r.url())) generates.push(r.url()); });
+    const { errors } = await openBoard(page, "/suites?view=board&stage=brief", { project: board() });
+    const ask = page.getByTestId("v12-brief-resolution");
+    await expect(ask).toBeVisible({ timeout: 60_000 });
+    await expect(ask).toContainText("Deliver at 1080p or 4K?");
+    const chips = ask.getByTestId("v12-brief-resolution-chip");
+    await expect(chips).toHaveText(["1080p", "4K"]);
+    /* No default: neither is chosen until the person chooses. No price, no spend marker. */
+    await expect(chips.first()).toHaveAttribute("aria-pressed", "false");
+    await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "false");
+    await expect(ask.locator("[data-spend]")).toHaveCount(0);
+    expect(await faintText(page, '[data-testid="v12-brief-resolution"]')).toEqual([]);
+    expect(await textReadsAtFloor(page, '[data-testid="v12-brief-resolution"]')).toEqual([]);
+
+    const put = saved(page);
+    await chips.nth(1).click();
+    await put;
+    await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "true");
+    const me = (await (await page.request.get("/api/me")).json()) as { id: string };
+    const scope = await page.evaluate(() => Object.keys(localStorage).find((k) => k.startsWith("particl-active-")) ?? "");
+    const draftId = await page.evaluate((key) => localStorage.getItem(key), scope);
+    const read = (await (await page.request.get(`/api/workbench/projects?id=${draftId}`, { headers: { "X-Workbench-Scope": scope } })).json()) as { project: { boardSetup?: unknown; boardMode?: Record<string, string> }; revision: number };
+    expect(read.project.boardSetup).toEqual({ agent: { brief: { resolution: "4k" } } });
+
+    /* The answer is there after a reload, and can be changed. */
+    await page.reload();
+    await expect(page.getByTestId("v12-brief-resolution-chip").nth(1)).toHaveAttribute("aria-pressed", "true", { timeout: 60_000 });
+    const again = saved(page);
+    await page.getByTestId("v12-brief-resolution-chip").first().click();
+    await again;
+    await expect(page.getByTestId("v12-brief-resolution-chip").first()).toHaveAttribute("aria-pressed", "true");
+
+    /* Director's person is not asked: the per-shot Resolution covers it. */
+    const latest = (await (await page.request.get(`/api/workbench/projects?id=${draftId}`, { headers: { "X-Workbench-Scope": scope } })).json()) as { project: Record<string, unknown>; revision: number };
+    const director = await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: { project: { ...latest.project, boardMode: { [me.id]: "director" } }, revision: latest.revision } });
+    expect(director.ok(), await director.text()).toBe(true);
+    await page.reload();
+    await expect(page.getByTestId("v12-text-stage")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("v12-brief-resolution")).toHaveCount(0);
+    expect(generates).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
   test("Brief: one card with the brief's words and its spec; it opens to edit, keeps the edit, and ✓ goes stale when the words change", async ({ page }) => {
     const generates: string[] = [];
     page.on("request", (r) => { if (r.method() === "POST" && /\/api\/generate$/.test(r.url())) generates.push(r.url()); });
