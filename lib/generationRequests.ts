@@ -111,8 +111,12 @@ export const ANSWER_AFTER_MS = 25_000;
  * waits for its run as before.
  *
  * `afterReply`: tests only; Next's after() otherwise.
+ *
+ * `fencedBy`: the key of another claim of the same person whose existence sets this request aside (a cancelled press, lib/batchPress.ts).
+ * It is checked in the same statement that writes this claim, so a fence written before the claim always stops it: the claim is then
+ * written complete and set aside, and nothing is run, reserved or sent.
  */
-export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void };
+export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void; fencedBy?: string };
 
 const STILL_ACCEPTING = "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.";
 /** The answer for a claim whose run has not finished: not final, so the client keeps the request and asks again. */
@@ -120,6 +124,8 @@ const stillAccepting = (headers: Record<string, string> = {}) =>
   Response.json({ error: STILL_ACCEPTING, pending: true }, { status: 409, headers: { ...headers, "Retry-After": "2" } });
 
 const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
+/** A claim stopped by its fence (GenerationRequestOptions.fencedBy): it never ran. */
+const FENCED = "This was cancelled before it started. Nothing billed.";
 /** Longer than any function may run (800 s), so the request that made a claim this old is gone. */
 export const STALE_CLAIM_MS = 30 * 60_000;
 /**
@@ -200,10 +206,20 @@ export async function withGenerationRequestData(
   const { userId, key, fingerprint } = input;
   if (!/^[A-Za-z0-9._:-]{8,160}$/.test(key)) return Response.json({ error: "The request key is invalid." }, { status: 400 });
   await generationRequestsReady();
-  const inserted = await db().execute({
-    sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?)`,
-    args: [userId, key, fingerprint, now(), now()],
-  });
+  const inserted = await db().execute(options.fencedBy
+    ? {
+        /* One statement: the claim is written only while its fence does not exist. */
+        sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at)
+              SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM generation_requests WHERE user_id=? AND request_key=?)`,
+        args: [userId, key, fingerprint, now(), now(), userId, options.fencedBy],
+      }
+    : { sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?)`, args: [userId, key, fingerprint, now(), now()] });
+  /* Fenced: the claim is written complete and set aside (a fence is never lifted), and is answered below like any claim set aside. */
+  if (!inserted.rowsAffected && options.fencedBy)
+    await db().execute({
+      sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,response_json,response_status,created_at,updated_at) VALUES(?,?,?,?,409,?,?)`,
+      args: [userId, key, fingerprint, JSON.stringify({ error: FENCED, code: "set_aside" }), now(), now()],
+    });
   if (!inserted.rowsAffected) {
     const rows = await db().execute({ sql: `SELECT * FROM generation_requests WHERE user_id=? AND request_key=?`, args: [userId, key] });
     const row = rows.rows[0];

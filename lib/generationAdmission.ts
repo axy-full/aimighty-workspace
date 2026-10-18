@@ -2551,7 +2551,7 @@ export function quoteGeneration(prepared: PreparedAdmission) {
 export function admitGeneration(
   prepared: PreparedAdmission,
   actor: AdmissionActor,
-  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"] },
+  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"]; fencedBy?: string },
 ): Promise<AdmissionReply> {
   return admitPrepared(
     prepared,

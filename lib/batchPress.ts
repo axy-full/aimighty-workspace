@@ -10,7 +10,7 @@ import { jobLineNow } from "./shotCap";
 import { prepareGeneration, admitGeneration } from "./generationAdmission";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply, PreparedAdmission } from "./admissionTypes";
 import { admissionReply, assertAdmissionActor } from "./admissionSupport";
-import { db } from "./db";
+import { db, now } from "./db";
 import { platformDb, platformReady } from "./platform";
 import { fenceGenerationRequest, generationFingerprint, generationRequestsReady, settleStaleClaim } from "./generationRequests";
 import { discardHeldJob } from "./held";
@@ -37,7 +37,8 @@ import { QueuedCancelError, cancelQueuedVideo, servedHere, type QueuedCancel } f
  * then starts on the next ask. The same key with other shots is refused: it names another press.
  *
  * CANCELLED SHOTS ARE NOT CHARGED (owner, 16 Oct 2026 evening, 2e). Cancelling a press (`cancel: true` under its key) sets the press aside for good, so no member that
- * has not started ever starts under it, asked again or not; a member waiting held (for a slot or for credits) is discarded, never reserved or sent; a member still in its
+ * has not started ever starts under it, asked again or not: each member's claim is written only while the cancel does not exist, in one statement (`fencedBy`), so a
+ * cancel that lands between the press's own check and a member's claim still stops that member before anything is reserved or sent; a member waiting held (for a slot or for credits) is discarded, never reserved or sent; a member still in its
  * engine's queue is cancelled there through the take's own cancel (lib/queuedCancel.ts), which bills nothing only while the engine still has it queued. A member the engine
  * has already started is not cancelled and is billed as today; the reply says so. No price, margin or ledger rule is written here.
  *
@@ -81,29 +82,39 @@ export const pressShots = (members: Record<string, unknown>[]) => hex(generation
 export const memberKey = (pressKey: string, shots: string, index: number, attempt: number) => `${pressPrefix(pressKey)}${shots}:${index}:${attempt}`;
 const cancelKey = (pressKey: string) => `${pressPrefix(pressKey)}cancel`;
 const CANCEL_FINGERPRINT = "batch-press-cancel-v1";
+/** The press's own record of its shots, written before its first shot is claimed, so a cancel lists every shot, claimed or not. Never a request: it answers none. */
+const membersKey = (pressKey: string) => `${pressPrefix(pressKey)}members`;
+const membersFingerprint = (shots: string) => `batch-press-members-v1:${shots}`;
 
 type Attempt = { key: string; shots: string; index: number; attempt: number; jobId: string | null; pending: boolean };
-/** The press's claims as the database has them now: every member attempt, and whether the press was cancelled. */
-async function pressClaims(userId: string, pressKey: string): Promise<{ attempts: Attempt[]; cancelled: boolean }> {
+/** The press's claims as the database has them now: every member attempt, whether the press was cancelled, and its shots as it recorded them (null before it pressed). */
+async function pressClaims(userId: string, pressKey: string): Promise<{ attempts: Attempt[]; cancelled: boolean; recorded: { shots: string; members: number } | null }> {
   await generationRequestsReady();
   const prefix = pressPrefix(pressKey);
   const rows = (await db().execute({
-    sql: `SELECT request_key,generation_id,response_json FROM generation_requests WHERE user_id=? AND request_key>=? AND request_key<?`,
+    sql: `SELECT request_key,fingerprint,generation_id,response_json FROM generation_requests WHERE user_id=? AND request_key>=? AND request_key<?`,
     args: [userId, prefix, `${prefix}~`],
   })).rows;
   const attempts: Attempt[] = [];
   let cancelled = false;
+  let recorded: { shots: string; members: number } | null = null;
   for (const row of rows) {
     const rest = String(row.request_key).slice(prefix.length);
     let reply: { id?: unknown; code?: unknown } = {};
     try { reply = row.response_json ? JSON.parse(String(row.response_json)) : {}; } catch { /* an unreadable reply still has its bound job, below */ }
     if (rest === "cancel") { cancelled ||= reply.code === "set_aside"; continue; }
+    if (rest === "members") {
+      const n = Number((reply as { members?: unknown }).members);
+      const shots = String(row.fingerprint).slice(membersFingerprint("").length);
+      if (Number.isInteger(n) && n > 0 && n <= BATCH_MAX_MEMBERS) recorded = { shots, members: n };
+      continue;
+    }
     const m = /^([a-f0-9]{24}):(\d{1,2}):(\d{1,4})$/.exec(rest);
     if (!m) continue;
     const jobId = row.generation_id != null ? String(row.generation_id) : typeof reply.id === "string" && reply.id ? reply.id : null;
     attempts.push({ key: String(row.request_key), shots: m[1], index: Number(m[2]), attempt: Number(m[3]), jobId, pending: !row.response_json && row.generation_id == null });
   }
-  return { attempts, cancelled };
+  return { attempts, cancelled, recorded };
 }
 
 /**
@@ -196,7 +207,7 @@ export async function admitBatch(input: Record<string, unknown>, got: AdmissionA
   const userId = got.user.id;
   const shots = pressShots(shotsAsSent);
   const claims = await pressClaims(userId, pressKey);
-  if (claims.attempts.some((a) => a.shots !== shots)) return admissionReply({ error: OTHER_PRESS }, { status: 409 });
+  if (claims.attempts.some((a) => a.shots !== shots) || (claims.recorded && claims.recorded.shots !== shots)) return admissionReply({ error: OTHER_PRESS }, { status: 409 });
   const states: MemberState[] = [];
   for (let index = 0; index < prepared.length; index++) states.push(await memberState(userId, claims.attempts.filter((a) => a.index === index)));
   const statuses = await takeStatuses(states.flatMap((s) => (s.state === "landed" ? [s.id] : [])));
@@ -214,6 +225,11 @@ export async function admitBatch(input: Record<string, unknown>, got: AdmissionA
     return admissionReply({ error: `Short by ${Math.ceil((toStart - state.balance) * 10) / 10} cr. Top up, then approve. Nothing is spent until you do.`, short: true }, { status: 402 });
 
   /* ── Each member still to start, at its own quote, under its own claim ── */
+  /* Its shots recorded first, so a cancel from here on lists every one of them, even a shot whose claim it lands before. */
+  await db().execute({
+    sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,response_json,response_status,created_at,updated_at) VALUES(?,?,?,?,409,?,?)`,
+    args: [userId, membersKey(pressKey), membersFingerprint(shots), JSON.stringify({ error: OTHER_PRESS, code: "press", members: prepared.length }), now(), now()],
+  });
   const out: MemberOut[] = [];
   let stopped = false;
   for (const [index, p] of prepared.entries()) {
@@ -222,8 +238,10 @@ export async function admitBatch(input: Record<string, unknown>, got: AdmissionA
     /* A cancel that arrived while this press was running: nothing more starts. */
     stopped ||= (await pressClaims(userId, pressKey)).cancelled;
     if (stopped) { out.push({ index, status: "cancelled", charged: 0 }); continue; }
-    const reply = await admitGeneration(p, got, { requestKey: memberKey(pressKey, shots, index, s.next), defer: options.defer, ...(options.run ? { run: options.run } : {}) });
-    if ((reply.status === 200 || reply.status === 202) && typeof reply.body.id === "string") out.push({ index, id: reply.body.id, status: typeof reply.body.status === "string" ? reply.body.status : "queued" });
+    /* The cancel is checked again in the claim's own write (fencedBy): one that lands after the check above still stops this shot, before anything is reserved or sent. */
+    const reply = await admitGeneration(p, got, { requestKey: memberKey(pressKey, shots, index, s.next), defer: options.defer, fencedBy: cancelKey(pressKey), ...(options.run ? { run: options.run } : {}) });
+    if (reply.body.code === "set_aside" && typeof reply.body.id !== "string" && (await pressClaims(userId, pressKey)).cancelled) { stopped = true; out.push({ index, status: "cancelled", charged: 0 }); }
+    else if ((reply.status === 200 || reply.status === 202) && typeof reply.body.id === "string") out.push({ index, id: reply.body.id, status: typeof reply.body.status === "string" ? reply.body.status : "queued" });
     else if (reply.status === 409 && reply.body.pending === true) out.push({ index, status: "starting" });
     else out.push({ index, error: typeof reply.body.error === "string" ? reply.body.error : "It did not start.", code: reply.status, charged: 0 });
   }
@@ -247,8 +265,9 @@ export async function cancelBatch(pressKey: string | null | undefined, got: Admi
   if (!pressKey) return admissionReply({ error: "Name the press to cancel by its Idempotency-Key." }, { status: 400 });
   const userId = got.user.id;
   await fenceGenerationRequest({ userId, key: cancelKey(pressKey), fingerprint: CANCEL_FINGERPRINT });
-  const { attempts } = await pressClaims(userId, pressKey);
-  const indices = [...new Set(attempts.map((a) => a.index))].sort((a, b) => a - b);
+  const { attempts, recorded } = await pressClaims(userId, pressKey);
+  /* Every shot the press recorded, claimed or not (a shot not yet claimed now never will be: its claim's write sees this cancel), and any claimed shot besides. */
+  const indices = [...new Set([...attempts.map((a) => a.index), ...Array.from({ length: recorded?.members ?? 0 }, (_, i) => i)])].sort((a, b) => a - b);
   const states = new Map<number, MemberState>();
   for (const index of indices) states.set(index, await memberState(userId, attempts.filter((a) => a.index === index)));
   const statuses = await takeStatuses([...states.values()].flatMap((s) => (s.state === "landed" ? [s.id] : [])));

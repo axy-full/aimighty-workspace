@@ -183,7 +183,7 @@ export function preparedClaimFingerprint(prepared: PreparedAdmission, namespace:
 export async function admitPrepared(
   prepared: PreparedAdmission,
   actor: AdmissionActor,
-  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"] },
+  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"]; fencedBy?: string },
   namespace: "generation" | "audio",
   execute: AdmissionExecutor,
 ): Promise<AdmissionReply> {
@@ -230,8 +230,8 @@ export async function admitPrepared(
               : undefined,
         }),
       ),
-    // Generation and audio admission bind the claim in the same write as the job row.
-    { atomicBinding: true },
+    // Generation and audio admission bind the claim in the same write as the job row. A fence (a cancelled press) is checked in the claim's own write.
+    { atomicBinding: true, ...(options.fencedBy ? { fencedBy: options.fencedBy } : {}) },
   );
   const body = await response.json();
   // A historical route failure may omit its already-created ID. The domain

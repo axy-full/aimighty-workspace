@@ -409,3 +409,64 @@ test("a cancelled press charges nothing for its shots that had not started: held
   /* A cancel names its press: without a key nothing is cancelled. */
   expect((await as(ws, ADMIN, () => batchPress.cancelBatch(undefined, ADMIN))).status).toBe(400);
 });
+
+test("a cancel that lands between a shot's cancelled check and its claim is still seen: that shot never starts, nothing is reserved, metered or billed for it, and the cancel lists it", async () => {
+  /* The press's own admission, with the cancel made at the one moment the race needs: after the press checked for a cancel before shot 2 (index 1), and before
+     shot 2's claim is written inside admitGeneration. Everything else is the real path. */
+  const asked: string[] = [];
+  const engine = { cancelQueued: async (id: string) => { asked.push(id); return { status: "cancelled" as const }; } };
+  let cancelAt: number | null = null;
+  let cancelReply: AdmissionReply | null = null;
+  const entered: number[] = [];
+  const raced = load<typeof import("../../lib/batchPress")>("lib/batchPress.ts", {
+    "./generationAdmission": {
+      ...admission,
+      admitGeneration: async (...args: Parameters<typeof admission.admitGeneration>) => {
+        const index = Number(args[2].requestKey.split(":")[3]);
+        entered.push(index);
+        if (index === cancelAt) { cancelAt = null; cancelReply = await raced.cancelBatch(key, ADMIN, engine); }
+        return admission.admitGeneration(...args);
+      },
+    },
+  });
+  const ws = await workspace("cancel_race", 100_000);
+  const q = await quote(ws, ADMIN, shots(3));
+  const key = `press-cancel-race-${run}`;
+  const before = dispatched.length;
+  cancelAt = 1;
+  const pressed = await as(ws, ADMIN, () => raced.admitBatch({ members: shots(3), ...approvalOf(q) }, ADMIN, { ...noDefer, pressKey: key }));
+  expect(pressed.status, JSON.stringify(pressed.body)).toBe(200);
+  expect(entered).toEqual([0, 1]);
+  const first = members(pressed)[0].id!;
+  expect(first).toBeTruthy();
+  expect(pressed.body).toMatchObject({ status: "cancelled" });
+  expect(members(pressed)).toEqual([
+    { index: 0, id: first, status: "queued" },
+    { index: 1, status: "cancelled", charged: 0 },
+    { index: 2, status: "cancelled", charged: 0 },
+  ]);
+  /* The cancel was told about every shot of the press, the one in the race among them, before that shot's claim existed. */
+  expect(cancelReply).not.toBeNull();
+  expect(members(cancelReply!)).toEqual([
+    { index: 0, id: first, status: "cancelled", charged: 0 },
+    { index: 1, status: "cancelled", charged: 0 },
+    { index: 2, status: "cancelled", charged: 0 },
+  ]);
+  expect(asked).toEqual([first]);
+  /* Only the shot that started before the cancel has a take, a meter row or a dispatch: nothing was reserved, metered, sent or billed for the others. */
+  const after = await as(ws, ADMIN, ledger);
+  expect(after.takes.map((t) => t.id)).toEqual([first]);
+  expect(after.meters.map((m) => m.id)).toEqual([first]);
+  expect(dispatched.slice(before)).toEqual([first]);
+  /* The racing shot's claim was written set aside, naming no take. */
+  const claim = await as(ws, ADMIN, async () => {
+    const { db } = await import("../../lib/db");
+    return (await db().execute({ sql: "SELECT generation_id,response_json FROM generation_requests WHERE user_id=? AND request_key=?", args: [ADMIN.user.id, raced.memberKey(key, raced.pressShots(shots(3)), 1, 0)] })).rows[0];
+  });
+  expect(claim?.generation_id ?? null).toBeNull();
+  expect(JSON.parse(String(claim?.response_json))).toMatchObject({ code: "set_aside" });
+  /* Asked again: nothing more starts. */
+  expect(await press(ws, ADMIN, shots(3), approvalOf(q), key)).toMatchObject({ status: 409, body: { cancelled: true } });
+  expect(await as(ws, ADMIN, ledger)).toEqual(after);
+});
+
