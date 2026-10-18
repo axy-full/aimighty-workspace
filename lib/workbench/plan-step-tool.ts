@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
+import { isPersonApprover, PEOPLE_ONLY } from "./plan-approval";
 import { driveRigAgent, planRigAgentStep, rigAgentState, RigAgentError, type TickDeps } from "./rig-agent";
 import { getRun, rigAgentReady } from "./rig-agent-store";
+import type { RigAgentPaidStepView } from "./rig-agent-plan";
 import { readDraft } from "./records";
 
 /**
@@ -9,7 +11,8 @@ import { readDraft } from "./records";
  * same plan: the server's own plan for a board step from its quick answers (lib/workbench/rig-agent-chips.ts), priced by the server's quote.
  *
  * It PREPARES and PRICES only. It spends nothing and approves nothing: the plan waits on the board for the person who owns it, who approves it once in Particl
- * (`agent.approvePlan`, a signed-in session, people only). Declared once here; the MCP tool and the route read this.
+ * (`agent.approvePlan`, a signed-in session, people only). This is the tool's declaration (what it takes, what it costs, who may use it); the route
+ * (app/api/board-agent/plan) calls `preparePlanStep`, and the MCP tool (lib/mcp.ts `plan_step`) calls the route.
  */
 export const PLAN_STEP_TOOL = {
   id: "plan_step",
@@ -35,7 +38,7 @@ export type PlanStepSummary = {
   shots: string[];
   /** Renders that ask on their own (over the per-job line, or for an admin). */
   asks: number;
-  /** Why it is not priced or not ready, in words. */
+  /** Why it is not priced yet, in fixed words with no engine's name ("2 shots can't be priced yet; open the board."); null once priced. */
   reason: string | null;
   answers: { quality: string; length: number } | null;
   /** It replaced an earlier plan a tool made that was still waiting; never one a person made. */
@@ -44,10 +47,23 @@ export type PlanStepSummary = {
 };
 
 const ID = /^[a-zA-Z0-9-]{1,100}$/;
+
+/**
+ * Why a plan has no price yet, in fixed words (owner, 16 Oct: no engine's name in any reply). A render's own pause reason can be a pricing refusal word for
+ * word, naming the engine; this reply never carries it. The board shows what each shot needs.
+ */
+export function unpricedWords(takes: readonly Pick<RigAgentPaidStepView, "state" | "quote" | "pause" | "fixOf">[]): string {
+  const open = takes.filter((p) => p.fixOf == null && (p.state === "next" || p.state === "waiting" || p.state === "paused"));
+  const unpriced = open.filter((p) => p.quote == null && p.pause !== "admin").length;
+  if (unpriced) return `${unpriced} ${unpriced === 1 ? "shot" : "shots"} can't be priced yet; open the board.`;
+  return open.length ? "Every shot here asks on its own; open the board." : "Nothing in this plan is waiting to render; open the board.";
+}
 const REQUEST = /^[A-Za-z0-9._:-]{1,120}$/;
 
 /** Makes the plan for a person (or for a token acting as them), prices it, and says what it came to. Never approves, never sends, never reserves. */
 export async function preparePlanStep(userId: string, input: PlanStepInput, deps: TickDeps & { budgetMs?: number } = {}): Promise<PlanStepSummary> {
+  /* People only, before anything is read: an agent identity is refused as one, not as a board it cannot see. */
+  if (!isPersonApprover(userId)) throw new RigAgentError(PEOPLE_ONLY, 403);
   if (typeof input.boardId !== "string" || !ID.test(input.boardId)) throw new RigAgentError("Name the board by its project id.", 400);
   const step = typeof input.step === "string" ? input.step : "shots";
   if (input.requestId != null && !(typeof input.requestId === "string" && REQUEST.test(input.requestId))) throw new RigAgentError("requestId must be 1–120 letters, digits, dots, colons, dashes or underscores.", 400);
@@ -71,7 +87,7 @@ export async function preparePlanStep(userId: string, input: PlanStepInput, deps
     total: quote?.total ?? null, ceiling: quote?.ceiling ?? null, approximate: quote?.approximate ?? false,
     shots: takes.map((p) => p.title),
     asks: quote?.asks.length ?? 0,
-    reason: quote ? null : view.plan?.blocked ?? view.reason ?? null,
+    reason: quote ? null : unpricedWords(takes),
     answers: row?.plan?.setup ?? null,
     replaced: made.replaced === true,
     needs: "A person approves this plan in Particl. Nothing is spent until they do.",

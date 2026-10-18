@@ -261,7 +261,7 @@ export async function runTool(
 ): Promise<string> {
   switch (name) {
     case "plan_step": {
-      if ("maxCredits" in args || "max_credits" in args || "approve" in args) throw new Error("The plan is not yours to approve: only a person approves spending, in Particl.");
+      if ("maxCredits" in args || "max_credits" in args || "fingerprint" in args || "approve" in args) throw new Error("The plan is not yours to approve: only a person approves spending, in Particl.");
       const answers = { ...(args.quality !== undefined ? { quality: args.quality } : {}), ...(args.length !== undefined ? { length: args.length } : {}) };
       const cards = typeof args.cards === "string" && args.cards.trim() ? args.cards.split(",").map((c) => c.trim()).filter(Boolean) : undefined;
       const out = (await call("/api/board-agent/plan", { method: "POST", body: { boardId: args.board_id, step: args.step, answers, cards, requestId: args.request_id } })) as { plan: PlanStepReply };

@@ -1,4 +1,5 @@
 import { requireUser, withTenant } from "@/lib/auth";
+import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import { RigAgentError } from "@/lib/workbench/rig-agent";
 import { preparePlanStep, type PlanStepInput } from "@/lib/workbench/plan-step-tool";
 
@@ -17,6 +18,9 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "Send the board and the step as JSON." }, { status: 400 });
   /* An approval is never taken from a caller here, whoever it is. */
   if ("maxCredits" in body || "fingerprint" in body || "approve" in body) return Response.json({ error: "A plan is prepared here, never approved: only a person approves it, in Particl." }, { status: 400 });
+  /* The sample workspace makes no plan, as the board's own `agent.planStep` is refused there (app/api/workbench/team-canvas): nothing is written on a sample board. */
+  const off = await sampleWorkspaceOff();
+  if (off) return off;
   try {
     return Response.json({ plan: await preparePlanStep(got.user.id, body as PlanStepInput) }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {

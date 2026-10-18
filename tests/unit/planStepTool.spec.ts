@@ -9,6 +9,9 @@ import type { RunSpend } from "../../lib/runLimit";
 import { newProject, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import type { BoardSnapshot } from "../../lib/workbench/rig-agent-plan";
 import { mockPlannerModel, runPlanner, MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL } from "../../lib/workbench/rig-agent-planner";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import ts from "typescript";
 
 /*
  * plan_step (lib/workbench/plan-step-tool.ts, POST /api/board-agent/plan, the MCP tool): Agent mode's quick plan, prepared and priced for a person or a token acting as
@@ -170,6 +173,8 @@ test("plan_step is declared once, listed over MCP as a tool a prepare token may 
   expect(mcpTools().find((t) => t.name === "plan_step")).toMatchObject({ token: "prepare" });
   const route = (await import("node:fs")).readFileSync("app/api/board-agent/plan/route.ts", "utf8");
   expect(route).toContain("preparedJobs: true");
+  /* The sample workspace makes no plan, as on the board (team-canvas's agent.planStep). */
+  expect(route).toContain("sampleWorkspaceOff()");
   expect(route).not.toMatch(/requireRender|approveRigAgentPlan|maxCredits\)|reserveGenerationSpend/);
 });
 
@@ -216,14 +221,15 @@ test("it refuses in words: a board that is not the caller's, one with no product
     await expect(preparePlanStep(OWNER, { boardId: "draft-1", cards: ["theirs"] }, deps)).rejects.toMatchObject({ status: 400 });
     await expect(preparePlanStep(OWNER, { boardId: "draft-1", step: "cast" }, deps)).rejects.toMatchObject({ status: 400 });
     await expect(preparePlanStep(OWNER, { boardId: "draft-1", answers: { quality: "gold" } }, deps)).rejects.toMatchObject({ status: 400 });
-    await expect(preparePlanStep("agent:rar_aaaaaaaaaaaaaaaaaaaaaaaa", { boardId: "draft-1" }, deps)).rejects.toMatchObject({ status: 404 });
+    /* People only, before the board is read: an agent identity gets the people-only refusal, not "not yours". */
+    for (const machine of ["agent:rar_aaaaaaaaaaaaaaaaaaaaaaaa", "mcp:client", "auto"])
+      await expect(preparePlanStep(machine, { boardId: "draft-1" }, deps), machine).rejects.toMatchObject({ status: 403, message: PEOPLE_ONLY });
     await expect(preparePlanStep(OWNER, { boardId: "draft-1" }, deps).then(() => (async () => {
       /* A board saved to no production. */
       const body = JSON.stringify({ ...JSON.parse(String((await db().execute({ sql: "SELECT body FROM workbench_projects WHERE key=?", args: [`${OWNER}:draft-1`] })).rows[0].body)), productionProjectId: undefined, id: "draft-free" });
       await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,0)", args: [`${OWNER}:draft-free`, OWNER, "draft-free", "Free", body] });
       return preparePlanStep(OWNER, { boardId: "draft-free" }, deps);
     })())).rejects.toMatchObject({ status: 409 });
-    void PEOPLE_ONLY;
   });
 });
 
@@ -238,7 +244,7 @@ test("over MCP: one call to the board route as the caller, never an approval; an
   expect(text).not.toMatch(/Pier · \d|Deck · \d/);
   expect(text).toContain("A person approves this plan in Particl");
   expect(text).toContain("Nothing was rendered or reserved");
-  for (const bad of [{ maxCredits: 12 }, { max_credits: 12 }, { approve: true }]) await expect(runTool("plan_step", { board_id: "draft-1", ...bad } as never, call as never, "https://example.invalid")).rejects.toThrow(/not yours to approve/);
+  for (const bad of [{ maxCredits: 12 }, { max_credits: 12 }, { fingerprint: "f".repeat(64) }, { approve: true }]) await expect(runTool("plan_step", { board_id: "draft-1", ...bad } as never, call as never, "https://example.invalid")).rejects.toThrow(/not yours to approve/);
   expect(calls).toHaveLength(1);
   /* A plan that could not be priced says why, and still approves nothing. */
   const unpriced = async () => ({ plan: { ...reply.plan, priced: false, total: null, ceiling: null, reason: "Pier is not priced yet." } });
@@ -279,4 +285,82 @@ test("a tool's plan never replaces a plan waiting on the board; it may replace a
   const { runTool } = await import("../../lib/mcp");
   const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 5, ceiling: 10, approximate: false, shots: ["Pier"], asks: 0, reason: null, replaced: true, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
   expect(await runTool("plan_step", { board_id: "draft-1" }, (async () => reply) as never, "https://example.invalid")).toContain("Replaced the plan waiting on the board.");
+});
+
+/** The real route file, its imports given: the caller (`requireUser`, no session layer) and plan_step with the test's stand-in for admission. */
+function planRoute(userId: string, prepare: (userId: string, input: unknown) => Promise<unknown>, spendGuard: unknown, agent: unknown) {
+  const filename = path.resolve("app/api/board-agent/plan/route.ts"), require = createRequire(filename);
+  const compiled = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const deps: Record<string, unknown> = {
+    "@/lib/auth": { requireUser: async () => ({ user: { id: userId } }), withTenant: (handler: unknown) => handler },
+    "@/lib/demo/spend-guard.server": spendGuard,
+    "@/lib/workbench/plan-step-tool": { preparePlanStep: prepare },
+    "@/lib/workbench/rig-agent": agent,
+  };
+  const mod = { exports: {} as Record<string, unknown> };
+  new Function("require", "module", "exports", compiled)((name: string) => (Object.hasOwn(deps, name) ? deps[name] : require(name)), mod, mod.exports);
+  return mod.exports as { POST: (req: Request) => Promise<Response> };
+}
+const post = (body: unknown) => new Request("http://localhost/api/board-agent/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+test("a pricing refusal that names the engine reaches no reply: plan_step's summary, the route's JSON and the MCP answer say how many shots can't be priced, in fixed words", async () => {
+  await inRun("pstep-engine", async (ws) => {
+    const tool = await import("../../lib/workbench/plan-step-tool");
+    const spendGuard = await import("../../lib/demo/spend-guard.server");
+    const r = renders(ws, () => 0.3);
+    /* A made-up engine label, standing in for the catalog's `${model.label} has no draft mode.` (lib/generationAdmission.ts). */
+    const prepare = async (body: Record<string, unknown>, actor: AdmissionActor) =>
+      String(body.prompt ?? "").includes("Shot 1 of") ? { ok: false as const, status: 422, body: { error: "Zephyrcam 9 has no draft mode." } } : r.prepare(body, actor);
+    const deps = await depsFor(ws, r, { prepare });
+    const out = await tool.preparePlanStep(OWNER, { boardId: "draft-1", requestId: "engine-1" }, deps);
+    expect(out).toMatchObject({ priced: false, total: null });
+    /* Pier's pricing was refused; Deck waits behind it, not priced yet either. */
+    expect(out.reason).toMatch(/^[12] shots? can't be priced yet; open the board\.$/);
+    const words = out.reason!;
+    expect(JSON.stringify(out)).not.toMatch(/zephyrcam|draft mode/i);
+    /* Through the route, as an outside agent's token reaches it. */
+    const route = planRoute(OWNER, (userId, input) => tool.preparePlanStep(userId, input as never, deps), spendGuard, await import("../../lib/workbench/rig-agent"));
+    const res = await route.POST(post({ boardId: "draft-1", requestId: "engine-2" }));
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.plan).toMatchObject({ priced: false, reason: words });
+    expect(JSON.stringify(json)).not.toMatch(/zephyrcam|draft mode/i);
+    /* And the words the agent reads over MCP, from that route. */
+    const { runTool } = await import("../../lib/mcp");
+    const call = async (_path: string, init: { method?: string; body?: unknown } = {}) => (await route.POST(post(init.body))).json();
+    const text = await runTool("plan_step", { board_id: "draft-1", request_id: "engine-3" }, call as never, "https://example.invalid");
+    expect(text).toContain(`not priced yet: ${words}`);
+    expect(text).not.toMatch(/zephyrcam|draft mode/i);
+    expect(r.calls).toEqual([]);
+    expect(await reservations(ws)).toBe(0);
+  });
+});
+
+test("the route: the sample workspace makes no plan; an approval or a fingerprint in the body is refused; an agent identity gets 403", async () => {
+  await inRun("pstep-route", async (ws) => {
+    const tool = await import("../../lib/workbench/plan-step-tool");
+    const spendGuard = await import("../../lib/demo/spend-guard.server");
+    const { PEOPLE_ONLY } = await import("../../lib/workbench/plan-approval");
+    const { db } = await import("../../lib/db");
+    const r = renders(ws, () => 0.3);
+    const deps = await depsFor(ws, r);
+    let prepared = 0;
+    const route = planRoute(OWNER, (userId, input) => { prepared++; return tool.preparePlanStep(userId, input as never, deps); }, spendGuard, await import("../../lib/workbench/rig-agent"));
+    for (const bad of [{ maxCredits: 5 }, { fingerprint: "f".repeat(64) }, { approve: true }])
+      expect((await route.POST(post({ boardId: "draft-1", ...bad }))).status, JSON.stringify(bad)).toBe(400);
+    expect(prepared).toBe(0);
+    const machine = planRoute("agent:rar_aaaaaaaaaaaaaaaaaaaaaaaa", (userId, input) => tool.preparePlanStep(userId, input as never, deps), spendGuard, await import("../../lib/workbench/rig-agent"));
+    const refused = await machine.POST(post({ boardId: "draft-1" }));
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error).toBe(PEOPLE_ONLY);
+    /* The sample workspace: refused in the sample's words, before anything is made. */
+    const { SAMPLE_SETTING_KEY, SAMPLE_LINE } = await import("../../lib/demo/sample");
+    await db().execute({ sql: "INSERT INTO settings(key,value,updated_by,updated_at) VALUES(?,?,?,?)", args: [SAMPLE_SETTING_KEY, JSON.stringify({ version: 1, projectId: "prod-1", draftOwner: OWNER, draftId: "draft-1" }), OWNER, 1] });
+    const sample = await route.POST(post({ boardId: "draft-1" }));
+    expect(sample.status).toBe(409);
+    expect((await sample.json()).error).toBe(SAMPLE_LINE);
+    expect(prepared).toBe(0);
+    const { rigAgentExists } = await import("../../lib/workbench/rig-agent-store");
+    if (await rigAgentExists()) expect((await db().execute("SELECT COUNT(*) AS n FROM rig_agent_runs")).rows[0].n).toBe(0);
+  });
 });
