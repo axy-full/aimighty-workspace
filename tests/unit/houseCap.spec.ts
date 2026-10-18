@@ -308,18 +308,18 @@ test("the reservation: 80% tells the platform owner once a month for each cap fi
       expect(await noteHouseSpend(base + 99.5, base + 100)).toBe(false);
       expect(await warned()).toBe(2);
       expect(mail).toHaveLength(2);
-      /* Next month it speaks again. */
-      expect(await noteHouseSpend(base + 99, base + 100, Date.now() + 40 * 86_400_000)).toBe(true);
-      expect(await warned()).toBe(3);
+      /* Another month it speaks again: one line, dated in that month (an earlier one, so no line here is dated ahead of the clock). */
+      expect(await noteHouseSpend(base + 99, base + 100, Date.now() - 40 * 86_400_000)).toBe(true);
+      expect(await warned()).toBe(2);
       expect(mail).toHaveLength(3);
       /* Under the line it never speaks. */
-      expect(await noteHouseSpend(1, 500, Date.now() + 80 * 86_400_000)).toBe(false);
+      expect(await noteHouseSpend(1, 500, Date.now() - 80 * 86_400_000)).toBe(false);
       expect(mail).toHaveLength(3);
     });
 
     /* A mail server that is down never fails a reserved job. */
     process.env.RESEND_BASE_URL = "http://127.0.0.1:9";
-    const calm = await noteHouseSpend(499, 500, Date.now() + 120 * 86_400_000);
+    const calm = await noteHouseSpend(499, 500, Date.now() - 120 * 86_400_000);
     expect(calm).toBe(true);
   } finally {
     hung.splice(0).forEach((reply) => reply());
@@ -396,8 +396,8 @@ test("a raised or reset cap is a new figure: crossing its 80% warns again (one l
       expect((await Promise.all([noteHouseSpend(raised, raised), noteHouseSpend(first, first)])).filter(Boolean)).toHaveLength(0);
       expect(mail).toHaveLength(3);
     });
-    /* A reset to the default is a figure of its own (in a month far from this one, where no line stands in the way). */
-    const later = Date.UTC(2032, 5, 15);
+    /* A reset to the default is a figure of its own (in a month long past, where no line stands in the way). */
+    const later = Date.UTC(2024, 5, 15);
     expect(await noteHouseSpend(400, 500, later)).toBe(true);
     expect(await noteHouseSpend(410, 500, later)).toBe(false);
     expect(await noteHouseSpend(0.9 * 250, 250, later)).toBe(true);
@@ -421,14 +421,14 @@ test("the month is the reservation's: a note that runs just after midnight on th
   const { meter } = await import("../../lib/meter");
   await platformReady();
   await houseRow();
-  /* Months far from today's, so no line already written stands in the way: the last moments of a January, then the first of February. */
-  const [jan, feb, mar, apr, may] = [0, 1, 2, 3, 4].map((m) => Date.UTC(2031, m, 1));
+  /* Months long past, so no line already written stands in the way (and none is dated ahead of the clock): the last moments of a January, then the first of February. */
+  const [jan, feb, mar, apr, may] = [0, 1, 2, 3, 4].map((m) => Date.UTC(2025, m, 1));
   const lines = async (from: number, to: number) => Number((await platformDb().execute({
     sql: "SELECT COUNT(*) AS n FROM platform_audit WHERE action='housecap.warned' AND workspace_id='ws_legacy' AND created_at>=? AND created_at<?", args: [from, to] })).rows[0].n);
   const model = "gemini-3.1-flash-image";
-  /* Synthetic figures: a $0.04 job against a $0.045 cap is 88% of it. */
+  /* Synthetic figures: a $0.04 job, and a cap that the house's spend since that January plus the job puts at 90% of it. */
   const usd = 0.04;
-  const cap = 0.045;
+  const cap = Math.ceil((((await houseSpendSince(jan)) + usd) / 0.9) * 1e6) / 1e6;
   const id = `gen_housecap_midnight_${Date.now().toString(36)}`;
   const before = await houseSpendSince(houseMonthStart());
   const clock = Date.now;
@@ -448,12 +448,12 @@ test("the month is the reservation's: a note that runs just after midnight on th
       expect(await lines(jan, feb)).toBe(1);
       expect(await lines(feb, mar)).toBe(0);
       /* February's own crossing still speaks, once. */
-      expect(await noteHouseSpend(usd, cap, feb + 100)).toBe(true);
-      expect(await noteHouseSpend(usd, cap, feb + 200)).toBe(false);
+      expect(await noteHouseSpend(cap * 0.9, cap, feb + 100)).toBe(true);
+      expect(await noteHouseSpend(cap * 0.9, cap, feb + 200)).toBe(false);
       expect(await lines(feb, mar)).toBe(1);
       expect(await lines(jan, feb)).toBe(1);
       /* Given the month its spend was summed over, a note that runs in the next one marks that month, dated inside it. */
-      expect(await noteHouseSpend(usd, cap, apr + 5, mar)).toBe(true);
+      expect(await noteHouseSpend(cap * 0.9, cap, apr + 5, mar)).toBe(true);
       expect(await lines(mar, apr)).toBe(1);
       expect(await lines(apr, may)).toBe(0);
       /* The job ends with nothing charged, so this month's figure for the files after this one is as it was. */
