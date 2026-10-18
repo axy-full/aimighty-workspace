@@ -41,6 +41,7 @@ export const PAID_ROUTES: PaidRoute[] = [
 export const NOT_SPENDING: Record<string, string> = {
   "admin/workspaces/[id]": "the platform owner's desk: it releases held jobs after a limit changes, with no customer button",
   "auth/reset": "password reset: only a recovery continuation, nothing is charged",
+  "board-agent/plan": "plan_step: prepares and prices a board step's quick plan for a person to approve; it refuses maxCredits, fingerprint and approve, and never reserves or spends",
   "cron/sync": "server-driven (cron), no button",
   "worker": "server-driven (the app's own worker), no button",
   "generate/check": "a check before a press: charges nothing",
