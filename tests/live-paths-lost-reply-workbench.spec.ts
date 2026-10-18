@@ -141,6 +141,9 @@ test("MCP render_shot called again with the same request_id after its reply was 
   const signed = await signInLocally(page.request);
   const me = await page.request.get("/api/me").then((r) => r.json());
   const tenantUrl = await grant(signed.workspace.id);
+  /* Set before anything reads the settings, so the answer is not a cached one. Only a person approves spending: an MCP render starts by itself only where the workspace allows spending without asking, and then only a 480p draft under the line. */
+  const settings = createClient({ url: tenantUrl, timeout: 10_000 });
+  try { await settings.execute({ sql: "INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('spendWithoutAsking','auto',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [me.id, Date.now()] }); } finally { settings.close(); }
   const minted = await page.request.post("/api/tokens", {
     headers: { "X-Workbench-Scope": `particl-active-${signed.workspace.id}-${me.id}` },
     data: { name: "Lost reply MCP fixture", scope: "render" },
@@ -152,7 +155,7 @@ test("MCP render_shot called again with the same request_id after its reply was 
   const render = async (id: number) => {
     const reply = await page.request.post("/api/mcp", {
       headers: { Authorization: `Bearer ${token}` },
-      data: { jsonrpc: "2.0", id, method: "tools/call", params: { name: "render_shot", arguments: { prompt: "A slow dolly through monsoon rain.", duration: 5, resolution: "720p", request_id: requestId } } },
+      data: { jsonrpc: "2.0", id, method: "tools/call", params: { name: "render_shot", arguments: { prompt: "A slow dolly through monsoon rain.", duration: 5, resolution: "480p", request_id: requestId } } },
     });
     expect(reply.ok(), await reply.text()).toBe(true);
     const text = String((await reply.json()).result?.content?.[0]?.text ?? "");
@@ -164,6 +167,42 @@ test("MCP render_shot called again with the same request_id after its reply was 
   const books = await ledger(tenantUrl, signed.workspace.id, { sql: "1=1", args: [] }, since);
   expect({ same: againId === firstId, made: books.jobs.length, billed: books.charges.length }).toEqual({ same: true, made: 1, billed: 1 });
   expect(books.jobs).toEqual([firstId]);
+});
+
+test("MCP render_shot never approves spending: in Ask a render token is told the price and nothing was filed, a prepare token's shot is filed for a person, and neither makes a take or a charge", async ({ page }) => {
+  test.setTimeout(120_000);
+  const signed = await signInLocally(page.request);
+  const me = await page.request.get("/api/me").then((r) => r.json());
+  const tenantUrl = await grant(signed.workspace.id);
+  const mint = async (scope: "render" | "prepare") => {
+    const minted = await page.request.post("/api/tokens", {
+      headers: { "X-Workbench-Scope": `particl-active-${signed.workspace.id}-${me.id}` },
+      data: { name: `Ask MCP fixture ${scope}`, scope },
+    });
+    expect(minted.ok(), await minted.text()).toBe(true);
+    return (await minted.json()).token as string;
+  };
+  const since = Date.now();
+  const shot = async (token: string, id: number, resolution: string) => {
+    const reply = await page.request.post("/api/mcp", {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { jsonrpc: "2.0", id, method: "tools/call", params: { name: "render_shot", arguments: { prompt: "A heron lifts off a still lake.", duration: 5, resolution, request_id: `ask-${randomUUID()}` } } },
+    });
+    expect(reply.ok(), await reply.text()).toBe(true);
+    return String((await reply.json()).result?.content?.[0]?.text ?? "");
+  };
+  /* The default is Ask: even a 480p draft is only priced. A token made to render cannot file a prepared job, and says so plainly. */
+  const renderText = await shot(await mint("render"), 1, "480p");
+  expect(renderText).toMatch(/^Priced, not started\.\n\nprice: \d[\d,.]* cr\n/);
+  expect(renderText).toContain("Nothing was filed: Only a token made to prepare jobs files one; a person uses Make.");
+  expect(renderText).not.toMatch(/Rendering started|id: gen/);
+  /* A token made to prepare is not even priced: the shot is filed for a person, who finds it in Settings › Connections beside "Approve at N cr". */
+  const prepareText = await shot(await mint("prepare"), 2, "1080p");
+  expect(prepareText).toMatch(/^Prepared, not started\.[\s\S]*prepared job: prep_\w+[\s\S]*This needs a person's approval: nothing was started or spent/);
+  const waiting = await (await page.request.get("/api/prepared-jobs")).json() as { jobs: { prompt: string; resolution: string }[] };
+  expect(waiting.jobs.map((j) => [j.prompt, j.resolution])).toEqual([["A heron lifts off a still lake.", "1080p"]]);
+  const books = await ledger(tenantUrl, signed.workspace.id, { sql: "1=1", args: [] }, since);
+  expect({ made: books.jobs.length, billed: books.charges.length }).toEqual({ made: 0, billed: 0 });
 });
 
 test("PATCH /api/atomik/steps/:id records a step's state and nothing else: it cannot start, approve or bill a render", async ({ page }) => {
