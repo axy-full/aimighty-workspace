@@ -8,11 +8,11 @@ import { z } from "zod";
  * file names a film type or lists a step. The list is the platform's default, the same for every workspace, and names no
  * workspace, client or person (ground rule 3).
  *
- * Each film type has two lists:
- *   - `steps`: what a new production opens with, in rail order;
- *   - `extras`: what the + tile offers besides, off by default (Sound · Edit · Deliver where the owner put them behind +,
- *     and Treatment where it is optional). A new production gets none of them; adding one is a person's choice.
- * A step's kind appears once across the two lists, and `add` takes a kind from either list and nothing else.
+ * Each film type lists its steps once, in rail order, each with `opened`:
+ *   - opened (the default): a new production shows it, so `ensureSteps` makes its row;
+ *   - not opened: it is listed, in its place, but behind the + tile (Sound · Edit · Deliver where the owner put them
+ *     behind +, and Treatment where it is optional). A person opens it from the + tile; `add` then puts it at its place.
+ * `add` takes a kind the type lists and nothing else (plan § 2.10).
  *
  *   - `FILM_TYPES_DEFAULT` below is the owner's final list for A1b (docs/redesign-plan.md, "Owner, 19 Oct 2026, ~00:20
  *     IST": Q16–Q20 and "The ten lists, final for A1b"). It replaces his 17 Oct list (plan Q1).
@@ -51,25 +51,26 @@ const stepSchema = z.strictObject({
   kind: z.string().regex(STEP_KIND),
   label: labelSchema,
   surface: z.enum(STEP_SURFACES),
+  /** Shown in a new production (true), or behind the + tile until a person opens it (false). A setting written before
+   *  A1b has no `opened`: every step it lists is opened, as it was. */
+  opened: z.boolean().default(true),
 });
 
 const filmTypeSchema = z
   .strictObject({
     id: z.string().regex(STEP_KIND),
     label: labelSchema,
-    /** What a new production opens with, in rail order. */
+    /** Every step the type has, opened or behind the + tile, in rail order. */
     steps: z.array(stepSchema).min(1).max(24),
-    /** What the + tile offers besides, off by default. A setting written before A1b has none. */
-    extras: z.array(stepSchema).max(24).default([]),
   })
   .superRefine((type, ctx) => {
-    /* One kind, one place: a kind is either opened by default or offered by the + tile, never both, never twice. */
     const kinds = new Set<string>();
-    for (const list of ["steps", "extras"] as const)
-      type[list].forEach((step, index) => {
-        if (kinds.has(step.kind)) ctx.addIssue({ code: "custom", path: [list, index, "kind"], message: "A step kind is listed twice in one film type." });
-        kinds.add(step.kind);
-      });
+    type.steps.forEach((step, index) => {
+      if (kinds.has(step.kind)) ctx.addIssue({ code: "custom", path: ["steps", index, "kind"], message: "A step kind is listed twice in one film type." });
+      kinds.add(step.kind);
+    });
+    /* A new production shows at least one step. */
+    if (!type.steps.some((step) => step.opened)) ctx.addIssue({ code: "custom", path: ["steps"], message: "A film type opens at least one step." });
   });
 
 export const filmTypeConfigSchema = z
@@ -93,19 +94,26 @@ export type FilmTypeConfig = z.output<typeof filmTypeConfigSchema> & { source: "
    canvas step. */
 const kindOf = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 const NOT_CANVAS: Record<string, StepSurface> = { brief: "document", script: "document", deliver: "table", treatment: "deck" };
-const stepsOf = (labels: string[]) => labels.map((step) => ({ kind: kindOf(step), label: step, surface: NOT_CANVAS[kindOf(step)] ?? "canvas" }));
-const filmType = (id: string, label: string, steps: string[], extras: string[]) => ({ id, label, steps: stepsOf(steps), extras: stepsOf(extras) });
+/* A step written "+Name" is listed but behind the + tile (not opened); every other step is opened. */
+const filmType = (id: string, label: string, steps: string[]) => ({
+  id,
+  label,
+  steps: steps.map((entry) => {
+    const step = entry.replace(/^\+/, "");
+    return { kind: kindOf(step), label: step, surface: NOT_CANVAS[kindOf(step)] ?? "canvas", opened: !entry.startsWith("+") };
+  }),
+});
 
-/* What the owner put behind the + tile: "+ Sound · Edit · Deliver" (Q16), and "(Treatment optional)" (Q17). */
-const PLUS = ["Sound", "Edit", "Deliver"];
-const TREATMENT_OPTIONAL = ["Treatment"];
+/* "+ Sound · Edit · Deliver" (Q16): all three behind the + tile, after Shots. */
+const PLUS = ["+Sound", "+Edit", "+Deliver"];
 
 /**
- * The owner's ten film types, final for A1b (19 Oct 2026, ~00:20 IST). Labels exactly as he wrote them; the first list
- * is what a new production opens with, the second what the + tile offers. From his answers:
- *   - Q16: Sound after Shots in every type with Shots and Edit, reached from the + tile (Sound · Edit · Deliver);
- *   - Q17: Treatment on by default in Ad film, Feature, Short film and Music video; in the other six, offered by the
- *     + tile and off by default;
+ * The owner's ten film types, final for A1b (19 Oct 2026, ~00:20 IST), in his order. Labels exactly as he wrote them;
+ * "+" marks a step behind the + tile. From his answers, as the plan reads them (docs/plans/v30-data-model.md § 2.10):
+ *   - Q16: Sound after Shots in every type with Shots and Edit, reached from the + tile (Sound · Edit · Deliver); all
+ *     three are behind the + tile where he wrote "+ Sound · Edit · Deliver";
+ *   - Q17: Treatment on by default in Ad film, Feature, Short film and Music video; in the other six, "(Treatment
+ *     optional)", it is behind the + tile, right after Script where the type has one, else right after the first step;
  *   - Q18: Pitch deck is gone from Ad film; its deck is the Treatment step. One deck per production;
  *   - Q19: Treatment's surface is `deck`;
  *   - Q20 and 18 Oct (d): Breakdown is no longer a step anywhere. Its beats are the Beats view inside Script, and Pre-vis
@@ -116,16 +124,16 @@ const TREATMENT_OPTIONAL = ["Treatment"];
  */
 export const FILM_TYPES_DEFAULT = {
   filmTypes: [
-    filmType("ad_film", "Ad film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots"], PLUS),
-    filmType("feature", "Feature", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots"], PLUS),
-    filmType("short_film", "Short film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots"], PLUS),
-    filmType("music_video", "Music video", ["Track", "Beat map", "Treatment", "Look", "Elements", "Storyboard", "Animatic", "Shots"], PLUS),
-    filmType("product_video", "Product video", ["Brief", "Product", "Look", "Storyboard", "Shots"], [...PLUS, ...TREATMENT_OPTIONAL]),
-    filmType("ugc", "UGC", ["Brief", "Creator", "Hook", "Script", "Shots", "Captions", "Deliver"], TREATMENT_OPTIONAL),
-    filmType("microdrama", "Microdrama", ["Series bible", "Episodes", "Elements", "Storyboard", "Shots"], [...PLUS, ...TREATMENT_OPTIONAL]),
-    filmType("pre_vis", "Pre-vis", ["Brief", "Script", "Set map", "Elements", "Storyboard", "Animatic", "Shots", "Handoff"], TREATMENT_OPTIONAL),
-    filmType("trend_clip", "Trend clip", ["Source", "Format breakdown", "Swap-ins", "Copy", "Shots", "Captions", "Deliver"], TREATMENT_OPTIONAL),
-    filmType("social", "Social", ["Deliverables", "Hook", "Copy", "Design", "Visuals", "Captions", "Deliver"], TREATMENT_OPTIONAL),
+    filmType("ad_film", "Ad film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]),
+    filmType("feature", "Feature", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]),
+    filmType("short_film", "Short film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]),
+    filmType("music_video", "Music video", ["Track", "Beat map", "Treatment", "Look", "Elements", "Storyboard", "Animatic", "Shots", ...PLUS]),
+    filmType("product_video", "Product video", ["Brief", "+Treatment", "Product", "Look", "Storyboard", "Shots", ...PLUS]),
+    filmType("ugc", "UGC", ["Brief", "Creator", "Hook", "Script", "+Treatment", "Shots", "Captions", "Deliver"]),
+    filmType("microdrama", "Microdrama", ["Series bible", "+Treatment", "Episodes", "Elements", "Storyboard", "Shots", ...PLUS]),
+    filmType("pre_vis", "Pre-vis", ["Brief", "Script", "+Treatment", "Set map", "Elements", "Storyboard", "Animatic", "Shots", "Handoff"]),
+    filmType("trend_clip", "Trend clip", ["Source", "+Treatment", "Format breakdown", "Swap-ins", "Copy", "Shots", "Captions", "Deliver"]),
+    filmType("social", "Social", ["Deliverables", "+Treatment", "Hook", "Copy", "Design", "Visuals", "Captions", "Deliver"]),
   ],
 } satisfies z.input<typeof filmTypeConfigSchema>;
 
@@ -159,14 +167,11 @@ export function filmTypeConfig(env: Record<string, string | undefined> = process
   return { ...result.data, source: "setting" };
 }
 
-/** The steps a new production of this film type opens with, in order, or null for a type the config does not list. */
+/**
+ * Every step a film type lists, opened or behind the + tile, in rail order (each with `opened`), or null for a type the
+ * config does not list. A new production gets the opened ones only.
+ */
 export function filmTypeSteps(filmType: string, env: Record<string, string | undefined> = process.env): FilmTypeStep[] | null {
   const type = filmTypeConfig(env).filmTypes.find((t) => t.id === filmType);
   return type ? type.steps.map((s) => ({ ...s })) : null;
-}
-
-/** What the + tile offers for this film type besides its opening steps (off by default), or null for an unlisted type. */
-export function filmTypeExtras(filmType: string, env: Record<string, string | undefined> = process.env): FilmTypeStep[] | null {
-  const type = filmTypeConfig(env).filmTypes.find((t) => t.id === filmType);
-  return type ? type.extras.map((s) => ({ ...s })) : null;
 }

@@ -225,7 +225,7 @@ test("one frame per canvas step, none on a document, table or deck step", async 
   await expect(client.execute({ sql: "UPDATE production_steps SET frame_w=NULL WHERE id=?", args: [canvas[1].id] })).rejects.toThrow(/CHECK/i);
 });
 
-test("steps come back in rail order; a reorder must name each live step once; a restored step goes to the end", async () => {
+test("steps come back in rail order; a reorder must name each live step once; an added step goes at its list place; a restored step goes to the end", async () => {
   const m = await mods();
   const ws = workspace("ordering");
   const client = await existingDatabase(ws);
@@ -242,9 +242,10 @@ test("steps come back in rail order; a reorder must name each live step once; a 
       await expect(store.reorder("prj_one", bad)).rejects.toMatchObject({ status: 409 });
     expect((await store.list("prj_one")).map((s) => s.id)).toEqual([c, a, b]);
 
-    // An added step goes to the end; a removed one leaves the order and is not in a reorder.
+    // An added step goes at its place in the list (plan § 2.10): a second frames_a right after the first (b), wherever
+    // the rail now has it, here last. A removed one leaves the order and is not in a reorder.
     const added = await store.add("prj_one", "frames_a", "person_a", "Second frames");
-    expect((await store.list("prj_one")).map((s) => s.id)).toEqual([c, a, b, added.id]);
+    expect((await store.list("prj_one")).map((s) => [s.id, s.position])).toEqual([[c, 0], [a, 1], [b, 2], [added.id, 3]]);
     await store.remove(a, "person_a");
     await expect(store.reorder("prj_one", [added.id, c, a, b])).rejects.toMatchObject({ status: 409 });
     expect((await store.reorder("prj_one", [added.id, c, b])).map((s) => s.id)).toEqual([added.id, c, b]);
@@ -279,6 +280,8 @@ test("the step list comes from config: the setting when set, else the owner's de
   await m.runInTenant(ws, async () => {
     const steps = await m.stepStoreForTests(client, ws.id, SYNTHETIC_ENV).ensureSteps("prj_one", "synthetic_spot", "person_a");
     expect(steps.map((s) => ({ kind: s.kind, label: s.label, surface: s.surface }))).toEqual(SYNTHETIC_TYPES.filmTypes[0].steps);
+    // A setting written before A1b has no `opened`: every step it lists is opened, as it was.
+    expect(m.filmTypeSteps("synthetic_spot", SYNTHETIC_ENV)!.map((s) => s.opened)).toEqual([true, true, true]);
 
     // A setting that is set but unreadable is refused, never swapped for the default, and nothing is written.
     // The error says where (the issue's path), never what the setting holds.
@@ -293,11 +296,11 @@ test("the step list comes from config: the setting when set, else the owner's de
       [JSON.stringify({ filmTypes: [{ ...one, [SECRET]: 1 }] }), "filmTypes.0"],
       [JSON.stringify({ filmTypes: [one, one] }), "filmTypes.1"],
       [JSON.stringify({ filmTypes: [{ ...one, steps: [one.steps[0], { ...one.steps[1], kind: one.steps[0].kind }] }] }), "filmTypes.0.steps.1.kind"],
-      // A kind is either opened by default or offered by the + tile, never both and never twice; extras read like steps.
-      [JSON.stringify({ filmTypes: [{ ...one, extras: [{ ...one.steps[0] }] }] }), "filmTypes.0.extras.0.kind"],
-      [JSON.stringify({ filmTypes: [{ ...one, extras: [{ kind: "extra_a", label: "x", surface: "deck" }, { kind: "extra_a", label: "y", surface: "deck" }] }] }), "filmTypes.0.extras.1.kind"],
-      [JSON.stringify({ filmTypes: [{ ...one, extras: [{ kind: "extra_a", label: "x", surface: SECRET }] }] }), "filmTypes.0.extras.0.surface"],
-      [JSON.stringify({ filmTypes: [{ ...one, extras: SECRET }] }), "filmTypes.0.extras"],
+      // `opened` is a yes or no, and a film type opens at least one step.
+      [JSON.stringify({ filmTypes: [{ ...one, steps: [{ ...one.steps[0], opened: SECRET }] }] }), "filmTypes.0.steps.0.opened"],
+      [JSON.stringify({ filmTypes: [{ ...one, steps: one.steps.map((step) => ({ ...step, opened: false })) }] }), "filmTypes.0.steps"],
+      // There is no separate list of extras: a step behind the + tile is a listed step with opened: false.
+      [JSON.stringify({ filmTypes: [{ ...one, extras: [] }] }), "filmTypes.0"],
       // The retired placeholder flag is not part of the shape any more.
       [JSON.stringify({ placeholder: true, filmTypes: [one] }), "(root)"],
     ];
@@ -326,123 +329,125 @@ test("the step list comes from config: the setting when set, else the owner's de
 });
 
 /*
- * The owner's ten film types, final for A1b, exactly as he gave them (19 Oct 2026, ~00:20 IST), in his order. The first
- * list is what a new production opens with; the second is what the + tile offers ("+ Sound · Edit · Deliver" and
- * "(Treatment optional)"), off by default.
+ * The owner's ten film types, final for A1b, exactly as he gave them (19 Oct 2026, ~00:20 IST), in his order, as the
+ * plan reads them (docs/plans/v30-data-model.md § 2.10). "+" marks a step that is listed but behind the + tile, not
+ * opened in a new production: "+ Sound · Edit · Deliver" is all three; "(Treatment optional)" is Treatment, right after
+ * Script where the type has one, else right after the first step.
  */
-const PLUS = ["Sound", "Edit", "Deliver"];
-const OWNER_TABLE: [string, string, string[], string[]][] = [
-  ["ad_film", "Ad film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots"], PLUS],
-  ["feature", "Feature", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots"], PLUS],
-  ["short_film", "Short film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots"], PLUS],
-  ["music_video", "Music video", ["Track", "Beat map", "Treatment", "Look", "Elements", "Storyboard", "Animatic", "Shots"], PLUS],
-  ["product_video", "Product video", ["Brief", "Product", "Look", "Storyboard", "Shots"], [...PLUS, "Treatment"]],
-  ["ugc", "UGC", ["Brief", "Creator", "Hook", "Script", "Shots", "Captions", "Deliver"], ["Treatment"]],
-  ["microdrama", "Microdrama", ["Series bible", "Episodes", "Elements", "Storyboard", "Shots"], [...PLUS, "Treatment"]],
-  ["pre_vis", "Pre-vis", ["Brief", "Script", "Set map", "Elements", "Storyboard", "Animatic", "Shots", "Handoff"], ["Treatment"]],
-  ["trend_clip", "Trend clip", ["Source", "Format breakdown", "Swap-ins", "Copy", "Shots", "Captions", "Deliver"], ["Treatment"]],
-  ["social", "Social", ["Deliverables", "Hook", "Copy", "Design", "Visuals", "Captions", "Deliver"], ["Treatment"]],
+const PLUS = ["+Sound", "+Edit", "+Deliver"];
+const OWNER_TABLE: [string, string, string[]][] = [
+  ["ad_film", "Ad film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]],
+  ["feature", "Feature", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]],
+  ["short_film", "Short film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]],
+  ["music_video", "Music video", ["Track", "Beat map", "Treatment", "Look", "Elements", "Storyboard", "Animatic", "Shots", ...PLUS]],
+  ["product_video", "Product video", ["Brief", "+Treatment", "Product", "Look", "Storyboard", "Shots", ...PLUS]],
+  ["ugc", "UGC", ["Brief", "Creator", "Hook", "Script", "+Treatment", "Shots", "Captions", "Deliver"]],
+  ["microdrama", "Microdrama", ["Series bible", "+Treatment", "Episodes", "Elements", "Storyboard", "Shots", ...PLUS]],
+  ["pre_vis", "Pre-vis", ["Brief", "Script", "+Treatment", "Set map", "Elements", "Storyboard", "Animatic", "Shots", "Handoff"]],
+  ["trend_clip", "Trend clip", ["Source", "+Treatment", "Format breakdown", "Swap-ins", "Copy", "Shots", "Captions", "Deliver"]],
+  ["social", "Social", ["Deliverables", "+Treatment", "Hook", "Copy", "Design", "Visuals", "Captions", "Deliver"]],
 ];
 /* Written out here, not derived, so a change to how the config makes kinds is caught. */
 const KINDS: Record<string, string> = {
   "Beat map": "beat_map", "Series bible": "series_bible", "Set map": "set_map", "Format breakdown": "format_breakdown", "Swap-ins": "swap_ins",
 };
 const SURFACES: Record<string, string> = { Brief: "document", Script: "document", Deliver: "table", Treatment: "deck" };
-const stepsOf = (labels: string[]) => labels.map((step) => ({ kind: KINDS[step] ?? step.toLowerCase(), label: step, surface: SURFACES[step] ?? "canvas" }));
+const labelOf = (entry: string) => entry.replace(/^\+/, "");
+const stepsOf = (entries: string[]) =>
+  entries.map((entry) => ({ kind: KINDS[labelOf(entry)] ?? labelOf(entry).toLowerCase(), label: labelOf(entry), surface: SURFACES[labelOf(entry)] ?? "canvas", opened: !entry.startsWith("+") }));
 
 /* Q17, written out by name. */
 const TREATMENT_ON = ["ad_film", "feature", "short_film", "music_video"];
 const TREATMENT_OPTIONAL = ["ugc", "product_video", "microdrama", "pre_vis", "trend_clip", "social"];
 
-test("the default is the owner's ten film types, final for A1b: his opening steps in his order, his + tile list beside them; Brief and Script documents, Deliver a table, Treatment a deck, the rest canvas", async () => {
+test("the default is the owner's ten film types, final for A1b: his steps in his order, each opened or behind the + tile; Brief and Script documents, Deliver a table, Treatment a deck, the rest canvas", async () => {
   const m = await mods();
   const config = m.filmTypeConfig({});
   expect(config.filmTypes).toHaveLength(10);
-  expect(config.filmTypes.map((t) => ({ id: t.id, label: t.label, steps: t.steps, extras: t.extras }))).toEqual(
-    OWNER_TABLE.map(([id, label, steps, extras]) => ({ id, label, steps: stepsOf(steps), extras: stepsOf(extras) })),
+  expect(config.filmTypes.map((t) => ({ id: t.id, label: t.label, steps: t.steps }))).toEqual(
+    OWNER_TABLE.map(([id, label, steps]) => ({ id, label, steps: stepsOf(steps) })),
   );
   for (const type of config.filmTypes) {
-    const all = [...type.steps, ...type.extras];
-    expect(new Set(all.map((s) => s.kind)).size, type.id).toBe(all.length);
-    for (const s of all) expect(s.kind).toMatch(m.STEP_KIND);
+    expect(new Set(type.steps.map((s) => s.kind)).size, type.id).toBe(type.steps.length);
+    for (const s of type.steps) expect(s.kind).toMatch(m.STEP_KIND);
     expect(m.filmTypeSteps(type.id, {})).toEqual(type.steps);
-    expect(m.filmTypeExtras(type.id, {})).toEqual(type.extras);
   }
-  expect(m.filmTypeExtras("not_on_list", {})).toBeNull();
   expect([...m.STEP_SURFACES].sort()).toEqual(["canvas", "deck", "document", "table"]);
 
-  // Through the store, with no setting: one type's opening steps, frames only on its canvas steps, page ids from the kinds.
+  // Through the store, with no setting: one type's opened steps, frames only on its canvas steps, page ids from the kinds.
   const ws = workspace("owner-default");
   const client = await existingDatabase(ws);
   await m.runInTenant(ws, async () => {
     const steps = await m.stepStoreForTests(client, ws.id, {}).ensureSteps("prj_one", "ad_film", "person_a");
     expect(steps.map((s) => s.pageId)).toEqual(["brief", "script", "treatment", "look", "elements", "storyboard", "shots"]);
+    expect(steps.map((s) => s.position)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(steps.filter((s) => s.frame === null).map((s) => [s.label, s.surface])).toEqual([["Brief", "document"], ["Script", "document"], ["Treatment", "deck"]]);
     expect(steps.filter((s) => s.frame !== null)).toHaveLength(4);
   });
 });
 
-test("Treatment: on by default in Ad film, Feature, Short film and Music video, right after Script or Beat map; offered by the + tile, off by default, in the other six; always a deck", async () => {
+test("Treatment: opened by default in Ad film, Feature, Short film and Music video; behind the + tile in the other six, right after Script, else right after the first step; always a deck", async () => {
   const m = await mods();
   const config = m.filmTypeConfig({});
   expect([...TREATMENT_ON, ...TREATMENT_OPTIONAL].sort()).toEqual(config.filmTypes.map((t) => t.id).sort());
-  const treatment = { kind: "treatment", label: "Treatment", surface: "deck" };
   for (const type of config.filmTypes) {
-    const opened = type.steps.find((s) => s.kind === "treatment");
-    const offered = type.extras.find((s) => s.kind === "treatment");
-    if (TREATMENT_ON.includes(type.id)) {
-      expect(opened, type.id).toEqual(treatment);
-      expect(offered, type.id).toBeUndefined();
-      expect(type.steps[type.steps.indexOf(opened!) - 1].kind, type.id).toBe(type.id === "music_video" ? "beat_map" : "script");
+    const kinds = type.steps.map((s) => s.kind);
+    const at = kinds.indexOf("treatment");
+    expect(type.steps[at], type.id).toEqual({ kind: "treatment", label: "Treatment", surface: "deck", opened: TREATMENT_ON.includes(type.id) });
+    const before = kinds.includes("script") ? "script" : TREATMENT_ON.includes(type.id) ? "beat_map" : kinds[0];
+    expect(kinds[at - 1], type.id).toBe(before);
+  }
+});
+
+test("no Breakdown, Pitch deck or Beats step in any film type; Pre-vis has Script where it had Breakdown; Beat map and Format breakdown stay; Sound · Edit · Deliver behind the + tile after Shots where marked", async () => {
+  const m = await mods();
+  const config = m.filmTypeConfig({});
+  const every = config.filmTypes.flatMap((t) => t.steps);
+  for (const gone of ["breakdown", "pitch_deck", "beats"]) expect(every.map((s) => s.kind), gone).not.toContain(gone);
+  for (const gone of ["Breakdown", "Pitch deck", "Beats"]) expect(every.map((s) => s.label), gone).not.toContain(gone);
+  const kindsOf = (id: string) => config.filmTypes.find((t) => t.id === id)!.steps.map((s) => s.kind);
+  expect(kindsOf("pre_vis").slice(0, 2)).toEqual(["brief", "script"]);
+  expect(kindsOf("music_video")).toContain("beat_map");
+  expect(kindsOf("trend_clip")).toContain("format_breakdown");
+  // Q16: Sound after Shots in every type with Shots and Edit; there, Sound · Edit · Deliver are all behind the + tile.
+  const PLUS_TYPES = ["ad_film", "feature", "short_film", "music_video", "product_video", "microdrama"];
+  for (const type of config.filmTypes) {
+    const kinds = type.steps.map((s) => s.kind);
+    if (PLUS_TYPES.includes(type.id)) {
+      expect(kinds.slice(kinds.indexOf("shots"), kinds.indexOf("shots") + 4), type.id).toEqual(["shots", "sound", "edit", "deliver"]);
+      expect(type.steps.slice(-3).map((s) => s.opened), type.id).toEqual([false, false, false]);
     } else {
-      expect(opened, type.id).toBeUndefined();
-      expect(offered, type.id).toEqual(treatment);
+      expect(kinds, type.id).not.toContain("sound");
+      // No "+" in UGC, Pre-vis, Trend clip, Social: everything but an optional Treatment is opened.
+      expect(type.steps.filter((s) => !s.opened).map((s) => s.kind), type.id).toEqual(["treatment"]);
     }
   }
 });
 
-test("no Breakdown, Pitch deck or Beats step in any film type, opened or offered; Pre-vis has Script where it had Breakdown; Beat map and Format breakdown stay", async () => {
+test("each film type: a new production opens its opened steps only; every + tile step can be added and lands at its place; a kind the type does not list is refused", async () => {
   const m = await mods();
-  const config = m.filmTypeConfig({});
-  const everyKind = config.filmTypes.flatMap((t) => [...t.steps, ...t.extras].map((s) => s.kind));
-  const everyLabel = config.filmTypes.flatMap((t) => [...t.steps, ...t.extras].map((s) => s.label));
-  for (const gone of ["breakdown", "pitch_deck", "beats"]) expect(everyKind, gone).not.toContain(gone);
-  for (const gone of ["Breakdown", "Pitch deck", "Beats"]) expect(everyLabel, gone).not.toContain(gone);
-  const kindsOf = (id: string) => config.filmTypes.find((t) => t.id === id)!.steps.map((s) => s.kind);
-  expect(kindsOf("pre_vis").slice(0, 3)).toEqual(["brief", "script", "set_map"]);
-  expect(kindsOf("music_video")).toContain("beat_map");
-  expect(kindsOf("trend_clip")).toContain("format_breakdown");
-  // Sound, where a type has it, is offered by the + tile only, after Shots in the + list's order (Q16).
-  for (const type of config.filmTypes) {
-    expect(type.steps.map((s) => s.kind), type.id).not.toContain("sound");
-    const offered = type.extras.map((s) => s.kind);
-    if (offered.includes("sound")) expect(offered.slice(0, 3), type.id).toEqual(["sound", "edit", "deliver"]);
-  }
-});
-
-test("each film type: a new production opens with its opening steps only; every + tile step can be added; a kind on neither of its lists is refused", async () => {
-  const m = await mods();
-  const config = m.filmTypeConfig({});
-  const ws = workspace("owner-extras");
+  const ws = workspace("owner-plus");
   const client = await existingDatabase(ws);
-  for (const type of config.filmTypes) await existingDatabase(ws, `prj_${type.id}`);
+  for (const [id] of OWNER_TABLE) await existingDatabase(ws, `prj_${id}`);
   await m.runInTenant(ws, async () => {
     const store = m.stepStoreForTests(client, ws.id, {});
-    for (const [id, , opening, offered] of OWNER_TABLE) {
+    for (const [id, , entries] of OWNER_TABLE) {
       const productionId = `prj_${id}`;
+      const listed = stepsOf(entries);
       const made = await store.ensureSteps(productionId, id, "person_a");
-      expect(made.map((s) => s.label), id).toEqual(opening);
-      for (const extra of stepsOf(offered)) expect(made.map((s) => s.kind), id).not.toContain(extra.kind);
+      expect(made.map((s) => s.label), id).toEqual(listed.filter((s) => s.opened).map((s) => s.label));
 
-      // Each + tile step: added at the end of the rail, with its surface; a frame only on a canvas step.
-      for (const extra of stepsOf(offered)) {
+      // The + tile's steps, added last to first, so each one has to find its own place, not the end of the rail.
+      for (const extra of listed.filter((s) => !s.opened).reverse()) {
         const added = await store.add(productionId, extra.kind, "person_a");
         expect(added, `${id}: ${extra.kind}`).toMatchObject({ kind: extra.kind, label: extra.label, surface: extra.surface, pageId: extra.kind });
         expect(added.frame === null, `${id}: ${extra.kind}`).toBe(extra.surface !== "canvas");
       }
-      expect((await store.list(productionId)).map((s) => s.label), id).toEqual([...opening, ...offered]);
+      const rail = await store.list(productionId);
+      expect(rail.map((s) => s.label), id).toEqual(listed.map((s) => s.label));
+      expect(rail.map((s) => s.position), id).toEqual(listed.map((_, i) => i));
 
-      // Kinds from no list of this type: refused, nothing written. Retired steps, and another type's own step.
+      // Kinds the type does not list: refused, nothing written. Retired steps, and another type's own step.
       const before = await count(client, `production_id='${productionId}'`);
       const elsewhere = id === "music_video" ? "creator" : "track";
       for (const kind of ["breakdown", "pitch_deck", "beats", elsewhere, "not_a_kind"])
@@ -452,10 +457,45 @@ test("each film type: a new production opens with its opening steps only; every 
   });
 });
 
-test("a production made from an older list keeps the steps it was made with; only today's lists say what can be added", async () => {
+test("add puts a step after the nearest earlier listed step the production has: past a removed one, after the last of its own kind, first when there is none", async () => {
   const m = await mods();
-  // The 17 Oct Ad film, written out here as a synthetic deployment setting: Pitch deck and Breakdown were steps then.
-  const OLD = { V30_FILM_TYPES: JSON.stringify({ filmTypes: [{ id: "ad_film", label: "Ad film", steps: stepsOf(["Brief", "Script", "Breakdown", "Shots", "Edit"]) }] }) };
+  const ws = workspace("owner-place");
+  const client = await existingDatabase(ws);
+  for (const p of ["prj_ugc", "prj_micro", "prj_social"]) await existingDatabase(ws, p);
+  await m.runInTenant(ws, async () => {
+    const store = m.stepStoreForTests(client, ws.id, {});
+    const kinds = async (p: string) => (await store.list(p)).map((s) => s.pageId);
+
+    // UGC: Treatment right after Script; with Script removed, right after Hook.
+    const ugc = await store.ensureSteps("prj_ugc", "ugc", "person_a");
+    await store.remove(ugc.find((s) => s.kind === "script")!.id, "person_a");
+    await store.add("prj_ugc", "treatment", "person_a");
+    expect(await kinds("prj_ugc")).toEqual(["brief", "creator", "hook", "treatment", "shots", "captions", "deliver"]);
+    // A second Shots: right after the first, before Captions; a third, after the second.
+    await store.add("prj_ugc", "shots", "person_a");
+    await store.add("prj_ugc", "shots", "person_a");
+    expect(await kinds("prj_ugc")).toEqual(["brief", "creator", "hook", "treatment", "shots", "shots-2", "shots-3", "captions", "deliver"]);
+
+    // Microdrama: Treatment right after Series bible; after a reorder, it follows Series bible wherever that now is.
+    const micro = await store.ensureSteps("prj_micro", "microdrama", "person_a");
+    const ids = micro.map((s) => s.id);
+    await store.reorder("prj_micro", [ids[1], ids[0], ...ids.slice(2)]);
+    await store.add("prj_micro", "treatment", "person_a");
+    expect(await kinds("prj_micro")).toEqual(["episodes", "series_bible", "treatment", "elements", "storyboard", "shots"]);
+
+    // Social: with Deliverables removed, nothing listed before Treatment is live: it goes first.
+    const social = await store.ensureSteps("prj_social", "social", "person_a");
+    await store.remove(social[0].id, "person_a");
+    await store.add("prj_social", "treatment", "person_a");
+    expect(await kinds("prj_social")).toEqual(["treatment", "hook", "copy", "design", "visuals", "captions", "deliver"]);
+    expect((await store.list("prj_social")).map((s) => s.position)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+});
+
+test("a production made from an older list keeps the steps it was made with; only today's list says what can be added and where", async () => {
+  const m = await mods();
+  // The 17 Oct Ad film, shortened, written out here as a synthetic deployment setting: Breakdown was a step then.
+  const OLD = { V30_FILM_TYPES: JSON.stringify({ filmTypes: [{ id: "ad_film", label: "Ad film", steps: stepsOf(["Brief", "Script", "Breakdown", "Shots", "Edit"]).map(({ kind, label, surface }) => ({ kind, label, surface })) }] }) };
   const ws = workspace("older-list");
   const client = await existingDatabase(ws);
   await m.runInTenant(ws, async () => {
@@ -465,10 +505,11 @@ test("a production made from an older list keeps the steps it was made with; onl
     // Today's default: nothing rewritten, nothing added, Breakdown kept until a person removes it.
     expect((await today.ensureSteps("prj_one", "ad_film", "person_a")).map((s) => s.id)).toEqual(made.map((s) => s.id));
     expect(await count(client)).toBe(5);
-    // Adding goes by today's lists: Treatment and Sound can be added; another Breakdown cannot.
+    // Adding goes by today's list: Treatment after Script, Sound after Shots; another Breakdown is refused.
     expect(await today.add("prj_one", "treatment", "person_a")).toMatchObject({ surface: "deck", frame: null });
     expect(await today.add("prj_one", "sound", "person_a")).toMatchObject({ surface: "canvas" });
     await expect(today.add("prj_one", "breakdown", "person_a")).rejects.toMatchObject({ status: 400 });
+    expect((await today.list("prj_one")).map((s) => s.kind)).toEqual(["brief", "script", "treatment", "breakdown", "shots", "sound", "edit"]);
   });
 });
 

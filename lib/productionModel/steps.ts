@@ -2,7 +2,7 @@ import type { Client, InStatement, Row, Transaction } from "@libsql/client";
 import { db, id as newId, now, ready } from "../db";
 import { columnInstaller } from "../schemaInitialization";
 import { requireTenant } from "../tenant";
-import { filmTypeConfig, filmTypeExtras, filmTypeSteps, STEP_KIND, STEP_SURFACES, type FilmTypeStep, type StepSurface } from "./filmTypes";
+import { filmTypeConfig, filmTypeSteps, STEP_KIND, STEP_SURFACES, type FilmTypeStep, type StepSurface } from "./filmTypes";
 import { ProductionModelOffError, productionModelOn } from "./flag";
 
 /**
@@ -31,8 +31,8 @@ import { ProductionModelOffError, productionModelOn } from "./flag";
  *     CHECK accepts `deck`, every row copied as it was.
  * Nothing is erased (rule 13): removing a step stamps `removed_at`/`removed_by`, and restoring clears them.
  *
- * A new production gets its film type's opening steps only; `add` also takes a kind from the type's + tile list
- * (lib/productionModel/filmTypes.ts, `extras`), and nothing outside the two.
+ * A new production gets its film type's opened steps only. `add` takes any kind the type lists, opened or behind the +
+ * tile (lib/productionModel/filmTypes.ts, `opened`), puts it at its place in the list, and refuses any other kind.
  */
 
 export type { StepSurface };
@@ -276,7 +276,7 @@ class StepStore {
         writes.push({ sql: "UPDATE projects SET film_type=? WHERE id=? AND film_type IS NULL", args: [filmType, productionId] });
       const taken: string[] = [];
       let canvasIndex = 0;
-      for (const [position, step] of steps.entries()) {
+      for (const [position, step] of steps.filter((s) => s.opened).entries()) {
         const pageId = nextPageId(step.kind, taken);
         taken.push(pageId);
         const frame = step.surface === "canvas" ? { x: canvasIndex++ * (DEFAULT_FRAME.w + DEFAULT_FRAME.gap), y: 0, w: DEFAULT_FRAME.w, h: DEFAULT_FRAME.h } : null;
@@ -342,23 +342,43 @@ class StepStore {
   }
 
   /**
-   * Another step, at the end of the rail: a kind the production's film type opens with (a second Shots step is
-   * `shots-2`), or one its + tile offers (Sound, Edit, Deliver, Treatment where the type has them behind +). A kind on
-   * neither list is refused.
+   * Another step: a kind the production's film type lists, opened by default or behind the + tile (Sound, Edit, Deliver,
+   * Treatment where the type has them there); a second step of a kind is `shots-2`. A kind the type does not list is
+   * refused. It goes at its place in the type's list (plan § 2.10): right after the live step, nearest before it in the
+   * list (itself included), that the production has; the last such on the rail when there are several; first on the
+   * rail when there is none. Steps after it move down one. A step the list no longer names (one made from an older list)
+   * is never a place to go after.
    */
   async add(productionId: string, kind: string, by: string, label?: string): Promise<ProductionStep> {
     return this.write(async (tx) => {
       const production = await this.production(tx, productionId);
       if (!production.filmType) throw new ProductionStepError("This project has no steps yet.", 409);
-      const step = [...(filmTypeSteps(production.filmType, this.env) ?? []), ...(filmTypeExtras(production.filmType, this.env) ?? [])].find((s) => s.kind === kind);
-      if (!step) throw new ProductionStepError("That step is not one this project's film type has.", 400);
+      const listed = filmTypeSteps(production.filmType, this.env) ?? [];
+      const index = listed.findIndex((s) => s.kind === kind);
+      if (index < 0) throw new ProductionStepError("That step is not one this project's film type has.", 400);
+      const step = listed[index];
       const all = await this.rows(tx, productionId, true);
       const pageId = nextPageId(kind, all.map((s) => s.pageId));
-      const position = all.reduce((max, s) => Math.max(max, s.position), -1) + 1;
+      /* Its place: after the live step whose kind is listed latest at or before this one's, else first. */
+      const live = all.filter((s) => s.removedAt === null);
+      const rank = new Map(listed.map((s, i) => [s.kind, i]));
+      let after = -1;
+      live.forEach((s, at) => {
+        const r = rank.get(s.kind);
+        if (r !== undefined && r <= index && (after < 0 || r >= rank.get(live[after].kind)!)) after = at;
+      });
+      const order = [...live.slice(0, after + 1).map((s) => s.id), null, ...live.slice(after + 1).map((s) => s.id)];
+      const at = now();
+      const moves: InStatement[] = [];
+      order.forEach((id, position) => {
+        if (id && live.find((s) => s.id === id)!.position !== position)
+          moves.push({ sql: "UPDATE production_steps SET position=?, updated_at=? WHERE workspace_id=? AND id=?", args: [position, at, this.workspaceId, id] });
+      });
+      const position = order.indexOf(null);
       const right = all.filter((s) => s.removedAt === null && s.frame).reduce((max, s) => Math.max(max, s.frame!.x + s.frame!.w + DEFAULT_FRAME.gap), 0);
       const frame = step.surface === "canvas" ? { x: right, y: 0, w: DEFAULT_FRAME.w, h: DEFAULT_FRAME.h } : null;
       const stepId = newId("pstep");
-      await tx.execute(this.insert(stepId, productionId, { ...step, label: label === undefined ? step.label : cleanLabel(label) }, pageId, position, frame, by, now()));
+      await tx.batch([...moves, this.insert(stepId, productionId, { ...step, label: label === undefined ? step.label : cleanLabel(label) }, pageId, position, frame, by, at)]);
       return this.step(tx, stepId);
     });
   }
