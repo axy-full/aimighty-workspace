@@ -50,7 +50,7 @@ const PEOPLE_ONLY = "Only a person approves spending. Atomik, outside agents and
 const NEEDS_KEY = "Send the press with an Idempotency-Key, so that asking again never starts a shot twice.";
 const OTHER_PRESS = "This Idempotency-Key already names a press of other shots.";
 const CANCELLED = "This press was cancelled. Nothing more starts under it.";
-const RETRY = "Ask again under the same Idempotency-Key: shots already started are not started again. Nothing was charged for the shots that did not start.";
+const RETRY = "Ask again under the same Idempotency-Key: shots already started are not started again. Nothing billed for the shots that did not start.";
 const STARTING = "This shot was being started as the press was cancelled. Cancel it once it shows.";
 const UNCONFIRMED = "Cancellation could not be confirmed. The take is still tracked; check it before trying again.";
 

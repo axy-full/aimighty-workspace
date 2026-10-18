@@ -275,6 +275,7 @@ test("asked again under the same key, a press starts nothing twice: what started
   expect(first.body).toMatchObject({ status: "partial" });
   expect(members(first)[2]).toMatchObject({ index: 2, code: 429, charged: 0 });
   expect(String(first.body.retry)).toContain("same Idempotency-Key");
+  expect(String(first.body.retry)).toContain("Nothing billed for the shots that did not start.");
   const started = members(first).slice(0, 2).map((m) => m.id);
   expect(started.every(Boolean)).toBe(true);
   const once = await as(ws, ADMIN, ledger);
