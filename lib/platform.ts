@@ -4,7 +4,7 @@ import { columnInstaller } from "./schemaInitialization";
 import { ACCOUNT_SECURITY_SCHEMA } from "./accountSecuritySchema";
 import { SECURITY_AUDIT_SCHEMA, securityAuditStatement } from "./securityAudit";
 import { PLATFORM_AUDIT_SCHEMA, platformAuditStatement } from "./platformAudit";
-import { createClient, type Client } from "@libsql/client";
+import { createClient, type Client, type InStatement } from "@libsql/client";
 import { isPaidKind, type GrantKind } from "./creditTerms";
 import { asPlanId, planById, DEFAULT_PLANS, type PlanId, type PlanDef } from "./plans";
 import { randomBytes, createHash } from "node:crypto";
@@ -491,13 +491,16 @@ export async function accountCount(): Promise<number> {
   const rs = await platformDb().execute(`SELECT COUNT(*) AS n FROM accounts WHERE deleted_at IS NULL`);
   return Number((rs.rows[0] as any)?.n ?? 0);
 }
-export async function createAccount(email: string, name: string, passwordHash: string): Promise<{ id: string; email: string; name: string }> {
+/** `alongside` gives the statements written in the SAME batch as the account (one transaction): if any of them fails, no account is made (first-run setup's 18+ line, lib/auth.ts). */
+export async function createAccount(email: string, name: string, passwordHash: string, alongside?: (id: string) => InStatement[]): Promise<{ id: string; email: string; name: string }> {
   await platformReady();
   const id = newId("usr");
-  await platformDb().execute({
+  const insert: InStatement = {
     sql: `INSERT INTO accounts (id, email, name, password_hash, created_at) VALUES (?,?,?,?,?)`,
     args: [id, email.trim().toLowerCase(), name.trim().slice(0, 80), passwordHash, now()],
-  });
+  };
+  if (alongside) await platformDb().batch([insert, ...alongside(id)], "write");
+  else await platformDb().execute(insert);
   return { id, email: email.trim().toLowerCase(), name: name.trim().slice(0, 80) };
 }
 

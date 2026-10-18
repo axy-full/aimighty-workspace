@@ -14,7 +14,7 @@ export const GOOGLE_REFUSALS = {
   full: "That workspace has no free seats. Ask its admin.",
   invite_mismatch: "That invite was sent to a different email address than this Google account.",
   signup_invite: "That invite sets up a new workspace. Use Continue with email for it.",
-  policy: "Read the content policy and terms to join, then try again.",
+  policy: "Confirm you're 18 or older and agree to the Terms to join, then try again.",
   two_step: "This account uses two-step sign-in. Sign in with your email, password and code.",
   limited: "Too many attempts. Try again later.",
 } as const;
