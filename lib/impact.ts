@@ -5,6 +5,7 @@ import { plannedTakeUsd } from "./shotBudgetCost";
 import { DEFAULT_MODEL_ID, getModel } from "./models";
 import { ENGINE_MODEL, type ShotEngine } from "./shotBuilder";
 import { renderKeyNameFor, paidByPlatform, allowanceUsd, platformSpendThisMonth } from "./allowance";
+import { houseCapView } from "./houseCap";
 import { getSetting } from "./settings";
 import { effectiveModels } from "./defaultModels";
 import { creditsApply, creditState } from "./credits";
@@ -277,9 +278,11 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
   }
 
   const ceiling = allowanceUsd();
+  const house = await houseCapView();
   return {
     balance: state ? state.balance : null,
     allowance: ceiling == null ? null : { cap: ceiling, spent: allowanceSpent },
+    houseCap: house ? { cap: house.capUsd, spent: house.spentUsd } : null,
     caps,
     warnPct: Number(warn) || 80,
     rule: cleanRule(rule),

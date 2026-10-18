@@ -54,6 +54,7 @@ test("email proof creates an isolated zero-grant workspace once and preserves pa
       password,
       planId: "agency",
       cadence: "annual",
+      ageConfirmed: true,
     },
     "source-direct",
   );
@@ -158,6 +159,7 @@ test("approved invitation survives provisioning failure and grants welcome credi
     email: "approved@example.test",
     workspace: "Approved studio",
     password,
+    ageConfirmed: true,
   };
   const accepted = await acceptSignupInvitation(input);
   const invalidFolder = path.join(dir, "not-a-directory");
@@ -652,6 +654,7 @@ test("verification token rotation and concurrent verification keep one account a
         email: "proof@example.test",
         workspace: "Proof house",
         password,
+        ageConfirmed: true,
       },
       "proof-source",
     );
