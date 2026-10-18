@@ -200,6 +200,64 @@ test("a stream cut off midway is failed and free: abandoned, never charged, the 
   });
 });
 
+/* Back inside a workspace that inWorkspace already made, to look at what it holds or press again. */
+async function inScopeOf(ws: string, fn: () => Promise<void>) {
+  const { platformDb, rowToWorkspace } = await import("../../lib/platform");
+  const { runInTenant } = await import("../../lib/tenant");
+  const row = rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [ws] })).rows[0]);
+  await runInTenant(row, fn, OWNER);
+}
+
+test("a Cancel or a dropped connection after the route has returned (outside the workspace's scope, as on the server) is still settled free, and the key replays it", async () => {
+  for (const how of ["cancel", "abort"] as const) {
+    const ws = `ws_stream_unscoped_${how}`;
+    const key = `stream-unscoped-${how}`;
+    const gone = new AbortController();
+    let route: Handler = async () => { throw new Error("no route"); };
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    await inWorkspace(ws, async () => {
+      route = enhance(answers(LONG));
+      const response = await route(stream(key, gone.signal));
+      expect(response.status).toBe(200);
+      reader = response.body!.getReader();
+      expect(JSON.parse(new TextDecoder().decode((await reader.read()).value!).split("\n")[0]).t).toBe("A ");
+    });
+    /* The handler has returned and its scope with it: the reader goes from here, where no workspace is in scope. */
+    const { currentTenant } = await import("../../lib/tenant");
+    expect(currentTenant(), how).toBeNull();
+    if (how === "cancel") await reader!.cancel();
+    else gone.abort();
+    await inScopeOf(ws, async () => {
+      /* The claim is ended last, once the job is settled: wait for it, then look. */
+      const { db } = await import("../../lib/db");
+      let claim: Record<string, unknown> | undefined;
+      for (let i = 0; i < 200; i++) {
+        claim = (await db().execute({ sql: "SELECT response_status,response_json FROM generation_requests WHERE request_key=?", args: [key] })).rows[0] as Record<string, unknown> | undefined;
+        if (claim?.response_status != null) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(Number(claim?.response_status), `${how}: the claim is ended`).toBe(499);
+      expect(JSON.parse(String(claim?.response_json)), how).toEqual({ error: "Cancelled. Nothing billed.", nothingBilled: true });
+      const t = await traces(ws);
+      expect(t.jobs.map((j) => j.status), how).toEqual(["failed"]);
+      expect(Number(t.jobs[0].cost_usd), how).toBe(0);
+      /* A reservation row stays as the line's record; what holds credits is its meter line still running. */
+      const { platformDb } = await import("../../lib/platform");
+      const held = await platformDb().execute({ sql: "SELECT m.status FROM generation_reservations r JOIN meter_events m ON m.id=r.id AND m.workspace_id=r.workspace_id WHERE r.workspace_id=? AND m.status='running'", args: [ws] });
+      expect(held.rows, `${how}: nothing is left held`).toHaveLength(0);
+      expect(t.meters.map((m) => m.status), how).toEqual(["failed"]);
+      expect(Number(t.meters[0].billed_credits), how).toBe(0);
+      expect(await balanceOf(ws), how).toBe(1000);
+      /* The same press again: the free ending, never "still being accepted". */
+      const again = await route(stream(key));
+      expect(again.status, how).toBe(499);
+      expect(await again.json(), how).toEqual({ error: "Cancelled. Nothing billed.", nothingBilled: true });
+      expect(await balanceOf(ws), how).toBe(1000);
+    });
+    if (how === "abort") await reader!.cancel().catch(() => {});
+  }
+});
+
 test("a press cancelled before the writer answers is dropped at the provider and never billed", async () => {
   await inWorkspace("ws_stream_cancel", async () => {
     const controller = new AbortController();

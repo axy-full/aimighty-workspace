@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { PaidTextError } from "./paidText";
 
 /**
@@ -13,6 +14,10 @@ import { PaidTextError } from "./paidText";
  *  - over: nothing more happens.
  * A `finish` that fails with a paid-text refusal (answered after the cron's pass returned the hold) is said as nothing billed; any other failure says only that
  * the answer couldn't be delivered, never a claim about the bill it cannot back.
+ *
+ * A Cancel or a dropped connection reaches `cancel()` and the signal's `abort` after the route handler has returned, and its workspace scope with it
+ * (lib/tenant.ts): settling there would find no workspace and the job would stay held until the cron. So everything the stream does runs back inside the
+ * scope it was made in, as lib/zip.ts does.
  */
 export type EnhanceAnswer = { prompt: string; provider: string; writer: string };
 export function enhanceStream(o: {
@@ -28,6 +33,7 @@ export function enhanceStream(o: {
 }): ReadableStream<Uint8Array> {
   const words = o.answer.prompt.match(/\S+\s*/g) ?? [o.answer.prompt];
   const gap = o.gapMs ?? Math.max(6, Math.min(40, Math.floor(1_200 / words.length)));
+  const inScope = AsyncLocalStorage.snapshot();
   const encoder = new TextEncoder();
   const line = (value: unknown) => encoder.encode(`${JSON.stringify(value)}\n`);
   let phase: "words" | "settling" | "over" = "words";
@@ -39,36 +45,38 @@ export function enhanceStream(o: {
     await o.abandon("The stream was cut off before the last word.").catch(() => {});
     await complete(499, { error: "Cancelled. Nothing billed.", nothingBilled: true });
   };
-  const onAbort = () => { void left(); };
+  const onAbort = () => { void inScope(left); };
   o.signal?.addEventListener("abort", onAbort, { once: true });
   if (o.signal?.aborted) onAbort();
   return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (value: unknown) => { try { controller.enqueue(line(value)); return true; } catch { return false; } };
-      try {
-        for (const word of words) {
-          if (phase !== "words") return;
-          if (!send({ t: word })) { await left(); return; }
-          await new Promise((resolve) => setTimeout(resolve, gap));
-        }
-        if (phase !== "words") return;
-        phase = "settling";
+    start(controller) {
+      return inScope(async () => {
+        const send = (value: unknown) => { try { controller.enqueue(line(value)); return true; } catch { return false; } };
         try {
-          await o.finish();
-        } catch (error) {
+          for (const word of words) {
+            if (phase !== "words") return;
+            if (!send({ t: word })) { await left(); return; }
+            await new Promise((resolve) => setTimeout(resolve, gap));
+          }
+          if (phase !== "words") return;
+          phase = "settling";
+          try {
+            await o.finish();
+          } catch (error) {
+            phase = "over";
+            const said = error instanceof PaidTextError ? { error: error.message, nothingBilled: true } : { error: "The answer couldn't be delivered." };
+            await complete(502, said);
+            if (send(said)) controller.close();
+            return;
+          }
           phase = "over";
-          const said = error instanceof PaidTextError ? { error: error.message, nothingBilled: true } : { error: "The answer couldn't be delivered." };
-          await complete(502, said);
-          if (send(said)) controller.close();
-          return;
+          await complete(200, o.answer);
+          if (send({ done: true, ...o.answer })) controller.close();
+        } finally {
+          o.signal?.removeEventListener("abort", onAbort);
         }
-        phase = "over";
-        await complete(200, o.answer);
-        if (send({ done: true, ...o.answer })) controller.close();
-      } finally {
-        o.signal?.removeEventListener("abort", onAbort);
-      }
+      });
     },
-    async cancel() { await left(); },
+    cancel() { return inScope(left); },
   });
 }
