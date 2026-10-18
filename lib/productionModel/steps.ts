@@ -2,11 +2,12 @@ import type { Client, InStatement, Row, Transaction } from "@libsql/client";
 import { db, id as newId, now, ready } from "../db";
 import { columnInstaller } from "../schemaInitialization";
 import { requireTenant } from "../tenant";
-import { filmTypeConfig, filmTypeSteps, STEP_KIND, type FilmTypeStep, type StepSurface } from "./filmTypes";
+import { filmTypeConfig, filmTypeExtras, filmTypeSteps, STEP_KIND, STEP_SURFACES, type FilmTypeStep, type StepSurface } from "./filmTypes";
 import { ProductionModelOffError, productionModelOn } from "./flag";
 
 /**
- * A v30 production's steps, and the frame of each canvas step (docs/plans/v30-data-model.md § 2.1, 2.2; PR A1).
+ * A v30 production's steps, and the frame of each canvas step (docs/plans/v30-data-model.md § 2.1, 2.2, 2.10; PRs A1
+ * and A1b).
  *
  * Where it lives: the workspace's OWN database (lib/db.ts: one database per workspace). How each table is scoped:
  *   - `production_steps`: every row carries `workspace_id`, first in its key and in every index, and every query here
@@ -24,8 +25,14 @@ import { ProductionModelOffError, productionModelOn } from "./flag";
  *   - `production_steps`: one row per step. `page_id` is made once from the step's kind (`shots`, then `shots-2` …),
  *     unique in its production, never reused, and never changed: a trigger refuses any update to it, so a rename or a
  *     reorder cannot move it. A canvas step's frame is its four `frame_*` columns, so there is exactly one frame per
- *     canvas step by construction (CHECKs: a canvas step always has one; a document or table step never does).
+ *     canvas step by construction (CHECKs: a canvas step always has one; a document, table or deck step never does).
+ *     `surface` is one of `STEP_SURFACES`; `deck` (Treatment, owner 19 Oct 2026, Q19) joined in A1b. A table made before
+ *     A1b (a development database only: the switch has never been on anywhere else) is rebuilt once by `ready()` so its
+ *     CHECK accepts `deck`, every row copied as it was.
  * Nothing is erased (rule 13): removing a step stamps `removed_at`/`removed_by`, and restoring clears them.
+ *
+ * A new production gets its film type's opening steps only; `add` also takes a kind from the type's + tile list
+ * (lib/productionModel/filmTypes.ts, `extras`), and nothing outside the two.
  */
 
 export type { StepSurface };
@@ -63,11 +70,14 @@ const ID = /^[A-Za-z0-9_-]{1,100}$/;
 const NOT_HERE = "That project is not in this workspace.";
 const NO_STEP = "That step is not in this workspace.";
 
-export const PRODUCTION_STEPS_SCHEMA: string[] = [
-  `CREATE TABLE IF NOT EXISTS production_steps(
+/* The table's columns, in order: the rebuild below copies exactly these. */
+const STEP_COLUMNS = "workspace_id,id,production_id,page_id,kind,surface,label,position,frame_x,frame_y,frame_w,frame_h,created_by,created_at,updated_at,removed_at,removed_by";
+const SURFACE_LIST = STEP_SURFACES.map((s) => `'${s}'`).join(",");
+
+const stepsTable = (name: string) => `CREATE TABLE IF NOT EXISTS ${name}(
      workspace_id TEXT NOT NULL, id TEXT NOT NULL, production_id TEXT NOT NULL,
      page_id TEXT NOT NULL, kind TEXT NOT NULL,
-     surface TEXT NOT NULL CHECK(surface IN ('document','canvas','table')),
+     surface TEXT NOT NULL CHECK(surface IN (${SURFACE_LIST})),
      label TEXT NOT NULL, position INTEGER NOT NULL,
      frame_x REAL, frame_y REAL, frame_w REAL, frame_h REAL,
      created_by TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
@@ -75,13 +85,35 @@ export const PRODUCTION_STEPS_SCHEMA: string[] = [
      CHECK(surface='canvas' OR (frame_x IS NULL AND frame_y IS NULL AND frame_w IS NULL AND frame_h IS NULL)),
      CHECK(surface<>'canvas' OR (frame_x IS NOT NULL AND frame_y IS NOT NULL AND COALESCE(frame_w,0) > 0 AND COALESCE(frame_h,0) > 0)),
      PRIMARY KEY(workspace_id,id),
-     UNIQUE(workspace_id,production_id,page_id))`,
+     UNIQUE(workspace_id,production_id,page_id))`;
+
+export const PRODUCTION_STEPS_SCHEMA: string[] = [
+  stepsTable("production_steps"),
   `CREATE INDEX IF NOT EXISTS idx_production_steps_order ON production_steps(workspace_id,production_id,position)`,
   `CREATE TRIGGER IF NOT EXISTS production_steps_page_id_fixed BEFORE UPDATE OF workspace_id,production_id,page_id,kind,surface ON production_steps
      WHEN NEW.workspace_id IS NOT OLD.workspace_id OR NEW.production_id IS NOT OLD.production_id OR NEW.page_id IS NOT OLD.page_id
        OR NEW.kind IS NOT OLD.kind OR NEW.surface IS NOT OLD.surface
      BEGIN SELECT RAISE(ABORT,'A step keeps its page id, kind and production'); END`,
 ];
+
+/**
+ * A `production_steps` table made before A1b refuses a `deck` step: `CREATE TABLE IF NOT EXISTS` cannot change a table
+ * that exists, and SQLite cannot change a CHECK in place. Such a table can only be in a development database (the switch
+ * has never been on anywhere else), but if one is found it is rebuilt here, once, the way SQLite documents: the new shape
+ * under another name, every row copied as it was, the old table dropped (its index and trigger with it), the new one
+ * renamed into place, and the index and trigger made again. One write transaction, so a second boot waits and then finds
+ * the new shape. On a database without the table, or with today's shape, this is one catalog read and nothing else.
+ */
+async function rebuildStepsTableIfStale(tx: Pick<Transaction, "execute">): Promise<void> {
+  const row = (await tx.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='production_steps'")).rows[0];
+  if (!row) return;
+  const allowed = String(row.sql ?? "").match(/surface\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(\s*surface\s+IN\s*\(([^)]*)\)/i)?.[1] ?? "";
+  if (STEP_SURFACES.every((surface) => allowed.includes(`'${surface}'`))) return;
+  await tx.execute(stepsTable("production_steps_rebuilt"));
+  await tx.execute(`INSERT INTO production_steps_rebuilt(${STEP_COLUMNS}) SELECT ${STEP_COLUMNS} FROM production_steps`);
+  await tx.execute("DROP TABLE production_steps");
+  await tx.execute("ALTER TABLE production_steps_rebuilt RENAME TO production_steps");
+}
 
 const boots = new WeakMap<Client, Promise<void>>();
 const OTHER_SCOPE = "This store is not for the workspace in scope.";
@@ -93,7 +125,7 @@ function stepOf(row: Row): ProductionStep {
     productionId: String(row.production_id),
     pageId: String(row.page_id),
     kind: String(row.kind),
-    surface: row.surface === "document" || row.surface === "table" ? row.surface : "canvas",
+    surface: (STEP_SURFACES as readonly unknown[]).includes(row.surface) ? (row.surface as StepSurface) : "canvas",
     label: String(row.label),
     position: Number(row.position),
     frame: hasFrame ? { x: Number(row.frame_x), y: Number(row.frame_y), w: Number(row.frame_w), h: Number(row.frame_h) } : null,
@@ -149,7 +181,17 @@ class StepStore {
         const addColumn = await columnInstaller(this.client);
         await addColumn("projects", "film_type TEXT");
         await addColumn("projects", "canvas_store TEXT CHECK(canvas_store IN ('team','v30'))");
-        await this.client.batch(PRODUCTION_STEPS_SCHEMA, "write");
+        const tx = await this.client.transaction("write");
+        try {
+          await rebuildStepsTableIfStale(tx);
+          for (const statement of PRODUCTION_STEPS_SCHEMA) await tx.execute(statement);
+          await tx.commit();
+        } catch (error) {
+          await tx.rollback().catch(() => {});
+          throw error;
+        } finally {
+          tx.close();
+        }
       })().catch((error) => {
         boots.delete(this.client);
         throw error;
@@ -213,8 +255,9 @@ class StepStore {
   }
 
   /**
-   * Give a production its film type's steps, once. A production that already has steps (removed ones included) gets
-   * nothing new and its steps back, so running this twice, or from two windows at once, makes one set.
+   * Give a production its film type's opening steps, once; nothing from the type's + tile list. A production that already
+   * has steps (removed ones included) gets nothing new and its live steps back, so running this twice, or from two windows
+   * at once, makes one set, and a production made from an older list keeps the steps it was made with.
    */
   async ensureSteps(productionId: string, filmType: string, by: string): Promise<ProductionStep[]> {
     this.scoped();
@@ -298,12 +341,16 @@ class StepStore {
     });
   }
 
-  /** Another step of a kind the production's film type has (a second Shots step is `shots-2`), at the end of the rail. */
+  /**
+   * Another step, at the end of the rail: a kind the production's film type opens with (a second Shots step is
+   * `shots-2`), or one its + tile offers (Sound, Edit, Deliver, Treatment where the type has them behind +). A kind on
+   * neither list is refused.
+   */
   async add(productionId: string, kind: string, by: string, label?: string): Promise<ProductionStep> {
     return this.write(async (tx) => {
       const production = await this.production(tx, productionId);
       if (!production.filmType) throw new ProductionStepError("This project has no steps yet.", 409);
-      const step = filmTypeSteps(production.filmType, this.env)?.find((s) => s.kind === kind);
+      const step = [...(filmTypeSteps(production.filmType, this.env) ?? []), ...(filmTypeExtras(production.filmType, this.env) ?? [])].find((s) => s.kind === kind);
       if (!step) throw new ProductionStepError("That step is not one this project's film type has.", 400);
       const all = await this.rows(tx, productionId, true);
       const pageId = nextPageId(kind, all.map((s) => s.pageId));
@@ -316,7 +363,7 @@ class StepStore {
     });
   }
 
-  /** Move or resize a canvas step's frame. A document or table step has none. */
+  /** Move or resize a canvas step's frame. A document, table or deck step has none. */
   async moveFrame(stepId: string, frame: StepFrame): Promise<ProductionStep> {
     const next = cleanFrame(frame);
     return this.write(async (tx) => {
