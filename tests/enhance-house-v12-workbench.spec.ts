@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createClient } from "@libsql/client";
+import { createClient, type Client } from "@libsql/client";
 import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { signInToRedesign } from "./helpers/newInterface";
 
@@ -8,7 +8,8 @@ import { signInToRedesign } from "./helpers/newInterface";
  * button reads ONE total in dollars, "up to $N" (the take's own dollars plus the text model's estimate for the enhancement), with
  * "Pays at cost" on hover; the press approves the enhancement at its quoted ceiling and the take at its own. Local ENGINE_MOCK
  * server; the house workspace row is made for this test (a person is made its owner) and removed after, as the other specs that
- * need the house do, so it never stays behind to be mistaken for the real one. Nothing real is spent.
+ * need the house do, so it never stays behind to be mistaken for the real one; so are the jobs this test ran in it, which would
+ * otherwise count against the house's monthly cap. Nothing real is spent.
  */
 const WORDS = "A paper kite over a grey sea";
 const DESKTOP = ["workbench-1440x900", "workbench-1920x1080"];
@@ -23,10 +24,28 @@ async function withHouse<T>(userId: string, run: () => Promise<T>): Promise<T> {
     await db.execute({ sql: "INSERT INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES('ws_legacy',?,'owner',0,?)", args: [userId, ts] });
     try { return await run(); }
     finally {
-      await db.execute({ sql: "DELETE FROM memberships WHERE workspace_id = 'ws_legacy'", args: [] });
-      await db.execute({ sql: "DELETE FROM workspaces WHERE id = 'ws_legacy'", args: [] });
+      try { await removeHouseJobsOf(db, userId); }
+      finally {
+        await db.execute({ sql: "DELETE FROM memberships WHERE workspace_id = 'ws_legacy'", args: [] });
+        await db.execute({ sql: "DELETE FROM workspaces WHERE id = 'ws_legacy'", args: [] });
+      }
     }
   } finally { db.close(); }
+}
+
+/**
+ * The jobs this test's own person ran in the house (the enhancement's text row and the take's image row), once they have settled,
+ * and their rows keyed by the same job: left behind, they would count against the house's monthly cap in the next spec that reads
+ * it (tests/house-cap-workbench.spec.ts). Only this person's rows in the house, by their ids; nobody else's.
+ */
+async function removeHouseJobsOf(db: Client, userId: string) {
+  const mine = async () => (await db.execute({ sql: "SELECT id, status FROM meter_events WHERE workspace_id = 'ws_legacy' AND created_by = ?", args: [userId] })).rows;
+  await expect.poll(async () => (await mine()).filter((row) => row.status === "running").length, { timeout: 60_000, message: "the house's jobs settle before they are removed" }).toBe(0);
+  const ids = (await mine()).map((row) => String(row.id));
+  if (!ids.length) return;
+  const marks = ids.map(() => "?").join(",");
+  for (const [table, column] of [["meter_credit_receipts", "event_id"], ["billing_debits", "event_id"], ["generation_reservations", "id"], ["recovery_intents", "id"], ["meter_events", "id"]] as const)
+    await db.execute({ sql: `DELETE FROM ${table} WHERE workspace_id = 'ws_legacy' AND ${column} IN (${marks})`, args: ids });
 }
 
 const isEnhanceCall = (r: { url(): string; method(): string; postDataJSON(): unknown }) =>
@@ -74,6 +93,7 @@ test("the house has the Enhance switch, priced at cost: one total in dollars, up
     /* The press: the enhancer at its quoted ceiling, then the take; the figure on the button was both. */
     const enhanceSent = page.waitForRequest(isEnhanceCall);
     const generateSent = page.waitForRequest(isGenerate);
+    const generateAnswered = page.waitForResponse((r) => isGenerate(r.request()));
     await go.click();
     const enhanceBody = (await enhanceSent).postDataJSON() as { maxCredits?: number; prompt?: string };
     expect(enhanceBody.prompt).toBe(WORDS);
@@ -81,6 +101,8 @@ test("the house has the Enhance switch, priced at cost: one total in dollars, up
     const generateBody = (await generateSent).postDataJSON() as { enhanced?: { from: string } | false };
     expect(generateBody.enhanced).toMatchObject({ from: WORDS });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    /* The take is in the house's meter before this test removes it (withHouse). */
+    await generateAnswered;
     /* Back to a credit workspace for the next spec. */
     await page.request.post("/api/workspaces/switch", { data: { id: signed.workspace.id } });
   });
