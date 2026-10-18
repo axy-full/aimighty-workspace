@@ -1330,3 +1330,48 @@ The advisor drafted these answers, and the owner confirmed them as his own, "all
 > Deploy #6 stays the owner's: backup first, then main, then deploy; before it, verify whether RIG_AGENT_ENABLED gates #805's API action and say so.
 >
 > Morning note at 10:30 IST, real PR numbers, nothing invented, "not yet" where not done.
+
+## Owner, 19 Oct 2026, ~00:20 IST: answers to the lead's 00:07 update (with the advisor)
+
+Verbatim, minus the advisor's recommendation marks.
+
+> New questions
+> 1 Enhance: price as it costs, shown before pressing. 1 cr for an ordinary prompt; a long prompt in a heavier script quotes 2 cr. No byte cap on the prompt, no lower reasoning allowance. The final figure comes from the business manager; build the quote path, not the number.
+> 2 #815: yes. If a press's total would pass the workspace cap, refuse at the quote with the pause card; no shot starts.
+> 3 #800: yes, 403 for an Atomik id with no run behind it; the fixture edit is allowed for that purpose only.
+> 4 #765: yes, a second 80% warning after the cap is raised.
+> 5 #765 follow-up: yes, add /api/usage/house-cap to the engine-dollars guard.
+> 6 #700: yes under the standing yes with its money and privacy review; the export_jobs table ships only on the owner's deploy after backup. #811: yes, after #791 and #750 merge, with its own Opus review.
+>
+> #817, Q12–Q26 (these replace your recommendations where they differ)
+> Q12 Keep is a separate mark (kept_at, kept_by), not today's approved. Today's approved is a commit; the commit is Sent. Every reader of "approved" (export, review links, shot locks) follows Sent on output steps and Kept on Look and Elements. Name each reader in its PR.
+> Q13 yes and yes: Send does not need Keep; a card shows both.
+> Q14 only takes sent back, with the reason given.
+> Q15 one card per shot, not one sheet per beat: a beat makes one plate in Storyboard and one in Shots ("from Script · beat 4"). A Storyboard sheet is a make-node output whose panels become frames inside the shot cards.
+> Q16 Sound after Shots in every film type that has Shots and Edit: Ad film, Feature, Short film, Music video, Product video, Microdrama. It is reached from the + tile (Sound · Edit · Deliver) and does not change what a new production shows.
+> Q17 Treatment, on by default: Ad film, Feature, Short film, Music video. Available from the + tile's list, off by default: UGC, Product video, Microdrama, Pre-vis, Trend clip, Social.
+> Q18 fold: Pitch deck is gone from Ad film; its deck is the Treatment step, with the ad film's section library. One deck per production.
+> Q19 neither canvas nor document: a third surface, deck. Content stays in treatments and treatment_versions; the page format is settled by the Polotno spike (one JSON per page). No deck pages as canvas cards.
+> Q20 yes, Pre-vis gets Script opened on the Beats view.
+> Q21 later; unchanged in Phase A.
+> Q22 untouched.
+> Q23 questions are free and write no job; a plan is a Writing job, quoted first.
+> Q24 Script revision: Writing. Deck page: one quoted job per page covering its words and its pictures; nothing built before the spike.
+> Q25 both, each shown with who, with Undo.
+> Q26 once per file; no shot triggers a reading.
+>
+> The ten lists, final for A1b (every Script has the Beats view; Sound, Edit and Deliver sit behind + where they are not opened by default):
+> Ad film: Brief · Script · Treatment · Look · Elements · Storyboard · Shots · + Sound · Edit · Deliver
+> Feature: Brief · Script · Treatment · Look · Elements · Storyboard · Shots · + Sound · Edit · Deliver
+> Short film: Brief · Script · Treatment · Look · Elements · Storyboard · Shots · + Sound · Edit · Deliver
+> Music video: Track · Beat map · Treatment · Look · Elements · Storyboard · Animatic · Shots · + Sound · Edit · Deliver
+> Product video: Brief · Product · Look · Storyboard · Shots · + Sound · Edit · Deliver (Treatment optional)
+> UGC: Brief · Creator · Hook · Script · Shots · Captions · Deliver (Treatment optional)
+> Microdrama: Series bible · Episodes · Elements · Storyboard · Shots · + Sound · Edit · Deliver (Treatment optional)
+> Pre-vis: Brief · Script · Set map · Elements · Storyboard · Animatic · Shots · Handoff (Treatment optional)
+> Trend clip: Source · Format breakdown · Swap-ins · Copy · Shots · Captions · Deliver (Treatment optional)
+> Social: Deliverables · Hook · Copy · Design · Visuals · Captions · Deliver (Treatment optional)
+>
+> Deploy #6 stays the owner's. Keep the draft current with #763's rollback note and the /admin allowance check. The gateway removal is its own small PR after the queue.
+>
+> Morning note at 10:30 IST, real PR numbers, nothing invented.

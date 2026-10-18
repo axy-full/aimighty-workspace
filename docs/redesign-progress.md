@@ -1353,3 +1353,8 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Opus reviews:** #765 (standard + money), #800 (standard + money), #763, #764, #750.
   - **CI:** #765 and #763.
   - **Checked:** #805's action is gated by `RIG_AGENT_ENABLED`; `planRigAgentStep` refuses with 403 when it is off, and it is off in production when unset. Production health reads ok at 62163d7.
+- **18 Oct 23:45 IST.** **Merged #763** (18+ tick; head f55efb70 after the lead's two required fixes; CI 39150366770, 24/24) as 307972d9.
+- **19 Oct 00:11 IST.** **Merged #765** (house cap; head 109fc01a; CI 39149289050 attempt 2, 24/24, after one unrelated header-layout shard failure re-run once) as b77296a2.
+- **Fix rounds approved (verdicts posted):** #815 at b2c84b3f, #808 at 07df845a, the Library-origin fix at 47f8fb4e, and the CLAUDE.md decisions at cbd240b6. #809 at cddf2b39 is approved apart from the money question the owner has now answered.
+- **Unrelated CI failures logged:** release/1 run 39144750399 after #818 (suites-business timeout; the next release/1 run passed) and #765's header shard.
+- **19 Oct ~00:20 IST.** **Owner's answers to the 00:07 update** recorded in redesign-plan.md.
