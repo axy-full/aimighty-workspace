@@ -120,14 +120,16 @@ async function pressClaims(userId: string, pressKey: string): Promise<{ attempts
 /**
  * A take of the press that failed and was charged nothing: refused at its reservation (a cap, a rate limit: nothing was reserved, so it has no meter row), or failed
  * at no cost. Like any failed step that cost nothing it is retried under the same approval (rule 14), as a new attempt. A failed take that was charged anything, or
- * whose charge is not settled, is never retried here: that would be new spend, which asks again.
+ * whose charge is not settled, is never retried here: that would be new spend, which asks again. Free means KNOWN to be free: a meter row whose credits or vendor
+ * cost were never reported (NULL; on a workspace's own key a lost vendor answer leaves the cost unknown, and a retry would spend its own vendor dollars again) is not.
  */
 async function failedFree(id: string): Promise<boolean> {
   const take = (await db().execute({ sql: "SELECT status FROM generations WHERE id=?", args: [id] })).rows[0];
   if (!take || String(take.status) !== "failed") return false;
   await platformReady();
   const meter = (await platformDb().execute({ sql: "SELECT status,billed_credits,engine_cost_usd FROM meter_events WHERE id=? AND workspace_id=?", args: [id, requireTenant().id] })).rows[0];
-  return !meter || (String(meter.status) === "failed" && Number(meter.billed_credits ?? 0) === 0 && Number(meter.engine_cost_usd ?? 0) === 0);
+  const knownZero = (v: unknown) => v != null && Number(v) === 0;
+  return !meter || (String(meter.status) === "failed" && knownZero(meter.billed_credits) && knownZero(meter.engine_cost_usd));
 }
 
 type MemberState = { state: "landed"; id: string } | { state: "pending" } | { state: "open"; next: number };

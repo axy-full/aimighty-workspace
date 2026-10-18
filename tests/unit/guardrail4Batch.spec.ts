@@ -470,3 +470,28 @@ test("a cancel that lands between a shot's cancelled check and its claim is stil
   expect(await as(ws, ADMIN, ledger)).toEqual(after);
 });
 
+test("a failed take is retried free only when it is known to have cost nothing: a vendor cost never reported (a workspace's own key) is not known to be free, and asks again", async () => {
+  const ws = await workspace("failed_unknown", 100_000);
+  const q = await quote(ws, ADMIN, shots(1));
+  /* The take failed, billed no credits, and its vendor never reported what it cost: what a workspace's own key leaves when its vendor's answer is lost. */
+  const fail = (id: string, engineCost: number | null) => as(ws, ADMIN, async () => {
+    const { db } = await import("../../lib/db");
+    const { platformDb } = await import("../../lib/platform");
+    await db().execute({ sql: "UPDATE generations SET status='failed' WHERE id=?", args: [id] });
+    await platformDb().execute({ sql: "UPDATE meter_events SET status='failed', billed_credits=0, engine_cost_usd=? WHERE id=?", args: [engineCost, id] });
+  });
+  const unknown = `press-failed-unknown-${run}`;
+  const one = members(await press(ws, ADMIN, shots(1), approvalOf(q), unknown))[0].id!;
+  await fail(one, null);
+  const again = await press(ws, ADMIN, shots(1), approvalOf(q), unknown);
+  expect(members(again)).toEqual([{ index: 0, id: one, status: "failed" }]);
+  expect((await as(ws, ADMIN, ledger)).takes.map((t) => t.id)).toEqual([one]);
+  /* Known to have cost nothing (its cost reported as zero): retried under the same approval, as a new take. */
+  const known = `press-failed-free-${run}`;
+  const two = members(await press(ws, ADMIN, shots(1), approvalOf(q), known))[0].id!;
+  await fail(two, 0);
+  const retried = await press(ws, ADMIN, shots(1), approvalOf(q), known);
+  expect(members(retried)[0].id).toBeTruthy();
+  expect(members(retried)[0].id).not.toBe(two);
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+});
