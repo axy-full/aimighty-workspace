@@ -61,10 +61,10 @@ test("⌘K opened by a link lists Home, the board's places, Make's types and too
   await expect(palette.getByRole("textbox", { name: "Search" })).toHaveAttribute("placeholder", "Search, or tell Atomik what to do");
   const rows = palette.getByTestId("palette-row");
   await expect(rows.first()).toContainText("Home");
-  for (const label of ["Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver", "Video", "Image", "Audio", "Motion transfer", "Object swap", "Atomik"]) await expect(palette.getByRole("option", { name: new RegExp(label) }).first()).toBeVisible();
+  for (const label of ["Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver", "Make", "Video", "Images", "Audio", "Motion transfer", "Object swap", "Atomik"]) await expect(palette.getByRole("option", { name: new RegExp(label) }).first()).toBeVisible();
   /* Settings' five sections are in the list too, below the fold of the scrolling list. */
   for (const label of ["Team", "Plan & credits", "Spending rules", "Connections", "Advanced"]) await expect(palette.getByRole("option", { name: new RegExp(label) }).first()).toBeAttached();
-  await expect(rows).toHaveCount(21);
+  await expect(rows).toHaveCount(22);
   await noSideways(page);
   await floors(page, "⌘K empty");
   await shot(page, "palette-empty", info);

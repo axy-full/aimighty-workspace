@@ -45,9 +45,10 @@ export const POST = recoveryRoute(async function POST(req: Request) {
       await takeAccountLimit("signup-closed:" + sourceKey(req), 30, 3600_000);
       return inviteOnlyRefusal();
     }
+    /* The one required tick, "I'm 18 or older and agree to the Terms" (lib/ageConfirm.ts): refused here, and again inside beginSignup and acceptSignupInvitation. */
     if (!policyAccepted(body))
       throw new AccountError(
-        "Read the content policy and terms, and tick the box.",
+        "Tick the box to confirm you're 18 or older and agree to the Terms.",
       );
     const input = {
       name: String(body.name ?? ""),
@@ -56,6 +57,7 @@ export const POST = recoveryRoute(async function POST(req: Request) {
       password: String(body.password ?? ""),
       planId: String(body.planId ?? ""),
       cadence: String(body.cadence ?? ""),
+      ageConfirmed: true,
     };
     if (code) {
       const readiness = workspaceCreationReadiness();

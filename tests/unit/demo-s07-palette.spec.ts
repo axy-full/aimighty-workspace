@@ -18,10 +18,11 @@ test("the empty palette lists Home, the board's places, Make's types and tools, 
   const first = searchNewPalette(index, "");
   expect(first.map((r) => `${r.group}:${r.label}`)).toEqual([
     "Home:Home", "Board:Brief", "Board:Looks", "Board:Storyboard", "Board:Shots", "Board:Cast", "Board:Cut", "Board:Deliver", "Board:Ads", "Board:Social",
-    "Make:Video", "Make:Image", "Make:Audio", "Make:Motion transfer", "Make:Object swap", "Atomik:Atomik",
+    "Make:Make", "Make:Video", "Make:Images", "Make:Audio", "Make:Motion transfer", "Make:Object swap", "Atomik:Atomik",
     "Settings:Team", "Settings:Plan & credits", "Settings:Spending rules", "Settings:Connections", "Settings:Advanced",
   ]);
-  expect(first.find((r) => r.label === "Image")?.run).toEqual({ type: "gen", tool: "image" });
+  expect(first.find((r) => r.label === "Images")?.run).toEqual({ type: "gen", tool: "image" });
+  expect(first.find((r) => r.label === "Make")?.run).toEqual({ type: "gen" });
   expect(first.find((r) => r.label === "Atomik")?.hint).toBe("Approvals · Activity · Skills · Memory");
   expect(first[0].hint).toBe("What needs you");
 });

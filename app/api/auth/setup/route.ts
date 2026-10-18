@@ -22,7 +22,8 @@ export const POST = recoveryRoute(async function POST(req: Request) {
   const pwProblem = passwordProblem(password);
   if (pwProblem) return NextResponse.json({ error: pwProblem }, { status: 400 });
 
-  const user = await createFirstAdmin(email, name, password);
+  if (body.accept !== true) return NextResponse.json({ error: "Tick the box to confirm you're 18 or older and agree to the Terms." }, { status: 400 });
+  const user = await createFirstAdmin(email, name, password, true);
   if (!user) return NextResponse.json({ error: "Setup is already complete. Ask for an invitation." }, { status: 403 });
   const token = await createSession(user.id);
   (await cookies()).set(SESSION_COOKIE, token, {
