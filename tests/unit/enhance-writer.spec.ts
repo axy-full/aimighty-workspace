@@ -101,6 +101,42 @@ test("a quick quote is the same quote the run is held at, and stays 1 cr for a t
   }
 });
 
+test("the longest prompt the enhancer takes (ENHANCE_MAX_PROMPT), on the default writer, is quoted at exactly 1 cr in every mode", async () => {
+  const { staticCatalog } = await import("../../lib/catalog");
+  const { quotePaidText } = await import("../../lib/paidText");
+  const { billCredits } = await import("../../lib/creditTerms");
+  const { textModelFor } = await import("../../lib/platformLayer");
+  const { isVerifiedTextModel } = await import("../../lib/atomikModelPolicy");
+  const { DEFAULT_ENHANCER, ENHANCE_MAX_PROMPT, ENHANCE_MAX_TOKENS, ENHANCE_MODES, enhancerMessages, pickEnhancerModel } = await import("../../lib/shell/enhancer");
+  /* The writer the route picks when nothing is chosen or routed (app/api/prompt/enhance/route.ts). */
+  const models = staticCatalog().filter((m) => m.type === "language" && isVerifiedTextModel(m.id));
+  const writer = pickEnhancerModel(DEFAULT_ENHANCER, models.map((m) => m.id), textModelFor(null, "enhance"));
+  expect(writer).toBe("anthropic/claude-opus-5.5");
+  const model = models.find((m) => m.id === writer)!;
+  const longest = `${"a paper kite over a grey sea, slow push in, ".repeat(200).slice(0, ENHANCE_MAX_PROMPT - 1)}.`;
+  expect(longest.length).toBe(ENHANCE_MAX_PROMPT);
+  /* Quoted inside a customer workspace on the platform's keys, where a quote is in credits. */
+  const { platformReady, platformDb, rowToWorkspace } = await import("../../lib/platform");
+  const { runInTenant } = await import("../../lib/tenant");
+  await platformReady();
+  const ws = "ws_writer_longest_prompt";
+  await platformDb().execute({
+    sql: "INSERT INTO workspaces(id,slug,name,db_url,uses_platform_keys,owner_id,created_at,updated_at,concurrency,renders_per_hour) VALUES(?,?,?,?,1,'owner',0,0,20,200)",
+    args: [ws, ws, ws, `file:${path.join(dir, ws + ".db")}`],
+  });
+  const row = rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [ws] })).rows[0]);
+  await runInTenant(row, async () => {
+    for (const mode of ENHANCE_MODES) {
+      /* The longest system text too: anchored, editing, and an engine named. */
+      const messages = enhancerMessages(longest, { mode, anchored: true, editing: true, engine: "Seedance 2.5" });
+      expect(messages[1].content.length, mode).toBe(ENHANCE_MAX_PROMPT);
+      const quote = await quotePaidText({ model: writer!, messages, maxTokens: ENHANCE_MAX_TOKENS, quick: true }, model);
+      expect(quote.estimateCredits, mode).toBe(1);
+      expect(billCredits(quote.estimateUsd!, "text"), mode).toBe(1);
+    }
+  });
+});
+
 test("a failed catalogue read is not asked again for 60 s; a forced read still asks, and a good read clears it", async () => {
   const hits: number[] = [];
   let healthy = false;
