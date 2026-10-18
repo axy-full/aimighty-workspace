@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
+import { loadRouteModule } from "../helpers/vendorCostScan";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -518,6 +519,24 @@ test("a held take (Cinema Studio, band 3) counts at its hold for the house: the 
     const { platformDb: p } = await import("../../lib/platform");
     await p().execute("UPDATE workspaces SET allowance_usd=NULL WHERE id='ws_legacy'");
   }
+});
+
+test("GET /api/usage/house-cap: every workspace but the house reads null, whoever asks; the house reads its cap", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const auth = await import("../../lib/auth");
+  await houseRow();
+  type Handler = (req: Request) => Promise<Response>;
+  const read = async (ws: TenantWorkspace, role: "admin" | "member") => {
+    const user = { id: `u_house_cap_${role}`, email: `${role}@example.test`, name: role, role };
+    const mod = loadRouteModule<{ GET: Handler }>("app/api/usage/house-cap/route.ts", {
+      "@/lib/auth": { ...auth, withTenant: (fn: Handler) => (req: Request) => runInTenant(ws, () => fn(req), { user, workspaces: [{ id: ws.id, slug: ws.slug, name: ws.name, role }] } as never) },
+    });
+    const res = await mod.GET(new Request("https://studio.test/api/usage/house-cap"));
+    return { status: res.status, body: await res.json() };
+  };
+  for (const ws of [customer(), { ...customer(), id: "ws_house_cap_own_keys", usesPlatformKeys: false } as TenantWorkspace])
+    for (const role of ["admin", "member"] as const) expect(await read(ws, role), `${ws.id} ${role}`).toEqual({ status: 200, body: { houseCap: null } });
+  expect(await read(house(), "member")).toMatchObject({ status: 200, body: { houseCap: { capUsd: 500, source: "default" } } });
 });
 
 test("a customer workspace's reservation is untouched: no house cap read, its own allowance still the wall", () => {

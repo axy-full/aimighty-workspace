@@ -253,16 +253,6 @@ for (const route of ROUTES) {
   });
 }
 
-/* The house's own cap is in the engines' dollars: every other workspace, whoever asks, reads null. */
-test("GET /api/usage/house-cap: no workspace but the house reads a figure", async () => {
-  const route = ROUTES.find((r) => r.url === "/api/usage/house-cap")!;
-  for (const ws of [credit, ownKeys]) for (const [role, user] of Object.entries(ACTORS)) {
-    const { status, body } = await callAs(ws, user, route);
-    expect(status, `${ws.slug} ${role}`).toBe(200);
-    expect(body, `${ws.slug} ${role}`).toEqual({ houseCap: null });
-  }
-});
-
 test("a migrated workspace receives no provider amounts or job internals", async () => {
   const leaks: Record<string, Finding[]> = {};
   for (const route of ROUTES) {
