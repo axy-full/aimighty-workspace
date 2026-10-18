@@ -145,7 +145,7 @@ test("the quote: a warning from 80%, a refusal at the cap or for a job that woul
   expect(verdictOf(quote(1), context)).toMatchObject({ allow: true, notice: "" });
 });
 
-test("the reservation: 80% tells the platform owner once a month, 100% stops the job, a refused job writes nothing; the customer allowance never sees it; a mail that hangs holds up no reservation", async () => {
+test("the reservation: 80% tells the platform owner once a month for each cap figure, 100% stops the job, a refused job writes nothing; the customer allowance never sees it; a mail that hangs holds up no reservation", async () => {
   const mail: { to: string[]; subject: string; text: string }[] = [];
   /* While `hang` is set, the stand-in mail server takes a message and never answers (until `answer`), as a slow one would for its 15 s. */
   let hang = false;
@@ -199,7 +199,8 @@ test("the reservation: 80% tells the platform owner once a month, 100% stops the
       /* The cap lowered so this job takes the month past 80% and not past 100%: reserved, and the platform owner is told, once. The mail
          server hangs on that message: the house's reservation returns at once, and another workspace's reservation is not held up behind it. */
       const spent = await houseSpendSince(houseMonthStart());
-      await setHouseCap(Math.round((spent + usd + 0.005) * 1000) / 1000, "acct_house_cap_owner");
+      const lowered = Math.round((spent + usd + 0.005) * 1000) / 1000;
+      await setHouseCap(lowered, "acct_house_cap_owner");
       hang = true;
       const started = Date.now();
       await reserveGenerationSpend({ id: `gen_housecap_b_${tag}`, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd });
@@ -235,21 +236,29 @@ test("the reservation: 80% tells the platform owner once a month, 100% stops the
       expect(await warned()).toBe(1);
       expect(mail).toHaveLength(1);
 
-      /* A cap raised by the owner is read at once by the next reservation. */
+      /* A cap raised by the owner is read at once by the next reservation; well under 80% of the new figure, nobody is told. */
       await setHouseCap(base + 100, "acct_house_cap_owner");
       await job(`gen_housecap_d_${tag}`);
       expect(await meterRows()).toBe(rows + 1);
-      /* Crossing again inside the same month writes no second line and sends no second mail. */
-      expect(await noteHouseSpend(base + 99, base + 100)).toBe(false);
+      expect(await warned()).toBe(1);
+      /* The figure already warned at, crossed again inside the same month: no second line, no second mail. */
+      expect(await noteHouseSpend(lowered, lowered)).toBe(false);
       expect(await warned()).toBe(1);
       expect(mail).toHaveLength(1);
-      /* Next month it speaks again. */
-      expect(await noteHouseSpend(base + 99, base + 100, Date.now() + 40 * 86_400_000)).toBe(true);
+      /* The raised figure is a new one (owner, 19 Oct 2026): crossing its own 80% tells the platform owner again, once. */
+      expect(await noteHouseSpend(base + 99, base + 100)).toBe(true);
       expect(await warned()).toBe(2);
       expect(mail).toHaveLength(2);
+      expect(await noteHouseSpend(base + 99.5, base + 100)).toBe(false);
+      expect(await warned()).toBe(2);
+      expect(mail).toHaveLength(2);
+      /* Next month it speaks again. */
+      expect(await noteHouseSpend(base + 99, base + 100, Date.now() + 40 * 86_400_000)).toBe(true);
+      expect(await warned()).toBe(3);
+      expect(mail).toHaveLength(3);
       /* Under the line it never speaks. */
       expect(await noteHouseSpend(1, 500, Date.now() + 80 * 86_400_000)).toBe(false);
-      expect(mail).toHaveLength(2);
+      expect(mail).toHaveLength(3);
     });
 
     /* A mail server that is down never fails a reserved job. */
@@ -258,6 +267,88 @@ test("the reservation: 80% tells the platform owner once a month, 100% stops the
     expect(calm).toBe(true);
   } finally {
     hung.splice(0).forEach((reply) => reply());
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    delete process.env.RESEND_BASE_URL; delete process.env.RESEND_API_KEY; delete process.env.MAIL_FROM;
+    const { platformDb } = await import("../../lib/platform");
+    await platformDb().execute("UPDATE workspaces SET allowance_usd=NULL WHERE id='ws_legacy'");
+  }
+});
+
+test("a raised or reset cap is a new figure: crossing its 80% warns again (one line, one email), at most once per figure a month, however many cross it together", async () => {
+  const mail: { subject: string }[] = [];
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => { mail.push(JSON.parse(Buffer.concat(chunks).toString())); res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ id: "mail_test" })); });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  process.env.RESEND_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  process.env.RESEND_API_KEY = "test-mail-key";
+  process.env.MAIL_FROM = "Particl <desk@example.test>";
+  try {
+    const { runInTenant } = await import("../../lib/tenant");
+    const { db, ready } = await import("../../lib/db");
+    const { platformDb, platformReady, setHouseCap } = await import("../../lib/platform");
+    const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+    const { cycleBounds } = await import("../../lib/cycle");
+    const { houseNotesSettled, houseSpendSince, houseMonthStart, noteHouseSpend } = await import("../../lib/houseCap");
+    await platformReady();
+    await houseRow();
+    const model = "gemini-3.1-flash-image";
+    /* Synthetic figures throughout. */
+    const usd = 0.04;
+    const tag = `${Date.now().toString(36)}r`;
+    const job = async (id: string) => {
+      await db().execute({ sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at) VALUES(?,'image','google',?,'a still','{}','running',?,?)`, args: [id, model, Date.now(), Date.now()] });
+      try { await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd }); }
+      finally { await houseNotesSettled(); }
+    };
+    /* The lines written in a month at one cap figure. */
+    const linesAt = async (capUsd: number, at = Date.now()) => {
+      const month = cycleBounds(1, at);
+      return Number((await platformDb().execute({
+        sql: "SELECT COUNT(*) AS n FROM platform_audit WHERE action='housecap.warned' AND workspace_id='ws_legacy' AND created_at>=? AND created_at<? AND ABS(json_extract(details,'$.capUsd')-?)<1e-9",
+        args: [month.start, month.end, capUsd] })).rows[0].n);
+    };
+    /* A figure that this month's spend plus one job puts at 90% of it (and odd enough that no other test set it). */
+    const crossedBy = async () => Math.round(((await houseSpendSince(houseMonthStart())) + usd) / 0.9 * 1e6) / 1e6 + 0.000123;
+
+    await runInTenant(house(), async () => {
+      await ready();
+      /* The owner sets a figure; a job crosses 80% of it: one line at that figure, one email. */
+      const first = await crossedBy();
+      await setHouseCap(first, "acct_house_cap_owner");
+      await job(`gen_housecap_raise_a_${tag}`);
+      expect(await linesAt(first)).toBe(1);
+      expect(mail).toHaveLength(1);
+      /* The owner raises it; a job crosses 80% of the new figure in the same month: told again, once. */
+      const raised = await crossedBy();
+      expect(raised).toBeGreaterThan(first);
+      await setHouseCap(raised, "acct_house_cap_owner");
+      await job(`gen_housecap_raise_b_${tag}`);
+      expect(await linesAt(raised)).toBe(1);
+      expect(await linesAt(first)).toBe(1);
+      expect(mail).toHaveLength(2);
+      expect(mail[1].subject).toMatch(/^Particl: \d+% of this month's \$/);
+      /* Jobs crossing a figure together write one line and send one email: the marker is one statement. */
+      const again = raised + 1;
+      const raced = await Promise.all(Array.from({ length: 6 }, () => noteHouseSpend(again * 0.85, again)));
+      expect(raced.filter(Boolean)).toHaveLength(1);
+      expect(await linesAt(again)).toBe(1);
+      expect(mail).toHaveLength(3);
+      /* A figure already warned at this month stays quiet, raced or not. */
+      expect((await Promise.all([noteHouseSpend(raised, raised), noteHouseSpend(first, first)])).filter(Boolean)).toHaveLength(0);
+      expect(mail).toHaveLength(3);
+    });
+    /* A reset to the default is a figure of its own (in a month far from this one, where no line stands in the way). */
+    const later = Date.UTC(2032, 5, 15);
+    expect(await noteHouseSpend(400, 500, later)).toBe(true);
+    expect(await noteHouseSpend(410, 500, later)).toBe(false);
+    expect(await noteHouseSpend(0.9 * 250, 250, later)).toBe(true);
+    expect(await linesAt(500, later)).toBe(1);
+    expect(await linesAt(250, later)).toBe(1);
+    expect(mail).toHaveLength(5);
+  } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     delete process.env.RESEND_BASE_URL; delete process.env.RESEND_API_KEY; delete process.env.MAIL_FROM;
     const { platformDb } = await import("../../lib/platform");

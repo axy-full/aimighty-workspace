@@ -11,7 +11,7 @@
 
 /** What the house may spend on the engines a month until the platform owner sets another figure. */
 export const HOUSE_CAP_DEFAULT_USD = 500;
-/** The share of the cap at which the warning shows and the platform owner is told, once a month. */
+/** The share of the cap at which the warning shows and the platform owner is told, once a month for each figure the cap is set to. */
 export const HOUSE_CAP_WARN_PCT = 80;
 
 export type HouseCapView = {

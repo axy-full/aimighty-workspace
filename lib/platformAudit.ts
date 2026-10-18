@@ -81,8 +81,11 @@ export function inviteRef(code: string): string {
 
 const PARTS = ["setup", "starter", "rules", "caps", "models", "plans"];
 
-/** A once-only line's window: none of the same action and workspace dated from `since` (and before `until`, when given). */
-export type PlatformAuditOnce = { since: number; until?: number };
+/**
+ * A once-only line's window: none of the same action and workspace dated from `since` (and before `until`, when given), and, with
+ * `capUsd`, none carrying that same cap figure (the house's warning: once a month for each figure the cap is set to).
+ */
+export type PlatformAuditOnce = { since: number; until?: number; capUsd?: number };
 
 /**
  * The row as a statement, to ride in the same batch (or transaction) as the change it records. `changedOnly` writes it only when the
@@ -110,13 +113,14 @@ export function platformAuditStatement(input: PlatformAuditInput, changedOnly = 
   const window = typeof once === "number" ? { since: once } : once;
   if (!Number.isFinite(at) || (window && (!Number.isFinite(window.since) || (window.until != null && !Number.isFinite(window.until)))))
     throw new Error("Invalid platform history date");
+  if (window?.capUsd != null && !(Number.isFinite(window.capUsd) && window.capUsd >= 0)) throw new Error("Invalid platform history detail");
   const conditions = [changedOnly ? "changes()>0" : null,
-    window ? `NOT EXISTS (SELECT 1 FROM platform_audit WHERE action=? AND workspace_id IS ? AND created_at>=?${window.until != null ? " AND created_at<?" : ""})` : null].filter(Boolean);
+    window ? `NOT EXISTS (SELECT 1 FROM platform_audit WHERE action=? AND workspace_id IS ? AND created_at>=?${window.until != null ? " AND created_at<?" : ""}${window.capUsd != null ? " AND ABS(json_extract(details,'$.capUsd')-?)<1e-9" : ""})` : null].filter(Boolean);
   return {
     sql: `INSERT INTO platform_audit(id,actor_id,action,target_type,target_id,workspace_id,details,created_at)
       SELECT ?,?,?,?,?,?,?,? ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}`,
     args: [randomUUID(), identifier(input.actorId), input.action, input.targetType, identifier(input.targetId), workspaceId, JSON.stringify(details), at,
-      ...(window ? [input.action, workspaceId, window.since, ...(window.until != null ? [window.until] : [])] : [])],
+      ...(window ? [input.action, workspaceId, window.since, ...(window.until != null ? [window.until] : []), ...(window.capUsd != null ? [window.capUsd] : [])] : [])],
   };
 }
 

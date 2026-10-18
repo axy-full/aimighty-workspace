@@ -64,7 +64,7 @@ export async function houseCapViewFor(stored: unknown, at = Date.now()): Promise
 /**
  * The gate: whether the house may start a job estimated at `estUsd` (a take that holds its ceiling counts at `band` times it).
  * Anything but the house passes. At the cap, a job is refused with 429 and the sentence for the person; a job that would pass it
- * is refused the same way. It also tells the platform owner, once a month, that the warning line has been reached.
+ * is refused the same way. (The reservation tells the platform owner when the warning line is reached: noteHouseSpend.)
  */
 export async function houseCapCheck(estUsd = 0, band = 1): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   const view = await houseCapView();
@@ -76,8 +76,10 @@ export async function houseCapCheck(estUsd = 0, band = 1): Promise<{ ok: true } 
 
 /**
  * A house job was just reserved, bringing the month to `spentUsd` of `capUsd`. At the warning line the platform owner is told, once
- * a month: one platform history line (the marker, written only when none exists for this month, so two jobs crossing together
- * write one) and, when mail is set up, one email to the deployment's owner address. A failed email never fails the job.
+ * a month for each figure the cap is set to: one platform history line (the marker, written only when none exists for this month and
+ * this figure, in one statement, so two jobs crossing together write one) and, when mail is set up, one email to the deployment's owner
+ * address. A cap the platform owner raises (or resets to the default) is a new figure: crossing its own warning line tells them again,
+ * once (owner, 19 Oct 2026: "yes, a second 80% warning after the cap is raised"). A failed email never fails the job.
  *
  * The month is the reservation's, never the clock's when the note runs: `at` is the reservation's own time and `since` the start of
  * the month its spend was summed over (lib/generationRequests.ts), so a note that runs just after midnight on the 1st marks the month
@@ -90,7 +92,7 @@ export async function noteHouseSpend(spentUsd: number, capUsd: number, at = Date
   const month = cycleBounds(1, since);
   const dated = Math.min(Math.max(at, month.start), month.end - 1);
   const audit = platformAuditStatement({ actorId: "system", action: "housecap.warned", targetType: "workspace", targetId: HOUSE_WORKSPACE_ID, workspaceId: HOUSE_WORKSPACE_ID, details: { capUsd, atPct: view.pct } },
-    false, { since: month.start, until: month.end }, dated);
+    false, { since: month.start, until: month.end, capUsd }, dated);
   const wrote = await platformDb().execute(audit);
   if (!wrote.rowsAffected) return false;
   const owner = (process.env.SUPER_ADMIN_EMAIL ?? "").trim().toLowerCase();
