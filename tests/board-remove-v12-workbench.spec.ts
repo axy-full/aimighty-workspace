@@ -26,6 +26,16 @@ test.describe("desktop", () => {
     test.setTimeout(300_000);
     const { project, scope, errors } = await openBoard(page, "/suites?view=board&stage=shots");
     const trashed = await trash(page, scope, project.id);
+    await page.addInitScript(() => {
+      const log = (what: string) => console.log("DBG hook " + what + " " + new Error().stack?.split("\n").slice(2, 6).join(" <- ").slice(0, 600));
+      const L = Location.prototype as unknown as Record<string, (...a: unknown[]) => void>;
+      for (const k of ["assign", "replace", "reload"]) { const o = L[k]; L[k] = function (...a: unknown[]) { log("location." + k); return o.apply(this, a); }; }
+      window.addEventListener("beforeunload", () => log("beforeunload"));
+    });
+    page.on("framenavigated", (f) => console.log("DBG nav " + f.url().slice(-80)));
+    page.on("load", () => console.log("DBG load"));
+    page.on("pageerror", (e) => console.log("DBG pageerror " + e.message.slice(0, 300)));
+    page.on("console", (m) => { if (m.type() === "error" || /DBG|Error|error boundary|Cannot/i.test(m.text())) console.log("DBG console[" + m.type() + "] " + m.text().slice(0, 400)); });
     const cards = page.locator('.bd-node[data-removable="true"]');
     await expect(cards.first()).toBeVisible({ timeout: 90_000 });
     const count = await cards.count();
@@ -138,6 +148,50 @@ test.describe("desktop", () => {
     await page.getByTestId("toast").hover();
     await expect.poll(async () => (await trashed()).map((i) => i.kind), { timeout: 30_000 }).toEqual(["frame"]);
     await page.getByTestId("toast-undo").click();
+    await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(0);
+    expect(errors).toEqual([]);
+  });
+
+  test("a removal the Trash cannot record changes nothing and says why; an Undo whose record cannot be claimed changes nothing either", async ({ page }) => {
+    test.setTimeout(300_000);
+    const { project, scope, errors } = await openBoard(page, "/suites?view=board&stage=shots");
+    const trashed = await trash(page, scope, project.id);
+    const cards = page.locator('.bd-node[data-removable="true"]');
+    await expect(cards.first()).toBeVisible({ timeout: 90_000 });
+    const id = (await cards.first().getAttribute("data-card-id"))!;
+    const card = page.locator(`.bd-node[data-card-id="${id}"]`);
+    const toast = page.getByTestId("toast");
+    const record = "**/api/boards/*/trash";
+    /* Recorded first: the Trash is full, the item is too large, the connection drops: the card stays and the reason is said, never "Removed". */
+    for (const [label, fulfil, said] of [
+      ["the cap", { status: 409, json: { error: "Your Trash for this board already holds 500 items, the most it keeps at once. Put something back first." } }, /500 items/],
+      ["too large", { status: 413, json: { error: "That is too large to keep in the Trash in one piece." } }, /too large/],
+      ["offline", null, /connection dropped/],
+    ] as const) {
+      await page.route(record, (route) => (route.request().method() === "POST" ? (fulfil ? route.fulfill(fulfil) : route.abort()) : route.fallback()));
+      await card.click();
+      await page.keyboard.press("Delete");
+      await expect(toast, label).toContainText(said);
+      await expect(toast, label).not.toContainText("Removed");
+      await expect(card, label).toHaveCount(1);
+      expect(await trashed(), label).toEqual([]);
+      await page.unroute(record);
+      await page.keyboard.press("Escape");
+    }
+    /* An Undo whose record cannot be claimed leaves the board and the record as they were; once it can, ⌘Z does it. */
+    await card.click();
+    await page.keyboard.press("Delete");
+    await expect(card).toHaveCount(0);
+    await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(1);
+    await page.getByTestId("toast").hover();
+    await page.route("**/api/boards/*/trash/*/restore", (route) => route.fulfill({ status: 409, json: { error: "Already restored." } }));
+    await page.getByTestId("toast-undo").click();
+    await expect(toast).toContainText("Could not undo");
+    await expect(card).toHaveCount(0);
+    expect((await trashed()).length).toBe(1);
+    await page.unroute("**/api/boards/*/trash/*/restore");
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(card).toHaveCount(1);
     await expect.poll(async () => (await trashed()).length, { timeout: 30_000 }).toBe(0);
     expect(errors).toEqual([]);
   });

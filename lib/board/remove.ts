@@ -78,6 +78,18 @@ function restoreDrawing(project: Project, drawing: Drawing): Project {
 }
 
 export type TrashRecord = { kind: TrashKindOfCard | "take"; itemId: string; label: string; payload: unknown };
+/**
+ * What the Trash keeps of one removal: ONE record for the whole step (the selection is one step, recorded and claimed back all or nothing). One item is recorded as
+ * its own kind (a note, a look, a frame...), several as a "card" holding them all; `payload.items` is every item, whole, with the links other cards had to it.
+ */
+export function trashEntryOf(plan: Pick<RemovalPlan, "records">, id: string): TrashRecord | null {
+  if (!plan.records.length) return null;
+  const [first] = plan.records;
+  return plan.records.length === 1
+    ? { kind: first.kind, itemId: id, label: first.label, payload: { items: plan.records } }
+    : { kind: "card", itemId: id, label: `${plan.records.length} cards`, payload: { items: plan.records } };
+}
+
 export type RemovalPlan = {
   /** The draft after the nodes are removed (one edit); the same draft when there are none. */
   project: Project;
@@ -152,7 +164,9 @@ export function restoreRemoved(project: Project, plan: Pick<RemovalPlan, "remove
 
 /** Puts one Trash record's node back, with the links other cards had to it, onto a draft (the Trash's restore, on the browser's side). */
 export function restoreRecord(project: Project, payload: unknown): Project {
-  const p = payload as { node?: CanvasNode; links?: { nodeId: string; linked: string[] }[]; drawing?: Drawing } | null;
+  const p = payload as { node?: CanvasNode; links?: { nodeId: string; linked: string[] }[]; drawing?: Drawing; items?: { payload: unknown }[] } | null;
+  /* A whole removal (trashEntryOf): each item back, in the order they were taken. */
+  if (p?.items) return p.items.reduce((acc, item) => restoreRecord(acc, item.payload), project);
   if (p?.drawing) return restoreDrawing(project, p.drawing);
   if (!p || !p.node || !p.node.id) return project;
   return restoreShots(project, { removed: [p.node], links: Array.isArray(p.links) ? p.links : [] });

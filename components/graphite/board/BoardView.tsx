@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { ReactFlowProvider, useReactFlow, useStoreApi, type Viewport } from "@xyflow/react";
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { planRemoval, restoreRemoved, RigBuildError } from "@/lib/board/remove";
+import { planRemoval, restoreRemoved, RigBuildError, trashEntryOf } from "@/lib/board/remove";
 import { recordToTrash, restoreFromTrash } from "./board-trash";
 import { SHARE_TEAM, viewOnlyLine } from "@/lib/workbench/view-only";
 import { markBoardOpen } from "@/lib/board/active";
@@ -435,50 +435,51 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
      selection (lib/board/remove.ts), so removing a mix of shots and free cards never brings one back; the draft's edit is refused in its own words (view-only,
      a switch in progress), never claimed; a locked card says so. Everything removed goes to the board's Trash (lib/boardTrash.ts) and ⌘Z puts it back. */
   const fetcher = useScopedFetch(scope);
-  const removeFrom = useCallback(async (cards: readonly BoardCard[]) => {
+  const removeFrom = useCallback(async (cards: readonly BoardCard[], reselect?: () => void) => {
+    /* The selection was cleared when the key was pressed (the shell's own ⌫ must not also remove what is selected); when nothing is removed it comes back. */
+    const stop = (text: string) => { reselect?.(); ws.toast(text); };
     const current = rig.project;
     if (!current || !cards.length) return;
-    if (offline) { ws.toast("Needs a connection to remove a card."); return; }
-    if (gate.readOnly) { ws.toast(gate.readOnly); return; }
+    if (offline) { stop("Needs a connection to remove a card."); return; }
+    if (gate.readOnly) { stop(gate.readOnly); return; }
     let plan: ReturnType<typeof planRemoval>;
-    try { plan = planRemoval(current, cards); } catch (error) { if (error instanceof RigBuildError) { ws.toast(error.message); return; } throw error; }
+    try { plan = planRemoval(current, cards); } catch (error) { if (error instanceof RigBuildError) { stop(error.message); return; } throw error; }
     const why = plan.refused[0]?.why;
-    if (!plan.removed && !plan.drawings.length) { ws.toast(why ?? "Nothing there can be removed."); return; }
-    /* The draft's own edit first, refused in its own words (view-only, a switch in progress) and never claimed. */
-    if (plan.removed || plan.drawings.length) {
-      const refusal = rig.apply(() => plan.project);
-      if (refusal) { ws.toast(refusal); return; }
-    }
-    pick(new Set(), null);
+    const changes = Boolean(plan.removed || plan.drawings.length);
+    if (!changes) { stop(why ?? "Nothing there can be removed."); return; }
+    /* The Trash first: the step is recorded whole, and only when it is is the draft changed. If the record cannot be made (the Trash is full, the item is too large,
+       the board has no Trash yet, the connection dropped), nothing changes and the reason is shown: nothing leaves the board without a record to put it back from. */
     const board = current.productionProjectId ?? null;
-    const removed = plan.removed;
-    const entries: string[] = [];
-    const problems: string[] = [];
-    /* What leaves the draft is recorded whole in the Trash, in the background (the draft's edit has already happened). */
-    const recordedNodes = (async () => {
-      if (!plan.records.length) return;
-      if (!board) { problems.push("This board has no Trash yet."); return; }
-      for (const result of await Promise.all(plan.records.map((record) => recordToTrash(fetcher, board, record)))) {
-        if ("entry" in result) entries.push(result.entry); else problems.push(result.error);
-      }
-    })();
-    const nodeCount = (removed?.removed.length ?? 0) - plan.alsoGone.length;
+    const record = trashEntryOf(plan, uid("removal"));
+    if (!board || !record) { stop("This board is still being set up, so nothing can be removed from it yet. Try again in a moment."); return; }
+    const saved = await recordToTrash(fetcher, board, record);
+    if ("error" in saved) { stop(saved.error); return; }
+    let entry = saved.entry;
+    /* The draft's own edit, refused in its own words (view-only, a workspace switch) and never claimed; the record just made is given back. */
+    const refusal = rig.apply(() => plan.project);
+    if (refusal) { void restoreFromTrash(fetcher, board, entry); stop(refusal); return; }
+    const nodeCount = (plan.removed?.removed.length ?? 0) - plan.alsoGone.length;
     const count = nodeCount + plan.drawings.length;
-    if (!count) { ws.toast(problems[0] ?? why ?? "Nothing there could be removed."); return; }
     const name = cards.length === 1 ? (cards[0].data as { title?: string; name?: string } | null)?.title || (cards[0].data as { name?: string } | null)?.name : null;
     const what = name && count === 1 ? `“${name.slice(0, 40)}”` : count === 1 ? "1 card" : `${count} cards`;
-    const note = problems[0] ?? why ?? null;
     undoable(`${what} is back`, async () => {
-      await recordedNodes;
-      const refusal = rig.apply((p) => restoreRemoved(p, plan));
-      if (refusal) { ws.toast(refusal); return; }
-      await Promise.all(entries.map((entry) => (board ? restoreFromTrash(fetcher, board, entry) : false)));
-    }, withUndoHint(`Removed ${what}${note ? ` · ${note}` : ""}`));
-    void recordedNodes.then(() => { if (problems.length && !note) ws.toast(`${problems[0]} ⌘Z still brings it back.`); });
+      /* The record is claimed first, and the cards come back only if it was: a record can never put things back twice. */
+      if (!(await restoreFromTrash(fetcher, board, entry))) throw new Error("its Trash record could not be claimed, so nothing was changed. Try again.");
+      const back = rig.apply((p) => restoreRemoved(p, plan));
+      if (back) {
+        /* Claimed but not put back (view-only now, a workspace switch): the record is made again, so the Trash still holds it. */
+        const again = await recordToTrash(fetcher, board, record);
+        if ("entry" in again) entry = again.entry;
+        throw new Error(back);
+      }
+    }, withUndoHint(`Removed ${what}${why ? ` · ${why}` : ""}`));
   }, [fetcher, gate.readOnly, offline, pick, rig, undoable, ws]);
   const remove = useCallback(() => {
-    void removeFrom([...selection.ids].map((id) => placed.byId.get(id)).filter((card): card is BoardCard => Boolean(card)));
-  }, [placed.byId, removeFrom, selection.ids]);
+    const had = selection.ids, primary = selection.primary;
+    const cards = [...had].map((id) => placed.byId.get(id)).filter((card): card is BoardCard => Boolean(card));
+    pick(new Set(), null);
+    void removeFrom(cards, () => pick(had, primary));
+  }, [pick, placed.byId, removeFrom, selection.ids, selection.primary]);
   /* The Rig removes by node: a shot or an input, planned like any card. */
   const [rigPicked, setRigPicked] = useState<string[]>([]);
   const removeNodes = useCallback((nodeIds: readonly string[]) => {

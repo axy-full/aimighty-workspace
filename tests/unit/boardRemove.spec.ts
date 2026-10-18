@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { isRemovable, planRemoval, restoreRecord, restoreRemoved, whyNotRemovable } from "../../lib/board/remove";
+import { isRemovable, planRemoval, restoreRecord, restoreRemoved, trashEntryOf, whyNotRemovable } from "../../lib/board/remove";
 import { newProject, type CanvasNode, type Project } from "../../lib/workbench/studio";
 import type { BoardCard } from "../../lib/board/types";
 
@@ -91,4 +91,19 @@ test("a locked card refuses the removal in its own words and nothing leaves; a c
   const gone = planRemoval(draft(nodes), [card("ghost", "note", "ghost")]);
   expect(gone.removed).toBeNull();
   expect(gone.refused).toEqual([{ id: "ghost", why: "That card is already gone." }]);
+});
+
+test("a whole removal is ONE Trash record (all or nothing to record and to claim back), holding every item whole; it restores in the order taken", () => {
+  const nodes = [node("a", "scene", { linked: ["inA"] }), node("inA", "media"), node("n", "note"), node("viewer", "scene", { linked: ["n"] })];
+  const one = planRemoval(draft(nodes), [card("n", "note", "n")]);
+  expect(trashEntryOf(one, "removal_1")).toMatchObject({ kind: "note", itemId: "removal_1", label: "Card n" });
+  const many = planRemoval(draft(nodes), [card("a", "take", "a"), card("n", "note", "n")]);
+  const entry = trashEntryOf(many, "removal_2")!;
+  expect(entry).toMatchObject({ kind: "card", itemId: "removal_2", label: "3 cards" });
+  expect((entry.payload as { items: unknown[] }).items).toHaveLength(3);
+  expect(trashEntryOf(planRemoval(draft(nodes), []), "removal_3")).toBeNull();
+  /* The whole record restores every node, with the links other cards had. */
+  const back = restoreRecord(many.project, entry.payload);
+  expect(back.nodes.map((n) => n.id).sort()).toEqual(["a", "inA", "n", "viewer"]);
+  expect(back.nodes.find((n) => n.id === "viewer")!.linked).toEqual(["n"]);
 });

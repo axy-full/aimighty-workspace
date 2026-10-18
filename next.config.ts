@@ -59,6 +59,7 @@ const headers = [
 ];
 
 const nextConfig: NextConfig = {
+  onDemandEntries: { maxInactiveAge: 3_600_000, pagesBufferLength: 200 },
   // Self-hosted Docker image only (ops/selfhost/Dockerfile sets NEXT_OUTPUT=standalone).
   // Unset on Vercel, so Vercel builds are unchanged.
   ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
