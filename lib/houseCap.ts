@@ -78,12 +78,19 @@ export async function houseCapCheck(estUsd = 0, band = 1): Promise<{ ok: true } 
  * A house job was just reserved, bringing the month to `spentUsd` of `capUsd`. At the warning line the platform owner is told, once
  * a month: one platform history line (the marker, written only when none exists for this month, so two jobs crossing together
  * write one) and, when mail is set up, one email to the deployment's owner address. A failed email never fails the job.
+ *
+ * The month is the reservation's, never the clock's when the note runs: `at` is the reservation's own time and `since` the start of
+ * the month its spend was summed over (lib/generationRequests.ts), so a note that runs just after midnight on the 1st marks the month
+ * the spend belongs to, and the line is dated inside it.
  */
-export async function noteHouseSpend(spentUsd: number, capUsd: number, at = Date.now()): Promise<boolean> {
+export async function noteHouseSpend(spentUsd: number, capUsd: number, at = Date.now(), since = houseMonthStart(at)): Promise<boolean> {
   const view = houseCapState(capUsd, spentUsd);
   if (!view.warn) return false;
   await platformReady();
-  const audit = platformAuditStatement({ actorId: "system", action: "housecap.warned", targetType: "workspace", targetId: HOUSE_WORKSPACE_ID, workspaceId: HOUSE_WORKSPACE_ID, details: { capUsd, atPct: view.pct } }, false, houseMonthStart(at));
+  const month = cycleBounds(1, since);
+  const dated = Math.min(Math.max(at, month.start), month.end - 1);
+  const audit = platformAuditStatement({ actorId: "system", action: "housecap.warned", targetType: "workspace", targetId: HOUSE_WORKSPACE_ID, workspaceId: HOUSE_WORKSPACE_ID, details: { capUsd, atPct: view.pct } },
+    false, { since: month.start, until: month.end }, dated);
   const wrote = await platformDb().execute(audit);
   if (!wrote.rowsAffected) return false;
   const owner = (process.env.SUPER_ADMIN_EMAIL ?? "").trim().toLowerCase();
@@ -102,9 +109,9 @@ const notesUnderway = new Set<Promise<unknown>>();
  * `after`; outside one (a script, a test, background work) it simply runs on its own. A failure is logged, never thrown: the job is
  * already reserved and stays so.
  */
-export function noteHouseSpendLater(spentUsd: number, capUsd: number): void {
+export function noteHouseSpendLater(spentUsd: number, capUsd: number, at = Date.now(), since = houseMonthStart(at)): void {
   const run = async (): Promise<void> => {
-    const note = noteHouseSpend(spentUsd, capUsd).catch((error) => {
+    const note = noteHouseSpend(spentUsd, capUsd, at, since).catch((error) => {
       console.error(JSON.stringify({ level: "error", event: "house_cap.warn_failed", message: error instanceof Error ? error.message : "unknown" }));
       return false;
     });

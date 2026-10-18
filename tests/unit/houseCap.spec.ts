@@ -265,6 +265,60 @@ test("the reservation: 80% tells the platform owner once a month, 100% stops the
   }
 });
 
+test("the month is the reservation's: a note that runs just after midnight on the 1st marks the month the spend belongs to, and the new month still speaks", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { platformDb, platformReady, setHouseCap } = await import("../../lib/platform");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { houseNotesSettled, houseSpendSince, houseMonthStart, noteHouseSpend } = await import("../../lib/houseCap");
+  const { meter } = await import("../../lib/meter");
+  await platformReady();
+  await houseRow();
+  /* Months far from today's, so no line already written stands in the way: the last moments of a January, then the first of February. */
+  const [jan, feb, mar, apr, may] = [0, 1, 2, 3, 4].map((m) => Date.UTC(2031, m, 1));
+  const lines = async (from: number, to: number) => Number((await platformDb().execute({
+    sql: "SELECT COUNT(*) AS n FROM platform_audit WHERE action='housecap.warned' AND workspace_id='ws_legacy' AND created_at>=? AND created_at<?", args: [from, to] })).rows[0].n);
+  const model = "gemini-3.1-flash-image";
+  /* Synthetic figures: a $0.04 job against a $0.045 cap is 88% of it. */
+  const usd = 0.04;
+  const cap = 0.045;
+  const id = `gen_housecap_midnight_${Date.now().toString(36)}`;
+  const before = await houseSpendSince(houseMonthStart());
+  const clock = Date.now;
+  try {
+    await runInTenant(house(), async () => {
+      await ready();
+      await setHouseCap(cap, "acct_house_cap_owner");
+      await db().execute({ sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at) VALUES(?,'image','google',?,'a still','{}','running',?,?)`, args: [id, model, feb - 100, feb - 100] });
+      /* The reservation reads the clock in its last moments of January (its month and its own time); everything after it, the note
+         included, reads it after midnight on the 1st, as a note sent off past the turn (or past the response) can. */
+      const reservation = /reserveGenerationSpendLocked|billingTransaction/;
+      Date.now = () => (reservation.test(new Error().stack ?? "") ? feb - 100 : feb + 100);
+      await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd });
+      await houseNotesSettled();
+      Date.now = clock;
+      expect(Number((await platformDb().execute({ sql: "SELECT created_at FROM meter_events WHERE id=?", args: [id] })).rows[0].created_at)).toBe(feb - 100);
+      expect(await lines(jan, feb)).toBe(1);
+      expect(await lines(feb, mar)).toBe(0);
+      /* February's own crossing still speaks, once. */
+      expect(await noteHouseSpend(usd, cap, feb + 100)).toBe(true);
+      expect(await noteHouseSpend(usd, cap, feb + 200)).toBe(false);
+      expect(await lines(feb, mar)).toBe(1);
+      expect(await lines(jan, feb)).toBe(1);
+      /* Given the month its spend was summed over, a note that runs in the next one marks that month, dated inside it. */
+      expect(await noteHouseSpend(usd, cap, apr + 5, mar)).toBe(true);
+      expect(await lines(mar, apr)).toBe(1);
+      expect(await lines(apr, may)).toBe(0);
+      /* The job ends with nothing charged, so this month's figure for the files after this one is as it was. */
+      await meter({ id, kind: "image", engine: "google", model, status: "failed", engineCostUsd: 0 });
+    });
+  } finally {
+    Date.now = clock;
+    await platformDb().execute("UPDATE workspaces SET allowance_usd=NULL WHERE id='ws_legacy'");
+  }
+  expect(await houseSpendSince(houseMonthStart())).toBeCloseTo(before, 6);
+});
+
 test("a held take (Cinema Studio, band 3) counts at its hold for the house: the cap is checked at cost x band, the row records the band, concurrent holds near the cap admit one, settlement gives the room back", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");

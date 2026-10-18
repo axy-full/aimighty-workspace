@@ -450,11 +450,14 @@ export async function reserveGenerationSpend(event: MeterEvent, options: Reserva
   /* The house's month has reached the warning line: the platform owner hears once a month. Told after the turn is let go, never awaited
      here, so a slow mail server holds up no reservation (this workspace's or any other's) and never fails the job already reserved. */
   const house = await result;
-  if (house) noteHouseSpendLater(house.spentUsd, house.capUsd);
+  if (house) noteHouseSpendLater(house.spentUsd, house.capUsd, house.at, house.since);
 }
 
+/** Where the house's month stands once its job is reserved: the spend and cap, the reservation's own time, and the start of the month its spend was summed over. */
+type HouseReserved = { spentUsd: number; capUsd: number; at: number; since: number };
+
 /** Reserves the job; for the house, where its month then stands (the warning is the caller's to send, after the turn). */
-async function reserveGenerationSpendLocked(event: MeterEvent, options: ReservationOptions = {}): Promise<{ spentUsd: number; capUsd: number } | null> {
+async function reserveGenerationSpendLocked(event: MeterEvent, options: ReservationOptions = {}): Promise<HouseReserved | null> {
   const ws = requireTenant();
   const projectId = event.projectId ?? options.projectId ?? null;
   const cost = Number(event.engineCostUsd);
@@ -511,7 +514,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const stopped = options.run ? await options.run.live?.() : null;
   if (stopped) throw new SpendReservationError(stopped, 409, true);
   /* Set inside the write when the house's job is reserved: where its month then stands (the warning is sent after the write commits and the turn is let go). */
-  const houseReserved: { at: { spentUsd: number; capUsd: number } | null } = { at: null };
+  const houseReserved: { at: HouseReserved | null } = { at: null };
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
     const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at,allowance_usd FROM workspaces WHERE id=?`, args: [ws.id] });
@@ -589,7 +592,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       const houseSpent = existing.rows.filter((r) => Number(r.created_at) >= since).reduce((sum, r) => sum + houseSpendOfRow(r), 0);
       const needs = cost * (houseHeld ? keptBand : 1);
       if (houseSpent + needs > houseCapNow + 1e-9) throw new SpendReservationError(HOUSE_CAP_REACHED, 429);
-      houseReserved.at = { spentUsd: houseSpent + needs, capUsd: houseCapNow };
+      houseReserved.at = { spentUsd: houseSpent + needs, capUsd: houseCapNow, at: ts, since };
     }
     if (capNow != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost * band > capNow + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
