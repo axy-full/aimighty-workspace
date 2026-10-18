@@ -181,6 +181,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/usage", file: "app/api/usage/route.ts", url: "/api/usage" },
   { name: "GET /api/usage?rows=1", file: "app/api/usage/route.ts", url: "/api/usage?rows=1" },
   { name: "GET /api/usage/summary", file: "app/api/usage/summary/route.ts", url: "/api/usage/summary", ownKeys: true },
+  { name: "GET /api/usage/house-cap", file: "app/api/usage/house-cap/route.ts", url: "/api/usage/house-cap" },
   /* `capUsd` is the ceiling the customer typed for their own token, in the dollars they pay, not a vendor figure. */
   { name: "GET /api/tokens", file: "app/api/tokens/route.ts", url: "/api/tokens", allow: { allowKeys: ["capUsd"] } },
   { name: "GET /api/workspaces/keys", file: "app/api/workspaces/keys/route.ts", url: "/api/workspaces/keys" },
@@ -251,6 +252,16 @@ for (const route of ROUTES) {
     expect(leaks).toEqual({});
   });
 }
+
+/* The house's own cap is in the engines' dollars: every other workspace, whoever asks, reads null. */
+test("GET /api/usage/house-cap: no workspace but the house reads a figure", async () => {
+  const route = ROUTES.find((r) => r.url === "/api/usage/house-cap")!;
+  for (const ws of [credit, ownKeys]) for (const [role, user] of Object.entries(ACTORS)) {
+    const { status, body } = await callAs(ws, user, route);
+    expect(status, `${ws.slug} ${role}`).toBe(200);
+    expect(body, `${ws.slug} ${role}`).toEqual({ houseCap: null });
+  }
+});
 
 test("a migrated workspace receives no provider amounts or job internals", async () => {
   const leaks: Record<string, Finding[]> = {};
