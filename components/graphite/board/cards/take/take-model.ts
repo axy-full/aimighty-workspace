@@ -117,6 +117,13 @@ export function engineLine(g: Pick<Generation, "model" | "kind" | "params" | "du
   return [engineName(g.model, g.kind), resolution, g.kind === "video" || g.kind === "audio" ? (length != null && length > 0 ? seconds(length) : "") : ""].filter(Boolean).join(" · ");
 }
 
+/** "1080p", "4K": the size a take was asked for (owner, 16 Oct 2026, § D: the resolution is on every card's line), or "" when it has none. */
+export function takeResolution(v: Pick<ShotVersion, "entry">): string {
+  const g = v.entry.asset.origin === "generation" ? v.entry.asset.value : null;
+  const size = g ? str(g.params?.resolution) : "";
+  return /^\d+p$/i.test(size) ? size.toLowerCase() : /^4k$/i.test(size) ? "4K" : size;
+}
+
 /** The generation ids a take's request cited (params.references, as admission stores them). */
 export function referencedTakes(params: Record<string, unknown> | null | undefined): string[] {
   const refs = params?.references;

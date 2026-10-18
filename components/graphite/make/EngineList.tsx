@@ -1,7 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL } from "@/lib/shell/enhancer";
-import { exact } from "@/lib/shell/price-words";
+import { exact, priceWords } from "@/lib/shell/price-words";
+import { resolutionPick, resolutionView, sizeLabel, type ResolutionChip } from "@/lib/shell/resolution-control";
+import { useResolutionOptions } from "./use-resolutions";
 import { cinemaPriceWords } from "@/lib/cinemaHold";
 import { spendAttrsOf } from "@/lib/spend";
 import { CINEMA_BANK } from "@/lib/workspace/cinema-vocabulary";
@@ -27,6 +29,7 @@ export function EngineList({ make, id, scope }: { make: MakeModel; id: string; s
   const advancedNotes = [
     !settings.draft && state.count > 1 ? `${state.count} takes` : null,
     settings.draft ? "Draft" : null,
+    make.upscale ? "4K upscaled" : null,
     settings.generateAudio ? "With sound" : null,
     enhancer.auto ? "Auto enhance" : null,
     make.soundTask === "music" && state.instrumental ? "Instrumental" : null,
@@ -107,6 +110,64 @@ const MUSIC_LENGTHS = [15, 30, 60];
 /** What Sound can be: a voice, music, or effects, each the offered engine that does it. */
 const SOUND_KINDS = [{ task: "speech", label: "Voice" }, { task: "music", label: "Music" }, { task: "sound", label: "Effects" }] as const;
 const TAKE_CHOICES = [1, 2, 3, 4];
+
+/** A size chip: the size is its name, the price is read after it (so "480p" is the button a person, or a test, asks for). */
+function SizeChip({ chip, label, onPick, testId }: { chip: ResolutionChip; label: string; onPick: (id: string) => void; testId: string }) {
+  const priceId = useId();
+  if (chip.off) {
+    /* Not a button: nothing to press. Greyed, and it says why. */
+    return <span className="gx-chip gx-mk-res-off" aria-disabled="true" data-testid={`${testId}-off`} data-size={chip.id}>{label}<span className="gx-mk-res-why"> · {chip.reason}</span></span>;
+  }
+  return (
+    <button type="button" className="gx-chip" aria-pressed={chip.pressed} disabled={!chip.enabled} title={chip.enabled ? undefined : chip.reason ?? undefined}
+      aria-describedby={chip.price ? priceId : undefined} onClick={() => onPick(chip.id)} data-testid={testId} data-size={chip.id}>
+      {chip.pressed ? "✓ " : ""}{label}
+      {chip.price ? <span aria-hidden="true"> · <Price value={chip.price} /></span> : null}
+      {chip.price ? <span id={priceId} hidden>{priceWords(chip.price)}</span> : null}
+      {chip.untested ? <span className="gx-mk-res-why" aria-hidden="true"> · untested</span> : null}
+    </button>
+  );
+}
+
+/**
+ * Resolution, beside Aspect and Length (owner, 16 Oct 2026, § D): the engine's own sizes from the server, each priced by the quote engine; the
+ * sizes it cannot do greyed, "not on this engine"; Draft (480p) and Final (1080p) as presets over them; and the upscaled 4K apart from a native
+ * 4K: a render at the engine's top size, then an upscale of that take, each priced and each asked for on its own.
+ */
+function ResolutionControl({ make, scope }: { make: MakeModel; scope: string }) {
+  const { state, model, settings } = make;
+  const video = state.type === "video";
+  /* No figures in the sample workspace, where nothing is made; none with references either: they move the price, and the button carries it. */
+  const unpriced = Boolean(make.spendOff) || state.references.length > 0;
+  const reply = useResolutionOptions(scope, { model: model?.id ?? null, ratio: settings.ratio, duration: settings.duration, generateAudio: settings.generateAudio }, Boolean(model) && !make.spendOff);
+  if (!model?.resolutions?.length) return null;
+  const view = resolutionView({ resolutions: model.resolutions, resolution: settings.resolution, draft: Boolean(settings.draft), upscale: make.upscale, video, reply, unpriced });
+  const pick = (id: string) => { const next = resolutionPick(view, id); if (next) make.pickResolution(next); };
+  const up = view.upscaled;
+  return (
+    <div className="gx-mk-res" data-testid="make-resolution">
+      <span className="gx-mk-eyebrow">Resolution</span>
+      {view.presets.length ? (
+        <div className="gx-mk-chips" role="group" aria-label="Presets" data-testid="make-resolution-presets">
+          {view.presets.map((p) => <SizeChip key={p.name} chip={p} label={`${p.name} · ${p.label}`} onPick={pick} testId={`make-preset-${p.name.toLowerCase()}`} />)}
+        </div>
+      ) : null}
+      <div className="gx-mk-chips" role="group" aria-label="Resolution">
+        {view.sizes.map((s) => <SizeChip key={s.id} chip={s} label={s.label} onPick={pick} testId="make-resolution-size" />)}
+      </div>
+      {up ? (
+        <div className="gx-mk-chips" role="group" aria-label="Upscale">
+          <SizeChip chip={up} label={up.label} onPick={pick} testId="make-resolution-upscaled" />
+        </div>
+      ) : null}
+      {up && make.upscale ? (
+        <p className="gx-mk-line-note" data-testid="make-resolution-upscale-note">
+          Made at {sizeLabel(up.from)}{up.render ? <> · <Price value={up.render} /></> : null}. Upscale the take to 4K once it is made{up.upscale ? <> · <Price value={up.upscale} /></> : null}.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 function Row({ name, value, testId }: { name: string; value: React.ReactNode; testId?: string }) {
   return <div className="gx-mk-row2" data-testid={testId}><span className="gx-mk-row2-name">{name}</span><span className="gx-mk-row2-value">{value}</span></div>;
@@ -213,14 +274,7 @@ function Advanced({ make, id, scope, lengths }: { make: MakeModel; id: string; s
               {settings.draft ? <p className="gx-mk-line-note" data-testid="gen-draft-note">A watermarked draft at the 480p price. Make its 1080p final from it within seven days.</p> : null}
             </div>
           ) : null}
-          {model?.resolutions?.length && model.resolutions.length > 1 ? (
-            <div className="gx-mk-chips" role="group" aria-label="Resolution">
-              {model.resolutions.map((r) => (
-                <button key={r} type="button" className="gx-chip" aria-pressed={settings.resolution === r} disabled={Boolean(settings.draft) && r !== settings.resolution}
-                  title={settings.draft && r !== settings.resolution ? "A draft is 480p; its final is 1080p." : undefined} onClick={() => set({ type: "pick", value: { resolution: r } })}>{settings.resolution === r ? "✓ " : ""}{r}</button>
-              ))}
-            </div>
-          ) : null}
+          <ResolutionControl make={make} scope={scope} />
           {lengths.length ? (
             <label className="gx-mk-row2">
               <span className="gx-mk-row2-name">Length</span>
