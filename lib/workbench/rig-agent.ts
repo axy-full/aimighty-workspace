@@ -193,7 +193,8 @@ function onePrice(view: RigAgentRunView, approval: PlanApprovalRow | null): RigA
       if (!covered(p)) return p;
       const { quoteUsd: _q, worstUsd: _w, ...rest } = p;
       void _q; void _w;
-      return { ...rest, quote: null, worst: null, reason: null, planPriced: true };
+      /* No tap of its own either: its approval is the plan's. */
+      return { ...rest, quote: null, worst: null, reason: null, fingerprint: null, planPriced: true };
     }),
   };
 }
