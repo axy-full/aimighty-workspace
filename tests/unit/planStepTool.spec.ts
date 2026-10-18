@@ -233,6 +233,14 @@ test("it refuses in words: a board that is not the caller's, one with no product
   });
 });
 
+test("plan_step's reason counts only shots it tried to price and could not; one not reached yet is still being priced", async () => {
+  const { unpricedWords } = await import("../../lib/workbench/plan-step-tool");
+  const t = (state: string, extra: Record<string, unknown> = {}) => ({ state, quote: null, pause: null, fixOf: null, ...extra }) as never;
+  expect(unpricedWords([t("paused", { pause: "unpriced" }), t("next"), t("next")])).toBe("1 shot can't be priced yet; open the board.");
+  expect(unpricedWords([t("next"), t("next")])).toBe("The plan is still being priced; open the board.");
+  expect(unpricedWords([t("waiting", { quote: 300 }), t("paused", { pause: "admin", quote: 40 })])).toBe("Every shot here asks on its own; open the board.");
+});
+
 test("over MCP: one call to the board route as the caller, never an approval; an approval in the arguments is refused; the answer says the person approves it and nothing was rendered", async () => {
   const { runTool } = await import("../../lib/mcp");
   const calls: { path: string; method?: string; body?: Record<string, unknown> }[] = [];
@@ -313,9 +321,8 @@ test("a pricing refusal that names the engine reaches no reply: plan_step's summ
       String(body.prompt ?? "").includes("Shot 1 of") ? { ok: false as const, status: 422, body: { error: "Zephyrcam 9 has no draft mode." } } : r.prepare(body, actor);
     const deps = await depsFor(ws, r, { prepare });
     const out = await tool.preparePlanStep(OWNER, { boardId: "draft-1", requestId: "engine-1" }, deps);
-    expect(out).toMatchObject({ priced: false, total: null });
-    /* Pier's pricing was refused; Deck waits behind it, not priced yet either. */
-    expect(out.reason).toMatch(/^[12] shots? can't be priced yet; open the board\.$/);
+    /* Pier's pricing was refused; Deck, behind it, is not counted as one that can't be priced. */
+    expect(out).toMatchObject({ priced: false, total: null, reason: "1 shot can't be priced yet; open the board." });
     const words = out.reason!;
     expect(JSON.stringify(out)).not.toMatch(/zephyrcam|draft mode/i);
     /* Through the route, as an outside agent's token reaches it. */

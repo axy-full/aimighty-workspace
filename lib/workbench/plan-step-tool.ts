@@ -54,8 +54,10 @@ const ID = /^[a-zA-Z0-9-]{1,100}$/;
  */
 export function unpricedWords(takes: readonly Pick<RigAgentPaidStepView, "state" | "quote" | "pause" | "fixOf">[]): string {
   const open = takes.filter((p) => p.fixOf == null && (p.state === "next" || p.state === "waiting" || p.state === "paused"));
-  const unpriced = open.filter((p) => p.quote == null && p.pause !== "admin").length;
+  /* Can't be priced: a render the run tried to price and paused. One merely not reached yet (next) is still being priced. */
+  const unpriced = open.filter((p) => p.state === "paused" && p.quote == null && p.pause !== "admin").length;
   if (unpriced) return `${unpriced} ${unpriced === 1 ? "shot" : "shots"} can't be priced yet; open the board.`;
+  if (open.some((p) => p.state === "next")) return "The plan is still being priced; open the board.";
   return open.length ? "Every shot here asks on its own; open the board." : "Nothing in this plan is waiting to render; open the board.";
 }
 const REQUEST = /^[A-Za-z0-9._:-]{1,120}$/;
