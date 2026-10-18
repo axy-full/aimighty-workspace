@@ -1,5 +1,5 @@
-import { uploadOpenableBy } from "./uploadAccess";
-import { actingViewer } from "./actingViewer";
+import { uploadOpenableBy, type Viewer } from "./uploadAccess";
+import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { currentTenant } from "./tenant";
 import { mayReadTake } from "./draftProject";
 import type { Reference } from "./ark";
@@ -187,28 +187,39 @@ function extOf(mime: string): string {
   return /wav/.test(mime) ? "wav" : mime === "audio/ogg" ? "ogg" : mime === "audio/flac" ? "flac" : mime === "audio/mp4" || mime === "audio/aac" ? "m4a" : "mp3";
 }
 
-/** For an `agent:*` request: does its run exist (a read that fails counts as yes, closed), or is there no such run? "not-agent" for anyone else. */
-async function agentRun(): Promise<"not-agent" | "exists" | "missing"> {
-  const id = currentTenant()?.user?.id;
-  if (!id || !id.startsWith("agent:")) return "not-agent";
-  try {
-    if (!(await db().execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rig_agent_runs'")).rows.length) return "missing";
-    return (await db().execute({ sql: "SELECT 1 FROM rig_agent_runs WHERE id = ? LIMIT 1", args: [id.slice("agent:".length)] })).rows.length > 0 ? "exists" : "missing";
-  } catch { return "exists"; }
+/** The answer a source door gives an agent identity with no person behind it (lib/actingViewer.ts): refused before anything is quoted, reserved or written. */
+export type SourceRefusal = { error: string; code: "NO_ACTING_PERSON"; status: 403 };
+export const NO_ACTING_PERSON_REFUSAL: SourceRefusal = Object.freeze({ error: NO_ACTING_PERSON, code: "NO_ACTING_PERSON", status: 403 });
+export const isSourceRefusal = (found: StoredSource | SourceRefusal | null): found is SourceRefusal => !!found && "code" in found && found.code === "NO_ACTING_PERSON";
+
+/**
+ * Who reads a source: the signed-in person, or an Atomik run's owner as a member (lib/actingViewer.ts). An agent identity (`agent:*`, or "server",
+ * lib/security/people-only.ts isAgentId) with no person behind it is refused: an id with no run row, or a run that names no person. Background work with
+ * no user at all (the workers, such as handleDubbing's deferred submit) is not asked, as before: its job was checked when it was admitted.
+ */
+async function sourceViewer(): Promise<{ viewer: Viewer | null } | "refused"> {
+  const viewer = await actingViewer();
+  if (viewer) return { viewer };
+  if (!currentTenant()?.user) return { viewer: null };
+  /* A user with no acting viewer is an agent identity (currentViewer() names every other user), so no person stands behind it. Anyone else would be refused too: fails closed. */
+  return "refused";
 }
 
-/** The audio or video original a source reference names, or null when the workspace has no such file. */
-export async function findStoredSource(ref: SourceRef): Promise<StoredSource | null> {
+/** The audio or video original a source reference names, or null when the workspace has no such file. Refused (never null) for an agent identity with no person behind it. */
+export async function lookupStoredSource(ref: SourceRef): Promise<StoredSource | SourceRefusal | null> {
   await ready();
-  /* Who is asking: the signed-in person, or an Atomik run's owner (lib/actingViewer.ts), or nobody (background work, which is not asked). A run that EXISTS but whose owner
-     cannot be found reads nothing. An agent id with no run behind it at all is no person's run, and is never trusted with more than an anonymous member may see: unowned
-     uploads and ordinary takes, never a private board's take or another person's private upload. */
-  let viewer = await actingViewer();
-  if (!viewer) {
-    const run = await agentRun();
-    if (run === "exists") return null;
-    if (run === "missing") viewer = { id: "agent:none", role: "member" };
-  }
+  const who = await sourceViewer();
+  if (who === "refused") return NO_ACTING_PERSON_REFUSAL;
+  return readStoredSource(ref, who.viewer);
+}
+
+/** The audio or video original a source reference names, or null when the workspace has no such file or no person stands behind the request (render-time readers fail closed). */
+export async function findStoredSource(ref: SourceRef): Promise<StoredSource | null> {
+  const found = await lookupStoredSource(ref);
+  return isSourceRefusal(found) ? null : found;
+}
+
+async function readStoredSource(ref: SourceRef, viewer: Viewer | null): Promise<StoredSource | null> {
   if (ref.uploadId) {
     const row = (await db().execute({
       sql: "SELECT id, filename, mime, ext, bytes, kind, duration_s, stored_url FROM uploads WHERE id=? LIMIT 1",
