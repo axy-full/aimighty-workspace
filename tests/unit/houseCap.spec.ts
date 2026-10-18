@@ -145,6 +145,62 @@ test("the quote: a warning from 80%, a refusal at the cap or for a job that woul
   expect(verdictOf(quote(1), context)).toMatchObject({ allow: true, notice: "" });
 });
 
+test("the house quote counts a held take at its band, as admission does (the cap and the approval line); every other workspace's quote and verdict are unchanged", async () => {
+  const { quoteOf, verdictOf, withHouseBands, publicQuote } = await import("../../lib/quote");
+  const { CINEMA_STUDIO_MODEL_ID } = await import("../../lib/cinemaStudioTypes");
+  const { holdBandOf } = await import("../../lib/cinemaHold");
+  const { HOUSE_CAP_REACHED } = await import("../../lib/houseCapText");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { houseCapCheck, houseCapView } = await import("../../lib/houseCap");
+  const band = holdBandOf(CINEMA_STUDIO_MODEL_ID);
+  expect(band).toBeGreaterThan(1);
+  /* Synthetic terms and costs, built here: a credit at $0.10 and a margin of 2 on every engine. */
+  const SYNTHETIC_TERMS = { perCredit: 0.1, table: { "*": 2 } };
+  const held = { key: "shot_held", usd: 4, engine: CINEMA_STUDIO_MODEL_ID };
+  const plain = { key: "shot_plain", usd: 4, engine: "gemini-3.1-flash-image" };
+  const base = { balance: null, allowance: null, caps: {}, warnPct: 80, rule: "anyone" as const, shotCap: 0, isAdmin: true };
+  const priced = (units: (typeof held)[], context: Parameters<typeof verdictOf>[1]) => verdictOf(quoteOf(units, SYNTHETIC_TERMS), withHouseBands(context, units));
+
+  /* The cap: $10 of room. The held take needs its hold ($4 x band), the plain one its quote. */
+  const nearCap = { ...base, houseCap: { cap: 500, spent: 490 } };
+  expect(priced([plain], nearCap)).toMatchObject({ allow: true });
+  expect(priced([held], nearCap)).toMatchObject({ allow: false, gate: "allowance", line: HOUSE_CAP_REACHED });
+  /* Counted at its quote, as before, it would have been allowed and then refused at admission. */
+  expect(verdictOf(quoteOf([held], SYNTHETIC_TERMS), nearCap)).toMatchObject({ allow: true });
+  /* The warning names the month with the hold in it. */
+  expect(priced([held], { ...base, houseCap: { cap: 500, spent: 485 } })).toMatchObject({ allow: true, notice: `${Math.floor((485 + 4 * band) / 5)}% of this month's $500 used ($${485 + 4 * band})` });
+  /* The approval line, judged at cost for the house: a held take at its hold, as admission's jobLineGate counts it. */
+  const line = { ...base, isAdmin: false, houseCap: { cap: 1_000_000, spent: 0 }, jobLine: { credits: 200, machine: false, house: true, perCredit: 0.1 } };
+  const big = (u: typeof held) => ({ ...u, usd: 8 });
+  expect(priced([big(plain)], line)).toMatchObject({ allow: true });
+  expect(priced([big(held)], line)).toMatchObject({ allow: false, gate: "approval" });
+
+  /* The same answer as admission's own gate, against the house's real month. */
+  await houseRow();
+  const { houseSpendSince, houseMonthStart } = await import("../../lib/houseCap");
+  const cap = Math.ceil(((await houseSpendSince(houseMonthStart())) + 10) * 100) / 100;
+  await runInTenant(house(cap), async () => {
+    const view = (await houseCapView())!;
+    const context = { ...base, houseCap: { cap: view.capUsd, spent: view.spentUsd } };
+    for (const unit of [plain, held]) {
+      const admitted = await houseCapCheck(unit.usd, holdBandOf(unit.engine));
+      expect(priced([unit], context).allow, unit.key).toBe(admitted.ok);
+    }
+  });
+
+  /* Every other workspace: no house cap, so the context comes back as the same object, and the quote and verdict are byte-identical. */
+  const customers = [
+    { ...base, allowance: { cap: 50, spent: 10 }, houseCap: null, jobLine: { credits: 200, machine: false, perCredit: 0.1 } },
+    { ...base, isAdmin: false, houseCap: null, jobLine: { credits: 200, machine: false, house: true, perCredit: 0.1 } },
+    { ...base, isAdmin: false },
+  ];
+  for (const context of customers) for (const units of [[held], [plain], [held, plain], [big(held), big(plain)]]) {
+    expect(withHouseBands(context, units)).toBe(context);
+    expect(JSON.stringify(verdictOf(quoteOf(units, SYNTHETIC_TERMS), withHouseBands(context, units)))).toBe(JSON.stringify(verdictOf(quoteOf(units, SYNTHETIC_TERMS), context)));
+    expect(JSON.stringify(publicQuote(quoteOf(units, SYNTHETIC_TERMS)))).not.toMatch(/band|usd/);
+  }
+});
+
 test("the reservation: 80% tells the platform owner once a month for each cap figure, 100% stops the job, a refused job writes nothing; the customer allowance never sees it; a mail that hangs holds up no reservation", async () => {
   const mail: { to: string[]; subject: string; text: string }[] = [];
   /* While `hang` is set, the stand-in mail server takes a message and never answers (until `answer`), as a slow one would for its 15 s. */
