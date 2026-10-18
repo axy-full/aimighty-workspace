@@ -11,6 +11,7 @@ export type PaidRoute = { dir: string; spends: string };
 
 export const PAID_ROUTES: PaidRoute[] = [
   { dir: "generate", spends: "video, image, upscale (Topaz), Seedance edit, Cinema Studio, Motion transfer, Object swap and the agent's renders" },
+  { dir: "cast-character", spends: "an AI-made character's eight-still character sheet (one plan, one approval)" },
   { dir: "audio", spends: "speech, sound effects and music" },
   { dir: "audio/dub", spends: "dubbing" },
   { dir: "bfl", spends: "FLUX.2 stills and edits (BFL; off unless the engine is on for the workspace)" },

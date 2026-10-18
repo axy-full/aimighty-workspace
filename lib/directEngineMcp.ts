@@ -2,6 +2,7 @@ import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { sarvamTools } from "./sarvamTools";
 import { bflTools, flux3TierOf } from "./bflImage";
+import { castCharacterTools } from "./castCharacter";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "./approvalRule";
@@ -189,7 +190,37 @@ const FLUX2_EDIT: DirectTool = {
   describe: (out, quote) => `Edit started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX3_IMAGE, FLUX2_IDENTITY, FLUX2_EDIT];
+/**
+ * The Cast tool: an AI-made character, its identity and its eight-still character sheet, under one price. Never a draft (it always asks a person), and a sheet is several jobs
+ * under one approval, so it is never filed as one prepared job: an agent gets the price and is told a person approves it in Particl.
+ */
+const CAST_CHARACTER: DirectTool = {
+  def: {
+    name: "cast_character",
+    description:
+      "Make an AI-made character, its identity and its character sheet: the front view from your words, then seven more views of the same person (three-quarters, profiles, back, face, in motion). " +
+      "Priced as one plan, 'up to N cr', all in; a person approves it in Particl, never you. It makes no real person's likeness and takes no photo. Returns the price, and says a person approves it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The character's name: letters, digits and underscores, starting with a letter (it is what @Name cites)." },
+        description: { type: "string", description: "How they look, in a few words (up to 800 characters)." },
+        look: { type: "string", description: "The film's look, up to 300 characters. Optional." },
+        draft_id: { type: "string", description: "The board to put the character on. Optional." },
+        project_id: { type: "string", description: "The production. Optional." },
+        request_id: { type: "string" },
+      },
+      required: ["name", "description"],
+    },
+  },
+  present: async () => (await castCharacterTools()).length > 0,
+  file: false,
+  prepared: (b) => `prepared: a character sheet for ${String(b.name ?? "a character")} (8 stills)`,
+  request: (a) => ({ path: "/api/cast-character", body: { name: str(a.name), description: str(a.description), look: str(a.look), draftId: str(a.draft_id), projectId: str(a.project_id) } }),
+  describe: (out, quote) => `Character sheet started.\n\nid: ${String(out.id)}\nprice: up to ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}`,
+};
+
+const REGISTRY: DirectTool[] = [LIP_SYNC, SARVAM_SPEECH, SARVAM_TRANSCRIBE, SARVAM_TRANSLATE, FLUX2_IMAGE, FLUX3_IMAGE, FLUX2_IDENTITY, FLUX2_EDIT, CAST_CHARACTER];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {
