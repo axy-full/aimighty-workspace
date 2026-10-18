@@ -342,39 +342,53 @@ class StepStore {
   }
 
   /**
+   * Where a step of `kind` goes on the rail, given the production's live steps (plan § 2.10): right after the live step,
+   * nearest before it in the type's list (its own kind included), that the production has; the last such on the rail
+   * when there are several; first on the rail when there is none. Returns that position and the position updates that
+   * move the steps after it down one. A step the list no longer names (one made from an older list) is never a place to
+   * go after. Null when the list does not name `kind`.
+   */
+  private placeOf(listed: FilmTypeStep[], live: ProductionStep[], kind: string, at: number): { position: number; moves: InStatement[] } | null {
+    const index = listed.findIndex((s) => s.kind === kind);
+    if (index < 0) return null;
+    const rank = new Map(listed.map((s, i) => [s.kind, i]));
+    let after = -1;
+    live.forEach((s, i) => {
+      const r = rank.get(s.kind);
+      if (r !== undefined && r <= index && (after < 0 || r >= rank.get(live[after].kind)!)) after = i;
+    });
+    const order = [...live.slice(0, after + 1).map((s) => s.id), null, ...live.slice(after + 1).map((s) => s.id)];
+    const moves: InStatement[] = [];
+    order.forEach((id, position) => {
+      if (id && live.find((s) => s.id === id)!.position !== position)
+        moves.push({ sql: "UPDATE production_steps SET position=?, updated_at=? WHERE workspace_id=? AND id=?", args: [position, at, this.workspaceId, id] });
+    });
+    return { position: order.indexOf(null), moves };
+  }
+
+  /**
    * Another step: a kind the production's film type lists, opened by default or behind the + tile (Sound, Edit, Deliver,
    * Treatment where the type has them there); a second step of a kind is `shots-2`. A kind the type does not list is
-   * refused. It goes at its place in the type's list (plan § 2.10): right after the live step, nearest before it in the
-   * list (itself included), that the production has; the last such on the rail when there are several; first on the
-   * rail when there is none. Steps after it move down one. A step the list no longer names (one made from an older list)
-   * is never a place to go after.
+   * refused. It goes at its place in the type's list (`placeOf`). One deck per production (owner, 19 Oct 2026, Q18): a
+   * deck step is refused while the production has one, live or removed; a removed one comes back by `restore`.
    */
   async add(productionId: string, kind: string, by: string, label?: string): Promise<ProductionStep> {
     return this.write(async (tx) => {
       const production = await this.production(tx, productionId);
       if (!production.filmType) throw new ProductionStepError("This project has no steps yet.", 409);
       const listed = filmTypeSteps(production.filmType, this.env) ?? [];
-      const index = listed.findIndex((s) => s.kind === kind);
-      if (index < 0) throw new ProductionStepError("That step is not one this project's film type has.", 400);
-      const step = listed[index];
+      const step = listed.find((s) => s.kind === kind);
+      if (!step) throw new ProductionStepError("That step is not one this project's film type has.", 400);
       const all = await this.rows(tx, productionId, true);
+      if (step.surface === "deck") {
+        const deck = all.find((s) => s.surface === "deck");
+        if (deck && deck.removedAt === null) throw new ProductionStepError("This project already has its deck. There is one deck per project.", 409);
+        if (deck) throw new ProductionStepError("This project's deck was removed. Restore it instead: there is one deck per project.", 409);
+      }
       const pageId = nextPageId(kind, all.map((s) => s.pageId));
-      /* Its place: after the live step whose kind is listed latest at or before this one's, else first. */
       const live = all.filter((s) => s.removedAt === null);
-      const rank = new Map(listed.map((s, i) => [s.kind, i]));
-      let after = -1;
-      live.forEach((s, at) => {
-        const r = rank.get(s.kind);
-        if (r !== undefined && r <= index && (after < 0 || r >= rank.get(live[after].kind)!)) after = at;
-      });
-      const order = [...live.slice(0, after + 1).map((s) => s.id), null, ...live.slice(after + 1).map((s) => s.id)];
       const at = now();
-      const moves: InStatement[] = [];
-      order.forEach((id, position) => {
-        if (id && live.find((s) => s.id === id)!.position !== position)
-          moves.push({ sql: "UPDATE production_steps SET position=?, updated_at=? WHERE workspace_id=? AND id=?", args: [position, at, this.workspaceId, id] });
-      });
-      const position = order.indexOf(null);
+      const { position, moves } = this.placeOf(listed, live, kind, at)!;
       const right = all.filter((s) => s.removedAt === null && s.frame).reduce((max, s) => Math.max(max, s.frame!.x + s.frame!.w + DEFAULT_FRAME.gap), 0);
       const frame = step.surface === "canvas" ? { x: right, y: 0, w: DEFAULT_FRAME.w, h: DEFAULT_FRAME.h } : null;
       const stepId = newId("pstep");
@@ -410,17 +424,26 @@ class StepStore {
     });
   }
 
-  /** Undo a removal: the step comes back at the end of the rail, after every live step. */
+  /**
+   * Undo a removal: the step comes back at its place in the film type's list, as `add` puts one (`placeOf`). A step the
+   * list does not name (one made from an older list) comes back at the end of the rail, after every live step.
+   */
   async restore(stepId: string): Promise<ProductionStep> {
     return this.write(async (tx) => {
       const step = await this.step(tx, stepId);
       if (step.removedAt === null) return step;
+      const production = await this.production(tx, step.productionId);
       const live = await this.rows(tx, step.productionId, false);
-      const position = live.reduce((max, s) => Math.max(max, s.position), -1) + 1;
-      await tx.execute({
-        sql: "UPDATE production_steps SET removed_at=NULL, removed_by=NULL, position=?, updated_at=? WHERE workspace_id=? AND id=?",
-        args: [position, now(), this.workspaceId, stepId],
-      });
+      const at = now();
+      const listed = production.filmType ? (filmTypeSteps(production.filmType, this.env) ?? []) : [];
+      const place = this.placeOf(listed, live, step.kind, at) ?? { position: live.reduce((max, s) => Math.max(max, s.position), -1) + 1, moves: [] };
+      await tx.batch([
+        ...place.moves,
+        {
+          sql: "UPDATE production_steps SET removed_at=NULL, removed_by=NULL, position=?, updated_at=? WHERE workspace_id=? AND id=?",
+          args: [place.position, at, this.workspaceId, stepId],
+        },
+      ]);
       return this.step(tx, stepId);
     });
   }

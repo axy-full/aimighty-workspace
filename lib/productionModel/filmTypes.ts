@@ -69,6 +69,9 @@ const filmTypeSchema = z
       if (kinds.has(step.kind)) ctx.addIssue({ code: "custom", path: ["steps", index, "kind"], message: "A step kind is listed twice in one film type." });
       kinds.add(step.kind);
     });
+    /* One deck per production (owner, 19 Oct 2026, Q18): a film type lists at most one deck step. */
+    const decks = type.steps.flatMap((step, index) => (step.surface === "deck" ? [index] : []));
+    if (decks.length > 1) ctx.addIssue({ code: "custom", path: ["steps", decks[1], "surface"], message: "A film type has at most one deck step." });
     /* A new production shows at least one step. */
     if (!type.steps.some((step) => step.opened)) ctx.addIssue({ code: "custom", path: ["steps"], message: "A film type opens at least one step." });
   });

@@ -225,7 +225,7 @@ test("one frame per canvas step, none on a document, table or deck step", async 
   await expect(client.execute({ sql: "UPDATE production_steps SET frame_w=NULL WHERE id=?", args: [canvas[1].id] })).rejects.toThrow(/CHECK/i);
 });
 
-test("steps come back in rail order; a reorder must name each live step once; an added step goes at its list place; a restored step goes to the end", async () => {
+test("steps come back in rail order; a reorder must name each live step once; an added or restored step goes at its list place", async () => {
   const m = await mods();
   const ws = workspace("ordering");
   const client = await existingDatabase(ws);
@@ -251,14 +251,15 @@ test("steps come back in rail order; a reorder must name each live step once; an
     expect((await store.reorder("prj_one", [added.id, c, b])).map((s) => s.id)).toEqual([added.id, c, b]);
     expect((await store.list("prj_one", { removed: true })).map((s) => s.id)).toContain(a);
 
-    // Remove a, reorder [c, b], restore a: a comes back after every live step, never tied with one.
+    // Remove a, reorder [c, b], restore a: a comes back at its list place, first (nothing listed before it is live),
+    // and the others move down one, never tied with it.
     const [a2, b2, c2] = (await store.ensureSteps("prj_two", "synthetic_spot", "person_a")).map((s) => s.id);
     await store.remove(a2, "person_a");
     await store.reorder("prj_two", [c2, b2]);
-    expect((await store.restore(a2)).position).toBe(2);
-    expect((await store.list("prj_two")).map((s) => [s.id, s.position])).toEqual([[c2, 0], [b2, 1], [a2, 2]]);
+    expect((await store.restore(a2)).position).toBe(0);
+    expect((await store.list("prj_two")).map((s) => [s.id, s.position])).toEqual([[a2, 0], [c2, 1], [b2, 2]]);
     // Restoring a step that is not removed changes nothing.
-    expect((await store.restore(c2)).position).toBe(0);
+    expect((await store.restore(c2)).position).toBe(1);
   });
 });
 
@@ -299,6 +300,8 @@ test("the step list comes from config: the setting when set, else the owner's de
       // `opened` is a yes or no, and a film type opens at least one step.
       [JSON.stringify({ filmTypes: [{ ...one, steps: [{ ...one.steps[0], opened: SECRET }] }] }), "filmTypes.0.steps.0.opened"],
       [JSON.stringify({ filmTypes: [{ ...one, steps: one.steps.map((step) => ({ ...step, opened: false })) }] }), "filmTypes.0.steps"],
+      // One deck per production (Q18): a film type lists at most one deck step.
+      [JSON.stringify({ filmTypes: [{ ...one, steps: [{ ...one.steps[0], surface: "deck" }, { ...one.steps[1], surface: "deck" }] }] }), "filmTypes.0.steps.1.surface"],
       // There is no separate list of extras: a step behind the + tile is a listed step with opened: false.
       [JSON.stringify({ filmTypes: [{ ...one, extras: [] }] }), "filmTypes.0"],
       // The retired placeholder flag is not part of the shape any more.
@@ -489,6 +492,73 @@ test("add puts a step after the nearest earlier listed step the production has: 
     await store.add("prj_social", "treatment", "person_a");
     expect(await kinds("prj_social")).toEqual(["treatment", "hook", "copy", "design", "visuals", "captions", "deliver"]);
     expect((await store.list("prj_social")).map((s) => s.position)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+});
+
+test("one deck per production (Q18): a second Treatment is refused in words, live or removed; a removed one comes back by restore, at its place", async () => {
+  const m = await mods();
+  const ws = workspace("one-deck");
+  const client = await existingDatabase(ws);
+  await existingDatabase(ws, "prj_ugc");
+  await m.runInTenant(ws, async () => {
+    const store = m.stepStoreForTests(client, ws.id, {});
+    const decks = async (p: string) => count(client, `production_id='${p}' AND surface='deck'`);
+
+    // Ad film opens its Treatment: another is refused while it is live, and again, pointing at restore, once removed.
+    const made = await store.ensureSteps("prj_one", "ad_film", "person_a");
+    const treatment = made.find((s) => s.kind === "treatment")!;
+    await expect(store.add("prj_one", "treatment", "person_a")).rejects.toMatchObject({ status: 409, message: "This project already has its deck. There is one deck per project." });
+    await store.remove(treatment.id, "person_a");
+    await expect(store.add("prj_one", "treatment", "person_a")).rejects.toMatchObject({ status: 409, message: "This project's deck was removed. Restore it instead: there is one deck per project." });
+    expect(await decks("prj_one")).toBe(1);
+    // Undo: the same step, the same page id, back after Script.
+    expect(await store.restore(treatment.id)).toMatchObject({ id: treatment.id, pageId: "treatment", removedAt: null, position: 2 });
+    expect((await store.list("prj_one")).map((s) => s.pageId)).toEqual(["brief", "script", "treatment", "look", "elements", "storyboard", "shots"]);
+    expect(await decks("prj_one")).toBe(1);
+
+    // UGC, where Treatment is optional: the first one is added, a second is refused.
+    await store.ensureSteps("prj_ugc", "ugc", "person_a");
+    expect(await store.add("prj_ugc", "treatment", "person_a")).toMatchObject({ pageId: "treatment", surface: "deck" });
+    await expect(store.add("prj_ugc", "treatment", "person_a")).rejects.toMatchObject({ status: 409 });
+    expect(await decks("prj_ugc")).toBe(1);
+  });
+});
+
+test("restore puts a step back at its list place, as add does; a step the list no longer names comes back at the end", async () => {
+  const m = await mods();
+  const OLD = { V30_FILM_TYPES: JSON.stringify({ filmTypes: [{ id: "ad_film", label: "Ad film", steps: [{ kind: "brief", label: "Brief", surface: "document" }, { kind: "breakdown", label: "Breakdown", surface: "canvas" }, { kind: "shots", label: "Shots", surface: "canvas" }] }] }) };
+  const ws = workspace("restore-place");
+  const client = await existingDatabase(ws);
+  await existingDatabase(ws, "prj_old");
+  await m.runInTenant(ws, async () => {
+    const store = m.stepStoreForTests(client, ws.id, {});
+    const pages = async (p: string) => (await store.list(p)).map((s) => s.pageId);
+    const made = await store.ensureSteps("prj_one", "ad_film", "person_a");
+    const byKind = (k: string) => made.find((s) => s.kind === k)!;
+
+    // Look, removed and restored: back between Treatment and Elements, not at the end.
+    await store.remove(byKind("look").id, "person_a");
+    expect((await store.restore(byKind("look").id)).position).toBe(3);
+    expect(await pages("prj_one")).toEqual(["brief", "script", "treatment", "look", "elements", "storyboard", "shots"]);
+
+    // After a reorder, Script comes back right after Brief, wherever Brief now is; with Brief removed too, first.
+    const ids = made.map((s) => s.id);
+    await store.reorder("prj_one", [ids[3], ids[0], ids[1], ids[2], ...ids.slice(4)]);
+    await store.remove(byKind("script").id, "person_a");
+    await store.restore(byKind("script").id);
+    expect(await pages("prj_one")).toEqual(["look", "brief", "script", "treatment", "elements", "storyboard", "shots"]);
+    await store.remove(byKind("brief").id, "person_a");
+    await store.remove(byKind("script").id, "person_a");
+    await store.restore(byKind("script").id);
+    expect(await pages("prj_one")).toEqual(["script", "look", "treatment", "elements", "storyboard", "shots"]);
+    expect((await store.list("prj_one")).map((s) => s.position)).toEqual([0, 1, 2, 3, 4, 5]);
+
+    // A production made from an older list: its Breakdown, which today's list does not name, comes back at the end.
+    const old = await m.stepStoreForTests(client, ws.id, OLD).ensureSteps("prj_old", "ad_film", "person_a");
+    await store.remove(old[1].id, "person_a");
+    // After every live step (one past the last position, as before A1b).
+    expect((await store.restore(old[1].id)).position).toBe(3);
+    expect(await pages("prj_old")).toEqual(["brief", "shots", "breakdown"]);
   });
 });
 
