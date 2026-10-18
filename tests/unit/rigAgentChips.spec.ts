@@ -207,7 +207,7 @@ test("a chips plan costs no thinking turn and reserves nothing: priced by the se
     const run = await agent.rigAgentState("prod-1", OWNER).then((s) => s.run!);
     const a = await credits(0.3), b = await credits(0.45);
     const takes = run.paid.filter((p) => p.tool === "render");
-    /* The first waits on the run's limit (there is none until a person approves) and keeps its price; the rest are priced ahead, so the card can show the total. */
+    /* The first waits on the run's limit (there is none until a person approves); the rest are priced ahead, so the plan has its total. Both are covered by the plan's gate, so neither shows a price of its own. */
     expect(takes.map((p) => [p.title, p.state, p.pause])).toEqual([["Pier", "paused", "limit"], ["Deck", "waiting", null]]);
     expect(run.plan?.quote).toMatchObject({ total: a + b, ceiling: 2 * (a + b), asks: [] });
     /* ONE price for the plan (owner, 16 Oct): the client is told the total and no step's price, no step's note about a price, and no engine's name; the server keeps each step's quote on its record, and their sum is the total. */
@@ -228,6 +228,122 @@ test("a chips plan costs no thinking turn and reserves nothing: priced by the se
     const first = await agent.planRigAgentStep({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: id, step: "shots" });
     const second = await agent.planRigAgentStep({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: id, step: "shots" });
     expect(second.id).toBe(first.id);
+  });
+});
+
+test("one price, but every tap that spends shows its own (rule 14): a shot over the per-job line keeps the server's price at the gate, on its Render button after the approval and in the queue; the covered shot shows none; the card fetches no estimate", async () => {
+  await inRun("chips-line", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { stepsOf } = await import("../../lib/workbench/rig-agent-store");
+    const { db } = await import("../../lib/db");
+    const { planModel } = await import("../../components/graphite/board/cards/plan/model");
+    const { wantsEstimates } = await import("../../components/graphite/board/cards/plan/estimates");
+    const { readApprovals } = await import("../../lib/control-room/approvals.server");
+    const { creditFigure } = await import("../../lib/workbench/rig-agent-plan");
+    /* Synthetic dollars, made up for this test: shot 2 comes to more than the 200 cr a render may cost inside a plan. */
+    const r = renders(ws, (shot) => (shot === "1" ? 0.3 : 25));
+    const deps = await depsFor(ws, r);
+    const asked = await plan();
+    await agent.advanceRigAgentRun(asked.id, deps);
+    const run = await view();
+    const [s1, s2] = run.paid.filter((p) => p.tool === "render");
+    const kept = new Map((await stepsOf(db(), asked.id)).filter((s) => s.purpose === "take").map((s) => [s.seq, s.quoteCredits]));
+    const a = await credits(0.3), b = kept.get(s2.seq)!;
+    expect(b).toBeGreaterThan(200);
+    expect(run.plan?.quote).toMatchObject({ total: a, covered: [s1.seq], asks: [s2.seq] });
+    /* The covered shot: no price of its own. The one that asks on its own: the server's quote for it, exactly. */
+    expect([s1.quote, s1.worst, s1.reason]).toEqual([null, null, null]);
+    expect([s2.state, s2.quote, s2.worst]).toEqual(["waiting", b, b]);
+    /* The card: no client estimate for a chips run; the covered shot reads "in the plan", the other its server price. */
+    expect(wantsEstimates(run)).toBe(false);
+    expect(wantsEstimates({ kind: "ask" })).toBe(true);
+    const card = planModel({ run, enabled: true, estimates: { [s1.seq]: { credits: 1, approximate: false }, [s2.seq]: { credits: 1, approximate: false } }, balance: 2000, rule: null, readOnly: null })!;
+    expect(card.steps.map((s) => [s.price, s.source, s.asksAlone])).toEqual([[null, "plan", null], [{ kind: "exact", credits: b }, "run", "Asks on its own · over the per-render line"]]);
+    expect(card.primary).toMatchObject({ kind: "plan", label: `Approve the rest · ${creditFigure(a)} cr` });
+    /* The person approves the plan; the covered shot renders under it; the other asks at its own price, on its button and in the queue. */
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId: asked.id, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(asked.id, deps);
+    expect(r.calls).toHaveLength(1);
+    await settleTake((await renderRows())[0].id, "succeeded", 0.3);
+    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "needs_you", more: false });
+    expect(r.calls).toHaveLength(1);
+    const queued = async () => (await readApprovals({ id: OWNER, role: "admin", owner: true })).items.filter((i) => i.source === "board-render" || i.source === "board-plan");
+    /* The approval's room is the plan's ceiling, which this shot is not in: it stops at the limit, showing its own price, and the person raises the limit for it. */
+    const after = await view();
+    const paused = after.paid.find((p) => p.seq === s2.seq)!;
+    expect([paused.state, paused.pause, paused.quote, paused.inPlan]).toEqual(["paused", "limit", b, false]);
+    const raise = planModel({ run: after, enabled: true, balance: 2000, rule: null, readOnly: null })!;
+    expect(raise.steps[1].price).toEqual({ kind: "exact", credits: b });
+    /* The rendered shot shows what it settled at; never a pre-quote. */
+    expect(raise.steps[0]).toMatchObject({ source: "settled" });
+    expect((await queued()).map((i) => [i.id, i.price])).toEqual([[`board-render:${asked.id}:${s2.seq}`, { kind: "exact", credits: b }]]);
+    expect(raise.primary).toMatchObject({ kind: "raise" });
+    await agent.raiseRigAgentLimit({ productionId: "prod-1", runId: asked.id, limit: (raise.primary as { raiseTo: number }).raiseTo, userId: OWNER });
+    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "needs_you", more: false });
+    /* A raised limit is not a tap: it waits for one, at its own price, on the button and in the queue. */
+    expect(r.calls).toHaveLength(1);
+    const waiting = await view();
+    const asks = waiting.paid.find((p) => p.seq === s2.seq)!;
+    expect([asks.state, asks.quote, asks.inPlan]).toEqual(["waiting", b, false]);
+    const tap = planModel({ run: waiting, enabled: true, balance: 2000, rule: null, readOnly: null })!;
+    expect(tap.primary).toMatchObject({ kind: "render", label: `Render · ${creditFigure(b)} cr`, price: { kind: "exact", credits: b }, seq: s2.seq, blocked: null });
+    expect((await queued()).map((i) => [i.id, i.price])).toEqual([[`board-render:${asked.id}:${s2.seq}`, { kind: "exact", credits: b }]]);
+    expect(await reservations(ws)).toBe(1);
+  });
+});
+
+test("a shot that needs an admin keeps its own server price on a chips plan, in the queue too with the admin marker; its note names no engine", async () => {
+  MEMBERS.add(OWNER);
+  try {
+    await inRun("chips-admin", async (ws) => {
+      const agent = await import("../../lib/workbench/rig-agent");
+      const { readApprovals } = await import("../../lib/control-room/approvals.server");
+      const r = renders(ws, () => 0.3, new Set(), new Set(["1"]));
+      const deps = await depsFor(ws, r);
+      const asked = await plan();
+      await agent.advanceRigAgentRun(asked.id, deps);
+      const run = await view();
+      const a = await credits(0.3);
+      const [s1, s2] = run.paid.filter((p) => p.tool === "render");
+      expect(run.plan?.quote).toMatchObject({ total: a, covered: [s2.seq], asks: [s1.seq] });
+      expect(s1).toMatchObject({ state: "paused", pause: "admin", quote: a, reason: "Needs an admin: it asks on its own, at its own price." });
+      expect(s2.quote).toBeNull();
+      await agent.approveRigAgentPlan({ productionId: "prod-1", runId: asked.id, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
+      await agent.advanceRigAgentRun(asked.id, deps);
+      expect(r.calls).toHaveLength(1);
+      const queued = (await readApprovals({ id: OWNER, role: "member" })).items.filter((i) => i.source === "board-render" || i.source === "board-plan");
+      expect(queued.map((i) => [i.id, i.price, i.needsAdmin, i.canApprove])).toEqual([[`board-render:${asked.id}:${s1.seq}`, { kind: "exact", credits: a }, true, false]]);
+      expect(JSON.stringify(queued)).not.toMatch(/over the 50 cr/);
+    });
+  } finally {
+    MEMBERS.delete(OWNER);
+  }
+});
+
+test("a pricing refusal that names the engine never reaches the client: the step, the plan's note and the run's note say it in fixed words; the record keeps the refusal", async () => {
+  await inRun("chips-engine", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { stepsOf } = await import("../../lib/workbench/rig-agent-store");
+    const { db } = await import("../../lib/db");
+    const r = renders(ws, () => 0.3);
+    /* A made-up engine label, standing in for the catalog's `${model.label} has no draft mode.` (lib/generationAdmission.ts). */
+    const prepare = async (body: Record<string, unknown>, actor: AdmissionActor) =>
+      String(body.prompt ?? "").includes("Shot 1 of") ? { ok: false as const, status: 422, body: { error: "Zephyrcam 9 has no draft mode." } } : r.prepare(body, actor);
+    const deps = await depsFor(ws, r, { prepare });
+    const asked = await plan();
+    await agent.advanceRigAgentRun(asked.id, deps);
+    const run = await view();
+    const s1 = run.paid.find((p) => p.tool === "render")!;
+    expect(s1).toMatchObject({ state: "paused", pause: "unpriced", reason: "Can't be priced yet. Check the shot, then price it again." });
+    expect(run.plan).toMatchObject({ quote: null, blocked: "Pier: Can't be priced yet. Check the shot, then price it again." });
+    expect(JSON.stringify(run)).not.toMatch(/zephyrcam|draft mode/i);
+    const stored = (await stepsOf(db(), asked.id)).find((s) => s.seq === s1.seq)!;
+    expect(stored.reason).toBe("Zephyrcam 9 has no draft mode.");
+    /* History reads the same view: no engine's name there either. */
+    const { readActivity } = await import("../../lib/control-room/activity.server");
+    const history = await readActivity({ id: OWNER, role: "admin", owner: true }, null);
+    expect(JSON.stringify(history)).toContain("Pier");
+    expect(JSON.stringify(history)).not.toMatch(/zephyrcam|draft mode/i);
   });
 });
 

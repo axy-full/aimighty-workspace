@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type { RigAgentPaidStepView, RigAgentRunView } from "../../lib/workbench/rig-agent-plan";
 import {
-  NOT_MINE, SHORT_LINE, SWITCHED_OFF, balanceLine, estimatePrice, fixLine, planModel, runStepPrice, type PlanInput,
+  NOT_MINE, NO_PRICE, SHORT_LINE, SWITCHED_OFF, balanceLine, estimatePrice, fixLine, planModel, runStepPrice, type PlanInput,
 } from "../../components/graphite/board/cards/plan/model";
 
 /*
@@ -186,6 +186,33 @@ test("a paused render: Retry at its price, Price again when it has none, Raise w
   const limit = planModel(base({ run: run({ state: "needs_you", money: { mode: "ask", limit: 14, jobCeiling: 200, spent: 14, inFlight: 0, left: 0, planning: { state: "settled", credits: 14 } },
     paid: [step(1, "Shot 1", { state: "paused", pause: "limit", quote: 43, worst: 43, canRender: true, fingerprint: FP })] }) }))!;
   expect(limit.primary).toEqual({ kind: "raise", label: "Raise the limit to 57 cr", raiseTo: 57, blocked: null });
+});
+
+test("a tap that renders always shows its price: a waiting or paused render with none is not offered, and never reads Price again (which only prices afresh)", () => {
+  const one = (over: Partial<RigAgentPaidStepView>) => planModel(base({ estimates: {}, run: run({ state: "needs_you", paid: [step(1, "Shot 1", { canRender: true, fingerprint: FP, ...over })] }) }))!;
+  for (const over of [{ state: "waiting" }, { state: "paused", pause: "credits" }] as Partial<RigAgentPaidStepView>[]) {
+    const m = one(over);
+    expect(m.primary, JSON.stringify(over)).toMatchObject({ kind: "render", price: null, blocked: NO_PRICE });
+    expect(m.primary?.label, JSON.stringify(over)).not.toBe("Price again");
+  }
+  /* Price again is only for a render paused unpriced, or on its record: the server prices it afresh and sends nothing. */
+  expect(one({ state: "paused", pause: "record" }).primary).toMatchObject({ label: "Price again", price: null, blocked: null });
+});
+
+test("a chips plan (Agent mode's quick plan) has ONE price: no pre-quote of any step; a covered step shows none of its own; one outside the plan shows the server's", () => {
+  const chips = gate({ kind: "chips", paid: [
+    step(1, "Shot 1", { state: "waiting", canRender: true, fingerprint: FP }),
+    step(3, "Shot 2", { state: "waiting", quote: 250, worst: 250, canRender: true, fingerprint: FP }),
+  ], plan: { quote: { total: 43, ceiling: 86, approximate: false, fingerprint: GATE_FP, covered: [1], asks: [3] }, blocked: null, approval: null } });
+  const m = planModel(base({ run: chips }))!;
+  expect(m.steps.map((s) => [s.price, s.source])).toEqual([[null, "plan"], [{ kind: "exact", credits: 250 }, "run"]]);
+  expect(m.primary).toMatchObject({ kind: "plan", label: "Approve the rest · 43 cr" });
+  /* After the approval: a step the plan covers shows no price of its own until it settles. */
+  const approved = run({ kind: "chips", state: "running", paid: [
+    step(1, "Shot 1", { state: "rendering", quote: 43, worst: 43, inPlan: true }),
+    step(3, "Shot 2", { state: "done", quote: 7, worst: 7, charged: 7, inPlan: true }),
+  ] });
+  expect(planModel(base({ run: approved }))!.steps.map((s) => [s.price, s.source])).toEqual([[null, "plan"], [{ kind: "exact", credits: 7 }, "settled"]]);
 });
 
 test("finished steps say what they settled at, or what the provider did with a failure", () => {

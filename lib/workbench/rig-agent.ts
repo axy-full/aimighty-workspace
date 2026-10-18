@@ -163,26 +163,57 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
 }
 
 /**
- * A chips plan has ONE price (owner, 16 Oct 2026): the plan's total, all in, and no per-step breakdown and no engine's name. The server keeps every step's quote on its
- * record (for the ledger and for the plan's own sum); the client is not told them. Shot titles, states, outcomes and what was charged once a render has settled stay.
+ * A chips plan has ONE price (owner, 16 Oct 2026): the plan's total, all in, with no per-step breakdown and no engine's name. While the plan's gate is open (its quote
+ * waits for the one approval), a step the gate COVERS is told no price of its own, and no note about one: its price is in the total. The server keeps every step's
+ * quote on its record (for the ledger and for the plan's own sum).
+ *
+ * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step in the gate's `asks` (over the per-job
+ * line, or needing an admin), a fix, every step while there is no plan quote yet (each one asks on its own), and every step once the plan is approved (a render
+ * the approval does not cover asks at its own price). Shot titles, states, outcomes and what was charged stay.
  */
 function onePrice(view: RigAgentRunView): RigAgentRunView {
-  const waiting = (p: RigAgentPaidStepView) => p.state === "waiting" || (p.state === "paused" && (p.pause === "limit" || p.pause === "credits"));
+  const gate = view.plan?.quote && !view.plan.approval ? view.plan.quote : null;
+  if (!gate) return view;
+  const covered = new Set(gate.covered);
   return {
     ...view,
     /* While the plan waits for its one approval, the run's own note is a step's price and the limit it is not under yet: not the card's to show. */
-    reason: view.state === "needs_you" && view.plan?.quote ? null : view.reason,
+    reason: view.state === "needs_you" ? null : view.reason,
     paid: view.paid.map((p) => {
-      const { quoteUsd: _q, worstUsd: _w, ...rest } = p as RigAgentPaidStepView & { quoteUsd?: number; worstUsd?: number };
+      if (p.tool !== "render" || !covered.has(p.seq)) return p;
+      const { quoteUsd: _q, worstUsd: _w, ...rest } = p;
       void _q; void _w;
-      return { ...rest, quote: null, worst: null, reason: waiting(p) ? null : p.reason };
+      return { ...rest, quote: null, worst: null, reason: null };
     }),
   };
 }
 
+/**
+ * The words a chips plan shows for a render paused because it could not be priced, or because it needs an admin: fixed, with no engine's name (owner, 16 Oct).
+ * The pause's own reason is the pricing refusal word for word (lib/workbench/rig-agent-runs.ts priceRender), which can name the engine; it stays on the record.
+ */
+export function engineFreeReason(pause: string | null): string | null {
+  if (pause === "unpriced") return "Can't be priced yet. Check the shot, then price it again.";
+  if (pause === "admin") return "Needs an admin: it asks on its own, at its own price.";
+  return null;
+}
+
+/** A chips run's steps and note with every paused unpriced or admin render's reason in engine-free words (the run's note is that reason when the pause set it). */
+function engineFree(run: RunRow, steps: StepRow[]): { run: RunRow; steps: StepRow[] } {
+  const said = new Map<string, string>();
+  const safe = steps.map((s) => {
+    const words = s.purpose === "take" && s.state === "paused" ? engineFreeReason(s.pause) : null;
+    if (words == null || s.reason === words) return s;
+    if (s.reason) said.set(s.reason, `${stepTitle(run, s)}: ${words}`);
+    return { ...s, reason: words };
+  });
+  return { run: run.reason && said.has(run.reason) ? { ...run, reason: said.get(run.reason)! } : run, steps: safe };
+}
+
 export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger = NO_LEDGER, approval: PlanApprovalRow | null = null): RigAgentRunView {
-  const view = runViewOf(run, steps, viewer, ledger, approval);
-  return run.plan?.kind === "chips" ? onePrice(view) : view;
+  if (run.plan?.kind !== "chips") return runViewOf(run, steps, viewer, ledger, approval);
+  const safe = engineFree(run, steps);
+  return onePrice(runViewOf(safe.run, safe.steps, viewer, ledger, approval));
 }
 
 function runViewOf(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger = NO_LEDGER, approval: PlanApprovalRow | null = null): RigAgentRunView {
