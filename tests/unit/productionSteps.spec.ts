@@ -583,11 +583,8 @@ test("a production made from an older list keeps the steps it was made with; onl
   });
 });
 
-test("a production_steps table made before A1b (no deck in its CHECK) is rebuilt once: every row kept, the index and the trigger back, deck accepted", async () => {
-  const m = await mods();
-  const ws = workspace("pre-a1b");
-  const client = await existingDatabase(ws);
-  // The table exactly as #818 made it, written out here, with one step in it.
+/** The steps table exactly as #818 made it, written out here, with one removed step in it, on a production of film type ad_film. */
+async function preA1bTable(client: Client, ws: TenantWorkspace) {
   await client.batch([
     `CREATE TABLE production_steps(
        workspace_id TEXT NOT NULL, id TEXT NOT NULL, production_id TEXT NOT NULL,
@@ -610,9 +607,17 @@ test("a production_steps table made before A1b (no deck in its CHECK) is rebuilt
     `UPDATE projects SET film_type='ad_film' WHERE id='prj_one'`,
     { sql: `INSERT INTO production_steps VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [ws.id, "pstep_old", "prj_one", "breakdown", "breakdown", "canvas", "Breakdown", 0, 10, 20, 1920, 1080, "person_a", 5, 6, 7, "person_a"] },
   ], "write");
+}
+
+test("a production_steps table made before A1b (no deck in its CHECK) is rebuilt once: the old table kept aside with every row, every row copied, the index and the trigger back, deck accepted", async () => {
+  const m = await mods();
+  const ws = workspace("pre-a1b");
+  const client = await existingDatabase(ws);
+  await preA1bTable(client, ws);
   await expect(client.execute({ sql: "INSERT INTO production_steps(workspace_id,id,production_id,page_id,kind,surface,label,position,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", args: [ws.id, "x", "prj_one", "x", "x", "deck", "x", 1, 1, 1] })).rejects.toThrow(/CHECK/i);
-  const rowsOf = async () => (await client.execute("SELECT * FROM production_steps ORDER BY id")).rows.map((r) => ({ ...r }));
+  const rowsOf = async (table = "production_steps") => (await client.execute(`SELECT * FROM ${table} ORDER BY id`)).rows.map((r) => ({ ...r }));
   const before = await rowsOf();
+  const catalog = async () => (await client.execute("SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master WHERE name LIKE 'production_steps%' OR name='idx_production_steps_order' ORDER BY name")).rows.map((r) => ({ ...r }));
 
   // Another client object on the same database (the local client is cached per file, so it is closed only at the end).
   const again = m.createPlatformDatabaseClient({ url: ws.dbUrl });
@@ -621,11 +626,20 @@ test("a production_steps table made before A1b (no deck in its CHECK) is rebuilt
       const store = m.stepStoreForTests(client, ws.id, {});
       await store.ready();
       expect(await rowsOf()).toEqual(before);
-      expect(await tables(client)).toEqual(expect.arrayContaining(["production_steps", "idx_production_steps_order", "production_steps_page_id_fixed"]));
-      expect((await tables(client)).filter((t) => t.startsWith("production_steps_rebuilt"))).toEqual([]);
-      // Ready again, through the other client object: the new shape is found and left alone.
+      // Nothing erased: the old table is kept aside, under its own name, with every row it had.
+      expect(await rowsOf(m.STEPS_ASIDE_TABLE)).toEqual(before);
+      expect((await tables(client)).filter((t) => t.startsWith("production_steps"))).toEqual(expect.arrayContaining(["production_steps", "production_steps_page_id_fixed", m.STEPS_ASIDE_TABLE]));
+      // The index and the trigger are on the new table, not left on the aside one.
+      const onTable = (await client.execute("SELECT name, tbl_name FROM sqlite_master WHERE type IN ('index','trigger') AND name IN ('idx_production_steps_order','production_steps_page_id_fixed') ORDER BY name")).rows.map((r) => [String(r.name), String(r.tbl_name)]);
+      expect(onTable).toEqual([["idx_production_steps_order", "production_steps"], ["production_steps_page_id_fixed", "production_steps"]]);
+      expect(String((await client.execute("SELECT sql FROM sqlite_master WHERE name='production_steps'")).rows[0].sql)).toContain("'deck'");
+      // Ready again, through the other client object: the new shape is found and left alone. Same catalog (sql and
+      // rootpage of every table, index and trigger), no second aside table, the same rows in both.
+      const rebuilt = await catalog();
       await m.stepStoreForTests(again, ws.id, {}).ready();
+      expect(await catalog()).toEqual(rebuilt);
       expect(await rowsOf()).toEqual(before);
+      expect(await rowsOf(m.STEPS_ASIDE_TABLE)).toEqual(before);
       // The old step reads as it was; a deck step can now be written; the trigger still holds.
       expect((await store.list("prj_one", { removed: true })).map((s) => [s.pageId, s.removedBy])).toEqual([["breakdown", "person_a"]]);
       expect(await store.add("prj_one", "treatment", "person_a")).toMatchObject({ surface: "deck", frame: null, pageId: "treatment" });
@@ -635,6 +649,22 @@ test("a production_steps table made before A1b (no deck in its CHECK) is rebuilt
   } finally {
     again.close();
   }
+});
+
+test("a rebuild never overwrites an aside table already there: it takes the next free name, and the earlier one is left as it was", async () => {
+  const m = await mods();
+  const ws = workspace("pre-a1b-again");
+  const client = await existingDatabase(ws);
+  await preA1bTable(client, ws);
+  // An aside table from an earlier rebuild, holding a row of its own, and one already numbered 2 for good measure.
+  for (const name of [m.STEPS_ASIDE_TABLE, `${m.STEPS_ASIDE_TABLE}_2`])
+    await client.batch([`CREATE TABLE ${name}(id TEXT, note TEXT)`, { sql: `INSERT INTO ${name} VALUES(?,?)`, args: ["earlier", name] }], "write");
+  const before = (await client.execute("SELECT * FROM production_steps ORDER BY id")).rows.map((r) => ({ ...r }));
+  await m.runInTenant(ws, () => m.stepStoreForTests(client, ws.id, {}).ready());
+  for (const name of [m.STEPS_ASIDE_TABLE, `${m.STEPS_ASIDE_TABLE}_2`])
+    expect((await client.execute(`SELECT * FROM ${name}`)).rows.map((r) => ({ ...r })), name).toEqual([{ id: "earlier", note: name }]);
+  expect((await client.execute(`SELECT * FROM ${m.STEPS_ASIDE_TABLE}_3 ORDER BY id`)).rows.map((r) => ({ ...r }))).toEqual(before);
+  expect((await client.execute("SELECT * FROM production_steps ORDER BY id")).rows.map((r) => ({ ...r }))).toEqual(before);
 });
 
 test("flag off: refused before the workspace database is opened; nothing in the app reaches the store or the test-only builder", async () => {

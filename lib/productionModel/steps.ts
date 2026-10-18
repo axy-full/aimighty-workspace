@@ -28,7 +28,7 @@ import { ProductionModelOffError, productionModelOn } from "./flag";
  *     canvas step by construction (CHECKs: a canvas step always has one; a document, table or deck step never does).
  *     `surface` is one of `STEP_SURFACES`; `deck` (Treatment, owner 19 Oct 2026, Q19) joined in A1b. A table made before
  *     A1b (a development database only: the switch has never been on anywhere else) is rebuilt once by `ready()` so its
- *     CHECK accepts `deck`, every row copied as it was.
+ *     CHECK accepts `deck`: every row copied as it was, and the old table kept aside, never dropped.
  * Nothing is erased (rule 13): removing a step stamps `removed_at`/`removed_by`, and restoring clears them.
  *
  * A new production gets its film type's opened steps only. `add` takes any kind the type lists, opened or behind the +
@@ -99,20 +99,33 @@ export const PRODUCTION_STEPS_SCHEMA: string[] = [
 /**
  * A `production_steps` table made before A1b refuses a `deck` step: `CREATE TABLE IF NOT EXISTS` cannot change a table
  * that exists, and SQLite cannot change a CHECK in place. Such a table can only be in a development database (the switch
- * has never been on anywhere else), but if one is found it is rebuilt here, once, the way SQLite documents: the new shape
- * under another name, every row copied as it was, the old table dropped (its index and trigger with it), the new one
- * renamed into place, and the index and trigger made again. One write transaction, so a second boot waits and then finds
- * the new shape. On a database without the table, or with today's shape, this is one catalog read and nothing else.
+ * has never been on anywhere else), but if one is found it is rebuilt here, once. Nothing is erased (rule 13; plan § 2.2):
+ *   1. the old table is renamed aside, to `production_steps_pre_a1b` (or `_2`, `_3` … if that name is taken: an aside
+ *      table is never overwritten), and keeps every row;
+ *   2. its index and trigger, which moved with it, are dropped by name, so the `IF NOT EXISTS` statements that follow
+ *      make them again on the new table instead of finding the old ones and doing nothing;
+ *   3. the new table is made, every row is copied across as it was, and `ready()` then makes the index and trigger.
+ * All in the caller's one write transaction, so a second boot waits and then finds the new shape and does nothing. On a
+ * database without the table, or with today's shape, this is one catalog read and nothing else.
  */
+export const STEPS_ASIDE_TABLE = "production_steps_pre_a1b";
+
 async function rebuildStepsTableIfStale(tx: Pick<Transaction, "execute">): Promise<void> {
   const row = (await tx.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='production_steps'")).rows[0];
   if (!row) return;
-  const allowed = String(row.sql ?? "").match(/surface\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(\s*surface\s+IN\s*\(([^)]*)\)/i)?.[1] ?? "";
+  const ddl = String(row.sql ?? "");
+  /* The surface CHECK's list. If the table's text ever stops matching this shape, the whole text is searched instead:
+     today's table names every surface in it, so it is still found current and never rebuilt again and again. */
+  const allowed = ddl.match(/surface\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(\s*surface\s+IN\s*\(([^)]*)\)/i)?.[1] ?? ddl;
   if (STEP_SURFACES.every((surface) => allowed.includes(`'${surface}'`))) return;
-  await tx.execute(stepsTable("production_steps_rebuilt"));
-  await tx.execute(`INSERT INTO production_steps_rebuilt(${STEP_COLUMNS}) SELECT ${STEP_COLUMNS} FROM production_steps`);
-  await tx.execute("DROP TABLE production_steps");
-  await tx.execute("ALTER TABLE production_steps_rebuilt RENAME TO production_steps");
+  const taken = new Set((await tx.execute(`SELECT name FROM sqlite_master WHERE name LIKE '${STEPS_ASIDE_TABLE}%'`)).rows.map((r) => String(r.name)));
+  let aside = STEPS_ASIDE_TABLE;
+  for (let n = 2; taken.has(aside); n++) aside = `${STEPS_ASIDE_TABLE}_${n}`;
+  await tx.execute(`ALTER TABLE production_steps RENAME TO ${aside}`);
+  await tx.execute("DROP TRIGGER IF EXISTS production_steps_page_id_fixed");
+  await tx.execute("DROP INDEX IF EXISTS idx_production_steps_order");
+  await tx.execute(stepsTable("production_steps"));
+  await tx.execute(`INSERT INTO production_steps(${STEP_COLUMNS}) SELECT ${STEP_COLUMNS} FROM ${aside}`);
 }
 
 const boots = new WeakMap<Client, Promise<void>>();
