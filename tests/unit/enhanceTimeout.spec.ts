@@ -208,6 +208,38 @@ test("every other text job still bills an error status as uncertain (the shared 
   });
 });
 
+test("the writer answered, then something of ours broke before the job settled: the enhancer is still free; every other text job keeps the shared uncertain hold", async () => {
+  const answered: Submit = async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ prompt: "A lone tree in steady rain." }) } }], usage: { cost: 0.0004 } }) });
+  /* Any error that is not a paid-text refusal, after the answer is in and while the job is still running. */
+  const broke = (): never => { throw new Error("database is locked"); };
+  const job = { model: WRITER, messages: [{ role: "user", content: "a tree in rain" }], maxTokens: 400, mock: "prompt" as const, createdBy: "owner" };
+  await inWorkspace("ws_enhance_broke_after_answer", async () => {
+    const { runPaidText } = await import("../../lib/paidText");
+    const error = await runPaidText({ ...job, id: "enhance-broke", kind: "enhance", freeOnFailure: true }, { model: MODEL as never, submit: answered, accept: broke }).then(() => null, (e: unknown) => e as Error & { billing?: unknown });
+    expect(error?.message).toBe("The writer couldn't answer this time. Nothing billed.");
+    expect(error?.billing).toEqual({ nothingBilled: true });
+    const settled = await traces("ws_enhance_broke_after_answer");
+    expect(settled.jobs.map((j) => j.status)).toEqual(["failed"]);
+    expect(Number(settled.jobs[0].cost_usd)).toBe(0);
+    expect(settled.meters.map((m) => m.status)).toEqual(["failed"]);
+    expect(Number(settled.meters[0].billed_credits)).toBe(0);
+    expect(Number(settled.meters[0].engine_cost_usd)).toBe(0);
+    expect(await balanceOf("ws_enhance_broke_after_answer")).toBe(1000);
+    const { platformDb } = await import("../../lib/platform");
+    const line = (await platformDb().execute({ sql: "SELECT provider_outcome FROM meter_events WHERE workspace_id=?", args: ["ws_enhance_broke_after_answer"] })).rows[0];
+    expect(JSON.parse(String(line.provider_outcome))).toMatchObject({ stage: "run", billing: { state: "unknown" } });
+  });
+  await inWorkspace("ws_text_broke_after_answer", async () => {
+    const { runPaidText } = await import("../../lib/paidText");
+    const error = await runPaidText({ ...job, id: "text-broke", kind: "plan" }, { model: MODEL as never, submit: answered, accept: broke }).then(() => null, (e: unknown) => e as Error & { billing?: unknown });
+    expect(error?.message).toMatch(/^The text request was interrupted after submission\./);
+    expect(error?.billing).toEqual({ heldCredits: 1 });
+    const settled = await traces("ws_text_broke_after_answer");
+    expect(settled.jobs[0].status).toBe("uncertain");
+    expect(Number(settled.meters[0].billed_credits)).toBe(1);
+  });
+});
+
 test("time spent before the provider call comes off its timeout: a slow catalogue leaves the provider the rest of the 8 s", async () => {
   await inWorkspace("ws_enhance_slow_catalogue", async () => {
     const timeouts: (number | undefined)[] = [];

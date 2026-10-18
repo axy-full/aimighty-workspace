@@ -496,6 +496,10 @@ return await withRecoveryActivity('paid-text', async () => {
       throw await freeFailure(noAnswerOutcome(writer, "run", cancelled ? "The person cancelled before the writer answered. Not billed to the workspace; whether the provider billed the platform is unknown." : "The writer did not answer inside the enhancer's deadline. Not billed to the workspace; whether the provider billed the platform is unknown."),
         cancelled ? "Cancelled. Nothing billed." : "The writer didn't answer in time. Nothing billed.", cancelled ? 499 : 504);
     }
+    /* Answered, then something else broke before the job settled (a write that failed, an error of our own): the enhancer is still never billed for it. */
+    if (!(error instanceof PaidTextError) && input.freeOnFailure && answered && record?.status === "running")
+      throw await freeFailure(silentOutcome(writer, "run", "failed", "The writer answered, but the job could not be settled. Not billed to the workspace; the provider's own bill is unknown."),
+        "The writer couldn't answer this time. Nothing billed.");
     if (!(error instanceof PaidTextError)) {
       const completed = record?.status === "succeeded";
       const cost = completed
