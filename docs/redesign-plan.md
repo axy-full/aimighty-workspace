@@ -1305,3 +1305,28 @@ Recorded by the lead, verbatim. Four brackets were unfilled when sent; item 1 (t
 > One more: #750 — one line on what it changes, before it merges.
 
 **Lead's notes:** the five money PRs merge only on CI 24/24, a fresh Opus approval and a done money review (#765 and #800 have both; #815 has a must-fix in progress; #809 and #814 are under money review). Demo lanes B, C, D, F and H restarted 17 Oct evening; I and J follow when capacity allows.
+
+## Owner, 18 Oct 2026, ~23:00 IST: answers to the lead's 18 Oct summary (with the advisor)
+
+The advisor drafted these answers, and the owner confirmed them as his own, "all eight as written". They are verbatim below, with the advisor's recommendation marks removed.
+
+> 1 Demo screens: v25. The 31 Oct demo runs on the live v25 screens. v30 is superseded: the design is settled at v31.2 (Claude Design, in review now) and the interface plan from it replaces v25/v29 for Phase B. Build nothing in the interface until the approved v31.2 zip is in the repo as THE design.
+> 2 Money PRs under the standing yes: yes, for #765, #800 and #814, each only with a full CI pass at the merged head and a posted Opus money approval. #815 and #809 not until their cancel bugs are fixed and re-reviewed.
+> 3 #763: yes, merge after CI and review.
+> 4 #808's guard lists: yes to adding the plan_step route to the two lists, only once its two failing guard tests pass; the price-on-renders and engine-in-reason bugs fixed first.
+> 5 Fix lanes: yes. Mocks only, nothing spent, within 5 cores / 20 GB. Order: #815 cancel, #809 cancel, #808, then #818's step lists.
+> 6 #750: hold; merge only after item 1 is confirmed v25.
+> 7 Library origin: a trained likeness is "uploaded" (a real person, carries the consent tick); anything made from it is "generated".
+> 8 Commit trailer: sign as Opus 5.5, the model that runs.
+>
+> Data-model work you can start now, in lanes, behind switches, no interface: (a) the production record: what Atomik carries forward (brief, script and what changed, beats, treatment, look pack, elements with handles, uploads with reading notes, keeps and rejections), pinned or removed per item, free; (b) Sent status with its step (Draft · Kept · Sent → step), distinct from Kept; (c) make nodes typed by output (Image · Storyboard sheet · Video · Audio · Lip-sync · Script revision · Deck page · Upscale · Layers) with inputs as rows, bundles of cards, and the shot as the card that holds its takes; (d) step order per film type with Sound after Shots, Breakdown renamed Beats and folded into Script as views, Treatment as its own step after Script; #818's lists change to this before its switch goes on.
+>
+> Money behaviour (decided 18 Oct, supersedes 16–17 Oct): a Preflight card before every quote; everything Atomik makes is charged and quoted first, including plans, research, analysis and text revisions as Reading · Research · Analysis · Writing bands; the quote and the Preflight card are free; Atomik's own check of its work is free and never a line; Enhance 1 cr with no Undo; "Options" is a priced chip; Agent History one line per command; no engine name in Agent mode anywhere, History included. Bring CLAUDE.md to this, not to the 16–17 Oct wording, in a docs PR.
+>
+> Spikes next: the Polotno spike first (JSON writer from a deck-system spec, polotno-node render, PPTX and MP4 fidelity checked by you, not taken from their page; template and stock panels removed); then the Tiptap 3 screenplay node set with Fountain and .fdx import/export and open-source pagination; then evaluate OpenVideo Editor (designcombo/react-video-editor) for the Edit timeline with Remotion/ffmpeg for renders.
+>
+> Loose end: your 17 Oct vendor-terms note counted "the Vercel gateway" among eight vendors. Say which code path still references it and whether a gateway key name exists in Coolify (names only).
+>
+> Deploy #6 stays the owner's: backup first, then main, then deploy; before it, verify whether RIG_AGENT_ENABLED gates #805's API action and say so.
+>
+> Morning note at 10:30 IST, real PR numbers, nothing invented, "not yet" where not done.

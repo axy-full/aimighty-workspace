@@ -1341,3 +1341,15 @@ Copied from `lib/v12/unpriced.ts` (each entry's reason is there), as of release/
   - **Lanes and reviewers:** every lane (B, C, D, F, H, I, J) and both Opus reviewers were told to stop, stop servers, release slots, report their state and wait.
   - **Still running:** the production watcher (read-only health checks) and release/1's own post-merge CI run.
   - **Merged today:** #771, #697, #699, #805, #749. Deploy #5 is live at 62163d7.
+- **18 Oct ~21:05 IST. Resumed** (owner: "resume"), with a new lead. The 18 Oct handover was verified against git and gh: main 62163d76, release/1 75453d3a, 123 open PRs, the machine idle.
+- **18 Oct 21:53 IST.** **Merged #818** (v30 A1 steps and frames; head e20e46ab; CI 39141696196, 24 passed + 1 skipped) as 9e7222da, and **#822** (JPEG sizing; head a4f5cbfe; CI 39141684058, 24/24) as e5ce3d8c. Both have Opus approvals posted on the PR.
+- **18 Oct 22:43 IST.** **Merged #820** (v30 Library; head 4974134e; CI 39145690098, 24/24) as c6f90813, with its Opus approval posted.
+- **18 Oct, the same evening.** Opus changes requested, each posted on its PR:
+  - **#808:** a wrong price, or none, on renders that ask on their own; an engine name in a reason; two failing guard tests.
+  - **#809 (fix e9d4b2de):** a stream cancel never settles in production.
+  - **#815 (fix e59f6de9):** money-approved, but the lead requires the cancel-race fix.
+- **18 Oct ~23:00 IST.** **Owner's answers recorded** in redesign-plan.md: v25 demo; money yes for #765, #800 and #814; #763 yes; fix lanes yes; trailer Opus 5.5.
+  - **Started:** fix lanes for #815, #809 and #808.
+  - **Opus reviews:** #765 (standard + money), #800 (standard + money), #763, #764, #750.
+  - **CI:** #765 and #763.
+  - **Checked:** #805's action is gated by `RIG_AGENT_ENABLED`; `planRigAgentStep` refuses with 403 when it is off, and it is off in production when unset. Production health reads ok at 62163d7.
