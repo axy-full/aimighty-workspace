@@ -101,7 +101,7 @@ test("a quick quote is the same quote the run is held at, and stays 1 cr for a t
   }
 });
 
-test("the longest prompt the enhancer takes (ENHANCE_MAX_PROMPT), on the default writer, is quoted at exactly 1 cr in every mode", async () => {
+test("an ordinary (ASCII) prompt at the length limit (ENHANCE_MAX_PROMPT), on the default writer, is quoted at 1 cr in every mode", async () => {
   const { staticCatalog } = await import("../../lib/catalog");
   const { quotePaidText } = await import("../../lib/paidText");
   const { billCredits } = await import("../../lib/creditTerms");

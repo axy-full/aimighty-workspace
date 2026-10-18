@@ -240,6 +240,74 @@ test("the writer answered, then something of ours broke before the job settled: 
   });
 });
 
+test("a long prompt in a heavier script is priced as it costs: quoted above 1 cr before the press, refused below its quote with nothing reserved or sent, charged its cost at it", async () => {
+  /* The owner, 19 Oct 2026: price as it costs, shown before pressing; no byte cap. The default writer as the route picks it, with its price from the code's catalogue (no price is written here). */
+  const { staticCatalog } = await import("../../lib/catalog");
+  const { DEFAULT_TEXT_MODELS } = await import("../../lib/platformLayer");
+  const { ENHANCE_MAX_PROMPT, ENHANCE_MAX_TOKENS, enhancerMessages } = await import("../../lib/shell/enhancer");
+  const writer = staticCatalog().find((m) => m.id === DEFAULT_TEXT_MODELS.enhance)!;
+  expect(writer).toBeTruthy();
+  /* Devanagari: three bytes a character, at the length limit. */
+  const heavy = "क".repeat(ENHANCE_MAX_PROMPT);
+  const ordinary = `${"a paper kite over a grey sea, slow push in, ".repeat(200).slice(0, ENHANCE_MAX_PROMPT - 1)}.`;
+  const sent: number[] = [];
+  /* The answer's usage is built here from the code's own estimate for this press: what it cost is what the quote said. */
+  let costUsd = 0;
+  const answers: Submit = async () => {
+    sent.push(1);
+    return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ prompt: `${heavy.slice(0, 40)}, slow push-in, grey dusk light.` }) } }], usage: { cost: costUsd } }) };
+  };
+  const paidText = nodeRequire(path.resolve("lib/paidText.ts"));
+  const route = load<{ POST: Handler }>("app/api/prompt/enhance/route.ts", {
+    "@/lib/auth": { ...nodeRequire(path.resolve("lib/auth.ts")), withTenant: (h: unknown) => h, requireRender: async () => OWNER },
+    "@/lib/catalog": { catalog: async () => [writer] },
+    "@/lib/gateway": { gatewayReachable: () => true },
+    "@/lib/paidText": { ...paidText, runPaidText: (input: unknown, o: Record<string, unknown> = {}) => paidText.runPaidText(input, { ...o, submit: answers }) },
+    "next/server": { NextResponse: Response, after: () => { throw new Error("Nothing is continued after the response here"); } },
+  }).POST;
+  /* No provider named: the workspace's default enhancer, on the default writer. */
+  const ask = (prompt: string, extra: Record<string, unknown>, key?: string) => route(new Request("http://localhost/api/prompt/enhance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(key ? { "Idempotency-Key": key } : {}) },
+    body: JSON.stringify({ prompt, mode: "video", ...extra }),
+  }));
+  const ws = "ws_enhance_heavy_script";
+  await inWorkspace(ws, async () => {
+    /* Shown before pressing: the quote, in credits. */
+    const plain = await ask(ordinary, { quoteOnly: true });
+    expect(plain.status).toBe(200);
+    expect((await plain.json()).estimateCredits, "an ordinary prompt at the limit").toBe(1);
+    const quoted = await ask(heavy, { quoteOnly: true });
+    expect(quoted.status).toBe(200);
+    const quote = await quoted.json();
+    expect(quote.model).toBe(writer.id);
+    expect(quote.estimateCredits, "a heavier script at the limit costs more, and says so").toBeGreaterThan(1);
+    expect(quote.estimateCredits, "today's catalogue and terms").toBe(2);
+    expect(quote.estimateUsd, "a vendor's dollars never reach a credits workspace").toBeUndefined();
+    expect(sent, "a quote sends nothing").toHaveLength(0);
+
+    /* Enforced before the press: without a quote, or below it, refused with nothing written, reserved, metered or sent. */
+    const unquoted = await ask(heavy, {}, "enhance-heavy-unquoted");
+    expect(unquoted.status).toBe(409);
+    const below = await ask(heavy, { maxCredits: quote.estimateCredits - 1 }, "enhance-heavy-below");
+    expect(below.status).toBe(409);
+    expect((await below.json()).error).toBe("The writing estimate changed. Review the new quote before running.");
+    expect(sent).toHaveLength(0);
+    expect(await traces(ws)).toEqual({ jobs: [], meters: [], reservations: 0 });
+    expect(await balanceOf(ws)).toBe(1000);
+
+    /* At its quote: run, and charged what it cost (here exactly the estimate), never more than the quote. */
+    costUsd = (await paidText.quotePaidText({ model: writer.id, messages: enhancerMessages(heavy, { mode: "video", anchored: false, editing: false, engine: null }), maxTokens: ENHANCE_MAX_TOKENS, quick: true }, writer)).estimateUsd;
+    const pressed = await ask(heavy, { maxCredits: quote.estimateCredits }, "enhance-heavy-at-quote");
+    expect(pressed.status, JSON.stringify(await pressed.clone().json())).toBe(200);
+    expect(sent).toHaveLength(1);
+    const settled = await traces(ws);
+    expect(settled.jobs.map((j) => j.status)).toEqual(["succeeded"]);
+    expect(settled.meters.map((m) => Number(m.billed_credits))).toEqual([quote.estimateCredits]);
+    expect(await balanceOf(ws)).toBe(1000 - quote.estimateCredits);
+  });
+});
+
 test("time spent before the provider call comes off its timeout: a slow catalogue leaves the provider the rest of the 8 s", async () => {
   await inWorkspace("ws_enhance_slow_catalogue", async () => {
     const timeouts: (number | undefined)[] = [];
