@@ -447,8 +447,8 @@ export async function createFirstAdmin(email: string, name: string, password: st
   if (ageConfirmed !== true) throw new Error(AGE_CONFIRM_REFUSAL);
   await platformReady();
   if ((await accountCount()) > 0) return null;
-  const account = await createAccount(email, name, hashPassword(password));
-  await platformDb().execute(ageConfirmedStatement(account.id));
+  /* One batch: the account and its 18+ line are written together or not at all, so the first admin never exists without the line. */
+  const account = await createAccount(email, name, hashPassword(password), (id) => [ageConfirmedStatement(id)]);
   let ws = await legacyWorkspace();
   if (!ws) {
     const ts = now();

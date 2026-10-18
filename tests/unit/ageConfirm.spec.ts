@@ -135,6 +135,37 @@ test("first-run setup: refused without the tick (the account function and the ro
   expect(calls).toEqual(["first:true"]);
 });
 
+test("first-run setup writes the account and its line in one batch: when the line fails, no first admin is made", async () => {
+  const { createFirstAdmin, hashPassword } = await import("../../lib/auth");
+  const { createAccount, platformDb } = await import("../../lib/platform");
+  const { ageConfirmedStatement } = await import("../../lib/ageConfirm");
+  const db = platformDb();
+  const count = async (email: string) => Number((await db.execute({ sql: "SELECT COUNT(*) AS n FROM accounts WHERE email = ?", args: [email] })).rows[0].n);
+  const orphanLines = async () => Number((await db.execute("SELECT COUNT(*) AS n FROM security_audit WHERE action = 'account.age_confirmed' AND target_id NOT IN (SELECT id FROM accounts)")).rows[0].n);
+  const orphansBefore = await orphanLines();
+  /* First run means no live account: the accounts other tests made in this worker are hidden for the length of this test and given back after (accountCount counts deleted_at IS NULL). */
+  const hiddenAt = Date.now();
+  const hidden = (await db.execute("SELECT id FROM accounts WHERE deleted_at IS NULL")).rows.map((r) => String(r.id));
+  const trigger = `age_line_fails_${tag}`;
+  await db.execute({ sql: "UPDATE accounts SET deleted_at = ? WHERE deleted_at IS NULL", args: [hiddenAt] });
+  /* The second statement fails for real: the database refuses the 18+ line. */
+  await db.execute(`CREATE TRIGGER ${trigger} BEFORE INSERT ON security_audit WHEN NEW.action = 'account.age_confirmed' BEGIN SELECT RAISE(ABORT, 'age line refused'); END`);
+  try {
+    await expect(createFirstAdmin(mail("first-atomic"), "First", password, true)).rejects.toThrow(/age line refused/);
+    expect(await count(mail("first-atomic")), "no first admin without the line").toBe(0);
+    await expect(createAccount(mail("helper-atomic"), "Helper", hashPassword(password), (id) => [ageConfirmedStatement(id)])).rejects.toThrow(/age line refused/);
+    expect(await count(mail("helper-atomic")), "the helper's batch is all or nothing").toBe(0);
+    expect(await orphanLines()).toBe(orphansBefore);
+  } finally {
+    await db.execute(`DROP TRIGGER IF EXISTS ${trigger}`);
+    for (const id of hidden) await db.execute({ sql: "UPDATE accounts SET deleted_at = NULL WHERE id = ? AND deleted_at = ?", args: [id, hiddenAt] });
+  }
+  /* With the line allowed, the same batch writes both: one account, one line. */
+  const from = Date.now();
+  const made = await createAccount(mail("helper-atomic"), "Helper", hashPassword(password), (id) => [ageConfirmedStatement(id)]);
+  expectLine(await lines(made.id), made.id, from, Date.now());
+});
+
 test("the sign-up route refuses without the tick and passes it down with it", async () => {
   const calls: string[] = [];
   const seen: unknown[] = [];
@@ -202,7 +233,10 @@ test("every place that makes an account is on an exact list: the sign-up sites w
   ]);
   /* Callers of the helper: first-run setup (which writes the line right after) and the preview seed. A new caller fails here until it is listed, or confirms. */
   expect(calls.sort()).toEqual(["lib/auth.ts:createAccount", "lib/previewSeed.ts:createAccount"]);
-  expect(readFileSync("lib/auth.ts", "utf8")).toMatch(/createAccount\(.*\);\s*await platformDb\(\)\.execute\(ageConfirmedStatement\(account\.id\)\)/);
+  /* First-run setup hands the line to createAccount, which writes it in the account's own batch (one transaction), never as a second write after it. */
+  expect(readFileSync("lib/auth.ts", "utf8")).toMatch(/createAccount\(email, name, hashPassword\(password\), \(id\) => \[ageConfirmedStatement\(id\)\]\)/);
+  expect(readFileSync("lib/auth.ts", "utf8"), "no separate write of the line").not.toMatch(/execute\(ageConfirmedStatement/);
+  expect(readFileSync("lib/platform.ts", "utf8")).toMatch(/if \(alongside\) await platformDb\(\)\.batch\(\[insert, \.\.\.alongside\(id\)\], "write"\)/);
   expect(readFileSync("lib/auth.ts", "utf8"), "the tick-less helper is gone").not.toMatch(/export async function createUser/);
 });
 
