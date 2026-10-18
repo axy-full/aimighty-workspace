@@ -1,5 +1,5 @@
 "use client";
-import { AgeConfirm } from "@/components/AgeConfirm";
+import { AgeConfirm, AgeConfirmDocs } from "@/components/AgeConfirm";
 import { useId, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import { Dialog } from "../ui";
 import { PlanPicker } from "@/components/v12/settings/PlanPicker";
@@ -120,6 +120,7 @@ function InvitePath({ state, setState, invite, back, google }: { state: JoinStat
             {/* `accept` is the tick below, not a hidden field: Google is never started for a new account without it (lib/ageConfirm.ts). */}
             {Object.entries(googleJoinFields({ invite: code, next: back })).filter(([name]) => name !== "accept").map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}
             <AgeConfirm name="accept" className="v12-join-age" testId="v12-join-age" />
+            <AgeConfirmDocs testId="v12-join-docs" />
             <button type="submit" className="v12-join-btn" data-testid="v12-join-google">
               Continue with Google
             </button>

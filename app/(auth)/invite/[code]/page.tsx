@@ -11,7 +11,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
-import { AgeConfirm } from "@/components/AgeConfirm";
+import { AgeConfirm, AgeConfirmDocs } from "@/components/AgeConfirm";
 
 type Info = { workspace: string; email: string; name: string; role: string; hasAccount: boolean; signedInAsInvitee: boolean; mailboxNeeded?: boolean };
 
@@ -101,6 +101,7 @@ export default function InvitePage({ params, searchParams }: { params: Promise<{
         <Field label="Password"><input className="ctl" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} autoFocus /></Field>
         <Field label="Confirm"><input className="ctl" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
         <AgeConfirm className="mt-3" checked={agreed} onChange={setAgreed} testId="invite-terms" />
+        <AgeConfirmDocs testId="invite-docs" />
         <Submit busy={busy}>Join the workspace</Submit>
         {err && <ErrorLine>{err}</ErrorLine>}
       </form>

@@ -22,3 +22,16 @@ export function AgeConfirm({ checked, onChange, testId, name, className = "" }: 
     </label>
   );
 }
+
+/**
+ * The other two documents, under the tick, as their own targets (the Terms are in the tick's sentence): the same pages the sign-up page links (`gx-su-docs`, app/(auth)/signup/page.tsx).
+ * Each link is 44 px high, readable, with a visible focus ring, so the privacy notice stays in view wherever an account is made.
+ */
+export function AgeConfirmDocs({ testId, className = "" }: { testId?: string; className?: string }) {
+  return (
+    <div className={`age-confirm-docs ${className}`.trim()} data-testid={testId}>
+      <Link className="age-confirm-link" href="/policy" target="_blank" rel="noopener">Content policy</Link>
+      <Link className="age-confirm-link" href="/privacy" target="_blank" rel="noopener">Privacy notice</Link>
+    </div>
+  );
+}

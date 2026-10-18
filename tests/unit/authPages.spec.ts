@@ -68,6 +68,27 @@ test("the invitation page asks for the policy before an account is made", () => 
   /* The tick is the shared required checkbox (components/AgeConfirm.tsx; lib/ageConfirm.ts), not a box of the page's own. */
   expect(page).toMatch(/<AgeConfirm[^>]*checked=\{agreed\}/);
   expect(readFileSync("components/AgeConfirm.tsx", "utf8")).toMatch(/type="checkbox" required/);
+  /* The Content policy and Privacy notice stay in view under the tick, as on the sign-up page. */
+  expect(page).toMatch(/<AgeConfirm[^>]*checked=\{agreed\}[^>]*\/>\s*<AgeConfirmDocs /);
   const route = readFileSync("app/api/auth/accept/route.ts", "utf8");
   expect(route).toContain("acceptedPolicy: policyAccepted(body)");
+});
+
+test("the invitation page and the join sheet link the Content policy and the Privacy notice under the tick, to the pages the sign-up page links", () => {
+  const signup = readFileSync("app/(auth)/signup/page.tsx", "utf8");
+  const docs = readFileSync("components/AgeConfirm.tsx", "utf8");
+  const shared = docs.slice(docs.indexOf("export function AgeConfirmDocs"));
+  for (const [href, words] of [["/policy", "Content policy"], ["/privacy", "Privacy notice"]]) {
+    expect(signup).toContain(`href="${href}" target="_blank">${words}</Link>`);
+    expect(shared).toContain(`href="${href}" target="_blank" rel="noopener">${words}</Link>`);
+  }
+  expect(shared).toMatch(/className="age-confirm-link"/);
+  const join = readFileSync("components/v12/join/JoinSheet.tsx", "utf8");
+  expect(join).toMatch(/<AgeConfirm name="accept"[^>]*\/>\s*<AgeConfirmDocs /);
+  expect(readFileSync("app/(auth)/invite/[code]/page.tsx", "utf8")).toMatch(/<AgeConfirmDocs testId="invite-docs" \/>/);
+  /* Readable, 44 px targets, a visible ring (rule 15): the links share the tick's own link style. */
+  const css = readFileSync("components/age-confirm.css", "utf8");
+  expect(css).toMatch(/\.age-confirm-link \{[^}]*min-height: 44px/);
+  expect(css).toMatch(/\.age-confirm-link:focus-visible \{ outline: 2px solid/);
+  expect(css).toMatch(/\.age-confirm-docs \{[^}]*font-size: 13px/);
 });

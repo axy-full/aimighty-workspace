@@ -12,3 +12,5 @@
 .age-confirm-box:focus-visible { outline: 2px solid #6eb4ff; outline-offset: -2px; }
 .age-confirm-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: #9ccbff; text-decoration: underline; text-underline-offset: 2px; }
 .age-confirm-link:focus-visible { outline: 2px solid #6eb4ff; outline-offset: -2px; border-radius: 2px; }
+/* The Content policy and Privacy notice under the tick (AgeConfirmDocs): the same 13 px, 44 px links, side by side, wrapping on a narrow screen. */
+.age-confirm-docs { display: flex; flex-wrap: wrap; gap: 0 16px; font-size: 13px; line-height: 1.4; }
