@@ -43,6 +43,15 @@ These amend the ground rules above and the scope they were copied from (the full
 - **"quoted"** is shown where an action has no live quote path, which overrides rule 14's "never the bare word quoted" for the prototype-12 build. Each such action is listed in docs/redesign-progress.md.
 - **The new-interface switch** (`lib/newInterface.ts`) stays until launch: off for every customer workspace, on for the house workspace.
 - **Remotion (owner, 13 Oct 2026).** Remotion: Free License, confirmed by Remotion 13 Oct 2026; no licence key, nothing sent to Remotion; pinned to 4.x. SensAI is 3 people in total. Rendering is self-hosted on our own server only (no Remotion Lambda, no AWS), on a sealed worker with no internet, and only our own templates are rendered; users never upload Remotion projects. **When SensAI's headcount reaches 4, the Remotion Company License must be bought before the next release.** Any upgrade to Remotion 5.x is flagged to the owner first (5.0 may require a key): NEEDS AKSHAY. Remotion exports are free to customers (0 cr, "Free") for as long as Remotion charges us nothing; paid engine steps inside an export are priced as usual; only the owner sets a price for exports. The plan is docs/plans/remotion.md on the redesign branches.
+- **Design (18 Oct).** The 31 Oct demo runs on the live v25 screens. The interface after it is built from the approved v31.2 design (Claude Design). No interface work starts until that zip is in the repo as THE design.
+- **Money behaviour (18 Oct; supersedes the 16–17 Oct wording and amends rule 14).** These are the rules the product is built to. Until the business manager signs off, today's billing code stays as it is: the 200 cr line, 480p drafts first, the house cap, and the billing of failed and cancelled jobs.
+  - A Preflight card comes before every quote. The Preflight card and the quote are free.
+  - Everything Atomik makes is charged and quoted first. That includes plans, research, analysis and text revisions, priced as Reading · Research · Analysis · Writing bands. Atomik's own check of its work is free and is never a line. This replaces rule 14's planning-turn sentence.
+  - An Agent plan carries ONE all-in credit price, shown before approval and charged exactly, with no per-step breakdown (owner, 16 Oct). This replaces rule 14's "its listed steps at their listed prices". A step that asks on its own (over the 200 cr line, needing an admin, or outside the plan) shows its own price before its tap.
+  - Enhance is 1 cr, with no Undo, and free when it fails. "Options" is a priced chip: N variants are one job and one approval.
+  - Agent History is one line per command. No engine name appears in Agent mode anywhere: API, History, receipts, exports or error messages. Director jobs show what they chose.
+  - Only the workspace owner raises the monthly spend limit. The limit runs on the UTC calendar month, and a paused workspace resumes when the new month starts (17 Oct).
+- **Library origin (18 Oct).** A trained likeness is "uploaded": it is a real person and carries the consent tick. Anything made from it is "generated".
 
 # Pricing
 
