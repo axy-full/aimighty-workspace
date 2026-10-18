@@ -206,9 +206,10 @@ export function planModel(input: PlanInput): PlanModel | null {
   const plan = run.plan ?? null;
   const gate = phase === "proposal" && run.state !== "awaiting_approval" && plan?.quote ? plan.quote : null;
   const takes = run.paid.filter((p) => p.tool === "render");
-  /* A chips plan: ONE price. No pre-quote of a step, and none of its own for a step the plan covers, until it settles. */
+  /* A chips plan: ONE price. No pre-quote of a step, and none of its own for a step the plan covers (the server says which: `planPriced`), until it settles.
+     After the approval a paused step is never covered: its Retry runs at its own price, and a limit pause offers Raise from it. */
   const chips = run.kind === "chips";
-  const coveredByPlan = (p: RigAgentPaidStepView) => chips && p.state !== "done" && p.state !== "failed" && (p.inPlan === true || Boolean(gate?.covered.includes(p.seq)));
+  const coveredByPlan = (p: RigAgentPaidStepView) => chips && p.state !== "done" && p.state !== "failed" && (p.planPriced === true || Boolean(gate?.covered.includes(p.seq)));
   const steps: PlanStep[] = takes.map((p) => {
     const estimate = chips ? undefined : input.estimates?.[p.seq];
     const fromRun = coveredByPlan(p) ? null : runStepPrice(p);
@@ -275,7 +276,8 @@ export function planModel(input: PlanInput): PlanModel | null {
       if (to != null && ceilTenths(to) > toTenths(money.limit))
         primary = { kind: "raise", label: `Raise the limit to ${creditsText(to)}`, raiseTo: to, blocked: input.readOnly ?? (!input.enabled ? SWITCHED_OFF : !run.mine ? NOT_MINE : null) };
     } else if (open) {
-      /* Price again prices it afresh on the server and spends nothing. A tap that renders always shows its price: with none, it is not offered. */
+      /* Price again prices it again on the server; it runs only at a price already approved (the same price a tap or the plan gave), else it asks.
+         A tap that renders always shows its price: with none, it is not offered. */
       const again = paused?.state === "paused" && (paused.pause === "unpriced" || paused.pause === "record");
       const verb = again ? "Price again" : paused?.state === "paused" ? "Retry" : "Render";
       const words = !again && open.price ? priceWords(open.price) : null;

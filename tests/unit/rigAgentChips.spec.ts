@@ -292,6 +292,50 @@ test("one price, but every tap that spends shows its own (rule 14): a shot over 
   });
 });
 
+test("after the approval, one price still: a covered shot waiting behind a rendering one shows no price of its own, on the card and in History; one that pauses keeps its own price and its button (Retry · N cr, or Raise)", async () => {
+  await inRun("chips-approved", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { db } = await import("../../lib/db");
+    const { planModel } = await import("../../components/graphite/board/cards/plan/model");
+    const { readActivity } = await import("../../lib/control-room/activity.server");
+    const { creditFigure } = await import("../../lib/workbench/rig-agent-plan");
+    const r = renders(ws, (shot) => (shot === "1" ? 0.3 : 0.45));
+    const deps = await depsFor(ws, r);
+    const asked = await plan();
+    await agent.advanceRigAgentRun(asked.id, deps);
+    const gate = await view();
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId: asked.id, fingerprint: gate.plan!.quote!.fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(asked.id, deps);
+    expect(r.calls).toHaveLength(1);
+    const run = await view();
+    const [s1, s2] = run.paid.filter((p) => p.tool === "render");
+    /* Shot 1 renders under the approval; shot 2 waits for its turn, priced ahead at the very price the approval lists. Neither shows a price of its own. */
+    expect([s1.state, s1.inPlan, s1.quote, s1.planPriced]).toEqual(["rendering", true, null, true]);
+    expect([s2.state, s2.inPlan, s2.quote, s2.worst, s2.reason, s2.planPriced]).toEqual(["waiting", false, null, null, null, true]);
+    expect(run.plan?.approval).toMatchObject({ open: true });
+    const card = planModel({ run, enabled: true, balance: 2000, rule: null, readOnly: null })!;
+    expect(card.steps.map((s) => [s.price, s.source])).toEqual([[null, "plan"], [null, "plan"]]);
+    const history = (await readActivity({ id: OWNER, role: "admin", owner: true }, null)).runs.find((x) => x.id === `board:${asked.id}`)!;
+    expect(history.steps.filter((x) => x.kind === "paid").map((x) => x.priced)).toEqual([null, null]);
+    /* A step the approval sent keeps the approval's id when it pauses (credits, limit, a refusal): then it shows its own server price, and its button. */
+    const approvalId = String((await db().execute({ sql: "SELECT id FROM rig_plan_approvals WHERE run_id=?", args: [asked.id] })).rows[0].id);
+    const b = await credits(0.45);
+    for (const pause of ["credits", "refused", "limit"] as const) {
+      await db().execute({ sql: "UPDATE rig_agent_steps SET state='paused', pause=?, reason='It waits for you.', approval_id=?, approved_fingerprint=json_extract(admission,'$.quote.fingerprint'), approved_by=? WHERE run_id=? AND seq=?", args: [pause, approvalId, OWNER, asked.id, s2.seq] });
+      await db().execute({ sql: "UPDATE rig_agent_runs SET state='needs_you' WHERE id=?", args: [asked.id] });
+      const paused = await view();
+      const step = paused.paid.find((p) => p.seq === s2.seq)!;
+      expect([step.state, step.pause, step.inPlan, step.quote, step.planPriced], pause).toEqual(["paused", pause, true, b, undefined]);
+      const m = planModel({ run: paused, enabled: true, balance: 2000, rule: null, readOnly: null })!;
+      expect(m.steps[1].price, pause).toEqual({ kind: "exact", credits: b });
+      /* A limit pause offers Raise from this price when the room is short (tests/unit/demo-s04-plan-model.spec.ts); here the faked pause has room, so no button is made up. */
+      if (pause === "limit") expect(m.primary?.kind ?? null, pause).not.toBe("render");
+      else expect(m.primary, pause).toMatchObject({ kind: "render", label: `Retry · ${creditFigure(b)} cr`, price: { kind: "exact", credits: b }, seq: s2.seq, blocked: null });
+    }
+    expect(r.calls).toHaveLength(1);
+  });
+});
+
 test("a shot that needs an admin keeps its own server price on a chips plan, in the queue too with the admin marker; its note names no engine", async () => {
   MEMBERS.add(OWNER);
   try {

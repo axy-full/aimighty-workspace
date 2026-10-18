@@ -460,6 +460,8 @@ export type RigAgentPaidStepView = {
   fixOf?: number | null;
   /** Covered by the plan's one approval (no tap of its own). */
   inPlan?: boolean;
+  /** A chips plan's step priced only in the plan's one total: it is told no price of its own (lib/workbench/rig-agent.ts onePrice). */
+  planPriced?: boolean;
 };
 
 /**
