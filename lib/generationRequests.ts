@@ -27,7 +27,7 @@ import { workbenchScopeProblem } from "./workbench/request-scope";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
 import { allowanceUsdOf } from "./cinemaHold";
-import { HOUSE_CAP_REACHED, houseCapOfStored, houseSpendOfRow, noteHouseSpend } from "./houseCap";
+import { HOUSE_CAP_REACHED, houseCapOfStored, houseSpendOfRow, noteHouseSpendLater } from "./houseCap";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
@@ -446,11 +446,15 @@ export async function reserveGenerationSpend(event: MeterEvent, options: Reserva
   // Local libsql clients share a connection; never interleave transactions on it.
   // The database transaction below also protects requests in other processes.
   const result = reservationTurn.then(() => reserveGenerationSpendLocked(event, options));
-  reservationTurn = result.catch(() => {});
-  return result;
+  reservationTurn = result.then(() => {}, () => {});
+  /* The house's month has reached the warning line: the platform owner hears once a month. Told after the turn is let go, never awaited
+     here, so a slow mail server holds up no reservation (this workspace's or any other's) and never fails the job already reserved. */
+  const house = await result;
+  if (house) noteHouseSpendLater(house.spentUsd, house.capUsd);
 }
 
-async function reserveGenerationSpendLocked(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
+/** Reserves the job; for the house, where its month then stands (the warning is the caller's to send, after the turn). */
+async function reserveGenerationSpendLocked(event: MeterEvent, options: ReservationOptions = {}): Promise<{ spentUsd: number; capUsd: number } | null> {
   const ws = requireTenant();
   const projectId = event.projectId ?? options.projectId ?? null;
   const cost = Number(event.engineCostUsd);
@@ -506,7 +510,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
      workspace's own database, which is never read inside the platform's write). */
   const stopped = options.run ? await options.run.live?.() : null;
   if (stopped) throw new SpendReservationError(stopped, 409, true);
-  /* Set inside the write when the house's job is reserved: where its month then stands (the warning is sent after the write commits). */
+  /* Set inside the write when the house's job is reserved: where its month then stands (the warning is sent after the write commits and the turn is let go). */
   const houseReserved: { at: { spentUsd: number; capUsd: number } | null } = { at: null };
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
@@ -655,6 +659,5 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
       args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? (heldAtCeiling ? 1 : Math.max(1, Math.round(options.run.band))) : null] });
   });
-  /* The house's month has reached the warning line: the platform owner hears once a month. Never fails the job that is already reserved. */
-  if (houseReserved.at) await noteHouseSpend(houseReserved.at.spentUsd, houseReserved.at.capUsd).catch((error) => console.error(JSON.stringify({ level: "error", event: "house_cap.warn_failed", message: error instanceof Error ? error.message : "unknown" })));
+  return houseReserved.at;
 }

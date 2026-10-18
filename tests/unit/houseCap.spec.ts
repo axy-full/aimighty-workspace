@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { alignLedgerUnit } from "../helpers/ledgerUnit";
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -144,12 +145,19 @@ test("the quote: a warning from 80%, a refusal at the cap or for a job that woul
   expect(verdictOf(quote(1), context)).toMatchObject({ allow: true, notice: "" });
 });
 
-test("the reservation: 80% tells the platform owner once a month, 100% stops the job, a refused job writes nothing; the customer allowance never sees it", async () => {
+test("the reservation: 80% tells the platform owner once a month, 100% stops the job, a refused job writes nothing; the customer allowance never sees it; a mail that hangs holds up no reservation", async () => {
   const mail: { to: string[]; subject: string; text: string }[] = [];
+  /* While `hang` is set, the stand-in mail server takes a message and never answers (until `answer`), as a slow one would for its 15 s. */
+  let hang = false;
+  const hung: (() => void)[] = [];
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (c) => chunks.push(c));
-    req.on("end", () => { mail.push(JSON.parse(Buffer.concat(chunks).toString())); res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ id: "mail_test" })); });
+    req.on("end", () => {
+      mail.push(JSON.parse(Buffer.concat(chunks).toString()));
+      const reply = () => { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ id: "mail_test" })); };
+      if (hang) hung.push(reply); else reply();
+    });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   process.env.RESEND_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -160,15 +168,19 @@ test("the reservation: 80% tells the platform owner once a month, 100% stops the
     const { db, ready } = await import("../../lib/db");
     const { platformDb, platformReady, setHouseCap } = await import("../../lib/platform");
     const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
-    const { houseSpendSince, houseMonthStart, noteHouseSpend, HOUSE_CAP_REACHED } = await import("../../lib/houseCap");
+    const { houseSpendSince, houseMonthStart, houseNotesSettled, noteHouseSpend, HOUSE_CAP_REACHED } = await import("../../lib/houseCap");
     await platformReady();
     await houseRow();
     const model = "gemini-3.1-flash-image";
     const usd = 0.04;
     const tag = Date.now().toString(36);
+    /* Another workspace, on its own database, funded for its one job. */
+    const other = { ...customer(), id: `ws_house_cap_other_${tag}`, dbUrl: `file:${path.join(dir, `other-${tag}.db`)}` } as TenantWorkspace;
+    /* The warning is sent after the reservation's turn, never awaited by it: wait for it here before reading what it wrote. */
     const job = async (id: string) => {
       await db().execute({ sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at) VALUES(?,'image','google',?,'a still','{}','running',?,?)`, args: [id, model, Date.now(), Date.now()] });
-      await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd });
+      try { await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd }); }
+      finally { await houseNotesSettled(); }
     };
     const meterRows = async () => Number((await platformDb().execute("SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id='ws_legacy'")).rows[0].n);
     const warned = async () => Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM platform_audit WHERE action='housecap.warned' AND created_at>=?", args: [houseMonthStart()] })).rows[0].n);
@@ -184,10 +196,27 @@ test("the reservation: 80% tells the platform owner once a month, 100% stops the
       expect(await warned()).toBe(0);
       expect(mail).toEqual([]);
 
-      /* The cap lowered so this job takes the month past 80% and not past 100%: reserved, and the platform owner is told, once. */
+      /* The cap lowered so this job takes the month past 80% and not past 100%: reserved, and the platform owner is told, once. The mail
+         server hangs on that message: the house's reservation returns at once, and another workspace's reservation is not held up behind it. */
       const spent = await houseSpendSince(houseMonthStart());
       await setHouseCap(Math.round((spent + usd + 0.005) * 1000) / 1000, "acct_house_cap_owner");
-      await job(`gen_housecap_b_${tag}`);
+      hang = true;
+      const started = Date.now();
+      await reserveGenerationSpend({ id: `gen_housecap_b_${tag}`, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd });
+      await expect.poll(() => mail.length, { timeout: 5_000 }).toBe(1);
+      expect(hung).toHaveLength(1);
+      await runInTenant(other, async () => {
+        await ready();
+        await fundFixtureWorkspace(100);
+        await reserveGenerationSpend({ id: `gen_housecap_other_${tag}`, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd });
+      });
+      /* Both reserved while the mail still hangs: well inside the mail's 15 s timeout, which the reservations used to wait out. */
+      expect(hung).toHaveLength(1);
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect(Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE id IN (?,?) AND status='running'", args: [`gen_housecap_b_${tag}`, `gen_housecap_other_${tag}`] })).rows[0].n)).toBe(2);
+      hang = false;
+      hung.splice(0).forEach((reply) => reply());
+      await houseNotesSettled();
       expect(await warned()).toBe(1);
       expect(mail).toHaveLength(1);
       expect(mail[0].to).toEqual(["house-cap-owner@example.test"]);
@@ -228,6 +257,7 @@ test("the reservation: 80% tells the platform owner once a month, 100% stops the
     const calm = await noteHouseSpend(499, 500, Date.now() + 120 * 86_400_000);
     expect(calm).toBe(true);
   } finally {
+    hung.splice(0).forEach((reply) => reply());
     await new Promise<void>((resolve) => server.close(() => resolve()));
     delete process.env.RESEND_BASE_URL; delete process.env.RESEND_API_KEY; delete process.env.MAIL_FROM;
     const { platformDb } = await import("../../lib/platform");

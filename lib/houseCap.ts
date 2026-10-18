@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { currentTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
 import { cycleBounds } from "./cycle";
@@ -90,4 +91,30 @@ export async function noteHouseSpend(spentUsd: number, capUsd: number, at = Date
   const body = `${houseCapWarning(view)}. The house workspace's engine spend has reached ${HOUSE_CAP_WARN_PCT}% of its ${houseCapUsdText(capUsd)} monthly cap. At 100% its jobs stop until the month turns or you raise the cap on the platform desk.`;
   await sendMail({ to: owner, subject: `Particl: ${houseCapWarning(view)}`, text: body, html: `<p>${body}</p>` }).catch(() => {});
   return true;
+}
+
+/* The notes still on their way (a test, or anything that must see the warning written, waits for them with houseNotesSettled). */
+const notesUnderway = new Set<Promise<unknown>>();
+
+/**
+ * noteHouseSpend, sent off and never awaited: a reservation calls this once its turn is let go (lib/generationRequests.ts), so a mail
+ * server that is slow or down holds up no reservation, the house's or any other workspace's. Inside a request it runs in Next's
+ * `after`; outside one (a script, a test, background work) it simply runs on its own. A failure is logged, never thrown: the job is
+ * already reserved and stays so.
+ */
+export function noteHouseSpendLater(spentUsd: number, capUsd: number): void {
+  const run = async (): Promise<void> => {
+    const note = noteHouseSpend(spentUsd, capUsd).catch((error) => {
+      console.error(JSON.stringify({ level: "error", event: "house_cap.warn_failed", message: error instanceof Error ? error.message : "unknown" }));
+      return false;
+    });
+    notesUnderway.add(note);
+    try { await note; } finally { notesUnderway.delete(note); }
+  };
+  try { after(run); } catch { void run(); }
+}
+
+/** Resolves once every house note sent off so far has finished (written its line, sent or given up on its mail). */
+export async function houseNotesSettled(): Promise<void> {
+  while (notesUnderway.size) await Promise.allSettled([...notesUnderway]);
 }
