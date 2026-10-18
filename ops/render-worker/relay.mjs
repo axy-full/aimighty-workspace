@@ -1,4 +1,5 @@
-// Astra render relay: a TCP forwarder with no secret and no brains. One worker (render-1) on this server.
+// Worker relay: a TCP forwarder with no secret and no brains. One worker per relay: the Astra render worker (render-1) in
+// the render stack, the Remotion export worker (remotion-1) in its own stack, each behind its own copy of this file.
 //
 // The render workers sit on an internal Docker network with no route out (compose.yaml). The production app lives
 // on the platform's network, which does have one. The relay is the only service on both: it listens on one port (8081)
@@ -23,8 +24,8 @@ export const MAX_WORKERS = 1; // one worker on this 8-core server (README.md, "H
 export const DEFAULT_WORKERS = 1;
 export const DEFAULT_TARGETS = ["render-1"];
 export const LIMITS = { connectMs: 5_000, idleMs: 200_000, perPort: 16 };
-/* The worker is called render-1, optionally with the platform's own suffix (render-1-abc123). Nothing else: not a number (16843009 and 0x1010101 are 1.1.1.1), not a dotted name. */
-const NAME = /^render-1(?:-[a-z0-9]+)?$/;
+/* The worker is called render-1 or remotion-1, optionally with the platform's own suffix (render-1-abc123). Nothing else: not a number (16843009 and 0x1010101 are 1.1.1.1), not a dotted name, not another index. Which of the two a relay serves is the one name in its RELAY_TARGET_1. */
+const NAME = /^(?:render|remotion)-1(?:-[a-z0-9]+)?$/;
 
 /** Only private (RFC 1918, loopback, IPv6 unique-local) addresses are ever connected to: a name that resolves anywhere else (a missing worker looked up upstream) is refused. */
 export function privateAddress(address) {
@@ -52,7 +53,7 @@ export function routesFor({ workers = DEFAULT_WORKERS, targets = DEFAULT_TARGETS
   if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS) throw new Error("The relay serves one worker.");
   if (!Array.isArray(targets) || targets.length < workers) throw new Error("A target name is needed for every worker.");
   return targets.slice(0, workers).map((host, index) => {
-    if (typeof host !== "string" || !NAME.test(host)) throw new Error(`Target ${index + 1} is not a worker container name (render-1, with the platform's suffix if it adds one).`);
+    if (typeof host !== "string" || !NAME.test(host)) throw new Error(`Target ${index + 1} is not a worker container name (render-1 or remotion-1, with the platform's suffix if it adds one).`);
     return { listenPort: BASE_PORT + index + 1, host, port: WORKER_PORT };
   });
 }
