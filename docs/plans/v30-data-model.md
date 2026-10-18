@@ -1,10 +1,33 @@
-# v30 Phase A data model (plan, 17 Oct 2026; updated 18 Oct 2026)
+# v30 Phase A data model (plan, 17 Oct 2026; updated 18 and 19 Oct 2026)
 
-The schema under the v30 interface, for Phase A items 1, 2, 3, 5 and 6 of the owner's 17 Oct brief, brought to his answers of 17 Oct and his 18 Oct data-model and money decisions (`docs/redesign-plan.md`: "Owner, 17 Oct 2026 …" and "Owner, 18 Oct 2026, ~23:00 IST"). Docs only: no product code changes with this file. Read from `origin/release/1` at `85cb7a07`; what #818 (A1) and #820 (A5) built was re-read at `c6f90813` and is marked **as built** where it differs from the plan.
+The schema under the v30 interface, for Phase A items 1, 2, 3, 5 and 6 of the owner's 17 Oct brief. It is brought to:
+- his answers of 17 Oct;
+- his 18 Oct data-model and money decisions;
+- his 19 Oct answers to Q12–Q26, with the ten final step lists.
+
+The sources are in `docs/redesign-plan.md`: "Owner, 17 Oct 2026 …", "Owner, 18 Oct 2026, ~23:00 IST" and "Owner, 19 Oct 2026, ~00:20 IST". Docs only: no product code changes with this file. Read from `origin/release/1` at `85cb7a07`. What #818 (A1) and #820 (A5) built was re-read at `c6f90813` and is marked **as built** where it differs from the plan. The list of readers of "approved" (§2.8) was taken at `b77296a2`.
+
+**Changes on 19 Oct** (the owner's answers replace the 18 Oct recommendations where they differ)
+1. **§2.8 rewritten for Q12: Keep is a separate mark**, `generations.kept_at` / `kept_by`, not today's approved.
+   - Today's approved is a commit, and in v30 the commit is Sent.
+   - The one predicate every reader of "approved" moves to follows Sent on output steps and Kept on Look and Elements.
+   - Every reader found in the code is listed with file:line, as the list each PR must name.
+   - The 18 Oct `approved_via` is withdrawn.
+2. **§2.6 and §2.9 rewritten for Q15: one card per shot.**
+   - A beat makes one plate in Storyboard and one in Shots ("from Script · beat 4").
+   - A Storyboard sheet is a make-node output whose panels become frames inside the shot cards.
+3. **§2.10 replaced with the owner's final lists** (the "+" tile, Treatment on or off by default, Pitch deck folded into Treatment).
+   - A third surface is added for the Treatment step: `deck` (Q19). No deck pages are canvas cards, so `deck_page` leaves the canvas output list (§2.9).
+4. **§2.7: Q14** (rejections are takes sent back, with the reason given), **Q25** (both may mark, each shown with who, with Undo) and **Q26** (one reading per file; no shot triggers a reading).
+5. **§4: Q23** (questions are free and write no job; a plan is a Writing job, quoted first) and **Q24** (Script revision: Writing; Deck page: one quoted job per page covering its words and pictures; nothing built before the spike).
+   - The 19 Oct money answers are added, with no figures: Enhance is priced as it costs and shown before pressing, and only the quote path is built.
+   - A press (#815) is refused at the quote, with the pause card, when its total would pass the workspace cap.
+6. **Q13, Q20, Q21, Q22 placed** (§2.8, §2.10).
+7. **§7, §8, §9 updated.** Q12–Q26 move to the answered table; three readings of the answers that need the lead's or owner's confirmation are listed in §9.2.
 
 **Changes on 18 Oct**
 1. **§2.7 (new): the production record**, what Atomik carries forward per production. A read model over the existing rows plus one table of pins and removals; no content is copied (18 Oct, data-model (a)).
-2. **§2.8 (new): Kept and Sent.** It replaces §2.3's derived "kept = picked or approved" (Q2 is answered: 17 Oct #12). Keep maps onto today's approved state, so draft → picked → approved stays (ground rule 4). The tension is flagged, and the choice is owner question Q12. Sent is a filing with its step (18 Oct (b)).
+2. **§2.8 (new): Kept and Sent.** It replaces §2.3's derived "kept = picked or approved" (Q2 is answered: 17 Oct #12). Keep maps onto today's approved state, so draft → picked → approved stays (ground rule 4). The tension is flagged, and the choice is owner question Q12. Sent is a filing with its step (18 Oct (b)). *(Superseded 19 Oct: Keep is a separate mark; see Changes on 19 Oct.)*
 3. **§2.9 (new): make nodes typed by output**, with frames and variants as children of the one shot card, card groups, and inputs as rows. §2.3's `kind` list and §2.5's roles are reconciled with it (18 Oct (c)).
 4. **§2.6 rewritten: beats are `script_beats` rows under the Script**, and `shots.beat_id` gives one beat several shots (17 Oct #13, 18 Oct (d)). Q3 is answered.
 5. **§2.10 (new): proposed step lists for the ten film types** (17 Oct #11, with 18 Oct (d) applied), with the ambiguities as Q16–Q22.
@@ -19,7 +42,7 @@ The schema under the v30 interface, for Phase A items 1, 2, 3, 5 and 6 of the ow
 10. **As built:** §2.1 and §2.2 (#818), §6 (#820).
 11. **§7, §8 and §9 are updated.**
     - Q1–Q11 are answered, with where each answer lands.
-    - Q12–Q26 are new.
+    - Q12–Q26 were new, and were answered on 19 Oct.
 
 **What this plan holds to**
 - **Extend, don't replace** (ground rule 4). Every v30 concept below names the existing table it extends, or says why it needs a new one.
@@ -63,8 +86,11 @@ The brief's words are kept in the interface. Table and column names avoid words 
 | frame of a shot, variant | `canvas_nodes.frame_of`, `variant_of` (children of one card) | `variants` is the team canvas's ad-variant list (`lib/workbench/studio-schema.ts`); it lives in another store and never meets these columns. |
 | link (node → plate, with a role) | **`plate_inputs`**, column `input_role` | `role` already means a member's role and a reference's role (`reference_image`). |
 | link (gen ↔ production and step) | **`take_filings`** | "Take" is the product's word for a generation (rule 4). "Filed" is how the code already says a take sits on a shot. |
-| Sent (→ step) | a `take_filings` row with `filed_as='sent'` | A send puts a take in another step, which is what a filing already records. |
-| Kept | today's approved state, `generations.review_state='approved'`, plus `approved_via` (§2.8) | A second "kept" column beside `approved_at` would be a second truth for the same decision (Q12). |
+| Sent (→ step), the commit | a `take_filings` row with `filed_as='sent'` | A send puts a take in another step, which is what a filing already records. |
+| Kept | **`generations.kept_at`, `kept_by`** (§2.8; Q12, 19 Oct) | `approved` is today's commit, and in v30 the commit is Sent; a Keep is not a commit. |
+| committed (what "approved" readers ask) | one predicate, `committedSql(alias)` (§2.8) | Each reader names one rule instead of its own mix of `review_state`, Sent and Kept. |
+| the "+" tile (steps offered, not opened) | `opened` on a film type's step in config (§2.10) | `optional` would hide that the step exists in the list and has a place in its order. |
+| deck (Treatment) | surface `deck` on `production_steps` (§2.10) | `document` means `production_documents`; the treatment is a deck kept in `treatments`. |
 | jobs | `quoted_jobs` | `lib/jobs.ts` (the take listing), the `JOBS` purpose list (`lib/takeJob.ts`) and the header's "jobs tray" already use "job". No job is spent without its quote (brief rule 4). |
 | Preflight (card) | columns `preflight`, `preflight_at` on `quoted_jobs` | It belongs to the quote it precedes and is free; a table would hold rows nobody is charged for or reads alone. |
 | Options (chip) | `quoted_jobs.options` (how many takes one job makes) | `variant` is a card child, above. |
@@ -89,7 +115,11 @@ The brief's words are kept in the interface. Table and column names avoid words 
 | `canvas_store TEXT` | `team` (NULL reads as `team`) or `v30`. This says **which store is the truth for this production's canvas** (see 2.4). **As built (#818):** with `CHECK(canvas_store IN ('team','v30'))`; nothing writes it yet. |
 
 - **Step lists by film type** are defaults, not a table, and no workspace or client name appears in them. **As built (#818):** the owner's ten film types are the shipped default in code (`FILM_TYPES_DEFAULT`, `lib/productionModel/filmTypes.ts`). The deployment setting `V30_FILM_TYPES` (JSON, strict schema) replaces the whole list when it is set; a setting that is set but unreadable is refused, and the error names its path, never its value. A step's kind is its label in snake case (`Pitch deck` → `pitch_deck`, `Swap-ins` → `swap_ins`). They move to a **platform-layer** key (`platform_layer`, `lib/platformLayer.ts`) with a workspace override (rule 3) in a later PR, because adding a layer key changes the admin platform-layer response, which Phase A must not.
-- **The default changes before the switch goes on** (owner, 18 Oct: "#818's lists change to this before its switch goes on"). §2.10 proposes the new lists; the code change is a one-concern PR on `FILM_TYPES_DEFAULT` once Q16–Q22 are answered.
+- **The default changes before the switch goes on** (owner, 18 Oct: "#818's lists change to this before its switch goes on"). The owner gave the final lists on 19 Oct ("final for A1b"; §2.10). The code change is A1b, which covers:
+  - `FILM_TYPES_DEFAULT`;
+  - an `opened` flag per step;
+  - the `deck` surface;
+  - `add()` placing a step at its list position.
 - `projects.step` (0–5 on the six old steps) is left alone. It keeps meaning what it means for productions from before v30.
 
 ### 2.2 Steps and frames: new `production_steps`
@@ -98,7 +128,7 @@ production_steps(
   workspace_id, id, production_id,
   page_id      TEXT NOT NULL,     -- stable link id, see below
   kind         TEXT NOT NULL,     -- the step's kind from the film type's list (brief, script, look, cast, storyboard, shots, deliver …)
-  surface      TEXT NOT NULL CHECK(surface IN ('document','canvas','table')),
+  surface      TEXT NOT NULL CHECK(surface IN ('document','canvas','table','deck')),   -- 'deck' added 19 Oct (Q19), A1b
   label        TEXT NOT NULL,     -- the name a person may rename; page_id never follows it
   position     INTEGER NOT NULL,  -- order on the rail
   frame_x REAL, frame_y REAL, frame_w REAL, frame_h REAL,   -- the frame, canvas steps only
@@ -107,7 +137,10 @@ production_steps(
   UNIQUE(workspace_id, production_id, page_id))
 INDEX (workspace_id, production_id, position)
 ```
-- **One row per step.** A canvas step's frame is its four `frame_*` columns, so "one frame per canvas step" holds by construction. A document step (Brief, Script) and a table step (Deliver) have no frame.
+- **One row per step.** A canvas step's frame is its four `frame_*` columns, so "one frame per canvas step" holds by construction. A document step (Brief, Script), a table step (Deliver) and a deck step (Treatment) have no frame.
+- **Adding `deck` to the CHECK (A1b).** SQLite cannot alter a CHECK.
+  - On a database that already has `production_steps`, A1b rebuilds it in one transaction: a new table with the four-surface CHECK, every row copied, the trigger and index recreated. The old table is renamed aside, not dropped (nothing is erased).
+  - Only flag-on databases have the table (at most the house), so the risk is low. A test runs the rebuild over a fixture database and compares rows.
 - **`page_id` is the stable page id.** It is made once from the kind (`script`; a second Shots step is `shots-2`), it is unique per production, and it never changes on a rename. It is never reused after Undo-able removal. A later route `/<production>/<page_id>` can rely on it.
 - The rows are created from the film type's list when a v30 production is made. Adding, renaming or reordering a step changes only this production's rows. **A production keeps the steps it was made with when the default list changes** (§2.10).
 
@@ -125,7 +158,7 @@ canvas_nodes(
   workspace_id, id, production_id,
   step_id      TEXT NOT NULL,          -- the frame it sits in
   kind         TEXT NOT NULL CHECK(kind IN ('still','clip','audio','text','document','plate','detail','element','group')),
-  output_kind  TEXT CHECK(output_kind IN ('image','storyboard_sheet','video','audio','lip_sync','script_revision','deck_page','upscale','layers')),
+  output_kind  TEXT CHECK(output_kind IN ('image','storyboard_sheet','video','audio','lip_sync','script_revision','upscale','layers')),   -- no deck_page: deck pages are not canvas cards (Q19)
   x REAL, y REAL, w REAL, h REAL, z INTEGER,   -- relative to its frame, so moving a frame is one row
   title, text,
   shot_id      TEXT,   -- the shot card (and its children) (§2.9)
@@ -151,20 +184,20 @@ INDEX (workspace_id, frame_of)  INDEX (workspace_id, variant_of)  INDEX (workspa
 UNIQUE (workspace_id, step_id, shot_id) WHERE shot_id IS NOT NULL AND frame_of IS NULL AND variant_of IS NULL AND removed_at IS NULL
 ```
 - **Kinds (17 Oct, reconciled with 18 Oct (c)).** The 17 Oct list stays: still · clip · audio · text · document · plate · detail · element. One kind is added, `group`. A **plate is the make node**: it is typed by what it makes (`output_kind`, §2.9) and must have one. `still`, `clip` and `audio` are cards that show something not made in that card, such as an upload or a take brought from the Library.
-- **The shot is one card** (18 Oct (c)): the last UNIQUE allows one top-level card per shot per step. Its frames and variants are children (§2.9), never cards of their own.
+- **One card per shot** (18 Oct (c); Q15, 19 Oct): the last UNIQUE allows one top-level card per shot per step. Its frames and variants are children (§2.9), never cards of their own.
 - **Takes as versions.**
   - The plan adds `generations.node_id TEXT` (additive, nullable, indexed). It is written at admission in the same insert as the take, the way `shot_id` is today.
   - A card's versions are `generations WHERE node_id=? ORDER BY created_at`. Takes made before v30 have no `node_id`; for those, a shot card reads `WHERE shot_id=? AND node_id IS NULL`, numbered by the existing `generations.version`.
   - There is no copy of the version list.
-- **Status is derived, not stored** (**changed 18 Oct**, replacing the 17 Oct "kept = picked or approved"). A pure `nodeStatusOf(currentTake, filings)` returns three things:
+- **Status is derived, not stored** (**changed 18 Oct; Kept changed again 19 Oct**, replacing the 17 Oct "kept = picked or approved"). A pure `nodeStatusOf(currentTake, filings)` returns three things:
   - **state**, which is one of:
     - `failed`: the take failed;
-    - `kept`: the take is in today's approved state (§2.8);
+    - `kept`: `generations.kept_at` is set (§2.8);
     - `draft`: anything else (a picked take is still `draft`: picking is "a step on the way", 17 Oct #12).
-  - **sent**: the step the take was last sent to, from its live `take_filings` row with `filed_as='sent'` (§2.8), or none. It is shown beside the state: "Kept · Sent → Edit".
+  - **sent**: the step the take was last sent to, from its live `take_filings` row with `filed_as='sent'` (§2.8), or none. It is shown beside the state: a card shows both, "Kept · Sent → Edit" (Q13).
   - **finish**: `4k` (an upscale), `final` (`finalOf`, job label `shot_final`) or none. These are the 17 Oct `final` and `4k`, kept as labels on the take, not as states.
 
-  Storing any of these would make a second truth beside `generations.status`, `review_state` and the draft/final link. Text, document, detail, group and empty plate cards have no status.
+  Storing any of these would make a second truth beside `generations.status`, `kept_at`, the filings and the draft/final link. Text, document, detail, group and empty plate cards have no status.
 - **Detail nodes are a fifth Setup layer**, above the shot's. Setup today has four layers: platform, workspace, production, shot (`lib/setup.ts`).
   - A detail card linked to a plate supplies its `detail_type`'s Setup key: `angle`→`angle`, `camera_move`→`move`, `lighting`→`light`.
   - `action` and `note` add words to the prompt and set no Setup key.
@@ -187,7 +220,7 @@ plate_inputs(
   workspace_id, id, production_id,
   plate_id     TEXT NOT NULL,   -- canvas_nodes.id, kind plate
   from_id      TEXT NOT NULL,   -- canvas_nodes.id (never a group: see below)
-  input_role   TEXT NOT NULL CHECK(input_role IN ('cast','frame','angle','camera_move','environment','prop','brand','product','look','source','audio','text')),
+  input_role   TEXT NOT NULL CHECK(input_role IN ('cast','frame','angle','camera_move','environment','prop','brand','product','look','source','audio','text','panel')),
   ordinal      INTEGER NOT NULL DEFAULT 0,
   via_group_id TEXT,            -- the group card this row came in with, when a whole group was wired
   binding_id   TEXT,            -- bindings.id when the source is an element and the plate has a shot
@@ -196,10 +229,12 @@ plate_inputs(
 UNIQUE (workspace_id, plate_id, input_role, ordinal) WHERE removed_at IS NULL
 INDEX (workspace_id, from_id)   INDEX (workspace_id, via_group_id)
 ```
-- **Three roles are added (18 Oct (c))** for the new outputs:
-  - `source`: the take (or, for a Script revision, the document) a make node works on: Upscale, Layers, Lip-sync;
-  - `audio`: a voice or a track;
-  - `text`: words a Script revision or Deck page works from.
+- **Four roles are added** for the new outputs:
+  - from 18 Oct (c):
+    - `source`: the take (or, for a Script revision, the document) a make node works on: Upscale, Layers, Lip-sync;
+    - `audio`: a voice or a track;
+    - `text`: words a Script revision works from;
+  - from 19 Oct (Q15): `panel`, a shot card a Storyboard sheet draws, with `ordinal` = its panel's place on the sheet.
 
   Which roles each output accepts is in §2.9; the store refuses any other.
 - **Inputs are rows, one per input.** Wiring a group writes one row per member, each with its own role and `via_group_id`. Unwiring the group removes exactly those rows, in one write.
@@ -207,7 +242,7 @@ INDEX (workspace_id, from_id)   INDEX (workspace_id, via_group_id)
   - When an element card feeds a plate that has a shot, the `plate_inputs` row and the `bindings` row are written **in the same transaction**.
   - `plate_inputs` holds only the wire and its role. `bindings` stays the only truth for which version the shot uses (follow or pin).
   - Role → slot: `cast`→`character`, `environment`→`background`, `prop`/`brand`/`product`→`element`, `look`→`look`, `frame`→`keyframe`.
-  - `angle` and `camera_move` come from detail cards and set no binding (2.3). Neither do `source`, `audio` or `text`, which point at a take, an upload or a document, not an element.
+  - `angle` and `camera_move` come from detail cards and set no binding (2.3). Neither do `source`, `audio`, `text` or `panel`, which point at a take, an upload, a document or a shot card, not an element.
 
 ### 2.6 Beats, under the Script: new `script_beats`, and `shots.beat_id`
 **Changed 18 Oct.** On 17 Oct "a beat is a `shots` row". The owner has since decided:
@@ -233,11 +268,22 @@ INDEX (workspace_id, document_id, position)
   - The shots store refuses a `beat_id` from another production, or a removed beat.
   - Removing a beat does not remove its shots: they keep the `beat_id` and read as "beat removed", and Undo brings the beat back.
 - **The Beats view is a view of the Script, not a step.** It reads `script_beats` with their shots (`shots WHERE beat_id=?` by `position`). The Script step's page shows it; no `production_steps` row exists for it (§2.10).
-- **A beat makes plates (17 Oct item 1, with 18 Oct (c)):**
-  - in the Shots step, one shot card per shot of the beat (`kind='plate'`, `output_kind='video'`, the shot's `shot_id`);
-  - in the Storyboard step, one `storyboard_sheet` plate with the beat's `beat_id`, proposed (Q15).
+- **A beat makes plates: one card per shot** (Q15, 19 Oct: "one card per shot, not one sheet per beat: a beat makes one plate in Storyboard and one in Shots ('from Script · beat 4')"). Making a beat's plates writes the following in one write:
+  - its first `shots` row (`beat_id` = the beat), unless it already has shots;
+  - one plate in the Storyboard step for that shot (`output_kind='image'`, the shot's `shot_id`). Its takes are the shot's storyboard frames;
+  - one plate in the Shots step for that shot (`output_kind='video'`, the same `shot_id`): the shot card.
 
-  The link between them is the shot's `beat_id`; no extra link row. "Dashed" is derived: a plate with no take yet. Making plates spends nothing.
+  Each plate's origin line, "from Script · beat 4", is derived from `shots.beat_id` → `script_beats.position`, not stored. When a beat becomes several shots (17 Oct #13), each new shot gets its own pair of plates the same way.
+  - The two cards of one shot are linked by the shared `shot_id`; the beat by the shot's `beat_id`. No extra link row.
+  - The UNIQUE in §2.3 keeps it to one card per shot per step. "Dashed" is derived: a plate with no take yet.
+  - Making plates spends nothing.
+- **A Storyboard sheet is a make-node output, not the beat's card** (Q15). A `storyboard_sheet` plate in the Storyboard step takes the shots it draws as inputs (role `panel`, ordinal = panel order; §2.5, §2.9) and makes one sheet image. Each panel then becomes a **frame inside that shot's card**:
+  - a crop of the sheet, stored as its own upload row (`derived_from_gen` = the sheet's take, `derivation` the panel rectangle; §6.4);
+  - shown as a `frame_of` child (`frame_role='key'`) of the shot's card in Shots, the card that holds its takes. The shot's Storyboard card shows the same frame through the shared `shot_id`, with no copy.
+
+  Which of the shot's two cards the owner meant is a reading, flagged in §9.2 (R2).
+
+  Cutting panels is free: an upload and a crop are never billed (brief rule 3).
 - **Breaking a Script into beats is a billed Analysis job** (a `quoted_jobs` row, product `analysis`; §4.5). Writing beats by hand is never billed.
 - **Today's beat sheet** (`lib/production/beats.ts`, inside the person's draft JSON) keeps working for productions on the team canvas. It is copied into `script_beats` only by the one-way import (§2.4).
 - **M5 changes accordingly:** `shots` gains only `beat_id`. The source-range columns the 17 Oct plan put on `shots` live on `script_beats`.
@@ -257,8 +303,8 @@ The owner, 18 Oct: "the production record: what Atomik carries forward (brief, s
 | Look pack | the production's `elements` with `library_kind='reference'` (Q8, answered 17 Oct #16: "Reference, in the Look pack") | yes |
 | Elements with handles | the production's `elements`, plus workspace-wide ones bound to its shots (`bindings`) or wired into its plates (`plate_inputs`) | yes |
 | Uploads with reading notes | `project_library_uploads` → `uploads`, with the newest `reading_notes` row per upload (below) | yes |
-| Keeps | the production's takes (home or filing, §6.5) in the approved state (§2.8) | yes |
-| Rejections | the production's takes sent back (`review_state='changes'`), Q14 | yes |
+| Keeps | the production's takes (home or filing, §6.5) with `kept_at` set (§2.8) | yes |
+| Rejections | **only takes sent back, with the reason given** (Q14, 19 Oct): `review_state='changes'`, and the reason, which is the `notes` row the Reject wrote (below) | yes |
 | Memory | `atomik_memory` entries, `active` only (the production's and the workspace's), as today | yes |
 | Setup | **not an item.** The four `lib/setup.ts` layers and the detail layer (§2.3), resolved as today | always; cannot be removed |
 
@@ -286,6 +332,7 @@ reading_notes(                           -- written once, never updated
   created_by, created_at,
   PRIMARY KEY(workspace_id, id))
 INDEX (workspace_id, production_id, upload_id, created_at)
+UNIQUE (workspace_id, source_sha256)        -- once per file (Q26): the same bytes are read once in the workspace
 ```
 - **A row exists only when an item was touched.** That means pinned, removed, or added by hand: a workspace element Atomik should carry, or a memory entry. An item derived from the production's own rows and never touched has no row and is carried.
   - So nothing has to be kept in step: a new Brief version, beat or keep is in the record the moment its own row exists.
@@ -295,7 +342,11 @@ INDEX (workspace_id, production_id, upload_id, created_at)
 - **Free to read** (owner: "free").
   - `productionRecord()` calls no model and writes nothing.
   - Viewing it, and Atomik loading it into a job, adds no job row and no meter row.
-  - Reading an upload for understanding stays a billed Reading job (brief rule 3), and its output is kept in `reading_notes` so that no shot pays for it again (Q26).
+  - Reading an upload for understanding stays a billed Reading job (brief rule 3). Its output is kept in `reading_notes` (Q26, 19 Oct: "once per file; no shot triggers a reading"):
+    - one reading per file (`source_sha256`) in the workspace; `production_id` names where it was read, and every production holding that upload carries the same notes;
+    - a shot, and any job a shot starts, only reads `reading_notes` and never starts a Reading job;
+    - the reading store refuses a second Reading job for the same SHA-256 (the UNIQUE). A fresh reading of a changed file is a new file, with a new SHA-256;
+    - a test asserts that composing a shot over an unread upload starts no job.
   - A test runs the read model over a fixture production and asserts that every table in both databases is row-for-row unchanged.
 - **Setup is not copied.**
   - The production's Setup stays `projects.setup` (written by `setProductionSetup`, `lib/setup.ts`), and its format stays `projects.format`.
@@ -305,42 +356,83 @@ INDEX (workspace_id, production_id, upload_id, created_at)
   - Both tables live in the workspace database with `workspace_id` first in every key.
   - A `ref` resolves only in that database, and one that does not resolve reads as gone.
   - Reading the record needs `mayReachProject(…, "read")`; pinning, removing and adding need `"admit"`. A production the person may not reach answers as one that does not exist.
-- **Who marks.** A person, or Atomik, recorded by `pinned_by` and `removed_by`. Neither is a money action (rule 11), so neither is people-only. Q25 asks the owner to confirm.
+- **Who marks (Q25, 19 Oct: "both, each shown with who, with Undo").** A person or Atomik may pin, remove or add. Each mark is shown with who made it (`pinned_by`, `removed_by`, read through `readableActors`), and Undo clears it. None is a money action (rule 11).
+- **The reason a take was sent back (Q14).** Today the board's Reject writes the `changes` mark (PATCH `/api/jobs/:id`) and then the reason as a `notes` row on the take (POST `/api/notes`, `components/graphite/board/cards/take/use-judge.ts:17-18,74-83`). These are two requests with no link between the two rows.
+  - v30's Reject writes both in one server write, plus one additive column, `generations.review_note_id` (the `notes.id` of the reason), so the record reads the exact reason.
+  - Takes sent back before v30 read their newest note by the person who sent them back, written at or after `reviewed_at`, and say "reason not linked" when there is none.
+  - The reason codes in `lib/rejectReasons.ts` are not stored anywhere yet; storing them is a separate PR.
 
-### 2.8 Kept and Sent (17 Oct #12; 18 Oct (b))
+### 2.8 Kept, Sent, and the commit (17 Oct #12; 18 Oct (b); Q12 and Q13, 19 Oct)
 The owner:
 - 17 Oct #12: "Kept means the user pressed Keep on a take. Picked is choosing among options and is a step on the way; approved is not a separate state."
 - 18 Oct: "Sent status with its step (Draft · Kept · Sent → step), distinct from Kept".
+- 19 Oct, Q12: "Keep is a separate mark (kept_at, kept_by), not today's approved. Today's approved is a commit; the commit is Sent. Every reader of 'approved' (export, review links, shot locks) follows Sent on output steps and Kept on Look and Elements. Name each reader in its PR."
+- 19 Oct, Q13: "yes and yes: Send does not need Keep; a card shows both."
 
-**What the code records today.** `generations` has `review_state` ('' \| `picked` \| `approved` \| `changes`), with `picked_by`/`picked_at` and `approved_by`/`approved_at`, each written with its own moment (`app/api/jobs/[id]/route.ts:232-251`). Approving is people-only (route line 113), and only a person can undo an approval (line 165). **There is no Keep press and no `kept_at` anywhere in `lib/` or `app/`.** "Approved" is read by:
-- the selects export (`app/api/export/selects/route.ts:35`);
-- review links (`lib/security/review-link.ts:112`, `app/api/review/[token]/route.ts:42`);
-- shot locks and impact (`lib/shots.ts:164`, `lib/impact.ts:200`);
-- house style (`lib/housestyle.ts:62`).
+**What the code records today.** `generations` has `review_state` ('' \| `picked` \| `approved` \| `changes`), with `picked_by`/`picked_at` and `approved_by`/`approved_at`, each written with its own moment (`app/api/jobs/[id]/route.ts:232-251`). Approving is people-only (route line 113), and only a person can undo an approval (line 165). There is no Keep press and no `kept_at` anywhere in `lib/` or `app/`.
 
-**⚠ The tension with ground rule 4.** Rule 4 says "draft → picked → approved … Extend; don't replace." A new, separate Kept mark would add a fourth decision beside them, and those readers would each have to choose which one to follow.
+**Ground rule 4, and how this extends rather than replaces.** Rule 4 keeps "draft → picked → approved". The owner's answer keeps all three, and gives each its v30 meaning:
+- **draft** is draft;
+- **picked** is "choosing among options … a step on the way" (the chosen take of an Options job, §4.1);
+- **approved is the commit, and in v30 the commit is Sent.**
 
-**How this plan extends rather than replaces (proposed; owner question Q12):**
-- **Keep is the approved state under its v30 name.** "Approved is not a separate state" reads as: in v30 approving *is* keeping. The Keep press writes today's mark through today's people-only path, in one statement:
-  - `review_state='approved'`, `approved_by`, `approved_at`;
-  - one additive column, **`generations.approved_via TEXT CHECK(approved_via IN ('keep','approve'))`**, so "the user pressed Keep" is a recorded fact. It is NULL on older rows, read as `approve`.
-- **`kept_at` is therefore not a new column.** Read models expose `keptAt` = `approved_at` **while `review_state='approved'`**, never `approved_at` alone. Today's clear keeps the old mark as a trail (route lines 236-251), so a cleared approval still has `approved_at` set.
-- **Picked stays exactly as it is.** v30 writes it when a person (or Atomik) chooses one of an Options job's takes (§4.1). It shows as the chosen option, not as a status.
-- **Undo of Keep** goes back to `picked` when the take has `picked_at`, else to ''. As today, only a person can undo it.
-- **Keep is a person's alone**, like approval today: `agent:*`, API and MCP tokens are refused. Atomik can prepare and explain a Keep; it cannot press it (rules 11, 14).
-- Every reader of "approved" sees a kept take with no change. Takes approved before v30 read as Kept with no backfill.
-- **If the owner wants Kept separate from approved (Q12's other answer):** add `kept_at`/`kept_by` instead. Each "approved" reader above then needs the owner's word on which mark it follows, so that each one is named in its PR.
+Keep is a new, separate mark beside them. Nothing is renamed and no column is rewritten. Productions on the team canvas keep reading and writing `review_state` exactly as today; only `canvas_store='v30'` productions use the v30 marks (§2.4). The 18 Oct proposal (Keep = approved, plus `approved_via`) is withdrawn.
 
-**Sent is a filing with its step**, and it is distinct from Kept:
-- `take_filings` (§6.5) gains two columns:
-  - `filed_as TEXT NOT NULL DEFAULT 'filed' CHECK(filed_as IN ('filed','sent'))`;
-  - `from_step_id TEXT`, the step it was sent from.
+**Kept: `generations.kept_at INTEGER`, `kept_by TEXT`** (additive, nullable).
+- **Keep** sets both: the person, and the moment.
+- **Undo, or Keep pressed again,** clears both. Kept means a person said "this one", which is a mark, not a thing made, so clearing it erases nothing that was made (rule 13). The take's activity line still says who kept it and when.
+- **Keep is a person's alone**, as the owner's words say ("the user pressed Keep"). `agent:*`, API and MCP tokens are refused on the server, and Atomik can prepare and explain a Keep. It moves no money.
+- **Keep writes nothing else.** It does not touch `review_state`, `picked_*` or `approved_*`, and it never writes a filing.
+- Takes kept before v30 do not exist: no take has `kept_at` until a v30 Keep.
+
+**Sent: a filing with its step, and the commit.**
+- `take_filings` (§6.5) gains `filed_as TEXT NOT NULL DEFAULT 'filed' CHECK(filed_as IN ('filed','sent'))` and `from_step_id TEXT`.
 - A send writes one filing row with `filed_as='sent'` and the target `step_id`. The card shows "Sent → <step label>" from its newest live sent filing.
-- **Distinct by construction.** The send path never writes `review_state`, and the Keep path never writes a filing. A take can be kept and not sent, sent and not kept (Q13), or both.
-- Sending moves no money, so a person or Atomik may send (rule 11). Undo stamps `removed_at`.
-- The take's home stays `generations.project_id` / `shot_id` (§6.5). Sending to a step in another production is allowed only where the person can admit to both.
+- **Send does not need Keep, and a card shows both** (Q13): "Kept · Sent → Edit". The send path never writes `kept_*`.
+- **Send is a person's alone (changed 19 Oct).** It is today's approval under its v30 meaning, and approval is people-only today (route line 113). `agent:*`, API and MCP callers are refused, and Atomik can prepare a send. The 18 Oct draft let Atomik send; that is withdrawn with Q12.
+- **Undo** stamps `removed_at` on the filing.
+- The take's home stays `generations.project_id` / `shot_id` (§6.5). Sending to a step in another production needs `"admit"` on both.
 
-### 2.9 Make nodes typed by output, children, groups (18 Oct (c))
+**The commit: one predicate, `committedSql(alias)`** (a new pure SQL helper, the only place the rule is written). A take is committed when:
+- its production is on the team canvas (`canvas_store` NULL or `team`) **and** `review_state='approved'`, which is today's rule, unchanged; or
+- its production is `v30`, **and** either:
+  - its card sits in an **output step** and it has a live `sent` filing; or
+  - its card sits in a **Look or Elements step** (step kinds `look`, `elements`) and `kept_at` is set.
+
+A step's role comes from the film-type config: each step there carries `commit: 'kept' | 'sent'`, with `kept` for `look` and `elements` and `sent` for all others. Which of the other input-like steps count with Look and Elements (Product, Creator, Set map, Swap-ins, Track, Source) is a reading, flagged in §9.2 (R3).
+
+**Every reader of "approved" or "picked" on takes** (`origin/release/1` at `b77296a2`). Each reader's PR names its line(s) here and moves it to `committedSql` (or, for "picked", says what it reads in v30). None changes for a team-canvas production.
+
+| Reader | file:line | What it reads today |
+|---|---|---|
+| Selects export | `app/api/export/selects/route.ts:35` | `review_state = 'approved'` |
+| Review link: the take set | `lib/security/review-link.ts:112` | approved; `review` scope also picked |
+| Review link: one take's state | `lib/security/review-link.ts:139,165` | `review_state` → approved \| review |
+| Review page | `app/api/review/[token]/route.ts:42` | approved |
+| Review media | `app/api/review/[token]/media/[genId]/route.ts:34-36` | approved; `review` scope also picked |
+| Review notes | `app/api/review/[token]/notes/route.ts:29` | the set above (`takeInSet`) |
+| Shot lock: the shot's approved take | `lib/shots.ts:163-171` | approved, newest `approved_at` |
+| Re-render impact | `lib/impact.ts:200-201`, `lib/impactChoice.ts:59` | approved ("Re-render approved only") |
+| Attribute change clears approvals (a writer) | `app/api/rig/attributes/[id]/current/route.ts:124-130` | sets approved → '' |
+| House style | `lib/housestyle.ts:62` | approved |
+| Project list counts and activity | `app/api/projects/route.ts:68,71,93,108` | approved; picked |
+| Productions "needs you" | `lib/productions.ts:99` | picked |
+| Shot list state | `app/api/shots/route.ts:70-82` | approved, picked |
+| Binding versions order | `app/api/rig/bindings/[id]/route.ts:65-86` | approved first, then picked |
+| Provenance | `app/api/rig/provenance/[id]/route.ts:25,43` | `review_state` |
+| Take listing | `lib/jobs.ts:227-234` | `review_state`, picked and approved marks |
+| Recorded demo | `lib/demo/recorded.server.ts:46,57` | approved |
+| Starter production (writers) | `lib/starter.ts:125-128`, `lib/workbench/starter-draft.ts:98,106` | writes and reads approved |
+| Take status words (client) | `lib/workspace/takes.ts:103` | `reviewState` |
+| Board take card and judge (client) | `components/graphite/board/cards/take/take-model.ts:152,290,311`, `use-judge.ts:59-62` | approved; one approved per shot |
+| Cut, review, crew, phone (client) | `components/graphite/board/cards/cut/cut-model.ts:53`, `components/graphite/board/review/review-model.ts:43`, `components/graphite/board/review/crew-model.ts:51`, `components/graphite/phone/cut-model.ts:25`, `components/graphite/phone/PhoneCutScreen.tsx:60`, `components/GenCard.tsx:134` | approved |
+| The review write itself | `app/api/jobs/[id]/route.ts:113,160-165,232-259` | writes `review_state` and its marks |
+
+Not readers of a take's approval, and so left alone: plan and spend approvals (`lib/workbench/plan-approval.ts`, `rig-agent*`, `lib/control-room/approvals.server.ts`) and top-up requests (`lib/topups.ts`).
+
+**Picked readers in v30.** "Picked" keeps its meaning (the chosen option). Readers that use "picked" to mean "waiting for a decision" (`lib/productions.ts:99`, `app/api/projects/route.ts:71`, the review link's `review` scope) read, in v30, "kept and not yet sent". Each PR says so.
+
+### 2.9 Make nodes typed by output, children, groups (18 Oct (c); Q15, Q19, Q24, 19 Oct)
 The owner, 18 Oct: "make nodes typed by output (Image · Storyboard sheet · Video · Audio · Lip-sync · Script revision · Deck page · Upscale · Layers) with inputs as rows, bundles of cards, and the shot as the card that holds its takes".
 
 **A make node is a plate (`kind='plate'`) with an `output_kind`.** What it makes decides the following:
@@ -348,18 +440,20 @@ The owner, 18 Oct: "make nodes typed by output (Image · Storyboard sheet · Vid
 | `output_kind` | Its versions are | Accepted `input_role`s | `quoted_jobs.product` |
 |---|---|---|---|
 | `image` | takes (`generations`, kind image) | cast, frame, angle, camera_move, environment, prop, brand, product, look, text | `generation` |
-| `storyboard_sheet` | takes (kind image, job label `storyboard`) | as image | `generation` |
+| `storyboard_sheet` | takes (kind image, job label `storyboard`); each panel becomes a frame inside its shot's card (§2.6) | panel, plus the image roles | `generation` |
 | `video` (a shot card when it has `shot_id`) | takes (kind video) | as image, plus audio | `generation` |
 | `audio` | takes (kind audio) | text, audio, cast | `generation` |
 | `lip_sync` | takes (kind video) | source, audio, cast | `generation` |
 | `upscale` | takes (`task='upscale'`) | source | `upscale` |
 | `layers` | takes (proposed: a take with `task='layers'`, like an upscale; confirmed when the Layers engine is chosen) | source | `layers` |
-| `script_revision` | proposed `document_changes` on the Script (with a new `document_changes.job_id`) | text, source (a document) | `writing` |
-| `deck_page` | to be decided with the Polotno spike; no deck page is made before then | text, look, frame | proposed `writing` (Q24) |
+| `script_revision` | proposed `document_changes` on the Script (with a new `document_changes.job_id`) | text, source (a document) | `writing` (Q24, 19 Oct) |
 
 - **The store refuses a role an output does not accept**, so a wire that cannot be used is never written.
+- **Deck page is not a canvas output (Q19, Q24, 19 Oct).** "No deck pages as canvas cards": a deck page is made inside the Treatment step's `deck` surface (§2.10).
+  - It is **one quoted job per page, covering its words and its pictures**: one `quoted_jobs` row with `node_id` NULL and `source_ref` naming the treatment version and page. Its pictures are not separate image jobs.
+  - Its product is not named by the owner, and it waits with the rest: **nothing is built for deck pages before the Polotno spike**, which settles the page format (one JSON per page).
 - **The shot is the one card that holds its takes, frames and variants.** Children are `canvas_nodes` rows drawn inside their parent, never as cards of their own:
-  - **frame** (`frame_of` = the shot card, `frame_role` start \| end \| key): a still that sets a frame of the shot. It is `kind='still'` for an upload or a Library take, or a plate with `output_kind='image'` when it is made there. It also feeds the shot through a `plate_inputs` row with role `frame`, the slot `keyframe` in `bindings`.
+  - **frame** (`frame_of` = the shot card, `frame_role` start \| end \| key): a still that sets a frame of the shot. It is `kind='still'` for an upload, a Library take or a Storyboard sheet's panel (a crop, §2.6), or a plate with `output_kind='image'` when it is made there. It also feeds the shot through a `plate_inputs` row with role `frame`, the slot `keyframe` in `bindings`.
   - **variant** (`variant_of` = the parent card): a branch of the same shot developed alongside it ("the same shot, wider"). It is a plate with the parent's `output_kind` and `shot_id`, with its own takes (`generations.node_id` = the variant).
   - **Options are not variants.** An Options chip is one job whose takes are versions of the same card (§4.1).
   - Children are one level deep: a child has no children, and the store refuses one.
@@ -370,33 +464,53 @@ The owner, 18 Oct: "make nodes typed by output (Image · Storyboard sheet · Vid
   - Wiring a group into a plate writes one input row per member (§2.5).
   - Removing a group removes nothing inside it: its members lose `group_id` in the same write, and Undo puts them back.
 
-### 2.10 Step lists per film type (17 Oct #11, with 18 Oct (d) applied): PROPOSED
-The owner, 18 Oct (d): "step order per film type with Sound after Shots, Breakdown renamed Beats and folded into Script as views, Treatment as its own step after Script; #818's lists change to this before its switch goes on."
+### 2.10 Step lists per film type: the owner's final lists (19 Oct, "final for A1b")
+The owner, 19 Oct: "every Script has the Beats view; Sound, Edit and Deliver sit behind + where they are not opened by default". His Q16–Q22 answers:
+- Sound comes after Shots in every type with Shots and Edit, "reached from the + tile (Sound · Edit · Deliver)", and "does not change what a new production shows".
+- Treatment is on by default for Ad film, Feature, Short film and Music video. For UGC, Product video, Microdrama, Pre-vis, Trend clip and Social it is off by default, on the + tile's list.
+- Pitch deck folds into Treatment: "One deck per production."
+- Treatment is a third surface, `deck`.
+- Pre-vis gets a Script opened on the Beats view.
+- Microdrama is unchanged in Phase A.
+- Format breakdown and Beat map are untouched.
 
-Applied as follows:
-- every Breakdown step goes into its type's Script, as the Beats view (§2.6);
-- Treatment, `kind treatment`, comes right after Script where the recommended answer to Q17 puts it;
-- Sound moves after Shots where it exists (Q16).
+**The two parts of a list.**
+- **Opened** steps are the ones a new production shows: `ensureSteps` creates their rows.
+- **"+"** steps are listed in the film type, in their place, but not opened. A person (or Atomik) opens one from the + tile, and that creates its row.
 
-Labels are the owner's, and surfaces follow #818: Brief and Script are documents, Deliver is a table, and everything else is canvas.
+In config, each step gains **`opened: boolean`** (default `true`) and **`commit: 'kept' | 'sent'`** (§2.8). `add()` already accepts only a kind the film type lists. A1b changes it to put the new step at **its list position**: after the nearest earlier listed step the production has, instead of at the end of the rail.
 
-| Film type | Proposed steps, in order | Change from 17 Oct |
+| Film type | Opened in a new production | Behind the + tile (not opened) |
 |---|---|---|
-| Ad film | Pitch deck · Brief · Script · **Treatment** · Look · Elements · Storyboard · Shots · Edit · Deliver | Breakdown → Script's Beats view; Treatment added (Q17, Q18) |
-| Feature | Brief · Script · **Treatment** · Look · Elements · Storyboard · Shots · Edit · Deliver | Breakdown → Beats view; Treatment added |
-| Short film | Brief · Script · **Treatment** · Look · Elements · Storyboard · Shots · **Sound** · Edit · Deliver | Breakdown → Beats view; Treatment added; Sound after Shots |
-| UGC | Brief · Creator · Hook · Script · Shots · Captions · Deliver | none in the list (its Script gains the Beats view; no Treatment, Q17) |
-| Product video | Brief · Product · Look · Storyboard · Shots · Edit · Deliver | none |
-| Music video | Track · Beat map · Look · Elements · Storyboard · Animatic · Shots · Edit · Deliver | none (Beat map is the track's beats, Q22) |
-| Microdrama | Series bible · Episodes · Elements · Storyboard · Shots · Edit · Deliver | none in Phase A (Q21) |
-| Pre-vis | Brief · **Script** · Set map · Elements · Storyboard · Animatic · Shots · Handoff | Breakdown → a Script step opened on its Beats view (Q20) |
-| Trend clip | Source · Format breakdown · Swap-ins · Copy · Shots · Captions · Deliver | none (Format breakdown is not the script breakdown, Q22) |
-| Social | Deliverables · Hook · Copy · Design · Visuals · Captions · Deliver | none |
+| Ad film | Brief · Script · Treatment · Look · Elements · Storyboard · Shots | Sound · Edit · Deliver |
+| Feature | Brief · Script · Treatment · Look · Elements · Storyboard · Shots | Sound · Edit · Deliver |
+| Short film | Brief · Script · Treatment · Look · Elements · Storyboard · Shots | Sound · Edit · Deliver |
+| Music video | Track · Beat map · Treatment · Look · Elements · Storyboard · Animatic · Shots | Sound · Edit · Deliver |
+| Product video | Brief · Product · Look · Storyboard · Shots | Sound · Edit · Deliver; Treatment |
+| UGC | Brief · Creator · Hook · Script · Shots · Captions · Deliver | Treatment |
+| Microdrama | Series bible · Episodes · Elements · Storyboard · Shots | Sound · Edit · Deliver; Treatment |
+| Pre-vis | Brief · Script · Set map · Elements · Storyboard · Animatic · Shots · Handoff | Treatment |
+| Trend clip | Source · Format breakdown · Swap-ins · Copy · Shots · Captions · Deliver | Treatment |
+| Social | Deliverables · Hook · Copy · Design · Visuals · Captions · Deliver | Treatment |
 
-- **Treatment's content stays where it is today:** `treatments` + `treatment_versions`, one per production. The step row only gives it a place on the rail, so there is no second copy. Its surface is Q19; `canvas` is recommended, with its pages as Deck page cards, as Pitch deck already is.
-  - This supersedes 17 Oct #14's "today's treatment stays as the deck inside Look".
-- **Where it is enforced:** only `FILM_TYPES_DEFAULT` changes (and `V30_FILM_TYPES` where a deployment sets it). `treatment` would join the surface map in `filmTypes.ts`.
-- **Productions that already have steps keep them.** `ensureSteps` never rewrites a production's rows, so a production made from the 17 Oct list keeps its Breakdown step until a person removes it. The switch is off everywhere but the house, so this is at most the house's test productions. A test asserts it.
+- **Surfaces.** Brief and Script are `document`; Treatment is **`deck`**; Deliver is `table`; every other step is `canvas` (Handoff included).
+- **"+ Sound · Edit · Deliver" is read as all three behind the + tile**, from the owner's sentence above and Q16's "+ tile (Sound · Edit · Deliver)". If he meant only Sound behind +, with Edit and Deliver opened, only the `opened` flags change. Flagged in §9.2 (R1).
+- **Where an optional Treatment goes when it is opened.** The lists name Treatment as optional but give it no place.
+  - In UGC and Pre-vis it goes right after Script ("Treatment as its own step after Script", 18 Oct (d)).
+  - In types with no Script (Product video, Microdrama, Trend clip, Social), the plan puts it right after the first step, the client's material. Flagged in §9.2 (R1).
+- **Every Script has the Beats view** (UGC and Pre-vis included). Beats live under the Script (§2.6), and no type has a Breakdown or Beats step. **Pre-vis's Breakdown becomes Script** (Q20).
+- **Untouched:** Trend clip's Format breakdown and Music video's Beat map (Q22); Microdrama's Episodes (Q21).
+- **Pitch deck is gone from Ad film (Q18).** Its deck is the Treatment step, "with the ad film's section library". **One deck per production** is already enforced by `treatments.project_id UNIQUE` (`lib/db.ts` treatments). The section library is per-film-type deck config, settled with the Polotno spike, and names no workspace or client (rule 3).
+- **The `deck` surface (Q19).**
+  - The Treatment step's content stays in `treatments` + `treatment_versions`, the only truth. The step row only gives it a place on the rail.
+  - It has no frame, and its pages are not canvas cards. The page format, one JSON per page, is settled by the Polotno spike.
+  - A deck page is made by one quoted job per page (§2.9).
+  - This supersedes 17 Oct #14's "the deck inside Look".
+- **Where it is enforced:**
+  - `FILM_TYPES_DEFAULT` (and `V30_FILM_TYPES` where a deployment sets it, whose schema gains `opened` and `commit`);
+  - `STEP_SURFACES` and the steps table's CHECK, which gain `deck` (§2.2);
+  - `add()` placing a step at its list position.
+- **Productions that already have steps keep them.** `ensureSteps` never rewrites a production's rows, so a production made from the 17 Oct list keeps its Breakdown and Pitch deck steps until a person removes them. The switch is off everywhere but the house, so this is at most the house's test productions. A test asserts it.
 
 ---
 
@@ -461,7 +575,7 @@ document_imports(
 - everything Atomik makes is charged and quoted first, including plans, research, analysis and text revisions, as Reading · Research · Analysis · Writing bands;
 - the quote and the Preflight card are free;
 - Atomik's own check of its work is free and never a line;
-- Enhance has a fixed price and no Undo;
+- Enhance has no Undo; since 19 Oct it is priced as it costs and shown before pressing (below);
 - "Options" is a priced chip;
 - Agent History has one line per command;
 - no engine name appears anywhere in Agent mode, History included.
@@ -475,7 +589,7 @@ quoted_jobs(
   production_id, step_id, node_id, command_id,
   decider TEXT NOT NULL CHECK(decider IN ('agent','director')),
   product TEXT NOT NULL CHECK(product IN ('generation','reading','research','analysis','writing','layers','enhance','render','upscale')),
-  band    TEXT,                 -- reading/research/analysis/writing: the band key from the pricing config it was quoted in; NULL otherwise
+  band    TEXT,                 -- reading/research/analysis/writing, and enhance (19 Oct): the band key from the pricing config it was quoted in; NULL otherwise
   engine  TEXT,                 -- PRIVATE: read only by lib/jobView.ts (4.4)
   options INTEGER NOT NULL DEFAULT 1 CHECK(options >= 1),   -- takes this one job makes (an Options chip is >1)
   preflight    TEXT NOT NULL,   -- JSON: the Preflight card's checks, below
@@ -503,7 +617,11 @@ INDEX (workspace_id, step_id)   INDEX (workspace_id, take_id)   INDEX (workspace
   - **inputs**: every input the output needs (§2.9) is present and readable;
   - **consent**: every real person's face or voice among the inputs has consent recorded (`identities.consent_at`, `soul_identities.consent_at`). Recording consent is a person's alone (rule 11);
   - **resolution**: the resolution and length the job will make, listed;
-  - **balance**: whether the balance covers the quote, as enough or short, never the balance itself. Rule 14: checked before it starts, with Top up offered then, never halfway.
+  - **balance**: whether the balance covers the quote, as enough or short, never the balance itself. Rule 14: checked before it starts, with Top up offered then, never halfway;
+  - **cap** (19 Oct, #815): whether the job's whole total would pass a workspace cap, as within or over, never the cap's figure.
+    - For a press of several shots (#815's batch press), the total is the press's sum, not each shot's quote.
+    - Over is a `stop`, shown with the pause card, and no shot starts (owner, 19 Oct: "If a press's total would pass the workspace cap, refuse at the quote with the pause card; no shot starts").
+    - Which caps apply is what #815 already judges per shot; this check judges the same caps on the sum, at the quote.
 - **A preflight with any `stop` writes no job and gets no quote.** It is returned to the card only. Nothing is spent, so nothing is recorded.
 - **The preflight and the quote are free.** Computing either writes no meter row, no reservation and no receipt. A test runs them and compares every table in both databases.
 - **No engine in an Agent job's preflight.** It goes through `lib/jobView.ts` like every other field (4.4).
@@ -559,8 +677,8 @@ agent_commands(
 INDEX (workspace_id, production_id, created_at)   INDEX (workspace_id, created_by, created_at)
 ```
 - **The total is never stored.** It is the sum of its jobs' `credit_receipts`.
-- **The plan is one of its jobs (18 Oct: plans are charged and quoted first).** Atomik's plan for a command is a `quoted_jobs` row under the command (product `writing`, proposed; Q23), quoted before it is made, like any other job.
-  - Talking before a plan (Atomik's questions) writes no job (brief rule 3; Q23 asks the owner to confirm).
+- **The plan is one of its jobs (18 Oct; Q23, 19 Oct: "questions are free and write no job; a plan is a Writing job, quoted first").** Atomik's plan for a command is a `quoted_jobs` row under the command, product `writing`, quoted before it is made, like any other job.
+  - Atomik's questions before a plan write no job and no meter row. A test asks questions on a mocked command and asserts that nothing was written.
 - **Atomik's own check of its work is never a job (18 Oct).**
   - The product list has no value for it, and the command's total is the sum of its jobs, so it cannot appear as a line.
   - A test runs a mocked command with a self-check and asserts that the check added no job row and no receipt line.
@@ -580,7 +698,11 @@ Its total is the sum of the actuals.
 - It is built through `lib/jobView.ts`, so Agent lines carry no engine.
 - **It carries no refund status and never the word "refund"** (owner, 17 Oct 18:00 #4). A failure that was not billed shows its actual, which is 0. A failure that was billed shows what it cost (rule 14).
 - Atomik's own check never appears (4.2).
-- **Enhance (18 Oct: a fixed price, no Undo).** An Enhance job is a line at its rate-card price. No Undo is offered for it, because the charge stands. The text it replaced is not erased (rule 13).
+- **Enhance (18 Oct: no Undo; 19 Oct: "price as it costs, shown before pressing").** An Enhance job is quoted from the prompt before the press, like every other job.
+  - The quote comes from the prompt's own size, in the pricing config's enhance bands, stored in `band`. A longer prompt, or one in a heavier script, can quote more.
+  - The owner: "No byte cap on the prompt, no lower reasoning allowance." So the quote path never trims the prompt to fit a price.
+  - **The quote path is built; the number is not.** "The final figure comes from the business manager." Until then the bands are named placeholders in server config, and today's Enhance charge stays exactly as it is.
+  - No Undo is offered for it, because the charge stands. The text it replaced is not erased (rule 13).
 
 ### 4.4 Rule 1 (an Agent job never shows its engine): where it is enforced
 - **One serializer, `lib/jobView.ts › publicJob(row, joins)`.** It is the only code that turns a `quoted_jobs` row (with its take, provenance, preflight and receipt) into JSON, CSV or a sentence. Every v30 read model uses it: History (Agent and Director), aggregates, CSV export, step receipts, preflight cards, error lines, and the "recreate" recipe.
@@ -605,8 +727,9 @@ Its total is the sum of the actuals.
 | Path | Product | `meter_id` / takes |
 |---|---|---|
 | Generation admission (`lib/generationAdmission.ts` → `reserveGenerationSpend`) | `generation` (`upscale` when `task='upscale'`) | takes by `generations.job_id`; `take_id` for a one-take job |
-| Enhance (`app/api/prompt/enhance/route.ts` → `lib/paidText.ts runPaidText`, kind `enhance`) | `enhance` | the `paid_text_jobs` id |
-| Atomik's plan (`lib/workbench/rig-agent.ts` `planEvent`; chat turns `lib/atomik.ts:1052`) | `writing`, proposed (Q23); **charged and quoted (18 Oct)**, superseding 17 Oct #8's "free in v30" | the meter id it already writes |
+| Enhance (`app/api/prompt/enhance/route.ts` → `lib/paidText.ts runPaidText`, kind `enhance`) | `enhance`, quoted from the prompt (19 Oct) | the `paid_text_jobs` id |
+| Deck page (after the Polotno spike) | one job per page, words and pictures together (Q24) | new |
+| Atomik's plan (`lib/workbench/rig-agent.ts` `planEvent`; chat turns `lib/atomik.ts:1052`) | `writing` (Q23, 19 Oct); **charged and quoted (18 Oct)**, superseding 17 Oct #8's "free in v30". Questions write no job | the meter id it already writes |
 | Script breakdown into beats, and development (`lib/workbench/development-server.ts`) | `analysis` / `writing` | its job id |
 | Document reading for understanding (new) | `reading` | new; output in `reading_notes` |
 | Research (new) | `research` | new |
@@ -725,7 +848,7 @@ take_filings(
   job_id  TEXT,            -- quoted_jobs.id, for a filing made before the take exists
   production_id TEXT NOT NULL,
   step_id TEXT NOT NULL DEFAULT '',   -- '' = the production as a whole (a NULL would defeat UNIQUE)
-  filed_as TEXT NOT NULL DEFAULT 'filed' CHECK(filed_as IN ('filed','sent')),   -- 'sent': a person or Atomik sent it to this step (§2.8)
+  filed_as TEXT NOT NULL DEFAULT 'filed' CHECK(filed_as IN ('filed','sent')),   -- 'sent': a person sent it to this step, the commit (§2.8)
   from_step_id TEXT,       -- the step it was sent from
   filed_by, filed_at, removed_at, removed_by,
   CHECK (take_id IS NOT NULL OR job_id IS NOT NULL),
@@ -736,7 +859,7 @@ INDEX (workspace_id, production_id, step_id)   INDEX (workspace_id, job_id)
 ```
 - **Before, during, after:** a filing can name a job before its take exists. When the job's take is written, `take_id` is set in the same write. For an Options job, each of its takes gets its own filing in the write that makes it.
 - **The take's home stays `generations.project_id` / `shot_id`.** Filings are extra places it appears, never a second home. "Takes in production P" = its home OR a filing.
-- **Sent is a filing to a step** (§2.8). A take sent to a step where it is already filed turns that filing into `sent`; it is never a second row (the UNIQUE).
+- **Sent is a filing to a step, and the commit; a person's alone** (§2.8). A take sent to a step where it is already filed turns that filing into `sent`; it is never a second row (the UNIQUE).
 - Uploads already have their own many-to-many, `project_library_uploads` (`lib/workbench/project-library.ts`), which stays.
 
 ---
@@ -748,9 +871,9 @@ Every item is additive. Tables are created by their store's `…Ready()` (`CREAT
 | # | Change | Database | How | Risk on an existing database |
 |---|---|---|---|---|
 | M1 | `projects.film_type`, `projects.canvas_store` | workspace | `addColumn` in the steps store's `ready()` | Low: nullable; SQLite adds a column without rewriting the table. **Landed in #818.** |
-| M2 | `production_steps` (surface incl. `table`, frame CHECKs, fixed-column trigger) | workspace | `CREATE TABLE IF NOT EXISTS` | None until used. **Landed in #818.** |
-| M3 | `canvas_nodes` (with `output_kind`, `frame_of`, `frame_role`, `variant_of`, `group_id`, `beat_id`), `plate_inputs` (with `via_group_id` and the 18 Oct roles) | workspace | `CREATE TABLE IF NOT EXISTS` | None until used |
-| M4 | `generations.node_id`, `generations.job_id`, `generations.approved_via` + indexes on the first two | workspace | `addColumn`, then `addIndex` | Low: a hot table, but metadata-only; each index build is one pass over takes (thousands per workspace) |
+| M2 | `production_steps` (surface incl. `table`, frame CHECKs, fixed-column trigger); **A1b: the CHECK gains `deck`**, by a rebuild where the table exists (§2.2) | workspace | `CREATE TABLE IF NOT EXISTS`; A1b: new table, rows copied, old one renamed aside, in one transaction | None until used. **Landed in #818.** A1b's rebuild: Low (only flag-on databases have the table) |
+| M3 | `canvas_nodes` (with `output_kind` (no `deck_page`), `frame_of`, `frame_role`, `variant_of`, `group_id`, `beat_id`), `plate_inputs` (with `via_group_id` and the 18–19 Oct roles, `panel` included) | workspace | `CREATE TABLE IF NOT EXISTS` | None until used |
+| M4 | `generations.node_id`, `generations.job_id`, **`generations.kept_at`, `kept_by`** (Q12; replaces the 18 Oct `approved_via`), `generations.review_note_id` (Q14) + indexes on `node_id` and `job_id` | workspace | `addColumn`, then `addIndex` | Low: a hot table, but metadata-only; each index build is one pass over takes (thousands per workspace) |
 | M5 | `script_beats`; `shots.beat_id` + index (**changed 18 Oct**: the source-range columns are on `script_beats`, not `shots`) | workspace | `CREATE TABLE IF NOT EXISTS`; `addColumn` | Low |
 | M6 | `production_documents`, `document_versions`, `document_changes` (with `job_id`), `document_imports` | workspace | `CREATE TABLE IF NOT EXISTS` | None until used |
 | M7 | `quoted_jobs` (with the 18 Oct columns, 4.1), `agent_commands` | workspace | `CREATE TABLE IF NOT EXISTS`, or `addColumn` if A3 merged first | None until used |
@@ -759,7 +882,7 @@ Every item is additive. Tables are created by their store's `…Ready()` (`CREAT
 | M10 | `uploads.derived_from_upload`, `derived_from_gen`, `derivation` | workspace | `addColumn` at boot (#820) | Low. **Landed in #820.** |
 | M11 | `take_filings` (with `filed_as`, `from_step_id`) | workspace | `CREATE TABLE IF NOT EXISTS` | None until used |
 | M12 | Status trigger `generations` → `quoted_jobs` (wiring only) | workspace | `CREATE TRIGGER IF NOT EXISTS`, installed only after M7 exists | **Medium:** a trigger on the take table. It touches only rows that have a job, and it is installed only by the wiring PR (after the freeze). |
-| M13 | `production_record_items`, `reading_notes` | workspace | `CREATE TABLE IF NOT EXISTS` | None until used |
+| M13 | `production_record_items`, `reading_notes` (once per file: `UNIQUE (workspace_id, source_sha256)`) | workspace | `CREATE TABLE IF NOT EXISTS` | None until used |
 
 No platform-database change in Phase A.
 
@@ -777,7 +900,7 @@ None of these PRs changes the interface, so the rule-7 viewport runs do not appl
 | PR | Concern | Size | Needs | Flag | Opus money review | Tests beyond isolation |
 |---|---|---|---|---|---|---|
 | **A1** | Steps and frames: M1, M2, film-type step lists, the store, `page_id` | S | — | `V30_PRODUCTION_MODEL` | no | **Merged (#818).** |
-| **A1b** | Step lists to 18 Oct (§2.10): `FILM_TYPES_DEFAULT`, `treatment` surface | S | A1, Q16–Q22 | `V30_PRODUCTION_MODEL` | no | each type's list as answered; a production made from the 17 Oct list keeps its steps |
+| **A1b** | Step lists, final (§2.10): `FILM_TYPES_DEFAULT` with `opened` and `commit`, the `deck` surface and the table rebuild, `add()` at list position | S | A1 | `V30_PRODUCTION_MODEL` | no | each type's opened and + steps as the owner listed them; an opened + step lands at its list position; a production made from the 17 Oct list keeps its steps; the rebuild keeps every row |
 | **A2** | Nodes and plate inputs: M3, M4 (`node_id`), `nodeStatusOf`, outputs and accepted roles, children, groups, the `bindings` pairing | M | A1 | `V30_PRODUCTION_MODEL` | no | status derivation table; one top-level shot card per step; a child never has children; a refused role; plate-input and binding rows written together or not at all; a group wire writes and removes its member rows in one write |
 | **A3** | Jobs and commands: M7, the store, `lib/jobView.ts`, the engine guard | M | — | `V30_JOBS` | **yes** | the response test and the source guard (4.4); the refund-status mapping; no charge path touched (open) |
 | **A3b** | Preflight, Options, bands, job approval: the 18 Oct columns on `quoted_jobs`, `generations.job_id` | S | A3 | `V30_JOBS` | **yes** | no job without a preflight; a `stop` writes nothing; preflight and quote write no money row; only a person approves; no engine in an Agent preflight |
@@ -785,16 +908,16 @@ None of these PRs changes the interface, so the rule-7 viewport runs do not appl
 | **A5** | Library columns and handles: M9, M10, the kind map, crop rows | M | — | `V30_LIBRARY` | no | **Merged (#820).** |
 | **A5b** | Library origin: a trained likeness is `uploaded` (6.1) | S | A5 | `V30_LIBRARY` | no | identity-first → uploaded; a take made from it → generated; consent read from the identity |
 | **A6** | Documents: M6, the version, change and import stores | M | A1 | `V30_DOCUMENTS` | no | an accepted change makes a new version; a stale base marks the change stale; the original upload's SHA-256 is unchanged |
-| **A7** | Beats → plates: M5, a beat's shots → shot cards, its storyboard sheet | S | A2, A6 | `V30_PRODUCTION_MODEL` | no | several shots per beat, one beat per shot; both steps share the shots; making plates spends nothing |
-| **A8** | Take filings and Sent: M11 | S | A1, A3 | `V30_LIBRARY` | no | a filing before the take exists gets its take id in the same write; the home is unchanged; send never writes `review_state` |
+| **A7** | Beats → plates: M5, a beat's shots → one Storyboard plate and one Shots card per shot; a sheet's panels → frames in the shot cards | S | A2, A6 | `V30_PRODUCTION_MODEL` | no | several shots per beat, one beat per shot; one card per shot per step; panels become crop uploads and frame children; making plates and cutting panels spend nothing |
+| **A8** | Take filings and Sent (people-only send): M11 | S | A1, A3 | `V30_LIBRARY` | no | a filing before the take exists gets its take id in the same write; the home is unchanged; send never writes `kept_*` or `review_state`; `agent:*`, MCP and token sends refused |
 | **A9** | History read models and CSV (read-only API), with the meter backfill | M | A3, A8 | `V30_HISTORY` | **yes** | the totals equal the `credit_receipts` sums; Agent rows and backfilled rows have no engine; one line per command; CSV through `csvCell`, no refund column |
 | **A10** | Job wiring (admission, Enhance, plan, exports): M12 | L | A3, A3b, A8 | `V30_JOB_WIRING` | **yes** | flag on and off give identical meter rows, reservations, balances and refusals |
 | **A11** | The production record: M13, `productionRecord()`, pins and removals, reading notes | M | A1, A6, A7 | `V30_PRODUCTION_MODEL` | no | reading it writes nothing anywhere; a removed item is not carried and Undo brings it back; a pinned version holds; Setup cannot be removed; a ref from another workspace never resolves |
-| **A12** | Keep (`approved_via`, people-only Keep and its Undo) | S | Q12 | `V30_PRODUCTION_MODEL` | no | Keep writes today's approved mark in one statement; `agent:*`, MCP and token Keep refused; a cleared approval is not Kept; every "approved" reader sees a kept take |
+| **A12** | Keep (`kept_at`, `kept_by`, people-only, Undo) and `committedSql` (§2.8) | S | A1, A8 | `V30_PRODUCTION_MODEL` | no | Keep writes only `kept_*`; `agent:*`, MCP and token Keep refused; `committedSql` gives today's answer for every team-canvas fixture and the Sent/Kept answer by step for v30 ones. Each reader in §2.8's table moves in its own PR, which names its line(s) |
 
 **What can realistically merge by Thu 22**
 - A1 (#818) and A5 (#820) merged on 18 Oct. Deploy #8 on Fri 23 is the last feature deploy; the freeze is Tue 27.
-- The owner's fix-lane order of 18 Oct ends with "#818's step lists" (A1b). A1b waits for Q16–Q22.
+- The owner's fix-lane order of 18 Oct ends with "#818's step lists" (A1b). The lists are final since 19 Oct, so A1b can start; R1 (§9.2) changes only `opened` flags and one position.
 - The data-model work of 18 Oct ((a)–(d): A11, A12, A2's outputs, A7) is "start now, in lanes, behind switches, no interface". Only what passes CI first time rides deploy #8. The rest lands after the freeze.
 - **After 31 Oct:** A10 (Q9, answered 17 Oct #18).
 
@@ -802,7 +925,7 @@ None of these PRs changes the interface, so the rule-7 viewport runs do not appl
 
 ## 9. Owner questions
 
-### 9.1 Answered (17–18 Oct), and where each answer lands
+### 9.1 Answered (17–19 Oct), and where each answer lands
 
 | # | Question | The owner's answer | Lands in |
 |---|---|---|---|
@@ -817,23 +940,30 @@ None of these PRs changes the interface, so the rule-7 viewport runs do not appl
 | Q9 | Job wiring before or after the freeze? | 17 Oct #18: "After 31 Oct" | §4.5, §8 |
 | Q10 | Spend limit: which period, and what stops? | 17 Oct #17: calendar month, UTC; finishes the running job, starts nothing new. Update two #5 and 18:00 #3: owner-only raise (removing counts); a pause lifts at the new month | §4.6 |
 | Q11 | A refunded failure costs 0? | 17 Oct #4 and 18:00 #4: store the refund status now; "Agreed, not yet"; refunds stay internal | §4.1, §4.3 |
+| Q12 | Keep: today's approved, or a separate mark? | 19 Oct: "Keep is a separate mark (kept_at, kept_by), not today's approved. Today's approved is a commit; the commit is Sent. Every reader of 'approved' (export, review links, shot locks) follows Sent on output steps and Kept on Look and Elements. Name each reader in its PR." | §2.8 (the readers' table), §2.3, M4, A12 |
+| Q13 | Send without Keep? Show both? | 19 Oct: "yes and yes: Send does not need Keep; a card shows both." | §2.8, §2.3 |
+| Q14 | What is a rejection in the record? | 19 Oct: "only takes sent back, with the reason given." | §2.7 (`review_note_id`) |
+| Q15 | A sheet per beat, or a card per shot? | 19 Oct: "one card per shot, not one sheet per beat: a beat makes one plate in Storyboard and one in Shots ('from Script · beat 4'). A Storyboard sheet is a make-node output whose panels become frames inside the shot cards." | §2.6, §2.9, §2.5 (`panel`), A7 |
+| Q16 | Sound after Shots: where? | 19 Oct: in every type with Shots and Edit (Ad film, Feature, Short film, Music video, Product video, Microdrama), reached from the + tile; a new production shows no change | §2.10 |
+| Q17 | Which types get Treatment? | 19 Oct: on by default for Ad film, Feature, Short film, Music video; off by default, on the + tile's list, for UGC, Product video, Microdrama, Pre-vis, Trend clip, Social | §2.10 |
+| Q18 | Pitch deck and Treatment? | 19 Oct: "fold: Pitch deck is gone from Ad film; its deck is the Treatment step, with the ad film's section library. One deck per production." | §2.10 |
+| Q19 | Treatment's surface? | 19 Oct: "neither canvas nor document: a third surface, deck. Content stays in treatments and treatment_versions; the page format is settled by the Polotno spike (one JSON per page). No deck pages as canvas cards." | §2.2, §2.9, §2.10, M2 |
+| Q20 | Pre-vis beats? | 19 Oct: "yes, Pre-vis gets Script opened on the Beats view." | §2.10 |
+| Q21 | Microdrama Episodes as scripts? | 19 Oct: "later; unchanged in Phase A." | §2.10 |
+| Q22 | Format breakdown and Beat map? | 19 Oct: "untouched." | §2.10 |
+| Q23 | Questions before a plan; a plan's band? | 19 Oct: "questions are free and write no job; a plan is a Writing job, quoted first." | §4.2, §4.5 |
+| Q24 | Script revision and Deck page bands? | 19 Oct: "Script revision: Writing. Deck page: one quoted job per page covering its words and its pictures; nothing built before the spike." | §2.9, §4.5 |
+| Q25 | Who pins and removes in the record? | 19 Oct: "both, each shown with who, with Undo." | §2.7 |
+| Q26 | Read an upload once? | 19 Oct: "once per file; no shot triggers a reading." | §2.7 (`reading_notes` UNIQUE), M13 |
 
-### 9.2 Open
+**The 19 Oct money answers, placed** (no figures here):
+- Enhance is "price as it costs, shown before pressing … build the quote path, not the number". See §4.3 and `band`.
+- #815: "If a press's total would pass the workspace cap, refuse at the quote with the pause card; no shot starts." See §4.1 (the preflight's `cap` check).
 
-| # | Question | Why it matters | Recommended | Until you answer |
-|---|---|---|---|---|
-| Q12 | Pressing Keep: is it today's "approved" under the v30 name, so draft → picked → approved stays and every place that reads "approved" (selects export, review links, shot locks) sees a kept take? Or is Kept a separate mark beside approved? | Ground rule 4 keeps draft → picked → approved. A separate mark adds a fourth decision that every one of those places must choose between. | The same state: Keep writes today's approved mark and records that it was Keep. | Nothing is built for Keep (A12 waits). |
-| Q13 | Can a take be sent to a step without being kept? When it is both, does its card show both ("Kept · Sent → Edit")? | It decides whether Send needs Keep first. | Yes, and yes. | Send and Keep are independent; both are shown. |
-| Q14 | In the production record, what is a rejection: only a take someone sent back, or also the options not picked when one was? | Rejections are carried forward into every later job. | Only takes sent back. Unpicked options are not rejections. | Only takes sent back. |
-| Q15 | Storyboard: does a beat get one storyboard sheet (its shots as panels), or does each shot get its own storyboard card? | It decides how many plates a beat makes in Storyboard. | One sheet per beat. | One sheet per beat. |
-| Q16 | "Sound after Shots": does it only move Sound where it already is (Short film), or add a Sound step after Shots to other film types? | It changes the step list of other types. | Only move it, in Short film. | Only Short film changes. |
-| Q17 | Which film types get the new Treatment step after Script? | Four types have a Script (Ad film, Feature, Short film, UGC). | Ad film, Feature and Short film; not UGC, where Hook and Script carry it. | Those three. |
-| Q18 | Ad film has a Pitch deck before Brief. With a Treatment after Script, keep both or does Treatment replace Pitch deck? | Two decks in one production. | Keep both: the pitch wins the job, and the treatment sets the approach after the script. | Both. |
-| Q19 | Is the Treatment step a canvas (its pages as cards, like Pitch deck) or a document step? | It decides how the treatment is edited. | Canvas. Its content stays today's treatment. | Canvas. |
-| Q20 | Pre-vis has Breakdown but no Script. With Breakdown folded into Script, does Pre-vis get a Script step in its place, opened on the Beats view (script text optional)? | Pre-vis beats need a home. | Yes, labelled Script. | Yes. |
-| Q21 | Microdrama: are Episodes scripts (one Script with its Beats per episode)? | Today a production has one Script. | Later. In Phase A, Episodes stays a canvas step and Microdrama has no beats. | Unchanged. |
-| Q22 | Are Trend clip's "Format breakdown" and Music video's "Beat map" untouched by the Breakdown → Beats change? | Same words, different things. | Untouched. | Untouched. |
-| Q23 | Plans are now charged. Are Atomik's questions before a plan still free talking? Which band is a plan billed in? | It decides what a command costs before anything is made. | Questions are free, with no job. A plan is in the Writing band. | Questions write no job; a plan is a Writing job; today's planning charge stays until sign-off. |
-| Q24 | Which band are Script revision and Deck page makes billed in? | The quote's band. | Script revision: Writing. Deck page: Writing for its words, with its pictures as their own Image makes. | Writing; no Deck page is made before the Polotno spike. |
-| Q25 | In the production record, may Atomik pin and remove items itself, or only a person? | It decides who shapes what Atomik remembers. | Both, each shown with who did it, with Undo. | Both. |
-| Q26 | Is an upload read for understanding once per file, reused by every shot, with a fresh reading only when a person asks (quoted first)? | Reading is billed. | Yes. | Once per file; no shot triggers a reading. |
+### 9.2 Readings to confirm (no open owner questions; these are how the plan read three answers)
+
+| # | The plan's reading | The other reading | What changes if it is the other |
+|---|---|---|---|
+| R1 | "Shots · + Sound · Edit · Deliver" puts all three behind the + tile (Q16 names the tile "Sound · Edit · Deliver"). Optional Treatment, which the lists do not place, goes after Script, or after the first step where there is no Script. | Only Sound is behind +, and Edit and Deliver open as before; Treatment's place is somewhere else. | Only `opened` flags and one position in `FILM_TYPES_DEFAULT` (A1b). |
+| R2 | A Storyboard sheet's panels become frame children of the shot's card in **Shots**; its Storyboard card shows them through the shared shot. | The panels sit inside the shot's **Storyboard** card. | Which card `frame_of` points at (A7). |
+| R3 | Only `look` and `elements` steps commit by Kept; every other step commits by Sent. | Input-like steps (Product, Creator, Set map, Swap-ins, Track, Source) also commit by Kept. | The `commit` value of those steps in config (A1b). |
