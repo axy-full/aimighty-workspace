@@ -261,7 +261,8 @@ test("a long prompt in a heavier script is priced as it costs: quoted above 1 cr
   const route = load<{ POST: Handler }>("app/api/prompt/enhance/route.ts", {
     "@/lib/auth": { ...nodeRequire(path.resolve("lib/auth.ts")), withTenant: (h: unknown) => h, requireRender: async () => OWNER },
     "@/lib/catalog": { catalog: async () => [writer] },
-    "@/lib/gateway": { gatewayReachable: () => true },
+    /* The writer is connected: the route's own check (lib/language-provider.ts), stubbed at its boundary. */
+    "@/lib/language-provider": { languageReachable: () => true },
     "@/lib/paidText": { ...paidText, runPaidText: (input: unknown, o: Record<string, unknown> = {}) => paidText.runPaidText(input, { ...o, submit: answers }) },
     "next/server": { NextResponse: Response, after: () => { throw new Error("Nothing is continued after the response here"); } },
   }).POST;

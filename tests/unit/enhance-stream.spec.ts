@@ -50,7 +50,8 @@ function enhance(submit: Submit, catalogueTakes = 0): Handler {
     "@/lib/auth": { ...nodeRequire(path.resolve("lib/auth.ts")), withTenant: (h: unknown) => h, requireRender: signedIn },
     /* The route's one catalogue read; the model it prices from is handed on, so paid text never reads it again. */
     "@/lib/catalog": { catalog: async () => { skew += catalogueTakes; return [MODEL]; } },
-    "@/lib/gateway": { gatewayReachable: () => true },
+    /* The writer is connected: the route's own check (lib/language-provider.ts), stubbed at its boundary. */
+    "@/lib/language-provider": { languageReachable: () => true },
     "@/lib/paidText": { ...paidText, runPaidText: (input: unknown, o: Record<string, unknown> = {}) => paidText.runPaidText(input, { ...o, submit }) },
     "next/server": { NextResponse: Response, after: () => { throw new Error("Nothing is continued after the response here"); } },
   }).POST;
