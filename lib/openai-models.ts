@@ -4,6 +4,8 @@ import { engineMock } from './mock';
 
 export type OpenAIConnection = { configured: boolean; verified: boolean; models: string[]; checkedAt: number; error: string | null };
 const cache = new Map<string, OpenAIConnection>();
+/** A listing that failed is not asked again for this long: each ask can cost the whole 15 s, and every quote waited behind it. */
+export const FAILED_VERIFY_TTL_MS = 60_000;
 /** Availability is scoped to a credential fingerprint, never shared between
  * studios. A read-only model listing incurs no generation request. */
 export async function openAIConnection(force = false, fetcher: typeof fetch = fetch): Promise<OpenAIConnection> {
@@ -12,7 +14,7 @@ export async function openAIConnection(force = false, fetcher: typeof fetch = fe
   if (!key) return { configured: false, verified: false, models: [], checkedAt: Date.now(), error: 'No language account key is configured for this workspace.' };
   const fingerprint = createHash('sha256').update(key).digest('hex');
   const cached = cache.get(fingerprint);
-  if (!force && cached && Date.now() - cached.checkedAt < (cached.verified ? 300000 : 15000)) return cached;
+  if (!force && cached && Date.now() - cached.checkedAt < (cached.verified ? 300000 : FAILED_VERIFY_TTL_MS)) return cached;
   let result: OpenAIConnection;
   try {
     const response = await fetcher('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15000), cache: 'no-store', redirect: 'error' });

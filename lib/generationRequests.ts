@@ -152,6 +152,16 @@ async function completeUnadmitted(userId: string, key: string): Promise<Response
 }
 
 /** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
+/**
+ * A run whose answer is a stream still being written (the prompt enhancer's) marks its Response with this header: the claim is not answered from the body
+ * (it does not exist yet), the Response goes out as it is, and the run ends the claim itself with `completeDeferredRequest` once the stream is over, with the
+ * answer the key will replay.
+ */
+export const CLAIM_DEFERRED_HEADER = "X-Claim-Deferred";
+export async function completeDeferredRequest(claim: { userId: string; key: string }, status: number, json: string): Promise<void> {
+  await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, status, now(), claim.userId, claim.key] });
+}
+
 export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>, options: GenerationRequestOptions = {}): Promise<Response> {
   const scopeError = workbenchScopeProblem(req, requireTenant().id, userId);
   if (scopeError) return Response.json({ error: scopeError }, { status: 409 });
@@ -216,6 +226,10 @@ export async function withGenerationRequestData(
   const settle = async (): Promise<Response> => {
     try {
       const response = await run(claim);
+      if (response.headers.get(CLAIM_DEFERRED_HEADER) === "1") {
+        response.headers.delete(CLAIM_DEFERRED_HEADER);
+        return response;
+      }
       const json = await response.clone().text();
       await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, response.status, now(), userId, key] });
       response.headers.set("Idempotency-Status", "complete");
