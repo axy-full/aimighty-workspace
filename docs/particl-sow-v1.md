@@ -395,9 +395,18 @@ nothing can leave a plan, and the two differ only for someone who has.
 1. Free grant is one-time, never recurring. Invite approvals are capped per month by a platform setting (`grant_budget_usd`).
 2. Bonus credits never exceed 20% of a pack.
 3. Any workspace consuming more than 25% of the platform's monthly engine spend is flagged to the admin console.
-4. Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.
+4. ~~Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.~~ Retired 19 October 2026; see the amendment below.
 5. Included-credit consumption is metered separately from purchased credits, so statements show what was free and what was paid.
 6. Workspaces flagged `internal: true` carry a pricing override set by the private policy. The flag is set only from the platform admin console, never from workspace settings, and its spend is excluded from margin reporting.
+
+**AMENDED 19 October 2026 — guardrail 4 is retired.** The owner, verbatim: "the 200 cr per-job line (guardrail 4) is retired. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with its Paused state. #815 keeps "a multi-shot press is one job, one approval for the total" and drops the guardrail-4 check; a press whose total would pass the workspace cap is refused at the quote. Update CLAUDE.md's pricing section and the rulebook in the docs PR; a money review on the #815 change. Nothing else in the money behaviour changes."
+
+What replaces it:
+- Every job is approved on its quote before it runs.
+- The only automatic stop is the workspace's monthly spend limit, with its Paused state.
+- A multi-shot press is one job, with one approval for its total. A press whose total would pass the workspace cap is refused at the quote.
+
+The code still has the line. `JOB_APPROVAL_LINE_USD` (US$20, 200 cr at $0.10) in `lib/approvalRule.ts` is judged by `jobLineVerdict` in the reservation (`lib/generationRequests.ts`), before a job is parked, quoted or sent (`lib/shotCap.ts`) and in the quote's verdict (`lib/quote.ts`); a composer press of several takes is summed as one job (`lib/batchLine.ts`). Auto mode's per-job line (`lib/workbench/rig-agent-limits.ts`) and Settings › Spending rules (`components/graphite/settings/rules/spending.ts`) read the same figure. Only #815 changes it now: its multi-shot press drops the guardrail-4 check, under a money review. Everywhere else the line stays in the code until a PR removes it, with the owner's yes.
 
 ---
 
@@ -767,9 +776,25 @@ recurring billing of any kind (`startCheckout` throws for anything but
 `manual`, so a $49/mo plan today is an admin remembering every month); panel
 allowances and the §2.8 board pipeline they would count.
 
-Guardrail 4's line now has one source, `lib/approvalRule.ts`. Since 2 October
+~~Guardrail 4's line now has one source, `lib/approvalRule.ts`. Since 2 October
 2026 Atomik's Rig runs use it as the most one job may cost without asking
-(§9); nothing else enforces it yet.
+(§9); nothing else enforces it yet.~~
+
+**AMENDED 19 October 2026 — guardrail 4 is retired** (§7A, "Guardrails in
+code", AMENDED 19 October 2026). The owner, verbatim: "the 200 cr per-job line
+(guardrail 4) is retired. Every job is approved on its quote before it runs;
+the only automatic stop is the workspace's monthly spend limit with its Paused
+state. #815 keeps "a multi-shot press is one job, one approval for the total"
+and drops the guardrail-4 check; a press whose total would pass the workspace
+cap is refused at the quote. Update CLAUDE.md's pricing section and the
+rulebook in the docs PR; a money review on the #815 change. Nothing else in the
+money behaviour changes." The line is still in the code, with its one source in
+`lib/approvalRule.ts` (`JOB_APPROVAL_LINE_USD`). By 19 October it was enforced
+at the press as well as in the Rig runs (`jobLineVerdict`, called from
+`lib/generationRequests.ts`, `lib/shotCap.ts` and `lib/quote.ts`), so the
+struck "nothing else enforces it yet" was already out of date. Only #815
+changes it now; everywhere else it stays until a PR removes it, with the
+owner's yes.
 # September 2026 amendment: durable published-context pipelines
 
 The additive pipeline executor introduces immutable versioned DAGs and private creator-owned runs from an explicit published production context. It never publishes a private draft. Each ready image/video/audio stage receives a batch quote and explicit approval; later stages require their own approval after inputs resolve. Permanent attempt keys, CAS revisions, fenced leases, and a persisted wakeup outbox prevent lost responses from creating replacement spend. Review selections become fixed once downstream attempts depend on them. Assembly produces an editorial timeline for the existing browser movie renderer, not a falsely completed movie. New tables and the full limits/recovery contract are documented in `docs/durable-production-pipelines.md`; historical recipes and runs remain compatible. This amendment does not introduce Stripe changes.
