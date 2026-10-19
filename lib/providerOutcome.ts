@@ -59,11 +59,11 @@ export type BillingBasis = keyof typeof BASIS;
 export type ProviderBilling = { state: BillingState; amount?: number; unit?: BillingUnit; basis: BillingBasis };
 
 /** Who answered. `higgsfield_account` is the person's own connected account; `higgsfield` the API on a key. */
-export const OUTCOME_PROVIDERS = ["higgsfield", "higgsfield_account", "byteplus", "google", "gateway", "openai", "xai", "fal", "elevenlabs", "syncso", "sarvam"] as const;
+export const OUTCOME_PROVIDERS = ["higgsfield", "higgsfield_account", "byteplus", "google", "gateway", "openai", "anthropic", "xai", "fal", "elevenlabs", "syncso", "sarvam"] as const;
 export type OutcomeProvider = (typeof OUTCOME_PROVIDERS)[number];
 export const PROVIDER_NAME: Record<OutcomeProvider, string> = {
   higgsfield: "The engine", higgsfield_account: "The connected account", byteplus: "BytePlus", google: "Google",
-  gateway: "The AI Gateway", openai: "OpenAI", xai: "xAI", fal: "fal", elevenlabs: "ElevenLabs", syncso: "sync.so", sarvam: "Sarvam",
+  gateway: "The AI Gateway", openai: "OpenAI", anthropic: "Anthropic", xai: "xAI", fal: "fal", elevenlabs: "ElevenLabs", syncso: "sync.so", sarvam: "Sarvam",
 };
 
 export const FAILURE_KINDS = [

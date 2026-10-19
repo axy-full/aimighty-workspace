@@ -6,7 +6,7 @@ import { useSession } from "@/lib/session";
 import { DraftRequestError, draftRequest } from "@/lib/workbench/draft-request";
 import type { RigAgentRunView } from "@/lib/workbench/rig-agent-plan";
 import type { BoardCtx } from "../types";
-import { stepRequest, stepShots } from "./estimates";
+import { stepRequest, stepShots, wantsEstimates } from "./estimates";
 import { planModel, type PlanModel, type PlanPrimary, type StepEstimate } from "./model";
 import { AGENT_CHANGED } from "./use-run";
 
@@ -14,7 +14,8 @@ import { AGENT_CHANGED } from "./use-run";
  * The plan card's data and actions (CLAUDE.md rule 14: a plan is approved once):
  *  - the run is Atomik's on this production (the board's `agent`, read by the team-canvas GET), with the server's
  *    plan quote at the gate and the approval's record after it;
- *  - before the build, renders not yet priced are pre-quoted on the request the run will price (./estimates.ts);
+ *  - before the build, renders not yet priced are pre-quoted on the request the run will price (./estimates.ts); never for a chips plan (Agent mode's
+ *    quick plan), which has ONE price, the server's (owner, 16 Oct): a step its gate covers shows none, and one that asks on its own shows the server's;
  *  - the balance is the session's; the approval rule is the workspace's (GET /api/engines, as the composer reads it);
  *  - every action is the run's own, through POST /api/workbench/team-canvas, which takes a person's session only
  *    and only the person who asked: `agent.approve` (build, free); `agent.approvePlan` (the plan once, at the
@@ -75,10 +76,10 @@ export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: st
     }
     return out;
   }, [run, project]);
-  const requests = useMemo(() => Object.fromEntries([...pending].flatMap(([seq, req]) => {
+  const requests = useMemo(() => (!wantsEstimates(run) ? {} : Object.fromEntries([...pending].flatMap(([seq, req]) => {
     const step = run?.paid.find((p) => p.seq === seq);
     return req && step?.quote == null && !["done", "failed", "skipped"].includes(step?.state ?? "") ? [[String(seq), { body: req.body }]] : [];
-  })), [pending, run]);
+  }))), [pending, run]);
   const quotes = useStageQuotes(ctx.scope, requests);
   const estimates: Record<number, StepEstimate> = {};
   for (const [seq, quote] of Object.entries(quotes.quotes)) {
@@ -90,7 +91,7 @@ export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: st
   const stills = new Set<number>();
   for (const [seq, req] of pending) {
     if (!req) continue;
-    meta[seq] = req.meta;
+    if (wantsEstimates(run)) meta[seq] = req.meta;
     if (req.still) stills.add(seq);
   }
   const inCredits = session.rates.unit === "cr";

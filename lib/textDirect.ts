@@ -1,3 +1,4 @@
+import { within } from './abortWithin';
 import { TEXT_SAFETY_BLOCK_MESSAGE, geminiBlockReason, safetyBlockLog } from './geminiSafety';
 import { APICallError, generateText, Output, type LanguageModelUsage, type ModelMessage, type SystemModelMessage } from 'ai';
 import type { JSONObject, JSONSchema7 } from '@ai-sdk/provider';
@@ -25,6 +26,8 @@ import { directVendorOf, isDirectRoute, redactProviderError, textRoute, type Dir
  */
 export type TextPostOptions = {
   auth?: Record<string, string>; timeoutMs?: number;
+  /** The caller gave up: the call is dropped (lib/paidText.ts `signal`). */
+  signal?: AbortSignal;
   mock?: MockKind;
   /** Tests inject the transport; production uses the recovery fetch. */
   fetch?: typeof fetch;
@@ -43,12 +46,12 @@ export async function textPost(body: string, opts: TextPostOptions = {}): Promis
   }
   /* OpenAI's own text API, directly (moved here from lib/gateway.ts); every other model that is not switched on in TEXT_DIRECT is the gateway's door. */
   assertTextProvider(input.model, opts.auth);
-  if (textVendor(input.model) === 'openai') return openaiDirectPost(input, { timeoutMs: opts.timeoutMs });
+  if (textVendor(input.model) === 'openai') return openaiDirectPost(input, { timeoutMs: opts.timeoutMs, signal: opts.signal });
   return gatewayPost(body, opts);
 }
 
 /** A text call by its parts (the thinking engine's shape): what the paid text paths and Atomik send. */
-export const textRun = (req: TextRun): Promise<TextReply> => textPost(req.body, { auth: req.auth, timeoutMs: req.timeoutMs, mock: req.mock });
+export const textRun = (req: TextRun): Promise<TextReply> => textPost(req.body, { auth: req.auth, timeoutMs: req.timeoutMs, signal: req.signal, mock: req.mock });
 
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 const int = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -272,7 +275,7 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
     // throwing away a paid reply that does not validate.
     const output = format ? { ...Output.text(), responseFormat: Promise.resolve(format.schema ? { type: 'json' as const, schema: format.schema as JSONSchema7, ...(format.name ? { name: format.name } : {}) } : { type: 'json' as const }) } : undefined;
     const result = await generateText({
-      model, maxRetries: 0, abortSignal: AbortSignal.timeout(opts.timeoutMs ?? 120_000),
+      model, maxRetries: 0, abortSignal: within(opts.timeoutMs ?? 120_000, opts.signal),
       ...(request.instructions ? { instructions: request.instructions } : {}), messages: request.messages,
       maxOutputTokens: request.maxOutputTokens, temperature: request.temperature, topP: request.topP, stopSequences: request.stopSequences,
       providerOptions: request.providerOptions, ...(output ? { output } : {}),

@@ -601,6 +601,12 @@ test("dubbing, run for real: an hour of source (about $30) is refused for a memb
   let id = "";
   /* The admission asserts the actor is the signed-in tenant, so each actor runs in its own scope. */
   await runInTenant(ws, async () => { await ready(); const seeded = await seedLongSource(3600); id = seeded.id; cleanup = seeded.cleanup; }, member);
+  /* Atomik's id is a real run with a person behind it (owner-approved fixture, 19 Oct): an agent id with no run is refused before any quote (lib/mediaSource.server.ts). */
+  await runInTenant(ws, async () => {
+    const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+    await rigAgentReady();
+    await db().execute({ sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_dub", "prod_dub", "draft_dub", "u_admin", `req_dub_${run}`, "goal", "auto", "running"] });
+  }, member);
   const body = () => ({ sourceUploadId: id, sourceLang: "en", targetLang: "es", mode: "v1", projectId: "project" });
   try {
     for (const [who, words] of [[member, /An admin has to start it\./], [agent, /never start it\./], [token, /never start it\./]] as const) {

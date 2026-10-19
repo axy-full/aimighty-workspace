@@ -123,6 +123,7 @@ export function admissionCheckpoint(
   return options.checkpoint({
     kind,
     request,
+    holdUsd: usd * (terms.band && terms.band > 1 ? terms.band : 1),
     compiled: resolved,
     quote: {
       ...quote,
@@ -138,10 +139,15 @@ export function admissionCheckpoint(
   });
 }
 
+/**
+ * `cost`: server-only, filled with the take's engine dollars at its hold (AdmissionCheckpoint.holdUsd) for a caller that judges a monthly dollar
+ * cap on a sum of takes (lib/batchPress.ts). It is never part of the prepared admission, its fingerprint or any reply.
+ */
 export async function prepareAdmission(
   input: Record<string, unknown>,
   actor: AdmissionActor,
   execute: AdmissionExecutor,
+  cost?: { holdUsd?: number },
 ): Promise<PrepareAdmissionResult> {
   let captured: AdmissionCheckpoint | undefined;
   const request = structuredClone(input);
@@ -156,6 +162,7 @@ export async function prepareAdmission(
     },
   });
   if (!captured) return { ok: false, status: reply.status, body: reply.body };
+  if (cost) cost.holdUsd = captured.holdUsd;
   return {
     ok: true,
     value: {
@@ -185,7 +192,7 @@ export function preparedClaimFingerprint(prepared: PreparedAdmission, namespace:
 export async function admitPrepared(
   prepared: PreparedAdmission,
   actor: AdmissionActor,
-  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"] },
+  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"]; fencedBy?: string },
   namespace: "generation" | "audio",
   execute: AdmissionExecutor,
 ): Promise<AdmissionReply> {
@@ -232,8 +239,8 @@ export async function admitPrepared(
               : undefined,
         }),
       ),
-    // Generation and audio admission bind the claim in the same write as the job row.
-    { atomicBinding: true },
+    // Generation and audio admission bind the claim in the same write as the job row. A fence (a cancelled press) is checked in the claim's own write.
+    { atomicBinding: true, ...(options.fencedBy ? { fencedBy: options.fencedBy } : {}) },
   );
   const body = await response.json();
   // A historical route failure may omit its already-created ID. The domain

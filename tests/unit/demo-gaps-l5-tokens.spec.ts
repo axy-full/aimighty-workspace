@@ -65,7 +65,7 @@ test("a prepare or read token is refused every write but its own, before the han
 
 test("only the prepared-jobs route and the MCP transport let a prepare token's POST through: the list is closed", () => {
   const files = (pattern: string) => spawnSync("git", ["grep", "-l", "--untracked", "-E", pattern, "--", "app/api"], { encoding: "utf8" }).stdout.split("\n").filter(Boolean).sort();
-  expect(files("preparedJobs: *true|mcpTransport: *true")).toEqual(["app/api/mcp/route.ts", "app/api/prepared-jobs/route.ts"]);
+  expect(files("preparedJobs: *true|mcpTransport: *true")).toEqual(["app/api/board-agent/plan/route.ts", "app/api/mcp/route.ts", "app/api/prepared-jobs/route.ts"]);
   /* lib/auth.ts reads only those two options for a prepare token (readOnlyPostTransport is the read token's, as before). */
   expect(readFileSync("lib/auth.ts", "utf8")).toContain("store.token?.scope==='prepare'&&!(req.method==='POST'&&(options.mcpTransport||options.preparedJobs))");
   /* The MCP transport forwards each tool to the app's own routes with the same bearer, so a tool can do no more than the token. */
