@@ -319,7 +319,7 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
   const first = new Map<string, Row>();
   for (const r of rs.rows as Row[]) if (!first.has(String(r.chat_id))) first.set(String(r.chat_id), r);
   /* A chat step is its own person's (owner, 12 Oct): a member is shown their own steps and nothing of anyone else's, not even that one exists. An admin is shown
-     another MEMBER's step only while it needs an admin's tap (over the workspace's per-shot cap, or over guardrail 4's line), and then only its title and its price:
+     another MEMBER's step only while it needs an admin's tap (over the workspace's per-shot cap), and then only its title and its price:
      never the chat's words, the plan's step bodies or what was asked. Once it no longer needs one it is not shown. Another admin's step needs only its owner. */
   const shown = [...first.values()].filter((r) => {
     if (String(r.chat_owner ?? "") === viewer.id) return true;

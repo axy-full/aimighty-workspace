@@ -3,8 +3,6 @@ import { lipSyncTools } from "./lipSync";
 import { RECRAFT_DIRECT_TOOLS } from "./recraftMcp";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
-import { jobApprovalLineCredits } from "./approvalRule";
-import { creditUsd } from "./creditTerms";
 
 /**
  * The direct engines' tools (sync.so, and in the stack above it Sarvam and BFL) as an outside agent over MCP sees them (rule 11: the button, Make, a board
@@ -91,9 +89,9 @@ export async function directEngineMcpTools(): Promise<ToolDef[]> {
   return out;
 }
 
-/** The most a call may start without a person: the Rig's per-job line, and never above the approval line (guardrail 4). */
+/** The most a call may start without a person: Auto's ceiling (the platform's per-job line was retired on 20 Oct 2026). */
 async function autoLineCredits(): Promise<number> {
-  return Math.min(await rigJobCeiling(), jobApprovalLineCredits(creditUsd()));
+  return rigJobCeiling();
 }
 /** The workspace's spending setting: only an exact "auto" lets a call start; anything else, or none, is Ask. */
 async function spendsWithoutAsking(): Promise<boolean> {

@@ -18,7 +18,7 @@ import { uploadOpenableBy, type Viewer } from "./uploadAccess";
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
+import { shotCapAdmin, shotCapGate } from "./shotCap";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { engineEnabled } from "./engineGate";
 import { VendorPriceUnavailable, fileVendorQuote } from "./vendorPriceFile";
@@ -213,9 +213,6 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   /* The approval unit (lib/credits.ts quotedCredits), through the margin table, keyed by the model. No figure of ours. */
   const estimatedCredits = quotedCredits(usd, model);
   const inCredits = creditsApply(requireTenant());
-  /* Guardrail 4 at the quote, before any row is written. */
-  const over = jobLineNow({ credits: estimatedCredits, usd, key: "sync", actor: got, auto: options.run?.auto === true });
-  if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. Refused here, on the quote and the press, before any row is written, so no failed take is left in the Library. */
   if (shotId && shotCode) {
     const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
