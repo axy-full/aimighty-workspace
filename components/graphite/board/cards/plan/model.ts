@@ -14,7 +14,7 @@ import type { RigAgentPaidStepView, RigAgentRunView, RigAgentStepState } from "@
  *    (`agent.approvePlan` with the server's quote fingerprint). That one approval covers the listed renders at those
  *    prices and up to two fixes per shot, within the ceiling (2 × the total). The server enforces it, not this card.
  *  - After it: what the plan has used of its ceiling. A render outside the approval (a price that moved, one over
- *    the per-job line) asks at its own price, as does everything in Auto that is not a cheap draft.
+ *    the per-render line) asks at its own price, as does everything in Auto that is not a cheap draft.
  *  - Every price is the server's: the plan's quote, the run's own pricing of a step, or (before the build) a
  *    pre-quote of the exact request it will price. Words come from lib/shell/price-words.ts only.
  *  - A chips plan (Agent mode's quick plan) has ONE price (owner, 16 Oct): no pre-quotes, and a step the plan covers

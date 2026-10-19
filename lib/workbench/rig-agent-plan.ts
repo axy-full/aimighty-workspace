@@ -394,7 +394,7 @@ export function undoOps(canvas: Pick<TeamCanvas, "nodes" | "serverMade">, author
 
 /* ── What the run card shows (never a model, a cost or a key) ─────────── */
 
-/** `needs_you`: the run waits for a person — a render to tap (Ask), one over the per-job line, the limit, or a refusal. */
+/** `needs_you`: the run waits for a person — a render to tap (Ask), one over the per-render line, the limit, or a refusal. */
 export type RigAgentState = "planning" | "awaiting_approval" | "running" | "paused" | "needs_you" | "done" | "stopped" | "failed";
 export const ACTIVE_STATES: readonly RigAgentState[] = ["planning", "awaiting_approval", "running", "paused", "needs_you"];
 /**

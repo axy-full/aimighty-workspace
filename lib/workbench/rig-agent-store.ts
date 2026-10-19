@@ -154,7 +154,7 @@ export type RunRow = {
   undoneAt: number | null; undoneBy: string | null; undo: UndoRecord | null;
   /** The limit the person approved for the run, in credits (null: asked before limits, so nothing after the build is paid). */
   capCredits: number | null;
-  /** The per-job line in force when the limit was approved: Auto never runs a render priced above it (nor above today's). */
+  /** Auto's ceiling in force when the limit was approved: Auto never runs a render priced above it (nor above today's). */
   perJobCap: number | null;
   limits: LimitRecord[];
   planCharge: PlanCharge | null;
@@ -176,7 +176,7 @@ export type StepRow = {
   quoteCredits: number | null;
   band: number | null;
   approvedAt: number | null;
-  /** A user id (a tap, or the person's plan approval), or `auto` (Auto mode, under the per-job line). */
+  /** A user id (a tap, or the person's plan approval), or `auto` (Auto mode, under Auto's ceiling). */
   approvedBy: string | null;
   /** The plan approval that covered it, when one did (no tap of its own). */
   approvalId: string | null;
@@ -261,7 +261,7 @@ export function newRunId() {
 
 export async function insertRun(tx: Transaction, run: {
   id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; model: string; at: number;
-  /** The limit the person approved as they asked, the mode, and the per-job line then in force. */
+  /** The limit the person approved as they asked, the mode, and Auto's ceiling then in force. */
   limit: { credits: number; mode: RigAgentMode; jobCeiling: number };
   /** The files attached to the ask, already checked (`upload:<id>`). */
   attachments?: readonly string[];

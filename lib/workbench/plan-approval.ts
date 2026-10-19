@@ -73,7 +73,7 @@ export type PlanQuote =
     ready: true;
     /** The renders one approval covers. */
     steps: PlanStepQuote[];
-    /** Renders that ask on their own: above the per-job line, or needing an admin (with their own price, when known). */
+    /** Renders that ask on their own: above the per-render line, or needing an admin (with their own price, when known). */
     asks: { seq: number; title: string; worst: number | null; why: "line" | "admin" }[];
     totalTenths: number;
     ceilingTenths: number;
@@ -93,7 +93,7 @@ const KEEPS_PRICE: readonly string[] = ["limit", "credits"];
 
 /**
  * The plan's quote from its render steps: every original render not yet sent must carry the server's price.
- * A render above the per-job line is listed to ask on its own and is not in the total.
+ * A render above the per-render line is listed to ask on its own and is not in the total.
  */
 export function planQuote(steps: readonly QuoteInputStep[], jobLine: number): PlanQuote {
   const open = steps.filter((s) => s.fixOf == null && OPEN.includes(s.state));
@@ -147,7 +147,7 @@ export type CoverStep = { seq: number; fixOf: number | null; quote: number; wors
 
 /**
  * Whether one render is covered by the plan's approval, with no new tap: a listed render at the very price
- * approved, or a fix drawn under it priced no higher than its shot, never above the per-job line. Room under the
+ * approved, or a fix drawn under it priced no higher than its shot, never above the per-render line. Room under the
  * total is the reservation's to enforce (the run's limit); this says only whether the tap is already given.
  */
 export function coverage(approval: PlanApprovalRow, step: CoverStep, at: number, jobLine: number): { ok: true } | { ok: false; reason: string } {
