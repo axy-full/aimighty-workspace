@@ -25,10 +25,12 @@ import { QueuedCancelError, cancelQueuedVideo, servedHere, type QueuedCancel } f
  * is never read) and adds their holds. The 200 cr per-job line is not judged on the sum (owner, 19 Oct 2026: "#815 keeps “a multi-shot press is one job, one
  * approval for the total” and drops the guardrail-4 check; a press whose total would pass the workspace cap is refused at the quote"). What the sum IS judged
  * against is the workspace's monthly spending cap (`capVerdict`): the workspace's own cap on the platform's engines, or for the house workspace its house cap
- * (lib/houseCap.ts), read as the reservation reads it, with this month's spend and running holds counted, and every shot of the press at its hold. A press that
- * would pass it is refused whole, at the quote and again at the press before any shot is admitted (429, in the cap's own words), so a press is never started in part
- * and stopped at the cap halfway. Each shot's own reservation still judges the cap as before: two presses at once are caught there. A workspace with no cap is not
- * judged here. A token, an MCP client or Atomik may ask the price, never press.
+ * (lib/houseCap.ts), counted as the admission gate counts it (this month's spend and running holds), with every shot of the press at its hold. A press that would
+ * pass it is refused whole, at the quote and again at the press before any shot is admitted (429, in the cap's own words). Each shot's own reservation still judges
+ * the cap as before and remains the backstop: two presses at once, a claim still in flight or a take parked as held (neither counted here) are caught there, and an
+ * edge where the reservation counts a take higher than this gate does can still end a press `partial`, with nothing charged for the shots that did not start. A
+ * re-quote of a partly started press counts its started shots twice; ask again with the press's key instead. A workspace with no cap is not judged here. A token,
+ * an MCP client or Atomik may ask the price, never press.
  *
  * The approval is the person's, once, for exactly the listed members at their listed prices: it carries the batch's fingerprint (a hash of every member's own quote
  * fingerprint and the total), so a member added, removed or re-priced is another batch that asks again. The balance is checked against what is still to start before the
