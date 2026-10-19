@@ -3,6 +3,7 @@ import { platformDb, platformReady, getWorkspace } from "./platform";
 import { runInTenant } from "./tenant";
 import { EVENTS, type WorkerEventName } from "./dispatch";
 import { ASTRA_RENDER_CONCURRENCY } from "./astra-blender/backend";
+import { exportLimits, exportWorkerSlots } from "./exports/limits";
 
 /**
  * Concurrency for native dispatch, kept in the platform database.
@@ -20,7 +21,11 @@ export const WORKER_SLOT_LIMIT = 4;
 export const WORKER_SLOT_WORKSPACE_LIMIT = 2;
 /** Kinds with a platform-wide ceiling below WORKER_SLOT_LIMIT. */
 export const WORKER_SLOT_KIND_LIMITS: Readonly<Partial<Record<string, number>>> = { [EVENTS.astraRender]: ASTRA_RENDER_CONCURRENCY };
-export const workerSlotLimit = (kind: string) => WORKER_SLOT_KIND_LIMITS[kind] ?? WORKER_SLOT_LIMIT;
+export const workerSlotLimit = (kind: string) =>
+  kind === EVENTS.exportRender ? exportWorkerSlots() : (WORKER_SLOT_KIND_LIMITS[kind] ?? WORKER_SLOT_LIMIT);
+/** Slots one workspace may hold at once for a kind: 2 for everything but exports, whose share the platform sets (lib/exports/limits.ts). */
+export const workerSlotWorkspaceLimit = (kind: string) =>
+  kind === EVENTS.exportRender ? exportLimits().maxRunningPerWorkspace : WORKER_SLOT_WORKSPACE_LIMIT;
 export const WORKER_SLOT_TTL_MS = 330_000;
 
 export type WorkerSlot = { id: string; kind: string; workspaceId: string; jobId: string };
@@ -61,7 +66,7 @@ export async function acquireSlot(
       ).rows[0];
       if (
         Number(counts?.total ?? 0) >= workerSlotLimit(input.kind) ||
-        Number(counts?.workspace ?? 0) >= WORKER_SLOT_WORKSPACE_LIMIT
+        Number(counts?.workspace ?? 0) >= workerSlotWorkspaceLimit(input.kind)
       ) {
         await tx.commit();
         return null;
@@ -126,7 +131,7 @@ export async function chainDispatch(
   input: { kind: WorkerEventName; workspaceId: string },
   deps: ChainDeps = {},
 ): Promise<boolean> {
-  if (input.kind !== EVENTS.render && input.kind !== EVENTS.astraRender) return false;
+  if (input.kind !== EVENTS.render && input.kind !== EVENTS.astraRender && input.kind !== EVENTS.exportRender) return false;
   try {
     const ws = await getWorkspace(input.workspaceId);
     if (!ws || ws.deletedAt || ws.suspendedAt) return false;
@@ -141,6 +146,11 @@ export async function chainDispatch(
 }
 
 async function defaultFindQueued(kind: WorkerEventName): Promise<string | null> {
+  if (kind === EVENTS.exportRender) {
+    const { pendingExports, EXPORT_BUSY_BACKOFF_MS } = await import("./exports/jobs");
+    const next = (await pendingExports(4)).find((job) => job.status === "queued" && !(job.error && Date.now() - Number(job.updated_at) < EXPORT_BUSY_BACKOFF_MS));
+    return next ? String(next.id) : null;
+  }
   if (kind === EVENTS.astraRender) {
     const { pendingAstraRenders, astraRenderInBusyBackoff } = await import("./astra-blender/render-jobs");
     // A job that just found every render worker busy waits out its backoff; chaining it at once would spin.
@@ -178,6 +188,7 @@ async function defaultFindQueued(kind: WorkerEventName): Promise<string | null> 
 }
 
 async function defaultEnqueue(kind: WorkerEventName, jobId: string): Promise<boolean> {
+  if (kind === EVENTS.exportRender) return (await import("./exports/dispatch")).enqueueExport(jobId);
   if (kind === EVENTS.astraRender) {
     const { enqueueAstraRender } = await import("./astra-blender/render-dispatch");
     return enqueueAstraRender(jobId);
