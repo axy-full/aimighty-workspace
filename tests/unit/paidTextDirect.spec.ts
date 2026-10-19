@@ -73,32 +73,36 @@ async function ratesOf(id: string): Promise<Rate> {
 
 /**
  * One row per direct vendor: a snapshot model, its provider's reply, and what
- * that reply costs at the snapshot, worked by hand from its token counts and the snapshot's rates.
+ * that reply costs at the snapshot, worked by hand.
+ * `derived` works the same cost again from the snapshot's own rates (`ratesOf`), the rates it uses told apart (`distinct`).
  */
 const VENDORS = [
   /* Ids the owner's keys list (11 Oct 2026): Claude Sonnet 5 and Gemini 3.5 Flash-Lite. */
   { vendor: "anthropic", model: "anthropic/claude-sonnet-5", origin: "https://api.anthropic.com", reply: anthropicReply,
     refusal: { status: 429, body: { type: "error", error: { type: "rate_limit_error", message: "Fixture." } } },
-    // 100 uncached + 60 cache reads + 40 cache writes + 25 out, each at its own rate
-    usd: (r: Rate) => 100 * r("input") + 60 * r("input_cache_read") + 40 * r("input_cache_write") + 25 * r("output"),
-    distinct: ["input", "input_cache_read", "input_cache_write", "output"] },
+    derived: (r: Rate) => 100 * r("input") + 60 * r("input_cache_read") + 40 * r("input_cache_write") + 25 * r("output"),
+    distinct: ["input", "input_cache_read", "input_cache_write", "output"],
+    // 100 uncached × $2/M + 60 cache reads × $0.20/M + 40 cache writes × $2.50/M + 25 out × $10/M
+    usd: 100 * 0.000002 + 60 * 0.0000002 + 40 * 0.0000025 + 25 * 0.00001 },
   { vendor: "google", model: "google/gemini-3.5-flash-lite", origin: "https://generativelanguage.googleapis.com", reply: googleReply,
     refusal: { status: 400, body: { error: { code: 400, message: "Fixture.", status: "INVALID_ARGUMENT" } } },
-    // 80 uncached + 120 cache reads + (30 answer + 50 thought) out, each at its own rate
-    usd: (r: Rate) => 80 * r("input") + 120 * r("input_cache_read") + 80 * r("output"),
-    distinct: ["input", "input_cache_read", "output"] },
+    derived: (r: Rate) => 80 * r("input") + 120 * r("input_cache_read") + 80 * r("output"),
+    distinct: ["input", "input_cache_read", "output"],
+    // 80 uncached × $0.30/M + 120 cache reads × $0.03/M + (30 answer + 50 thought) out × $2.50/M
+    usd: 80 * 0.0000003 + 120 * 0.00000003 + 80 * 0.0000025 },
   { vendor: "xai", model: "spacexai/grok-4.6", origin: "https://api.x.ai", reply: xaiReply,
     refusal: { status: 403, body: { code: "forbidden", error: "Fixture." } },
-    // 50 uncached + 100 cache reads + 40 out (reasoning included), each at its own rate, first context tier
-    usd: (r: Rate) => 50 * r("input") + 100 * r("input_cache_read") + 40 * r("output"),
-    distinct: ["input", "input_cache_read", "output"] },
+    derived: (r: Rate) => 50 * r("input") + 100 * r("input_cache_read") + 40 * r("output"),
+    distinct: ["input", "input_cache_read", "output"],
+    // 50 uncached × $2/M + 100 cache reads × $0.50/M + 40 out (reasoning included) × $6/M, first context tier
+    usd: 50 * 0.000002 + 100 * 0.0000005 + 40 * 0.000006 },
 ] as const;
 
 /** What a row's reply costs at the snapshot's rates, the rates it uses told apart first. */
-async function usdOf(row: (typeof VENDORS)[number]): Promise<number> {
+async function derivedUsd(row: (typeof VENDORS)[number]): Promise<number> {
   const r = await ratesOf(row.model);
   expect(new Set(row.distinct.map((key) => r(key))).size, `${row.vendor}: its rates are told apart`).toBe(row.distinct.length);
-  return row.usd(r);
+  return row.derived(r);
 }
 
 function stub(origin: string, reply: () => Response) {
@@ -159,7 +163,9 @@ for (const row of VENDORS) test(`${row.vendor}: the provider's raw usage settles
   const model = await snapshot(row.model);
   const raw = row.vendor === "anthropic" ? anthropicReply.usage : row.vendor === "google" ? googleReply.usageMetadata : xaiReply.usage;
   const usage = directTextUsage(row.vendor, { raw });
-  expect(directTextCostUsd(model, usage)).toBeCloseTo(await usdOf(row), 15);
+  expect(directTextCostUsd(model, usage)).toBeCloseTo(row.usd, 15);
+  /* The same cost, worked again from the snapshot's own rates. */
+  expect(directTextCostUsd(model, usage)).toBeCloseTo(await derivedUsd(row), 15);
 
   /* The quote is the most a call can cost: every split of its input into fresh, cached and newly cached
      tokens, and any output up to the ceiling, settles at or under it. */
@@ -227,27 +233,26 @@ for (const row of VENDORS) test(`${row.vendor}: paid text quotes, reserves, send
     const { runPaidText, quotePaidText } = await import("../../lib/paidText");
     const { billCredits } = await import("../../lib/creditTerms");
     const model = await snapshot(row.model);
-    const usd = await usdOf(row);
     const before = await balance(ws);
     const quote = await quotePaidText(request(row.model, "q"), model);
     const transport = stub(row.origin, () => Response.json(row.reply));
     const id = `direct_${row.vendor}`;
     const result = await runPaidText(request(row.model, id), { model, submit: through(transport.fetch) });
     expect(transport.urls).toHaveLength(1);
-    expect(result.costUsd).toBeCloseTo(usd, 15);
+    expect(result.costUsd).toBeCloseTo(row.usd, 15);
     expect(result.engine).toBe(row.vendor);
     expect(quote.estimateUsd!).toBeGreaterThanOrEqual(result.costUsd);
     const { job, spend, meter } = await state(ws, id);
     expect(job).toMatchObject({ status: "succeeded" });
-    expect(Number(job.cost_usd)).toBeCloseTo(usd, 15);
+    expect(Number(job.cost_usd)).toBeCloseTo(row.usd, 15);
     // The price the call was approved at travels with the job.
     expect(JSON.parse(String(job.request_body)).pricingModel.pricing).toEqual(model.pricing);
-    expect(meter).toMatchObject({ engine: row.vendor, status: "succeeded", paid_by_platform: 1, billed_credits: billCredits(usd, "text") });
-    expect(Number(meter.engine_cost_usd)).toBeCloseTo(usd, 15);
+    expect(meter).toMatchObject({ engine: row.vendor, status: "succeeded", paid_by_platform: 1, billed_credits: billCredits(row.usd, "text") });
+    expect(Number(meter.engine_cost_usd)).toBeCloseTo(row.usd, 15);
     expect(spend).toMatchObject({ ledger: row.vendor });
-    expect(Number(spend.cost_usd)).toBeCloseTo(usd, 15);
-    expect(result.credits).toBe(billCredits(usd, "text"));
-    expect(await balance(ws)).toBe(before - billCredits(usd, "text"));
+    expect(Number(spend.cost_usd)).toBeCloseTo(row.usd, 15);
+    expect(result.credits).toBe(billCredits(row.usd, "text"));
+    expect(await balance(ws)).toBe(before - billCredits(row.usd, "text"));
   });
 });
 
