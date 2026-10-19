@@ -212,6 +212,19 @@ test.describe("coverage against the model registry", () => {
     expect(minute.coverage!.missing).toEqual(['sync-3: no "second" rows (priced from this file)']);
     const withRes = run(`${fullSheet((id) => id === "sync-3")}\nsync-3,second,1080p,,,,${PLACEHOLDER_COST}`);
     expect(withRes.coverage!.missing).toEqual(['sync-3: its "second" rows must name no resolution, sound or length (priced from this file)']);
+    /* No band either: a job settles at the rate it was quoted at, so a rate that depends on the quantity would not hold. Refused with exit 2. */
+    const banded = `${fullSheet((id) => id === "sync-3")}\nsync-3,second,,,,10,${PLACEHOLDER_COST}\nsync-3,second,,,,100,${PLACEHOLDER_BAD}`;
+    const bands = run(banded);
+    expect(bands.ok).toBe(false);
+    expect(bands.stage).toBe("coverage");
+    expect(bands.coverage!.missing).toEqual(['sync-3: its "second" rows must not name a band (upTo): a job settles at the rate it was quoted at (priced from this file)']);
+    expect(lib.report(bands)).not.toMatch(new RegExp(`${PLACEHOLDER_COST}|${PLACEHOLDER_BAD}`));
+    const bandsCli = cli(sheet(banded));
+    expect(bandsCli.code).toBe(2);
+    expect(bandsCli.stdout).toBe("");
+    expect(bandsCli.stderr).toContain("must not name a band (upTo)");
+    /* A band on an engine the registry prices stays allowed (the shared rules); only file-priced engines settle at a kept rate. */
+    expect(run(`${HEADER}\nplaceholder-reader,page,,,,10,${PLACEHOLDER_COST}`, ["placeholder-reader"]).ok).toBe(true);
     /* --skip and --engines treat them like any other engine. */
     const skipped = run(fullSheet((id) => id === "sync-3"), null, "csv", ["sync-3"]);
     expect(skipped.ok).toBe(true);

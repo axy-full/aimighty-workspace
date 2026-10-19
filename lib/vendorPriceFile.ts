@@ -359,6 +359,13 @@ export function fileVendorQuote(engine: string, req: VendorPriceRequest, engines
   if (!engines.includes(engine)) throw new VendorPriceUnavailable(engine, "this engine is not priced from the vendor price file");
   const v = load();
   if (v.state !== "loaded") throw new VendorPriceUnavailable(engine, v.state === "invalid" ? "the vendor price file is invalid" : v.reason);
+  /* An engine priced from this file keeps the rate it was quoted at and settles at it (lib/lipSync.ts), so a band, whose rate depends on the
+     quantity, would not hold at settlement: rows with one leave the engine unpriced, as the converter refuses them. */
+  if (Object.hasOwn(FILE_PRICED_UNITS, engine)) {
+    const units = Object.hasOwn(v.table.engines, engine) ? v.table.engines[engine] : undefined;
+    const rows = units && Object.hasOwn(units, req.unit) ? units[req.unit] : undefined;
+    if (rows?.some((r) => r.upTo !== undefined)) throw new VendorPriceUnavailable(engine, "this engine's rows must not name a band (upTo)");
+  }
   const got = rowFromTable(v.table, engine, req);
   if (!got.ok) throw new VendorPriceUnavailable(engine, got.reason);
   return { costUsd: got.costUsd, rateUsd: got.rateUsd };

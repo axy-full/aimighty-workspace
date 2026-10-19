@@ -286,6 +286,24 @@ test.describe("loading the file from the variable", () => {
     expect(refusal(() => fileVendorCostUsd("sync-3", { unit: "second", quantity: 5 })).reason).toBe('no "second" price for this engine');
   });
 
+  test("an engine priced from the file takes no band: a hand-written file with upTo on its rows leaves it unpriced, and other engines keep their bands", () => {
+    const file = placeholderFile();
+    file.engines["lipsync-2-pro"] = { second: [{ upTo: 10, costUsd: PLACEHOLDER_COST_A }, { upTo: 100, costUsd: PLACEHOLDER_COST_B }] };
+    file.engines["sync-3"] = { second: [{ costUsd: PLACEHOLDER_COST_D }] };
+    useFile(writeFile(file));
+    /* The file itself is valid (bands are a rule of the format)... */
+    expect(vendorPricesStatus().state).toBe("loaded");
+    /* ...but a file-priced engine with a band is refused, for any quantity, inside or past the bands. */
+    for (const quantity of [1, 5, 50, 500]) {
+      const r = refusal(() => fileVendorQuote("lipsync-2-pro", { unit: "second", quantity }));
+      expect(r.reason, String(quantity)).toBe("this engine's rows must not name a band (upTo)");
+      expect(refusal(() => fileVendorCostUsd("lipsync-2-pro", { unit: "second", quantity })).reason).toContain("band");
+    }
+    /* Another file-priced engine without a band, in the same file, is priced; a banded engine that is not file-priced keeps its bands. */
+    expect(fileVendorCostUsd("sync-3", { unit: "second", quantity: 5 })).toBe(micro(PLACEHOLDER_COST_D * 5));
+    expect(fileVendorCostUsd(PLACEHOLDER_READER, { unit: "page", quantity: 20 }, OPT_IN)).toBe(micro(PLACEHOLDER_COST_B * 20));
+  });
+
   test("a quote can keep the rate it was priced at: the matched row's cost per unit, from the same read as the total", () => {
     useFile(writeFile(placeholderFile()));
     expect(fileVendorQuote(PLACEHOLDER_READER, { unit: "page", quantity: 20 }, OPT_IN)).toEqual({ costUsd: micro(PLACEHOLDER_COST_B * 20), rateUsd: PLACEHOLDER_COST_B });

@@ -153,8 +153,9 @@ function withLines(problems, lines) {
  * The engines the server prices from the file (`required`, lib/vendorPriceFile.ts
  * FILE_PRICED_UNITS, such as lip-sync's models, which are not in the registry)
  * are checked the same way: each needs a row in its unit that names no
- * resolution, sound or length, since its quote asks for none. Without one the
- * server refuses every quote of that engine.
+ * resolution, sound or length, since its quote asks for none, and no band
+ * (upTo), since its job settles at the rate it was quoted at. Without such a
+ * row the server refuses every quote of that engine.
  */
 /**
  * @param {{ engines: Record<string, Record<string, Array<Record<string, unknown>>>> }} table
@@ -208,6 +209,8 @@ export function coverage(table, models, scope = null, skip = null, required = nu
     const rows = units && Object.hasOwn(units, unit) ? units[unit] : null;
     if (!rows || !rows.length) missing.push(`${id}: no "${unit}" rows (priced from this file)`);
     else if (rows.some((r) => "resolution" in r || "audio" in r || "length" in r)) missing.push(`${id}: its "${unit}" rows must name no resolution, sound or length (priced from this file)`);
+    /* A job of these engines keeps the rate it was quoted at and settles at it, so a band (a rate that depends on the quantity) would not hold at settlement. */
+    if (rows?.some((r) => "upTo" in r)) missing.push(`${id}: its "${unit}" rows must not name a band (upTo): a job settles at the rate it was quoted at (priced from this file)`);
   }
   if (scope) for (const id of scope) if (!known.has(id) && !filePricedIds.includes(id) && !skip?.includes(id)) {
     checked.push(id);
