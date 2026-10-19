@@ -40,6 +40,11 @@ export type AdmissionCheckpoint = {
   request: Record<string, unknown>;
   compiled: Record<string, unknown>;
   quote: AdmissionQuote;
+  /**
+   * Server-only: the engine's dollars at the take's hold (its estimate times its band). Never part of the quote, its fingerprint or any
+   * reply; read only by a caller that judges a monthly dollar cap on a sum of takes (lib/batchPress.ts, through prepareAdmission's `cost`).
+   */
+  holdUsd?: number;
 };
 export type AdmissionExecution = {
   requestClaim?: GenerationRequest;
