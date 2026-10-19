@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { createClient, type Client } from "@libsql/client";
+import { createClient } from "@libsql/client";
 import { localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { removeHouseJobsOf } from "./helpers/houseJobs";
 import { signInToRedesign } from "./helpers/newInterface";
 
 /**
@@ -31,21 +32,6 @@ async function withHouse<T>(userId: string, run: () => Promise<T>): Promise<T> {
       }
     }
   } finally { db.close(); }
-}
-
-/**
- * The jobs this test's own person ran in the house (the enhancement's text row and the take's image row), once they have settled,
- * and their rows keyed by the same job: left behind, they would count against the house's monthly cap in the next spec that reads
- * it (tests/house-cap-workbench.spec.ts). Only this person's rows in the house, by their ids; nobody else's.
- */
-async function removeHouseJobsOf(db: Client, userId: string) {
-  const mine = async () => (await db.execute({ sql: "SELECT id, status FROM meter_events WHERE workspace_id = 'ws_legacy' AND created_by = ?", args: [userId] })).rows;
-  await expect.poll(async () => (await mine()).filter((row) => row.status === "running").length, { timeout: 60_000, message: "the house's jobs settle before they are removed" }).toBe(0);
-  const ids = (await mine()).map((row) => String(row.id));
-  if (!ids.length) return;
-  const marks = ids.map(() => "?").join(",");
-  for (const [table, column] of [["meter_credit_receipts", "event_id"], ["billing_debits", "event_id"], ["generation_reservations", "id"], ["recovery_intents", "id"], ["meter_events", "id"]] as const)
-    await db.execute({ sql: `DELETE FROM ${table} WHERE workspace_id = 'ws_legacy' AND ${column} IN (${marks})`, args: ids });
 }
 
 const isEnhanceCall = (r: { url(): string; method(): string; postDataJSON(): unknown }) =>
