@@ -18,7 +18,7 @@ import type { SpendingLines, SpendingRules } from "./spending-words";
  *    own admin-and-person check; the setting keeps who changed it last), never a figure still being typed. "Undo
  *    changes" puts back what was there when the panel opened; "Done" saves what is waiting and closes it.
  *  - A member reads the same figures, and "Ask an admin" tells the owner and admins (POST /api/workbench/ask-admin).
- *  - The platform line is fixed and shown read-only.
+ *  - No platform per-job line: it was retired on 20 October 2026 (owner), so none is shown.
  * Roles are owner, admin and member only; limits are by role, never by person. Atomik and outside agents never change
  * these: the routes take a signed-in person only.
  */
@@ -155,13 +155,6 @@ function BudgetPanel({ rules, inCredits, onClose }: { rules: Rules; inCredits: b
             <span className="gs-unit-word">cr a shot</span>
           </span>
           <span className="gs-row-line">{capHelp(view)}</span>
-        </label>
-        <label className="gs-label"><span className="gs-eyebrow">Platform line</span>
-          <span className="gs-unit">
-            <input className="gs-field" value={rules.platformLine != null ? String(rules.platformLine) : ""} disabled aria-readonly data-testid="settings-line-field" />
-            <span className="gs-unit-word">cr a job</span>
-          </span>
-          <span className="gs-row-line">{rules.platformLineText ? `${rules.platformLineText} Fixed.` : "Fixed."}</span>
         </label>
         <div className="gs-sheet-foot">
           <span className="gs-sheet-state" role="status" data-tone={state.kind} data-testid="settings-budget-state">{state.text}</span>

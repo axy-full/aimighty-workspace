@@ -10,11 +10,9 @@ export type SpendingRules = {
   rule: ApprovalRule | null;
   /** Credits a shot may take before a member needs an admin (the "cap" rule). */
   shotCap: number | null;
-  /** Guardrail 4 in credits: a job above it never runs without a person's tap. */
-  platformLine: number | null;
   /** Spend without asking. Always "ask" until the owner makes it a workspace setting. */
   mode: "ask";
-  /** In Auto (one Board run at a time), a draft at or under this runs without a tap. */
+  /** Auto's own no-tap ceiling (lib/workbench/rig-agent-limits.ts): in Auto (one Board run at a time), a draft at or under this runs without a tap. */
   perJobLine: number | null;
   capWarnPct: number | null;
   atCap: "producer" | "stop" | "warn" | null;
@@ -25,8 +23,6 @@ export type SpendingRules = {
 export type SpendingLines = {
   /** "Members up to 50 cr a shot; an admin above it." */
   ruleLine: string | null;
-  /** "Any job over 200 cr needs an admin’s tap, even under Auto." */
-  platformLineText: string | null;
   /** "Every paid step waits for a person." */
   modeLine: string;
   /** "Auto is picked per Board run, for drafts at or under 200 cr." */
@@ -47,7 +43,6 @@ export function spendingLines(r: SpendingRules, cr: (n: number) => string): Spen
       : r.rule === "cap" ? (r.shotCap === null ? null : `Members up to ${cr(r.shotCap)} a shot; an admin above it.`)
       : r.rule === "producer" ? "A producer signs off on every take."
       : "Members render freely.",
-    platformLineText: r.platformLine === null ? null : `Any job over ${cr(r.platformLine)} needs an admin’s tap, even under Auto.`,
     modeLine: "Every paid step waits for a person.",
     autoLine: r.perJobLine === null ? null : `Auto is picked per Board run, for drafts at or under ${cr(r.perJobLine)}.`,
     budgetLine: r.capWarnPct === null || r.atCap === null ? null : `Auto drafts ask at ${r.capWarnPct}% of a production’s budget · ${AT_CAP[r.atCap]}`,

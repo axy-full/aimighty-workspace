@@ -19,7 +19,7 @@ import { atItsCap, capInput, productionLine, ruleValue, type ProductionBudget } 
  * shows the same lines read-only, from `useSpendingRules()`, with a link here.
  *
  *  - Who may approve: the cost approval rule and its cap (limits are by role: members up to the cap, an admin
- *    above it), the platform line, and the workspace's warning and at-cap rules for a production's budget.
+ *    above it), and the workspace's warning and at-cap rules for a production's budget.
  *    A change saves itself through PATCH /api/settings (an admin's, with the route's own checks) and a toast
  *    with Undo; a member reads the same lines and "Only an admin changes these."
  *  - Spend without asking: Ask. Auto is chosen per Board run today; making it a workspace setting is money work
@@ -104,8 +104,6 @@ export function RulesSection({ open = null }: { open?: SettingsFold | null } = {
             <p className="gs-row-line">Limits are by role, not by person: every member follows the rule, and an admin may press above it.</p>
           </div>
         ) : null}
-        <Row name="Platform line" line={rules.platformLineText ?? undefined} value={rules.platformLine != null ? creditsText(rules.platformLine) : "—"}
-          valueTitle={rules.platformLine != null ? creditsUsd(rules.platformLine, rate) : null} testId="settings-platform-line" />
         <Row name="At a production’s budget" line={loaded ? rules.budgetLine ?? undefined : undefined} testId="settings-budget">
           {canChange && loaded ? <Btn pressed={editing === "budget"} onClick={() => setEditing(editing === "budget" ? null : "budget")} testId="settings-budget-change">Change</Btn> : null}
         </Row>
