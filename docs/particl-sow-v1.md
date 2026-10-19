@@ -408,7 +408,7 @@ What replaces it:
 
 **AMENDED 20 October 2026 — every job, single jobs included.** The owner, verbatim: "Guardrail 4 is retired everywhere, single jobs included: no per-job line in the product. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with Paused. Strike it in CLAUDE.md and the scope with a dated note in the owner's words, and in the code with its own money review; keep the workspace cap and the house cap exactly as they are."
 
-The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by `jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and `lib/quote.ts`) is removed from the code in a separate code PR, under its own money review; until that PR merges, the line is still in the code. The workspace's monthly spend limit (with Paused) and the house cap stay exactly as they are. The workspace's own approval rule (a step over the workspace's own rule cap needs an admin; `lib/approvalRule.ts`) is not guardrail 4 and stays. Auto keeps its own no-tap ceiling (today's value) until the owner decides whether Auto stays.
+The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by `jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and `lib/quote.ts`) is removed from the code in a separate code PR, under its own money review; until that PR merges, the line is still in the code. The workspace cap (its monthly spend limit) and the house cap stay exactly as they are. The workspace's own approval rule (a step over the workspace's own rule cap needs an admin; `lib/approvalRule.ts`) is not guardrail 4 and stays. Auto keeps its own no-tap ceiling (today's value) until the owner decides whether Auto stays.
 
 ---
 
@@ -807,7 +807,7 @@ The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by
 `jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and
 `lib/quote.ts`) is removed from the code in a separate code PR, under its own
 money review; until that PR merges, the line is still in the code. The
-workspace's monthly spend limit (with Paused) and the house cap stay exactly as
+workspace cap (its monthly spend limit) and the house cap stay exactly as
 they are. The workspace's own approval rule (a step over the workspace's own
 rule cap needs an admin; `lib/approvalRule.ts`) is not guardrail 4 and stays.
 Auto keeps its own no-tap ceiling (today's value) until the owner decides
