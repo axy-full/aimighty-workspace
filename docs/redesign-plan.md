@@ -1393,3 +1393,19 @@ Recorded by the lead. Item 1 is summarised by PR number only, because this file 
 > The stall from 10:15 to 15:52: check your own session log and the machine (load, memory, OOM kills) for that window and give the cause, or say "unknown" with what you checked. Add a line to the status page whenever an hour passes with no progress, so the owner sees it.
 >
 > Morning note at 10:30 IST, real PR numbers, nothing invented.
+
+## Owner, 19 Oct 2026, ~19:45 IST: second round (with the advisor)
+
+Recorded by the lead. Engine items are summarised by PR number only, because this file is public.
+
+- **Queue:** the old queue scripts stop; nothing else runs in CI until release/1 is green.
+- **#809, yes.** Owner, verbatim: "every Enhance failure is free: an unanswered or failed call replaces nothing, so nothing was made and nothing is charged; a cancelled press is never billed; a double press charges once. A successful Enhance is charged at the price shown before pressing (the 19 Oct answer on long prompts stands: price as it costs, shown first; the business chat sets the figure)."
+- **#777** stays held with the others until after 31 Oct.
+- **#786, yes.** Its engine is never named in Agent mode. In Director mode every still engine is offered by name with its price, with by-hand beside them. Order: the price file, then #776, then #786.
+- **The price file**
+  - A file mount on the self-host platform does not block a second server. Only the app reads prices; workers never do.
+  - It is mounted on production and on staging, at `/etc/particl/vendor-prices.json`, readable by the app's user. It is never in the image or the repo.
+  - **A converter:** a script the owner runs on his own machine. It turns a CSV export of the cost sheet into the JSON, with a validator: every engine, resolution and length the registry knows has a row; nothing negative; dollars only. A sample CSV in the repo uses obviously fake numbers. The real numbers never leave his machine except into the self-host platform.
+- **Liveblocks:** the plan is Pro.
+- **Scanned briefs:** the five scanned briefs (two in Hindi) arrive Wednesday 21 Oct.
+- **Polotno:** the spike runs keyless until its PR names the variable.
