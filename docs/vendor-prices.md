@@ -70,6 +70,24 @@ Examples with placeholder names (the owner's sheet fills the figures):
 }
 ```
 
+## Making the file from the cost sheet
+
+The owner exports the cost sheet as CSV and converts it on his own machine, in a clone of this repo (Node 24, the repo's version; no install beyond the repo's own):
+
+```sh
+node --permission --allow-fs-read="*" scripts/vendor-prices/csv-to-json.mjs ~/cost-sheet.csv
+```
+
+It prints the JSON to the terminal (add `| pbcopy` on a Mac to copy it straight away) and a report naming lines, columns and engines, never a figure. The JSON goes into the file mount on the server by hand; the figures never go anywhere else. `--permission --allow-fs-read` lets it read and nothing more: Node refuses any write, child process or worker. It opens no connection (a test checks the script and everything it loads).
+
+- **Columns**, one row per price: `engine, unit, resolution, audio, length, upTo, costUsd`, as in the table above. Only `engine`, `unit` and `costUsd` are required; an empty cell means the key is not set. Lines starting with `#` are notes. Any column order works.
+- **`costUsd` is plain US dollars per unit:** digits and at most one dot. A currency sign or code, a thousands separator, a minus, an exponent, a word, or zero is refused. A margin, markup or selling-price column is refused: the sheet holds vendor costs only.
+- **The same rules as the server:** the script checks its output with `parseVendorPrices` from `lib/vendorPriceFile.ts`, so a file it prints is a file the server loads. Problems point at the sheet's line.
+- **Coverage:** by default every engine the model registry (`MODELS` in `lib/models.ts`, the catalogue of engines with their resolutions and lengths) offers must have a row for each resolution, and, for `job` rows, for each length; where an engine's rows name sound, both with and without where it offers sound. Retired engines are not expected. Engines priced by the vendor's live estimate for each job (the identity stills, the marketing still, the transform engines) are listed as not checked. A gap is refused (nothing printed, exit 2) with the list of what is missing. `--engines id,id` checks only the engines named, for a sheet that prices some engines only (for example only those moved to the file).
+- `--check` validates and reports without printing the JSON. Given a `.json` file instead of a CSV, it checks that file the same way (for a file converted earlier).
+- Exit codes: 0 valid and covered; 1 refused (the sheet or the file's shape); 2 valid but not covered.
+- **Sample sheet:** `docs/vendor-prices-sample.csv`. Every figure in it is fake (one digit repeated, 111.11 to 999.99), and a test keeps it that way.
+
 ## When something is wrong
 
 Nothing is ever priced from a number in code. In every case below, an engine priced from this file is **unpriced** and its quote is refused with "This engine has no confirmed price." (HTTP 503):

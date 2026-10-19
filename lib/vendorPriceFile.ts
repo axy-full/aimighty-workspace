@@ -270,9 +270,16 @@ export function vendorPricesStatus(): VendorPricesStatus {
 export class VendorPriceUnavailable extends Error {
   readonly code = "unpriced";
   readonly status = 503;
-  constructor(readonly engine: string, readonly reason: string) {
+  readonly engine: string;
+  readonly reason: string;
+  /* Plain fields, not constructor parameter properties: the owner's converter
+     (scripts/vendor-prices/csv-to-json.mjs) loads this file with Node's own
+     type stripping, which accepts only erasable syntax. */
+  constructor(engine: string, reason: string) {
     super("This engine has no confirmed price.");
     this.name = "VendorPriceUnavailable";
+    this.engine = engine;
+    this.reason = reason;
   }
 }
 
