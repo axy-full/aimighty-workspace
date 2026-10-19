@@ -359,8 +359,13 @@ test("Connections: tokens as the code has them, made and shown once, revoked in 
   await page.getByTestId("settings-client-mcp").click();
   await expect(page.getByTestId("settings-setup-step").nth(1)).toContainText("Bearer pk_secret_once_123");
   await page.getByTestId("settings-fold-mcp-toggle").click();
-  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(8);
+  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(9);
   await expect(page.getByTestId("settings-mcp-tool").filter({ hasText: "render_shot" })).toContainText("Can generate");
+  /* plan_step prepares and prices a plan a person approves: a prepare token's tool, never one that generates. */
+  const planStep = page.getByTestId("settings-mcp-tool").filter({ hasText: "plan_step" });
+  await expect(planStep).toContainText("Prepares and prices a board step's quick plan; a person approves it in Particl");
+  await expect(planStep).toContainText("Prepare jobs");
+  await expect(planStep).not.toContainText("Can generate");
   await floors(page, "Connections, folds open");
   await page.getByTestId("settings-fold-mcp").scrollIntoViewIfNeeded();
   await shot(page, "connections-folds");

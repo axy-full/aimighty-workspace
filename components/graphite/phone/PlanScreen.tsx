@@ -92,7 +92,7 @@ export function PlanScreen({ scope, project, runId, online, spendOff = null, onH
                   {s.unavailable ? <span className="ph-row-line ph-row-line--warn">{s.unavailable}</span> : null}
                   {s.needsAdmin ? <span className="ph-row-line ph-row-line--warn" data-testid="phone-plan-admin">{model.adminLine}</span> : null}
                 </span>
-                {s.price ? <Price value={s.price} className="ph-plan-price" /> : <span className="ph-row-line">{s.unavailable ? "" : "priced when it runs"}</span>}
+                {s.price ? <Price value={s.price} className="ph-plan-price" /> : <span className="ph-row-line">{s.unavailable ? "" : s.source === "plan" ? "in the plan" : "priced when it runs"}</span>}
               </div>
             ))}
             <Allowance model={model} />
