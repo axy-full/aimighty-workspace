@@ -14,6 +14,7 @@ export const PAID_ROUTES: PaidRoute[] = [
   { dir: "generate/batch", spends: "a multi-shot press as ONE job: every shot priced by the server, the sum judged against the workspace's monthly cap, one approval for the total" },
   { dir: "audio", spends: "speech, sound effects and music" },
   { dir: "audio/dub", spends: "dubbing" },
+  { dir: "lipsync", spends: "lip-sync (sync.so; off unless the engine is on for the workspace)" },
   { dir: "audio/transcribe", spends: "transcription" },
   { dir: "jobs/[id]/release", spends: "releasing a held take once the balance covers it" },
   { dir: "atomik/steps/[id]/claim", spends: "taking a proposed Atomik step, once, before it is paid for" },

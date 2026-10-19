@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import ts from "typescript";
 import {
-  FILE_PRICED_ENGINES, VENDOR_PRICES_ENV, VENDOR_PRICES_FORMAT, VendorPriceUnavailable,
-  costFromTable, fileVendorCostUsd, parseVendorPrices, reloadVendorPrices, vendorPricesStatus,
+  FILE_PRICED_ENGINES, FILE_PRICED_UNITS, VENDOR_PRICES_ENV, VENDOR_PRICES_FORMAT, VendorPriceUnavailable,
+  costFromTable, fileVendorCostUsd, fileVendorQuote, parseVendorPrices, reloadVendorPrices, vendorPricesStatus,
   type VendorPriceTable,
 } from "../../lib/vendorPriceFile";
 import { VENDOR_RATES } from "../../lib/vendorRates";
@@ -273,12 +273,46 @@ test.describe("loading the file from the variable", () => {
     expect(JSON.stringify(status)).not.toContain(file);
   });
 
-  test("an engine is priced from the file only once it opts in; none does today", () => {
+  test("an engine is priced from the file only once it opts in; today only lip-sync's three models do, per second", () => {
     useFile(writeFile(placeholderFile()));
     expect(refusal(() => fileVendorCostUsd(PLACEHOLDER_ENGINE_A, { unit: "second", quantity: 5, resolution: "1080p", audio: true })).reason)
       .toContain("not priced from the vendor price file");
     /* No engine is ever priced in both places: one already in lib/vendorRates.ts moves, it is not copied. */
     expect(FILE_PRICED_ENGINES.filter((id) => id in VENDOR_RATES)).toEqual([]);
+    expect([...FILE_PRICED_ENGINES]).toEqual(Object.keys(FILE_PRICED_UNITS));
+    expect({ ...FILE_PRICED_UNITS }).toEqual({ "lipsync-2": "second", "lipsync-2-pro": "second", "sync-3": "second" });
+    expect(Object.isFrozen(FILE_PRICED_UNITS) && Object.isFrozen(FILE_PRICED_ENGINES)).toBe(true);
+    /* An opted-in engine the file has no row for is unpriced, like any other. */
+    expect(refusal(() => fileVendorCostUsd("sync-3", { unit: "second", quantity: 5 })).reason).toBe('no "second" price for this engine');
+  });
+
+  test("an engine priced from the file takes no band: a hand-written file with upTo on its rows leaves it unpriced, and other engines keep their bands", () => {
+    const file = placeholderFile();
+    file.engines["lipsync-2-pro"] = { second: [{ upTo: 10, costUsd: PLACEHOLDER_COST_A }, { upTo: 100, costUsd: PLACEHOLDER_COST_B }] };
+    file.engines["sync-3"] = { second: [{ costUsd: PLACEHOLDER_COST_D }] };
+    useFile(writeFile(file));
+    /* The file itself is valid (bands are a rule of the format)... */
+    expect(vendorPricesStatus().state).toBe("loaded");
+    /* ...but a file-priced engine with a band is refused, for any quantity, inside or past the bands. */
+    for (const quantity of [1, 5, 50, 500]) {
+      const r = refusal(() => fileVendorQuote("lipsync-2-pro", { unit: "second", quantity }));
+      expect(r.reason, String(quantity)).toBe("this engine's rows must not name a band (upTo)");
+      expect(refusal(() => fileVendorCostUsd("lipsync-2-pro", { unit: "second", quantity })).reason).toContain("band");
+    }
+    /* Another file-priced engine without a band, in the same file, is priced; a banded engine that is not file-priced keeps its bands. */
+    expect(fileVendorCostUsd("sync-3", { unit: "second", quantity: 5 })).toBe(micro(PLACEHOLDER_COST_D * 5));
+    expect(fileVendorCostUsd(PLACEHOLDER_READER, { unit: "page", quantity: 20 }, OPT_IN)).toBe(micro(PLACEHOLDER_COST_B * 20));
+  });
+
+  test("a quote can keep the rate it was priced at: the matched row's cost per unit, from the same read as the total", () => {
+    useFile(writeFile(placeholderFile()));
+    expect(fileVendorQuote(PLACEHOLDER_READER, { unit: "page", quantity: 20 }, OPT_IN)).toEqual({ costUsd: micro(PLACEHOLDER_COST_B * 20), rateUsd: PLACEHOLDER_COST_B });
+    expect(fileVendorQuote(PLACEHOLDER_READER, { unit: "page", quantity: 7 }, OPT_IN)).toEqual({ costUsd: micro(PLACEHOLDER_COST_C * 7), rateUsd: PLACEHOLDER_COST_C });
+    expect(fileVendorQuote(PLACEHOLDER_ENGINE_A, { unit: "second", quantity: 5, resolution: "720p", audio: false }, OPT_IN).costUsd)
+      .toBe(fileVendorCostUsd(PLACEHOLDER_ENGINE_A, { unit: "second", quantity: 5, resolution: "720p", audio: false }, OPT_IN));
+    refusal(() => fileVendorQuote(PLACEHOLDER_READER, { unit: "page", quantity: 101 }, OPT_IN));
+    useFile(undefined);
+    refusal(() => fileVendorQuote(PLACEHOLDER_READER, { unit: "page", quantity: 1 }, OPT_IN));
   });
 
   test("a changed file is read again, and a broken edit refuses rather than keep an old figure", () => {

@@ -2,7 +2,7 @@ import { currentTenant, type TenantWorkspace } from "./tenant";
 import { paidByPlatform } from "./platformSpend";
 import { billCreditsWith, creditUsd, type CreditState } from "./creditTerms";
 import { creditsFor, type EstimateTerms } from "./billingTerms";
-import type { VendorKeyName } from "./vendorKeys";
+import type { EngineVendor } from "./vendorKeys";
 import { billingStateFor } from "./billingLedger";
 import { isHouseWorkspace } from "./houseWorkspace";
 
@@ -63,7 +63,7 @@ export function fmtCredits(n: number): string {
  */
 export type CreditVerdict = { ok: true } | { ok: false; status: number; error: string };
 
-export async function creditCheck(vendor: VendorKeyName, estUsd = 0, engine?: EstimateTerms, band = 1): Promise<CreditVerdict> {
+export async function creditCheck(vendor: EngineVendor, estUsd = 0, engine?: EstimateTerms, band = 1): Promise<CreditVerdict> {
   if (!creditsApply(currentTenant()?.workspace) || !paidByPlatform(vendor)) return { ok: true };
   const state = await creditState();
   if (!state) return { ok: true };

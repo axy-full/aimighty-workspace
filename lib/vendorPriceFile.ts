@@ -9,9 +9,10 @@ import { readFileSync, statSync } from "node:fs";
  * the one environment variable named below, checks its shape strictly, and
  * prices a job from it. docs/vendor-prices.md describes the file.
  *
- * Nothing is priced from here today. lib/vendorRates.ts still prices every
- * engine it priced before; an engine is priced from this file only once it is
- * listed in FILE_PRICED_ENGINES, and the list is empty.
+ * lib/vendorRates.ts still prices every engine it priced before; an engine is
+ * priced from this file only once it is listed in FILE_PRICED_UNITS (and so in
+ * FILE_PRICED_ENGINES). Today that is sync.so lip-sync's three models, per
+ * second (lib/lipSync.ts).
  *
  * Failure is always a refusal, never a number from code: no variable, no
  * file, a file that does not parse or does not match the shape, or no row for
@@ -61,11 +62,18 @@ export type VendorPriceTable = {
 };
 
 /**
- * Engines priced from the file instead of lib/vendorRates.ts. Empty until the
- * owner signs off; an engine is added here in the PR that ports it (the first
- * is planned to be sync.so lip-sync, PR #776).
+ * Engines priced from the file instead of lib/vendorRates.ts, each with the
+ * unit its quote asks for. An engine is added here in the PR that ports it,
+ * and the owner's converter (scripts/vendor-prices/) refuses a sheet with no
+ * row in that unit for any of them. Ids only: never a figure.
  */
-export const FILE_PRICED_ENGINES: readonly string[] = [];
+export const FILE_PRICED_UNITS: Readonly<Record<string, VendorPriceUnit>> = Object.freeze({
+  /* sync.so lip-sync (lib/syncso.ts SYNC_MODELS), per output second, no other setting. */
+  "lipsync-2": "second",
+  "lipsync-2-pro": "second",
+  "sync-3": "second",
+});
+export const FILE_PRICED_ENGINES: readonly string[] = Object.freeze(Object.keys(FILE_PRICED_UNITS));
 
 /** The largest file read. A price table is a few kilobytes; anything near this is a wrong paste. */
 const MAX_BYTES = 1024 * 1024;
@@ -303,6 +311,12 @@ const microCeil = (usd: number): number => Math.ceil(usd * 1e6 - 1e-6) / 1e6;
  * smallest such band wins, and a quantity past the largest band is unpriced.
  */
 export function costFromTable(table: VendorPriceTable, engine: string, req: VendorPriceRequest): { ok: true; costUsd: number } | { ok: false; reason: string } {
+  const got = rowFromTable(table, engine, req);
+  return got.ok ? { ok: true, costUsd: got.costUsd } : got;
+}
+
+/** costFromTable, with the matched row's own cost per unit (`rateUsd`) beside the total. */
+function rowFromTable(table: VendorPriceTable, engine: string, req: VendorPriceRequest): { ok: true; costUsd: number; rateUsd: number } | { ok: false; reason: string } {
   /* Own keys only: an engine or unit the file does not name is unpriced, whatever an object inherits. */
   const entry = Object.hasOwn(table.engines, engine) ? table.engines[engine] : undefined;
   const rows = entry && Object.hasOwn(entry, req.unit) ? entry[req.unit] : undefined;
@@ -322,7 +336,7 @@ export function costFromTable(table: VendorPriceTable, engine: string, req: Vend
     (r.upTo === undefined || quantity <= r.upTo));
   if (!matches.length) return { ok: false, reason: "no price for these settings" };
   const row = matches.reduce((a, b) => ((b.upTo ?? Infinity) < (a.upTo ?? Infinity) ? b : a));
-  return { ok: true, costUsd: microCeil(row.costUsd * quantity) };
+  return { ok: true, costUsd: microCeil(row.costUsd * quantity), rateUsd: row.costUsd };
 }
 
 /**
@@ -333,10 +347,26 @@ export function costFromTable(table: VendorPriceTable, engine: string, req: Vend
  * `engines` is the opt-in list; only a test passes its own.
  */
 export function fileVendorCostUsd(engine: string, req: VendorPriceRequest, engines: readonly string[] = FILE_PRICED_ENGINES): number {
+  return fileVendorQuote(engine, req, engines).costUsd;
+}
+
+/**
+ * fileVendorCostUsd, plus the cost per unit it was priced at (`rateUsd`), from
+ * one read of the file. For a caller that keeps the rate with the job, so the
+ * job settles at the rate it was quoted at and never reads the file again.
+ */
+export function fileVendorQuote(engine: string, req: VendorPriceRequest, engines: readonly string[] = FILE_PRICED_ENGINES): { costUsd: number; rateUsd: number } {
   if (!engines.includes(engine)) throw new VendorPriceUnavailable(engine, "this engine is not priced from the vendor price file");
   const v = load();
   if (v.state !== "loaded") throw new VendorPriceUnavailable(engine, v.state === "invalid" ? "the vendor price file is invalid" : v.reason);
-  const got = costFromTable(v.table, engine, req);
+  /* An engine priced from this file keeps the rate it was quoted at and settles at it (lib/lipSync.ts), so a band, whose rate depends on the
+     quantity, would not hold at settlement: rows with one leave the engine unpriced, as the converter refuses them. */
+  if (Object.hasOwn(FILE_PRICED_UNITS, engine)) {
+    const units = Object.hasOwn(v.table.engines, engine) ? v.table.engines[engine] : undefined;
+    const rows = units && Object.hasOwn(units, req.unit) ? units[req.unit] : undefined;
+    if (rows?.some((r) => r.upTo !== undefined)) throw new VendorPriceUnavailable(engine, "this engine's rows must not name a band (upTo)");
+  }
+  const got = rowFromTable(v.table, engine, req);
   if (!got.ok) throw new VendorPriceUnavailable(engine, got.reason);
-  return got.costUsd;
+  return { costUsd: got.costUsd, rateUsd: got.rateUsd };
 }

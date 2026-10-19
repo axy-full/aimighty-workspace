@@ -149,18 +149,27 @@ function withLines(problems, lines) {
  * resolution and length the registry knows has a row"); only a retired one is
  * not expected. Leaving an engine out is explicit: `skip` (--skip), and the
  * report lists every engine not checked and why.
+ *
+ * The engines the server prices from the file (`required`, lib/vendorPriceFile.ts
+ * FILE_PRICED_UNITS, such as lip-sync's models, which are not in the registry)
+ * are checked the same way: each needs a row in its unit that names no
+ * resolution, sound or length, since its quote asks for none, and no band
+ * (upTo), since its job settles at the rate it was quoted at. Without such a
+ * row the server refuses every quote of that engine.
  */
 /**
  * @param {{ engines: Record<string, Record<string, Array<Record<string, unknown>>>> }} table
  * @param {Array<{ id: string; resolutions: string[]; durations?: number[]; supportsAudio?: boolean; retired?: boolean }>} models
  * @param {string[] | null} [scope] check only these (--engines)
  * @param {string[] | null} [skip] never check these (--skip)
+ * @param {Record<string, string> | null} [required] engine id -> unit, for the engines priced from the file
  */
-export function coverage(table, models, scope = null, skip = null) {
-  const missing = [], checked = [], skipped = [], outOfScope = [], retired = [];
+export function coverage(table, models, scope = null, skip = null, required = null) {
+  const missing = [], checked = [], skipped = [], outOfScope = [], retired = [], filePriced = [];
   const ownUnits = (id) => (Object.hasOwn(table.engines, id) ? table.engines[id] : null);
   const inScope = (id) => !scope || scope.includes(id);
   const known = new Set(models.map((m) => m.id));
+  const filePricedIds = Object.keys(required ?? {}).filter((id) => !known.has(id));
   for (const m of models) {
     if (skip?.includes(m.id)) { skipped.push(m.id); continue; }
     if (m.retired) { retired.push(m.id); continue; }
@@ -191,15 +200,27 @@ export function coverage(table, models, scope = null, skip = null) {
       if (!covered) missing.push(...(gaps.length ? gaps : [`${m.id}: ${resolution}`]));
     }
   }
-  if (scope) for (const id of scope) if (!known.has(id) && !skip?.includes(id)) {
+  for (const id of filePricedIds) {
+    if (skip?.includes(id)) continue;
+    if (!inScope(id)) { outOfScope.push(id); continue; }
+    filePriced.push(id);
+    const unit = required[id];
+    const units = ownUnits(id);
+    const rows = units && Object.hasOwn(units, unit) ? units[unit] : null;
+    if (!rows || !rows.length) missing.push(`${id}: no "${unit}" rows (priced from this file)`);
+    else if (rows.some((r) => "resolution" in r || "audio" in r || "length" in r)) missing.push(`${id}: its "${unit}" rows must name no resolution, sound or length (priced from this file)`);
+    /* A job of these engines keeps the rate it was quoted at and settles at it, so a band (a rate that depends on the quantity) would not hold at settlement. */
+    if (rows?.some((r) => "upTo" in r)) missing.push(`${id}: its "${unit}" rows must not name a band (upTo): a job settles at the rate it was quoted at (priced from this file)`);
+  }
+  if (scope) for (const id of scope) if (!known.has(id) && !filePricedIds.includes(id) && !skip?.includes(id)) {
     checked.push(id);
     const units = ownUnits(id);
     if (!units || !Object.keys(units).length) missing.push(`${id}: no rows (not in the model registry)`);
   }
   for (const id of skip ?? []) if (!known.has(id)) skipped.push(id);
-  const unknownSkips = (skip ?? []).filter((id) => !known.has(id) && !Object.hasOwn(table.engines, id));
-  const outside = Object.keys(table.engines).filter((id) => !known.has(id));
-  return { missing, checked, skipped, outOfScope, retired, unknownSkips, outside };
+  const unknownSkips = (skip ?? []).filter((id) => !known.has(id) && !filePricedIds.includes(id) && !Object.hasOwn(table.engines, id));
+  const outside = Object.keys(table.engines).filter((id) => !known.has(id) && !filePricedIds.includes(id));
+  return { missing, checked, skipped, outOfScope, retired, unknownSkips, outside, filePriced };
 }
 
 /**
@@ -208,9 +229,9 @@ export function coverage(table, models, scope = null, skip = null) {
  */
 /**
  * @param {string} text
- * @param {{ kind: "csv" | "json"; parse: (text: string) => { ok: boolean; table?: any; problems?: string[] }; format: string; models: any[]; scope?: string[] | null; skip?: string[] | null }} options
+ * @param {{ kind: "csv" | "json"; parse: (text: string) => { ok: boolean; table?: any; problems?: string[] }; format: string; models: any[]; scope?: string[] | null; skip?: string[] | null; required?: Record<string, string> | null }} options
  */
-export function convert(text, { kind, parse, format, models, scope = null, skip = null }) {
+export function convert(text, { kind, parse, format, models, scope = null, skip = null, required = null }) {
   let lines = null;
   let json;
   if (kind === "csv") {
@@ -225,7 +246,7 @@ export function convert(text, { kind, parse, format, models, scope = null, skip 
   if (!checked.ok) return { ok: false, stage: "shape", problems: withLines(checked.problems, lines) };
   const engines = Object.keys(checked.table.engines).length;
   const rows = Object.values(checked.table.engines).reduce((n, units) => n + Object.values(units).reduce((k, r) => k + r.length, 0), 0);
-  const cover = coverage(checked.table, models, scope, skip);
+  const cover = coverage(checked.table, models, scope, skip, required);
   return { ok: cover.missing.length === 0, stage: cover.missing.length ? "coverage" : "done", json, engines, rows, coverage: cover };
 }
 
@@ -246,6 +267,7 @@ export function report(result, { scope = null } = {}) {
   out.push(scope
     ? `coverage: checked only the engines named (${c.checked.length}).`
     : `coverage: ${c.checked.length} registry engines checked.`);
+  if (c.filePriced?.length) out.push(`priced from this file, checked (${c.filePriced.length}): ${c.filePriced.join(", ")}`);
   if (c.skipped.length) out.push(`NOT CHECKED, skipped with --skip (${c.skipped.length}): ${c.skipped.join(", ")}`);
   if (c.unknownSkips.length) out.push(`--skip names engines neither the registry nor the sheet has (a typo?): ${c.unknownSkips.join(", ")}`);
   if (c.outOfScope.length) out.push(`NOT CHECKED, outside --engines (${c.outOfScope.length}): ${c.outOfScope.join(", ")}`);
