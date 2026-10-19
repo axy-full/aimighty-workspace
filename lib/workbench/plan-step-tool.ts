@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
-import { isPersonApprover, PEOPLE_ONLY } from "./plan-approval";
+import { requireTenant, runInTenant } from "@/lib/tenant";
+import { isPersonApprover, PEOPLE_ONLY, planApprovalOf } from "./plan-approval";
 import { driveRigAgent, planRigAgentStep, rigAgentState, RigAgentError, type TickDeps } from "./rig-agent";
 import { getRun, rigAgentReady } from "./rig-agent-store";
 import type { RigAgentPaidStepView } from "./rig-agent-plan";
@@ -76,9 +77,16 @@ export async function preparePlanStep(userId: string, input: PlanStepInput, deps
   const productionId = draft.project.productionProjectId;
   if (!productionId) throw new RigAgentError("Open this board once in Particl first, so it is saved to a production.", 409);
   const made = await planRigAgentStep({ productionId, draftId: input.boardId, userId, requestId: (input.requestId as string | undefined) ?? `mcp-plan-${randomUUID()}`, step, answers: input.answers, cards, byTool: true });
-  /* Pricing is free and repeatable: one bounded drive asks the server's quote for each render. The run has no limit until a person approves, so nothing can be sent. */
-  await driveRigAgent(made.id, { ...deps, budgetMs: deps.budgetMs ?? 20_000 }).catch(() => undefined);
+  /* Pricing is free and repeatable: one bounded drive asks the server's quote for each render. The run has no limit until a person approves, so nothing can be sent.
+     The drive runs as the run's own worker does (dispatchRigAgent's continuation): in the workspace with no caller in the store. Inside a token's store the person's
+     restore from live membership (lib/pipeline/actor.ts) refuses, so nothing was priced and the run paused as if they had lost access. It drives only this tool's own
+     plan while it is unapproved at limit 0 in Ask (a request id cannot point it at another run), and it prices only: it never approves, sends, follows or locks. */
   await rigAgentReady();
+  const fresh = await getRun(db(), made.id);
+  if (fresh && fresh.plan?.kind === "chips" && fresh.plan.madeBy === "tool" && fresh.owner === userId && fresh.capCredits === 0 && fresh.mode === "ask" && !(await planApprovalOf(db(), fresh.id))) {
+    const workspace = requireTenant();
+    await runInTenant(workspace, () => driveRigAgent(made.id, { ...deps, budgetMs: deps.budgetMs ?? 20_000, priceOnly: true })).catch(() => undefined);
+  }
   const run = (await rigAgentState(productionId, userId, input.boardId)).run;
   const row = await getRun(db(), made.id);
   const view = run && run.id === made.id ? run : made;

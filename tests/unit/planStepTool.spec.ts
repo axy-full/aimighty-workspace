@@ -371,3 +371,65 @@ test("the route: the sample workspace makes no plan; an approval or a fingerprin
     if (await rigAgentExists()) expect((await db().execute("SELECT COUNT(*) AS n FROM rig_agent_runs")).rows[0].n).toBe(0);
   });
 });
+
+test("over an API token (the MCP path): plan_step prices the plan as the person, with no stand-in for their access, and never reads as them losing it; it drives only its own unapproved plan, and sends nothing", async () => {
+  await inRun("pstep-token", async (ws) => {
+    const agent = await import("../../lib/workbench/rig-agent");
+    const { preparePlanStep } = await import("../../lib/workbench/plan-step-tool");
+    const { runInTenant } = await import("../../lib/tenant");
+    const { withPipelineActor } = await import("../../lib/pipeline/actor");
+    const { platformDb } = await import("../../lib/platform");
+    const { db } = await import("../../lib/db");
+    /* The person is a live member, so their restore from membership (no stand-in here) succeeds outside a token's store. */
+    await platformDb().batch([
+      { sql: "INSERT INTO accounts(id,email,name,password_hash,created_at) VALUES(?,?,?,'unused',0)", args: [OWNER, `${OWNER}@example.invalid`, "Ana"] },
+      { sql: "INSERT INTO memberships(workspace_id,account_id,role,created_at) VALUES(?,?,'owner',0)", args: [ws.id, OWNER] },
+    ], "write");
+    const token = { id: "tok_pstep", name: "Outside agent", scope: "prepare" as const, capUsd: null };
+    const asToken = <T,>(fn: () => Promise<T>) => runInTenant(ws, fn, { user: userOf(OWNER), token });
+    /* The store is a token's: the person's restore refuses inside it, which is what the drive must not run under. */
+    await expect(asToken(() => withPipelineActor(ws.id, OWNER, async () => "restored"))).rejects.toMatchObject({ status: 403 });
+    expect(await withPipelineActor(ws.id, OWNER, async () => "restored")).toBe("restored");
+    const r = renders(ws, (shot) => (shot === "1" ? 0.3 : 0.45));
+    /* No access and no asOwner stand-in: the real membership check and the real restore. */
+    const real = await depsFor(ws, r);
+    delete (real as Partial<typeof real>).access;
+    delete (real as Partial<typeof real>).asOwner;
+    expect(real).not.toHaveProperty("access");
+    expect(real).not.toHaveProperty("asOwner");
+    const before = await balance(ws);
+    const LOST = "The person who asked for this build no longer has access to this workspace.";
+    const out = await asToken(() => preparePlanStep(OWNER, { boardId: "draft-1", requestId: "tok-plan-1" }, real));
+    const a = await credits(0.3), b = await credits(0.45);
+    expect(out).toMatchObject({ priced: true, total: a + b, ceiling: 2 * (a + b), state: "needs_you", reason: null });
+    const row = (await db().execute({ sql: "SELECT state,reason FROM rig_agent_runs WHERE id=?", args: [out.id] })).rows[0];
+    expect(String(row.state)).toBe("needs_you");
+    expect(row.reason).not.toBe(LOST);
+    expect(String(row.reason ?? "")).not.toMatch(/no longer has access/);
+    expect(r.calls).toEqual([]);
+    expect(await reservations(ws)).toBe(0);
+    expect(await balance(ws)).toBe(before);
+
+    /* The person's own plan on the board, approved by them and not yet driven. A token's plan_step naming its request id gets it back, and drives nothing of it. */
+    await agent.stopRigAgent({ productionId: "prod-1", runId: out.id, userId: OWNER });
+    const mine = await agent.planRigAgentStep({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: "req-pstep-person", step: "shots" });
+    await agent.advanceRigAgentRun(mine.id, await depsFor(ws, r));
+    const view = (await agent.rigAgentState("prod-1", OWNER)).run!;
+    expect(view).toMatchObject({ id: mine.id, state: "needs_you" });
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId: mine.id, fingerprint: view.plan!.quote!.fingerprint, userId: OWNER });
+    const stateOf = async (id: string) => (await db().execute({ sql: "SELECT state,reason FROM rig_agent_runs WHERE id=?", args: [id] })).rows[0];
+    expect(String((await stateOf(mine.id)).state)).toBe("running");
+    const back = await asToken(() => preparePlanStep(OWNER, { boardId: "draft-1", requestId: "req-pstep-person" }, real));
+    expect(back.id).toBe(mine.id);
+    expect(r.calls).toEqual([]);
+    expect(String((await stateOf(mine.id)).state)).toBe("running");
+    expect((await stateOf(mine.id)).reason).not.toBe(LOST);
+    expect(await reservations(ws)).toBe(0);
+    /* A price-only drive stops at an approved render; the run's own drive sends it, under the person's approval. */
+    await agent.driveRigAgent(mine.id, { ...(await depsFor(ws, r)), priceOnly: true });
+    expect(r.calls).toEqual([]);
+    expect(String((await stateOf(mine.id)).state)).toBe("running");
+    await agent.driveRigAgent(mine.id, await depsFor(ws, r));
+    expect(r.calls.length).toBeGreaterThan(0);
+  });
+});
