@@ -45,7 +45,8 @@ test("a saved choice that cannot run says what runs in its place; one that can s
   const gpt = ROUTABLE.find((id) => id.startsWith("openai/"))!;
   const effect = textEffect("enhance", gpt, ROUTABLE);
   expect(effect.runnable).toBe(false);
-  expect(effect.runs).toBe("anthropic/claude-sonnet-5.5");
+  /* The enhancer's stand-in is the deployment's own first writer, which the owner made Opus 5.5 on 16 Oct 2026. */
+  expect(effect.runs).toBe("anthropic/claude-opus-5.5");
   /* Nothing Atomik runs is connected: no stand-in. */
   expect(textEffect("idea", gemini, [gemini]).runs).toBeNull();
 });
@@ -74,7 +75,7 @@ test("the admin route sends each job its own list and what a saved choice does",
   expect(body.textModelsByJob.idea.some((id: string) => id.startsWith("google/"))).toBe(false);
   expect(body.textModelsByJob.enhance.includes("openai/gpt-5.5")).toBe(false);
   expect(body.textEffects.idea).toMatchObject({ runnable: false, runs: "anthropic/claude-sonnet-5.5" });
-  expect(body.textEffects.enhance).toMatchObject({ runnable: false, runs: "anthropic/claude-sonnet-5.5" });
+  expect(body.textEffects.enhance).toMatchObject({ runnable: false, runs: "anthropic/claude-opus-5.5" });
   expect(body.textEffects.shot).toMatchObject({ runnable: true });
 });
 

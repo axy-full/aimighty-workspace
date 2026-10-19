@@ -27,6 +27,7 @@ import { workbenchScopeProblem } from "./workbench/request-scope";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
 import { allowanceUsdOf } from "./cinemaHold";
+import { HOUSE_CAP_REACHED, houseCapOfStored, houseSpendOfRow, noteHouseSpend } from "./houseCap";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
@@ -157,6 +158,16 @@ async function completeUnadmitted(userId: string, key: string): Promise<Response
 }
 
 /**
+ * A run whose answer is a stream still being written (the prompt enhancer's) marks its Response with this header: the claim is not answered from the body
+ * (it does not exist yet), the Response goes out as it is, and the run ends the claim itself with `completeDeferredRequest` once the stream is over, with the
+ * answer the key will replay.
+ */
+export const CLAIM_DEFERRED_HEADER = "X-Claim-Deferred";
+export async function completeDeferredRequest(claim: { userId: string; key: string }, status: number, json: string): Promise<void> {
+  await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, status, now(), claim.userId, claim.key] });
+}
+
+/**
  * What every paid request is checked for before its key is used: the workbench scope it was prepared in, the person and workspace it
  * was prepared for, and a well-formed Idempotency-Key. The refusal, or the key the request names (null when it sent none).
  */
@@ -254,6 +265,10 @@ export async function withGenerationRequestData(
   const settle = async (): Promise<Response> => {
     try {
       const response = await run(claim);
+      if (response.headers.get(CLAIM_DEFERRED_HEADER) === "1") {
+        response.headers.delete(CLAIM_DEFERRED_HEADER);
+        return response;
+      }
       const json = await response.clone().text();
       await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, response.status, now(), userId, key] });
       response.headers.set("Idempotency-Status", "complete");
@@ -544,6 +559,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
      workspace's own database, which is never read inside the platform's write). */
   const stopped = options.run ? await options.run.live?.() : null;
   if (stopped) throw new SpendReservationError(stopped, 409, true);
+  /* Set inside the write when the house's job is reserved: where its month then stands (the warning is sent after the write commits). */
+  const houseReserved: { at: { spentUsd: number; capUsd: number } | null } = { at: null };
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
     const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at,allowance_usd FROM workspaces WHERE id=?`, args: [ws.id] });
@@ -554,6 +571,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
        request was on its way applies to it. A cap that appeared since (none when the request began) counts the meter's
        rows only; the pre-meter product records it would add hold nothing from this month. */
     const capNow = !paid ? null : standing.rows[0] ? allowanceUsdOfStored(standing.rows[0].allowance_usd) : monthlyCap;
+    /* The house's own monthly cap (lib/houseCap.ts), read at this write like the one above: the figure the platform owner set, else the default. */
+    const houseCapNow = isHouseWorkspace(ws) ? houseCapOfStored(standing.rows[0]?.allowance_usd).usd : null;
     await syncBillingLedger(tx, ws.id, ts);
     const own = await tx.execute({ sql: `SELECT workspace_id,status,paid_by_platform,engine,kind,model,credit_usd,credit_margin,hold_band FROM meter_events WHERE id=?`, args: [event.id] });
     if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
@@ -582,6 +601,10 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const keptBand = Math.max(holdBand, Number(prior?.hold_band) > 1 ? Number(prior!.hold_band) : 1);
     const held = billed * keptBand;
     const heldAtCeiling = paid && keptBand > 1;
+    /* The house is metered in dollars and billed no credits, so its held take (Cinema Studio) counts at its hold for the house's own cap
+       (cost times band), and its row records the band so every later reservation counts it running at its hold (lib/cinemaHold.ts) and its
+       settlement is capped at it (lib/meter.ts heldSettlement), as a customer's is. */
+    const houseHeld = isHouseWorkspace(ws) && keptBand > 1;
     /* Every cap below reads a take that holds its ceiling at its hold (credits: the hold; dollars: its cost times
        the band), as the balance does, since that is what it may settle at; any other job at its estimate. */
     const band = heldAtCeiling ? keptBand : 1;
@@ -609,6 +632,13 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (shotCap != null) {
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
       if (shotCredits + charge(cost) * band > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
+    }
+    if (houseCapNow != null) {
+      /* Every house job this month at what the engines charge (the meter's rows, which the customer allowance never counts), and this one at its hold. */
+      const houseSpent = existing.rows.filter((r) => Number(r.created_at) >= since).reduce((sum, r) => sum + houseSpendOfRow(r), 0);
+      const needs = cost * (houseHeld ? keptBand : 1);
+      if (houseSpent + needs > houseCapNow + 1e-9) throw new SpendReservationError(HOUSE_CAP_REACHED, 429);
+      houseReserved.at = { spentUsd: houseSpent + needs, capUsd: houseCapNow };
     }
     if (capNow != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost * band > capNow + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
@@ -674,8 +704,10 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     /* The hold is recorded on the take's row (`hold_band`): its settlement charges what it cost, never past the hold. */
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin,hold_band)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin),hold_band=COALESCE(excluded.hold_band,meter_events.hold_band)`,
-      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, held, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin, heldAtCeiling ? keptBand : null] });
+      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, held, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin, heldAtCeiling || houseHeld ? keptBand : null] });
     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
       args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? (heldAtCeiling ? 1 : Math.max(1, Math.round(options.run.band))) : null] });
   });
+  /* The house's month has reached the warning line: the platform owner hears once a month. Never fails the job that is already reserved. */
+  if (houseReserved.at) await noteHouseSpend(houseReserved.at.spentUsd, houseReserved.at.capUsd).catch((error) => console.error(JSON.stringify({ level: "error", event: "house_cap.warn_failed", message: error instanceof Error ? error.message : "unknown" })));
 }

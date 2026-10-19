@@ -16,8 +16,8 @@ const back = (code: GoogleRefusal) => see(`/login?google=${code}`);
 /**
  * Starts "Continue with Google" (lib/googleSignIn.ts): a fresh state, nonce and PKCE verifier, kept in a signed cookie for ten minutes,
  * then Google. A GET (the sign-in page's link) is a plain sign-in with `next`, where to land. A POST is the join sheet's form: it may
- * also carry `invite`, a team invitation's code (a new person needs one), and `accept=1`, the content policy and terms accepted on that
- * sheet; both are kept only when the form came from Particl's own page (startIntent). Nothing is created and no one is signed in here.
+ * also carry `invite`, a team invitation's code (a new person needs one), and `accept=1`, the sheet's 18+ and Terms tick (lib/ageConfirm.ts);
+ * both are kept only when the form came from Particl's own page (startIntent). Nothing is created and no one is signed in here.
  */
 async function start(req: Request, fields: { get(name: string): unknown }, post: boolean) {
   const config = googleConfig();

@@ -36,6 +36,15 @@ export function stepShots(run: Pick<RigAgentRunView, "paid">, project: Pick<Proj
   return out;
 }
 
+/**
+ * Whether the card pre-quotes a run's renders here: never for a chips plan (Agent mode's quick plan). It has ONE price, the server's total (owner, 16 Oct);
+ * a step the plan covers shows no price of its own, and one that asks on its own shows the server's quote for it. A pre-quote here would ignore the plan's
+ * quick answers (length, final), so it could read less than what the tap approves. Nor does it name each step's engine.
+ */
+export function wantsEstimates(run: Pick<RigAgentRunView, "kind"> | null): boolean {
+  return !!run && run.kind !== "chips";
+}
+
 export type StepRequest = { body: Record<string, unknown>; meta: string; still: boolean };
 
 /**

@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { mkdirSync } from "node:fs";
 import { localPlatformDbUrl } from "./helpers/workbenchLocal";
+import { removeHouseJobsOf } from "./helpers/houseJobs";
 import { signInToRedesign } from "./helpers/newInterface";
 import { newProject } from "../lib/workbench/studio";
 
@@ -22,8 +23,12 @@ async function withHouse<T>(userId: string, run: () => Promise<T>): Promise<T> {
     await db.execute({ sql: "INSERT INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES('ws_legacy',?,'owner',0,?)", args: [userId, ts] });
     try { return await run(); }
     finally {
-      await db.execute({ sql: "DELETE FROM memberships WHERE workspace_id = 'ws_legacy'", args: [] });
-      await db.execute({ sql: "DELETE FROM workspaces WHERE id = 'ws_legacy'", args: [] });
+      /* The plan asked in the house bills Atomik's planning turn there: its jobs go with the house, or the cap spec reads them. */
+      try { await removeHouseJobsOf(db, userId); }
+      finally {
+        await db.execute({ sql: "DELETE FROM memberships WHERE workspace_id = 'ws_legacy'", args: [] });
+        await db.execute({ sql: "DELETE FROM workspaces WHERE id = 'ws_legacy'", args: [] });
+      }
     }
   } finally { db.close(); }
 }

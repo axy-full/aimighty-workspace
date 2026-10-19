@@ -61,7 +61,7 @@ test("a workspace invitation records the policy, and never creates the platform 
   await invite(ws.id, mail("newcomer"), `policy-new-${tag}`);
   await expect(
     acceptWorkspaceInvitation({ code: `policy-new-${tag}`, password }),
-  ).rejects.toThrow(/content policy/);
+  ).rejects.toThrow(/18 or older and agree to the Terms/);
   const p = platformDb();
   expect(
     (

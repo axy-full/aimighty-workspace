@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
+import { AgeConfirm } from "@/components/AgeConfirm";
 
 /** First run only: creates the first admin. Refuses once any user exists. */
 export default function SetupPage() {
   const router = useRouter();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -20,7 +22,7 @@ export default function SetupPage() {
     try {
       const res = await fetch("/api/auth/setup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, accept: agreed }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Setup failed");
@@ -51,6 +53,7 @@ export default function SetupPage() {
           <input className="ctl" type="password" autoComplete="new-password" required
             value={form.confirm} onChange={set("confirm")} />
         </Field>
+        <AgeConfirm checked={agreed} onChange={setAgreed} testId="setup-terms" />
         <Submit busy={busy}>Create admin</Submit>
         {err && <ErrorLine>{err}</ErrorLine>}
       </form>

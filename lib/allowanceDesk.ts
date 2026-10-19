@@ -24,7 +24,9 @@
  * So an empty box must never be read as 0 (that would wall a workspace by
  * accident), and 0 must never be read as "none" (that would open one).
  *
- * No imports: the browser reads it.
+ * The house workspace's cap is its own (lib/houseCapText.ts); this file's `house` kind stays the "no customer allowance" reading.
+ *
+ * Pure: the browser reads it.
  */
 
 /** The most the admin route accepts, in dollars a month. */
