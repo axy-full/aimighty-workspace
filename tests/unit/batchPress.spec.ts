@@ -344,9 +344,11 @@ test("in the house workspace the sum is judged against the house cap: a batch th
     allowanceUsd, gatewayKeyId: null, ownerId: "u_admin", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 1000, rendersPerHour: 100_000, storageQuotaBytes: null, deletedAt: null });
   /* The house's cap is the `allowance_usd` the platform owner sets on its row (lib/houseCap.ts), and the request's workspace carries the same. */
   await platformReady();
+  /* Other specs in this worker share the platform database and insert the house themselves: the row is removed if this test made it, else its cap is put back. */
+  const before = (await platformDb().execute({ sql: "SELECT allowance_usd FROM workspaces WHERE id='ws_legacy'", args: [] })).rows[0];
   await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,legacy,uses_platform_keys,owner_id,created_at,updated_at) VALUES('ws_legacy','house-batch','House','(primary)',1,0,'u_admin',0,0)", args: [] });
   const setHouseCap = async (usd: number) => { await platformDb().execute({ sql: "UPDATE workspaces SET allowance_usd=? WHERE id='ws_legacy'", args: [usd] }); return house(usd); };
-  await keepingHouseJobsClean(async () => {
+  try { await keepingHouseJobsClean(async () => {
     await as(house(null), MEMBER, async () => {
       const { ready, db } = await import("../../lib/db");
       await ready();
@@ -367,15 +369,24 @@ test("in the house workspace the sum is judged against the house cap: a batch th
     expect(await press(ws, MEMBER, shots(3), approvalOf(q3), key)).toEqual({ status: 429, body: { error: HOUSE_CAP_REACHED } });
     expect(await as(ws, MEMBER, ledger)).toEqual({ takes: [], meters: [], held: 0 });
     expect(await as(ws, MEMBER, () => pressClaimsOf(key))).toBe(0);
-    /* Two fit, at 80% of the cap: the quote carries the house cap's own warning, in its own words, and the press runs. */
+    /* Two fit, at 80% of the cap: the quote carries the house cap's own warning, in its own words (a quote writes nothing). */
     const q2 = await quote(ws, MEMBER, shots(2));
     expect(q2.status, JSON.stringify(q2.body)).toBe(200);
     expect(q2.body.notice).toBe(houseCapWarning(houseCapState(spent + usd * 2.5, spent + usd * 2)));
-    const pressed = await press(ws, MEMBER, shots(2), approvalOf(q2), `press-house-fits-${run}`);
+    /* A batch that fits runs. It is pressed under room for ten, below 80%, so it writes no month's warning into the platform history this worker's other specs share
+       (that history is append-only; the warning itself is houseCap.spec's). */
+    ws = await setHouseCap(spent + usd * 10);
+    const fits = await quote(ws, MEMBER, shots(2));
+    expect(fits.status, JSON.stringify(fits.body)).toBe(200);
+    expect(fits.body.notice).toBeUndefined();
+    const pressed = await press(ws, MEMBER, shots(2), approvalOf(fits), `press-house-fits-${run}`);
     expect(pressed.status, JSON.stringify(pressed.body)).toBe(200);
     expect(pressed.body).toMatchObject({ status: "started" });
     expect((await as(ws, MEMBER, ledger)).takes).toHaveLength(2);
-  });
+  }); } finally {
+    if (before) await platformDb().execute({ sql: "UPDATE workspaces SET allowance_usd=? WHERE id='ws_legacy'", args: [before.allowance_usd ?? null] });
+    else await platformDb().execute({ sql: "DELETE FROM workspaces WHERE id='ws_legacy'", args: [] });
+  }
 });
 
 test("asked again under the same key, a press starts nothing twice: what started is that take, what was refused starts on the next ask, and other shots under the key are refused", async () => {
