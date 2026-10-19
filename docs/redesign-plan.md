@@ -1375,3 +1375,21 @@ Verbatim, minus the advisor's recommendation marks.
 > Deploy #6 stays the owner's. Keep the draft current with #763's rollback note and the /admin allowance check. The gateway removal is its own small PR after the queue.
 >
 > Morning note at 10:30 IST, real PR numbers, nothing invented.
+
+## Owner, 19 Oct 2026, ~19:00 IST: answers to the lead's 16:03 note (with the advisor)
+
+Recorded by the lead. Item 1 is summarised by PR number only, because this file is public and must not name engine routing or prices; the full text is in the lead's private notes. Everything else is verbatim.
+
+> First, release/1. Run 39237031538 failed at 11:00 UTC: workbench shard 9 at 33/36 sub-shards, the same as before #840, and shard 1 at 26/36. #840 merged with the browser suite skipped at its head, which is not 24/24; from now on any PR that touches tests/*.spec.ts or claims to fix the suite runs the full plan at its head before merge. Nothing merges until release/1 is green. Report the failing test names and the real cause of a 33/36 shard; "flaky at 1920" is not a cause. #800, #809 and #808 need a fresh Opus approval at their current heads before they merge.
+
+1. Engine PRs (summary): #777–#787 are held until the server-only price file exists. That file is built next (Phase A item 4: its path set on the self-host platform, today's `lib/vendorRates.ts` untouched, tests on placeholders, never a vendor dollar in a fixture), with a click-by-click step for the owner, names only. Then #776 moves onto it, because the demo needs it. #814 follows #776 only if its bake-off is still on. #777 and #786 wait for a yes/no from Akshay. The other ten wait until after 31 Oct.
+
+> 2 Dollar figures: yes, remove them from #814, #784 and #776; list the PR numbers whose edit history the owner must delete.
+> 3 House cap: no warning on a lowering; /admin shows the new standing.
+> 4 R1 yes for Ad film, Feature, Short film, Music video, Product video and Microdrama; no for UGC, Trend clip, Social and Pre-vis, whose last steps are on the rail as in the 19 Oct lists. R2 no: Storyboard's card is the shot with its panels as frames; Shots' card holds takes; a storyboard frame enters a Shots node as its Start frame row. R3 yes.
+> 5 Yes: the monthly spend limit in credits, with Paused, is the budget ceiling of rule 14. The engine-dollar allowance behind #765 is the platform's guard, a separate object, never shown to a customer. #835 builds on that.
+> 6 Deploy #6 is the owner's and waits for a green release/1. Backups: the scheduled job is inert by design (PARTICL_BACKUP_ENABLED unset, as docs/backup-restore.md says), so "skipped" is its normal state and not an alarm; stop reporting it as one. The pre-deploy backup is the manual routine from deploy #5.
+>
+> The stall from 10:15 to 15:52: check your own session log and the machine (load, memory, OOM kills) for that window and give the cause, or say "unknown" with what you checked. Add a line to the status page whenever an hour passes with no progress, so the owner sees it.
+>
+> Morning note at 10:30 IST, real PR numbers, nothing invented.
