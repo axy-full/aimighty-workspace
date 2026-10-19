@@ -101,6 +101,12 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
   { dir: "generate", body: { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" } },
   { dir: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 5, projectId: "film" } },
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
+  /* Lip-sync is off unless its engine is on for the workspace, so THIS press only proves the door is shut while it is off: it stops at "no such tool" and spends nothing, at any cap.
+     The cap wall with the engine ON is proved in tests/unit/lipSync.spec.ts: a listed workspace at its own $0 cap is refused 429 in the cap's words, nothing held, written or sent. */
+  /* Sarvam is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/sarvam.spec.ts
+     (a listed workspace at its own $0 cap is refused 429 in the cap's words, nothing held, written, reserved or sent). */
+  { dir: "sarvam", body: { tool: "translate", text: "Hello", source: "en-IN", target: "ta-IN", maxCredits: 100000 } },
+  { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
   { dir: "jobs/[id]/release", body: { credits: 10 }, id: "gen_held" },
   { dir: "atomik/steps/[id]/claim", body: {}, id: "step_1" },
@@ -373,6 +379,10 @@ const RESERVERS: Record<string, Reserver> = {
   "lib/generationAdmission.ts": { reserve: "await reserveGenerationSpend(", count: 3, vendor: ["runIdentityRender(started.genId", 'enqueueRender(genId, "image")', "runInline(genId)", 'enqueueRender(genId, "video")', "submitVideoRow(genId)"] },
   "lib/audioAdmission.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ['enqueueRender(genId, "audio")', "runInline(genId)"] },
   "lib/dubbing.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["?? submitDubbing)("] },
+  /* Lip-sync (sync.so): reserved at admission, before its row is ever advanced; every vendor call is in the advance step, which only runs on a funded row. */
+  /* Sarvam: one reservation site (reserveCall), reached before any of its three vendor calls; its speech take, translation and transcription all go through it. */
+  "lib/sarvamTools.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (seams.speak ?? speak)(", "await (seams.translate ?? translate)(", "await (seams.transcribe ?? transcribe)("] },
+  "lib/lipSync.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.upload ?? uploadAsset)(", "await (deps.submit ?? submitLipSync)("] },
   "lib/transcription.ts": { reserve: "?? reserveGenerationSpend)(", count: 1, vendor: ["?? grokTranscribe)("] },
   "lib/held.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["submitVideoRow(r.id)", "runInline(r.id)"] },
   "lib/paidText.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await submit("] },
@@ -396,6 +406,8 @@ const DOOR_MODULE: Record<string, string> = {
   "generate": "lib/generationAdmission.ts",
   "audio": "lib/audioAdmission.ts",
   "audio/dub": "lib/dubbing.ts",
+  "lipsync": "lib/lipSync.ts",
+  "sarvam": "lib/sarvamTools.ts",
   "audio/transcribe": "lib/transcription.ts",
   "jobs/[id]/release": "lib/held.ts",
   /* Taking a step claims it; the step's render is paid through admission. */
