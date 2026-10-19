@@ -1,0 +1,18 @@
+# Sample cost sheet for scripts/vendor-prices/csv-to-json.mjs. EVERY FIGURE IS FAKE (111.11 to 999.99): not a price.
+# Columns: engine, unit, resolution, audio, length, upTo, costUsd. Empty cell = not set. costUsd is plain US dollars per unit.
+# Units: second, minute, job, image, page, source, layer, character, token. "length" is for unit job only; "upTo" is a band, not for job.
+engine,unit,resolution,audio,length,upTo,costUsd
+dreamina-seedance-2-5-260628,token,480p,,,,111.11
+dreamina-seedance-2-5-260628,token,720p,,,,222.22
+dreamina-seedance-2-5-260628,token,1080p,,,,333.33
+fal-ai/kling-video/v3/standard,second,1080p,false,,,444.44
+fal-ai/kling-video/v3/standard,second,1080p,true,,,555.55
+gemini-3.1-flash-image,image,512,,,,111.11
+gemini-3.1-flash-image,image,1K,,,,222.22
+gemini-3.1-flash-image,image,2K,,,,333.33
+gemini-3.1-flash-image,image,4K,,,,444.44
+example-fixed-length-engine,job,1080p,,5,,666.66
+example-fixed-length-engine,job,1080p,,10,,777.77
+example-reader,page,,,,10,888.88
+example-reader,page,,,,100,999.99
+lipsync-2-pro,second,,,,,999.99
