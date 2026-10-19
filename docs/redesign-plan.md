@@ -1418,3 +1418,13 @@ Recorded by the lead. Owner, verbatim: "the 200 cr per-job line (guardrail 4) is
 - **Docs PR (CLAUDE.md):** guardrail 4 is struck in CLAUDE.md's pricing section and in the scope of work. The scope of work is read as the rulebook: `docs/particl-sow-v1.md` §7A and `docs/particl-sow-2026-10-04.md` rule 14 / §10.
 - **Unchanged:** the per-job line on single jobs stays in the code until the owner asks for a PR to remove it.
 - **Open:** whether Auto mode (spending without a tap) stays, given "every job is approved on its quote".
+
+## Owner, 20 Oct 2026, ~01:20 IST: answers to the 19 Oct status page
+
+Recorded by the lead.
+
+1. **Guardrail 4.** Verbatim: "Guardrail 4 is retired everywhere, single jobs included: no per-job line in the product. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with Paused. Strike it in CLAUDE.md and the scope with a dated note in the owner's words, and in the code with its own money review; keep the workspace cap and the house cap exactly as they are." This widens the earlier answer: the code PR removes the line everywhere, under a money review.
+2. **Attended capture:** the night of Wednesday 21 Oct into Thursday 22 Oct, 02:00–03:00 IST. The fallback is the same hour on Friday 23 Oct. The lead writes the owner a click-by-click, with the undo for each step and the abort condition at every stage.
+3. **The price file (#843)** merges under the standing yes after a full 24/24 run at its head. #776's lip-sync goes on top of it. The owner mounts the file once #843 is on release/1; it is the only variable, and only names are used in chat.
+4. **The twenty other PRs with "$" in their descriptions:** list which hold vendor prices and which hold caps. Strip the vendor prices; the owner then deletes their edit history.
+5. **Deploy #6** waits for the owner, who takes it when release/1 is green, with the backup first.
