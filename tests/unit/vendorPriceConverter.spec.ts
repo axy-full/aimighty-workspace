@@ -34,8 +34,8 @@ const sheet = (text: string, ext = "csv") => {
   return file;
 };
 
-const run = (text: string, scope: string[] | null = null, kind: "csv" | "json" = "csv") =>
-  lib.convert(text, { kind, parse: parseVendorPrices, format: VENDOR_PRICES_FORMAT, models: MODELS, scope });
+const run = (text: string, scope: string[] | null = null, kind: "csv" | "json" = "csv", skip: string[] | null = null) =>
+  lib.convert(text, { kind, parse: parseVendorPrices, format: VENDOR_PRICES_FORMAT, models: MODELS, scope, skip });
 
 function cli(...args: string[]) {
   /* Under Node's permission model with read access only: a write, a child
@@ -44,8 +44,8 @@ function cli(...args: string[]) {
   return { code: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
-/** The engines the registry expects in the sheet by default: offered, and not priced by a live estimate. */
-const expected = (): ModelDef[] => (MODELS as ModelDef[]).filter((m) => !m.retired && !lib.liveEstimate(m));
+/** The engines the registry expects in the sheet by default: every one not retired (owner: "every engine, resolution and length the registry knows"). */
+const expected = (): ModelDef[] => (MODELS as ModelDef[]).filter((m) => !m.retired);
 /** A sheet that covers every one of them, one per-unit row per resolution, at a placeholder figure. */
 function fullSheet(skip: (id: string, res: string) => boolean = () => false): string {
   const rows = expected().flatMap((m) => m.resolutions
@@ -136,12 +136,21 @@ test.describe("converting the sheet", () => {
 });
 
 test.describe("coverage against the model registry", () => {
-  test("by default every engine x resolution the registry offers needs a row; live-estimate and retired engines are not expected", () => {
+  test("by default every engine x resolution the registry offers needs a row, identity, marketing and transform engines included; nothing is skipped unless named", () => {
     expect(expected().length).toBeGreaterThan(10);
     const full = run(fullSheet());
     expect(full.coverage?.missing, "a sheet covering the registry").toEqual([]);
     expect(full.ok).toBe(true);
-    expect(full.coverage!.skipped.sort()).toEqual((MODELS as ModelDef[]).filter((m) => !m.retired && lib.liveEstimate(m)).map((m) => m.id).sort());
+    expect(full.coverage!.skipped).toEqual([]);
+    expect(full.coverage!.outOfScope).toEqual([]);
+    expect(full.coverage!.checked.sort()).toEqual(expected().map((m) => m.id).sort());
+
+    /* The engines once left out as "live estimate" are expected like any other. */
+    const special = expected().filter((m) => m.soulIdentity || m.marketing || m.genjutsu);
+    expect(special.length, "the registry still has identity, marketing or transform engines").toBeGreaterThan(0);
+    const withoutSpecial = run(fullSheet((id) => special.some((m) => m.id === id)));
+    expect(withoutSpecial.ok).toBe(false);
+    expect(withoutSpecial.coverage!.missing.sort()).toEqual(special.map((m) => `${m.id}: no rows`).sort());
 
     const [first] = expected();
     const gap = run(fullSheet((id, res) => id === first.id && res === first.resolutions[0]));
@@ -171,11 +180,32 @@ test.describe("coverage against the model registry", () => {
     expect(both.coverage!.missing).toEqual([]);
   });
 
-  test("--engines scopes the check: only the named engines, live-estimate ones included when named, unknown ones need a row", () => {
-    const live = (MODELS as ModelDef[]).find((m) => !m.retired && lib.liveEstimate(m))!;
-    const r = run(`${HEADER}\nplaceholder-service,minute,,,,,${PLACEHOLDER_COST}`, [live.id, "placeholder-service", "placeholder-absent"]);
-    expect(r.coverage!.missing).toEqual([`${live.id}: no rows`, "placeholder-absent: no rows (not in the model registry)"]);
+  test("--engines scopes the check: only the named engines, unknown ones need a row, and the rest are listed as not checked", () => {
+    const [named, ...rest] = expected();
+    const r = run(`${HEADER}\nplaceholder-service,minute,,,,,${PLACEHOLDER_COST}`, [named.id, "placeholder-service", "placeholder-absent"]);
+    expect(r.coverage!.missing).toEqual([`${named.id}: no rows`, "placeholder-absent: no rows (not in the model registry)"]);
     expect(r.coverage!.outside).toEqual(["placeholder-service"]);
+    expect(r.coverage!.outOfScope).toEqual(rest.map((m) => m.id));
+    const text = lib.report(r, { scope: [named.id] });
+    expect(text).toContain(`NOT CHECKED, outside --engines (${rest.length}): ${rest.map((m) => m.id).join(", ")}`);
+  });
+
+  test("--skip leaves only the named engines out, and the report lists every one of them", () => {
+    const special = expected().filter((m) => m.soulIdentity || m.marketing || m.genjutsu).map((m) => m.id);
+    const skip = [...special, "placeholder-typo"];
+    const r = run(fullSheet((id) => special.includes(id)), null, "csv", skip);
+    expect(r.coverage!.missing).toEqual([]);
+    expect(r.ok).toBe(true);
+    expect(r.coverage!.skipped).toEqual(skip);
+    expect(r.coverage!.unknownSkips).toEqual(["placeholder-typo"]);
+    const text = lib.report(r);
+    expect(text).toContain(`NOT CHECKED, skipped with --skip (${skip.length}): ${skip.join(", ")}`);
+    expect(text).toContain("(a typo?): placeholder-typo");
+    expect(text).toContain("coverage: complete.");
+    /* A skip names engines, nothing else: one missing resolution of an engine not skipped is still refused. */
+    const [first] = expected().filter((m) => !special.includes(m.id));
+    const gap = run(fullSheet((id, res) => special.includes(id) || (id === first.id && res === first.resolutions[0])), null, "csv", skip);
+    expect(gap.coverage!.missing).toEqual([`${first.id}: ${first.resolutions[0]}`]);
   });
 });
 
@@ -205,6 +235,16 @@ test.describe("the command", () => {
     expect(json.stderr).toContain("coverage: complete.");
 
     expect(cli().code).toBe(1);
+    const help = cli("--help");
+    expect(help.code).toBe(0);
+    expect(help.stdout).toBe("");
+    expect(help.stderr).toContain("--skip id,id");
+    expect(cli(sheet(fullSheet()), "--skip").code).toBe(1);
+    const special = expected().filter((m) => m.soulIdentity || m.marketing || m.genjutsu).map((m) => m.id);
+    const skipped = cli(sheet(fullSheet((id) => special.includes(id))), "--skip", special.join(","));
+    expect(skipped.code, skipped.stderr).toBe(0);
+    expect(skipped.stderr).toContain(`NOT CHECKED, skipped with --skip (${special.length})`);
+    expect(cli(sheet(fullSheet((id) => special.includes(id)))).code).toBe(2);
     expect(cli(path.join(dir, "no-such-sheet.csv")).stderr).toContain("cannot read that file");
   });
 
@@ -238,7 +278,12 @@ test.describe("the command", () => {
     expect(hits).toEqual([]);
   });
 
-  test("the sample sheet's figures are obviously fake, and it is no price file", () => {
+  test("the sample sheet's figures are obviously fake, and it is no price file; real sheets and files are ignored by git", () => {
+    const ignore = readFileSync(path.join(ROOT, ".gitignore"), "utf8").split("\n").map((l) => l.trim());
+    expect(ignore).toContain("/vendor-prices*.json");
+    expect(ignore).toContain("*cost-sheet*.csv");
+    const script = readFileSync(SCRIPT, "utf8");
+    expect(script, "the usage must not tell the owner to write the JSON into the repo").not.toMatch(/>\s*vendor-prices[^\s]*\.json/);
     const text = readFileSync(SAMPLE, "utf8");
     expect(text).not.toContain(VENDOR_PRICES_FORMAT);
     const parsed = lib.parseCsv(text);

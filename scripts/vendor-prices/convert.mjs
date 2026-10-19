@@ -138,29 +138,33 @@ function withLines(problems, lines) {
   }));
 }
 
-/** Priced by the vendor's live estimate for each job, not from a rate: not expected in the sheet unless named. */
-export const liveEstimate = (m) => Boolean(m.marketing || m.soulIdentity || m.genjutsu);
-
 /**
  * Every engine x resolution x length the registry (lib/models.ts MODELS) offers
  * must have a row. A per-unit row (second, token, image, ...) covers every
  * length at its resolution; "job" rows must name each length the engine
  * offers. If an engine's rows name sound, both with and without are needed
  * where the engine offers sound. Names only, never a figure.
+ *
+ * Every engine the registry offers is checked (owner, 19 Oct: "every engine,
+ * resolution and length the registry knows has a row"); only a retired one is
+ * not expected. Leaving an engine out is explicit: `skip` (--skip), and the
+ * report lists every engine not checked and why.
  */
 /**
  * @param {{ engines: Record<string, Record<string, Array<Record<string, unknown>>>> }} table
  * @param {Array<{ id: string; resolutions: string[]; durations?: number[]; supportsAudio?: boolean; retired?: boolean }>} models
- * @param {string[] | null} [scope]
+ * @param {string[] | null} [scope] check only these (--engines)
+ * @param {string[] | null} [skip] never check these (--skip)
  */
-export function coverage(table, models, scope = null) {
-  const missing = [], skipped = [], checked = [];
+export function coverage(table, models, scope = null, skip = null) {
+  const missing = [], checked = [], skipped = [], outOfScope = [], retired = [];
   const ownUnits = (id) => (Object.hasOwn(table.engines, id) ? table.engines[id] : null);
   const inScope = (id) => !scope || scope.includes(id);
   const known = new Set(models.map((m) => m.id));
   for (const m of models) {
-    if (m.retired || !inScope(m.id)) continue;
-    if (!scope && liveEstimate(m)) { skipped.push(m.id); continue; }
+    if (skip?.includes(m.id)) { skipped.push(m.id); continue; }
+    if (m.retired) { retired.push(m.id); continue; }
+    if (!inScope(m.id)) { outOfScope.push(m.id); continue; }
     checked.push(m.id);
     const units = ownUnits(m.id);
     if (!units || !Object.keys(units).length) { missing.push(`${m.id}: no rows`); continue; }
@@ -187,13 +191,15 @@ export function coverage(table, models, scope = null) {
       if (!covered) missing.push(...(gaps.length ? gaps : [`${m.id}: ${resolution}`]));
     }
   }
-  if (scope) for (const id of scope) if (!known.has(id)) {
+  if (scope) for (const id of scope) if (!known.has(id) && !skip?.includes(id)) {
     checked.push(id);
     const units = ownUnits(id);
     if (!units || !Object.keys(units).length) missing.push(`${id}: no rows (not in the model registry)`);
   }
+  for (const id of skip ?? []) if (!known.has(id)) skipped.push(id);
+  const unknownSkips = (skip ?? []).filter((id) => !known.has(id) && !Object.hasOwn(table.engines, id));
   const outside = Object.keys(table.engines).filter((id) => !known.has(id));
-  return { missing, skipped, checked, outside };
+  return { missing, checked, skipped, outOfScope, retired, unknownSkips, outside };
 }
 
 /**
@@ -202,9 +208,9 @@ export function coverage(table, models, scope = null) {
  */
 /**
  * @param {string} text
- * @param {{ kind: "csv" | "json"; parse: (text: string) => { ok: boolean; table?: any; problems?: string[] }; format: string; models: any[]; scope?: string[] | null }} options
+ * @param {{ kind: "csv" | "json"; parse: (text: string) => { ok: boolean; table?: any; problems?: string[] }; format: string; models: any[]; scope?: string[] | null; skip?: string[] | null }} options
  */
-export function convert(text, { kind, parse, format, models, scope = null }) {
+export function convert(text, { kind, parse, format, models, scope = null, skip = null }) {
   let lines = null;
   let json;
   if (kind === "csv") {
@@ -219,7 +225,7 @@ export function convert(text, { kind, parse, format, models, scope = null }) {
   if (!checked.ok) return { ok: false, stage: "shape", problems: withLines(checked.problems, lines) };
   const engines = Object.keys(checked.table.engines).length;
   const rows = Object.values(checked.table.engines).reduce((n, units) => n + Object.values(units).reduce((k, r) => k + r.length, 0), 0);
-  const cover = coverage(checked.table, models, scope);
+  const cover = coverage(checked.table, models, scope, skip);
   return { ok: cover.missing.length === 0, stage: cover.missing.length ? "coverage" : "done", json, engines, rows, coverage: cover };
 }
 
@@ -240,12 +246,15 @@ export function report(result, { scope = null } = {}) {
   out.push(scope
     ? `coverage: checked only the engines named (${c.checked.length}).`
     : `coverage: ${c.checked.length} registry engines checked.`);
-  if (c.skipped.length) out.push(`not checked, priced by the vendor's live estimate (${c.skipped.length}): ${c.skipped.join(", ")}`);
+  if (c.skipped.length) out.push(`NOT CHECKED, skipped with --skip (${c.skipped.length}): ${c.skipped.join(", ")}`);
+  if (c.unknownSkips.length) out.push(`--skip names engines neither the registry nor the sheet has (a typo?): ${c.unknownSkips.join(", ")}`);
+  if (c.outOfScope.length) out.push(`NOT CHECKED, outside --engines (${c.outOfScope.length}): ${c.outOfScope.join(", ")}`);
+  if (c.retired.length) out.push(`not expected, retired (${c.retired.length}): ${c.retired.join(", ")}`);
   if (c.outside.length) out.push(`in the sheet but not in the model registry (${c.outside.length}; fine for a service such as lip-sync): ${c.outside.join(", ")}`);
   if (c.missing.length) {
     out.push(`MISSING, no row for (${c.missing.length}):`);
     for (const m of c.missing) out.push(`  - ${m}`);
-    out.push("Refused: add the rows above, or check only some engines with --engines <id,id>.");
+    out.push("Refused: add the rows above, check only some engines with --engines <id,id>, or leave engines out with --skip <id,id>.");
   } else {
     out.push("coverage: complete.");
   }
