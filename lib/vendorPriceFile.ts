@@ -70,6 +70,8 @@ export const FILE_PRICED_ENGINES: readonly string[] = [];
 /** The largest file read. A price table is a few kilobytes; anything near this is a wrong paste. */
 const MAX_BYTES = 1024 * 1024;
 const ENGINE_ID = /^(?=.*[A-Za-z])[A-Za-z0-9._/:@-]{1,200}$/;
+/** Names an object already has: as an engine id they would reach the prototype instead of a row. */
+const RESERVED_IDS = new Set(["__proto__", "constructor", "prototype"]);
 const MAX_ROWS = 500;
 
 export type ParseResult = { ok: true; table: VendorPriceTable } | { ok: false; problems: string[] };
@@ -103,13 +105,15 @@ export function parseVendorPrices(text: string): ParseResult {
     problems.push(`"engines" must be an object keyed by engine id`);
     return { ok: false, problems };
   }
-  const engines: VendorPriceTable["engines"] = {};
+  /* No prototype: an id can never resolve to an inherited key. */
+  const engines: VendorPriceTable["engines"] = Object.create(null);
   let rowCount = 0;
   for (const [id, entry] of Object.entries(raw.engines)) {
     const at = `engine ${engineLabel(id)}`;
     if (!ENGINE_ID.test(id)) { problems.push(`${at}: the id must be 1-200 letters, digits or . _ / : @ - and contain a letter`); continue; }
+    if (RESERVED_IDS.has(id)) { problems.push(`${at}: this id is reserved (__proto__, constructor and prototype cannot be engine ids)`); continue; }
     if (!isObject(entry) || Object.keys(entry).length === 0) { problems.push(`${at}: must be an object of units, with at least one`); continue; }
-    const units: Partial<Record<VendorPriceUnit, VendorPriceRow[]>> = {};
+    const units: Partial<Record<VendorPriceUnit, VendorPriceRow[]>> = Object.create(null);
     for (const [unit, rows] of Object.entries(entry)) {
       if (!(VENDOR_PRICE_UNITS as readonly string[]).includes(unit)) {
         problems.push(/margin|markup|multiplier/i.test(unit)
@@ -292,10 +296,13 @@ const microCeil = (usd: number): number => Math.ceil(usd * 1e6 - 1e-6) / 1e6;
  * smallest such band wins, and a quantity past the largest band is unpriced.
  */
 export function costFromTable(table: VendorPriceTable, engine: string, req: VendorPriceRequest): { ok: true; costUsd: number } | { ok: false; reason: string } {
-  const rows = table.engines[engine]?.[req.unit];
-  if (!rows?.length) return { ok: false, reason: `no "${req.unit}" price for this engine` };
+  /* Own keys only: an engine or unit the file does not name is unpriced, whatever an object inherits. */
+  const entry = Object.hasOwn(table.engines, engine) ? table.engines[engine] : undefined;
+  const rows = entry && Object.hasOwn(entry, req.unit) ? entry[req.unit] : undefined;
+  if (!Array.isArray(rows) || !rows.length) return { ok: false, reason: `no "${req.unit}" price for this engine` };
   const quantity = req.quantity ?? (req.unit === "job" ? 1 : NaN);
   if (!Number.isFinite(quantity) || quantity <= 0) return { ok: false, reason: "the quantity must be above zero" };
+  if (req.unit === "job" && !Number.isInteger(quantity)) return { ok: false, reason: "a number of jobs must be a whole number" };
   const named = rows[0];
   if ("resolution" in named && !req.resolution) return { ok: false, reason: "this price needs a resolution" };
   if ("length" in named && !req.length) return { ok: false, reason: "this price needs a length" };

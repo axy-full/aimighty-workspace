@@ -167,6 +167,55 @@ test.describe("the file's shape", () => {
     bad((f) => { f.engines[String(PLACEHOLDER_COST_A)] = { second: [{ costUsd: PLACEHOLDER_COST_A }] }; }, /unusable id/);
     bad((f) => { f.engines[PLACEHOLDER_ENGINE_A].second[0][String(PLACEHOLDER_COST_D)] = 1; }, /a key this format does not define/);
   });
+  test("an engine id an object already has (__proto__, constructor, prototype) is refused, and nothing inherited is ever a price", () => {
+    for (const id of ["__proto__", "constructor", "prototype"]) {
+      /* Written as text: a JSON key "__proto__" is an own key once parsed, which is how a sheet would carry it. */
+      const text = JSON.stringify(placeholderFile()).replace(
+        /"engines":\{/, `"engines":{${JSON.stringify(id)}:{"second":[{"costUsd":${PLACEHOLDER_COST_A}}]},`);
+      expect(text).toContain(`"${id}":{"second"`);
+      const parsed = parseVendorPrices(text);
+      expect(parsed.ok, id).toBe(false);
+      const problems = (parsed as { ok: false; problems: string[] }).problems.join("\n");
+      expect(problems).toContain("this id is reserved");
+      expectNoFigure(problems);
+    }
+
+    const table = (parseVendorPrices(JSON.stringify(placeholderFile())) as { ok: true; table: VendorPriceTable }).table;
+    expect(Object.getPrototypeOf(table.engines)).toBeNull();
+    expect(Object.keys(table.engines)).toHaveLength(3);
+    for (const id of ["__proto__", "constructor", "prototype", "toString", "hasOwnProperty", "valueOf"]) {
+      expect(costFromTable(table, id, { unit: "job" }).ok, id).toBe(false);
+      expect(costFromTable(table, id, { unit: "second", quantity: 5 }).ok, id).toBe(false);
+    }
+    /* A unit name an object has is no unit either. */
+    expect(costFromTable(table, PLACEHOLDER_ENGINE_A, { unit: "constructor" as never, quantity: 1 }).ok).toBe(false);
+    expect(costFromTable(table, PLACEHOLDER_ENGINE_A, { unit: "__proto__" as never, quantity: 1 }).ok).toBe(false);
+
+    /* An opted-in engine the file does not name is refused, never priced from something inherited. */
+    useFile(writeFile(placeholderFile()));
+    for (const id of ["__proto__", "constructor", "toString"]) {
+      refusal(() => fileVendorCostUsd(id, { unit: "job" }, [id]));
+      refusal(() => fileVendorCostUsd(id, { unit: "second", quantity: 5 }, [id]));
+    }
+  });
+
+  test("a number of jobs is a positive whole number, or the job is unpriced", () => {
+    const table = (parseVendorPrices(JSON.stringify(placeholderFile())) as { ok: true; table: VendorPriceTable }).table;
+    const job = (quantity: number | undefined) => costFromTable(table, PLACEHOLDER_ENGINE_B, { unit: "job", quantity, resolution: "1080p", length: 5 });
+    expect(job(undefined)).toEqual({ ok: true, costUsd: micro(PLACEHOLDER_COST_A) });
+    expect(job(3)).toEqual({ ok: true, costUsd: micro(PLACEHOLDER_COST_A * 3) });
+    for (const q of [0.5, 1.5, 2.25, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(job(q).ok, String(q)).toBe(false);
+    }
+    expect(job(1.5)).toEqual({ ok: false, reason: "a number of jobs must be a whole number" });
+    /* A per-unit quantity may still be fractional: seconds, minutes. */
+    expect(costFromTable(table, PLACEHOLDER_READER, { unit: "minute", quantity: 2.5 })).toEqual({ ok: true, costUsd: micro(PLACEHOLDER_COST_D * 2.5) });
+
+    useFile(writeFile(placeholderFile()));
+    expect(refusal(() => fileVendorCostUsd(PLACEHOLDER_ENGINE_B, { unit: "job", quantity: 1.5, resolution: "1080p", length: 5 }, OPT_IN)).reason)
+      .toBe("a number of jobs must be a whole number");
+    expect(fileVendorCostUsd(PLACEHOLDER_ENGINE_B, { unit: "job", quantity: 2, resolution: "1080p", length: 5 }, OPT_IN)).toBe(micro(PLACEHOLDER_COST_A * 2));
+  });
 });
 
 test.describe("loading the file from the variable", () => {

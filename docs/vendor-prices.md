@@ -39,6 +39,7 @@ Code: `lib/vendorPriceFile.ts`. Tests: `tests/unit/vendorPriceFile.spec.ts`.
 | `upTo` | a band: this cost per unit applies up to this many units (pages, sources, minutes) | every unit but `job` |
 
 - Every row of one unit names the same keys, and no two rows repeat the same settings.
+- An engine id written twice in the JSON is not caught: the last one silently wins, so check the sheet for duplicate engine ids before pasting. The ids `__proto__`, `constructor` and `prototype` are refused.
 - A cost is the row's `costUsd` times the quantity (seconds, pages, and so on; for `job`, the number of jobs), rounded up to the micro-dollar. With bands, the smallest band the quantity fits is used.
 
 Examples with placeholder names (the owner's sheet fills the figures):
