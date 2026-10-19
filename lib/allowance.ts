@@ -1,7 +1,7 @@
 import { currentTenant } from "./tenant";
 import { creditCheck } from "./credits";
 import { paidByPlatform, platformSpendSince } from "./platformSpend";
-import type { VendorKeyName } from "./vendorKeys";
+import type { EngineVendor } from "./vendorKeys";
 import type { EstimateTerms } from "./billingTerms";
 import { cycleBounds } from "./cycle";
 import { isHouseWorkspace } from "./houseWorkspace";
@@ -71,7 +71,7 @@ export const ALLOWANCE_REACHED = "This workspace has reached its monthly cap on 
  * estimate is counted at, or the exact terms the job's reservation will charge
  * (currentBillingTerms), so the wall asks for what will be reserved.
  */
-export async function allowanceCheck(vendor: VendorKeyName, estUsd = 0, engine?: EstimateTerms, band = 1): Promise<
+export async function allowanceCheck(vendor: EngineVendor, estUsd = 0, engine?: EstimateTerms, band = 1): Promise<
   { ok: true } | { ok: false; status: number; error: string }
 > {
   /* `band`: a take that holds its ceiling (Cinema Studio, lib/cinemaHold.ts) needs the balance to cover its hold. */
