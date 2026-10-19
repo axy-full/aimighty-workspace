@@ -112,8 +112,12 @@ export const ANSWER_AFTER_MS = 25_000;
  * waits for its run as before.
  *
  * `afterReply`: tests only; Next's after() otherwise.
+ *
+ * `fencedBy`: the key of another claim of the same person whose existence sets this request aside (a cancelled press, lib/batchPress.ts).
+ * It is checked in the same statement that writes this claim, so a fence written before the claim always stops it: the claim is then
+ * written complete and set aside, and nothing is run, reserved or sent.
  */
-export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void };
+export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void; fencedBy?: string };
 
 const STILL_ACCEPTING = "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.";
 /** The answer for a claim whose run has not finished: not final, so the client keeps the request and asks again. */
@@ -121,6 +125,8 @@ const stillAccepting = (headers: Record<string, string> = {}) =>
   Response.json({ error: STILL_ACCEPTING, pending: true }, { status: 409, headers: { ...headers, "Retry-After": "2" } });
 
 const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
+/** A claim stopped by its fence (GenerationRequestOptions.fencedBy): it never ran. */
+const FENCED = "This was cancelled before it started. Nothing billed.";
 /** Longer than any function may run (800 s), so the request that made a claim this old is gone. */
 export const STALE_CLAIM_MS = 30 * 60_000;
 /**
@@ -151,7 +157,6 @@ async function completeUnadmitted(userId: string, key: string): Promise<Response
   return new Response(json, { status: 409, headers: { "Content-Type": "application/json", "Idempotency-Status": "complete" } });
 }
 
-/** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
 /**
  * A run whose answer is a stream still being written (the prompt enhancer's) marks its Response with this header: the claim is not answered from the body
  * (it does not exist yet), the Response goes out as it is, and the run ends the claim itself with `completeDeferredRequest` once the stream is over, with the
@@ -162,20 +167,44 @@ export async function completeDeferredRequest(claim: { userId: string; key: stri
   await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, status, now(), claim.userId, claim.key] });
 }
 
-export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>, options: GenerationRequestOptions = {}): Promise<Response> {
+/**
+ * What every paid request is checked for before its key is used: the workbench scope it was prepared in, the person and workspace it
+ * was prepared for, and a well-formed Idempotency-Key. The refusal, or the key the request names (null when it sent none).
+ */
+export function generationRequestKey(req: Request, userId: string): { response: Response } | { key: string | null } {
   const scopeError = workbenchScopeProblem(req, requireTenant().id, userId);
-  if (scopeError) return Response.json({ error: scopeError }, { status: 409 });
+  if (scopeError) return { response: Response.json({ error: scopeError }, { status: 409 }) };
   const expectedActor = req.headers.get("X-Actor-Email");
-  if (expectedActor && expectedActor.toLowerCase() !== currentTenant()?.user?.email.toLowerCase()) return Response.json({ error: "Sign in with the account that prepared this request before recovering it." }, { status: 409 });
+  if (expectedActor && expectedActor.toLowerCase() !== currentTenant()?.user?.email.toLowerCase()) return { response: Response.json({ error: "Sign in with the account that prepared this request before recovering it." }, { status: 409 }) };
   const expectedWorkspace = req.headers.get("X-Workspace-Id");
-  if (expectedWorkspace && expectedWorkspace !== requireTenant().id) return Response.json({ error: "Return to the workspace where this request was prepared before recovering it." }, { status: 409 });
+  if (expectedWorkspace && expectedWorkspace !== requireTenant().id) return { response: Response.json({ error: "Return to the workspace where this request was prepared before recovering it." }, { status: 409 }) };
   const supplied = req.headers.get("Idempotency-Key");
   if (supplied != null && !/^[A-Za-z0-9._:-]{8,160}$/.test(supplied)) {
-    return Response.json({ error: "Idempotency-Key must contain 8–160 letters, digits, dots, colons, dashes or underscores." }, { status: 400 });
+    return { response: Response.json({ error: "Idempotency-Key must contain 8–160 letters, digits, dots, colons, dashes or underscores." }, { status: 400 }) };
   }
-  const key = supplied ?? randomUUID();
+  return { key: supplied };
+}
+
+/** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
+export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>, options: GenerationRequestOptions = {}): Promise<Response> {
+  const checked = generationRequestKey(req, userId);
+  if ("response" in checked) return checked.response;
+  const key = checked.key ?? randomUUID();
   const fingerprint = generationFingerprint({ method: req.method, path: new URL(req.url).pathname, body: await req.clone().json().catch(() => ({})) });
   return withGenerationRequestData({ userId, key, fingerprint }, run, options);
+}
+
+/**
+ * A claim with no reply and no job, made longer ago than any request can run (STALE_CLAIM_MS), by a route that binds its job in
+ * the same write as the row (atomic binding): the request that made it is gone and made no job, so nothing was reserved or sent.
+ * It is completed with that answer, as a replay under its key would complete it. True when this call completed it. For a caller
+ * that keeps its own attempts under keys of its own (lib/batchPress.ts) and must know an attempt is over before making the next.
+ */
+export async function settleStaleClaim(userId: string, key: string): Promise<boolean> {
+  await generationRequestsReady();
+  const row = (await db().execute({ sql: `SELECT created_at FROM generation_requests WHERE user_id=? AND request_key=? AND generation_id IS NULL AND response_json IS NULL`, args: [userId, key] })).rows[0];
+  if (!row || Number(row.created_at) >= now() - STALE_CLAIM_MS) return false;
+  return (await completeUnadmitted(userId, key)) != null;
 }
 
 /** Server-side admission uses the same durable claim without making an HTTP request.
@@ -188,10 +217,20 @@ export async function withGenerationRequestData(
   const { userId, key, fingerprint } = input;
   if (!/^[A-Za-z0-9._:-]{8,160}$/.test(key)) return Response.json({ error: "The request key is invalid." }, { status: 400 });
   await generationRequestsReady();
-  const inserted = await db().execute({
-    sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?)`,
-    args: [userId, key, fingerprint, now(), now()],
-  });
+  const inserted = await db().execute(options.fencedBy
+    ? {
+        /* One statement: the claim is written only while its fence does not exist. */
+        sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at)
+              SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM generation_requests WHERE user_id=? AND request_key=?)`,
+        args: [userId, key, fingerprint, now(), now(), userId, options.fencedBy],
+      }
+    : { sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?)`, args: [userId, key, fingerprint, now(), now()] });
+  /* Fenced: the claim is written complete and set aside (a fence is never lifted), and is answered below like any claim set aside. */
+  if (!inserted.rowsAffected && options.fencedBy)
+    await db().execute({
+      sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,response_json,response_status,created_at,updated_at) VALUES(?,?,?,?,409,?,?)`,
+      args: [userId, key, fingerprint, JSON.stringify({ error: FENCED, code: "set_aside" }), now(), now()],
+    });
   if (!inserted.rowsAffected) {
     const rows = await db().execute({ sql: `SELECT * FROM generation_requests WHERE user_id=? AND request_key=?`, args: [userId, key] });
     const row = rows.rows[0];
