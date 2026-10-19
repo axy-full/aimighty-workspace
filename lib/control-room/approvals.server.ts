@@ -430,7 +430,7 @@ export const missingTable = (error: unknown) => /no such table/i.test(String(err
 async function boardDecisions(since: number): Promise<Found[]> {
   if (!(await rigAgentExists())) return [];
   const found: Found[] = [];
-  /* Renders approved (by a person, or by Auto under the per-job line) or skipped. */
+  /* Renders approved (by a person, or by Auto under Auto's ceiling) or skipped. */
   const steps = (await db().execute({
     sql: `SELECT run_id, seq, node_id, label, state, approved_by, approved_at, job_id, updated_at FROM rig_agent_steps
           WHERE purpose = 'take' AND ((approved_at IS NOT NULL AND approved_at >= ?) OR (state = 'skipped' AND approved_at IS NULL AND updated_at >= ? AND reason LIKE 'Skipped%'))

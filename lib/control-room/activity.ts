@@ -32,7 +32,7 @@ export type RunStep = {
   /** Who approved it, under the usage ledger's naming rule; null when the record does not say. */
   by: string | null;
   byYou: boolean;
-  /** Auto ran it without a tap: a draft at or under the per-job line. */
+  /** Auto ran it without a tap: a draft at or under Auto's ceiling. */
   auto: boolean;
   at: number | null;
 };

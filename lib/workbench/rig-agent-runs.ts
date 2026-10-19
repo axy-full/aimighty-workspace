@@ -42,7 +42,7 @@ import { withTeamCanvas } from "./team-canvas-model";
  *  - approved: by the plan's one approval (lib/workbench/plan-approval.ts:
  *    a listed render at exactly the price approved, or a fix drawn under it),
  *    by a tap from the person who asked (Ask, the default), or in
- *    Auto when it is a draft priced at or under the per-job line
+ *    Auto when it is a draft priced at or under Auto's ceiling
  *    (lib/workbench/rig-agent-limits.ts). Anything over the line asks, and so
  *    does a full-quality render (an engine with no draft). The run's limit is
  *    checked before approval and again before sending.
@@ -130,7 +130,7 @@ export type PaidDeps = {
   /** Prices and gates only: a render already approved, being sent or rendering is left to the run's own drive, and this drive stops there (plan_step's drive, which runs
    *  outside the caller's token, sends nothing). */
   priceOnly?: true;
-  /** The per-job line now (default: lib/workbench/rig-agent-limits.ts). */
+  /** Auto's ceiling now (default: lib/workbench/rig-agent-limits.ts). */
   ceiling?: () => Promise<number>;
   /** Whether this render reaches the pause at a share of the production's budget (default: lib/caps.ts budgetAsk). */
   budget?: (productionId: string, credits: number) => Promise<{ line: string } | null>;

@@ -65,7 +65,7 @@ import { readTeamCanvas, requireProduction } from "./team-canvas";
  * Money (plan §5.5, §8; PR 10). Before a run spends anything, the person who
  * asks approves a limit for it ("up to about N credits for this run") and a
  * mode: Ask (the default: every render waits for their tap) or Auto (a draft
- * priced at or under the per-job line runs on its own; anything else asks).
+ * priced at or under Auto's ceiling runs on its own; anything else asks).
  * The planning turn is metered into that limit — reserved at its ceiling,
  * settled at what it used. Placing cards, wiring and tidying stay free. After
  * the build, the renders the plan names run as paid steps inside the limit
@@ -106,7 +106,7 @@ const agentAuthor = (runId: string) => `agent:${runId}`;
 
 const distinct = (items: string[]) => [...new Set(items)];
 
-/** The ledger's view of a run: every charge that named it (planning, renders), and the per-job line now. */
+/** The ledger's view of a run: every charge that named it (planning, renders), and Auto's ceiling now. */
 export type RunLedger = { charges: (RunCharge & { id: string; status: string })[]; ceiling: number | null };
 const NO_LEDGER: RunLedger = { charges: [], ceiling: null };
 
@@ -171,7 +171,7 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
  *  - after the approval: a step the approval sent or is sending (approved, sending, rendering, with the approval's id), and a listed step that waits only for its
  *    turn (waiting, at the very price the approval lists, with no note: nothing asked of anyone), while the approval is open.
  *
- * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step in the gate's `asks` (over the per-job
+ * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step in the gate's `asks` (over the per-render
  * line, or needing an admin), a fix waiting for its turn, every step while there is no plan quote yet (each one asks on its own), a step whose price moved or that
  * waits for a tap, and every paused step (a Retry runs at its own price; a limit pause offers Raise from it). Titles, states, outcomes and what was charged stay.
  */
@@ -315,7 +315,7 @@ export async function planGateQuote(productionId: string, runId: string): Promis
   return view?.quote ? { total: view.quote.total, ceiling: view.quote.ceiling } : null;
 }
 
-/** What asking costs, for the ask form: the suggested limit, the per-job line, and the planning turn's approximate ceiling. */
+/** What asking costs, for the ask form: the suggested limit, Auto's ceiling, and the planning turn's approximate ceiling. */
 export type RigAgentAskTerms = { limit: number; jobCeiling: number; planning: number | null;
   /** The planner's ceiling in the engines' own dollars, sent to the house workspace alone (it is never billed in credits and sees every price at cost). Display only: the limit a press approves is `planning`, in credits. */
   planningUsd?: number | null };
@@ -424,7 +424,7 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   /* The files attached to the ask: each must be filed in this production's Library, in this workspace. */
   const attachments = (await checkedAttachments(input.productionId, input.attachments ?? [])).map((a) => a.id);
   await rigAgentReady();
-  /* The per-job line in force as the limit is approved: Auto never goes above it (nor above the line of the day). */
+  /* Auto's ceiling in force as the limit is approved: Auto never goes above it (nor above the line of the day). */
   const jobCeiling = await rigJobCeiling();
   /* The sample workspace refuses every ask (lib/demo/spend-guard.server.ts) save the one its mark is lifted for: the
      run this ask makes becomes the one run the lift covers, in this same write, or nothing is written. */

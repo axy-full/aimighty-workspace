@@ -25,7 +25,7 @@ import { memoDrop } from "./memo";
  * What is converted, and why:
  *  - caps and limits a person set, in credits: the shot cap setting
  *    (`shotCapCredits`), production and project credit caps, API tokens'
- *    monthly credit ceilings, an Atomik run's approved limit, per-job line and
+ *    monthly credit ceilings, an Atomik run's approved limit, Auto's ceiling and
  *    limit history;
  *  - approved figures waiting to be spent: an Atomik step's approved quote and
  *    ceiling (`admission.request.maxCredits`), a pipeline attempt's prepared
