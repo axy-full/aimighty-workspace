@@ -269,14 +269,16 @@ test("old links land on their section; the design's ws= spelling and open= work;
   expect(errors).toEqual([]);
 });
 
-test("Spending rules: the rule, the platform line and Ask, read as the code has them; an admin changes them with Undo; an admin's cap per production", async ({ page }, info) => {
+test("Spending rules: the rule, no platform line, and Ask, read as the code has them; an admin changes them with Undo; an admin's cap per production", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, writes } = await open(page, "/suites?view=workspace&tab=rules");
   await expect(page.getByTestId("settings-title")).toHaveText("Spending rules");
   await expect(page.getByTestId("settings-approve")).toContainText("people only · Atomik never approves");
   await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot; an admin above it.");
   await expect(page.getByTestId("settings-rule").locator(".gs-row-v")).toHaveText("50 cr");
-  await expect(page.getByTestId("settings-platform-line")).toContainText("Any job over 200 cr needs an admin’s tap, even under Auto.");
+  /* No platform per-job line (owner, 20 Oct 2026: guardrail 4 retired): no row of it, and no sentence that a job's size needs an admin. */
+  await expect(page.getByTestId("settings-platform-line")).toHaveCount(0);
+  await expect(page.getByTestId("settings-view")).not.toContainText(/Platform line|Any job over|even under Auto/);
   await expect(page.getByTestId("settings-budget")).toContainText("Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it");
   /* Spend without asking is Ask, read-only: no Auto switch, no invented pause. */
   await expect(page.getByTestId("settings-auto")).toContainText("Every paid step waits for a person.");
