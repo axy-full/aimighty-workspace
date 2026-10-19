@@ -113,7 +113,11 @@ export const ANSWER_AFTER_MS = 25_000;
  *
  * `afterReply`: tests only; Next's after() otherwise.
  */
-export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void };
+export type GenerationRequestOptions = {
+  atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void;
+  /** What is written to the claim in place of the reply, when the reply holds what must not be kept (a transcript, a translation): the first caller still gets the reply itself, a replay gets this. */
+  recorded?: (json: string, status: number) => string;
+};
 
 const STILL_ACCEPTING = "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.";
 /** The answer for a claim whose run has not finished: not final, so the client keeps the request and asks again. */
@@ -216,7 +220,7 @@ export async function withGenerationRequestData(
   const settle = async (): Promise<Response> => {
     try {
       const response = await run(claim);
-      const json = await response.clone().text();
+      const json = options.recorded ? options.recorded(await response.clone().text(), response.status) : await response.clone().text();
       await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, response.status, now(), userId, key] });
       response.headers.set("Idempotency-Status", "complete");
       return response;
