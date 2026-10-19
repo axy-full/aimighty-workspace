@@ -1409,3 +1409,12 @@ Recorded by the lead. Engine items are summarised by PR number only, because thi
 - **Liveblocks:** the plan is Pro.
 - **Scanned briefs:** the five scanned briefs (two in Hindi) arrive Wednesday 21 Oct.
 - **Polotno:** the spike runs keyless until its PR names the variable.
+
+## Owner, 19 Oct 2026 (received 20 Oct, ~01:00 IST): guardrail 4 retired
+
+Recorded by the lead. Owner, verbatim: "the 200 cr per-job line (guardrail 4) is retired. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with its Paused state. #815 keeps "a multi-shot press is one job, one approval for the total" and drops the guardrail-4 check; a press whose total would pass the workspace cap is refused at the quote. Update CLAUDE.md's pricing section and the rulebook in the docs PR; a money review on the #815 change. Nothing else in the money behaviour changes."
+
+- **#815:** the batch guardrail-4 check is removed, and the press is refused at the quote when its total would pass the workspace cap. It gets a money review before merge.
+- **Docs PR (CLAUDE.md):** guardrail 4 is struck in CLAUDE.md's pricing section and in the scope of work. The scope of work is read as the rulebook: `docs/particl-sow-v1.md` §7A and `docs/particl-sow-2026-10-04.md` rule 14 / §10.
+- **Unchanged:** the per-job line on single jobs stays in the code until the owner asks for a PR to remove it.
+- **Open:** whether Auto mode (spending without a tap) stays, given "every job is approved on its quote".
