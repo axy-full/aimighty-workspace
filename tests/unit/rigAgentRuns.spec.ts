@@ -276,31 +276,37 @@ test("two reservations of one run that each fit but not together: exactly one la
   });
 });
 
-/* ── The per-job line: the workspace's own approval line ──────────────── */
+/* ── Auto's own no-tap ceiling (not a platform per-job line: retired 20 Oct 2026) ── */
 
-test("the per-job line is the platform's approval line (SOW guardrail 4) at the price of a credit — the owner's seam unset, a workspace's own shot cap does not move it — and the card suggests the same limit", async () => {
+test("Auto's ceiling is its own (AUTO_NO_TAP_CEILING_USD, 200 cr at US$0.10) at the price of a credit, not a platform line — the owner's seam unset, a workspace's own shot cap does not move it — and the card suggests the same limit", async () => {
   const limits = await import("../../lib/workbench/rig-agent-limits");
-  const { jobApprovalLineCredits, JOB_APPROVAL_LINE_USD } = await import("../../lib/approvalRule");
+  const { AUTO_NO_TAP_CEILING_USD, autoNoTapCeilingCredits } = limits;
   const { creditUsd } = await import("../../lib/creditTerms");
   expect(limits.RIG_AGENT_JOB_CEILING_CREDITS).toBeNull();
-  /* One line, a job's price, counted in credits at whatever a credit costs, in whole tenths rounded down. */
+  /* The same value Auto had while it borrowed guardrail 4's line: US$20 of credits, 200 cr at a credit's US$0.10. */
+  expect(AUTO_NO_TAP_CEILING_USD).toBe(20);
+  expect(autoNoTapCeilingCredits(0.1)).toBe(200);
+  /* The platform's per-job line is gone (owner, 20 Oct 2026): approvalRule no longer exports one. */
+  const rule = await import("../../lib/approvalRule") as Record<string, unknown>;
+  for (const gone of ["JOB_APPROVAL_LINE_USD", "jobApprovalLineCredits", "jobLineVerdict", "JOB_LINE_STATUS"]) expect(rule[gone], gone).toBeUndefined();
+  /* One ceiling, a job's price, counted in credits at whatever a credit costs, in whole tenths rounded down. */
   for (const perCredit of [0.1, 0.8, 0.125, 0.3]) {
-    const line = jobApprovalLineCredits(perCredit);
-    expect(line * perCredit).toBeLessThanOrEqual(JOB_APPROVAL_LINE_USD + 1e-9);
-    expect((line + 0.1) * perCredit).toBeGreaterThan(JOB_APPROVAL_LINE_USD);
+    const line = autoNoTapCeilingCredits(perCredit);
+    expect(line * perCredit).toBeLessThanOrEqual(AUTO_NO_TAP_CEILING_USD + 1e-9);
+    expect((line + 0.1) * perCredit).toBeGreaterThan(AUTO_NO_TAP_CEILING_USD);
     expect(Math.round(line * 10)).toBe(line * 10);
   }
-  /* Where the line divides evenly into credits, it is exactly that many: read from the one source, never a figure of its own. */
-  expect(jobApprovalLineCredits(0.125)).toBe(JOB_APPROVAL_LINE_USD / 0.125);
-  expect(jobApprovalLineCredits(0.1)).toBe(JOB_APPROVAL_LINE_USD / 0.1);
-  expect(jobApprovalLineCredits(0)).toBe(0);
+  /* Where the ceiling divides evenly into credits, it is exactly that many: read from the one source, never a figure of its own. */
+  expect(autoNoTapCeilingCredits(0.125)).toBe(AUTO_NO_TAP_CEILING_USD / 0.125);
+  expect(autoNoTapCeilingCredits(0.1)).toBe(AUTO_NO_TAP_CEILING_USD / 0.1);
+  expect(autoNoTapCeilingCredits(0)).toBe(0);
   expect(limits.effectiveJobCeiling(null, 17)).toBe(17);
   expect(limits.effectiveJobCeiling(30, 17)).toBe(17);
   expect(limits.effectiveJobCeiling(12, 17)).toBe(12);
   await inRun("line", async () => {
     const { setSetting } = await import("../../lib/settings");
     const agent = await import("../../lib/workbench/rig-agent");
-    const line = jobApprovalLineCredits(creditUsd());
+    const line = autoNoTapCeilingCredits(creditUsd());
     expect(await limits.rigJobCeiling()).toBe(line);
     expect(await limits.suggestedRunLimit()).toBe(line);
     /* A workspace's per-shot cap is its own rule (enforced at admission): it does not move Atomik's line. */

@@ -11,16 +11,25 @@ import type {
 
 import type { TenantWorkspace } from "../../lib/tenant";
 
-const dir = mkdtempSync(path.join(tmpdir(), "particl-guardrail-4-admission-"));
+/**
+ * No per-job line, through admission (owner, 20 Oct 2026: "Guardrail 4 is retired everywhere, single jobs included: no per-job line in the
+ * product. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with Paused.").
+ * This file pinned guardrail 4 (a job over 200 cr needed an admin's own tap; a token was refused outright). It now pins its retirement: a job
+ * priced far over 200 cr is quoted and admitted like any other, at the quote route, the prepared admission and the press, for a member, an
+ * admin, a token and the house, single takes and presses of several; and the press still carries the person's approval of its quote
+ * (`maxCredits`), so a press whose approval is under the quote is refused and nothing is created. Mocked engines; nothing is spent.
+ */
+const dir = mkdtempSync(path.join(tmpdir(), "particl-no-per-job-line-admission-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET = "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 const person = (id: string, role: "admin" | "member"): AdmissionActor => ({ user: { id, email: `${id}@example.invalid`, name: id, role, owner: role === "admin", disabled: false, createdAt: 0, lastSeen: null } });
 const admin = person("owner", "admin"), member = person("u_member", "member");
-/* A token's press carries its approved quote (owner, 20 Oct 2026; lib/tokenSpend.ts): a ceiling, maxCredits and a well-formed fingerprint, so it reaches the line. */
+/* A token spends only with a monthly ceiling an admin set, and its press carries the quote it was approved at (owner, 20 Oct 2026, Q1 "B"; #854,
+   lib/tokenSpend.ts): the tokens here carry a ceiling far above every job (synthetic) and press with their own quote's price and fingerprint
+   (`pressQuoted`), so what they meet is what this file pins, not the no-ceiling refusal. */
 const ROOMY = { capUsd: 1_000_000, capCredits: 1_000_000 };
-const FINGERPRINT = { quoteFingerprint: "f".repeat(64) };
 let actor: AdmissionActor = admin;
 const nodeRequire = createRequire(path.resolve("package.json"));
 let dispatched: { genId: string; kind: string }[] = [];
@@ -177,150 +186,137 @@ function quoteRoute(service: ReturnType<typeof services>) {
 }
 const quoteRequest = (body: unknown) => new Request("http://localhost/api/generate/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-/* Cinema Studio 4.0 at 720p, 30 s: about 209 cr (its hold is more); at 480p, 30 s: about 94 cr, whose hold (3 ×) is over the line. A Grok clip is far under it. */
+/* Cinema Studio 4.0 at 720p, 30 s: about 209 cr (its hold is more); at 480p, 30 s: about 94 cr, whose hold (3 ×) is over 200 cr. A Grok clip is far under. */
 const OVER = { model: "higgsfield-cinema-studio-4.0", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "720p", duration: 30 };
 const HELD_OVER = { ...OVER, resolution: "480p" };
 const UNDER = { model: "grok-imagine-video", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "720p", duration: 5 };
 
 /* The press carries the ceiling its price was approved at (Cinema Studio's is approximate, so it must). */
-const press = (service: ReturnType<typeof services>, body: Record<string, unknown>, key: string) => route("generation", service).POST(request("generation", { ...body, maxCredits: 5000 }, key));
+const press = (service: ReturnType<typeof services>, body: Record<string, unknown>, key: string, maxCredits = 5000) => route("generation", service).POST(request("generation", { ...body, maxCredits }, key));
+const counts = async () => [(await rows()).length, (await meters()).length];
+/* A token's press: the quote route asked first as the same caller, and its fingerprint sent with the press (lib/tokenSpend.ts asks it of a token). */
+const pressQuoted = async (service: ReturnType<typeof services>, body: Record<string, unknown>, key: string) => {
+  const quoted = await (await quoteRoute(service).POST(quoteRequest(body))).json();
+  expect(quoted.fingerprint, JSON.stringify(quoted)).toMatch(/^[a-f0-9]{64}$/);
+  return press(service, { ...body, quoteFingerprint: quoted.fingerprint }, key);
+};
 
-test("through admission and the quote route: a member over the line is told 403 with needsAdmin before anything is created", async () =>
-  scope("g4-line", async (service) => {
+test("through admission and the quote route: a member's job over 200 cr (at its estimate, and at its hold) is quoted and admitted like any other; no 403, no needsAdmin", async () =>
+  scope("npl-line", async (service) => {
     const quote = quoteRoute(service);
     for (const [label, body] of [["its estimate", OVER], ["its hold", HELD_OVER]] as const) {
-      /* The free quote, the prepared admission and the press all say the same, and nothing is written. */
-      const before = [(await rows()).length, (await meters()).length];
+      /* The free quote, the prepared admission and the press: no per-job line answers, and the press is admitted and reserved. */
       const q = await quote.POST(quoteRequest(body));
-      expect(q.status, `${label}: ${JSON.stringify(await q.clone().json())}`).toBe(403);
-      expect(await q.json(), label).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/An admin has to start it\./) });
-      expect(await service.gen.prepareGeneration(body, actor), label).toMatchObject({ ok: false, status: 403, body: { needsAdmin: true } });
-      const pressed = await press(service, body, `g4-member-${label.replace(/\W+/g, "-")}`);
-      expect(pressed.status, `${label}: ${JSON.stringify(await pressed.clone().json())}`).toBe(403);
-      expect(await pressed.json(), label).toMatchObject({ needsAdmin: true });
-      expect([(await rows()).length, (await meters()).length], `${label}: nothing created, nothing reserved`).toEqual(before);
+      const answer = await q.clone().json();
+      expect(q.status, `${label}: ${JSON.stringify(answer)}`).toBe(200);
+      expect(answer.needsAdmin, label).toBeUndefined();
+      expect(Math.max(Number(answer.estimatedCredits), Number(answer.ceilingCredits ?? 0)), `${label}: priced over the old 200 cr line`).toBeGreaterThan(200);
+      expect(await service.gen.prepareGeneration(body, actor), label).toMatchObject({ ok: true });
+      const before = await counts();
+      const pressed = await press(service, body, `npl-member-${label.replace(/\W+/g, "-")}`);
+      expect(pressed.status, `${label}: ${JSON.stringify(await pressed.clone().json())}`).toBeLessThan(300);
+      expect(await counts(), `${label}: one take created, one job reserved`).toEqual([before[0] + 1, before[1] + 1]);
     }
-    /* Under the line nothing changes, for the member too. */
+    /* Under 200 cr nothing changes, for the member too. */
     const small = await quote.POST(quoteRequest(UNDER));
     expect(small.status).toBe(200);
-  }, "g4-line", member));
+  }, "npl-line", member));
 
-test("through admission: an admin's own tap clears it (the quote answers, the press is admitted), and a token with an admin's identity is refused outright", async () => {
-  await scope("g4-line", async (service) => {
+test("every job is approved on its quote: a press whose approval (maxCredits) is under the quote is refused, whatever its size, and nothing is created", async () =>
+  scope("npl-approval", async (service) => {
+    const q = await (await quoteRoute(service).POST(quoteRequest(OVER))).json();
+    const quoted = Number(q.ceilingCredits ?? q.estimatedCredits);
+    expect(quoted).toBeGreaterThan(200);
+    const before = await counts();
+    const short = await press(service, OVER, "npl-short-approval", Math.floor(quoted) - 50);
+    expect(short.status, JSON.stringify(await short.clone().json())).toBe(409);
+    expect(String((await short.json()).error)).toMatch(/Review the updated credit quote/);
+    expect(await counts(), "nothing created, nothing reserved").toEqual(before);
+  }, "npl-approval", member));
+
+test("through admission: an admin's own tap is admitted as before; a token with an admin's identity is quoted (no per-job line) but still cannot approve a held take: only a person approves a hold", async () => {
+  await scope("npl-line", async (service) => {
     const ok = await quoteRoute(service).POST(quoteRequest(OVER));
     expect(ok.status, JSON.stringify(await ok.clone().json())).toBe(200);
     expect((await ok.json()).estimatedCredits).toBeGreaterThan(200);
-    const made = await press(service, OVER, "g4-admin");
+    const made = await press(service, OVER, "npl-admin");
     expect(made.status, JSON.stringify(await made.clone().json())).toBeLessThan(300);
-  }, "g4-line", admin);
-  await scope("g4-line", async (service) => {
+  }, "npl-line", admin);
+  await scope("npl-line", async (service) => {
     const viaToken = await quoteRoute(service).POST(quoteRequest(OVER));
-    expect(viaToken.status).toBe(403);
-    expect(await viaToken.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
-    const viaPress = await press(service, { ...OVER, ...FINGERPRINT }, "g4-token");
-    expect(viaPress.status).toBe(403);
-    expect(await viaPress.json()).toMatchObject({ needsAdmin: true });
-  }, "g4-line", { ...admin, token: { id: "tok_g4", name: "agent", scope: "render", ...ROOMY } } as AdmissionActor);
+    expect(viaToken.status, JSON.stringify(await viaToken.clone().json())).toBe(200);
+    expect((await viaToken.json()).needsAdmin).toBeUndefined();
+    /* A machine can prepare it, never approve its hold (people only, unchanged): refused for that, not for its size, and nothing is created. */
+    const before = await counts();
+    const made = await pressQuoted(service, OVER, "npl-token");
+    const said = await made.clone().json();
+    expect(made.status, JSON.stringify(said)).toBe(403);
+    expect(said).toMatchObject({ error: expect.stringMatching(/Only a person signed in to Particl approves/) });
+    expect(said.needsAdmin).toBeUndefined();
+    expect(await counts()).toEqual(before);
+  }, "npl-line", { ...admin, token: { id: "tok_npl", name: "agent", scope: "render", ...ROOMY } } as AdmissionActor);
 });
 
-/* The house pays no credits and is judged at cost: this clip's hold (3 × its ~$14 estimate, counted in credits at no margin) is over the 200 cr line, so a member is told an admin must start it, in words with no figure. */
-test("the house is judged at cost: a member over the line is told an admin must start it, with no credit figure; an admin clears it; a token is refused; under it nothing changes", async () => {
+/* The house pays no credits; its job over the old line at cost (this clip's hold: 3 × its ~$14 estimate) is quoted in dollars and admitted, for a member and a token too.
+   Its own monthly cap (lib/houseCap.ts) is what stops the house, and is unchanged (tests/unit/houseCap.spec.ts). */
+test("the house: a member's and an admin's job over the old line at cost is quoted and admitted, a token's quoted (its hold still a person's to approve); under it nothing changes", async () => {
   await keepingHouseJobsClean(async () => {
-    await scope("g4-house", async (service) => {
-      const before = [(await rows()).length, (await meters()).length];
-      const q = await quoteRoute(service).POST(quoteRequest(OVER));
-      const answer = await q.clone().json();
-      expect(q.status, JSON.stringify(answer)).toBe(403);
-      expect(answer).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/An admin has to start it\./) });
-      expect(String(answer.error)).not.toMatch(/\bcr\b|\d/);
-      const pressed = await press(service, OVER, "g4-house-member");
-      expect(pressed.status).toBe(403);
-      expect(await pressed.json()).toMatchObject({ needsAdmin: true });
-      expect([(await rows()).length, (await meters()).length], "nothing created, nothing reserved").toEqual(before);
-      expect((await quoteRoute(service).POST(quoteRequest(UNDER))).status).toBe(200);
-    }, "ws_legacy", member);
-    await scope("g4-house", async (service) => {
-      const q = await quoteRoute(service).POST(quoteRequest(OVER));
-      expect(q.status, JSON.stringify(await q.clone().json())).toBe(200);
-      expect((await q.json()).unit).toBe("usd");
-      const made = await press(service, OVER, "g4-house-admin");
-      expect(made.status, JSON.stringify(await made.clone().json())).toBeLessThan(300);
-    }, "ws_legacy", admin);
-    await scope("g4-house", async (service) => {
-      const viaToken = await quoteRoute(service).POST(quoteRequest(OVER));
-      expect(viaToken.status).toBe(403);
-      expect(await viaToken.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
-      const viaPress = await press(service, { ...OVER, ...FINGERPRINT }, "g4-house-token");
-      expect(viaPress.status).toBe(403);
-      expect(await viaPress.json()).toMatchObject({ needsAdmin: true });
-    }, "ws_legacy", { ...admin, token: { id: "tok_g4h", name: "agent", scope: "render", ...ROOMY } } as AdmissionActor);
+    for (const [who, label] of [[member, "member"], [admin, "admin"], [{ ...admin, token: { id: "tok_nplh", name: "agent", scope: "render", ...ROOMY } } as AdmissionActor, "token"]] as const) {
+      await scope("npl-house", async (service) => {
+        const q = await quoteRoute(service).POST(quoteRequest(OVER));
+        const answer = await q.clone().json();
+        expect(q.status, `${label}: ${JSON.stringify(answer)}`).toBe(200);
+        expect(answer.unit, label).toBe("usd");
+        expect(answer.needsAdmin, label).toBeUndefined();
+        const before = await counts();
+        const made = label === "token" ? await pressQuoted(service, OVER, `npl-house-${label}`) : await press(service, OVER, `npl-house-${label}`);
+        const said = await made.clone().json();
+        if (label === "token") {
+          expect(made.status, `${label}: ${JSON.stringify(said)}`).toBe(403);
+          expect(String(said.error)).toMatch(/Only a person signed in to Particl approves/);
+          expect(await counts(), label).toEqual(before);
+        } else {
+          expect(made.status, `${label}: ${JSON.stringify(said)}`).toBeLessThan(300);
+          expect(await counts(), label).toEqual([before[0] + 1, before[1] + 1]);
+        }
+        expect((await quoteRoute(service).POST(quoteRequest(UNDER))).status, label).toBe(200);
+      }, "ws_legacy", who);
+    }
   });
 });
 
-/* One press is one job: Seedance 2.0 at 1080p for 10 s is 57 cr a take, so a press of 4 is 228 cr as one job (over the line) and a press of 3 is 171 cr (under it). */
+/* A press of several: Seedance 2.0 at 1080p for 10 s is 57 cr a take, so a press of 4 is 228 cr in all. Each take is its own job at its own quote; nothing adds them up. */
 const TAKE = { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", projectId: "project", ratio: "16:9", resolution: "1080p", duration: 10 };
 const take = (batch: string, variation: number, size?: number) => ({ ...TAKE, batchId: batch, variation, ...(size ? { batchSize: size } : {}) });
 let batchNo = 0;
-const batchId = () => `b_g4${Math.random().toString(36).slice(2, 8)}${++batchNo}`;
+const batchId = () => `b_npl${Math.random().toString(36).slice(2, 8)}${++batchNo}`;
 
-test("one press is one job: 4 x 57 cr from a member is refused at the quote and at every take, and nothing is reserved for any take; a single take, and a press of 3, are unchanged", async () =>
-  scope("g4-batch", async (service) => {
+test("a press of 4 x 57 cr (228 cr in all) from a member: every take is quoted and admitted, four jobs reserved; with no size named, the fourth take too", async () =>
+  scope("npl-batch", async (service) => {
     const single = await quoteRoute(service).POST(quoteRequest(TAKE));
     expect(single.status, JSON.stringify(await single.clone().json())).toBe(200);
     expect((await single.json()).estimatedCredits).toBe(57);
     const id = batchId();
-    const before = [(await rows()).length, (await meters()).length];
+    const before = await counts();
     for (let variation = 1; variation <= 4; variation++) {
       const q = await quoteRoute(service).POST(quoteRequest(take(id, variation, 4)));
-      expect(q.status, `take ${variation}: ${JSON.stringify(await q.clone().json())}`).toBe(403);
-      expect(await q.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/An admin has to start it\./) });
-      const pressed = await press(service, take(id, variation, 4), `g4-batch4-${id}-${variation}`);
-      expect(pressed.status, `take ${variation}`).toBe(403);
-      expect(await pressed.json()).toMatchObject({ needsAdmin: true });
+      expect(q.status, `take ${variation}: ${JSON.stringify(await q.clone().json())}`).toBe(200);
+      const pressed = await press(service, take(id, variation, 4), `npl-batch4-${id}-${variation}`);
+      expect(pressed.status, `take ${variation}: ${JSON.stringify(await pressed.clone().json())}`).toBeLessThan(300);
     }
-    expect([(await rows()).length, (await meters()).length], "nothing created, nothing reserved for any take").toEqual(before);
-    /* A single 57 cr take is unchanged. */
-    expect((await press(service, TAKE, `g4-single-${id}`)).status).toBeLessThan(300);
-    /* A press of 3 (171 cr as one job) goes, every take. */
-    const three = batchId();
-    for (let variation = 1; variation <= 3; variation++)
-      expect((await press(service, take(three, variation, 3), `g4-batch3-${three}-${variation}`)).status, `take ${variation}`).toBeLessThan(300);
-  }, "g4-batch", member));
+    expect(await counts(), "four takes, four jobs").toEqual([before[0] + 4, before[1] + 4]);
+    const loose = batchId();
+    for (let variation = 1; variation <= 4; variation++)
+      expect((await press(service, take(loose, variation), `npl-loose-${loose}-${variation}`)).status, `take ${variation}`).toBeLessThan(300);
+  }, "npl-batch", member));
 
-test("one press is one job: the takes already reserved under its batch id count, so a batch that names no size is stopped at the take that passes the line", async () =>
-  scope("g4-batch", async (service) => {
-    const id = batchId();
-    for (let variation = 1; variation <= 3; variation++)
-      expect((await press(service, take(id, variation), `g4-acc-${id}-${variation}`)).status, `take ${variation}`).toBeLessThan(300);
-    const before = [(await rows()).length, (await meters()).length];
-    /* 57 x 4 = 228 cr: the fourth take of the same press is told an admin must start it. */
-    const fourth = await press(service, take(id, 4), `g4-acc-${id}-4`);
-    expect(fourth.status).toBe(403);
-    expect(await fourth.json()).toMatchObject({ needsAdmin: true });
-    expect([(await rows()).length, (await meters()).length]).toEqual(before);
-  }, "g4-batch", member));
-
-test("one press is one job: an admin's tap clears a press of 4 x 57 cr, every take; a token is refused at the first", async () => {
-  await scope("g4-batch", async (service) => {
+test("a press of 4 x 57 cr from a token: admitted, every take (no per-job line for machines either; a token's own monthly ceiling still applies at the reservation)", async () =>
+  scope("npl-batch", async (service) => {
     const id = batchId();
     const before = (await meters()).length;
     for (let variation = 1; variation <= 4; variation++) {
-      const q = await quoteRoute(service).POST(quoteRequest(take(id, variation, 4)));
-      expect(q.status, `quote ${variation}: ${JSON.stringify(await q.clone().json())}`).toBe(200);
-      const made = await press(service, take(id, variation, 4), `g4-admin-batch-${id}-${variation}`);
+      const made = await pressQuoted(service, take(id, variation, 4), `npl-token-batch-${id}-${variation}`);
       expect(made.status, `take ${variation}: ${JSON.stringify(await made.clone().json())}`).toBeLessThan(300);
     }
     expect((await meters()).length - before).toBe(4);
-  }, "g4-batch", admin);
-  await scope("g4-batch", async (service) => {
-    const id = batchId();
-    const before = [(await rows()).length, (await meters()).length];
-    const q = await quoteRoute(service).POST(quoteRequest(take(id, 1, 4)));
-    expect(q.status).toBe(403);
-    expect(await q.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
-    const viaPress = await press(service, { ...take(id, 1, 4), ...FINGERPRINT }, `g4-token-batch-${id}`);
-    expect(viaPress.status).toBe(403);
-    expect(await viaPress.json()).toMatchObject({ needsAdmin: true });
-    expect([(await rows()).length, (await meters()).length]).toEqual(before);
-  }, "g4-batch", { ...admin, token: { id: "tok_g4b", name: "agent", scope: "render", ...ROOMY } } as AdmissionActor);
-});
+  }, "npl-batch", { ...admin, token: { id: "tok_nplb", name: "agent", scope: "render", ...ROOMY } } as AdmissionActor));

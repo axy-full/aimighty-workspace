@@ -118,11 +118,12 @@ test("the published rate card, from the code", async () => {
   expect(row("Prompt enhancement", "per prompt")).toBe(1);
 });
 
-test("plans, the welcome grant, the Starter pack and the approval line at US$0.10", async () => {
+test("plans, the welcome grant, the Starter pack at US$0.10; no platform per-job line (retired 20 Oct 2026), Auto's own ceiling at 200 cr", async () => {
   const { DEFAULT_PLANS } = await import("../../lib/plans");
   const { signupCredits, creditUsd } = await import("../../lib/creditTerms");
   const { packs } = await import("../../lib/packs");
-  const { JOB_APPROVAL_LINE_USD, jobApprovalLineCredits } = await import("../../lib/approvalRule");
+  const approvalRule = await import("../../lib/approvalRule") as Record<string, unknown>;
+  const { AUTO_NO_TAP_CEILING_USD, autoNoTapCeilingCredits } = await import("../../lib/workbench/rig-agent-limits");
 
   expect(DEFAULT_PLANS.map((p) => [p.label, p.priceUsd, p.includedCredits])).toEqual([
     ["Invite", 0, 0], ["Studio", 49, 400], ["Agency", 199, 1600], ["Production", 999, 9000],
@@ -135,6 +136,9 @@ test("plans, the welcome grant, the Starter pack and the approval line at US$0.1
   const starter = packs().find((p) => p.id === "starter")!;
   expect([starter.usd, starter.credits, starter.bonus]).toEqual([50, 500, 0]);
 
-  expect(JOB_APPROVAL_LINE_USD).toBe(20);
-  expect(jobApprovalLineCredits(creditUsd())).toBe(200);
+  /* Guardrail 4 is retired (owner, 20 Oct 2026): the code carries no platform per-job line. */
+  for (const gone of ["JOB_APPROVAL_LINE_USD", "jobApprovalLineCredits", "jobLineVerdict"]) expect(approvalRule[gone], gone).toBeUndefined();
+  /* What is left of the 200 cr figure is Auto's own no-tap ceiling, unchanged. */
+  expect(AUTO_NO_TAP_CEILING_USD).toBe(20);
+  expect(autoNoTapCeilingCredits(creditUsd())).toBe(200);
 });
