@@ -18,7 +18,7 @@ import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./g
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import { elevenConfigured, submitDubbing, dubbingStatus, downloadDubbedAudio, dubbingUsd, dubbingUsdPerMinute, ElevenLabsError } from "./elevenlabs";
 import { ELEVENLABS_RATES, OFFERED_DUBBING_MODES, type DubbingMode } from "./vendorRates";
-import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, inspectAudioBuffer, billableMinutes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
+import { findStoredSource, isSourceRefusal, lookupStoredSource, resolveStoredDuration, readStoredSourceBytes, inspectAudioBuffer, billableMinutes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
 import { DUBBING_SOURCE_AUTO, isDubbingLanguage, dubbingLanguageLabel } from "./workbench/dubbing-options";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
@@ -119,13 +119,14 @@ const isMode = (value: unknown): value is DubbingMode => typeof value === "strin
 
 /** The source: one stored audio or video original with a measured length. */
 export async function resolveDubbingSource(body: { sourceUploadId?: unknown; sourceGenId?: unknown }): Promise<
-  { source: StoredSource; seconds: number } | { error: string; status: number }
+  { source: StoredSource; seconds: number } | { error: string; status: number; code?: string }
 > {
   const uploadId = body.sourceUploadId ? String(body.sourceUploadId) : "";
   const genId = body.sourceGenId ? String(body.sourceGenId) : "";
   if ((!uploadId && !genId) || (uploadId && genId)) return { error: "Pick one audio or video original to dub.", status: 400 };
   if ((uploadId && !SOURCE_ID.test(uploadId)) || (genId && !SOURCE_ID.test(genId))) return { error: "That source is not valid.", status: 400 };
-  const source = await findStoredSource(uploadId ? { uploadId } : { genId });
+  const source = await lookupStoredSource(uploadId ? { uploadId } : { genId });
+  if (isSourceRefusal(source)) return { error: source.error, code: source.code, status: source.status };
   if (!source) return { error: "That original is not in this workspace.", status: 404 };
   if (source.bytes > SOURCE_BYTES_LIMIT) return { error: "Dubbing takes a source up to 100 MB.", status: 400 };
   const length = await resolveStoredDuration(source);
@@ -151,7 +152,7 @@ export async function executeDubbingAdmission(
     return admissionReply({ error: "Sound isn't connected for this workspace. Ask the platform to connect it." }, { status: 400 });
 
   const resolved = await resolveDubbingSource(body);
-  if ("error" in resolved) return admissionReply({ error: resolved.error }, { status: resolved.status });
+  if ("error" in resolved) return admissionReply({ error: resolved.error, ...(resolved.code ? { code: resolved.code } : {}) }, { status: resolved.status });
   const { source, seconds } = resolved;
   const sourceLang = String(body.sourceLang ?? DUBBING_SOURCE_AUTO).trim().toLowerCase();
   const targetLang = String(body.targetLang ?? "").trim().toLowerCase();

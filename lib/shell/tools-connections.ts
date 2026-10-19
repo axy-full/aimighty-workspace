@@ -57,11 +57,12 @@ export const STATUS_LABEL: Record<ReachStatus, string> = {
 /** Tools that write: a read-only token is refused them (lib/auth withTenant refuses its non-GET calls). */
 const WRITES = new Set(["render_shot", "create_project"]);
 /** The one tool a prepare token writes with: a job a person approves (lib/security/prepared-jobs.ts). */
-const PREPARES = new Set(["prepare_shot"]);
+const PREPARES = new Set(["prepare_shot", "plan_step"]);
 /** One line per tool; tests/unit/toolsConnections.spec.ts fails when lib/mcp.ts gains a tool this page does not describe. */
 export const MCP_TOOL_LINES: Readonly<Record<string, string>> = Object.freeze({
   render_shot: "Starts a video take and returns its id",
   prepare_shot: "Prepares a video take; a person approves it in Particl",
+  plan_step: "Prepares and prices a board step's quick plan; a person approves it in Particl",
   wait_for_render: "Waits for a take, then reports what it cost",
   list_renders: "Recent takes, by project, status or prompt",
   get_render: "One take, with a link to watch or save it",

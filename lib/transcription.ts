@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Client } from "@libsql/client";
-import { findStoredSource, readStoredSourceBytes, resolveStoredDuration, SOURCE_BYTES_LIMIT } from "./mediaSource.server";
+import { isSourceRefusal, lookupStoredSource, readStoredSourceBytes, resolveStoredDuration, SOURCE_BYTES_LIMIT } from "./mediaSource.server";
 import { allowanceCheck } from "./allowance";
 import { paidByPlatform } from "./platformSpend";
 import { creditsAtTerms, currentBillingTerms } from "./billingTerms";
@@ -209,7 +209,8 @@ async function transcription(input: TranscriptionInput, userId: string, options:
   const genId = input.sourceGenId ? String(input.sourceGenId) : "";
   if ((!uploadId && !genId) || (uploadId && genId)) return { status: 400, body: { error: "Pick one audio or video original to transcribe." } };
   if ((uploadId && !SOURCE_ID.test(uploadId)) || (genId && !SOURCE_ID.test(genId))) return { status: 400, body: { error: "That source is not valid." } };
-  const source = await findStoredSource(uploadId ? { uploadId } : { genId });
+  const source = await lookupStoredSource(uploadId ? { uploadId } : { genId });
+  if (isSourceRefusal(source)) return { status: source.status, body: { error: source.error, code: source.code } };
   if (!source) return { status: 404, body: { error: "That original is not in this workspace." } };
   if (source.bytes > SOURCE_BYTES_LIMIT) return { status: 400, body: { error: "Transcription takes a source up to 100 MB." } };
   const length = await resolveStoredDuration(source);
