@@ -51,7 +51,7 @@ const tenant = (id: string, over: Partial<TenantWorkspace> = {}): TenantWorkspac
   allowanceUsd: null, gatewayKeyId: null, ownerId: "u_test", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null,
   concurrency: 50, rendersPerHour: 1000, storageQuotaBytes: null, deletedAt: null, ...over,
 } as TenantWorkspace);
-const house = () => tenant("ws_legacy");
+const house = (over: Partial<TenantWorkspace> = {}) => tenant("ws_legacy", over);
 const OWNER: AdmissionActor = { user: { id: "owner", email: "owner@example.invalid", name: "owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null } as AdmissionActor["user"] };
 let n = 0;
 const uid = (label: string) => `${label}_${Date.now().toString(36)}_${++n}`;
@@ -212,6 +212,9 @@ test("no confirmed price, no quote: with the price file unset, missing, invalid,
       /* A row priced with settings the quote does not name is not a price for it. */
       writeFileSync(PRICES, JSON.stringify({ format: PRICES_FORMAT, engines: { "lipsync-2-pro": { second: [{ resolution: "1080p", costUsd: PRO }] } } })); reloadVendorPrices();
       await refusedEverywhere("row with settings", [undefined]);
+      /* Nor is a band: the job settles at the rate it was quoted at, so a rate that depends on the quantity could not hold. */
+      writeFileSync(PRICES, JSON.stringify({ format: PRICES_FORMAT, engines: { "lipsync-2-pro": { second: [{ upTo: 10, costUsd: PRO }, { upTo: 1000, costUsd: PLACEHOLDER_EDITED_RATE_USD_PER_SECOND["lipsync-2-pro"] }] } } })); reloadVendorPrices();
+      await refusedEverywhere("banded rows", [undefined]);
       /* Through all of it: no take, no ledger line, nothing handed to the worker. */
       expect(await rows()).toBe(before.rows);
       expect((await meterRows()).length).toBe(before.meter);
@@ -221,6 +224,40 @@ test("no confirmed price, no quote: with the price file unset, missing, invalid,
       expect((await admit(w, { quoteOnly: true })).status).toBe(200);
     });
   } finally { await restorePrices(); }
+});
+
+test("the house's own monthly cap: set below the quote, the press is refused 429 in HOUSE_CAP_REACHED's words, with nothing reserved, written or handed to the worker", async () => {
+  const { HOUSE_CAP_REACHED, houseSpendSince, houseMonthStart } = await import("../../lib/houseCap");
+  const { db } = await import("../../lib/db");
+  process.env.SYNC_ENABLED = "1";
+  /* What the house has spent this month so far (other tests in this worker's platform database), read before; the cap leaves less headroom than the quote. */
+  const quoteUsd = micro(5 * PRO);
+  const spent = await houseSpendSince(houseMonthStart());
+  for (const capUsd of [spent + quoteUsd / 2, 0]) {
+    await asTenant(house({ allowanceUsd: capUsd }), async () => {
+      const w = await world();
+      const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+      const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
+      if (capUsd > 0) {
+        /* Under the cap so far, so the quote answers (at the placeholder price); the press would pass it. */
+        expect(await admit(w, { quoteOnly: true }), String(capUsd)).toMatchObject({ status: 200, body: { price: quoteUsd } });
+      }
+      const pressed = await admit(w, { maxCredits: 100000 });
+      expect(pressed, String(capUsd)).toMatchObject({ status: 429, body: { error: HOUSE_CAP_REACHED } });
+      /* The cap's words only: no figure, no vendor. */
+      expect(JSON.stringify(pressed.body)).not.toMatch(/\d|\$|sync\.so/);
+      expect(await rows()).toBe(before.rows);
+      expect((await meterRows()).length).toBe(before.meter);
+      expect(deferred.length).toBe(before.handed);
+    });
+  }
+  /* The default cap (none set) leaves room for this placeholder-priced job: it goes through, and is run to its end so no job is left for the cron in later tests. */
+  await asTenant(house(), async () => {
+    const reply = await admit(await world(), { maxCredits: 100000 });
+    expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+    deferred.splice(0);
+    expect(await run(String(reply.body.id), fakeVendor({ outputDuration: 4 }).deps, 4)).toMatchObject({ status: "done", settled: 1 });
+  });
 });
 
 test("a job settles at the rate it was quoted at: the price file edited, emptied or removed after the press neither breaks nor moves its charge", async () => {
