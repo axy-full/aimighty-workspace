@@ -11,7 +11,7 @@ import { joinLocallyAsMember, localPlatformDbUrl, signInLocally } from "./helper
  *  - an admin edits the budget per production and the per-shot cap; a field saves when it is left or on Enter (PATCH
  *    /api/settings), never a figure still being typed; "Undo changes" puts back what was there, "Done" closes;
  *  - a member reads the same figures, can't change them (the route refuses them too), and "Ask an admin" tells the owner.
- * Owner values (6 Oct): budget 400 cr with the pause at 320 cr; the per-shot cap 50 cr; the ask line 200 cr.
+ * Owner values (6 Oct): budget 400 cr with the pause at 320 cr; the per-shot cap 50 cr. (The 200 cr ask line was retired on 20 Oct 2026: no per-job line.)
  */
 const SHOTS = process.env.L4_SHOTS || join(tmpdir(), "claude-gaps-l4-shots");
 const size = (name: string) => name.replace("workbench-", "");
@@ -59,9 +59,9 @@ test("an admin edits the budget per production and the per-shot cap; a field sav
   const panel = page.getByTestId("settings-budget-panel");
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("Admins only. A field saves when you leave it or press Enter.");
-  await expect(page.getByTestId("settings-line-field")).toBeDisabled();
-  await expect(page.getByTestId("settings-line-field")).toHaveValue("200");
-  await expect(panel).toContainText("Any job over 200 cr needs an admin’s tap, even under Auto. Fixed.");
+  /* No platform per-job line (owner, 20 Oct 2026: guardrail 4 retired): the panel shows no line field and no line sentence. */
+  await expect(page.getByTestId("settings-line-field")).toHaveCount(0);
+  await expect(panel).not.toContainText(/Platform line|Any job over|even under Auto/);
   await expect(page.getByTestId("settings-budget-undo")).toBeDisabled();
 
   /* A figure still being typed is never saved: "4" on the way to "400" stays unsaved however long it waits. */
