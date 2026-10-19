@@ -6,7 +6,9 @@ import { isPersonApprover } from "./workbench/plan-approval";
 import { isAgentId } from "./security/people-only";
 import { billedTo } from "./providers";
 import { paidByPlatform, vendorKeyNameFor } from "./platformSpend";
-import { jobLineNow } from "./shotCap";
+import { allowanceUsdOfStored, platformSpendThisMonth } from "./allowance";
+import { houseCapOfStored, houseMonthStart, houseSpendSince } from "./houseCap";
+import { verdictOf, type Quote } from "./quote";
 import { prepareGeneration, admitGeneration } from "./generationAdmission";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply, PreparedAdmission } from "./admissionTypes";
 import { admissionReply, assertAdmissionActor } from "./admissionSupport";
@@ -17,12 +19,16 @@ import { discardHeldJob } from "./held";
 import { QueuedCancelError, cancelQueuedVideo, servedHere, type QueuedCancel } from "./queuedCancel";
 
 /**
- * A multi-shot press is ONE job (owner, 16 Oct 2026, A.2): judged as one against the 200 cr line (SOW §7A guardrail 4), with one approval that shows the total.
+ * A multi-shot press is ONE job (owner, 16 Oct 2026, A.2), with one approval that shows the total.
  *
- * Without this, a press of N shots is N requests that are each under the line, and the line never sees the sum. Here the SERVER prices every member itself (the same
- * `prepareGeneration` every take is priced by; a total from the client is never read), adds their holds, and judges the sum with the one rule every job is judged by
- * (`jobLineNow`): over the line, a member of the workspace is told an admin has to start it, an admin's own tap clears it, and a token, an MCP client or Atomik can prepare it
- * and never start it. Exactly at the line is not over it.
+ * The SERVER prices every member itself (the same `prepareGeneration` every take is priced by, with every check a single take meets there; a total from the client
+ * is never read) and adds their holds. The 200 cr per-job line is not judged on the sum (owner, 19 Oct 2026: "#815 keeps “a multi-shot press is one job, one
+ * approval for the total” and drops the guardrail-4 check; a press whose total would pass the workspace cap is refused at the quote"). What the sum IS judged
+ * against is the workspace's monthly spending cap (`capVerdict`): the workspace's own cap on the platform's engines, or for the house workspace its house cap
+ * (lib/houseCap.ts), read as the reservation reads it, with this month's spend and running holds counted, and every shot of the press at its hold. A press that
+ * would pass it is refused whole, at the quote and again at the press before any shot is admitted (429, in the cap's own words), so a press is never started in part
+ * and stopped at the cap halfway. Each shot's own reservation still judges the cap as before: two presses at once are caught there. A workspace with no cap is not
+ * judged here. A token, an MCP client or Atomik may ask the price, never press.
  *
  * The approval is the person's, once, for exactly the listed members at their listed prices: it carries the batch's fingerprint (a hash of every member's own quote
  * fingerprint and the total), so a member added, removed or re-priced is another batch that asks again. The balance is checked against what is still to start before the
@@ -43,7 +49,7 @@ import { QueuedCancelError, cancelQueuedVideo, servedHere, type QueuedCancel } f
  * has already started is not cancelled and is billed as today; the reply says so. No price, margin or ledger rule is written here.
  *
  * Members are ordinary generation requests (the body POST /api/generate takes, with no `maxCredits`). The members do not carry `batchId`/`batchSize`: those are a composer's
- * own claim about its press (lib/batchLine.ts) and would judge each member by the first one's price times the rest; this endpoint has already judged the sum.
+ * own claim about its press (lib/batchLine.ts) and would judge each member by the first one's price times the rest; each member here is judged on its own.
  */
 export const BATCH_MAX_MEMBERS = 24;
 const PEOPLE_ONLY = "Only a person approves spending. Atomik, outside agents and tokens can prepare this, never approve it.";
@@ -64,13 +70,40 @@ export type BatchExecution = {
 /** The engine boundary of a cancel, replaceable in mocked tests only: a take in its engine's queue is cancelled through lib/queuedCancel.ts. */
 export type BatchCancelDeps = { cancelQueued: (id: string) => Promise<QueuedCancel> };
 
-/** What the line is judged on for one member: its price at its hold (the most it can settle at), and the engine's dollars at that hold (the house pays at cost). */
-function holdOf(p: PreparedAdmission): { credits: number; usd: number } {
-  const credits = p.quote.ceilingCredits ?? p.quote.estimatedCredits;
-  const usd = p.quote.unit === "usd" ? p.quote.price * (p.quote.ceilingCredits != null && p.quote.estimatedCredits > 0 ? p.quote.ceilingCredits / p.quote.estimatedCredits : 1) : 0;
-  return { credits, usd };
-}
+/** One member's price at its hold (the most it can settle at): what the approval and the balance are judged on. */
+const holdCredits = (p: PreparedAdmission): number => p.quote.ceilingCredits ?? p.quote.estimatedCredits;
 const platformKeyOf = (p: PreparedAdmission) => vendorKeyNameFor(billedTo(String((p.compiled.model as { provider?: unknown } | undefined)?.provider ?? "byteplus")));
+
+/**
+ * The workspace's monthly cap judged on the sum of these members, each at its hold, by the verdict a quote is judged with (lib/quote.ts verdictOf): only its
+ * monthly cap and, in the house, the house cap; every other check is each shot's own. The caps as the reservation reads them (lib/generationRequests.ts
+ * reserveGenerationSpendLocked): the stored `allowance_usd` read afresh, the workspace's own figure or the deployment's default for a customer
+ * (allowanceUsdOfStored, which applies only to work the platform's keys pay for), the house's figure or its default for the house (houseCapOfStored). This
+ * month's spend is what those caps count it as: the platform's spend for this workspace (platformSpendThisMonth), or the house's meter rows (houseSpendSince),
+ * running jobs at their hold. Engine dollars stay here: the refusal carries the cap's own sentence and no figure; the house's notice is its own words.
+ */
+async function capVerdict(members: { p: PreparedAdmission; holdUsd: number }[]): Promise<{ refusal: string | null; notice: string }> {
+  if (!members.length) return { refusal: null, notice: "" };
+  const ws = requireTenant();
+  const house = isHouseWorkspace(ws);
+  const lines = members.map(({ p, holdUsd }, i) => ({
+    key: String(i), credits: holdCredits(p), count: 1, usd: holdUsd, spent: 0, code: "", projectId: null, platformPays: house || paidByPlatform(platformKeyOf(p)),
+  }));
+  if (!house && !lines.some((l) => l.platformPays)) return { refusal: null, notice: "" };
+  await platformReady();
+  const standing = (await platformDb().execute({ sql: "SELECT allowance_usd FROM workspaces WHERE id=?", args: [ws.id] })).rows[0];
+  const houseCap = house ? houseCapOfStored(standing?.allowance_usd).usd : null;
+  const cap = house ? null : standing ? allowanceUsdOfStored(standing.allowance_usd) : allowanceUsdOfStored(ws.allowanceUsd);
+  if (houseCap == null && cap == null) return { refusal: null, notice: "" };
+  const quote: Quote = { totalCredits: lines.reduce((n, l) => n + l.credits, 0), unitCredits: null, units: lines.length, usd: lines.reduce((n, l) => n + l.usd, 0), lines };
+  const verdict = verdictOf(quote, {
+    balance: null,
+    allowance: cap == null ? null : { cap, spent: await platformSpendThisMonth() },
+    houseCap: houseCap == null ? null : { cap: houseCap, spent: await houseSpendSince(houseMonthStart()) },
+    caps: {}, warnPct: 80, rule: "anyone", shotCap: 0, isAdmin: false,
+  });
+  return verdict.allow ? { refusal: null, notice: verdict.notice } : { refusal: verdict.line, notice: "" };
+}
 
 /* ── The press's keys ── */
 const hex = (value: string, n: number) => createHash("sha256").update(value).digest("hex").slice(0, n);
@@ -168,33 +201,35 @@ export async function admitBatch(input: Record<string, unknown>, got: AdmissionA
 
   /* ── The server prices every member itself ── */
   const prepared: PreparedAdmission[] = [];
+  /* Each member's engine dollars at its hold, for the monthly cap only (server-only, never in a reply). */
+  const holdUsd: number[] = [];
   const shotsAsSent: Record<string, unknown>[] = [];
   for (const [i, raw] of members.entries()) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return admissionReply({ error: `Shot ${i + 1} is not valid.` }, { status: 400 });
     const { maxCredits: _a, quoteFingerprint: _b, batchId: _c, batchSize: _d, ...member } = raw as Record<string, unknown>;
     void _a; void _b; void _c; void _d;
     shotsAsSent.push(member);
-    const p = await prepareGeneration(member, got);
+    const cost: { holdUsd?: number } = {};
+    const p = await prepareGeneration(member, got, cost);
     /* The shot is named beside the refusal, never inside it: a cap's or a limit's words stay exactly the door's own, with no figure in them. */
     if (!p.ok) return admissionReply({ ...p.body, error: typeof p.body.error === "string" ? p.body.error : "This shot can't be priced.", shot: i + 1 }, { status: p.status });
+    if (!Number.isFinite(cost.holdUsd) || cost.holdUsd! < 0) return admissionReply({ error: "This shot can't be priced.", shot: i + 1 }, { status: 400 });
     prepared.push(p.value);
+    holdUsd.push(cost.holdUsd!);
   }
   const unit = creditsApply(requireTenant()) ? "cr" : "usd";
-  const holds = prepared.map(holdOf);
-  const credits = holds.reduce((n, h) => n + h.credits, 0);
-  const usd = holds.reduce((n, h) => n + h.usd, 0);
+  const holds = prepared.map(holdCredits);
+  const credits = holds.reduce((n, h) => n + h, 0);
   const price = prepared.reduce((n, p) => n + p.quote.price, 0);
   const estimatedCredits = prepared.reduce((n, p) => n + p.quote.estimatedCredits, 0);
-
-  /* ── Guardrail 4 on the SUM, by the one rule every job is judged by ── */
-  const anyPlatform = prepared.find((p) => paidByPlatform(platformKeyOf(p)));
-  if (anyPlatform || isHouseWorkspace(requireTenant())) {
-    const over = jobLineNow({ credits, usd, key: platformKeyOf(anyPlatform ?? prepared[0]), actor: got, auto: options.run?.auto === true });
-    if (over) return admissionReply({ error: over, needsAdmin: true, members: prepared.length }, { status: 403 });
-  }
   const fingerprint = createHash("sha256").update(JSON.stringify({ v: 1, members: prepared.map((p) => p.quote.fingerprint), credits })).digest("hex");
   const batchId = `bt_${fingerprint.slice(0, 24)}`;
-  if (quoteOnly) return admissionReply({ estimatedCredits, price: unit === "cr" ? estimatedCredits : Math.round(price * 1e6) / 1e6, unit, members: prepared.length, batchId, fingerprint, ...(credits > estimatedCredits ? { ceilingCredits: credits } : {}) });
+  if (quoteOnly) {
+    /* ── The workspace's monthly cap on the whole press, before anyone can press it ── */
+    const cap = await capVerdict(prepared.map((p, i) => ({ p, holdUsd: holdUsd[i] })));
+    if (cap.refusal) return admissionReply({ error: cap.refusal }, { status: 429 });
+    return admissionReply({ estimatedCredits, price: unit === "cr" ? estimatedCredits : Math.round(price * 1e6) / 1e6, unit, members: prepared.length, batchId, fingerprint, ...(credits > estimatedCredits ? { ceilingCredits: credits } : {}), ...(cap.notice ? { notice: cap.notice } : {}) });
+  }
 
   /* ── The approval: one person, once, for exactly these members at these prices ── */
   if (!isPersonApprover(got.user.id) || isAgentId(got.user.id) || got.token != null || options.run?.auto === true) return admissionReply({ error: PEOPLE_ONLY }, { status: 403 });
@@ -220,8 +255,14 @@ export async function admitBatch(input: Record<string, unknown>, got: AdmissionA
   if (claims.cancelled)
     return admissionReply({ error: CANCELLED, cancelled: true, id: batchId, batchId, members: states.map((s, i) => reported(i, s, true)) }, { status: 409 });
 
+  /* The workspace's monthly cap on what is still to start, before the first of it starts: a press that would pass it starts nothing. What already started is
+     in this month's spend at its hold. Each shot's reservation judges the cap again, so two presses at once cannot pass it together. */
+  {
+    const cap = await capVerdict(prepared.flatMap((p, i) => (states[i].state === "open" ? [{ p, holdUsd: holdUsd[i] }] : [])));
+    if (cap.refusal) return admissionReply({ error: cap.refusal }, { status: 429 });
+  }
   /* The balance against what is still to start, before the first of it starts (rule 14): never halfway through. What already started holds its own reservation. */
-  const toStart = states.reduce((n, s, i) => n + (s.state === "open" ? holds[i].credits : 0), 0);
+  const toStart = states.reduce((n, s, i) => n + (s.state === "open" ? holds[i] : 0), 0);
   const state = unit === "cr" && toStart > 0 ? await creditState() : null;
   if (state && state.balance < toStart)
     return admissionReply({ error: `Short by ${Math.ceil((toStart - state.balance) * 10) / 10} cr. Top up, then approve. Nothing is spent until you do.`, short: true }, { status: 402 });

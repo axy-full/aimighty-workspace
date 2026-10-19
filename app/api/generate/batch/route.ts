@@ -11,7 +11,7 @@ export const maxDuration = 300;
 
 /**
  * A multi-shot press as ONE job (lib/batchPress.ts): `{ members: [<a generation request>, ...] }`. Quote with `quoteOnly` (the server prices every member itself and judges the SUM
- * against the approval line); press with `maxCredits` (the total) and the quote's `fingerprint`, under an Idempotency-Key that names the press: asking again under it starts only
+ * against the workspace's monthly cap); press with `maxCredits` (the total) and the quote's `fingerprint`, under an Idempotency-Key that names the press: asking again under it starts only
  * what has not started. `{ cancel: true }` under the same key cancels the press: nothing more starts under it, and its takes still waiting are cancelled at no charge.
  */
 export const POST = withTenant(async function POST(req: Request) {

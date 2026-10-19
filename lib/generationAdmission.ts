@@ -2534,15 +2534,18 @@ export async function executeGenerationAdmission(
   }
 }
 
-/** Free, repeatable preparation. Paid implicit prompt refinement is never part of a pipeline quote. */
+/** Free, repeatable preparation. Paid implicit prompt refinement is never part of a pipeline quote.
+ * `cost`: server-only, the take's engine dollars at its hold (lib/admissionSupport.ts prepareAdmission). */
 export function prepareGeneration(
   input: Record<string, unknown>,
   actor: AdmissionActor,
+  cost?: { holdUsd?: number },
 ): Promise<PrepareAdmissionResult> {
   return prepareAdmission(
     { ...input, refine: false },
     actor,
     executeGenerationAdmission,
+    cost,
   );
 }
 export function quoteGeneration(prepared: PreparedAdmission) {

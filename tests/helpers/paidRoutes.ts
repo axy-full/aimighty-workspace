@@ -11,7 +11,7 @@ export type PaidRoute = { dir: string; spends: string };
 
 export const PAID_ROUTES: PaidRoute[] = [
   { dir: "generate", spends: "video, image, upscale (Topaz), Seedance edit, Cinema Studio, Motion transfer, Object swap and the agent's renders" },
-  { dir: "generate/batch", spends: "a multi-shot press as ONE job: every shot priced by the server, the sum judged against the approval line, one approval for the total" },
+  { dir: "generate/batch", spends: "a multi-shot press as ONE job: every shot priced by the server, the sum judged against the workspace's monthly cap, one approval for the total" },
   { dir: "audio", spends: "speech, sound effects and music" },
   { dir: "audio/dub", spends: "dubbing" },
   { dir: "audio/transcribe", spends: "transcription" },

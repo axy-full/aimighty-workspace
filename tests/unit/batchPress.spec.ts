@@ -10,9 +10,11 @@ import { jobApprovalLineCredits } from "../../lib/approvalRule";
 import { alignLedgerUnit } from "../helpers/ledgerUnit";
 
 /**
- * Pricing guardrail 4 for a multi-shot press (SOW §7A; owner, 16 Oct 2026, A.2): a press of several shots is ONE job, judged as one against the 200 cr line, with one
- * approval that shows the total, even when every shot in it is under the line. The server prices every member itself and judges the sum (lib/batchPress.ts, POST
- * /api/generate/batch); a total from the client is never read.
+ * A multi-shot press is ONE job with one approval that shows the total (owner, 16 Oct 2026, A.2). The server prices every member itself (lib/batchPress.ts, POST
+ * /api/generate/batch); a total from the client is never read. The 200 cr per-job line is not judged on the sum (owner, 19 Oct 2026: the guardrail-4 check is
+ * dropped from #815): a person presses a total far above it with one approval. What the sum is judged against is the workspace's monthly spending cap (its own,
+ * or the house cap in the house workspace): a press whose total would pass it is refused whole, at the quote and at the press, though each shot alone fits.
+ * Each shot's own checks still run as before.
  *
  * Also: one press asked again starts nothing twice (the same key re-reads every member's claim: what started is that take, what was refused starts on the next ask, a
  * claim left by a press killed mid-way is settled once no request can still run it), and a cancelled press charges nothing for its shots that had not started (owner,
@@ -21,9 +23,10 @@ import { alignLedgerUnit } from "../helpers/ledgerUnit";
  * The REAL price path: every shot is priced by lib/generationAdmission.ts's own prepareGeneration and started by its own admitGeneration and reservation, on real
  * temporary databases. Only the render's dispatch (lib/inngest.ts enqueueRender) and, in the cancel test, the engine's answer to a cancel are stand-ins: no engine is
  * called and no network is reached. No price is written in this file: each figure is read from the server's own quote of one shot. This file only adds to the guards:
- * the single-job rules are guardrail4.spec.ts's.
+ * the single-job rules are guardrail4.spec.ts's. A cap here is set from one shot's own engine dollars at its hold, as the server's own preparation reports them
+ * (prepareGeneration's server-only `cost`), never a figure written here.
  */
-const dir = mkdtempSync(path.join(tmpdir(), "particl-guardrail-4-batch-"));
+const dir = mkdtempSync(path.join(tmpdir(), "particl-batch-press-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.WORKSPACE_DB_DIRECTORY = path.join(dir, "tenants");
@@ -136,24 +139,52 @@ async function ledger() {
 }
 const members = (reply: AdmissionReply) => reply.body.members as { index: number; id?: string; status?: string; error?: string; code?: number; charged?: number }[];
 
-test("a batch over the line asks, though every shot in it is under the line: a member is told an admin has to start it, at the quote and at the press, and nothing starts", async () => {
-  const ws = await workspace("over", 100_000);
+/** One shot's engine dollars at its hold, as the server's own preparation reports them (server-only; read here only to set a cap around it). */
+async function holdUsdOf(ws: TenantWorkspace, actor: AdmissionActor, member = shot(0)): Promise<number> {
+  return as(ws, actor, async () => {
+    const cost: { holdUsd?: number } = {};
+    const p = await admission.prepareGeneration(member, actor, cost);
+    expect(p.ok, JSON.stringify(p)).toBe(true);
+    expect(cost.holdUsd).toBeGreaterThan(0);
+    return cost.holdUsd!;
+  });
+}
+/** The workspace with its monthly cap on the platform's engines set on the platform's desk (`allowance_usd`), as the next request reads it. */
+async function withCap(ws: TenantWorkspace, usd: number | null): Promise<TenantWorkspace> {
+  const { platformDb, rowToWorkspace } = await import("../../lib/platform");
+  await platformDb().execute({ sql: "UPDATE workspaces SET allowance_usd=? WHERE id=?", args: [usd, ws.id] });
+  return rowToWorkspace((await platformDb().execute({ sql: "SELECT * FROM workspaces WHERE id=?", args: [ws.id] })).rows[0]);
+}
+/** The press's own claims (its shots' claims and its record of them): none when it was refused before anything was written. */
+async function pressClaimsOf(key: string): Promise<number> {
+  const { db } = await import("../../lib/db");
+  const { generationRequestsReady } = await import("../../lib/generationRequests");
+  await generationRequestsReady();
+  const prefix = batchPress.pressPrefix(key);
+  return Number((await db().execute({ sql: "SELECT COUNT(*) AS n FROM generation_requests WHERE request_key>=? AND request_key<?", args: [prefix, `${prefix}~`] })).rows[0].n);
+}
+
+test("a batch far above the 200 cr line, with no cap, is quoted and pressed by a member with one approval: no admin rule fires for the sum, and every shot starts", async () => {
+  const ws = await workspace("far", 100_000);
   const { each, over } = await sizing(ws);
-  /* Each shot alone is a job under the line: it quotes for a member. */
-  for (const m of shots(over)) expect((await quote(ws, MEMBER, [m])).status).toBe(200);
-  /* Together they are one job, over the line. */
-  const total = each * over;
+  /* Twice as many shots as it takes to pass the line: the sum is at least twice the line. */
+  const far = Math.min(2 * over, batchPress.BATCH_MAX_MEMBERS);
+  const total = each * far;
   expect(total).toBeGreaterThan(LINE);
-  for (const quoteOnly of [true, false]) {
-    const out = await as(ws, MEMBER, () => batchPress.admitBatch({ members: shots(over), quoteOnly, maxCredits: total, fingerprint: "0".repeat(64) }, MEMBER, { ...noDefer, pressKey: `press-over-${run}` }));
-    expect(out.status, `quoteOnly ${quoteOnly}`).toBe(403);
-    expect(out.body).toMatchObject({ needsAdmin: true });
-    expect(String(out.body.error)).toContain(`This job is ${total} cr, over the ${LINE} cr that needs an admin. An admin has to start it.`);
-  }
-  expect(await as(ws, MEMBER, ledger)).toEqual({ takes: [], meters: [], held: 0 });
+  const q = await quote(ws, MEMBER, shots(far));
+  expect(q.status, JSON.stringify(q.body)).toBe(200);
+  expect(q.body).toMatchObject({ estimatedCredits: total, price: total, unit: "cr", members: far });
+  expect(q.body).not.toHaveProperty("needsAdmin");
+  const pressed = await press(ws, MEMBER, shots(far), approvalOf(q), `press-far-${run}`);
+  expect(pressed.status, JSON.stringify(pressed.body)).toBe(200);
+  expect(pressed.body).toMatchObject({ status: "started", estimatedCredits: total });
+  const after = await as(ws, MEMBER, ledger);
+  expect(after.takes).toHaveLength(far);
+  expect(after.meters.map((m) => m.credits)).toEqual(Array(far).fill(each));
+  expect(after.held).toBe(total);
 });
 
-test("an admin's own tap clears it, once, for exactly the listed shots at their listed prices; the quote's total is the server's sum, and each shot starts at its own quote", async () => {
+test("one approval, once, for exactly the listed shots at their listed prices; the quote's total is the server's sum, and each shot starts at its own quote", async () => {
   const ws = await workspace("admin", 100_000);
   const { each, over } = await sizing(ws);
   const q = await quote(ws, ADMIN, shots(over));
@@ -189,41 +220,105 @@ test("the total is the server's: a total, a size or a ceiling sent by the client
   const { each, over } = await sizing(ws);
   const forged = shots(over).map((m) => ({ ...m, maxCredits: 1, quoteFingerprint: "a".repeat(64), batchId: "b_forged1", batchSize: 1 }));
   const out = await quote(ws, MEMBER, forged, { estimatedCredits: 1, total: 1, size: 1 });
-  expect(out.status).toBe(403);
-  expect(String(out.body.error)).toContain(`This job is ${each * over} cr`);
+  expect(out.status, JSON.stringify(out.body)).toBe(200);
+  expect(out.body).toMatchObject({ estimatedCredits: each * over, members: over });
   /* With the claims stripped, the forged shots are the plain shots: the same price and the same approval. */
   expect((await quote(ws, ADMIN, forged)).body.fingerprint).toBe((await quote(ws, ADMIN, shots(over))).body.fingerprint);
+  /* A forged total is never an approval: pressed with the quote's fingerprint and a ceiling of 1, nothing starts. */
+  expect(await press(ws, MEMBER, forged, { fingerprint: out.body.fingerprint, maxCredits: 1 }, `press-forged-${run}`)).toMatchObject({ status: 409 });
+  expect(await as(ws, MEMBER, ledger)).toEqual({ takes: [], meters: [], held: 0 });
 });
 
-test("at the line: as many shots as fit under it start for a member; one more shot asks", async () => {
-  const ws = await workspace("edge", 100_000);
-  const { each, under } = await sizing(ws);
-  expect(each * under).toBeLessThanOrEqual(LINE);
-  const q = await quote(ws, MEMBER, shots(under));
-  expect(q.status, JSON.stringify(q.body)).toBe(200);
-  const pressed = await press(ws, MEMBER, shots(under), approvalOf(q), `press-edge-${run}`);
+test("a batch whose total would pass the workspace's monthly cap is refused whole, at the quote and at the press, though each shot alone fits: nothing is written, no take, no reservation, no claim", async () => {
+  const { ALLOWANCE_REACHED } = await import("../../lib/allowance");
+  let ws = await workspace("cap", 100_000);
+  const usd = await holdUsdOf(ws, MEMBER);
+  /* Approved with no cap, four shots. Then the platform's desk sets a cap with room for three and a half. */
+  const q4 = await quote(ws, MEMBER, shots(4));
+  expect(q4.status, JSON.stringify(q4.body)).toBe(200);
+  const stale = ws;
+  ws = await withCap(ws, usd * 3.5);
+  /* Each shot alone fits. */
+  for (const m of shots(4)) expect((await quote(ws, MEMBER, [m])).status).toBe(200);
+  /* Together they would pass it: refused at the quote, in the cap's own words with no figure, and with nothing to approve. */
+  expect(await quote(ws, MEMBER, shots(4))).toEqual({ status: 429, body: { error: ALLOWANCE_REACHED } });
+  /* Pressed with the approval from before the cap: refused before any shot is admitted. The cap is read as the reservation reads it, afresh: a
+     request that began before the cap was set (its workspace still says none) is refused the same. */
+  const key = `press-cap-${run}`;
+  for (const at of [ws, stale]) expect(await press(at, MEMBER, shots(4), approvalOf(q4), key)).toEqual({ status: 429, body: { error: ALLOWANCE_REACHED } });
+  expect(await as(ws, MEMBER, ledger)).toEqual({ takes: [], meters: [], held: 0 });
+  expect(await as(ws, MEMBER, () => pressClaimsOf(key))).toBe(0);
+  /* Two fit: quoted and pressed, both start. */
+  const q2 = await quote(ws, MEMBER, shots(2));
+  expect(q2.status, JSON.stringify(q2.body)).toBe(200);
+  expect(q2.body).not.toHaveProperty("notice");
+  const pressed = await press(ws, MEMBER, shots(2), approvalOf(q2), `press-cap-fits-${run}`);
   expect(pressed.status, JSON.stringify(pressed.body)).toBe(200);
-  expect((await as(ws, MEMBER, ledger)).takes).toHaveLength(under);
-  expect((await quote(ws, MEMBER, shots(under + 1))).status).toBe(403);
+  expect(pressed.body).toMatchObject({ status: "started" });
+  const two = await as(ws, MEMBER, ledger);
+  expect(two.takes).toHaveLength(2);
+  /* The two running at their hold count against the month: a press of one more fits, a press of two more would pass the cap. */
+  expect((await quote(ws, MEMBER, [shot(5)])).status).toBe(200);
+  expect(await quote(ws, MEMBER, [shot(5), shot(6)])).toEqual({ status: 429, body: { error: ALLOWANCE_REACHED } });
+  /* With the cap lifted, nothing is judged on the sum. */
+  ws = await withCap(ws, null);
+  expect((await quote(ws, MEMBER, shots(12))).status).toBe(200);
+  expect(await as(ws, MEMBER, ledger)).toEqual(two);
 });
 
-test("a machine never presses it: a token (an admin's too), an agent identity and Atomik's Auto may ask the price under the line, are refused outright over it, and never approve", async () => {
+test("asked again, the cap is judged on what is still to start: shots that already started count once, in this month's spend", async () => {
+  let ws = await workspace("cap_again", 100_000, { rendersPerHour: 2 });
+  const usd = await holdUsdOf(ws, ADMIN);
+  ws = await withCap(ws, usd * 3.5);
+  const q = await quote(ws, ADMIN, shots(3));
+  expect(q.status, JSON.stringify(q.body)).toBe(200);
+  const key = `press-cap-again-${run}`;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.body).toMatchObject({ status: "partial" });
+  expect(members(first)[2]).toMatchObject({ index: 2, code: 429, charged: 0 });
+  /* Room in the hour again: the third shot starts. The two already running are not counted a second time. */
+  ws = await withLimits(ws, { rendersPerHour: 100_000 });
+  const again = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(again.status, JSON.stringify(again.body)).toBe(200);
+  expect(again.body).toMatchObject({ status: "started" });
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+});
+
+test("each shot's own checks still run as before: a shot past the shot cap is refused, named beside the refusal, and nothing starts", async () => {
+  const ws = await workspace("shot_cap", 100_000);
+  await as(ws, ADMIN, async () => {
+    const { db } = await import("../../lib/db");
+    await db().execute({ sql: "INSERT INTO shots(id,project_id,code,title,created_at,updated_at) VALUES(?,?,?,?,0,0)", args: ["shot_capped", "project", "SH010", "Capped"] });
+    for (const [key, value] of [["approvalRule", "cap"], ["shotCapCredits", "1"]])
+      await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [key, value] });
+  });
+  /* The shot on the capped shot is over its cap alone: the batch is refused at that shot, as the shot alone is. */
+  const alone = await quote(ws, MEMBER, [shot(0, { shotId: "shot_capped" })]);
+  expect(alone).toMatchObject({ status: 403, body: { needsAdmin: true } });
+  for (const quoteOnly of [true, false]) {
+    const out = await as(ws, MEMBER, () => batchPress.admitBatch({ members: [shot(1), shot(0, { shotId: "shot_capped" })], quoteOnly, maxCredits: 100_000, fingerprint: "0".repeat(64) }, MEMBER, { ...noDefer, pressKey: `press-shot-cap-${run}` }));
+    expect(out, `quoteOnly ${quoteOnly}`).toMatchObject({ status: 403, body: { needsAdmin: true, shot: 2, error: alone.body.error } });
+  }
+  expect(await as(ws, MEMBER, ledger)).toEqual({ takes: [], meters: [], held: 0 });
+  /* The shots that are not on it quote as before. */
+  expect((await quote(ws, MEMBER, shots(2))).status).toBe(200);
+});
+
+test("a machine never presses it: a token (an admin's too), an agent identity and Atomik's Auto may ask the price, of any total, and never approve", async () => {
   const ws = await workspace("machine", 100_000);
   const { under, over } = await sizing(ws);
   for (const actor of [TOKEN, AGENT]) {
-    const q = await quote(ws, actor, shots(under));
-    expect(q.status, `${actor.user.id} ${JSON.stringify(q.body)}`).toBe(200);
-    expect(await press(ws, actor, shots(under), approvalOf(q), `press-machine-${run}`), actor.user.id).toMatchObject({ status: 403, body: { error: expect.stringMatching(/Only a person approves/) } });
-    for (const quoteOnly of [true, false]) {
-      const out = await as(ws, actor, () => batchPress.admitBatch({ members: shots(over), quoteOnly, maxCredits: 100_000, fingerprint: "0".repeat(64) }, actor, { ...noDefer, pressKey: `press-machine-${run}` }));
-      expect(out.status, `${actor.user.id} ${quoteOnly}`).toBe(403);
-      expect(String(out.body.error)).toMatch(/needs an admin's own tap\. Atomik, an MCP client and API tokens can prepare it, never start it\./);
+    for (const n of [under, over]) {
+      const q = await quote(ws, actor, shots(n));
+      expect(q.status, `${actor.user.id} ${JSON.stringify(q.body)}`).toBe(200);
+      expect(await press(ws, actor, shots(n), approvalOf(q), `press-machine-${actor.user.id.replace(/[^a-z_]/g, "-")}-${n}-${run}`), actor.user.id).toMatchObject({ status: 403, body: { error: expect.stringMatching(/Only a person approves/) } });
     }
   }
   const auto = { run: { auto: true } };
-  const q = await quote(ws, ADMIN, shots(under));
-  expect(await press(ws, ADMIN, shots(under), approvalOf(q), `press-auto-${run}`, auto)).toMatchObject({ status: 403 });
-  expect((await as(ws, ADMIN, () => batchPress.admitBatch({ members: shots(over), quoteOnly: true }, ADMIN, { ...noDefer, ...auto } as never))).status).toBe(403);
+  for (const n of [under, over]) {
+    const q = await quote(ws, ADMIN, shots(n));
+    expect(await press(ws, ADMIN, shots(n), approvalOf(q), `press-auto-${n}-${run}`, auto)).toMatchObject({ status: 403, body: { error: expect.stringMatching(/Only a person approves/) } });
+  }
   expect(await as(ws, ADMIN, ledger)).toEqual({ takes: [], meters: [], held: 0 });
 });
 
@@ -240,28 +335,46 @@ test("the balance is checked against the whole total before the first shot start
   expect(await as(ws, MEMBER, ledger)).toEqual({ takes: [], meters: [], held: 0 });
 });
 
-test("the house is judged at cost against the same line, in words with no figure", async () => {
+test("in the house workspace the sum is judged against the house cap: a batch that would pass it is refused whole at the quote and at the press, one that fits runs, and its quote carries the cap's own 80% notice", async () => {
   const { keepingHouseJobsClean } = await import("../helpers/houseJobs");
-  const house: TenantWorkspace = { id: "ws_legacy", slug: "house", name: "House", legacy: true, dbUrl: `file:${path.join(dir, `house_${run}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: false,
-    allowanceUsd: null, gatewayKeyId: null, ownerId: "u_admin", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 1000, rendersPerHour: 100_000, storageQuotaBytes: null, deletedAt: null };
+  const { HOUSE_CAP_REACHED, houseMonthStart, houseSpendSince } = await import("../../lib/houseCap");
+  const { houseCapState, houseCapWarning } = await import("../../lib/houseCapText");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const house = (allowanceUsd: number | null): TenantWorkspace => ({ id: "ws_legacy", slug: "house", name: "House", legacy: true, dbUrl: `file:${path.join(dir, `house_${run}.db`)}`, dbToken: null, keys: {}, usesPlatformKeys: false,
+    allowanceUsd, gatewayKeyId: null, ownerId: "u_admin", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 1000, rendersPerHour: 100_000, storageQuotaBytes: null, deletedAt: null });
+  /* The house's cap is the `allowance_usd` the platform owner sets on its row (lib/houseCap.ts), and the request's workspace carries the same. */
+  await platformReady();
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,legacy,uses_platform_keys,owner_id,created_at,updated_at) VALUES('ws_legacy','house-batch','House','(primary)',1,0,'u_admin',0,0)", args: [] });
+  const setHouseCap = async (usd: number) => { await platformDb().execute({ sql: "UPDATE workspaces SET allowance_usd=? WHERE id='ws_legacy'", args: [usd] }); return house(usd); };
   await keepingHouseJobsClean(async () => {
-    await as(house, MEMBER, async () => {
+    await as(house(null), MEMBER, async () => {
       const { ready, db } = await import("../../lib/db");
       await ready();
       await db().execute("INSERT OR IGNORE INTO projects(id,name,created_at) VALUES('project','Film',0)");
       await db().execute("INSERT INTO settings(key,value,updated_at) VALUES('promptWriter','none',0) ON CONFLICT(key) DO UPDATE SET value='none'");
     });
-    const one = await quote(house, MEMBER, [shot(0)]);
-    expect(one.status, JSON.stringify(one.body)).toBe(200);
-    expect(one.body).toMatchObject({ unit: "usd" });
-    /* At cost, counted in credits at no margin: the same line, more shots to reach it. Two past it, so rounding cannot land on it. */
-    const atCost = one.body.estimatedCredits as number;
-    const over = Math.floor(LINE / atCost) + 2;
-    expect(over).toBeLessThanOrEqual(batchPress.BATCH_MAX_MEMBERS);
-    const out = await quote(house, MEMBER, shots(over));
-    expect(out.status, JSON.stringify(out.body)).toBe(403);
-    expect(String(out.body.error)).not.toMatch(/\bcr\b|\d/);
-    expect((await quote(house, MEMBER, shots(Math.max(1, Math.floor(LINE / atCost) - 1)))).status).toBe(200);
+    const usd = await holdUsdOf(house(null), MEMBER);
+    const spent = await as(house(null), MEMBER, () => houseSpendSince(houseMonthStart()));
+    /* Approved under a cap with room for ten shots; then the owner lowers it to room for two and a half. */
+    let ws = await setHouseCap(spent + usd * 10);
+    const q3 = await quote(ws, MEMBER, shots(3));
+    expect(q3.status, JSON.stringify(q3.body)).toBe(200);
+    expect(q3.body).toMatchObject({ unit: "usd", members: 3 });
+    ws = await setHouseCap(spent + usd * 2.5);
+    for (const m of shots(3)) expect((await quote(ws, MEMBER, [m])).status).toBe(200);
+    expect(await quote(ws, MEMBER, shots(3))).toEqual({ status: 429, body: { error: HOUSE_CAP_REACHED } });
+    const key = `press-house-cap-${run}`;
+    expect(await press(ws, MEMBER, shots(3), approvalOf(q3), key)).toEqual({ status: 429, body: { error: HOUSE_CAP_REACHED } });
+    expect(await as(ws, MEMBER, ledger)).toEqual({ takes: [], meters: [], held: 0 });
+    expect(await as(ws, MEMBER, () => pressClaimsOf(key))).toBe(0);
+    /* Two fit, at 80% of the cap: the quote carries the house cap's own warning, in its own words, and the press runs. */
+    const q2 = await quote(ws, MEMBER, shots(2));
+    expect(q2.status, JSON.stringify(q2.body)).toBe(200);
+    expect(q2.body.notice).toBe(houseCapWarning(houseCapState(spent + usd * 2.5, spent + usd * 2)));
+    const pressed = await press(ws, MEMBER, shots(2), approvalOf(q2), `press-house-fits-${run}`);
+    expect(pressed.status, JSON.stringify(pressed.body)).toBe(200);
+    expect(pressed.body).toMatchObject({ status: "started" });
+    expect((await as(ws, MEMBER, ledger)).takes).toHaveLength(2);
   });
 });
 
