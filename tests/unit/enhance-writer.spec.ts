@@ -138,13 +138,15 @@ test("an ordinary (ASCII) prompt at the length limit (ENHANCE_MAX_PROMPT), on th
 });
 
 test("a failed catalogue read is not asked again for 60 s; a forced read still asks, and a good read clears it", async () => {
+  /* A made-up rate, not any vendor's price: the read only needs a priced model to keep. */
+  const SYNTHETIC_RATE = { input: "0.00000111", output: "0.00000222" };
   const hits: number[] = [];
   let healthy = false;
   const server = createServer((_req, res) => {
     hits.push(Date.now());
     if (!healthy) { res.statusCode = 503; res.end("no"); return; }
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ data: [{ id: "anthropic/claude-sonnet-5.5", name: "Sonnet", owner: "anthropic", type: "language", context_window: 100000, max_tokens: 8000, pricing: { input: "0.000002", output: "0.00001" } }] }));
+    res.end(JSON.stringify({ data: [{ id: "anthropic/claude-sonnet-5.5", name: "Sonnet", owner: "anthropic", type: "language", context_window: 100000, max_tokens: 8000, pricing: SYNTHETIC_RATE }] }));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

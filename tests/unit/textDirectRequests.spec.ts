@@ -231,11 +231,23 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
   expect([...planner.featured, ...planner.rest].map(m => m.id)).toEqual(expect.arrayContaining(['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5']));
   expect(selectAtomikModel('auto', ids)).toBe('anthropic/claude-sonnet-5.5');
   expect(ENHANCER_MODELS.claude.filter(id => ids.includes(id)).slice(0, 2)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5']);
-  // Priced from Anthropic's list: Opus 5.5 $4 / $20, Sonnet 5.5 $2 / $10, Haiku 5.5 $0.10 / $0.50 up to 100k prompt tokens.
-  const priced = new Map((await catalog(true)).map(m => [m.id, m.pricing]));
-  expect(priced.get('anthropic/claude-opus-5.5')).toMatchObject({ input: '0.000004', output: '0.00002', input_cache_read: '0.0000002', input_cache_write: '0.000005' });
-  expect(priced.get('anthropic/claude-sonnet-5.5')).toMatchObject({ input: '0.000002', output: '0.00001', input_cache_read: '0.0000001', input_cache_write: '0.0000025' });
-  expect(priced.get('anthropic/claude-haiku-5.5')).toMatchObject({ input: '0.0000001', output: '0.0000005' });
+  // Priced as the catalogue snapshot states each (lib/modelCatalog.json; no figure is written here): every rate a direct Claude call settles at is there and
+  // positive, Opus above Sonnet above Haiku for input and output, and Haiku 5.5's flat rate is its first prompt tier's.
+  const { snapshotModels } = await import('../../lib/catalog');
+  const priced = new Map((await catalog(true)).map(m => [m.id, m.pricing as Record<string, unknown> | null]));
+  const CLAUDE = ['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'] as const;
+  for (const id of CLAUDE) {
+    const stated = snapshotModels().find(m => m.id === id)?.pricing;
+    expect(stated, id).toBeTruthy();
+    expect(priced.get(id), id).toEqual(stated);
+    for (const key of ['input', 'output', 'input_cache_read', 'input_cache_write']) expect(Number(priced.get(id)![key]), `${id} ${key}`).toBeGreaterThan(0);
+  }
+  const rate = (id: (typeof CLAUDE)[number], key: string) => Number(priced.get(id)![key]);
+  for (const key of ['input', 'output']) {
+    expect(rate(CLAUDE[0], key), key).toBeGreaterThan(rate(CLAUDE[1], key));
+    expect(rate(CLAUDE[1], key), key).toBeGreaterThan(rate(CLAUDE[2], key));
+    expect(Number((priced.get(CLAUDE[2])![`${key}_tiers`] as { cost: string }[])[0].cost), key).toBe(rate(CLAUDE[2], key));
+  }
   // Nothing direct and no gateway: no Claude or Grok at all; Gemini is still the direct ids on its key, and none without it.
   delete process.env.TEXT_DIRECT;
   const textIds = async () => (await catalog(true)).filter(m => m.type === 'language' && !m.outputModalities?.includes('image') && !m.id.startsWith('openai/')).map(m => m.id);

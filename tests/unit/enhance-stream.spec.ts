@@ -20,7 +20,9 @@ delete process.env.PLATFORM_ALLOWANCE_USD;
 
 const OWNER: AdmissionActor = { user: { id: "owner", email: "owner@example.invalid", name: "owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null } };
 const WRITER = "anthropic/claude-haiku-4.5";
-const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language", description: "", contextWindow: 100000, maxTokens: 5000, pricing: { input: "0.000001", output: "0.000002" } };
+/** A made-up rate for the fixture writer, not any vendor's price: the run only needs a model with a price. */
+const SYNTHETIC_RATE = { input: "0.00000111", output: "0.00000222" };
+const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language", description: "", contextWindow: 100000, maxTokens: 5000, pricing: SYNTHETIC_RATE };
 
 const nodeRequire = createRequire(path.resolve("package.json"));
 function resolveSource(from: string, name: string): string {
