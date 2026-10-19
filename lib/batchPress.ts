@@ -51,7 +51,7 @@ import { QueuedCancelError, cancelQueuedVideo, servedHere, type QueuedCancel } f
  * has already started is not cancelled and is billed as today; the reply says so. No price, margin or ledger rule is written here.
  *
  * Members are ordinary generation requests (the body POST /api/generate takes, with no `maxCredits`). The members do not carry `batchId`/`batchSize`: those are a composer's
- * own claim about its press (lib/batchLine.ts) and would judge each member by the first one's price times the rest; each member here is judged on its own.
+ * own label for its press; nothing judges a member on a batch line (there is no per-job line since 20 Oct 2026), and each member here is judged on its own.
  */
 export const BATCH_MAX_MEMBERS = 24;
 const PEOPLE_ONLY = "Only a person approves spending. Atomik, outside agents and tokens can prepare this, never approve it.";

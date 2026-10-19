@@ -6,7 +6,6 @@ import { createRequire } from "node:module";
 import ts from "typescript";
 import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
 import type { AdmissionActor, AdmissionReply } from "../../lib/admissionTypes";
-import { jobApprovalLineCredits } from "../../lib/approvalRule";
 import { alignLedgerUnit } from "../helpers/ledgerUnit";
 
 /**
@@ -22,8 +21,8 @@ import { alignLedgerUnit } from "../helpers/ledgerUnit";
  *
  * The REAL price path: every shot is priced by lib/generationAdmission.ts's own prepareGeneration and started by its own admitGeneration and reservation, on real
  * temporary databases. Only the render's dispatch (lib/inngest.ts enqueueRender) and, in the cancel test, the engine's answer to a cancel are stand-ins: no engine is
- * called and no network is reached. No price is written in this file: each figure is read from the server's own quote of one shot. This file only adds to the guards:
- * the single-job rules are guardrail4.spec.ts's. A cap here is set from one shot's own engine dollars at its hold, as the server's own preparation reports them
+ * called and no network is reached. No price is written in this file: each figure is read from the server's own quote of one shot (OLD_LINE below is a size for the test, not a price).
+ * This file only adds to the guards: the single-job rules (no per-job line since 20 Oct 2026) are noPerJobLine.spec.ts's. A cap here is set from one shot's own engine dollars at its hold, as the server's own preparation reports them
  * (prepareGeneration's server-only `cost`), never a figure written here.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-batch-press-"));
@@ -40,7 +39,9 @@ test.beforeEach(() => { globalThis.fetch = async () => { throw new Error("Extern
 test.afterEach(() => { globalThis.fetch = originalFetch; });
 
 const SEEDANCE = "dreamina-seedance-2-5-260628";
-const LINE = jobApprovalLineCredits(0.1);
+/* The platform's per-job line (200 cr at US$0.10) is retired (owner, 20 Oct 2026; tests/unit/noPerJobLine.spec.ts). The figure only sizes this test's presses:
+   a shot under it, and a press whose total passes it. Nothing in the product judges it. */
+const OLD_LINE = 200;
 const run = Math.random().toString(36).slice(2, 8);
 const person = (id: string, role: "admin" | "member"): TenantUser => ({ id, email: `${id}@example.test`, name: id, role, owner: role === "admin", disabled: false, lastSeen: null, createdAt: 0 });
 const MEMBER: AdmissionActor = { user: person("u_member", "member") };
@@ -121,8 +122,8 @@ async function sizing(ws: TenantWorkspace) {
   expect(one.status, JSON.stringify(one.body)).toBe(200);
   const each = one.body.estimatedCredits as number;
   expect(each).toBeGreaterThan(0);
-  expect(each).toBeLessThan(LINE);
-  const under = Math.floor(LINE / each);
+  expect(each).toBeLessThan(OLD_LINE);
+  const under = Math.floor(OLD_LINE / each);
   const over = under + 1;
   expect(over).toBeLessThanOrEqual(batchPress.BATCH_MAX_MEMBERS);
   return { each, under, over };
@@ -170,7 +171,7 @@ test("a batch far above the 200 cr line, with no cap, is quoted and pressed by a
   /* Twice as many shots as it takes to pass the line: the sum is at least twice the line. */
   const far = Math.min(2 * over, batchPress.BATCH_MAX_MEMBERS);
   const total = each * far;
-  expect(total).toBeGreaterThan(LINE);
+  expect(total).toBeGreaterThan(OLD_LINE);
   const q = await quote(ws, MEMBER, shots(far));
   expect(q.status, JSON.stringify(q.body)).toBe(200);
   expect(q.body).toMatchObject({ estimatedCredits: total, price: total, unit: "cr", members: far });
