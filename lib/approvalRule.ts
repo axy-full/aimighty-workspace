@@ -17,49 +17,14 @@ export function cleanShotCap(v: unknown): number {
   return Number.isFinite(n) && n >= 1 ? Math.min(n, 1_000_000) : 50;
 }
 
-/**
- * SOW §7A guardrail 4, the platform's approval line: any single job estimated above this price needs the
- * workspace's cost approval rule, whatever the workspace's own setting. It is a price, so in credits it
- * follows the price of a credit (the SOW's "200 cr" is this line at a credit's US$0.10), and the same
- * line reads as fewer credits when a credit costs more.
- * Its single source: change the line here. It is enforced at the press (jobLineVerdict below): in the reservation
- * (lib/generationRequests.ts), in admission and the audio, dubbing and text quotes (lib/shotCap.ts), and in the quote
- * verdict (lib/quote.ts). Atomik's Rig runs also use it as the most one Auto job may cost without asking
- * (lib/workbench/rig-agent-limits.ts); an Auto step is a machine here and never starts a job over it.
+/*
+ * Retired, 20 October 2026: the platform's per-job line (SOW §7A guardrail 4, US$20 = 200 cr at a credit's US$0.10) is gone.
+ * The owner's words: "Guardrail 4 is retired everywhere, single jobs included: no per-job line in the product. Every job is
+ * approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with Paused."
+ * No job is refused, parked or sent to an admin because of its size alone. What stays here is the workspace's OWN rule:
+ * with "cap per shot", a member's take that carries a shot past the workspace's cap needs an admin (shotCapVerdict below);
+ * the workspace's setting alone decides whether that fires.
  */
-export const JOB_APPROVAL_LINE_USD = 20;
-
-/** Guardrail 4 in credits at a price of a credit, in whole tenths (rounded down: a job exactly at the line is not above it). */
-export function jobApprovalLineCredits(perCredit: number): number {
-  if (!(Number.isFinite(perCredit) && perCredit > 0)) return 0;
-  return Math.floor((JOB_APPROVAL_LINE_USD / perCredit) * 10 + 1e-9) / 10;
-}
-
-/**
- * Guardrail 4 at the press (SOW §7A): a single job priced above the platform's approval line needs an admin's own tap, whatever
- * the workspace's approval rule, and whatever shot it is for. Judged on the job's price in credits (`credits`: a take at its hold,
- * a batch's takes multiplied before they are compared where a quote stands for several), against `lineCredits`, the line at the
- * workspace's price of a credit (`jobApprovalLineCredits`). Exactly at the line is not above it.
- *
- * Who clears it: an admin pressing it themselves (`isAdmin`, and a person). A member is refused with the sentence that says an admin
- * must start it. An API token, an MCP client and Atomik (`machine`) are refused outright, admin or not: they prepare a job over the
- * line, and an admin starts it (rule 14: approving spend is a person's alone). `figures` says whether the sentence may carry
- * credits (a credit workspace); the house, which pays in dollars at cost, is never worded in credits.
- */
-export const JOB_LINE_STATUS = 403;
-export function jobLineVerdict(o: { credits: number; lineCredits: number; isAdmin: boolean; machine: boolean; figures?: boolean },
-  credits: (n: number) => string = (n) => `${Math.round(n).toLocaleString("en-US")} cr`): { blocked: boolean; line: string } {
-  if (!(o.lineCredits > 0) || !(o.credits > o.lineCredits + 1e-9)) return { blocked: false, line: "" };
-  const figures = o.figures !== false;
-  if (o.machine)
-    return { blocked: true, line: figures
-      ? `A job over ${credits(o.lineCredits)} needs an admin's own tap. Atomik, an MCP client and API tokens can prepare it, never start it.`
-      : "A job this size needs an admin's own tap. Atomik, an MCP client and API tokens can prepare it, never start it." };
-  if (o.isAdmin) return { blocked: false, line: "" };
-  return { blocked: true, line: figures
-    ? `This job is ${credits(o.credits)}, over the ${credits(o.lineCredits)} that needs an admin. An admin has to start it.`
-    : "This job is over the size that needs an admin. An admin has to start it." };
-}
 
 /** What the composer says under the price, or nothing when anyone may press. */
 export function ruleLine(rule: ApprovalRule, cap: number, credits: (n: number) => string): string {
