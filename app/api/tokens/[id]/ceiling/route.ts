@@ -45,7 +45,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
       : { sql: `UPDATE api_tokens SET cap_usd = ?, cap_credits = NULL WHERE id = ? AND revoked_at IS NULL`, args: [ceiling.capUsd, id] },
     securityAuditStatement({ workspaceId: requireTenant().id, actorId: got.user.id, action: "api_token.ceiling_set", targetType: "api_token", targetId: id,
       details: { ceilingUnit: inCredits ? "cr" : "usd_cents", ceilingBefore: whole(before), ceilingAfter: whole(inCredits ? ceiling.capCredits : ceiling.capUsd),
-        ...(inCredits && row.cap_usd != null ? { legacyCleared: true } : {}) } }, true),
+        /* The other unit's ceiling it replaced: a dollar one from before credits, or (where the workspace pays in dollars) a leftover credit one. */
+        ...((inCredits ? row.cap_usd : row.cap_credits) != null ? { legacyCleared: true } : {}) } }, true),
   ], "write");
   /* Revoked between the read and the write: nothing changed, and nothing was recorded. */
   if (!updated?.rowsAffected) return NextResponse.json({ error: "That token is not in this workspace." }, { status: 404 });

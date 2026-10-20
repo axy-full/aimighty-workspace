@@ -190,11 +190,15 @@ test("GET /api/tokens shows an admin the other members' tokens that can generate
   const forAdmin = await listed(admin());
   expect(forAdmin.tokens.map((t: { id: string }) => t.id)).toEqual(["tok_owner_render"]);
   expect(forAdmin.others).toContainEqual(expect.objectContaining({ id: "tok_member_render", scope: "render", owner: "Member Person", capCredits: null }));
+  /* Exactly the other members' tokens that can generate: never a prepare or read-only one, never the admin's own. */
+  expect(forAdmin.others.map((t: { id: string }) => t.id).sort()).toEqual(["tok_legacy_a", "tok_legacy_b", "tok_member_render"]);
+  expect(forAdmin.others.map((t: { id: string }) => t.id)).not.toContain("tok_owner_render");
   expect(forAdmin.others.every((t: { scope: string }) => t.scope === "render")).toBe(true);
   expect(JSON.stringify(forAdmin)).not.toMatch(/token_hash|pk_|capUsd/);
   const forMember = await listed(member());
   expect(forMember.others).toBeUndefined();
-  expect(forMember.tokens.map((t: { id: string }) => t.id)).toEqual(expect.arrayContaining(["tok_member_prep", "tok_member_read", "tok_member_render"]));
+  /* Exactly the member's own tokens: never another person's. */
+  expect(forMember.tokens.map((t: { id: string }) => t.id).sort()).toEqual(["tok_legacy_a", "tok_legacy_b", "tok_member_prep", "tok_member_read", "tok_member_render"]);
 });
 
 test("no agent path can set a ceiling: the route is an admin's session alone, and no MCP tool takes a ceiling", async () => {
@@ -204,4 +208,30 @@ test("no agent path can set a ceiling: the route is an admin's session alone, an
   for (const tool of TOOLS) expect(JSON.stringify(tool.inputSchema), tool.name).not.toMatch(/cap_?credits|cap_?usd|ceiling/i);
   /* POST /api/tokens names a ceiling only for an admin, too. */
   expect(readFileSync("app/api/tokens/route.ts", "utf8")).toContain('if ((capUsd != null || capCredits != null) && got.user.role !== "admin")');
+});
+
+/* The house pays its engines in dollars (lib/houseWorkspace.ts): its token ceilings are dollars, and an admin's figure replaces a leftover credit
+   ceiling the same way a credit figure replaces a dollar one, recorded alike (whole cents, and legacyCleared). */
+const H = workspace(dir, "ws_legacy");
+const HOUSE_RENDER = rawToken(H, "7");
+const houseAdmin = (): Who => ({ mode: "session", ws: H, userId: "owner", name: "Owner Person", role: "admin", bearer: "" });
+test("in the house (dollars), an admin's dollar ceiling replaces a leftover credit one, recorded in whole cents with legacyCleared; clearing leaves none", async () => {
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  await platformReady();
+  await platformDb().execute({ sql: "INSERT OR IGNORE INTO workspaces(id,slug,name,db_url,legacy,uses_platform_keys,owner_id,created_at,updated_at) VALUES(?,?,?,?,1,1,'owner',0,0)", args: [H.id, "house", "House", H.dbUrl] });
+  await seedPeople(H, [{ id: "owner", name: "Owner Person" }, { id: "member", name: "Member Person" }], [{ id: "tok_house_render", userId: "member", scope: "render", raw: HOUSE_RENDER }]);
+  await runInTenant(H, () => db().execute("UPDATE api_tokens SET cap_credits = 300 WHERE id = 'tok_house_render'"));
+  const read = async () => runInTenant(H, async () => {
+    const row = (await db().execute("SELECT cap_credits, cap_usd FROM api_tokens WHERE id='tok_house_render'")).rows[0];
+    const audit = (await db().execute("SELECT details FROM security_audit WHERE action='api_token.ceiling_set' AND target_id='tok_house_render' ORDER BY created_at DESC, rowid DESC LIMIT 1")).rows[0];
+    return { capCredits: row.cap_credits == null ? null : Number(row.cap_credits), capUsd: row.cap_usd == null ? null : Number(row.cap_usd), audit: audit ? JSON.parse(String(audit.details)) : null };
+  });
+  /* A credit figure is refused here: the house counts in dollars. */
+  expect((await patch(houseAdmin(), "tok_house_render", { capCredits: 500 })).status).toBe(400);
+  expect(await patch(houseAdmin(), "tok_house_render", { capUsd: "20.50" })).toEqual({ status: 200, body: { id: "tok_house_render", capUsd: 20.5 } });
+  expect(await read()).toEqual({ capCredits: null, capUsd: 20.5, audit: { ceilingUnit: "usd_cents", ceilingBefore: null, ceilingAfter: 2050, legacyCleared: true } });
+  expect(await patch(houseAdmin(), "tok_house_render", { capUsd: "" })).toEqual({ status: 200, body: { id: "tok_house_render", capUsd: null } });
+  expect(await read()).toEqual({ capCredits: null, capUsd: null, audit: { ceilingUnit: "usd_cents", ceilingBefore: 2050, ceilingAfter: null } });
 });

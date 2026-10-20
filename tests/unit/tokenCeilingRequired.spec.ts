@@ -405,4 +405,11 @@ test("Recraft's MCP tools never start a job or carry an approval: priced and pre
   const { RECRAFT_DIRECT_TOOLS } = await import("../../lib/recraftMcp");
   expect(RECRAFT_DIRECT_TOOLS.length).toBeGreaterThan(0);
   for (const tool of RECRAFT_DIRECT_TOOLS) expect("draft" in tool, tool.def.name).toBe(false);
+  /* The body each tool sends is built from its arguments alone: it never names an approval, whatever the caller passed. */
+  const args = { prompt: "A lighthouse", source_upload_id: "upl_x", project_id: "p1", maxCredits: 999, max_credits: 999 };
+  for (const tool of RECRAFT_DIRECT_TOOLS) {
+    const { body } = tool.request(args as never);
+    expect(Object.keys(body), tool.def.name).not.toContain("maxCredits");
+    expect(Object.keys(body), tool.def.name).not.toContain("max_credits");
+  }
 });
