@@ -180,7 +180,7 @@ test("desktop: the sample board is explorable and says nothing is saved; every a
   await expect(page.getByTestId("v12-visitor-board")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("v12-visitor-pill")).toHaveText("Sample · changes on the sample aren’t saved");
   await expect(page.getByTestId("v12-stage-kind")).toHaveText("FILM");
-  expect(await page.getByTestId("v12-stage-row").count()).toBe(8);
+  expect(await page.getByTestId("v12-stage-row").count()).toBe(11);
   await expect(page.getByTestId("v12-visitor-stage")).toHaveText("Storyboard");
   const cards = page.getByTestId("v12-visitor-card");
   await expect(cards).toHaveCount(3);

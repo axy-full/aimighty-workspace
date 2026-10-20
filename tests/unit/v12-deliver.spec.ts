@@ -77,7 +77,7 @@ test.describe("Deliver", () => {
     expect(stagePage("ppm-deck", "previs")).toBe("ppm");
     expect(stagePage("deliver", "previs")).toBeNull();
     expect(stagePage("deliver", "campaign")).toBeNull();
-    expect(stagePage("cut", "film")).toBeNull();
+    expect(stagePage("edit", "film")).toBeNull();
     expect(stagePage(null, "film")).toBeNull();
   });
 });
