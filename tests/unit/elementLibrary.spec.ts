@@ -121,7 +121,7 @@ test("origin and the crop columns", () => {
   expect(originOf("gen_1", { uploadId: "u", genId: null, identityId: null })).toBe("generated");
   expect(originOf(null, { uploadId: "u", genId: null, identityId: null })).toBe("uploaded");
   expect(originOf(null, { uploadId: null, genId: "g", identityId: null })).toBe("generated");
-  expect(originOf(null, { uploadId: null, genId: null, identityId: "i" })).toBe("generated");
+  expect(originOf(null, { uploadId: null, genId: null, identityId: "i" })).toBe("uploaded");
   expect(originOf(null, null)).toBe("uploaded");
 
   const sha = "ab".repeat(32);
@@ -133,6 +133,19 @@ test("origin and the crop columns", () => {
   expect(() => cropDerivation({ fromUpload: "up_1", x: 0, y: 0, w: 0, h: 1, sourceSha256: sha })).toThrow(/whole pixels/);
   expect(() => cropDerivation({ fromUpload: "up_1", x: 1.5, y: 0, w: 1, h: 1, sourceSha256: sha })).toThrow(/whole pixels/);
   expect(() => cropDerivation({ fromUpload: "up_1", x: 0, y: 0, w: 1, h: 1, sourceSha256: "nope" })).toThrow(/SHA-256/);
+});
+
+test("a trained likeness is uploaded; anything made from it is generated (owner, 18 Oct 2026)", () => {
+  // "A trained likeness is 'uploaded': it is a real person and carries the consent tick. Anything made from it is
+  // 'generated'." Plan § 6.1, A5b.
+  const likeness = { uploadId: null, genId: null, identityId: "id_maya" };
+  expect(originOf(null, likeness)).toBe("uploaded");
+  // A still generated from that likeness, made into an element: promoted from its take.
+  expect(originOf("gen_from_id_maya", null)).toBe("generated");
+  // The same still, when the element's first version is the take rather than the promotion.
+  expect(originOf(null, { uploadId: null, genId: "gen_from_id_maya", identityId: null })).toBe("generated");
+  // Promoted from a take wins even when the first version names the likeness.
+  expect(originOf("gen_from_id_maya", likeness)).toBe("generated");
 });
 
 /* ── The database ─────────────────────────────────────────────────────── */
@@ -168,7 +181,7 @@ const EXPECTED: Record<string, { handle: string; library_kind: string; origin: s
   el_maya2: { handle: "maya_2", library_kind: "character", origin: "uploaded" },
   el_car: { handle: "zoe_s_car", library_kind: "prop", origin: "generated" },
   el_radio: { handle: "prop_1920s_radio", library_kind: "prop", origin: "uploaded" },
-  el_maya3: { handle: "maya_3", library_kind: "character", origin: "generated" },
+  el_maya3: { handle: "maya_3", library_kind: "character", origin: "uploaded" },
   el_long1: { handle: "the_extraordinarily_long_charact", library_kind: LOOK_LIBRARY_KIND, origin: "generated" },
   el_long2: { handle: "the_extraordinarily_long_chara_2", library_kind: LOOK_LIBRARY_KIND, origin: "uploaded" },
   el_image2: { handle: "image2_2", library_kind: "prop", origin: "uploaded" },

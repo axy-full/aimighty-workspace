@@ -112,9 +112,14 @@ export function assignHandles(candidates: readonly HandleCandidate[], taken: Ite
   return out;
 }
 
-/* ── Origin ─────────────────────────────────────────────────────────────
+/* ── Origin (plan § 6.1; A5b) ───────────────────────────────────────────
    Written once and never rewritten. Promoted from a take → generated; else what its first version stands on: a photo
-   someone brought → uploaded, a frame the product made or a trained likeness → generated; nothing at all → uploaded.
+   someone brought → uploaded, a trained likeness → uploaded, a frame the product made → generated; nothing at all →
+   uploaded.
+
+   The likeness rule is the owner's (18 Oct 2026): "A trained likeness is 'uploaded': it is a real person and carries
+   the consent tick. Anything made from it is 'generated'." So a still or take made from a likeness and then made into
+   an element is generated, by its take (`fromGenId`) or its first version's `genId`.
 
    The edge case, on purpose: an element filled while it has no version (made by hand, or mirrored from a cast member
    with no still) is `uploaded`, and stays `uploaded` if its first version is later a generated frame. Origin says
@@ -124,8 +129,8 @@ export type FirstVersion = { uploadId: string | null; genId: string | null; iden
 
 export function originOf(fromGenId: string | null, first: FirstVersion): LibraryOrigin {
   if (fromGenId) return "generated";
-  if (first?.uploadId) return "uploaded";
-  if (first?.genId || first?.identityId) return "generated";
+  if (first?.uploadId || first?.identityId) return "uploaded";
+  if (first?.genId) return "generated";
   return "uploaded";
 }
 
