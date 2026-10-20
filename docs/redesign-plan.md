@@ -1428,3 +1428,16 @@ Recorded by the lead.
 3. **The price file (#843)** merges under the standing yes after a full 24/24 run at its head. #776's lip-sync goes on top of it. The owner mounts the file once #843 is on release/1; it is the only variable, and only names are used in chat.
 4. **The twenty other PRs with "$" in their descriptions:** list which hold vendor prices and which hold caps. Strip the vendor prices; the owner then deletes their edit history.
 5. **Deploy #6** waits for the owner, who takes it when release/1 is green, with the backup first.
+
+## Owner, 20 Oct 2026, ~13:30 IST: answers to the 13:20 update (with the advisor)
+
+Recorded by the lead, verbatim:
+
+1. "Q1: B. An admin sets a ceiling per token in credits per month; every paid request from a token or an MCP client carries its approved quote; a token with no ceiling can only prepare and price. With that, retire guardrail 4 in the code (branch feat/retire-guardrail-4) after its money review and a full run."
+2. "Q2 Auto goes: every job is approved on its quote; "Ask before every take" off means one approval per step. Q3 a big Atomik step still goes to an admin, keyed to the workspace cap, never to a fixed figure. Q4 the per-render ask over 200 cr goes. Q5 the balance check, token ceilings, run limits, project caps and the per-shot rule stay."
+3. "House cap: yes, a third warning after a second raise; never twice at the same figure."
+4. "#852: yes, merge under the standing yes, off behind RECRAFT_ENABLED. The first real Recraft run needs its own yes with the estimate. Close #786."
+5. "Demo: the card says Sent. "Other" needs a line, one word is enough. The demo runs v25's Film steps as they are; v30's lists stay behind their switch. A viewer's mode on a teammate's board is their own and kept. The base language is English and does not count toward the twelve."
+6. "Capture: Thursday 22 Oct, 02:00–03:00 IST. The owner takes the Wednesday prerequisites at 12:00 and 18:00; first on that list is rotating every production credential the old Vercel project still holds (the self-host platform first, then removed from Vercel), with the undo for each step. Write that one click by click, names only, before the rest."
+7. "The owner places SYNC_API_KEY now and RECRAFT_API_KEY once #852 is on release/1, both switches unset; VENDOR_PRICES_PATH and the mounted file with them. Say in the morning note that the names landed, from the readiness endpoint, never the values."
+8. "Deploy #6 stays the owner's, after the capture."
