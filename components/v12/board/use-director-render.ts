@@ -69,29 +69,48 @@ async function readBatchQuote(scope: string, members: Record<string, unknown>[],
 /** A 4xx is the server refusing the press (its own words); anything else is a read that did not happen. */
 const refusedBy = (error: unknown) => error instanceof StudioRequestError && error.status >= 400 && error.status < 500;
 
-/* ── The press's claim: its key and the approval it was pressed with, kept in this browser until the server has settled the press ── */
+/* ── The press's claims: each press's key and the approval it was pressed with, kept in this browser until the server has settled it ── */
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
-/** `quote`: the approval the press carries (its fingerprint and total), or null when the server refused it as out of date and the person must approve the new total. */
-type PressClaim = { key: string; shots: string; quote: BatchQuote | null };
+/**
+ * One press. `quote`: the approval it carries (its fingerprint and total), or null when the server refused it as out of date and the person must approve the new
+ * total. `answered`: the server has reported this press's shots (which started, which did not); a press never answered (a lost reply, a shot still being accepted)
+ * is kept even after Next, because only the server knows what it started.
+ */
+type PressClaim = { key: string; shots: string; quote: BatchQuote | null; answered: boolean };
+/** Claims are kept one per exact set of shots, so a press of other shots never takes the place of one whose reply was lost; the oldest go past this many. */
+export const CLAIMS_KEPT = 8;
 const claimSlot = (scope: string, projectKey: string) => `particl:director-press:${JSON.stringify([scope, projectKey])}`;
-function readClaim(storage: Storage, slot: string, shots: string): PressClaim | null {
+function readClaims(storage: Storage, slot: string): PressClaim[] {
   try {
     const raw = storage.getItem(slot);
-    const v = raw ? (JSON.parse(raw) as Partial<PressClaim>) : null;
-    if (!v || typeof v.key !== "string" || v.shots !== shots) return null;
-    const quote = v.quote && validQuote(v.quote, v.quote.members) ? v.quote : null;
-    return { key: v.key, shots, quote };
-  } catch { return null; }
+    const v = raw ? (JSON.parse(raw) as { claims?: unknown } | Partial<PressClaim>) : null;
+    /* A claim written before claims were kept per shots (one object) is read as a list of one. */
+    const list = Array.isArray((v as { claims?: unknown } | null)?.claims) ? ((v as { claims: unknown[] }).claims) : v && typeof (v as Partial<PressClaim>).key === "string" ? [v] : [];
+    return list.flatMap((c) => {
+      const x = c as Partial<PressClaim>;
+      if (!x || typeof x.key !== "string" || typeof x.shots !== "string") return [];
+      const quote = x.quote && validQuote(x.quote, x.quote.members) ? x.quote : null;
+      return [{ key: x.key, shots: x.shots, quote, answered: x.answered === true }];
+    });
+  } catch { return []; }
 }
-/** Written before anything is sent. Throws when it cannot be kept: without it a lost reply could not be told from a new press. */
+function readClaim(storage: Storage, slot: string, shots: string): PressClaim | null {
+  return readClaims(storage, slot).find((c) => c.shots === shots) ?? null;
+}
+function storeClaims(storage: Storage, slot: string, claims: PressClaim[]) {
+  if (!claims.length) { storage.removeItem(slot); return; }
+  const text = JSON.stringify({ claims });
+  storage.setItem(slot, text);
+  if (storage.getItem(slot) !== text) throw new Error("Enable local storage to safely recover this press.");
+}
+/** Written before anything is sent, in place of the claim for the same shots (the newest last; the oldest past CLAIMS_KEPT go). Throws when it cannot be kept. */
 function writeClaim(storage: Storage, slot: string, claim: PressClaim) {
-  storage.setItem(slot, JSON.stringify(claim));
-  if (storage.getItem(slot) !== JSON.stringify(claim)) throw new Error("Enable local storage to safely recover this press.");
+  storeClaims(storage, slot, [...readClaims(storage, slot).filter((c) => c.shots !== claim.shots && c.key !== claim.key), claim].slice(-CLAIMS_KEPT));
 }
 function letGo(storage: Storage, slot: string, key: string) {
   try {
-    const raw = storage.getItem(slot);
-    if (raw && (JSON.parse(raw) as { key?: unknown }).key === key) storage.removeItem(slot);
+    const claims = readClaims(storage, slot);
+    if (claims.some((c) => c.key === key)) storeClaims(storage, slot, claims.filter((c) => c.key !== key));
   } catch { /* the next press asks under it, and starts nothing twice */ }
 }
 
@@ -175,6 +194,8 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
   const [problem, setProblem] = useState<string | null>(null);
   const [short, setShort] = useState(false);
   const [again, setAgain] = useState(false);
+  /* The last Retry started nothing new: Retry is not offered again for this press. */
+  const [noNew, setNoNew] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [takes, setTakes] = useState<Record<string, Take>>({});
   const [statuses, setStatuses] = useState<Record<string, string>>({});
@@ -210,14 +231,15 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
       const take = takes[j.jobId];
       if (!take || (take.status !== "failed" && take.status !== "cancelled")) return [];
       const cancelled = take.status === "cancelled";
-      const words = take.failure ? failureLine(take.failure, { cancelled }).text : cancelled ? "Cancelled" : "Failed";
+      /* The shared failure line (lib/errors.ts), with rule 14's words for a take that cost nothing: "Nothing billed". */
+      const words = (take.failure ? failureLine(take.failure, { cancelled }).text : cancelled ? "Cancelled" : "Failed").replace(/\bNot billed\b/, "Nothing billed");
       /* Only a failure KNOWN to have cost nothing is asked again under the same approval; a charged one, or one not settled, would be new spend, which asks again. */
       return [{ shotId: j.shotId, name: names[j.shotId] ?? j.shotId, words, free: !cancelled && failureUncharged(take.failure) }];
     })
     : [];
 
   /** One ask of the press: under the approval it already has, else (a new press, or one whose approval went out of date) a fresh quote the person is approving now. */
-  const ask = useCallback(async () => {
+  const ask = useCallback(async (retrying = false) => {
     if (sending.current || readOnly || !members.length) return;
     const storage = window.localStorage;
     const inHand = pressRef.current?.shots === shotsKey ? pressRef.current : readClaim(storage, slot, shotsKey);
@@ -228,10 +250,14 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
     setProblem(null);
     setShort(false);
     setAgain(false);
+    const before = jobs.map((j) => j.jobId).sort().join(",");
     const begin = (made: Job[], words: string | null, retryable = false) => {
       for (const j of made) announceJob(j.jobId);
+      /* A Retry that brought back exactly the takes it had (the server started nothing new): no Retry again, so a disagreement on "free" cannot loop. */
+      const same = retrying && made.map((j) => j.jobId).sort().join(",") === before;
+      setNoNew(same);
       setProblem(words);
-      setAgain(retryable);
+      setAgain(retryable && !same);
       setJobs(made);
       setTakes({});
       setStatuses({});
@@ -239,6 +265,8 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
     };
     const madeOf = (out: MemberOut[]) => out.flatMap((m) => (m.id && shotIds[m.index] ? [{ shotId: shotIds[m.index], jobId: m.id }] : []));
     const forget = (key: string) => { letGo(storage, slot, key); if (pressRef.current?.key === key) pressRef.current = null; setPressKey(null); syncHeld(); };
+    /* The server reported this press's shots: kept for Retry, it is let go at Next. */
+    const answered = (claim: PressClaim) => { const told = { ...claim, answered: true }; try { writeClaim(storage, slot, told); } catch { /* still in hand */ } pressRef.current = told; syncHeld(); };
     try {
       let approval: BatchQuote;
       if (inHand?.quote) approval = inHand.quote;
@@ -260,7 +288,7 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
         approval = fresh;
       }
       const reused = Boolean(inHand);
-      const claim: PressClaim = { key: inHand?.key ?? crypto.randomUUID(), shots: shotsKey, quote: approval };
+      const claim: PressClaim = { key: inHand?.key ?? crypto.randomUUID(), shots: shotsKey, quote: approval, answered: inHand?.answered ?? false };
       writeClaim(storage, slot, claim);
       pressRef.current = claim;
       setPressKey(claim.key);
@@ -279,7 +307,7 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
         const said = out.find((m) => m.error)?.error ?? error.message;
         if (error.status >= 500) {
           /* Refused whole with every shot listed as not started, at no charge (rule 14): "Nothing billed", and Retry under the same approval. */
-          if (out.length && out.every((m) => !m.id && m.charged === 0)) { begin([], `Nothing billed. ${neutralCopy(said, NOT_SENT)}`, true); return; }
+          if (out.length && out.every((m) => !m.id && m.charged === 0)) { answered(claim); begin([], `Nothing billed. ${neutralCopy(said, NOT_SENT)}`, true); return; }
           setProblem(LOST_REPLY);
           setState("idle");
           return;
@@ -305,8 +333,10 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
       const out = reply.members ?? [];
       const refused = out.filter((m) => m.error);
       const starting = out.some((m) => m.status === "starting");
-      /* Every shot started: the browser lets the key go (the press stays in hand for a free retry of a take that fails). Otherwise it stays, for Retry. */
+      /* Every shot started: the browser lets the key go (the press stays in hand for a free retry of a take that fails). Otherwise it stays, for Retry;
+         answered unless a shot is still being accepted. */
       if (!refused.length && !starting) letGo(storage, slot, claim.key);
+      else if (!starting) answered(claim);
       const words = refused.length
         ? `Nothing billed for ${refused.length} ${refused.length === 1 ? "shot" : "shots"} that did not start. ${neutralCopy(refused[0].error!, NOT_SENT)}`
         : starting ? STILL_STARTING : null;
@@ -315,7 +345,7 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
       setProblem(neutralCopy(error instanceof Error ? error.message : "", NOT_SENT));
       setState("idle");
     } finally { sending.current = false; }
-  }, [readOnly, current, members, membersKey, shotsKey, shotIds, scope, slot, syncHeld]);
+  }, [readOnly, current, members, membersKey, shotsKey, shotIds, scope, slot, syncHeld, jobs]);
 
   const press = useCallback(async () => { if (state === "idle") await ask(); }, [state, ask]);
 
@@ -338,20 +368,25 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
 
   const total = jobs.length;
   const inHand = Boolean(heldFor);
-  const retryable = !readOnly && inHand && state !== "sending" && ((again && !done) || (done && failures.some((f) => f.free)));
+  /* Shots that did not start keep their Retry after the started ones settle; a take that failed at no charge adds it once all have settled. */
+  const retryable = !readOnly && inHand && state !== "sending" && !noNew && (again || (done && failures.some((f) => f.free)));
   return {
     state: done ? "done" : state, price: price ?? (reading ? last : null),
     pricing: !members.length ? "none" : price ? "ready" : current?.refusal ? "refused" : current?.error ? "error" : "loading",
     refusal: current?.refusal ?? null,
     tryAgain: () => setRetryRead((n) => n + 1),
     sent: total, finished, total, problem, short, failures,
-    retry: retryable ? () => void ask() : null,
+    retry: retryable ? () => void ask(true) : null,
     canCancel: state === "making" && !done && Boolean(pressKey) && cancellable(Object.entries(statuses).filter(([id]) => !takes[id]).map(([, s]) => s)),
     press, cancel,
     reset: () => {
-      /* After Next the press is over: what it holds in hand goes too. A claim a lost reply left in storage stays until the server has answered it. */
+      /* After Next the press is over: what it holds in hand goes, and so does its claim once the server has answered it (partial, a refusal). One never
+         answered (a lost reply, a shot still being accepted) stays: only the server knows what it started, and the next press of these shots asks under it. */
+      const storage = window.localStorage;
+      const claim = pressRef.current ?? readClaim(storage, slot, shotsKey);
+      if (claim?.answered) letGo(storage, slot, claim.key);
       pressRef.current = null;
-      setState("idle"); setJobs([]); setTakes({}); setStatuses({}); setProblem(null); setShort(false); setAgain(false); setPressKey(null);
+      setState("idle"); setJobs([]); setTakes({}); setStatuses({}); setProblem(null); setShort(false); setAgain(false); setNoNew(false); setPressKey(null);
       syncHeld();
     },
   };

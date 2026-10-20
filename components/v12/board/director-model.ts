@@ -100,3 +100,12 @@ export function pressPrice(q: { estimatedCredits: number; ceilingCredits?: numbe
   if (q.ceilingCredits != null && q.ceilingCredits > q.estimatedCredits) return heldUpTo(q.ceilingCredits);
   return exact(q.estimatedCredits, q.unit === "usd" && Number.isFinite(q.price) ? q.price : undefined);
 }
+
+/**
+ * Retry's price: the press's own approval as a ceiling, "up to N cr" (it asks again under that approval, and never charges past it). Read the same way the
+ * press's price reads: its own dollars at cost in the house where the server gave them, a hold at a credit's public price; never credits re-priced by hand.
+ */
+export function retryPrice(price: PriceValue | null | undefined): PriceValue | null {
+  if (!price || price.kind === "free") return null;
+  return { ...price, kind: "up-to" };
+}

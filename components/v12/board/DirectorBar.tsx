@@ -3,9 +3,8 @@ import type { ReactNode } from "react";
 import { spendAttrsOf } from "@/lib/spend";
 import { Price } from "../ui/Price";
 import { knownQuote } from "@/lib/v12/quote";
-import { heldUpTo } from "@/lib/shell/price-words";
 import { useEffect } from "react";
-import { NO_ENGINE_NOTE, barButton, nextStepLabel, type Scope } from "./director-model";
+import { NO_ENGINE_NOTE, barButton, nextStepLabel, retryPrice, type Scope } from "./director-model";
 import { useDirectorRender, type DirectorRender, type DirectorShot } from "./use-director-render";
 import "./director.css";
 
@@ -66,21 +65,27 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, engine = null,
   const unpriced = state === "idle" && (pricing === "error" || pricing === "refused");
   /* After every take settled: what failed or was cancelled, in the take's own failure line (what happened, what it cost). */
   const failed = state === "done" && failures.length ? failures.map((f) => `${f.name}: ${f.words.replace(/[.!?]?$/, ".")}`).join(" ") : null;
-  const note = problem ?? failed ?? (state === "idle" && pricing === "refused" ? render.refusal : state === "idle" && pricing === "error" ? "A price could not be read. Nothing was sent." : null) ?? readOnly ?? (engine ? null : NO_ENGINE_NOTE);
-  /* Retry asks the press again under the approval it was pressed with: the most it can charge is that approval's total. */
-  const retryPrice = retry && price ? heldUpTo(price.kind === "free" ? 0 : price.credits) : null;
+  /* The press's own words (shots that did not start) and the takes that failed, side by side. */
+  const said = [problem, failed].filter(Boolean).join(" ") || null;
+  const note = said ?? (state === "idle" && pricing === "refused" ? render.refusal : state === "idle" && pricing === "error" ? "A price could not be read. Nothing was sent." : null) ?? readOnly ?? (engine ? null : NO_ENGINE_NOTE);
+  /* Retry asks the press again under the approval it was pressed with: the most it can charge is that approval's total, read as the press's price reads. */
+  const again = retry ? retryPrice(price) : null;
+  /* One button for one ask (rule 13): while Retry is on offer with nothing making, it takes Render's place; while takes are making or settled, it sits in the line. */
+  const retryInBar = Boolean(retry && again && state === "idle");
   return (
     <div className="v12-dirbar" data-testid="v12-director-bar" data-state={state}>
       <span className="v12-dirbar-pill" data-testid="v12-director-scope">{scope.label}</span>
       {note ? <p className="v12-dirbar-note" role="status" data-testid="v12-director-note">{note}
         {unpriced && !problem && onTryAgain ? <> <button type="button" className="v12-dirbar-link" onClick={onTryAgain} data-testid="v12-director-try-again">Try again</button></> : null}
-        {retry && retryPrice ? <> <button type="button" className="v12-dirbar-link" onClick={retry} data-testid="v12-director-retry" {...spendAttrsOf(retryPrice)}>Retry · <Price quote={knownQuote(retryPrice)} /></button></> : null}
+        {retry && again && !retryInBar ? <> <button type="button" className="v12-dirbar-link" onClick={retry} data-testid="v12-director-retry" {...spendAttrsOf(again)}>Retry · <Price quote={knownQuote(again)} /></button></> : null}
         {short && onTopUp ? <> <button type="button" className="v12-dirbar-link" onClick={onTopUp} data-testid="v12-director-top-up">Top up</button></> : null}
       </p> : null}
       <div className="v12-dirbar-row">
         {ask ? <div className="v12-dirbar-ask">{ask}</div> : null}
         {state === "making" && canCancel ? <button type="button" className="v12-dirbar-cancel" onClick={onCancel} data-testid="v12-director-cancel">Cancel</button> : null}
-        {state === "done" ? (
+        {retryInBar ? (
+          <button type="button" className="v12-dirbar-go" onClick={retry!} data-testid="v12-director-go" data-retry="" {...spendAttrsOf(again)}>Retry · <Price quote={knownQuote(again)} /></button>
+        ) : state === "done" ? (
           <button type="button" className="v12-dirbar-go" onClick={goNext} data-testid="v12-director-go">{label}</button>
         ) : (
           <button type="button" className="v12-dirbar-go" disabled={making || off} aria-busy={making || undefined} onClick={onRender} data-testid="v12-director-go"

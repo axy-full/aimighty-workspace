@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { NO_ENGINE_NOTE, SHOTS_SETTINGS, barButton, modelWords, cancellable, cardChips, nextStepLabel, pressPrice, requestFields, scopeOf, shotSettings, valueWords } from "../../components/v12/board/director-model";
-import { CREDITS_MODE, NO_AT_COST_FIGURE, priceWords } from "../../lib/shell/price-words";
+import { NO_ENGINE_NOTE, SHOTS_SETTINGS, barButton, modelWords, cancellable, cardChips, nextStepLabel, pressPrice, retryPrice, requestFields, scopeOf, shotSettings, valueWords } from "../../components/v12/board/director-model";
+import { CREDITS_MODE, FREE, NO_AT_COST_FIGURE, priceWords } from "../../lib/shell/price-words";
 import { stagesOf } from "../../lib/v12/board/stages";
 
 /* v25 PR 7: Director on Shots (components/v12/board/director-model.ts). Pure. */
@@ -93,4 +93,16 @@ test("a press's price: its total in credits, a ceiling as \"up to\", and in the 
   expect(ceiling).toBe("up to $24.00");
   /* No figure, no price: never a zero or a guess. */
   expect(pressPrice({ estimatedCredits: Number.NaN })).toBeNull();
+});
+
+test("Retry's price is the press's own approval as a ceiling, read as the press's price reads: in the house its dollars at cost, never credits at a credit's price", () => {
+  /* Synthetic figures, built here. */
+  const HOUSE = { on: true, creditUsd: 0.1 } as const;
+  expect(priceWords(retryPrice(pressPrice({ estimatedCredits: 172, unit: "cr", price: 172 })), CREDITS_MODE)).toBe("up to 172 cr");
+  /* The house: an estimate at cost ($4.30) reads "up to $4.30", not 172 credits at $0.10. */
+  expect(priceWords(retryPrice(pressPrice({ estimatedCredits: 172, unit: "usd", price: 4.3 })), HOUSE)).toBe("up to $4.30");
+  /* A ceiling stays the hold it is. */
+  expect(priceWords(retryPrice(pressPrice({ estimatedCredits: 172, ceilingCredits: 240, unit: "usd", price: 4.3 })), HOUSE)).toBe("up to $24.00");
+  expect(retryPrice(null)).toBeNull();
+  expect(retryPrice(FREE)).toBeNull();
 });
