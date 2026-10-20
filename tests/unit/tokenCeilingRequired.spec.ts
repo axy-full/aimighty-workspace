@@ -120,16 +120,18 @@ async function traces() {
   const { platformDb } = await import("../../lib/platform");
   const { requireTenant } = await import("../../lib/tenant");
   const count = async (sql: string, args: unknown[] = []) => Number((await db().execute({ sql, args: args as never })).rows[0]?.n ?? 0);
-  const claims = await count("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name='generation_requests'")
-    ? await count("SELECT COUNT(*) AS n FROM generation_requests") : 0;
+  const rows = async (table: string) => (await count("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name=?", [table])) ? count(`SELECT COUNT(*) AS n FROM ${table}`) : 0;
+  const claims = await rows("generation_requests");
+  /* The workbench doors' own job rows: the 3D blocking agent, development steps, the 3D render. */
+  const jobs = (await rows("workbench_atomik_jobs")) + (await rows("workbench_development_jobs")) + (await rows("astra_render_jobs"));
   return {
-    claims,
+    claims, jobs,
     generations: await count("SELECT COUNT(*) AS n FROM generations"),
     meters: Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", args: [requireTenant().id] })).rows[0].n),
     dispatched: dispatched.length,
   };
 }
-const NOTHING = { claims: 0, generations: 0, meters: 0, dispatched: 0 };
+const NOTHING = { claims: 0, jobs: 0, generations: 0, meters: 0, dispatched: 0 };
 
 test("the rule in one place: a token spends only with a ceiling in its workspace's unit and the quote it was approved at; a person is never asked", async () => {
   const { runInTenant } = await import("../../lib/tenant");
@@ -286,6 +288,11 @@ const DOORS: { file: string; body: Record<string, unknown>; ctx?: unknown }[] = 
   { file: "app/api/atomik/treatment/scene/route.ts", body: { brief: "a tree", maxCredits: 5 } },
   { file: "app/api/atomik/[id]/route.ts", body: { text: "plan it", maxCredits: 5 }, ctx: { params: Promise.resolve({ id: "ach_x" }) } },
   { file: "app/api/identities/[id]/render/route.ts", body: { prompt: "a portrait", maxCredits: 50 }, ctx: { params: Promise.resolve({ id: "id_x" }) } },
+  /* The workbench doors and Crew: each body is one their schema accepts, so it is the token gate that answers, before any job is written. */
+  { file: "app/api/workbench/atomik/route.ts", body: { projectId: "p1", requestId: "req_tokengate1", request: "Plan the shoot", maxCredits: 5 } },
+  { file: "app/api/workbench/development/route.ts", body: { projectId: "p1", requestId: "req_tokengate2", kind: "idea", model: "auto", maxCredits: 5 } },
+  { file: "app/api/workbench/astra-blender/render/route.ts", body: { projectId: "p1", requestId: "req_tokengate3", source: "scene", sourceDigest: "a".repeat(64), quoteDigest: "b".repeat(64), maxCredits: 5 } },
+  { file: "app/api/crew/sessions/[id]/rounds/route.ts", body: { maxCredits: 5, round: 1 }, ctx: { params: Promise.resolve({ id: "crew_x" }) } },
 ];
 test("every other paid door a render token reaches refuses one with no ceiling before its key is claimed; with a ceiling and no quote, the same", async () => {
   const { runInTenant } = await import("../../lib/tenant");
@@ -300,7 +307,9 @@ test("every other paid door a render token reaches refuses one with no ceiling b
       for (const door of DOORS) {
         const route = loadRoute<Handler>(door.file, who);
         const body = label === "no quote" ? { ...door.body, maxCredits: undefined } : door.body;
-        const res = await route.POST(new Request(`http://localhost/api/${door.file}`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `door-${randomUUID()}` }, body: JSON.stringify(body) }), door.ctx);
+        /* The workspace scope the browser and a token's client send (Crew's own check is the real one: lib/crew/http.ts). */
+        const headers = { "Content-Type": "application/json", "Idempotency-Key": `door-${randomUUID()}`, "X-Workbench-Scope": `particl-active-${ws.id}-${who.user.id}` };
+        const res = await route.POST(new Request(`http://localhost/api/${door.file}`, { method: "POST", headers, body: JSON.stringify(body) }), door.ctx);
         expect(res.status, `${door.file} (${label})`).toBe(status);
         expect(await res.json(), `${door.file} (${label})`).toMatchObject({ code, charged: 0 });
       }
@@ -340,7 +349,7 @@ const TOKEN_DOORS: Record<string, { gate: RegExp; file?: string }> = {
   "prompt/enhance": { gate: /tokenSpendRefusal\(\{ maxCredits: [^\n]*\}, got\.token\)/ },
   /* Its POST makes a room (free) or quotes, for a signed-in session only (crewCaller without `paid`: requireSession). */
   "crew/sessions": { gate: /export const POST = withTenant\(async \(req: Request\) => \{\s*const caller = await crewCaller\(req\);/ },
-  "crew/sessions/[id]/rounds": { gate: /tokenSpendRefusal\(\{ maxCredits: body\.maxCredits \}\)/ },
+  "crew/sessions/[id]/rounds": { gate: /tokenSpendRefusal\(\{ maxCredits: asked\?\.maxCredits \}\)/ },
 };
 test("every paid route says how a token is held at it: its ceiling and its approved quote, or no token at all", () => {
   expect(Object.keys(TOKEN_DOORS).sort()).toEqual(PAID_ROUTES.map((r) => r.dir).sort());
@@ -351,5 +360,36 @@ test("every paid route says how a token is held at it: its ceiling and its appro
   /* Generation admission asks again, for every path that reaches it with a claim (a prepared approval, a pipeline stage, the route). */
   expect(readFileSync("lib/generationAdmission.ts", "utf8")).toMatch(/if \(options\.requestClaim\) \{\s*const problem = tokenSpendProblem\(got\.token, \{ maxCredits: body\.maxCredits \}\);/);
   /* And the spend gate, under its lock, for every reservation that names a token. */
-  expect(readFileSync("lib/generationRequests.ts", "utf8")).toContain("if (options.token && !hasSpendingCeiling(options.token, creditsApply(ws))) throw new SpendReservationError(noCeilingMessage(), 403, true);");
+  expect(readFileSync("lib/generationRequests.ts", "utf8")).toContain("if (options.token && !hasSpendingCeiling(options.token, creditsApply(ws))) throw new TokenNoCeilingError();");
+});
+
+/* A take a token made and parked (held for credits or a slot) is started by the spend gate when released. Made by a token with no ceiling, it
+   is refused there: the person pressing Release is told who acts and what then, in plain words, and the take stays held (who may release it is
+   an owner question, unchanged here). */
+test("a person releasing a held take made by a token with no ceiling is told who acts, and the take stays held, nothing reserved", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { releaseHeldJobs } = await import("../../lib/held");
+  const { HELD_TAKE_NO_CEILING } = await import("../../lib/tokenSpend");
+  const { db, ready } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const ws = await newWorkspace("held");
+  const id = `gen_held_${ws.id}`;
+  await runInTenant(ws, async () => {
+    await ready();
+    const at = Date.now() - 60_000;
+    await db().batch([
+      "INSERT INTO users(id,email,name,password_hash,created_at) VALUES('owner','owner@example.invalid','Owner','x',0) ON CONFLICT(id) DO NOTHING",
+      "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,created_at) VALUES('tok_bare','hash_bare','assistant','owner','render',0)",
+      { sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,token_id,billed_to,task)
+              VALUES(?,'video','byteplus',?,'test',?,'held','owner',?,?,'tok_bare','byteplus','generate')`,
+        args: [id, "dreamina-seedance-2-0-260128", JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false, held: { estUsd: 1, needs: 15, at: 1, why: "credits" } }), at, at] },
+    ], "write");
+    const out = await releaseHeldJobs({ only: id, defer: async () => {} });
+    expect(out.released).toEqual([]);
+    expect(out.refused).toMatchObject({ status: 403, error: HELD_TAKE_NO_CEILING });
+    expect(HELD_TAKE_NO_CEILING).toBe("This take was made by an API token with no monthly ceiling. An admin sets the ceiling in Settings › Connections, then release it.");
+    const row = (await db().execute({ sql: "SELECT status,error FROM generations WHERE id=?", args: [id] })).rows[0];
+    expect({ ...row }).toEqual({ status: "held", error: HELD_TAKE_NO_CEILING });
+    expect((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE id=?", args: [id] })).rows[0].n).toBe(0);
+  }, { user: person.user });
 });

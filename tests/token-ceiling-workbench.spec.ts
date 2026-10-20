@@ -16,9 +16,28 @@ const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "w
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-ceiling", productionProjectId: "prod-ceiling", shotMappings: {} });
 const compact = (page: Page) => (page.viewportSize()?.width ?? 1440) < 768 || (page.viewportSize()?.height ?? 900) <= 500;
 
+/** Text under 12 px inside the Connections section and the token dialog themselves (the rows, the ceiling field, the toast's words). */
+async function smallTextIn(page: Page, scope: string): Promise<string[]> {
+  return page.evaluate((scope) => {
+    const out: string[] = [];
+    for (const root of Array.from(document.querySelectorAll(scope))) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = (node.textContent ?? "").trim(), el = node.parentElement;
+        if (!text || !el || !el.getClientRects().length) continue;
+        const size = Number.parseFloat(getComputedStyle(el).fontSize);
+        if (size < 12) out.push(`${size}px: “${text.slice(0, 40)}”`);
+      }
+    }
+    return out;
+  }, scope);
+}
+
 async function floors(page: Page, where: string) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${where}: no horizontal page scroll`).toBe(true);
+  /* The whole page but the header (measured by its own spec), then the section and dialog this spec changed, named. */
   expect(await smallText(page, ".gx-header, header"), `${where}: text under 12px`).toEqual([]);
+  expect(await smallTextIn(page, ".gs, [data-testid='settings-tokens'], .gsec-dialog"), `${where}: text under 12px in Connections`).toEqual([]);
   if (compact(page)) expect(await smallTargets(page, ".gs"), `${where}: targets under 44×44`).toEqual([]);
 }
 
@@ -35,6 +54,8 @@ async function open(page: Page, opts: { member?: APIRequestContext } = {}) {
   const tokens: Token[] = [
     { id: "tk1", name: "Claude on my laptop", scope: "render", lastUsed: Date.now() - 7_200_000, createdAt: 1, spendThisMonth: 0, capCredits: null },
     { id: "tk2", name: "Studio script", scope: "prepare", lastUsed: null, createdAt: 2, spendThisMonth: 0, capCredits: null },
+    /* A dollar ceiling set before credits: the admin's credit figure replaces it (the server clears it). */
+    { id: "tk4", name: "Old script", scope: "render", lastUsed: null, createdAt: 5, spendThisMonth: 12, capCredits: null, legacyCeiling: true },
   ];
   const others: Token[] = [{ id: "tk9", name: "Edit bay agent", scope: "render", lastUsed: null, createdAt: 3, spendThisMonth: 40, capCredits: null, legacyCeiling: false, owner: "Jordan Lee" }];
   await page.route(/\/api\/tokens(\/[a-z0-9]+(\/ceiling)?)?$/, async (route) => {
@@ -45,7 +66,7 @@ async function open(page: Page, opts: { member?: APIRequestContext } = {}) {
       const body = route.request().postDataJSON() as { capCredits: number | null };
       writes.push({ url: `/api/tokens/${parts[3]}/ceiling`, method, body });
       const row = [...tokens, ...others].find((t) => t.id === parts[3]);
-      if (row) row.capCredits = body.capCredits;
+      if (row) { row.capCredits = body.capCredits; row.legacyCeiling = false; }
       return route.fulfill({ json: { id: parts[3], capCredits: body.capCredits } });
     }
     if (method === "POST" && parts.length === 3) {
@@ -85,6 +106,20 @@ test("an admin sets and clears a token's monthly ceiling in credits, with Undo, 
   await page.getByRole("button", { name: "Undo" }).click();
   await expect.poll(() => writes.at(-1)).toEqual({ url: "/api/tokens/tk1/ceiling", method: "PATCH", body: { capCredits: null } });
   await expect(mine).toContainText("no ceiling · prepares and prices only");
+  /* Cleared on purpose: the toast says what the token can do now. */
+  await mine.getByTestId("settings-token-ceiling").click();
+  await page.getByTestId("settings-token-ceiling-field").fill("");
+  await page.getByTestId("settings-token-ceiling-save").click();
+  await expect(page.getByText("“Claude on my laptop” has no ceiling: it prepares and prices only.")).toBeVisible();
+  /* A ceiling set before credits is replaced by the admin's credit figure; it cannot be put back from here, so no Undo is offered. */
+  const old = page.getByTestId("settings-token").filter({ hasText: "Old script" });
+  await expect(old).toContainText("12 cr this month · ceiling set before credits");
+  await old.getByTestId("settings-token-ceiling").click();
+  await page.getByTestId("settings-token-ceiling-field").fill("5000");
+  await page.getByTestId("settings-token-ceiling-save").click();
+  await expect.poll(() => writes.at(-1)).toEqual({ url: "/api/tokens/tk4/ceiling", method: "PATCH", body: { capCredits: 5000 } });
+  await expect(page.getByText("“Old script” spends up to 5,000 cr a month. Its ceiling from before credits is replaced.")).toBeVisible();
+  await expect(old).toContainText("12 cr of 5,000 cr this month");
   /* A figure that is not whole credits is refused on the page, and nothing is sent. */
   await mine.getByTestId("settings-token-ceiling").click();
   await page.getByTestId("settings-token-ceiling-field").fill("2.5");
