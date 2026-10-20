@@ -7,7 +7,7 @@ import type { Stage } from "@/lib/v12/board/stages";
  * own overrides on top; a card shows a chip only for a setting that differs from its step's.
  *
  * Director is full manual control (owner, 16 Oct 2026, 2a): no "Auto" engine. The model line opens empty and Render stays off until the person picks an engine;
- * the picker itself is PR 9's. Prices are never here: the server quotes the exact requests (POST /api/generate/quote) and the bar shows their sum.
+ * the picker itself is PR 9's. Prices are never here: the server quotes the whole press as one job (POST /api/generate/batch, #815) and the bar shows its total.
  */
 export const SHOTS_STEP = "shots";
 

@@ -12,7 +12,8 @@ import "./director.css";
  * Director mode's bar on Shots (v25 PR 7): the scope pill ("All 8 shots", "Shot 4": the same words as the column's header and the button), then the
  * bar. The bar holds the ask (the board's own, handed in as `ask`) and ONE filled button, the screen's only one:
  *
- *   idle     "Render 8 shots · 344 cr"   the server's price for exactly what will be sent; a press is the approval of that figure
+ *   idle     "Render 8 shots · 344 cr"   the server's price for the whole press (one job, one approval for the total, #815); a press is the approval of that figure,
+ *                                        and a press the workspace's monthly cap would not cover is refused at the quote: its words show and the button is off
  *   making   "Making…"                   disabled, with "3 of 8 ready"; "Cancel" beside it only while a take is still queued at the provider
  *   done     "Next: Edit →"              the way on; not a spend, so no price
  *
@@ -55,11 +56,13 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, engine = null,
   const making = state === "sending" || state === "making";
   const priced = state === "idle" && price !== null;
   const off = readOnly != null || !engine || (state === "idle" && (pricing !== "ready" || !scope.ids.length));
-  const note = problem ?? (pricing === "error" && state === "idle" ? "A price could not be read. Nothing was sent." : readOnly ?? (engine ? null : NO_ENGINE_NOTE));
+  /* Refused at the quote (the workspace's monthly cap, owner 19 Oct 2026): the server's own words, and Render stays off. */
+  const unpriced = state === "idle" && (pricing === "error" || pricing === "refused");
+  const note = problem ?? (state === "idle" && pricing === "refused" ? render.refusal : state === "idle" && pricing === "error" ? "A price could not be read. Nothing was sent." : null) ?? readOnly ?? (engine ? null : NO_ENGINE_NOTE);
   return (
     <div className="v12-dirbar" data-testid="v12-director-bar" data-state={state}>
       <span className="v12-dirbar-pill" data-testid="v12-director-scope">{scope.label}</span>
-      {note ? <p className="v12-dirbar-note" role="status" data-testid="v12-director-note">{note}{pricing === "error" && state === "idle" && onTryAgain ? <> <button type="button" className="v12-dirbar-link" onClick={onTryAgain}>Try again</button></> : null}</p> : null}
+      {note ? <p className="v12-dirbar-note" role="status" data-testid="v12-director-note">{note}{unpriced && !problem && onTryAgain ? <> <button type="button" className="v12-dirbar-link" onClick={onTryAgain}>Try again</button></> : null}</p> : null}
       <div className="v12-dirbar-row">
         {ask ? <div className="v12-dirbar-ask">{ask}</div> : null}
         {state === "making" && canCancel ? <button type="button" className="v12-dirbar-cancel" onClick={onCancel} data-testid="v12-director-cancel">Cancel</button> : null}
