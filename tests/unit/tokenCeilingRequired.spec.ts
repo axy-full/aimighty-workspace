@@ -159,7 +159,7 @@ test("the rule in one place: a token spends only with a ceiling in its workspace
     expect(tokenSpendProblem(capped, { maxCredits: 18, fingerprint: FP, needsFingerprint: true })).toBeNull();
     expect(tokenSpendProblem(capped, { maxCredits: 0 })).toBeNull();
   }, { user: person.user });
-  /* The unit is the workspace's: credits where it is billed in credits, dollars where it pays its engines itself. */
+  /* The unit is the workspace's: credits where it is billed in credits, dollars in the house, never billed in credits. */
   expect(hasSpendingCeiling({ capCredits: 500, capUsd: null }, true)).toBe(true);
   expect(hasSpendingCeiling({ capCredits: null, capUsd: 20 }, true)).toBe(true);
   expect(hasSpendingCeiling({ capCredits: null, capUsd: null }, true)).toBe(false);

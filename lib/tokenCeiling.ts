@@ -10,9 +10,10 @@
  * dialog and POST /api/tokens read the same value the same way.
  *
  * The ceiling is in the workspace's unit, the way a production's cap is
- * (lib/caps.ts): a workspace on the platform's keys pays in credits, so its
- * tokens are capped in whole credits and the engine's dollars never enter the
- * figure; a workspace on its own keys caps in dollars.
+ * (lib/caps.ts): every workspace is billed in credits (lib/credits.ts
+ * creditsApply), own keys included, so its tokens are capped in whole credits
+ * and the engine's dollars never enter the figure; only the house, never
+ * billed in credits, caps in dollars.
  */
 export type Ceiling = { capUsd: number | null } | { error: string };
 
@@ -72,7 +73,7 @@ export function tokenCeiling(body: { capUsd?: unknown; capCredits?: unknown }, o
  *  - a workspace billed in credits: its ceiling in credits (`capCredits`), or a dollar ceiling left from before credits (`capUsd`). The
  *    spend gate already holds that one as credits billed at the public price of a credit (lib/auth.ts tokenSpendThisMonth,
  *    lib/generationRequests.ts), so it is a ceiling in credits converted at read, and the token keeps working inside it;
- *  - a workspace that pays its engines itself (the house, a workspace on its own keys): its ceiling in dollars (`capUsd`).
+ *  - the house, never billed in credits (lib/credits.ts creditsApply): its ceiling in dollars (`capUsd`).
  * False: no ceiling, so the token only prepares and prices (lib/tokenSpend.ts). Pure, so the page and the server read it alike.
  */
 export function hasSpendingCeiling(token: { capUsd?: number | null; capCredits?: number | null }, inCredits: boolean): boolean {

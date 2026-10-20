@@ -10,13 +10,13 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 /**
  * An admin sets a token's monthly ceiling (owner, 20 Oct 2026, Q1 "B": "An admin sets a ceiling per token in credits per month").
- * `{ capCredits }` in a workspace billed in credits (whole credits a month), `{ capUsd }` in one that pays its engines itself, read
+ * `{ capCredits }` in a workspace billed in credits (whole credits a month), `{ capUsd }` in the house (never billed in credits), read
  * strictly by lib/tokenCeiling.ts; blank or null clears it, and the token then only prepares and prices (lib/tokenSpend.ts).
  *
  * People only, and admins only: requireAdmin is a signed-in session (a token, an MCP client or Atomik is refused, whatever its
  * scope, so no caller can raise its own ceiling) with the admin role. Any token of this workspace that can generate, whoever made
  * it; a read-only or prepare token spends nothing and takes no ceiling. The figure is the token's one ceiling: in a credits workspace
- * it replaces a dollar ceiling left from before credits (cleared, both are none), and the other way round in one that pays in dollars.
+ * it replaces a dollar ceiling left from before credits (cleared, both are none), and the other way round in the house.
  * Recorded in the security history with the figure before and after (whole credits, or whole cents), never a secret.
  */
 export const PATCH = withTenant(async function PATCH(req: Request, { params }: Ctx) {
@@ -45,7 +45,7 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
       : { sql: `UPDATE api_tokens SET cap_usd = ?, cap_credits = NULL WHERE id = ? AND revoked_at IS NULL`, args: [ceiling.capUsd, id] },
     securityAuditStatement({ workspaceId: requireTenant().id, actorId: got.user.id, action: "api_token.ceiling_set", targetType: "api_token", targetId: id,
       details: { ceilingUnit: inCredits ? "cr" : "usd_cents", ceilingBefore: whole(before), ceilingAfter: whole(inCredits ? ceiling.capCredits : ceiling.capUsd),
-        /* The other unit's ceiling it replaced: a dollar one from before credits, or (where the workspace pays in dollars) a leftover credit one. */
+        /* The other unit's ceiling it replaced: a dollar one from before credits, or (in the house, which counts in dollars) a leftover credit one. */
         ...((inCredits ? row.cap_usd : row.cap_credits) != null ? { legacyCleared: true } : {}) } }, true),
   ], "write");
   /* Revoked between the read and the write: nothing changed, and nothing was recorded. */

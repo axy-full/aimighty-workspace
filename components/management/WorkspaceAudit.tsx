@@ -219,7 +219,7 @@ export default function WorkspaceAudit({ scope }: { scope: string }) {
               );
             if (event.details.scope)
               details.push(`Permission: ${event.details.scope}`);
-            /* A token's ceiling, in credits; a workspace on its own keys reads no figure here. */
+            /* A token's ceiling, in credits; the house's dollar figure is not shown here. */
             if (event.details.ceilingUnit === "cr") {
               const word = (n: number | null | undefined) => (n == null ? "none" : `${n.toLocaleString("en-US")} cr`);
               details.push(`Ceiling: ${word(event.details.ceilingBefore)} → ${word(event.details.ceilingAfter)}`);

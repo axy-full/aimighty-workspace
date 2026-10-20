@@ -230,6 +230,8 @@ test("in the house (dollars), an admin's dollar ceiling replaces a leftover cred
   });
   /* A credit figure is refused here: the house counts in dollars. */
   expect((await patch(houseAdmin(), "tok_house_render", { capCredits: 500 })).status).toBe(400);
+  /* Refused: nothing changed, and nothing was recorded. */
+  expect(await read()).toEqual({ capCredits: 300, capUsd: null, audit: null });
   expect(await patch(houseAdmin(), "tok_house_render", { capUsd: "20.50" })).toEqual({ status: 200, body: { id: "tok_house_render", capUsd: 20.5 } });
   expect(await read()).toEqual({ capCredits: null, capUsd: 20.5, audit: { ceilingUnit: "usd_cents", ceilingBefore: null, ceilingAfter: 2050, legacyCleared: true } });
   expect(await patch(houseAdmin(), "tok_house_render", { capUsd: "" })).toEqual({ status: 200, body: { id: "tok_house_render", capUsd: null } });

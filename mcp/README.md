@@ -13,7 +13,7 @@ In the workspace: **Settings › Connections › Make a token**, with *Can
 generate* chosen (an admin's choice).
 
 Give it a name (`Claude`), and a monthly ceiling — in credits for a workspace
-on Particl's credits, in dollars for one on its own engine keys. Only an admin
+on Particl's credits, in dollars for the house workspace. Only an admin
 sets a token's ceiling (Settings › Connections), and a token with no ceiling
 can only prepare and price: `render_shot` tells you the price and starts
 nothing. The ceiling is the safety rail: an agent that misreads a brief and
