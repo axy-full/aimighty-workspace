@@ -1465,3 +1465,26 @@ B. Right: until A4 lands, one approval per job on its quote. The switch arrives 
 "Keys and the price file are mine. Nothing for you there."
 
 Lead's note: #854's run at b3dd17c5 failed on one browser fixture (a token minted with no ceiling expected to render), so the yes, pinned to that head, is asked again for the fixed head.
+
+## Owner, 21 Oct 2026, 01:30 IST: LangGraph, the demo date, one app, Langfuse
+
+- 21 Oct 2026: **Atomik's loop is built on LangGraph.js** (final; SOW S2). Library only (`@langchain/langgraph` pinned, `@langchain/core` as its dependency, nothing else from LangChain); the money gate does not move; checkpoints are tenant rows; Inngest is the one owner of time; three slices before the demo; design note first, before any code.
+
+Recorded by the lead, verbatim (item 1 restates the 16:50 answers of 20 Oct above, unchanged; the yes stays pinned to b3dd17c5):
+
+"2. There is no staging app. The droplet runs one Coolify application, and it is production. Read "production and staging" in your notes as production only: the price file, the Langfuse names and every new setting go to that one app. A staging app (same image, the staging Turso group, its own R2 bucket, ENGINE_MOCK=1, staging.particl.si) is P4 from the 5 Oct handover and comes after deploy #6, as its own PR; nothing before the capture."
+
+"3. Langfuse is set up: EU region (cloud.langfuse.com), one project "particl". Keys are in Coolify on the one app under LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_BASE_URL, LANGFUSE_ENVIRONMENT=production; LANGFUSE_ENABLED is unset and stays unset until I turn it on after deploy #6.
+One PR, standing yes after Opus (no money logic): trace every model call Atomik makes — chat turns, the board planner, Enhance, condense, memory ranking, Verify, the development kinds — through the AI SDK's telemetry hook into Langfuse. Each trace tagged: workspace id, run or chat id, step, mode (agent / director), band, model, effort, tokens in / out / cached, vendor cost, latency, outcome (answered / refused / failed / timed out), environment. Never prompt text or outputs (SOW §13 item 8): record inputs and outputs off. Off unless LANGFUSE_ENABLED is exactly 1. In CI, trace to a stub and assert every model call site is covered (a closed list, like paidRoutes). Pin the SDK."
+
+"4. LangGraph: final. Atomik's loop — plan → preflight → quote → approve → drafts → check → fix → final → review → remember — is built on LangGraph.js, as SOW S2 says. Rules:
+a. Library only: @langchain/langgraph pinned, @langchain/core as its dependency, nothing else from LangChain — no chains, no LangChain model wrappers, no LangGraph Platform, no LangSmith. Nodes call the existing AI SDK / direct provider paths. Tracing stays on Langfuse.
+b. The money gate does not move. A person approves spend in Particl's code (plan-approval, isPersonApprover, the spend reservation, admission). LangGraph's interrupt pauses the graph for that approval; it never grants it. Every paid node goes through admission and the quote as now; the money tests run unchanged against the graph.
+c. Checkpoints are tenant rows: checkpoint and state tables in the workspace's database with workspace_id on every row (rule 2); no shared store across workspaces. There is no Turso checkpointer in the box: a BaseCheckpointSaver on libSQL (the SQLite saver's shape), or justify another in the design note.
+d. One owner of time: Inngest keeps retries, leases and wakeups and calls the graph to run or resume; the graph never sleeps or schedules on its own.
+e. Slices, in order, each a PR with full CI, Opus review and a money review where it spends: (1) foundation — graph skeleton, the checkpointer, the Inngest handshake, Langfuse on every node, the money gate untouched; (2) the chips plan; (3) the board ask, with the planner reading the whole production (brief, script beats, kept Look, Elements, frames, cast, memory, rules, History) as a context node. Chat/Make, Genie, the development kinds and Import come after the demo. The old run/step machine stays until a slice passes the same suite and the money tests on the graph, and is removed in that slice's PR, never left beside it.
+f. Design note first — graph shape, checkpointer, handshake, test plan, your estimate — before any code. Record the decision as a dated line under Owner decisions in docs/redesign-plan.md and in the restart message."
+
+"5. The demo comes after LangGraph, and its date follows the work: slices 1–3 green on release/1, deploy #7, a rehearsal, then the demo. Go/no-go on 1 November: if 1–3 are not green on release/1 by then, the demo runs on the old machine on the first date I set, and LangGraph continues behind it. The 31 October date is off. The capture (Thu 22 Oct, 02:00 IST), deploy #6 after it, and Vercel off on the 27th do not move."
+
+"6. Keys and the price file are mine; nothing for you there."
