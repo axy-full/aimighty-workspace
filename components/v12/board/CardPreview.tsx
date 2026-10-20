@@ -65,7 +65,8 @@ export function CardPreview(props: CardPreviewProps) {
   const version = item?.versions[index] ?? null;
   const comparing = Boolean(item && compare && canCompare(item));
   const tabNow = item?.tabs?.length ? (item.tabs.find((t) => t.id === (tab && tab.id === item.id ? tab.tab : item.tabs![0].id)) ?? item.tabs[0]) : null;
-  /* ✓ and ✕ only when they would do something: a version that can be judged, and the board gave both handlers. */
+  /* ✓ and ✕ only when they would do something: the version on screen can be judged (its own `judgeable`: never an upload), and the board gave both
+     handlers. */
   const judge = item && props.onApprove && props.onReject ? judgeVersion(item, index) : null;
   const reasonKey = `${openId}:${index}`;
   const reasoning = rs?.key === reasonKey;

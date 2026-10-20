@@ -137,6 +137,31 @@ test("a shot with nothing to judge (making, failed, no take, an upload, a take w
   }
 });
 
+test("in a shot with a take and an upload, the take's version has ✓ ✕ and the upload's has neither", async ({ page }) => {
+  const calls = await watch(page);
+  await open(page, "shot-12");
+  /* It opens on the upload (v2, shown): no marks, though it has a picture and Download. */
+  await expect(page.getByTestId("v12-preview-version")).toHaveText("v2 of 2");
+  await expect(page.getByTestId("v12-preview-picture")).toBeVisible();
+  await expect(page.getByTestId("v12-preview-ok")).toHaveCount(0);
+  await expect(page.getByTestId("v12-preview-no")).toHaveCount(0);
+  /* The take (v1): ✓ and ✕, acting on v1. */
+  const strip = page.getByTestId("v12-preview-versions").getByTestId("v12-preview-version-btn");
+  await strip.nth(0).click();
+  await expect(page.getByTestId("v12-preview-version")).toHaveText("v1 of 2");
+  await expect(page.getByTestId("v12-preview-ok")).toHaveText("✓ Approve v1");
+  await expect(page.getByTestId("v12-preview-no")).toBeVisible();
+  await page.getByTestId("v12-preview-ok").click();
+  await expect.poll(() => calls.filter((c) => c.method === "PATCH").length).toBe(1);
+  expect(calls[0]).toMatchObject({ url: "/api/jobs/gen_s12a", body: { reviewState: "approved" } });
+  /* Back to the upload: the marks go again. */
+  await strip.nth(1).click();
+  await expect(page.getByTestId("v12-preview-version")).toHaveText("v2 of 2");
+  await expect(page.getByTestId("v12-preview-ok")).toHaveCount(0);
+  await expect(page.getByTestId("v12-preview-no")).toHaveCount(0);
+  expect(calls.filter((c) => c.url === "/api/jobs/gen_s12b")).toEqual([]);
+});
+
 test("a reason the review trail would not take keeps the preview's ✕ panel open and says why; the line takes at most 500 characters", async ({ page }) => {
   const calls = await watch(page);
   await open(page, "shot-2");
@@ -172,8 +197,8 @@ test("← and → step through the cards and wrap; Esc closes the reasons first,
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 2 · MAYA arrives");
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
-  /* The last card is #792's shot 11 (the rows run 1 to 8, then 9 to 11). */
-  await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 11 · Night swim");
+  /* The last card is shot 12, the mixed one (the rows run 1 to 8, then #792's 9 to 11, then 12). */
+  await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 12 · Take and upload");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 1 · Camp at night");
   /* Esc: the reasons first. */

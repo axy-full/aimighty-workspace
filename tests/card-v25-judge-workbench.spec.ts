@@ -102,8 +102,8 @@ test("✓ is the review trail's approve and takes itself back; ✕ sends the tak
   await card(t, "shot-2").getByLabel("One line, optional").press("Enter");
   await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(2);
   expect(calls.filter((c) => c.url === "/api/notes")[1].body).toEqual({ genId: "gen_s2", text: "Too dark by the fire" });
-  /* A card with nothing to judge (making, failed, no take, an upload, a finished take with no picture here) offers neither ✓ nor ✕. */
-  for (const id of ["shot-4", "shot-5", "shot-6", "shot-9", "shot-10"]) {
+  /* A card with nothing to judge (making, failed, no take, an upload, a finished take with no picture here, an upload shown beside a take) offers neither ✓ nor ✕. */
+  for (const id of ["shot-4", "shot-5", "shot-6", "shot-9", "shot-10", "shot-12"]) {
     if (!isCompact(info)) await card(t, id).hover();
     await expect(card(t, id).getByRole("button", { name: /^Approve|^Not right/ }), id).toHaveCount(0);
   }

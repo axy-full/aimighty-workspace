@@ -6,7 +6,7 @@ import {
 import type { ShotVersion } from "../../components/graphite/board/cards/take/take-model";
 
 /* PR 6: the preview's rules (components/v12/board/preview-model.ts). Pure. */
-const ver = (n: number, status: PreviewItemView["versions"][number]["status"], over: Partial<PreviewItemView["versions"][number]> = {}) => ({ genId: `g${n}`, label: `v${n}`, url: `/api/media/g${n}`, poster: `/p/${n}`, status, ...over });
+const ver = (n: number, status: PreviewItemView["versions"][number]["status"], over: Partial<PreviewItemView["versions"][number]> = {}) => ({ genId: `g${n}`, label: `v${n}`, url: `/api/media/g${n}`, poster: `/p/${n}`, status, judgeable: true, ...over });
 const item = (versions: PreviewItemView["versions"], over: Partial<PreviewItemView> = {}): PreviewItemView => ({ id: "s1", title: "Shot 1", kind: "picture", versions, shown: versions.length - 1, canJudge: true, reasons: [], ...over });
 
 test("the version label and Compare need more than one version", () => {
@@ -52,6 +52,10 @@ test("✓ and ✕ act on the version on screen, only when the card can be judged
   expect(judgeVersion(item([ver(1, "ready", { genId: undefined })]), 0)).toBeNull();
   /* A version with no picture or clip here to look at cannot be judged. */
   expect(judgeVersion(item([ver(1, "ready", { url: null })]), 0)).toBeNull();
+  /* A version that is not judgeable by its own rule (an upload) has no marks, even on a card that can be judged. */
+  const mixed = item([ver(1, "ready"), ver(2, "ready", { judgeable: false })]);
+  expect(judgeVersion(mixed, 0)?.genId).toBe("g1");
+  expect(judgeVersion(mixed, 1)).toBeNull();
 });
 
 test("a clip's time and frame steps stay inside the clip", () => {
@@ -90,4 +94,12 @@ test("Download is the original as an attachment; a shot's takes become versions,
   expect(clip.kind).toBe("video");
   expect(clip.versions[0].poster).toBe("/f.png");
   expect(previewItemOfShot({ nodeId: "n3", title: "Shot 3", versions: [], shown: null, frame: null })).toMatchObject({ versions: [], shown: 0, canJudge: false });
+  /* Each version carries the card's own rule: a take with its picture here can be judged; an upload beside it, with a url, cannot. */
+  const both = [v(1, "review"), v(2, "uploaded")];
+  const mixed = previewItemOfShot({ nodeId: "n4", title: "Shot 4", versions: both, shown: both[1], frame: null });
+  expect(mixed.versions.map((x) => [x.label, x.status, x.judgeable])).toEqual([["v1", "ready", true], ["v2", "ready", false]]);
+  expect(mixed.canJudge).toBe(true);
+  expect(judgeVersion(mixed, 0)?.genId).toBe("g1");
+  expect(judgeVersion(mixed, 1)).toBeNull();
+  expect(out.versions.every((x) => x.judgeable)).toBe(true);
 });

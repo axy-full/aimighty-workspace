@@ -23,6 +23,11 @@ export type PreviewVersionView = {
   status: CardStatus;
   /** Who approved it, by name, when the server said. */
   approvedBy?: string | null;
+  /**
+   * Whether ✓ and ✕ may act on this version: for a take, the card's own rule (take-model `judgeable`: finished, its picture here), so an upload never
+   * carries marks, even beside a take that does. False on anything that is not a take.
+   */
+  judgeable: boolean;
 };
 
 export type PreviewTab = { id: string; label: string; text: string };
@@ -71,10 +76,10 @@ export const approveLabel = (item: Pick<PreviewItemView, "versions">, index: num
   return v?.status === "approved" ? "Approved" : item.versions.length > 1 ? `Approve ${v?.label ?? ""}`.trim() : "Approve";
 };
 
-/** Whether ✓ and ✕ act on the version on screen. */
+/** Whether ✓ and ✕ act on the version on screen: the card can be judged, and so can that version (its own `judgeable`). */
 export const judgeVersion = (item: PreviewItemView, index: number): PreviewVersionView | null => {
   const v = item.versions[clampIndex(index, item.versions.length)];
-  return item.canJudge && v && v.genId && v.url && (v.status === "ready" || v.status === "approved" || v.status === "rejected") ? v : null;
+  return item.canJudge && v && v.judgeable && v.genId && v.url && (v.status === "ready" || v.status === "approved" || v.status === "rejected") ? v : null;
 };
 
 /** "0:03 / 0:08". */
@@ -107,6 +112,7 @@ const statusOf = (v: ShotVersion): CardStatus => shotCardState({ shown: v, versi
 export function previewItemOfShot(row: Pick<ShotTakes, "nodeId" | "title" | "versions" | "shown" | "frame">): PreviewItemView {
   const versions = row.versions.map((v): PreviewVersionView => ({
     genId: v.genId, label: v.label, url: v.url, poster: v.media === "image" ? v.url : row.frame?.kind === "image" ? row.frame.url : null, status: statusOf(v), approvedBy: v.approvedBy,
+    judgeable: judgeable(v),
   }));
   const shownAt = row.shown ? row.versions.findIndex((v) => v.genId === row.shown!.genId) : -1;
   const media = row.shown?.media ?? row.versions[row.versions.length - 1]?.media ?? null;

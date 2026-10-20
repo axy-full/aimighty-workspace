@@ -74,12 +74,14 @@ const ROWS: ShotTakes[] = [
   shot(10, "Last light", [version("gen_s10", 1, "review", { url: null })]),
   /* Sent back: its reason is the team's note at the mark (the browser check answers the notes). */
   shot(11, "Night swim", [version("gen_s11", 1, "changes")]),
+  /* Mixed (PR 6): a take that can be judged, then an upload with its picture here, shown. The upload never carries ✓ ✕; the take does. */
+  shot(12, "Take and upload", [version("gen_s12a", 1, "review"), version("gen_s12b", 2, "uploaded")]),
 ];
 
 /* Cards that are not takes: a script (Script · Beats · Breakdown) and a sound, as preview items (mock). */
 const SCRIPT: PreviewItemView = {
   id: "script", title: "Script", kind: "text", shown: 0, canJudge: false, reasons: TAKE_REASONS,
-  versions: [{ label: "v1", url: null, poster: null, status: "ready" }],
+  versions: [{ label: "v1", url: null, poster: null, status: "ready", judgeable: false }],
   tabs: [
     { id: "script", label: "Script", text: "INT. CAMP — NIGHT\nA cold bottle on a warm table." },
     { id: "beats", label: "Beats", text: "1. The arrival\n2. The water\n3. The first sip" },
@@ -88,7 +90,7 @@ const SCRIPT: PreviewItemView = {
 };
 const SOUND: PreviewItemView = {
   id: "sound", title: "Voice · line 1", kind: "sound", shown: 0, canJudge: false, reasons: TAKE_REASONS,
-  versions: [{ genId: "gen_voice", label: "v1", url: "/fixtures/tone.mp3", poster: null, status: "ready" }],
+  versions: [{ genId: "gen_voice", label: "v1", url: "/fixtures/tone.mp3", poster: null, status: "ready", judgeable: false }],
 };
 
 function TakeBoard() {
