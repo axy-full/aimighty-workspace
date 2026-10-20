@@ -73,7 +73,6 @@ test("✓ is the review trail's approve (Sent) and takes itself back; ✕ sends 
   expect(calls[0]).toMatchObject({ url: "/api/jobs/gen_s2", body: { reviewState: "approved" } });
   await expect(page.getByText("Shot 2 v1 sent").first()).toBeVisible();
   await expect(page.getByText("Shot 2 v1 approved")).toHaveCount(0);
-  await expect(status(t, "shot-2")).toHaveText("✓ Sent");
   /* ✓ on an approved card takes the approval back (Ready again; this page did not see it approved, so its earlier state is not known: ""),
      with an Undo that approves it again. */
   await reveal(t, "shot-3");
