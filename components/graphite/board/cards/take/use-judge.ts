@@ -60,8 +60,22 @@ export async function postTakeNote(scope: string, genId: string, text: string): 
 
 export type JudgeToast = (text: string, undo?: { label: string; run: () => void }) => void;
 
-export function useJudge(scope: string, projectId: string, toast: JudgeToast): Judge {
+/**
+ * What a surface may change about the judge's words and its reason rule, never what it writes. Left out, everything is as it has always been (the take
+ * cards, review mode, the Inspector). The v25 card and preview pass theirs (`V25_JUDGE`, components/v12/board/card-model.ts): "sent" (owner, 20 Oct 2026) and
+ * their own reason rule ("Other" needs a line, one word is enough).
+ */
+export type JudgeOptions = {
+  /** The word in ✓'s toast: "Shot 2 v1 approved" by default. */
+  approved?: string;
+  /** Why a reason may not be written, or null: the trail's rule (3 to 500 characters) by default. */
+  reasonProblem?: (reason: string) => string | null;
+};
+
+export function useJudge(scope: string, projectId: string, toast: JudgeToast, options?: JudgeOptions): Judge {
   const [busy, setBusy] = useState<string | null>(null);
+  const approvedWord = options?.approved ?? "approved";
+  const problemOf = options?.reasonProblem ?? rejectReasonProblem;
   const restore = useCallback(async (states: readonly { genId: string; state: ReviewState }[]) => {
     try {
       for (const s of states) await reviewProjectTake(scope, projectId, s.genId, s.state);
@@ -79,7 +93,8 @@ export function useJudge(scope: string, projectId: string, toast: JudgeToast): J
       await reviewProjectTake(scope, projectId, version.genId, "approved");
       if (version.status !== "approved") readyBefore.set(readyKey(scope, version.genId), reviewStateOf(version.status) === "picked" ? "picked" : "");
       for (const v of others) await reviewProjectTake(scope, projectId, v.genId, "");
-      toast(`Shot ${row.index} ${version.label} approved`, { label: `Shot ${row.index} ${version.label} approved`, run: () => { void restore(before); } });
+      const said = `Shot ${row.index} ${version.label} ${approvedWord}`;
+      toast(said, { label: said, run: () => { void restore(before); } });
       return true;
     } catch (error) {
       toast(error instanceof Error ? error.message : "The review was not saved.");
@@ -87,10 +102,10 @@ export function useJudge(scope: string, projectId: string, toast: JudgeToast): J
     } finally {
       setBusy(null);
     }
-  }, [busy, scope, projectId, toast, restore]);
+  }, [busy, scope, projectId, toast, restore, approvedWord]);
 
   const reject = useCallback(async (row: Pick<ShotTakes, "index" | "versions">, version: ShotVersion, reason: string) => {
-    if (busy || rejectReasonProblem(reason)) return false;
+    if (busy || problemOf(reason)) return false;
     setBusy(version.genId);
     const before = [{ genId: version.genId, state: reviewStateOf(version.status) }];
     try {
@@ -106,7 +121,7 @@ export function useJudge(scope: string, projectId: string, toast: JudgeToast): J
     } finally {
       setBusy(null);
     }
-  }, [busy, scope, projectId, toast, restore]);
+  }, [busy, scope, projectId, toast, restore, problemOf]);
 
   const unapprove = useCallback(async (row: Pick<ShotTakes, "index">, version: ShotVersion) => {
     if (busy || version.status !== "approved") return false;

@@ -1,8 +1,10 @@
 import type { ShotTakes, ShotVersion } from "@/components/graphite/board/cards/take/take-model";
-import { REJECT_REASON_MAX, cleanRejectReason, judgeable, rejectReasonProblem } from "@/components/graphite/board/cards/take/take-model";
+import { judgeable } from "@/components/graphite/board/cards/take/take-model";
 import { downloadUrl } from "@/lib/preview";
 import { SHOT_REASONS, shotCardState } from "./shot-card";
 import type { CardStatus } from "./card-model";
+
+export { REASON_NEEDS_LINE, REASON_TOO_LONG, reasonProblem } from "./card-model";
 
 /**
  * The v25 preview's rules (design/particl-prototype-25 README: "Double-click or Space: Preview with versions, Compare, ✓ / ✕ for the version shown,
@@ -21,7 +23,7 @@ export type PreviewVersionView = {
   /** A picture to draw for a version whose url is a clip or a sound (its frame), else the url itself when it is a still. */
   poster: string | null;
   status: CardStatus;
-  /** Who approved it, by name, when the server said. */
+  /** Who sent it (the trail's "approved" mark), by name, when the server said. */
   approvedBy?: string | null;
   /**
    * Whether ✓ and ✕ may act on this version: for a take, the card's own rule (take-model `judgeable`: finished, its picture here), so an upload never
@@ -76,10 +78,10 @@ export function stepId(ids: readonly string[], current: string, direction: 1 | -
   return ids[(at + direction + ids.length) % ids.length];
 }
 
-/** The word on ✓: what pressing it does to the version on screen. */
+/** The word on ✓: what pressing it does to the version on screen ("Sent" once it is: the trail's "approved" mark, owner 20 Oct 2026). */
 export const approveLabel = (item: Pick<PreviewItemView, "versions">, index: number) => {
   const v = item.versions[clampIndex(index, item.versions.length)];
-  return v?.status === "approved" ? "Approved" : item.versions.length > 1 ? `Approve ${v?.label ?? ""}`.trim() : "Approve";
+  return v?.status === "approved" ? "Sent" : item.versions.length > 1 ? `Send ${v?.label ?? ""}`.trim() : "Send";
 };
 
 /** Whether ✓ and ✕ act on the version on screen: the card can be judged, and so can that version (its own `judgeable`). */
@@ -87,14 +89,6 @@ export const judgeVersion = (item: PreviewItemView, index: number): PreviewVersi
   const v = item.versions[clampIndex(index, item.versions.length)];
   return item.canJudge && v && v.judgeable && v.genId && v.url && (v.status === "ready" || v.status === "approved" || v.status === "rejected") ? v : null;
 };
-
-/** What the reasons panel says when a reason is too long: the trail's own hint is about a reason that is too short. */
-export const REASON_TOO_LONG = `Too long: ${REJECT_REASON_MAX} characters at most.`;
-
-/** Why ✕'s reason cannot be sent, or null: too short (the trail's hint, "Say why…"), or too long (a chip and a full line can pass the limit). */
-export function reasonProblem(reason: string): string | null {
-  return cleanRejectReason(reason).length > REJECT_REASON_MAX ? REASON_TOO_LONG : rejectReasonProblem(reason);
-}
 
 /** "0:03 / 0:08". */
 export function timeLabel(seconds: number, duration: number): string {

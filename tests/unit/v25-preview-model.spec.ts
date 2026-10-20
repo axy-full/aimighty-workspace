@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  REASON_TOO_LONG, approveLabel, canCompare, clampIndex, compareSides, judgeVersion, previewItemOfShot, reasonProblem, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
+  REASON_NEEDS_LINE, REASON_TOO_LONG, approveLabel, canCompare, clampIndex, compareSides, judgeVersion, previewItemOfShot, reasonProblem, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
   type PreviewItemView,
 } from "../../components/v12/board/preview-model";
 import type { ShotVersion } from "../../components/graphite/board/cards/take/take-model";
@@ -47,9 +47,10 @@ test("← and → walk the step's cards and wrap at either end", () => {
 test("✓ and ✕ act on the version on screen, only when the card can be judged and that version can", () => {
   const three = item([ver(1, "rejected"), ver(2, "ready"), ver(3, "approved")]);
   expect(judgeVersion(three, 1)?.genId).toBe("g2");
-  expect(approveLabel(three, 1)).toBe("Approve v2");
-  expect(approveLabel(three, 2)).toBe("Approved");
-  expect(approveLabel(item([ver(1, "ready")]), 0)).toBe("Approve");
+  /* ✓'s word is Send, and Sent once the version carries the trail's "approved" mark (owner, 20 Oct 2026). */
+  expect(approveLabel(three, 1)).toBe("Send v2");
+  expect(approveLabel(three, 2)).toBe("Sent");
+  expect(approveLabel(item([ver(1, "ready")]), 0)).toBe("Send");
   expect(judgeVersion({ ...three, canJudge: false }, 1)).toBeNull();
   expect(judgeVersion(item([ver(1, "making")]), 0)).toBeNull();
   expect(judgeVersion(item([ver(1, "none")]), 0)).toBeNull();
@@ -108,10 +109,14 @@ test("Download is the original as an attachment; a shot's takes become versions,
   expect(out.versions.every((x) => x.judgeable)).toBe(true);
 });
 
-test("✕'s reason: too short says why (the trail's hint), too long says too long, and one that fits has no problem", () => {
-  expect(reasonProblem("ok")).toBe("Say why you are rejecting it.");
-  expect(reasonProblem(`Wrong framing · ${"x".repeat(500)}`)).toBe(REASON_TOO_LONG);
+test("✕'s reason: Other with no line says Other needs a line, too long says too long, and one that fits has no problem", () => {
+  /* Was: "ok" alone refused as too short. Now Other (or no chip) needs a line and one word is enough (owner, 20 Oct 2026). */
+  expect(reasonProblem("Other", "")).toBe(REASON_NEEDS_LINE);
+  expect(reasonProblem(null, "")).toBe(REASON_NEEDS_LINE);
+  expect(REASON_NEEDS_LINE).toBe("Other needs a line: one word is enough.");
+  expect(reasonProblem("Other", "ok")).toBeNull();
+  expect(reasonProblem("Wrong framing", "x".repeat(500))).toBe(REASON_TOO_LONG);
   expect(REASON_TOO_LONG).toBe("Too long: 500 characters at most.");
-  expect(reasonProblem("x".repeat(500))).toBeNull();
-  expect(reasonProblem("Wrong framing")).toBeNull();
+  expect(reasonProblem("Other", "x".repeat(500))).toBeNull();
+  expect(reasonProblem("Wrong framing", "")).toBeNull();
 });

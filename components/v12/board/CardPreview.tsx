@@ -25,9 +25,9 @@ export type CardPreviewProps = {
   openId: string;
   onStep: (id: string) => void;
   onClose: () => void;
-  /** ✓ on the version on screen: approve it, or take the approval back when it is already approved. ✓ and ✕ are drawn only when both are given. */
+  /** ✓ on the version on screen: send it (the trail's "approved" mark), or take that back when it is already sent. ✓ and ✕ are drawn only when both are given. */
   onApprove?: (item: PreviewItemView, versionIndex: number) => void;
-  /** Called only with a reason the review trail takes (one line, 3 to 500 characters); otherwise the panel stays open and says why. */
+  /** Called only with a reason the card's rule takes (card-model `reasonProblem`: a chip, or a typed line for Other; at most 500 characters); otherwise the panel stays open and says why. */
   onReject?: (item: PreviewItemView, versionIndex: number, reason: string) => void;
   /** The version the board shows changed (a version pressed in the strip): the board may follow. */
   onVersion?: (item: PreviewItemView, versionIndex: number) => void;
@@ -77,7 +77,7 @@ export function CardPreview(props: CardPreviewProps) {
   const reasoning = rs?.key === reasonKey;
   const pick = reasoning ? rs.pick : null;
   const line = reasoning ? rs.line : "";
-  /* Why the reason cannot be sent yet (too short with no chip, or too long): said in the panel, which stays open with the line in hand. */
+  /* Why the reason cannot be sent yet (Other or no chip with no line, or too long): said in the panel, which stays open with the line in hand. */
   const problem = reasoning ? (rs.problem ?? null) : null;
 
   /* The focus goes in when the preview opens and back to where it was when it closes. */
@@ -125,10 +125,9 @@ export function CardPreview(props: CardPreviewProps) {
   if (!item || !version) return null;
   const choose = (i: number) => { setPicked({ id: item.id, index: i }); props.onVersion?.(item, i); };
   const send = (chosen: string | null, text: string) => {
-    const reason = rejectReason(chosen, text);
-    const why = reasonProblem(reason);
+    const why = reasonProblem(chosen, text);
     if (why) { setRs({ key: reasonKey, pick: chosen, line: text, problem: why }); lineInput.current?.focus(); return; }
-    if (judge) props.onReject?.(item, index, reason);
+    if (judge) props.onReject?.(item, index, rejectReason(chosen, text));
     closeReasons(); root.current?.focus({ preventScroll: true });
   };
   const sides = comparing ? compareSides(item, index) : null;
@@ -148,7 +147,7 @@ export function CardPreview(props: CardPreviewProps) {
           {judge ? (
             <>
               <button type="button" className="v12-pv-btn" data-mark="ok" aria-pressed={version.status === "approved"} data-testid="v12-preview-ok"
-                title={version.status === "approved" && version.approvedBy ? `Approved by ${version.approvedBy}. Press again to undo.` : version.status === "approved" ? "Press again to undo." : "Approve this version"}
+                title={version.status === "approved" && version.approvedBy ? `Sent by ${version.approvedBy}. Press again to undo.` : version.status === "approved" ? "Press again to undo." : "Send this version"}
                 onClick={() => props.onApprove?.(item, index)}>✓ {approveLabel(item, index)}</button>
               <Tooltip name="Not right" line="Say why.">
                 <button type="button" className="v12-pv-btn" data-mark="no" aria-expanded={reasoning} aria-controls={reasoning ? panelId : undefined} data-testid="v12-preview-no"
@@ -215,8 +214,8 @@ export function CardPreview(props: CardPreviewProps) {
                   onClick={() => { if (reason === "Other") setRs({ key: reasonKey, pick: reason, line }); else send(reason, line); }}>{reason}</button>
               ))}
             </div>
-            <input ref={lineInput} className="v12-pv-line" value={line} aria-label="One line, optional" placeholder="One line, optional · ⏎ to send"
-              maxLength={REJECT_REASON_MAX} aria-invalid={problem ? true : undefined} aria-describedby={problem ? hintId : undefined}
+            <input ref={lineInput} className="v12-pv-line" value={line} aria-label="Why" placeholder={pick === "Other" ? "One word is enough · ⏎" : "One line, optional · ⏎"}
+              maxLength={REJECT_REASON_MAX} aria-required={pick === "Other" || undefined} aria-invalid={problem ? true : undefined} aria-describedby={problem ? hintId : undefined}
               onChange={(event) => setRs({ key: reasonKey, pick, line: event.target.value, problem: null })}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); send(pick, line); } }} />
             {problem ? <span id={hintId} className="v12-pv-reasons-hint" role="alert" data-testid="v12-preview-reasons-hint">{problem}</span> : null}
@@ -226,7 +225,7 @@ export function CardPreview(props: CardPreviewProps) {
       <div className="v12-pv-versions" data-testid="v12-preview-versions" role="group" aria-label="Versions">
         <span className="v12-pv-versions-label">Versions</span>
         {item.versions.map((v, i) => (
-          <button key={v.genId ?? v.label} type="button" className="v12-pv-vbtn" aria-pressed={i === index} aria-label={`${v.label}${v.status === "approved" ? ", approved" : ""}`} data-testid="v12-preview-version-btn" onClick={() => choose(i)}>
+          <button key={v.genId ?? v.label} type="button" className="v12-pv-vbtn" aria-pressed={i === index} aria-label={`${v.label}${v.status === "approved" ? ", sent" : ""}`} data-testid="v12-preview-version-btn" onClick={() => choose(i)}>
             <span className="v12-pv-thumb">{v.poster ? <Img src={v.poster} /> : null}</span>
             <span className="v12-pv-vlabel">{v.label}</span>
           </button>

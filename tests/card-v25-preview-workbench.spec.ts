@@ -134,11 +134,13 @@ test("✓ and ✕ act on the version on screen, through the review trail; ✕ na
   const calls = await watch(page);
   await open(page, "shot-7");
   const strip = page.getByTestId("v12-preview-versions").getByTestId("v12-preview-version-btn");
-  /* v3 is on screen: ✓ approves v3 (a review version), and v2 is not touched. */
-  await expect(page.getByTestId("v12-preview-ok")).toHaveText("✓ Approve v3");
+  /* v3 is on screen: ✓ sends v3 (a review version; the trail's "approved" mark), and v2 is not touched. */
+  await expect(page.getByTestId("v12-preview-ok")).toHaveText("✓ Send v3");
+  await expect(page.getByTestId("v12-preview-ok")).toHaveAttribute("title", "Send this version");
   await page.getByTestId("v12-preview-ok").click();
   await expect.poll(() => calls.filter((c) => c.method === "PATCH").length).toBe(1);
   expect(calls[0]).toMatchObject({ url: "/api/jobs/gen_s7c", body: { reviewState: "approved" } });
+  await expect(page.getByTestId("v12-toast")).toContainText("Shot 7 v3 sent");
   /* v2: ✕ asks what is wrong with v2, and a chip records it on v2. */
   await strip.nth(1).click();
   await page.getByTestId("v12-preview-no").click();
@@ -150,11 +152,12 @@ test("✓ and ✕ act on the version on screen, through the review trail; ✕ na
   expect(calls.filter((c) => c.method === "PATCH" && c.url === "/api/jobs/gen_s7b").map((c) => c.body)).toEqual([{ reviewState: "changes" }]);
   expect(calls.find((c) => c.url === "/api/notes")?.body).toEqual({ genId: "gen_s7b", text: "Wrong framing" });
   await expect(reasons).toHaveCount(0);
-  /* The approved shot's ✓ says so and takes it back. */
+  /* The sent shot's ✓ says so and takes it back. */
   await page.keyboard.press("Escape");
   await open(page, "shot-3");
-  await expect(page.getByTestId("v12-preview-ok")).toHaveText("✓ Approved");
-  await expect(page.getByTestId("v12-preview-ok")).toHaveAttribute("title", /Approved by Reviewer One/);
+  await expect(page.getByTestId("v12-preview-ok")).toHaveText("✓ Sent");
+  await expect(page.getByTestId("v12-preview-ok")).toHaveAttribute("title", "Sent by Reviewer One. Press again to undo.");
+  await expect(page.getByTestId("v12-preview-versions").getByTestId("v12-preview-version-btn").first()).toHaveAttribute("aria-label", "v1, sent");
   await page.getByTestId("v12-preview-ok").click();
   await expect.poll(() => calls.filter((c) => c.method === "PATCH" && c.url === "/api/jobs/gen_s3").length).toBe(1);
   expect(calls.find((c) => c.url === "/api/jobs/gen_s3")?.body).toEqual({ reviewState: "" });
@@ -198,7 +201,7 @@ test("in a shot with a take and an upload, the take's version has ✓ ✕ and th
   const strip = page.getByTestId("v12-preview-versions").getByTestId("v12-preview-version-btn");
   await strip.nth(0).click();
   await expect(page.getByTestId("v12-preview-version")).toHaveText("v1 of 2");
-  await expect(page.getByTestId("v12-preview-ok")).toHaveText("✓ Approve v1");
+  await expect(page.getByTestId("v12-preview-ok")).toHaveText("✓ Send v1");
   await expect(page.getByTestId("v12-preview-no")).toBeVisible();
   await page.getByTestId("v12-preview-ok").click();
   await expect.poll(() => calls.filter((c) => c.method === "PATCH").length).toBe(1);
@@ -211,24 +214,27 @@ test("in a shot with a take and an upload, the take's version has ✓ ✕ and th
   expect(calls.filter((c) => c.url === "/api/jobs/gen_s12b")).toEqual([]);
 });
 
-test("a reason the review trail would not take keeps the preview's ✕ panel open and says why; the line takes at most 500 characters", async ({ page }) => {
+test("Other with no line keeps the preview's ✕ panel open and says why, nothing written; one word sends; the line takes at most 500 characters", async ({ page }) => {
   const calls = await watch(page);
   await open(page, "shot-2");
   await page.getByTestId("v12-preview-no").click();
   const reasons = page.getByTestId("v12-preview-reasons");
-  const line = reasons.getByLabel("One line, optional");
+  const line = reasons.getByLabel("Why", { exact: true });
   await expect(line).toHaveAttribute("maxlength", "500");
+  /* Other with no line (owner, 20 Oct 2026: ""Other" needs a line, one word is enough"): refused, and the panel says why. */
   await reasons.getByRole("button", { name: "Other", exact: true }).click();
-  await line.fill("ok");
+  await expect(line).toHaveAttribute("placeholder", "One word is enough · ⏎");
+  await expect(line).toHaveAttribute("aria-required", "true");
+  await line.fill("  ");
   await line.press("Enter");
   const hint = page.getByTestId("v12-preview-reasons-hint");
-  await expect(hint).toHaveText("Say why you are rejecting it.");
+  await expect(hint).toHaveText("Other needs a line: one word is enough.");
   await expect(hint).toHaveAttribute("role", "alert");
   await expect(reasons).toBeVisible();
-  await expect(line).toHaveValue("ok");
+  await expect(line).toHaveValue("  ");
   await expect(line).toHaveAttribute("aria-invalid", "true");
   await expect(line).toHaveAttribute("aria-describedby", (await hint.getAttribute("id"))!);
-  expect(calls.length, "nothing written for a reason the trail would not take").toBe(0);
+  expect(calls.length, "nothing written for Other with no line").toBe(0);
   /* The panel and its hint stay inside the stage and the window, at every size (it scrolls inside itself when the stage is short). */
   const fit = await reasons.evaluate((panel) => {
     const r = panel.getBoundingClientRect();
@@ -244,22 +250,36 @@ test("a reason the review trail would not take keeps the preview's ✕ panel ope
   });
   expect(fit).toEqual([]);
   await expect(hint).toBeInViewport();
-  /* Too long (a chip and a full line pass 500): said as too long, not as "Say why". */
+  /* Too long (a chip and a full line pass 500): said as too long, not as Other's hint. */
   await line.fill("x".repeat(500));
   await expect(line).toHaveValue("x".repeat(500));
   await reasons.getByRole("button", { name: "Wrong framing", exact: true }).click();
   await expect(hint).toHaveText("Too long: 500 characters at most.");
   await expect(reasons).toBeVisible();
   expect(calls.length, "nothing written for a reason that is too long").toBe(0);
-  /* A longer line sends ("Other" again, so the line is the whole reason). */
+  /* Other with one short word sends ("Other" again, so the line is the whole reason): "ok", two letters, refused before 20 Oct, is enough. */
   await reasons.getByRole("button", { name: "Other", exact: true }).click();
-  await line.fill("okay now");
+  await line.fill("ok");
   await expect(hint).toHaveCount(0);
   await line.press("Enter");
   await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(1);
   expect(calls.filter((c) => c.method === "PATCH").map((c) => [c.url, c.body])).toEqual([["/api/jobs/gen_s2", { reviewState: "changes" }]]);
-  expect(calls.find((c) => c.url === "/api/notes")?.body).toEqual({ genId: "gen_s2", text: "okay now" });
+  expect(calls.find((c) => c.url === "/api/notes")?.body).toEqual({ genId: "gen_s2", text: "ok" });
   await expect(reasons).toHaveCount(0);
+});
+
+test("in the preview, a chip other than Other still sends without a line", async ({ page }) => {
+  const calls = await watch(page);
+  await open(page, "shot-2");
+  await page.getByTestId("v12-preview-no").click();
+  const reasons = page.getByTestId("v12-preview-reasons");
+  await expect(reasons.getByLabel("Why", { exact: true })).toHaveValue("");
+  await reasons.getByRole("button", { name: "Off the brief", exact: true }).click();
+  await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(1);
+  expect(calls.filter((c) => c.method === "PATCH").map((c) => [c.url, c.body])).toEqual([["/api/jobs/gen_s2", { reviewState: "changes" }]]);
+  expect(calls.find((c) => c.url === "/api/notes")?.body).toEqual({ genId: "gen_s2", text: "Off the brief" });
+  await expect(reasons).toHaveCount(0);
+  await expect(page.getByTestId("v12-preview-reasons-hint")).toHaveCount(0);
 });
 
 test("← and → step through the cards and wrap; Esc closes the reasons first, then the preview, and the focus goes back to the card", async ({ page }) => {
@@ -276,7 +296,7 @@ test("← and → step through the cards and wrap; Esc closes the reasons first,
   /* Esc: the reasons first, and the focus goes back to ✕. */
   await page.getByTestId("v12-preview-no").click();
   await expect(page.getByTestId("v12-preview-reasons")).toBeVisible();
-  await page.getByLabel("One line, optional").focus();
+  await page.getByLabel("Why", { exact: true }).focus();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("v12-preview-reasons")).toHaveCount(0);
   await expect(preview(page)).toBeVisible();
@@ -287,8 +307,8 @@ test("← and → step through the cards and wrap; Esc closes the reasons first,
   /* The arrows do not step while a field has them. */
   await open(page, "shot-1");
   await page.getByTestId("v12-preview-no").click();
-  await page.getByLabel("One line, optional").fill("ab");
-  await page.getByLabel("One line, optional").press("ArrowLeft");
+  await page.getByLabel("Why", { exact: true }).fill("ab");
+  await page.getByLabel("Why", { exact: true }).press("ArrowLeft");
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 1 · Camp at night");
   /* A layer that owns its keys (a menu beside the preview) keeps them: the preview neither steps nor closes. */
   await page.keyboard.press("Escape");
