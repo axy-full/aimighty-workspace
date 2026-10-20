@@ -79,6 +79,7 @@ test("an admin sets a member's token's ceiling in credits, recorded in the secur
   expect(set).toEqual({ status: 200, body: { id: "tok_member_render", capCredits: 300 } });
   expect(await stored("tok_member_render")).toEqual({ capCredits: 300, capUsd: null });
   expect(await audits()).toEqual([{ actor_id: "owner", action: "api_token.ceiling_set", target_id: "tok_member_render" }]);
+  expect(await lastAudit("tok_member_render")).toEqual({ ceilingUnit: "cr", ceilingBefore: null, ceilingAfter: 300 });
   /* The token as every request reads it: the ceiling, and so it may spend. */
   const auth = await authAs(bearer(MEMBER_RENDER, "member"));
   const caller = await auth.callerFromToken(MEMBER_RENDER);
@@ -106,6 +107,76 @@ test("an admin's figure is read strictly, in the workspace's unit, and only a to
   expect(await stored("tok_owner_render")).toEqual({ capCredits: null, capUsd: null });
 });
 
+/* Must-fix of the money review: the admin's figure is the token's one ceiling. A dollar ceiling left from before credits (credits workspace)
+   is replaced when the admin sets a credit ceiling, and cleared with it, so the page's "prepares and prices only" is true. */
+const LEGACY_A = rawToken(A, "5"), LEGACY_B = rawToken(A, "6");
+async function seedLegacy(id: string, raw: string, capUsd: number) {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const { tokenHash } = await import("../../lib/auth");
+  await runInTenant(A, () => db().execute({ sql: "INSERT OR IGNORE INTO api_tokens(id,token_hash,name,user_id,scope,cap_usd,created_at) VALUES(?,?,?,'member','render',?,0)", args: [id, tokenHash(raw), `legacy ${id}`, capUsd] }));
+}
+/** The token as a request reads it, and a reservation of one job it would start, under its own store. */
+async function asToken(raw: string) {
+  const auth = await authAs(bearer(raw, "member"));
+  const caller = await auth.callerFromToken(raw);
+  if (!caller?.token || !caller.user) throw new Error("the token did not read");
+  return caller;
+}
+async function reserveAs(raw: string, jobId: string) {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const caller = await asToken(raw);
+  return runInTenant(A, () => reserveGenerationSpend({ id: jobId, kind: "video", engine: "byteplus", model: "dreamina-seedance-2-0-260128", status: "running", engineCostUsd: 1, createdBy: "member" }, { token: caller.token }),
+    { user: caller.user, token: caller.token }).then(() => null, (error: { status?: number; message?: string }) => error);
+}
+async function metered(jobId: string) {
+  const { platformDb } = await import("../../lib/platform");
+  return Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE id=?", args: [jobId] })).rows[0].n);
+}
+async function lastAudit(target: string) {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  return runInTenant(A, async () => JSON.parse(String((await db().execute({ sql: "SELECT details FROM security_audit WHERE action='api_token.ceiling_set' AND target_id=? ORDER BY created_at DESC LIMIT 1", args: [target] })).rows[0]?.details ?? "null")));
+}
+
+test("clearing a token whose only ceiling is a dollar one from before credits makes it prepare-only: its paid work is refused, nothing reserved", async () => {
+  const { grantCredits } = await import("../../lib/platform");
+  const { alignLedgerUnit } = await import("../helpers/ledgerUnit");
+  await alignLedgerUnit();
+  await grantCredits(A.id, 10_000, "Test", "owner", "manual");
+  await seedLegacy("tok_legacy_a", LEGACY_A, 20);
+  const { runInTenant } = await import("../../lib/tenant");
+  const { tokenMaySpend, tokenSpendRefusal } = await import("../../lib/tokenSpend");
+  expect(await runInTenant(A, async () => tokenMaySpend((await asToken(LEGACY_A)).token))).toBe(true);
+  const cleared = await patch(admin(), "tok_legacy_a", { capCredits: "" });
+  expect(cleared).toEqual({ status: 200, body: { id: "tok_legacy_a", capCredits: null } });
+  expect(await stored("tok_legacy_a")).toEqual({ capCredits: null, capUsd: null });
+  expect(await lastAudit("tok_legacy_a")).toEqual({ ceilingUnit: "cr", ceilingBefore: null, ceilingAfter: null, legacyCleared: true });
+  /* Prepare-only now: the route's gate and the spend gate both refuse it, and nothing is reserved. */
+  const caller = await asToken(LEGACY_A);
+  const refused = await runInTenant(A, async () => tokenSpendRefusal({ maxCredits: 50 }, caller.token));
+  expect(refused?.status).toBe(403);
+  expect(await refused?.json()).toMatchObject({ code: "token_no_ceiling", charged: 0 });
+  const gate = await reserveAs(LEGACY_A, "gen_legacy_cleared");
+  expect(gate).toMatchObject({ status: 403, message: expect.stringContaining("can only prepare and price") });
+  expect(await metered("gen_legacy_cleared")).toBe(0);
+});
+
+test("setting 5,000 cr on a token with a dollar ceiling from before credits replaces it: a job past the old figure, within 5,000 cr, reserves", async () => {
+  await seedLegacy("tok_legacy_b", LEGACY_B, 0.01);
+  /* The old figure is under any job: refused at the reservation. */
+  const before = await reserveAs(LEGACY_B, "gen_legacy_before");
+  expect(before).toMatchObject({ status: 429, message: expect.stringContaining("monthly spending ceiling") });
+  expect(await metered("gen_legacy_before")).toBe(0);
+  const set = await patch(admin(), "tok_legacy_b", { capCredits: 5000 });
+  expect(set).toEqual({ status: 200, body: { id: "tok_legacy_b", capCredits: 5000 } });
+  expect(await stored("tok_legacy_b")).toEqual({ capCredits: 5000, capUsd: null });
+  expect(await lastAudit("tok_legacy_b")).toEqual({ ceilingUnit: "cr", ceilingBefore: null, ceilingAfter: 5000, legacyCleared: true });
+  expect(await reserveAs(LEGACY_B, "gen_legacy_after")).toBeNull();
+  expect(await metered("gen_legacy_after")).toBe(1);
+});
+
 test("GET /api/tokens shows an admin the other members' tokens that can generate, never their secrets; a member sees only their own", async () => {
   const listed = async (who: Who) => {
     const route = load<typeof import("../../app/api/tokens/route")>("app/api/tokens/route.ts", {
@@ -118,11 +189,12 @@ test("GET /api/tokens shows an admin the other members' tokens that can generate
   };
   const forAdmin = await listed(admin());
   expect(forAdmin.tokens.map((t: { id: string }) => t.id)).toEqual(["tok_owner_render"]);
-  expect(forAdmin.others).toEqual([expect.objectContaining({ id: "tok_member_render", scope: "render", owner: "Member Person", capCredits: null })]);
+  expect(forAdmin.others).toContainEqual(expect.objectContaining({ id: "tok_member_render", scope: "render", owner: "Member Person", capCredits: null }));
+  expect(forAdmin.others.every((t: { scope: string }) => t.scope === "render")).toBe(true);
   expect(JSON.stringify(forAdmin)).not.toMatch(/token_hash|pk_|capUsd/);
   const forMember = await listed(member());
   expect(forMember.others).toBeUndefined();
-  expect(forMember.tokens.map((t: { id: string }) => t.id).sort()).toEqual(["tok_member_prep", "tok_member_read", "tok_member_render"]);
+  expect(forMember.tokens.map((t: { id: string }) => t.id)).toEqual(expect.arrayContaining(["tok_member_prep", "tok_member_read", "tok_member_render"]));
 });
 
 test("no agent path can set a ceiling: the route is an admin's session alone, and no MCP tool takes a ceiling", async () => {

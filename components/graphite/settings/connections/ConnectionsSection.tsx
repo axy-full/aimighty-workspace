@@ -108,8 +108,11 @@ function Tokens({ onFresh }: { onFresh: (secret: string) => void }) {
     if (refused) { setNote({ ok: false, text: refused }); void read(); return; }
     setEdit(null);
     void read();
-    toast(cap.value == null ? `“${t.name}” has no ceiling: it prepares and prices only.` : `“${t.name}” spends up to ${unit === "credits" ? `${cap.value.toLocaleString("en-US")} cr` : `$${cap.value}`} a month.`,
-      { label: "Undo", kind: "undo", run: () => { void write(url, "PATCH", ceilingBody(unit, before)).then(({ error: no }) => { if (no) toast(no); void read(); }); } });
+    const said = cap.value == null ? `“${t.name}” has no ceiling: it prepares and prices only.` : `“${t.name}” spends up to ${unit === "credits" ? `${cap.value.toLocaleString("en-US")} cr` : `$${cap.value}`} a month.`;
+    /* The figure replaced a ceiling set before credits (the server clears it, PATCH /api/tokens/[id]/ceiling): that one cannot be put
+       back from here, so the toast says so and offers no Undo that would only clear the token. */
+    if (unit === "credits" && t.legacyCeiling) { toast(`${said} Its ceiling from before credits is replaced.`); return; }
+    toast(said, { label: "Undo", kind: "undo", run: () => { void write(url, "PATCH", ceilingBody(unit, before)).then(({ error: no }) => { if (no) toast(no); void read(); }); } });
   };
   /* The ceiling's button and field on a token that can generate, for an admin. */
   const ceilingEdit = (t: ApiToken) => {
