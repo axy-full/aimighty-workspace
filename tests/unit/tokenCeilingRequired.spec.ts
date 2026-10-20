@@ -281,6 +281,8 @@ const DOORS: { file: string; body: Record<string, unknown>; ctx?: unknown }[] = 
   { file: "app/api/audio/route.ts", body: { task: "tts", text: "Hello", maxCredits: 50 } },
   { file: "app/api/audio/dub/route.ts", body: { sourceUploadId: "upl_x", targetLang: "es", maxCredits: 50 } },
   { file: "app/api/lipsync/route.ts", body: { maxCredits: 50 } },
+  /* Recraft (#852): refused at the gate whether or not its engine is on for the workspace (the switch is never set here). */
+  { file: "app/api/recraft/route.ts", body: { tool: "image", prompt: "A lighthouse", maxCredits: 50 } },
   { file: "app/api/audio/transcribe/route.ts", body: { sourceUploadId: "upl_x", maxCredits: 50 } },
   { file: "app/api/prompt/enhance/route.ts", body: { prompt: "a tree", mode: "video", maxCredits: 5 } },
   { file: "app/api/atomik/ideas/draft/route.ts", body: { brief: "a tree", maxCredits: 5 } },
@@ -329,6 +331,7 @@ const TOKEN_DOORS: Record<string, { gate: RegExp; file?: string }> = {
   "audio": { gate: /tokenSpendRefusal\(\{ maxCredits: body\.maxCredits \}, got\.token\)/ },
   "audio/dub": { gate: /tokenSpendRefusal\(\{ maxCredits: body\.maxCredits \}, got\.token\)/ },
   "lipsync": { gate: /tokenSpendRefusal\(\{ maxCredits: body\.maxCredits \}, got\.token\)/ },
+  "recraft": { gate: /tokenSpendRefusal\(\{ maxCredits: body\.maxCredits \}, got\.token\)/ },
   "audio/transcribe": { gate: /tokenSpendRefusal\(\{ maxCredits: body\?\.maxCredits \}, got\.token\)/ },
   "jobs/[id]/release": { gate: /if \(got\.token\) return NextResponse\.json\(\{ error: "A held take is released by a person/ },
   "atomik/steps/[id]/claim": { gate: /if \(!isPerson\(\{ user: got\.user, token: got\.token \}\)\) return/ },
@@ -361,6 +364,8 @@ test("every paid route says how a token is held at it: its ceiling and its appro
   expect(readFileSync("lib/generationAdmission.ts", "utf8")).toMatch(/if \(options\.requestClaim\) \{\s*const problem = tokenSpendProblem\(got\.token, \{ maxCredits: body\.maxCredits \}\);/);
   /* And the spend gate, under its lock, for every reservation that names a token. */
   expect(readFileSync("lib/generationRequests.ts", "utf8")).toContain("if (options.token && !hasSpendingCeiling(options.token, creditsApply(ws))) throw new TokenNoCeilingError();");
+  /* Recraft (#852): its reservation names the request's token, so the spend gate holds it to its ceiling. */
+  expect(readFileSync("lib/recraftImage.ts", "utf8")).toMatch(/reserveGenerationSpend\([\s\S]{0,400}\{ token: got\.token \}/);
 });
 
 /* A take a token made and parked (held for credits or a slot) is started by the spend gate when released. Made by a token with no ceiling, it
@@ -392,4 +397,12 @@ test("a person releasing a held take made by a token with no ceiling is told who
     expect({ ...row }).toEqual({ status: "held", error: HELD_TAKE_NO_CEILING });
     expect((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE id=?", args: [id] })).rows[0].n).toBe(0);
   }, { user: person.user });
+});
+
+/* Recraft's MCP tools (#852) follow the direct-engine registry (lib/directEngineMcp.ts): none is declared a draft, so a call is priced and prepared
+   for a person, never started, and never carries a maxCredits of the caller's or the tool's own. */
+test("Recraft's MCP tools never start a job or carry an approval: priced and prepared for a person", async () => {
+  const { RECRAFT_DIRECT_TOOLS } = await import("../../lib/recraftMcp");
+  expect(RECRAFT_DIRECT_TOOLS.length).toBeGreaterThan(0);
+  for (const tool of RECRAFT_DIRECT_TOOLS) expect("draft" in tool, tool.def.name).toBe(false);
 });
