@@ -271,7 +271,6 @@ function routeModules() {
   return {
     "@/lib/auth": { ...nodeRequire(path.resolve("lib/auth.ts")), withTenant: (h: unknown) => h, requireRender: async () => OWNER },
     "@/lib/catalog": { ...nodeRequire(path.resolve("lib/catalog.ts")), catalog: async () => [WRITER] },
-    "@/lib/gateway": { gatewayReachable: () => true },
     "@/lib/language-provider": { languageReachable: () => true },
     "@/lib/atomik": { ...nodeRequire(path.resolve("lib/atomik.ts")), requestEffort: () => undefined, resolveModel: async () => WRITER.id },
     "@/lib/atomikDocs": { ...nodeRequire(path.resolve("lib/atomikDocs.ts")), getTreatment: async () => ({ logline: `A courier ${PROMPT_CANARY}`, setup: {}, scenes: [{ n: 1, title: "Platform", secs: 12, prose: "Rain on the platform." }], updatedAt: 1 }) },

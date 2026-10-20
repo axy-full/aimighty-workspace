@@ -733,7 +733,7 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
       const snapshot = JSON.parse(String(row.snapshot)) as Snapshot;
       const prompt = promptFor(snapshot, input, chunk, draft ? JSON.parse(String(draft.result)) : undefined, critique ? JSON.parse(String(critique.result)) : undefined);
       submitted = true;
-      reply = await call.run(() => deps.call({ model, effort: input.effort, stage, kind: input.kind, chunk,
+      reply = await call.run(async () => await deps.call({ model, effort: input.effort, stage, kind: input.kind, chunk,
         prompt, instructions: developmentInstructions(input.kind, stage), maxTokens: Number(next.max_tokens), images: developmentImages(snapshot) }));
       returned = true;
       const direct = isDirectText(input.model);
