@@ -267,22 +267,20 @@ test("what still stops a job over 200 cr, exactly as before: the balance, the wo
   }, { user: person("u_member", "member") });
 });
 
-test("Atomik: a person-tapped run step over 200 cr is reserved inside the run's approved limit, for a member too; Auto's own no-tap ceiling (rig-agent-limits) is still 200 cr and is judged at Auto's gate, not here", async () => {
+test("Atomik: a person-tapped run step over 200 cr is reserved inside the run's approved limit, for a member too; there is no Auto (owner, 20 Oct 2026): no no-tap ceiling exists and a run spend carries no Auto mark", async () => {
   const { reserveGenerationSpend, runInTenant, ready, funded, reserved } = await reservation();
-  const { rigJobCeiling, AUTO_NO_TAP_CEILING_USD } = await import("../../lib/workbench/rig-agent-limits");
+  const limits = await import("../../lib/workbench/rig-agent-limits") as Record<string, unknown>;
+  for (const gone of ["AUTO_NO_TAP_CEILING_USD", "autoNoTapCeilingCredits", "RIG_AGENT_JOB_CEILING_CREDITS", "rigJobCeiling", "effectiveJobCeiling"]) expect(limits[gone], gone).toBeUndefined();
   const { over } = await costs();
-  expect(AUTO_NO_TAP_CEILING_USD).toBe(20);
-  expect(await rigJobCeiling()).toBe(200);
   await runInTenant(await funded("atomik"), async () => {
     await ready();
     const spend = { id: `run_tap_${run}`, limitCredits: 1_000_000, band: 1 };
     await reserveGenerationSpend(event(`gen_tap_${run}`, over, { createdBy: "agent:run_tap" }), { run: spend });
     expect(await reserved(`gen_tap_${run}`)).toBe(1);
-    /* The reservation no longer reads who approved a run's step: Auto approves only a draft at or under its own ceiling
-       (lib/workbench/rig-agent-runs.ts; tests/unit/rigAgentRuns.spec.ts pins that gate), so the step that reaches here was within it. */
-    await reserveGenerationSpend(event(`gen_auto_${run}`, over, { createdBy: "agent:run_tap" }), { run: { ...spend, auto: true } });
-    expect(await reserved(`gen_auto_${run}`)).toBe(1);
   }, { user: person("u_member", "member") });
+  /* Nothing marks a run's job as approved by Auto: the run's spend never sets `auto` (lib/workbench/rig-agent-runs.ts runSpend), and no step is approved by "auto". */
+  const runs = readFileSync(path.join(repoRoot, "lib/workbench/rig-agent-runs.ts"), "utf8");
+  expect(runs).not.toMatch(/auto: true|approved_by: "auto"/);
 });
 
 test("held takes released through releaseHeldJobs: a member's held take over the old line is released by a poll, like an admin's; nothing asks for an admin's standing", async () => {

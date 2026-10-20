@@ -6,7 +6,7 @@ import type { RigAgentRunView } from "../../lib/workbench/rig-agent-plan";
 /* Stream 7 · the board's docked panel as a model: which queue row is which press, the ask's price, and what the lines say. */
 const run = (more: Partial<RigAgentRunView> = {}): RigAgentRunView => ({
   id: "rar_a", state: "needs_you", reason: null, goal: "g", mine: true, proposal: null, steps: [], built: { cards: 4, wires: 4 }, held: [], undo: null,
-  canUndo: false, credits: 1, money: { mode: "ask", limit: 14, jobCeiling: 9, spent: 1, inFlight: 0, left: 13, planning: null }, paid: [], at: 1, ...more,
+  canUndo: false, credits: 1, money: { mode: "ask", limit: 14, spent: 1, inFlight: 0, left: 13, planning: null }, paid: [], at: 1, ...more,
 });
 const item = (id: string, more: Partial<QueueItem> = {}): QueueItem => ({
   id, source: "board-render", title: "t", where: "Board", at: 1, project: { productionId: "p", draftId: "d", name: "n" }, price: { kind: "exact", credits: 8 },

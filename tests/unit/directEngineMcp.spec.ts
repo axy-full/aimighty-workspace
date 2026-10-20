@@ -25,7 +25,6 @@ const inTenant = async (ws: TenantWorkspace, fn: () => Promise<void>) => (await 
 /* The route is mocked: every price it answers here is a SYNTHETIC PLACEHOLDER (repeated digits), not a vendor's price. */
 const PLACEHOLDER_PRICE_USD = 1.11;
 const PLACEHOLDER_PRICE_B_USD = 3.33;
-const PLACEHOLDER_PRICE_C_USD = 2.22;
 const PLACEHOLDER_PRICE_D_USD = 99.99;
 const recorder = (quote: Record<string, unknown> = { estimatedCredits: 5, price: PLACEHOLDER_PRICE_USD, unit: "usd" }, door: { prepare?: "ok" | "refused" | "no-quote" } = {}) => {
   const calls: { path: string; body: Record<string, unknown>; headers?: Record<string, string> }[] = [];
@@ -63,7 +62,7 @@ test("lip_sync is in the list, and callable, only where the engine gate and the 
   });
 });
 
-/** Sets the workspace's spending setting ("auto" is the only value that lets a call start; any other is Ask). */
+/** Sets the workspace's old spending setting. Since 20 Oct 2026 no value lets a call start ("auto" included): the setting is not read. */
 async function setSpend(value: string | null) {
   const { setSetting, invalidateSettings } = await import("../../lib/settings");
   const { db, ready } = await import("../../lib/db");
@@ -72,17 +71,13 @@ async function setSpend(value: string | null) {
   invalidateSettings();
 }
 
-test("only a person approves spending: Ask (the default) returns the priced, prepared job and starts nothing; Auto starts it only at or under the per-job line, never above guardrail 4; the caller cannot write the approval", async () => {
+test("only a person approves spending: every call returns the priced, prepared job and starts nothing, whatever the stored setting says (\"auto\" included: no Auto since 20 Oct 2026), whatever the model and price; the caller cannot write the approval", async () => {
   const { runDirectEngineTool } = await import("../../lib/directEngineMcp");
-  const { jobApprovalLineCredits } = await import("../../lib/approvalRule");
-  const { creditUsd } = await import("../../lib/creditTerms");
-  const line = jobApprovalLineCredits(creditUsd());
-  expect(line).toBe(200);
   process.env.SYNC_ENABLED = "1";
   await inTenant(tenant("ws_legacy"), async () => {
     const prepared = /^Priced and prepared, not started\.\n\nprice: \$3\.33[\s\S]*needs a person's approval: nothing was started or spent/;
-    /* Ask: the default, and anything but an exact "auto". */
-    for (const mode of [null, "ask", "AUTO", "auto ", "yes", "1", ""]) {
+    /* Every stored value of the old setting, "auto" exactly included: the setting is no longer read, and nothing starts. */
+    for (const mode of [null, "ask", "auto", "AUTO", "auto ", "yes", "1", ""]) {
       await setSpend(mode);
       const r = recorder({ estimatedCredits: 7, price: PLACEHOLDER_PRICE_B_USD, unit: "usd" });
       const text = await runDirectEngineTool("lip_sync", { ...ARGS, model: "sync-3", request_id: "req-1" }, r.call);
@@ -97,29 +92,17 @@ test("only a person approves spending: Ask (the default) returns the priced, pre
       expect(JSON.stringify(r.calls[1].body)).not.toMatch(/maxCredits|quoteOnly|fingerprint/i);
       expect(r.calls.some((c) => "maxCredits" in c.body)).toBe(false);
     }
-    /* Auto runs only a DRAFT (lipsync-2) at or under the line; the full-quality models (the default lipsync-2-pro, and sync-3) always ask, at any price. */
+    /* Stored "auto", a draft model (lipsync-2) and any price, small or large (the old Auto line was 200 cr): prepared for a person, never started. */
     await setSpend("auto");
-    for (const model of [undefined, "lipsync-2-pro", "sync-3"]) {
-      const r = recorder({ estimatedCredits: 1, price: PLACEHOLDER_PRICE_C_USD, unit: "usd" });
-      expect(await runDirectEngineTool("lip_sync", { ...ARGS, ...(model ? { model } : {}) }, r.call), String(model)).toMatch(/not started[\s\S]*prepared job: prep_1[\s\S]*needs a person's approval/);
-      expect(r.calls.map((c) => c.path)).toEqual(["/api/lipsync", "/api/prepared-jobs"]);
-      expect(r.calls.some((c) => "maxCredits" in c.body)).toBe(false);
-    }
-    /* A draft at or under the line: it starts, at the price the server just gave, under the retry key. */
-    for (const credits of [1, 7, line]) {
-      const r = recorder({ estimatedCredits: credits, price: PLACEHOLDER_PRICE_B_USD, unit: "usd" });
-      const text = await runDirectEngineTool("lip_sync", { ...ARGS, model: "lipsync-2", request_id: "req-2" }, r.call);
-      expect(text, String(credits)).toMatch(/^Lip-sync started\.\n\nid: gen_mcp_1\nprice: \$3\.33/);
-      expect(r.calls).toHaveLength(2);
-      expect(r.calls[1]).toMatchObject({ path: "/api/lipsync", body: { maxCredits: credits }, headers: { "Idempotency-Key": "mcp-lip_sync:req-2" } });
-      expect(r.calls[1].body).not.toHaveProperty("quoteOnly");
-    }
-    /* Auto, above the line (and so above guardrail 4): prepared, and it asks a person. */
-    for (const credits of [line + 1, 250, 5000]) {
-      const r = recorder({ estimatedCredits: credits, price: PLACEHOLDER_PRICE_D_USD, unit: "usd" });
-      expect(await runDirectEngineTool("lip_sync", { ...ARGS, model: "lipsync-2" }, r.call), String(credits)).toMatch(/not started[\s\S]*needs a person's approval/);
-      expect(r.calls.map((c) => c.path)).toEqual(["/api/lipsync", "/api/prepared-jobs"]);
-    }
+    for (const model of [undefined, "lipsync-2", "lipsync-2-pro", "sync-3"])
+      for (const credits of [1, 7, 200, 201, 5000]) {
+        const r = recorder({ estimatedCredits: credits, price: PLACEHOLDER_PRICE_D_USD, unit: "usd" });
+        const text = await runDirectEngineTool("lip_sync", { ...ARGS, ...(model ? { model } : {}), request_id: "req-2" }, r.call);
+        expect(text, `${model} ${credits}`).toMatch(/not started[\s\S]*prepared job: prep_1[\s\S]*needs a person's approval/);
+        expect(text).not.toMatch(/Lip-sync started/);
+        expect(r.calls.map((c) => c.path)).toEqual(["/api/lipsync", "/api/prepared-jobs"]);
+        expect(r.calls.some((c) => "maxCredits" in c.body)).toBe(false);
+      }
     /* The caller never writes the approval, in either mode and under either spelling; a bad retry key is refused; an unpriced job starts nothing. */
     for (const mode of ["ask", "auto"]) {
       await setSpend(mode);
@@ -207,9 +190,8 @@ test("the MCP endpoint lists and calls them through the same module, and says no
   expect(route).toContain("tools: [...TOOLS, ...(await directEngineMcpTools())]");
   expect(route).toContain("(await runDirectEngineTool(name, args, call)) ??");
   const source = readFileSync("lib/directEngineMcp.ts", "utf8");
-  expect(source).toContain("maxCredits: quote.estimatedCredits");
-  expect(source).toContain("if (!(await spendsWithoutAsking()) || !(tool.draft?.(clean) ?? false) || quote.estimatedCredits > (await autoLineCredits()))");
+  /* No Auto (owner, 20 Oct 2026): this module never writes an approval, never sends a job, and never reads the old spend-without-asking setting. */
+  expect(source).not.toMatch(/maxCredits:/);
+  expect(source).not.toMatch(/allSettings|spendsWithoutAsking|autoLineCredits|rigJobCeiling/);
   expect(source).not.toMatch(/args\.maxCredits|args\.max_credits|a\.max/);
-  /* The send is after the Ask return and after the line: the only place a maxCredits is written. */
-  expect(source.indexOf("needs a person")).toBeLessThan(source.indexOf("maxCredits: quote.estimatedCredits"));
 });
