@@ -12,8 +12,8 @@ import type { SpendingLines, SpendingRules } from "./spending-words";
 /**
  * Settings › Spending rules › Budget and cap (design Gaps B: `?view=workspace&ws=rules&edit=rules`, and `&role=member`).
  *
- *  - The budget per production (`productionBudgetCredits`: a production with no cap of its own follows it, and paid
- *    work stops to ask at `capWarnPct` of it) and the per-shot cap before an admin (the cost approval rule's cap).
+ *  - The budget per production (`productionBudgetCredits`: a production with no cap of its own follows it, and the
+ *    producer is warned at `capWarnPct` of it) and the per-shot cap before an admin (the cost approval rule's cap).
  *  - An admin edits both; a field saves itself when it is left or Enter is pressed (PATCH /api/settings, the route's
  *    own admin-and-person check; the setting keeps who changed it last), never a figure still being typed. "Undo
  *    changes" puts back what was there when the panel opened; "Done" saves what is waiting and closes it.

@@ -54,7 +54,7 @@ function sources(folder: string): string[] {
   return out;
 }
 
-test("the code carries no per-job line: no constant, verdict or gate of it is exported or used anywhere in the product; the workspace's own rule is what remains", async () => {
+test("the code carries no per-job line and no Auto ceiling: no constant, verdict or gate of either is exported or used anywhere in the product, and the old Auto setting is not read; the workspace's own rule is what remains", async () => {
   const rule = await import("../../lib/approvalRule") as Record<string, unknown>;
   for (const gone of ["JOB_APPROVAL_LINE_USD", "jobApprovalLineCredits", "jobLineVerdict", "JOB_LINE_STATUS"]) expect(rule[gone], gone).toBeUndefined();
   const shotCap = await import("../../lib/shotCap") as Record<string, unknown>;
@@ -63,8 +63,14 @@ test("the code carries no per-job line: no constant, verdict or gate of it is ex
   expect(existsSync(path.join(repoRoot, "lib/batchLine.ts"))).toBe(false);
   /* Tripwire: nothing in the product names the line again. */
   const named = /\b(JOB_APPROVAL_LINE_USD|jobApprovalLineCredits|jobLineVerdict|JOB_LINE_STATUS|jobLineGate|jobLineGateAt|jobLineNow)\b|lib\/batchLine|"\.\/batchLine"/;
-  const hits = ["lib", "app", "components"].flatMap(sources).filter((file) => named.test(readFileSync(file, "utf8"))).map((file) => path.relative(repoRoot, file));
-  expect(hits).toEqual([]);
+  const product = ["lib", "app", "components"].flatMap(sources).map((file) => ({ file: path.relative(repoRoot, file), text: readFileSync(file, "utf8") }));
+  expect(product.filter((f) => named.test(f.text)).map((f) => f.file)).toEqual([]);
+  /* Nor Auto's no-tap ceiling (owner, 20 Oct 2026: "Auto goes"): none of its names is used anywhere in the product. */
+  const auto = /\b(AUTO_NO_TAP_CEILING_USD|autoNoTapCeilingCredits|RIG_AGENT_JOB_CEILING_CREDITS|rigJobCeiling|effectiveJobCeiling)\b/;
+  expect(product.filter((f) => auto.test(f.text)).map((f) => f.file)).toEqual([]);
+  /* And the old Auto setting is neither read nor written: no code names the key as a string or a property (a comment may say it is not read). */
+  const setting = /["']spendWithoutAsking["']|\.spendWithoutAsking\b|\bspendWithoutAsking\s*:/;
+  expect(product.filter((f) => setting.test(f.text)).map((f) => f.file)).toEqual([]);
   /* What stays: the workspace's own rule. With "cap per shot", a member's take that carries a shot past the cap needs an admin; an admin's goes. */
   const cr = (n: number) => `${n} cr`;
   expect(shotCapVerdict({ rule: "cap", isAdmin: false, cap: 50, shotCredits: 40, takeCredits: 20, code: "SH010" }, cr))
