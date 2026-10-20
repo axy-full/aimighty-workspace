@@ -1,6 +1,7 @@
 import { getSetting } from "./settings";
 import { billCredits } from "./creditTerms";
 import { cleanRule, cleanShotCap, shotCapVerdict } from "./approvalRule";
+import { isAgentId } from "./security/people-only";
 import { spentBy } from "./caps";
 
 /**
@@ -25,4 +26,12 @@ export async function shotCapGate(o: { shotId: string; code: string; takeUsd: nu
   const takeCredits = billCredits(o.takeUsd, o.modelId) * (Number.isInteger(o.band) && o.band! > 1 ? o.band! : 1);
   const v = shotCapVerdict({ rule, isAdmin: o.isAdmin, cap, shotCredits, takeCredits, code: o.code }, (n) => `${n} cr`);
   return v.blocked ? v.line : null;
+}
+
+/**
+ * Is this the tap of an ADMIN PERSON, the only one the cost approval rule lets past a shot's cap? An admin's own session is; an admin's token, an MCP client, an
+ * `agent:*` identity and a step Atomik's Auto approved are machines, and a machine never skips the cap (the same test the retired per-job line used for a machine).
+ */
+export function shotCapAdmin(actor: { user: { id: string; role: string }; token?: unknown }, auto = false): boolean {
+  return actor.user.role === "admin" && actor.token == null && !isAgentId(actor.user.id) && auto !== true;
 }

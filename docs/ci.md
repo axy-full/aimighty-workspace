@@ -9,23 +9,27 @@
 | push to `release/1` or `main` (every merge) | **full** | the whole browser suite: 16 `browser-shards` jobs (12 workbench, 4 customer), plus the five-minute test |
 | pull request into `main` | **full** | the same |
 | pull request into `release/1` that touches money, sign-in, tenant separation or shared code | **full** | the same |
-| pull request into `release/1` that only touches new-interface files and their tests | **slim** | the specs its changed paths map to, plus the fixed guard set, plus the five-minute test |
+| pull request into `release/1` that changes any browser spec (owner, 19 Oct 2026; below) | **full** | the same |
+| pull request into `release/1` that only touches new-interface files and their unit tests | **slim** | the specs its changed paths map to, plus the fixed guard set, plus the five-minute test |
 | pull request into `release/1` that only changes documentation | **docs** | no browser specs, no five-minute test |
 
 When the plan cannot be made (the changed files cannot be listed) the run is full.
 
 ## Which paths run slim
 
-A PR runs slim only if every changed path is **presentational** or a test or documentation. **Anything else is a full run: when in doubt, full.**
+A PR runs slim only if every changed path is **presentational** or a unit test, another non-browser test file, or documentation. **Anything else is a full run: when in doubt, full.**
+
+**A browser spec is never slim (owner, 19 Oct 2026).** In the owner's words: "#840 merged with the browser suite skipped at its head, which is not 24/24; from now on any PR that touches tests/*.spec.ts or claims to fix the suite runs the full plan at its head before merge." So a pull request into `release/1` that changes any browser spec, meaning any `*.spec.ts` under `tests/` at any depth except `tests/unit/**` and `tests/ops/**` (top-level `tests/*.spec.ts`, the `*-v12-*` specs, anything under `tests/redesign/`), gets the full plan, and the plan's reason says `changes a browser spec (…): the full plan at its head (owner, 19 Oct 2026 …)`. A changed unit spec (`tests/unit/*.spec.ts`) runs in the unit shards, which every plan runs, so this rule does not make it full. A PR that "claims to fix the suite" without changing a spec cannot be told apart by `scripts/ci-select.mjs`: the lead runs the full plan for it.
 
 Slim:
 
 - `docs/**`, top-level `*.md`, `design/**`
 - a new-interface **CSS** file under `components/v12/` that nothing outside it imports, or a `components/v12/**` `.ts`/`.tsx` file that is presentational: its text has no `fetch(`, no `/api/`, and none of `quote`, `price`, `cr`, `credit`, `charge`, `billed`, `hold`, `refund`, `cancel`, `approv`, `ledger`, `workspace_id` (checked on the file at the PR's head by `scripts/ci-select.mjs`), and **nothing outside `components/v12/` imports it**, directly or through other new-interface files (computed from the import specifiers of the repository at the PR's head)
-- `tests/*.spec.ts` (a changed spec runs itself), `tests/redesign/**`, non-guard `tests/unit/**` specs, `scripts/redesign/**`
+- non-spec files under `tests/redesign/**` (the `*.shots.ts` captures), non-guard `tests/unit/**` specs, `scripts/redesign/**`
 
 Always a full run:
 
+- **any browser spec**: every `*.spec.ts` under `tests/` except `tests/unit/**` and `tests/ops/**` (owner, 19 Oct 2026; above)
 - **everything in `lib/`, including `lib/v12/`**, and any `*.server.ts` anywhere
 - `app/**`, `middleware*`, and every component outside `components/v12/` (`components/graphite/**` including `BoardView.tsx`, `components/workbench/**`, …), and `components/v12/ui/**` (shared primitives)
 - a path naming money, sign-in or tenant separation: `quote`, `price`, `pricing`, `spend`, `unpriced`, `approval`, `credit`, `ledger`, `billing`, `budget`, `payment`, `stripe`, `topup`, `auth`, `session`, `signin`, `signup`, `invite`, `tenant`, `workspace`, `middleware`, `permission`, `privacy`
@@ -36,7 +40,7 @@ Always a full run:
 
 ## What a slim run runs
 
-1. **The specs the changed paths touch.** A changed spec runs itself. A changed path maps to its area's specs through the table `AREAS` in `scripts/ci-select.mjs` (for example `components/v12/rounds/**` and `lib/v12/rounds.ts` run `tests/rounds-v12-workbench.spec.ts`; `components/v12/board/campaign/**` runs `tests/campaign-v12-workbench.spec.ts`). A new-interface path no row names (shared CSS, a new area) runs every new-interface spec.
+1. **The specs the changed paths touch.** (A changed browser spec makes the run full, so it never reaches a slim run.) A changed path maps to its area's specs through the table `AREAS` in `scripts/ci-select.mjs` (for example `components/v12/rounds/**` and `lib/v12/rounds.ts` run `tests/rounds-v12-workbench.spec.ts`; `components/v12/board/campaign/**` runs `tests/campaign-v12-workbench.spec.ts`). A new-interface path no row names (shared CSS, a new area) runs every new-interface spec.
 2. **The fixed guard set, every time:**
    - `tests/spend-buttons-workbench.spec.ts`: every paid control on the rendered pages carries its price (the file scan is `tests/unit/spend-buttons.spec.ts`, in the unit shards)
    - `tests/signin-retired-workbench.spec.ts`, `tests/r1-port-paid-sends-workbench.spec.ts`, `tests/audit-money-workbench.spec.ts`: the retired sign-in, paid sends, and the money audit

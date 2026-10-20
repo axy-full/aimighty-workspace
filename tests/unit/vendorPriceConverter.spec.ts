@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import path from "node:path";
 import ts from "typescript";
-import { parseVendorPrices, VENDOR_PRICES_FORMAT } from "../../lib/vendorPriceFile";
+import { FILE_PRICED_UNITS, parseVendorPrices, VENDOR_PRICES_FORMAT } from "../../lib/vendorPriceFile";
 import { MODELS, type ModelDef } from "../../lib/models";
 
 /**
@@ -35,7 +35,7 @@ const sheet = (text: string, ext = "csv") => {
 };
 
 const run = (text: string, scope: string[] | null = null, kind: "csv" | "json" = "csv", skip: string[] | null = null) =>
-  lib.convert(text, { kind, parse: parseVendorPrices, format: VENDOR_PRICES_FORMAT, models: MODELS, scope, skip });
+  lib.convert(text, { kind, parse: parseVendorPrices, format: VENDOR_PRICES_FORMAT, models: MODELS, scope, skip, required: FILE_PRICED_UNITS });
 
 function cli(...args: string[]) {
   /* Under Node's permission model with read access only: a write, a child
@@ -46,12 +46,15 @@ function cli(...args: string[]) {
 
 /** The engines the registry expects in the sheet by default: every one not retired (owner: "every engine, resolution and length the registry knows"). */
 const expected = (): ModelDef[] => (MODELS as ModelDef[]).filter((m) => !m.retired);
-/** A sheet that covers every one of them, one per-unit row per resolution, at a placeholder figure. */
+/** The engines the server prices from the file (lip-sync's models), which are not in the registry. */
+const filePriced = (): string[] => Object.keys(FILE_PRICED_UNITS).filter((id) => !MODELS.some((m) => m.id === id));
+/** A sheet that covers every one of them, one per-unit row per resolution, and a row in its unit for each file-priced engine, at a placeholder figure. */
 function fullSheet(skip: (id: string, res: string) => boolean = () => false): string {
   const rows = expected().flatMap((m) => m.resolutions
     .filter((r) => !skip(m.id, r))
     .map((r) => `${m.id},${m.kind === "image" ? "image" : "second"},${r},,,,${PLACEHOLDER_COST}`));
-  return [HEADER, ...rows].join("\n");
+  const priced = filePriced().filter((id) => !skip(id, "")).map((id) => `${id},${FILE_PRICED_UNITS[id]},,,,,${PLACEHOLDER_COST}`);
+  return [HEADER, ...rows, ...priced].join("\n");
 }
 
 test.describe("converting the sheet", () => {
@@ -185,9 +188,53 @@ test.describe("coverage against the model registry", () => {
     const r = run(`${HEADER}\nplaceholder-service,minute,,,,,${PLACEHOLDER_COST}`, [named.id, "placeholder-service", "placeholder-absent"]);
     expect(r.coverage!.missing).toEqual([`${named.id}: no rows`, "placeholder-absent: no rows (not in the model registry)"]);
     expect(r.coverage!.outside).toEqual(["placeholder-service"]);
-    expect(r.coverage!.outOfScope).toEqual(rest.map((m) => m.id));
+    const notChecked = [...rest.map((m) => m.id), ...filePriced()];
+    expect(r.coverage!.outOfScope).toEqual(notChecked);
     const text = lib.report(r, { scope: [named.id] });
-    expect(text).toContain(`NOT CHECKED, outside --engines (${rest.length}): ${rest.map((m) => m.id).join(", ")}`);
+    expect(text).toContain(`NOT CHECKED, outside --engines (${notChecked.length}): ${notChecked.join(", ")}`);
+  });
+
+  test("the engines the server prices from the file need a row in their unit with no other setting, though the registry does not list them", () => {
+    const ids = filePriced();
+    expect(ids, "lip-sync's models are priced from the file").toEqual(["lipsync-2", "lipsync-2-pro", "sync-3"]);
+    const full = run(fullSheet());
+    expect(full.ok).toBe(true);
+    expect(full.coverage!.filePriced).toEqual(ids);
+    expect(full.coverage!.outside).toEqual([]);
+    expect(lib.report(full)).toContain(`priced from this file, checked (${ids.length}): ${ids.join(", ")}`);
+    /* One left out: refused, by name, with no figure. */
+    const without = run(fullSheet((id) => id === "sync-3"));
+    expect(without.ok).toBe(false);
+    expect(without.coverage!.missing).toEqual(['sync-3: no "second" rows (priced from this file)']);
+    expect(lib.report(without)).not.toContain(PLACEHOLDER_COST);
+    /* In another unit, or with a setting the quote never names: not a price the server can use. */
+    const minute = run(`${fullSheet((id) => id === "sync-3")}\nsync-3,minute,,,,,${PLACEHOLDER_COST}`);
+    expect(minute.coverage!.missing).toEqual(['sync-3: no "second" rows (priced from this file)']);
+    const withRes = run(`${fullSheet((id) => id === "sync-3")}\nsync-3,second,1080p,,,,${PLACEHOLDER_COST}`);
+    expect(withRes.coverage!.missing).toEqual(['sync-3: its "second" rows must name no resolution, sound or length (priced from this file)']);
+    /* No band either: a job settles at the rate it was quoted at, so a rate that depends on the quantity would not hold. Refused with exit 2. */
+    const banded = `${fullSheet((id) => id === "sync-3")}\nsync-3,second,,,,10,${PLACEHOLDER_COST}\nsync-3,second,,,,100,${PLACEHOLDER_BAD}`;
+    const bands = run(banded);
+    expect(bands.ok).toBe(false);
+    expect(bands.stage).toBe("coverage");
+    expect(bands.coverage!.missing).toEqual(['sync-3: its "second" rows must not name a band (upTo): a job settles at the rate it was quoted at (priced from this file)']);
+    expect(lib.report(bands)).not.toMatch(new RegExp(`${PLACEHOLDER_COST}|${PLACEHOLDER_BAD}`));
+    const bandsCli = cli(sheet(banded));
+    expect(bandsCli.code).toBe(2);
+    expect(bandsCli.stdout).toBe("");
+    expect(bandsCli.stderr).toContain("must not name a band (upTo)");
+    /* A band on an engine the registry prices stays allowed (the shared rules); only file-priced engines settle at a kept rate. */
+    expect(run(`${HEADER}\nplaceholder-reader,page,,,,10,${PLACEHOLDER_COST}`, ["placeholder-reader"]).ok).toBe(true);
+    /* --skip and --engines treat them like any other engine. */
+    const skipped = run(fullSheet((id) => id === "sync-3"), null, "csv", ["sync-3"]);
+    expect(skipped.ok).toBe(true);
+    expect(skipped.coverage!.skipped).toEqual(["sync-3"]);
+    expect(skipped.coverage!.unknownSkips).toEqual([]);
+    const scoped = run(`${HEADER}\nlipsync-2,second,,,,,${PLACEHOLDER_COST}`, ["lipsync-2"]);
+    expect(scoped.ok).toBe(true);
+    expect(scoped.coverage!.filePriced).toEqual(["lipsync-2"]);
+    /* The command checks them by default. */
+    expect(cli(sheet(fullSheet((id) => id === "lipsync-2"))).code).toBe(2);
   });
 
   test("--skip leaves only the named engines out, and the report lists every one of them", () => {

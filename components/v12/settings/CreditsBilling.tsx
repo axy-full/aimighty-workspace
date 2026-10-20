@@ -5,7 +5,7 @@ import { fmtCredits, useMoney } from "@/lib/price";
 import { creditRate, creditsUsd } from "@/lib/shell/price-words";
 import { creditRateLine } from "@/lib/creditTerms";
 import { HOUSE_NOT_BILLED } from "@/lib/houseWorkspace";
-import { houseCapSpentText, houseCapWarning, type HouseCapView } from "@/lib/houseCapText";
+import { houseCapStanding, type HouseCapView } from "@/lib/houseCapText";
 import { fmtLedgerUsd, type CreditLedgerRow, type DollarLedgerRow } from "@/lib/usageLedgerTerms";
 import type { BillingSubscription, Topups } from "@/lib/shell/workspace-view";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
@@ -100,7 +100,7 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
                   <span>Monthly cap</span>
                   <span className={houseCap.warn ? "v12-bill-low" : undefined} data-testid="v12-billing-house-cap-words">
                     {houseCap.warn ? <span className="v12-bill-dot" aria-hidden="true" /> : null}
-                    {houseCap.stop ? `Reached · ${houseCapSpentText(houseCap)}` : houseCap.warn ? houseCapWarning(houseCap) : houseCapSpentText(houseCap)}
+                    {houseCapStanding(houseCap)}
                   </span>
                 </div>
               ) : null}

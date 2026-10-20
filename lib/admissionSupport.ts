@@ -80,7 +80,8 @@ export function admissionCheckpoint(
   margin: EstimateTerms,
   compiled: Record<string, unknown>,
   /* `band`: a take that holds its ceiling (lib/cinemaHold.ts) states that ceiling with its estimate. */
-  terms: { approximate?: boolean; band?: number } = {},
+  /* `engine`: a direct engine (sync.so, Sarvam, BFL) names itself, so the funding engine in the fingerprint is the one that will be paid, not a guess from the model's provider. */
+  terms: { approximate?: boolean; band?: number; engine?: string } = {},
 ): AdmissionReply | undefined {
   if (!options.checkpoint) return;
   // Explicit source identities also let deletion guards protect quoted implicit cast references.
@@ -88,14 +89,15 @@ export function admissionCheckpoint(
   /* The take's job (lib/takeJob.ts), shot type (lib/takeShotType.ts) and quote snapshot (params.quote) are records of the take, never inputs to its price or render: not part of the fingerprint. */
   if (resolved.params && typeof resolved.params === "object") for (const key of ["job", "shotType", "quote"]) delete (resolved.params as Record<string, unknown>)[key];
   const engine =
-    kind === "audio"
+    terms.engine ??
+    (kind === "audio"
       ? "elevenlabs"
       : billedTo(
           String(
             (compiled.model as { provider?: string } | undefined)?.provider ??
               "byteplus",
           ),
-        );
+        ));
   resolved.funding = {
     engine,
     paidByPlatform: paidByPlatform(vendorKeyNameFor(engine)),

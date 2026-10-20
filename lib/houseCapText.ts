@@ -11,7 +11,7 @@
 
 /** What the house may spend on the engines a month until the platform owner sets another figure. */
 export const HOUSE_CAP_DEFAULT_USD = 500;
-/** The share of the cap at which the warning shows and the platform owner is told, once a month. */
+/** The share of the cap at which the warning shows and the platform owner is told, once a month and once more after each raise (lib/houseCap.ts noteHouseSpend). */
 export const HOUSE_CAP_WARN_PCT = 80;
 
 export type HouseCapView = {
@@ -42,6 +42,14 @@ export const houseCapWarning = (v: Pick<HouseCapView, "capUsd" | "pct" | "spentU
 
 /** What the month stands at, for the house's own screen: "$40 of $500 used · 8%". */
 export const houseCapSpentText = (v: Pick<HouseCapView, "capUsd" | "pct" | "spentUsd">): string => `${usdText(Math.round(v.spentUsd * 100) / 100)} of ${usdText(v.capUsd)} used · ${v.pct}%`;
+
+/**
+ * Where the month stands against the cap in force, for the platform owner's desk (/admin): the cap's figure is shown beside it, and this
+ * line always carries the month's spend and its share, so a cap just raised or lowered reads at once against what is already spent
+ * (owner, 19 Oct 2026: "/admin shows the new standing"). "Reached · $410 of $300 used · 100%", the warning, or "$40 of $500 used · 8%".
+ */
+export const houseCapStanding = (v: Pick<HouseCapView, "capUsd" | "pct" | "spentUsd" | "warn" | "stop">): string =>
+  v.stop ? `Reached · ${houseCapSpentText(v)}` : v.warn ? houseCapWarning(v) : houseCapSpentText(v);
 
 /** What a job hears when it would pass the cap. Only the platform owner raises it. */
 export const HOUSE_CAP_REACHED = "The house workspace has reached its monthly engine cap. The platform owner can raise it.";

@@ -4,6 +4,7 @@ import { shotCapVerdict, ruleLine, type ApprovalRule } from "./approvalRule";
 import { heldMessage } from "./held";
 import { ALLOWANCE_REACHED } from "./allowance";
 import { HOUSE_CAP_REACHED, houseCapState, houseCapWarning } from "./houseCapText";
+import { holdBandOf } from "./cinemaHold";
 
 /**
  * The quote engine (brief 3): what a thing costs, resolved before the button
@@ -206,8 +207,12 @@ export type Context = {
   balance: number | null;
   /** The monthly ceiling on the platform's engines, in dollars, or null. */
   allowance: { cap: number; spent: number } | null;
-  /** The house workspace's monthly engine cap and what it has spent this month (lib/houseCap.ts), in dollars; null for every other workspace. */
-  houseCap?: { cap: number; spent: number } | null;
+  /**
+   * The house workspace's monthly engine cap and what it has spent this month (lib/houseCap.ts), in dollars; null for every other workspace.
+   * `bands`: the hold band of each line that holds its ceiling (Cinema Studio, lib/cinemaHold.ts), by line key (withHouseBands), so the
+   * house's quote counts it against the house cap at cost times its band, as admission and the reservation do (the house cap only).
+   */
+  houseCap?: { cap: number; spent: number; bands?: Record<string, number> } | null;
   /** The cap of each production the quote touches, keyed by its id. */
   caps: Record<string, Cap>;
   warnPct: number;
@@ -218,6 +223,25 @@ export type Context = {
 };
 
 const fmt = (n: number): string => `${Math.round(n).toLocaleString("en-US")} cr`;
+
+/**
+ * The house's context with the band of each line that holds its ceiling (lib/cinemaHold.ts holdBandOf, from the line's model), so its quote
+ * counts a held take against the house's monthly cap as admission does: its cost times its band. The bands are read by the house cap's
+ * check below and by nothing else. Any other workspace has no house cap, and its context is returned as it came, the same object: its
+ * quote does not change.
+ */
+export function withHouseBands(c: Context, units: Unit[]): Context {
+  if (!c.houseCap) return c;
+  const bands: Record<string, number> = {};
+  for (const u of units) { const band = holdBandOf(u.engine); if (band > 1) bands[u.key] = band; }
+  return { ...c, houseCap: { ...c.houseCap, bands } };
+}
+
+/** The band a house line is counted at against the house cap: its hold band when it holds its ceiling, else 1 (every line of every other workspace). */
+const houseBandOf = (c: Context, l: QuoteLine): number => {
+  const band = c.houseCap?.bands?.[l.key];
+  return band != null && Number.isInteger(band) && band > 1 ? band : 1;
+};
 
 export function verdictOf(q: Quote, c: Context): Verdict {
   /* A choice that spends nothing is never gated. Leaving existing takes alone
@@ -263,7 +287,8 @@ export function verdictOf(q: Quote, c: Context): Verdict {
   let notice = "";
   /* The house's own monthly cap: a wall at the cap, a warning from 80% (the figures are the studio's own dollars, so the words may name them). */
   if (c.houseCap) {
-    const needs = q.lines.reduce((n, l) => n + l.usd, 0);
+    /* A held take at its hold, cost times band: what admission and the reservation count it at. */
+    const needs = q.lines.reduce((n, l) => n + l.usd * houseBandOf(c, l), 0);
     const now = houseCapState(c.houseCap.cap, c.houseCap.spent);
     const after = houseCapState(c.houseCap.cap, c.houseCap.spent + needs);
     if (now.stop || c.houseCap.spent + needs > c.houseCap.cap + 1e-9) return { allow: false, gate: "allowance", notice: "", line: HOUSE_CAP_REACHED };

@@ -9,7 +9,7 @@
 .gx-insp-take, .gx-insp-edit { display: flex; flex-direction: column; gap: 14px; }
 .gx-insp-quiet { font-size: var(--gx-fs-body); color: var(--gx-text-2); }
 
-.gx-insp-preview { aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; background: var(--gx-root); border: 1px solid var(--gx-hair); }
+.gx-insp-preview { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; background: var(--gx-root); border: 1px solid var(--gx-hair); }
 .gx-insp-preview > span:first-child { display: block; width: 100%; height: 100%; }
 .gx-insp-preview img, .gx-insp-preview video { object-fit: cover; }
 .gx-insp-face { display: block; width: 100%; height: 100%; background: var(--gx-card); }

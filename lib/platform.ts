@@ -582,12 +582,17 @@ export async function setWorkspaceAllowance(id: string, usd: number | null): Pro
 /**
  * The house workspace's monthly engine cap (lib/houseCap.ts), set by the platform owner and by no one else: the admin route calls this
  * after its own platform-owner check. The figure and its history line commit together. null removes the owner's figure, so the default
- * applies; the house is never left without a cap.
+ * applies; the house is never left without a cap. A lowering that leaves the month at or past 80% of the new figure also marks the
+ * month's warning at that figure, in the same batch and with no email, so no job after it warns (houseCapLoweringMarker).
  */
 export async function setHouseCap(usd: number | null, actorId: string): Promise<void> {
+  /* Loaded here, not at the top: lib/houseCap.ts reads this module's database. */
+  const { houseCapLoweringMarker } = await import("./houseCap");
+  const lowered = await houseCapLoweringMarker(usd, actorId);
   await platformDb().batch([
     { sql: `UPDATE workspaces SET allowance_usd = ?, updated_at = ? WHERE id = ?`, args: [usd, now(), HOUSE_WORKSPACE_ID] },
     platformAuditStatement({ actorId, action: "housecap.set", targetType: "workspace", targetId: HOUSE_WORKSPACE_ID, workspaceId: HOUSE_WORKSPACE_ID, details: { capUsd: usd } }, true),
+    ...(lowered ? [lowered] : []),
   ], "write");
 }
 

@@ -71,4 +71,38 @@ test.describe("desktop", () => {
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, "make-library-picked-1440x900.png") });
     expect(errors).toEqual([]);
   });
+
+  /* The tray's code loads on its own (components/graphite/SuitesShell.tsx), so a press can come before any tray listens. CI run 39353368784 lost that press: the
+     dev server was still compiling the tray, the click was dropped, and the tray never opened. The press now waits for the tray (lib/v12/useLibraryTray.ts). */
+  test("Library pressed before the tray's code has arrived opens the tray once it arrives", async ({ page }) => {
+    test.setTimeout(300_000);
+    /* Hold back the one script that carries the tray's own button (and not Make's) until after the press. */
+    let held = false;
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    await page.route(/\/_next\/static\/.+\.js(\?.*)?$/, async (route) => {
+      const response = await route.fetch();
+      const body = await response.text();
+      if (body.includes("v12-library-button") && !body.includes("v12-make-library")) { held = true; await released; }
+      const headers = Object.fromEntries(Object.entries(response.headers()).filter(([name]) => !/^(content-encoding|content-length|transfer-encoding)$/i.test(name)));
+      await route.fulfill({ status: response.status(), headers, body });
+    });
+    const { errors } = await openBoard(page, "/suites?view=make");
+    const make = page.getByTestId("v12-make");
+    const tray = page.getByTestId("v12-library");
+    await expect(make).toBeVisible({ timeout: 90_000 });
+    await expect.poll(() => held, { message: "the tray's script was asked for and is held back", timeout: 60_000 }).toBe(true);
+    await page.getByTestId("v12-make-library").click();
+    await page.waitForTimeout(500);
+    await expect(tray, "no tray yet: its code has not arrived").toHaveCount(0);
+    release();
+    await expect(tray).toBeVisible({ timeout: 60_000 });
+    await expect(make).toBeVisible();
+    /* Once, not twice: the tray stays open, and Esc closes it as before. */
+    await page.waitForTimeout(500);
+    await expect(tray).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(tray).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
 });

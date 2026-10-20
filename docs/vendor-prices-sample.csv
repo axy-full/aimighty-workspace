@@ -15,4 +15,6 @@ example-fixed-length-engine,job,1080p,,5,,666.66
 example-fixed-length-engine,job,1080p,,10,,777.77
 example-reader,page,,,,10,888.88
 example-reader,page,,,,100,999.99
+lipsync-2,second,,,,,888.88
 lipsync-2-pro,second,,,,,999.99
+sync-3,second,,,,,777.77

@@ -21,7 +21,8 @@
  *
  * The file's rules are lib/vendorPriceFile.ts's parseVendorPrices, the one the
  * server uses; coverage is checked against the model registry, lib/models.ts
- * MODELS (every engine x resolution x length the product offers).
+ * MODELS (every engine x resolution x length the product offers), and against
+ * the engines the server prices from the file (FILE_PRICED_UNITS there).
  *
  * Exit: 0 valid and covered (and --help, which prints usage to stderr);
  * 1 refused: a usage error, an unreadable file, a Node too old to load the
@@ -99,9 +100,9 @@ try {
   /* The error names a source file, never a figure from the sheet (the sheet is not parsed yet). */
   fail(`cannot load the repo's sources (run it from a full clone, with the repo's Node): ${error instanceof Error ? error.message.split("\n")[0] : "unknown error"}`);
 }
-const [{ parseVendorPrices, VENDOR_PRICES_FORMAT }, { MODELS }, { convert, report }] = loaded;
+const [{ parseVendorPrices, VENDOR_PRICES_FORMAT, FILE_PRICED_UNITS }, { MODELS }, { convert, report }] = loaded;
 
-const result = convert(text, { kind, parse: parseVendorPrices, format: VENDOR_PRICES_FORMAT, models: MODELS, scope, skip });
+const result = convert(text, { kind, parse: parseVendorPrices, format: VENDOR_PRICES_FORMAT, models: MODELS, scope, skip, required: FILE_PRICED_UNITS });
 process.stderr.write(`${report(result, { scope })}\n`);
 if (result.stage === "sheet" || result.stage === "shape") process.exit(1);
 if (!result.ok) process.exit(2);
