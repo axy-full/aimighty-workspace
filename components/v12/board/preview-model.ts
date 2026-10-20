@@ -1,5 +1,5 @@
 import type { ShotTakes, ShotVersion } from "@/components/graphite/board/cards/take/take-model";
-import { judgeable } from "@/components/graphite/board/cards/take/take-model";
+import { REJECT_REASON_MAX, cleanRejectReason, judgeable, rejectReasonProblem } from "@/components/graphite/board/cards/take/take-model";
 import { downloadUrl } from "@/lib/preview";
 import { SHOT_REASONS, shotCardState } from "./shot-card";
 import type { CardStatus } from "./card-model";
@@ -44,7 +44,10 @@ export type PreviewItemView = {
   tabs?: PreviewTab[];
   /** "Runway": the one place a model's name may show, as "Powered by …". */
   poweredBy?: string;
-  /** ✓ and ✕ show for the version on screen, only on a card the person does not own and a version that can be judged. */
+  /**
+   * Whether any version of the card can be judged (for a shot: one of its takes is finished with its picture here). ✓ and ✕ then show only for a version
+   * on screen whose own `judgeable` is true. False on anything that is not a take (a script, a sound demo).
+   */
   canJudge: boolean;
   reasons: readonly string[];
 };
@@ -54,8 +57,11 @@ export const clampIndex = (i: number, n: number) => (n <= 0 ? 0 : Math.max(0, Ma
 /** "v2 of 3" when the item has more than one version, else "". */
 export const versionOf = (item: Pick<PreviewItemView, "versions">, index: number) => (item.versions.length > 1 ? `${item.versions[clampIndex(index, item.versions.length)].label} of ${item.versions.length}` : "");
 
-/** Compare needs two versions to set side by side. */
-export const canCompare = (item: Pick<PreviewItemView, "versions">) => item.versions.length > 1;
+/**
+ * Compare needs two versions to set side by side, each with its own media: pictures, clips (two players) or sounds (two players). A page of words has one
+ * text for the card, not one a version, so it has no Compare.
+ */
+export const canCompare = (item: Pick<PreviewItemView, "versions" | "kind">) => item.kind !== "text" && item.versions.length > 1;
 
 /** Compare puts the version before the one on screen (A) beside it (B); the first version is compared with itself's successor. */
 export function compareSides(item: Pick<PreviewItemView, "versions">, index: number): { a: number; b: number } {
@@ -81,6 +87,14 @@ export const judgeVersion = (item: PreviewItemView, index: number): PreviewVersi
   const v = item.versions[clampIndex(index, item.versions.length)];
   return item.canJudge && v && v.judgeable && v.genId && v.url && (v.status === "ready" || v.status === "approved" || v.status === "rejected") ? v : null;
 };
+
+/** What the reasons panel says when a reason is too long: the trail's own hint is about a reason that is too short. */
+export const REASON_TOO_LONG = `Too long: ${REJECT_REASON_MAX} characters at most.`;
+
+/** Why ✕'s reason cannot be sent, or null: too short (the trail's hint, "Say why…"), or too long (a chip and a full line can pass the limit). */
+export function reasonProblem(reason: string): string | null {
+  return cleanRejectReason(reason).length > REJECT_REASON_MAX ? REASON_TOO_LONG : rejectReasonProblem(reason);
+}
 
 /** "0:03 / 0:08". */
 export function timeLabel(seconds: number, duration: number): string {

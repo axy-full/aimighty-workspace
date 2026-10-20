@@ -45,6 +45,9 @@ async function open(page: Page, id: string) {
 
 test("a card opens its preview: the title, which version of how many, and the versions strip", async ({ page }) => {
   await open(page, "shot-7");
+  /* The focus is in the preview once it is open, and stays there (a development build mounts it twice; the first mount's focus-return is cancelled). */
+  await page.waitForTimeout(100);
+  expect(await preview(page).evaluate((el) => el.contains(document.activeElement)), "the focus is in the preview").toBe(true);
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 7 · Three versions");
   await expect(page.getByTestId("v12-preview-version")).toHaveText("v3 of 3");
   const strip = page.getByTestId("v12-preview-versions").getByTestId("v12-preview-version-btn");
@@ -79,6 +82,52 @@ test("Compare sets the version before beside the one on screen, each labelled", 
   for (const b of boxes) { expect(b.w).toBeGreaterThan(40); expect(b.h).toBeGreaterThan(20); }
   await page.getByTestId("v12-preview-compare").click();
   await expect(view).toHaveCount(0);
+});
+
+test("Compare on clips plays each version's own clip, and on sounds gives each its own player", async ({ page }) => {
+  await open(page, "shot-13");
+  await page.getByTestId("v12-preview-compare").click();
+  const view = page.getByTestId("v12-preview-compare-view");
+  await expect(view.getByTestId("v12-preview-compare-label")).toHaveText(["v1", "v2"]);
+  /* Two players, each with its own clip (not the shot's frame twice) and its own Play. */
+  const videos = view.getByTestId("v12-preview-video");
+  await expect(videos).toHaveCount(2);
+  const srcs = await videos.evaluateAll((els) => els.map((el) => new URL((el as HTMLVideoElement).src).pathname));
+  expect(srcs).toEqual(["/fixtures/clip.mp4", "/fixtures/clip-6s.mp4"]);
+  await expect(view.locator('[data-side="a"]').getByTestId("v12-preview-play")).toHaveCount(1);
+  await expect(view.locator('[data-side="b"]').getByTestId("v12-preview-play")).toHaveCount(1);
+  for (const side of ["a", "b"]) {
+    const box = (await view.locator(`[data-side="${side}"]`).getByTestId("v12-preview-video").boundingBox())!;
+    expect(box.width, `side ${side}: the clip is drawn`).toBeGreaterThan(40);
+    expect(box.height, `side ${side}: the clip is drawn`).toBeGreaterThan(20);
+  }
+  await page.keyboard.press("Escape");
+  await expect(preview(page)).toHaveCount(0);
+  /* A sound with two versions: two waveforms and two players, each its own file. */
+  await page.getByTestId("open-sound").click();
+  await page.getByTestId("v12-preview-compare").click();
+  await expect(view.getByTestId("v12-preview-wave")).toHaveCount(2);
+  const audio = await view.locator("audio").evaluateAll((els) => els.map((el) => { const u = new URL((el as HTMLAudioElement).src); return u.pathname + u.search; }));
+  expect(audio).toEqual(["/fixtures/tone.mp3", "/fixtures/tone.mp3?v=2"]);
+  /* A page of words has one text for the card: no Compare. */
+  await page.keyboard.press("Escape");
+  await page.getByTestId("open-script").click();
+  await expect(page.getByTestId("v12-preview-tab").first()).toBeVisible();
+  await expect(page.getByTestId("v12-preview-compare")).toHaveCount(0);
+});
+
+test("a tall clip's Play and time are not under Previous or Next, at every size", async ({ page }) => {
+  await open(page, "shot-14");
+  await expect(page.getByTestId("v12-preview-video")).toBeVisible();
+  await page.waitForTimeout(300);
+  for (const id of ["v12-preview-play", "v12-preview-time"]) {
+    const box = (await page.getByTestId(id).boundingBox())!;
+    const hit = await page.evaluate(({ x, y, id }) => {
+      const at = document.elementFromPoint(x, y);
+      return at ? Boolean(at.closest(`[data-testid="${id}"]`)) : false;
+    }, { x: box.x + box.width / 2, y: box.y + box.height / 2, id });
+    expect(hit, `${id} is the topmost thing at its centre`).toBe(true);
+  }
 });
 
 test("✓ and ✕ act on the version on screen, through the review trail; ✕ names the version and sends the reason as a note", async ({ page }) => {
@@ -180,7 +229,30 @@ test("a reason the review trail would not take keeps the preview's ✕ panel ope
   await expect(line).toHaveAttribute("aria-invalid", "true");
   await expect(line).toHaveAttribute("aria-describedby", (await hint.getAttribute("id"))!);
   expect(calls.length, "nothing written for a reason the trail would not take").toBe(0);
-  /* A longer line sends. */
+  /* The panel and its hint stay inside the stage and the window, at every size (it scrolls inside itself when the stage is short). */
+  const fit = await reasons.evaluate((panel) => {
+    const r = panel.getBoundingClientRect();
+    const stage = panel.closest(".v12-pv-stage")!.getBoundingClientRect();
+    const input = panel.querySelector("input")!.getBoundingClientRect();
+    const said = panel.querySelector("[role=alert]")!.getBoundingClientRect();
+    const out: string[] = [];
+    if (r.left < -0.5 || r.top < -0.5 || r.right > window.innerWidth + 0.5 || r.bottom > window.innerHeight + 0.5) out.push(`panel outside the window (${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.right)},${Math.round(r.bottom)})`);
+    if (r.top < stage.top - 0.5 || r.bottom > stage.bottom + 0.5) out.push(`panel outside the stage (${Math.round(r.top)}-${Math.round(r.bottom)} in ${Math.round(stage.top)}-${Math.round(stage.bottom)})`);
+    if (input.top < r.top - 0.5 || input.bottom > r.bottom + 0.5) out.push("the line is scrolled out of the panel");
+    if (said.top < r.top - 0.5 || said.bottom > r.bottom + 0.5) out.push("the hint is scrolled out of the panel");
+    return out;
+  });
+  expect(fit).toEqual([]);
+  await expect(hint).toBeInViewport();
+  /* Too long (a chip and a full line pass 500): said as too long, not as "Say why". */
+  await line.fill("x".repeat(500));
+  await expect(line).toHaveValue("x".repeat(500));
+  await reasons.getByRole("button", { name: "Wrong framing", exact: true }).click();
+  await expect(hint).toHaveText("Too long: 500 characters at most.");
+  await expect(reasons).toBeVisible();
+  expect(calls.length, "nothing written for a reason that is too long").toBe(0);
+  /* A longer line sends ("Other" again, so the line is the whole reason). */
+  await reasons.getByRole("button", { name: "Other", exact: true }).click();
   await line.fill("okay now");
   await expect(hint).toHaveCount(0);
   await line.press("Enter");
@@ -197,16 +269,18 @@ test("← and → step through the cards and wrap; Esc closes the reasons first,
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 2 · MAYA arrives");
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
-  /* The last card is shot 12, the mixed one (the rows run 1 to 8, then #792's 9 to 11, then 12). */
-  await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 12 · Take and upload");
+  /* The last card is shot 14 (the rows run 1 to 8, then #792's 9 to 11, then 12 to 14). */
+  await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 14 · Tall clip");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 1 · Camp at night");
-  /* Esc: the reasons first. */
+  /* Esc: the reasons first, and the focus goes back to ✕. */
   await page.getByTestId("v12-preview-no").click();
   await expect(page.getByTestId("v12-preview-reasons")).toBeVisible();
+  await page.getByLabel("One line, optional").focus();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("v12-preview-reasons")).toHaveCount(0);
   await expect(preview(page)).toBeVisible();
+  await expect(page.getByTestId("v12-preview-no")).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(preview(page)).toHaveCount(0);
   await expect(card(page, "shot-1")).toBeFocused();
@@ -215,6 +289,15 @@ test("← and → step through the cards and wrap; Esc closes the reasons first,
   await page.getByTestId("v12-preview-no").click();
   await page.getByLabel("One line, optional").fill("ab");
   await page.getByLabel("One line, optional").press("ArrowLeft");
+  await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 1 · Camp at night");
+  /* A layer that owns its keys (a menu beside the preview) keeps them: the preview neither steps nor closes. */
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("v12-preview-reasons")).toHaveCount(0);
+  await page.evaluate(() => { const m = document.createElement("div"); m.setAttribute("role", "menu"); m.tabIndex = 0; m.dataset.testid = "a-menu"; m.textContent = "Menu"; document.body.appendChild(m); m.focus(); });
+  await expect(page.getByTestId("a-menu")).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Escape");
+  await expect(preview(page)).toBeVisible();
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 1 · Camp at night");
 });
 
@@ -266,7 +349,7 @@ test("the preview fits the window at every size: no sideways scroll, its header 
   });
   expect(small, "text under 12 px").toEqual([]);
   if (isCompact(info)) {
-    const tiny = await preview(page).evaluate((root) => [...root.querySelectorAll<HTMLElement>("button, a, input")].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.height < 43.5 || r.width < 43.5) && !el.closest(".v12-pv-versions"); }).map((el) => `${el.getAttribute("data-testid") ?? el.className} ${Math.round(el.getBoundingClientRect().width)}x${Math.round(el.getBoundingClientRect().height)}`));
+    const tiny = await preview(page).evaluate((root) => [...root.querySelectorAll<HTMLElement>("button, a, input")].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.height < 43.5 || r.width < 43.5); }).map((el) => `${el.getAttribute("data-testid") ?? el.className} ${Math.round(el.getBoundingClientRect().width)}x${Math.round(el.getBoundingClientRect().height)}`));
     expect(tiny, "controls under 44 px").toEqual([]);
   }
 });

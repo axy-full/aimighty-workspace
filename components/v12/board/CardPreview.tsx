@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { IconButton, Tooltip } from "../ui";
-import { REJECT_REASON_MAX, rejectReasonProblem } from "@/components/graphite/board/cards/take/take-model";
+import { REJECT_REASON_MAX } from "@/components/graphite/board/cards/take/take-model";
 import { withOther, rejectReason } from "./card-model";
 import {
-  approveLabel, canCompare, clampIndex, compareSides, judgeVersion, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
-  type PreviewItemView,
+  approveLabel, canCompare, clampIndex, compareSides, judgeVersion, reasonProblem, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
+  type PreviewItemView, type PreviewVersionView,
 } from "./preview-model";
 import "./card-preview.css";
 
@@ -45,12 +45,16 @@ function Img({ src, className, testId }: { src: string; className?: string; test
 }
 
 const isField = (el: EventTarget | null) => el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement;
+/* Layers that own their keys (a menu, a list box, a radio group, another dialog): Esc and the arrows are theirs, not the preview's. */
+const OWN_KEYS = '[role="menu"], [role="menubar"], [role^="menuitem"], [role="listbox"], [role="option"], [role="radio"], [role="radiogroup"], [role="dialog"], [role="alertdialog"]';
 
 export function CardPreview(props: CardPreviewProps) {
   const { ids, openId, onStep, onClose, inset, note, placement = "absolute" } = props;
   const item = (Array.isArray(props.items) ? (props.items as PreviewItemView[]).find((i) => i.id === openId) : (props.items as ReadonlyMap<string, PreviewItemView>).get(openId)) ?? null;
   const root = useRef<HTMLDivElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
+  /* The queued focus-return, cancelled if the effect runs again (a development build mounts it twice). */
+  const backFrame = useRef(0);
   const [picked, setPicked] = useState<{ id: string; index: number } | null>(null);
   const [compare, setCompare] = useState(false);
   const [tab, setTab] = useState<{ id: string; tab: string } | null>(null);
@@ -59,6 +63,7 @@ export function CardPreview(props: CardPreviewProps) {
   const panelId = useId();
   const hintId = useId();
   const lineInput = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
 
   /* The version on screen: the one pressed in the strip for this card, else the card's own shown one. */
   const index = item ? clampIndex(picked && picked.id === item.id ? picked.index : item.shown, item.versions.length) : 0;
@@ -77,20 +82,35 @@ export function CardPreview(props: CardPreviewProps) {
 
   /* The focus goes in when the preview opens and back to where it was when it closes. */
   useEffect(() => {
-    /* Where the focus was when it opened, taken once (a development build runs this effect twice, and the second time the focus is already here). */
+    /* Where the focus was when it opened, taken once (a development build runs this effect twice, and the second time the focus is already here). The
+       first run's cleanup queued a focus-return; it is cancelled here, or it would pull the focus back out of the preview. */
+    cancelAnimationFrame(backFrame.current);
     if (!returnTo.current && document.activeElement instanceof HTMLElement && !root.current?.contains(document.activeElement)) returnTo.current = document.activeElement;
     root.current?.focus({ preventScroll: true });
-    return () => { const back = returnTo.current; if (back && back.isConnected) requestAnimationFrame(() => back.focus({ preventScroll: true })); };
+    return () => { const back = returnTo.current; if (back && back.isConnected) backFrame.current = requestAnimationFrame(() => back.focus({ preventScroll: true })); };
   }, []);
 
   const closeReasons = () => setRs(null);
 
+  /* On a short stage the panel scrolls inside itself: when it says why a reason was refused, the line and the hint (its last rows) are brought into it. */
+  useEffect(() => {
+    const el = panel.current;
+    if (problem && el) el.scrollTop = el.scrollHeight;
+  }, [problem]);
+
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      /* Only keys meant for the preview: pressed inside it, or with the focus nowhere (on the page's body). A menu, a list box, a radio group or another
+         dialog keeps its own keys, inside the preview or beside it. */
+      const target = event.target instanceof Element ? event.target : null;
+      const here = Boolean(target && (root.current?.contains(target) || target === document.body || target === document.documentElement));
+      const owner = target?.closest(OWN_KEYS);
+      if (!here || (owner && owner !== root.current)) return;
       if (event.key === "Escape") {
         event.preventDefault(); event.stopPropagation();
-        if (reasoning) closeReasons(); else onClose();
+        /* Esc closes the reasons first, and the focus goes back to ✕, which opened them. */
+        if (reasoning) { closeReasons(); root.current?.querySelector<HTMLElement>('[data-testid="v12-preview-no"]')?.focus({ preventScroll: true }); } else onClose();
         return;
       }
       /* The arrows are a field's, a tab's, the audio player's and a clip's own when the focus is on them. */
@@ -106,7 +126,7 @@ export function CardPreview(props: CardPreviewProps) {
   const choose = (i: number) => { setPicked({ id: item.id, index: i }); props.onVersion?.(item, i); };
   const send = (chosen: string | null, text: string) => {
     const reason = rejectReason(chosen, text);
-    const why = rejectReasonProblem(reason);
+    const why = reasonProblem(reason);
     if (why) { setRs({ key: reasonKey, pick: chosen, line: text, problem: why }); lineInput.current?.focus(); return; }
     if (judge) props.onReject?.(item, index, reason);
     closeReasons(); root.current?.focus({ preventScroll: true });
@@ -157,7 +177,8 @@ export function CardPreview(props: CardPreviewProps) {
               const v = item.versions[at];
               return (
                 <div key={slot} className="v12-pv-side" data-side={slot === 0 ? "a" : "b"}>
-                  {v.poster ? <Img src={v.poster} className="v12-pv-img" /> : <span className="v12-pv-empty">No picture</span>}
+                  {/* Each side is the version itself: a picture, or its own player for a clip or a sound, so the two can be watched or heard apart. */}
+                  <Media item={item} version={v} at={at} />
                   <span className="v12-pv-tag" data-testid="v12-preview-compare-label">{v.label}</span>
                 </div>
               );
@@ -166,8 +187,7 @@ export function CardPreview(props: CardPreviewProps) {
         ) : (
           <div className="v12-pv-one">
             {item.kind === "picture" && version.poster ? <Img src={version.poster} className="v12-pv-img" testId="v12-preview-picture" /> : null}
-            {item.kind === "video" ? <Clip key={`${item.id}:${index}`} src={version.url} poster={version.poster} /> : null}
-            {item.kind === "sound" ? <Sound key={`${item.id}:${index}`} src={version.url} seed={`${item.id}:${version.genId ?? version.label}`} /> : null}
+            {item.kind === "video" || item.kind === "sound" ? <Media item={item} version={version} at={index} /> : null}
             {item.kind === "text" ? (
               <div className="v12-pv-page">
                 {item.tabs?.length ? (
@@ -187,7 +207,7 @@ export function CardPreview(props: CardPreviewProps) {
           <button type="button" className="v12-pv-step" data-side="next" aria-label="Next" onClick={() => onStep(stepId(ids, openId, 1))}>›</button>
         </Tooltip>
         {reasoning && judge ? (
-          <div id={panelId} className="v12-pv-reasons" data-testid="v12-preview-reasons">
+          <div ref={panel} id={panelId} className="v12-pv-reasons" data-testid="v12-preview-reasons">
             <span className="v12-pv-reasons-label">What’s wrong{versionOf(item, index) ? ` with ${version.label}` : ""}?</span>
             <div className="v12-pv-reasons-list" role="group" aria-label="What’s wrong?">
               {withOther(item.reasons).map((reason) => (
@@ -214,6 +234,14 @@ export function CardPreview(props: CardPreviewProps) {
       </div>
     </div>
   );
+}
+
+/** One version's media: its picture, or its own player for a clip or a sound (keyed by the version, so a new version starts from the top). */
+function Media({ item, version, at }: { item: PreviewItemView; version: PreviewVersionView; at: number }) {
+  const key = `${item.id}:${at}`;
+  if (item.kind === "video") return <Clip key={key} src={version.url} poster={version.poster} />;
+  if (item.kind === "sound") return <Sound key={key} src={version.url} seed={`${item.id}:${version.genId ?? version.label}`} />;
+  return version.poster ? <Img src={version.poster} className="v12-pv-img" /> : <span className="v12-pv-empty">No picture</span>;
 }
 
 /** A clip with the prototype's controls: play, one frame back and forward, a scrub bar and the time. */

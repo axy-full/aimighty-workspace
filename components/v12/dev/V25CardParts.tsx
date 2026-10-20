@@ -16,8 +16,8 @@ import "./v25-parts.css";
  * screenshots beside design/particl-prototype-25 and tests/card-v25-workbench.spec.ts. EVERYTHING HERE IS MOCK DATA: the titles, the
  * statuses and the stand-in pictures stand for what the board screen will pass in when it is built; nothing is read from a workspace.
  */
-const still = (hue: number) => `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},38%,26%)"/><stop offset="1" stop-color="hsl(${hue},30%,10%)"/></linearGradient></defs><rect width="640" height="360" fill="url(#g)"/></svg>`)}`;
+const still = (hue: number, w = 640, h = 360) => `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},38%,26%)"/><stop offset="1" stop-color="hsl(${hue},30%,10%)"/></linearGradient></defs><rect width="${w}" height="${h}" fill="url(#g)"/></svg>`)}`;
 
 type Mock = Omit<StepCardProps, "onSelect" | "onApprove" | "onReject" | "onMenu">;
 const SHOT_REASONS = ["Look", "Framing", "Motion", "Face", "Text"];
@@ -76,6 +76,10 @@ const ROWS: ShotTakes[] = [
   shot(11, "Night swim", [version("gen_s11", 1, "changes")]),
   /* Mixed (PR 6): a take that can be judged, then an upload with its picture here, shown. The upload never carries ✓ ✕; the take does. */
   shot(12, "Take and upload", [version("gen_s12a", 1, "review"), version("gen_s12b", 2, "uploaded")]),
+  /* Two clips (PR 6 review): Compare plays each version's own clip, not the shot's frame twice. */
+  { ...shot(13, "Two cuts", [version("gen_s13a", 1, "review", { media: "video", url: "/fixtures/clip.mp4" }), version("gen_s13b", 2, "review", { media: "video", url: "/fixtures/clip-6s.mp4" })]), frame: { url: still(250), kind: "image" } },
+  /* A 9:16 clip (720 x 1280) with a 9:16 frame: on a phone its Play and time stay clear of Previous and Next. */
+  { ...shot(14, "Tall clip", [version("gen_s14", 1, "review", { media: "video", url: "/fixtures/astra-clip.mp4" })]), frame: { url: still(290, 360, 640), kind: "image" } },
 ];
 
 /* Cards that are not takes: a script (Script · Beats · Breakdown) and a sound, as preview items (mock). */
@@ -90,7 +94,10 @@ const SCRIPT: PreviewItemView = {
 };
 const SOUND: PreviewItemView = {
   id: "sound", title: "Voice · line 1", kind: "sound", shown: 0, canJudge: false, reasons: TAKE_REASONS,
-  versions: [{ genId: "gen_voice", label: "v1", url: "/fixtures/tone.mp3", poster: null, status: "ready", judgeable: false }],
+  versions: [
+    { genId: "gen_voice", label: "v1", url: "/fixtures/tone.mp3", poster: null, status: "ready", judgeable: false },
+    { genId: "gen_voice2", label: "v2", url: "/fixtures/tone.mp3?v=2", poster: null, status: "ready", judgeable: false },
+  ],
 };
 
 function TakeBoard() {

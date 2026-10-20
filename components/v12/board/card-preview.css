@@ -34,12 +34,13 @@
 }
 .v12 .v12-pv-step[data-side="prev"] { left: 0; }
 .v12 .v12-pv-step[data-side="next"] { right: 0; }
-.v12 .v12-pv-one { flex: 1; height: 100%; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 48px; }
+.v12 .v12-pv-one { flex: 1; height: 100%; min-width: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 0 48px; }
 .v12 .v12-pv-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; border-radius: var(--gx-r-btn); }
 .v12 .v12-pv-empty { font-size: var(--gx-fs-meta); color: var(--gx-text-sec); }
-.v12 .v12-pv-compare { flex: 1; height: 100%; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--gx-sp-10); padding: 0 48px; }
+.v12 .v12-pv-compare { flex: 1; height: 100%; min-width: 0; box-sizing: border-box; display: grid; grid-template-columns: 1fr 1fr; gap: var(--gx-sp-10); padding: 0 48px; }
 .v12 .v12-pv-side { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 0; }
 .v12 .v12-pv-side .v12-pv-img { width: 100%; }
+.v12 .v12-pv-side > .v12-pv-sound { width: 100%; }
 .v12 .v12-pv-tag { position: absolute; left: 8px; top: 8px; font-size: var(--gx-fs-label); font-weight: 600; background: rgba(0, 0, 0, .7); padding: 2px 7px; border-radius: var(--gx-r-xs); }
 
 .v12 .v12-pv-clip { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--gx-sp-10); }
@@ -52,7 +53,7 @@
 
 .v12 .v12-pv-sound { display: flex; flex-direction: column; align-items: center; gap: var(--gx-sp-16); width: min(560px, 100%); }
 .v12 .v12-pv-wave { display: flex; align-items: center; gap: 2px; height: 120px; width: 100%; }
-.v12 .v12-pv-wave > span { flex: 1; background: color-mix(in srgb, var(--gx-sound, #bf5af2) 80%, transparent); border-radius: 1px; }
+.v12 .v12-pv-wave > span { flex: 1; background: color-mix(in srgb, var(--gx-purple) 80%, transparent); border-radius: 1px; }
 .v12 .v12-pv-audio { width: 100%; }
 
 .v12 .v12-pv-page { max-width: 620px; width: 100%; max-height: 100%; display: flex; flex-direction: column; gap: var(--gx-sp-12); min-height: 0; }
@@ -62,7 +63,8 @@
 .v12 .v12-pv-text { font-size: 17px; line-height: 1.65; color: var(--gx-text); white-space: pre-wrap; overflow: auto; min-height: 0; }
 
 .v12 .v12-pv-reasons {
-  position: absolute; right: 8px; top: 8px; z-index: 3; width: min(280px, calc(100% - 16px)); display: flex; flex-direction: column; gap: var(--gx-sp-6); padding: var(--gx-sp-10);
+  position: absolute; right: 8px; top: 8px; z-index: 3; width: min(280px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow: auto; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: var(--gx-sp-6); padding: var(--gx-sp-10);
   border: 1px solid color-mix(in srgb, var(--gx-failed) 40%, transparent); border-radius: var(--gx-r-pop); background: var(--gx-card);
 }
 .v12 .v12-pv-reasons-label { font-size: var(--gx-fs-label); color: var(--gx-text-sec); }
@@ -81,12 +83,13 @@
 .v12 .v12-pv-thumb > img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .v12 .v12-pv-vlabel { font-size: var(--gx-fs-label); font-weight: 600; }
 
-/* A narrow window: the header's actions drop under the title, Compare stacks the two versions, and the side arrows give way to the page's own room. */
+/* A narrow window: the header's actions drop under the title, Compare stacks the two versions, and the side arrows move to a row of their own at the
+   bottom, kept clear so they never cover a clip's Play or its time. */
 @media (max-width: 559px) {
   .v12 .v12-pv { padding: 10px 12px; }
   .v12 .v12-pv-note { display: none; }
   .v12 .v12-pv-acts { width: 100%; justify-content: flex-start; margin-left: 0; }
-  .v12 .v12-pv-one, .v12 .v12-pv-compare { padding: 0 4px; }
+  .v12 .v12-pv-one, .v12 .v12-pv-compare { padding: 0 4px 52px; }
   .v12 .v12-pv-compare { grid-template-columns: 1fr; grid-auto-rows: minmax(0, 1fr); }
   .v12 .v12-pv-step { top: auto; bottom: 0; transform: none; }
 }

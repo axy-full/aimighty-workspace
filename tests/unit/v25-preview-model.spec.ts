@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  approveLabel, canCompare, clampIndex, compareSides, judgeVersion, previewItemOfShot, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
+  REASON_TOO_LONG, approveLabel, canCompare, clampIndex, compareSides, judgeVersion, previewItemOfShot, reasonProblem, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
   type PreviewItemView,
 } from "../../components/v12/board/preview-model";
 import type { ShotVersion } from "../../components/graphite/board/cards/take/take-model";
@@ -17,6 +17,10 @@ test("the version label and Compare need more than one version", () => {
   expect(versionOf(three, 1)).toBe("v2 of 3");
   expect(versionOf(three, 99)).toBe("v3 of 3");
   expect(canCompare(three)).toBe(true);
+  /* Clips and sounds compare as two players; a page of words has one text for the card, so no Compare. */
+  expect(canCompare({ ...three, kind: "video" })).toBe(true);
+  expect(canCompare({ ...three, kind: "sound" })).toBe(true);
+  expect(canCompare({ ...three, kind: "text" })).toBe(false);
   expect(clampIndex(-4, 3)).toBe(0);
   expect(clampIndex(7, 3)).toBe(2);
   expect(clampIndex(1.9, 3)).toBe(1);
@@ -102,4 +106,12 @@ test("Download is the original as an attachment; a shot's takes become versions,
   expect(judgeVersion(mixed, 0)?.genId).toBe("g1");
   expect(judgeVersion(mixed, 1)).toBeNull();
   expect(out.versions.every((x) => x.judgeable)).toBe(true);
+});
+
+test("✕'s reason: too short says why (the trail's hint), too long says too long, and one that fits has no problem", () => {
+  expect(reasonProblem("ok")).toBe("Say why you are rejecting it.");
+  expect(reasonProblem(`Wrong framing · ${"x".repeat(500)}`)).toBe(REASON_TOO_LONG);
+  expect(REASON_TOO_LONG).toBe("Too long: 500 characters at most.");
+  expect(reasonProblem("x".repeat(500))).toBeNull();
+  expect(reasonProblem("Wrong framing")).toBeNull();
 });
