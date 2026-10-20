@@ -120,8 +120,8 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
         (error: unknown) => {
           if (controller.signal.aborted) return;
           const words = error instanceof Error ? neutralCopy(error.message, UNREAD) : UNREAD;
-          /* 429: refused at the quote (the workspace's monthly cap, or a limit), in the server's own words. */
-          setRead(error instanceof StudioRequestError && error.status === 429 ? { key: membersKey, refusal: words } : { key: membersKey, error: words });
+          /* Refused at the quote (429: the workspace's monthly cap or a limit; 400: more shots than a press takes, a shot that can't be priced), in the server's own words. */
+          setRead(error instanceof StudioRequestError && error.status >= 400 && error.status < 500 ? { key: membersKey, refusal: words } : { key: membersKey, error: words });
         },
       );
     }, 400);
