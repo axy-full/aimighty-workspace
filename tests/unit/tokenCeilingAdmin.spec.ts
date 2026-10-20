@@ -237,3 +237,31 @@ test("in the house (dollars), an admin's dollar ceiling replaces a leftover cred
   expect(await patch(houseAdmin(), "tok_house_render", { capUsd: "" })).toEqual({ status: 200, body: { id: "tok_house_render", capUsd: null } });
   expect(await read()).toEqual({ capCredits: null, capUsd: null, audit: { ceilingUnit: "usd_cents", ceilingBefore: 2050, ceilingAfter: null } });
 });
+
+/* CI on #854: POST /api/mcp tells render_shot whether to send its quote from the bearer the tools act with, not from the request's session (a
+   browser holding a cookie and a bearer is the session to the route, while its tools still act as the token). */
+test("render_shot's permission to spend is the bearer's ceiling, even when the request also carries a person's session", async () => {
+  const seen: unknown[] = [];
+  const route = load<typeof import("../../app/api/mcp/route")>("app/api/mcp/route.ts", {
+    "@/lib/crew/mcp": { isCrewMcpRequest: () => false, handleCrewMcp: async () => new Response(null) },
+    "@/lib/recovery": { recoveryRoute: (handler: unknown) => handler },
+    "@/lib/auth": await authAs(admin()),
+    "@/lib/credits": await import("../../lib/credits"),
+    "@/lib/tenant": await import("../../lib/tenant"),
+    "@/lib/site": await import("../../lib/site"),
+    "@/lib/tokenCeiling": await import("../../lib/tokenCeiling"),
+    "@/lib/directEngineMcp": { runDirectEngineTool: async () => null, directEngineMcpTools: async () => [] },
+    "@/lib/mcp": { TOOLS: [], makeCaller: () => async () => ({}), runTool: async (_n: string, _a: unknown, _c: unknown, _o: string, options: { spends?: boolean }) => { seen.push(options.spends); return "ok"; } },
+  });
+  const call = async (bearer: string | null, name = "render_shot") => {
+    const headers: Record<string, string> = { "Content-Type": "application/json", ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) };
+    const res = await route.POST(new Request(`${ORIGIN}/api/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: {} } }) }), undefined as never);
+    expect(res.status).toBe(200);
+  };
+  await call(LEGACY_B);      /* a ceiling of 5,000 cr (set above): may spend */
+  await call(MEMBER_RENDER); /* cleared above: no ceiling, prepares and prices only */
+  await call(PREP);          /* a prepare token never spends */
+  await call(null);          /* no bearer: the tools act as nobody */
+  await call(LEGACY_B, "list_renders"); /* only render_shot is told */
+  expect(seen).toEqual([true, false, false, false, false]);
+});

@@ -257,7 +257,7 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
  * `credits`: the workspace pays in credits (lib/credits creditsApply), so
  * spend is reported in credits and the engine's dollars are never named.
  *
- * `spends`: the caller's token has a monthly ceiling an admin set (lib/tokenSpend.ts › tokenMaySpend), the person's standing approval.
+ * `spends`: the caller's token has a monthly ceiling an admin set (read by POST /api/mcp from the bearer the tools act with), the person's standing approval.
  * Only then does render_shot send the price it was quoted as its `maxCredits`; without it (absent or false) the tool prices the shot and
  * starts nothing: the tool never invents an approval (owner, 20 Oct 2026, Q1 "B"). The routes refuse a token with no ceiling as well.
  */

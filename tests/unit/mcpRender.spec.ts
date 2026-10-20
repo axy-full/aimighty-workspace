@@ -68,7 +68,7 @@ test("render_shot's optional request_id is its Idempotency-Key, so a retried cal
 });
 
 /* Owner, 20 Oct 2026, Q1 "B": a token with no ceiling can only prepare and price. The tool never invents an approval: without the token's
-   ceiling (`spends` absent or false, as POST /api/mcp passes it from lib/tokenSpend.ts › tokenMaySpend) it prices the shot and sends nothing. */
+   ceiling (`spends` absent or false, as POST /api/mcp passes it from the bearer the tools act with) it prices the shot and sends nothing. */
 test("render_shot from a token with no ceiling is priced and never sent", async () => {
   for (const options of [{}, { spends: false }, { credits: true }]) {
     const api = workspace();
@@ -82,5 +82,8 @@ test("render_shot from a token with no ceiling is priced and never sent", async 
 
 test("the MCP endpoint tells the tool whether this token may spend, from its ceiling", async () => {
   const { readFileSync } = await import("node:fs");
-  expect(readFileSync("app/api/mcp/route.ts", "utf8")).toContain("spends: tokenMaySpend(currentTenant()?.token)");
+  const route = readFileSync("app/api/mcp/route.ts", "utf8");
+  /* Read from the bearer the tools act with (CI on #854: a browser holding a session cookie and a bearer is the session to the route). */
+  expect(route).toContain('spends: name === "render_shot" ? await bearerMaySpend(req) : false');
+  expect(route).toContain('return Boolean(acting?.token?.scope === "render" && hasSpendingCeiling(acting.token, creditsApply(acting.workspace)));');
 });
