@@ -67,7 +67,7 @@ const deferred: (() => Promise<unknown>)[] = [];
 const options = (): AdmissionExecution => ({ defer: async (work) => { deferred.push(work); } });
 
 /** A real PNG upload of this workspace (sources are measured), of the given size. */
-async function image(label: string, width = 512, height = 512): Promise<{ id: string; bytes: Buffer }> {
+async function image(label: string, width = 512, height = 512, uploader: string | null = null): Promise<{ id: string; bytes: Buffer }> {
   const { db, ready } = await import("../../lib/db");
   const { storeUpload } = await import("../../lib/storage");
   const sharp = (await import("sharp")).default;
@@ -76,7 +76,7 @@ async function image(label: string, width = 512, height = 512): Promise<{ id: st
   const bytes = await sharp({ create: { width, height, channels: 3, background: "#808080" } }).png().toBuffer();
   await storeUpload(id, "png", bytes, "image/png");
   made.push(path.join(process.cwd(), ".data", "uploads", `${id}.png`));
-  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.png`, "image/png", "png", bytes.length, "x", width, height, `uploads/${id}.png`, Date.now(), "image"] });
+  await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,width,height,stored_url,created_at,kind,uploader_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", args: [id, `${id}.png`, "image/png", "png", bytes.length, "x", width, height, `uploads/${id}.png`, Date.now(), "image", uploader] });
   return { id, bytes };
 }
 async function project(id: string) {
@@ -659,6 +659,45 @@ test("remove background: the still is read from this workspace and sent as data;
   });
 });
 
+test("an upload is cut out only for a person who may open it, for an Atomik run (as its owner, a member) as for a person; with no person behind the request nothing is read, written or reserved", async () => {
+  const { executeRecraftAdmission: admitRecraft } = await import("../../lib/recraftImage");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  const { db, ready } = await import("../../lib/db");
+  process.env.RECRAFT_ENABLED = "1";
+  const agentUser = (runId: string) => ({ ...OWNER.user, id: `agent:${runId}`, role: "member", owner: false }) as AdmissionActor["user"];
+  const agent = (runId: string): AdmissionActor => ({ user: agentUser(runId) });
+  await runInTenant(house(), async () => {
+    await ready(); await rigAgentReady();
+    await db().execute({ sql: "INSERT OR IGNORE INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_recraft_owned", "prod_x", "draft_x", "u_runner", "req_recraft", "goal", "auto", "finished"] });
+    const mine = await image("mine", 512, 512, "u_runner");
+    const theirs = await image("theirs", 512, 512, "u_other");
+    const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
+    const cut = (actor: AdmissionActor, sourceUploadId: string, extra: Record<string, unknown> = { quoteOnly: true }) => admitRecraft({ tool: "remove_background", sourceUploadId, ...extra }, actor, options());
+    /* The run acts for the person who started it: their own upload, yes; another person's private one, no (the words a missing one gets). */
+    await runInTenant(house(), async () => {
+      expect((await cut(agent("run_recraft_owned"), mine.id)).status).toBe(200);
+      for (const extra of [{ quoteOnly: true }, approved]) expect(await cut(agent("run_recraft_owned"), theirs.id, extra), JSON.stringify(extra)).toMatchObject({ status: 404, body: { error: "That still is not in this workspace." } });
+    }, { user: agentUser("run_recraft_owned") } as never);
+    /* No person behind the run (an unknown run): refused before the source is looked at, quote or press. */
+    await runInTenant(house(), async () => {
+      for (const extra of [{ quoteOnly: true }, approved]) expect(await cut(agent("run_recraft_none"), mine.id, extra), JSON.stringify(extra)).toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+      expect(await cut(agent("run_recraft_none"), "../x")).toMatchObject({ status: 403 });
+    }, { user: agentUser("run_recraft_none") } as never);
+    /* A signed-in person is judged the same way: their own, yes; another person's private upload, no. */
+    const person: AdmissionActor = { user: { ...OWNER.user, id: "u_runner", role: "member", owner: false } as AdmissionActor["user"] };
+    await runInTenant(house(), async () => {
+      expect((await cut(person, mine.id)).status).toBe(200);
+      expect((await cut(person, theirs.id, approved)).status).toBe(404);
+    }, { user: person.user } as never);
+    /* Through every refusal and quote: no take, no ledger line, nothing handed to the worker. */
+    expect(await rows()).toBe(before.rows);
+    expect((await meterRows()).length).toBe(before.meter);
+    expect(deferred.length).toBe(before.handed);
+  }, OWNER as never);
+});
+
 test("a listed customer workspace pays exactly the quote in credits, once, and a failure refunds it; at its own $0 cap it is refused 429 with nothing held, written or sent", async () => {
   const { platformReady, platformDb, grantCredits, getWorkspace } = await import("../../lib/platform");
   const { creditState } = await import("../../lib/credits");
@@ -740,6 +779,18 @@ test("over MCP: recraft_image and recraft_remove_background are listed only wher
       }
       for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) await expect(runDirectEngineTool("recraft_image", { prompt: "a tree", ...bad }, call)).rejects.toThrow(/only a person approves/);
     } finally { await spend(null); }
+  });
+});
+
+test("over MCP, an unpriced quote reaches the agent as the route's sentence, and nothing is filed or started", async () => {
+  const { runDirectEngineTool } = await import("../../lib/directEngineMcp");
+  const calls: string[] = [];
+  const call = async (p: string) => { calls.push(p); if (p === "/api/recraft") throw new Error("This engine has no confirmed price."); return { job: { id: "prep_never" } }; };
+  process.env.RECRAFT_ENABLED = "1";
+  await asTenant(house(), async () => {
+    await expect(runDirectEngineTool("recraft_image", { prompt: "a tree" }, call)).rejects.toThrow("This engine has no confirmed price.");
+    await expect(runDirectEngineTool("recraft_remove_background", { source_upload_id: "u1" }, call)).rejects.toThrow("This engine has no confirmed price.");
+    expect(calls).toEqual(["/api/recraft", "/api/recraft"]);
   });
 });
 
