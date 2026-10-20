@@ -284,6 +284,43 @@ test("asked again, the cap is judged on what is still to start: shots that alrea
   expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
 });
 
+test("a press whose reply was lost, asked again under its key with the approval it was pressed with, near the cap: it never starts or bills a shot twice; refused while the cap is full, it returns the same takes once there is room", async () => {
+  let ws = await workspace("lost_near_cap", 100_000);
+  const usd = await holdUsdOf(ws, ADMIN);
+  ws = await withCap(ws, usd * 3.5);
+  const q = await quote(ws, ADMIN, shots(3));
+  expect(q.status, JSON.stringify(q.body)).toBe(200);
+  const key = `press-lost-near-cap-${run}`;
+  const sentBefore = dispatched.length;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.status, JSON.stringify(first.body)).toBe(200);
+  expect(first.body).toMatchObject({ status: "started" });
+  const started = members(first).map((m) => m.id);
+  expect(started.every(Boolean)).toBe(true);
+  const once = await as(ws, ADMIN, ledger);
+  expect(once.takes).toHaveLength(3);
+  expect(once.meters).toHaveLength(3);
+  const sentOnce = dispatched.length - sentBefore;
+  /* The browser never saw that reply. A new quote of the same three shots counts the three running ones a second time, and the cap refuses it. */
+  expect((await quote(ws, ADMIN, shots(3))).status).toBe(429);
+  /* Asked again under the press's key with its approval while the cap is full: each shot is priced again on the way in (lib/batchPress.ts admitBatch, prepareGeneration),
+     and that price check counts the running takes against the cap, so the ask is refused in the cap's words. Nothing is started, reserved, metered or sent again. */
+  const full = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(full.status, JSON.stringify(full.body)).toBe(429);
+  expect(await as(ws, ADMIN, ledger)).toEqual(once);
+  expect(dispatched.length - sentBefore).toBe(sentOnce);
+  /* Room again (the cap raised): asked again, twice, the press returns the same takes and starts nothing. */
+  ws = await withCap(ws, usd * 100);
+  for (let i = 0; i < 2; i++) {
+    const again = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(again.body).toMatchObject({ status: "started" });
+    expect(members(again).map((m) => m.id)).toEqual(started);
+    expect(await as(ws, ADMIN, ledger)).toEqual(once);
+    expect(dispatched.length - sentBefore).toBe(sentOnce);
+  }
+});
+
 test("each shot's own checks still run as before: a shot past the shot cap is refused, named beside the refusal, and nothing starts", async () => {
   const ws = await workspace("shot_cap", 100_000);
   await as(ws, ADMIN, async () => {
