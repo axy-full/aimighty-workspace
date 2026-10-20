@@ -401,7 +401,8 @@ export const projectSchema = z.object({
   boardCut: z.object({
     shots: z.array(z.object({
       take: takeId,
-      trim: z.object({ startSeconds: z.number().finite().min(0).max(CUT_DATA_LIMITS.seconds), endSeconds: z.number().finite().min(0).max(CUT_DATA_LIMITS.seconds) }).strict().optional(),
+      trim: z.object({ startSeconds: z.number().finite().min(0).max(CUT_DATA_LIMITS.seconds), endSeconds: z.number().finite().min(0).max(CUT_DATA_LIMITS.seconds) }).strict()
+        .refine((t) => t.endSeconds > t.startSeconds, "A trim ends after it starts").optional(),
       hasAudio: z.boolean().optional(),
     }).strict()).max(CUT_DATA_LIMITS.shots).optional(),
     music: z.object({ take: takeId.optional(), upload: takeId.optional(), volume: unit.optional() }).strict()

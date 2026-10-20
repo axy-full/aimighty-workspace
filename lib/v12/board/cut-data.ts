@@ -10,14 +10,22 @@
  *    the finished film's clock) and the shots that are replaced for it (a lip-synced take in place of the cut's take). Language
  *    codes are the Deliver stage's (`boardLanguages`): `en` is the film as made, `hi` Hindi, and so on.
  *
- * Everything names media by take id, never by URL; the export route resolves each id inside the caller's workspace
- * (lib/exports/inputs.ts). A voice line is an audio take made on its own tool, at its own price and approval; the Edit step only
+ * Everything names media by take id, never by URL; the export PR will resolve each id inside the caller's workspace (nothing
+ * reads these fields yet). A voice line is an audio take made on its own tool, at its own price and approval; the Edit step only
  * places it. Whoever writes `boardVoice` (the Hindi tool, a person in the Edit step, an outside agent) writes exactly this shape.
  */
 
+import { MAX_LANGUAGES } from "../deliver";
+import { notInherited } from "./board-data";
+
 export const LANGUAGE_CODE = /^[a-z]{2,3}$/;
-export const TAKE_ID = /^[A-Za-z0-9_-]{1,120}$/;
-export const CUT_DATA_LIMITS = { shots: 24, lines: 24, swaps: 24, languages: 12, text: 160, seconds: 24 * 3600 } as const;
+/** A take or upload id; never a name every object inherits (`constructor`, `__proto__`, …), since it also keys `swap`. */
+export const TAKE_ID = new RegExp(`^${notInherited}[A-Za-z0-9_-]{1,120}$`);
+/**
+ * `languages` counts the base language too: Deliver's MAX_LANGUAGES targets, plus the film as made, which may carry a voice of
+ * its own (its narration). Erring this way keeps every board Deliver allows writable.
+ */
+export const CUT_DATA_LIMITS = { shots: 24, lines: 24, swaps: 24, languages: MAX_LANGUAGES + 1, text: 160, seconds: 24 * 3600 } as const;
 
 export type CutShot = {
   /** The video take (a generation id). */
@@ -60,8 +68,27 @@ export type LanguageVoice = {
 };
 export type BoardVoice = Record<string, LanguageVoice>;
 
-/** The language the film is made in. */
-export const BASE_LANGUAGE = "en";
+const seconds = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= CUT_DATA_LIMITS.seconds;
+
+/** A trim as the draft keeps it (start before end, both on the take's clock), or undefined: a bad trim means the whole take. */
+export function cleanTrim(value: unknown): CutShot["trim"] {
+  const trim = (value && typeof value === "object" ? value : {}) as { startSeconds?: unknown; endSeconds?: unknown };
+  return seconds(trim.startSeconds) && seconds(trim.endSeconds) && trim.endSeconds > trim.startSeconds
+    ? { startSeconds: trim.startSeconds, endSeconds: trim.endSeconds } : undefined;
+}
+
+/** The cut's own shot list as the draft keeps it: shots with a well-formed take, a trim only when it is a real span, within the limit. */
+export function cleanCutShots(value: unknown): CutShot[] {
+  if (!Array.isArray(value)) return [];
+  const shots: CutShot[] = [];
+  for (const item of value) {
+    const shot = item as Partial<CutShot> | null;
+    if (!shot || typeof shot.take !== "string" || !TAKE_ID.test(shot.take)) continue;
+    const trim = cleanTrim(shot.trim);
+    shots.push({ take: shot.take, ...(trim ? { trim } : {}), ...(typeof shot.hasAudio === "boolean" ? { hasAudio: shot.hasAudio } : {}) });
+  }
+  return shots.slice(0, CUT_DATA_LIMITS.shots);
+}
 
 /** A voice of one language, as the draft keeps it: only well-formed lines and swaps, in time order, within the limits. */
 export function cleanLanguageVoice(value: unknown): LanguageVoice {
@@ -71,7 +98,7 @@ export function cleanLanguageVoice(value: unknown): LanguageVoice {
     for (const item of rec.lines) {
       const line = item as Partial<VoiceLine> | null;
       if (!line || typeof line.take !== "string" || !TAKE_ID.test(line.take)) continue;
-      if (typeof line.startSeconds !== "number" || !Number.isFinite(line.startSeconds) || line.startSeconds < 0 || line.startSeconds > CUT_DATA_LIMITS.seconds) continue;
+      if (!seconds(line.startSeconds)) continue;
       const text = typeof line.text === "string" ? line.text.replace(/\s+/g, " ").trim().slice(0, CUT_DATA_LIMITS.text) : "";
       const volume = typeof line.volume === "number" && Number.isFinite(line.volume) ? Math.min(1, Math.max(0, line.volume)) : undefined;
       lines.push({ take: line.take, startSeconds: line.startSeconds, text, ...(volume !== undefined ? { volume } : {}) });
@@ -90,11 +117,11 @@ export function cleanLanguageVoice(value: unknown): LanguageVoice {
 
 /** The voice of a language (a copy); nothing for a language that has none. */
 export const voiceOf = (voice: BoardVoice | null | undefined, language: string): LanguageVoice =>
-  Object.prototype.hasOwnProperty.call(voice ?? {}, language) ? cleanLanguageVoice(voice![language]) : { lines: [] };
+  Object.hasOwn(voice ?? {}, language) ? cleanLanguageVoice(voice![language]) : { lines: [] };
 
 /**
  * The board's voices after one language is written: the whole language is replaced (a Hindi version is made as one piece).
- * A language code the draft would refuse, or a thirteenth language, leaves the voices as they were; a language with no lines and
+ * A language code the draft would refuse, or one language past the limit, leaves the voices as they were; a language with no lines and
  * no swaps is removed.
  */
 export function withLanguageVoice(voice: BoardVoice | null | undefined, language: string, value: unknown): BoardVoice {
@@ -103,6 +130,6 @@ export function withLanguageVoice(voice: BoardVoice | null | undefined, language
   const next = cleanLanguageVoice(value);
   const { [language]: _was, ...others } = current;
   if (!next.lines.length && !next.swap) return others;
-  if (!(language in current) && Object.keys(current).length >= CUT_DATA_LIMITS.languages) return current;
+  if (!Object.hasOwn(current, language) && Object.keys(current).length >= CUT_DATA_LIMITS.languages) return current;
   return { ...others, [language]: next };
 }
