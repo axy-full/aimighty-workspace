@@ -62,7 +62,14 @@ import { proposeMemory } from "./atomikMemory";
 export type StepKind = "video" | "image" | "audio" | "3d";
 export type StepStatus = "proposed" | "running" | "done" | "failed" | "rejected";
 export type ChatStatus = "idle" | "running" | "waiting" | "failed";
-export type AgentMode = "ask" | "auto";
+/**
+ * A chat's mode: always "ask" (every paid step waits for a person's Continue at its quote). There is no Auto since 20 Oct 2026 (owner:
+ * "Auto goes: every job is approved on its quote"). An older caller may still send "auto", and a chat stored before then may hold it:
+ * both read and are written as "ask" (chatModeOf). The column keeps its name and default; nothing is migrated.
+ */
+export type AgentMode = "ask";
+/** Any mode a caller sent or a row holds, as the chat now is: always "ask". */
+export function chatModeOf(value: unknown): AgentMode { void value; return "ask"; }
 
 export type Step = {
   id: string; chatId: string; messageId: string; position: number;
@@ -153,7 +160,7 @@ const toChat = (r: Row): Chat => {
     id: String(r.id), projectId: r.project_id ? String(r.project_id) : null,
     title: String(r.title ?? "New chat"), model: saved.model, effort: !saved.note && typeof r.effort === "string" ? r.effort : undefined,
     ...(saved.note ? { modelNote: saved.note } : {}),
-    agentMode: String(r.agent_mode ?? "ask") as AgentMode,
+    agentMode: chatModeOf(r.agent_mode),
     status: String(r.status ?? "idle") as ChatStatus,
     textCostUsd: Number(r.text_cost_usd ?? 0), createdBy: String(r.created_by ?? ""),
     createdAt: Number(r.created_at ?? 0), updatedAt: Number(r.updated_at ?? 0),
@@ -212,7 +219,7 @@ export async function listChats(viewer: string, limit = 40): Promise<(Chat & { n
 }
 
 export async function createChat(opts: {
-  userId: string; projectId: string | null; model: string; effort?: string; agentMode: AgentMode;
+  userId: string; projectId: string | null; model: string; effort?: string; agentMode: AgentMode | "auto";
 }): Promise<string> {
   await ready();
   const chatId = newId("ach");
@@ -222,7 +229,7 @@ export async function createChat(opts: {
             (id, project_id, title, model, effort, agent_mode, status, text_cost_usd,
              created_by, created_at, updated_at, deleted)
           VALUES (?,?,?,?,?,?,'idle',0,?,?,?,0)`,
-    args: [chatId, opts.projectId, "New chat", opts.model, opts.effort ?? null, opts.agentMode, opts.userId, ts, ts],
+    args: [chatId, opts.projectId, "New chat", opts.model, opts.effort ?? null, chatModeOf(opts.agentMode), opts.userId, ts, ts],
   });
   return chatId;
 }
@@ -305,7 +312,7 @@ async function ledgerCredits(workspaceId: string, ids: string[]): Promise<Map<st
 }
 
 export async function patchChat(chatId: string, patch: {
-  title?: string; model?: string; effort?: string; agentMode?: AgentMode;
+  title?: string; model?: string; effort?: string; agentMode?: AgentMode | "auto";
   status?: ChatStatus; projectId?: string | null;
 }): Promise<void> {
   await ready();
@@ -318,7 +325,7 @@ export async function patchChat(chatId: string, patch: {
   /* A dropped id is saved as its alias, the model that will run (lib/modelAliases.ts). */
   if (patch.model != null) { sets.push("model = ?"); args.push(aliasModel(patch.model)); }
   if (patch.effort != null) { sets.push("effort = ?"); args.push(patch.effort); }
-  if (patch.agentMode != null) { sets.push("agent_mode = ?"); args.push(patch.agentMode); }
+  if (patch.agentMode != null) { sets.push("agent_mode = ?"); args.push(chatModeOf(patch.agentMode)); }
   if (patch.status != null) { sets.push("status = ?"); args.push(patch.status); }
   if (patch.projectId !== undefined) { sets.push("project_id = ?"); args.push(patch.projectId); }
   if (!sets.length) return;
