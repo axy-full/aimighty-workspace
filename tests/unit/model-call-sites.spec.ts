@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { MODEL_CALL_CONSTRUCTS, MODEL_CALL_FILES, SDK_CONSTRUCTS } from "../helpers/modelCallSites";
+import { MODEL_CALL_FILES, SDK_CONSTRUCTS, closedListProblems, constructCounts, stripComments } from "../helpers/modelCallSites";
 
 /**
  * The closed list of model calls (tests/helpers/modelCallSites.ts), held to the source. Every model call Atomik (or
@@ -12,8 +12,7 @@ import { MODEL_CALL_CONSTRUCTS, MODEL_CALL_FILES, SDK_CONSTRUCTS } from "../help
  */
 
 const root = process.cwd();
-/** Comments out, so a sentence about a call is not a call. */
-const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:\\])\/\/.*$/gm, "$1");
+const code = stripComments;
 
 function sources(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(path.join(root, dir))) {
@@ -23,30 +22,23 @@ function sources(dir: string, out: string[] = []): string[] {
   }
   return out;
 }
-function counts(file: string): Record<string, number> {
-  const text = code(readFileSync(path.join(root, file), "utf8"));
-  const found: Record<string, number> = {};
-  for (const [name, pattern] of Object.entries(MODEL_CALL_CONSTRUCTS)) {
-    const n = (text.match(new RegExp(pattern.source, "g")) ?? []).length;
-    if (n) found[name] = n;
-  }
-  return found;
-}
-const listed = new Map(MODEL_CALL_FILES.map((entry) => [entry.file, entry]));
+const counts = (file: string) => constructCounts(readFileSync(path.join(root, file), "utf8"));
 
-test("every file in lib/ and app/ with a model-call construct is on the closed list, with its exact counts", () => {
+test("every file in lib/ and app/ with a model-call construct is on the closed list, with its exact counts; no door under another name; every agent call inside modelDoor", () => {
   const scanned = [...sources("lib"), ...sources("app")];
   expect(scanned.length).toBeGreaterThan(200);
-  const problems: string[] = [];
-  for (const file of scanned) {
-    const found = counts(file);
-    const entry = listed.get(file);
-    if (!Object.keys(found).length) continue;
-    if (!entry) problems.push(`${file}: ${JSON.stringify(found)} is not in tests/helpers/modelCallSites.ts`);
-    else if (JSON.stringify(Object.entries(found).sort()) !== JSON.stringify(Object.entries(entry.constructs).sort()))
-      problems.push(`${file}: has ${JSON.stringify(found)}, the list says ${JSON.stringify(entry.constructs)}`);
-  }
-  expect(problems).toEqual([]);
+  expect(closedListProblems(scanned.map((file) => ({ file, text: readFileSync(path.join(root, file), "utf8") })))).toEqual([]);
+});
+
+/* The stricter checks, shown to fire: each planted source (tests/fixtures/model-call-guard/, never compiled or imported) fails. */
+for (const [fixture, as, expected] of [
+  ["second-generate.txt", "lib/workbench/suite-agent.ts", [/has .*"agentGenerate":2.*the list says/, /an agent call outside modelDoor at line \d+/]],
+  ["aliased-door.txt", "lib/planted-alias.ts", [/textPost is used under another name/, /gatewayPost is used under another name/]],
+  ["base-url-fetch.txt", "lib/planted-fetch.ts", [/lib\/planted-fetch\.ts: \{"baseUrl":2\} is not in/]],
+] as const) test(`the guard fails on a planted ${fixture.replace(/\.txt$/, "").replace(/-/g, " ")}`, () => {
+  const text = readFileSync(path.join(root, "tests/fixtures/model-call-guard", fixture), "utf8");
+  const problems = closedListProblems([{ file: as, text }]);
+  for (const pattern of expected) expect(problems.some((p) => pattern.test(p)), `${pattern} in ${JSON.stringify(problems)}`).toBe(true);
 });
 
 test("every listed file exists, is listed once, and says what it is", () => {

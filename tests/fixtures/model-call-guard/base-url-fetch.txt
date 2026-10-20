@@ -1,0 +1,6 @@
+// Planted for tests/unit/model-call-sites.spec.ts: raw model fetches built from base-URL helpers. Never compiled or imported.
+import { GATEWAY_BASE } from "./gateway";
+import { getProvider, providerBaseUrl } from "./providers";
+
+export const ask = (body: string) => fetch(`${GATEWAY_BASE()}/chat/completions`, { method: "POST", body });
+export const askAgain = (body: string) => fetch(`${providerBaseUrl(getProvider("xai"))}/responses`, { method: "POST", body });
