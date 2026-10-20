@@ -107,14 +107,19 @@ const filmType = (id: string, label: string, steps: string[]) => ({
   }),
 });
 
-/* "+ Sound · Edit · Deliver" (Q16): all three behind the + tile, after Shots. */
+/* "+ Sound · Edit · Deliver" (Q16): all three behind the + tile, after Shots. Owner, 19 Oct 2026 (~19:00 IST, R1): yes
+   for Ad film, Feature, Short film, Music video, Product video and Microdrama; UGC, Trend clip, Social and Pre-vis have
+   no + steps but Treatment, their last steps opened on the rail as in his lists. */
 const PLUS = ["+Sound", "+Edit", "+Deliver"];
 
 /**
  * The owner's ten film types, final for A1b (19 Oct 2026, ~00:20 IST), in his order. Labels exactly as he wrote them;
- * "+" marks a step behind the + tile. From his answers, as the plan reads them (docs/plans/v30-data-model.md § 2.10):
+ * "+" marks a step behind the + tile. From his answers (docs/plans/v30-data-model.md § 2.10), with the plan's reading
+ * R1 confirmed by him on 19 Oct 2026, ~19:00 IST ("R1 yes for Ad film, Feature, Short film, Music video, Product video
+ * and Microdrama; no for UGC, Trend clip, Social and Pre-vis, whose last steps are on the rail as in the 19 Oct lists"):
  *   - Q16: Sound after Shots in every type with Shots and Edit, reached from the + tile (Sound · Edit · Deliver); all
- *     three are behind the + tile where he wrote "+ Sound · Edit · Deliver";
+ *     three are behind the + tile where he wrote "+ Sound · Edit · Deliver" (those six types). In UGC, Trend clip,
+ *     Social and Pre-vis the last steps (Captions · Deliver, or Handoff) are opened on the rail;
  *   - Q17: Treatment on by default in Ad film, Feature, Short film and Music video; in the other six, "(Treatment
  *     optional)", it is behind the + tile, right after Script where the type has one, else right after the first step;
  *   - Q18: Pitch deck is gone from Ad film; its deck is the Treatment step. One deck per production;
@@ -122,6 +127,10 @@ const PLUS = ["+Sound", "+Edit", "+Deliver"];
  *   - Q20 and 18 Oct (d): Breakdown is no longer a step anywhere. Its beats are the Beats view inside Script, and Pre-vis
  *     gets a Script step (opened on that view) where it had Breakdown. Music video's Beat map and Trend clip's Format
  *     breakdown are other things and stay (Q22); Microdrama waits for Q21.
+ * Not here, by design: which steps commit by Kept and which by Sent (plan § 2.8; R3, confirmed 19 Oct: only Look and
+ * Elements by Kept, every other step by Sent) is a later A1 follow-up, and nothing reads it yet. Where a Storyboard
+ * panel lands (R2, answered 19 Oct: a frame of the shot's Storyboard card, entering a Shots node as its Start frame) is
+ * a later PR's, not a step list's.
  * Feature, for later (nothing is built for it yet): its board is grouped by scene, and a representative scene is made
  * before the rest are scaled from it.
  */

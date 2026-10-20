@@ -333,9 +333,11 @@ test("the step list comes from config: the setting when set, else the owner's de
 
 /*
  * The owner's ten film types, final for A1b, exactly as he gave them (19 Oct 2026, ~00:20 IST), in his order, as the
- * plan reads them (docs/plans/v30-data-model.md § 2.10). "+" marks a step that is listed but behind the + tile, not
- * opened in a new production: "+ Sound · Edit · Deliver" is all three; "(Treatment optional)" is Treatment, right after
- * Script where the type has one, else right after the first step.
+ * plan reads them (docs/plans/v30-data-model.md § 2.10), with reading R1 as he answered it (19 Oct, ~19:00 IST: "R1 yes
+ * for Ad film, Feature, Short film, Music video, Product video and Microdrama; no for UGC, Trend clip, Social and
+ * Pre-vis, whose last steps are on the rail as in the 19 Oct lists"). "+" marks a step that is listed but behind the +
+ * tile, not opened in a new production: "+ Sound · Edit · Deliver" is all three; "(Treatment optional)" is Treatment,
+ * right after Script where the type has one, else right after the first step.
  */
 const PLUS = ["+Sound", "+Edit", "+Deliver"];
 const OWNER_TABLE: [string, string, string[]][] = [
@@ -424,6 +426,14 @@ test("no Breakdown, Pitch deck or Beats step in any film type; Pre-vis has Scrip
       // No "+" in UGC, Pre-vis, Trend clip, Social: everything but an optional Treatment is opened.
       expect(type.steps.filter((s) => !s.opened).map((s) => s.kind), type.id).toEqual(["treatment"]);
     }
+  }
+  // R1 (owner, 19 Oct, ~19:00 IST): "no for UGC, Trend clip, Social and Pre-vis, whose last steps are on the rail as in
+  // the 19 Oct lists": their last steps are opened, and none of them has Edit.
+  const LAST_ON_RAIL: Record<string, string[]> = { ugc: ["shots", "captions", "deliver"], trend_clip: ["shots", "captions", "deliver"], social: ["visuals", "captions", "deliver"], pre_vis: ["animatic", "shots", "handoff"] };
+  for (const [id, last] of Object.entries(LAST_ON_RAIL)) {
+    const type = config.filmTypes.find((t) => t.id === id)!;
+    expect(type.steps.slice(-3).map((s) => [s.kind, s.opened]), id).toEqual(last.map((kind) => [kind, true]));
+    expect(type.steps.map((s) => s.kind), id).not.toContain("edit");
   }
 });
 
