@@ -175,7 +175,7 @@ test("a higher figure for the new project is shown for another press, never spen
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === "GET" && url.searchParams.get("projectId"))
-      return route.fulfill({ json: { agent: { enabled: true, run: null, ask: { limit: 200, jobCeiling: 200, planning: figure + 5 } } } });
+      return route.fulfill({ json: { agent: { enabled: true, run: null, ask: { limit: 200, planning: figure + 5 } } } });
     if (request.method() === "POST") { asks.push(request.postDataJSON()); return route.fulfill({ status: 202, json: { agent: { enabled: true, run: null, ask: null } } }); }
     return route.fallback();
   });

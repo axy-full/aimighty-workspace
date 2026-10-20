@@ -196,8 +196,10 @@ test("every kind of wait reads as the code has it; one tap approves only the lis
 
   /* The rules: shown, not changed here. */
   const spend = page.getByTestId("spend-without-asking");
-  await expect(spend.getByRole("button", { name: "Ask" })).toHaveAttribute("aria-current", "true");
-  await expect(spend.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-disabled", "true");
+  /* No Auto (owner, 20 Oct 2026): every paid step waits for a person, and there is no Ask/Auto choice to show. */
+  await expect(spend.getByTestId("spend-mode")).toHaveText("Each paid step waits for a person.");
+  await expect(spend.getByRole("button", { name: "Auto" })).toHaveCount(0);
+  await expect(page.getByTestId("spend-auto-line")).toHaveCount(0);
   await expect(spend.getByTestId("spend-edit")).toHaveText("Edit in Settings › Spending rules ›");
   /* No platform per-job line (owner, 20 Oct 2026: guardrail 4 retired): who may approve is the workspace's own rule alone. */
   await expect(page.getByTestId("who-may-approve")).toBeVisible();
