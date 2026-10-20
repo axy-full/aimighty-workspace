@@ -81,8 +81,20 @@ export function inviteRef(code: string): string {
 
 const PARTS = ["setup", "starter", "rules", "caps", "models", "plans"];
 
-/** The row as a statement, to ride in the same batch (or transaction) as the change it records. `changedOnly` writes it only when the statement before it changed a row. `onceSince` writes it only when no line of the same action and workspace exists since that instant (a once-a-month marker). */
-export function platformAuditStatement(input: PlatformAuditInput, changedOnly = false, onceSince?: number): InStatement {
+/**
+ * A once-only line's window: none of the same action and workspace dated from `since` (and before `until`, when given), and, with
+ * `capUsdAbove`, none carrying a cap figure at or above that one (the house's warning: once a month, and once more for each figure
+ * higher than any already warned at that month; a line with no figure counts as any figure).
+ */
+export type PlatformAuditOnce = { since: number; until?: number; capUsdAbove?: number };
+
+/**
+ * The row as a statement, to ride in the same batch (or transaction) as the change it records. `changedOnly` writes it only when the
+ * statement before it changed a row. `once` (an instant, or a window) writes it only when no line of the same action and workspace is
+ * dated in that window (a once-a-month marker). `at` is the line's date: now, unless the line records something that happened at a
+ * known instant (a reservation's own time, so the marker sits in the month the spend belongs to).
+ */
+export function platformAuditStatement(input: PlatformAuditInput, changedOnly = false, once?: number | PlatformAuditOnce, at = Date.now()): InStatement {
   if (!(PLATFORM_AUDIT_ACTIONS as readonly string[]).includes(input.action) || !(TARGETS as readonly string[]).includes(input.targetType))
     throw new Error("Invalid platform history action");
   const details: PlatformAuditDetails = input.details ?? {};
@@ -99,12 +111,17 @@ export function platformAuditStatement(input: PlatformAuditInput, changedOnly = 
     if (!valid) throw new Error("Invalid platform history detail");
   }
   const workspaceId = identifier(input.workspaceId ?? null);
-  const conditions = [changedOnly ? "changes()>0" : null, onceSince != null ? "NOT EXISTS (SELECT 1 FROM platform_audit WHERE action=? AND workspace_id IS ? AND created_at>=?)" : null].filter(Boolean);
+  const window = typeof once === "number" ? { since: once } : once;
+  if (!Number.isFinite(at) || (window && (!Number.isFinite(window.since) || (window.until != null && !Number.isFinite(window.until)))))
+    throw new Error("Invalid platform history date");
+  if (window?.capUsdAbove != null && !(Number.isFinite(window.capUsdAbove) && window.capUsdAbove >= 0)) throw new Error("Invalid platform history detail");
+  const conditions = [changedOnly ? "changes()>0" : null,
+    window ? `NOT EXISTS (SELECT 1 FROM platform_audit WHERE action=? AND workspace_id IS ? AND created_at>=?${window.until != null ? " AND created_at<?" : ""}${window.capUsdAbove != null ? " AND (json_extract(details,'$.capUsd') IS NULL OR json_extract(details,'$.capUsd')>?-1e-9)" : ""})` : null].filter(Boolean);
   return {
     sql: `INSERT INTO platform_audit(id,actor_id,action,target_type,target_id,workspace_id,details,created_at)
       SELECT ?,?,?,?,?,?,?,? ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}`,
-    args: [randomUUID(), identifier(input.actorId), input.action, input.targetType, identifier(input.targetId), workspaceId, JSON.stringify(details), Date.now(),
-      ...(onceSince != null ? [input.action, workspaceId, onceSince] : [])],
+    args: [randomUUID(), identifier(input.actorId), input.action, input.targetType, identifier(input.targetId), workspaceId, JSON.stringify(details), at,
+      ...(window ? [input.action, workspaceId, window.since, ...(window.until != null ? [window.until] : []), ...(window.capUsdAbove != null ? [window.capUsdAbove] : [])] : [])],
   };
 }
 

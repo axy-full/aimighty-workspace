@@ -190,6 +190,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/usage", file: "app/api/usage/route.ts", url: "/api/usage" },
   { name: "GET /api/usage?rows=1", file: "app/api/usage/route.ts", url: "/api/usage?rows=1" },
   { name: "GET /api/usage/summary", file: "app/api/usage/summary/route.ts", url: "/api/usage/summary", ownKeys: true },
+  { name: "GET /api/usage/house-cap", file: "app/api/usage/house-cap/route.ts", url: "/api/usage/house-cap" },
   /* `capUsd` is the ceiling the customer typed for their own token, in the dollars they pay, not a vendor figure. */
   { name: "GET /api/tokens", file: "app/api/tokens/route.ts", url: "/api/tokens", allow: { allowKeys: ["capUsd"] } },
   { name: "GET /api/workspaces/keys", file: "app/api/workspaces/keys/route.ts", url: "/api/workspaces/keys" },

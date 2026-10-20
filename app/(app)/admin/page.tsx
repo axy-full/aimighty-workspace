@@ -26,7 +26,7 @@ import { billingAmount, failureCopy } from "@/lib/errors";
 import { SharedKeyCard } from "@/components/SharedKeyCard";
 import { SiteSettingsCard } from "@/components/SiteSettingsCard";
 import { capLabel, capView, parseCapUsd } from "@/lib/allowanceDesk";
-import { HOUSE_CAP_DEFAULT_USD, HOUSE_CAP_WARN_PCT, houseCapUsdText, houseCapWarning, type HouseCapView } from "@/lib/houseCapText";
+import { HOUSE_CAP_DEFAULT_USD, HOUSE_CAP_WARN_PCT, houseCapStanding, houseCapUsdText, type HouseCapView } from "@/lib/houseCapText";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -253,7 +253,7 @@ function CapCell({ w, defaultUsd, onChanged }: {
   /* The house is capped too (lib/houseCap.ts): its own figure, else $500, with a warning from 80%. Only the platform owner, here, sets it. */
   const houseCap = w.house ? w.houseCap ?? null : null;
   const label = houseCap
-    ? { main: houseCapUsdText(houseCap.capUsd), sub: houseCap.stop ? "Reached · nothing can spend" : houseCap.warn ? houseCapWarning(houseCap) : `${houseCap.pct}% of this month used`,
+    ? { main: houseCapUsdText(houseCap.capUsd), sub: houseCapStanding(houseCap),
         title: `The house workspace's monthly cap on the engines (their cost, from the 1st). Warning from ${HOUSE_CAP_WARN_PCT}%; at 100% its jobs stop.` }
     : capLabel(view);
   const lifted = houseCap ? houseCap.warn : view.kind === "own" && view.usd === 0;

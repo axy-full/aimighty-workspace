@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import type { WorkspaceSheet } from "@/lib/platformConsole.server";
 import { HOUSE_NOT_BILLED } from "@/lib/houseWorkspace";
 import { creditsText } from "@/lib/shell/price-words";
-import { houseCapUsdText, houseCapWarning } from "@/lib/houseCapText";
+import { houseCapStanding, houseCapUsdText } from "@/lib/houseCapText";
 import { timeAgo } from "@/lib/format";
 import { ContextMenu, IconButton, useOverlay, useToast, type MenuItem } from "../ui";
 import { adminSend, useAdminRead } from "./api";
@@ -106,7 +106,7 @@ function Sheet({ id, summary, onClose, changed }: { id: string; summary: AdminWo
         <div className="v12-pc-sheet-body">
           <div className="v12-pc-minitiles">
             <div className="v12-pc-minitile"><span className="v12-pc-tile-name">Plan</span><strong data-testid="pc-sheet-plan">{data.house ? "House · pays at cost" : data.plan?.label ?? "No plan"}</strong></div>
-            {data.houseCap ? <div className="v12-pc-minitile" data-testid="pc-sheet-house-cap"><span className="v12-pc-tile-name">Monthly cap</span><strong>{data.houseCap.warn ? houseCapWarning(data.houseCap) : `${houseCapUsdText(data.houseCap.capUsd)} · ${data.houseCap.pct}% used`}</strong></div> : null}
+            {data.houseCap ? <div className="v12-pc-minitile" data-testid="pc-sheet-house-cap"><span className="v12-pc-tile-name">Monthly cap</span><strong>{houseCapStanding(data.houseCap)}</strong></div> : null}
             <div className="v12-pc-minitile"><span className="v12-pc-tile-name">Credits left</span><strong data-testid="pc-sheet-balance">{data.balance == null ? "—" : <Cr credits={data.balance} />}</strong></div>
           </div>
           <h3 className="v12-pc-h3">Members · {data.members.length}</h3>
