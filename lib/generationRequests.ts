@@ -27,6 +27,7 @@ import { workbenchScopeProblem } from "./workbench/request-scope";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
 import { allowanceUsdOf } from "./cinemaHold";
+import { HOUSE_CAP_REACHED, houseCapOfStored, houseSpendOfRow, noteHouseSpendLater } from "./houseCap";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
@@ -111,8 +112,12 @@ export const ANSWER_AFTER_MS = 25_000;
  * waits for its run as before.
  *
  * `afterReply`: tests only; Next's after() otherwise.
+ *
+ * `fencedBy`: the key of another claim of the same person whose existence sets this request aside (a cancelled press, lib/batchPress.ts).
+ * It is checked in the same statement that writes this claim, so a fence written before the claim always stops it: the claim is then
+ * written complete and set aside, and nothing is run, reserved or sent.
  */
-export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void };
+export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void; fencedBy?: string };
 
 const STILL_ACCEPTING = "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.";
 /** The answer for a claim whose run has not finished: not final, so the client keeps the request and asks again. */
@@ -120,6 +125,8 @@ const stillAccepting = (headers: Record<string, string> = {}) =>
   Response.json({ error: STILL_ACCEPTING, pending: true }, { status: 409, headers: { ...headers, "Retry-After": "2" } });
 
 const UNADMITTED = "The request was interrupted before a job was created. Nothing was charged; try again.";
+/** A claim stopped by its fence (GenerationRequestOptions.fencedBy): it never ran. */
+const FENCED = "This was cancelled before it started. Nothing billed.";
 /** Longer than any function may run (800 s), so the request that made a claim this old is gone. */
 export const STALE_CLAIM_MS = 30 * 60_000;
 /**
@@ -150,21 +157,54 @@ async function completeUnadmitted(userId: string, key: string): Promise<Response
   return new Response(json, { status: 409, headers: { "Content-Type": "application/json", "Idempotency-Status": "complete" } });
 }
 
-/** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
-export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>, options: GenerationRequestOptions = {}): Promise<Response> {
+/**
+ * A run whose answer is a stream still being written (the prompt enhancer's) marks its Response with this header: the claim is not answered from the body
+ * (it does not exist yet), the Response goes out as it is, and the run ends the claim itself with `completeDeferredRequest` once the stream is over, with the
+ * answer the key will replay.
+ */
+export const CLAIM_DEFERRED_HEADER = "X-Claim-Deferred";
+export async function completeDeferredRequest(claim: { userId: string; key: string }, status: number, json: string): Promise<void> {
+  await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, status, now(), claim.userId, claim.key] });
+}
+
+/**
+ * What every paid request is checked for before its key is used: the workbench scope it was prepared in, the person and workspace it
+ * was prepared for, and a well-formed Idempotency-Key. The refusal, or the key the request names (null when it sent none).
+ */
+export function generationRequestKey(req: Request, userId: string): { response: Response } | { key: string | null } {
   const scopeError = workbenchScopeProblem(req, requireTenant().id, userId);
-  if (scopeError) return Response.json({ error: scopeError }, { status: 409 });
+  if (scopeError) return { response: Response.json({ error: scopeError }, { status: 409 }) };
   const expectedActor = req.headers.get("X-Actor-Email");
-  if (expectedActor && expectedActor.toLowerCase() !== currentTenant()?.user?.email.toLowerCase()) return Response.json({ error: "Sign in with the account that prepared this request before recovering it." }, { status: 409 });
+  if (expectedActor && expectedActor.toLowerCase() !== currentTenant()?.user?.email.toLowerCase()) return { response: Response.json({ error: "Sign in with the account that prepared this request before recovering it." }, { status: 409 }) };
   const expectedWorkspace = req.headers.get("X-Workspace-Id");
-  if (expectedWorkspace && expectedWorkspace !== requireTenant().id) return Response.json({ error: "Return to the workspace where this request was prepared before recovering it." }, { status: 409 });
+  if (expectedWorkspace && expectedWorkspace !== requireTenant().id) return { response: Response.json({ error: "Return to the workspace where this request was prepared before recovering it." }, { status: 409 }) };
   const supplied = req.headers.get("Idempotency-Key");
   if (supplied != null && !/^[A-Za-z0-9._:-]{8,160}$/.test(supplied)) {
-    return Response.json({ error: "Idempotency-Key must contain 8–160 letters, digits, dots, colons, dashes or underscores." }, { status: 400 });
+    return { response: Response.json({ error: "Idempotency-Key must contain 8–160 letters, digits, dots, colons, dashes or underscores." }, { status: 400 }) };
   }
-  const key = supplied ?? randomUUID();
+  return { key: supplied };
+}
+
+/** A claim never expires into another paid attempt. An interrupted submit is recoverable by job id. */
+export async function withGenerationRequest(req: Request, userId: string, run: (claim: GenerationRequest) => Promise<Response>, options: GenerationRequestOptions = {}): Promise<Response> {
+  const checked = generationRequestKey(req, userId);
+  if ("response" in checked) return checked.response;
+  const key = checked.key ?? randomUUID();
   const fingerprint = generationFingerprint({ method: req.method, path: new URL(req.url).pathname, body: await req.clone().json().catch(() => ({})) });
   return withGenerationRequestData({ userId, key, fingerprint }, run, options);
+}
+
+/**
+ * A claim with no reply and no job, made longer ago than any request can run (STALE_CLAIM_MS), by a route that binds its job in
+ * the same write as the row (atomic binding): the request that made it is gone and made no job, so nothing was reserved or sent.
+ * It is completed with that answer, as a replay under its key would complete it. True when this call completed it. For a caller
+ * that keeps its own attempts under keys of its own (lib/batchPress.ts) and must know an attempt is over before making the next.
+ */
+export async function settleStaleClaim(userId: string, key: string): Promise<boolean> {
+  await generationRequestsReady();
+  const row = (await db().execute({ sql: `SELECT created_at FROM generation_requests WHERE user_id=? AND request_key=? AND generation_id IS NULL AND response_json IS NULL`, args: [userId, key] })).rows[0];
+  if (!row || Number(row.created_at) >= now() - STALE_CLAIM_MS) return false;
+  return (await completeUnadmitted(userId, key)) != null;
 }
 
 /** Server-side admission uses the same durable claim without making an HTTP request.
@@ -177,10 +217,20 @@ export async function withGenerationRequestData(
   const { userId, key, fingerprint } = input;
   if (!/^[A-Za-z0-9._:-]{8,160}$/.test(key)) return Response.json({ error: "The request key is invalid." }, { status: 400 });
   await generationRequestsReady();
-  const inserted = await db().execute({
-    sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?)`,
-    args: [userId, key, fingerprint, now(), now()],
-  });
+  const inserted = await db().execute(options.fencedBy
+    ? {
+        /* One statement: the claim is written only while its fence does not exist. */
+        sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at)
+              SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM generation_requests WHERE user_id=? AND request_key=?)`,
+        args: [userId, key, fingerprint, now(), now(), userId, options.fencedBy],
+      }
+    : { sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,created_at,updated_at) VALUES(?,?,?,?,?)`, args: [userId, key, fingerprint, now(), now()] });
+  /* Fenced: the claim is written complete and set aside (a fence is never lifted), and is answered below like any claim set aside. */
+  if (!inserted.rowsAffected && options.fencedBy)
+    await db().execute({
+      sql: `INSERT OR IGNORE INTO generation_requests(user_id,request_key,fingerprint,response_json,response_status,created_at,updated_at) VALUES(?,?,?,?,409,?,?)`,
+      args: [userId, key, fingerprint, JSON.stringify({ error: FENCED, code: "set_aside" }), now(), now()],
+    });
   if (!inserted.rowsAffected) {
     const rows = await db().execute({ sql: `SELECT * FROM generation_requests WHERE user_id=? AND request_key=?`, args: [userId, key] });
     const row = rows.rows[0];
@@ -215,6 +265,10 @@ export async function withGenerationRequestData(
   const settle = async (): Promise<Response> => {
     try {
       const response = await run(claim);
+      if (response.headers.get(CLAIM_DEFERRED_HEADER) === "1") {
+        response.headers.delete(CLAIM_DEFERRED_HEADER);
+        return response;
+      }
       const json = await response.clone().text();
       await db().execute({ sql: `UPDATE generation_requests SET response_json=?,response_status=?,updated_at=? WHERE user_id=? AND request_key=?`, args: [json, response.status, now(), userId, key] });
       response.headers.set("Idempotency-Status", "complete");
@@ -445,11 +499,18 @@ export async function reserveGenerationSpend(event: MeterEvent, options: Reserva
   // Local libsql clients share a connection; never interleave transactions on it.
   // The database transaction below also protects requests in other processes.
   const result = reservationTurn.then(() => reserveGenerationSpendLocked(event, options));
-  reservationTurn = result.catch(() => {});
-  return result;
+  reservationTurn = result.then(() => {}, () => {});
+  /* The house's month has reached the warning line: the platform owner hears once a month, and once more after each raise. Told after the turn is let go, never awaited
+     here, so a slow mail server holds up no reservation (this workspace's or any other's) and never fails the job already reserved. */
+  const house = await result;
+  if (house) noteHouseSpendLater(house.spentUsd, house.capUsd, house.at, house.since);
 }
 
-async function reserveGenerationSpendLocked(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
+/** Where the house's month stands once its job is reserved: the spend and cap, the reservation's own time, and the start of the month its spend was summed over. */
+type HouseReserved = { spentUsd: number; capUsd: number; at: number; since: number };
+
+/** Reserves the job; for the house, where its month then stands (the warning is the caller's to send, after the turn). */
+async function reserveGenerationSpendLocked(event: MeterEvent, options: ReservationOptions = {}): Promise<HouseReserved | null> {
   const ws = requireTenant();
   const projectId = event.projectId ?? options.projectId ?? null;
   const cost = Number(event.engineCostUsd);
@@ -505,6 +566,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
      workspace's own database, which is never read inside the platform's write). */
   const stopped = options.run ? await options.run.live?.() : null;
   if (stopped) throw new SpendReservationError(stopped, 409, true);
+  /* Set inside the write when the house's job is reserved: where its month then stands (the warning is sent after the write commits and the turn is let go). */
+  const houseReserved: { at: HouseReserved | null } = { at: null };
   await billingTransaction(async (tx, ts) => {
     await acceptRecoveryJobTx(tx, ws.id, event.id, event.kind);
     const standing = await tx.execute({ sql: `SELECT deleted_at,suspended_at,allowance_usd FROM workspaces WHERE id=?`, args: [ws.id] });
@@ -515,6 +578,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
        request was on its way applies to it. A cap that appeared since (none when the request began) counts the meter's
        rows only; the pre-meter product records it would add hold nothing from this month. */
     const capNow = !paid ? null : standing.rows[0] ? allowanceUsdOfStored(standing.rows[0].allowance_usd) : monthlyCap;
+    /* The house's own monthly cap (lib/houseCap.ts), read at this write like the one above: the figure the platform owner set, else the default. */
+    const houseCapNow = isHouseWorkspace(ws) ? houseCapOfStored(standing.rows[0]?.allowance_usd).usd : null;
     await syncBillingLedger(tx, ws.id, ts);
     const own = await tx.execute({ sql: `SELECT workspace_id,status,paid_by_platform,engine,kind,model,credit_usd,credit_margin,hold_band FROM meter_events WHERE id=?`, args: [event.id] });
     if (own.rows[0] && own.rows[0].workspace_id !== ws.id) throw new SpendReservationError("This job belongs to another workspace.", 409, true);
@@ -543,6 +608,10 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const keptBand = Math.max(holdBand, Number(prior?.hold_band) > 1 ? Number(prior!.hold_band) : 1);
     const held = billed * keptBand;
     const heldAtCeiling = paid && keptBand > 1;
+    /* The house is metered in dollars and billed no credits, so its held take (Cinema Studio) counts at its hold for the house's own cap
+       (cost times band), and its row records the band so every later reservation counts it running at its hold (lib/cinemaHold.ts) and its
+       settlement is capped at it (lib/meter.ts heldSettlement), as a customer's is. */
+    const houseHeld = isHouseWorkspace(ws) && keptBand > 1;
     /* Every cap below reads a take that holds its ceiling at its hold (credits: the hold; dollars: its cost times
        the band), as the balance does, since that is what it may settle at; any other job at its estimate. */
     const band = heldAtCeiling ? keptBand : 1;
@@ -570,6 +639,13 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     if (shotCap != null) {
       const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
       if (shotCredits + charge(cost) * band > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
+    }
+    if (houseCapNow != null) {
+      /* Every house job this month at what the engines charge (the meter's rows, which the customer allowance never counts), and this one at its hold. */
+      const houseSpent = existing.rows.filter((r) => Number(r.created_at) >= since).reduce((sum, r) => sum + houseSpendOfRow(r), 0);
+      const needs = cost * (houseHeld ? keptBand : 1);
+      if (houseSpent + needs > houseCapNow + 1e-9) throw new SpendReservationError(HOUSE_CAP_REACHED, 429);
+      houseReserved.at = { spentUsd: houseSpent + needs, capUsd: houseCapNow, at: ts, since };
     }
     if (capNow != null && [...monthly.values()].reduce((sum, recordedCost) => sum + recordedCost, 0) + cost * band > capNow + 1e-9) throw new SpendReservationError("This job and the reserved jobs would exceed the workspace's monthly spending cap.", 429);
     if (cap) {
@@ -635,8 +711,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     /* The hold is recorded on the take's row (`hold_band`): its settlement charges what it cost, never past the hold. */
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin,hold_band)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin),hold_band=COALESCE(excluded.hold_band,meter_events.hold_band)`,
-      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, held, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin, heldAtCeiling ? keptBand : null] });
+      args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, held, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin, heldAtCeiling || houseHeld ? keptBand : null] });
     await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
       args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? (heldAtCeiling ? 1 : Math.max(1, Math.round(options.run.band))) : null] });
   });
+  return houseReserved.at;
 }

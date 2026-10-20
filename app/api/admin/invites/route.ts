@@ -16,6 +16,7 @@ import { keyringConfigured } from "@/lib/keyring";
 import { meterByWorkspace, meterSummary, marginUsd, engineSpansSince } from "@/lib/meter";
 import { HOUSE_WORKSPACE_ID, isHouseWorkspace } from "@/lib/houseWorkspace";
 import { inviteRef, platformAuditStatement } from "@/lib/platformAudit";
+import { houseCapViewFor } from "@/lib/houseCap";
 
 export const dynamic = "force-dynamic";
 const INVITE_DAYS = 14;
@@ -53,6 +54,9 @@ export const GET = recoveryRoute(async function GET() {
      day a sampler was switched on. Thirty days, matching the spend window
      beside it. */
   const spans = await engineSpansSince(now() - 30 * 86_400_000).catch(() => []);
+  /* The house's monthly engine cap and the month so far (lib/houseCap.ts): the desk is where the platform owner sets it. */
+  const houseRow = (workspaces.rows as any[]).find((r) => isHouseWorkspace({ id: String(r.id) }));
+  const houseCap = houseRow ? await houseCapViewFor(houseRow.allowance_usd).catch(() => null) : null;
   const credits = await Promise.all((workspaces.rows as any[]).map(async (r) => {
     try { return await creditStateFor(rowToWorkspace(r)); } catch { return null; }
   }));
@@ -79,6 +83,7 @@ export const GET = recoveryRoute(async function GET() {
       grants: (() => { const g = split.get(String(r.id)); return { paid: g?.paid ?? 0, free: g?.free ?? 0 }; })(),
       planId: asPlanId(r.plan_id),
       house: isHouseWorkspace({ id: String(r.id) }),
+      houseCap: isHouseWorkspace({ id: String(r.id) }) ? houseCap : null,
       spend30: (() => {
         if (isHouseWorkspace({ id: String(r.id) }))
           return house?.jobs ? { jobs: house.jobs, failed: house.failed, running: house.running, engineCostUsd: house.engineCostUsd, billedCredits: 0, marginUsd: null, atCost: true } : null;

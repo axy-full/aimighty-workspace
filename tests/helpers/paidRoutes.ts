@@ -11,8 +11,10 @@ export type PaidRoute = { dir: string; spends: string };
 
 export const PAID_ROUTES: PaidRoute[] = [
   { dir: "generate", spends: "video, image, upscale (Topaz), Seedance edit, Cinema Studio, Motion transfer, Object swap and the agent's renders" },
+  { dir: "generate/batch", spends: "a multi-shot press as ONE job: every shot priced by the server, the sum judged against the workspace's monthly cap, one approval for the total" },
   { dir: "audio", spends: "speech, sound effects and music" },
   { dir: "audio/dub", spends: "dubbing" },
+  { dir: "lipsync", spends: "lip-sync (sync.so; off unless the engine is on for the workspace)" },
   { dir: "audio/transcribe", spends: "transcription" },
   { dir: "jobs/[id]/release", spends: "releasing a held take once the balance covers it" },
   { dir: "atomik/steps/[id]/claim", spends: "taking a proposed Atomik step, once, before it is paid for" },
@@ -41,6 +43,7 @@ export const PAID_ROUTES: PaidRoute[] = [
 export const NOT_SPENDING: Record<string, string> = {
   "admin/workspaces/[id]": "the platform owner's desk: it releases held jobs after a limit changes, with no customer button",
   "auth/reset": "password reset: only a recovery continuation, nothing is charged",
+  "board-agent/plan": "plan_step: prepares and prices a board step's quick plan for a person to approve; it refuses maxCredits, fingerprint and approve, and never reserves or spends",
   "cron/sync": "server-driven (cron), no button",
   "worker": "server-driven (the app's own worker), no button",
   "generate/check": "a check before a press: charges nothing",

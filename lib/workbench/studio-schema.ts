@@ -63,6 +63,7 @@ const asset = z.object({
   refs: z.array(z.string()).max(100),
   uploadId: z.string().max(100).optional(),
   generationId: z.string().max(100).optional(),
+  sampleClip: z.literal(true).optional(),
   soulIdentityId: z.string().min(1).max(100).optional(),
   productionShotId: z.string().max(100).optional(),
   nodeId: z.string().max(100).optional(),

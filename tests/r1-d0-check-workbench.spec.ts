@@ -86,7 +86,7 @@ test("the avatar menu: the person's name, then 'workspace · role', then the fiv
   await expect(menu).toBeHidden();
 });
 
-const PALETTE = ["Home", "Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver", "Ads", "Social", "Video", "Image", "Audio", "Motion transfer", "Object swap", "Atomik", "Team", "Plan & credits", "Spending rules", "Connections", "Advanced"];
+const PALETTE = ["Home", "Brief", "Looks", "Storyboard", "Shots", "Cast", "Cut", "Deliver", "Ads", "Social", "Make", "Video", "Images", "Audio", "Motion transfer", "Object swap", "Atomik", "Team", "Plan & credits", "Spending rules", "Connections", "Advanced"];
 
 test("⌘K lists exactly the design's places (Home, the board's rail, Ads, Social, Make's types and tools, Atomik, Settings' five) and opens by key and by the header", async ({ page }, info) => {
   const { project } = await openBoard(page);
@@ -187,10 +187,11 @@ test("right-click in Make's Recent: the same menu, the same quoted price, Delete
   await expect(page.getByTestId("screen")).toBeVisible();
   await expect(page.locator('[data-suite-tab="project"]')).toHaveText(seeded.project.name);
   await page.locator('[data-suite-tab="make"]').click();
+  /* Recent asks the server for its takes' quote as its tiles render, before any right-click, and the menu reuses that answer; so listen before Recent opens. */
+  const quote = page.waitForResponse((r) => /\/api\/workbench\/engines\?.*model=gemini-3-pro-image/.test(r.url()) && r.request().method() === "GET");
   await page.getByRole("tablist", { name: "Make or Recent" }).getByRole("tab", { name: "Recent" }).click();
   const tile = page.getByTestId("make-recent-card").locator("[data-ctx]").first();
   await expect(tile).toBeVisible({ timeout: 30_000 });
-  const quote = page.waitForResponse((r) => /\/api\/workbench\/engines\?.*model=gemini-3-pro-image/.test(r.url()) && r.request().method() === "GET");
   await tile.click({ button: "right" });
   const menu = page.getByTestId("context-menu");
   await expect(menu).toBeVisible();

@@ -4,6 +4,7 @@ import { requireTenant } from "@/lib/tenant";
 import { seedStarterProduction, starterProductionId, type Seeder } from "@/lib/starter";
 import type { CastEntry } from "@/lib/production/cast";
 import { readDraft, saveDraft, workbenchReady, workbenchTransaction } from "./records";
+import { isSampleClipUrl } from "@/lib/sampleClip";
 import { newProject, type Asset, type CanvasNode, type Project, type Shot } from "./studio";
 
 /**
@@ -21,7 +22,7 @@ export type StarterSource = {
   production: { id: string; name: string; description: string };
   shots: { id: string; code: string; title: string; description: string; planned: number | null }[];
   cast: { name: string; kind: string; description: string }[];
-  takes: { id: string; shotId: string | null; version: number; prompt: string; approved: boolean; createdAt: number }[];
+  takes: { id: string; shotId: string | null; version: number; prompt: string; approved: boolean; createdAt: number; sampleClip?: boolean }[];
 };
 
 /** One draft per workspace, person and starter production. */
@@ -57,7 +58,7 @@ export function starterDraft(draftId: string, source: StarterSource, createdAt: 
       id: `take-${shown.id}`, name: `${shot.code} · v${shown.version}`, kind: "video", category: "Shot",
       url: `/api/media/${encodeURIComponent(shown.id)}`, description: title, prompt: shown.prompt.slice(0, 20000),
       status: approved ? "Selected" : "Draft", locked: false, version: Math.max(1, shown.version), refs: [],
-      generationId: shown.id, productionShotId: shot.id,
+      generationId: shown.id, productionShotId: shot.id, ...(shown.sampleClip ? { sampleClip: true as const } : {}),
     } : null;
     if (picture) assets.push(picture);
     const nodeId = `node-shot-${two(i + 1)}`;
@@ -95,7 +96,7 @@ export async function readStarterSource(productionId: string): Promise<StarterSo
     db().execute({ sql: `SELECT id, name, description FROM projects WHERE id = ? AND starter = 1`, args: [productionId] }),
     db().execute({ sql: `SELECT id, code, title, description, planned FROM shots WHERE project_id = ? ORDER BY position, created_at, id`, args: [productionId] }),
     db().execute({ sql: `SELECT name, kind, description FROM cast_members WHERE project_id = ? ORDER BY created_at, id`, args: [productionId] }),
-    db().execute({ sql: `SELECT id, shot_id, version, prompt, review_state, created_at FROM generations WHERE project_id = ? AND deleted = 0 AND status = 'succeeded' ORDER BY created_at, id`, args: [productionId] }),
+    db().execute({ sql: `SELECT id, shot_id, version, prompt, review_state, created_at, stored_url FROM generations WHERE project_id = ? AND deleted = 0 AND status = 'succeeded' ORDER BY created_at, id`, args: [productionId] }),
   ]);
   const p = row.rows[0];
   if (!p) return null;
@@ -103,7 +104,7 @@ export async function readStarterSource(productionId: string): Promise<StarterSo
     production: { id: String(p.id), name: String(p.name ?? ""), description: String(p.description ?? "") },
     shots: shots.rows.map((r) => ({ id: String(r.id), code: String(r.code ?? ""), title: String(r.title ?? ""), description: String(r.description ?? ""), planned: r.planned == null ? null : Number(r.planned) })),
     cast: cast.rows.map((r) => ({ name: String(r.name ?? ""), kind: String(r.kind ?? "character"), description: String(r.description ?? "") })),
-    takes: takes.rows.map((r) => ({ id: String(r.id), shotId: r.shot_id == null ? null : String(r.shot_id), version: Number(r.version ?? 1), prompt: String(r.prompt ?? ""), approved: r.review_state === "approved", createdAt: Number(r.created_at ?? 0) })),
+    takes: takes.rows.map((r) => ({ id: String(r.id), shotId: r.shot_id == null ? null : String(r.shot_id), version: Number(r.version ?? 1), prompt: String(r.prompt ?? ""), approved: r.review_state === "approved", createdAt: Number(r.created_at ?? 0), sampleClip: isSampleClipUrl(r.stored_url == null ? null : String(r.stored_url)) })),
   };
 }
 

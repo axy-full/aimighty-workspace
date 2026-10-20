@@ -5,6 +5,7 @@ import path from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
 import { deployedCommit } from "../../lib/deployment";
+import * as atRiskWindow from "../../lib/atRiskWindow";
 
 const nativeRequire = createRequire(path.resolve("package.json"));
 function healthFixture(options: { signedIn?: boolean; owner?: boolean; admin?: boolean; databaseDown?: boolean; dispatchLogDown?: boolean; rangeStatus?: number; cleanupFails?: boolean; env?: Record<string, string> } = {}) {
@@ -29,6 +30,7 @@ function healthFixture(options: { signedIn?: boolean; owner?: boolean; admin?: b
     "@/lib/mail": { mailConfigured: () => false, mailFrom: () => null },
     "@/lib/mock": { engineMock: () => false },
     "@/lib/dispatch": { dispatchMode: () => "native" },
+    "@/lib/atRiskWindow": atRiskWindow,
     "@/lib/deployment": { deployedCommit: () => deployedCommit(env) },
     "@/lib/dispatch-log": {
       recentDispatches: async (limit: number) => {

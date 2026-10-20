@@ -105,6 +105,7 @@ async function cron(failing: string | null, signInOff = true) {
     "next/server": { NextResponse: { json: (body: unknown, init?: ResponseInit) => Response.json(body, init) }, after: () => {} },
     "@/lib/db": { db: () => ({ execute: async () => ({ rows: [{ pending: 0, atrisk: 0 }] }) }), ready: async () => {} },
     "@/lib/jobs": { syncPending: step("generations", { failed: 0, deferred: 0 }) },
+    "@/lib/atRisk": { atRiskHorizon: () => 0, atRiskCounts: async () => ({ saved: 0, atRisk: 0, lost: 0 }), listAtRisk: async () => [], whyNotSaved: () => null, logUnsavable: async () => 0, storedAmong: async () => new Set<string>() },
     "@/lib/identities": { syncTrainingIdentities: step("training", { failed: 0 }) },
     "@/lib/soulIdentities": { syncSoulIdentities: step("soul_training", { failed: 0 }) },
     "@/lib/storageCost": { backfillSizes: step("storage_sizes") },

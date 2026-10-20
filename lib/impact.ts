@@ -5,6 +5,7 @@ import { plannedTakeUsd } from "./shotBudgetCost";
 import { DEFAULT_MODEL_ID, getModel } from "./models";
 import { ENGINE_MODEL, type ShotEngine } from "./shotBuilder";
 import { renderKeyNameFor, paidByPlatform, allowanceUsd, platformSpendThisMonth } from "./allowance";
+import { houseCapView } from "./houseCap";
 import { getSetting } from "./settings";
 import { effectiveModels } from "./defaultModels";
 import { creditsApply, creditState } from "./credits";
@@ -13,7 +14,7 @@ import { cleanRule, cleanShotCap, jobApprovalLineCredits } from "./approvalRule"
 import { creditUsd } from "./creditTerms";
 import { isAgentId } from "./security/people-only";
 import { shotCreditsSoFar } from "./shotCap";
-import { quoteOf, verdictOf, liveTerms, stampOf, publicQuote, type PublicQuote, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
+import { quoteOf, verdictOf, liveTerms, stampOf, publicQuote, withHouseBands, type PublicQuote, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
 
 /**
  * What changing something costs, before it is changed (brief 3, surface 1b).
@@ -87,13 +88,13 @@ export async function impactOf(
   /* Every production the change actually reaches, not the one that was asked
      about. Without a production named, a shared element spans the workspace
      and each production it lands in has a cap of its own. */
-  const context = await contextFor(described.map((d) => d.shot.projectId), { isAdmin: opts.isAdmin === true });
-
   const unitOf = (d: Described): Unit => ({
     key: d.shot.shotId, usd: d.usd, engine: d.engine,
     spent: d.spent, code: d.shot.code, projectId: d.shot.projectId,
     platformPays: d.platformPays,
   });
+  /* The house counts a held take at its band, as admission does; any other workspace's context is unchanged. */
+  const context = withHouseBands(await contextFor(described.map((d) => d.shot.projectId), { isAdmin: opts.isAdmin === true }), described.map(unitOf));
   const priced = (list: Described[]) => {
     const q = quoteOf(list.map(unitOf), terms);
     return { q, v: verdictOf(q, context) };
@@ -277,9 +278,11 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
   }
 
   const ceiling = allowanceUsd();
+  const house = await houseCapView();
   return {
     balance: state ? state.balance : null,
     allowance: ceiling == null ? null : { cap: ceiling, spent: allowanceSpent },
+    houseCap: house ? { cap: house.capUsd, spent: house.spentUsd } : null,
     caps,
     warnPct: Number(warn) || 80,
     rule: cleanRule(rule),
@@ -319,12 +322,13 @@ export async function quoteShots(
     ? await describe(wanted.map((shotId) => ({ shotId, projectId: null, slots: [], pinned: false })))
     : [];
 
-  const context = await contextFor(described.map((d) => d.shot.projectId), { isAdmin: opts.isAdmin === true });
   const units: Unit[] = described.map((d) => ({
     key: d.shot.shotId, usd: d.usd, engine: d.engine,
     spent: d.spent, code: d.shot.code, projectId: d.shot.projectId,
     platformPays: d.platformPays,
   }));
+  /* The house counts a held take at its band, as admission does; any other workspace's context is unchanged. */
+  const context = withHouseBands(await contextFor(described.map((d) => d.shot.projectId), { isAdmin: opts.isAdmin === true }), units);
 
   const quote = quoteOf(units, terms);
   return {

@@ -11,6 +11,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthCard, Field, Submit, ErrorLine } from "@/components/AuthCard";
+import { AgeConfirm, AgeConfirmDocs } from "@/components/AgeConfirm";
 
 type Info = { workspace: string; email: string; name: string; role: string; hasAccount: boolean; signedInAsInvitee: boolean; mailboxNeeded?: boolean };
 
@@ -99,14 +100,8 @@ export default function InvitePage({ params, searchParams }: { params: Promise<{
       <form onSubmit={(e) => { e.preventDefault(); accept(true); }}>
         <Field label="Password"><input className="ctl" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} autoFocus /></Field>
         <Field label="Confirm"><input className="ctl" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
-        <label className="mt-3 flex min-h-[44px] items-start gap-2 text-[13px] leading-relaxed text-lead">
-          <input className="mt-1" type="checkbox" required checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-          <span>
-            I agree to the <Link className="text-ink underline" href="/terms" target="_blank">terms</Link> and{" "}
-            <Link className="text-ink underline" href="/policy" target="_blank">content policy</Link>. Read the{" "}
-            <Link className="text-ink underline" href="/privacy" target="_blank">privacy notice</Link>.
-          </span>
-        </label>
+        <AgeConfirm className="mt-3" checked={agreed} onChange={setAgreed} testId="invite-terms" />
+        <AgeConfirmDocs testId="invite-docs" />
         <Submit busy={busy}>Join the workspace</Submit>
         {err && <ErrorLine>{err}</ErrorLine>}
       </form>

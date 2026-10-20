@@ -17,6 +17,9 @@ export { REJECT_REASON_MAX };
  * - Reject: the trail's "changes" mark, and the reason (required: one line, 3 to 500 characters) as a note on that take
  *   (POST /api/notes), recorded with the person and the time. The version is kept; nothing more is spent.
  *   Undo clears the mark; the note stays as history.
+ * - Take back an approval: the version goes back to Ready, as it was before it was approved when that is known (an
+ *   artist's "picked" is restored if this page saw it approved from picked; otherwise "", Needs review). Undo
+ *   approves it again. Only a person: the route refuses anyone else clearing a sign-off.
  *
  * Nothing here is paid and nothing is erased.
  */
@@ -25,7 +28,21 @@ export type Judge = {
   busy: string | null;
   approve: (row: Pick<ShotTakes, "index" | "versions">, version: ShotVersion) => Promise<boolean>;
   reject: (row: Pick<ShotTakes, "index" | "versions">, version: ShotVersion, reason: string) => Promise<boolean>;
+  /** An approved version back to Ready (its earlier Ready state when known), with an Undo that approves it again. */
+  unapprove: (row: Pick<ShotTakes, "index">, version: ShotVersion) => Promise<boolean>;
 };
+
+/*
+ * The Ready state each version had when this page approved it, so that taking the approval back restores an artist's
+ * "picked" instead of losing it. Per scope and take; only Ready states are kept ("changes" before an approval comes back
+ * as Ready, since taking an approval back is "back to Ready"). Unknown (approved elsewhere, or before a reload): "".
+ */
+const readyBefore = new Map<string, ReviewState>();
+const readyKey = (scope: string, genId: string) => `${scope}\n${genId}`;
+/** What taking back an approval of `genId` writes: its Ready state before it was approved, when this page knows it. */
+export function readyStateBeforeApproval(scope: string, genId: string): ReviewState {
+  return readyBefore.get(readyKey(scope, genId)) === "picked" ? "picked" : "";
+}
 
 
 export async function postTakeNote(scope: string, genId: string, text: string): Promise<void> {
@@ -60,6 +77,7 @@ export function useJudge(scope: string, projectId: string, toast: JudgeToast): J
     const before = [{ genId: version.genId, state: reviewStateOf(version.status) }, ...others.map((v) => ({ genId: v.genId, state: "approved" as const }))];
     try {
       await reviewProjectTake(scope, projectId, version.genId, "approved");
+      if (version.status !== "approved") readyBefore.set(readyKey(scope, version.genId), reviewStateOf(version.status) === "picked" ? "picked" : "");
       for (const v of others) await reviewProjectTake(scope, projectId, v.genId, "");
       toast(`Shot ${row.index} ${version.label} approved`, { label: `Shot ${row.index} ${version.label} approved`, run: () => { void restore(before); } });
       return true;
@@ -90,5 +108,22 @@ export function useJudge(scope: string, projectId: string, toast: JudgeToast): J
     }
   }, [busy, scope, projectId, toast, restore]);
 
-  return { busy, approve, reject };
+  const unapprove = useCallback(async (row: Pick<ShotTakes, "index">, version: ShotVersion) => {
+    if (busy || version.status !== "approved") return false;
+    setBusy(version.genId);
+    const back = readyStateBeforeApproval(scope, version.genId);
+    try {
+      await reviewProjectTake(scope, projectId, version.genId, back);
+      const said = `Shot ${row.index} ${version.label} is Ready again`;
+      toast(said, { label: said, run: () => { void restore([{ genId: version.genId, state: "approved" }]); } });
+      return true;
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "The review was not saved.");
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, scope, projectId, toast, restore]);
+
+  return { busy, approve, reject, unapprove };
 }

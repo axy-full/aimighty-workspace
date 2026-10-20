@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { MAX_STAGES, freeCards, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, stageId, startingRail } from "../../lib/v12/board/stages";
+import { MAX_STAGES, freeCards, stageLimit, CAMPAIGN_STAGES, CLIPS_STAGES, FILM_STAGES, KIND_LABEL, NARRATED_STAGES, OPENS_ON, PREVIS_STAGES, addStage, applyStageEdit, currentStage, firstStage, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, stageId, startingRail } from "../../lib/v12/board/stages";
 import type { BoardCard } from "../../lib/board/types";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 import { newProject } from "../../lib/workbench/studio";
@@ -323,4 +323,27 @@ test("a removed flag is only for the kind's own stages: the schema refuses it on
   expect(drawn.length).toBeLessThanOrEqual(MAX_STAGES);
   expect(drawn.some((s) => s.id.startsWith("custom-gone"))).toBe(false);
   expect(projectSchema.safeParse({ ...project, boardStages: [...custom, ...flagged] }).success).toBe(false);
+});
+
+/* An empty board opens on the stage it starts from, and the board's crumb goes back to it (components/graphite/board/BoardView.tsx,
+   components/v12/visitor/VisitorBoard.tsx). Before v25 that was Film's Brief; Treatment and Pitch have nothing to draw yet, so it still is. */
+test("an empty Film board still opens on the Brief, not Treatment; every other kind starts from its first stage, as before", () => {
+  const film = stagesOf("film", null);
+  expect(film[0].id).toBe("treatment");
+  expect(firstStage(film, "film")?.id).toBe("brief");
+  expect(currentStage(film, firstStage(film, "film")?.id, "film")?.id).toBe("brief");
+  /* A rail where the person put a step of their own, or Script, first starts there, as it did before v25. */
+  const own = stagesOf("film", addStage(film, null, "Moodboard", () => "m").saved);
+  const first = moveStage(own, own.find((s) => s.custom)!.id, 0);
+  expect(firstStage(stagesOf("film", first), "film")?.custom).toBe(true);
+  const script = stagesOf("film", moveStage(film, "script", 0));
+  expect(firstStage(script, "film")?.id).toBe("script");
+  /* A rail of nothing but steps with nothing to draw still has somewhere to open. */
+  const bare = stagesOf("film", [{ id: "treatment" }, { id: "pitch" }]);
+  expect(firstStage(bare, "film")?.id).toBe(bare[0].id);
+  expect(firstStage([], "film")).toBeNull();
+  for (const flavor of ["previs", "campaign", "narrated", "clips"] as const) {
+    const rail = stagesOf(flavor, null);
+    expect(firstStage(rail, flavor)?.id, flavor).toBe(rail[0].id);
+  }
 });

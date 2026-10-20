@@ -469,6 +469,7 @@ test("first signup verification still issues a session and can safely resume wit
       name: "New account",
       password,
       workspace: "New route house",
+      ageConfirmed: true,
     },
     "new-route-verify-source",
   );

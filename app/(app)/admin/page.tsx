@@ -26,6 +26,7 @@ import { billingAmount, failureCopy } from "@/lib/errors";
 import { SharedKeyCard } from "@/components/SharedKeyCard";
 import { SiteSettingsCard } from "@/components/SiteSettingsCard";
 import { capLabel, capView, parseCapUsd } from "@/lib/allowanceDesk";
+import { HOUSE_CAP_DEFAULT_USD, HOUSE_CAP_WARN_PCT, houseCapStanding, houseCapUsdText, type HouseCapView } from "@/lib/houseCapText";
 
 type Admin = {
   ready: boolean; mail: boolean;
@@ -47,6 +48,8 @@ type Ws = {
   credits: { granted: number; used: number; balance: number } | null; createdAt: number; deletedAt: number | null; owner: { email: string; name: string } | null; members: number;
   /** The house workspace (lib/houseWorkspace.ts): never billed in credits; its spend is read at cost. */
   house?: boolean;
+  /** The house's monthly engine cap and the month so far (lib/houseCap.ts); null for every other workspace. */
+  houseCap?: HouseCapView | null;
   spend30: { jobs: number; failed: number; running: number; engineCostUsd: number; billedCredits: number; marginUsd: number | null; atCost?: boolean } | null;
   grants: { paid: number; free: number };
   suspended: boolean; suspendedReason: string | null; flagged: boolean; flagNote: string | null;
@@ -239,7 +242,7 @@ function CreditsCell({ w, onChanged }: {
  * empty box can never open or close a workspace by accident.
  */
 function CapCell({ w, defaultUsd, onChanged }: {
-  w: Pick<Ws, "id" | "name" | "allowanceUsd" | "house" | "deletedAt">;
+  w: Pick<Ws, "id" | "name" | "allowanceUsd" | "house" | "houseCap" | "deletedAt">;
   defaultUsd: number | null; onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -247,16 +250,22 @@ function CapCell({ w, defaultUsd, onChanged }: {
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const view = capView(w, defaultUsd);
-  const label = capLabel(view);
+  /* The house is capped too (lib/houseCap.ts): its own figure, else $500, with a warning from 80%. Only the platform owner, here, sets it. */
+  const houseCap = w.house ? w.houseCap ?? null : null;
+  const label = houseCap
+    ? { main: houseCapUsdText(houseCap.capUsd), sub: houseCapStanding(houseCap),
+        title: `The house workspace's monthly cap on the engines (their cost, from the 1st). Warning from ${HOUSE_CAP_WARN_PCT}%; at 100% its jobs stop.` }
+    : capLabel(view);
+  const lifted = houseCap ? houseCap.warn : view.kind === "own" && view.usd === 0;
   const shown = (
     <span className="flex flex-col gap-0.5">
       <span className="admin-cap-k">ENGINE CAP / MO</span>
       <span className="mono-s">{label.main}</span>
-      <span className={`text-[12px] ${view.kind === "own" && view.usd === 0 ? "text-lift" : "text-lead"}`}>{label.sub}</span>
+      <span className={`text-[12px] ${lifted ? "text-lift" : "text-lead"}`}>{label.sub}</span>
     </span>
   );
   // The house takes no cap, and nobody can open a deleted workspace: read, not set.
-  if (view.kind === "house" || w.deletedAt) return <span className="admin-cap" title={label.title}>{shown}</span>;
+  if ((view.kind === "house" && !houseCap) || w.deletedAt) return <span className="admin-cap" title={label.title}>{shown}</span>;
   async function save(usd: number | null) {
     setBusy(true);
     try {
@@ -273,6 +282,10 @@ function CapCell({ w, defaultUsd, onChanged }: {
     const got = parseCapUsd(val);
     if (!got.ok) { setProblem(got.error); return; }
     void save(got.usd);
+  }
+  async function putBack() {
+    if (!(await appConfirm("Put the house cap back to the default?", `The cap becomes ${houseCapUsdText(HOUSE_CAP_DEFAULT_USD)} a month. The house is never left without one.`, { confirmLabel: "Use the default", danger: true }))) return;
+    await save(null);
   }
   async function remove() {
     const after = defaultUsd == null ? "There will be no engine cap at all." : `The deployment's default applies: $${defaultUsd.toFixed(2)} a month.`;
@@ -292,13 +305,13 @@ function CapCell({ w, defaultUsd, onChanged }: {
         {problem
           ? <span className="text-[12px] text-lift" role="alert">{problem}</span>
           : <span className="text-[12px] text-lead">$0 stops every paid job</span>}
-        {w.allowanceUsd != null && <button type="button" className="ak-act is-muted self-start" disabled={busy} onClick={remove}>REMOVE CAP</button>}
+        {w.allowanceUsd != null && <button type="button" className="ak-act is-muted self-start" disabled={busy} onClick={houseCap ? putBack : remove}>{houseCap ? `USE ${houseCapUsdText(HOUSE_CAP_DEFAULT_USD)}` : "REMOVE CAP"}</button>}
       </span>
     );
   }
   return (
     <button type="button" className="admin-cap text-left hover:text-ink" title={`${label.title} Click to change it.`} aria-label={`Engine cap for ${w.name}: ${label.main}, ${label.sub}. Change`}
-      onClick={() => { setVal(w.allowanceUsd == null ? "" : String(Number(w.allowanceUsd.toFixed(2)))); setEditing(true); }}>
+      onClick={() => { const now = w.allowanceUsd ?? houseCap?.capUsd ?? null; setVal(now == null ? "" : String(Number(now.toFixed(2)))); setEditing(true); }}>
       {shown}
     </button>
   );

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { BOARD_DATA_LIMITS, BOARD_MODES, DEFAULT_BOARD_MODE, cardOverrides, effectiveSetup, modeOf, overriddenKeys, stepSetup, withCardOverride, withMode, withStepSetting, withoutCardOverrides, type BoardModes } from "../../lib/v12/board/board-data";
+import { BOARD_DATA_LIMITS, BOARD_MODES, CARD_ID, DEFAULT_BOARD_MODE, INHERITED_NAMES, PERSON_ID, SETTING_KEY, STEP_ID, cardOverrides, effectiveSetup, modeOf, overriddenKeys, stepSetup, withCardOverride, withMode, withStepSetting, withoutCardOverrides, type BoardModes } from "../../lib/v12/board/board-data";
 import { newProject } from "../../lib/workbench/studio";
 import { projectSchema } from "../../lib/workbench/studio-schema";
 
@@ -78,8 +78,38 @@ test("a setting the draft would refuse leaves the setup as it was", () => {
   expect(projectSchema.safeParse({ ...newProject("Board"), boardSetup: steps }).success).toBe(true);
 });
 
+/* An id or key that every object inherits (`constructor`, `__proto__`, …) would find the inherited value, not a saved one, and
+   could slip past the limits into a draft the schema then refuses. The patterns refuse them and the helpers hand back the same object. */
+test("names every object inherits are never an id or a key: the helpers refuse them and return the same object", () => {
+  for (const name of [...Object.getOwnPropertyNames(Object.prototype), "prototype"]) expect(INHERITED_NAMES).toContain(name);
+  for (const name of INHERITED_NAMES) {
+    for (const pattern of [PERSON_ID, STEP_ID, CARD_ID, SETTING_KEY]) expect(pattern.test(name), `${pattern} ${name}`).toBe(false);
+    const modes: BoardModes = { ana: "director" };
+    expect(withMode(modes, name, "director")).toBe(modes);
+    expect(modeOf(modes, name)).toBe("agent");
+    const setup = withStepSetting(undefined, "director", "shots", "quality", "final");
+    expect(withStepSetting(setup, "director", name, "quality", "x")).toBe(setup);
+    expect(withStepSetting(setup, "director", "shots", name, "x")).toBe(setup);
+    expect(stepSetup(setup, "director", name)).toEqual({});
+    const overrides = withCardOverride(undefined, "shot:4", "quality", "final");
+    expect(withCardOverride(overrides, name, "quality", "x")).toBe(overrides);
+    expect(withCardOverride(overrides, "shot:4", name, "x")).toBe(overrides);
+    expect(cardOverrides(overrides, name)).toEqual({});
+  }
+  /* Names that only contain one are fine. */
+  for (const ok of ["constructors", "my-prototype", "toStringify", "valueOfShot"]) {
+    expect(STEP_ID.test(ok)).toBe(true);
+    expect(SETTING_KEY.test(ok)).toBe(true);
+  }
+  const project = newProject("Board");
+  for (const bad of [
+    { boardMode: { constructor: "director" } }, { boardSetup: { agent: { constructor: { a: 1 } } } },
+    { boardSetup: { agent: { shots: { toString: "x" } } } }, { boardOverrides: { prototype: { a: 1 } } },
+  ]) expect(projectSchema.safeParse({ ...project, ...bad }).success, JSON.stringify(bad)).toBe(false);
+});
+
 test("a card's own overrides sit on top of its step's setup, in the open mode, and clearing them returns to the step", () => {
-  let draft: { boardSetup?: ReturnType<typeof withStepSetting>; boardOverrides?: ReturnType<typeof withCardOverride> } = {};
+  const draft: { boardSetup?: ReturnType<typeof withStepSetting>; boardOverrides?: ReturnType<typeof withCardOverride> } = {};
   draft.boardSetup = withStepSetting(draft.boardSetup, "director", "shots", "quality", "draft");
   draft.boardSetup = withStepSetting(draft.boardSetup, "director", "shots", "length", 5);
   draft.boardSetup = withStepSetting(draft.boardSetup, "agent", "shots", "length", 8);
