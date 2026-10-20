@@ -7,7 +7,7 @@ import { draftRequest, DraftRequestError } from "@/lib/workbench/draft-request";
  * asked with the limit the person pressed, and every render after it asks again
  * at its own price through the approvals queue (lib/control-room/approve.ts).
  */
-export type AskTerms = { limit: number; jobCeiling: number; planning: number | null; /** The planner's ceiling in the engines' own dollars (the house workspace alone is sent it). */ planningUsd?: number | null };
+export type AskTerms = { limit: number; planning: number | null; /** The planner's ceiling in the engines' own dollars (the house workspace alone is sent it). */ planningUsd?: number | null };
 export type AgentAnswer = { enabled: boolean; run: RigAgentRunView | null; ask?: AskTerms | null };
 
 export const TEAM_CANVAS = "/api/workbench/team-canvas";

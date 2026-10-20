@@ -394,7 +394,7 @@ export function undoOps(canvas: Pick<TeamCanvas, "nodes" | "serverMade">, author
 
 /* ── What the run card shows (never a model, a cost or a key) ─────────── */
 
-/** `needs_you`: the run waits for a person — a render to tap (Ask), one over the per-render line, the limit, or a refusal. */
+/** `needs_you`: the run waits for a person — a render to tap, one that needs an admin, the limit, or a refusal. */
 export type RigAgentState = "planning" | "awaiting_approval" | "running" | "paused" | "needs_you" | "done" | "stopped" | "failed";
 export const ACTIVE_STATES: readonly RigAgentState[] = ["planning", "awaiting_approval", "running", "paused", "needs_you"];
 /**
@@ -407,16 +407,21 @@ export type RigAgentStepState =
   | "proposed" | "queued" | "done" | "skipped" | "next"
   | "waiting" | "approved" | "sending" | "rendering" | "failed" | "paused";
 export type RigAgentStepView = { seq: number; label: string; state: RigAgentStepState; held: string[] };
-export type RigAgentMode = "ask" | "auto";
-export const RIG_AGENT_MODES: readonly RigAgentMode[] = ["ask", "auto"];
+/**
+ * How a run asks: "ask", every render approved by a person on its quote (its own tap, or the plan's one approval).
+ * There is no Auto since 20 October 2026 (owner: "Auto goes: every job is approved on its quote"). A run stored with "auto"
+ * (before then) and a request that still says "auto" read as "ask": one approval per step, never a render without a person.
+ */
+export type RigAgentMode = "ask";
+export const RIG_AGENT_MODES: readonly RigAgentMode[] = ["ask"];
+/** Any stored or requested mode, as the run now behaves: always "ask". */
+export function runModeOf(stored: unknown): RigAgentMode { void stored; return "ask"; }
 
 /** What the run may spend and what it has spent (credits only: never a vendor's cost). */
 export type RigAgentMoneyView = {
   mode: RigAgentMode;
   /** The limit the person approved for this run. */
   limit: number;
-  /** In Auto, a render priced up to this runs without asking; anything more asks. */
-  jobCeiling: number;
   /** Charged so far: finished work at its final charge. */
   spent: number;
   /** Reserved by work in flight, at its estimate. */
@@ -525,15 +530,12 @@ export { creditFigure };
 
 /**
  * The proposal as the card shows it: the cards by kind, the wires, the tidy, and what comes next.
- * In Auto, the renders say how much one may cost without asking.
  */
-export function proposalView(plan: CompiledPlan, fingerprint: string, money?: Pick<RigAgentMoneyView, "mode" | "jobCeiling"> | null): RigAgentProposalView {
+export function proposalView(plan: CompiledPlan, fingerprint: string): RigAgentProposalView {
   const groups = AGENT_KINDS.map((kind) => ({ kind, label: AGENT_KIND_LABELS[kind], titles: plan.cards.filter((c) => c.kind === kind).map((c) => c.title) })).filter((g) => g.titles.length);
   const renders = plan.next.filter((n) => n.what === "render").length, locks = plan.next.filter((n) => n.what === "lock").length;
   const next = [
-    ...(renders ? [money?.mode === "auto"
-      ? `Next: render ${plural(renders, "shot")} · priced; drafts up to about ${creditFigure(money.jobCeiling)} cr each run on their own`
-      : `Next: render ${plural(renders, "shot")} · priced, each one approved first`] : []),
+    ...(renders ? [`Next: render ${plural(renders, "shot")} · priced, each one approved first`] : []),
     ...(locks ? [`Next: lock ${plural(locks, "master")} · a person locks them`] : []),
   ];
   return { title: plan.title, summary: plan.summary, groups, cards: plan.cards.length, wires: plan.wires.length, tidy: plan.tidy, next, fingerprint };

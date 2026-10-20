@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Client, Transaction } from "@libsql/client";
-import { creditFigure, fromTenths, toTenths } from "../runLimit";
+import { fromTenths, toTenths } from "../runLimit";
 
 /*
  * A plan is approved once (CLAUDE.md rule 14; the scope's § 0 Money): one tap by the person who asked Atomik
@@ -73,8 +73,8 @@ export type PlanQuote =
     ready: true;
     /** The renders one approval covers. */
     steps: PlanStepQuote[];
-    /** Renders that ask on their own: above the per-render line, or needing an admin (with their own price, when known). */
-    asks: { seq: number; title: string; worst: number | null; why: "line" | "admin" }[];
+    /** Renders that ask on their own: those needing an admin under the workspace's own rule (with their own price, when known). No render asks for its size alone (owner, 20 Oct 2026: the per-render ask over 200 cr is gone). */
+    asks: { seq: number; title: string; worst: number | null; why: "admin" }[];
     totalTenths: number;
     ceilingTenths: number;
     total: number;
@@ -93,13 +93,14 @@ const KEEPS_PRICE: readonly string[] = ["limit", "credits"];
 
 /**
  * The plan's quote from its render steps: every original render not yet sent must carry the server's price.
- * A render above the per-render line is listed to ask on its own and is not in the total.
+ * Every priced render is listed and in the total, whatever its price (rule 14: a plan is approved once, its listed renders at their listed
+ * prices up to its total; the per-render ask over 200 cr was removed on 20 Oct 2026). Only a render that needs an admin asks on its own.
  */
-export function planQuote(steps: readonly QuoteInputStep[], jobLine: number): PlanQuote {
+export function planQuote(steps: readonly QuoteInputStep[]): PlanQuote {
   const open = steps.filter((s) => s.fixOf == null && OPEN.includes(s.state));
   if (!open.length) return { ready: false, reason: "Nothing in this plan is waiting to render." };
   const listed: PlanStepQuote[] = [];
-  const asks: { seq: number; title: string; worst: number | null; why: "line" | "admin" }[] = [];
+  const asks: { seq: number; title: string; worst: number | null; why: "admin" }[] = [];
   let approximate = false;
   for (const s of open) {
     /* One that needs an admin asks on its own and holds up nothing else (owner decision L5): never in T, never in the plan's room. */
@@ -109,10 +110,9 @@ export function planQuote(steps: readonly QuoteInputStep[], jobLine: number): Pl
       return { ready: false, reason: s.state === "paused" && s.reason ? `${s.title}: ${s.reason}` : `${s.title} is not priced yet.` };
     }
     if (toTenths(s.worst!) > toTenths(s.quote!)) approximate = true;
-    if (toTenths(s.worst!) > toTenths(jobLine)) { asks.push({ seq: s.seq, title: s.title, worst: s.worst!, why: "line" }); continue; }
     listed.push({ seq: s.seq, nodeId: s.nodeId!, title: s.title, quote: s.quote!, worst: s.worst!, fingerprint: s.fingerprint! });
   }
-  if (!listed.length) return { ready: false, reason: `Every render here is over the ${creditFigure(jobLine)} cr a render may cost inside a plan, so each asks on its own.` };
+  if (!listed.length) return { ready: false, reason: "Every render here needs an admin, so each asks on its own." };
   const totalTenths = listed.reduce((sum, s) => sum + toTenths(s.worst), 0);
   const ceilingTenths = totalTenths * PLAN_CEILING_MULTIPLE;
   const fingerprint = createHash("sha256").update(JSON.stringify({
@@ -147,13 +147,12 @@ export type CoverStep = { seq: number; fixOf: number | null; quote: number; wors
 
 /**
  * Whether one render is covered by the plan's approval, with no new tap: a listed render at the very price
- * approved, or a fix drawn under it priced no higher than its shot, never above the per-render line. Room under the
+ * approved, or a fix drawn under it priced no higher than its shot, whatever the price (no per-render line since 20 Oct 2026). Room under the
  * total is the reservation's to enforce (the run's limit); this says only whether the tap is already given.
  */
-export function coverage(approval: PlanApprovalRow, step: CoverStep, at: number, jobLine: number): { ok: true } | { ok: false; reason: string } {
+export function coverage(approval: PlanApprovalRow, step: CoverStep, at: number): { ok: true } | { ok: false; reason: string } {
   const closed = approvalClosed(approval, at);
   if (closed) return { ok: false, reason: closed };
-  if (toTenths(step.worst) > toTenths(jobLine)) return { ok: false, reason: `Over the ${creditFigure(jobLine)} cr a render may cost without its own tap, so it asks.` };
   if (step.fixOf == null) {
     const listed = approval.steps.find((s) => s.seq === step.seq);
     if (!listed) return { ok: false, reason: NOT_IN_PLAN };

@@ -22,8 +22,8 @@ import { atItsCap, capInput, productionLine, ruleValue, type ProductionBudget } 
  *    above it), and the workspace's warning and at-cap rules for a production's budget.
  *    A change saves itself through PATCH /api/settings (an admin's, with the route's own checks) and a toast
  *    with Undo; a member reads the same lines and "Only an admin changes these."
- *  - Spend without asking: Ask. Auto is chosen per Board run today; making it a workspace setting is money work
- *    for the owner, so there is no switch here (DECISIONS 1).
+ *  - Spend without asking: Ask, always: there is no Auto (owner, 20 Oct 2026). Every paid step waits for a person, so there is no
+ *    switch here (DECISIONS 1).
  *
  * Nothing here spends, approves or prices. People only: Atomik and outside agents never change these.
  */
@@ -113,7 +113,7 @@ export function RulesSection({ open = null }: { open?: SettingsFold | null } = {
             <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="Ask at">
               {[...CAP_WARN_OPTIONS, ...(rules.capWarnPct != null && !CAP_WARN_OPTIONS.some(([v]) => v === String(rules.capWarnPct)) ? [[String(rules.capWarnPct), `${rules.capWarnPct}% of the cap`] as const] : [])].map(([id, label]) => (
                 <button key={id} type="button" role="radio" aria-checked={String(rules.capWarnPct) === id} className="gs-btn" disabled={busy}
-                  onClick={() => { if (String(rules.capWarnPct) !== id) void save({ capWarnPct: id }, budgetBefore(), `Auto drafts ask at ${id}% of a production’s budget.`); }} data-testid={`settings-warn-${id}`}>{label}</button>
+                  onClick={() => { if (String(rules.capWarnPct) !== id) void save({ capWarnPct: id }, budgetBefore(), `Warns at ${id}% of a production’s budget.`); }} data-testid={`settings-warn-${id}`}>{label}</button>
               ))}
             </div>
             <span className="gs-eyebrow">At a production’s cap</span>
@@ -130,7 +130,7 @@ export function RulesSection({ open = null }: { open?: SettingsFold | null } = {
       </Section>
 
       <Section label="Spend without asking" meta="Ask" testId="settings-auto">
-        <Row name="Every paid step waits for a person." line={rules.autoLine ?? undefined} value="Ask" accent testId="settings-mode" />
+        <Row name="Every paid step waits for a person." value="Ask" accent testId="settings-mode" />
       </Section>
 
       {inCredits ? <Productions canChange={canChange} budget={rules.budget} /> : null}
