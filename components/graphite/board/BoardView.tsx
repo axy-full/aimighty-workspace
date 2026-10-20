@@ -57,7 +57,7 @@ import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
 import { stageLimit, stagePage, type StagePageKind, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
-import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
+import { requestTrayOpen } from "@/lib/v12/useLibraryTray";
 import { RigView } from "@/components/v12/rig/RigView";
 import { rigModel } from "@/components/v12/rig/model";
 import { roundCardsFor, type RoundCardData } from "@/components/v12/rounds/round-derive";
@@ -549,7 +549,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       case "list": setList(true); return true;
       case "board": setList(false); return true;
       case "glide": glide(command.to); return true;
-      case "library": if (v12Frame) window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)); else setDrawer("library"); return true;
+      case "library": if (v12Frame) requestTrayOpen(); else setDrawer("library"); return true;
       /* Sent only by the new interface's right-click menus (lib/board/commands.ts BoardMenuCommand). */
       case "select": select(command.card, { add: command.add }); return true;
       case "remove": if (offline || !selection.ids.size) return false; remove(); return true;
@@ -766,7 +766,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* The 3D blocking card is not drawn on the new stages (a stray box under the grid): its way in is the board menu. */
   const blocking = (allCards.find((c) => c.kind === "blocking")?.data as { nodeId?: string } | undefined)?.nodeId ?? null;
   const boardMenu = [
-    { id: "library", label: "Library", shortcut: "L", onSelect: () => window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)) },
+    { id: "library", label: "Library", shortcut: "L", onSelect: requestTrayOpen },
     { id: "history", label: "History", onSelect: () => setDrawer("history") },
     ...(round ? [{ id: "share-round", label: `Share R${round.n} · copy what changed`, onSelect: () => void copyRound() }] : []),
     ...(kind === "studio" ? [{ id: "render", label: "3D scene", onSelect: () => setDrawer("render") }] : []),
