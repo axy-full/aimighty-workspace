@@ -12,7 +12,7 @@ import { lipSyncTools } from "./lipSync";
  *   monthly ceiling) and asks the route for the quote (`quoteOnly`).
  * - **Only a person approves spending** (rule 14: "an approval written by agent:* or an MCP caller is refused"). The call NEVER sends the quote as `maxCredits` on the caller's
  *   behalf, and a `maxCredits` in the arguments is refused. The call returns the priced, prepared job and says it needs a person's approval, and nothing is started or
- *   spent. There is no Auto (owner, 20 Oct 2026: "Auto goes: every job is approved on its quote"): the stored setting `spendWithoutAsking` is no longer read, and
+ *   spent. There is no Auto (owner, 20 Oct 2026: "Auto goes: every job is approved on its quote"): the old stored spend-without-asking setting is no longer read, and
  *   whatever it holds ("auto" included) a call here starts nothing. A token that may not spend is refused by the route (requireRender); consent is only ever read by these tools.
  * - Declared once beside each engine's handler (`LIP_SYNC_TOOL`, ...); this file only maps them to MCP's shape. Names are the registry's tool ids.
  */
