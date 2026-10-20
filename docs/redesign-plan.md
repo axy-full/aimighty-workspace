@@ -1441,3 +1441,27 @@ Recorded by the lead, verbatim:
 6. "Capture: Thursday 22 Oct, 02:00–03:00 IST. The owner takes the Wednesday prerequisites at 12:00 and 18:00; first on that list is rotating every production credential the old Vercel project still holds (the self-host platform first, then removed from Vercel), with the undo for each step. Write that one click by click, names only, before the rest."
 7. "The owner places SYNC_API_KEY now and RECRAFT_API_KEY once #852 is on release/1, both switches unset; VENDOR_PRICES_PATH and the mounted file with them. Say in the morning note that the names landed, from the readiness endpoint, never the values."
 8. "Deploy #6 stays the owner's, after the capture."
+
+## Owner, 20 Oct 2026, 16:50 IST: answers on #854 and the 15:15 questions
+
+Recorded by the lead, verbatim:
+
+"#854 (token ceilings): yes on the money, once its full run is 24/24 at b3dd17c5. Its six questions:
+1. Yes: add quoteShot to /api/openapi and the one NOT_SPENDING entry for it in tests/helpers/paidRoutes.ts — that entry is my word, not a lane's.
+2. Yes, revoking members' tokens by an admin as a follow-up.
+3. Confirmed: the house in dollars, every other workspace in credits.
+4. Yes, an identity-stills quote step as a follow-up.
+A. Yes: a person's Release of a held take made by a no-ceiling token is that person's approval and starts it, recorded under the person. Who may release is unchanged.
+C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask setting — the ceiling is the standing approval. lip_sync follows the same rule once Auto goes, so the two tools behave alike."
+
+"15:15 questions:
+A. "The workspace cap" in Q3 is the per-shot rule cap in lib/approvalRule.ts. The monthly limit is a stop (Paused), never an escalation.
+B. Right: until A4 lands, one approval per job on its quote. The switch arrives with A4."
+
+"Wording: keep both ("One line, optional · ⏎" / "One word is enough · ⏎", label "Why")."
+
+"Guardrail-4 removal: open its PR after #854 merges, rebased on it, with the money review posted. I say yes on the PR, not the branch."
+
+"Keys and the price file are mine. Nothing for you there."
+
+Lead's note: #854's run at b3dd17c5 failed on one browser fixture (a token minted with no ceiling expected to render), so the yes, pinned to that head, is asked again for the fixed head.
