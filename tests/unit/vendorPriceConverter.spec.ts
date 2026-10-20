@@ -196,7 +196,7 @@ test.describe("coverage against the model registry", () => {
 
   test("the engines the server prices from the file need a row in their unit with no other setting, though the registry does not list them", () => {
     const ids = filePriced();
-    expect(ids, "lip-sync's models are priced from the file").toEqual(["lipsync-2", "lipsync-2-pro", "sync-3"]);
+    expect(ids, "lip-sync's and Recraft's models are priced from the file").toEqual(["lipsync-2", "lipsync-2-pro", "sync-3", "recraftv4_1", "recraftv4_1_pro", "recraft_remove_background"]);
     const full = run(fullSheet());
     expect(full.ok).toBe(true);
     expect(full.coverage!.filePriced).toEqual(ids);
@@ -235,6 +235,15 @@ test.describe("coverage against the model registry", () => {
     expect(scoped.coverage!.filePriced).toEqual(["lipsync-2"]);
     /* The command checks them by default. */
     expect(cli(sheet(fullSheet((id) => id === "lipsync-2"))).code).toBe(2);
+    /* Recraft's are the same, per image: required, with no setting and no band. */
+    const noRecraft = run(fullSheet((id) => id === "recraftv4_1_pro"));
+    expect(noRecraft.coverage!.missing).toEqual(['recraftv4_1_pro: no "image" rows (priced from this file)']);
+    const recraftRes = run(`${fullSheet((id) => id === "recraft_remove_background")}\nrecraft_remove_background,image,1K,,,,${PLACEHOLDER_COST}`);
+    expect(recraftRes.coverage!.missing).toEqual(['recraft_remove_background: its "image" rows must name no resolution, sound or length (priced from this file)']);
+    const recraftBands = run(`${fullSheet((id) => id === "recraftv4_1")}\nrecraftv4_1,image,,,,10,${PLACEHOLDER_COST}\nrecraftv4_1,image,,,,100,${PLACEHOLDER_BAD}`);
+    expect(recraftBands.coverage!.missing).toEqual(['recraftv4_1: its "image" rows must not name a band (upTo): a job settles at the rate it was quoted at (priced from this file)']);
+    expect(lib.report(recraftBands)).not.toMatch(new RegExp(`${PLACEHOLDER_COST}|${PLACEHOLDER_BAD}`));
+    expect(cli(sheet(fullSheet((id) => id === "recraftv4_1"))).code).toBe(2);
   });
 
   test("--skip leaves only the named engines out, and the report lists every one of them", () => {
