@@ -116,7 +116,7 @@ type CallState = {
   doorError: ModelCallOutcome | null; errorName: string | null; failure: unknown; failed: boolean;
   steps: Map<string, ModelSpan>; ended: boolean;
 };
-type Scope = { call: CallState; inDoor: boolean };
+type Scope = { call: CallState; inDoor: boolean; /** This door attempt sent nothing (modelCallNotSent). */ unsent?: boolean };
 /* Reached through process.getBuiltinModule, as lib/tenant.ts does, so a client chunk that reaches this module through shared code
    does not pull a Node builtin into the browser; there, every wrapper simply runs its function. */
 let als: AsyncLocalStorage<Scope> | null | undefined;
@@ -160,6 +160,11 @@ function begin(site: string, meta: ModelCallMeta): CallState {
   return state;
 }
 
+/**
+ * answered: the call came back and the site used it. refused: any 4xx status other than 408 (the provider's, or
+ * Particl's own refusal before anything was sent; `sent` tells them apart), a content or safety filter, or a model
+ * refusal. timed_out: a TimeoutError, or 408/504. failed: anything else (5xx, an unreadable or unusable answer, an error of ours).
+ */
 function outcomeOf(state: CallState): ModelCallOutcome {
   const status = state.note.status;
   if (state.failed) {
@@ -221,7 +226,7 @@ function finish(state: CallState): void {
 function fail(state: CallState, error: unknown): void {
   state.failed = true;
   state.failure = error;
-  state.errorName ??= errorName(error);
+  safe(() => { state.errorName ??= errorName(error); });
 }
 
 /** A model call whose cost is worked out after the answer: run the model work in `run`, `note` the cost, `fail` on an error, `end` once. */
@@ -254,7 +259,7 @@ export async function traceModelCall<T>(site: ModelSiteId, meta: ModelCallMeta, 
 }
 
 function noteInto(state: CallState, note: ModelCallNote): void {
-  for (const [key, value] of Object.entries(note) as [keyof ModelCallNote, never][]) if (value !== undefined) (state.note as Record<string, unknown>)[key] = value;
+  safe(() => { for (const [key, value] of Object.entries(note) as [keyof ModelCallNote, never][]) if (value !== undefined) (state.note as Record<string, unknown>)[key] = value; });
 }
 /** Adds what is known to the model call in scope (nothing when there is none). Numbers and ids only. */
 export function noteModelCall(note: ModelCallNote): void {
@@ -283,8 +288,9 @@ export async function modelDoor<T>(fn: () => Promise<T>, read?: (value: NoInfer<
   state.sent = true;
   state.attempts++;
   const started = Date.now();
+  const attempt: Scope = { call: state, inDoor: true };
   try {
-    const value = await scope.run({ call: state, inDoor: true }, fn);
+    const value = await scope.run(attempt, fn);
     if (read && state.span) safe(() => {
       const r = read(value);
       if (!r) return;
@@ -302,10 +308,19 @@ export async function modelDoor<T>(fn: () => Promise<T>, read?: (value: NoInfer<
     state.doorError = timedOut(error) ? "timed_out" : status != null ? fromStatus(status) : "failed";
     if (status != null) state.note.status = status;
     state.errorName ??= errorName(error);
+    /* Our own refusal before anything was sent (lib/textDirect.ts TextNotSentError): not an attempt that left the process. */
+    if (errorName(error) === "TextNotSentError") attempt.unsent = true;
     throw error;
   } finally {
     state.doorMs += Date.now() - started;
+    if (attempt.unsent) { state.attempts--; state.sent = state.attempts > 0; }
   }
+}
+
+/** Said by a door that refused before sending anything: the call in scope is then not marked sent for this attempt (its outcome stays as its status says). */
+export function modelCallNotSent(): void {
+  const current = scope.getStore();
+  if (current?.inDoor) current.unsent = true;
 }
 
 /* ── Readers for the reply shapes the doors return ────────────────────── */
@@ -379,7 +394,10 @@ export function modelTelemetry(functionId: string): TelemetryOptions {
 
 /** The board mode a person works a project in (lib/v12/board/board-data.ts), when the project records one. */
 export function boardModeOf(project: { boardMode?: Record<string, "agent" | "director"> } | null | undefined, personId: string | null | undefined): ModelCallMode | null {
-  if (!project?.boardMode || !personId || !Object.hasOwn(project.boardMode, personId)) return null;
-  const mode = project.boardMode[personId];
-  return mode === "agent" || mode === "director" ? mode : null;
+  /* Read after a reservation (the board planner): never throws, whatever the saved project holds. */
+  try {
+    if (!project?.boardMode || typeof project.boardMode !== "object" || !personId || !Object.hasOwn(project.boardMode, personId)) return null;
+    const mode = project.boardMode[personId];
+    return mode === "agent" || mode === "director" ? mode : null;
+  } catch { return null; }
 }
