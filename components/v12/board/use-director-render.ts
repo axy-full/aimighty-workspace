@@ -5,10 +5,10 @@ import { cancelWords } from "@/lib/shell/use-key-take";
 import { priceWords, type PriceValue } from "@/lib/shell/price-words";
 import { generationRequestBody, type GenerationBodyInput } from "@/lib/workbench/generation-request";
 import { announceJob } from "@/lib/shell/jobs-bus";
-import { failureLine, failureUncharged } from "@/lib/errors";
+import { failureUncharged } from "@/lib/errors";
 import type { TakeFailure } from "@/lib/providerOutcome";
 import { dispatchGate, neutralCopy } from "@/lib/workspace/rig";
-import { cancellable, pressPrice, type BarState } from "./director-model";
+import { cancellable, failureWords, pressPrice, type BarState } from "./director-model";
 
 /**
  * "Render 8 shots · 344 cr" (v25 PR 7): the bar's one spend button. A multi-shot press is ONE job with one approval for the total (owner, 16 Oct 2026, A.2;
@@ -231,8 +231,7 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
       const take = takes[j.jobId];
       if (!take || (take.status !== "failed" && take.status !== "cancelled")) return [];
       const cancelled = take.status === "cancelled";
-      /* The shared failure line (lib/errors.ts), with rule 14's words for a take that cost nothing: "Nothing billed". */
-      const words = (take.failure ? failureLine(take.failure, { cancelled }).text : cancelled ? "Cancelled" : "Failed").replace(/\bNot billed\b/, "Nothing billed");
+      const words = failureWords(take.failure, cancelled);
       /* Only a failure KNOWN to have cost nothing is asked again under the same approval; a charged one, or one not settled, would be new spend, which asks again. */
       return [{ shotId: j.shotId, name: names[j.shotId] ?? j.shotId, words, free: !cancelled && failureUncharged(take.failure) }];
     })
@@ -251,10 +250,11 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
     setShort(false);
     setAgain(false);
     const before = jobs.map((j) => j.jobId).sort().join(",");
-    const begin = (made: Job[], words: string | null, retryable = false) => {
+    const begin = (made: Job[], words: string | null, retryable = false, pending = false) => {
       for (const j of made) announceJob(j.jobId);
-      /* A Retry that brought back exactly the takes it had (the server started nothing new): no Retry again, so a disagreement on "free" cannot loop. */
-      const same = retrying && made.map((j) => j.jobId).sort().join(",") === before;
+      /* A Retry that brought back exactly the takes it had (the server started nothing new): no Retry again, so a disagreement on "free" cannot loop.
+         A shot the server says is still being accepted is not that: it is asked again once it has landed. */
+      const same = retrying && !pending && made.map((j) => j.jobId).sort().join(",") === before;
       setNoNew(same);
       setProblem(words);
       setAgain(retryable && !same);
@@ -288,7 +288,8 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
         approval = fresh;
       }
       const reused = Boolean(inHand);
-      const claim: PressClaim = { key: inHand?.key ?? crypto.randomUUID(), shots: shotsKey, quote: approval, answered: inHand?.answered ?? false };
+      /* Each ask is unanswered until its own reply: a Retry the server answers "still being accepted" must not inherit an earlier "answered" and be let go at Next. */
+      const claim: PressClaim = { key: inHand?.key ?? crypto.randomUUID(), shots: shotsKey, quote: approval, answered: false };
       writeClaim(storage, slot, claim);
       pressRef.current = claim;
       setPressKey(claim.key);
@@ -340,7 +341,7 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
       const words = refused.length
         ? `Nothing billed for ${refused.length} ${refused.length === 1 ? "shot" : "shots"} that did not start. ${neutralCopy(refused[0].error!, NOT_SENT)}`
         : starting ? STILL_STARTING : null;
-      begin(madeOf(out), words, refused.length > 0 || starting);
+      begin(madeOf(out), words, refused.length > 0 || starting, starting);
     } catch (error) {
       setProblem(neutralCopy(error instanceof Error ? error.message : "", NOT_SENT));
       setState("idle");

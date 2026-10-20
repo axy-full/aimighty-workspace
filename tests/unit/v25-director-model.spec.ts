@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { NO_ENGINE_NOTE, SHOTS_SETTINGS, barButton, modelWords, cancellable, cardChips, nextStepLabel, pressPrice, retryPrice, requestFields, scopeOf, shotSettings, valueWords } from "../../components/v12/board/director-model";
+import { NO_ENGINE_NOTE, SHOTS_SETTINGS, barButton, modelWords, cancellable, cardChips, failureWords, nextStepLabel, pressPrice, retryPrice, requestFields, scopeOf, shotSettings, valueWords } from "../../components/v12/board/director-model";
 import { CREDITS_MODE, FREE, NO_AT_COST_FIGURE, priceWords } from "../../lib/shell/price-words";
 import { stagesOf } from "../../lib/v12/board/stages";
 
@@ -105,4 +105,19 @@ test("Retry's price is the press's own approval as a ceiling, read as the press'
   expect(priceWords(retryPrice(pressPrice({ estimatedCredits: 172, ceilingCredits: 240, unit: "usd", price: 4.3 })), HOUSE)).toBe("up to $24.00");
   expect(retryPrice(null)).toBeNull();
   expect(retryPrice(FREE)).toBeNull();
+});
+
+test("a failed take's line on the Director's bar says \"Nothing billed\" where the shared line says \"Not billed\" or \"Not charged\"; a charge keeps its figure", () => {
+  /* Synthetic failures, as the jobs route sends them with the ledger's charge. */
+  const failure = (charge: { credits: number; settled: boolean; released?: true }) => ({ provider: null, stage: null, code: "unknown", kind: "unknown" as const, message: null, billing: null, payer: null, charge });
+  const free = failureWords(failure({ credits: 0, settled: true }), false);
+  expect(free).toContain("Nothing billed");
+  expect(free).not.toContain("Not billed");
+  /* A held take whose hold came back whole: the shared line says "Not charged". */
+  const released = failureWords(failure({ credits: 0, settled: true, released: true }), false);
+  expect(released).toContain("Nothing billed");
+  expect(released).not.toContain("Not charged");
+  expect(failureWords(failure({ credits: 43, settled: true }), false)).toContain("43 cr charged");
+  expect(failureWords(null, true)).toBe("Cancelled");
+  expect(failureWords(undefined, false)).toBe("Failed");
 });

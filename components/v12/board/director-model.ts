@@ -1,6 +1,8 @@
 import { effectiveSetup, overriddenKeys, type SettingValue, type Setup } from "@/lib/v12/board/board-data";
 import type { Stage } from "@/lib/v12/board/stages";
 import { exact, heldUpTo, type PriceValue } from "@/lib/shell/price-words";
+import { failureLine } from "@/lib/errors";
+import type { TakeFailure } from "@/lib/providerOutcome";
 
 /**
  * Director mode on Shots (v25 PR 7; design/particl-prototype-25 README, "Director · Shots": the column, the scope pill and the bar). Pure: no React, no fetch
@@ -106,6 +108,18 @@ export function pressPrice(q: { estimatedCredits: number; ceilingCredits?: numbe
  * press's price reads: its own dollars at cost in the house where the server gave them, a hold at a credit's public price; never credits re-priced by hand.
  */
 export function retryPrice(price: PriceValue | null | undefined): PriceValue | null {
+  /* A free press has nothing to approve again, so Retry carries no price: "up to free" is not a price, and a spend button with no price stays off
+     (lib/spend.ts spendAttrsOf). No price, no Retry offered in the bar. */
   if (!price || price.kind === "free") return null;
   return { ...price, kind: "up-to" };
+}
+
+/**
+ * A failed or cancelled take's line on the Director's bar: the shared failure line (lib/errors.ts failureLine: what happened, what it cost, the next step), with
+ * rule 14's words for a take that cost nothing. The shared line says "Not billed" (the ledger settled at 0) or "Not charged" (a hold that came back whole); both
+ * read "Nothing billed" here. lib/errors.ts itself is unchanged: its other screens keep their words.
+ */
+export function failureWords(failure: TakeFailure | null | undefined, cancelled: boolean): string {
+  const line = failure ? failureLine(failure, { cancelled }).text : cancelled ? "Cancelled" : "Failed";
+  return line.replace(/\bNot (?:billed|charged)\b/, "Nothing billed");
 }

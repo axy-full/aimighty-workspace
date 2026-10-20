@@ -445,6 +445,31 @@ test("a shot still being accepted: the claim is kept through Next, and the next 
   await expect.poll(() => net.started.length).toBe(4);
 });
 
+test("partial, then a Retry the server answers \"still being accepted\": that ask is unanswered, so its claim stays through Next and the next press reuses its key", async ({ page }) => {
+  const net = await routes(page, { answer: (n) => (n === 1 ? "partial" : n === 2 ? "starting" : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.started.length).toBe(3);
+  await page.getByTestId("v12-director-retry").click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  await expect(page.getByTestId("v12-director-note")).toContainText("A shot is still being accepted.");
+  /* Not a loop: the note says to press Retry, and Retry is there. */
+  await expect(page.getByTestId("v12-director-retry")).toBeVisible();
+  expect(net.started).toHaveLength(3);
+  net.state.phase = "succeeded";
+  await expect(go(page)).toHaveText("Next: Edit →", { timeout: 20_000 });
+  await go(page).click();
+  const kept = await claimOf(page);
+  expect(kept?.key, "a shot still being accepted: kept through Next").toBe(net.sent[0].key);
+  expect(kept?.answered).toBe(false);
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.sent.length).toBe(3);
+  expect(net.sent[2].key).toBe(net.sent[0].key);
+  await expect.poll(() => net.started.length).toBe(4);
+  expect(net.started, "nothing started twice").toHaveLength(4);
+});
+
 test("a press of other shots never takes the place of a lost reply's claim: back on those shots, the next press asks under the lost one's key", async ({ page }) => {
   const net = await routes(page, { lose: 1 });
   await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
