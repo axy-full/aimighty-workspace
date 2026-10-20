@@ -844,6 +844,11 @@ export async function syncPending(
   results.attempted += lips.attempted;
   results.failed += lips.failed;
   results.deferred += lips.deferred;
+  // Recraft stills (direct): a funded job whose one request never went out is sent (once); a lost reply is never sent again.
+  const recrafts = await (await import("./recraftImage")).recoverRecraftJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += recrafts.attempted;
+  results.failed += recrafts.failed;
+  results.deferred += recrafts.deferred;
   /* The window is lib/atRisk.ts's: the same 72 hours the health counter and the console count a take at risk in. */
   const horizon = options.horizon ?? atRiskHorizon(now());
   const rs = await db().execute({
@@ -874,6 +879,8 @@ export async function syncPending(
           if (gen.kind === "audio" && params.task === "dub") return;
           // A lip-sync job's row is advanced by its own workflow above (lib/lipSync.ts); it is neither a render nor an orphan.
           if (gen.kind === "video" && params.task === "lipsync") return;
+          // A Recraft still's row is advanced by its own workflow above (lib/recraftImage.ts); it is neither a render nor an orphan.
+          if (gen.kind === "image" && params.task === "recraft_image") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome

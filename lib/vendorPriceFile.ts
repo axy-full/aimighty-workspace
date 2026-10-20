@@ -12,7 +12,8 @@ import { readFileSync, statSync } from "node:fs";
  * lib/vendorRates.ts still prices every engine it priced before; an engine is
  * priced from this file only once it is listed in FILE_PRICED_UNITS (and so in
  * FILE_PRICED_ENGINES). Today that is sync.so lip-sync's three models, per
- * second (lib/lipSync.ts).
+ * second (lib/lipSync.ts), and Recraft's two raster models and background
+ * removal, per image (lib/recraftImage.ts).
  *
  * Failure is always a refusal, never a number from code: no variable, no
  * file, a file that does not parse or does not match the shape, or no row for
@@ -72,6 +73,11 @@ export const FILE_PRICED_UNITS: Readonly<Record<string, VendorPriceUnit>> = Obje
   "lipsync-2": "second",
   "lipsync-2-pro": "second",
   "sync-3": "second",
+  /* Recraft (lib/recraft.ts RECRAFT_MODELS; lib/recraftImage.ts recraftModelOf), per image, no other setting: the two raster models, and background removal (one image a call).
+     The vector models and vectorize are refused before any quote until an SVG sanitiser exists, so they are not priced. */
+  "recraftv4_1": "image",
+  "recraftv4_1_pro": "image",
+  "recraft_remove_background": "image",
 });
 export const FILE_PRICED_ENGINES: readonly string[] = Object.freeze(Object.keys(FILE_PRICED_UNITS));
 
@@ -359,7 +365,7 @@ export function fileVendorQuote(engine: string, req: VendorPriceRequest, engines
   if (!engines.includes(engine)) throw new VendorPriceUnavailable(engine, "this engine is not priced from the vendor price file");
   const v = load();
   if (v.state !== "loaded") throw new VendorPriceUnavailable(engine, v.state === "invalid" ? "the vendor price file is invalid" : v.reason);
-  /* An engine priced from this file keeps the rate it was quoted at and settles at it (lib/lipSync.ts), so a band, whose rate depends on the
+  /* An engine priced from this file keeps the rate it was quoted at and settles at it (lib/lipSync.ts, lib/recraftImage.ts), so a band, whose rate depends on the
      quantity, would not hold at settlement: rows with one leave the engine unpriced, as the converter refuses them. */
   if (Object.hasOwn(FILE_PRICED_UNITS, engine)) {
     const units = Object.hasOwn(v.table.engines, engine) ? v.table.engines[engine] : undefined;

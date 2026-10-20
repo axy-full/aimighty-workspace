@@ -106,6 +106,8 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string; quote?: 
   /* Lip-sync is off unless its engine is on for the workspace, so THIS press only proves the door is shut while it is off: it stops at "no such tool" and spends nothing, at any cap.
      The cap wall with the engine ON is proved in tests/unit/lipSync.spec.ts: a listed workspace at its own $0 cap is refused 429 in the cap's words, nothing held, written or sent. */
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
+  /* Recraft is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/recraft.spec.ts. */
+  { dir: "recraft", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
   { dir: "jobs/[id]/release", body: { credits: 10 }, id: "gen_held" },
   { dir: "atomik/steps/[id]/claim", body: {}, id: "step_1" },
@@ -391,6 +393,8 @@ const RESERVERS: Record<string, Reserver> = {
   "lib/dubbing.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["?? submitDubbing)("] },
   /* Lip-sync (sync.so): reserved at admission, before its row is ever advanced; every vendor call is in the advance step, which only runs on a funded row. */
   "lib/lipSync.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.upload ?? uploadAsset)(", "await (deps.submit ?? submitLipSync)("] },
+  /* Recraft: reserved at admission, before its row is ever advanced; its one vendor call (per tool) is in the advance step, which only runs on a funded row. */
+  "lib/recraftImage.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.generate ?? generateImage)(", "await (deps.removeBackground ?? removeBackground)(", "await (deps.vectorize ?? vectorize)("] },
   "lib/transcription.ts": { reserve: "?? reserveGenerationSpend)(", count: 1, vendor: ["?? grokTranscribe)("] },
   "lib/held.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["submitVideoRow(r.id)", "runInline(r.id)"] },
   "lib/paidText.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await submit("] },
@@ -417,6 +421,7 @@ const DOOR_MODULE: Record<string, string> = {
   "audio": "lib/audioAdmission.ts",
   "audio/dub": "lib/dubbing.ts",
   "lipsync": "lib/lipSync.ts",
+  "recraft": "lib/recraftImage.ts",
   "audio/transcribe": "lib/transcription.ts",
   "jobs/[id]/release": "lib/held.ts",
   /* Taking a step claims it; the step's render is paid through admission. */

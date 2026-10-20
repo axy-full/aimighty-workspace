@@ -42,7 +42,8 @@ export const INHERITED_NAMES: readonly string[] = [
   "__proto__", "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__", "constructor", "hasOwnProperty",
   "isPrototypeOf", "propertyIsEnumerable", "toLocaleString", "toString", "valueOf", "prototype",
 ];
-const notInherited = `(?!(?:${INHERITED_NAMES.join("|")})$)`;
+/** A lookahead that refuses an id or key that is exactly one of INHERITED_NAMES; put it right after `^` in a pattern. */
+export const notInherited = `(?!(?:${INHERITED_NAMES.join("|")})$)`;
 export const PERSON_ID = new RegExp(`^${notInherited}[A-Za-z0-9_-]{1,100}$`);
 export const STEP_ID = new RegExp(`^${notInherited}[A-Za-z0-9_-]{1,80}$`);
 export const CARD_ID = new RegExp(`^${notInherited}[A-Za-z0-9_:.-]{1,100}$`);
