@@ -124,7 +124,8 @@ export function Steps({ model }: { model: PlanModel }) {
             {s.needsAdmin ? <span className="gx-plan-step-flag" data-testid="board-plan-admin">{model.adminLine}</span> : null}
           </span>
           {s.state === "failed" && s.status === "Failed · nothing billed" ? <span className="gx-plan-step-later">nothing billed</span>
-            : s.price ? <Price value={s.price} className="gx-plan-step-price" /> : <span className="gx-plan-step-later">{s.unavailable ? "" : "priced when it runs"}</span>}
+            : s.price ? <Price value={s.price} className="gx-plan-step-price" />
+            : <span className="gx-plan-step-later">{s.unavailable ? "" : s.source === "plan" ? "in the plan" : "priced when it runs"}</span>}
         </div>
       ))}
       {model.ruleLine ? <div className="gx-plan-step gx-plan-step--quiet"><span>{model.ruleLine}</span></div> : null}

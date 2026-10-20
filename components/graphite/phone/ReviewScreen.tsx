@@ -1,4 +1,5 @@
 "use client";
+import { SampleClipCredit } from "@/components/ui/SampleClipCredit";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { creditsText, exact, upTo } from "@/lib/shell/price-words";
 import { useShell } from "@/lib/shell/state";
@@ -190,6 +191,7 @@ export function ReviewScreen({ scope, project, items, online, startTake, fixOpen
           <span className="ph-row-text"><span className="ph-row-title" data-testid="phone-review-title">{takeTitle(shown)}</span>{meta ? <span className="ph-row-line">{meta}</span> : null}</span>
           <span className="ph-row-line ph-nowrap" data-functional-label="">{Math.min(at + 1, order.length)} of {order.length}</span>
         </div>
+        <SampleClipCredit take={shown.take.sourceId} className="ph-review-credit" />
         <div className="ph-pair">
           <button type="button" className="ph-btn" onClick={() => void judge("changes")} disabled={Boolean(hint)} data-testid="phone-reject">← Reject</button>
           <button type="button" className="ph-btn ph-btn--done" onClick={() => void judge("approved")} disabled={Boolean(hint)} data-testid="phone-approve">Approve →</button>

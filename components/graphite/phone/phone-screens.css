@@ -24,6 +24,7 @@
 .ph-header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 16px 10px; border-bottom: 1px solid var(--gx-hair-strong); }
 .ph-header-lead { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ph-back { flex: none; width: 44px; height: 44px; margin-left: -12px; border: 0; background: transparent; color: var(--gx-accent-text); font-size: 22px; line-height: 1; cursor: pointer; }
+.ph-title.ph-title-logo { display: flex; align-items: center; overflow: visible; }
 .ph-title { margin: 0; min-width: 0; font-size: 17px; font-weight: 600; letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ph-credits { flex: none; min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: var(--gx-r-pill); border: 1px solid var(--gx-btn-border); background: transparent; color: var(--gx-text); font-family: var(--gx-mono); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 

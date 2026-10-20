@@ -43,7 +43,9 @@ import {
   patchStep, releaseRun, renewRun, rigAgentExists, rigAgentReady, runByRequest, runCanvasChanges, runOfProduction, setSteps, stepOpId, stepsOf, undoOpId,
   type LimitRecord, type RunLease, type RunRow, type StepRow,
 } from "./rig-agent-store";
-import { orderedIds } from "./team-canvas-model";
+import { orderedIds, withTeamCanvas } from "./team-canvas-model";
+import { rigShots } from "../workspace/shots";
+import { SHOTS_STEP, chipsOf, resolveAnswers } from "./rig-agent-chips";
 import { newProject, type Asset, type CanvasNode, type Project } from "./studio";
 import { readTeamCanvas, requireProduction } from "./team-canvas";
 
@@ -160,7 +162,72 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
   };
 }
 
+/**
+ * A chips plan has ONE price (owner, 16 Oct 2026): the plan's total, all in, with no per-step breakdown and no engine's name. A step the plan covers is told no
+ * price of its own, and no note about one (`planPriced`): its price is in the total. The server keeps every step's quote on its record (for the ledger and for the
+ * plan's own sum). Covered means:
+ *  - while the gate is open (its quote waits for the one approval): a step the gate lists;
+ *  - after the approval: a step the approval sent or is sending (approved, sending, rendering, with the approval's id), and a listed step that waits only for its
+ *    turn (waiting, at the very price the approval lists, with no note: nothing asked of anyone), while the approval is open.
+ *
+ * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step in the gate's `asks` (over the per-job
+ * line, or needing an admin), a fix waiting for its turn, every step while there is no plan quote yet (each one asks on its own), a step whose price moved or that
+ * waits for a tap, and every paused step (a Retry runs at its own price; a limit pause offers Raise from it). Titles, states, outcomes and what was charged stay.
+ */
+function onePrice(view: RigAgentRunView, approval: PlanApprovalRow | null): RigAgentRunView {
+  const gate = view.plan?.quote && !view.plan.approval ? view.plan.quote : null;
+  const listed = approval && view.plan?.approval?.open ? new Map(approval.steps.map((s) => [s.seq, s.fingerprint])) : null;
+  const covered = (p: RigAgentPaidStepView): boolean => {
+    if (p.tool !== "render") return false;
+    if (gate) return gate.covered.includes(p.seq);
+    if (!approval) return false;
+    if (p.inPlan && (p.state === "approved" || p.state === "sending" || p.state === "rendering")) return true;
+    return !!listed && p.state === "waiting" && p.fixOf == null && p.reason == null && !!p.fingerprint && listed.get(p.seq) === p.fingerprint;
+  };
+  if (!gate && !approval) return view;
+  return {
+    ...view,
+    /* While the plan waits for its one approval, the run's own note is a step's price and the limit it is not under yet: not the card's to show. */
+    reason: gate && view.state === "needs_you" ? null : view.reason,
+    paid: view.paid.map((p) => {
+      if (!covered(p)) return p;
+      const { quoteUsd: _q, worstUsd: _w, ...rest } = p;
+      void _q; void _w;
+      /* No tap of its own either: its approval is the plan's. */
+      return { ...rest, quote: null, worst: null, reason: null, fingerprint: null, planPriced: true };
+    }),
+  };
+}
+
+/**
+ * The words a chips plan shows for a render paused because it could not be priced, or because it needs an admin: fixed, with no engine's name (owner, 16 Oct).
+ * The pause's own reason is the pricing refusal word for word (lib/workbench/rig-agent-runs.ts priceRender), which can name the engine; it stays on the record.
+ */
+export function engineFreeReason(pause: string | null): string | null {
+  if (pause === "unpriced") return "Can't be priced yet. Check the shot, then price it again.";
+  if (pause === "admin") return "Needs an admin: it asks on its own, at its own price.";
+  return null;
+}
+
+/** A chips run's steps and note with every paused unpriced or admin render's reason in engine-free words (the run's note is that reason when the pause set it). */
+function engineFree(run: RunRow, steps: StepRow[]): { run: RunRow; steps: StepRow[] } {
+  const said = new Map<string, string>();
+  const safe = steps.map((s) => {
+    const words = s.purpose === "take" && s.state === "paused" ? engineFreeReason(s.pause) : null;
+    if (words == null || s.reason === words) return s;
+    if (s.reason) said.set(s.reason, `${stepTitle(run, s)}: ${words}`);
+    return { ...s, reason: words };
+  });
+  return { run: run.reason && said.has(run.reason) ? { ...run, reason: said.get(run.reason)! } : run, steps: safe };
+}
+
 export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger = NO_LEDGER, approval: PlanApprovalRow | null = null): RigAgentRunView {
+  if (run.plan?.kind !== "chips") return runViewOf(run, steps, viewer, ledger, approval);
+  const safe = engineFree(run, steps);
+  return onePrice(runViewOf(safe.run, safe.steps, viewer, ledger, approval), approval);
+}
+
+function runViewOf(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger = NO_LEDGER, approval: PlanApprovalRow | null = null): RigAgentRunView {
   const done = steps.filter((s) => s.state === "done" && s.purpose === "build");
   const outcomes = (step: StepRow): OpOutcome[] => step.result ?? [];
   const cards = done.filter((s) => s.tool === "create").flatMap(outcomes).filter((o) => o.kind === "create" && !o.held).reduce((n, o) => n + o.nodeIds.length, 0);
@@ -204,7 +271,7 @@ export function runView(run: RunRow, steps: StepRow[], viewer: string, ledger: R
   });
   const jobLine = effectiveJobCeiling(run.perJobCap, ledger.ceiling ?? run.perJobCap ?? 0);
   return {
-    id: run.id, state: run.state, reason: run.reason, goal: run.goal, mine,
+    id: run.id, state: run.state, reason: run.reason, goal: run.goal, kind: run.plan?.kind ?? "ask", step: run.plan?.step ?? null, mine,
     proposal: run.plan && run.fingerprint ? proposalView(run.plan, run.fingerprint, money) : null,
     steps: steps.filter((s) => s.purpose !== "take" && s.purpose !== "verify").map((s) => ({ seq: s.seq, label: s.label, state: s.state, held: distinct(outcomes(s).map((o) => o.held).filter((h): h is string => !!h)) })),
     built: { cards, wires },
@@ -390,6 +457,82 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   });
   if (run.state === "planning") await dispatchRigAgent(run, "plan");
   return viewOf(run.id, input.userId);
+}
+
+/**
+ * A chips plan (v25 Agent mode): the server's own plan for a board step, made from the person's quick answers with NO thinking turn. Shots: a render for each shot card
+ * that is not approved yet, priced by the same server quote as any render (lib/workbench/rig-agent-runs.ts), with Quality and Length from the answers.
+ *
+ * Nothing is reserved or spent here. The run starts with no limit (0), so every render is priced, none is sent, and the run waits at "needs you" with the plan card's total
+ * (the sum of its steps' quotes) until the person who asked approves the plan once (`approveRigAgentPlan`: people only, the limit becomes the plan's ceiling, two fixes
+ * a shot). A newer chips plan replaces one still waiting for that approval. `cards` narrows the plan to those shot cards.
+ */
+export async function planRigAgentStep(input: { productionId: string; draftId: string; userId: string; requestId: string; step: string; answers?: unknown; cards?: readonly string[]; /** Made by a tool for the person (an outside agent over MCP): it never replaces a plan the person made on the board. */ byTool?: boolean }): Promise<RigAgentRunView> {
+  if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
+  if (!isPersonApprover(input.userId)) throw new RigAgentError(PEOPLE_ONLY, 403);
+  if (!chipsOf(input.step) || input.step !== SHOTS_STEP) throw new RigAgentError("Atomik has no quick plan for that step yet.", 400);
+  /* The sample workspace spends nothing, and a plan here would only be a way to ask for it. */
+  if ((await sampleWorkspaceRefusal()) !== null) throw new RigAgentError(SAMPLE_LINE, 409);
+  await requireProduction(input.productionId, input.userId, "write");
+  const draft = await readDraft(input.userId, input.draftId);
+  if (!draft) throw new RigAgentError("Open this project's board first.", 404);
+  if (draft.project.productionProjectId !== input.productionId) throw new RigAgentError("This project is not saved to that production.", 409);
+  const kept = (draft.project as unknown as { boardSetup?: { agent?: Record<string, unknown> } }).boardSetup?.agent?.[input.step];
+  const answers = resolveAnswers(input.step, input.answers, kept);
+  if ("error" in answers) throw new RigAgentError(answers.error, 400);
+  await rigAgentReady();
+  const saved = await readTeamCanvas(input.productionId);
+  const project = saved ? withTeamCanvas(draft.project, saved.canvas) : draft.project;
+  const nodes = saved ? orderedIds(saved.canvas).map((id) => saved.canvas.nodes[id]) : draft.project.nodes;
+  const canvasAssets = saved ? Object.values(saved.canvas.assets) : [];
+  const waiting = rigShots(project).filter((s) => s.status !== "approved" && s.note).map((s) => s.id);
+  let chosen = waiting;
+  if (input.cards) {
+    const wanted = [...new Set(input.cards)];
+    if (!wanted.length || wanted.length > PLAN_LIMITS.next || wanted.some((id) => !rigShots(project).some((s) => s.id === id))) throw new RigAgentError("Pick shot cards from this board.", 400);
+    chosen = wanted;
+  }
+  if (!chosen.length) throw new RigAgentError("Nothing on this board is waiting to render.", 409);
+  if (chosen.length > PLAN_LIMITS.next) throw new RigAgentError(`A plan renders up to ${PLAN_LIMITS.next} shots at a time. Pick some.`, 409);
+  const jobCeiling = await rigJobCeiling();
+  const at = now();
+  let replaced = false;
+  const run = await workbenchTransaction(async (tx) => {
+    const again = await runByRequest(tx, input.userId, input.requestId);
+    if (again) {
+      if (again.productionId !== input.productionId) throw new RigAgentError("That request was for another production.", 409);
+      return { run: again, made: false };
+    }
+    const recent = Number((await tx.execute({ sql: "SELECT COUNT(*) AS n FROM rig_agent_runs WHERE owner=? AND created_at>?", args: [input.userId, at - 3_600_000] })).rows[0].n);
+    if (recent >= PLANS_PER_HOUR) throw new RigAgentError(`You have asked Atomik for ${PLANS_PER_HOUR} plans in the last hour. Try again in a little while.`, 429);
+    const active = await activeRun(tx, input.productionId);
+    if (active) {
+      const unapprovedChips = active.plan?.kind === "chips" && active.state === "needs_you" && !(await planApprovalOf(tx, active.id));
+      if (active.state !== "awaiting_approval" && !unapprovedChips) throw new RigAgentError("Atomik is already working on this board. Stop that build, or wait for it to finish.", 409);
+      /* A tool's plan never replaces what a person made on the board (their plan or Atomik's proposal): only an earlier tool-made plan. */
+      if (input.byTool && !(unapprovedChips && active.plan?.madeBy === "tool")) throw new RigAgentError("A plan is waiting for approval on the board.", 409);
+      replaced = input.byTool === true;
+      await patchRun(tx, active.id, { state: "stopped", reason: "A newer plan replaced this one.", finished_at: at, wake_at: null }, ["awaiting_approval", "needs_you"]);
+      await setSteps(tx, active.id, "proposed", "skipped");
+      await closePaidSteps(tx, active.id, "A newer plan replaced this one. Nothing was charged.");
+    }
+    const id = newRunId();
+    const plan = {
+      ...compilePlan(
+        { cards: [], wires: [], tidy: false, next: chosen.map((card) => ({ what: "render" as const, card })) },
+        { runId: id, title: `Render ${chosen.length === 1 ? "1 shot" : `${chosen.length} shots`}`, summary: "", existing: nodes, assets: new Map([...draft.project.assets, ...(draft.project.sharedAssets ?? []), ...canvasAssets].map((a) => [a.id, a])) },
+      ),
+      kind: "chips" as const, step: input.step, setup: answers, ...(input.byTool ? { madeBy: "tool" as const } : {}),
+    };
+    const fingerprint = createHash("sha256").update(planFingerprintText(plan)).digest("hex");
+    await insertRun(tx, { id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: plan.title, model: "auto", at, limit: { credits: 0, mode: "ask", jobCeiling } });
+    /* Nothing to build: the plan is only renders, so the run goes straight to pricing them. The limit stays 0 until a person approves the plan. */
+    await patchRun(tx, id, { state: "running", plan, plan_fingerprint: fingerprint, approved_at: at, approved_by: input.userId, wake_at: at });
+    await insertSteps(tx, id, plan, at);
+    return { run: (await getRun(tx, id))!, made: true };
+  });
+  if (run.made) await dispatchRigAgent(run.run, "build");
+  return replaced && run.made ? { ...(await viewOf(run.run.id, input.userId)), replaced: true } : viewOf(run.run.id, input.userId);
 }
 
 /** What a person's ask or press on a run needs of its production. In the sample it is READ: the ask and its presses write no board row themselves (the run does, as an agent), and the sample's own spend guard answers them; every other board needs write. */

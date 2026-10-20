@@ -1,8 +1,10 @@
 import { db, ready, now } from "./db";
+import { isSampleClipUrl, sampleClipNotice } from "./sampleClip";
 import { requireTenant } from "./tenant";
 import { platformDb, platformReady } from "./platform";
 import { creditsApply } from "./credits";
 import { withoutVendorDollars } from "./analyticsRedact";
+import { publicDirectParams } from "./directEnginePublic";
 import { PipelineStore } from "./pipeline/store";
 import { publicRun } from "./pipeline/public";
 import type { CompiledPipeline } from "./pipeline/schema";
@@ -61,6 +63,7 @@ function generation(row: Row, creditWorkspace: boolean) {
     delete params.higgsfieldVideoPollUntil;
     delete params.higgsfieldVideoPollToken;
     delete params.genjutsuOriginal;
+    params = publicDirectParams(params);
     /* The working figures in a take's params are what vendors charge (lib/jobs.ts rowToGeneration
        reads them the same way): a workspace billed in credits exports none of them. */
     if (creditWorkspace) {
@@ -216,6 +219,7 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     }));
     contents.soul_identities = contents.soul_identities.map(row => ({ ...row, billed_credits: billed.get(row.id) ?? null }));
   }
+  const sampleTakes = contents.generations.filter((row) => isSampleClipUrl(String(row.stored_url ?? ""))).map((row) => String(row.id));
   return {
     formatVersion: 2,
     workspace: { id: workspace.id, slug: workspace.slug, name: workspace.name },
@@ -225,6 +229,8 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     counts: Object.fromEntries(
       Object.entries(contents).map(([name, rows]) => [name, rows.length]),
     ),
+    /* The starter's sample clip (Big Buck Bunny, CC BY 3.0) is in these takes: the credit goes with them (lib/sampleClip.ts). */
+    ...(sampleTakes.length ? { credits: [sampleClipNotice(sampleTakes)] } : {}),
     ...contents,
   };
 }

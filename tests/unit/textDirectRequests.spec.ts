@@ -236,6 +236,23 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
   expect(priced.get('anthropic/claude-opus-5.5')).toMatchObject({ input: '0.000004', output: '0.00002', input_cache_read: '0.0000002', input_cache_write: '0.000005' });
   expect(priced.get('anthropic/claude-sonnet-5.5')).toMatchObject({ input: '0.000002', output: '0.00001', input_cache_read: '0.0000001', input_cache_write: '0.0000025' });
   expect(priced.get('anthropic/claude-haiku-5.5')).toMatchObject({ input: '0.0000001', output: '0.0000005' });
+  // And as the catalogue snapshot states each (lib/modelCatalog.json): every rate a direct Claude call settles at is there and positive, Opus above Sonnet
+  // above Haiku for input and output, and Haiku 5.5's flat rate is its first prompt tier's.
+  const { snapshotModels } = await import('../../lib/catalog');
+  const pricedRates = priced as Map<string, Record<string, unknown> | null>;
+  const CLAUDE = ['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'] as const;
+  for (const id of CLAUDE) {
+    const stated = snapshotModels().find(m => m.id === id)?.pricing;
+    expect(stated, id).toBeTruthy();
+    expect(pricedRates.get(id), id).toEqual(stated);
+    for (const key of ['input', 'output', 'input_cache_read', 'input_cache_write']) expect(Number(pricedRates.get(id)![key]), `${id} ${key}`).toBeGreaterThan(0);
+  }
+  const rate = (id: (typeof CLAUDE)[number], key: string) => Number(pricedRates.get(id)![key]);
+  for (const key of ['input', 'output']) {
+    expect(rate(CLAUDE[0], key), key).toBeGreaterThan(rate(CLAUDE[1], key));
+    expect(rate(CLAUDE[1], key), key).toBeGreaterThan(rate(CLAUDE[2], key));
+    expect(Number((pricedRates.get(CLAUDE[2])![`${key}_tiers`] as { cost: string }[])[0].cost), key).toBe(rate(CLAUDE[2], key));
+  }
   // Nothing direct and no gateway: no Claude or Grok at all; Gemini is still the direct ids on its key, and none without it.
   delete process.env.TEXT_DIRECT;
   const textIds = async () => (await catalog(true)).filter(m => m.type === 'language' && !m.outputModalities?.includes('image') && !m.id.startsWith('openai/')).map(m => m.id);
@@ -244,8 +261,8 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
   expect(await textIds()).toEqual([]);
 });
 
-test('defaults: enhancement on Sonnet 5.5, ideas and shots on Opus 5.5; Auto tries Sonnet 5.5, then Opus 5.5', () => {
-  expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-sonnet-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
+test('defaults: enhancement, ideas and shots on Opus 5.5 (the owner, 16 Oct 2026, for enhancement); Auto tries Sonnet 5.5, then Opus 5.5', () => {
+  expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-opus-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
   expect(ATOMIK_AUTO_MODEL_IDS.slice(0, 2)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5']);
   expect(selectAtomikModel('auto', ['anthropic/claude-opus-5.5', 'openai/gpt-5.5'])).toBe('anthropic/claude-opus-5.5');
   expect(selectAtomikModel('auto', ['anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-5', 'openai/gpt-5.5'])).toBe('anthropic/claude-sonnet-5');

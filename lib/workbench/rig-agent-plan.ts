@@ -261,6 +261,13 @@ export type CompiledStep = {
   state: "proposed" | "next";
 };
 export type CompiledPlan = {
+  /**
+   * "chips": made from a step's quick answers by the server alone, with no thinking turn (lib/workbench/rig-agent-chips.ts); absent: Atomik's own proposal.
+   * `step` is the board step it is for and `setup` the answers its renders are priced and sent with. All three are part of what a person approves (the fingerprint).
+   */
+  kind?: "chips"; step?: string; setup?: { quality: "draft" | "final"; length: number };
+  /** Who made a chips plan: a person on the board (absent reads as that), or a tool (an outside agent over MCP, preparing it for them). A tool never replaces a person's. */
+  madeBy?: "tool";
   title: string; summary: string;
   cards: CompiledCard[];
   wires: { from: string; to: string }[];
@@ -347,7 +354,7 @@ export function compilePlan(draft: PlanDraft, input: { runId: string; title: str
 
 /** What a proposal's fingerprint covers: everything the person approves, in one canonical text. */
 export function planFingerprintText(plan: CompiledPlan): string {
-  return JSON.stringify({ title: plan.title, summary: plan.summary, cards: plan.cards, wires: plan.wires, tidy: plan.tidy, next: plan.next, steps: plan.steps.map((s) => [s.seq, s.tool, s.state, s.ops]) });
+  return JSON.stringify({ ...(plan.kind ? { kind: plan.kind, step: plan.step ?? null, setup: plan.setup ?? null, madeBy: plan.madeBy ?? null } : {}), title: plan.title, summary: plan.summary, cards: plan.cards, wires: plan.wires, tidy: plan.tidy, next: plan.next, steps: plan.steps.map((s) => [s.seq, s.tool, s.state, s.ops]) });
 }
 
 /* ── Undo ─────────────────────────────────────────────────────────────── */
@@ -453,6 +460,8 @@ export type RigAgentPaidStepView = {
   fixOf?: number | null;
   /** Covered by the plan's one approval (no tap of its own). */
   inPlan?: boolean;
+  /** A chips plan's step priced only in the plan's one total: it is told no price of its own (lib/workbench/rig-agent.ts onePrice). */
+  planPriced?: boolean;
 };
 
 /**
@@ -487,6 +496,12 @@ export type RigAgentProposalView = {
 };
 export type RigAgentRunView = {
   id: string; state: RigAgentState; reason: string | null; goal: string;
+  /** "chips": a plan the server made from a step's quick answers, no thinking turn and no planning charge; "ask": Atomik's own proposal. */
+  kind?: "ask" | "chips";
+  /** The board step a chips plan is for (e.g. "shots"); null for an ask. */
+  step?: string | null;
+  /** A chips plan made by a tool that replaced an earlier tool-made plan still waiting for approval. */
+  replaced?: boolean;
   /** The viewer asked for this build (only they approve it). */
   mine: boolean;
   proposal: RigAgentProposalView | null;

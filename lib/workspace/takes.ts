@@ -1,4 +1,5 @@
 import { libraryId, libraryName, type LibraryAsset } from "../genLibrary";
+import { isSampleClipUrl } from "../sampleClip";
 import { failureCopy, failureLine, failureUncharged } from "../errors";
 import { failureKind } from "../jobState";
 import type { TakeFailure } from "../providerOutcome";
@@ -66,6 +67,8 @@ export type Take = {
   pair?: { role: "draft" } | { role: "final"; of: string };
   sha256: string | null;
   createdAt: number;
+  /** The starter production's sample clip (Big Buck Bunny, CC BY 3.0): the take carries its credit (lib/sampleClip.ts). */
+  sampleClip?: true;
 };
 
 /** A render in flight: queued (or waiting for a slot), on the engine, or held until credits arrive. */
@@ -124,7 +127,7 @@ export function projectTakes(assets: readonly LibraryAsset[]): Take[] {
       status, ...(unbilled ? { failedUnbilled: true as const } : {}), ...(g.status === "cancelled" ? { cancelled: true as const } : {}),
       ...(failure ? { failure, failureLine: failureLine(failure, { cancelled: g.status === "cancelled" }).text } : {}),
       ...(stage ? { stage } : {}), ...(needs != null ? { needs } : {}), ...(why ? { reason: why.reason, ...(why.detail ? { detail: why.detail } : {}) } : {}),
-      ...(pair ? { pair } : {}), sha256: sha, createdAt: g.createdAt,
+      ...(pair ? { pair } : {}), sha256: sha, createdAt: g.createdAt, ...(isSampleClipUrl(g.storedUrl) ? { sampleClip: true as const } : {}),
     };
   });
 }

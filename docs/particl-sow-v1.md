@@ -395,9 +395,20 @@ nothing can leave a plan, and the two differ only for someone who has.
 1. Free grant is one-time, never recurring. Invite approvals are capped per month by a platform setting (`grant_budget_usd`).
 2. Bonus credits never exceed 20% of a pack.
 3. Any workspace consuming more than 25% of the platform's monthly engine spend is flagged to the admin console.
-4. Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.
+4. ~~Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.~~ Retired 19–20 October 2026; see the amendments below.
 5. Included-credit consumption is metered separately from purchased credits, so statements show what was free and what was paid.
 6. Workspaces flagged `internal: true` carry a pricing override set by the private policy. The flag is set only from the platform admin console, never from workspace settings, and its spend is excluded from margin reporting.
+
+**AMENDED 19 October 2026 — guardrail 4 is retired.** The owner, verbatim: "the 200 cr per-job line (guardrail 4) is retired. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with its Paused state. #815 keeps "a multi-shot press is one job, one approval for the total" and drops the guardrail-4 check; a press whose total would pass the workspace cap is refused at the quote. Update CLAUDE.md's pricing section and the rulebook in the docs PR; a money review on the #815 change. Nothing else in the money behaviour changes."
+
+What replaces it:
+- Every job is approved on its quote before it runs.
+- The only automatic stop is the workspace's monthly spend limit, with its Paused state.
+- A multi-shot press is one job, with one approval for its total. A press whose total would pass the workspace cap is refused at the quote.
+
+**AMENDED 20 October 2026 — every job, single jobs included.** The owner, verbatim: "Guardrail 4 is retired everywhere, single jobs included: no per-job line in the product. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with Paused. Strike it in CLAUDE.md and the scope with a dated note in the owner's words, and in the code with its own money review; keep the workspace cap and the house cap exactly as they are."
+
+The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by `jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and `lib/quote.ts`) is removed from the code in a separate code PR, under its own money review; until that PR merges, the line is still in the code. The workspace cap (its monthly spend limit) and the house cap stay exactly as they are. The workspace's own approval rule (a step over the workspace's own rule cap needs an admin; `lib/approvalRule.ts`) is not guardrail 4 and stays. Auto keeps its own no-tap ceiling (today's value) until the owner decides whether Auto stays.
 
 ---
 
@@ -521,7 +532,7 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 
 **Also built on the Suites Rig, 2 October 2026.**
 
-- **Atomik's runs.** Asking Atomik for a board carries a limit for the whole run ("up to about N cr") and a mode: Ask (the default) or Auto. The planning turn is metered inside the limit. After the build, each render the plan names is priced first. In Ask it waits for one tap; in Auto, only a draft priced at or under the per-job line goes on its own. The per-job line is the platform's approval line (§7A guardrail 4). The reservation refuses any job that would pass the limit, and a run's take is never held to start later. A refusal pauses the run at "Needs you", with Retry, Skip, Raise the limit or Stop. Atomik's board building stays off in production until the owner turns on `RIG_AGENT_ENABLED`.
+- **Atomik's runs.** Asking Atomik for a board carries a limit for the whole run ("up to about N cr") and a mode: Ask (the default) or Auto. The planning turn is metered inside the limit. After the build, each render the plan names is priced first. In Ask it waits for one tap; in Auto, only a draft priced at or under the per-job line goes on its own. ~~The per-job line is the platform's approval line (§7A guardrail 4).~~ **AMENDED 20 October 2026:** guardrail 4 is retired for every job (§7A, "Guardrails in code", AMENDED 19 and 20 October 2026); Auto keeps its own no-tap ceiling (today's value) until the owner decides whether Auto stays. The reservation refuses any job that would pass the limit, and a run's take is never held to start later. A refusal pauses the run at "Needs you", with Retry, Skip, Raise the limit or Stop. Atomik's board building stays off in production until the owner turns on `RIG_AGENT_ENABLED`.
 - **Verify.** A Verify card checks one take against the Cast, Environment and Element cards wired into it: identity, wardrobe, environment, props, and artifacts such as extra limbs or warped text. It is one judge call on a vision model from the agent's menu (Claude, OpenAI or Grok), priced first and charged in credits at what it used. The judge only scores; the code turns each score into pass, fail or unsure against fixed thresholds. A failed check fails the card; otherwise any unsure check makes it "Needs you", so nothing passes on a guess. Checking the same take against the same cards again reads the stored scorecard, free. A new version of one of those cards needs a new, priced check.
 - **A tidier board.** Cards snap to a 20 px grid; Alt places one exactly. Notes and section titles are written on the board itself. Each card sits in its kind's section (Cast, Environment, Elements, Refs, Looks, Direction, Shots, Finishing, Review and output) or in one a person made. Tidy lays the board out by sections for everyone, free, and locked cards keep their place. Atomik's build lays out its own cards the same way but adds no section titles.
 - **Old boards.** "Open in the new Rig" on an old board (`/rig/canvas/:board`) brings its cards, inputs and places onto the production's shared canvas, free. The old board is only read and stays editable. Opening it again brings only what is new, and a card someone took off the new Rig stays off.
@@ -767,9 +778,40 @@ recurring billing of any kind (`startCheckout` throws for anything but
 `manual`, so a $49/mo plan today is an admin remembering every month); panel
 allowances and the §2.8 board pipeline they would count.
 
-Guardrail 4's line now has one source, `lib/approvalRule.ts`. Since 2 October
+~~Guardrail 4's line now has one source, `lib/approvalRule.ts`. Since 2 October
 2026 Atomik's Rig runs use it as the most one job may cost without asking
-(§9); nothing else enforces it yet.
+(§9); nothing else enforces it yet.~~
+
+**AMENDED 19 October 2026 — guardrail 4 is retired** (§7A, "Guardrails in
+code", AMENDED 19 October 2026). The owner, verbatim: "the 200 cr per-job line
+(guardrail 4) is retired. Every job is approved on its quote before it runs;
+the only automatic stop is the workspace's monthly spend limit with its Paused
+state. #815 keeps "a multi-shot press is one job, one approval for the total"
+and drops the guardrail-4 check; a press whose total would pass the workspace
+cap is refused at the quote. Update CLAUDE.md's pricing section and the
+rulebook in the docs PR; a money review on the #815 change. Nothing else in the
+money behaviour changes." By 19 October the line was enforced at the press as
+well as in the Rig runs (`jobLineVerdict`, called from
+`lib/generationRequests.ts`, `lib/shotCap.ts` and `lib/quote.ts`), so the
+struck "nothing else enforces it yet" was already out of date.
+
+**AMENDED 20 October 2026 — every job, single jobs included.** The owner,
+verbatim: "Guardrail 4 is retired everywhere, single jobs included: no per-job
+line in the product. Every job is approved on its quote before it runs; the only
+automatic stop is the workspace's monthly spend limit with Paused. Strike it in
+CLAUDE.md and the scope with a dated note in the owner's words, and in the code
+with its own money review; keep the workspace cap and the house cap exactly as
+they are."
+
+The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by
+`jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and
+`lib/quote.ts`) is removed from the code in a separate code PR, under its own
+money review; until that PR merges, the line is still in the code. The
+workspace cap (its monthly spend limit) and the house cap stay exactly as
+they are. The workspace's own approval rule (a step over the workspace's own
+rule cap needs an admin; `lib/approvalRule.ts`) is not guardrail 4 and stays.
+Auto keeps its own no-tap ceiling (today's value) until the owner decides
+whether Auto stays.
 # September 2026 amendment: durable published-context pipelines
 
 The additive pipeline executor introduces immutable versioned DAGs and private creator-owned runs from an explicit published production context. It never publishes a private draft. Each ready image/video/audio stage receives a batch quote and explicit approval; later stages require their own approval after inputs resolve. Permanent attempt keys, CAS revisions, fenced leases, and a persisted wakeup outbox prevent lost responses from creating replacement spend. Review selections become fixed once downstream attempts depend on them. Assembly produces an editorial timeline for the existing browser movie renderer, not a falsely completed movie. New tables and the full limits/recovery contract are documented in `docs/durable-production-pipelines.md`; historical recipes and runs remain compatible. This amendment does not introduce Stripe changes.

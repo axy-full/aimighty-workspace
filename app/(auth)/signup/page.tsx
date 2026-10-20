@@ -3,6 +3,7 @@ import { Suspense, useEffect, useRef, useState, useSyncExternalStore, type React
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TRAIL } from "@/components/ui/Mark";
+import { AgeConfirm } from "@/components/AgeConfirm";
 import { RequestAccessForm, sentLine, inviteCredits } from "@/components/graphite/guest/RequestAccess";
 import { billingPath, readAnswer, signupSignInPath } from "@/lib/authPages";
 import { decodeGuestBrief, guestBriefRaw, subscribeGuestBrief } from "@/lib/guest/brief";
@@ -306,13 +307,9 @@ function Signup() {
           <span className="gx-su-label">Confirm password</span>
           <input className="gx-su-input" type="password" required autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} data-testid="signup-confirm" />
         </label>
-        <label className="gx-su-check">
-          <input type="checkbox" required checked={accept} onChange={(e) => setAccept(e.target.checked)} data-testid="signup-terms" />
-          <span>I agree to the terms and the content policy, and I have read the privacy notice.</span>
-        </label>
-        {/* The three documents as their own targets, not words inside the box's label. */}
+        <AgeConfirm checked={accept} onChange={setAccept} testId="signup-terms" />
+        {/* The other documents as their own targets; the Terms are in the tick's own sentence. */}
         <div className="gx-su-docs">
-          <Link className="gx-su-link" href="/terms" target="_blank">Terms</Link>
           <Link className="gx-su-link" href="/policy" target="_blank">Content policy</Link>
           <Link className="gx-su-link" href="/privacy" target="_blank">Privacy notice</Link>
         </div>

@@ -100,5 +100,6 @@
 .v12 .v12-card-reason[data-on] { border-color: var(--gx-failed); background: color-mix(in srgb, var(--gx-failed) 14%, transparent); }
 .v12 .v12-card-note { height: 28px; border: 1px solid var(--gx-input-border); background: var(--gx-root); border-radius: var(--gx-r-tab); color: var(--gx-text); font: inherit; font-size: var(--gx-fs-label); padding: 0 var(--gx-sp-8); min-width: 0; }
 .v12 .v12-card-note::placeholder { color: var(--gx-placeholder); }
+.v12 .v12-card-reasons-hint { font-size: var(--gx-fs-label); color: var(--gx-failed-text); }
 @media (pointer: coarse) { .v12 .v12-card-reason, .v12 .v12-card-chip, .v12 .v12-card-note { min-height: var(--gx-touch); } }
 @media (prefers-reduced-motion: reduce) { .v12 .v12-card, .v12 .v12-card-marks, .v12 .v12-card-handle, .v12 .v12-card-bar > span { transition: none; } }

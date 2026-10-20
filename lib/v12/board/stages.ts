@@ -206,6 +206,16 @@ export function currentStage(stages: readonly Stage[], asked: string | null | un
   return stages.find((s) => s.id === want) ?? stages.find((s) => s.id === OPENS_ON[flavor]) ?? stages[0] ?? null;
 }
 
+/**
+ * The stage a board starts from (an empty board opens on it, and the board's crumb goes back to it): the first on the rail,
+ * passing over the steps added in v25 that have nothing to draw yet (Film's Treatment and Pitch), so an empty Film board opens
+ * on the Brief as it did before them. No other kind has such steps, so every other rail starts from its first stage, as before.
+ */
+export function firstStage(stages: readonly Stage[], flavor: Flavor): Stage | null {
+  const waiting = new Set(builtInStages(flavor).filter((d) => d.added && !d.regions.length).map((d) => d.id));
+  return stages.find((s) => s.custom || !waiting.has(s.id)) ?? stages[0] ?? null;
+}
+
 /* ── Rail edits: each returns the whole saved list, which the draft keeps ─────────────────────────── */
 
 /** The list an edit saves: the stages as shown, then a `removed` flag for each of the kind's built-in stages that is not on the rail. */

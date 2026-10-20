@@ -22,6 +22,7 @@ import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
 import { heldPriceNow } from "./creditTerms";
 import { withoutVendorDollars } from "./analyticsRedact";
+import { publicDirectParams } from "./directEnginePublic";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
@@ -44,6 +45,7 @@ import { billedTo, getProvider } from "./providers";
 import { engineFor } from "./engines";
 import { notify } from "./push";
 import { hasRetainedConsumerOriginal, RETAINED_CONSUMER_ORIGINAL_SQL } from "./higgsfield-consumer/video-original";
+import { IN_WINDOW_SQL, atRiskHorizon } from "./atRiskWindow";
 import { uploadReservationsReady } from "./uploadReservations";
 import type { AssetCursor } from "./assetPagination";
 import type { ProviderCreditQuote } from "./providerCreditQuote";
@@ -196,6 +198,8 @@ export function rowToGeneration(r: any): Generation {
   delete params.genjutsuOriginal;
   delete params.storeUntil;
   delete params.settledBy;
+  /* A direct engine's working record (its job and asset ids, links, claims, consent ids, vendor figures) is the workflow's own: only what describes the take is read. */
+  params = publicDirectParams(params);
   if (params.held && typeof params.held === "object")
     params.held = heldForBrowser(params.held, inCredits, r.kind === "image" || r.kind === "audio" ? r.kind : "video", String(r.model ?? ""));
   /* A workspace on the platform's keys reads its params with no figure in the vendors' dollars
@@ -797,7 +801,13 @@ export function heartbeatSaveDeadline(deadlineAt: number): number {
  */
 export async function syncPending(
   limit = 30,
-  options: { deadlineAt?: number } = {},
+  /** `horizon`: the visit's own (lib/atRisk.ts), so the window the cron counted is the window this chooses by. */
+  options: {
+    deadlineAt?: number;
+    horizon?: number;
+    /** Told, once, how many of the takes this pass chose were at risk (lib/atRisk.ts): succeeded, no stored copy, inside the window. The return value keeps its own shape. */
+    onAtRiskChosen?: (count: number) => void;
+  } = {},
 ): Promise<ReconcileResult & { deferred: number }> {
   await ready();
   await syncCreditReceipts();
@@ -829,14 +839,26 @@ export async function syncPending(
   results.attempted += dubs.attempted;
   results.failed += dubs.failed;
   results.deferred += dubs.deferred;
-  const horizon = now() - 3 * 86400_000;
+  // Lip-sync jobs (sync.so): ask after the running, and delete the vendor's copy of the finished. Never resubmit.
+  const lips = await (await import("./lipSync")).recoverLipSyncJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += lips.attempted;
+  results.failed += lips.failed;
+  results.deferred += lips.deferred;
+  // Recraft stills (direct): a funded job whose one request never went out is sent (once); a lost reply is never sent again.
+  const recrafts = await (await import("./recraftImage")).recoverRecraftJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += recrafts.attempted;
+  results.failed += recrafts.failed;
+  results.deferred += recrafts.deferred;
+  /* The window is lib/atRisk.ts's: the same 72 hours the health counter and the console count a take at risk in. */
+  const horizon = options.horizon ?? atRiskHorizon(now());
   const rs = await db().execute({
     sql: `${SELECT} WHERE (g.status IN ('queued','running') AND g.deleted=0)
-      OR (g.status='succeeded' AND g.deleted=0 AND g.created_at > ?
+      OR (g.status='succeeded' AND g.deleted=0 AND ${IN_WINDOW_SQL("g")}
         AND (g.stored_url IS NULL OR g.cost_usd IS NULL) AND NOT (${RETAINED_CONSUMER_ORIGINAL_SQL}))
       ORDER BY g.updated_at,g.created_at,g.id LIMIT ?`,
     args: [horizon, bounded],
   });
+  options.onAtRiskChosen?.(rows(rs).filter((row) => row.status === "succeeded" && row.stored_url == null).length);
   // Oldest checked first, with a persisted check time: failures cannot starve later jobs.
   for (let i = 0; i < rs.rows.length; i += 4) {
     if (options.deadlineAt != null && now() >= options.deadlineAt) {
@@ -855,6 +877,10 @@ export async function syncPending(
           const params = JSON.parse(String(row.params || "{}"));
           // A dubbing project's row is advanced by its own workflow above; it is neither a render nor an orphan.
           if (gen.kind === "audio" && params.task === "dub") return;
+          // A lip-sync job's row is advanced by its own workflow above (lib/lipSync.ts); it is neither a render nor an orphan.
+          if (gen.kind === "video" && params.task === "lipsync") return;
+          // A Recraft still's row is advanced by its own workflow above (lib/recraftImage.ts); it is neither a render nor an orphan.
+          if (gen.kind === "image" && params.task === "recraft_image") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome

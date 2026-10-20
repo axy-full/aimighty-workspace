@@ -1,12 +1,12 @@
 import { test, expect } from "@playwright/test";
 import {
-  approveLabel, canCompare, clampIndex, compareSides, judgeVersion, previewItemOfShot, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
+  REASON_NEEDS_LINE, REASON_TOO_LONG, approveLabel, canCompare, clampIndex, compareSides, judgeVersion, previewItemOfShot, reasonProblem, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
   type PreviewItemView,
 } from "../../components/v12/board/preview-model";
 import type { ShotVersion } from "../../components/graphite/board/cards/take/take-model";
 
 /* PR 6: the preview's rules (components/v12/board/preview-model.ts). Pure. */
-const ver = (n: number, status: PreviewItemView["versions"][number]["status"], over: Partial<PreviewItemView["versions"][number]> = {}) => ({ genId: `g${n}`, label: `v${n}`, url: `/api/media/g${n}`, poster: `/p/${n}`, status, ...over });
+const ver = (n: number, status: PreviewItemView["versions"][number]["status"], over: Partial<PreviewItemView["versions"][number]> = {}) => ({ genId: `g${n}`, label: `v${n}`, url: `/api/media/g${n}`, poster: `/p/${n}`, status, judgeable: true, ...over });
 const item = (versions: PreviewItemView["versions"], over: Partial<PreviewItemView> = {}): PreviewItemView => ({ id: "s1", title: "Shot 1", kind: "picture", versions, shown: versions.length - 1, canJudge: true, reasons: [], ...over });
 
 test("the version label and Compare need more than one version", () => {
@@ -17,6 +17,10 @@ test("the version label and Compare need more than one version", () => {
   expect(versionOf(three, 1)).toBe("v2 of 3");
   expect(versionOf(three, 99)).toBe("v3 of 3");
   expect(canCompare(three)).toBe(true);
+  /* Clips and sounds compare as two players; a page of words has one text for the card, so no Compare. */
+  expect(canCompare({ ...three, kind: "video" })).toBe(true);
+  expect(canCompare({ ...three, kind: "sound" })).toBe(true);
+  expect(canCompare({ ...three, kind: "text" })).toBe(false);
   expect(clampIndex(-4, 3)).toBe(0);
   expect(clampIndex(7, 3)).toBe(2);
   expect(clampIndex(1.9, 3)).toBe(1);
@@ -43,15 +47,20 @@ test("← and → walk the step's cards and wrap at either end", () => {
 test("✓ and ✕ act on the version on screen, only when the card can be judged and that version can", () => {
   const three = item([ver(1, "rejected"), ver(2, "ready"), ver(3, "approved")]);
   expect(judgeVersion(three, 1)?.genId).toBe("g2");
-  expect(approveLabel(three, 1)).toBe("Approve v2");
-  expect(approveLabel(three, 2)).toBe("Approved");
-  expect(approveLabel(item([ver(1, "ready")]), 0)).toBe("Approve");
+  /* ✓'s word is Send, and Sent once the version carries the trail's "approved" mark (owner, 20 Oct 2026). */
+  expect(approveLabel(three, 1)).toBe("Send v2");
+  expect(approveLabel(three, 2)).toBe("Sent");
+  expect(approveLabel(item([ver(1, "ready")]), 0)).toBe("Send");
   expect(judgeVersion({ ...three, canJudge: false }, 1)).toBeNull();
   expect(judgeVersion(item([ver(1, "making")]), 0)).toBeNull();
   expect(judgeVersion(item([ver(1, "none")]), 0)).toBeNull();
   expect(judgeVersion(item([ver(1, "ready", { genId: undefined })]), 0)).toBeNull();
   /* A version with no picture or clip here to look at cannot be judged. */
   expect(judgeVersion(item([ver(1, "ready", { url: null })]), 0)).toBeNull();
+  /* A version that is not judgeable by its own rule (an upload) has no marks, even on a card that can be judged. */
+  const mixed = item([ver(1, "ready"), ver(2, "ready", { judgeable: false })]);
+  expect(judgeVersion(mixed, 0)?.genId).toBe("g1");
+  expect(judgeVersion(mixed, 1)).toBeNull();
 });
 
 test("a clip's time and frame steps stay inside the clip", () => {
@@ -90,4 +99,24 @@ test("Download is the original as an attachment; a shot's takes become versions,
   expect(clip.kind).toBe("video");
   expect(clip.versions[0].poster).toBe("/f.png");
   expect(previewItemOfShot({ nodeId: "n3", title: "Shot 3", versions: [], shown: null, frame: null })).toMatchObject({ versions: [], shown: 0, canJudge: false });
+  /* Each version carries the card's own rule: a take with its picture here can be judged; an upload beside it, with a url, cannot. */
+  const both = [v(1, "review"), v(2, "uploaded")];
+  const mixed = previewItemOfShot({ nodeId: "n4", title: "Shot 4", versions: both, shown: both[1], frame: null });
+  expect(mixed.versions.map((x) => [x.label, x.status, x.judgeable])).toEqual([["v1", "ready", true], ["v2", "ready", false]]);
+  expect(mixed.canJudge).toBe(true);
+  expect(judgeVersion(mixed, 0)?.genId).toBe("g1");
+  expect(judgeVersion(mixed, 1)).toBeNull();
+  expect(out.versions.every((x) => x.judgeable)).toBe(true);
+});
+
+test("✕'s reason: Other with no line says Other needs a line, too long says too long, and one that fits has no problem", () => {
+  /* Was: "ok" alone refused as too short. Now Other (or no chip) needs a line and one word is enough (owner, 20 Oct 2026). */
+  expect(reasonProblem("Other", "")).toBe(REASON_NEEDS_LINE);
+  expect(reasonProblem(null, "")).toBe(REASON_NEEDS_LINE);
+  expect(REASON_NEEDS_LINE).toBe("Other needs a line: one word is enough.");
+  expect(reasonProblem("Other", "ok")).toBeNull();
+  expect(reasonProblem("Wrong framing", "x".repeat(500))).toBe(REASON_TOO_LONG);
+  expect(REASON_TOO_LONG).toBe("Too long: 500 characters at most.");
+  expect(reasonProblem("Other", "x".repeat(500))).toBeNull();
+  expect(reasonProblem("Wrong framing", "")).toBeNull();
 });

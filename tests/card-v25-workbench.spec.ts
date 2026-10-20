@@ -30,7 +30,7 @@ test("five statuses, each as one line under the title", async ({ page }) => {
   await expect(status("k-making")).toHaveText("Making…");
   await expect(status("k-ready")).toHaveText("Ready");
   await expect(status("k-ready3")).toHaveText("Ready · v3");
-  await expect(status("k-ok")).toHaveText("✓ Approved");
+  await expect(status("k-ok")).toHaveText("✓ Sent");
   await expect(status("k-no")).toHaveText("✕ Look · warmer");
   /* Making shows its bar on the picture; an owned item says what it is. */
   await expect(card(k, "k-making").getByRole("progressbar")).toHaveAttribute("aria-valuenow", "60");
@@ -44,16 +44,16 @@ test("hovering a ready card shows ✓ ✕ ⋯; a card not made yet and a user-ow
   await expect(marks("s1")).toHaveCSS("opacity", "0");
   await card(s, "s1").hover();
   await expect(marks("s1")).toHaveCSS("opacity", "1");
-  await expect(card(s, "s1").getByRole("button", { name: "Approve Shot 1 · Camp at night" })).toBeVisible();
+  await expect(card(s, "s1").getByRole("button", { name: "Send Shot 1 · Camp at night" })).toBeVisible();
   await expect(card(s, "s1").getByRole("button", { name: /^Not right/ })).toBeVisible();
   await card(s, "s3").hover();
-  await expect(card(s, "s3").getByRole("button", { name: /^Approve/ })).toHaveCount(0);
+  await expect(card(s, "s3").getByRole("button", { name: /^Send/ })).toHaveCount(0);
   await expect(card(s, "s3").getByRole("button", { name: /^More/ })).toBeVisible();
   const k = kinds(page);
   await card(k, "k-tile").hover();
-  await expect(card(k, "k-tile").getByRole("button", { name: /^Approve|^Not right/ })).toHaveCount(0);
+  await expect(card(k, "k-tile").getByRole("button", { name: /^Send|^Not right/ })).toHaveCount(0);
   await card(k, "k-grey").hover();
-  await expect(card(k, "k-grey").getByRole("button", { name: /^Approve/ })).toHaveCount(0);
+  await expect(card(k, "k-grey").getByRole("button", { name: /^Send/ })).toHaveCount(0);
 });
 
 test("the keyboard reaches ✓ and ✕: focusing a card shows its marks", async ({ page }) => {
@@ -61,9 +61,9 @@ test("the keyboard reaches ✓ and ✕: focusing a card shows its marks", async 
   await card(s, "s1").focus();
   await expect(card(s, "s1").locator(".v12-card-marks")).toHaveCSS("opacity", "1");
   await page.keyboard.press("Tab");
-  await expect(card(s, "s1").getByRole("button", { name: /^Approve/ })).toBeFocused();
+  await expect(card(s, "s1").getByRole("button", { name: /^Send/ })).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(card(s, "s1").getByTestId("v12-card-status")).toHaveText("✓ Approved");
+  await expect(card(s, "s1").getByTestId("v12-card-status")).toHaveText("✓ Sent");
   /* ✓ again undoes it. */
   await page.keyboard.press("Enter");
   await expect(card(s, "s1").getByTestId("v12-card-status")).toHaveText("Ready · v2");
@@ -74,9 +74,9 @@ test("✕ opens the step's reasons ending in Other and one optional line; a reas
   await openReasons(s, "s4");
   const reasons = card(s, "s4").getByTestId("v12-card-reasons");
   await expect(reasons.getByRole("button")).toHaveText(["Look", "Framing", "Motion", "Face", "Text", "Other"]);
-  await expect(reasons.getByLabel("One line, optional")).toHaveAttribute("placeholder", "One line, optional · ⏎ to send");
+  await expect(reasons.getByLabel("Why", { exact: true })).toHaveAttribute("placeholder", "One line, optional · ⏎");
   /* A reason sends at once, with the line if one is written. */
-  await reasons.getByLabel("One line, optional").fill("warmer");
+  await reasons.getByLabel("Why", { exact: true }).fill("warmer");
   await reasons.getByRole("button", { name: "Look" }).click();
   await expect(card(s, "s4").getByTestId("v12-card-status")).toHaveText("✕ Look · warmer");
   await expect(card(s, "s4").getByTestId("v12-card-reasons")).toHaveCount(0);
@@ -84,7 +84,7 @@ test("✕ opens the step's reasons ending in Other and one optional line; a reas
   await openReasons(s, "s1");
   const second = card(s, "s1").getByTestId("v12-card-reasons");
   await second.getByRole("button", { name: "Other" }).click();
-  await expect(second.getByLabel("One line, optional")).toBeFocused();
+  await expect(second.getByLabel("Why", { exact: true })).toBeFocused();
   await page.keyboard.type("the camp is wrong");
   await page.keyboard.press("Enter");
   await expect(card(s, "s1").getByTestId("v12-card-status")).toHaveText("✕ the camp is wrong");
@@ -136,7 +136,7 @@ test.describe("touch", () => {
   test.skip(!isCompact(info), "desktop shows the marks on hover and focus");
   const s = shots(page);
   await expect(card(s, "s1").locator(".v12-card-marks")).toHaveCSS("opacity", "1");
-  for (const name of [/^Approve/, /^Not right/, /^More/]) {
+  for (const name of [/^Send/, /^Not right/, /^More/]) {
     const box = (await card(s, "s1").getByRole("button", { name }).boundingBox())!;
     expect(box.width, String(name)).toBeGreaterThanOrEqual(44);
     expect(box.height, String(name)).toBeGreaterThanOrEqual(44);

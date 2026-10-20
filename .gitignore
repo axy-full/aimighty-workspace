@@ -58,3 +58,7 @@ ci-results/
 /public/vendor/pdfjs-*/
 
 /public/vendor/tesseract-*/
+
+# vendor price files and cost sheets: real figures, never committed (docs/vendor-prices.md)
+/vendor-prices*.json
+*cost-sheet*.csv

@@ -9,7 +9,9 @@ import type { TenantWorkspace } from "./tenant";
  * accounts, so:
  *
  * - it is never given credits: no welcome grant, no grant from the desk, no
- *   top-up, no monthly allowance;
+ *   top-up, no customer allowance. It has its own monthly cap on the engines
+ *   instead, $500 unless the platform owner sets another, with a warning at 80%
+ *   (lib/houseCap.ts);
  * - nothing it runs is charged in credits, and no credit wall stops it;
  * - what its jobs cost is still metered, at the engines' cost, for the
  *   studio's own reporting (its own Usage page and the platform desk) and
@@ -29,5 +31,5 @@ export function isHouseWorkspace(ws: Pick<TenantWorkspace, "id"> | null | undefi
   return ws?.id === HOUSE_WORKSPACE_ID;
 }
 
-/** What a request to give the house credits, or to cap it, is told. */
-export const HOUSE_NOT_BILLED = "The house workspace runs on the platform's engines and is never billed in credits, so it takes no credits or allowance.";
+/** What a request to give the house credits is told. Its monthly engine cap is another matter (lib/houseCap.ts). */
+export const HOUSE_NOT_BILLED = "The house workspace runs on the platform's engines and is never billed in credits, so it takes no credits.";
