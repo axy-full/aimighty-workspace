@@ -189,6 +189,11 @@ test("desktop: the sample board is explorable and says nothing is saved; every a
   await page.keyboard.press("Escape");
   await page.locator('[data-testid="v12-stage-row"][data-stage="shots"] .v12-rail-btn').click();
   await expect(page.getByTestId("v12-visitor-stage")).toHaveText("Shots");
+  /* The board's crumb goes back to the Brief, as before Treatment and Pitch joined the rail. */
+  await page.locator(".v12-crumb-board").click();
+  await expect(page.getByTestId("v12-visitor-stage")).toHaveText("Brief");
+  await page.locator('[data-testid="v12-stage-row"][data-stage="shots"] .v12-rail-btn').click();
+  await expect(page.getByTestId("v12-visitor-stage")).toHaveText("Shots");
   await page.getByTestId("v12-visitor-plan-approve").click();
   await expect(page.getByTestId("v12-join-title")).toContainText("To run this you need a Particl account · Approve · ");
   await page.keyboard.press("Escape");

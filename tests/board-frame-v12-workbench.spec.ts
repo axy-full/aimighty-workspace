@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { filmBoard, openBoard } from "./helpers/boardV12";
+import { newProject } from "../lib/workbench/studio";
 
 /**
  * The board frame in the new interface (docs/redesign-plan.md P2-a1; components/v12/board/): the Film stage rail over
@@ -39,6 +40,19 @@ test.describe("desktop, switch on", () => {
     /* Edit draws today's cut card: a stage shows what today's board has, nothing invented. */
     await page.locator('[data-testid="v12-stage-row"][data-stage="edit"] .v12-rail-btn').click();
     await expect(page.getByTestId("v12-stage-empty")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test("an empty Film board opens on the Brief, as before Treatment and Pitch; the board's crumb goes back to it", async ({ page }) => {
+    const { errors } = await openBoard(page, "/suites?view=board", { project: { ...newProject("Empty film"), nodes: [] } });
+    await expect(page.getByTestId("v12-stage-rail")).toBeVisible({ timeout: 60_000 });
+    await expect(rows(page)).toHaveCount(11);
+    await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "brief");
+    await expect(page.getByTestId("v12-stage-crumb")).toHaveText("Brief");
+    await page.locator('[data-testid="v12-stage-row"][data-stage="storyboard"] .v12-rail-btn').click();
+    await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "storyboard");
+    await page.getByTitle("The first stage").click();
+    await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "brief");
     expect(errors).toEqual([]);
   });
 
