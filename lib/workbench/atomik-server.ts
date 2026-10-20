@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { db, ready, now } from '../db';
 import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
 import { textRun } from '../textDirect';
+import { openModelCall } from '../modelTrace';
 import { explainGatewayFailure } from '../gateway';
 import { allowanceCheck } from '../allowance';
 import { checkLimits, limitVerdict } from '../limits';
@@ -477,13 +478,15 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
   let cost = job.estimateUsd;
   let raw = '';
   let usage: unknown = null;
+  /* One model call (lib/modelTrace.ts): the job's ids, its variant and its counts, never the request or the plan. */
+  const call = openModelCall('atomik.workbench', { runId: job.id, step: atomikJobVariant(String(row.request_body)), model: job.model, effort: job.effort ?? 'auto' });
   try {
     const auth = await deps.auth(job.model);
     /* The door is decided again here: one that changed since the reservation (TEXT_DIRECT, a key) is refused before sending. */
     await deps.assertFunding(id, textEngine(job.model));
     submitted = true;
     const input = atomikRequestSchema.parse(JSON.parse(String(row.request_body)));
-    const response = input.astraBlender
+    const response = await call.run(async () => input.astraBlender
       ? await deps.runAstra(JSON.parse(String(row.provider_body)), auth, async trace => {
           await db().execute({ sql: "UPDATE workbench_atomik_jobs SET provider_response=?,updated_at=? WHERE id=? AND owner=? AND status='running'", args: [trace, now(), id, owner] });
         })
@@ -491,8 +494,9 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       ? await deps.runSuite(JSON.parse(String(row.provider_body)), auth, async trace => {
           await db().execute({ sql: "UPDATE workbench_atomik_jobs SET provider_response=?,updated_at=? WHERE id=? AND owner=? AND status='running'", args: [trace, now(), id, owner] });
         })
-      : await deps.run({ body: JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(String(row.provider_body))).filter(([key]) => !['referenceAnalysisEvidence', 'pricingModel'].includes(key)))), auth, timeoutMs: 270000 });
+      : await deps.run({ body: JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(String(row.provider_body))).filter(([key]) => !['referenceAnalysisEvidence', 'pricingModel'].includes(key)))), auth, timeoutMs: 270000 }));
     providerReturned = true;
+    if (!response.ok) call.note({ status: response.status });
     raw = response.text;
     if (!response.ok) {
       // A definitive 4xx rejection incurred no generation. 5xx is ambiguous.
@@ -531,6 +535,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       providerReturned = false; cost = job.estimateUsd;
       throw new AtomikError('The provider usage exceeded the approved estimate. This attempt needs billing review.', 409);
     }
+    call.note({ costUsd: cost });
     const content = reply.choices?.[0]?.message?.content;
     const referenceAnalysis = input.referenceAd ? referenceAdAnalysisSchema.parse({ projectId: input.projectId, jobId: job.id, model: job.model, createdAt: new Date().toISOString(), evidence: JSON.parse(String(row.provider_body)).referenceAnalysisEvidence, result: referenceAnalysisResultSchema.parse(JSON.parse(typeof content === 'string' ? content : '')) }) : null;
     const suiteResult = input.suite ? suiteAgentResultSchema.parse(JSON.parse(typeof content === 'string' ? content : '')) : null;
@@ -552,6 +557,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
     ], 'write');
     await deps.meter(eventFor(job, owner, 'succeeded', cost), { critical: false });
   } catch (error) {
+    call.fail(error);
     const uncertain = submitted && !providerReturned;
     if (!submitted) cost = 0;
     const errorText = uncertain
@@ -566,9 +572,19 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       { sql: 'UPDATE atomik_spend SET cost_usd=? WHERE id=?', args: [cost, id] },
     ], 'write');
     await deps.meter(eventFor(job, owner, 'failed', cost), { critical: false });
+  } finally {
+    call.end();
   }
 
 });
+}
+
+/** Which kind of Studio Atomik job a saved request is, for its model call's span: a fixed word, never the request. */
+function atomikJobVariant(body: string): string | null {
+  try {
+    const input = JSON.parse(body) as { astraBlender?: unknown; suite?: unknown; referenceAd?: unknown };
+    return input.astraBlender ? '3d_blocking' : input.suite ? 'suite_agent' : input.referenceAd ? 'reference_ad' : 'plan';
+  } catch { return null; }
 }
 
 export async function listAtomikJobs(owner: string, projectId: string, overrides?: Pick<AtomikDependencies, 'meter'>, requestId?: string) {

@@ -64,7 +64,8 @@ export const POST = withTenant(async function POST(req: Request) {
       const engine = typeof body.model === "string" && body.model ? displayModelName(body.model.slice(0, 120)) : null;
       const messages = enhancerMessages(prompt, { mode: body.mode, anchored: body.anchored === true, editing: body.editing === true, engine });
       /* `quick`: the lightest reasoning the writer offers, with a small fixed room to think (lib/paidText.ts quickEffort); quoted and run the same way. */
-      const input = { model: writer, messages, maxTokens: ENHANCE_MAX_TOKENS, kind: "enhance", mock: "prompt" as const, createdBy: got.user.id, quick: true };
+      const input = { model: writer, messages, maxTokens: ENHANCE_MAX_TOKENS, kind: "enhance", mock: "prompt" as const, createdBy: got.user.id, quick: true,
+        /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.enhance" as const, step: body.mode as string, model: writer, effort: "quick" } };
       /* The catalogue read above is the one priced from: a second read could wait on the gateway again. */
       const model = models.find((m) => m.id === writer);
       if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input, model));

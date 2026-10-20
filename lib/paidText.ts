@@ -22,6 +22,7 @@ import {
 import type { TextRun } from "./engines/types";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { jobLineNow } from "./shotCap";
+import { noteModelCall, traceModelCall, type ModelCallMeta, type ModelSiteId } from "./modelTrace";
 
 /** The least time a deadline-bound text job must still have for its provider call (runPaidText `deadline`). */
 export const PAID_TEXT_MIN_PROVIDER_MS = 20_000;
@@ -261,6 +262,8 @@ export async function runPaidText(
     holdSettlement?: boolean;
     /** Chat messages already keep their own cost row. Failed calls still remain in paid_text_jobs and meter_events. */
     recordSpend?: boolean;
+    /** The model call site this job is, for its span (lib/modelTrace.ts): ids and settings only. Nothing else here reads it. */
+    trace?: ModelCallMeta & { site: ModelSiteId };
   },
   overrides: {
     model?: CatalogModel;
@@ -276,6 +279,10 @@ export async function runPaidText(
     accept?: (text: string) => { ok: true } | { ok: false; reason: string };
   } = {},
 ): Promise<PaidTextResult> {
+  if (input.trace) { const { site, ...meta } = input.trace; return traceModelCall(site, meta, () => runPaidTextJob(input, overrides)); }
+  return runPaidTextJob(input, overrides);
+}
+async function runPaidTextJob(input: Parameters<typeof runPaidText>[0], overrides: NonNullable<Parameters<typeof runPaidText>[1]>): Promise<PaidTextResult> {
 return await withRecoveryActivity('paid-text', async () => {
 
   /* The sample workspace spends nothing (lib/demo/spend-guard.server.ts): refused before a job row, a reservation or a call. */
@@ -287,6 +294,8 @@ return await withRecoveryActivity('paid-text', async () => {
   requestMaxCredits(input.maxCredits, input.effort !== undefined);
   await paidTextReady();
   const id = input.id ?? newId("text");
+  /* The model call in scope (lib/modelTrace.ts) is told the job's id; nothing here changes for it. */
+  noteModelCall({ runId: id, model: input.model });
   const prior = await db().execute({
     sql: `SELECT * FROM paid_text_jobs WHERE id=?`,
     args: [id],
@@ -426,6 +435,8 @@ return await withRecoveryActivity('paid-text', async () => {
           ? (textCostUsd(model, inputTokens, outputTokens) ?? estimate)
           : estimate;
     }
+    /* What this answer cost the platform, as just worked out, for the model call's span (lib/modelTrace.ts). */
+    noteModelCall({ costUsd: cost });
     /* An empty answer is refused like any other unusable one. It used to
        settle as a success and bill the workspace in full while the person was
        told the model returned nothing they could use. */

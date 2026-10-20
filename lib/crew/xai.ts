@@ -2,6 +2,7 @@ import type { CrewMcpAccess } from "./mcp";
 import { engineMock } from "../mock";
 import { catalog } from "../catalog";
 import { vendorKey } from "../vendorKeys";
+import { modelDoor } from "../modelTrace";
 import { MEMBER_MAX_TOKENS, REQUEST_TIMEOUT_MS, CREW_OUTPUT_TOKENS, CREW_MAX_TURNS, type CrewEffort, type CrewPhase, type Rate } from "./room";
 
 /**
@@ -59,6 +60,12 @@ async function once(body: string, key: string): Promise<GrokAnswer> {
 
 /** A paid request is sent once. A lost answer never causes an automatic replay. */
 export async function askGrok(input: { system: string; user: string; phase: CrewPhase; effort: CrewEffort; mock: () => string; model?: string; mcp?: Pick<CrewMcpAccess, "token" | "url"> }): Promise<GrokAnswer> {
+  /* A model call's door (lib/modelTrace.ts): the status and the counts it reports, never the text. */
+  return modelDoor(() => sendGrok(input), (answer) => answer.ok
+    ? { status: 200, tokensIn: answer.promptTokens, tokensOut: answer.completionTokens, costUsd: answer.providerCostUsd ?? null }
+    : { status: answer.status });
+}
+async function sendGrok(input: Parameters<typeof askGrok>[0]): Promise<GrokAnswer> {
   if (engineMock()) {
     const text = input.mock();
     return { ok: true, text, promptTokens: Math.ceil((input.system.length + input.user.length) / 4), completionTokens: Math.ceil(text.length / 4) };

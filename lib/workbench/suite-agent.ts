@@ -1,5 +1,6 @@
 import { isDirectText } from '../openai-direct';
 import { stepTextUsage } from '../textDirect';
+import { modelDoor, modelTelemetry, readSdkResult } from '../modelTrace';
 import { ToolLoopAgent, Output, isStepCount, tool, type ModelMessage, type LanguageModel } from 'ai';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { z } from 'zod';
@@ -118,6 +119,7 @@ export function createSuiteAgent(envelope: SuiteAgentEnvelope, model: LanguageMo
     providerOptions: envelope.providerOptions,
     stopWhen: isStepCount(SUITE_AGENT_STEPS),
     output: Output.object({ schema: suiteAgentResultSchema }),
+    experimental_telemetry: modelTelemetry('suite-agent'),
     tools: {
       inspect_project: tool({ description: 'Read the saved project, brief, selected references and available asset IDs once.', inputSchema: z.object({}).strict(), execute: async () => budget.inspect() }),
       check_plan: tool({ description: 'Check a proposed plan against real project references before finalizing it; at most two checks.', inputSchema: suiteAgentResultSchema, execute: async value => budget.check(value) }),
@@ -180,7 +182,7 @@ export async function runSuiteAgent(envelope: SuiteAgentEnvelope, auth: Record<s
     await checkpoint?.(JSON.stringify({ agentTrace: trace }));
   });
   const messages = suiteAgentMessages(envelope);
-  const result = await agent.generate({ messages, abortSignal: AbortSignal.timeout(260000) });
+  const result = await modelDoor(() => agent.generate({ messages, abortSignal: AbortSignal.timeout(260000) }), readSdkResult);
   const output = suiteAgentResultSchema.parse(result.output);
   const validation = checkSuiteProposal(output, envelope.assetIds);
   if (!validation.valid) throw new Error('The agent proposal referenced unavailable assets. This attempt is saved and will not be repeated automatically.');
