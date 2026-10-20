@@ -109,10 +109,15 @@ test("✓ and ✕ act on the version on screen, through the review trail; ✕ na
   await page.getByTestId("v12-preview-ok").click();
   await expect.poll(() => calls.filter((c) => c.method === "PATCH" && c.url === "/api/jobs/gen_s3").length).toBe(1);
   expect(calls.find((c) => c.url === "/api/jobs/gen_s3")?.body).toEqual({ reviewState: "" });
+  /* Through the card's judge (#792): Ready again, with an Undo that approves it again. */
+  await expect(page.getByTestId("v12-toast")).toContainText("Shot 3 v1 is Ready again");
+  await page.getByTestId("v12-toast").getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => calls.filter((c) => c.method === "PATCH" && c.url === "/api/jobs/gen_s3").length).toBe(2);
+  expect(calls.filter((c) => c.url === "/api/jobs/gen_s3").map((c) => c.body)).toEqual([{ reviewState: "" }, { reviewState: "approved" }]);
   expect(calls.filter((c) => c.url.startsWith("/api/generate"))).toEqual([]);
 });
 
-test("a shot with nothing to judge (making, failed, no take) has no preview ✓ ✕; Download points at the original as an attachment", async ({ page }) => {
+test("a shot with nothing to judge (making, failed, no take, an upload, a take with no picture here) has no preview ✓ ✕; Download points at the original as an attachment", async ({ page }) => {
   await open(page, "shot-2");
   await expect(page.getByTestId("v12-preview-ok")).toBeVisible();
   const href = await page.getByTestId("v12-preview-download").getAttribute("href");
@@ -122,6 +127,42 @@ test("a shot with nothing to judge (making, failed, no take) has no preview ✓ 
   await expect(page.getByTestId("v12-preview-ok")).toHaveCount(0);
   await expect(page.getByTestId("v12-preview-no")).toHaveCount(0);
   await expect(page.getByTestId("v12-preview-download")).toHaveCount(0);
+  /* #792's rows: an upload, and a finished take whose picture is not here. */
+  for (const id of ["shot-9", "shot-10"]) {
+    await page.keyboard.press("Escape");
+    await expect(preview(page)).toHaveCount(0);
+    await open(page, id);
+    await expect(page.getByTestId("v12-preview-ok"), id).toHaveCount(0);
+    await expect(page.getByTestId("v12-preview-no"), id).toHaveCount(0);
+  }
+});
+
+test("a reason the review trail would not take keeps the preview's ✕ panel open and says why; the line takes at most 500 characters", async ({ page }) => {
+  const calls = await watch(page);
+  await open(page, "shot-2");
+  await page.getByTestId("v12-preview-no").click();
+  const reasons = page.getByTestId("v12-preview-reasons");
+  const line = reasons.getByLabel("One line, optional");
+  await expect(line).toHaveAttribute("maxlength", "500");
+  await reasons.getByRole("button", { name: "Other", exact: true }).click();
+  await line.fill("ok");
+  await line.press("Enter");
+  const hint = page.getByTestId("v12-preview-reasons-hint");
+  await expect(hint).toHaveText("Say why you are rejecting it.");
+  await expect(hint).toHaveAttribute("role", "alert");
+  await expect(reasons).toBeVisible();
+  await expect(line).toHaveValue("ok");
+  await expect(line).toHaveAttribute("aria-invalid", "true");
+  await expect(line).toHaveAttribute("aria-describedby", (await hint.getAttribute("id"))!);
+  expect(calls.length, "nothing written for a reason the trail would not take").toBe(0);
+  /* A longer line sends. */
+  await line.fill("okay now");
+  await expect(hint).toHaveCount(0);
+  await line.press("Enter");
+  await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(1);
+  expect(calls.filter((c) => c.method === "PATCH").map((c) => [c.url, c.body])).toEqual([["/api/jobs/gen_s2", { reviewState: "changes" }]]);
+  expect(calls.find((c) => c.url === "/api/notes")?.body).toEqual({ genId: "gen_s2", text: "okay now" });
+  await expect(reasons).toHaveCount(0);
 });
 
 test("← and → step through the cards and wrap; Esc closes the reasons first, then the preview, and the focus goes back to the card", async ({ page }) => {
@@ -131,7 +172,8 @@ test("← and → step through the cards and wrap; Esc closes the reasons first,
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 2 · MAYA arrives");
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
-  await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 8 · A clip");
+  /* The last card is #792's shot 11 (the rows run 1 to 8, then 9 to 11). */
+  await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 11 · Night swim");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 1 · Camp at night");
   /* Esc: the reasons first. */

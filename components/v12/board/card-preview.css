@@ -71,6 +71,7 @@
 .v12 .v12-pv-reason[data-on] { border-color: var(--gx-failed); background: color-mix(in srgb, var(--gx-failed) 14%, transparent); }
 .v12 .v12-pv-line { height: 28px; border: 1px solid var(--gx-input-border); background: var(--gx-root); border-radius: var(--gx-r-tab); color: var(--gx-text); font: inherit; font-size: var(--gx-fs-label); padding: 0 var(--gx-sp-8); min-width: 0; }
 .v12 .v12-pv-line::placeholder { color: var(--gx-placeholder); }
+.v12 .v12-pv-reasons-hint { font-size: var(--gx-fs-label); color: var(--gx-failed-text); }
 
 .v12 .v12-pv-versions { display: flex; gap: var(--gx-sp-8); align-items: center; overflow-x: auto; min-width: 0; padding: 2px; }
 .v12 .v12-pv-versions-label { font-size: var(--gx-fs-label); color: var(--gx-text-sec); flex: none; }

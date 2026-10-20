@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { IconButton, Tooltip } from "../ui";
+import { REJECT_REASON_MAX, rejectReasonProblem } from "@/components/graphite/board/cards/take/take-model";
 import { withOther, rejectReason } from "./card-model";
 import {
   approveLabel, canCompare, clampIndex, compareSides, judgeVersion, stepFrame, stepId, timeLabel, versionDownload, versionOf, waveBars,
@@ -16,7 +17,7 @@ import "./card-preview.css";
  * step through the step's cards; Esc closes the reasons, then the preview, and the focus goes back to where it was.
  *
  * Controlled by the board: `ids` is the order ← and → walk, `openId` the card on screen. ✓ / ✕ are the board's (they go through the review trail,
- * components/v12/board/ShotPreview.tsx); this draws them. `inset` leaves room for the column and the bar in Director mode.
+ * components/v12/board/ShotPreview.tsx); this draws them, only when it was given both (as the card does: a mark that does nothing is not drawn). `inset` leaves room for the column and the bar in Director mode.
  */
 export type CardPreviewProps = {
   items: ReadonlyMap<string, PreviewItemView> | readonly PreviewItemView[];
@@ -24,8 +25,9 @@ export type CardPreviewProps = {
   openId: string;
   onStep: (id: string) => void;
   onClose: () => void;
-  /** ✓ on the version on screen: approve it, or take the approval back when it is already approved. */
+  /** ✓ on the version on screen: approve it, or take the approval back when it is already approved. ✓ and ✕ are drawn only when both are given. */
   onApprove?: (item: PreviewItemView, versionIndex: number) => void;
+  /** Called only with a reason the review trail takes (one line, 3 to 500 characters); otherwise the panel stays open and says why. */
   onReject?: (item: PreviewItemView, versionIndex: number, reason: string) => void;
   /** The version the board shows changed (a version pressed in the strip): the board may follow. */
   onVersion?: (item: PreviewItemView, versionIndex: number) => void;
@@ -53,19 +55,24 @@ export function CardPreview(props: CardPreviewProps) {
   const [compare, setCompare] = useState(false);
   const [tab, setTab] = useState<{ id: string; tab: string } | null>(null);
   /* ✕'s reasons belong to one version of one card: another card or version has its own, closed. */
-  const [rs, setRs] = useState<{ key: string; pick: string | null; line: string } | null>(null);
+  const [rs, setRs] = useState<{ key: string; pick: string | null; line: string; problem?: string | null } | null>(null);
   const panelId = useId();
+  const hintId = useId();
+  const lineInput = useRef<HTMLInputElement>(null);
 
   /* The version on screen: the one pressed in the strip for this card, else the card's own shown one. */
   const index = item ? clampIndex(picked && picked.id === item.id ? picked.index : item.shown, item.versions.length) : 0;
   const version = item?.versions[index] ?? null;
   const comparing = Boolean(item && compare && canCompare(item));
   const tabNow = item?.tabs?.length ? (item.tabs.find((t) => t.id === (tab && tab.id === item.id ? tab.tab : item.tabs![0].id)) ?? item.tabs[0]) : null;
-  const judge = item ? judgeVersion(item, index) : null;
+  /* ✓ and ✕ only when they would do something: a version that can be judged, and the board gave both handlers. */
+  const judge = item && props.onApprove && props.onReject ? judgeVersion(item, index) : null;
   const reasonKey = `${openId}:${index}`;
   const reasoning = rs?.key === reasonKey;
   const pick = reasoning ? rs.pick : null;
   const line = reasoning ? rs.line : "";
+  /* Why the reason cannot be sent yet (too short with no chip, or too long): said in the panel, which stays open with the line in hand. */
+  const problem = reasoning ? (rs.problem ?? null) : null;
 
   /* The focus goes in when the preview opens and back to where it was when it closes. */
   useEffect(() => {
@@ -96,7 +103,13 @@ export function CardPreview(props: CardPreviewProps) {
 
   if (!item || !version) return null;
   const choose = (i: number) => { setPicked({ id: item.id, index: i }); props.onVersion?.(item, i); };
-  const send = (chosen: string | null, text: string) => { if (judge) props.onReject?.(item, index, rejectReason(chosen, text)); closeReasons(); root.current?.focus({ preventScroll: true }); };
+  const send = (chosen: string | null, text: string) => {
+    const reason = rejectReason(chosen, text);
+    const why = rejectReasonProblem(reason);
+    if (why) { setRs({ key: reasonKey, pick: chosen, line: text, problem: why }); lineInput.current?.focus(); return; }
+    if (judge) props.onReject?.(item, index, reason);
+    closeReasons(); root.current?.focus({ preventScroll: true });
+  };
   const sides = comparing ? compareSides(item, index) : null;
   const download = versionDownload(version);
   const style = { right: inset?.right ?? 0, bottom: inset?.bottom ?? 0 };
@@ -181,8 +194,11 @@ export function CardPreview(props: CardPreviewProps) {
                   onClick={() => { if (reason === "Other") setRs({ key: reasonKey, pick: reason, line }); else send(reason, line); }}>{reason}</button>
               ))}
             </div>
-            <input className="v12-pv-line" value={line} aria-label="One line, optional" placeholder="One line, optional · ⏎ to send" onChange={(event) => setRs({ key: reasonKey, pick, line: event.target.value })}
+            <input ref={lineInput} className="v12-pv-line" value={line} aria-label="One line, optional" placeholder="One line, optional · ⏎ to send"
+              maxLength={REJECT_REASON_MAX} aria-invalid={problem ? true : undefined} aria-describedby={problem ? hintId : undefined}
+              onChange={(event) => setRs({ key: reasonKey, pick, line: event.target.value, problem: null })}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); send(pick, line); } }} />
+            {problem ? <span id={hintId} className="v12-pv-reasons-hint" role="alert" data-testid="v12-preview-reasons-hint">{problem}</span> : null}
           </div>
         ) : null}
       </div>

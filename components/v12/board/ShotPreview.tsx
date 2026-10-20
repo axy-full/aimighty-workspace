@@ -1,6 +1,5 @@
 "use client";
 import { useMemo } from "react";
-import { reviewProjectTake } from "@/lib/workspace/library";
 import { useJudge } from "@/components/graphite/board/cards/take/use-judge";
 import type { ShotTakes } from "@/components/graphite/board/cards/take/take-model";
 import { useToast } from "../ui";
@@ -9,8 +8,9 @@ import { previewItemOfShot } from "./preview-model";
 
 /**
  * The preview over the Shots step (PR 6): the shots' takes as preview items, ✓ and ✕ for the version on screen going through the same review trail as the
- * card's (use-judge.ts: ✓ approves that version and clears any other approved one of the shot, with an Undo; ✓ again takes it back; ✕ sends it back with
- * its reason as a note). Free, and only a person: the routes refuse anything else. Nothing is paid and nothing is erased.
+ * card's (use-judge.ts: ✓ approves that version and clears any other approved one of the shot, with an Undo; ✓ again takes it back to Ready, as it was
+ * before when known, with an Undo that approves it again; ✕ sends it back with its reason as a note). Free, and only a person: the routes refuse anything
+ * else. Nothing is paid and nothing is erased.
  */
 export function ShotPreview({ rows, scope, projectId, ...rest }: { rows: readonly ShotTakes[]; scope: string; projectId: string } & Pick<CardPreviewProps, "openId" | "onStep" | "onClose" | "inset" | "note" | "placement" | "onVersion">) {
   const raise = useToast();
@@ -29,11 +29,8 @@ export function ShotPreview({ rows, scope, projectId, ...rest }: { rows: readonl
       onApprove={(item, at) => {
         const t = target(item.id, at);
         if (!t) return;
-        if (item.versions[at].status !== "approved") { void judge.approve(t.row, t.version); return; }
-        void reviewProjectTake(scope, projectId, t.version.genId, "").then(
-          () => toast(`Shot ${t.row.index} ${t.version.label} is Ready again`),
-          (error) => toast(error instanceof Error ? error.message : "The review was not saved."),
-        );
+        /* ✓ on an approved version takes the approval back through the judge (its busy guard, the earlier Ready state, an Undo), as the card does. */
+        void (t.version.status === "approved" ? judge.unapprove(t.row, t.version) : judge.approve(t.row, t.version));
       }}
       onReject={(item, at, reason) => { const t = target(item.id, at); if (t) void judge.reject(t.row, t.version, reason); }} />
   );
