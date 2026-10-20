@@ -13,8 +13,8 @@ import type { RigAgentPaidStepView, RigAgentRunView, RigAgentStepState } from "@
  *    send. "Make 3 shots · 93 cr · at most 186 cr", and the button is the price: Approve · 93 cr
  *    (`agent.approvePlan` with the server's quote fingerprint). That one approval covers the listed renders at those
  *    prices and up to two fixes per shot, within the ceiling (2 × the total). The server enforces it, not this card.
- *  - After it: what the plan has used of its ceiling. A render outside the approval (a price that moved, one over
- *    the per-render line) asks at its own price, as does everything in Auto that is not a cheap draft.
+ *  - After it: what the plan has used of its ceiling. A render outside the approval (a price that moved, one that
+ *    needs an admin) asks at its own price. There is no per-render line and no Auto (owner, 20 Oct 2026).
  *  - Every price is the server's: the plan's quote, the run's own pricing of a step, or (before the build) a
  *    pre-quote of the exact request it will price. Words come from lib/shell/price-words.ts only.
  *  - A chips plan (Agent mode's quick plan) has ONE price (owner, 16 Oct): no pre-quotes, and a step the plan covers
@@ -46,7 +46,7 @@ export type PlanStep = {
   unavailable: string | null;
   /** Over the workspace's per-shot rule: a member can't render it; an admin can. */
   needsAdmin: boolean;
-  /** Priced, but outside the plan's one approval: it asks at its own price ("Asks on its own · over 200 cr"). */
+  /** Priced, but outside the plan's one approval: it asks at its own price ("Asks on its own · needs an admin"). */
   asksAlone: string | null;
   state: RigAgentStepState;
   /** Where it is, in a few words. */
@@ -173,11 +173,7 @@ function modeLine(run: RigAgentRunView, gate: boolean): string | null {
   const money = run.money;
   if (!money) return null;
   if (run.plan?.approval?.open) return "Inside the approved plan nothing asks again; anything outside it asks at its price.";
-  if (gate || (run.state === "awaiting_approval" && money.mode !== "auto")) return "One approval covers the shots and up to 2 fixes each; anything else asks.";
-  if (money.mode === "auto") {
-    const line = priceWords(upTo(money.jobCeiling));
-    return line ? `Drafts ${line} each render without asking; anything else asks.` : "Drafts under the per-render line run without asking; anything else asks.";
-  }
+  if (gate || run.state === "awaiting_approval") return "One approval covers the shots and up to 2 fixes each; anything else asks.";
   return "Each shot asks at its price before it renders.";
 }
 
@@ -227,9 +223,8 @@ export function planModel(input: PlanInput): PlanModel | null {
       seq: p.seq, nodeId: p.nodeId ?? null, kind: input.stills?.has(p.seq) ? "still" : "take", title: p.title, meta: input.meta?.[p.seq] ?? "", price, source,
       unavailable: unavailable ? `Unavailable · ${unavailable}` : null,
       needsAdmin: overCap || (p.state === "paused" && p.pause === "admin"),
-      /* Outside the plan's one approval, with its own price (owner decision L5): it needs an admin, or it is over the per-render line. */
-      asksAlone: !gate?.asks.includes(p.seq) ? null
-        : p.state === "paused" && p.pause === "admin" ? "Asks on its own · needs an admin" : "Asks on its own · over the per-render line",
+      /* Outside the plan's one approval, with its own price (owner decision L5): it needs an admin (the only render that asks on its own). */
+      asksAlone: !gate?.asks.includes(p.seq) ? null : "Asks on its own · needs an admin",
       state: p.state, status, reason: p.reason, canRender: p.canRender, fingerprint: p.fingerprint,
     };
   });

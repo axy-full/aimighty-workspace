@@ -29,7 +29,7 @@ export function decidedLine(item: Pick<DecidedItem, "project" | "what" | "by" | 
   return [item.project.name, who ? `${item.what} by ${who}` : item.what, when(item.at, now)].filter(Boolean).join(" · ");
 }
 
-/** The empty queue, in the frame's words, said as the code behaves (a draft under Auto's line runs without a tap). */
+/** The empty queue, in the frame's words, said as the code behaves (every paid step waits for a person). */
 export const EMPTY_QUEUE = "Nothing is waiting. A priced step that needs your yes waits here until you approve it or let it go.";
 /** Said where a sample production's item would have its buttons. */
 export const SAMPLE_LINE = "Sample production · nothing here spends credits";

@@ -71,7 +71,7 @@ export function ApprovalsView() {
       </section>
       <section className="cr-col" aria-label="Rules and Approve in one go">
         <BatchApprove items={queue.items} run={queue.approveBatch} />
-        <SpendWithoutAsking rules={rules} onEdit={() => goSettings("rules")} />
+        <SpendWithoutAsking onEdit={() => goSettings("rules")} />
         <WhoMayApprove rules={rules} onEdit={() => goSettings("rules")} />
       </section>
     </div>
@@ -99,22 +99,14 @@ function DecidedRow({ item }: { item: DecidedItem }) {
   );
 }
 
-/** Spend without asking, as the code has it today (lead decision 1): Ask, picked per board run, shown and never changed here. */
-function SpendWithoutAsking({ rules, onEdit }: { rules: SpendingRules; onEdit: () => void }) {
+/** Spend without asking: never. Every paid step waits for a person's approval of its quote (owner, 20 Oct 2026: Auto goes), so there is no Ask/Auto choice to show. */
+function SpendWithoutAsking({ onEdit }: { onEdit: () => void }) {
   return (
     <div className="cr-block" data-testid="spend-without-asking">
       <span className="cr-eyebrow">Spend without asking</span>
       <div className="cr-seg-row">
-        {/* The current state, not a control: only Settings › Spending rules changes it. */}
-        <div className="cr-seg" role="group" aria-label="Spend without asking: Ask">
-          <button type="button" className="cr-seg-btn" aria-current="true" aria-disabled="true" title="Only Settings › Spending rules changes this" onClick={onEdit}>Ask</button>
-          <button type="button" className="cr-seg-btn" aria-disabled="true" title="Only Settings › Spending rules changes this" onClick={onEdit}>Auto</button>
-        </div>
-        <span className="cr-strong">Each paid step waits for a person.</span>
+        <span className="cr-strong" data-testid="spend-mode">Each paid step waits for a person.</span>
       </div>
-      {rules.loaded && rules.perJobLine !== null && rules.perJobLine > 0 ? (
-        <p className="cr-text" data-testid="spend-auto-line">Auto is chosen per board run, for drafts at or under <Price value={exact(rules.perJobLine)} />; full-quality renders always ask.</p>
-      ) : null}
       <button type="button" className="cr-link" onClick={onEdit} data-testid="spend-edit">Edit in Settings › Spending rules ›</button>
     </div>
   );
