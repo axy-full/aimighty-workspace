@@ -66,10 +66,10 @@ test("the code carries no per-job line and no Auto ceiling: no constant, verdict
   const product = ["lib", "app", "components"].flatMap(sources).map((file) => ({ file: path.relative(repoRoot, file), text: readFileSync(file, "utf8") }));
   expect(product.filter((f) => named.test(f.text)).map((f) => f.file)).toEqual([]);
   /* Nor Auto's no-tap ceiling (owner, 20 Oct 2026: "Auto goes"): none of its names is used anywhere in the product. */
-  const auto = /\b(AUTO_NO_TAP_CEILING_USD|autoNoTapCeilingCredits|RIG_AGENT_JOB_CEILING_CREDITS|rigJobCeiling|effectiveJobCeiling)\b/;
+  const auto = /\b(AUTO_NO_TAP_CEILING_USD|autoNoTapCeilingCredits|RIG_AGENT_JOB_CEILING_CREDITS|rigJobCeiling|effectiveJobCeiling|autoLineCredits|spendsWithoutAsking)\b/;
   expect(product.filter((f) => auto.test(f.text)).map((f) => f.file)).toEqual([]);
-  /* And the old Auto setting is neither read nor written: no code names the key as a string or a property (a comment may say it is not read). */
-  const setting = /["']spendWithoutAsking["']|\.spendWithoutAsking\b|\bspendWithoutAsking\s*:/;
+  /* And the old Auto setting is neither read nor written: its key appears nowhere in the product, in any form (string, property, destructured or bare). */
+  const setting = /\bspendWithoutAsking\b/;
   expect(product.filter((f) => setting.test(f.text)).map((f) => f.file)).toEqual([]);
   /* What stays: the workspace's own rule. With "cap per shot", a member's take that carries a shot past the cap needs an admin; an admin's goes. */
   const cr = (n: number) => `${n} cr`;

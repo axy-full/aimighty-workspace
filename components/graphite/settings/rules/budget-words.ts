@@ -15,7 +15,7 @@ import { budgetPause } from "@/lib/budgetPause";
 
 export type BudgetRules = { budget: number | null; warnPct: number | null; rule: ApprovalRule | null; shotCap: number | null };
 
-/** "the 80 % pause asks at 320 cr", or what no budget means. */
+/** "warns at 320 cr (80 %)", or what no budget means. */
 export function budgetLine(r: Pick<BudgetRules, "budget" | "warnPct">, cr: (n: number) => string): string {
   const pause = r.budget == null ? null : budgetPause({ cap: r.budget, spent: 0, needs: 0, warnPct: r.warnPct ?? 80 });
   return pause ? `warns at ${cr(pause.pauseAt)} (${pause.pct} %)` : "none · a production follows its own cap, if it has one";

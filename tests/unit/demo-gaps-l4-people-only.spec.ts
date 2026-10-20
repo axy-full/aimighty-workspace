@@ -308,7 +308,7 @@ test("an unlock belongs to the cap it was given for: a new cap or a new budget r
   /* Unlocked at the old cap (a direct write: the route's own Unlock is tied to the cap shown, demo-gaps-l4-budget-gate). */
   await exec("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
   await exec("UPDATE projects SET cap_warned_at=1 WHERE id='prod-l4'");
-  /* A new cap: re-locked, the warning re-armed, and the ask at 800 of 1,000 cr stands. */
+  /* A new cap: re-locked, the warning re-armed, and the 80 % share is at 800 of 1,000 cr. */
   expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capCredits: 1000 }), ctx as never)).status).toBe(200);
   expect(await read("SELECT cap_credits,cap_unlocked,cap_warned_at FROM projects WHERE id='prod-l4'")).toEqual([{ cap_credits: 1000, cap_unlocked: 0, cap_warned_at: null }]);
   /* The share at the new cap, as the gate reckons spend (budgetAsk, the Auto gate's ask, went with Auto on 20 Oct 2026). */

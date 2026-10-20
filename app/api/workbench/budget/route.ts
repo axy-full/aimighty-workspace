@@ -12,9 +12,9 @@ const NO_STORE = { "Cache-Control": "private, no-store" };
 
 /**
  * A production's budget as the reservation gate enforces it (lib/caps.ts projectCapSpent): its cap (its own, or the
- * workspace's budget per production), what it has used against it, and where paid work stops to ask (the workspace's
- * `capWarnPct` share). Credits workspaces only; read-only; this workspace only. The board's plan card reads it to show
- * "Paused at 80 % of the budget"; the gate decides on its own. With `runId` (a plan at its gate), also where the plan's
+ * workspace's budget per production), what it has used against it, and the workspace's `capWarnPct` share, where the
+ * producer is warned (nothing pauses there since Auto went on 20 Oct 2026). Credits workspaces only; read-only; this workspace
+ * only. The board's plan card reads it for its budget lines; the gate decides on its own. With `runId` (a plan at its gate), also where the plan's
  * "at most" (the server's own quote) would take the production: one line for the card before Approve, or null. A token
  * caller (requireUser lets read-only API and MCP tokens through) gets the budget only, never the plan's figures.
  */
