@@ -100,8 +100,8 @@ test("✓ is the review trail's approve (Sent) and takes itself back; ✕ sends 
   await reveal(t, "shot-2");
   await card(t, "shot-2").getByRole("button", { name: /^Not right/ }).click();
   await card(t, "shot-2").getByTestId("v12-card-reasons").getByRole("button", { name: "Other", exact: true }).click();
-  await card(t, "shot-2").getByLabel("One line, optional").fill("Too dark by the fire");
-  await card(t, "shot-2").getByLabel("One line, optional").press("Enter");
+  await card(t, "shot-2").getByLabel("Why", { exact: true }).fill("Too dark by the fire");
+  await card(t, "shot-2").getByLabel("Why", { exact: true }).press("Enter");
   await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(2);
   expect(calls.filter((c) => c.url === "/api/notes")[1].body).toEqual({ genId: "gen_s2", text: "Too dark by the fire" });
   /* A card with nothing to judge (making, failed, no take, an upload, a finished take with no picture here, an upload shown beside a take) offers neither ✓ nor ✕. */
@@ -118,7 +118,7 @@ test("Other with no line is refused (the panel stays and says why, nothing writt
   const calls = await watch(page);
   const t = takes(page);
   const reasons = card(t, "shot-2").getByTestId("v12-card-reasons");
-  const line = card(t, "shot-2").getByLabel("One line, optional");
+  const line = card(t, "shot-2").getByLabel("Why", { exact: true });
   /* The first press on a page that has just loaded can land before it answers: press until the panel is there (it is never closed by this). */
   await expect(async () => {
     if (!(await reasons.count())) { await reveal(t, "shot-2"); await card(t, "shot-2").getByRole("button", { name: /^Not right/ }).click(); }
@@ -127,7 +127,7 @@ test("Other with no line is refused (the panel stays and says why, nothing writt
   await expect(line).toHaveAttribute("maxlength", "500");
   /* Other with no line (owner, 20 Oct 2026: ""Other" needs a line, one word is enough"): refused, the panel stays, the hint says why. */
   await reasons.getByRole("button", { name: "Other", exact: true }).click();
-  await expect(line).toHaveAttribute("placeholder", "One word is enough · ⏎ to send");
+  await expect(line).toHaveAttribute("placeholder", "One word is enough · ⏎");
   await expect(line).toHaveAttribute("aria-required", "true");
   await line.fill("   ");
   await line.press("Enter");
@@ -135,6 +135,8 @@ test("Other with no line is refused (the panel stays and says why, nothing writt
   await expect(hint).toHaveText("Other needs a line: one word is enough.");
   await expect(hint).toHaveAttribute("role", "alert");
   await expect(reasons).toBeVisible();
+  /* The refused line stays in hand. */
+  await expect(line).toHaveValue("   ");
   await expect(line).toHaveAttribute("aria-invalid", "true");
   await expect(line).toHaveAttribute("aria-describedby", (await hint.getAttribute("id"))!);
   await expect(status(t, "shot-2")).toHaveText("Ready");
@@ -151,6 +153,7 @@ test("Other with no line is refused (the panel stays and says why, nothing writt
   await reasons.getByRole("button", { name: "Wrong framing", exact: true }).click();
   await expect(hint).toHaveText("Too long: 500 characters at most.");
   await expect(reasons).toBeVisible();
+  await expect(line).toHaveValue("x".repeat(500));
   await expect(line).toHaveAttribute("aria-invalid", "true");
   expect(calls.length, "nothing written for a reason that is too long").toBe(0);
   /* Other with one short word sends: "ok" (two letters, refused before 20 Oct) is enough. */
@@ -164,6 +167,37 @@ test("Other with no line is refused (the panel stays and says why, nothing writt
   await expect(reasons).toHaveCount(0);
 });
 
+test("with no chip, Enter on an empty line is refused (hint, nothing written); one word with no chip sends", async ({ page }) => {
+  const calls = await watch(page);
+  const t = takes(page);
+  const reasons = card(t, "shot-2").getByTestId("v12-card-reasons");
+  const line = card(t, "shot-2").getByLabel("Why", { exact: true });
+  await expect(async () => {
+    if (!(await reasons.count())) { await reveal(t, "shot-2"); await card(t, "shot-2").getByRole("button", { name: /^Not right/ }).click(); }
+    await expect(reasons).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  /* No chip pressed, nothing typed: Enter would have recorded "Other" before 20 Oct; now it is refused. */
+  await expect(reasons.getByRole("button", { pressed: true })).toHaveCount(0);
+  await expect(line).toHaveValue("");
+  await line.press("Enter");
+  const hint = card(t, "shot-2").getByTestId("v12-card-reasons-hint");
+  await expect(hint).toHaveText("Other needs a line: one word is enough.");
+  await expect(hint).toHaveAttribute("role", "alert");
+  await expect(line).toHaveAttribute("aria-invalid", "true");
+  await expect(line).toHaveAttribute("aria-describedby", (await hint.getAttribute("id"))!);
+  await expect(reasons).toBeVisible();
+  await expect(status(t, "shot-2")).toHaveText("Ready");
+  expect(calls.length, "nothing written for no chip and no line").toBe(0);
+  /* One word, still no chip: sent, the line is the whole reason. */
+  await line.fill("dark");
+  await expect(hint).toHaveCount(0);
+  await line.press("Enter");
+  await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(1);
+  expect(calls.filter((c) => c.method === "PATCH").map((c) => [c.url, c.body])).toEqual([["/api/jobs/gen_s2", { reviewState: "changes" }]]);
+  expect(calls.find((c) => c.url === "/api/notes")?.body).toEqual({ genId: "gen_s2", text: "dark" });
+  await expect(reasons).toHaveCount(0);
+});
+
 test("a chip other than Other still sends without a line", async ({ page }) => {
   const calls = await watch(page);
   const t = takes(page);
@@ -172,7 +206,7 @@ test("a chip other than Other still sends without a line", async ({ page }) => {
     if (!(await reasons.count())) { await reveal(t, "shot-2"); await card(t, "shot-2").getByRole("button", { name: /^Not right/ }).click(); }
     await expect(reasons).toBeVisible({ timeout: 1_000 });
   }).toPass({ timeout: 15_000 });
-  await expect(card(t, "shot-2").getByLabel("One line, optional")).toHaveValue("");
+  await expect(card(t, "shot-2").getByLabel("Why", { exact: true })).toHaveValue("");
   await reasons.getByRole("button", { name: "Artifacts", exact: true }).click();
   await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(1);
   expect(calls.filter((c) => c.method === "PATCH").map((c) => [c.url, c.body])).toEqual([["/api/jobs/gen_s2", { reviewState: "changes" }]]);

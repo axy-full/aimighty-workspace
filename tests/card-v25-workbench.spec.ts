@@ -74,9 +74,9 @@ test("✕ opens the step's reasons ending in Other and one optional line; a reas
   await openReasons(s, "s4");
   const reasons = card(s, "s4").getByTestId("v12-card-reasons");
   await expect(reasons.getByRole("button")).toHaveText(["Look", "Framing", "Motion", "Face", "Text", "Other"]);
-  await expect(reasons.getByLabel("One line, optional")).toHaveAttribute("placeholder", "One line, optional · ⏎ to send");
+  await expect(reasons.getByLabel("Why", { exact: true })).toHaveAttribute("placeholder", "One line, optional · ⏎");
   /* A reason sends at once, with the line if one is written. */
-  await reasons.getByLabel("One line, optional").fill("warmer");
+  await reasons.getByLabel("Why", { exact: true }).fill("warmer");
   await reasons.getByRole("button", { name: "Look" }).click();
   await expect(card(s, "s4").getByTestId("v12-card-status")).toHaveText("✕ Look · warmer");
   await expect(card(s, "s4").getByTestId("v12-card-reasons")).toHaveCount(0);
@@ -84,7 +84,7 @@ test("✕ opens the step's reasons ending in Other and one optional line; a reas
   await openReasons(s, "s1");
   const second = card(s, "s1").getByTestId("v12-card-reasons");
   await second.getByRole("button", { name: "Other" }).click();
-  await expect(second.getByLabel("One line, optional")).toBeFocused();
+  await expect(second.getByLabel("Why", { exact: true })).toBeFocused();
   await page.keyboard.type("the camp is wrong");
   await page.keyboard.press("Enter");
   await expect(card(s, "s1").getByTestId("v12-card-status")).toHaveText("✕ the camp is wrong");

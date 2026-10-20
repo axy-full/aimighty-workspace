@@ -182,7 +182,7 @@ export function StepCard(props: StepCardProps) {
                   onClick={() => { if (reason === "Other") { setPick(reason); setProblem(null); input.current?.focus(); } else send(reason, note); }}>{reason}</button>
               ))}
             </div>
-            <input ref={input} className="v12-card-note" value={note} aria-label="One line, optional" placeholder={pick === "Other" ? "One word is enough · ⏎ to send" : "One line, optional · ⏎ to send"} autoFocus={false}
+            <input ref={input} className="v12-card-note" value={note} aria-label="Why" placeholder={pick === "Other" ? "One word is enough · ⏎" : "One line, optional · ⏎"} autoFocus={false}
               maxLength={REJECT_REASON_MAX} aria-required={pick === "Other" || undefined} aria-invalid={problem ? true : undefined} aria-describedby={problem ? hintId : undefined}
               onChange={(event) => { setNote(event.target.value); setProblem(null); }}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); send(pick, note); } }} />

@@ -214,7 +214,7 @@ export function CardPreview(props: CardPreviewProps) {
                   onClick={() => { if (reason === "Other") setRs({ key: reasonKey, pick: reason, line }); else send(reason, line); }}>{reason}</button>
               ))}
             </div>
-            <input ref={lineInput} className="v12-pv-line" value={line} aria-label="One line, optional" placeholder={pick === "Other" ? "One word is enough · ⏎ to send" : "One line, optional · ⏎ to send"}
+            <input ref={lineInput} className="v12-pv-line" value={line} aria-label="Why" placeholder={pick === "Other" ? "One word is enough · ⏎" : "One line, optional · ⏎"}
               maxLength={REJECT_REASON_MAX} aria-required={pick === "Other" || undefined} aria-invalid={problem ? true : undefined} aria-describedby={problem ? hintId : undefined}
               onChange={(event) => setRs({ key: reasonKey, pick, line: event.target.value, problem: null })}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); send(pick, line); } }} />

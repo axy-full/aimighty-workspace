@@ -219,11 +219,11 @@ test("Other with no line keeps the preview's ✕ panel open and says why, nothin
   await open(page, "shot-2");
   await page.getByTestId("v12-preview-no").click();
   const reasons = page.getByTestId("v12-preview-reasons");
-  const line = reasons.getByLabel("One line, optional");
+  const line = reasons.getByLabel("Why", { exact: true });
   await expect(line).toHaveAttribute("maxlength", "500");
   /* Other with no line (owner, 20 Oct 2026: ""Other" needs a line, one word is enough"): refused, and the panel says why. */
   await reasons.getByRole("button", { name: "Other", exact: true }).click();
-  await expect(line).toHaveAttribute("placeholder", "One word is enough · ⏎ to send");
+  await expect(line).toHaveAttribute("placeholder", "One word is enough · ⏎");
   await expect(line).toHaveAttribute("aria-required", "true");
   await line.fill("  ");
   await line.press("Enter");
@@ -273,7 +273,7 @@ test("in the preview, a chip other than Other still sends without a line", async
   await open(page, "shot-2");
   await page.getByTestId("v12-preview-no").click();
   const reasons = page.getByTestId("v12-preview-reasons");
-  await expect(reasons.getByLabel("One line, optional")).toHaveValue("");
+  await expect(reasons.getByLabel("Why", { exact: true })).toHaveValue("");
   await reasons.getByRole("button", { name: "Off the brief", exact: true }).click();
   await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(1);
   expect(calls.filter((c) => c.method === "PATCH").map((c) => [c.url, c.body])).toEqual([["/api/jobs/gen_s2", { reviewState: "changes" }]]);
@@ -296,7 +296,7 @@ test("← and → step through the cards and wrap; Esc closes the reasons first,
   /* Esc: the reasons first, and the focus goes back to ✕. */
   await page.getByTestId("v12-preview-no").click();
   await expect(page.getByTestId("v12-preview-reasons")).toBeVisible();
-  await page.getByLabel("One line, optional").focus();
+  await page.getByLabel("Why", { exact: true }).focus();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("v12-preview-reasons")).toHaveCount(0);
   await expect(preview(page)).toBeVisible();
@@ -307,8 +307,8 @@ test("← and → step through the cards and wrap; Esc closes the reasons first,
   /* The arrows do not step while a field has them. */
   await open(page, "shot-1");
   await page.getByTestId("v12-preview-no").click();
-  await page.getByLabel("One line, optional").fill("ab");
-  await page.getByLabel("One line, optional").press("ArrowLeft");
+  await page.getByLabel("Why", { exact: true }).fill("ab");
+  await page.getByLabel("Why", { exact: true }).press("ArrowLeft");
   await expect(page.getByTestId("v12-preview-title")).toHaveText("Shot 1 · Camp at night");
   /* A layer that owns its keys (a menu beside the preview) keeps them: the preview neither steps nor closes. */
   await page.keyboard.press("Escape");
