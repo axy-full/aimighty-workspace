@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import type { GuestBoard } from "@/lib/guest/board";
 import { fmtCredits } from "@/lib/price";
-import { currentStage, stageEmpty, stagesOf, type Stage } from "@/lib/v12/board/stages";
+import { currentStage, firstStage, stageEmpty, stagesOf, type Stage } from "@/lib/v12/board/stages";
 import { SAMPLE_PILL } from "@/lib/v12/visitor";
 import { Bar } from "@/components/v12/bar/Bar";
 import { Price } from "@/components/v12/ui/Price";
@@ -31,7 +31,7 @@ export function VisitorBoard({ title, board }: { title: string; board: GuestBoar
         <div className="v12-stagehead" data-testid="v12-stage-header">
           <span className="v12-stagehead-left">
             <span className="v12-crumbs">
-              <button type="button" className="v12-crumb v12-crumb-board" onClick={() => setAsked(stages[0].id)}>{title}</button>
+              <button type="button" className="v12-crumb v12-crumb-board" onClick={() => setAsked(firstStage(stages, "film")?.id ?? null)}>{title}</button>
               <span className="v12-crumb-sep" aria-hidden="true">›</span>
               <span className="v12-crumb v12-crumb-stage" data-testid="v12-visitor-stage">{stage.label}</span>
             </span>
