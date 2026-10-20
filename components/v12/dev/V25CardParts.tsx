@@ -1,8 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { OverlayProvider, ToastProvider } from "../ui";
 import { StepCard, type StepCardProps } from "../board/StepCard";
 import { ShotStepCard } from "../board/ShotStepCard";
+import { ShotPreview } from "../board/ShotPreview";
+import { CardPreview } from "../board/CardPreview";
+import type { PreviewItemView } from "../board/preview-model";
+import { SHOT_REASONS as TAKE_REASONS } from "../board/shot-card";
 import type { ShotTakes, ShotVersion } from "@/components/graphite/board/cards/take/take-model";
 import "../v12.css";
 import "./v25-parts.css";
@@ -12,8 +16,8 @@ import "./v25-parts.css";
  * screenshots beside design/particl-prototype-25 and tests/card-v25-workbench.spec.ts. EVERYTHING HERE IS MOCK DATA: the titles, the
  * statuses and the stand-in pictures stand for what the board screen will pass in when it is built; nothing is read from a workspace.
  */
-const still = (hue: number) => `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},38%,26%)"/><stop offset="1" stop-color="hsl(${hue},30%,10%)"/></linearGradient></defs><rect width="640" height="360" fill="url(#g)"/></svg>`)}`;
+const still = (hue: number, w = 640, h = 360) => `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},38%,26%)"/><stop offset="1" stop-color="hsl(${hue},30%,10%)"/></linearGradient></defs><rect width="${w}" height="${h}" fill="url(#g)"/></svg>`)}`;
 
 type Mock = Omit<StepCardProps, "onSelect" | "onApprove" | "onReject" | "onMenu">;
 const SHOT_REASONS = ["Look", "Framing", "Motion", "Face", "Text"];
@@ -63,19 +67,54 @@ const ROWS: ShotTakes[] = [
   shot(4, "The drink", [version("gen_s4", 1, "rendering", { url: null })]),
   shot(5, "Bottle detail", [version("gen_s5", 1, "failed", { url: null })]),
   shot(6, "Pack on sand", []),
+  shot(7, "Three versions", [version("gen_s7a", 1, "changes"), version("gen_s7b", 2, "review"), version("gen_s7c", 3, "review")]),
+  { ...shot(8, "A clip", [version("gen_s8", 1, "review", { media: "video", url: "/fixtures/clip.mp4" })]), frame: { url: still(210), kind: "image" } },
   /* Ready, with nothing to judge: an upload, and a finished take whose picture is not here. (9 on: 7 and 8 are the preview's, PR 6.) */
   shot(9, "The sphere", [version("gen_s9", 1, "uploaded")]),
   shot(10, "Last light", [version("gen_s10", 1, "review", { url: null })]),
   /* Sent back: its reason is the team's note at the mark (the browser check answers the notes). */
   shot(11, "Night swim", [version("gen_s11", 1, "changes")]),
+  /* Mixed (PR 6): a take that can be judged, then an upload with its picture here, shown. The upload never carries ✓ ✕; the take does. */
+  shot(12, "Take and upload", [version("gen_s12a", 1, "review"), version("gen_s12b", 2, "uploaded")]),
+  /* Two clips (PR 6 review): Compare plays each version's own clip, not the shot's frame twice. */
+  { ...shot(13, "Two cuts", [version("gen_s13a", 1, "review", { media: "video", url: "/fixtures/clip.mp4" }), version("gen_s13b", 2, "review", { media: "video", url: "/fixtures/clip-6s.mp4" })]), frame: { url: still(250), kind: "image" } },
+  /* A 9:16 clip (720 x 1280) with a 9:16 frame: on a phone its Play and time stay clear of Previous and Next. */
+  { ...shot(14, "Tall clip", [version("gen_s14", 1, "review", { media: "video", url: "/fixtures/astra-clip.mp4" })]), frame: { url: still(290, 360, 640), kind: "image" } },
 ];
 
+/* Cards that are not takes: a script (Script · Beats · Breakdown) and a sound, as preview items (mock). */
+const SCRIPT: PreviewItemView = {
+  id: "script", title: "Script", kind: "text", shown: 0, canJudge: false, reasons: TAKE_REASONS,
+  versions: [{ label: "v1", url: null, poster: null, status: "ready", judgeable: false }],
+  tabs: [
+    { id: "script", label: "Script", text: "INT. CAMP — NIGHT\nA cold bottle on a warm table." },
+    { id: "beats", label: "Beats", text: "1. The arrival\n2. The water\n3. The first sip" },
+    { id: "breakdown", label: "Breakdown", text: "Shot 1 camp · Shot 2 arrival · Shot 3 water" },
+  ],
+};
+const SOUND: PreviewItemView = {
+  id: "sound", title: "Voice · line 1", kind: "sound", shown: 0, canJudge: false, reasons: TAKE_REASONS,
+  versions: [
+    { genId: "gen_voice", label: "v1", url: "/fixtures/tone.mp3", poster: null, status: "ready", judgeable: false },
+    { genId: "gen_voice2", label: "v2", url: "/fixtures/tone.mp3?v=2", poster: null, status: "ready", judgeable: false },
+  ],
+};
+
 function TakeBoard() {
+  const [open, setOpen] = useState<string | null>(null);
+  const [demo, setDemo] = useState<"script" | "sound" | null>(null);
+  const demos = useMemo(() => new Map([[SCRIPT.id, SCRIPT], [SOUND.id, SOUND]]), []);
   return (
     <section className="v25-parts-canvas" aria-label="Takes" data-testid="v25-board-takes">
       <div className="v25-parts-grid">
-        {ROWS.map((row) => <ShotStepCard key={row.nodeId} row={row} scope="particl-active-test" projectId="test-project" />)}
+        {ROWS.map((row) => <ShotStepCard key={row.nodeId} row={row} scope="particl-active-test" projectId="test-project" onOpen={() => setOpen(row.nodeId)} />)}
       </div>
+      <p className="v25-parts-said">
+        <button type="button" className="v25-parts-btn" data-testid="open-script" onClick={() => setDemo("script")}>Preview a script</button>{" "}
+        <button type="button" className="v25-parts-btn" data-testid="open-sound" onClick={() => setDemo("sound")}>Preview a sound</button>
+      </p>
+      {open ? <ShotPreview rows={ROWS} scope="particl-active-test" projectId="test-project" openId={open} onStep={setOpen} onClose={() => setOpen(null)} placement="fixed" note="The column and the bar act on this shot." /> : null}
+      {demo ? <CardPreview items={demos} ids={[demo]} openId={demo} onStep={() => {}} onClose={() => setDemo(null)} placement="fixed" /> : null}
     </section>
   );
 }

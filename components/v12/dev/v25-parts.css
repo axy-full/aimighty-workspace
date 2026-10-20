@@ -23,3 +23,6 @@
 }
 @media (min-width: 1400px) { .v12 .v25-parts-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (min-width: 1800px) { .v12 .v25-parts-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+
+.v12 .v25-parts-btn { height: 32px; padding: 0 12px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); cursor: pointer; }
+@media (pointer: coarse) { .v12 .v25-parts-btn { min-height: var(--gx-touch); } }
