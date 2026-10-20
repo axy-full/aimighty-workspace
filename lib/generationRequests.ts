@@ -500,7 +500,7 @@ export async function reserveGenerationSpend(event: MeterEvent, options: Reserva
   // The database transaction below also protects requests in other processes.
   const result = reservationTurn.then(() => reserveGenerationSpendLocked(event, options));
   reservationTurn = result.then(() => {}, () => {});
-  /* The house's month has reached the warning line: the platform owner hears once a month for each cap figure. Told after the turn is let go, never awaited
+  /* The house's month has reached the warning line: the platform owner hears once a month, and once more after each raise. Told after the turn is let go, never awaited
      here, so a slow mail server holds up no reservation (this workspace's or any other's) and never fails the job already reserved. */
   const house = await result;
   if (house) noteHouseSpendLater(house.spentUsd, house.capUsd, house.at, house.since);

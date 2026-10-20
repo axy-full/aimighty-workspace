@@ -146,7 +146,7 @@ test("the quote: a warning from 80%, a refusal at the cap or for a job that woul
   expect(verdictOf(quote(1), context)).toMatchObject({ allow: true, notice: "" });
 });
 
-test("the house quote counts a held take at its band, as admission does (the cap and the approval line); every other workspace's quote and verdict are unchanged", async () => {
+test("the house quote counts a held take at its band against the house cap, as admission does; every other workspace's quote and verdict are unchanged", async () => {
   const { quoteOf, verdictOf, withHouseBands, publicQuote } = await import("../../lib/quote");
   const { CINEMA_STUDIO_MODEL_ID } = await import("../../lib/cinemaStudioTypes");
   const { holdBandOf } = await import("../../lib/cinemaHold");
@@ -170,11 +170,11 @@ test("the house quote counts a held take at its band, as admission does (the cap
   expect(verdictOf(quoteOf([held], SYNTHETIC_TERMS), nearCap)).toMatchObject({ allow: true });
   /* The warning names the month with the hold in it. */
   expect(priced([held], { ...base, houseCap: { cap: 500, spent: 485 } })).toMatchObject({ allow: true, notice: `${Math.floor((485 + 4 * band) / 5)}% of this month's $500 used ($${485 + 4 * band})` });
-  /* The approval line, judged at cost for the house: a held take at its hold, as admission's jobLineGate counts it. */
-  const line = { ...base, isAdmin: false, houseCap: { cap: 1_000_000, spent: 0 }, jobLine: { credits: 200, machine: false, house: true, perCredit: 0.1 } };
+  /* The bands are the house cap's alone: with room under the cap, a held take passes like a plain one. */
+  const roomy = { ...base, isAdmin: false, houseCap: { cap: 1_000_000, spent: 0 } };
   const big = (u: typeof held) => ({ ...u, usd: 8 });
-  expect(priced([big(plain)], line)).toMatchObject({ allow: true });
-  expect(priced([big(held)], line)).toMatchObject({ allow: false, gate: "approval" });
+  expect(priced([big(plain)], roomy)).toMatchObject({ allow: true, notice: "" });
+  expect(priced([big(held)], roomy)).toMatchObject({ allow: true, notice: "" });
 
   /* The same answer as admission's own gate, against the house's real month. */
   await houseRow();
@@ -191,8 +191,9 @@ test("the house quote counts a held take at its band, as admission does (the cap
 
   /* Every other workspace: no house cap, so the context comes back as the same object, and the quote and verdict are byte-identical. */
   const customers = [
-    { ...base, allowance: { cap: 50, spent: 10 }, houseCap: null, jobLine: { credits: 200, machine: false, perCredit: 0.1 } },
-    { ...base, isAdmin: false, houseCap: null, jobLine: { credits: 200, machine: false, house: true, perCredit: 0.1 } },
+    { ...base, allowance: { cap: 50, spent: 10 }, houseCap: null },
+    { ...base, allowance: { cap: 1, spent: 0 }, houseCap: null },
+    { ...base, isAdmin: false, houseCap: null },
     { ...base, isAdmin: false },
   ];
   for (const context of customers) for (const units of [[held], [plain], [held, plain], [big(held), big(plain)]]) {
@@ -202,7 +203,7 @@ test("the house quote counts a held take at its band, as admission does (the cap
   }
 });
 
-test("the reservation: 80% tells the platform owner once a month for each cap figure, 100% stops the job, a refused job writes nothing; the customer allowance never sees it; a mail that hangs holds up no reservation", async () => {
+test("the reservation: 80% tells the platform owner once a month (and once more after a raise), 100% stops the job, a refused job writes nothing; the customer allowance never sees it; a mail that hangs holds up no reservation", async () => {
   const mail: { to: string[]; subject: string; text: string }[] = [];
   /* While `hang` is set, the stand-in mail server takes a message and never answers (until `answer`), as a slow one would for its 15 s. */
   let hang = false;
@@ -302,7 +303,7 @@ test("the reservation: 80% tells the platform owner once a month for each cap fi
       expect(await noteHouseSpend(lowered, lowered)).toBe(false);
       expect(await warned()).toBe(1);
       expect(mail).toHaveLength(1);
-      /* The raised figure is a new one (owner, 19 Oct 2026): crossing its own 80% tells the platform owner again, once. */
+      /* A raise past every figure warned at this month (owner, 19 Oct 2026): crossing its own 80% tells the platform owner again, once. */
       expect(await noteHouseSpend(base + 99, base + 100)).toBe(true);
       expect(await warned()).toBe(2);
       expect(mail).toHaveLength(2);
@@ -331,7 +332,7 @@ test("the reservation: 80% tells the platform owner once a month for each cap fi
   }
 });
 
-test("a raised or reset cap is a new figure: crossing its 80% warns again (one line, one email), at most once per figure a month, however many cross it together", async () => {
+test("after a raise the 80% warning comes once more; after a lowering it never comes again that month; jobs crossing together write one line and one email", async () => {
   const mail: { subject: string }[] = [];
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -342,6 +343,9 @@ test("a raised or reset cap is a new figure: crossing its 80% warns again (one l
   process.env.RESEND_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   process.env.RESEND_API_KEY = "test-mail-key";
   process.env.MAIL_FROM = "Particl <desk@example.test>";
+  const clock = Date.now;
+  const ids: string[] = [];
+  const model = "gemini-3.1-flash-image";
   try {
     const { runInTenant } = await import("../../lib/tenant");
     const { db, ready } = await import("../../lib/db");
@@ -351,61 +355,117 @@ test("a raised or reset cap is a new figure: crossing its 80% warns again (one l
     const { houseNotesSettled, houseSpendSince, houseMonthStart, noteHouseSpend } = await import("../../lib/houseCap");
     await platformReady();
     await houseRow();
-    const model = "gemini-3.1-flash-image";
-    /* Synthetic figures throughout. */
-    const usd = 0.04;
-    const tag = `${Date.now().toString(36)}r`;
-    const job = async (id: string) => {
+    const tag = `${clock().toString(36)}r`;
+    /* The whole month below runs on a clock set to a month long past (the clock still moves), so the reservations' rows, their notes and
+       their lines all sit in that month, where nothing else this file or another writes stands in the way, and this month's figures are
+       left as they were. Synthetic figures throughout: jobs of $2 and $0.04, and caps built from the spend they find. */
+    const month = Date.UTC(2023, 2, 10);
+    const offset = month - clock();
+    Date.now = () => clock() + offset;
+    const job = async (usd: number) => {
+      const id = `gen_housecap_raise_${ids.length}_${tag}`;
+      ids.push(id);
       await db().execute({ sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at) VALUES(?,'image','google',?,'a still','{}','running',?,?)`, args: [id, model, Date.now(), Date.now()] });
       try { await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd }); }
       finally { await houseNotesSettled(); }
     };
-    /* The lines written in a month at one cap figure. */
-    const linesAt = async (capUsd: number, at = Date.now()) => {
-      const month = cycleBounds(1, at);
+    const lines = async (capUsd?: number, at = Date.now()) => {
+      const m = cycleBounds(1, at);
       return Number((await platformDb().execute({
-        sql: "SELECT COUNT(*) AS n FROM platform_audit WHERE action='housecap.warned' AND workspace_id='ws_legacy' AND created_at>=? AND created_at<? AND ABS(json_extract(details,'$.capUsd')-?)<1e-9",
-        args: [month.start, month.end, capUsd] })).rows[0].n);
+        sql: `SELECT COUNT(*) AS n FROM platform_audit WHERE action='housecap.warned' AND workspace_id='ws_legacy' AND created_at>=? AND created_at<?${capUsd == null ? "" : " AND ABS(json_extract(details,'$.capUsd')-?)<1e-9"}`,
+        args: [m.start, m.end, ...(capUsd == null ? [] : [capUsd])] })).rows[0].n);
     };
-    /* A figure that this month's spend plus one job puts at 90% of it (and odd enough that no other test set it). */
-    const crossedBy = async () => Math.round(((await houseSpendSince(houseMonthStart())) + usd) / 0.9 * 1e6) / 1e6 + 0.000123;
+    const spent = () => houseSpendSince(houseMonthStart());
+    /* A figure the month's spend plus a $2 job puts at 90% of (odd enough that no other test sets it). */
+    const crossedBy = async () => Math.round(((await spent()) + 2) / 0.9 * 1e6) / 1e6 + 0.000123;
 
     await runInTenant(house(), async () => {
       await ready();
-      /* The owner sets a figure; a job crosses 80% of it: one line at that figure, one email. */
+      expect(await lines()).toBe(0);
+      /* The month's first crossing: one line, one email. */
       const first = await crossedBy();
       await setHouseCap(first, "acct_house_cap_owner");
-      await job(`gen_housecap_raise_a_${tag}`);
-      expect(await linesAt(first)).toBe(1);
+      await job(2);
+      expect(await lines(first)).toBe(1);
       expect(mail).toHaveLength(1);
-      /* The owner raises it; a job crosses 80% of the new figure in the same month: told again, once. */
+
+      /* A raise (owner, 19 Oct 2026: "a second 80% warning after a raise"): crossing the new figure's 80% tells the platform owner once more. */
       const raised = await crossedBy();
       expect(raised).toBeGreaterThan(first);
       await setHouseCap(raised, "acct_house_cap_owner");
-      await job(`gen_housecap_raise_b_${tag}`);
-      expect(await linesAt(raised)).toBe(1);
-      expect(await linesAt(first)).toBe(1);
+      await job(2);
+      expect(await lines(raised)).toBe(1);
+      expect(await lines()).toBe(2);
       expect(mail).toHaveLength(2);
       expect(mail[1].subject).toMatch(/^Particl: \d+% of this month's \$/);
-      /* Jobs crossing a figure together write one line and send one email: the marker is one statement. */
-      const again = raised + 1;
-      const raced = await Promise.all(Array.from({ length: 6 }, () => noteHouseSpend(again * 0.85, again)));
+
+      /* A lowering ("House cap: no warning on a lowering"): to a figure never warned at, a job past its 80% and under its 100% is reserved,
+         and nobody is told. */
+      const now = await spent();
+      const lowered = Math.round((now + 0.04 + (raised - now - 0.04) / 2) * 1e6) / 1e6;
+      expect(lowered).toBeLessThan(raised);
+      await setHouseCap(lowered, "acct_house_cap_owner");
+      await job(0.04);
+      expect((await spent()) / lowered).toBeGreaterThanOrEqual(0.8);
+      expect(await lines(lowered)).toBe(0);
+      expect(await lines()).toBe(2);
+      expect(mail).toHaveLength(2);
+      /* Lowered further, near the spend: still nobody is told. */
+      const lower = Math.round(((await spent()) + 0.05) * 1e6) / 1e6;
+      await setHouseCap(lower, "acct_house_cap_owner");
+      await job(0.04);
+      expect(await lines()).toBe(2);
+      expect(mail).toHaveLength(2);
+      /* Put back up to a figure already warned at, or one under it: not a raise past anything the owner has heard about. Quiet. */
+      await setHouseCap(raised, "acct_house_cap_owner");
+      await job(0.04);
+      expect(await noteHouseSpend(raised - 0.01, raised - 0.005)).toBe(false);
+      expect(await lines()).toBe(2);
+      expect(mail).toHaveLength(2);
+
+      /* Raised past every figure warned at this month: told once more, and once only. */
+      const again = await crossedBy();
+      expect(again).toBeGreaterThan(raised);
+      await setHouseCap(again, "acct_house_cap_owner");
+      await job(2);
+      expect(await lines(again)).toBe(1);
+      expect(await lines()).toBe(3);
+      expect(mail).toHaveLength(3);
+      expect(await noteHouseSpend(again * 0.95, again)).toBe(false);
+      expect(mail).toHaveLength(3);
+
+      /* Jobs crossing a higher figure together write one line and send one email: the marker is one statement. */
+      const higher = again + 1;
+      const raced = await Promise.all(Array.from({ length: 6 }, () => noteHouseSpend(higher * 0.85, higher)));
       expect(raced.filter(Boolean)).toHaveLength(1);
-      expect(await linesAt(again)).toBe(1);
-      expect(mail).toHaveLength(3);
-      /* A figure already warned at this month stays quiet, raced or not. */
-      expect((await Promise.all([noteHouseSpend(raised, raised), noteHouseSpend(first, first)])).filter(Boolean)).toHaveLength(0);
-      expect(mail).toHaveLength(3);
+      expect(await lines(higher)).toBe(1);
+      expect(mail).toHaveLength(4);
+      /* Every figure at or under the highest warned at, raced or not: quiet. */
+      expect((await Promise.all([noteHouseSpend(raised, raised), noteHouseSpend(first, first), noteHouseSpend(lowered, lowered), noteHouseSpend(higher, higher)])).filter(Boolean)).toHaveLength(0);
+      expect(await lines()).toBe(4);
+      expect(mail).toHaveLength(4);
     });
-    /* A reset to the default is a figure of its own (in a month long past, where no line stands in the way). */
+
+    /* A reset to the default is a figure like any other (in another month long past): a raise to it warns once more, a lowering from it does not. */
+    Date.now = clock;
     const later = Date.UTC(2024, 5, 15);
+    expect(await noteHouseSpend(0.9 * 250, 250, later)).toBe(true);
     expect(await noteHouseSpend(400, 500, later)).toBe(true);
     expect(await noteHouseSpend(410, 500, later)).toBe(false);
-    expect(await noteHouseSpend(0.9 * 250, 250, later)).toBe(true);
-    expect(await linesAt(500, later)).toBe(1);
-    expect(await linesAt(250, later)).toBe(1);
-    expect(mail).toHaveLength(5);
+    expect(await noteHouseSpend(0.9 * 250, 250, later)).toBe(false);
+    expect(await noteHouseSpend(0.9 * 300, 300, later)).toBe(false);
+    expect(await lines(250, later)).toBe(1);
+    expect(await lines(500, later)).toBe(1);
+    expect(await lines(undefined, later)).toBe(2);
+    expect(mail).toHaveLength(6);
   } finally {
+    Date.now = clock;
+    /* The jobs end with nothing charged. */
+    const { meter } = await import("../../lib/meter");
+    const { runInTenant } = await import("../../lib/tenant");
+    await runInTenant(house(), async () => {
+      for (const id of ids) await meter({ id, kind: "image", engine: "google", model, status: "failed", engineCostUsd: 0 });
+    });
     await new Promise<void>((resolve) => server.close(() => resolve()));
     delete process.env.RESEND_BASE_URL; delete process.env.RESEND_API_KEY; delete process.env.MAIL_FROM;
     const { platformDb } = await import("../../lib/platform");
@@ -537,6 +597,84 @@ test("GET /api/usage/house-cap: every workspace but the house reads null, whoeve
   for (const ws of [customer(), { ...customer(), id: "ws_house_cap_own_keys", usesPlatformKeys: false } as TenantWorkspace])
     for (const role of ["admin", "member"] as const) expect(await read(ws, role), `${ws.id} ${role}`).toEqual({ status: 200, body: { houseCap: null } });
   expect(await read(house(), "member")).toMatchObject({ status: 200, body: { houseCap: { capUsd: 500, source: "default" } } });
+});
+
+test("/admin shows the new standing: after a raise and after a lowering the desk reads the cap in force and the month's spend and share against it, and nobody is warned", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db, ready } = await import("../../lib/db");
+  const { platformDb, platformReady, setHouseCap } = await import("../../lib/platform");
+  const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+  const { houseNotesSettled, houseSpendSince, houseMonthStart } = await import("../../lib/houseCap");
+  const { houseCapStanding, houseCapState, houseCapUsdText } = await import("../../lib/houseCapText");
+  const { meter } = await import("../../lib/meter");
+  await platformReady();
+  await houseRow();
+  /* The desk's own read (GET /api/admin/invites, which /admin and the platform console poll), with its real platform-owner guard. */
+  type Handler = () => Promise<Response>;
+  const desk = loadRouteModule<{ GET: Handler }>("app/api/admin/invites/route.ts", { "@/lib/recovery": { recoveryRoute: (handler: Handler) => handler } });
+  const owner = { id: "acct_house_cap_owner", email: "house-cap-owner@example.test", name: "Owner", role: "admin" as const };
+  const read = async () => runInTenant(customer(), async () => {
+    const res = await desk.GET();
+    expect(res.status).toBe(200);
+    const body = await res.json() as { workspaces: { id: string; houseCap: { capUsd: number; spentUsd: number; pct: number; warn: boolean; stop: boolean; source: string } | null }[] };
+    return body.workspaces.find((w) => w.id === "ws_legacy")!.houseCap!;
+  }, { user: owner } as never);
+  const warned = async () => Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM platform_audit WHERE action='housecap.warned' AND created_at>=?", args: [houseMonthStart()] })).rows[0].n);
+  const model = "gemini-3.1-flash-image";
+  const id = `gen_housecap_desk_${Date.now().toString(36)}`;
+  const before = await houseSpendSince(houseMonthStart());
+  try {
+    await runInTenant(house(), async () => {
+      await ready();
+      /* Something spent this month, so the standing has a figure to show: a synthetic $1 job, ended at nothing charged below. */
+      await setHouseCap(before + 100, "acct_house_cap_owner");
+      await db().execute({ sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at) VALUES(?,'image','google',?,'a still','{}','running',?,?)`, args: [id, model, Date.now(), Date.now()] });
+      await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: 1 });
+      await houseNotesSettled();
+    });
+    const spent = await houseSpendSince(houseMonthStart());
+    expect(spent).toBeGreaterThanOrEqual(1);
+    const lines = await warned();
+    const standing = (cap: number) => houseCapStanding(houseCapState(cap, spent));
+    const spentText = houseCapUsdText(Math.round(spent * 100) / 100);
+
+    /* Raised: the new figure, and the month's spend and share against it. */
+    const raised = Math.ceil(spent * 4 + 50);
+    await setHouseCap(raised, "acct_house_cap_owner");
+    const up = await read();
+    expect(up).toMatchObject({ capUsd: raised, source: "own", warn: false, stop: false, pct: Math.floor((spent / raised) * 100 + 1e-9) });
+    expect(up.spentUsd).toBeCloseTo(spent, 9);
+    expect(houseCapStanding(up)).toBe(standing(raised));
+    expect(houseCapStanding(up)).toBe(`${spentText} of ${houseCapUsdText(raised)} used · ${up.pct}%`);
+
+    /* Lowered into the warning band: the new figure and where the month now stands against it, at once; nobody is told. */
+    const banded = Math.round((spent / 0.9) * 100) / 100;
+    await setHouseCap(banded, "acct_house_cap_owner");
+    const warn = await read();
+    expect(warn).toMatchObject({ capUsd: banded, warn: true, stop: false });
+    expect(houseCapStanding(warn)).toBe(standing(banded));
+    expect(houseCapStanding(warn)).toMatch(new RegExp(`^${warn.pct}% of this month's \\${houseCapUsdText(banded)} used \\(\\$`));
+
+    /* Lowered under the month's spend: reached, with the spend and the share still shown. */
+    const under = Math.floor((spent / 2) * 100) / 100;
+    await setHouseCap(under, "acct_house_cap_owner");
+    const stop = await read();
+    expect(stop).toMatchObject({ capUsd: under, warn: true, stop: true, pct: 100 });
+    expect(houseCapStanding(stop)).toBe(`Reached · ${spentText} of ${houseCapUsdText(under)} used · 100%`);
+    /* Setting the cap, either way, warns nobody (the warning is the reservation's alone). */
+    expect(await warned()).toBe(lines);
+
+    /* /admin's cap cell and the platform console's sheet both show that line, read-only, under the cap's figure. */
+    const page = readFileSync("app/(app)/admin/page.tsx", "utf8");
+    const cell = page.slice(page.indexOf("function CapCell("), page.indexOf("type Queue = {"));
+    expect(cell).toContain("{ main: houseCapUsdText(houseCap.capUsd), sub: houseCapStanding(houseCap),");
+    expect(readFileSync("components/v12/platform/Workspaces.tsx", "utf8")).toContain("<strong>{houseCapStanding(data.houseCap)}</strong>");
+    expect(readFileSync("app/api/admin/invites/route.ts", "utf8")).toContain("await houseCapViewFor(houseRow.allowance_usd)");
+  } finally {
+    await runInTenant(house(), async () => { await meter({ id, kind: "image", engine: "google", model, status: "failed", engineCostUsd: 0 }); });
+    await platformDb().execute("UPDATE workspaces SET allowance_usd=NULL WHERE id='ws_legacy'");
+  }
+  expect(await houseSpendSince(houseMonthStart())).toBeCloseTo(before, 6);
 });
 
 test("a customer workspace's reservation is untouched: no house cap read, its own allowance still the wall", () => {

@@ -210,7 +210,7 @@ export type Context = {
   /**
    * The house workspace's monthly engine cap and what it has spent this month (lib/houseCap.ts), in dollars; null for every other workspace.
    * `bands`: the hold band of each line that holds its ceiling (Cinema Studio, lib/cinemaHold.ts), by line key (withHouseBands), so the
-   * house's quote counts it at cost times its band, as admission and the reservation do.
+   * house's quote counts it against the house cap at cost times its band, as admission and the reservation do (the house cap only).
    */
   houseCap?: { cap: number; spent: number; bands?: Record<string, number> } | null;
   /** The cap of each production the quote touches, keyed by its id. */
@@ -231,8 +231,9 @@ const fmt = (n: number): string => `${Math.round(n).toLocaleString("en-US")} cr`
 
 /**
  * The house's context with the band of each line that holds its ceiling (lib/cinemaHold.ts holdBandOf, from the line's model), so its quote
- * counts a held take as admission does: its cost times its band, against the house's cap and the approval line. Any other workspace has no
- * house cap, and its context is returned as it came, the same object: its quote does not change.
+ * counts a held take against the house's monthly cap as admission does: its cost times its band. The bands are read by the house cap's
+ * check below and by nothing else. Any other workspace has no house cap, and its context is returned as it came, the same object: its
+ * quote does not change.
  */
 export function withHouseBands(c: Context, units: Unit[]): Context {
   if (!c.houseCap) return c;
@@ -241,7 +242,7 @@ export function withHouseBands(c: Context, units: Unit[]): Context {
   return { ...c, houseCap: { ...c.houseCap, bands } };
 }
 
-/** The band a house line is counted at: its hold band when it holds its ceiling, else 1 (every line of every other workspace). */
+/** The band a house line is counted at against the house cap: its hold band when it holds its ceiling, else 1 (every line of every other workspace). */
 const houseBandOf = (c: Context, l: QuoteLine): number => {
   const band = c.houseCap?.bands?.[l.key];
   return band != null && Number.isInteger(band) && band > 1 ? band : 1;
@@ -265,7 +266,7 @@ export function verdictOf(q: Quote, c: Context): Verdict {
     for (const l of q.lines) {
       /* Only work the platform pays for has a credit price to refuse, and the house, which is judged at cost. */
       if (!house && !l.platformPays) continue;
-      const credits = house ? billCreditsWith(l.usd * houseBandOf(c, l), 1, c.jobLine.perCredit ?? creditUsd()) : l.credits;
+      const credits = house ? billCreditsWith(l.usd, 1, c.jobLine.perCredit ?? creditUsd()) : l.credits;
       const stop = jobLineVerdict({ credits, lineCredits: c.jobLine.credits, isAdmin: c.isAdmin, machine: c.jobLine.machine, figures: !house }, fmt);
       if (stop.blocked) return { allow: false, gate: "approval", line: stop.line, notice: "" };
     }

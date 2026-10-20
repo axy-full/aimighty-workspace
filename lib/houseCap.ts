@@ -75,11 +75,13 @@ export async function houseCapCheck(estUsd = 0, band = 1): Promise<{ ok: true } 
 }
 
 /**
- * A house job was just reserved, bringing the month to `spentUsd` of `capUsd`. At the warning line the platform owner is told, once
- * a month for each figure the cap is set to: one platform history line (the marker, written only when none exists for this month and
- * this figure, in one statement, so two jobs crossing together write one) and, when mail is set up, one email to the deployment's owner
- * address. A cap the platform owner raises (or resets to the default) is a new figure: crossing its own warning line tells them again,
- * once (owner, 19 Oct 2026: "yes, a second 80% warning after the cap is raised"). A failed email never fails the job.
+ * A house job was just reserved, bringing the month to `spentUsd` of `capUsd`. At the warning line the platform owner is told once a
+ * month, and once more after each raise: one platform history line (the marker) and, when mail is set up, one email to the deployment's
+ * owner address. The marker is written only when this month has no line at this figure or a higher one, in one statement, so two jobs
+ * crossing together write one. So a cap raised (or reset to a higher default) past every figure already warned at this month tells them
+ * again, once, at its own 80% (owner, 19 Oct 2026: "a second 80% warning after a raise"); a cap lowered to any figure, or raised back to
+ * one at or under a figure already warned at, tells them nothing new ("House cap: no warning on a lowering; /admin shows the new
+ * standing"). The month's first crossing always tells them, whatever the figure. A failed email never fails the job.
  *
  * The month is the reservation's, never the clock's when the note runs: `at` is the reservation's own time and `since` the start of
  * the month its spend was summed over (lib/generationRequests.ts), so a note that runs just after midnight on the 1st marks the month
@@ -92,7 +94,7 @@ export async function noteHouseSpend(spentUsd: number, capUsd: number, at = Date
   const month = cycleBounds(1, since);
   const dated = Math.min(Math.max(at, month.start), month.end - 1);
   const audit = platformAuditStatement({ actorId: "system", action: "housecap.warned", targetType: "workspace", targetId: HOUSE_WORKSPACE_ID, workspaceId: HOUSE_WORKSPACE_ID, details: { capUsd, atPct: view.pct } },
-    false, { since: month.start, until: month.end, capUsd }, dated);
+    false, { since: month.start, until: month.end, capUsdAbove: capUsd }, dated);
   const wrote = await platformDb().execute(audit);
   if (!wrote.rowsAffected) return false;
   const owner = (process.env.SUPER_ADMIN_EMAIL ?? "").trim().toLowerCase();
