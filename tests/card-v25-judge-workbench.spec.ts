@@ -52,10 +52,10 @@ test("the five statuses are read from the shot's takes: Ready (· vN with more t
   await expect(status(t, "shot-5")).toHaveText("Not started");
   await expect(status(t, "shot-6")).toHaveText("Not started");
   /* An upload, and a finished take whose picture is not here: Ready, with nothing to judge. */
-  await expect(status(t, "shot-7")).toHaveText("Ready");
-  await expect(status(t, "shot-8")).toHaveText("Ready");
+  await expect(status(t, "shot-9")).toHaveText("Ready");
+  await expect(status(t, "shot-10")).toHaveText("Ready");
   /* Sent back: "✕", with the team's reason once there is one (the next test answers the notes). */
-  await expect(status(t, "shot-9")).toHaveText(/^✕/);
+  await expect(status(t, "shot-11")).toHaveText(/^✕/);
   /* The ✓ names who approved it, on hover (the server shows names to this workspace's members only). */
   await reveal(t, "shot-3");
   await card(t, "shot-3").getByRole("button", { name: /^Approve|^Approved/ }).hover();
@@ -103,7 +103,7 @@ test("✓ is the review trail's approve and takes itself back; ✕ sends the tak
   await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(2);
   expect(calls.filter((c) => c.url === "/api/notes")[1].body).toEqual({ genId: "gen_s2", text: "Too dark by the fire" });
   /* A card with nothing to judge (making, failed, no take, an upload, a finished take with no picture here) offers neither ✓ nor ✕. */
-  for (const id of ["shot-4", "shot-5", "shot-6", "shot-7", "shot-8"]) {
+  for (const id of ["shot-4", "shot-5", "shot-6", "shot-9", "shot-10"]) {
     if (!isCompact(info)) await card(t, id).hover();
     await expect(card(t, id).getByRole("button", { name: /^Approve|^Not right/ }), id).toHaveCount(0);
   }
@@ -115,10 +115,13 @@ test("✓ is the review trail's approve and takes itself back; ✕ sends the tak
 test("a reason the review trail would not take keeps ✕'s panel open and says why; the line takes at most 500 characters", async ({ page }) => {
   const calls = await watch(page);
   const t = takes(page);
-  await reveal(t, "shot-2");
-  await card(t, "shot-2").getByRole("button", { name: /^Not right/ }).click();
   const reasons = card(t, "shot-2").getByTestId("v12-card-reasons");
   const line = card(t, "shot-2").getByLabel("One line, optional");
+  /* The first press on a page that has just loaded can land before it answers: press until the panel is there (it is never closed by this). */
+  await expect(async () => {
+    if (!(await reasons.count())) { await reveal(t, "shot-2"); await card(t, "shot-2").getByRole("button", { name: /^Not right/ }).click(); }
+    await expect(reasons).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
   await expect(line).toHaveAttribute("maxlength", "500");
   await reasons.getByRole("button", { name: "Other", exact: true }).click();
   await line.fill("ok");
@@ -138,14 +141,14 @@ test("a reason the review trail would not take keeps ✕'s panel open and says w
 });
 
 test("a rejected card reads the team's reason given at the mark: not a client's newer review-link comment, not an older note", async ({ page }) => {
-  await watch(page, { gen_s9: [
+  await watch(page, { gen_s11: [
     { text: "Nice light", author: "A", createdAt: 0, guest: false },
     { text: "Wrong framing", author: "A", createdAt: 100, guest: false },
     { text: "Love it", author: "Client", createdAt: 200, guest: true },
   ] });
   /* The page read its notes before the route was there: read them again. */
   await page.reload();
-  await expect(status(takes(page), "shot-9")).toHaveText("✕ Wrong framing");
+  await expect(status(takes(page), "shot-11")).toHaveText("✕ Wrong framing");
 });
 
 test("✕ says it is open and what it opens, and Esc closes it and keeps the status", async ({ page }) => {

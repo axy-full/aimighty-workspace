@@ -63,11 +63,11 @@ const ROWS: ShotTakes[] = [
   shot(4, "The drink", [version("gen_s4", 1, "rendering", { url: null })]),
   shot(5, "Bottle detail", [version("gen_s5", 1, "failed", { url: null })]),
   shot(6, "Pack on sand", []),
-  /* Ready, with nothing to judge: an upload, and a finished take whose picture is not here. */
-  shot(7, "The sphere", [version("gen_s7", 1, "uploaded")]),
-  shot(8, "Last light", [version("gen_s8", 1, "review", { url: null })]),
+  /* Ready, with nothing to judge: an upload, and a finished take whose picture is not here. (9 on: 7 and 8 are the preview's, PR 6.) */
+  shot(9, "The sphere", [version("gen_s9", 1, "uploaded")]),
+  shot(10, "Last light", [version("gen_s10", 1, "review", { url: null })]),
   /* Sent back: its reason is the team's note at the mark (the browser check answers the notes). */
-  shot(9, "Night swim", [version("gen_s9", 1, "changes")]),
+  shot(11, "Night swim", [version("gen_s11", 1, "changes")]),
 ];
 
 function TakeBoard() {
