@@ -138,7 +138,8 @@ const ATTACHMENTS_SENT = 50;
 const actionSchema = z.discriminatedUnion("action", [
   tidySchema,
   /* Ask Atomik to build: the project (draft) it is asked from, a request id (asking twice asks once), the request,
-     and the limit the person approves for the run with its mode (Ask, the default, or Auto). */
+     and the limit the person approves for the run. `mode` is accepted for older callers: "ask", or "auto", which is recorded as "ask"
+     (no Auto since 20 Oct 2026: every render waits for a person's tap or the plan's one approval). */
   z.object({
     action: z.literal("agent.plan"), productionId: PRODUCTION, projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
     requestId: z.string().regex(ACTION_ID), goal: z.string().trim().min(3).max(2000), model: z.string().min(1).max(120).optional(),

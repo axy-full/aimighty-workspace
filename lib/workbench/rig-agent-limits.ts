@@ -5,8 +5,8 @@ import { creditUsd } from "../creditTerms";
  * person's approval of its quote, given as the render's own tap or as the plan's one approval (rule 14).
  *
  * There is no Auto (owner, 20 Oct 2026: "Auto goes: every job is approved on its quote"). Nothing here lets a render
- * run without a person: the no-tap ceiling Auto used (AUTO_NO_TAP_CEILING_USD, 200 cr at US$0.10) and the owner's seam
- * for it (RIG_AGENT_JOB_CEILING_CREDITS) are gone, and so is the per-render ask a plan made over that figure.
+ * run without a person: the no-tap ceiling Auto used (200 cr at US$0.10) and the owner's seam for it are gone, and so
+ * is the per-render ask a plan made over that figure.
  * A run stored with mode "auto" reads as Ask (lib/workbench/rig-agent-plan.ts runModeOf).
  */
 
