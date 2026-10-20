@@ -179,7 +179,7 @@ export function StepRail({ steps, current, onPick, onAdd, onEdit, readOnly }: {
   );
 }
 
-/** A step's new name: Enter keeps it, Esc and a click away leave it as it was. */
+/** A step's new name: Enter or a click away keeps it (everything saves itself, rule 13); Esc leaves it as it was; an empty name keeps the old one. */
 function RenameField({ value, onDone }: { value: string; onDone: (label: string | null) => void }) {
   const [text, setText] = useState(value);
   const done = useRef(false);
