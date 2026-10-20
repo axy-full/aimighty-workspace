@@ -59,11 +59,11 @@ export type BillingBasis = keyof typeof BASIS;
 export type ProviderBilling = { state: BillingState; amount?: number; unit?: BillingUnit; basis: BillingBasis };
 
 /** Who answered. `higgsfield_account` is the person's own connected account; `higgsfield` the API on a key. */
-export const OUTCOME_PROVIDERS = ["higgsfield", "higgsfield_account", "byteplus", "google", "gateway", "openai", "anthropic", "xai", "fal", "elevenlabs", "syncso", "sarvam"] as const;
+export const OUTCOME_PROVIDERS = ["higgsfield", "higgsfield_account", "byteplus", "google", "gateway", "openai", "anthropic", "xai", "fal", "elevenlabs", "syncso", "sarvam", "recraft"] as const;
 export type OutcomeProvider = (typeof OUTCOME_PROVIDERS)[number];
 export const PROVIDER_NAME: Record<OutcomeProvider, string> = {
   higgsfield: "The engine", higgsfield_account: "The connected account", byteplus: "BytePlus", google: "Google",
-  gateway: "The AI Gateway", openai: "OpenAI", anthropic: "Anthropic", xai: "xAI", fal: "fal", elevenlabs: "ElevenLabs", syncso: "sync.so", sarvam: "Sarvam",
+  gateway: "The AI Gateway", openai: "OpenAI", anthropic: "Anthropic", xai: "xAI", fal: "fal", elevenlabs: "ElevenLabs", syncso: "sync.so", sarvam: "Sarvam", recraft: "Recraft",
 };
 
 export const FAILURE_KINDS = [
@@ -404,10 +404,10 @@ export function elevenLabsErrorOutcome(status: number, body: unknown): ProviderO
 }
 
 /**
- * A direct engine's HTTP refusal (sync.so, Sarvam): its status and its own words, billing unknown. Neither provider's published billing page says
+ * A direct engine's HTTP refusal (sync.so, Sarvam, Recraft): its status and its own words, billing unknown. Neither provider's published billing page says
  * whether a refused or failed job is charged (docs/plans/provider-adapters.md §§ 1, 2), so no claim is made: "the provider didn't say".
  */
-export function directErrorOutcome(provider: "syncso" | "sarvam", status: number, message: unknown, stage: ProviderOutcome["stage"] = "submit"): ProviderOutcome {
+export function directErrorOutcome(provider: "syncso" | "sarvam" | "recraft", status: number, message: unknown, stage: ProviderOutcome["stage"] = "submit"): ProviderOutcome {
   return outcome(provider, stage, httpCode(status), providerText(message), unknown(), { status });
 }
 

@@ -1,5 +1,6 @@
 import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
+import { RECRAFT_DIRECT_TOOLS } from "./recraftMcp";
 import { allSettings } from "./settings";
 import { rigJobCeiling } from "./workbench/rig-agent-limits";
 import { jobApprovalLineCredits } from "./approvalRule";
@@ -79,7 +80,9 @@ const LIP_SYNC: DirectTool = {
   describe: (out, quote) => `Lip-sync started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
-const REGISTRY: DirectTool[] = [LIP_SYNC];
+const REGISTRY: DirectTool[] = [LIP_SYNC,
+  /* Recraft (lib/recraftMcp.ts): declared with no `draft`, so every call asks. */
+  ...RECRAFT_DIRECT_TOOLS];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
 export async function directEngineMcpTools(): Promise<ToolDef[]> {

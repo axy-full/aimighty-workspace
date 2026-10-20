@@ -111,7 +111,12 @@ A bad file is logged and refused; it never stops the server. The file is read ag
 | `lipsync-2` | `second` | none | lip-sync through sync.so (`lib/lipSync.ts`) |
 | `lipsync-2-pro` | `second` | none | the same (the default model) |
 | `sync-3` | `second` | none | the same |
+| `recraftv4_1` | `image` | none | Recraft stills from words (`lib/recraftImage.ts`; the default model) |
+| `recraftv4_1_pro` | `image` | none | the same |
+| `recraft_remove_background` | `image` | none | Recraft background removal (one image a call) |
 
 A lip-sync quote asks for its model's cost per output second times the output seconds. Its rows name no resolution, sound, length or band (`upTo`): a job settles at the rate it was quoted at, so a band could not hold. The converter refuses such a row (exit 2), and the server treats the model as unpriced if a hand-written file has one. With no file, a bad file or no row for the model, the quote is refused ("This engine has no confirmed price.", 503, code `unpriced`) before any take, reservation or request is written. The per-second rate a job was quoted at is kept with the job, and the job settles at that rate times the delivered seconds: the file is not read again, so removing or editing it after a job starts does not change that job's charge.
+
+A Recraft quote asks for its model's (or background removal's) cost per image, for one image. The same rules hold as for lip-sync: rows that name no resolution, sound, length or band; with no file, a bad file or no row for the id, the quote is refused (503, `unpriced`) before any take, reservation or request is written; the per-image rate a job was quoted at is kept with the job (`rateUsd`), and the job settles at it whatever happens to the file afterwards. The units Recraft's reply states are kept with the job for reconciling against its invoice; they are never turned into dollars by the code. Recraft's vector models (`recraftv4_1_vector`, `recraftv4_1_pro_vector`) and `recraft_vectorize` are refused before any quote until an SVG sanitiser exists, so they need no row yet.
 
 Every other engine is priced exactly as before by `lib/vendorRates.ts`. An engine moves to this file by being listed in `FILE_PRICED_UNITS` (which makes `FILE_PRICED_ENGINES`) in the PR that ports it, after the owner signs off; an engine is never priced in both places.

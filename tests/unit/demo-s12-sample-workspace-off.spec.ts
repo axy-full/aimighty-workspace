@@ -70,6 +70,7 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string; quote?: 
   { dir: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 5 } },
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
   { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
+  { dir: "recraft", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
   { dir: "jobs/[id]/release", body: { credits: 10 }, id: "gen_held" },
   { dir: "atomik/steps/[id]/claim", body: {}, id: "step_1" },

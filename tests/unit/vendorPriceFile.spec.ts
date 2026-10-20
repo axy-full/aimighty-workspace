@@ -273,14 +273,14 @@ test.describe("loading the file from the variable", () => {
     expect(JSON.stringify(status)).not.toContain(file);
   });
 
-  test("an engine is priced from the file only once it opts in; today only lip-sync's three models do, per second", () => {
+  test("an engine is priced from the file only once it opts in; today lip-sync's three models do, per second, and Recraft's two raster models and background removal, per image", () => {
     useFile(writeFile(placeholderFile()));
     expect(refusal(() => fileVendorCostUsd(PLACEHOLDER_ENGINE_A, { unit: "second", quantity: 5, resolution: "1080p", audio: true })).reason)
       .toContain("not priced from the vendor price file");
     /* No engine is ever priced in both places: one already in lib/vendorRates.ts moves, it is not copied. */
     expect(FILE_PRICED_ENGINES.filter((id) => id in VENDOR_RATES)).toEqual([]);
     expect([...FILE_PRICED_ENGINES]).toEqual(Object.keys(FILE_PRICED_UNITS));
-    expect({ ...FILE_PRICED_UNITS }).toEqual({ "lipsync-2": "second", "lipsync-2-pro": "second", "sync-3": "second" });
+    expect({ ...FILE_PRICED_UNITS }).toEqual({ "lipsync-2": "second", "lipsync-2-pro": "second", "sync-3": "second", recraftv4_1: "image", recraftv4_1_pro: "image", recraft_remove_background: "image" });
     expect(Object.isFrozen(FILE_PRICED_UNITS) && Object.isFrozen(FILE_PRICED_ENGINES)).toBe(true);
     /* An opted-in engine the file has no row for is unpriced, like any other. */
     expect(refusal(() => fileVendorCostUsd("sync-3", { unit: "second", quantity: 5 })).reason).toBe('no "second" price for this engine');
