@@ -890,8 +890,8 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
           FROM generations WHERE id=? AND deleted=0 AND status NOT IN ('succeeded','failed','cancelled')`,
     args: [genId],
   })).rows[0];
-  // Nothing left to end (already over, hidden, or a dubbing project its own workflow owns).
-  if (!row || (row.kind === "audio" && row.task === "dub")) {
+  // Nothing left to end (already over, hidden, or a dubbing project or lip-sync job its own workflow owns).
+  if (!row || (row.kind === "audio" && row.task === "dub") || (row.kind === "video" && row.task === "lipsync")) {
     await deliverGenerationSettlement(genId);
     return;
   }

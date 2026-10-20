@@ -13,6 +13,9 @@ import modelCatalogJson from "./modelCatalog.json";
  * today's behaviour: OpenAI direct when its key is set, everything else
  * through the gateway. Each vendor is switched on, and back off, by env alone.
  *
+ * Google is always direct, whatever `TEXT_DIRECT` says (lib/textDirectVendors.ts; Vercel out, owner 14 Oct 2026): Gemini text carries the shared safety
+ * settings (lib/geminiSafety.ts), and no Gemini id reaches the gateway.
+ *
  * There is no fallback between doors. A vendor that is switched on and has no
  * key fails with the name of the missing variable; it never quietly goes back
  * to the gateway, and an unmapped model id is refused rather than guessed.
@@ -154,7 +157,9 @@ export function directModelId(model: string): string {
 /** The key for a direct door, or an error that names the missing variable. */
 export function directKey(vendor: DirectVendor): string {
   const key = vendorKey(DIRECT_KEY[vendor]);
-  if (!key) throw new Error(`${vendorKeyEnv(DIRECT_KEY[vendor])} is not set. Direct ${vendor} text is switched on in TEXT_DIRECT and has no key; nothing was sent.`);
+  if (!key) throw new Error(vendor === "google"
+    ? `${vendorKeyEnv(DIRECT_KEY[vendor])} is not set. Gemini text always goes direct to Google and needs ${vendorKeyEnv(DIRECT_KEY[vendor])}; nothing was sent.`
+    : `${vendorKeyEnv(DIRECT_KEY[vendor])} is not set. Direct ${vendor} text is switched on in TEXT_DIRECT and has no key; nothing was sent.`);
   return key;
 }
 

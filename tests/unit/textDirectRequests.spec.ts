@@ -171,9 +171,12 @@ test('xAI: the exact Responses request on the dated Grok 4.20 id', async () => {
 });
 
 test('a model is offered only with a working route: its key and TEXT_DIRECT (or OpenAI on its key); gateway-only models need the gateway', () => {
-  // No gateway, nothing direct: nothing but OpenAI-with-key works.
+  // No gateway, nothing direct: nothing but OpenAI-with-key works, and Gemini, which is always direct, on its own key.
   expect(textRouteWorks('anthropic/claude-opus-5.5')).toBe(false);
-  expect(textRouteWorks('google/gemini-3.1-pro-preview')).toBe(false);
+  expect(textRouteWorks('google/gemini-3.1-pro-preview')).toBe(true);
+  delete process.env.GEMINI_API_KEY;
+  expect(textRouteWorks('google/gemini-3.1-pro-preview')).toBe(false);   // no key: it never falls back to the gateway
+  process.env.GEMINI_API_KEY = KEYS.GEMINI_API_KEY;
   expect(textRouteWorks('openai/gpt-5.5')).toBe(false);
   process.env.OPENAI_API_KEY = 'test-openai-key-never-sent';
   expect(textRouteWorks('openai/gpt-5.5')).toBe(true);
@@ -181,14 +184,17 @@ test('a model is offered only with a working route: its key and TEXT_DIRECT (or 
   process.env.TEXT_DIRECT = 'anthropic';
   expect(textRouteWorks('anthropic/claude-opus-5.5')).toBe(true);
   expect(textRouteWorks('anthropic/claude-sonnet-4.6')).toBe(false);   // not on the owner's Anthropic key list
-  expect(textRouteWorks('google/gemini-3.1-pro-preview')).toBe(false);
+  expect(textRouteWorks('google/gemini-3.1-pro-preview')).toBe(true);   // Gemini is always direct, whatever TEXT_DIRECT says
   expect(textRouteWorks('spacexai/grok-4.7')).toBe(false);
   // Direct without the key: off, even with the gateway up (the call would not go there).
   delete process.env.ANTHROPIC_API_KEY; process.env.AI_GATEWAY_API_KEY = 'test-gateway-key-never-sent';
   expect(textRouteWorks('anthropic/claude-opus-5.5')).toBe(false);
-  // Gateway up, vendor not direct: what the gateway listed works; a provider-priced model the gateway never listed does not.
+  // Gateway up, vendor not direct: what the gateway listed works; a provider-priced model the gateway never listed does not. Gemini is never carried by the gateway.
   delete process.env.TEXT_DIRECT;
-  expect(textRouteWorks('google/gemini-3.1-pro-preview')).toBe(true);
+  expect(textRouteWorks('spacexai/grok-4.7')).toBe(true);
+  delete process.env.GEMINI_API_KEY;
+  expect(textRouteWorks('google/gemini-3.1-pro-preview')).toBe(false);   // gateway up, no Gemini key
+  process.env.GEMINI_API_KEY = KEYS.GEMINI_API_KEY;
   expect(textRouteWorks('anthropic/claude-sonnet-5')).toBe(true);
   expect(textRouteWorks('anthropic/claude-opus-5.5')).toBe(false);
   // Direct doors offer only ids they can send: unconfirmed ids stay on the gateway.
@@ -210,13 +216,15 @@ test('admin text routing lists every routable, priced text model: the same filte
   expect((await routableTextModelIds()).filter(id => id.startsWith('anthropic/'))).toEqual([]);
 });
 
-test('without the gateway, the static catalogue, Atomik and the enhancer offer the direct Claude models and nothing gateway-only', async () => {
+test('without the gateway, the static catalogue, Atomik and the enhancer offer the direct Claude models and the direct Gemini models (Gemini is always direct), and nothing gateway-only', async () => {
   process.env.MODEL_CATALOG = 'static';
   process.env.TEXT_DIRECT = 'anthropic';
   // Text models; stills (image output) follow their own key and door.
   const ids = (await catalog(true)).filter(m => m.type === 'language' && !m.outputModalities?.includes('image')).map(m => m.id);
   expect(ids).toEqual(expect.arrayContaining(['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5', 'anthropic/claude-fable-5.1']));
-  expect(ids.filter(id => !id.startsWith('anthropic/'))).toEqual([]);
+  /* Gemini text is always direct, on its own key: exactly the mapped ids whose price is confirmed (the seven others are on no menu). Nothing else that is not Claude. */
+  const GEMINI_DIRECT = ['google/gemini-3-flash', 'google/gemini-3.1-pro-preview', 'google/gemini-3.5-flash-lite', 'google/gemini-3.6-flash'];
+  expect(ids.filter(id => !id.startsWith('anthropic/')).sort()).toEqual(GEMINI_DIRECT);
   const planner = await menuFor('planner');
   expect(planner.featured.slice(0, 2).map(m => m.id)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5']);
   expect([...planner.featured, ...planner.rest].map(m => m.id).filter(id => /claude-(?:opus|sonnet|haiku)-4/.test(id))).toEqual([]);
@@ -228,13 +236,33 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
   expect(priced.get('anthropic/claude-opus-5.5')).toMatchObject({ input: '0.000004', output: '0.00002', input_cache_read: '0.0000002', input_cache_write: '0.000005' });
   expect(priced.get('anthropic/claude-sonnet-5.5')).toMatchObject({ input: '0.000002', output: '0.00001', input_cache_read: '0.0000001', input_cache_write: '0.0000025' });
   expect(priced.get('anthropic/claude-haiku-5.5')).toMatchObject({ input: '0.0000001', output: '0.0000005' });
-  // Nothing direct and no gateway: no Claude, Gemini or Grok at all.
+  // And as the catalogue snapshot states each (lib/modelCatalog.json): every rate a direct Claude call settles at is there and positive, Opus above Sonnet
+  // above Haiku for input and output, and Haiku 5.5's flat rate is its first prompt tier's.
+  const { snapshotModels } = await import('../../lib/catalog');
+  const pricedRates = priced as Map<string, Record<string, unknown> | null>;
+  const CLAUDE = ['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'] as const;
+  for (const id of CLAUDE) {
+    const stated = snapshotModels().find(m => m.id === id)?.pricing;
+    expect(stated, id).toBeTruthy();
+    expect(pricedRates.get(id), id).toEqual(stated);
+    for (const key of ['input', 'output', 'input_cache_read', 'input_cache_write']) expect(Number(pricedRates.get(id)![key]), `${id} ${key}`).toBeGreaterThan(0);
+  }
+  const rate = (id: (typeof CLAUDE)[number], key: string) => Number(pricedRates.get(id)![key]);
+  for (const key of ['input', 'output']) {
+    expect(rate(CLAUDE[0], key), key).toBeGreaterThan(rate(CLAUDE[1], key));
+    expect(rate(CLAUDE[1], key), key).toBeGreaterThan(rate(CLAUDE[2], key));
+    expect(Number((pricedRates.get(CLAUDE[2])![`${key}_tiers`] as { cost: string }[])[0].cost), key).toBe(rate(CLAUDE[2], key));
+  }
+  // Nothing direct and no gateway: no Claude or Grok at all; Gemini is still the direct ids on its key, and none without it.
   delete process.env.TEXT_DIRECT;
-  expect((await catalog(true)).filter(m => m.type === 'language' && !m.outputModalities?.includes('image') && !m.id.startsWith('openai/'))).toEqual([]);
+  const textIds = async () => (await catalog(true)).filter(m => m.type === 'language' && !m.outputModalities?.includes('image') && !m.id.startsWith('openai/')).map(m => m.id);
+  expect((await textIds()).sort()).toEqual(GEMINI_DIRECT);
+  delete process.env.GEMINI_API_KEY;
+  expect(await textIds()).toEqual([]);
 });
 
-test('defaults: enhancement on Sonnet 5.5, ideas and shots on Opus 5.5; Auto tries Sonnet 5.5, then Opus 5.5', () => {
-  expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-sonnet-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
+test('defaults: enhancement, ideas and shots on Opus 5.5 (the owner, 16 Oct 2026, for enhancement); Auto tries Sonnet 5.5, then Opus 5.5', () => {
+  expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-opus-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
   expect(ATOMIK_AUTO_MODEL_IDS.slice(0, 2)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5']);
   expect(selectAtomikModel('auto', ['anthropic/claude-opus-5.5', 'openai/gpt-5.5'])).toBe('anthropic/claude-opus-5.5');
   expect(selectAtomikModel('auto', ['anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-5', 'openai/gpt-5.5'])).toBe('anthropic/claude-sonnet-5');

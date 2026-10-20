@@ -1,5 +1,6 @@
 import { withTenant, requireSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { mayReachProject, projectLister } from "@/lib/draftProject";
 import { pipelineStore } from "@/lib/pipeline/store";
 import { publicRun, pipelineStageModels } from "@/lib/pipeline/service";
 import { PipelineError } from "@/lib/pipeline/schema";
@@ -14,12 +15,14 @@ export const GET = withTenant(async (req) => {
   if (auth.response) return auth.response;
   const store = await pipelineStore(),
     projectId = new URL(req.url).searchParams.get("projectId") || undefined;
+  /* A private board's published bible is read only by people who can read that board (lib/draftProject.ts): its author, or anyone once it is shared. No admin elevation. */
+  const listed = await projectLister(auth.user);
   const publications = (
     await db().execute({
-      sql: `SELECT b.project_id AS projectId,b.version,p.name,b.body FROM workbench_bibles b JOIN projects p ON p.id=b.project_id ${projectId ? "WHERE b.project_id=?" : ""} ORDER BY b.created_at DESC LIMIT 100`,
+      sql: `SELECT b.project_id AS projectId,b.version,p.name,b.body FROM workbench_bibles b JOIN projects p ON p.id=b.project_id ${projectId ? "WHERE b.project_id=?" : ""} ORDER BY b.created_at DESC LIMIT 500`,
       args: projectId ? [projectId] : [],
     })
-  ).rows.map((row) => {
+  ).rows.filter((row) => listed(String(row.projectId))).slice(0, 100).map((row) => {
     const body = JSON.parse(String(row.body));
     return {
       projectId: String(row.projectId),
@@ -90,6 +93,10 @@ export const POST = withTenant(
       if (!body || typeof body !== "object" || Array.isArray(body))
         throw new PipelineError("Check the pipeline fields.");
       const store = await pipelineStore();
+      /* A pipeline is built on a published version of a production: one of a private board someone else may not read is answered as one that was never published. */
+      const wanted = (body.spec as { context?: { projectId?: unknown } } | undefined)?.context?.projectId;
+      if (typeof wanted === "string" && !(await mayReachProject(auth.user, wanted, "read")))
+        throw new PipelineError("Publish the intended production context first. Private drafts are never published by a pipeline.", 409);
       const version = await store.saveVersion(
         auth.user.id,
         body.spec,

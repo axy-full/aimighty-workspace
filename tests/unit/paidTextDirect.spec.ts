@@ -53,25 +53,57 @@ const xaiReply = { id: "resp_xai_fixture", object: "response", created_at: 1, mo
   output: [{ type: "message", id: "msg_xai_fixture", role: "assistant", status: "completed", content: [{ type: "output_text", text: '{"ok":true}', annotations: [] }] }],
   usage: { input_tokens: 150, input_tokens_details: { cached_tokens: 100 }, output_tokens: 40, output_tokens_details: { reasoning_tokens: 30 }, total_tokens: 190, cost_in_usd_ticks: 12345 } };
 
+/** One kind of token's rate for a model, as the snapshot states it. */
+type Rate = (key: "input" | "input_cache_read" | "input_cache_write" | "output") => number;
+
+/**
+ * A model's rates, read from the code's catalogue snapshot (lib/modelCatalog.json, through `snapshot`) and never written in this file: the first context tier
+ * where a price is tiered. Each is a positive number, and a reply's rates are told apart (`distinct`), so a cost that priced one kind of token at another's rate fails.
+ */
+async function ratesOf(id: string): Promise<Rate> {
+  const pricing = (await snapshot(id)).pricing as Record<string, unknown> | null;
+  if (!pricing) throw new Error(`${id} has no price in the snapshot`);
+  return (key) => {
+    const tiers = pricing[`${key}_tiers`] as { cost: string }[] | undefined;
+    const value = Number(tiers?.[0]?.cost ?? pricing[key]);
+    expect(Number.isFinite(value) && value > 0, `${id} ${key}`).toBe(true);
+    return value;
+  };
+}
+
 /**
  * One row per direct vendor: a snapshot model, its provider's reply, and what
  * that reply costs at the snapshot, worked by hand.
+ * `derived` works the same cost again from the snapshot's own rates (`ratesOf`), the rates it uses told apart (`distinct`).
  */
 const VENDORS = [
   /* Ids the owner's keys list (11 Oct 2026): Claude Sonnet 5 and Gemini 3.5 Flash-Lite. */
   { vendor: "anthropic", model: "anthropic/claude-sonnet-5", origin: "https://api.anthropic.com", reply: anthropicReply,
     refusal: { status: 429, body: { type: "error", error: { type: "rate_limit_error", message: "Fixture." } } },
+    derived: (r: Rate) => 100 * r("input") + 60 * r("input_cache_read") + 40 * r("input_cache_write") + 25 * r("output"),
+    distinct: ["input", "input_cache_read", "input_cache_write", "output"],
     // 100 uncached × $2/M + 60 cache reads × $0.20/M + 40 cache writes × $2.50/M + 25 out × $10/M
     usd: 100 * 0.000002 + 60 * 0.0000002 + 40 * 0.0000025 + 25 * 0.00001 },
   { vendor: "google", model: "google/gemini-3.5-flash-lite", origin: "https://generativelanguage.googleapis.com", reply: googleReply,
     refusal: { status: 400, body: { error: { code: 400, message: "Fixture.", status: "INVALID_ARGUMENT" } } },
+    derived: (r: Rate) => 80 * r("input") + 120 * r("input_cache_read") + 80 * r("output"),
+    distinct: ["input", "input_cache_read", "output"],
     // 80 uncached × $0.30/M + 120 cache reads × $0.03/M + (30 answer + 50 thought) out × $2.50/M
     usd: 80 * 0.0000003 + 120 * 0.00000003 + 80 * 0.0000025 },
   { vendor: "xai", model: "spacexai/grok-4.6", origin: "https://api.x.ai", reply: xaiReply,
     refusal: { status: 403, body: { code: "forbidden", error: "Fixture." } },
+    derived: (r: Rate) => 50 * r("input") + 100 * r("input_cache_read") + 40 * r("output"),
+    distinct: ["input", "input_cache_read", "output"],
     // 50 uncached × $2/M + 100 cache reads × $0.50/M + 40 out (reasoning included) × $6/M, first context tier
     usd: 50 * 0.000002 + 100 * 0.0000005 + 40 * 0.000006 },
 ] as const;
+
+/** What a row's reply costs at the snapshot's rates, the rates it uses told apart first. */
+async function derivedUsd(row: (typeof VENDORS)[number]): Promise<number> {
+  const r = await ratesOf(row.model);
+  expect(new Set(row.distinct.map((key) => r(key))).size, `${row.vendor}: its rates are told apart`).toBe(row.distinct.length);
+  return row.derived(r);
+}
 
 function stub(origin: string, reply: () => Response) {
   const urls: string[] = [];
@@ -132,6 +164,8 @@ for (const row of VENDORS) test(`${row.vendor}: the provider's raw usage settles
   const raw = row.vendor === "anthropic" ? anthropicReply.usage : row.vendor === "google" ? googleReply.usageMetadata : xaiReply.usage;
   const usage = directTextUsage(row.vendor, { raw });
   expect(directTextCostUsd(model, usage)).toBeCloseTo(row.usd, 15);
+  /* The same cost, worked again from the snapshot's own rates. */
+  expect(directTextCostUsd(model, usage)).toBeCloseTo(await derivedUsd(row), 15);
 
   /* The quote is the most a call can cost: every split of its input into fresh, cached and newly cached
      tokens, and any output up to the ceiling, settles at or under it. */
@@ -174,9 +208,10 @@ test("a cache the snapshot has no price for is unpriced: no quote, and a call th
 
 test("the meter engine and the ledger are the vendor for a direct door, the gateway's otherwise", async () => {
   const { textEngine, textKeyName, isDirectText } = await import("../../lib/openai-direct");
+  /* With TEXT_DIRECT empty Claude and Grok stay on the gateway; Gemini text always goes direct to Google (Vercel out, owner 14 Oct 2026). */
   for (const row of VENDORS) {
-    expect(textEngine(row.model)).toBe("vercel");
-    expect(isDirectText(row.model)).toBe(false);
+    expect(textEngine(row.model), row.vendor).toBe(row.vendor === "google" ? "google" : "vercel");
+    expect(isDirectText(row.model), row.vendor).toBe(row.vendor === "google");
   }
   process.env.TEXT_DIRECT = "anthropic,google,xai";
   for (const row of VENDORS) {
@@ -352,14 +387,15 @@ test("ANTHROPIC_API_KEY set with TEXT_DIRECT empty: paid text, the meter, the le
   const withKey = await run(true);
   expect(withKey).toEqual(without);
   expect(without.out).toMatchObject({ cost: 0.0004, engine: "vercel", meterEngine: "vercel", ledger: "vercel", route: "gateway", refineProvider: "gateway",
-    writer: { provider: "gateway", model: "anthropic/claude-sonnet-5", via: "Model gateway (API key)", configured: true }, refined: { ledger: "vercel", costUsd: 0.0004 }, configured: false, via: null, adapter: false });
+    writer: { provider: "gateway", model: "anthropic/claude-opus-5.5", via: "Model gateway (API key)", configured: true }, refined: { ledger: "vercel", costUsd: 0.0004 }, configured: false, via: null, adapter: false });
   // Both calls went to the gateway, on the gateway's key.
   expect(without.sent.map((s) => [new URL(s.url).host, s.auth])).toEqual([["ai-gateway.vercel.sh", `Bearer ${KEYS.AI_GATEWAY_API_KEY}`], ["ai-gateway.vercel.sh", `Bearer ${KEYS.AI_GATEWAY_API_KEY}`]]);
 });
 
 test("the writer's model list is PROMPT_MODELS, still reading GATEWAY_PROMPT_MODELS; the legacy Claude call only when REFINE_PROVIDER forces it", async () => {
   const { PROMPT_MODELS, refineProvider } = await import("../../lib/enhance");
-  expect(PROMPT_MODELS()).toEqual(["anthropic/claude-sonnet-5.5", "anthropic/claude-sonnet-5"]);
+  /* Owner, 16 Oct 2026: Opus 5.5 first, Sonnet 5.5 behind it. */
+  expect(PROMPT_MODELS()).toEqual(["anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5.5"]);
   process.env.GATEWAY_PROMPT_MODELS = "anthropic/claude-haiku-4.5";
   expect(PROMPT_MODELS()).toEqual(["anthropic/claude-haiku-4.5"]);
   process.env.PROMPT_MODELS = "google/gemini-2.5-flash, anthropic/claude-sonnet-4.6";
@@ -378,12 +414,14 @@ test("the inline writer on a direct door: priced at usage × snapshot, on the ve
   await inWorkspace(async () => {
     const { enhancePrompt, activeWriter } = await import("../../lib/enhance");
     // The platform's enhance writer (DEFAULT_TEXT_MODELS), now on Anthropic's own API.
-    expect(await activeWriter()).toMatchObject({ provider: "gateway", model: "anthropic/claude-sonnet-5.5", via: "Model provider, direct", configured: true });
+    expect(await activeWriter()).toMatchObject({ provider: "gateway", model: "anthropic/claude-opus-5.5", via: "Model provider, direct", configured: true });
     const refined = await enhancePrompt({ prompt: "A tree in rain.", citations: [], provider: "gateway" });
     expect(transport.urls).toHaveLength(1);
-    expect(refined).toMatchObject({ text: "A lone tree in steady rain.", move: "static", ledger: "anthropic", model: "anthropic/claude-sonnet-5.5" });
-    // Claude Sonnet 5.5 at its list price (provider-priced): 100 × $2/M + 60 reads × $0.10/M + 40 writes × $2.50/M + 25 out × $10/M.
-    expect(refined.costUsd).toBeCloseTo(100 * 0.000002 + 60 * 0.0000001 + 40 * 0.0000025 + 25 * 0.00001, 15);
+    expect(refined).toMatchObject({ text: "A lone tree in steady rain.", move: "static", ledger: "anthropic", model: "anthropic/claude-opus-5.5" });
+    // Claude Opus 5.5 at its rates in the catalogue snapshot (lib/modelCatalog.json): 100 in + 60 cache reads + 40 cache writes + 25 out, each at its own rate.
+    const r = await ratesOf("anthropic/claude-opus-5.5");
+    expect(new Set(["input", "input_cache_read", "input_cache_write", "output"].map((key) => r(key as Parameters<Rate>[0]))).size).toBe(4);
+    expect(refined.costUsd).toBeCloseTo(100 * r("input") + 60 * r("input_cache_read") + 40 * r("input_cache_write") + 25 * r("output"), 15);
   });
 });
 

@@ -1,3 +1,4 @@
+import { AGE_CONFIRM_REFUSAL, ageConfirmedStatement } from "./ageConfirm";
 import { recoveryRoute } from "./recovery";
 import { SESSION_COOKIE } from "./sessionCookie";
 import { crossOriginProblem } from "./requestOrigin";
@@ -436,19 +437,18 @@ export async function findByEmail(email: string) {
   return findAccountByEmail(email);
 }
 
-export async function createUser(email: string, name: string, password: string): Promise<{ id: string; email: string; name: string }> {
-  return createAccount(email, name, hashPassword(password));
-}
-
 /**
  * First run: the first account becomes the platform owner and gets the
  * studio's original workspace — the primary database — as its own.
  * Atomic on the account count, so two racing setups make one owner.
  */
-export async function createFirstAdmin(email: string, name: string, password: string): Promise<User | null> {
+export async function createFirstAdmin(email: string, name: string, password: string, ageConfirmed: boolean): Promise<User | null> {
+  /* A sign-up like any other: the 18+ and Terms tick is required, and its line (the id and the moment) is written with the account (lib/ageConfirm.ts). */
+  if (ageConfirmed !== true) throw new Error(AGE_CONFIRM_REFUSAL);
   await platformReady();
   if ((await accountCount()) > 0) return null;
-  const account = await createAccount(email, name, hashPassword(password));
+  /* One batch: the account and its 18+ line are written together or not at all, so the first admin never exists without the line. */
+  const account = await createAccount(email, name, hashPassword(password), (id) => [ageConfirmedStatement(id)]);
   let ws = await legacyWorkspace();
   if (!ws) {
     const ts = now();

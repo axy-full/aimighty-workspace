@@ -49,11 +49,25 @@ test("the picture is the shown still, else the storyboard frame when that is a s
   expect(shotCardPicture({ shown: null, frame: null })).toBeNull();
 });
 
-test("✕'s reasons are the Shots chips word for word, ending in Other once; the reason shown is the take's latest note, in one line", () => {
+test("✕'s reasons are the Shots chips word for word, ending in Other once; the reason shown is the team's latest note since the mark, in one line", () => {
   expect([...SHOT_REASONS]).toEqual([...REJECT_CHIPS]);
   expect(withOther(SHOT_REASONS).at(-1)).toBe("Other");
   expect(withOther(SHOT_REASONS).filter((r) => r === "Other")).toHaveLength(1);
-  expect(rejectedReason(undefined)).toBe("");
-  expect(rejectedReason([])).toBe("");
-  expect(rejectedReason([{ text: "first" }, { text: "  Off the brief \n · warmer " }])).toBe("Off the brief · warmer");
+  expect(rejectedReason(undefined, 0)).toBe("");
+  expect(rejectedReason([], 0)).toBe("");
+  expect(rejectedReason([{ text: "first", at: 10 }, { text: "  Off the brief \n · warmer ", at: 20 }], 10)).toBe("Off the brief · warmer");
+  /* A client's comment from a review link is not the team's reason, even when it is the newest. */
+  expect(rejectedReason([{ text: "Off the brief", at: 20 }, { text: "Love it", at: 30, guest: true }], 15)).toBe("Off the brief");
+  /* A note from before the "changes" mark is older talk, not the reason it was sent back with. */
+  expect(rejectedReason([{ text: "Nice light", at: 5 }], 10)).toBe("");
+  expect(rejectedReason([{ text: "Nice light", at: 5 }, { text: "Wrong framing", at: 10 }], 10)).toBe("Wrong framing");
+  /* Only guests since the mark: no reason (the card reads "✕"). */
+  expect(rejectedReason([{ text: "Hmm", at: 12, guest: true }], 10)).toBe("");
+});
+
+test("a Ready card with nothing to judge offers nothing: an upload, a take with no picture here, an approved take with no picture here", () => {
+  expect(shotCardState(row([v(1, "uploaded")]))).toMatchObject({ status: "ready", judge: null });
+  expect(shotCardState(row([v(1, "review", { url: null })]))).toMatchObject({ status: "ready", judge: null });
+  expect(shotCardState(row([v(1, "picked", { media: null })]))).toMatchObject({ status: "ready", judge: null });
+  expect(shotCardState(row([v(1, "approved", { url: null })]))).toMatchObject({ status: "approved", judge: null });
 });

@@ -5,6 +5,7 @@ import { fmtCredits, useMoney } from "@/lib/price";
 import { creditRate, creditsUsd } from "@/lib/shell/price-words";
 import { creditRateLine } from "@/lib/creditTerms";
 import { HOUSE_NOT_BILLED } from "@/lib/houseWorkspace";
+import { houseCapStanding, type HouseCapView } from "@/lib/houseCapText";
 import { fmtLedgerUsd, type CreditLedgerRow, type DollarLedgerRow } from "@/lib/usageLedgerTerms";
 import type { BillingSubscription, Topups } from "@/lib/shell/workspace-view";
 import type { WorkspaceAccount } from "@/lib/workspace/data";
@@ -53,6 +54,9 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
   const boards = useRead<unknown>(inCredits ? `/api/usage/boards?month=${month}` : null);
   /* The house reads the same Usage routes in their dollar form: the board totals (all time) and the month's dollar ledger. */
   const usage = useRead<{ spentUsd?: number; byProject?: unknown }>(inDollars ? "/api/usage" : null);
+  /* The house's monthly engine cap and the month so far (lib/houseCap.ts). */
+  const cap = useRead<{ houseCap?: HouseCapView | null }>(inDollars ? "/api/usage/house-cap" : null);
+  const houseCap = cap.data?.houseCap ?? null;
   const dollarLedger = useRead<{ unit?: string; rows?: DollarLedgerRow[] }>(inDollars ? `/api/usage?rows=1&month=${month}&limit=20` : null);
 
   const totals = monthTotalsOf(ledger.data);
@@ -91,6 +95,15 @@ export function CreditsBilling({ account, onTopUp, onOpenBoard }: {
                 <span>Spent · all time</span>
                 <span className="v12-bill-mono v12-bill-accent">{spentAll != null ? money.price(spentAll) : usage.error ? "—" : "Reading…"}</span>
               </div>
+              {houseCap ? (
+                <div className="v12-bill-row" data-testid="v12-billing-house-cap" data-state={houseCap.stop ? "stop" : houseCap.warn ? "warn" : "ok"}>
+                  <span>Monthly cap</span>
+                  <span className={houseCap.warn ? "v12-bill-low" : undefined} data-testid="v12-billing-house-cap-words">
+                    {houseCap.warn ? <span className="v12-bill-dot" aria-hidden="true" /> : null}
+                    {houseCapStanding(houseCap)}
+                  </span>
+                </div>
+              ) : null}
               <div className="v12-bill-row" data-testid="v12-billing-no-topup">
                 <span>Top up</span>
                 <span className="v12-bill-quiet">None: this workspace has no credits to buy.</span>

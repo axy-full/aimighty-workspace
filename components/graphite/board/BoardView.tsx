@@ -23,6 +23,7 @@ import { withUndoHint } from "@/lib/shell/undo";
 import { useShell } from "@/lib/shell/state";
 import { useCompact } from "@/lib/shell/use-compact";
 import { useNewInterface } from "@/lib/session";
+import { ATOMIK_DOCK_TOGGLE } from "@/lib/v12/atomik-dock";
 import { findProjectTake, libraryEntries, projectLibraryState, uploadFilesToProject, type LibraryEntry } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { uid, type Asset, type Project } from "@/lib/workbench/studio";
@@ -56,12 +57,13 @@ import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
 import { stageLimit, stagePage, type StagePageKind, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
-import { LIBRARY_OPEN_EVENT } from "@/lib/v12/useLibraryTray";
+import { requestTrayOpen } from "@/lib/v12/useLibraryTray";
 import { RigView } from "@/components/v12/rig/RigView";
 import { rigModel } from "@/components/v12/rig/model";
 import { roundCardsFor, type RoundCardData } from "@/components/v12/rounds/round-derive";
 import { RoundCard } from "@/components/v12/rounds/RoundCard";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
+import { useScreenScale } from "@/components/v12/board/use-screen-scale";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
 import { openBlocking } from "./blocking/blocking-store";
 import { useShotsBatch } from "@/components/v12/render/use-batch";
@@ -207,7 +209,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   const stageAll = useMemo(() => (stage ? [...stageOwn, ...unstagedCards(allCards)] : allCards).filter((c) => !(roundShare && c.id === roundShare.id)), [stage, stageOwn, allCards, roundShare]);
   /* The new interface's stage grid (components/v12/board/stage-grid.ts, redesign P2-b): on a grid stage, its groups N across with
      a 24 px gap and its shot cards one size. Off the switch, or on any other stage, today's definitions as they are. */
-  const gridAcross = useStageColumns(v12Frame && onGrid(stage?.id));
+  /* A large screen scales the canvas up (lib/v12/board/screen-scale.ts); the groups stay as many across as they are at 1440. */
+  const scale = useScreenScale(v12Frame);
+  const gridAcross = useStageColumns(v12Frame && onGrid(stage?.id), scale);
   const cards = useMemo(() => (gridAcross ? gridCards(stageAll) : stageAll), [gridAcross, stageAll]);
   const layoutDefs = useMemo(() => (gridAcross ? gridDefs(registry.defs, cards, project?.aspect ?? "16:9", gridAcross) : registry.defs), [gridAcross, registry.defs, cards, project?.aspect]);
   const placed = useMemo(() => placeBoard(cards, layoutDefs, board.bands, project?.aspect ?? "16:9"), [cards, layoutDefs, board.bands, project?.aspect]);
@@ -300,22 +304,32 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     /* A link to a take (`asset=`: a copied link, Open in Takes, a jobs-tray Open): the shot card holding that take opens first and is selected. */
     const linkedTake = asset.current ? placed.cards.find((c) => c.kind === "take" && (c.data as { row?: { versions?: { id: string }[] } } | undefined)?.row?.versions?.some((v) => v.id === asset.current)) : undefined;
     const box = linkedTake ? placed.boxes.get(linkedTake.id) : null;
-    const first = box ? viewportFor(box, 1, true) : saved ?? viewportFor(target ?? placed.arranged ?? placed.bounds, 1);
+    const first = box ? viewportFor(box, scale, true) : saved ?? viewportFor(target ?? placed.arranged ?? placed.bounds, scale);
     void flow.setViewport(first).then(() => { measureInView(first); if (linkedTake) select(linkedTake.id); });
-  }, [board.rail, flow, frame, kind, measureInView, placed.arranged, placed.bounds, placed.boxes, placed.cards, placed.regions, placed.slots, projectId, ready, region, scope, select, shell.params.card, status, v12Frame, viewportFor]);
-  /* The new interface: each stage opens on its own cards, at 100 %, from their top-left. */
+  }, [board.rail, flow, frame, kind, measureInView, placed.arranged, placed.bounds, placed.boxes, placed.cards, placed.regions, placed.slots, projectId, ready, region, scale, scope, select, shell.params.card, status, v12Frame, viewportFor]);
+  /* The new interface: each stage opens on its own cards, at 100 %, from their top-left. `scale` is the large-screen zoom (lib/v12/board/screen-scale.ts); a grid stage starts 60 px in
+     from the stage column's top-left as the prototype's cards do (L556), and that margin scales with the cards. */
   const shownStage = useRef<string | null>(null);
+  const opening = useRef<{ scale: number; view: Viewport } | null>(null);
   useEffect(() => {
     if (!v12Frame || !ready || !projectId || !stage) return;
     const key = `${projectId}:${stage.id}`;
-    if (shownStage.current === key) return;
-    shownStage.current = key;
-    const box = placed.arranged ?? placed.bounds;
-    const from = box ? viewportFor(box, 1) : { x: INSET, y: INSET, zoom: 1 };
-    /* A grid stage starts 60 px in from the stage column's top-left, as the prototype's cards do (L556). */
-    const next = onGrid(stage.id) ? { ...from, x: from.x + GRID_ORIGIN - INSET, y: from.y + GRID_ORIGIN - INSET } : from;
-    void flow.setViewport(next).then(() => measureInView(next));
-  }, [flow, measureInView, placed.arranged, placed.bounds, projectId, ready, stage, v12Frame, viewportFor]);
+    const open = () => {
+      const box = placed.arranged ?? placed.bounds;
+      const from = box ? viewportFor(box, scale) : { x: INSET, y: INSET, zoom: scale };
+      const shift = (GRID_ORIGIN - INSET) * scale;
+      const next = onGrid(stage.id) ? { ...from, x: from.x + shift, y: from.y + shift } : from;
+      opening.current = { scale, view: next };
+      void flow.setViewport(next).then(() => measureInView(next));
+    };
+    if (shownStage.current !== key) { shownStage.current = key; open(); return; }
+    /* Only the window's scale changed (a resize): open again at the new scale when the person has not moved or zoomed the view since it opened; otherwise leave their view. */
+    const was = opening.current;
+    if (!was || was.scale === scale) return;
+    const now = flow.getViewport();
+    const untouched = Math.abs(now.x - was.view.x) < 1.5 && Math.abs(now.y - was.view.y) < 1.5 && Math.abs(now.zoom - was.view.zoom) < 0.005;
+    if (untouched) open(); else opening.current = { ...was, scale };
+  }, [flow, measureInView, placed.arranged, placed.bounds, projectId, ready, scale, stage, v12Frame, viewportFor]);
   const onMoveEnd = useCallback((viewport: Viewport) => {
     /* A grid stage scrolls no further than its last row clear of the bar and the bottom-left controls (never above where the stage opens). */
     const box = placed.arranged ?? placed.bounds;
@@ -323,7 +337,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       const { height } = store.getState();
       const floor = height - bottomClear();
       const bottom = (box.y + box.h) * viewport.zoom + viewport.y;
-      const top = GRID_ORIGIN - box.y * viewport.zoom;
+      const top = INSET + (GRID_ORIGIN - INSET) * scale - box.y * viewport.zoom;
       const y = Math.min(viewport.y + (floor - bottom), top);
       if (bottom < floor - 1 && y > viewport.y + 1) {
         const next = { ...viewport, y };
@@ -333,7 +347,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     }
     if (projectId) saveBoardView(scope, projectId, viewport);
     measureInView(viewport);
-  }, [flow, gridAcross, measureInView, placed.arranged, placed.bounds, projectId, scope, store]);
+  }, [flow, gridAcross, measureInView, placed.arranged, placed.bounds, projectId, scale, scope, store]);
 
   /* ── Edits a person makes on the board: each one draft edit, free, with ⌘Z ── */
   const undoable = useCallback((label: string, undo: () => void, say?: string) => {
@@ -535,7 +549,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       case "list": setList(true); return true;
       case "board": setList(false); return true;
       case "glide": glide(command.to); return true;
-      case "library": if (v12Frame) window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)); else setDrawer("library"); return true;
+      case "library": if (v12Frame) requestTrayOpen(); else setDrawer("library"); return true;
       /* Sent only by the new interface's right-click menus (lib/board/commands.ts BoardMenuCommand). */
       case "select": select(command.card, { add: command.add }); return true;
       case "remove": if (offline || !selection.ids.size) return false; remove(); return true;
@@ -572,6 +586,13 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* ── The seams other streams provide (review mode: 5; Atomik's panel: 7) ── */
   const [seams] = useState(() => new BoardSeams());
   const [dockOpen, setDockOpen] = useState(false);
+  /* The new interface's ⌘J (its header has no Atomik button on a board): open or close the dock this board holds. */
+  useEffect(() => {
+    if (!v12Frame) return;
+    const toggle = () => setDockOpen((open) => !open);
+    window.addEventListener(ATOMIK_DOCK_TOGGLE, toggle);
+    return () => window.removeEventListener(ATOMIK_DOCK_TOGGLE, toggle);
+  }, [v12Frame]);
   /* The new interface: selecting a card does not open the Inspector (it would cover the bar); a card's ⓘ Details does (redesign P2-b). */
   const [details, setDetails] = useState<string | null>(null);
   const ctx = useMemo<BoardCtx | null>(() => (project ? {
@@ -745,7 +766,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* The 3D blocking card is not drawn on the new stages (a stray box under the grid): its way in is the board menu. */
   const blocking = (allCards.find((c) => c.kind === "blocking")?.data as { nodeId?: string } | undefined)?.nodeId ?? null;
   const boardMenu = [
-    { id: "library", label: "Library", shortcut: "L", onSelect: () => window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT)) },
+    { id: "library", label: "Library", shortcut: "L", onSelect: requestTrayOpen },
     { id: "history", label: "History", onSelect: () => setDrawer("history") },
     ...(round ? [{ id: "share-round", label: `Share R${round.n} · copy what changed`, onSelect: () => void copyRound() }] : []),
     ...(kind === "studio" ? [{ id: "render", label: "3D scene", onSelect: () => setDrawer("render") }] : []),
@@ -768,7 +789,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
             onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
           <StageColumn on={v12Frame}>
           {list ? <List ctx={ctx} cards={placed.cards} /> : (
-            <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline || Boolean(viewing)} onMoveEnd={onMoveEnd}
+            <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline || Boolean(viewing)} onMoveEnd={onMoveEnd} zoomBase={scale}
               placing={tool === "note" || tool === "text"} onPlace={place}
               onOpen={(id) => {
                 const card = placed.byId.get(id);
@@ -802,7 +823,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
           ) : null}
           {batch.offer && !list ? <NotifyAsk onTell={() => void batch.tellMe()} onNotNow={batch.notNow} /> : null}
           {list || page || rigOn ? null : v12Frame ? <BoardToolbar tool={tool} readOnly={offline || Boolean(viewing)} onTool={chooseTool} userId={userId ?? null} firstVisit={shell.params.first === "1"} /> : <ToolPill tool={tool} readOnly={offline} onTool={chooseTool} />}
-          <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} />
+          <HoverCluster regions={regionBoxes} bounds={placed.bounds} list={list} onList={setList} onTidy={freeCards.length && !offline ? tidy : undefined} views={!v12Frame} base={scale} />
           {v12Frame ? <ViewSwitch view={list ? "list" : rigOn ? "rig" : "canvas"} onView={(v) => { setList(v === "list"); setRigView(v === "rig"); }} /> : null}
           {offline ? <p className="bd-offline" role="status">Offline · changes queue</p> : null}
           {pill ? <p className="bd-sample" role="status" data-testid="board-sample" data-lifted={pill === LIFT_LINE || undefined}>{pill}{pill === CHECK_LINE ? <> <CheckAgain className="bd-link" /></> : null}</p> : null}

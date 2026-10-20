@@ -92,8 +92,8 @@ test("the platform desk reads the house workspace as never billed: no balance, n
       args: [`house_desk_${randomBytes(4).toString("hex")}`, at, at],
     });
   } finally { platform.close(); }
-  /* It takes no credits and no allowance: refused before anything is written. */
-  for (const data of [{ grantCredits: 100 }, { allowanceUsd: 10 }]) {
+  /* It takes no credits: refused before anything is written. Its monthly engine cap is the platform owner's to set (lib/houseCap.ts). */
+  for (const data of [{ grantCredits: 100 }]) {
     const refused = await page.request.patch("/api/admin/workspaces/ws_legacy", { data });
     expect(refused.status(), JSON.stringify(data)).toBe(400);
     expect(((await refused.json()) as { error: string }).error).toMatch(/never billed in credits/);
@@ -101,13 +101,25 @@ test("the platform desk reads the house workspace as never billed: no balance, n
   const desk = await page.request.get("/api/admin/invites").then((r) => r.json()) as { workspaces: { id: string }[] };
   expect(desk.workspaces.find((w) => w.id === "ws_legacy")).toMatchObject({
     house: true, credits: null, spend30: { atCost: true, billedCredits: 0, marginUsd: null },
+    /* Capped at $500 a month until the owner sets another figure (lib/houseCap.ts). */
+    houseCap: { capUsd: 500, source: "default", warn: false },
   });
   await page.goto("/admin");
   const row = page.locator(".steam").filter({ hasText: "HOUSE · NOT BILLED" });
   await expect(row).toHaveCount(1);
   await expect(row.getByText(/ at cost$/)).toBeVisible();
   await expect(row).not.toContainText(/ CR\b|margin/);
+  await expect(row.locator(".admin-cap")).toContainText("$500");
   expect(await noSideScroll(page)).toBe(true);
+  /* The platform owner sets the house's cap through the desk's own route, and removing their figure puts back the default. */
+  const set = await page.request.patch("/api/admin/workspaces/ws_legacy", { data: { allowanceUsd: 120 } });
+  expect(set.ok(), await set.text()).toBe(true);
+  const after = await page.request.get("/api/admin/invites").then((r) => r.json()) as { workspaces: { id: string; houseCap?: { capUsd: number; source: string } }[] };
+  expect(after.workspaces.find((w) => w.id === "ws_legacy")?.houseCap).toMatchObject({ capUsd: 120, source: "own" });
+  const back = await page.request.patch("/api/admin/workspaces/ws_legacy", { data: { allowanceUsd: null } });
+  expect(back.ok(), await back.text()).toBe(true);
+  const reset = await page.request.get("/api/admin/invites").then((r) => r.json()) as { workspaces: { id: string; houseCap?: { capUsd: number; source: string } }[] };
+  expect(reset.workspaces.find((w) => w.id === "ws_legacy")?.houseCap).toMatchObject({ capUsd: 500, source: "default" });
 });
 
 /* The engine cap (lib/allowanceDesk.ts) on a workspace row: read in engine dollars only (no credits figure: billed credits carry the margin),

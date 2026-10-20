@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useShell } from "@/lib/shell/state";
 import { writeAssetDrag } from "@/lib/drop";
 import type { Project } from "@/lib/workbench/studio";
@@ -8,11 +8,14 @@ import type { ProjectSummary } from "@/lib/workspace/data";
 import { STUB_KINDS, castKindsOf, TRAY_HINT, TRAY_KINDS, TRAY_SOURCES, filterTray, masonry, trayItems, type CastKind, type TrayItem } from "@/lib/v12/library";
 import { requestMention } from "@/lib/v12/mention";
 import { keyOf } from "@/lib/v12/keymap";
-import { TRAY_TOGGLE_EVENT, inField, useTrayLibrary, useTrayState } from "@/lib/v12/useLibraryTray";
+import { inField, useTrayLibrary, useTrayState } from "@/lib/v12/useLibraryTray";
 import { Kbd, Menu, Segment, Tooltip, useOverlay, useOverlayStack, type MenuItem } from "@/components/v12/ui";
 import { TrayMenu } from "../menus/TrayMenu";
 import { useMenuAt } from "../menus/menu-items";
 import "./library.css";
+
+/** useLayoutEffect on the client (it runs in the commit, after the DOM is changed), a plain effect where there is no layout to read. */
+const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 /**
  * The Library tray (docs/redesign/inventory.md § 5.10; prototype `?view=board&drawer=Library`): 360 px from the left,
@@ -46,10 +49,12 @@ export function LibraryTray({ project, projects, library }: { project: Project |
     if (!wasOpen.current) returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setOpen((was) => !was);
   }, [setOpen]);
-  useEffect(() => {
+  /* Focus goes back in the same commit that removes the tray (a layout effect), not a frame later: a frame that arrived late (a slow runner at 1920 x 1080)
+     could land after something else had taken focus, and moved it again. It was a requestAnimationFrame, and tests/library-tray-v12-workbench.spec.ts failed on it. */
+  useBeforePaint(() => {
     if (!tray.open && wasOpen.current) {
       const back = returnTo.current;
-      requestAnimationFrame(() => { (back && back.isConnected && back !== document.body ? back : button.current)?.focus(); });
+      (back && back.isConnected && back !== document.body ? back : button.current)?.focus();
     }
     wasOpen.current = tray.open;
   }, [tray.open]);
@@ -72,12 +77,7 @@ export function LibraryTray({ project, projects, library }: { project: Project |
     return () => window.removeEventListener("keydown", onKey, true);
   }, [toggle, stack]);
   useOverlay("drawer", tray.open, () => setOpen(false));
-  /* The right-click menu's "Library L" asks for the same toggle. */
-  useEffect(() => {
-    const onToggle = () => setOpen((was) => !was);
-    window.addEventListener(TRAY_TOGGLE_EVENT, onToggle);
-    return () => window.removeEventListener(TRAY_TOGGLE_EVENT, onToggle);
-  }, [setOpen]);
+  /* The right-click menu's and Make's Library ask for the same toggle: useTrayState listens for it (lib/v12/useLibraryTray.ts). */
 
   return (
     <>

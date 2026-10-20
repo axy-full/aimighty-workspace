@@ -106,7 +106,7 @@ const roleOf = async (id) => (await p().execute(`SELECT role, disabled FROM memb
   assert.equal(await snapshot(), before, "a rerun with no accounts changed the databases");
 
   /* ── (b) no account, the house exists ── */
-  const studio = await createFirstAdmin(STUDIO, "Studio", "Unique-studio-password-43");
+  const studio = await createFirstAdmin(STUDIO, "Studio", "Unique-studio-password-43", true /* the /setup route passes the tick as the person gave it */);
   assert.ok(studio, "the house owner");
   before = await snapshot();
   report = await run();

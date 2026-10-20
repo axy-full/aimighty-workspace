@@ -18,8 +18,9 @@ import { scheduleCanvasPush } from "@/lib/workbench/canvas-push";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import {
   approveRigAgent, approveRigAgentPlan, askRigAgent, declineRigAgent, fixRigAgentShot, MAX_RUN_LIMIT, retryRigAgentStep, raiseRigAgentLimit, renderRigAgentStep, RigAgentError, rigAgentEnabled, rigAgentState,
-  newBoardAskTerms, skipRigAgentStep, stopRigAgent, undoRigAgent,
+  newBoardAskTerms, planRigAgentStep, skipRigAgentStep, stopRigAgent, undoRigAgent,
 } from "@/lib/workbench/rig-agent";
+import { chipsView } from "@/lib/workbench/rig-agent-chips";
 
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -64,6 +65,9 @@ export const GET = withTenant(async (req: Request) => {
   try {
     if (url.searchParams.get("agent") === "1" && url.searchParams.get("board") === "new")
       return Response.json({ agent: await newBoardAskTerms() }, { headers: NO_STORE });
+    /* `agent=1&steps=1`: each step's quick questions (chips) in Agent mode: fixed, free, no model (lib/workbench/rig-agent-chips.ts). */
+    if (url.searchParams.get("agent") === "1" && url.searchParams.get("steps") === "1")
+      return Response.json({ chips: chipsView() }, { headers: NO_STORE });
     if (url.searchParams.get("agent") === "1") {
       const draftId = url.searchParams.get("projectId");
       /* `attachment` (repeated): the files the ask would attach, priced into planning's figure (each checked as the ask checks it). */
@@ -142,6 +146,13 @@ const actionSchema = z.discriminatedUnion("action", [
     /* Files attached to the ask (`upload:<id>`), each checked against this production's Library in this workspace. */
     attachments: z.array(z.string().max(200)).max(ATTACHMENTS_SENT).optional(),
   }),
+  /* A chips plan: the server's own plan for a board step from its quick answers, no thinking turn (lib/workbench/rig-agent-chips.ts). It prices, reserves nothing, and waits for the person's one approval. */
+  z.object({
+    action: z.literal("agent.planStep"), productionId: PRODUCTION, projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
+    requestId: z.string().regex(ACTION_ID), step: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/),
+    answers: z.record(z.string().max(40), z.union([z.string().max(40), z.number().finite()])).optional(),
+    cards: z.array(z.string().max(200)).min(1).max(24).optional(),
+  }),
   runAction("agent.approve").extend({ fingerprint: FINGERPRINT }),
   runAction("agent.decline"),
   runAction("agent.stop"),
@@ -177,7 +188,7 @@ const actionSchema = z.discriminatedUnion("action", [
  *    the approved limit. Each answers Atomik's run card.
  */
 /** The board agent's actions that can lead to a paid call (a planning turn, a render, a raised limit). */
-const SPENDING_AGENT_ACTIONS = new Set(["agent.plan", "agent.approve", "agent.render", "agent.limit", "agent.approvePlan", "agent.fix", "agent.retry"]);
+const SPENDING_AGENT_ACTIONS = new Set(["agent.plan", "agent.planStep", "agent.approve", "agent.render", "agent.limit", "agent.approvePlan", "agent.fix", "agent.retry"]);
 
 export const POST = withTenant(async (req: Request) => {
   const who = await caller(req, true);
@@ -208,7 +219,8 @@ export const POST = withTenant(async (req: Request) => {
     if (action.action === "agent.undo") { const { sampleWriteRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleWriteRefusal(productionId, { id: userId }); if (refused) return refused; }
     if ("runId" in action) { const { sampleRunRefusal } = await import("@/lib/demo/readonly.server"); const refused = await sampleRunRefusal(productionId, action.runId, { id: userId }); if (refused) return refused; }
     const run =
-      action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode, attachments: action.attachments })
+      action.action === "agent.planStep" ? await planRigAgentStep({ productionId, draftId: action.projectId, userId, requestId: action.requestId, step: action.step, answers: action.answers, cards: action.cards })
+      : action.action === "agent.plan" ? await askRigAgent({ productionId, draftId: action.projectId, userId, requestId: action.requestId, goal: action.goal, model: action.model, limit: action.limit, mode: action.mode, attachments: action.attachments })
       : action.action === "agent.approve" ? await approveRigAgent({ productionId, runId: action.runId, fingerprint: action.fingerprint, userId })
       : action.action === "agent.decline" ? await declineRigAgent({ productionId, runId: action.runId, userId })
       : action.action === "agent.stop" ? await stopRigAgent({ productionId, runId: action.runId, userId })
@@ -219,6 +231,6 @@ export const POST = withTenant(async (req: Request) => {
       : action.action === "agent.fix" ? await fixRigAgentShot({ productionId, runId: action.runId, seq: action.seq, userId })
       : action.action === "agent.retry" ? await retryRigAgentStep({ productionId, runId: action.runId, seq: action.seq, userId })
       : await undoRigAgent({ productionId, runId: action.runId, userId });
-    return Response.json({ agent: { enabled: rigAgentEnabled(), run, ask: null } }, { status: action.action === "agent.plan" ? 202 : 200, headers: NO_STORE });
+    return Response.json({ agent: { enabled: rigAgentEnabled(), run, ask: null } }, { status: action.action === "agent.plan" || action.action === "agent.planStep" ? 202 : 200, headers: NO_STORE });
   } catch (error) { return failure(error); }
 });

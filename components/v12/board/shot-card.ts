@@ -47,8 +47,13 @@ export function shotCardPicture(row: Pick<ShotTakes, "shown" | "frame">): { src:
 /** ✕'s reasons on Shots: the five chips the board's reject panel has always had, word for word ("Other" is added by the card). */
 export const SHOT_REASONS: readonly string[] = REJECT_CHIPS;
 
-/** What a rejected card shows after "✕": the take's latest note, which is the reason it was sent back with. Empty when there is none yet. */
-export function rejectedReason(notes: readonly { text: string }[] | undefined): string {
-  const last = notes && notes.length ? notes[notes.length - 1].text : "";
+/**
+ * What a rejected card shows after "✕": the reason it was sent back with, which is the latest note the team wrote on the take at or after its
+ * "changes" mark (`since`, the take's updatedAt: ✕ writes the mark, then the note). A client's comment from a review link (`guest`) is never the
+ * reason, nor is a note from before the mark. Empty when there is none (the card then reads "✕").
+ */
+export function rejectedReason(notes: readonly { text: string; at: number; guest?: boolean }[] | undefined, since: number): string {
+  const team = (notes ?? []).filter((n) => !n.guest && n.at >= since);
+  const last = team.length ? team.reduce((a, b) => (b.at >= a.at ? b : a)).text : "";
   return last.replace(/\s+/g, " ").trim();
 }

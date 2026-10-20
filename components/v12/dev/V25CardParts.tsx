@@ -69,6 +69,11 @@ const ROWS: ShotTakes[] = [
   shot(6, "Pack on sand", []),
   shot(7, "Three versions", [version("gen_s7a", 1, "changes"), version("gen_s7b", 2, "review"), version("gen_s7c", 3, "review")]),
   { ...shot(8, "A clip", [version("gen_s8", 1, "review", { media: "video", url: "/fixtures/clip.mp4" })]), frame: { url: still(210), kind: "image" } },
+  /* Ready, with nothing to judge: an upload, and a finished take whose picture is not here. (9 on: 7 and 8 are the preview's, PR 6.) */
+  shot(9, "The sphere", [version("gen_s9", 1, "uploaded")]),
+  shot(10, "Last light", [version("gen_s10", 1, "review", { url: null })]),
+  /* Sent back: its reason is the team's note at the mark (the browser check answers the notes). */
+  shot(11, "Night swim", [version("gen_s11", 1, "changes")]),
 ];
 
 /* Cards that are not takes: a script (Script · Beats · Breakdown) and a sound, as preview items (mock). */

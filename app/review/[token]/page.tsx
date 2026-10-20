@@ -1,5 +1,6 @@
 "use client";
 
+import { SampleClipCreditLine } from "@/components/ui/SampleClipCredit";
 import "./review.css";
 import { use, useCallback, useEffect, useState } from "react";
 import { posterSrc } from "@/lib/format";
@@ -14,7 +15,7 @@ import { ClientReview, type ClientReviewData } from "@/components/graphite/secur
  * take's notes, where the team reads it beside their own.
  */
 type Note = { text: string; author: string; guest: boolean; at: number };
-type Take = { id: string; kind: "video" | "image" | "audio" | "model"; shot: string | null; title: string | null; version: number; prompt: string; approvedBy: string | null; media: string; notes: Note[] };
+type Take = { id: string; kind: "video" | "image" | "audio" | "model"; shot: string | null; title: string | null; version: number; prompt: string; approvedBy: string | null; media: string; notes: Note[]; credit?: { title: string; licence: string; licenceUrl: string; sourceUrl: string } };
 type Review = { workspace: { name: string; logo: string | null }; production: { name: string; description: string }; takes: Take[]; expiresAt: number };
 
 export default function ReviewPage({ params }: { params: Promise<{ token: string }> }) {
@@ -80,6 +81,7 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
             <div className="rv-body">
               <h2>{t.shot ? `${t.shot} · v${t.version}` : `v${t.version}`}{t.title ? ` — ${t.title}` : ""}</h2>
               <p className="rv-prompt">{t.prompt}</p>
+              {t.credit ? <SampleClipCreditLine /> : null}
               {t.notes.length > 0 && (
                 <ul className="rv-notes">
                   {t.notes.map((n, i) => (

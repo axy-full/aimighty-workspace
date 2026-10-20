@@ -125,7 +125,7 @@ async function route(file: string, user: Acct & { owner?: boolean; role?: string
     },
   };
   for (const name of ["accountDb", "credits", "db", "houseWorkspace", "mail", "mentions", "originalMedia", "platform",
-    "platformOwnerPrivacy", "platformOwnerScrub", "push", "security/review-link", "securityAudit", "settings", "shares",
+    "platformOwnerPrivacy", "platformOwnerScrub", "push", "sampleClip", "security/review-link", "securityAudit", "settings", "shares",
     "teamInvitations", "tenant", "workbench/request-scope"]) mods[`@/lib/${name}`] = await real(name);
   const compiled = ts.transpileModule(readFileSync(file, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

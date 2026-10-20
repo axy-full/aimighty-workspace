@@ -1,6 +1,5 @@
 "use client";
 import { useMemo } from "react";
-import { reviewProjectTake } from "@/lib/workspace/library";
 import { useJudge } from "@/components/graphite/board/cards/take/use-judge";
 import { useTakeNotes } from "@/components/graphite/board/cards/take/use-take-notes";
 import type { ShotTakes } from "@/components/graphite/board/cards/take/take-model";
@@ -11,7 +10,8 @@ import { SHOT_REASONS, rejectedReason, shotCardPicture, shotCardState } from "./
 /**
  * A shot on the v25 board (PR 5): the card, fed by the shot's takes, with ✓ and ✕ doing what they have always done on a take, through the review trail
  * that exists today (components/graphite/board/cards/take/use-judge.ts): ✓ approves the shown version (one approved version a shot; an Undo is in the toast),
- * ✓ again takes it back to Ready, ✕ sends it back with a reason (the Shots chips, "Other", one line) recorded as a note on the take. Free, and only a person:
+ * ✓ again takes it back to Ready (as it was before, when known; an Undo approves it again), ✕ sends it back with a reason (the Shots chips, "Other", one
+ * line) recorded as a note on the take. ✓ and ✕ are drawn only when the shown version can be judged (finished, its picture here). Free, and only a person:
  * the routes refuse a token, an MCP caller and an agent identity (#723). Nothing is paid and nothing is erased.
  */
 export function ShotStepCard({ row, scope, projectId, onOpen, onMenu, onSelect, ...rest }: {
@@ -23,18 +23,14 @@ export function ShotStepCard({ row, scope, projectId, onOpen, onMenu, onSelect, 
   const state = shotCardState(row);
   const rejectedGen = state.status === "rejected" && state.shown ? [state.shown.genId] : [];
   const notes = useTakeNotes(scope, rejectedGen);
-  const reason = rejectedGen.length ? rejectedReason(notes.get(rejectedGen[0])) : undefined;
+  const reason = rejectedGen.length && state.shown ? rejectedReason(notes.get(rejectedGen[0]), state.shown.updatedAt) : undefined;
   const picture = shotCardPicture(row);
   const target = state.judge;
 
+  /* ✓ on an approved card takes the approval back: the card is Ready again (through the judge, so a second press while one is saving does nothing). */
   const approve = () => {
     if (!target) return;
-    if (state.status !== "approved") { void judge.approve(row, target); return; }
-    /* ✓ on an approved card takes the approval back: the card is Ready again. */
-    void reviewProjectTake(scope, projectId, target.genId, "").then(
-      () => toast(`Shot ${row.index} ${target.label} is Ready again`),
-      (error) => toast(error instanceof Error ? error.message : "The review was not saved."),
-    );
+    void (target.status === "approved" ? judge.unapprove(row, target) : judge.approve(row, target));
   };
   return (
     <StepCard {...rest} id={row.nodeId} title={row.title} status={state.status} version={state.version} reason={reason} reasons={SHOT_REASONS}

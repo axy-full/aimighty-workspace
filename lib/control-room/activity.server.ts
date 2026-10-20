@@ -9,6 +9,7 @@ import { nameFor, type LedgerViewer } from "@/lib/usageLedger";
 import { threadTitle } from "@/lib/atomikThreadsText";
 import { getRun, rigAgentExists, stepsOf, type RunRow } from "@/lib/workbench/rig-agent-store";
 import { runView } from "@/lib/workbench/rig-agent";
+import { planApprovalOf } from "@/lib/workbench/plan-approval";
 import type { RigAgentState } from "@/lib/workbench/rig-agent-plan";
 import {
   NO_PROJECT, ledgerOf, meterOf, missingTable, outcomeOf, projectsOf, renderPrice, shortText, text,
@@ -151,7 +152,8 @@ async function boardRuns(production: string | null, inCredits: boolean, viewerId
     const run: RunRow | null = await getRun(db(), id);
     if (!run) continue;
     const raw = await stepsOf(db(), run.id);
-    const view = runView(run, raw, viewerId, await ledgerOf(run));
+    /* With the plan's approval, so a chips plan reads as the board does (its one price; lib/workbench/rig-agent.ts onePrice). */
+    const view = runView(run, raw, viewerId, await ledgerOf(run), await planApprovalOf(db(), run.id));
     const bySeq = new Map(raw.map((s) => [s.seq, s]));
     const steps: RunStep[] = [];
     const planning = view.money?.planning;
@@ -186,7 +188,7 @@ async function boardRuns(production: string | null, inCredits: boolean, viewerId
     const { settled, settling } = fold(steps.map((s) => s.settled));
     runs.push({
       id: `board:${run.id}`, source: "board", title: shortText(view.proposal?.title || run.goal) || "Atomik's board",
-      startedAt: run.createdAt, state: BOARD_STATE[run.state] ?? "running", reason: run.reason, steps, settled, settling,
+      startedAt: run.createdAt, state: BOARD_STATE[run.state] ?? "running", /* The view's note: a chips plan's carries no engine's name. */ reason: view.reason, steps, settled, settling,
       request: run.goal, open: { kind: "board", productionId: run.productionId, draftId: null }, _production: run.productionId,
     });
   }

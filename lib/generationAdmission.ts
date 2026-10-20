@@ -1922,7 +1922,7 @@ export async function executeGenerationAdmission(
         // converges on their taste rather than on a generic one.
         const writerRules = rulesBlock(rules, "video", "writer", model.family);
         const style = [
-          houseStyleBlock(await houseStyle(projectIdForCast)),
+          houseStyleBlock(await houseStyle(got.user, projectIdForCast)),
           writerRules ? `THE PLATFORM'S RULES\n${writerRules}` : "",
         ]
           .filter(Boolean)
@@ -2534,15 +2534,18 @@ export async function executeGenerationAdmission(
   }
 }
 
-/** Free, repeatable preparation. Paid implicit prompt refinement is never part of a pipeline quote. */
+/** Free, repeatable preparation. Paid implicit prompt refinement is never part of a pipeline quote.
+ * `cost`: server-only, the take's engine dollars at its hold (lib/admissionSupport.ts prepareAdmission). */
 export function prepareGeneration(
   input: Record<string, unknown>,
   actor: AdmissionActor,
+  cost?: { holdUsd?: number },
 ): Promise<PrepareAdmissionResult> {
   return prepareAdmission(
     { ...input, refine: false },
     actor,
     executeGenerationAdmission,
+    cost,
   );
 }
 export function quoteGeneration(prepared: PreparedAdmission) {
@@ -2551,7 +2554,7 @@ export function quoteGeneration(prepared: PreparedAdmission) {
 export function admitGeneration(
   prepared: PreparedAdmission,
   actor: AdmissionActor,
-  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"] },
+  options: { requestKey: string; defer: AdmissionExecution["defer"]; run?: AdmissionExecution["run"]; fencedBy?: string },
 ): Promise<AdmissionReply> {
   return admitPrepared(
     prepared,

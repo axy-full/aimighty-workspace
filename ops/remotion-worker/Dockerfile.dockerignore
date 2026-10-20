@@ -1,0 +1,11 @@
+# Build context is the repository root; send only what the image needs.
+*
+!remotion
+remotion/node_modules
+remotion/build
+remotion/test
+remotion/README.md
+!ops/remotion-worker/server.mjs
+!ops/render-worker/check-egress.mjs
+!ops/render-worker/relay.mjs
+!ops/render-worker/check-relay.mjs

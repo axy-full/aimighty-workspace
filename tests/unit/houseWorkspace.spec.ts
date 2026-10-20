@@ -71,7 +71,7 @@ test("one named rule: the house is the workspace with the house id, not whicheve
   expect(creditsApply(null)).toBe(false);
 });
 
-test("the house workspace runs on the platform's engines unbilled: no credit wall, no allowance, metered at cost", async () => {
+test("the house workspace runs on the platform's engines unbilled: no credit wall, no customer allowance, its own monthly cap and nothing else, metered at cost", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { creditCheck, creditState, quotedCredits } = await import("../../lib/credits");
   const { allowanceCheck, allowanceUsd } = await import("../../lib/allowance");
@@ -81,17 +81,18 @@ test("the house workspace runs on the platform's engines unbilled: no credit wal
   const { vendorKey } = await import("../../lib/vendorKeys");
   const { billCreditsWith, creditUsd } = await import("../../lib/creditTerms");
   const previous = { allowance: process.env.PLATFORM_ALLOWANCE_USD, ark: process.env.ARK_API_KEY };
-  /* A deployment-wide monthly cap, and a figure stored against the house itself: neither applies to it. */
+  /* A deployment-wide monthly cap does not apply to it. The figure stored against the house itself IS its own monthly cap (lib/houseCap.ts; owner, 15-16 Oct 2026): here $500. */
   process.env.PLATFORM_ALLOWANCE_USD = "1";
   process.env.ARK_API_KEY = "deployment-ark-unit-key";
   const before = await grantsTo(house.id);
   try {
-    await runInTenant({ ...house, allowanceUsd: 1 }, async () => {
+    await runInTenant({ ...house, allowanceUsd: 500 }, async () => {
       expect(vendorKey("ark")).toBe("deployment-ark-unit-key");
       expect(paidByPlatform("ark")).toBe(false);
       expect(paidByPlatformEngine("byteplus")).toBe(false);
       expect(paidByPlatformEngine("vercel-sandbox")).toBe(false);
       expect(paidByPlatformEngine("selfhost-blender")).toBe(false);
+      /* The customer allowance is not the house's: the deployment-wide figure and the stored one are read by the customer path as nothing. */
       expect(allowanceUsd()).toBeNull();
       expect(await creditState()).toBeNull();
       expect(await creditCheck("ark", 50, "mock")).toEqual({ ok: true });
@@ -106,9 +107,14 @@ test("the house workspace runs on the platform's engines unbilled: no credit wal
       await meter({ ...job(id, 2.5), status: "succeeded" });
       expect(await meterRow(id)).toEqual({ workspace: house.id, status: "succeeded", cost: 2.5, credits: 0, paid: 0 });
       expect(await debited(id)).toBe(0);
-      /* Above the stored allowance as well: the house has none. */
+      /* Far above the deployment-wide figure ($1) as well: that is not the house's cap. */
       await reserveGenerationSpend(job(`gen_house_big_${run}`, 40));
       expect(await meterRow(`gen_house_big_${run}`)).toMatchObject({ cost: 40, credits: 0, paid: 0 });
+    }, { user: studioOwner });
+    /* The house's own cap is the one thing that stops it: the same job against a stored $1 is refused 429 (this month's spend so far counts), nothing reserved. */
+    await runInTenant({ ...house, allowanceUsd: 1 }, async () => {
+      expect(await allowanceCheck("ark", 50, "mock")).toMatchObject({ ok: false, status: 429 });
+      /* (The reservation's own refusal, read fresh at the write, is proved in tests/unit/houseCap.spec.ts.) */
     }, { user: studioOwner });
     expect(await grantsTo(house.id)).toBe(before);
   } finally {

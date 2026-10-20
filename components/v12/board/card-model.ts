@@ -29,10 +29,12 @@ export function statusLine(input: { status: CardStatus; version?: number; reason
 
 /**
  * Whether ✓ and ✕ show on hover: a card that has something to judge (ready, approved or rejected, so a verdict can be changed), that the person
- * does not own (user-owned items have no ✓ / ✕), and that an option step has not greyed out (v25: ✓ on one option picks it and greys the rest).
+ * does not own (user-owned items have no ✓ / ✕), that an option step has not greyed out (v25: ✓ on one option picks it and greys the rest), and
+ * whose ✓ and ✕ would do something (`acts: false` when the card was given nothing to call: a Ready upload, or a take with no picture here, is not
+ * judged, and a mark that does nothing is not drawn).
  */
-export function canJudge(input: { status: CardStatus; userOwned?: boolean; greyed?: boolean }): boolean {
-  return !input.userOwned && !input.greyed && (input.status === "ready" || input.status === "approved" || input.status === "rejected");
+export function canJudge(input: { status: CardStatus; userOwned?: boolean; greyed?: boolean; acts?: boolean }): boolean {
+  return input.acts !== false && !input.userOwned && !input.greyed && (input.status === "ready" || input.status === "approved" || input.status === "rejected");
 }
 
 /** The reasons ✕ offers: the step's own, always ending in "Other" (once). */

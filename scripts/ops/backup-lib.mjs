@@ -735,8 +735,16 @@ export function mediaResolver(entries, kind) {
 /** Every object a database row points at must resolve, by the app's rule,
  * to an object in the captured inventory. Missing objects are named by
  * database/table/row only: a key or URL can carry a customer's file name. onReference receives each
- * resolved reference, for restore/report/prepare. */
-export async function verifyMediaReferences(databases, entries, kind, { onReference } = {}) {
+ * resolved reference, for restore/report/prepare. With onMissing, each unresolved reference goes to it
+ * (database, table, id and `kind`, never a key) and nothing is thrown: a census counts them instead of failing.
+ *
+ * With `extended: true` (only the verify and census tools pass it; backup, restore and the recovery report do not, so their behaviour is unchanged), a cloud store's rows
+ * also point at two more kinds of object: an upload's delivery copy
+ * (uploads.derivative_url, read by the engines that cannot take the master) and a consent recording
+ * (consent_recordings.stored_url). A bare key, an absolute URL or the deterministic key, as for uploads. Local disk keeps
+ * recordings in its own layout, outside the media inventory, so the local kind does not check them. Neither carries
+ * `absolute`, so a restore never rewrites a column from them. */
+export async function verifyMediaReferences(databases, entries, kind, { onReference, onMissing, extended = false } = {}) {
   const resolver = mediaResolver(entries, kind);
   const platform = databases.find((d) => d.role === "platform");
   const p = createClient({ url: pathToFileURL(platform.snapshot).href });
@@ -753,7 +761,8 @@ export async function verifyMediaReferences(databases, entries, kind, { onRefere
     missing = [];
   const found = (reference, entry) => {
     if (!entry) {
-      missing.push(`${reference.database}/${reference.table}/${reference.id}`);
+      if (onMissing) onMissing({ database: reference.database, table: reference.table, id: reference.id, kind: reference.kind });
+      else missing.push(`${reference.database}/${reference.table}/${reference.id}`);
       return;
     }
     references++;
@@ -776,7 +785,7 @@ export async function verifyMediaReferences(databases, entries, kind, { onRefere
         for (const row of (await db.execute("SELECT path FROM platform_assets"))
           .rows) {
           const key = String(row.path);
-          found({ database: source.id, table: "platform_assets", id: key, key, localPath: key }, resolver.key(key));
+          found({ database: source.id, table: "platform_assets", id: key, key, localPath: key, kind: "platform" }, resolver.key(key));
         }
       if (names.has("generations"))
         for (const row of (
@@ -784,7 +793,7 @@ export async function verifyMediaReferences(databases, entries, kind, { onRefere
         ).rows) {
           if (!row.stored_url || row.deleted) continue;
           const file = `generations/${row.id}.${GENERATION_EXT[row.kind] ?? "mp4"}`;
-          found({ database: source.id, table: "generations", id: String(row.id), key: prefix + file, localPath: file }, resolver.key(prefix + file));
+          found({ database: source.id, table: "generations", id: String(row.id), key: prefix + file, localPath: file, kind: String(row.kind ?? "video") }, resolver.key(prefix + file));
         }
       for (const table of ["uploads", "workbench_media"]) {
         if (!names.has(table)) continue;
@@ -793,7 +802,7 @@ export async function verifyMediaReferences(databases, entries, kind, { onRefere
           const file = `uploads/${row.id}.${row.ext}`,
             deterministic = prefix + file,
             stored = row.stored_url == null ? "" : String(row.stored_url);
-          const reference = { database: source.id, table, id: String(row.id), localPath: file, deterministic };
+          const reference = { database: source.id, table, id: String(row.id), localPath: file, deterministic, kind: String(row.kind ?? "file") };
           if (resolver.cloud && /^https?:/.test(stored)) {
             const { key, entry } = resolver.url(stored);
             found({ ...reference, key, absolute: stored }, entry);
@@ -801,8 +810,31 @@ export async function verifyMediaReferences(databases, entries, kind, { onRefere
             // A bare stored key is read as-is by the app (resolveStored).
             found({ ...reference, key: stored }, resolver.key(stored));
           } else found({ ...reference, key: deterministic }, resolver.key(deterministic));
+          // The delivery copy the engines are sent instead of a master they cannot take.
+          const derived = extended && table === "uploads" && resolver.cloud && row.derivative_url != null && String(row.derivative_url) !== "" ? String(row.derivative_url) : null;
+          if (derived) {
+            const copy = `uploads/${row.id}-api.jpg`;
+            const base = { database: source.id, table: "uploads.derivative_url", id: String(row.id), localPath: copy, deterministic: prefix + copy, kind: "derivative" };
+            if (/^https?:/.test(derived)) {
+              const { key, entry } = resolver.url(derived);
+              found({ ...base, key }, entry);
+            } else if (!derived.startsWith("/api/")) found({ ...base, key: derived }, resolver.key(derived));
+            else found({ ...base, key: prefix + copy }, resolver.key(prefix + copy));
+          }
         }
       }
+      // Consent recordings: kept apart from uploads, at consents/<id>.<ext> under the workspace prefix (lib/storage.ts consentRecordingPath).
+      if (extended && resolver.cloud && names.has("consent_recordings"))
+        for (const row of (await db.execute("SELECT id, ext, stored_url FROM consent_recordings")).rows) {
+          const stored = row.stored_url == null ? "" : String(row.stored_url),
+            file = `consents/${row.id}.${row.ext}`,
+            base = { database: source.id, table: "consent_recordings", id: String(row.id), localPath: file, deterministic: prefix + file, kind: "consent" };
+          if (/^https?:/.test(stored)) {
+            const { key, entry } = resolver.url(stored);
+            found({ ...base, key }, entry);
+          } else if (stored && !stored.startsWith("/api/")) found({ ...base, key: stored }, resolver.key(stored));
+          else found({ ...base, key: prefix + file }, resolver.key(prefix + file));
+        }
     } finally {
       db.close();
     }

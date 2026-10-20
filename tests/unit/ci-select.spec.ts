@@ -4,8 +4,8 @@ import { readFileSync, readdirSync } from "node:fs";
 /**
  * Which browser specs a pull request runs (scripts/ci-select.mjs; docs/ci.md): the whole suite after a merge and for any change that
  * is not presentational (money, sign-in, tenant separation, shared code, everything in lib/); a slimmer set (touched specs plus a fixed
- * guard set) for CSS, presentational new-interface files and tests; none for documentation. A dry run over example diffs, on the
- * repository's real files.
+ * guard set) for CSS, presentational new-interface files and unit tests; none for documentation. A PR that changes a browser spec runs
+ * the whole suite (owner, 19 Oct 2026). A dry run over example diffs, on the repository's real files.
  */
 type Run = { name: string; suite: "workbench" | "customer"; grep: string | null; specs: string[] };
 type Plan = { mode: "full" | "slim" | "docs"; reasons: string[]; runs: Run[]; fiveMinute: boolean };
@@ -25,6 +25,14 @@ const pr = async (files: string[], base = "release/1", event = "pull_request", o
 /* Nothing outside components/v12 imports anything: for the cases that need a stylesheet or a file to count as presentational. */
 const unexposed = { exposed: new Set<string>() };
 const specsOf = (plan: Plan) => plan.runs.flatMap((r) => r.specs);
+const BROWSER_SPEC_RULE = "the full plan at its head (owner, 19 Oct 2026";
+/* A PR that changes a browser spec: the whole suite, and the plan quotes the owner's rule for that spec. */
+const expectSpecFull = (plan: Plan, spec: string) => {
+  expect(plan.mode, spec).toBe("full");
+  expect(plan.runs, spec).toEqual([]);
+  expect(plan.fiveMinute, spec).toBe(true);
+  expect(plan.reasons.join(" "), spec).toContain(`changes a browser spec (${spec}): ${BROWSER_SPEC_RULE}`);
+};
 
 test("the suite patterns here are the playwright configs' own", async () => {
   const { WORKBENCH_SPEC, CUSTOMER_SPEC } = await script();
@@ -115,10 +123,10 @@ test("any change to a guard or safety test is a full run, and the plan says it n
     expect(plan.mode, file).toBe("full");
     expect(plan.reasons.join(" "), file).toContain("guard test changed: owner review");
   }
-  /* An ordinary test next to a guard does not make the guard slim; an ordinary test alone still runs slim. */
+  /* An ordinary test next to a guard does not make the guard slim; an ordinary browser spec alone is a full run too (owner, 19 Oct 2026). */
   const mixed = await pr(["tests/rounds-v12-workbench.spec.ts", "tests/unit/spend-buttons.spec.ts"], "release/1", "pull_request", unexposed);
   expect(mixed.mode).toBe("full");
-  expect((await pr(["tests/rounds-v12-workbench.spec.ts"], "release/1", "pull_request", unexposed)).mode).toBe("slim");
+  expectSpecFull(await pr(["tests/rounds-v12-workbench.spec.ts"], "release/1", "pull_request", unexposed), "tests/rounds-v12-workbench.spec.ts");
 });
 
 test("a pull request whose changed files cannot be read runs the whole suite", async () => {
@@ -149,10 +157,8 @@ test("CSS and tests run slim: their own specs plus the fixed guard set, and noth
   for (const spec of specsOf(plan)) expect(SPECS, spec).toContain(spec);
 });
 
-test("a changed spec runs itself; a changed area maps to its own specs; an unmapped new-interface path runs every new-interface spec", async () => {
-  const own = await pr(["tests/shots-v12-workbench.spec.ts"]);
-  expect(own.mode).toBe("slim");
-  expect(own.runs[0].specs).toContain("tests/shots-v12-workbench.spec.ts");
+test("a changed browser spec runs the whole suite; a changed area maps to its own specs; an unmapped new-interface path runs every new-interface spec", async () => {
+  expectSpecFull(await pr(["tests/shots-v12-workbench.spec.ts"]), "tests/shots-v12-workbench.spec.ts");
   const board = await pr(["components/v12/board/board.css"], "release/1", "pull_request", unexposed);
   expect(board.mode).toBe("slim");
   expect(board.runs[0].specs).toContain("tests/campaign-v12-workbench.spec.ts");
@@ -160,8 +166,39 @@ test("a changed spec runs itself; a changed area maps to its own specs; an unmap
   const css = await pr(["components/v12/v12.css"], "release/1", "pull_request", unexposed);
   expect(css.mode).toBe("slim");
   expect(css.runs[0].specs.length + (css.runs.find((r) => r.grep)?.specs.length ?? 0)).toBeGreaterThan(15);
-  const customerSpec = await pr(["tests/customer.spec.ts"]);
-  expect(customerSpec.runs.find((r) => r.suite === "customer")!.specs).toContain("tests/customer.spec.ts");
+  expectSpecFull(await pr(["tests/customer.spec.ts"]), "tests/customer.spec.ts");
+});
+
+test("owner, 19 Oct 2026: a pull request that changes a browser spec runs the full plan at its head; a unit spec or docs alone do not", async () => {
+  /* A browser spec alone: tests/*.spec.ts at the top (the #845 case), in a subfolder such as tests/redesign/, and with a presentational file. */
+  for (const spec of ["tests/r1-d0-check-workbench.spec.ts", "tests/redesign/board-frame.spec.ts", "tests/home-v12-layout-workbench.spec.ts"]) {
+    expectSpecFull(await pr([spec], "release/1", "pull_request", unexposed), spec);
+  }
+  const greeting = { ...unexposed, read: () => "export const Greeting = () => <p>Hello</p>;" };
+  expectSpecFull(await pr(["components/v12/home/Greeting.tsx", "tests/home-v12-workbench.spec.ts"], "release/1", "pull_request", greeting), "tests/home-v12-workbench.spec.ts");
+  /* Several: the reason names them. */
+  const many = await pr(["tests/a-workbench.spec.ts", "tests/b-workbench.spec.ts"], "release/1", "pull_request", unexposed);
+  expect(many.mode).toBe("full");
+  expect(many.reasons.join(" ")).toContain("changes a browser spec (tests/a-workbench.spec.ts, tests/b-workbench.spec.ts)");
+  /* Already full for another reason: both reasons are in the plan. */
+  const both = await pr(["tests/shots-v12-workbench.spec.ts", "lib/credits.ts"]);
+  expect(both.mode).toBe("full");
+  expect(both.reasons.join(" ")).toContain(`changes a browser spec (tests/shots-v12-workbench.spec.ts): ${BROWSER_SPEC_RULE}`);
+  expect(both.reasons.join(" ")).toContain("touches lib/credits.ts");
+  /* A unit spec alone runs in the unit shards, which every plan runs: this rule does not make it full. */
+  const unit = await pr(["tests/unit/v12-rounds.spec.ts"], "release/1", "pull_request", unexposed);
+  expect(unit.mode).toBe("slim");
+  expect(unit.reasons.join(" ")).not.toContain("changes a browser spec");
+  /* Non-spec test files under tests/redesign/ stay as they were. */
+  expect((await pr(["tests/redesign/board-frame.shots.ts"], "release/1", "pull_request", unexposed)).mode).toBe("slim");
+  /* Documentation alone is still docs. */
+  expect((await pr(["docs/ci.md"])).mode).toBe("docs");
+  /* A presentational new-interface component alone, with no spec, is still slim, and still runs its area's specs. */
+  const component = await pr(["components/v12/home/Greeting.tsx"], "release/1", "pull_request", greeting);
+  expect(component.mode).toBe("slim");
+  expect(specsOf(component)).toContain("tests/home-v12-workbench.spec.ts");
+  /* A push or a PR into main is full as before, with no browser-spec reason needed. */
+  expect((await pr(["tests/r1-d0-check-workbench.spec.ts"], "main")).mode).toBe("full");
 });
 
 test("a documentation-only change runs no browser specs and no five-minute test", async () => {
