@@ -1,0 +1,7 @@
+// Planted for tests/unit/model-call-sites.spec.ts: doors under other names. Never compiled or imported.
+import { textPost as send } from "./textDirect";
+
+export async function ask(body: string) {
+  const { gatewayPost: post } = await import("./gateway");
+  return [await send(body), await post(body)];
+}

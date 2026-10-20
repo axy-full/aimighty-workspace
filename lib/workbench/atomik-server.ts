@@ -17,7 +17,7 @@ import { z } from 'zod';
 import { db, ready, now } from '../db';
 import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
 import { textRun } from '../textDirect';
-import { openModelCall } from '../modelTrace';
+import { modelTracingOn, openModelCall } from '../modelTrace';
 import { explainGatewayFailure } from '../gateway';
 import { allowanceCheck } from '../allowance';
 import { checkLimits, limitVerdict } from '../limits';
@@ -479,7 +479,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
   let raw = '';
   let usage: unknown = null;
   /* One model call (lib/modelTrace.ts): the job's ids, its variant and its counts, never the request or the plan. */
-  const call = openModelCall('atomik.workbench', { runId: job.id, step: atomikJobVariant(String(row.request_body)), model: job.model, effort: job.effort ?? 'auto' });
+  const call = openModelCall('atomik.workbench', { runId: job.id, step: modelTracingOn() ? atomikJobVariant(String(row.request_body)) : null, model: job.model, effort: job.effort ?? 'auto' });
   try {
     const auth = await deps.auth(job.model);
     /* The door is decided again here: one that changed since the reservation (TEXT_DIRECT, a key) is refused before sending. */
@@ -579,7 +579,7 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
 });
 }
 
-/** Which kind of Studio Atomik job a saved request is, for its model call's span: a fixed word, never the request. */
+/** Which kind of Studio Atomik job a saved request is, for its model call's span: a fixed word, never the request. Read only while tracing is on. */
 function atomikJobVariant(body: string): string | null {
   try {
     const input = JSON.parse(body) as { astraBlender?: unknown; suite?: unknown; referenceAd?: unknown };

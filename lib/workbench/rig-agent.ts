@@ -1049,7 +1049,8 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
   }
   /* Settled at what it used (never above what was reserved); usage that cannot be priced is not billed. */
   const used = plannerCostUsd(price.catalog, outcome.stepUsage, price.direct);
-  call.note({ costUsd: used, tokensIn: outcome.usage.inputTokens, tokensOut: outcome.usage.outputTokens });
+  /* Trace only, and unable to throw (optional reads): nothing between the plan and its settlement can fail because of it. */
+  call.note({ costUsd: used, tokensIn: outcome.usage?.inputTokens ?? null, tokensOut: outcome.usage?.outputTokens ?? null });
   call.end();
   await settlePlanning(run, price, ceiling, { billed: used != null, usedUsd: used });
   const assets = new Map([...draft.project.assets, ...(draft.project.sharedAssets ?? []), ...canvasAssets].map((a) => [a.id, a]));

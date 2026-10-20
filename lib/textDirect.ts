@@ -10,7 +10,7 @@ import type { TextRun } from './engines/types';
 import { languageModel } from './language-provider';
 import { recoveryFetch } from './recovery';
 import { directVendorOf, isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
-import { modelDoor, modelTelemetry, readTextReply } from './modelTrace';
+import { modelCallNotSent, modelDoor, modelTelemetry, readTextReply } from './modelTrace';
 
 /**
  * The raw text seam (P4b). Callers send the OpenAI-compatible chat body they
@@ -304,6 +304,8 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
     // Our own refusal says why (its text names the model and the setting, never the prompt).
     console.warn(`direct text ${vendor}: ${sent ? 'failed' : 'not sent'} ${providerErrorSummary(error)}${error instanceof TextNotSentError ? ` reason=${JSON.stringify(error.message.slice(0, 200))}` : ''}`);
     if (!sent) {
+      /* Nothing left the process: the model call's span says so (sent: false). */
+      modelCallNotSent();
       if (error instanceof TextNotSentError) return reply(error.status, error.message);
       // Missing key, unmapped id, refused endpoint or a request the SDK rejected locally: nothing left the process.
       return reply(422, error instanceof Error ? error.message : 'The direct language request was not sent.');

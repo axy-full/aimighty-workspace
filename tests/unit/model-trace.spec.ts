@@ -208,6 +208,31 @@ test("the memory read through textPost to a direct vendor: answered with its tok
   }
 });
 
+test("a refusal before anything is sent is refused with sent false: TextNotSentError at a door, and a direct request the door will not send", async () => {
+  const { traceModelCall, modelDoor, readTextReply } = await import("../../lib/modelTrace");
+  const { TextNotSentError, textPost } = await import("../../lib/textDirect");
+  await expect(traceModelCall("atomik.ideas", {}, () => modelDoor(async () => { throw new TextNotSentError(`not sendable ${PROMPT_CANARY}`); }))).rejects.toThrow(TextNotSentError);
+  const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
+  delete process.env.ENGINE_MOCK;
+  process.env.TEXT_DIRECT = "anthropic";
+  process.env.ANTHROPIC_API_KEY = "test-anthropic-key-synthetic-never-sent";
+  try {
+    let fetched = 0;
+    /* No max_tokens: the direct door refuses it before sending (lib/textDirect.ts directTextRequest). */
+    const body = JSON.stringify({ model: "anthropic/claude-sonnet-5", messages: [{ role: "user", content: PROMPT_CANARY }] });
+    const reply = await traceModelCall("atomik.ideas", {}, () => textPost(body, { fetch: async () => { fetched++; return new Response("{}"); } }));
+    expect(reply.status).toBe(422);
+    expect(fetched).toBe(0);
+    /* A provider's own 4xx, for contrast: sent. */
+    await traceModelCall("atomik.ideas", {}, () => modelDoor(async () => ({ ok: false, status: 400, text: "{}" }), readTextReply));
+  } finally {
+    if (saved.mock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = saved.mock;
+    if (saved.direct === undefined) delete process.env.TEXT_DIRECT; else process.env.TEXT_DIRECT = saved.direct;
+    if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = saved.key;
+  }
+  expect(calls().map((c) => [c.meta.outcome, c.meta.sent, c.meta.attempts])).toEqual([["refused", false, 0], ["refused", false, 0], ["refused", true, 1]]);
+});
+
 /* ── Every listed site, under ENGINE_MOCK or a scripted model ─────────── */
 
 test("atomik.memory_read under ENGINE_MOCK", async () => {
@@ -225,7 +250,7 @@ async function withCatalogue<T>(fn: () => Promise<T>): Promise<T> {
     const url = String(input instanceof Request ? input.url : input);
     if (url.endsWith("/models") && url.includes("ai-gateway.vercel.sh"))
       return new Response(JSON.stringify({ data: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", type: "language", context_window: 200000, max_tokens: 8000,
-        pricing: { input: "0.000003", output: "0.000015" }, modalities: { input: ["text", "image"], output: ["text"] } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+        pricing: SYNTHETIC_RATE, modalities: { input: ["text", "image"], output: ["text"] } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
     throw new Error(`Network is forbidden in the trace test: ${url}`);
   }) as typeof fetch;
   try {
