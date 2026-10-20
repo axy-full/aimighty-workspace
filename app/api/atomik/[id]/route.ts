@@ -4,7 +4,7 @@ import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
   getChat, patchChat, clearChatProject, deleteChat, VIEW_ONLY_INSTRUCTION, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
-  type AgentMode,
+  chatModeOf,
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { effectiveRules } from "@/lib/rules";
@@ -51,7 +51,8 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
   await patchChat(id, {
     model: typeof b.model === "string" ? b.model : undefined,
     effort: requestEffort(b.effort),
-    agentMode: b.agentMode === "ask" || b.agentMode === "auto" ? b.agentMode as AgentMode : undefined,
+    /* "ask", or "auto" from an older caller, is stored as "ask": no Auto since 20 Oct 2026. */
+    agentMode: b.agentMode === "ask" || b.agentMode === "auto" ? chatModeOf(b.agentMode) : undefined,
     /* As at creation: only a project this person may read is kept; anything else clears it. */
     projectId: b.projectId === undefined ? undefined : await contextProjectOr(got.user, typeof b.projectId === "string" ? b.projectId : null),
   });
