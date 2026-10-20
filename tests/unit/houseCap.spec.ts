@@ -235,9 +235,9 @@ test("the reservation: 80% tells the platform owner once a month (and once more 
     /* Another workspace, on its own database, funded for its one job. */
     const other = { ...customer(), id: `ws_house_cap_other_${tag}`, dbUrl: `file:${path.join(dir, `other-${tag}.db`)}` } as TenantWorkspace;
     /* The warning is sent after the reservation's turn, never awaited by it: wait for it here before reading what it wrote. */
-    const job = async (id: string) => {
+    const job = async (id: string, cost = usd) => {
       await db().execute({ sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at) VALUES(?,'image','google',?,'a still','{}','running',?,?)`, args: [id, model, Date.now(), Date.now()] });
-      try { await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd }); }
+      try { await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: cost }); }
       finally { await houseNotesSettled(); }
     };
     const meterRows = async () => Number((await platformDb().execute("SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id='ws_legacy'")).rows[0].n);
@@ -255,9 +255,12 @@ test("the reservation: 80% tells the platform owner once a month (and once more 
       expect(mail).toEqual([]);
 
       /* The cap lowered so this job takes the month past 80% and not past 100%: reserved, and the platform owner is told, once. The mail
-         server hangs on that message: the house's reservation returns at once, and another workspace's reservation is not held up behind it. */
+         server hangs on that message: the house's reservation returns at once, and another workspace's reservation is not held up behind it.
+         The month is still under 80% of the lowered figure when it is set, so the lowering itself marks nothing and the job's crossing speaks. */
       const spent = await houseSpendSince(houseMonthStart());
-      const lowered = Math.round((spent + usd + 0.005) * 1000) / 1000;
+      const lowered = Math.floor(((spent + usd) / 0.8 - 0.001) * 1e6) / 1e6;
+      expect(spent).toBeLessThan(lowered * 0.8);
+      expect(spent + usd).toBeGreaterThanOrEqual(lowered * 0.8);
       await setHouseCap(lowered, "acct_house_cap_owner");
       hang = true;
       const started = Date.now();
@@ -284,9 +287,10 @@ test("the reservation: 80% tells the platform owner once a month (and once more 
       /* No prompt, key or person's name in the mail: figures and the cap's words only. */
       expect(mail[0].text).not.toMatch(/test-mail-key|a still/);
 
-      /* 100%: the next job would pass the cap. Refused with the cap's words, 429, and nothing is reserved. */
+      /* 100%: the next job would pass the cap (it costs a cent more than the room left). Refused with the cap's words, 429, and nothing is reserved. */
       const rows = await meterRows();
-      const refused = await job(`gen_housecap_c_${tag}`).then(() => null, (e) => e);
+      const room = lowered - (await houseSpendSince(houseMonthStart()));
+      const refused = await job(`gen_housecap_c_${tag}`, Math.round((room + 0.01) * 1e6) / 1e6).then(() => null, (e) => e);
       expect(refused).toBeInstanceOf(SpendReservationError);
       expect(refused).toMatchObject({ status: 429, message: HOUSE_CAP_REACHED });
       expect(await meterRows()).toBe(rows);
@@ -332,7 +336,7 @@ test("the reservation: 80% tells the platform owner once a month (and once more 
   }
 });
 
-test("after a raise the 80% warning comes once more; after a lowering it never comes again that month; jobs crossing together write one line and one email", async () => {
+test("a crossing at a figure higher than every figure marked this month warns once more; a lowering never warns (a lowering past 80% marks the month at the new figure, with no email); jobs crossing together write one line and one email", async () => {
   const mail: { subject: string }[] = [];
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -376,8 +380,11 @@ test("after a raise the 80% warning comes once more; after a lowering it never c
         args: [m.start, m.end, ...(capUsd == null ? [] : [capUsd])] })).rows[0].n);
     };
     const spent = () => houseSpendSince(houseMonthStart());
-    /* A figure the month's spend plus a $2 job puts at 90% of (odd enough that no other test sets it). */
-    const crossedBy = async () => Math.round(((await spent()) + 2) / 0.9 * 1e6) / 1e6 + 0.000123;
+    /* A figure the month's spend plus a job of `usd` puts at 90% of (odd enough that no other test sets it). */
+    const crossedBy = async (usd = 2) => Math.round(((await spent()) + usd) / 0.9 * 1e6) / 1e6 + 0.000123;
+    const marks = async (capUsd: number) => (await platformDb().execute({
+      sql: "SELECT actor_id FROM platform_audit WHERE action='housecap.warned' AND workspace_id='ws_legacy' AND created_at>=? AND ABS(json_extract(details,'$.capUsd')-?)<1e-9",
+      args: [houseMonthStart(), capUsd] })).rows.map((r) => String(r.actor_id));
 
     await runInTenant(house(), async () => {
       await ready();
@@ -399,8 +406,8 @@ test("after a raise the 80% warning comes once more; after a lowering it never c
       expect(mail).toHaveLength(2);
       expect(mail[1].subject).toMatch(/^Particl: \d+% of this month's \$/);
 
-      /* A lowering ("House cap: no warning on a lowering"): to a figure never warned at, a job past its 80% and under its 100% is reserved,
-         and nobody is told. */
+      /* A lowering ("House cap: no warning on a lowering"): to a figure never warned at, under one already marked, a job past its 80% and
+         under its 100% is reserved, and nobody is told. */
       const now = await spent();
       const lowered = Math.round((now + 0.04 + (raised - now - 0.04) / 2) * 1e6) / 1e6;
       expect(lowered).toBeLessThan(raised);
@@ -423,13 +430,36 @@ test("after a raise the 80% warning comes once more; after a lowering it never c
       expect(await lines()).toBe(2);
       expect(mail).toHaveLength(2);
 
-      /* Raised past every figure warned at this month: told once more, and once only. */
-      const again = await crossedBy();
-      expect(again).toBeGreaterThan(raised);
-      await setHouseCap(again, "acct_house_cap_owner");
-      await job(2);
-      expect(await lines(again)).toBe(1);
+      /* Warned at a figure, raised to one not yet crossed, then lowered to one between them that the month is already past 80% of: the
+         lowering marks the month at its figure in the same write as the cap, as the owner's act, with no email, and the next job is silent. */
+      const wide = Math.round(((await spent()) * 3 + 50) * 1e6) / 1e6;
+      await setHouseCap(wide, "acct_house_cap_owner");
+      expect(await lines()).toBe(2);
+      const between = Math.round((((await spent()) + 0.04) / 0.85) * 1e6) / 1e6;
+      expect(between).toBeGreaterThan(raised);
+      expect(between).toBeLessThan(wide);
+      await setHouseCap(between, "acct_house_cap_owner");
+      expect(await marks(between)).toEqual(["acct_house_cap_owner"]);
       expect(await lines()).toBe(3);
+      expect(mail).toHaveLength(2);
+      await job(0.04);
+      expect((await spent()) / between).toBeGreaterThanOrEqual(0.8);
+      expect(await lines()).toBe(3);
+      expect(mail).toHaveLength(2);
+      /* A lowering under a figure already marked marks nothing more. */
+      await setHouseCap(raised, "acct_house_cap_owner");
+      expect(await lines()).toBe(3);
+
+      /* Raised past every figure marked this month: told once more, and once only. */
+      const step = Math.round((2 + (await spent()) / 10) * 1e6) / 1e6;
+      const again = await crossedBy(step);
+      expect(again).toBeGreaterThan(between);
+      await setHouseCap(again, "acct_house_cap_owner");
+      expect(await lines()).toBe(3);
+      await job(step);
+      expect(await lines(again)).toBe(1);
+      expect(await marks(again)).toEqual(["system"]);
+      expect(await lines()).toBe(4);
       expect(mail).toHaveLength(3);
       expect(await noteHouseSpend(again * 0.95, again)).toBe(false);
       expect(mail).toHaveLength(3);
@@ -441,8 +471,8 @@ test("after a raise the 80% warning comes once more; after a lowering it never c
       expect(await lines(higher)).toBe(1);
       expect(mail).toHaveLength(4);
       /* Every figure at or under the highest warned at, raced or not: quiet. */
-      expect((await Promise.all([noteHouseSpend(raised, raised), noteHouseSpend(first, first), noteHouseSpend(lowered, lowered), noteHouseSpend(higher, higher)])).filter(Boolean)).toHaveLength(0);
-      expect(await lines()).toBe(4);
+      expect((await Promise.all([noteHouseSpend(raised, raised), noteHouseSpend(first, first), noteHouseSpend(lowered, lowered), noteHouseSpend(between, between), noteHouseSpend(higher, higher)])).filter(Boolean)).toHaveLength(0);
+      expect(await lines()).toBe(5);
       expect(mail).toHaveLength(4);
     });
 
@@ -461,6 +491,103 @@ test("after a raise the 80% warning comes once more; after a lowering it never c
   } finally {
     Date.now = clock;
     /* The jobs end with nothing charged. */
+    const { meter } = await import("../../lib/meter");
+    const { runInTenant } = await import("../../lib/tenant");
+    await runInTenant(house(), async () => {
+      for (const id of ids) await meter({ id, kind: "image", engine: "google", model, status: "failed", engineCostUsd: 0 });
+    });
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    delete process.env.RESEND_BASE_URL; delete process.env.RESEND_API_KEY; delete process.env.MAIL_FROM;
+    const { platformDb } = await import("../../lib/platform");
+    await platformDb().execute("UPDATE workspaces SET allowance_usd=NULL WHERE id='ws_legacy'");
+  }
+});
+
+test("a lowering before the month's first warning warns nobody: the month is marked at the new figure, with no email; a raise past it still warns once; a lowering that leaves the month under 80% marks nothing, and a crossing after it still warns", async () => {
+  const mail: { subject: string }[] = [];
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => { mail.push(JSON.parse(Buffer.concat(chunks).toString())); res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ id: "mail_test" })); });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  process.env.RESEND_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  process.env.RESEND_API_KEY = "test-mail-key";
+  process.env.MAIL_FROM = "Particl <desk@example.test>";
+  const clock = Date.now;
+  const ids: string[] = [];
+  const model = "gemini-3.1-flash-image";
+  try {
+    const { runInTenant } = await import("../../lib/tenant");
+    const { db, ready } = await import("../../lib/db");
+    const { platformDb, platformReady, setHouseCap } = await import("../../lib/platform");
+    const { reserveGenerationSpend } = await import("../../lib/generationRequests");
+    const { houseNotesSettled, houseSpendSince, houseMonthStart } = await import("../../lib/houseCap");
+    await platformReady();
+    await houseRow();
+    const tag = `${clock().toString(36)}l`;
+    /* Another month long past, on a clock that still moves (as in the test above). Synthetic figures throughout. */
+    const offset = Date.UTC(2023, 4, 10) - clock();
+    Date.now = () => clock() + offset;
+    const job = async (usd: number) => {
+      const id = `gen_housecap_lower_${ids.length}_${tag}`;
+      ids.push(id);
+      await db().execute({ sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_at,updated_at) VALUES(?,'image','google',?,'a still','{}','running',?,?)`, args: [id, model, Date.now(), Date.now()] });
+      try { await reserveGenerationSpend({ id, kind: "image" as const, engine: "google", model, status: "running" as const, engineCostUsd: usd }); }
+      finally { await houseNotesSettled(); }
+    };
+    const marks = async () => (await platformDb().execute({
+      sql: "SELECT actor_id, json_extract(details,'$.capUsd') AS cap FROM platform_audit WHERE action='housecap.warned' AND workspace_id='ws_legacy' AND created_at>=? AND created_at<? ORDER BY created_at",
+      args: [houseMonthStart(), houseMonthStart() + 31 * 86_400_000] })).rows.map((r) => ({ actor: String(r.actor_id), cap: Number(r.cap) }));
+    const spent = () => houseSpendSince(houseMonthStart());
+    const fig = (n: number) => Math.round(n * 1e6) / 1e6;
+
+    await runInTenant(house(), async () => {
+      await ready();
+      expect(await marks()).toEqual([]);
+      /* Room, and a job well under 80%: nothing marked, nobody told. */
+      await setHouseCap(fig((await spent()) + 100), "acct_house_cap_owner");
+      await job(2);
+      expect(await marks()).toEqual([]);
+
+      /* (a) No warning yet this month; the owner lowers the cap to a figure the month is already past 80% of. The month is marked at that
+         figure, as the owner's act, with no email; the next job crosses nothing new and tells nobody. */
+      const lowered = fig(((await spent()) + 0.04) / 0.85);
+      await setHouseCap(lowered, "acct_house_cap_owner");
+      expect(await marks()).toEqual([{ actor: "acct_house_cap_owner", cap: lowered }]);
+      expect(mail).toEqual([]);
+      await job(0.04);
+      expect((await spent()) / lowered).toBeGreaterThanOrEqual(0.8);
+      expect(await marks()).toHaveLength(1);
+      expect(mail).toEqual([]);
+
+      /* A raise past every figure marked this month: its crossing tells the platform owner, once. */
+      const step = fig(2 + (await spent()) / 10);
+      const raised = fig(((await spent()) + step) / 0.9);
+      expect(raised).toBeGreaterThan(lowered);
+      await setHouseCap(raised, "acct_house_cap_owner");
+      expect(await marks()).toHaveLength(1);
+      await job(step);
+      expect(await marks()).toEqual([{ actor: "acct_house_cap_owner", cap: lowered }, { actor: "system", cap: raised }]);
+      expect(mail).toHaveLength(1);
+
+      /* A lowering that leaves the month under 80% of the new figure (here from a wide cap to one still above every marked figure) marks
+         nothing; when later spend crosses its 80%, the platform owner is told, once. */
+      await setHouseCap(fig(raised * 3 + 50), "acct_house_cap_owner");
+      const now = await spent();
+      const jump = fig(now / 4 + 1);
+      const under = fig((now + jump) / 0.9);
+      expect(now).toBeLessThan(under * 0.8);
+      expect(under).toBeGreaterThan(raised);
+      await setHouseCap(under, "acct_house_cap_owner");
+      expect(await marks()).toHaveLength(2);
+      expect(mail).toHaveLength(1);
+      await job(jump);
+      expect(await marks()).toEqual([{ actor: "acct_house_cap_owner", cap: lowered }, { actor: "system", cap: raised }, { actor: "system", cap: under }]);
+      expect(mail).toHaveLength(2);
+    });
+  } finally {
+    Date.now = clock;
     const { meter } = await import("../../lib/meter");
     const { runInTenant } = await import("../../lib/tenant");
     await runInTenant(house(), async () => {
@@ -599,12 +726,12 @@ test("GET /api/usage/house-cap: every workspace but the house reads null, whoeve
   expect(await read(house(), "member")).toMatchObject({ status: 200, body: { houseCap: { capUsd: 500, source: "default" } } });
 });
 
-test("/admin shows the new standing: after a raise and after a lowering the desk reads the cap in force and the month's spend and share against it, and nobody is warned", async () => {
+test("/admin shows the new standing: after a raise and after a lowering the desk reads the cap in force and the month's spend and share against it; a raise writes no warning, and after a lowering the next crossing tells nobody", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   const { platformDb, platformReady, setHouseCap } = await import("../../lib/platform");
   const { reserveGenerationSpend } = await import("../../lib/generationRequests");
-  const { houseNotesSettled, houseSpendSince, houseMonthStart } = await import("../../lib/houseCap");
+  const { houseNotesSettled, houseSpendSince, houseMonthStart, noteHouseSpend } = await import("../../lib/houseCap");
   const { houseCapStanding, houseCapState, houseCapUsdText } = await import("../../lib/houseCapText");
   const { meter } = await import("../../lib/meter");
   await platformReady();
@@ -646,6 +773,7 @@ test("/admin shows the new standing: after a raise and after a lowering the desk
     expect(up.spentUsd).toBeCloseTo(spent, 9);
     expect(houseCapStanding(up)).toBe(standing(raised));
     expect(houseCapStanding(up)).toBe(`${spentText} of ${houseCapUsdText(raised)} used · ${up.pct}%`);
+    expect(await warned()).toBe(lines);
 
     /* Lowered into the warning band: the new figure and where the month now stands against it, at once; nobody is told. */
     const banded = Math.round((spent / 0.9) * 100) / 100;
@@ -661,8 +789,11 @@ test("/admin shows the new standing: after a raise and after a lowering the desk
     const stop = await read();
     expect(stop).toMatchObject({ capUsd: under, warn: true, stop: true, pct: 100 });
     expect(houseCapStanding(stop)).toBe(`Reached · ${spentText} of ${houseCapUsdText(under)} used · 100%`);
-    /* Setting the cap, either way, warns nobody (the warning is the reservation's alone). */
-    expect(await warned()).toBe(lines);
+    /* A lowering warns nobody: the month already past 80% of the lowered figures, a crossing at either writes no line (and so sends no email). */
+    const marked = await warned();
+    expect(await noteHouseSpend(spent, banded)).toBe(false);
+    expect(await noteHouseSpend(spent, under)).toBe(false);
+    expect(await warned()).toBe(marked);
 
     /* /admin's cap cell and the platform console's sheet both show that line, read-only, under the cap's figure. */
     const page = readFileSync("app/(app)/admin/page.tsx", "utf8");

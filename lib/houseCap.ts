@@ -5,6 +5,7 @@ import { cycleBounds } from "./cycle";
 import { allowanceUsdOf } from "./cinemaHold";
 import { HOUSE_WORKSPACE_ID, isHouseWorkspace } from "./houseWorkspace";
 import { mailConfigured, sendMail } from "./mail";
+import type { InStatement } from "@libsql/client";
 import { platformAuditStatement } from "./platformAudit";
 import { HOUSE_CAP_DEFAULT_USD, HOUSE_CAP_REACHED, HOUSE_CAP_WARN_PCT, houseCapState, houseCapUsdText, houseCapWarning, type HouseCapView } from "./houseCapText";
 
@@ -75,13 +76,16 @@ export async function houseCapCheck(estUsd = 0, band = 1): Promise<{ ok: true } 
 }
 
 /**
- * A house job was just reserved, bringing the month to `spentUsd` of `capUsd`. At the warning line the platform owner is told once a
- * month, and once more after each raise: one platform history line (the marker) and, when mail is set up, one email to the deployment's
- * owner address. The marker is written only when this month has no line at this figure or a higher one, in one statement, so two jobs
- * crossing together write one. So a cap raised (or reset to a higher default) past every figure already warned at this month tells them
- * again, once, at its own 80% (owner, 19 Oct 2026: "a second 80% warning after a raise"); a cap lowered to any figure, or raised back to
- * one at or under a figure already warned at, tells them nothing new ("House cap: no warning on a lowering; /admin shows the new
- * standing"). The month's first crossing always tells them, whatever the figure. A failed email never fails the job.
+ * A house job was just reserved, bringing the month to `spentUsd` of `capUsd`. At the warning line the platform owner is told: one
+ * platform history line (the marker) and, when mail is set up, one email to the deployment's owner address. The marker is written only
+ * when this month has no line at this figure or a higher one, in one statement, so two jobs crossing together write one. A failed email
+ * never fails the job.
+ *
+ * So the owner hears once a month, and once more each time a crossing comes at a figure higher than every figure marked this month
+ * (owner, 19 Oct 2026: "a second 80% warning after a raise"). A lowering never warns ("House cap: no warning on a lowering; /admin
+ * shows the new standing"): a lowering that leaves the month at or past 80% of the new figure writes the marker itself, with no email,
+ * when the cap is set (houseCapLoweringMarker, lib/platform.ts setHouseCap), so no job crossing that figure or a lower one tells
+ * anyone; a lowering that leaves the month under 80% writes nothing, and a crossing that later spend brings still warns.
  *
  * The month is the reservation's, never the clock's when the note runs: `at` is the reservation's own time and `since` the start of
  * the month its spend was summed over (lib/generationRequests.ts), so a note that runs just after midnight on the 1st marks the month
@@ -102,6 +106,25 @@ export async function noteHouseSpend(spentUsd: number, capUsd: number, at = Date
   const body = `${houseCapWarning(view)}. The house workspace's engine spend has reached ${HOUSE_CAP_WARN_PCT}% of its ${houseCapUsdText(capUsd)} monthly cap. At 100% its jobs stop until the month turns or you raise the cap on the platform desk.`;
   await sendMail({ to: owner, subject: `Particl: ${houseCapWarning(view)}`, text: body, html: `<p>${body}</p>` }).catch(() => {});
   return true;
+}
+
+/**
+ * The marker a lowering of the house cap writes in the same batch as the new figure (lib/platform.ts setHouseCap), or null. Only when
+ * the new figure is lower than the one in force and the month's spend is already at or past its warning line: the month is then marked
+ * at the new figure, with no email, so the reservations that follow find the marker and tell nobody (owner, 19 Oct 2026: "House cap:
+ * no warning on a lowering"). A raise, the same figure, or a lowering that leaves the month under 80% writes nothing.
+ */
+export async function houseCapLoweringMarker(usd: number | null, actorId: string, at = Date.now()): Promise<InStatement | null> {
+  await platformReady();
+  const stored = (await platformDb().execute({ sql: "SELECT allowance_usd FROM workspaces WHERE id=?", args: [HOUSE_WORKSPACE_ID] })).rows[0];
+  const before = houseCapOfStored(stored?.allowance_usd).usd;
+  const after = houseCapOfStored(usd).usd;
+  if (!(after < before - 1e-9)) return null;
+  const month = cycleBounds(1, at);
+  const view = houseCapState(after, await houseSpendSince(month.start));
+  if (!view.warn) return null;
+  return platformAuditStatement({ actorId, action: "housecap.warned", targetType: "workspace", targetId: HOUSE_WORKSPACE_ID, workspaceId: HOUSE_WORKSPACE_ID, details: { capUsd: after, atPct: view.pct } },
+    false, { since: month.start, until: month.end, capUsdAbove: after }, at);
 }
 
 /* The notes still on their way (a test, or anything that must see the warning written, waits for them with houseNotesSettled). */
