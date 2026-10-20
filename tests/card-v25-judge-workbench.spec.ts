@@ -9,8 +9,13 @@ import { isCompact } from "./helpers/shellMode";
  * and what it opens, and the focus comes back to the card once a reason is sent.
  */
 type Call = { method: string; url: string; body: Record<string, unknown> | null };
-async function watch(page: Page) {
+type Note = { text: string; author: string; createdAt: number; guest: boolean };
+/** Every request the page makes that is not a read: the only ones allowed here are the review mark and the note. */
+const WRITES_ALLOWED = (c: { method: string; url: string }) => (c.method === "PATCH" && /^\/api\/jobs\/[^/]+$/.test(c.url)) || (c.method === "POST" && c.url === "/api/notes");
+async function watch(page: Page, notes: Record<string, Note[]> = {}) {
   const calls: Call[] = [];
+  const writes: { method: string; url: string }[] = [];
+  page.on("request", (r) => { if (!["GET", "HEAD", "OPTIONS"].includes(r.method())) writes.push({ method: r.method(), url: new URL(r.url()).pathname }); });
   await page.route("**/api/jobs/*", async (route) => {
     const req = route.request();
     if (req.method() !== "PATCH") return route.fallback();
@@ -21,10 +26,9 @@ async function watch(page: Page) {
   await page.route("**/api/notes**", async (route) => {
     const req = route.request();
     if (req.method() === "POST") { calls.push({ method: "POST", url: new URL(req.url()).pathname, body: req.postDataJSON() as Record<string, unknown> }); return route.fulfill({ json: { ok: true } }); }
-    return route.fulfill({ json: { notes: [] } });
+    return route.fulfill({ json: { notes: notes[new URL(req.url()).searchParams.get("genId") ?? ""] ?? [] } });
   });
-  page.on("request", (r) => { const p = new URL(r.url()).pathname; if (r.method() === "POST" && p.startsWith("/api/generate")) calls.push({ method: "POST", url: p, body: null }); });
-  return calls;
+  return Object.assign(calls, { writes });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -47,6 +51,11 @@ test("the five statuses are read from the shot's takes: Ready (· vN with more t
   await expect(status(t, "shot-4")).toHaveText("Making…");
   await expect(status(t, "shot-5")).toHaveText("Not started");
   await expect(status(t, "shot-6")).toHaveText("Not started");
+  /* An upload, and a finished take whose picture is not here: Ready, with nothing to judge. */
+  await expect(status(t, "shot-7")).toHaveText("Ready");
+  await expect(status(t, "shot-8")).toHaveText("Ready");
+  /* Sent back: "✕", with the team's reason once there is one (the next test answers the notes). */
+  await expect(status(t, "shot-9")).toHaveText(/^✕/);
   /* The ✓ names who approved it, on hover (the server shows names to this workspace's members only). */
   await reveal(t, "shot-3");
   await card(t, "shot-3").getByRole("button", { name: /^Approve|^Approved/ }).hover();
@@ -62,11 +71,16 @@ test("✓ is the review trail's approve and takes itself back; ✕ sends the tak
   await expect.poll(() => calls.filter((c) => c.method === "PATCH").length).toBe(1);
   expect(calls[0]).toMatchObject({ url: "/api/jobs/gen_s2", body: { reviewState: "approved" } });
   await expect(page.getByText("Shot 2 v1 approved").first()).toBeVisible();
-  /* ✓ on an approved card takes the approval back (Ready again). */
+  /* ✓ on an approved card takes the approval back (Ready again; this page did not see it approved, so its earlier state is not known: ""),
+     with an Undo that approves it again. */
   await reveal(t, "shot-3");
   await card(t, "shot-3").getByRole("button", { name: "Approve Shot 3 · At the water" }).click();
   await expect.poll(() => calls.filter((c) => c.method === "PATCH").length).toBe(2);
   expect(calls[1]).toMatchObject({ url: "/api/jobs/gen_s3", body: { reviewState: "" } });
+  await expect(page.getByTestId("v12-toast")).toContainText("Shot 3 v1 is Ready again");
+  await page.getByTestId("v12-toast").getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => calls.filter((c) => c.method === "PATCH").length).toBe(3);
+  expect(calls[2]).toMatchObject({ url: "/api/jobs/gen_s3", body: { reviewState: "approved" } });
   /* ✕ with a chip: the "changes" mark on the shown version, then the reason as a note on it. */
   await reveal(t, "shot-1");
   await card(t, "shot-1").getByRole("button", { name: /^Not right/ }).click();
@@ -88,13 +102,50 @@ test("✓ is the review trail's approve and takes itself back; ✕ sends the tak
   await card(t, "shot-2").getByLabel("One line, optional").press("Enter");
   await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(2);
   expect(calls.filter((c) => c.url === "/api/notes")[1].body).toEqual({ genId: "gen_s2", text: "Too dark by the fire" });
-  /* A card with nothing to judge (making, failed, no take) offers neither ✓ nor ✕. */
-  for (const id of ["shot-4", "shot-5", "shot-6"]) {
+  /* A card with nothing to judge (making, failed, no take, an upload, a finished take with no picture here) offers neither ✓ nor ✕. */
+  for (const id of ["shot-4", "shot-5", "shot-6", "shot-7", "shot-8"]) {
     if (!isCompact(info)) await card(t, id).hover();
     await expect(card(t, id).getByRole("button", { name: /^Approve|^Not right/ }), id).toHaveCount(0);
   }
-  /* Free: nothing was generated. */
-  expect(calls.filter((c) => c.url.startsWith("/api/generate"))).toEqual([]);
+  /* Free: every request that was not a read is the review mark or the note, nothing else (no generate, no spend). */
+  expect(calls.writes.length).toBeGreaterThan(0);
+  expect(calls.writes.filter((c) => !WRITES_ALLOWED(c)), "a write that is not a review mark or a note").toEqual([]);
+});
+
+test("a reason the review trail would not take keeps ✕'s panel open and says why; the line takes at most 500 characters", async ({ page }) => {
+  const calls = await watch(page);
+  const t = takes(page);
+  await reveal(t, "shot-2");
+  await card(t, "shot-2").getByRole("button", { name: /^Not right/ }).click();
+  const reasons = card(t, "shot-2").getByTestId("v12-card-reasons");
+  const line = card(t, "shot-2").getByLabel("One line, optional");
+  await expect(line).toHaveAttribute("maxlength", "500");
+  await reasons.getByRole("button", { name: "Other", exact: true }).click();
+  await line.fill("ok");
+  await line.press("Enter");
+  await expect(card(t, "shot-2").getByTestId("v12-card-reasons-hint")).toHaveText("Say why you are rejecting it.");
+  await expect(reasons).toBeVisible();
+  await expect(line).toHaveValue("ok");
+  await expect(line).toHaveAttribute("aria-invalid", "true");
+  expect(calls.length, "nothing written for a reason the trail would not take").toBe(0);
+  /* A longer line sends. */
+  await line.fill("okay now");
+  await expect(card(t, "shot-2").getByTestId("v12-card-reasons-hint")).toHaveCount(0);
+  await line.press("Enter");
+  await expect.poll(() => calls.filter((c) => c.url === "/api/notes").length).toBe(1);
+  expect(calls.find((c) => c.url === "/api/notes")?.body).toEqual({ genId: "gen_s2", text: "okay now" });
+  await expect(reasons).toHaveCount(0);
+});
+
+test("a rejected card reads the team's reason given at the mark: not a client's newer review-link comment, not an older note", async ({ page }) => {
+  await watch(page, { gen_s9: [
+    { text: "Nice light", author: "A", createdAt: 0, guest: false },
+    { text: "Wrong framing", author: "A", createdAt: 100, guest: false },
+    { text: "Love it", author: "Client", createdAt: 200, guest: true },
+  ] });
+  /* The page read its notes before the route was there: read them again. */
+  await page.reload();
+  await expect(status(takes(page), "shot-9")).toHaveText("✕ Wrong framing");
 });
 
 test("✕ says it is open and what it opens, and Esc closes it and keeps the status", async ({ page }) => {
@@ -134,14 +185,35 @@ test("one tile a card: none on a picture, one on a page's title row, one large o
 
 test("no sideways scroll, and no word under 12 px or 55% white on the takes board", async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), "horizontal overflow").toBeLessThanOrEqual(0);
-  const small = await takes(page).evaluate((root) => {
-    const out: string[] = [];
+  /* Rule 15: text people read is at least 12 px and at least 55% white on black (about 6:1). Each word's colour, with its alpha and every ancestor's
+     opacity, is laid over black and its contrast with black compared with 55% white's. Words not drawn (opacity 0, hidden) are not read. */
+  const found = await takes(page).evaluate((root) => {
+    const small: string[] = [];
+    const faint: string[] = [];
+    const lin = (c: number) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const lum = (r: number, g: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    const floor = lum(255 * 0.55, 255 * 0.55, 255 * 0.55);
+    const probe = document.createElement("canvas").getContext("2d")!;
+    const rgba = (css: string) => {
+      probe.clearRect(0, 0, 1, 1); probe.fillStyle = "#000"; probe.fillStyle = css; probe.fillRect(0, 0, 1, 1);
+      const [r, g, b, a] = probe.getImageData(0, 0, 1, 1).data;
+      return { r, g, b, a: a / 255 };
+    };
     for (const el of root.querySelectorAll<HTMLElement>("*")) {
       if (!el.childNodes.length || ![...el.childNodes].some((n) => n.nodeType === 3 && (n.textContent ?? "").trim())) continue;
-      const px = parseFloat(getComputedStyle(el).fontSize);
-      if (px < 12) out.push(`${el.className} ${px}px`);
+      if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
+      const style = getComputedStyle(el);
+      const px = parseFloat(style.fontSize);
+      if (px < 12) small.push(`${el.className} ${px}px`);
+      let opacity = 1;
+      for (let at: HTMLElement | null = el; at; at = at.parentElement) opacity *= parseFloat(getComputedStyle(at).opacity);
+      if (opacity === 0) continue;
+      const c = rgba(style.color);
+      const k = c.a * opacity;
+      if (lum(c.r * k, c.g * k, c.b * k) + 1e-6 < floor) faint.push(`${el.className} "${(el.textContent ?? "").trim().slice(0, 24)}" ${style.color} × ${opacity.toFixed(2)}`);
     }
-    return out;
+    return { small, faint };
   });
-  expect(small, "text under 12 px").toEqual([]);
+  expect(found.small, "text under 12 px").toEqual([]);
+  expect(found.faint, "text under 55% white on black").toEqual([]);
 });

@@ -1,6 +1,7 @@
 "use client";
 import { useId, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
 import { IconButton, MoreDots } from "../ui";
+import { REJECT_REASON_MAX, rejectReasonProblem } from "@/components/graphite/board/cards/take/take-model";
 import { canJudge, rejectReason, statusLine, withOther, type CardStatus } from "./card-model";
 import "./card.css";
 
@@ -50,8 +51,9 @@ export type StepCardProps = {
   onSelect?: (event: MouseEvent<HTMLElement>) => void;
   /** Double-click, Enter or Space: the preview. */
   onOpen?: () => void;
-  /** ✓ toggles: Approved, or back to Ready. */
+  /** ✓ toggles: Approved, or back to Ready. ✓ and ✕ are drawn only when both are given: a card with nothing to call has no marks. */
   onApprove?: () => void;
+  /** Called only with a reason the review trail takes (one line, 3 to 500 characters); otherwise the panel stays open and says why. */
   onReject?: (reason: string) => void;
   /** ⋯ and right-click. */
   onMenu?: (anchor: HTMLElement, at: { x: number; y: number }) => void;
@@ -82,20 +84,29 @@ const letterTile = (tile: CardTile, className: string) => (
 export function StepCard(props: StepCardProps) {
   const { id, title, status, picture, text, tile, selected, targeted, differs, dimmed, greyed, chips = [], onMenu } = props;
   const line = statusLine({ status, version: props.version, reason: props.reason, own: props.own });
-  const judge = canJudge({ status, userOwned: props.own !== undefined, greyed });
+  const judge = canJudge({ status, userOwned: props.own !== undefined, greyed, acts: Boolean(props.onApprove && props.onReject) });
   const [reasoning, setReasoning] = useState(false);
   const [pick, setPick] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  /* Why the reason cannot be sent yet (too short with no chip, or too long): said in the panel, which stays open. */
+  const [problem, setProblem] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const reasonsId = useId();
+  const hintId = useId();
   const isText = !picture && text !== undefined;
   const bigTile = !picture && !isText && Boolean(tile);
   const notStarted = status === "none" && props.own === undefined;
 
-  const closeReasons = () => { setReasoning(false); setPick(null); setNote(""); };
-  /* After a reason is sent the panel goes, and with it the focus: it comes back to the card, where the new status reads. */
-  const send = (chosen: string | null, line: string) => { props.onReject?.(rejectReason(chosen, line)); closeReasons(); requestAnimationFrame(() => root.current?.focus({ preventScroll: true })); };
+  const closeReasons = () => { setReasoning(false); setPick(null); setNote(""); setProblem(null); };
+  /* After a reason is sent the panel goes, and with it the focus: it comes back to the card, where the new status reads. A reason the trail would
+     not take is not dropped: the panel stays, says why, and keeps the line in hand. */
+  const send = (chosen: string | null, line: string) => {
+    const reason = rejectReason(chosen, line);
+    const why = rejectReasonProblem(reason);
+    if (why) { setPick(chosen); setProblem(why); input.current?.focus(); return; }
+    props.onReject?.(reason); closeReasons(); requestAnimationFrame(() => root.current?.focus({ preventScroll: true }));
+  };
   const openMenu = (anchor: HTMLElement, event?: { clientX: number; clientY: number }) => {
     const box = anchor.getBoundingClientRect();
     onMenu?.(anchor, event ? { x: event.clientX, y: event.clientY } : { x: box.left, y: box.bottom });
@@ -173,8 +184,10 @@ export function StepCard(props: StepCardProps) {
               ))}
             </div>
             <input ref={input} className="v12-card-note" value={note} aria-label="One line, optional" placeholder="One line, optional · ⏎ to send" autoFocus={false}
-              onChange={(event) => setNote(event.target.value)}
+              maxLength={REJECT_REASON_MAX} aria-invalid={problem ? true : undefined} aria-describedby={problem ? hintId : undefined}
+              onChange={(event) => { setNote(event.target.value); setProblem(null); }}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); send(pick, note); } }} />
+            {problem ? <span id={hintId} className="v12-card-reasons-hint" role="alert" data-testid="v12-card-reasons-hint">{problem}</span> : null}
           </div>
         ) : null}
         {chips.length ? (

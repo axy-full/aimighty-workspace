@@ -20,13 +20,15 @@ test("an item the person owns says what it is, not a status", () => {
   expect(statusLine({ status: "none", own: "Source clip" }).text).toBe("Source clip");
 });
 
-test("✓ and ✕ show on a card with something to judge, never on a user-owned card, a card not made yet, or an option greyed out", () => {
+test("✓ and ✕ show on a card with something to judge, never on a user-owned card, a card not made yet, an option greyed out, or a card whose marks would do nothing", () => {
   const judged: CardStatus[] = ["ready", "approved", "rejected"];
   for (const status of judged) expect(canJudge({ status }), status).toBe(true);
+  for (const status of judged) expect(canJudge({ status, acts: true }), status).toBe(true);
   for (const status of ["none", "making"] as CardStatus[]) expect(canJudge({ status }), status).toBe(false);
   for (const status of judged) {
     expect(canJudge({ status, userOwned: true })).toBe(false);
     expect(canJudge({ status, greyed: true })).toBe(false);
+    expect(canJudge({ status, acts: false }), `${status} with nothing to call`).toBe(false);
   }
 });
 
