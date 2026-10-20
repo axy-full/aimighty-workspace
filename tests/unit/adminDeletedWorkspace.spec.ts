@@ -24,6 +24,7 @@ function adminRoute(workspace: { deletedAt: number | null; legacy?: boolean; id?
       platformKeysByDefault: () => true,
       setWorkspaceInternalTest: record("internalTest"),
       setWorkspaceAllowance: record("allowance"),
+      setHouseCap: record("houseCap"),
       setWorkspaceMode: record("mode"),
       grantCredits: record("grant"),
       setWorkspaceSuspended: record("suspended"),
@@ -110,15 +111,13 @@ test("a deleted workspace takes no credits, plan or limits from the desk; it can
   expect(live.calls).toEqual(["grant"]);
 });
 
-test("the house workspace takes no credits or allowance from the desk; its other settings apply like any other's", async () => {
+test("the house workspace takes no credits from the desk; its monthly engine cap and its other settings apply", async () => {
   for (const body of [
     { grantCredits: 500 },
     { grantCredits: -5, note: "Correction" },
-    { allowanceUsd: 20 },
-    { allowanceUsd: null },
     /* A mixed request changes nothing: the refusal comes before any write. */
     { suspended: true, grantCredits: 500 },
-    { limits: { concurrency: 2 }, allowanceUsd: 20 },
+    { limits: { concurrency: 2 }, grantCredits: 500 },
   ]) {
     const route = adminRoute({ deletedAt: null, id: houseWorkspace.HOUSE_WORKSPACE_ID, legacy: true });
     const response = await route.patch(body);
@@ -133,6 +132,15 @@ test("the house workspace takes no credits or allowance from the desk; its other
   expect((await house.patch({ internalTest: true })).status).toBe(200);
   expect((await house.patch({ planId: "studio" })).status).toBe(200);
   expect(house.calls).toEqual(["suspended", "flag", "limits", "internalTest", "plan"]);
+  /* The owner's 15 October 2026 decision: the house has a monthly cap the platform owner sets (lib/houseCap.ts), through its own writer, never the customer allowance's. */
+  const capped = adminRoute({ deletedAt: null, id: houseWorkspace.HOUSE_WORKSPACE_ID, legacy: true });
+  expect((await capped.patch({ allowanceUsd: 20 })).status).toBe(200);
+  expect((await capped.patch({ allowanceUsd: null })).status).toBe(200);
+  expect((await capped.patch({ allowanceUsd: "20" })).status).toBe(400);
+  expect(capped.calls).toEqual(["houseCap", "houseCap"]);
+  const customer = adminRoute({ deletedAt: null });
+  expect((await customer.patch({ allowanceUsd: 20 })).status).toBe(200);
+  expect(customer.calls).toEqual(["allowance"]);
   /* A legacy-flagged workspace under any other id is not the house: the desk can fund it. */
   const flagged = adminRoute({ deletedAt: null, legacy: true });
   expect((await flagged.patch({ grantCredits: 5 })).status).toBe(200);

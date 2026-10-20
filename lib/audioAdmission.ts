@@ -26,7 +26,7 @@ import {
   type DialogueLine,
 } from "@/lib/elevenlabs";
 import { GROK_TTS_MODEL, GROK_VOICE_ID, audioVendor, grokSpeechUsd, grokVoiceConfigured, listGrokVoices } from "@/lib/xaiVoice";
-import { findStoredSource, resolveStoredDuration, SOURCE_BYTES_LIMIT } from "@/lib/mediaSource.server";
+import { isSourceRefusal, lookupStoredSource, resolveStoredDuration, SOURCE_BYTES_LIMIT, type StoredSource } from "@/lib/mediaSource.server";
 import { getShot } from "@/lib/shots";
 import {
   claimBinding,
@@ -77,14 +77,15 @@ const SOURCE_ID = /^[A-Za-z0-9_-]{1,128}$/;
  * with the reason rather than priced from a guess.
  */
 export async function resolveVoiceChangeSource(body: { sourceUploadId?: unknown; sourceGenId?: unknown }): Promise<
-  | { source: NonNullable<Awaited<ReturnType<typeof findStoredSource>>>; seconds: number }
-  | { error: string; status: number }
+  | { source: StoredSource; seconds: number }
+  | { error: string; status: number; code?: string }
 > {
   const uploadId = body.sourceUploadId ? String(body.sourceUploadId) : "";
   const genId = body.sourceGenId ? String(body.sourceGenId) : "";
   if ((!uploadId && !genId) || (uploadId && genId)) return { error: "Pick one audio original to change the voice of.", status: 400 };
   if ((uploadId && !SOURCE_ID.test(uploadId)) || (genId && !SOURCE_ID.test(genId))) return { error: "That audio source is not valid.", status: 400 };
-  const source = await findStoredSource(uploadId ? { uploadId } : { genId });
+  const source = await lookupStoredSource(uploadId ? { uploadId } : { genId });
+  if (isSourceRefusal(source)) return { error: source.error, code: source.code, status: source.status };
   if (!source) return { error: "That audio original is not in this workspace.", status: 404 };
   if (source.mediaKind !== "audio") return { error: "Voice change takes an audio original. Export the clip's sound first for a video.", status: 400 };
   if (source.bytes > SOURCE_BYTES_LIMIT) return { error: "Voice change takes a source up to 100 MB.", status: 400 };
@@ -180,7 +181,7 @@ export async function executeAudioAdmission(
      Activity and the library say which track was re-voiced. */
   const voiceChange = task === "voiceChange" ? await resolveVoiceChangeSource(body) : null;
   if (voiceChange && "error" in voiceChange)
-    return admissionReply({ error: voiceChange.error }, { status: voiceChange.status });
+    return admissionReply({ error: voiceChange.error, ...(voiceChange.code ? { code: voiceChange.code } : {}) }, { status: voiceChange.status });
   const text = (
     dialogue
       ? dialogue.lines.map((line) => line.text).join("\n")

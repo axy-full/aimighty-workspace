@@ -1,4 +1,5 @@
 import type { Client } from "@libsql/client";
+import { isSampleClipUrl } from "../sampleClip";
 import { createHash } from "node:crypto";
 import { db, ready, now, id as newId } from "../db";
 import { clientIp } from "../clientIp";
@@ -125,6 +126,8 @@ export type ClientTake = {
   /** What a client decided through this production's links, newest last; null when nobody has. */
   verdict: { verdict: Verdict; guest: string; at: number } | null;
   media: string; notes: ClientNote[];
+  /** The starter's sample clip (Big Buck Bunny, CC BY 3.0): its credit shows on the client's page (lib/sampleClip.ts). */
+  credit?: true;
 };
 
 /**
@@ -136,7 +139,7 @@ export async function reviewSet(token: string, shareId: string, projectId: strin
   const project = await db().execute({ sql: `SELECT name FROM projects WHERE id = ? LIMIT 1`, args: [projectId] });
   if (!project.rows.length) return null;
   const takes = await db().execute({
-    sql: `SELECT g.id, g.kind, g.version, g.review_state, s.code AS shot_code, s.title AS shot_title
+    sql: `SELECT g.id, g.kind, g.version, g.review_state, g.stored_url, s.code AS shot_code, s.title AS shot_title
           FROM generations g LEFT JOIN shots s ON s.id = g.shot_id
           WHERE ${IN_SET("review")}
           ORDER BY COALESCE(s.position, 1e9), s.code, g.version, g.created_at LIMIT 200`,
@@ -165,6 +168,8 @@ export async function reviewSet(token: string, shareId: string, projectId: strin
       version: Number(r.version ?? 1), state: r.review_state === "approved" ? "approved" : "review",
       verdict: lastVerdict.get(String(r.id)) ?? null,
       media: `/api/review/${token}/media/${r.id}`, notes: byGen.get(String(r.id)) ?? [],
+      /* The starter's sample clip (Big Buck Bunny, CC BY 3.0) carries its credit onto the client's page (lib/sampleClip.ts). */
+      ...(isSampleClipUrl(String(r.stored_url ?? "")) ? { credit: true as const } : {}),
     })),
   };
 }

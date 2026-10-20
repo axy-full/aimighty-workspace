@@ -92,9 +92,10 @@ test("Connections lists the MCP tools and Advanced › Tools Particl's own reach
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors } = await open(page, "/suites?view=workspace&tab=connections&open=mcp");
   await expect(page.getByTestId("settings-title")).toHaveText("Connections");
-  /* Eight tools: prepare_shot (a person approves it in Particl) joined the seven that start or read takes. */
-  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(8);
+  /* Nine tools: prepare_shot and plan_step (each prepares what a person approves in Particl) joined the seven that start or read takes. */
+  await expect(page.getByTestId("settings-mcp-tool")).toHaveCount(9);
   await expect(page.getByTestId("settings-mcp-tool").filter({ hasText: "prepare_shot" })).toContainText("Prepare jobs");
+  await expect(page.getByTestId("settings-mcp-tool").filter({ hasText: "plan_step" })).toContainText("Prepare jobs");
   await expect(page.getByTestId("skill-packs")).toHaveCount(0);
   await expect(page.getByTestId("settings-view")).not.toContainText(/higgsfield/i);
   await page.goto("/suites?view=workspace&tab=advanced&open=tools");

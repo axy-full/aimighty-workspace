@@ -1,6 +1,7 @@
 "use client";
 import { useState, type ReactNode } from "react";
 import LazyMedia from "@/components/LazyMedia";
+import { SampleClipCredit } from "@/components/ui/SampleClipCredit";
 import { dragAttrs } from "@/lib/drop";
 import { entryPreview, previewAttrs } from "@/lib/preview";
 import { entryFace, entryKind, type EntryFace, type LibraryEntry, type LibraryView } from "@/lib/workspace/library";
@@ -157,6 +158,7 @@ export function TakeTile({ entry, variant, label, selected = false, checked = fa
           onClick={onOpen}>
           {inner}
         </button>
+        <SampleClipCredit take={take.sourceId} over />
         {refreshButton}
       </div>
       {variant === "library" ? (

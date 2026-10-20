@@ -17,6 +17,9 @@ import type { RigAgentPaidStepView, RigAgentRunView, RigAgentStepState } from "@
  *    the per-job line) asks at its own price, as does everything in Auto that is not a cheap draft.
  *  - Every price is the server's: the plan's quote, the run's own pricing of a step, or (before the build) a
  *    pre-quote of the exact request it will price. Words come from lib/shell/price-words.ts only.
+ *  - A chips plan (Agent mode's quick plan) has ONE price (owner, 16 Oct): no pre-quotes, and a step the plan covers
+ *    (its open gate, or its approval) shows no price of its own until it has settled. A step that asks on its own
+ *    shows the server's quote for it, on its button too.
  *
  * Pure: the phone's plan screen (stream 10) reads the same model.
  */
@@ -37,7 +40,8 @@ export type PlanStep = {
   meta: string;
   /** What it costs or cost: settled once done; the run's price once it has one; else the pre-quote. */
   price: PriceValue | null;
-  source: "settled" | "run" | "estimate" | "none";
+  /** "plan": a chips plan's step the plan covers, priced only in the plan's one total (no price of its own). */
+  source: "settled" | "run" | "estimate" | "plan" | "none";
   /** Why it can't be priced, when it can't ("Unavailable · …"). */
   unavailable: string | null;
   /** Over the workspace's per-shot rule: a member can't render it; an admin can. */
@@ -119,6 +123,8 @@ const STATUS: Record<RigAgentStepState, string> = {
 export const SWITCHED_OFF = "Atomik's board building is switched off right now.";
 export const NOT_MINE = "Only the person who asked approves this plan.";
 export const SHORT_LINE = "Top up, then approve. Nothing is spent until you do.";
+/** A render the card has no price for: its tap is never offered (every spend shows its price before it runs). */
+export const NO_PRICE = "This render has no price yet. Open the shot, or wait for Atomik to price it.";
 
 /** The most a plan may spend, fixes included, as a multiple of its renders' total (lib/workbench/plan-approval.ts). */
 export const PLAN_CEILING_MULTIPLE = 2;
@@ -200,13 +206,17 @@ export function planModel(input: PlanInput): PlanModel | null {
   const plan = run.plan ?? null;
   const gate = phase === "proposal" && run.state !== "awaiting_approval" && plan?.quote ? plan.quote : null;
   const takes = run.paid.filter((p) => p.tool === "render");
+  /* A chips plan: ONE price. No pre-quote of a step, and none of its own for a step the plan covers (the server says which: `planPriced`), until it settles.
+     After the approval a paused step is never covered: its Retry runs at its own price, and a limit pause offers Raise from it. */
+  const chips = run.kind === "chips";
+  const coveredByPlan = (p: RigAgentPaidStepView) => chips && p.state !== "done" && p.state !== "failed" && (p.planPriced === true || Boolean(gate?.covered.includes(p.seq)));
   const steps: PlanStep[] = takes.map((p) => {
-    const estimate = input.estimates?.[p.seq];
-    const fromRun = runStepPrice(p);
+    const estimate = chips ? undefined : input.estimates?.[p.seq];
+    const fromRun = coveredByPlan(p) ? null : runStepPrice(p);
     const unavailable = !fromRun && estimate && "unavailable" in estimate ? estimate.unavailable : null;
     const estimated = !fromRun && estimate && !("unavailable" in estimate) ? estimatePrice(estimate) : null;
     const price = fromRun ?? estimated;
-    const source: PlanStep["source"] = fromRun ? (p.state === "done" || p.state === "failed" ? "settled" : "run") : estimated ? "estimate" : "none";
+    const source: PlanStep["source"] = fromRun ? (p.state === "done" || p.state === "failed" ? "settled" : "run") : estimated ? "estimate" : coveredByPlan(p) ? "plan" : "none";
     const credits = price ? ceilingOf(price) : null;
     const overCap = Boolean(input.rule && input.rule.rule === "cap" && credits != null && credits > input.rule.cap);
     const settled = p.state === "done" && fromRun ? ` · ${priceWords(fromRun)} settled` : "";
@@ -266,12 +276,14 @@ export function planModel(input: PlanInput): PlanModel | null {
       if (to != null && ceilTenths(to) > toTenths(money.limit))
         primary = { kind: "raise", label: `Raise the limit to ${creditsText(to)}`, raiseTo: to, blocked: input.readOnly ?? (!input.enabled ? SWITCHED_OFF : !run.mine ? NOT_MINE : null) };
     } else if (open) {
-      const again = paused?.state === "paused" && (paused.pause === "unpriced" || paused.pause === "record" || open.price == null);
+      /* Price again prices it again on the server; it runs only at a price already approved (the same price a tap or the plan gave), else it asks.
+         A tap that renders always shows its price: with none, it is not offered. */
+      const again = paused?.state === "paused" && (paused.pause === "unpriced" || paused.pause === "record");
       const verb = again ? "Price again" : paused?.state === "paused" ? "Retry" : "Render";
       const words = !again && open.price ? priceWords(open.price) : null;
       primary = {
         kind: "render", label: words ? `${verb} · ${words}` : verb, price: again ? null : open.price, seq: open.seq, fingerprint: open.fingerprint,
-        blocked: offBlock ?? (!open.canRender ? NOT_MINE : null),
+        blocked: offBlock ?? (!open.canRender ? NOT_MINE : !again && !words ? NO_PRICE : null),
       };
     }
   }

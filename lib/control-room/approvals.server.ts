@@ -250,6 +250,8 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
     for (const step of view.paid) {
       if (step.tool !== "render" || (step.state !== "waiting" && step.state !== "paused")) continue;
       if (run.state === "running" && !(step.state === "paused" && step.pause === "admin")) continue;
+      /* A chips plan's covered shot waiting its turn asks nothing of anyone: only the shot that asks is listed, at its own price (lib/workbench/rig-agent.ts onePrice). */
+      if (step.planPriced) continue;
       const price = renderPrice(step, ctx.inCredits);
       const credits = price && price.kind !== "free" ? price.credits : null;
       const gate = capGate(credits, ctx.cap, ctx.admin);

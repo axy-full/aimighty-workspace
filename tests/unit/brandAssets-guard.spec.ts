@@ -78,31 +78,35 @@ test("(b) every icon the app declares is one of those files, and nothing in app/
   expect(override, "files in app/ that would replace the real icons").toEqual([]);
 });
 
-test("(c) the header's logo is the brand's mark and wordmark from public/brand, drawn as pictures of them: the new header, the visitor's and the older shell's", () => {
-  const logo = read("components/v12/shell/Logo.tsx");
-  const mark = /export const HEADER_MARK = "([^"]+)"/.exec(logo)?.[1] ?? "";
-  const word = /export const HEADER_WORDMARK = "([^"]+)"/.exec(logo)?.[1] ?? "";
+test("(c) the header's logo is the brand's mark and wordmark from public/brand, drawn as pictures of them: the new header, the visitor's, today's customer header and the older shell's", () => {
+  const logo = read("components/ui/BrandLogo.tsx");
+  const mark = /export const BRAND_MARK = "([^"]+)"/.exec(logo)?.[1] ?? "";
+  const word = /export const BRAND_WORDMARK = "([^"]+)"/.exec(logo)?.[1] ?? "";
   expect(mark, "the mark").toMatch(/^\/brand\/particl-mark-on-(?:dark|light)\.svg$/);
   expect(word, "the wordmark").toMatch(/^\/brand\/particl-wordmark-on-(?:dark|light)@4x\.png$/);
   for (const file of [mark, word]) expect(existsSync(`${PUBLIC}${file}`), `${file} exists`).toBe(true);
-  /* Pictures of those files: the mark directly, the wordmark through Next's image route (sized(HEADER_WORDMARK, n)), as plain <img> elements. */
-  expect(logo).toMatch(/<img\b[^>]*src=\{HEADER_MARK\}/);
-  expect(logo).toMatch(/<img\b[^>]*src=\{sized\(HEADER_WORDMARK, 128\)\}/);
+  /* Pictures of those files: the mark directly, the wordmark through Next's image route (sized(BRAND_WORDMARK, n)), as plain <img> elements. */
+  expect(logo).toMatch(/<img\b[^>]*src=\{BRAND_MARK\}/);
+  expect(logo).toMatch(/<img\b[^>]*src=\{sized\(BRAND_WORDMARK, 128\)\}/);
   /* No drawing and no typed name inside it, and not the full lockup: it has a "studio" line, and renders large only (sign-in, marketing, documents). */
-  const body = logo.slice(logo.indexOf("export function HeaderLogo"));
+  const body = logo.slice(logo.indexOf("export function BrandLogo"));
   expect(body, "no inline drawing").not.toMatch(/<svg|<circle|TRAIL/);
   expect(body, "no typed wordmark").not.toMatch(/>\s*particl\s*</i);
-  expect(logo.replace(/\/\*[\s\S]*?\*\//g, ""), "the header uses no lockup").not.toMatch(/particl-lockup/);
-  /* Both v12 headers draw it through HeaderLogo, and neither makes a logo of its own. */
+  expect(logo.replace(/\/\*[\s\S]*?\*\//g, ""), "the header logo uses no lockup").not.toMatch(/particl-lockup/);
+  /* Every header draws it through BrandLogo (the v12 ones through HeaderLogo, which does), and none makes a logo of its own. */
+  expect(read("components/v12/shell/Logo.tsx"), "HeaderLogo draws BrandLogo").toMatch(/<BrandLogo\b/);
   for (const file of ["components/v12/shell/Header.tsx", "components/v12/visitor/VisitorHeader.tsx"]) {
     const text = read(file);
     expect(text, `${file} draws HeaderLogo`).toMatch(/<HeaderLogo\b/);
     expect(text, `${file} draws no logo of its own`).not.toMatch(/TRAIL|className="v12-logo|Mark"|particl-lockup/);
   }
+  const customer = read("components/graphite/Header.tsx");
+  expect(customer, "today's customer header draws BrandLogo").toMatch(/<BrandLogo\b/);
+  expect(customer, "today's customer header draws no logo of its own").not.toMatch(/TRAIL|<circle|gx-brand-name|particl-lockup/);
   /* The older shell's header (components/shell/Header.tsx): its logo picture is a brand file. */
   const today = read("components/shell/Header.tsx");
   const todays = [...today.matchAll(/<Image[\s\S]*?\bsrc="([^"]+)"/g)].map((m) => m[1]);
-  expect(todays.length, "today's header draws its logo as an Image").toBeGreaterThan(0);
+  expect(todays.length, "the shell header draws its logo as an Image").toBeGreaterThan(0);
   for (const url of todays) expect(url.startsWith("/brand/") && existsSync(`${PUBLIC}${url}`), `the shell header's logo ${url}`).toBe(true);
 });
 
@@ -124,21 +128,36 @@ test("(c) the full lockup is named only on sign-in, marketing and document surfa
 });
 
 /**
- * Today's customer header (components/graphite/Header.tsx) draws the brand's mark (an inline copy of its seven circles, checked in (a)) and then types the name
- * "particl" as text. The owner's 15 Oct rule calls a typed-text logo a placeholder. It is customer-facing, so it is NOT changed in the v25 foundation PRs; it is recorded
- * here as a known gap, and this list may only shrink: another header with a typed name fails, and so does the day the gap is fixed (delete its entry).
+ * Every screen that carries the logo draws it through BrandLogo (components/ui/BrandLogo.tsx): the app headers, the visitor's and the guest header, the error page, the
+ * no-workspace page and the phone's top bar (owner, 15 Oct 19:30: "one small deploy #5 PR switches the error page, no-workspace page, guest header and phone top bar to the
+ * shared logo; add the phone bar to the brand guard"). The list is of files, so a new logo surface is added here with its file.
  */
-export const TYPED_NAME_HEADERS = ["components/graphite/Header.tsx"];
-test("(c) no header types its name as the logo, except the known gap the owner decides (today's customer header)", () => {
-  const headers = ["components/graphite/Header.tsx", "components/shell/Header.tsx", "components/v12/shell/Header.tsx", "components/v12/shell/Logo.tsx", "components/v12/visitor/VisitorHeader.tsx"];
+export const LOGO_SURFACES = [
+  "components/graphite/Header.tsx", "components/graphite/FaultPage.tsx", "components/graphite/NoWorkspace.tsx", "components/graphite/guest/GuestHeader.tsx",
+  "components/graphite/phone/PhoneChrome.tsx", "components/v12/shell/Logo.tsx",
+];
+test("(c) every logo surface draws BrandLogo: the app and guest headers, the error and no-workspace pages and the phone's top bar", () => {
+  for (const file of LOGO_SURFACES) {
+    const text = read(file);
+    expect(text, `${file} draws BrandLogo`).toMatch(/<BrandLogo\b/);
+    expect(text, `${file} draws no logo of its own`).not.toMatch(/TRAIL|<circle|gx-brand-name|particl-lockup/);
+  }
+  /* The phone's top bar: the logo stands for the Home title, which stays as the screen reader's heading. */
+  expect(read("components/graphite/phone/PhoneChrome.tsx")).toMatch(/logo \? <><BrandLogo \/><span className="ph-sr">\{title\}<\/span><\/> : title/);
+});
+
+test("(c) no typed-name logo anywhere in components/: no gx-brand-name element, and no header types its name", () => {
+  const files = walk("components", (f) => /\.(tsx|css)$/.test(f));
+  expect(files.filter((file) => /\bgx-brand-name\b/.test(read(file))), "files that still have the typed-name logo class (the list of known typed names is gone; draw BrandLogo)").toEqual([]);
+  const headers = ["components/shell/Header.tsx", "components/ui/BrandLogo.tsx", "components/v12/visitor/VisitorHeader.tsx", ...LOGO_SURFACES];
   const typed = headers.filter((file) => /className="[^"]*(?:brand-name|logo-name|wordmark-text)[^"]*"[^>]*>\s*particl\s*</i.test(read(file)));
-  expect(typed, "headers that type their name; fix it with the lockup, or add it here only on the owner's word").toEqual(TYPED_NAME_HEADERS);
+  expect(typed, "headers that type their name; draw the brand's mark and wordmark (BrandLogo) instead").toEqual([]);
 });
 
 /** The placeholder, as source: the ring and dot of the v25 prototype's logo, or a logo that is only the typed word. */
 export const PLACEHOLDER = [
   { name: "the ring-and-dot mark", re: /\bv12-logo-(?:ring|dot)\b/i },
-  { name: "the typed-text logo", re: /\bv12-logo-name\b/i },
+  { name: "the typed-text logo", re: /\b(?:v12-logo-name|gx-brand-name)\b/i },
   { name: "a logo element holding only the word particl", re: /className=["'][^"']*\blogo[^"']*["'][^>]*>\s*(?:<[^>]+>\s*)*particl\s*</i },
 ];
 const placeholdersIn = (text: string) => PLACEHOLDER.filter((p) => p.re.test(text)).map((p) => p.name);
@@ -154,6 +173,7 @@ test("(d) the matcher sees the placeholder and leaves ordinary words alone", () 
   const ring = `<span className="v12-logo-ring"><span className="v12-logo-dot" /></span>`;
   expect(placeholdersIn(ring)).toEqual(["the ring-and-dot mark"]);
   expect(placeholdersIn(`<span className="brand-tool-logo-name">Your logo</span>`)).toEqual([]);
+  expect(placeholdersIn(`<span className="gx-brand-name">particl</span>`)).toEqual(["the typed-text logo"]);
   expect(placeholdersIn(`<span className="v12-logo-name">particl</span>`)).toContain("the typed-text logo");
   expect(placeholdersIn(`<a className="brand-logo" href="/"><b>particl</b></a>`)).toEqual(["a logo element holding only the word particl"]);
   expect(placeholdersIn(`<button className="v12-logo"><Image src={HEADER_LOGO} alt="" /></button>`)).toEqual([]);

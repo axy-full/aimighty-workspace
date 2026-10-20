@@ -2,7 +2,7 @@ import {recoveryRoute} from '@/lib/recovery';
 import { NextResponse, after } from "next/server";
 import { asPlanId } from "@/lib/plans";
 import { requireSuperAdmin } from "@/lib/auth";
-import { setWorkspaceInternalTest, getWorkspace, setWorkspaceAllowance, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag, setWorkspaceLimits, setWorkspacePlan } from "@/lib/platform";
+import { setWorkspaceInternalTest, getWorkspace, setWorkspaceAllowance, setHouseCap, setWorkspaceMode, platformKeysByDefault, grantCredits, setWorkspaceSuspended, setWorkspaceFlag, setWorkspaceLimits, setWorkspacePlan } from "@/lib/platform";
 import { runInTenant } from "@/lib/tenant";
 import { releaseHeldJobs } from "@/lib/held";
 import { restoreDeletedWorkspace } from "@/lib/purge";
@@ -38,11 +38,12 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   if ("mode" in body && body.mode !== "platform")
     return NextResponse.json({ error: "All workspaces use Particl credits and managed engines." }, { status: 400 });
   /* The house workspace is never billed in credits (lib/houseWorkspace.ts): a
-     grant or an allowance means nothing there. Everything else — suspending
+     grant means nothing there. Its monthly engine cap is another matter: the platform owner (this route is theirs alone)
+     sets it, and removing their figure puts back the default (lib/houseCap.ts). Everything else — suspending
      it, its limits, its flags, its plan, and whether it is the platform's
      test workspace — applies to it like any other. Checked before anything
      is written, so a mixed request changes nothing. */
-  if (isHouseWorkspace(ws) && ["grantCredits", "allowanceUsd"].some((k) => k in body))
+  if (isHouseWorkspace(ws) && "grantCredits" in body)
     return NextResponse.json({ error: HOUSE_NOT_BILLED }, { status: 400 });
   /* The engine cap, read before anything is written so a bad figure changes nothing: a number of dollars a month
      (0 is a wall), to the cent, or a literal null to remove it. A string, a blank or anything else is refused,
@@ -77,7 +78,9 @@ export const PATCH = recoveryRoute(async function PATCH(req: Request, { params }
   }
 
   if (cap) {
-    await setWorkspaceAllowance(id, cap.usd);
+    /* The house's cap is its own (lib/houseCap.ts), with its own history line; every other workspace's is the engine cap below. */
+    if (isHouseWorkspace(ws)) await setHouseCap(cap.usd, got.user.id);
+    else await setWorkspaceAllowance(id, cap.usd);
     out.allowanceUsd = cap.usd;
   }
   if ("grantCredits" in body) {

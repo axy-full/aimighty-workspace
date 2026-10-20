@@ -3,6 +3,7 @@ import { recoveryRoute } from "@/lib/recovery";
 import { requireUser, withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
 import { TOOLS, runTool, makeCaller } from "@/lib/mcp";
+import { directEngineMcpTools, runDirectEngineTool } from "@/lib/directEngineMcp";
 import { currentTenant } from "@/lib/tenant";
 import { linkOrigin } from "@/lib/site";
 
@@ -57,7 +58,8 @@ const workspacePost = withTenant(async function POST(req: Request) {
   if (id === undefined || id === null) return new Response(null, { status: 202 });
 
   if (method === "ping") return ok(id, {});
-  if (method === "tools/list") return ok(id, { tools: TOOLS });
+  /* The direct engines' tools are listed only where their engine gate lets this workspace have them (lib/directEngineMcp.ts). */
+  if (method === "tools/list") return ok(id, { tools: [...TOOLS, ...(await directEngineMcpTools())] });
 
   if (method === "tools/call") {
     const name = String(params?.name ?? "");
@@ -65,7 +67,7 @@ const workspacePost = withTenant(async function POST(req: Request) {
     /* The tools call this same server at its own address (the bearer never leaves it); the links they hand back use the public one. */
     const call = makeCaller(new URL(req.url).origin, req.headers.get("authorization") ?? "");
     try {
-      const text = await runTool(name, args, call, linkOrigin(req), { credits: creditsApply(currentTenant()?.workspace) });
+      const text = (await runDirectEngineTool(name, args, call)) ?? (await runTool(name, args, call, linkOrigin(req), { credits: creditsApply(currentTenant()?.workspace) }));
       return ok(id, { content: [{ type: "text", text }] });
     } catch (e) {
       // A refused render or a bad project name is information for the model,
@@ -87,7 +89,7 @@ export const GET = withTenant(async function GET() {
     name: "particl",
     transport: "mcp/streamable-http",
     usage: "POST JSON-RPC here with an 'Authorization: Bearer aw_…' header.",
-    tools: TOOLS.map((t) => t.name),
+    tools: [...TOOLS, ...(await directEngineMcpTools())].map((t) => t.name),
   });
 });
 

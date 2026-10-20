@@ -132,11 +132,36 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
   }
 
   // ── JPEG ─────────────────────────────────────────────────────────────
+  // The header is walked to the first scan (SOS), the way a decoder reads it,
+  // and anything a decoder would refuse or read differently is not sized:
+  // a size we report must be the size a decoder opens the file at.
   if (buf[0] === 0xff && buf[1] === 0xd8) {
     let off = 2;
+    let frame: { width: number; height: number } | null = null;
     while (off + 9 < buf.length) {
       if (buf[off] !== 0xff) { off++; continue; }
       const marker = buf[off + 1];
+      // 0xFF after 0xFF is fill (JPEG B.1.1.2): the marker is the next non-0xFF
+      // byte. Reading the fill as a marker with a length used to skip a real
+      // SOF and take a later, fake one; decoders take the real one.
+      if (marker === 0xff) { off++; continue; }
+      // FF 00 is a stuffed byte, not a marker: it carries no length. Reading
+      // one there was the same bypass as fill, one byte different.
+      if (marker === 0x00) { off += 2; continue; }
+      // 02-BF are reserved, and so are C8 (JPG), DE (DHP), DF (EXP) and F0-FD
+      // (JPGn): libjpeg refuses them, and another reader may size them differently.
+      if ((marker >= 0x02 && marker <= 0xbf) || marker === 0xc8 || marker === 0xde || marker === 0xdf || (marker >= 0xf0 && marker <= 0xfd)) return null;
+      // The first scan ends the header: the frame read before it is the image's.
+      // Past SOS is entropy-coded data, where a "SOF" would be invented. A scan
+      // with no frame before it, or the end of the image before any scan, is not
+      // a JPEG we can size.
+      if (marker === 0xda) return frame ? { kind: "image", durationS: null, mime: "image/jpeg", ext: "jpg", ...frame } : null;
+      if (marker === 0xd9) return null;
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { off += 2; continue; }
+      const len = buf.readUInt16BE(off + 2);
+      // A length under 2 is written by no encoder; libjpeg steps over it and
+      // decodes the frame after it, so stopping here would leave a real size unread.
+      if (len < 2) return null;
       // SOF0-3, SOF5-7, SOF9-11, SOF13-15 carry the frame dimensions.
       const isSOF =
         (marker >= 0xc0 && marker <= 0xc3) ||
@@ -144,17 +169,15 @@ function identifyImageInner(buf: Buffer): ImageMeta | null {
         (marker >= 0xc9 && marker <= 0xcb) ||
         (marker >= 0xcd && marker <= 0xcf);
       if (isSOF) {
-        return {
-          kind: "image", durationS: null, mime: "image/jpeg", ext: "jpg",
-          height: buf.readUInt16BE(off + 5), width: buf.readUInt16BE(off + 7),
-        };
+        // One frame per image: a second frame header is refused, since readers
+        // disagree on which one counts.
+        if (frame) return null;
+        frame = { height: buf.readUInt16BE(off + 5), width: buf.readUInt16BE(off + 7) };
       }
-      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { off += 2; continue; }
-      const len = buf.readUInt16BE(off + 2);
-      if (len < 2) break;
       off += 2 + len;
     }
-    return { kind: "image", durationS: null, mime: "image/jpeg", ext: "jpg", width: null, height: null };
+    // The header ran out before a scan (a truncated file): the frame read so far, or unknown.
+    return { kind: "image", durationS: null, mime: "image/jpeg", ext: "jpg", width: frame?.width ?? null, height: frame?.height ?? null };
   }
 
   return null;

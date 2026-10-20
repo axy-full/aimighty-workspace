@@ -1,4 +1,5 @@
 "use client";
+import { SampleClipCredit } from "@/components/ui/SampleClipCredit";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { assetIdFromUrl, downloadUrl, galleryOf, originalUrl, readPreview, validAssetId, type PreviewItem } from "@/lib/preview";
@@ -246,6 +247,7 @@ function Viewer({ items, start, binding, onClose }: { items: PreviewItem[]; star
             </>
           ) : null}
         </div>
+        <SampleClipCredit take={item.asset ?? item.url} className="pv-credit" />
         {actions && offered.length ? (
           /* The shell's own commands for this take: Recreate hands its recipe to Gen, Use as reference sends it there — neither sends anything paid; Gen prices on its button. */
           <div className="pv-bar" role="group" aria-label={`Actions for ${name}`} data-testid="preview-actions">
