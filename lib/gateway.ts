@@ -6,6 +6,7 @@ import { engineMock } from "./mock";
 import { explainTextFailure, mockTextReply, withoutProviderHeader, type MockKind, type TextReply } from "./textReply";
 import { assertTextProvider, openaiDirectPost, textVendor } from './openai-direct';
 import { isDirectRoute, textRoute } from './textRoute';
+import { modelDoor, readTextReply } from './modelTrace';
 /**
  * Vercel AI Gateway — the one door this deployment can always open.
  *
@@ -109,6 +110,13 @@ export type GatewayReply = TextReply;
 export async function gatewayPost(
   body: string,
   opts: { auth?: Record<string, string>; timeoutMs?: number; signal?: AbortSignal; mock?: MockKind } = {},
+): Promise<GatewayReply> {
+  /* A model call's door (lib/modelTrace.ts); inside textPost it is the same call. */
+  return modelDoor(() => sendGatewayPost(body, opts), readTextReply);
+}
+async function sendGatewayPost(
+  body: string,
+  opts: { auth?: Record<string, string>; timeoutMs?: number; signal?: AbortSignal; mock?: MockKind },
 ): Promise<GatewayReply> {
   const mocked = await mockTextReply(body, opts.mock);
   if (mocked) return mocked;

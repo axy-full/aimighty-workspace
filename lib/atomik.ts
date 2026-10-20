@@ -12,6 +12,7 @@ import type { Transaction } from "@libsql/client";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { cinemaStudioEnabled } from "./vendorRates";
 import { PaidTextError, runPaidText, quotePaidText, type PaidTextQuote } from "./paidText";
+import { traceModelCall } from "./modelTrace";
 import { meter } from "./meter";
 import { getPlatformLayer, platformDb, platformReady } from "./platform";
 import { currentTenant, requireTenant } from "./tenant";
@@ -1002,8 +1003,8 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
 
   if (opts.quoteOnly) return quotePaidText({ model, effort, messages: base, maxTokens: 4000 });
   if (!chatId) throw new Error("A saved conversation is required to run the planner.");
-  const result = await runPaidText({ model, effort, maxCredits: opts.maxCredits, messages: base, maxTokens: 4000, kind: "turn", mock: "turn", timeoutMs: 270_000,
-    projectId: chat.projectId, createdBy: chat.createdBy, recordSpend: false });
+  const result = await traceModelCall("atomik.turn", { chatId, step: "turn", model, effort: effort ?? "auto" }, () => runPaidText({ model, effort, maxCredits: opts.maxCredits, messages: base, maxTokens: 4000, kind: "turn", mock: "turn", timeoutMs: 270_000,
+    projectId: chat.projectId, createdBy: chat.createdBy, recordSpend: false }));
   const costUsd = result.costUsd;
   const turn = extractTurn(result.text, allowed, { library, presets }) ?? {
     say: `${model} completed but did not return a usable proposal. The response has been saved; choose another planner for a new request.`,

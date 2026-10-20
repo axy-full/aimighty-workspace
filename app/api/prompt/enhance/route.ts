@@ -15,6 +15,7 @@ import {
   isRawPrompt, parseEnhanced, pickEnhancerModel, type EnhancerProvider,
 } from "@/lib/shell/enhancer";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { traceModelCall } from "@/lib/modelTrace";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -80,7 +81,7 @@ export const POST = withTenant(async function POST(req: Request) {
          and the workspace is charged when the last is delivered; a stream cut off midway is
          abandoned, free. */
       const stream = body.stream === true && claim !== undefined;
-      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true), deadline, minProviderMs: ENHANCE_MIN_PROVIDER_MS, freeOnFailure: true, signal: req.signal, holdSettlement: stream }, { model, accept: (text) => parseEnhanced(text, prompt) });
+      const result = await traceModelCall("atomik.enhance", { step: body.mode, model: writer, effort: "quick" }, () => runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true), deadline, minProviderMs: ENHANCE_MIN_PROVIDER_MS, freeOnFailure: true, signal: req.signal, holdSettlement: stream }, { model, accept: (text) => parseEnhanced(text, prompt) }));
       const parsed = parseEnhanced(result.text, prompt);
       if (!parsed.ok) {
         await result.abandon?.("The answer was not a prompt.");

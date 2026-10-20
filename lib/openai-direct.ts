@@ -5,6 +5,7 @@ import { vendorKey, type VendorKeyName } from './vendorKeys';
 import { recoveryFetch } from './recovery';
 import type { TextReply as GatewayReply } from './textReply';
 import { textRoute, type TextRoute } from './textRoute';
+import { modelDoor, readTextReply } from './modelTrace';
 
 /**
  * The billing vendor the money paths read: the door the call takes
@@ -159,6 +160,10 @@ function gatewayResponse(value: Record<string, unknown>) {
     usage: { prompt_tokens: usage.input_tokens, completion_tokens: usage.output_tokens, total_tokens: usage.total_tokens, prompt_tokens_details: usage.input_tokens_details, completion_tokens_details: usage.output_tokens_details }, ...(value.error ? { error: value.error } : {}) };
 }
 export async function openaiDirectPost(input: Record<string, unknown>, options: { timeoutMs?: number; signal?: AbortSignal; fetch?: typeof fetch } = {}): Promise<GatewayReply> {
+  /* A model call's door (lib/modelTrace.ts); inside textPost or gatewayPost it is the same call. */
+  return modelDoor(() => sendOpenaiDirect(input, options), readTextReply);
+}
+async function sendOpenaiDirect(input: Record<string, unknown>, options: { timeoutMs?: number; signal?: AbortSignal; fetch?: typeof fetch }): Promise<GatewayReply> {
   const key = typeof input.model === 'string' ? directOpenAIKey(input.model) : null;
   if (!key) throw new Error('The language account is not connected for this workspace.');
   const { endpoint, body } = openAIDirectBody(input);

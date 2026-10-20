@@ -12,6 +12,7 @@ import { currentTenant } from "@/lib/tenant";
 
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { traceModelCall } from "@/lib/modelTrace";
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +68,7 @@ export const POST = withTenant(async function POST(req: Request) {
   ].filter(Boolean).join("\n");
   const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 900, kind: "scene", mock: "scene" as const, createdBy: got.user.id, projectId };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
-  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
+  const result = await traceModelCall("atomik.treatment_scene", { step: input.kind, model, effort: effort ?? "auto" }, () => runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) }));
   const out = sceneFromReply(result.text);
   if (!out) return NextResponse.json({ error: `${model} answered, but not with a scene. Try once more, or another model.` }, { status: 502 });
 

@@ -22,6 +22,7 @@ import {
 import type { TextRun } from "./engines/types";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { jobLineNow } from "./shotCap";
+import { noteModelCall } from "./modelTrace";
 
 /** The least time a deadline-bound text job must still have for its provider call (runPaidText `deadline`). */
 export const PAID_TEXT_MIN_PROVIDER_MS = 20_000;
@@ -287,6 +288,8 @@ return await withRecoveryActivity('paid-text', async () => {
   requestMaxCredits(input.maxCredits, input.effort !== undefined);
   await paidTextReady();
   const id = input.id ?? newId("text");
+  /* The model call in scope (lib/modelTrace.ts) is told the job's id; nothing here changes for it. */
+  noteModelCall({ runId: id, model: input.model });
   const prior = await db().execute({
     sql: `SELECT * FROM paid_text_jobs WHERE id=?`,
     args: [id],
@@ -426,6 +429,8 @@ return await withRecoveryActivity('paid-text', async () => {
           ? (textCostUsd(model, inputTokens, outputTokens) ?? estimate)
           : estimate;
     }
+    /* What this answer cost the platform, as just worked out, for the model call's span (lib/modelTrace.ts). */
+    noteModelCall({ costUsd: cost });
     /* An empty answer is refused like any other unusable one. It used to
        settle as a success and bill the workspace in full while the person was
        told the model returned nothing they could use. */

@@ -31,6 +31,7 @@ import {
 } from "./gateway";
 import { vendorKey } from "./vendorKeys";
 import { textPost } from "./textDirect";
+import { modelDoor, noteModelCall, traceModelCall } from "./modelTrace";
 import { engineMock } from "./mock";
 import { getModel } from "./models";
 import {
@@ -405,7 +406,7 @@ async function refineWithClaude(
   const client = new Anthropic({ maxRetries: 0, timeout: 120_000 });
   const model = CLAUDE_MODEL();
 
-  const res = await client.beta.messages.create({
+  const res = await modelDoor(() => client.beta.messages.create({
     model,
     max_tokens: 1200,
     output_config: {
@@ -423,7 +424,8 @@ async function refineWithClaude(
     ],
     messages: [{ role: "user", content: userMsg }],
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  } as any);
+  } as any), (reply) => ({ status: 200, tokensIn: Number(reply.usage?.input_tokens ?? 0), tokensOut: Number(reply.usage?.output_tokens ?? 0),
+    tokensCached: Number(reply.usage?.cache_read_input_tokens ?? 0), refused: reply.stop_reason === "refusal", model }));
 
   if (res.stop_reason === "refusal") {
     throw new Error(
@@ -545,6 +547,14 @@ export async function enhancePrompt(opts: {
   /** Which writer to use; the workspace's choice when omitted. */
   provider?: RefineProvider;
 }): Promise<RefineResult> {
+  /* One model call (lib/modelTrace.ts): ids and counts only, never the idea or the prompt written. */
+  return traceModelCall("enhance.inline", { step: opts.task ?? "generate" }, async () => {
+    const result = await writePrompt(opts);
+    noteModelCall({ model: result.model, tokensIn: result.inTokens, tokensOut: result.outTokens, ...(result.costUsd != null ? { costUsd: result.costUsd } : {}) });
+    return result;
+  });
+}
+async function writePrompt(opts: Parameters<typeof enhancePrompt>[0]): Promise<RefineResult> {
   const userMsg =
     `${targetBlock(opts.model, opts.durationS, opts.task, opts.prompt.trim().split(/\s+/).filter(Boolean).length)}\n\n` +
     (opts.citations.length
@@ -571,7 +581,7 @@ export async function enhancePrompt(opts: {
     const model = TEXT_MODEL();
     // A minute, not two: this is a $0.001 helper sitting in front of a paid
     // submit that wants 120s of its own, and both have to fit inside 300s.
-    const res = await fetch(CHAT_URL(), {
+    const res = await modelDoor(() => fetch(CHAT_URL(), {
       method: "POST",
       signal: AbortSignal.timeout(60_000),
       headers: {
@@ -590,7 +600,7 @@ export async function enhancePrompt(opts: {
           { role: "user", content: userMsg },
         ],
       }),
-    });
+    }), (reply) => ({ status: reply.status, model }));
     const text = await res.text();
     if (res.ok) {
       const j = JSON.parse(text);

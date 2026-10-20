@@ -1,4 +1,5 @@
 import { PaidTextError, quotePaidText, runPaidText, type PaidTextQuote } from "./paidText";
+import { traceModelCall } from "./modelTrace";
 import type { CatalogModel } from "./catalog";
 import type { TextRun } from "./engines/types";
 import { MEMORY_LIMITS, readFence, readProposals, type ReadResult } from "./atomikMemoryText";
@@ -81,9 +82,9 @@ export async function runMemoryRead(
   input: ReadInput & { maxCredits: number; projectId: string | null; createdBy: string; id?: string },
   overrides: { model?: CatalogModel; submit?: (request: TextRun) => Promise<{ ok: boolean; status: number; text: string }> } = {},
 ): Promise<{ id: string; costUsd: number; credits: number; read: ReadResult }> {
-  const result = await runPaidText(
+  const result = await traceModelCall("atomik.memory_read", { step: MEMORY_READ_KIND, model: input.model }, () => runPaidText(
     { ...paidInput(input), id: input.id, maxCredits: input.maxCredits, projectId: input.projectId, createdBy: input.createdBy },
     { ...overrides, accept: usable },
-  );
+  ));
   return { id: result.id, costUsd: result.costUsd, credits: result.credits, read: readProposals(result.text)! };
 }
