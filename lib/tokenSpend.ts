@@ -27,6 +27,9 @@ export function noCeilingMessage(name?: string | null): string {
   return `${name ? `The token "${name}"` : "This token"} has no monthly ceiling, so it can only prepare and price jobs. ` +
     "An admin can set its ceiling in credits in Settings › Connections, or a person can approve the job in Particl.";
 }
+/** What a person pressing Release on a take such a token made is told (lib/held.ts): who must act, and then what. It stays held. */
+export const HELD_TAKE_NO_CEILING =
+  "This take was made by an API token with no monthly ceiling. An admin sets the ceiling in Settings › Connections, then release it.";
 export const QUOTE_REQUIRED_MESSAGE =
   "A paid request from an API token or an MCP client carries the quote it was approved at. Ask for the price first (quoteOnly, or POST /api/generate/quote) and send that figure as maxCredits.";
 export const FINGERPRINT_REQUIRED_MESSAGE =
