@@ -158,6 +158,7 @@ test("the selects count is one per approved take, even when a prompt holds a lin
     "@/lib/zip": await import("../../lib/zip"),
     "@/lib/selects": await import("../../lib/selects"),
     "@/lib/originalMedia": await import("../../lib/originalMedia"),
+    "@/lib/sampleClip": await import("../../lib/sampleClip"),
   });
   await tenant.runInTenant(workspace("selects"), async () => {
     await ready();

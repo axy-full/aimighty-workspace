@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import LazyMedia from "@/components/LazyMedia";
+import { SampleClipCredit } from "@/components/ui/SampleClipCredit";
 import { Price } from "@/components/graphite/Price";
 import { AssetNextActions } from "@/components/graphite/AssetNextActions";
 import { SeedanceEditHost } from "@/components/graphite/tools/SeedanceEditHost";
@@ -98,6 +99,7 @@ export function TakeBody({ row, ctx }: { row: ShotTakes; ctx: BoardCtx }) {
     <div className="gx-insp-take" data-testid="insp-take">
       <div className="gx-insp-preview">
         {v.url && (v.media === "image" || v.media === "video") && !inFlight(v) ? <LazyMedia url={v.url} kind={v.media} alt="" name={row.title} preview={false} /> : <span className="gx-insp-face" aria-hidden="true" />}
+        <SampleClipCredit take={v.genId} over />
       </div>
       <div>
         <div className="gx-insp-title">{`Shot ${row.index} · ${row.name} · ${v.label}`}</div>
