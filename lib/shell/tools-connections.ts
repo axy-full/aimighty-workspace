@@ -247,7 +247,7 @@ export function parseTokens(value: unknown): { unit: TokenUnit; tokens: ApiToken
 
 /**
  * The ceiling field, read the way POST /api/tokens reads it (lib/tokenCeiling.ts).
- * Blank is "no ceiling" and has to be said on purpose (`blank`), so the page
+ * Blank is "no ceiling" (the token then only prepares and prices) and has to be said on purpose (`blank`), so the page
  * can make the person confirm it rather than mint an unbounded token by
  * leaving a field empty.
  */

@@ -2,10 +2,11 @@
  * A generating token's monthly ceiling, as a person types it (/connect and
  * Atomik › Tools & connections).
  *
- * Blank is the one way to say "no limit", and it has to be said: a typo, a
+ * Blank is the one way to say "no ceiling", and it has to be said: a typo, a
  * word or a cancelled dialog must never mint a token that can spend without
  * a stop. `$20`, `20`, `20.50` and `1,000` are dollars; anything else asks
- * again. Zero is refused rather than read as "no limit". Pure, so the /connect
+ * again. Zero is refused rather than read as "no ceiling". A token with no
+ * ceiling only prepares and prices (owner, 20 Oct 2026; lib/tokenSpend.ts). Pure, so the /connect
  * dialog and POST /api/tokens read the same value the same way.
  *
  * The ceiling is in the workspace's unit, the way a production's cap is
@@ -15,7 +16,7 @@
  */
 export type Ceiling = { capUsd: number | null } | { error: string };
 
-export const CEILING_PROBLEM = "Type a monthly ceiling in dollars above $0, like 20, or leave it blank for no limit.";
+export const CEILING_PROBLEM = "Type a monthly ceiling in dollars above $0, like 20, or leave it blank and it only prepares and prices.";
 
 export function parseCeiling(input: string): Ceiling {
   if (!input.trim()) return { capUsd: null };
@@ -27,7 +28,7 @@ export function parseCeiling(input: string): Ceiling {
 }
 
 export const CREDIT_CEILING_MAX = 1_000_000;
-export const CREDIT_CEILING_PROBLEM = "Type a monthly ceiling in whole credits, like 500, or leave it blank for no limit.";
+export const CREDIT_CEILING_PROBLEM = "Type a monthly ceiling in whole credits, like 500, or leave it blank and it only prepares and prices.";
 
 /** `500`, `1,000`, `500 cr` and `500 credits` are credits; fractions, zero and words ask again. */
 export function parseCreditCeiling(input: string): { capCredits: number | null } | { error: string } {
@@ -53,12 +54,12 @@ const given = (value: unknown) => value != null && !(typeof value === "string" &
  */
 export function tokenCeiling(body: { capUsd?: unknown; capCredits?: unknown }, o: { scope: "read" | "render" | "prepare"; inCredits: boolean }): TokenCeiling {
   if (o.inCredits) {
-    if (given(body.capUsd)) return { error: "This workspace counts in credits. Set the ceiling in credits, or leave it blank for no limit." };
+    if (given(body.capUsd)) return { error: "This workspace counts in credits. Set the ceiling in credits, or leave it blank and it only prepares and prices." };
     const credits = given(body.capCredits) ? parseCreditCeiling(String(body.capCredits)) : { capCredits: null };
     if ("error" in credits) return credits;
     return { capUsd: null, capCredits: o.scope === "render" ? credits.capCredits : null };
   }
-  if (given(body.capCredits)) return { error: "This workspace pays its engines in dollars. Set the ceiling in dollars, or leave it blank for no limit." };
+  if (given(body.capCredits)) return { error: "This workspace pays its engines in dollars. Set the ceiling in dollars, or leave it blank and it only prepares and prices." };
   const dollars = given(body.capUsd) ? parseCeiling(String(body.capUsd)) : { capUsd: null };
   if ("error" in dollars) return dollars;
   return { capUsd: o.scope === "render" ? dollars.capUsd : null, capCredits: null };

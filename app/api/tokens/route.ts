@@ -138,8 +138,9 @@ export const POST = withTenant(async function POST(req: Request) {
      itself grants spending, when a token is made as when it is read. */
   const scope: TokenScope = body.scope === "render" ? "render" : body.scope === "prepare" ? "prepare" : "read";
   /* The ceiling, in the workspace's unit (lib/tokenCeiling.ts). Absent or
-     blank is "no limit"; any other value must read as a figure or nothing is
-     made. A value that did not read used to be stored as no limit: an
+     blank is "no ceiling": the token then only prepares and prices
+     (lib/tokenSpend.ts). Any other value must read as a figure or nothing is
+     made: a value that did not read used to be stored as no ceiling, an
      uncapped spending token from a typo. */
   const ceiling = tokenCeiling(body, { scope, inCredits: creditsApply(requireTenant()) });
   if ("error" in ceiling) return NextResponse.json({ error: ceiling.error }, { status: 400 });

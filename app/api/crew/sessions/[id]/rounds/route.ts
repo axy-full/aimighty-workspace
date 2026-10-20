@@ -35,7 +35,11 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
   const caller = await crewCaller(req, true);
   if (caller.response) return caller.response;
   /* The sample workspace spends nothing: answered before the round is claimed or reserved. A quote still answers. */
-  if ((await req.clone().json().catch(() => ({})))?.quoteOnly !== true) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  const asked = await req.clone().json().catch(() => ({}));
+  if (asked?.quoteOnly !== true) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before
+     the room is read, the round claimed or anything reserved. Its quote still answers. */
+  if (asked?.quoteOnly !== true) { const refused = tokenSpendRefusal({ maxCredits: asked?.maxCredits }); if (refused) return refused; }
   try {
     const session = await readSession(caller.userId, (await params).id);
     if (!session) throw new CrewError("That room is not in this workspace.", 404);
@@ -56,8 +60,6 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
     if (body.quoteOnly === true)
       return Response.json({ model: quote.model, calls: quote.calls, members: active.length, estimateCredits: quote.estimateCredits, ...(credits ? {} : { estimateUsd: quote.ceilingUsd }) }, { headers: NO_STORE });
 
-    /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before the round is claimed. */
-    { const refused = tokenSpendRefusal({ maxCredits: body.maxCredits }); if (refused) return refused; }
     if (typeof body.maxCredits !== "number" || !Number.isInteger(body.maxCredits) || body.maxCredits < 0) throw new CrewError("Review the round's price before running it.", 409);
     if (typeof body.round !== "number" || !Number.isInteger(body.round) || body.round < 1) throw new CrewError("Reload the room before running a round.", 409);
     if (body.round !== session.roundsRun + 1) throw new CrewError(body.round <= session.roundsRun ? `Round ${body.round} has already run. Read the room again before running another.` : "Reload the room before running a round.", 409);

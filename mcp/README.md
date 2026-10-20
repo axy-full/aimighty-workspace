@@ -9,8 +9,8 @@ updated.
 
 ## 1. Make a token
 
-In the workspace: **Atomik › Tools & connections › Claude & ChatGPT › Make a
-token**, with *Can generate* chosen.
+In the workspace: **Settings › Connections › Make a token**, with *Can
+generate* chosen (an admin's choice).
 
 Give it a name (`Claude`), and a monthly ceiling — in credits for a workspace
 on Particl's credits, in dollars for one on its own engine keys. Only an admin
@@ -96,6 +96,6 @@ So does this:
   able to look but never bill: it can list, fetch and download, and a render
   request is refused with a clear reason.
 - **Revocation is instant.** Every request checks the token, so revoking one
-  in Atomik › Tools & connections stops it mid-conversation. Revoking disables
+  in Settings › Connections stops it mid-conversation. Revoking disables
   the token; nothing is erased.
 - The token is never logged, and only its SHA-256 is stored in the database.
