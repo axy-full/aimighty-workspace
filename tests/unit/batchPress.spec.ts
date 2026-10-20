@@ -306,6 +306,8 @@ test("a press whose reply was lost, asked again under its key with the approval 
   /* Asked again under the press's key with its approval while the cap is full: each shot is priced again on the way in (lib/batchPress.ts admitBatch, prepareGeneration),
      and that price check counts the running takes against the cap, so the ask is refused in the cap's words. Nothing is started, reserved, metered or sent again. */
   const full = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  /* This 429 documents TODAY's server behaviour (owner question: read the press's claims before pricing, its own money PR); the guard is the two checks after it,
+     that nothing was started, reserved, metered or sent again. If the server is fixed to return the press's takes here, this status changes and those checks stay. */
   expect(full.status, JSON.stringify(full.body)).toBe(429);
   expect(await as(ws, ADMIN, ledger)).toEqual(once);
   expect(dispatched.length - sentBefore).toBe(sentOnce);
