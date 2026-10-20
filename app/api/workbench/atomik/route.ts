@@ -9,6 +9,7 @@ import { creditsApply } from '@/lib/credits';
 import { atomikPublicResponse } from '@/lib/workbench/atomik-response';
 import { atomikRequestSchema, atomikState, AtomikError, prepareAtomikJob, quoteAtomikJob, runAtomikJob, listAtomikJobs } from '@/lib/workbench/atomik-server';
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { tokenSpendRefusal } from "@/lib/tokenSpend";
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -55,6 +56,8 @@ export const POST = withTenant(async (req: Request) => {
     if (quoteOnly) return response(await quoteAtomikJob(input, auth.user.id));
     /* The sample workspace spends nothing: answered before a job is written or reserved. */
     { const off = await sampleWorkspaceOff(); if (off) return off; }
+    /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before a job is written. */
+    { const refused = tokenSpendRefusal({ maxCredits: input.maxCredits }, auth.token); if (refused) return refused; }
     const prepared = await prepareAtomikJob(input, auth.user.id, auth.token);
     if (prepared.scheduled) {
       const store = currentTenant();

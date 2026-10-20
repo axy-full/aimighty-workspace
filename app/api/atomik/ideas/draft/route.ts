@@ -8,6 +8,7 @@ import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, p
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 import { textRunCost } from "@/lib/textRunCost";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { tokenSpendRefusal } from "@/lib/tokenSpend";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -61,6 +62,8 @@ export const POST = withTenant(async function POST(req: Request) {
   if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
   /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
   if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before the request is claimed. */
+  if (!quoteOnly) { const refused = tokenSpendRefusal({ maxCredits: body?.maxCredits }, got.token); if (refused) return refused; }
   const run = async () => {
   try {
   const brief = String(body.brief ?? "").trim().slice(0, 2000);

@@ -92,6 +92,7 @@ import {
 import { POOL_QUEUED, SHARED_POOL, poolAdmission, queueForPool, releasePoolWaiters, type PoolVerdict } from "@/lib/providerPool";
 import { POOL_BUSY_UNSENT } from "@/lib/sharedKeyTerms";
 import { creditState, creditsApply, quotedCredits } from "@/lib/credits";
+import { tokenSpendProblem } from "@/lib/tokenSpend";
 import { requireTenant } from "@/lib/tenant";
 import { submitVideoRow } from "@/lib/submitVideo";
 import { checkCap } from "@/lib/caps";
@@ -405,11 +406,18 @@ export async function executeGenerationAdmission(
   try {
     await ready();
 
-    // A token may carry a monthly ceiling. Checked before submit, so an agent
+    /* A token (an outside agent, an MCP client) starts paid work only with a monthly ceiling an admin set and the quote it was
+       approved at (owner, 20 Oct 2026; lib/tokenSpend.ts). Asked of a submit (a claim) only: its quote still answers, and a
+       person in the browser is not asked. Before anything is read, held or reserved. */
+    if (options.requestClaim) {
+      const problem = tokenSpendProblem(got.token, { maxCredits: body.maxCredits });
+      if (problem) return admissionReply(problem.body, { status: problem.status });
+    }
+    // A token carries a monthly ceiling. Checked before submit, so an agent
     // in a loop stops at the wall instead of discovering it on the invoice.
-    // A ceiling cannot be edited: the way past it is a new token, made where
-    // tokens are made, or the turn of the month.
-    const pastCeiling = "Make a new token in Atomik › Tools & connections, or wait for the 1st.";
+    // The way past it is an admin raising it (Settings › Connections), or
+    // the turn of the month.
+    const pastCeiling = "An admin can raise its ceiling in Settings › Connections, or wait for the 1st.";
     if (got.token?.capUsd != null) {
       const spent = await tokenSpendThisMonth(got.token.id);
       if (spent.usd >= got.token.capUsd) {

@@ -63,3 +63,18 @@ export function tokenCeiling(body: { capUsd?: unknown; capCredits?: unknown }, o
   if ("error" in dollars) return dollars;
   return { capUsd: o.scope === "render" ? dollars.capUsd : null, capCredits: null };
 }
+
+/**
+ * Whether a render token has a monthly ceiling, which is what lets it spend (owner, 20 Oct 2026, Q1 "B": "An admin sets a ceiling per
+ * token in credits per month; … a token with no ceiling can only prepare and price"), in the workspace's unit, the one POST /api/tokens
+ * stores and the spend gate counts:
+ *  - a workspace billed in credits: its ceiling in credits (`capCredits`), or a dollar ceiling left from before credits (`capUsd`). The
+ *    spend gate already holds that one as credits billed at the public price of a credit (lib/auth.ts tokenSpendThisMonth,
+ *    lib/generationRequests.ts), so it is a ceiling in credits converted at read, and the token keeps working inside it;
+ *  - a workspace that pays its engines itself (the house, a workspace on its own keys): its ceiling in dollars (`capUsd`).
+ * False: no ceiling, so the token only prepares and prices (lib/tokenSpend.ts). Pure, so the page and the server read it alike.
+ */
+export function hasSpendingCeiling(token: { capUsd?: number | null; capCredits?: number | null }, inCredits: boolean): boolean {
+  const set = (cap: number | null | undefined) => typeof cap === "number" && Number.isFinite(cap) && cap > 0;
+  return inCredits ? set(token.capCredits) || set(token.capUsd) : set(token.capUsd);
+}

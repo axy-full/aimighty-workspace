@@ -28,6 +28,8 @@ import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { runLimitVerdict, runTally, toTenths, type RunCharge, type RunSpend } from "./runLimit";
 import { allowanceUsdOf } from "./cinemaHold";
 import { HOUSE_CAP_REACHED, houseCapOfStored, houseSpendOfRow, noteHouseSpendLater } from "./houseCap";
+import { hasSpendingCeiling } from "./tokenCeiling";
+import { noCeilingMessage } from "./tokenSpend";
 
 export class SpendReservationError extends Error {
   /** `perJob`: the refusal is about this job alone (its cost, project, shot or token), not the whole workspace. */
@@ -515,6 +517,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const projectId = event.projectId ?? options.projectId ?? null;
   const cost = Number(event.engineCostUsd);
   if (!Number.isFinite(cost) || cost < 0) throw new SpendReservationError("This job has no valid cost estimate.", 400, true);
+  /* A token with no monthly ceiling only prepares and prices (owner, 20 Oct 2026; lib/tokenSpend.ts): nothing is reserved for it, whichever
+     path asked. Its routes refuse it before this; this is the wall that holds if one forgot. */
+  if (options.token && !hasSpendingCeiling(options.token, creditsApply(ws))) throw new SpendReservationError(noCeilingMessage(), 403, true);
   const paid = paidByPlatformEngine(event.engine);
   const holdBand = Number.isInteger(options.holdBand) && options.holdBand! > 1 ? options.holdBand! : 1;
   await ready();
