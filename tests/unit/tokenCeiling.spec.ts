@@ -35,7 +35,8 @@ test("POST /api/tokens refuses a ceiling it cannot read instead of storing no li
     },
     "@/lib/auth": {
       currentUser: async () => null,
-      requireSession: async () => ({ user: { id: "caller" } }),
+      /* An admin: only an admin sets a token's ceiling (owner, 20 Oct 2026); a member is refused below. */
+      requireSession: async () => ({ user: { id: "caller", role: "admin" } }),
       mintTokenSecret: () => "secret", tokenHash: () => "hash",
       withTenant: (h: Handler) => h,
     },
@@ -109,7 +110,7 @@ test("in a credits workspace POST stores whole credits and GET names no dollar f
       db: () => ({
         batch: async (statements: { args: unknown[] }[]) => { inserted.push(statements[0].args); },
         execute: async ({ sql }: { sql: string }) => {
-          listed = sql;
+          listed += `${sql}\n`; /* every query the list makes (an admin's reads the members' tokens too) */
           return { rows: [{ id: "tok_a", name: "Claude", scope: "render", cap_usd: 20, cap_credits: null, last_used: null, created_at: 1, spend: 42 }] };
         },
       }),
@@ -117,7 +118,8 @@ test("in a credits workspace POST stores whole credits and GET names no dollar f
     },
     "@/lib/auth": {
       currentUser: async () => ({ id: "caller" }),
-      requireSession: async () => ({ user: { id: "caller" } }),
+      /* An admin: only an admin sets a token's ceiling (owner, 20 Oct 2026). */
+      requireSession: async () => ({ user: { id: "caller", role: "admin" } }),
       mintTokenSecret: () => "secret", tokenHash: () => "hash",
       withTenant: (h: Handler) => h,
     },
@@ -143,4 +145,47 @@ test("in a credits workspace POST stores whole credits and GET names no dollar f
   expect(list.unit).toBe("cr");
   expect(list.tokens[0]).toEqual({ id: "tok_a", name: "Claude", scope: "render", spendThisMonth: 42, capCredits: null, legacyCeiling: true, lastUsed: null, createdAt: 1 });
   expect(JSON.stringify(list)).not.toMatch(/capUsd|usd/i);
+});
+
+/* Owner, 20 Oct 2026, Q1 "B": "An admin sets a ceiling per token in credits per month". A member may make a token that can generate, with
+   no ceiling (it only prepares and prices, lib/tokenSpend.ts); a member who names a ceiling is refused, and nothing is made. */
+test("only an admin sets a token's ceiling when it is made: a member naming one is refused and nothing is stored", async () => {
+  type Handler = (request: Request) => Promise<Response>;
+  const inserted: unknown[][] = [];
+  const compiled = ts.transpileModule(readFileSync(path.join(process.cwd(), "app/api/tokens/route.ts"), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const load = (role: "admin" | "member") => {
+    const dependencies: Record<string, unknown> = {
+      "next/server": createRequire(path.resolve("package.json"))("next/server"),
+      "@/lib/securityAudit": { securityAuditStatement: () => ({ sql: "SELECT 1", args: [] }) },
+      "@/lib/security/token-grants": { grantPrepareStatement: () => ({ sql: "SELECT 1", args: [] }), preparing: async () => new Set<string>() },
+      "@/lib/tenant": { requireTenant: () => ({ id: "tenant-fixture" }) },
+      "@/lib/tokenCeiling": tokenCeilingModule,
+      "@/lib/credits": { creditsApply: () => true },
+      "@/lib/tokenUsage": { tokenCreditUsage: async () => new Map() },
+      "@/lib/cycle": cycleModule,
+      "@/lib/db": { db: () => ({ batch: async (statements: { args: unknown[] }[]) => { inserted.push(statements[0].args); } }), ready: async () => {}, now: () => 1, id: () => "tok_fixture" },
+      "@/lib/auth": { requireSession: async () => ({ user: { id: "caller", role } }), mintTokenSecret: () => "secret", tokenHash: () => "hash", withTenant: (h: Handler) => h },
+    };
+    const mod = { exports: {} as Record<string, Handler> };
+    new Function("require", "module", "exports", compiled)((name: string) => {
+      if (!(name in dependencies)) throw new Error(`Unexpected dependency ${name}`);
+      return dependencies[name];
+    }, mod, mod.exports);
+    return (body: unknown) => mod.exports.POST(new Request("http://localhost/api/tokens", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+  };
+  const tokenCeilingModule = await import("../../lib/tokenCeiling");
+  const cycleModule = await import("../../lib/cycle");
+  const member = load("member");
+  for (const capCredits of [500, "500 cr", 1]) {
+    const refused = await member({ name: "Assistant", scope: "render", capCredits });
+    expect(refused.status, String(capCredits)).toBe(403);
+    expect((await refused.json()).error).toMatch(/Only an admin sets a token's monthly ceiling/);
+  }
+  expect(inserted).toEqual([]);
+  /* With none it is made, and only prepares and prices until an admin sets one. */
+  expect(await (await member({ name: "Open", scope: "render" })).json()).toMatchObject({ scope: "render", capCredits: null, capUsd: null });
+  expect(await (await load("admin")({ name: "Capped", scope: "render", capCredits: 500 })).json()).toMatchObject({ capCredits: 500 });
+  expect(inserted.map((args) => [args[5], args[6]])).toEqual([[null, null], [null, 500]]);
 });

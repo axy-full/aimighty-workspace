@@ -201,6 +201,8 @@ function route(file: string) {
       saveSkillFromRun: blocked("skill-save"),
       runSkill: blocked("skill-run"),
     },
+    /* The token gate (lib/tokenSpend.ts) comes after the body is read: never reached by a body refused here. */
+    "@/lib/tokenSpend": { tokenSpendRefusal: blocked("token-gate") },
     "@/lib/workbench/atomik-server": {
       atomikRequestSchema,
       quoteAtomikJob: blocked("quote"),
