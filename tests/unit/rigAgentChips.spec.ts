@@ -231,16 +231,15 @@ test("a chips plan costs no thinking turn and reserves nothing: priced by the se
   });
 });
 
-test("one price, but every tap that spends shows its own (rule 14): a shot over the per-job line keeps the server's price at the gate, on its Render button after the approval and in the queue; the covered shot shows none; the card fetches no estimate", async () => {
+test("one price for the whole plan, a shot over 200 cr included (owner, 20 Oct 2026: the per-render ask over 200 cr goes): both shots are in the plan's total, neither shows a price of its own, the card fetches no estimate, and the one approval sends both with no further tap", async () => {
   await inRun("chips-line", async (ws) => {
     const agent = await import("../../lib/workbench/rig-agent");
     const { stepsOf } = await import("../../lib/workbench/rig-agent-store");
     const { db } = await import("../../lib/db");
     const { planModel } = await import("../../components/graphite/board/cards/plan/model");
     const { wantsEstimates } = await import("../../components/graphite/board/cards/plan/estimates");
-    const { readApprovals } = await import("../../lib/control-room/approvals.server");
     const { creditFigure } = await import("../../lib/workbench/rig-agent-plan");
-    /* Synthetic dollars, made up for this test: shot 2 comes to more than the 200 cr a render may cost inside a plan. */
+    /* Synthetic dollars, made up for this test: shot 2 comes to more than 200 cr. */
     const r = renders(ws, (shot) => (shot === "1" ? 0.3 : 25));
     const deps = await depsFor(ws, r);
     const asked = await plan();
@@ -250,45 +249,25 @@ test("one price, but every tap that spends shows its own (rule 14): a shot over 
     const kept = new Map((await stepsOf(db(), asked.id)).filter((s) => s.purpose === "take").map((s) => [s.seq, s.quoteCredits]));
     const a = await credits(0.3), b = kept.get(s2.seq)!;
     expect(b).toBeGreaterThan(200);
-    expect(run.plan?.quote).toMatchObject({ total: a, covered: [s1.seq], asks: [s2.seq] });
-    /* The covered shot: no price of its own. The one that asks on its own: the server's quote for it, exactly. */
+    expect(run.plan?.quote).toMatchObject({ total: a + b, covered: [s1.seq, s2.seq], asks: [] });
+    /* Both are covered by the plan: no price of their own until they settle. */
     expect([s1.quote, s1.worst, s1.reason]).toEqual([null, null, null]);
-    expect([s2.state, s2.quote, s2.worst]).toEqual(["waiting", b, b]);
-    /* The card: no client estimate for a chips run; the covered shot reads "in the plan", the other its server price. */
+    expect([s2.quote, s2.worst]).toEqual([null, null]);
+    /* The card: no client estimate for a chips run; both shots read "in the plan". */
     expect(wantsEstimates(run)).toBe(false);
     expect(wantsEstimates({ kind: "ask" })).toBe(true);
     const card = planModel({ run, enabled: true, estimates: { [s1.seq]: { credits: 1, approximate: false }, [s2.seq]: { credits: 1, approximate: false } }, balance: 2000, rule: null, readOnly: null })!;
-    expect(card.steps.map((s) => [s.price, s.source, s.asksAlone])).toEqual([[null, "plan", null], [{ kind: "exact", credits: b }, "run", "Asks on its own · over the per-render line"]]);
-    expect(card.primary).toMatchObject({ kind: "plan", label: `Approve the rest · ${creditFigure(a)} cr` });
-    /* The person approves the plan; the covered shot renders under it; the other asks at its own price, on its button and in the queue. */
+    expect(card.steps.map((s) => [s.price, s.source, s.asksAlone])).toEqual([[null, "plan", null], [null, "plan", null]]);
+    expect(card.primary).toMatchObject({ kind: "plan", label: `Approve · ${creditFigure(a + b)} cr` });
+    /* The person approves the plan once; shot 1 renders, then shot 2 (over 200 cr) under the same approval, with no tap of its own. */
     await agent.approveRigAgentPlan({ productionId: "prod-1", runId: asked.id, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
     await agent.advanceRigAgentRun(asked.id, deps);
     expect(r.calls).toHaveLength(1);
     await settleTake((await renderRows())[0].id, "succeeded", 0.3);
-    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "needs_you", more: false });
-    expect(r.calls).toHaveLength(1);
-    const queued = async () => (await readApprovals({ id: OWNER, role: "admin", owner: true })).items.filter((i) => i.source === "board-render" || i.source === "board-plan");
-    /* The approval's room is the plan's ceiling, which this shot is not in: it stops at the limit, showing its own price, and the person raises the limit for it. */
-    const after = await view();
-    const paused = after.paid.find((p) => p.seq === s2.seq)!;
-    expect([paused.state, paused.pause, paused.quote, paused.inPlan]).toEqual(["paused", "limit", b, false]);
-    const raise = planModel({ run: after, enabled: true, balance: 2000, rule: null, readOnly: null })!;
-    expect(raise.steps[1].price).toEqual({ kind: "exact", credits: b });
-    /* The rendered shot shows what it settled at; never a pre-quote. */
-    expect(raise.steps[0]).toMatchObject({ source: "settled" });
-    expect((await queued()).map((i) => [i.id, i.price])).toEqual([[`board-render:${asked.id}:${s2.seq}`, { kind: "exact", credits: b }]]);
-    expect(raise.primary).toMatchObject({ kind: "raise" });
-    await agent.raiseRigAgentLimit({ productionId: "prod-1", runId: asked.id, limit: (raise.primary as { raiseTo: number }).raiseTo, userId: OWNER });
-    expect(await agent.advanceRigAgentRun(asked.id, deps)).toEqual({ state: "needs_you", more: false });
-    /* A raised limit is not a tap: it waits for one, at its own price, on the button and in the queue. */
-    expect(r.calls).toHaveLength(1);
-    const waiting = await view();
-    const asks = waiting.paid.find((p) => p.seq === s2.seq)!;
-    expect([asks.state, asks.quote, asks.inPlan]).toEqual(["waiting", b, false]);
-    const tap = planModel({ run: waiting, enabled: true, balance: 2000, rule: null, readOnly: null })!;
-    expect(tap.primary).toMatchObject({ kind: "render", label: `Render · ${creditFigure(b)} cr`, price: { kind: "exact", credits: b }, seq: s2.seq, blocked: null });
-    expect((await queued()).map((i) => [i.id, i.price])).toEqual([[`board-render:${asked.id}:${s2.seq}`, { kind: "exact", credits: b }]]);
-    expect(await reservations(ws)).toBe(1);
+    await agent.advanceRigAgentRun(asked.id, deps);
+    expect(r.calls).toHaveLength(2);
+    expect((await view()).paid.filter((p) => p.tool === "render").map((p) => p.inPlan)).toEqual([true, true]);
+    expect(await reservations(ws)).toBe(2);
   });
 });
 
