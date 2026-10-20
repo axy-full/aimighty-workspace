@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { filmBoard, openBoard } from "./helpers/boardV12";
+import { newProject } from "../lib/workbench/studio";
 
 /**
  * The board frame in the new interface (docs/redesign-plan.md P2-a1; components/v12/board/): the Film stage rail over
@@ -15,18 +16,18 @@ const saved = (page: Page) => page.waitForResponse((r) => r.url().includes("/api
 test.describe("desktop, switch on", () => {
   test.beforeEach(({}, info) => test.skip(!DESKTOP.includes(info.project.name), "desktop sizes"));
 
-  test("a Film board: eight stages, opening on Storyboard; one stage at a time; at most one primary on any stage", async ({ page }) => {
+  test("a Film board: eleven stages, opening on Storyboard; one stage at a time; at most one primary on any stage", async ({ page }) => {
     const { errors } = await openBoard(page);
     await expect(page.getByTestId("v12-stage-rail")).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId("v12-stage-kind")).toHaveText("FILM");
-    await expect(rows(page)).toHaveCount(8);
-    expect(await rows(page).evaluateAll((els) => els.map((el) => el.getAttribute("data-stage")))).toEqual(["brief", "script", "cast", "elements", "storyboard", "shots", "cut", "deliver"]);
+    await expect(rows(page)).toHaveCount(11);
+    expect(await rows(page).evaluateAll((els) => els.map((el) => el.getAttribute("data-stage")))).toEqual(["treatment", "pitch", "brief", "script", "cast", "locations", "elements", "storyboard", "shots", "edit", "deliver"]);
     await expect(page.getByTestId("v12-stage-crumb")).toHaveText("Storyboard");
     await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "storyboard");
     /* Today's rail and tool pill give way to the new ones. */
     await expect(page.getByTestId("board-rail")).toHaveCount(0);
     await expect(page.getByTestId("board-tools")).toHaveCount(0);
-    for (const id of ["brief", "script", "cast", "elements", "storyboard", "shots", "cut", "deliver"]) {
+    for (const id of ["treatment", "pitch", "brief", "script", "cast", "locations", "elements", "storyboard", "shots", "edit", "deliver"]) {
       await page.locator(`[data-testid="v12-stage-row"][data-stage="${id}"] .v12-rail-btn`).click();
       await expect(page).toHaveURL(new RegExp(`stage=${id}`));
       await expect(page.getByTestId("board")).toHaveAttribute("data-stage", id);
@@ -36,9 +37,22 @@ test.describe("desktop, switch on", () => {
     /* Script has nothing on today's board: it says what goes there. */
     await page.locator('[data-testid="v12-stage-row"][data-stage="script"] .v12-rail-btn').click();
     await expect(page.getByTestId("v12-stage-empty")).toBeVisible();
-    /* Cut draws today's cut card: a stage shows what today's board has, nothing invented. */
-    await page.locator('[data-testid="v12-stage-row"][data-stage="cut"] .v12-rail-btn').click();
+    /* Edit draws today's cut card: a stage shows what today's board has, nothing invented. */
+    await page.locator('[data-testid="v12-stage-row"][data-stage="edit"] .v12-rail-btn').click();
     await expect(page.getByTestId("v12-stage-empty")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test("an empty Film board opens on the Brief, as before Treatment and Pitch; the board's crumb goes back to it", async ({ page }) => {
+    const { errors } = await openBoard(page, "/suites?view=board", { project: { ...newProject("Empty film"), nodes: [] } });
+    await expect(page.getByTestId("v12-stage-rail")).toBeVisible({ timeout: 60_000 });
+    await expect(rows(page)).toHaveCount(11);
+    await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "brief");
+    await expect(page.getByTestId("v12-stage-crumb")).toHaveText("Brief");
+    await page.locator('[data-testid="v12-stage-row"][data-stage="storyboard"] .v12-rail-btn').click();
+    await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "storyboard");
+    await page.getByTitle("The first stage").click();
+    await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "brief");
     expect(errors).toEqual([]);
   });
 
@@ -46,10 +60,10 @@ test.describe("desktop, switch on", () => {
     await openBoard(page, "/suites?view=board&stage=storyboard");
     await expect(page.getByTestId("v12-stage-rail")).toBeVisible({ timeout: 60_000 });
     await page.locator(".react-flow__pane").click({ position: { x: 40, y: 40 } });
-    await page.keyboard.press("3");
+    await page.keyboard.press("5");
     await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "cast");
     await page.keyboard.press("]");
-    await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "elements");
+    await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "locations");
     await page.keyboard.press("[");
     await page.keyboard.press("[");
     await expect(page.getByTestId("board")).toHaveAttribute("data-stage", "script");
@@ -59,13 +73,13 @@ test.describe("desktop, switch on", () => {
     await openBoard(page, "/suites?view=board&stage=storyboard");
     await expect(page.getByTestId("v12-stage-rail")).toBeVisible({ timeout: 60_000 });
     const row = (id: string) => page.locator(`[data-testid="v12-stage-row"][data-stage="${id}"]`);
-    /* Rename Cut to Edit. */
-    await row("cut").hover();
-    await page.getByRole("button", { name: "Rename Cut" }).click();
+    /* Rename Edit to Final cut. */
+    await row("edit").hover();
+    await page.getByRole("button", { name: "Rename Edit" }).click();
     const put = saved(page);
-    await page.getByTestId("v12-stage-rename").fill("Edit");
+    await page.getByTestId("v12-stage-rename").fill("Final cut");
     await page.getByTestId("v12-stage-rename").press("Enter");
-    await expect(row("cut")).toContainText("Edit");
+    await expect(row("edit")).toContainText("Final cut");
     await put;
     /* Skip Script: its marker is a dash and its label struck. */
     await row("script").hover();
@@ -75,23 +89,23 @@ test.describe("desktop, switch on", () => {
     /* + Stage · Animatic after Storyboard: added, opened, and saying what goes there. */
     await page.getByTestId("v12-stage-add").click();
     await page.getByRole("menuitem", { name: /Animatic/ }).click();
-    await expect(rows(page)).toHaveCount(9);
+    await expect(rows(page)).toHaveCount(12);
     await expect(page.getByTestId("v12-stage-crumb")).toHaveText("Animatic");
     await expect(page.getByTestId("v12-stage-empty")).toContainText("The storyboard cut to the script’s timings.");
     /* It stays after a reload: the arrangement is the draft's. */
     await saved(page).catch(() => {});
     await page.reload();
-    await expect(rows(page)).toHaveCount(9, { timeout: 60_000 });
-    await expect(row("cut")).toContainText("Edit");
+    await expect(rows(page)).toHaveCount(12, { timeout: 60_000 });
+    await expect(row("edit")).toContainText("Final cut");
     await expect(row("script")).toHaveAttribute("data-state", "skip");
     /* Remove the new stage; Undo brings it back. */
     const added = rows(page).filter({ hasText: "Animatic" });
     await added.hover();
     await added.getByTestId("v12-stage-menu").click();
     await page.getByRole("menuitem", { name: "Remove" }).click();
-    await expect(rows(page)).toHaveCount(8);
+    await expect(rows(page)).toHaveCount(11);
     await page.keyboard.press(process.platform === "darwin" ? "Meta+z" : "Control+z");
-    await expect(rows(page)).toHaveCount(9);
+    await expect(rows(page)).toHaveCount(12);
   });
 
   test("the right toolbar: first-visit labels until Got it, again with ?first=1; tooltips say what a tool does; the view switch", async ({ page }) => {

@@ -54,7 +54,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
   scope: string;
   userId: string | null;
   apply: RigContext["apply"];
-  onStage: (stage: "shots" | "cut" | "deliver") => void;
+  onStage: (stage: "shots" | "edit" | "deliver") => void;
   /** Atomik's panel with these words, never sent (BoardCtx.askAtomik). */
   onAsk: (words: string) => void;
   readOnly: boolean;
@@ -292,7 +292,7 @@ export function RigView({ model, project, scope, userId, apply, onStage, onAsk, 
               <h3 className="v12-rig-h">Outputs</h3>
               {model.outputs.map((o) => (
                 <button key={o.id} type="button" className="v12-rig-node v12-rig-output" data-testid="v12-rig-output" data-id={o.id} data-dim={point ? "" : undefined}
-                  onClick={(e) => { e.stopPropagation(); onStage(o.stage); }} title={`Opens ${o.stage === "shots" ? "Shots" : o.stage === "cut" ? "Cut" : "Deliver"}`}>
+                  onClick={(e) => { e.stopPropagation(); onStage(o.stage); }} title={`Opens ${o.stage === "shots" ? "Shots" : o.stage === "edit" ? "Edit" : "Deliver"}`}>
                   <span className="v12-rig-mosaic" data-n={Math.min(4, model.shots.filter((s) => s.thumb).length)} aria-hidden="true">
                     {model.shots.filter((s) => s.thumb).slice(0, o.id === "masters" ? 1 : 4).map((s) => <Thumb key={s.nodeId} still={s.thumb} className="v12-rig-mosaic-img" />)}
                   </span>

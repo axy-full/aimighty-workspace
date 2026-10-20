@@ -77,7 +77,7 @@ test.describe("desktop, switch on", () => {
     /* Undo puts the kind and the rail back. */
     await page.getByTestId("toast-undo").click();
     await expect(kind).toHaveText("FILM");
-    expect(await rows(page).count()).toBe(8);
+    expect(await rows(page).count()).toBe(11);
 
     /* Round the kinds: Pre-vis, Campaign, Social · narrated, Social · clips. */
     const want: [string, string[]][] = [
@@ -122,7 +122,7 @@ test.describe("desktop, switch on", () => {
     await expect(page.getByTestId("board")).toHaveCount(0);
 
     const cases: [string, string, string, string[]][] = [
-      ["film", "Describe the film", "FILM", ["Brief", "Script", "Cast", "Elements", "Storyboard", "Shots", "Cut", "Deliver"]],
+      ["film", "Describe the film", "FILM", ["Treatment", "Pitch", "Brief", "Script", "Cast", "Locations", "Elements", "Storyboard", "Shots", "Edit", "Deliver"]],
       ["previs", "Paste or attach the agency script", "PRE-VIS", ["Brief", "Script", "Cast", "Elements", "Storyboard", "Animatic", "PPM deck"]],
       ["campaign", "Paste the product page link", "CAMPAIGN", ["Product", "Look", "Formats", "Variants", "Deliver"]],
       ["social", "A topic, or a long video link", "SOCIAL · NARRATED", ["Hook", "Script", "Scenes", "Voice", "Captions", "Deliver"]],

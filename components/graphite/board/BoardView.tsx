@@ -56,7 +56,7 @@ import { CheckAgain } from "../CheckAgain";
 import { sampleGate } from "@/lib/demo/sample";
 import { useSession } from "@/lib/session";
 import { FLAVOR_BOARD, flavorOf, nextFlavor, type Flavor } from "@/lib/v12/board/kinds";
-import { stageLimit, stagePage, type StagePageKind, addStage, currentStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
+import { stageLimit, stagePage, type StagePageKind, addStage, currentStage, firstStage, freeCards as unstagedCards, KIND_LABEL, moveStage, removeStage, renameStage, selectionCrumb, skipStage, stageCards, stageEmpty, stagePrimary, stagesOf, stageStatus, type SavedStage } from "@/lib/v12/board/stages";
 import { requestTrayOpen } from "@/lib/v12/useLibraryTray";
 import { RigView } from "@/components/v12/rig/RigView";
 import { rigModel } from "@/components/v12/rig/model";
@@ -194,8 +194,9 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   /* The kind a person sees (Film, Pre-vis, Campaign, Social · narrated or clips) sits over today's three board kinds. */
   const flavor = flavorOf(kind, project?.boardFlavor);
   const stages = useMemo(() => stagesOf(flavor, savedStages), [flavor, savedStages]);
-  /* A board with nothing on it yet opens on its first stage (the brief); one with work on it, where the kind opens. */
-  const stage = v12Frame ? currentStage(stages, shell.params.stage ?? (allCards.length ? null : stages[0]?.id), flavor) : null;
+  /* A board with nothing on it yet opens on the stage it starts from (Film's Brief, `firstStage`); one with work on it, where the kind opens. */
+  const start = firstStage(stages, flavor);
+  const stage = v12Frame ? currentStage(stages, shell.params.stage ?? (allCards.length ? null : start?.id), flavor) : null;
   const stageOwn = useMemo(() => (stage ? stageCards(stage, allCards, flavor) : allCards), [stage, allCards, flavor]);
   /* Film's Deliver and Pre-vis's PPM deck are pages of their own over the canvas, once the board has something for them. */
   const pageWanted = stagePage(stage?.id, flavor);
@@ -786,7 +787,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
         ) : <Rail rail={board.rail} status={status} inView={list ? null : inView} drawer={drawer} onGlide={glide} onDrawer={setDrawer} render={kind === "studio"} />}
         <div className="bd-main" data-testid="board-canvas">
           {v12Frame ? <StageHeader board={project.name || "Untitled board"} stage={stage?.label ?? null} meta={stageMeta} selection={crumb} primary={viewing ? null : headPrimary} menu={boardMenu} viewOnly={viewing} badge={round ? <RoundBadge board={project.name || "Board"} round={round} /> : null}
-            onBoard={() => { if (stages[0]) goStage(stages[0].id); }} onStage={() => pick(new Set(), null)} /> : null}
+            onBoard={() => { if (start) goStage(start.id); }} onStage={() => pick(new Set(), null)} /> : null}
           <StageColumn on={v12Frame}>
           {list ? <List ctx={ctx} cards={placed.cards} /> : (
             <BoardCanvas placed={placed} selection={selection} onSelect={pick} onFreeMoved={onFreeMoved} readOnly={offline || Boolean(viewing)} onMoveEnd={onMoveEnd} zoomBase={scale}
