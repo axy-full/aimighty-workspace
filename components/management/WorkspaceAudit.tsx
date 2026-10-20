@@ -47,6 +47,7 @@ export const labels: Record<string, string> = {
   "workspace.restored": "Restored the workspace",
   "api_token.created": "Created API token",
   "api_token.revoked": "Revoked API token",
+  "api_token.ceiling_set": "Set an API token's monthly ceiling",
   "review_link.created": "Created review link",
   "review_link.revoked": "Revoked review link",
   "identity_consent.recorded": "Recorded identity consent",
