@@ -7,7 +7,7 @@ import type { CardStatus } from "./card-model";
  *
  *   Making…   a take is rendering or held for credits
  *   Ready     a finished take no one has judged (picked, uploaded and review all read Ready; "picked" is the review trail's own word for it)
- *   Approved  the review trail's approved mark (✓ is today's approve: one approved version a shot)
+ *   Sent      the review trail's "approved" mark (✓ is today's approve, called Sent on the card: one a shot)
  *   ✕ reason  the review trail's changes mark; its reason is the take's note
  *   Not started  no take yet, or the shown one failed (a failed take's Retry is its own card's, not a verdict)
  *

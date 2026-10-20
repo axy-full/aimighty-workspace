@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { SHOT_REASONS, rejectedReason, shotCardPicture, shotCardState } from "../../components/v12/board/shot-card";
 import { REJECT_CHIPS, type ShotVersion } from "../../components/graphite/board/cards/take/take-model";
-import { withOther } from "../../components/v12/board/card-model";
+import { REASON_NEEDS_LINE, reasonProblem, withOther } from "../../components/v12/board/card-model";
 
 /* PR 5: a shot's takes as the v25 card reads them (components/v12/board/shot-card.ts). Pure. */
 const v = (n: number, status: ShotVersion["status"], over: Partial<ShotVersion> = {}): ShotVersion => ({
@@ -70,4 +70,10 @@ test("a Ready card with nothing to judge offers nothing: an upload, a take with 
   expect(shotCardState(row([v(1, "review", { url: null })]))).toMatchObject({ status: "ready", judge: null });
   expect(shotCardState(row([v(1, "picked", { media: null })]))).toMatchObject({ status: "ready", judge: null });
   expect(shotCardState(row([v(1, "approved", { url: null })]))).toMatchObject({ status: "approved", judge: null });
+});
+
+test("on Shots, every chip but Other sends without a line; Other needs one, and one word is enough", () => {
+  for (const chip of SHOT_REASONS) expect(reasonProblem(chip, ""), chip).toBeNull();
+  expect(reasonProblem("Other", "")).toBe(REASON_NEEDS_LINE);
+  expect(reasonProblem("Other", "dark")).toBeNull();
 });

@@ -38,7 +38,7 @@ const KINDS: Mock[] = [
   { id: "k-making", title: "Making", status: "making", progress: 60, picture: { src: still(32) } },
   { id: "k-ready", title: "Ready · one version", status: "ready", picture: { src: still(28) } },
   { id: "k-ready3", title: "Ready · three versions", status: "ready", version: 3, picture: { src: still(200) } },
-  { id: "k-ok", title: "Approved", status: "approved", picture: { src: still(40) } },
+  { id: "k-ok", title: "Sent", status: "approved", picture: { src: still(40) } },
   { id: "k-no", title: "Not right", status: "rejected", reason: "Look · warmer", picture: { src: still(0) } },
   { id: "k-text", title: "Director’s note", status: "ready", text: "A camp at the edge of a dry lake. One cold bottle, one warm light, and the people who have been walking since dawn.", tile: { letter: "M" } },
   { id: "k-tile", title: "Brand kit", status: "ready", own: "Brand kit · 3 files", tile: { letter: "M" } },
