@@ -5,7 +5,8 @@ import { MODEL_CALL_CONSTRUCTS, MODEL_CALL_FILES, SDK_CONSTRUCTS } from "../help
 
 /**
  * The closed list of model calls (tests/helpers/modelCallSites.ts), held to the source. Every model call Atomik (or
- * anything else in lib/ and app/) makes is a listed site wrapped by its id, behind a listed door; a new one cannot
+ * anything else in lib/ and app/) makes is a listed site wrapped by its id (traceModelCall, openModelCall, or runPaidText's
+ * `trace: { site: ... }`), behind a listed door; a new one cannot
  * land unlisted, and a listed one cannot quietly disappear. What each site's span carries is proven by
  * tests/unit/model-trace.spec.ts.
  */
@@ -66,13 +67,13 @@ test("the listed sites are exactly lib/modelTrace.ts's sites, each wrapped by it
   expect(new Set(sites.map((s) => s.id)).size).toBe(sites.length);
   for (const { id, file } of sites) {
     const text = code(readFileSync(path.join(root, file), "utf8"));
-    const wrapped = new RegExp(`\\b(?:traceModelCall|openModelCall)\\(\\s*["']${id.replace(".", "\\.")}["']`, "g");
+    const wrapped = new RegExp(`(?:\\b(?:traceModelCall|openModelCall)\\(\\s*|\\btrace:\\s*\\{\\s*site:\\s*)["']${id.replace(".", "\\.")}["']`, "g");
     expect((text.match(wrapped) ?? []).length, `${file} wraps ${id} once`).toBe(1);
   }
   /* No other file opens a site's span: every site id lives where the list says. */
   for (const file of [...sources("lib"), ...sources("app")]) {
     const text = code(readFileSync(path.join(root, file), "utf8"));
-    for (const match of text.matchAll(/\b(?:traceModelCall|openModelCall)\(\s*["']([^"']+)["']/g))
+    for (const match of text.matchAll(/(?:\b(?:traceModelCall|openModelCall)\(\s*|\btrace:\s*\{\s*site:\s*)["']([^"']+)["']/g))
       expect(sites.some((s) => s.id === match[1] && s.file === file), `${file} opens ${match[1]}`).toBe(true);
   }
 });

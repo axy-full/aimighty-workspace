@@ -8,7 +8,6 @@ import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, p
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 import { textRunCost } from "@/lib/textRunCost";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
-import { traceModelCall } from "@/lib/modelTrace";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -74,9 +73,10 @@ export const POST = withTenant(async function POST(req: Request) {
   const effort = requestEffort(body.effort);
   const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
   const user = [`NOTE: ${brief}`, toneIn ? `TONE WORDS: ${toneIn}` : ""].filter(Boolean).join("\n");
-  const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 600, kind: "idea", mock: "idea" as const, createdBy: got.user.id };
+  const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 600, kind: "idea", mock: "idea" as const, createdBy: got.user.id,
+    /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.ideas" as const, step: "idea", model, effort: effort ?? "auto" } };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
-  const result = await traceModelCall("atomik.ideas", { step: input.kind, model, effort: effort ?? "auto" }, () => runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) }));
+  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
   const text = result.text;
   const out = extract(text);
   if (!out) return NextResponse.json({ error: `${model} answered, but not with a logline. Try once more, or another model.` }, { status: 502 });

@@ -15,7 +15,6 @@ import {
   isRawPrompt, parseEnhanced, pickEnhancerModel, type EnhancerProvider,
 } from "@/lib/shell/enhancer";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
-import { traceModelCall } from "@/lib/modelTrace";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -65,7 +64,8 @@ export const POST = withTenant(async function POST(req: Request) {
       const engine = typeof body.model === "string" && body.model ? displayModelName(body.model.slice(0, 120)) : null;
       const messages = enhancerMessages(prompt, { mode: body.mode, anchored: body.anchored === true, editing: body.editing === true, engine });
       /* `quick`: the lightest reasoning the writer offers, with a small fixed room to think (lib/paidText.ts quickEffort); quoted and run the same way. */
-      const input = { model: writer, messages, maxTokens: ENHANCE_MAX_TOKENS, kind: "enhance", mock: "prompt" as const, createdBy: got.user.id, quick: true };
+      const input = { model: writer, messages, maxTokens: ENHANCE_MAX_TOKENS, kind: "enhance", mock: "prompt" as const, createdBy: got.user.id, quick: true,
+        /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.enhance" as const, step: body.mode as string, model: writer, effort: "quick" } };
       /* The catalogue read above is the one priced from: a second read could wait on the gateway again. */
       const model = models.find((m) => m.id === writer);
       if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input, model));
@@ -81,7 +81,7 @@ export const POST = withTenant(async function POST(req: Request) {
          and the workspace is charged when the last is delivered; a stream cut off midway is
          abandoned, free. */
       const stream = body.stream === true && claim !== undefined;
-      const result = await traceModelCall("atomik.enhance", { step: body.mode, model: writer, effort: "quick" }, () => runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true), deadline, minProviderMs: ENHANCE_MIN_PROVIDER_MS, freeOnFailure: true, signal: req.signal, holdSettlement: stream }, { model, accept: (text) => parseEnhanced(text, prompt) }));
+      const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, true), deadline, minProviderMs: ENHANCE_MIN_PROVIDER_MS, freeOnFailure: true, signal: req.signal, holdSettlement: stream }, { model, accept: (text) => parseEnhanced(text, prompt) });
       const parsed = parseEnhanced(result.text, prompt);
       if (!parsed.ok) {
         await result.abandon?.("The answer was not a prompt.");

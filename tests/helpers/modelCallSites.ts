@@ -5,7 +5,7 @@
  * or when a listed site or file disappears. A new model call cannot land without a decision recorded here.
  *
  * - `sites`: the model call sites in the file, by the id their span carries (lib/modelTrace.ts MODEL_SITES). Each appears as
- *   `traceModelCall("<id>"` or `openModelCall("<id>"` in the file.
+ *   `traceModelCall("<id>"`, `openModelCall("<id>"` or, for a paid-text job, runPaidText's `trace: { site: "<id>"` in the file.
  * - `door`: where a call leaves the process (or forwards to such a place); it is wrapped in `modelDoor(` unless `wrapped`
  *   says why not. A door reached without a site is still traced, as `unattributed`.
  * - `notModelCall`: the construct is there, and it is not an Atomik language-model call; says what it is instead.
