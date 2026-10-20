@@ -58,7 +58,7 @@ export type PollResult = {
   costUsd?: number | null;
 };
 
-export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" };
+export type TextRun = { body: string; auth?: Record<string, string>; timeoutMs?: number; /** The caller gave up (a person pressed Cancel): the provider call is dropped. */ signal?: AbortSignal; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" };
 /** A chat call by its parts, so the instruction can be marked cacheable (brief 1.8). */
 export type ChatRun = { model: string; system: string; user: string; maxTokens?: number; auth?: Record<string, string>; timeoutMs?: number; mock?: "prompt" | "turn" | "idea" | "scene" | "shots" | "memory" };
 

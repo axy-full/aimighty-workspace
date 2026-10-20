@@ -105,7 +105,7 @@ export const PROMPT_MODELS = (): string[] =>
   (
     process.env.PROMPT_MODELS ??
     process.env.GATEWAY_PROMPT_MODELS ??
-    "anthropic/claude-sonnet-5.5,anthropic/claude-sonnet-5"
+    "anthropic/claude-opus-5.5,anthropic/claude-sonnet-5.5"
   )
     .split(",")
     .map((s) => aliasDropped(s.trim()))

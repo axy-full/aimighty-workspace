@@ -63,10 +63,13 @@ function door(dirName: string, actor: AdmissionActor = OWNER): Handler {
 
 /** One request per paid door: a body each door would accept far enough to spend, with the id its path needs. */
 const DIGEST = "a".repeat(64);
-const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
+const DOORS: { dir: string; body: Record<string, unknown>; id?: string; quote?: true }[] = [
   { dir: "generate", body: { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5 } },
+  /* Quoted first, then pressed with the quote's own approval: the press a person makes, not one a stand-in fingerprint stops early. */
+  { dir: "generate/batch", quote: true, body: { members: [{ model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }, { model: "dreamina-seedance-2-0-260128", prompt: "A tree in sun", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }] } },
   { dir: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 5 } },
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
+  { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
   { dir: "jobs/[id]/release", body: { credits: 10 }, id: "gen_held" },
   { dir: "atomik/steps/[id]/claim", body: {}, id: "step_1" },
@@ -150,11 +153,21 @@ async function traces() {
 const NONE = { claims: 0, generations: 0, textJobs: 0, chats: 0, meters: 0, reservations: 0, provider: 0 };
 
 async function press(entry: (typeof DOORS)[number], key: string): Promise<{ status: number; body: Record<string, unknown> }> {
+  /* A door that approves a quote (`quote`): its quote first (a quote spends nothing, and leaves no trace), and the press carries that quote's fingerprint and total. */
+  let body = entry.body;
+  if (entry.quote) {
+    const quoted = await post(entry, `${key}-quote`, { ...entry.body, quoteOnly: true });
+    expect(quoted.status, `${entry.dir} quote ${JSON.stringify(quoted.body)}`).toBe(200);
+    body = { ...entry.body, fingerprint: quoted.body.fingerprint, maxCredits: quoted.body.ceilingCredits ?? quoted.body.estimatedCredits };
+  }
+  return post(entry, key, body);
+}
+async function post(entry: (typeof DOORS)[number], key: string, payload: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
   const { requireTenant } = await import("../../lib/tenant");
   const req = new Request(`http://localhost/api/${entry.dir.replace("[id]", entry.id ?? "x")}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": key.replace(/[^A-Za-z0-9.:_-]/g, "-"), "X-Workbench-Scope": `particl-active-${requireTenant().id}-owner` },
-    body: JSON.stringify(entry.body),
+    body: JSON.stringify(payload),
   });
   const res = await door(entry.dir)(req, { params: Promise.resolve({ id: entry.id ?? "x" }) });
   const text = await res.text();

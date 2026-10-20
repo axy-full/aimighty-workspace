@@ -1,4 +1,5 @@
 "use client";
+import { SampleClipCredit } from "@/components/ui/SampleClipCredit";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import LazyMedia from "@/components/LazyMedia";
 import type { ProjectSummary } from "@/lib/workspace/data";
@@ -11,7 +12,8 @@ import { useProjectCards, useProjectCover, type ProjectCardModel } from "./use-p
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "—";
 
 /** A card's picture: the project's newest take once the card nears the screen, else its swatch (gradients are allowed on swatches, README § 2). */
-function Cover({ scope, id, name, children }: { scope: string; id: string | null; name: string; children?: React.ReactNode }) {
+/* `onCover` tells the card which picture it drew, so the sample clip's credit can stand beside the card (a link cannot sit inside its button). */
+function Cover({ scope, id, name, children, onCover }: { scope: string; id: string | null; name: string; children?: React.ReactNode; onCover?: (url: string | null) => void }) {
   const box = useRef<HTMLSpanElement>(null);
   const [near, setNear] = useState(false);
   useEffect(() => {
@@ -23,6 +25,8 @@ function Cover({ scope, id, name, children }: { scope: string; id: string | null
     return () => seen.disconnect();
   }, [id]);
   const cover = useProjectCover(scope, id ?? "", near && Boolean(id));
+  const coverUrl = cover?.url ?? null;
+  useEffect(() => { onCover?.(coverUrl); }, [coverUrl, onCover]);
   const swatch = posterOf(name);
   return (
     <span className="gx-hm-cover" ref={box} style={cover ? undefined : ({ "--hm-from": swatch.from, "--hm-to": swatch.to } as CSSProperties)} data-cover={cover ? cover.kind : "swatch"}>
@@ -33,10 +37,11 @@ function Cover({ scope, id, name, children }: { scope: string; id: string | null
 }
 
 function ProjectCard({ scope, card, disabled, onOpen }: { scope: string; card: ProjectCardModel; disabled: boolean; onOpen: (id: string) => void }) {
+  const [pic, setPic] = useState<string | null>(null);
   return (
     <li className="gx-hm-cell">
       <button type="button" className="gx-hm-card" disabled={disabled} onClick={() => onOpen(card.id)} data-testid="home-project" data-project={card.id}>
-        <Cover scope={scope} id={card.id} name={card.name} />
+        <Cover scope={scope} id={card.id} name={card.name} onCover={setPic} />
         <span className="gx-hm-card-body">
           <span className="gx-hm-card-name">{card.name}</span>
           {card.meta ? <span className="gx-hm-card-meta">{card.meta}</span> : null}
@@ -45,16 +50,18 @@ function ProjectCard({ scope, card, disabled, onOpen }: { scope: string; card: P
           ) : null}
         </span>
       </button>
+      {pic ? <SampleClipCredit take={pic} className="gx-hm-credit" /> : null}
     </li>
   );
 }
 
 function SampleCard({ scope, projects, disabled, onOpen }: { scope: string; projects: readonly ProjectSummary[]; disabled: boolean; onOpen: () => void }) {
   const sample = sampleCard(projects);
+  const [pic, setPic] = useState<string | null>(null);
   return (
     <li className="gx-hm-cell">
       <button type="button" className="gx-hm-card" disabled={disabled} onClick={onOpen} data-testid="home-sample">
-        <Cover scope={scope} id={sample.id} name={sample.name}>
+        <Cover scope={scope} id={sample.id} name={sample.name} onCover={setPic}>
           <span className="gx-hm-badge">{SAMPLE_BADGE}</span>
         </Cover>
         <span className="gx-hm-card-body">
@@ -62,6 +69,7 @@ function SampleCard({ scope, projects, disabled, onOpen }: { scope: string; proj
           <span className="gx-hm-needs" data-tone="sample"><span className="gx-hm-dot" aria-hidden="true" />{SAMPLE_LINE}</span>
         </span>
       </button>
+      {pic ? <SampleClipCredit take={pic} className="gx-hm-credit" /> : null}
     </li>
   );
 }
