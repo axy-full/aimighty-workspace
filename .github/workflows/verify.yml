@@ -104,7 +104,7 @@ jobs:
         env:
           ENGINE_MOCK: '1'
       - name: Verify production bundle privacy
-        run: npm run test:unit -- tests/unit/bundle.spec.ts
+        run: npm run test:unit -- tests/unit/bundle.spec.ts tests/unit/vendorPriceFile.spec.ts
   browser-shards:
     needs: plan
     if: needs.plan.outputs.mode == 'full'

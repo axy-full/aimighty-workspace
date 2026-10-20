@@ -127,6 +127,9 @@ export type PaidDeps = {
   defer?: (work: () => Promise<unknown>) => void | Promise<void>;
   /** Moves a render in flight along: the jobs poll's own look at that one job, a free status read. */
   follow?: (jobId: string) => Promise<void>;
+  /** Prices and gates only: a render already approved, being sent or rendering is left to the run's own drive, and this drive stops there (plan_step's drive, which runs
+   *  outside the caller's token, sends nothing). */
+  priceOnly?: true;
   /** The per-job line now (default: lib/workbench/rig-agent-limits.ts). */
   ceiling?: () => Promise<number>;
   /** Whether this render reaches the pause at a share of the production's budget (default: lib/caps.ts budgetAsk). */
@@ -367,6 +370,8 @@ export async function advancePaidSteps(runId: string, ctx: PaidContext, deps: Pa
 }
 
 async function advanceStep(run: RunRow, step: StepRow, ctx: PaidContext, deps: PaidDeps): Promise<Moved> {
+  /* A price-only drive never sends, follows, locks or checks: the run's wake (set by the approval that moved it) carries it on in the run's own drive. */
+  if (deps.priceOnly && (step.purpose !== "take" || step.state === "approved" || step.state === "sending" || step.state === "rendering")) return stop({ state: run.state, more: false });
   if (step.purpose === "lock") return lockStep(run, step);
   if (step.purpose === "verify") return verifyStep(run, step, ctx);
   switch (step.state) {

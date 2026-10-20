@@ -22,6 +22,7 @@ import { effectiveRate, estimateCostUsd } from "./vendorPricing";
 import { creditsApply } from "./credits";
 import { heldPriceNow } from "./creditTerms";
 import { withoutVendorDollars } from "./analyticsRedact";
+import { publicDirectParams } from "./directEnginePublic";
 import { currentTenant } from "./tenant";
 import { reconcileFalRender } from "./identities";
 import { syncFalVideo } from "./falVideo";
@@ -197,6 +198,8 @@ export function rowToGeneration(r: any): Generation {
   delete params.genjutsuOriginal;
   delete params.storeUntil;
   delete params.settledBy;
+  /* A direct engine's working record (its job and asset ids, links, claims, consent ids, vendor figures) is the workflow's own: only what describes the take is read. */
+  params = publicDirectParams(params);
   if (params.held && typeof params.held === "object")
     params.held = heldForBrowser(params.held, inCredits, r.kind === "image" || r.kind === "audio" ? r.kind : "video", String(r.model ?? ""));
   /* A workspace on the platform's keys reads its params with no figure in the vendors' dollars
@@ -836,6 +839,11 @@ export async function syncPending(
   results.attempted += dubs.attempted;
   results.failed += dubs.failed;
   results.deferred += dubs.deferred;
+  // Lip-sync jobs (sync.so): ask after the running, and delete the vendor's copy of the finished. Never resubmit.
+  const lips = await (await import("./lipSync")).recoverLipSyncJobs({ limit: 4, deadlineAt: options.deadlineAt });
+  results.attempted += lips.attempted;
+  results.failed += lips.failed;
+  results.deferred += lips.deferred;
   /* The window is lib/atRisk.ts's: the same 72 hours the health counter and the console count a take at risk in. */
   const horizon = options.horizon ?? atRiskHorizon(now());
   const rs = await db().execute({
@@ -864,6 +872,8 @@ export async function syncPending(
           const params = JSON.parse(String(row.params || "{}"));
           // A dubbing project's row is advanced by its own workflow above; it is neither a render nor an orphan.
           if (gen.kind === "audio" && params.task === "dub") return;
+          // A lip-sync job's row is advanced by its own workflow above (lib/lipSync.ts); it is neither a render nor an orphan.
+          if (gen.kind === "video" && params.task === "lipsync") return;
           if (
             (gen.kind === "image" || gen.kind === "audio") &&
             params.producedOutcome
