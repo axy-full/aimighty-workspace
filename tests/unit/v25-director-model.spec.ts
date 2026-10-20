@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { NO_ENGINE_NOTE, SHOTS_SETTINGS, barButton, modelWords, cancellable, cardChips, nextStepLabel, requestFields, scopeOf, shotSettings, valueWords } from "../../components/v12/board/director-model";
+import { NO_ENGINE_NOTE, SHOTS_SETTINGS, barButton, modelWords, cancellable, cardChips, nextStepLabel, pressPrice, requestFields, scopeOf, shotSettings, valueWords } from "../../components/v12/board/director-model";
+import { CREDITS_MODE, NO_AT_COST_FIGURE, priceWords } from "../../lib/shell/price-words";
 import { stagesOf } from "../../lib/v12/board/stages";
 
 /* v25 PR 7: Director on Shots (components/v12/board/director-model.ts). Pure. */
@@ -78,4 +79,18 @@ test("Director never picks an engine: the model line reads None until the person
   expect(modelWords({ id: "x", label: "Seedance 2.5" })).toBe("Seedance 2.5");
   expect(modelWords(null)).not.toMatch(/auto/i);
   expect(NO_ENGINE_NOTE).toBe("Pick an engine first.");
+});
+
+test("a press's price: its total in credits, a ceiling as \"up to\", and in the house a ceiling reads at a credit's public price, never \"—\"", () => {
+  /* Synthetic figures, built here: the press's quote as the batch route answers it. */
+  const HOUSE = { on: true, creditUsd: 0.1 } as const;
+  expect(priceWords(pressPrice({ estimatedCredits: 172, unit: "cr", price: 172 }), CREDITS_MODE)).toBe("172 cr");
+  expect(priceWords(pressPrice({ estimatedCredits: 172, ceilingCredits: 240, unit: "cr", price: 172 }), CREDITS_MODE)).toBe("up to 240 cr");
+  /* The house pays at cost in dollars: an estimate reads its own dollars; a ceiling, which the route gives only in credits, reads as a hold. */
+  expect(priceWords(pressPrice({ estimatedCredits: 172, unit: "usd", price: 4.3 }), HOUSE)).toBe("$4.30");
+  const ceiling = priceWords(pressPrice({ estimatedCredits: 172, ceilingCredits: 240, unit: "usd", price: 4.3 }), HOUSE);
+  expect(ceiling).not.toBe(NO_AT_COST_FIGURE);
+  expect(ceiling).toBe("up to $24.00");
+  /* No figure, no price: never a zero or a guess. */
+  expect(pressPrice({ estimatedCredits: Number.NaN })).toBeNull();
 });

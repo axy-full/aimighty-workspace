@@ -136,12 +136,14 @@ function DirectorBoard() {
   const [selected, setSelected] = useState<string[]>([]);
   const [hover, setHover] = useState<string | null>(null);
   const [engine, setEngine] = useState<PickedEngine | null>(null);
+  /* The board passes today's Top up path (Settings › Credits & billing); the test page only notes that it was asked for. */
+  const [toppedUp, setToppedUp] = useState(false);
   const scope = scopeOf(selected, DIRECTOR_SHOTS);
   const scopeIds = scope.ids.join(",");
   const shots: DirectorShot[] = scopeIds.split(",").filter(Boolean).map((id) => {
     const fields = requestFields(shotSettings(draft, id));
     const shot = DIRECTOR_SHOTS.find((x) => x.id === id)!;
-    return { id, input: { prompt: `${shot.title}. A slow push in.`, kind: "video", model: { id: engine?.id ?? TEST_ENGINE }, mapping: { productionProjectId: "test-project", shotId: id }, ratio: fields.ratio, resolution: fields.resolution, duration: fields.duration, references: [], firstFrameAssetId: "", generateAudio: fields.generateAudio, ...(fields.draft ? { draft: true } : {}) } };
+    return { id, name: shot.name, input: { prompt: `${shot.title}. A slow push in.`, kind: "video", model: { id: engine?.id ?? TEST_ENGINE }, mapping: { productionProjectId: "test-project", shotId: id }, ratio: fields.ratio, resolution: fields.resolution, duration: fields.duration, references: [], firstFrameAssetId: "", generateAudio: fields.generateAudio, ...(fields.draft ? { draft: true } : {}) } };
   });
   const [bar, setBar] = useState<{ state: BarState; finished: number; total: number }>({ state: "idle", finished: 0, total: 0 });
   const stages = useMemo(() => stagesOf("film", null), []);
@@ -168,9 +170,10 @@ function DirectorBoard() {
       <div className="v25-parts-dircol">
         <DirectorColumn scope={scope} step="Shots" values={values} mixed={mixed} onSet={set} onHover={setHover} engine={engine} />
         <button type="button" className="v25-parts-btn" data-testid="v25-parts-pick-engine" onClick={() => setEngine({ id: TEST_ENGINE, label: getModel(TEST_ENGINE).label })}>Pick an engine (test page)</button>
+        {toppedUp ? <p className="v25-parts-said" data-testid="v25-parts-topped-up">Top up opened (test page)</p> : null}
       </div>
       <div className="v25-parts-dirbar">
-        <DirectorBar scope={scope} scopeKey="particl-active-test" projectKey="test-project" shots={shots} engine={engine?.id ?? null} stages={stages} step={SHOTS_STEP} onState={setBar}
+        <DirectorBar scope={scope} scopeKey="particl-active-test" projectKey="test-project" shots={shots} engine={engine?.id ?? null} stages={stages} step={SHOTS_STEP} onState={setBar} onTopUp={() => setToppedUp(true)}
           ask={<input className="v25-parts-ask" aria-label="Ask for a change" placeholder={selected.length ? `Ask about ${scope.label}…` : "Ask about all the shots…"} />} />
       </div>
     </section>

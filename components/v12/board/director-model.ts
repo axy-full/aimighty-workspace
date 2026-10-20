@@ -1,5 +1,6 @@
 import { effectiveSetup, overriddenKeys, type SettingValue, type Setup } from "@/lib/v12/board/board-data";
 import type { Stage } from "@/lib/v12/board/stages";
+import { exact, heldUpTo, type PriceValue } from "@/lib/shell/price-words";
 
 /**
  * Director mode on Shots (v25 PR 7; design/particl-prototype-25 README, "Director · Shots": the column, the scope pill and the bar). Pure: no React, no fetch
@@ -89,3 +90,13 @@ export function nextStepLabel(stages: readonly Pick<Stage, "id" | "label" | "ski
 
 /** Cancel is offered only while a take is still held in the provider's queue: after that the provider has started it and a cancel is not ours to promise. */
 export const cancellable = (statuses: readonly string[]) => statuses.length > 0 && statuses.some((s) => s === "queued");
+
+/**
+ * A press's price as the bar shows it, from the server's quote for the whole press (POST /api/generate/batch, `quoteOnly`): "N cr" (the house: its dollars at
+ * cost, where the server gave them), or, when a shot holds a ceiling above its estimate, the ceiling as a hold, "up to N cr". A hold is kept in credits, so in the
+ * house workspace it reads at the public price of a credit, its dollars at cost (lib/shell/price-words.ts heldUpTo), as every other hold reads there: never "—".
+ */
+export function pressPrice(q: { estimatedCredits: number; ceilingCredits?: number; price?: number; unit?: string }): PriceValue | null {
+  if (q.ceilingCredits != null && q.ceilingCredits > q.estimatedCredits) return heldUpTo(q.ceilingCredits);
+  return exact(q.estimatedCredits, q.unit === "usd" && Number.isFinite(q.price) ? q.price : undefined);
+}

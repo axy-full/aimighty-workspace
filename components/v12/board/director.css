@@ -32,6 +32,7 @@
 .v12 .v12-dirbar-pill { height: 26px; padding: 0 var(--gx-sp-12); border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-pill); display: inline-flex; align-items: center; font-size: var(--gx-fs-label); font-weight: 600; background: var(--gx-card); }
 .v12 .v12-dirbar-note { margin: 0; font-size: var(--gx-fs-label); color: var(--gx-text-sec); text-align: center; max-width: 100%; overflow-wrap: anywhere; }
 .v12 .v12-dirbar-link { border: 0; background: transparent; padding: 0; color: var(--gx-accent-text); font: inherit; cursor: pointer; text-decoration: underline; }
+.v12 .v12-dirbar-link:focus-visible { outline: 2px solid var(--gx-text); outline-offset: 2px; }
 .v12 .v12-dirbar-row { display: flex; align-items: center; gap: var(--gx-sp-8); width: 100%; min-width: 0; padding: var(--gx-sp-8); box-sizing: border-box; border: 1px solid var(--gx-hair-strong); border-radius: var(--gx-r-pop); background: var(--gx-card); }
 .v12 .v12-dirbar-ask { flex: 1; min-width: 0; display: flex; }
 .v12 .v12-dirbar-ask > * { flex: 1; min-width: 0; }
@@ -51,4 +52,6 @@
 }
 @media (pointer: coarse) {
   .v12 .v12-dircol-row, .v12 .v12-dirpop-choice, .v12 .v12-dirbar-go, .v12 .v12-dirbar-cancel { min-height: var(--gx-touch); }
+  /* Try again, Retry and Top up in the bar's line: 44 px targets on a touch screen. */
+  .v12 .v12-dirbar-link { display: inline-flex; align-items: center; justify-content: center; min-height: var(--gx-touch); min-width: var(--gx-touch); padding: 0 var(--gx-sp-6); }
 }

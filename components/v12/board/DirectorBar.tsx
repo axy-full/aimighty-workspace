@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { spendAttrsOf } from "@/lib/spend";
 import { Price } from "../ui/Price";
 import { knownQuote } from "@/lib/v12/quote";
+import { heldUpTo } from "@/lib/shell/price-words";
 import { useEffect } from "react";
 import { NO_ENGINE_NOTE, barButton, nextStepLabel, type Scope } from "./director-model";
 import { useDirectorRender, type DirectorRender, type DirectorShot } from "./use-director-render";
@@ -22,7 +23,7 @@ import "./director.css";
  */
 const NONE: readonly DirectorShot[] = [];
 
-export function DirectorBar({ scope, scopeKey, projectKey, shots, engine = null, stages, step, readOnly, ask, onState, onNext }: {
+export function DirectorBar({ scope, scopeKey, projectKey, shots, engine = null, stages, step, readOnly, ask, onState, onNext, onTopUp }: {
   scope: Scope;
   /** The request scope (the signed-in person's workspace), as every paid send carries it. */
   scopeKey: string;
@@ -42,11 +43,16 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, engine = null,
   onState?: (render: Pick<DirectorRender, "state" | "finished" | "total">) => void;
   /** After "Next: …" is pressed: the board opens the next step. */
   onNext?: (nextLabel: string | null) => void;
+  /**
+   * Top up, offered when the server says the balance is short of the press (402). The board passes today's path, as the account menu does
+   * (components/v12/shell/AccountMenu.tsx: `useGoSettings()("credits", "packs")`, Settings › Credits & billing); with none, the words alone are shown.
+   */
+  onTopUp?: () => void;
 }) {
   const render = useDirectorRender({ scope: scopeKey, projectKey, shots: engine ? shots : NONE, readOnly: readOnly ?? (engine ? null : NO_ENGINE_NOTE) });
   const next = nextStepLabel(stages, step);
   useEffect(() => { onState?.({ state: render.state, finished: render.finished, total: render.total }); }, [onState, render.state, render.finished, render.total]);
-  const { state, price, pricing, problem, canCancel } = render;
+  const { state, price, pricing, problem, canCancel, failures, retry, short } = render;
   const progress = { finished: render.finished, total: render.total };
   const onRender = () => void render.press();
   const onCancel = () => void render.cancel();
@@ -58,11 +64,19 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, engine = null,
   const off = readOnly != null || !engine || (state === "idle" && (pricing !== "ready" || !scope.ids.length));
   /* Refused at the quote (the workspace's monthly cap, owner 19 Oct 2026): the server's own words, and Render stays off. */
   const unpriced = state === "idle" && (pricing === "error" || pricing === "refused");
-  const note = problem ?? (state === "idle" && pricing === "refused" ? render.refusal : state === "idle" && pricing === "error" ? "A price could not be read. Nothing was sent." : null) ?? readOnly ?? (engine ? null : NO_ENGINE_NOTE);
+  /* After every take settled: what failed or was cancelled, in the take's own failure line (what happened, what it cost). */
+  const failed = state === "done" && failures.length ? failures.map((f) => `${f.name}: ${f.words.replace(/[.!?]?$/, ".")}`).join(" ") : null;
+  const note = problem ?? failed ?? (state === "idle" && pricing === "refused" ? render.refusal : state === "idle" && pricing === "error" ? "A price could not be read. Nothing was sent." : null) ?? readOnly ?? (engine ? null : NO_ENGINE_NOTE);
+  /* Retry asks the press again under the approval it was pressed with: the most it can charge is that approval's total. */
+  const retryPrice = retry && price ? heldUpTo(price.kind === "free" ? 0 : price.credits) : null;
   return (
     <div className="v12-dirbar" data-testid="v12-director-bar" data-state={state}>
       <span className="v12-dirbar-pill" data-testid="v12-director-scope">{scope.label}</span>
-      {note ? <p className="v12-dirbar-note" role="status" data-testid="v12-director-note">{note}{unpriced && !problem && onTryAgain ? <> <button type="button" className="v12-dirbar-link" onClick={onTryAgain}>Try again</button></> : null}</p> : null}
+      {note ? <p className="v12-dirbar-note" role="status" data-testid="v12-director-note">{note}
+        {unpriced && !problem && onTryAgain ? <> <button type="button" className="v12-dirbar-link" onClick={onTryAgain} data-testid="v12-director-try-again">Try again</button></> : null}
+        {retry && retryPrice ? <> <button type="button" className="v12-dirbar-link" onClick={retry} data-testid="v12-director-retry" {...spendAttrsOf(retryPrice)}>Retry · <Price quote={knownQuote(retryPrice)} /></button></> : null}
+        {short && onTopUp ? <> <button type="button" className="v12-dirbar-link" onClick={onTopUp} data-testid="v12-director-top-up">Top up</button></> : null}
+      </p> : null}
       <div className="v12-dirbar-row">
         {ask ? <div className="v12-dirbar-ask">{ask}</div> : null}
         {state === "making" && canCancel ? <button type="button" className="v12-dirbar-cancel" onClick={onCancel} data-testid="v12-director-cancel">Cancel</button> : null}

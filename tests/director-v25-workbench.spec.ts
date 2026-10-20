@@ -11,18 +11,37 @@ import { isCompact } from "./helpers/shellMode";
  * reply reuses; never shot by shot. "Making…" until the takes settle, "Cancel" (the press's own cancel) only while one is still queued, then "Next: Edit →".
  * Nothing real is spent.
  */
-/* The test page's stand-in pick, centred first: on a phone Director's bar is fixed at the bottom and would lie over it. */
+/* The test page's stand-in pick, centred first. Below 1000 px the test page puts the bar in the page's flow, after the column; on the board, the wiring PR keeps the bar clear of the column and the home indicator. */
 async function pickEngine(page: Page) {
   const button = page.getByTestId("v25-parts-pick-engine");
   await button.evaluate((el) => el.scrollIntoView({ block: "center" }));
   await button.click();
 }
 type Sent = { body: Record<string, unknown>; key: string | undefined };
+type Member = { index: number; id?: string; status?: string; error?: string; code?: number; charged?: number };
 /** A synthetic refusal, as the batch route answers a press over the workspace's monthly cap (429, in the cap's own words). Test text, not the product's. */
 const CAP_WORDS = "Synthetic test refusal: this press would pass the monthly spending limit.";
-async function routes(page: Page, opts: { credits?: (body: Record<string, unknown>) => number; engine?: boolean; capAtQuote?: boolean; lose?: number } = {}) {
+/** A synthetic failed take's failure, as the jobs route sends it, with the ledger's charge: `credits` 0 is known free. */
+const failure = (credits: number) => ({ provider: null, stage: null, code: "unknown", kind: "unknown", message: null, billing: null, payer: null, charge: { credits, settled: true } });
+type Opts = {
+  credits?: (body: Record<string, unknown>) => number; engine?: boolean; capAtQuote?: boolean;
+  /** The first N presses reach the server, which starts them, and their replies are lost. */
+  lose?: number;
+  /** From the first press on, a quote is refused at the cap (it counts the running shots a second time). */
+  capAfterPress?: boolean;
+  /** A refusal at the quote: its status and words. */
+  quoteRefusal?: { status: number; error: string };
+  /** The server's answer to the Nth press (1-based) instead of starting every shot: a status and a body, or "partial" (the last shot refused at no charge). */
+  answer?: (n: number) => { status: number; json: Record<string, unknown> } | "partial" | null;
+};
+async function routes(page: Page, opts: Opts = {}) {
   const quotes: Record<string, unknown>[] = [], sent: Sent[] = [], cancels: string[] = [], single: string[] = [], fingerprints: string[] = [];
-  const state = { phase: "queued" as "queued" | "running" | "succeeded", bump: 0, lose: opts.lose ?? 0 };
+  /* The server's own record of each press, by its Idempotency-Key: asked again, a shot that started is that take and never starts twice. */
+  const presses = new Map<string, (string | null)[]>();
+  const started: string[] = [];
+  const state = { phase: "queued" as "queued" | "running" | "succeeded", bump: 0, lose: opts.lose ?? 0, capAtQuote: Boolean(opts.capAtQuote), pressed: false,
+    /** A settled take's own answer, by its id (a failure, with what it cost). */
+    takes: {} as Record<string, Record<string, unknown>> };
   const priceOf = opts.credits ?? ((b) => (b.resolution === "480p" ? 7 : 43));
   const sha = (b: unknown) => createHash("sha256").update(JSON.stringify(b)).digest("hex");
   /* Never shot by shot: a per-shot quote or send is recorded, and every test below expects none. */
@@ -37,33 +56,54 @@ async function routes(page: Page, opts: { credits?: (body: Record<string, unknow
     const key = route.request().headers()["idempotency-key"];
     if (body.cancel === true) {
       cancels.push(String(key));
-      return route.fulfill({ json: { status: "cancelled", members: sent.at(-1) ? (sent.at(-1)!.body.members as unknown[]).map((_, index) => ({ index, id: `gen_dir_${sent.length}_${index + 1}`, status: "cancelled", charged: 0 })) : [] } });
+      const ids = presses.get(String(key)) ?? [];
+      return route.fulfill({ json: { status: "cancelled", members: ids.map((id, index) => (id ? { index, id, status: "cancelled", charged: 0 } : { index, status: "cancelled", charged: 0 })) } });
     }
     const members = body.members as Record<string, unknown>[];
     const total = members.reduce((n, m) => n + priceOf(m) + state.bump, 0);
     const fingerprint = sha({ members, total });
     if (body.quoteOnly === true) {
       quotes.push(body);
-      if (opts.capAtQuote) return route.fulfill({ status: 429, json: { error: CAP_WORDS } });
+      if (opts.quoteRefusal) return route.fulfill({ status: opts.quoteRefusal.status, json: { error: opts.quoteRefusal.error } });
+      if (state.capAtQuote || (opts.capAfterPress && state.pressed)) return route.fulfill({ status: 429, json: { error: CAP_WORDS } });
       fingerprints.push(fingerprint);
       return route.fulfill({ json: { estimatedCredits: total, price: total, unit: "cr", members: members.length, batchId: `bt_${fingerprint.slice(0, 24)}`, fingerprint } });
     }
     sent.push({ body, key });
-    if (state.lose > 0) { state.lose -= 1; return route.abort("connectionreset"); }
     /* The route's own checks, as lib/batchPress.ts makes them: the approval is the quote's fingerprint and covers the total. */
     if (body.fingerprint !== fingerprint) return route.fulfill({ status: 409, json: { error: "The shots or their prices changed. Look at the total again before approving.", quoteChanged: true } });
     if (body.maxCredits !== total) return route.fulfill({ status: 409, json: { error: "Approve the price first: the total is above the approved credit amount." } });
-    await route.fulfill({ json: { id: `bt_${fingerprint.slice(0, 24)}`, batchId: `bt_${fingerprint.slice(0, 24)}`, status: "started", estimatedCredits: total, members: members.map((_, index) => ({ index, id: `gen_dir_${sent.length}_${index + 1}`, status: "queued" })) } });
+    state.pressed = true;
+    const answer = opts.answer?.(sent.length) ?? null;
+    if (answer && answer !== "partial") return route.fulfill(answer);
+    /* Each shot not yet started under this key starts now (a free failure starts again, as the server's failedFree allows); one already started is that take. */
+    const ids = presses.get(String(key)) ?? members.map(() => null);
+    const out: Member[] = members.map((_, index) => {
+      if (answer === "partial" && index === members.length - 1) return { index, error: "Synthetic test refusal: the hour's renders are used.", code: 429, charged: 0 };
+      const was = ids[index];
+      const freeFailure = was && (state.takes[was]?.failure as { charge?: { credits: number } } | undefined)?.charge?.credits === 0;
+      if (!was || freeFailure) { ids[index] = `gen_dir_${started.length + 1}`; started.push(ids[index]!); }
+      return { index, id: ids[index]!, status: "queued" };
+    });
+    presses.set(String(key), ids);
+    if (state.lose > 0) { state.lose -= 1; return route.abort("connectionreset"); }
+    const refused = out.filter((m) => m.error).length;
+    await route.fulfill({ json: { id: `bt_${fingerprint.slice(0, 24)}`, batchId: `bt_${fingerprint.slice(0, 24)}`, status: refused ? "partial" : "started", estimatedCredits: total, members: out } });
   });
   await page.route("**/api/jobs/gen_dir_*", async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
     const id = new URL(route.request().url()).pathname.split("/").pop()!;
-    await route.fulfill({ json: { generation: { id, status: state.phase } } });
+    await route.fulfill({ json: { generation: state.takes[id] ?? { id, status: state.phase } } });
   });
   /* Director opens with no engine (owner, 16 Oct 2026, 2a); the test page's stand-in pick sets one, as PR 9's pop-up will. */
   if (opts.engine !== false) await pickEngine(page);
-  return { quotes, sent, cancels, single, fingerprints, state };
+  return { quotes, sent, cancels, single, fingerprints, started, state };
 }
+/** The press's claim this browser keeps until the server has settled the press (components/v12/board/use-director-render.ts). */
+const claimOf = (page: Page) => page.evaluate(() => {
+  const key = Object.keys(localStorage).find((k) => k.startsWith("particl:director-press:"));
+  return key ? (JSON.parse(localStorage.getItem(key)!) as { key: string; quote: { fingerprint: string } | null }) : null;
+});
 
 test.beforeEach(async ({ page }) => {
   const res = await page.goto("/v25-board-parts");
@@ -242,6 +282,160 @@ test("a press whose reply was lost is asked again under the same key, so nothing
   await expect.poll(() => net.sent.length).toBe(2);
   expect(net.sent[1].key).toBe(net.sent[0].key);
   await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  /* The server had started the four shots under the first ask: the second returned those takes and started none. */
+  expect(net.started).toHaveLength(4);
+});
+
+test("a lost reply near the cap: the press is asked again under its key and approval with no new quote in the way (one would now be refused); the server's answer is the press's own takes, and nothing starts twice", async ({ page }) => {
+  const net = await routes(page, { lose: 1, capAfterPress: true });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  /* A quote now counts the running shots twice and is refused at the cap; the press already approved is still the one to ask again. */
+  expect((await claimOf(page))?.key).toBe(net.sent[0].key);
+  await expect(go(page)).toBeEnabled();
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/);
+  const quoted = net.quotes.length;
+  await go(page).click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.quotes.length, "no new quote stands in the way").toBe(quoted);
+  expect(net.sent[1].key).toBe(net.sent[0].key);
+  expect(net.sent[1].body.fingerprint).toBe(net.sent[0].body.fingerprint);
+  expect(net.sent[1].body.maxCredits).toBe(172);
+  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  expect(net.started, "nothing started twice").toHaveLength(4);
+  expect(net.single).toEqual([]);
+});
+
+test("a lost reply asked again while the cap is full: the server's cap words, the claim is kept with its key, and a later ask under it returns the same takes", async ({ page }) => {
+  const net = await routes(page, { lose: 1, answer: (n) => (n === 2 ? { status: 429, json: { error: CAP_WORDS, shot: 1 } } : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText(CAP_WORDS, { timeout: 30_000 });
+  expect((await claimOf(page))?.key, "a press asked before keeps its key").toBe(net.sent[0].key);
+  await expect(go(page)).toBeEnabled();
+  await go(page).click();
+  await expect.poll(() => net.sent.length).toBe(3);
+  expect(net.sent[2].key).toBe(net.sent[0].key);
+  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  expect(net.started, "nothing started twice").toHaveLength(4);
+});
+
+test("a 5xx listing every shot as not started at no charge says Nothing billed; Retry asks again under the same key and approval", async ({ page }) => {
+  const net = await routes(page, { answer: (n) => (n === 1 ? { status: 502, json: { status: "refused", members: [0, 1, 2, 3].map((index) => ({ index, error: "Synthetic test refusal: the engine is busy.", code: 502, charged: 0 })) } } : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("Nothing billed. Synthetic test refusal: the engine is busy.", { timeout: 30_000 });
+  expect(net.started).toEqual([]);
+  const retry = page.getByTestId("v12-director-retry");
+  await expect(retry).toHaveText("Retry · up to 172 cr");
+  await expect(retry).toHaveAttribute("data-spend", "priced");
+  await retry.click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.sent[1].key).toBe(net.sent[0].key);
+  expect(net.sent[1].body.fingerprint).toBe(net.sent[0].body.fingerprint);
+  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  expect(net.started).toHaveLength(4);
+});
+
+test("partial: the shots that did not start say Nothing billed, the key is kept, and Retry starts only them under the same approval", async ({ page }) => {
+  const net = await routes(page, { answer: (n) => (n === 1 ? "partial" : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("Nothing billed for 1 shot that did not start. Synthetic test refusal: the hour's renders are used.", { timeout: 30_000 });
+  expect(net.started).toHaveLength(3);
+  expect((await claimOf(page))?.key, "the key is kept for Retry").toBe(net.sent[0].key);
+  await page.getByTestId("v12-director-retry").click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.sent[1].key).toBe(net.sent[0].key);
+  expect(net.sent[1].body.fingerprint).toBe(net.sent[0].body.fingerprint);
+  /* The three that started are those takes; only the fourth starts. Every shot started, so the browser lets the key go. */
+  await expect.poll(() => net.started.length).toBe(4);
+  await expect.poll(() => claimOf(page)).toBeNull();
+  await expect(page.getByTestId("v12-director-note")).toHaveCount(0);
+});
+
+test("after the takes settle, a failed one says what happened and what it cost; Retry starts again only the one that cost nothing, under the same approval", async ({ page }) => {
+  const net = await routes(page);
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.started.length).toBe(4);
+  const [a, b, c, d] = net.started;
+  net.state.takes[a] = { id: a, status: "succeeded" };
+  net.state.takes[b] = { id: b, status: "failed", failure: failure(0) };
+  net.state.takes[c] = { id: c, status: "failed", failure: failure(43) };
+  net.state.takes[d] = { id: d, status: "succeeded" };
+  await expect(go(page)).toHaveText("Next: Edit →", { timeout: 20_000 });
+  const note = page.getByTestId("v12-director-note");
+  await expect(note).toContainText("Shot 2:");
+  await expect(note).toContainText("Not billed");
+  await expect(note).toContainText("Shot 3:");
+  await expect(note).toContainText("43 cr charged");
+  await page.getByTestId("v12-director-retry").click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.sent[1].key).toBe(net.sent[0].key);
+  /* Only the free failure starts again (the server's rule); the charged one and the two that succeeded are those takes. */
+  await expect.poll(() => net.started.length).toBe(5);
+  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+});
+
+test("a refusal at the press's own re-quote turns Render off, in the server's words, and sends nothing", async ({ page }) => {
+  const net = await routes(page);
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  net.state.capAtQuote = true;
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText(CAP_WORDS, { timeout: 30_000 });
+  await expect(go(page)).toBeDisabled();
+  await expect(go(page)).toHaveAttribute("data-spend", "unpriced");
+  expect(net.sent).toEqual([]);
+});
+
+test("short of credits (402): the server's words and Top up, which opens the top-up path; nothing started and the key is let go", async ({ page }, info) => {
+  const SHORT = "Short by 72 cr. Top up, then approve. Nothing is spent until you do.";
+  const net = await routes(page, { answer: (n) => (n === 1 ? { status: 402, json: { error: SHORT, short: true } } : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText(SHORT, { timeout: 30_000 });
+  expect(net.started).toEqual([]);
+  expect(await claimOf(page)).toBeNull();
+  const topUp = page.getByTestId("v12-director-top-up");
+  await expect(topUp).toBeVisible();
+  if (isCompact(info)) expect((await topUp.boundingBox())!.height).toBeGreaterThanOrEqual(43.5);
+  await topUp.click();
+  await expect(page.getByTestId("v25-parts-topped-up")).toBeVisible();
+});
+
+test("a confirmed cancel lets the press's key go: the next press is a new one", async ({ page }) => {
+  const net = await routes(page, { answer: (n) => (n === 1 ? "partial" : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-cancel")).toBeVisible({ timeout: 30_000 });
+  expect((await claimOf(page))?.key).toBe(net.sent[0].key);
+  await page.getByTestId("v12-director-cancel").click();
+  await expect.poll(() => net.cancels.length).toBe(1);
+  await expect.poll(() => claimOf(page)).toBeNull();
+  await expect(page.getByTestId("v12-director-retry")).toHaveCount(0);
+});
+
+test("a press over the route's 24 shots is refused at the quote (400): its words, Render off, Try again, nothing sent", async ({ page }, info) => {
+  const OVER = "A press takes up to 24 shots at a time.";
+  const net = await routes(page, { quoteRefusal: { status: 400, error: OVER } });
+  await expect(page.getByTestId("v12-director-note")).toContainText(OVER, { timeout: 30_000 });
+  await expect(go(page)).toBeDisabled();
+  await expect(go(page)).toHaveAttribute("data-spend", "unpriced");
+  const tryAgain = page.getByTestId("v12-director-try-again");
+  await expect(tryAgain).toBeVisible();
+  if (isCompact(info)) {
+    const box = (await tryAgain.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(43.5);
+    expect(box.width).toBeGreaterThanOrEqual(43.5);
+  }
+  await go(page).click({ force: true });
+  await page.waitForTimeout(800);
+  expect(net.sent).toEqual([]);
+  expect(net.single).toEqual([]);
 });
 
 test("the bar and the column fit the window at every size: no sideways scroll, text 12 px or more, 44 px controls on a touch screen", async ({ page }, info) => {
