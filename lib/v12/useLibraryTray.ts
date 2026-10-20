@@ -6,14 +6,9 @@ import type { LibraryUpload } from "@/lib/genLibrary";
 import type { Generation } from "@/lib/jobs";
 import { readTrayParams, writeTrayParams, type TrayKind, type TrayParams, type TraySource } from "./library";
 
-/** Opens the Library tray from anywhere: `window.dispatchEvent(new Event(LIBRARY_OPEN_EVENT))`. */
+/** Opens the Library tray from anywhere: call `requestTrayOpen()` below, never dispatch this event yourself (a press before the tray mounts would be lost). */
 export const LIBRARY_OPEN_EVENT = "particl:v12-library-open";
 
-/**
- * The tray's open state, source and kind: read from the address once (`drawer=Library`, `lib=1`, `src=`, `libkind=`),
- * then kept here and mirrored back into the address (replace, never a new history entry). The shell's own moves may
- * drop the mirror; the tray stays as it was.
- */
 /** Asks the tray on screen to open or close, as L does (the new interface's right-click menu, redesign A3). */
 export const TRAY_TOGGLE_EVENT = "particl:v12-library-toggle";
 
@@ -38,6 +33,11 @@ export function trayStops() {
   listening = Math.max(0, listening - 1);
 }
 
+/**
+ * The tray's open state, source and kind: read from the address once (`drawer=Library`, `lib=1`, `src=`, `libkind=`),
+ * then kept here and mirrored back into the address (replace, never a new history entry). The shell's own moves may
+ * drop the mirror; the tray stays as it was.
+ */
 export function useTrayState() {
   const [state, setState] = useState<TrayParams>(() => (typeof window === "undefined" ? { open: false, source: "All", kind: "All" } : readTrayParams(window.location.search)));
   useEffect(() => {
@@ -46,7 +46,8 @@ export function useTrayState() {
   }, [state]);
   const setOpen = useCallback((open: boolean | ((was: boolean) => boolean)) => setState((s) => ({ ...s, open: typeof open === "function" ? open(s.open) : open })), []);
   /* Anything may open the tray (the board menu, ⌘K): LIBRARY_OPEN_EVENT on the window. The right-click menu's and Make's
-     "Library" ask for a toggle, as L does: TRAY_TOGGLE_EVENT. A request made before this tray mounted is taken here. */
+     "Library" ask for a toggle, as L does: TRAY_TOGGLE_EVENT. A request made before this tray mounted is taken here, and opens it
+     (a person who pressed while no tray was on screen wants it open, even if the address already says drawer=Library). */
   useEffect(() => {
     const open = () => setOpen(true);
     const toggle = () => setOpen((was) => !was);
