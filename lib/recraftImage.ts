@@ -16,7 +16,8 @@ import { writeGenerationOutcome, deliverGenerationSettlement } from "./generatio
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
 import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
-import { currentViewer, uploadOpenableBy } from "./uploadAccess";
+import { uploadOpenableBy, type Viewer } from "./uploadAccess";
+import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { engineEnabled } from "./engineGate";
 import { VendorPriceUnavailable, fileVendorQuote } from "./vendorPriceFile";
 import {
@@ -27,8 +28,8 @@ import {
 /**
  * Recraft through its own API (lib/recraft.ts): `recraft_image` (a still from words), `recraft_remove_background` (a still of this workspace with its background removed) and `recraft_vectorize`
  * (a still turned into an SVG), one door (POST /api/recraft { tool }) for the button, Make, a board card, Atomik, a saved skill and an outside agent: the same quote, the same approval, the same
- * price. The vendor's reply carries the image, so the job is ONE request kept as a durable workflow in the take's own row (generations.params.recraft; no new table), shaped like FLUX.2
- * (lib/bflImage.ts) without the polling:
+ * price. The vendor's reply carries the image, so the job is ONE request kept as a durable workflow in the take's own row (generations.params.recraft; no new table), shaped like
+ * lip-sync's (lib/lipSync.ts) without the polling:
  *
  *   queued     admitted and funded (the reservation is the whole price)
  *   done       the one request was answered, the image STORED under the workspace's own prefix, the take settled
@@ -126,16 +127,16 @@ export function recraftSettledUsd(r: Pick<RecraftParams, "rateUsd" | "reservedUs
 /* ── Sources ────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 
 type Source = { kind: "upload" | "generation"; id: string; name: string; ext: string; stored: string; mime: string; bytes: number };
-async function resolveSource(uploadId: unknown, genId: unknown): Promise<(Source & { width: number; height: number }) | { error: string; status: number }> {
+async function resolveSource(uploadId: unknown, genId: unknown, viewer: Viewer): Promise<(Source & { width: number; height: number }) | { error: string; status: number }> {
   const up = uploadId ? String(uploadId) : "", gen = genId ? String(genId) : "";
   if ((!up && !gen) || (up && gen)) return { error: "Pick one still of this workspace.", status: 400 };
   if ((up && !SOURCE_ID.test(up)) || (gen && !SOURCE_ID.test(gen))) return { error: "That source is not valid.", status: 400 };
   let found: Source;
   if (up) {
     const row = (await db().execute({ sql: "SELECT id, filename, mime, ext, stored_url, kind, bytes FROM uploads WHERE id=? LIMIT 1", args: [up] })).rows[0];
-    /* A person's request reads only an upload they may open (lib/uploadAccess.ts); anything else is the same "not in this workspace" a missing one gets. */
-    const viewer = currentViewer();
-    if (!row || row.kind !== "image" || (viewer && !(await uploadOpenableBy(up, viewer)))) return { error: "That still is not in this workspace.", status: 404 };
+    /* An upload is read only by a person who may open it (lib/uploadAccess.ts), for an Atomik run (as the person who started it) as for a person; anything else is the
+       same "not in this workspace" a missing one gets. */
+    if (!row || row.kind !== "image" || !(await uploadOpenableBy(up, viewer))) return { error: "That still is not in this workspace.", status: 404 };
     found = { kind: "upload", id: up, name: String(row.filename ?? up), ext: String(row.ext || "png"), stored: String(row.stored_url ?? ""), mime: String(row.mime || "image/png"), bytes: Number(row.bytes ?? 0) };
   } else {
     const row = (await db().execute({ sql: "SELECT id, title, prompt, stored_url, bytes FROM generations WHERE id=? AND deleted=0 AND status='succeeded' AND kind='image' AND stored_url IS NOT NULL LIMIT 1", args: [gen] })).rows[0];
@@ -188,7 +189,10 @@ export async function executeRecraftAdmission(input: Record<string, unknown>, go
     if (body.style != null) { if (typeof body.style !== "string" || !RECRAFT_STYLE.test(body.style)) return admissionReply({ error: "A style is a name of lower-case letters, digits and underscores." }, { status: 400 }); style = body.style; }
     if (body.references != null) return admissionReply({ error: "Style references are not offered yet." }, { status: 400 });
   } else {
-    const found = await resolveSource(body.sourceUploadId, body.sourceGenId);
+    /* The person this request acts for (the signed-in person, or an Atomik run's owner): none, and no source is read, before anything is written or reserved. */
+    const viewer = await actingViewer();
+    if (!viewer) return admissionReply({ error: NO_ACTING_PERSON }, { status: 403 });
+    const found = await resolveSource(body.sourceUploadId, body.sourceGenId, viewer);
     if ("error" in found) return admissionReply({ error: found.error }, { status: found.status });
     source = found;
     size = `${found.width}x${found.height}`;
