@@ -1851,3 +1851,20 @@ The full text is in docs/particl-sow-v1.md, "Amendment, 21 October 2026 (ii)". I
 ### F · Open for the owner, not for the lead
 
 The Visitor hero line; the genre table rows; the Agent factor's number; rupee vs dollar billing; provenance-mark disclosure; the 4K figure.
+
+## Owner, 21 Oct 2026, 22:15 IST: yeses and answers
+
+- 21 Oct 2026: **#866** gets a yes at eadc5ffc, after one fresh full run at the same head, because release/1 changed after its run.
+- 21 Oct 2026: **#865** gets a yes at 08716401, after #866 lands. Then: merge release/1 into it, run a fresh 24/24, Opus confirms nothing changed but the merge, and merge it at that head. The wording and the 2160 threshold stand.
+- 21 Oct 2026: **Recraft over MCP: no, for now.** Recraft stays prepare-only until its first real run has had the owner's yes. Ask again then.
+- 21 Oct 2026: **A person's audio or dubbing press carries the figure that was on its button**, like the Director press (#860). It goes in its own small PR, under a money review.
+- 21 Oct 2026: **The approval-rule PR** opens after #866 lands. It needs Opus's code and money review posted at the PR head, and a 24/24 run. Its body names every deleted or shortened test with the decision that requires it. It also says what happens to a workspace's stored rule value: read nowhere, no migration.
+- 21 Oct 2026: **Range prices.** Rule 14 gets a fourth form, for bands only: N–M cr, reserved at M and settled at what was used. It goes in as a dated note in the owner's 21 Oct words ("the cost range can be given, but not the absolute cost").
+- 21 Oct 2026: **The per-document allowance.** The owner-only allowance is a no-tap path on purpose: his 21 Oct "bill at the end". It is a ceiling the workspace owner approves once, per document, off by default. It has the same shape as a token's ceiling (#854) and is not Auto. Build it as a ceiling, never a mode.
+- 21 Oct 2026: **"Enhance · 1 cr" is a sample** (rule 14: every price in a design is a sample). The docs line gets "(sample)", and the figure comes from the quote path only.
+- 21 Oct 2026: **The visitor bar gets a hard cap.** It has two settings: questions per visitor per day, and a house daily ceiling. Their names live in the code; the owner sets the values in the self-host config. At the cap the bar says "Sign in to keep going". This lives in #839, and the numbers come later.
+- 21 Oct 2026: **C1 "said" lines are tenant data.** They are workspace-scoped rows, never in Langfuse or telemetry (rule 17: ids and timings only). This goes in the schema PR's body.
+- 21 Oct 2026: **The review-token privacy test.** The owner sees the diff before it merges. It is OK in advance only if the fix is to the fixture, or to the exact string and place of the leak; never a dropped or widened check.
+- 21 Oct 2026: **#868** has the standing yes once its run is 24/24 (no money).
+- 21 Oct 2026: **Before deploy #6** (the owner's), a fresh range note for main 62163d76 → release/1 c1fc8568: migrations, every new setting name (names only), what changes for customers' money, and the rollback.
+- 21 Oct 2026: **The monthly spend limit is rule 14's budget ceiling.** It is one setting, owner-only and off by default; #835 builds it. The house cap warns on a raise only. The engine hold stays: an engine is rebuilt on the price file, like #846, only when the demo needs it, and the owner names which.
