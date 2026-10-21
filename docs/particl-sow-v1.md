@@ -930,7 +930,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **S1** The per-step catalogue (Script → Deliver, plus the other rails' extra stages) is the example bank for D1, not a fixed list: each stage opens with a proposal, a judging prompt, at most three bare questions only where no default exists and money is attached, and what each answer sets and carries forward.
 
-**S2 Agent mode sequence:** Brief (interview, genre) → read-back "How I'll make it" → Script → Treatment → Look → Elements → Storyboard (shot by shot; play as a cut) → Shots (shot by shot; preflight; one quote) → Sound → Edit → Deliver. A stranger is asked once; nothing is asked twice. *(Step order amended in (ii), D3: Elements before Look.)*
+**S2 Agent mode sequence:** Brief (interview, genre) → read-back "How I'll make it" → Script → Treatment → Elements → Look → Storyboard (shot by shot; play as a cut) → Shots (shot by shot; preflight; one quote) → Sound → Edit → Deliver. A stranger is asked once; nothing is asked twice. *(Step order as amended 21 October 2026 in (ii), D3: Elements before Look; the film types' rails in `lib/productionModel/filmTypes.ts` follow it.)*
 
 ## The owner's answers on this amendment, 21 October 2026
 
