@@ -55,7 +55,7 @@ async function seed() {
     await ready();
     await db().batch([
       "INSERT OR IGNORE INTO projects(id,name,description,created_at) VALUES('prod_b','Workspace B film','',0)",
-      gen("g_b", "prod_b", "picked"),
+      gen("g_wsb_take", "prod_b", "picked"),
     ], "write");
   });
 }
@@ -141,7 +141,7 @@ test("the client sees this production's review set and nothing else: no other ta
   expect(Object.keys(body).sort()).toEqual(["expiresAt", "kind", "production", "takes", "workspace"]);
   expect(Object.keys(body.workspace).sort()).toEqual(["logo", "name"]);
   const text = JSON.stringify(body);
-  for (const leak of ["g_unjudged", "g_changes", "g_deleted", "g_failed", "g_other", "Another production", "g_b", "Workspace B", "SECRET PROMPT", "internal notes", "Owner Person", "Member Person", "@example.invalid", "1234", "credits", "balance", "ws_linka", "owner"]) {
+  for (const leak of ["g_unjudged", "g_changes", "g_deleted", "g_failed", "g_other", "Another production", "g_wsb_take", "Workspace B", "SECRET PROMPT", "internal notes", "Owner Person", "Member Person", "@example.invalid", "1234", "credits", "balance", "ws_linka", "owner"]) {
     expect(text, leak).not.toContain(leak);
   }
   /* The team's note is signed by the production, never by a person. */
@@ -149,7 +149,7 @@ test("the client sees this production's review set and nothing else: no other ta
   expect(body.takes[1].notes).toEqual([]);
 
   /* Media: the set only. A take outside it, another production's, or another workspace's is not found, and nothing is read. */
-  for (const genId of ["g_unjudged", "g_other", "g_deleted", "g_b", "../g_review"]) {
+  for (const genId of ["g_unjudged", "g_other", "g_deleted", "g_wsb_take", "../g_review"]) {
     const res = await r.media.GET(new Request(`${ORIGIN}/x`), { params: Promise.resolve({ token, genId }) });
     expect(res.status, genId).toBe(404);
   }
@@ -165,7 +165,7 @@ test("the client approves or asks for changes on a take in the set, and on nothi
   const token = url.split("/review/")[1];
   const ok = await r.verdict.POST(post(`${ORIGIN}/api/review/${token}/verdict`, { genId: "g_review", verdict: "approved", name: "Client", text: "Love the light." }), ctx(token));
   expect(ok.status).toBe(201);
-  for (const genId of ["g_unjudged", "g_other", "g_b", "g_deleted", "nope"]) {
+  for (const genId of ["g_unjudged", "g_other", "g_wsb_take", "g_deleted", "nope"]) {
     const res = await r.verdict.POST(post(`${ORIGIN}/api/review/${token}/verdict`, { genId, verdict: "approved" }), ctx(token));
     expect(res.status, genId).toBe(404);
   }
