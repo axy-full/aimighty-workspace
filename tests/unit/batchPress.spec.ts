@@ -620,3 +620,309 @@ test("a failed take is retried free only when it is known to have cost nothing: 
   expect(members(retried)[0].id).not.toBe(two);
   expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
 });
+
+/* ── The press is read before it is priced (owner, 21 Oct 2026, (a)-(c)) ── */
+const quoteUnder = (ws: TenantWorkspace, actor: AdmissionActor, list: Record<string, unknown>[], key: string) =>
+  as(ws, actor, () => batchPress.admitBatch({ members: list, quoteOnly: true }, actor, { ...noDefer, pressKey: key }));
+/** A 409's new total, as the person would approve it. */
+const approvalIn = (reply: AdmissionReply) => approvalOf({ status: 200, body: reply.body.quote as Record<string, unknown> });
+/** SYNTHETIC DB WRITE: the press's recorded approval of one round, changed in place by the test (its total, or its back-dated `created_at`). Named at each use. */
+async function editApproval(key: string, round: number, sql: string, value: number) {
+  const { db } = await import("../../lib/db");
+  await db().execute({ sql: `UPDATE generation_requests SET ${sql} WHERE user_id=? AND request_key=?`, args: [value, ADMIN.user.id, batchPress.approvalKey(key, round)] });
+}
+/** SYNTHETIC DB WRITE: a take marked failed (generations.status) with its meter row settled failed at 0 credits and 0 engine cost, as a vendor failure that cost nothing leaves it. */
+const failFree = (ws: TenantWorkspace, id: string) => as(ws, ADMIN, async () => {
+  const { db } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  await db().execute({ sql: "UPDATE generations SET status='failed' WHERE id=?", args: [id] });
+  await platformDb().execute({ sql: "UPDATE meter_events SET status='failed', billed_credits=0, engine_cost_usd=0 WHERE id=?", args: [id] });
+});
+
+test("a press asked again under its key near the cap shows the running press: its started shots are not priced or judged again, and nothing starts, reserves, meters or sends twice", async () => {
+  const { ALLOWANCE_REACHED } = await import("../../lib/allowance");
+  let ws = await workspace("near_cap", 100_000);
+  const usd = await holdUsdOf(ws, ADMIN);
+  ws = await withCap(ws, usd * 3.5);
+  const q = await quote(ws, ADMIN, shots(3));
+  expect(q.status, JSON.stringify(q.body)).toBe(200);
+  const key = `press-near-cap-${run}`;
+  const sentBefore = dispatched.length;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.status, JSON.stringify(first.body)).toBe(200);
+  expect(first.body).toMatchObject({ status: "started", approval: { maxCredits: approvalOf(q).maxCredits } });
+  const started = members(first).map((m) => m.id);
+  expect(started.every(Boolean)).toBe(true);
+  const once = await as(ws, ADMIN, ledger);
+  expect(once.takes).toHaveLength(3);
+  expect(once.meters).toHaveLength(3);
+  const sentOnce = dispatched.length - sentBefore;
+  expect(sentOnce).toBe(3);
+  /* Without its key, a quote of the same shots prices the three running ones again, counting them a second time, and the cap refuses it. */
+  expect(await quote(ws, ADMIN, shots(3))).toMatchObject({ status: 429, body: { error: ALLOWANCE_REACHED } });
+  /* Under its key, the quote shows the running press, with nothing left to start, under the approval it holds. */
+  const shown = await quoteUnder(ws, ADMIN, shots(3), key);
+  expect(shown.status, JSON.stringify(shown.body)).toBe(200);
+  expect((shown.body.pressed as { id?: string }[]).map((m) => m.id)).toEqual(started);
+  expect(shown.body).toMatchObject({ estimatedCredits: q.body.estimatedCredits, toStart: { members: 0, estimatedCredits: 0 }, approval: { maxCredits: approvalOf(q).maxCredits, expired: false, covers: true } });
+  /* Asked again with the approval it was pressed with, the cap still full: the same takes, twice, and nothing more. */
+  for (let i = 0; i < 2; i++) {
+    const again = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(again.body).toMatchObject({ status: "started" });
+    expect(members(again).map((m) => m.id)).toEqual(started);
+    expect(again.body).not.toHaveProperty("toStart");
+    expect(await as(ws, ADMIN, ledger)).toEqual(once);
+    expect(dispatched.length - sentBefore).toBe(sentOnce);
+  }
+});
+
+test("asked again, a started shot skips the cap check and a shot still to start does not: refused in the cap's words beside the running press, it starts once there is room", async () => {
+  const { ALLOWANCE_REACHED } = await import("../../lib/allowance");
+  let ws = await workspace("skip_cap", 100_000, { rendersPerHour: 2 });
+  const usd = await holdUsdOf(ws, ADMIN);
+  const q = await quote(ws, ADMIN, shots(3));
+  const key = `press-skip-cap-${run}`;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.body).toMatchObject({ status: "partial" });
+  const started = members(first).slice(0, 2).map((m) => m.id);
+  const once = await as(ws, ADMIN, ledger);
+  /* Room in the hour again, but the platform's desk sets a cap with room for the two running and half of one more. */
+  ws = await withLimits(ws, { rendersPerHour: 100_000 });
+  ws = await withCap(ws, usd * 2.5);
+  const sentBefore = dispatched.length;
+  const refused = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(refused.status, JSON.stringify(refused.body)).toBe(429);
+  expect(refused.body).toMatchObject({ error: ALLOWANCE_REACHED, shot: 3 });
+  /* The press beside the refusal: its two running takes as they stand, the third still to start. */
+  expect(members(refused)).toEqual([{ index: 0, id: started[0], status: "queued" }, { index: 1, id: started[1], status: "queued" }, { index: 2 }]);
+  const shown = await quoteUnder(ws, ADMIN, shots(3), key);
+  expect(shown).toMatchObject({ status: 429, body: { error: ALLOWANCE_REACHED, shot: 3 } });
+  expect((shown.body.pressed as { id?: string }[]).map((m) => m.id)).toEqual([...started, undefined]);
+  expect(await as(ws, ADMIN, ledger)).toEqual(once);
+  expect(dispatched.length).toBe(sentBefore);
+  /* Room for one more: only the third starts. */
+  ws = await withCap(ws, usd * 3.5);
+  const again = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(again.status, JSON.stringify(again.body)).toBe(200);
+  expect(again.body).toMatchObject({ status: "started" });
+  expect(members(again).slice(0, 2).map((m) => m.id)).toEqual(started);
+  expect(members(again)[2].id).toBeTruthy();
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+  expect(dispatched.length - sentBefore).toBe(1);
+});
+
+test("Retry is priced and admitted at only the shots left: shots that did not start and takes that failed at no charge re-run under the same approval; what was charged stays charged", async () => {
+  const sized = await workspace("retry_size", 100_000);
+  const { each } = await sizing(sized);
+  /* Credits for the whole press, and no more: once two shots hold theirs, the balance covers only the shot left. */
+  let ws = await workspace("retry", each * 3, { rendersPerHour: 2 });
+  const q = await quote(ws, ADMIN, shots(3));
+  expect(q.body).toMatchObject({ estimatedCredits: each * 3 });
+  const key = `press-retry-${run}`;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.body).toMatchObject({ status: "partial", toStart: { members: 1, estimatedCredits: each, price: each, unit: "cr" }, approval: { maxCredits: each * 3 } });
+  const started = members(first).slice(0, 2).map((m) => m.id!);
+  /* Room in the hour again. Quoted under its key: the press's total stays the approved total; Retry's price is the one shot left; the approval it holds covers it. */
+  ws = await withLimits(ws, { rendersPerHour: 100_000 });
+  const shown = await quoteUnder(ws, ADMIN, shots(3), key);
+  expect(shown.status, JSON.stringify(shown.body)).toBe(200);
+  expect(shown.body).toMatchObject({ estimatedCredits: each * 3, toStart: { members: 1, estimatedCredits: each, price: each }, approval: { maxCredits: each * 3, covers: true, expired: false } });
+  expect(shown.body.fingerprint).not.toBe(q.body.fingerprint);
+  /* Retry, under the same approval: only the third starts, and the balance is judged on it alone (the whole press no longer fits it). */
+  expect((await as(ws, ADMIN, async () => (await import("../../lib/credits")).creditState()))?.balance).toBe(each);
+  const retried = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(retried.status, JSON.stringify(retried.body)).toBe(200);
+  expect(retried.body).toMatchObject({ status: "started" });
+  expect(members(retried).slice(0, 2).map((m) => m.id)).toEqual(started);
+  const third = members(retried)[2].id!;
+  expect(third).toBeTruthy();
+  const all = await as(ws, ADMIN, ledger);
+  expect(all.meters.map((m) => m.credits)).toEqual([each, each, each]);
+  /* SYNTHETIC DB WRITE (failFree): the second take fails at no charge. Retry's price is that shot alone, and it re-runs under the same approval as a new take. The others are not touched. */
+  await failFree(ws, started[1]);
+  const left = await quoteUnder(ws, ADMIN, shots(3), key);
+  expect(left.body).toMatchObject({ toStart: { members: 1, estimatedCredits: each }, approval: { covers: true } });
+  expect((left.body.pressed as { id?: string }[]).map((m) => m.id)).toEqual([started[0], undefined, third]);
+  const rerun = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(rerun.body).toMatchObject({ status: "started" });
+  expect(members(rerun)[0].id).toBe(started[0]);
+  expect(members(rerun)[2].id).toBe(third);
+  expect(members(rerun)[1].id).toBeTruthy();
+  expect(members(rerun)[1].id).not.toBe(started[1]);
+  const after = await as(ws, ADMIN, ledger);
+  expect(after.takes).toHaveLength(4);
+  expect(after.meters.filter((m) => m.status === "running").map((m) => m.credits)).toEqual([each, each, each]);
+});
+
+test("the approval binds the total: a press total above the approved total asks again (409, the new total), and the new approval it is pressed with runs", async () => {
+  let ws = await workspace("above", 100_000, { rendersPerHour: 2 });
+  const q = await quote(ws, ADMIN, shots(3));
+  const total = approvalOf(q).maxCredits as number;
+  const key = `press-above-${run}`;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.body).toMatchObject({ status: "partial" });
+  const once = await as(ws, ADMIN, ledger);
+  ws = await withLimits(ws, { rendersPerHour: 100_000 });
+  /* SYNTHETIC DB WRITE: the approval the press holds is recorded one credit under its total (its `maxCredits`), so the press's total now is above it. */
+  await as(ws, ADMIN, () => editApproval(key, 0, "response_json=json_set(response_json,'$.maxCredits',?)", total - 1));
+  const sentBefore = dispatched.length;
+  const asked = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(asked.status, JSON.stringify(asked.body)).toBe(409);
+  expect(asked.body).toMatchObject({ quoteChanged: true, quote: { estimatedCredits: total, members: 3, toStart: { members: 1 }, approval: { maxCredits: total - 1, covers: false } } });
+  expect(asked.body).not.toHaveProperty("approvalExpired");
+  expect(await as(ws, ADMIN, ledger)).toEqual(once);
+  expect(dispatched.length).toBe(sentBefore);
+  /* The person approves the new total: the third starts, and the next ask under that approval starts nothing. */
+  const approved = await press(ws, ADMIN, shots(3), approvalIn(asked), key);
+  expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+  expect(approved.body).toMatchObject({ status: "started", approval: { maxCredits: total } });
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+  const settled = await press(ws, ADMIN, shots(3), approvalIn(asked), key);
+  expect(members(settled).map((m) => m.id)).toEqual(members(approved).map((m) => m.id));
+  expect(dispatched.length - sentBefore).toBe(1);
+});
+
+test("a press's approval is drawn on for 7 days, as a plan's: past that, an ask that would start a shot is asked again at today's price and never admitted on the old approval", async () => {
+  const { PLAN_APPROVAL_MS } = await import("../../lib/workbench/plan-approval");
+  expect(batchPress.PRESS_APPROVAL_MS).toBe(PLAN_APPROVAL_MS);
+  let ws = await workspace("expired", 100_000, { rendersPerHour: 2 });
+  const q = await quote(ws, ADMIN, shots(3));
+  const key = `press-expired-${run}`;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.body).toMatchObject({ status: "partial" });
+  const once = await as(ws, ADMIN, ledger);
+  ws = await withLimits(ws, { rendersPerHour: 100_000 });
+  /* SYNTHETIC DB WRITE: the approval's `created_at` back-dated to 7 days and a moment ago. */
+  await as(ws, ADMIN, () => editApproval(key, 0, "created_at=?", Date.now() - batchPress.PRESS_APPROVAL_MS - 1));
+  const sentBefore = dispatched.length;
+  for (let i = 0; i < 2; i++) {
+    const asked = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+    expect(asked.status, JSON.stringify(asked.body)).toBe(409);
+    expect(asked.body).toMatchObject({ quoteChanged: true, approvalExpired: true, quote: { estimatedCredits: q.body.estimatedCredits, toStart: { members: 1 }, approval: { expired: true, covers: false } } });
+    expect((asked.body.quote as { fingerprint: string }).fingerprint).not.toBe(q.body.fingerprint);
+    expect(members(asked).map((m) => m.id)).toEqual([...members(first).slice(0, 2).map((m) => m.id), undefined]);
+    expect(await as(ws, ADMIN, ledger)).toEqual(once);
+    expect(dispatched.length).toBe(sentBefore);
+  }
+  /* Quoted under its key: the same new total, and the approval it holds has run out. */
+  const shown = await quoteUnder(ws, ADMIN, shots(3), key);
+  expect(shown.body).toMatchObject({ approval: { expired: true, covers: false }, toStart: { members: 1 } });
+  /* Approved again at today's price: the third starts under the new approval. */
+  const approved = await press(ws, ADMIN, shots(3), approvalOf(shown), key);
+  expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+  expect(approved.body).toMatchObject({ status: "started" });
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+  expect(dispatched.length - sentBefore).toBe(1);
+  const all = members(approved).map((m) => m.id);
+  /* The old approval is never admitted again: it asks again, beside the press as it stands. */
+  const old = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(old).toMatchObject({ status: 409, body: { quoteChanged: true } });
+  expect(members(old).map((m) => m.id)).toEqual(all);
+  /* SYNTHETIC DB WRITE: the new approval's `created_at` back-dated too. With nothing left to start, asking again under it only shows the press, and starts nothing. */
+  await as(ws, ADMIN, () => editApproval(key, 1, "created_at=?", Date.now() - batchPress.PRESS_APPROVAL_MS - 1));
+  const shownOnly = await press(ws, ADMIN, shots(3), approvalOf(shown), key);
+  expect(shownOnly.status, JSON.stringify(shownOnly.body)).toBe(200);
+  expect(members(shownOnly).map((m) => m.id)).toEqual(all);
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+  expect(dispatched.length - sentBefore).toBe(1);
+});
+
+test("a press is its own person's in its own workspace: workspace B, or another person in A, under the same key sees none of it and can neither replay nor cancel it", async () => {
+  const asked: string[] = [];
+  const engine = { cancelQueued: async (id: string) => { asked.push(id); return { status: "cancelled" as const }; } };
+  let a = await workspace("tenant_a", 100_000, { rendersPerHour: 2 });
+  const b = await workspace("tenant_b", 100_000);
+  const q = await quote(a, ADMIN, shots(3));
+  const key = `press-tenant-${run}`;
+  const pressedA = await press(a, ADMIN, shots(3), approvalOf(q), key);
+  expect(pressedA.body).toMatchObject({ status: "partial" });
+  const idsA = members(pressedA).flatMap((m) => (m.id ? [m.id] : []));
+  expect(idsA).toHaveLength(2);
+  const ledgerA = await as(a, ADMIN, ledger);
+  /* Room in A's hour again: A's third shot could start, but only under A's own press. */
+  a = await withLimits(a, { rendersPerHour: 100_000 });
+  const others = [[b, ADMIN], [a, MEMBER]] as const;
+  /* Quoted under A's key: no shot started, no approval held, the whole press still to start. */
+  for (const [ws, actor] of others) {
+    const shown = await quoteUnder(ws, actor, shots(3), key);
+    expect(shown.status, JSON.stringify(shown.body)).toBe(200);
+    expect(shown.body).toMatchObject({ toStart: { members: 3 }, approval: null, pressed: [{ index: 0 }, { index: 1 }, { index: 2 }] });
+  }
+  /* Pressed in B under A's key and A's approval: B's own press of B's own shots, never A's takes, and nothing of A's moves. */
+  const replay = await press(b, ADMIN, shots(3), approvalOf(q), key);
+  expect(JSON.stringify(replay.body)).not.toMatch(new RegExp(idsA.join("|")));
+  expect(await as(a, ADMIN, ledger)).toEqual(ledgerA);
+  /* Cancelled under A's key from B, or by another person in A: none of A's takes is cancelled, named or touched. */
+  for (const [ws, actor] of others) {
+    const cancelled = await as(ws, actor, () => batchPress.cancelBatch(key, actor, engine));
+    expect(JSON.stringify(cancelled.body)).not.toMatch(new RegExp(idsA.join("|")));
+  }
+  expect(asked.filter((id) => idsA.includes(id))).toEqual([]);
+  expect(await as(a, ADMIN, ledger)).toEqual(ledgerA);
+  /* A's press is A's: asked again in A, its own takes, and its third shot. */
+  const again = await press(a, ADMIN, shots(3), approvalOf(q), key);
+  expect(again.body).toMatchObject({ status: "started" });
+  expect(members(again).slice(0, 2).map((m) => m.id)).toEqual(idsA);
+});
+
+/** SYNTHETIC DB WRITE: one started shot's recorded hold, changed (`hold`/`estimated`) or removed, as named at each use. */
+async function editHold(key: string, index: number, change: { to: number } | "remove") {
+  const { db } = await import("../../lib/db");
+  const prefix = `${batchPress.memberKey(key, batchPress.pressShots(shots(3)), index, 0)}:hold:`;
+  if (change === "remove") await db().execute({ sql: "DELETE FROM generation_requests WHERE user_id=? AND request_key>=? AND request_key<?", args: [ADMIN.user.id, prefix, `${prefix}~`] });
+  else await db().execute({ sql: "UPDATE generation_requests SET response_json=json_set(response_json,'$.hold',?,'$.estimated',?) WHERE user_id=? AND request_key>=? AND request_key<?", args: [change.to, change.to, ADMIN.user.id, prefix, `${prefix}~`] });
+}
+
+test("a press with a started shot whose hold was never recorded (pressed before holds were recorded) starts nothing more under the approval it holds: it asks again at today's price", async () => {
+  let ws = await workspace("unrecorded", 100_000, { rendersPerHour: 2 });
+  const q = await quote(ws, ADMIN, shots(3));
+  const key = `press-unrecorded-${run}`;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.body).toMatchObject({ status: "partial" });
+  const once = await as(ws, ADMIN, ledger);
+  /* SYNTHETIC DB WRITE: the first shot's recorded hold removed, as a press started before this change left it. */
+  await as(ws, ADMIN, () => editHold(key, 0, "remove"));
+  ws = await withLimits(ws, { rendersPerHour: 100_000 });
+  const shown = await quoteUnder(ws, ADMIN, shots(3), key);
+  expect(shown.body).toMatchObject({ toStart: { members: 1 }, approval: { expired: false, covers: false } });
+  const sentBefore = dispatched.length;
+  const asked = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(asked.status, JSON.stringify(asked.body)).toBe(409);
+  expect(asked.body).toMatchObject({ quoteChanged: true, quote: { estimatedCredits: q.body.estimatedCredits, toStart: { members: 1 }, approval: { covers: false } } });
+  expect(asked.body).not.toHaveProperty("approvalExpired");
+  expect(members(asked).map((m) => m.id)).toEqual([...members(first).slice(0, 2).map((m) => m.id), undefined]);
+  expect(await as(ws, ADMIN, ledger)).toEqual(once);
+  expect(dispatched.length).toBe(sentBefore);
+  /* The person approves today's total: the third starts, once. */
+  const approved = await press(ws, ADMIN, shots(3), approvalIn(asked), key);
+  expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+  expect(approved.body).toMatchObject({ status: "started" });
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+  expect(dispatched.length - sentBefore).toBe(1);
+});
+
+test("the approval binds the total, not each shot: with the press's shots priced differently from the approval but its total at the approved figure, the shot left starts under the approval it holds", async () => {
+  /* The mocks cannot move one shot's price without writing a rate or a margin into the test, which this file never does. The shift is made on the recorded side
+     instead: a started shot recorded one credit under its quote, and the approval recorded one credit under its total, so the press's shots no longer match the
+     approval shot by shot while its total sits exactly at the approved figure. */
+  let ws = await workspace("shift", 100_000, { rendersPerHour: 2 });
+  const q = await quote(ws, ADMIN, shots(3));
+  const each = (q.body.estimatedCredits as number) / 3;
+  const total = approvalOf(q).maxCredits as number;
+  const key = `press-shift-${run}`;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.body).toMatchObject({ status: "partial" });
+  /* SYNTHETIC DB WRITE: the first shot's recorded hold one credit lower, and (editApproval) the approval's recorded total one credit lower. */
+  await as(ws, ADMIN, async () => { await editHold(key, 0, { to: each - 1 }); await editApproval(key, 0, "response_json=json_set(response_json,'$.maxCredits',?)", total - 1); });
+  ws = await withLimits(ws, { rendersPerHour: 100_000 });
+  const shown = await quoteUnder(ws, ADMIN, shots(3), key);
+  expect(shown.body).toMatchObject({ estimatedCredits: total - 1, toStart: { members: 1, estimatedCredits: each }, approval: { maxCredits: total - 1, covers: true } });
+  const sentBefore = dispatched.length;
+  const retried = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(retried.status, JSON.stringify(retried.body)).toBe(200);
+  expect(retried.body).toMatchObject({ status: "started" });
+  expect(members(retried).slice(0, 2).map((m) => m.id)).toEqual(members(first).slice(0, 2).map((m) => m.id));
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+  expect(dispatched.length - sentBefore).toBe(1);
+});
