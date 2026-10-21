@@ -59,6 +59,15 @@ test("Rename, Skip and Put it back are in a step's menu; a skipped step is muted
   await page.getByTestId("v12-steprail-rename").fill("Nope");
   await page.keyboard.press("Escape");
   await expect(step(page, "script").locator(".v12-steprail-label")).toHaveText("Story");
+  /* A click away keeps the new name (everything saves itself, rule 13); an emptied name keeps the old one. */
+  await menu(page, "script", "Rename");
+  await page.getByTestId("v12-steprail-rename").fill("Story draft");
+  await page.getByTestId("v12-steprail-rename").blur();
+  await expect(step(page, "script").locator(".v12-steprail-label")).toHaveText("Story draft");
+  await menu(page, "script", "Rename");
+  await page.getByTestId("v12-steprail-rename").fill("  ");
+  await page.getByTestId("v12-steprail-rename").press("Enter");
+  await expect(step(page, "script").locator(".v12-steprail-label")).toHaveText("Story draft");
   await menu(page, "pitch", "Skip this step");
   await expect(step(page, "pitch")).toHaveAttribute("data-skipped", "");
   await expect(step(page, "pitch")).toHaveCSS("opacity", "1");

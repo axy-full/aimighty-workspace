@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Client, Transaction } from "@libsql/client";
 import { creditFigure, fromTenths, toTenths } from "../runLimit";
+import { PLAN_APPROVAL_MS } from "./rig-agent-plan";
 
 /*
  * A plan is approved once (CLAUDE.md rule 14; the scope's § 0 Money): one tap by the person who asked Atomik
@@ -26,8 +27,8 @@ import { creditFigure, fromTenths, toTenths } from "../runLimit";
 export const PLAN_CEILING_MULTIPLE = 2;
 /** At most this many fixes per shot under one approval; a further one asks at its price. */
 export const MAX_FIXES_PER_SHOT = 2;
-/** How long an approval may be drawn on (owner decision 4), unless the run is stopped or undone first. */
-export const PLAN_APPROVAL_MS = 7 * 24 * 60 * 60 * 1000;
+/** How long an approval may be drawn on (owner decision 4), unless the run is stopped or undone first: one figure, kept with the plan's bounds so a client reads the same. */
+export { PLAN_APPROVAL_MS };
 
 export const PEOPLE_ONLY = "Only a person approves spending. Atomik, outside agents and tokens can prepare a plan, never approve it.";
 export const THIRD_FIX = `This shot has had its ${MAX_FIXES_PER_SHOT} fixes under this plan. Another one asks at its own price.`;
