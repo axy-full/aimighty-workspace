@@ -1,0 +1,10 @@
+// Planted for tests/unit/model-call-sites.spec.ts: a second agent call beside a wrapped one. Never compiled or imported.
+import { ToolLoopAgent, type LanguageModel, type ModelMessage } from 'ai';
+import { modelDoor, modelTelemetry, readSdkResult } from '../modelTrace';
+
+export async function run(model: LanguageModel, messages: ModelMessage[]) {
+  const agent = new ToolLoopAgent({ model, experimental_telemetry: modelTelemetry('suite-agent') });
+  const first = await modelDoor(() => agent.generate({ messages }), readSdkResult);
+  const second = await agent.generate({ messages });
+  return [first, second];
+}

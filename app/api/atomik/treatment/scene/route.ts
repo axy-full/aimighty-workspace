@@ -65,7 +65,8 @@ export const POST = withTenant(async function POST(req: Request) {
     `REWRITE SCENE ${n}:`, `title: ${scene.title || "(untitled)"}`, `secs: ${scene.secs}`, `prose: ${scene.prose || "(empty)"}`,
     typeof body.note === "string" && body.note.trim() ? `THE PERSON ASKS: ${body.note.trim().slice(0, 400)}` : "",
   ].filter(Boolean).join("\n");
-  const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 900, kind: "scene", mock: "scene" as const, createdBy: got.user.id, projectId };
+  const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 900, kind: "scene", mock: "scene" as const, createdBy: got.user.id,
+    /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.treatment_scene" as const, step: "scene", model, effort: effort ?? "auto" }, projectId };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
   const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
   const out = sceneFromReply(result.text);

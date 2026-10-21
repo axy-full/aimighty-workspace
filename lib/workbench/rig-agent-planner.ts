@@ -8,6 +8,7 @@ import { textCostUsd, textQuoteCostUsd, type CatalogModel } from "../catalog";
 import { ATOMIK_IMAGE_TOKENS, ATOMIK_MAX_VISUALS } from "./atomik-reference-types";
 import { directTextCostUsd } from "../openai-direct";
 import { stepTextUsage } from "../textDirect";
+import { modelDoor, modelTelemetry, readSdkResult } from "../modelTrace";
 import { DryBoard, createNodeInput, lockInput, renderInput, wireInput, type BoardSnapshot, type PlanDraft, type SnapshotAttachment } from "./rig-agent-plan";
 
 /*
@@ -217,6 +218,7 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
     maxRetries: 0,
     stopWhen: isStepCount(PLANNER_STEPS),
     output: Output.object({ schema: plannerResultSchema }),
+    experimental_telemetry: modelTelemetry("board-planner"),
     tools: {
       inspect_board: tool({
         description: "Read the board and the production again (cards with ids and kinds, pictures, cast, places, storyboard). Once.",
@@ -239,10 +241,10 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
       return stepNumber >= PLANNER_STEPS - 1 ? finalToolStep(model) : {};
     },
   });
-  const generated = await agent.generate({
+  const generated = await modelDoor(() => agent.generate({
     messages: [{ role: "user", content: [{ type: "text", text: plannerMessage(snapshot) }, ...attachedParts] }],
     abortSignal: options.abortSignal ?? AbortSignal.timeout(PLANNER_TIMEOUT_MS),
-  });
+  }), readSdkResult);
   if (over) throw new PlannerError("Atomik's plan went past its limit. Ask for a smaller board.");
   const stepUsage = generated.steps.map((step) => step.usage);
   let result: PlannerResult;

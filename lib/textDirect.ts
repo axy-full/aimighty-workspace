@@ -10,6 +10,7 @@ import type { TextRun } from './engines/types';
 import { languageModel } from './language-provider';
 import { recoveryFetch } from './recovery';
 import { directVendorOf, isDirectRoute, redactProviderError, textRoute, type DirectVendor } from './textRoute';
+import { modelCallNotSent, modelDoor, modelTelemetry, readTextReply } from './modelTrace';
 
 /**
  * The raw text seam (P4b). Callers send the OpenAI-compatible chat body they
@@ -34,6 +35,10 @@ export type TextPostOptions = {
 };
 
 export async function textPost(body: string, opts: TextPostOptions = {}): Promise<TextReply> {
+  /* A model call's door (lib/modelTrace.ts): its status and usage are read off the reply, never its text. */
+  return modelDoor(() => routeTextPost(body, opts), readTextReply);
+}
+async function routeTextPost(body: string, opts: TextPostOptions): Promise<TextReply> {
   /* The canned reply under ENGINE_MOCK: nothing leaves the process (moved here from lib/gateway.ts). */
   const mocked = await mockTextReply(body, opts.mock);
   if (mocked) return mocked;
@@ -279,6 +284,7 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
       ...(request.instructions ? { instructions: request.instructions } : {}), messages: request.messages,
       maxOutputTokens: request.maxOutputTokens, temperature: request.temperature, topP: request.topP, stopSequences: request.stopSequences,
       providerOptions: request.providerOptions, ...(output ? { output } : {}),
+      experimental_telemetry: modelTelemetry('text-direct'),
     });
     /* Google's own fixed safety filter blocked the answer (lib/geminiSafety.ts): a plain message, nothing charged, and only the reason is logged, never the prompt or the output. */
     if (vendor === 'google') {
@@ -298,6 +304,8 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
     // Our own refusal says why (its text names the model and the setting, never the prompt).
     console.warn(`direct text ${vendor}: ${sent ? 'failed' : 'not sent'} ${providerErrorSummary(error)}${error instanceof TextNotSentError ? ` reason=${JSON.stringify(error.message.slice(0, 200))}` : ''}`);
     if (!sent) {
+      /* Nothing left the process: the model call's span says so (sent: false). */
+      modelCallNotSent();
       if (error instanceof TextNotSentError) return reply(error.status, error.message);
       // Missing key, unmapped id, refused endpoint or a request the SDK rejected locally: nothing left the process.
       return reply(422, error instanceof Error ? error.message : 'The direct language request was not sent.');

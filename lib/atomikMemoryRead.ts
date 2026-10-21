@@ -82,7 +82,8 @@ export async function runMemoryRead(
   overrides: { model?: CatalogModel; submit?: (request: TextRun) => Promise<{ ok: boolean; status: number; text: string }> } = {},
 ): Promise<{ id: string; costUsd: number; credits: number; read: ReadResult }> {
   const result = await runPaidText(
-    { ...paidInput(input), id: input.id, maxCredits: input.maxCredits, projectId: input.projectId, createdBy: input.createdBy },
+    { ...paidInput(input), id: input.id, maxCredits: input.maxCredits, projectId: input.projectId, createdBy: input.createdBy,
+      /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.memory_read", step: MEMORY_READ_KIND, model: input.model } },
     { ...overrides, accept: usable },
   );
   return { id: result.id, costUsd: result.costUsd, credits: result.credits, read: readProposals(result.text)! };

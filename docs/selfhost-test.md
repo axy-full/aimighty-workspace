@@ -208,6 +208,22 @@ Check the bucket's CORS list contains `https://particl.si`. The origin does not 
 
 All three `VERCEL_*` names above are needed together; see "Astra Blender renders from the self-hosted host". The same token and team id also let workspace deletion revoke that workspace's gateway key (`lib/purge.ts`).
 
+### Tracing (Langfuse)
+
+Every model call Atomik makes (chat turns, the board planner, Enhance, the memory read, development steps including condense and Verify, Studio Atomik jobs, the inline prompt writer, Crew) can be traced to Langfuse, one span per call (`lib/modelTrace.ts`, `lib/modelTraceExport.ts`, loaded by `instrumentation.ts`). A span carries ids, settings and counts only: workspace id, run or chat id, step, mode, band, model, effort, tokens in, out and cached, the vendor cost the code already works out, latency, outcome and environment. Outcome is exact: **answered** (the call came back and was used); **refused** (any 4xx status other than 408, whether the provider's or Particl's own refusal before anything was sent, such as an estimate that changed; the `sent` attribute tells them apart: true for the provider, false for Particl; also a content or safety filter, or a model refusal); **timed out** (a timeout, or 408/504); **failed** (anything else). It never carries prompt text, messages, outputs, tool arguments or results, images, file names, people, user ids, URLs, headers or keys. Langfuse's region is the EU (`cloud.langfuse.com`), one project, "particl".
+
+**There is one application, and it is production.** There is no staging app (staging is a later step, after deploy #6); nothing below applies to anything else. **`LANGFUSE_ENABLED` stays unset on the production app until the owner turns it on after deploy #6.**
+
+| Name | Value or source | Notes |
+|---|---|---|
+| `LANGFUSE_ENABLED` | **unset** until the owner turns tracing on (after deploy #6); then exactly `1` | Anything else (`true`, `yes`, ` 1`, `0`) is off. Off, nothing of Langfuse is even loaded. |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse, the "particl" project, **Settings, API Keys** | not secret on its own; still never in the repo or a chat |
+| `LANGFUSE_SECRET_KEY` | the same API key pair | **secret** |
+| `LANGFUSE_BASE_URL` | the project's region address (EU: `https://cloud.langfuse.com`) | must be `https`; a missing or unusable value keeps tracing off |
+| `LANGFUSE_ENVIRONMENT` | fixed: `production` | sent on every span; filter by it in Langfuse |
+
+With `LANGFUSE_ENABLED=1` and a key or the base URL missing, the server logs one line, `langfuse.not_started`, naming the missing variables (never a value), and runs without tracing. Spans leave in the background in batches: a slow or unreachable Langfuse never slows or fails a person's request. Only model spans are exported; the app's own request spans (paths, query strings, headers) are never created by this tracer.
+
 ### Never set on the self-hosted app
 
 `VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_REGION`, `VERCEL_DEPLOYMENT_ID`, `VERCEL_GIT_*` (any), `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_BRANCH_URL`, `VERCEL_OIDC_TOKEN`. Vercel sets these itself; on another host they switch the app into Vercel behaviour: `VERCEL` alone makes the app read client addresses the Vercel way (anyone can then fake them) and send the AI gateway an OIDC identity it does not have. **Never bulk-paste a `vercel env pull` file into Coolify:** it contains `VERCEL=1`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_GIT_*` and `VERCEL_OIDC_TOKEN`. Copy the names in the tables above one by one. Also not added: `NODE_ENV`, `PORT`, `HOSTNAME` (the image sets them) and the script-only names (`PARTICL_BACKUP_*`, `PW_*`, `AIMIGHTY_*`, `PARTICL_URL`, `PARTICL_TOKEN`).

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { TextNotSentError } from "@/lib/textDirect";
+import { boardModeOf, openModelCall } from "@/lib/modelTrace";
 import { after } from "next/server";
 import { db, now } from "@/lib/db";
 import { EVENTS, RIG_AGENT_STOPPED, RIG_RENDER_SETTLED, type WorkerEvent } from "@/lib/dispatch";
@@ -1034,15 +1035,23 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
     return (await getRun(db(), run.id))?.state ?? "stopped";
   }
   let outcome: PlannerOutcome & { model: string };
-  try { outcome = await (deps.plan ?? defaultPlan)(snapshot, price.id, content); }
+  /* The planning turn's model call (lib/modelTrace.ts): the run's ids, the person's board mode and the turn's counts, never the goal or the plan. */
+  const call = openModelCall("atomik.board_planner", { runId: run.id, step: "plan", band: 1, model: price.id, mode: boardModeOf(draft.project, run.owner) });
+  try { outcome = await call.run(() => (deps.plan ?? defaultPlan)(snapshot, price.id, content)); }
   catch (error) {
     /* No proposal came back: the turn is not billed (what it used, when the model said, is recorded as the platform's). */
     const used = error instanceof PlannerError ? plannerCostUsd(price.catalog, error.stepUsage, price.direct) : null;
+    call.note({ costUsd: used });
+    call.fail(error);
+    call.end();
     await settlePlanning(run, price, ceiling, { billed: false, usedUsd: used });
     return failRun(run.id, error instanceof PlannerError ? error.message : "Atomik could not plan this board. Ask again.", ["planning"]);
   }
   /* Settled at what it used (never above what was reserved); usage that cannot be priced is not billed. */
   const used = plannerCostUsd(price.catalog, outcome.stepUsage, price.direct);
+  /* Trace only, and unable to throw (optional reads): nothing between the plan and its settlement can fail because of it. */
+  call.note({ costUsd: used, tokensIn: outcome.usage?.inputTokens ?? null, tokensOut: outcome.usage?.outputTokens ?? null });
+  call.end();
   await settlePlanning(run, price, ceiling, { billed: used != null, usedUsd: used });
   const assets = new Map([...draft.project.assets, ...(draft.project.sharedAssets ?? []), ...canvasAssets].map((a) => [a.id, a]));
   const plan = compilePlan(outcome.draft, { runId: run.id, title: outcome.result.title, summary: outcome.result.summary, existing: nodes, assets });

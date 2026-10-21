@@ -1,5 +1,6 @@
 import { textVendor, directTextCostUsd, isDirectText, textEngine, textKeyName, TEXT_PROVIDER_HEADER, type TextVendor } from '../openai-direct';
 import { stepTextUsage } from '../textDirect';
+import { modelDoor, modelTelemetry, openModelCall, readSdkResult } from '../modelTrace';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ToolLoopAgent, stepCountIs } from 'ai';
@@ -595,12 +596,13 @@ export async function executeDevelopmentAgent(input: DevelopmentCall, auth: Deve
     // already includes thinking, so subtract it here to keep the paid ceiling.
     maxOutputTokens: input.model.id.startsWith('anthropic/') && input.effort.startsWith('budget:') ? input.maxTokens - Number(input.effort.slice(7)) : input.maxTokens,
     maxRetries: 0, stopWhen: stepCountIs(1),
-    providerOptions: developmentProviderOptions(input.model, input.effort) });
+    providerOptions: developmentProviderOptions(input.model, input.effort),
+    experimental_telemetry: modelTelemetry('development') });
     /* A Verify check's review copies are 512 px at most and go at low detail, as its quote counts them. */
     const detail = input.kind === 'verify' ? { providerOptions: { openai: { imageDetail: 'low' } } } : {};
-    const result = input.images?.length
-      ? await agent.generate({ messages: [{ role: 'user', content: [{ type: 'text', text: input.prompt }, ...input.images.map((image) => ({ type: 'image' as const, image, ...detail }))] }], abortSignal: AbortSignal.timeout(240_000) })
-      : await agent.generate({ prompt: input.prompt, abortSignal: AbortSignal.timeout(240_000) });
+    const result = await modelDoor(() => input.images?.length
+      ? agent.generate({ messages: [{ role: 'user', content: [{ type: 'text', text: input.prompt }, ...input.images.map((image) => ({ type: 'image' as const, image, ...detail }))] }], abortSignal: AbortSignal.timeout(240_000) })
+      : agent.generate({ prompt: input.prompt, abortSignal: AbortSignal.timeout(240_000) }), readSdkResult);
     return { text: result.text, inputTokens: result.totalUsage.inputTokens, outputTokens: result.totalUsage.outputTokens, finishReason: result.finishReason,
       ...(isDirectText(input.model.id) ? { directUsage: result.steps.length === 1 ? stepTextUsage(input.model.id, result.steps[0].usage, true) : null } : {}) };
   } catch (error) { throw Object.assign(error as Error, { providerSubmitted }); }
@@ -723,20 +725,23 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
     const prior = (await db().execute({ sql: "SELECT stage,result FROM workbench_development_steps WHERE job_id=? AND chunk_index=? AND status='succeeded'", args: [id, chunk.index] })).rows;
     const draft = prior.find(step => step.stage === 'draft'), critique = prior.find(step => step.stage === 'critique');
     let submitted = false, returned = false, cost = Number(next.estimate_usd), reply: DevelopmentReply | undefined;
+    /* One model call per phase (lib/modelTrace.ts): the kind and stage, the counts and the cost, never the prompt or the answer. */
+    const call = openModelCall('atomik.development', { runId: id, step: `${input.kind}:${stage}`, model: input.model, effort: input.effort });
     try {
       await deps.funding(id, input.model);
       await deps.auth(input.model);
       const snapshot = JSON.parse(String(row.snapshot)) as Snapshot;
       const prompt = promptFor(snapshot, input, chunk, draft ? JSON.parse(String(draft.result)) : undefined, critique ? JSON.parse(String(critique.result)) : undefined);
       submitted = true;
-      reply = await deps.call({ model, effort: input.effort, stage, kind: input.kind, chunk,
-        prompt, instructions: developmentInstructions(input.kind, stage), maxTokens: Number(next.max_tokens), images: developmentImages(snapshot) });
+      reply = await call.run(async () => await deps.call({ model, effort: input.effort, stage, kind: input.kind, chunk,
+        prompt, instructions: developmentInstructions(input.kind, stage), maxTokens: Number(next.max_tokens), images: developmentImages(snapshot) }));
       returned = true;
       const direct = isDirectText(input.model);
       const directCost = direct ? directTextCostUsd(model, reply.directUsage) : null;
       if ((!direct || engineMock()) && typeof reply.costUsd === 'number' && Number.isFinite(reply.costUsd) && reply.costUsd >= 0) cost = reply.costUsd;
       else if (direct && directCost != null) cost = directCost;
       else if (!direct && typeof reply.inputTokens === 'number' && Number.isFinite(reply.inputTokens) && reply.inputTokens >= 0 && typeof reply.outputTokens === 'number' && Number.isFinite(reply.outputTokens) && reply.outputTokens >= 0) cost = textCostUsd(model, reply.inputTokens, reply.outputTokens) ?? cost;
+      call.note({ costUsd: cost, tokensIn: reply.inputTokens ?? null, tokensOut: reply.outputTokens ?? null, refused: reply.finishReason === 'content-filter' });
       // Preserve the paid answer before validating its structure; invalid answers
       // remain addressable and cannot be silently purchased again as a repair.
       await db().execute({ sql: 'UPDATE workbench_development_steps SET response=?,usage=?,cost_usd=?,updated_at=? WHERE job_id=? AND step_index=?', args: [reply.text, JSON.stringify({ inputTokens: reply.inputTokens, outputTokens: reply.outputTokens, ...(direct ? { directUsage: reply.directUsage } : {}) }), cost, now(), id, Number(next.step_index)] });
@@ -755,6 +760,7 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
       if (!more) { const settled = await finishDevelopmentJob(row, deps); return { done: settled, waiting: false, settlementPending: !settled }; }
       return { done: !more, waiting: false };
     } catch (error) {
+      call.fail(error);
       const status = Number((error as { statusCode?: number }).statusCode);
       const rejection = status >= 400 && status < 500 && status !== 408;
       const notSubmitted = (error as { providerSubmitted?: boolean }).providerSubmitted === false;
@@ -771,6 +777,8 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
       if (!stoppedJob.rowsAffected) return { done: false, waiting: true };
       const settled = await settleDevelopment({ ...row, status: uncertain ? 'uncertain' : 'failed', cost_usd: uncertain ? null : total }, deps);
       return { done: settled, waiting: false, settlementPending: !settled };
+    } finally {
+      call.end();
     }
   });
 }
