@@ -917,7 +917,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **D4 Picker vocabularies and the camera bank** (R10), a picture per item.
 
-**D5 "?" cards** — rails × steps × three lines (the Ad film set is written and approved: the product speaks, not Atomik) + one loop per step.
+**D5 "?" cards** — rails × steps × three lines (the Ad film set is written and approved: the product speaks, not Atomik) + one loop per step. *(Order amended in (ii), D3.)*
 
 **D6 Glossary** — film words, one-line definition, thumbnail; feeds Agent underlines and Director tooltips. One vocabulary (rule 5). The draft is `docs/glossary-d6-draft.md` (21 Oct 2026).
 
@@ -929,9 +929,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **S1** The per-step catalogue (Script → Deliver, plus the other rails' extra stages) is the example bank for D1, not a fixed list: each stage opens with a proposal, a judging prompt, at most three bare questions only where no default exists and money is attached, and what each answer sets and carries forward.
 
-**S2 Agent mode sequence:** Brief (interview, genre) → read-back "How I'll make it" → Script → Treatment → Elements → Look → Storyboard (shot by shot; play as a cut) → Shots (shot by shot; preflight; one quote) → Sound → Edit → Deliver. A stranger is asked once; nothing is asked twice.
-
-**Step order, 21 October 2026 (the owner, D3):** "S2 and D5: the step order is Brief · Script · Treatment · Elements · Look · Storyboard · Shots · Sound · Edit · Deliver (Elements before Look)." S2 above is amended to it; the film types' rails (`lib/productionModel/filmTypes.ts`) follow it, and the D5 "?" cards follow the rail's order.
+**S2 Agent mode sequence:** Brief (interview, genre) → read-back "How I'll make it" → Script → Treatment → Elements → Look → Storyboard (shot by shot; play as a cut) → Shots (shot by shot; preflight; one quote) → Sound → Edit → Deliver. A stranger is asked once; nothing is asked twice. *(Step order as amended 21 October 2026 in (ii), D3: Elements before Look; the film types' rails in `lib/productionModel/filmTypes.ts` follow it.)*
 
 ## The owner's answers on this amendment, 21 October 2026
 
@@ -962,3 +960,78 @@ Also strip what we control inside the file: container and image metadata fields 
 **R3, amended:** Options are never free — the three frames are billed, and the ideation behind them is billed as a band (18 Oct: everything Atomik makes is charged and quoted first).
 
 **D6:** the glossary draft is attached (`docs/glossary-d6-draft.md`): ~150 words, plain-word definitions in our own words, each marked A (Agent underline) or D (Director picker tooltip), grouped by step. Terms were checked against the standard handbook vocabulary; no book text is reproduced. The owner edits; then it ships as data with a thumbnail or loop per entry.
+
+# Amendment, 21 October 2026 (ii)
+
+The owner's decisions of 21 October 2026 (evening), in his words. Items already recorded earlier on 21 October are kept where they are, and only pointed to here. This PR is docs only. Code PRs follow as marked: **[money]** under a money review; **[schema]** flagged to the owner before any migration.
+
+## A · Spend approvals [money]
+
+Recorded earlier today (docs/redesign-plan.md, Owner decisions, 21 Oct):
+- **A1:** the admin approval rule is retired. Every member approves their own spend with their own tap on the quote. The monthly limit is off by default and owner-only, with no Paused card. The house cap is unchanged.
+- **A2:** Auto is retired, and guardrail-4 lands first, then the approval-rule PR.
+- **A3:** "free" is lowercase.
+- **A4:** the 4K-refusal fix (#865).
+- **A5:** the scoping pass and its estimate.
+
+The strikes of rule 14's "a step over the rule's cap needs an admin" and of the 20 Oct Q3 travel with the approval-rule code PR.
+
+## B · Prices [money]
+
+**B1** Recorded earlier today (docs/redesign-plan.md, "export and render pricing"): rendering what was already made and billed is free; another tool's processing inside a render is priced as one figure; 4K is free only if the takes were made and billed at 4K.
+
+**B2** Atomik's bands (Reading, Research, Analysis, Writing) are priced by size at quote time from rates in my private policy through the price path — never a fixed figure in code or copy. Because the cost depends on what the material contains (charts, images, scans), the quote is a range ("12–30 cr") or a ceiling ("up to 30 cr"); the Preflight names what will be read; the person approves the top; the top is reserved; the receipt settles at what was used. Engine steps stay exact. An Agent all-in quote that includes a band reads "up to N cr" and settles at actual. This amends the 18 Oct "charged exactly" for bands only. A workspace may set an owner-only allowance ("Atomik may read up to N cr per document without asking"); under it nothing asks, over it one tap.
+
+**B3** Nothing intelligent is free. Priced and quoted first: auditions, Options (the frames and the ideation), Enhance, transcription (by minutes, as a ceiling), reading documents and reference films, research, writing, Atomik's re-cuts, generated previews. Free means no model ran: Preflight and quote, hand edits, crops and exports of what was made, the animatic from kept frames, Keep, Send, undo.
+
+**B4** Two bounded exceptions. Atomik's own check of its work stays free (18 Oct): a judge call on the take (sampled frames or the still) with the shot's own rows, never the record; one pass per take, one more on a remake; cheapest capable model; cost absorbed in the Agent factor; per-take cost traced. The visitor bar is free to the visitor: a fixed number of questions per visitor, a small fixed context (the ? cards, the glossary, the plans), the cheapest model, no tools but the tour of the sample production; its spend marked "visitor" in house spend (#839).
+
+**B5** The first Agent turn in a Director-first project is a Reading turn, quoted as a ceiling and charged once; the record is digested per step and later turns read the digest inside their band price; a mode switch alone never bills.
+
+**B6** Transcription: offered on every new film's Brief; priced by minutes as a ceiling; the transcript is shown for approval; editing it is free; more talking is quoted again. The same for uploaded briefs, brand guidelines and campaign documents.
+
+**B7** GST is Stripe's job (rate, GSTIN, invoices), not the pricing section's; the only copy is "+ GST" on the plan card for Indian addresses, after the Stripe wiring.
+
+## C · The film record (R7, added) [schema]
+
+**C1** The record is written by both modes. Every Director-mode action writes rows (what was made, kept, rejected, with reasons); every free-text input writes "said" lines with source and step (prompts, notes, comments, titles, bar commands); the Director's engine and settings per shot are agent-private rows the agent reads and Agent mode never shows.
+
+**C2** The first Agent call in a Director-first project opens with the read-back assembled from the record ("Here's what I'm working from"), asks at most three questions for rows nothing answers, never asks what the brief document or the Director's own work already answers. "Brief from the board" drafts the brief and checklist from the record as a priced Writing turn. Tested on mocked Director-first projects; Langfuse shows the rows read, ids only.
+
+**C3** Reference films are read for structure only — cuts, shot sizes, moves, durations, the product moment, pacing, light, music turns — never content; priced by minutes as a ceiling; shown as "What I took from your reference" rows with Change; they set beat lengths, coverage bias and cut rhythm.
+
+**C4** Director mode's detail comes from the record, not the Director: a node shows a "Using" row (look · cast · rules · genre); Enhance · 1 cr turns a short prompt into the full one, shown before the press; with no record, the rail's and the genre's defaults fill the gaps.
+
+## D · Corrections to the morning amendment
+
+**D1** R13 and D7 (recorded earlier today; struck above): Particl ships no stock elements, cast or environments; every element is the person's own.
+
+**D2** R9 (recorded earlier today): "from storage (Cloudflare R2)".
+
+**D3** S2 and D5: the step order is Brief · Script · Treatment · Elements · Look · Storyboard · Shots · Sound · Edit · Deliver (Elements before Look). Update the rails in lib/productionModel/filmTypes.ts, the "Sent → …" targets and the ? cards' order.
+
+**D4** R3, amended (recorded earlier today): Options are never free — the frames are billed and the ideation behind them is billed as a band.
+
+## E · New rules from the owner's v31.4 review (R19–R27; they shape the build, not only the prototype)
+
+**R19** Card states, one chip per card: To make · N cr → Making… → Ready to judge → Kept / Needs you → Sent → <step>. "Needs you" = a question, a self-check flag or a failed step. "Awaiting approval" sits on the quote card, never on the asset. Everything else lives in the preview.
+
+**R20** Chips and questions are derived from what is on the card: a product never shows a face chip; the chip set comes from the element rows of that picture. At most three questions on any card; "Skip the rest" is "Decide for me".
+
+**R21** The selection tool (lasso, element selector, "Change this · one quote") exists only where a picture is the subject — Elements, Look, Storyboard, Shots, Make — and only in Agent mode (R18). Never on Sound.
+
+**R22** Make: Agent's Make is "say it → one quote", no model named. Director's Make is a simple generator — text to image, text to video, image to video — with the model picker, settings and a wide prompt field. Model names in Director's Make only; no board in Make.
+
+**R23** Beats and frames are numbered; the number is the story order; drag to renumber; "Number the beats" when an import had none. Script shows beats only (no pictures), as Cards, List or the Director's Page; no free canvas at Script.
+
+**R24** Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote). One canvas tool: drag on empty pans, drag on a card moves, wheel pans, Space pans; no separate Hand tool.
+
+**R25** The bar is a smart box: docked only when nothing is selected; clicking anything opens it beside the thing — Agent: "Tell Atomik about this…" with derived chips; Director: the click's options and a wide prompt field.
+
+**R26** Treatment's editor is Keynote-grade on the Polotno tools: a vertical page navigator that follows the scroll, a page canvas, an inspector of Design · Text · Image · Page — never x·y·w·h. Palettes and looks may come from outside (a Pinterest board, an uploaded deck) as a priced Reading turn. Sound's preview is the mixer (video over stacked layers, Add a layer). Edit in Agent mode lays the line-up first, then quoted prompt revisions; Director's Edit has multiple bins. Storyboard keeps the Director's controls and adds Layers.
+
+**R27** The rail hides with a visible handle that brings it back on every screen.
+
+## F · Open for the owner, not for the lead
+
+The Visitor hero line; the genre table rows; the Agent factor's number; rupee vs dollar billing; provenance-mark disclosure; the 4K figure.
