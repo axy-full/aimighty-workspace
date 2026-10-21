@@ -1771,3 +1771,14 @@ These are recorded in docs/particl-sow-v1.md, "Additions, 21 October 2026", in t
 - 21 Oct 2026: **another tool's processing inside the render is a priced engine step**, with Particl's markup, quoted before the press. That covers 4K upscale (or a native 4K re-render), Re-frame that repaints, lip-sync, voice and music. The export button then shows one figure, the paid steps' total, and never a breakdown of the free parts.
 - 21 Oct 2026: **4K** is free only if the takes were made and billed at 4K. Otherwise it is priced as the upscale it is.
 - 21 Oct 2026: only the owner changes this. Prices come from the rate card path.
+
+## Owner, 21 Oct 2026: spend approvals and the monthly limit [money] (advisor's reading pending the owner's line-by-line confirmation)
+
+- 21 Oct 2026, the owner's words: "no pausing cards, let team members gen to their hearts content till their credits run out. no need for admins to approve a take when they're flying away to a place with no network and nobody to approve a take."
+- The advisor's reading, which the owner confirms line by line. **Pending: no code until he does.**
+  1. The workspace approval rule (a step over the rule's cap needs an admin; lib/approvalRule.ts) is retired. Every member approves their own spend from the workspace pool, with their own tap on the quote. "Only a person approves spending" stands: Atomik, tokens and MCP callers still cannot approve.
+  2. The monthly spend limit stays as a mechanism, off by default. When a workspace sets one and reaches it, there is no Paused card: the quote button reads "Monthly limit reached · ask <owner>", and only the owner changes or removes the limit (17 Oct). Workspaces that set no limit spend until the balance is zero, where Top up is offered at the quote, as today.
+  3. The house cap (Particl's own ceiling on platform spend) is not a customer rule and stays exactly as it is.
+  4. "Ask before every take" remains a person's own setting for their own presses. Ask is the default. Auto's fate is still the owner's decision.
+  5. Code: one PR removes the approval-rule gate and the Paused card, under a money review. CLAUDE.md § Owner decisions and the SOW get the dated note. The 19–20 Oct sentence "the only automatic stop is the workspace's monthly spend limit with its Paused state" is struck and replaced by lines 2 and 3.
+- What line 1 would change: rule 14's sentence "A plan's approval follows the workspace's rule in lib/approvalRule.ts: a step over the rule's cap needs an admin", the owner's 20 Oct Q3 ("a big Atomik step still goes to an admin, keyed to the workspace cap"), and the guardrail-4 PR, which keeps that admin gate.
