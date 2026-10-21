@@ -881,7 +881,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **R2 Questions are derived, never fixed.** Each step has a checklist of decisions (D1). The agent fills it from everything known (brief, interview, earlier steps, the film record, house defaults); each row is known / assumed / open. Only open rows that change the result or the price are asked — in the film's own nouns, at most three per step, the agent's pick preselected. Assumed rows read "I assumed … · Change". A gap no checklist lists may be asked only in the fixed shapes (something to point at, chips, a default, "talk"). Which rows get asked is deterministic and tested on mocked briefs: a brief that says "Hindi VO" is never asked the language question.
 
-**R3 Judge, don't specify.** Every step shows a proposal first; the question is answered by pointing. "Decide for me" is the default; "Just make it" runs every default to one read-back page and one quote. "Options" is priced, sits at the cheapest stage that answers, and the button says so ("Options · 3 frames · 9 cr"). Options are never free.
+**R3 Judge, don't specify.** Every step shows a proposal first; the question is answered by pointing. "Decide for me" is the default; "Just make it" runs every default to one read-back page and one quote. "Options" is priced, sits at the cheapest stage that answers, and the button says so ("Options · 3 frames · 9 cr"). Options are never free. *(Amended 21 October 2026, below.)*
 
 **R4 Genre (owner):** "each film comes in its own genre." Set once in the Brief, never asked again; it keys per-genre defaults and chip sets at every step (D2). The three options the agent shows are all inside the genre, differing on the axis the genre cares about.
 
@@ -919,7 +919,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **D5 "?" cards** — rails × steps × three lines (the Ad film set is written and approved: the product speaks, not Atomik) + one loop per step.
 
-**D6 Glossary** — film words, one-line definition, thumbnail; feeds Agent underlines and Director tooltips. One vocabulary (rule 5).
+**D6 Glossary** — film words, one-line definition, thumbnail; feeds Agent underlines and Director tooltips. One vocabulary (rule 5). The draft is `docs/glossary-d6-draft.md` (21 Oct 2026).
 
 **D7 Recipes per rail** (R12); ~~stock cast and places (R13)~~.
 
@@ -942,3 +942,21 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 - **R8:** "no third mode" means Agent and Director. The Ask/Auto spend setting is a separate thing.
 
 **Correction, 21 October 2026 (the owner): R13 and D7.** Strike "a stock cast and stock places in the platform layer, pickable in one tap" and "stock cast and places (R13)". Particl ships no stock elements, cast or environments. Every element is the person's own, uploaded from references or generated from the script line under the plan's quote, and Atomik teaches the newcomer how (the Elements "?" card, "Show me on my film", the upload hint "even lighting and a plain background works best", the consent tick for a real face). Everything else in R13 stands.
+
+## Additions, 21 October 2026 (the owner's follow-up to the amendment)
+
+The owner's words. This PR is docs only; code PRs follow.
+
+**R16 File names are Particl's.** Every file a person downloads, exports or sees in the Library — takes, frames, images, sound, masters — is renamed on the way out:
+`prtcl-<project>-s<shot>-t<take>-a<asset>-<yyyymmdd>.<ext>`, e.g. `prtcl-mirror-s04-t02-a01-20261021.mp4`.
+For things without a shot the shot slot names the kind: el (element), lk (look), tr (treatment page), sd (sound), ms (master): `prtcl-mirror-el03-a01-20261021.png` · `prtcl-mirror-ms01-a01-20261105.mov`.
+Lowercase, hyphens, no spaces; project is the production's slug; numbers zero-padded to two digits; date is the day the file was made. The vendor's file name never reaches a person. Ground rule 4 lists today's "file naming" among the things that work: this PR names the current scheme and extends it, and every reader of a file name (Library, export, review links, Deliver) is listed in the PR.
+Also strip what we control inside the file: container and image metadata fields that name a tool, encoder or software. **[legal, owner]** Invisible watermarks and signed provenance manifests that some vendors embed may not be ours to remove; the owner decides with counsel before any stripping of those, and until then they stay.
+
+**R17 Failures never name the vendor.** In Agent mode a refused or failed job reads "Nothing billed" (or what it cost) in Particl's words; vendor refusal text is never shown raw. In Director mode the engine is known, but the refusal is still rewritten in plain words and the vendor's own message never appears.
+
+**R18 Quick Look tools by mode.** The lasso, the element selector and "Change this · one quote" in Quick Look are Agent mode only. The Director's Quick Look judges and compares; the Director fixes by hand through Inputs and the prompt.
+
+**R3, amended:** Options are never free — the three frames are billed, and the ideation behind them is billed as a band (18 Oct: everything Atomik makes is charged and quoted first).
+
+**D6:** the glossary draft is attached (`docs/glossary-d6-draft.md`): ~150 words, plain-word definitions in our own words, each marked A (Agent underline) or D (Director picker tooltip), grouped by step. Terms were checked against the standard handbook vocabulary; no book text is reproduced. The owner edits; then it ships as data with a thumbnail or loop per entry.
