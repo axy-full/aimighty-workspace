@@ -44,6 +44,8 @@ export function cardShape(kind: AgentKind): { type: NodeType; refKind?: RefKind;
 
 /** Bounds on one plan: what one build may make and wire. */
 export const PLAN_LIMITS = { cards: 24, wires: 60, next: 24, title: 120, text: 2000, goal: 2000, summary: 400 } as const;
+/** How long a plan's approval may be drawn on (owner decision 4), unless the run is stopped or undone first. Here, with the plan's other bounds, so a client can read it (lib/workbench/plan-approval.ts, which holds the approvals, is server-only). */
+export const PLAN_APPROVAL_MS = 7 * 24 * 60 * 60 * 1000;
 /** The ratios a planned shot may ask for (the Rig's own set; the engine's range is applied when the shot is read). */
 export const SHOT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"] as const;
 const KEY = /^[a-z0-9][a-z0-9-]{0,39}$/;

@@ -129,19 +129,27 @@ function TakeBoard() {
 /* Director on Shots (PR 7): the column, the scope pill and the bar, on mock shots; the prices and the sends are the real routes' (the browser check answers them). */
 /* The engine the test page's stand-in pick sets (PR 9 brings the real pop-up). Director opens with none. */
 const TEST_ENGINE = "dreamina-seedance-2-5-260628";
-const DIRECTOR_SHOTS = [1, 2, 3, 4].map((n) => ({ id: `d${n}`, name: `Shot ${n}`, title: `Shot ${n} · ${["Camp at night", "MAYA arrives", "At the water", "The drink"][n - 1]}`, hue: [32, 210, 200, 28][n - 1] }));
+const DIRECTOR_TITLES = ["Camp at night", "MAYA arrives", "At the water", "The drink"];
+const directorShots = (count: number) => Array.from({ length: count }, (_, i) => i + 1)
+  .map((n) => ({ id: `d${n}`, name: `Shot ${n}`, title: `Shot ${n} · ${DIRECTOR_TITLES[(n - 1) % 4]}`, hue: [32, 210, 200, 28][(n - 1) % 4] }));
+/* The test page's stand-in for a long board: more shots than one press takes. */
+const MANY_SHOTS = 26;
 
 function DirectorBoard() {
   const [draft, setDraft] = useState<{ boardSetup: BoardSetup; boardOverrides: CardOverrides }>({ boardSetup: {}, boardOverrides: {} });
   const [selected, setSelected] = useState<string[]>([]);
   const [hover, setHover] = useState<string | null>(null);
   const [engine, setEngine] = useState<PickedEngine | null>(null);
-  const scope = scopeOf(selected, DIRECTOR_SHOTS);
+  /* The board passes today's Top up path (Settings › Credits & billing); the test page only notes that it was asked for. */
+  const [toppedUp, setToppedUp] = useState(false);
+  const [count, setCount] = useState(4);
+  const dirShots = useMemo(() => directorShots(count), [count]);
+  const scope = scopeOf(selected, dirShots);
   const scopeIds = scope.ids.join(",");
   const shots: DirectorShot[] = scopeIds.split(",").filter(Boolean).map((id) => {
     const fields = requestFields(shotSettings(draft, id));
-    const shot = DIRECTOR_SHOTS.find((x) => x.id === id)!;
-    return { id, input: { prompt: `${shot.title}. A slow push in.`, kind: "video", model: { id: engine?.id ?? TEST_ENGINE }, mapping: { productionProjectId: "test-project", shotId: id }, ratio: fields.ratio, resolution: fields.resolution, duration: fields.duration, references: [], firstFrameAssetId: "", generateAudio: fields.generateAudio, ...(fields.draft ? { draft: true } : {}) } };
+    const shot = dirShots.find((x) => x.id === id)!;
+    return { id, name: shot.name, input: { prompt: `${shot.title}. A slow push in.`, kind: "video", model: { id: engine?.id ?? TEST_ENGINE }, mapping: { productionProjectId: "test-project", shotId: id }, ratio: fields.ratio, resolution: fields.resolution, duration: fields.duration, references: [], firstFrameAssetId: "", generateAudio: fields.generateAudio, ...(fields.draft ? { draft: true } : {}) } };
   });
   const [bar, setBar] = useState<{ state: BarState; finished: number; total: number }>({ state: "idle", finished: 0, total: 0 });
   const stages = useMemo(() => stagesOf("film", null), []);
@@ -159,7 +167,7 @@ function DirectorBoard() {
   return (
     <section className="v25-parts-canvas v25-parts-director" aria-label="Director" data-testid="v25-board-director">
       <div className="v25-parts-dirgrid">
-        {DIRECTOR_SHOTS.map((shot) => (
+        {dirShots.map((shot) => (
           <StepCard key={shot.id} id={shot.id} title={shot.title} status={bar.state === "making" && scope.ids.includes(shot.id) ? "making" : bar.state === "done" && scope.ids.includes(shot.id) ? "ready" : "none"}
             picture={{ src: still(shot.hue) }} selected={selected.includes(shot.id)} dimmed={hover !== null && !differs(shot.id)} differs={differs(shot.id)} chips={cardChips(draft, shot.id)}
             onSelect={(event) => setSelected((now) => (event.shiftKey || event.metaKey ? (now.includes(shot.id) ? now.filter((x) => x !== shot.id) : [...now, shot.id]) : now.length === 1 && now[0] === shot.id ? [] : [shot.id]))} />
@@ -168,9 +176,11 @@ function DirectorBoard() {
       <div className="v25-parts-dircol">
         <DirectorColumn scope={scope} step="Shots" values={values} mixed={mixed} onSet={set} onHover={setHover} engine={engine} />
         <button type="button" className="v25-parts-btn" data-testid="v25-parts-pick-engine" onClick={() => setEngine({ id: TEST_ENGINE, label: getModel(TEST_ENGINE).label })}>Pick an engine (test page)</button>
+        <button type="button" className="v25-parts-btn" data-testid="v25-parts-many-shots" onClick={() => setCount(MANY_SHOTS)}>{MANY_SHOTS} shots (test page)</button>
+        {toppedUp ? <p className="v25-parts-said" data-testid="v25-parts-topped-up">Top up opened (test page)</p> : null}
       </div>
       <div className="v25-parts-dirbar">
-        <DirectorBar scope={scope} scopeKey="particl-active-test" projectKey="test-project" shots={shots} engine={engine?.id ?? null} stages={stages} step={SHOTS_STEP} onState={setBar}
+        <DirectorBar scope={scope} scopeKey="particl-active-test" projectKey="test-project" shots={shots} engine={engine?.id ?? null} stages={stages} step={SHOTS_STEP} onState={setBar} onTopUp={() => setToppedUp(true)}
           ask={<input className="v25-parts-ask" aria-label="Ask for a change" placeholder={selected.length ? `Ask about ${scope.label}…` : "Ask about all the shots…"} />} />
       </div>
     </section>
