@@ -33,8 +33,8 @@ const product = () => ["app", "lib", "components"].flatMap(sources);
  * The only product files that may name a retired key, and why. Each reads no value of it to decide a spend:
  *  - lib/settings.ts names them to refuse and hide them (RETIRED_SETTING_KEYS);
  *  - lib/settingValues.ts says in a comment that they were retired;
- *  - lib/creditConversionTenant.ts is the owner's credit-unit conversion tool: it lists every saved cap for the owner's own keep-or-multiply
- *    choice (kept unless the owner names it), and it gates nothing.
+ *  - lib/creditConversionTenant.ts is the owner's credit-unit conversion tool: it no longer lists the retired cap among the saved caps, and
+ *    names it only to reverse exactly what a conversion recorded before 21 Oct 2026; it gates nothing (tests/unit/creditConversion.spec.ts).
  */
 const MAY_NAME = new Set(["lib/settings.ts", "lib/settingValues.ts", "lib/creditConversionTenant.ts"]);
 
@@ -94,6 +94,15 @@ test("approving stays a person's: an agent identity, an MCP caller, a token and 
   expect(claim.indexOf("isPerson({ user: got.user, token: got.token })")).toBeGreaterThan(0);
   expect(claim.indexOf("isPerson({ user: got.user, token: got.token })")).toBeLessThan(claim.indexOf("stepIsMine(id, got.user)"));
   expect(claim).not.toMatch(/adminStepSheet|chatless/);
+  /* Lip-sync and Recraft refuse an Atomik identity or a run marked Auto at the press, before anything is priced or held (the per-shot cap was their only
+     refusal of one until 21 Oct 2026); a token's press there is held to its own ceiling (#854). */
+  for (const file of ["lib/lipSync.ts", "lib/recraftImage.ts"]) {
+    const text = readFileSync(path.join(repoRoot, file), "utf8");
+    const refusal = text.indexOf("if (pressing && (!isPersonApprover(got.user.id) || isAgentId(got.user.id) || options.run?.auto === true))");
+    expect(refusal, file).toBeGreaterThan(0);
+    expect(text.slice(refusal, refusal + 260), file).toContain("return admissionReply({ error: PEOPLE_ONLY }, { status: 403 })");
+    for (const later of ["admissionCheckpoint(options", "reserveGenerationSpend(", "INSERT INTO generations"]) expect(text.indexOf(later), `${file}: ${later}`).toBeGreaterThan(refusal);
+  }
   /* A batch press refuses anyone but a person (a token, an agent identity, a run marked Auto). */
   expect(readFileSync(path.join(repoRoot, "lib/batchPress.ts"), "utf8")).toMatch(/!isPersonApprover\(got\.user\.id\) \|\| isAgentId\(got\.user\.id\) \|\| got\.token != null \|\| options\.run\?\.auto === true\)\) return admissionReply\(\{ error: PEOPLE_ONLY \}, \{ status: 403 \}\)/);
   /* The MCP plan tool refuses an approval in its arguments, and its reply names no admin. */

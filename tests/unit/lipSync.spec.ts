@@ -769,6 +769,40 @@ test("a per-shot cap a workspace stored stops no one (the admin approval rule wa
   }, MEMBER as never);
 });
 
+test("an Atomik identity never presses a lip-sync, whatever role it carries, and neither does a run marked Auto: refused 403 (people only) before anything is held, written, metered or handed on; it may still price; a person's press goes", async () => {
+  /* The per-shot cap was this door's only refusal of one (retired 21 Oct 2026, owner); rule 14 says it in its own words now. */
+  const { admitLipSync } = await import("../../lib/lipSync");
+  const { PEOPLE_ONLY } = await import("../../lib/security/people-only");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
+  const { db, ready } = await import("../../lib/db");
+  process.env.SYNC_ENABLED = "1";
+  const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_lip_press", role: "admin", owner: false } as AdmissionActor["user"] };
+  await runInTenant(house(), async () => {
+    await ready(); await rigAgentReady();
+    await db().execute({ sql: "INSERT OR IGNORE INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_lip_press", "prod_x", "draft_x", OWNER.user.id, "req_lip_press", "goal", "auto", "running"] });
+    const w = await world();
+    const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
+    await runInTenant(house(), async () => {
+      expect(await admitLipSync({ ...w.body, maxCredits: 100000 }, AGENT, options(), {})).toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
+      /* Pricing stays open to it (rule 14: Atomik prepares and prices, never approves). */
+      expect((await admitLipSync({ ...w.body, quoteOnly: true }, AGENT, options(), {})).status).toBe(200);
+    }, { user: AGENT.user } as never);
+    await runInTenant(house(), async () => {
+      expect(await admitLipSync({ ...w.body, maxCredits: 100000 }, OWNER, { ...options(), run: { auto: true } as never }, {})).toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
+    }, OWNER as never);
+    expect({ rows: await rows(), meter: (await meterRows()).length, handed: deferred.length }, "nothing held, written, metered or handed on").toEqual(before);
+    /* A person's own press, at the quote: started. */
+    await runInTenant(house(), async () => {
+      const made = await admitLipSync({ ...w.body, maxCredits: 100000 }, OWNER, options(), {});
+      expect(made.status, JSON.stringify(made.body)).toBe(200);
+    }, OWNER as never);
+    expect(await rows()).toBe(before.rows + 1);
+    deferred.splice(0);
+  }, OWNER as never);
+});
+
 /* Over MCP, lip_sync is started only by a token with a monthly ceiling an admin set, sent at its quote as maxCredits (lib/directEngineMcp.ts; owner,
    20 Oct 2026, 16:50 IST: "C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask setting — the ceiling is the standing approval.
    lip_sync follows the same rule once Auto goes, so the two tools behave alike."). This is that start at the admission: the ceiling and the quote are what hold it. Ceilings are synthetic, in the house's unit. */

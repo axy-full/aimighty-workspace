@@ -15,6 +15,8 @@ import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./g
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
+import { isPersonApprover } from "./workbench/plan-approval";
+import { PEOPLE_ONLY, isAgentId } from "./security/people-only";
 import { uploadOpenableBy, type Viewer } from "./uploadAccess";
 import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { engineEnabled } from "./engineGate";
@@ -169,6 +171,13 @@ export async function executeRecraftAdmission(input: Record<string, unknown>, go
   const tool = body.tool;
   if (tool !== "image" && tool !== "remove_background" && tool !== "vectorize") return admissionReply({ error: "Pick image, remove_background or vectorize." }, { status: 400 });
   const quoteOnly = body.quoteOnly === true;
+  /* Approving spend is a person's (CLAUDE.md rule 14): an Atomik identity (`agent:*`, or any machine id) and a run marked as approved by
+     Auto never press here, whatever role they carry. The per-shot cap used to be the only thing at this door that refused one (it was
+     retired on 21 Oct 2026), so the refusal is said here, before anything is priced, held or written. Pricing stays open to them (a quote,
+     or a preparation that stops at its checkpoint). A token's press is a person's token: it is held to the token's own ceiling below (#854). */
+  const pressing = !quoteOnly && !(options.checkpoint && !options.requestClaim);
+  if (pressing && (!isPersonApprover(got.user.id) || isAgentId(got.user.id) || options.run?.auto === true))
+    return admissionReply({ error: PEOPLE_ONLY }, { status: 403 });
   await ready();
   /* An SVG is refused before anything else is read or written (see the header). */
   if (tool === "vectorize") return admissionReply({ error: SVG_REFUSAL, code: "svg-sanitiser-missing" }, { status: 422 });

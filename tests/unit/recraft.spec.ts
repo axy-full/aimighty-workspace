@@ -564,6 +564,36 @@ test("a per-shot cap a workspace stored stops no one (the admin approval rule wa
   });
 });
 
+test("an Atomik identity never presses Recraft, whatever role it carries, and neither does a run marked Auto: refused 403 (people only) before anything is held, written or metered; it may still price; a person's press goes", async () => {
+  /* The per-shot cap was this door's only refusal of one (retired 21 Oct 2026, owner); rule 14 says it in its own words now. */
+  process.env.RECRAFT_ENABLED = "1";
+  const { PEOPLE_ONLY } = await import("../../lib/security/people-only");
+  const { db, ready } = await import("../../lib/db");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { executeRecraftAdmission: admitRecraft } = await import("../../lib/recraftImage");
+  const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_recraft_press", role: "admin", owner: false } as AdmissionActor["user"] };
+  await asTenant(house(), async () => {
+    await ready();
+    const input = { tool: "image", prompt: "a heron", model: "recraftv4_1_pro", ...approved };
+    const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
+    await runInTenant(house(), async () => {
+      expect(await admitRecraft(input, AGENT, options())).toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
+      expect((await admitRecraft({ ...input, quoteOnly: true }, AGENT, options())).status, "pricing stays open to it").toBe(200);
+    }, { user: AGENT.user } as never);
+    await runInTenant(house(), async () => {
+      expect(await admitRecraft(input, OWNER, { ...options(), run: { auto: true } as never })).toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
+    }, OWNER as never);
+    expect({ rows: await rows(), meter: (await meterRows()).length, handed: deferred.length }, "nothing held, written or metered").toEqual(before);
+    await runInTenant(house(), async () => {
+      const made = await admitRecraft(input, OWNER, options());
+      expect(made.status, JSON.stringify(made.body)).toBe(200);
+    }, OWNER as never);
+    expect(await rows()).toBe(before.rows + 1);
+    deferred.splice(0);
+  });
+});
+
 test("a lost reply is never sent again, and a job that never got to its request settles at nothing; two workers at once send once", async () => {
   const { RecraftError } = await import("../../lib/recraft");
   const { recoverRecraftJobs, advanceRecraftJobWith } = await import("../../lib/recraftImage");
@@ -640,6 +670,7 @@ test("remove background: the still is read from this workspace and sent as data;
 
 test("an upload is cut out only for a person who may open it, for an Atomik run (as its owner, a member) as for a person; with no person behind the request nothing is read, written or reserved", async () => {
   const { executeRecraftAdmission: admitRecraft } = await import("../../lib/recraftImage");
+  const { PEOPLE_ONLY } = await import("../../lib/security/people-only");
   const { runInTenant } = await import("../../lib/tenant");
   const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
   const { db, ready } = await import("../../lib/db");
@@ -657,11 +688,14 @@ test("an upload is cut out only for a person who may open it, for an Atomik run 
     /* The run acts for the person who started it: their own upload, yes; another person's private one, no (the words a missing one gets). */
     await runInTenant(house(), async () => {
       expect((await cut(agent("run_recraft_owned"), mine.id)).status).toBe(200);
-      for (const extra of [{ quoteOnly: true }, approved]) expect(await cut(agent("run_recraft_owned"), theirs.id, extra), JSON.stringify(extra)).toMatchObject({ status: 404, body: { error: "That still is not in this workspace." } });
+      expect(await cut(agent("run_recraft_owned"), theirs.id), "quote").toMatchObject({ status: 404, body: { error: "That still is not in this workspace." } });
+      /* A press by an Atomik identity is refused first, as people only, before any source is read (rule 14; since 21 Oct 2026 said at this door itself). */
+      expect(await cut(agent("run_recraft_owned"), theirs.id, approved), "press").toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
     }, { user: agentUser("run_recraft_owned") } as never);
     /* No person behind the run (an unknown run): refused before the source is looked at, quote or press. */
     await runInTenant(house(), async () => {
-      for (const extra of [{ quoteOnly: true }, approved]) expect(await cut(agent("run_recraft_none"), mine.id, extra), JSON.stringify(extra)).toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+      expect(await cut(agent("run_recraft_none"), mine.id), "quote").toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+      expect(await cut(agent("run_recraft_none"), mine.id, approved), "press").toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
       expect(await cut(agent("run_recraft_none"), "../x")).toMatchObject({ status: 403 });
     }, { user: agentUser("run_recraft_none") } as never);
     /* A signed-in person is judged the same way: their own, yes; another person's private upload, no. */
