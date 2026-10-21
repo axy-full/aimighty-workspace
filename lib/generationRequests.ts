@@ -5,21 +5,19 @@ import type { Client, InStatement, Transaction } from "@libsql/client";
 import { createHash, randomUUID } from "node:crypto";
 import { db, ready, now } from "./db";
 import { currentTenant, requireTenant } from "./tenant";
-import { membershipRole, platformDb, platformReady } from "./platform";
+import { platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
 import { allowanceUsd, allowanceUsdOfStored } from "./allowance";
 import { cycleBounds } from "./cycle";
 import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsApply } from "./credits";
 import { isHouseWorkspace } from "./houseWorkspace";
-import { batchTally, takesToCome, type BatchRef } from "./batchLine";
 import { LEDGER_UNIT_PAUSED, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
 import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./billingTerms";
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { freshSettings } from "./settings";
 import { workspaceLimits } from "./limits";
-import { JOB_LINE_STATUS, cleanRule, cleanShotCap, jobApprovalLineCredits, jobLineVerdict } from "./approvalRule";
-import { isAgentId } from "./security/people-only";
+import { cleanRule, cleanShotCap } from "./approvalRule";
 import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
 import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
@@ -485,21 +483,6 @@ type ReservationOptions = {
    * once, at band 1.
    */
   holdBand?: number;
-  /**
-   * Whether an admin's own tap started this job, for guardrail 4 (a job over the approval line, lib/approvalRule.ts). Omitted, the
-   * signed-in admin's; a held take's release decides from its author (lib/held.ts), not from whoever's poll released it.
-   */
-  adminTap?: boolean;
-  /**
-   * Background work that continues a request admission already judged against guardrail 4, with nobody to ask now (no signed-in person, no
-   * token, no agent, no author). Only such a caller sets it; any other reservation with no actor is judged as no admin's.
-   */
-  continuation?: boolean;
-  /**
-   * The press this take belongs to (lib/batchLine.ts): guardrail 4 counts one press as one job, so the takes already reserved under this batch id
-   * and the ones still to come are judged with this one.
-   */
-  batch?: BatchRef;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -542,20 +525,7 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   // Its private unit never appears in the refusal sent to customers.
   const legacyCap = projectId ? (await db().execute({ sql: "SELECT cap_usd,cap_credits,cap_unlocked FROM projects WHERE id=?", args: [projectId] })).rows[0] : null;
   const limits = await workspaceLimits();
-  /* The press's other takes already reserved (read here, never inside the platform's write): one press is one job for guardrail 4. */
-  const siblings = await batchTally(options.batch, event.id);
   const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
-  /* Guardrail 4's admin tap (lib/approvalRule.ts): the caller said (a held take's release decides from its author), else the signed-in admin's, else
-     (background work for a person, nobody signed in) the job's author: the workspace's owner or an admin member. A token, an MCP client, an agent
-     identity and a step Atomik's Auto approved itself are machines. A reservation with no actor at all is judged as no admin's, so refused over
-     the line, unless its caller marks it `continuation`: work that continues a request admission already judged. */
-  const user = currentTenant()?.user;
-  const machineCaller = options.token != null || currentTenant()?.token != null || isAgentId(event.createdBy) || options.run?.auto === true;
-  const author = event.createdBy && !isAgentId(event.createdBy) ? event.createdBy : null;
-  const adminTap = options.adminTap ?? (user ? user.role === "admin"
-    : author ? ws.ownerId === author || await membershipRole(ws.id, author).then((role) => role === "owner" || role === "admin").catch(() => false) : false);
-  const noActor = !user && !machineCaller && !author && options.adminTap === undefined;
-  const lineJudged = !(noActor && options.continuation === true);
   const shotCap = event.shotId && !shotCapExempt && cleanRule(settings!.approvalRule) === "cap"
     ? cleanShotCap(settings!.shotCapCredits) : null;
   const ruleRaw = cap ? settings!.atCap : null;
@@ -700,17 +670,8 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
       });
       if (!verdict.ok) throw new SpendReservationError(RUN_LIMIT_REACHED, 409, true);
     }
-    /* Guardrail 4 (SOW §7A): a NEW job priced above the approval line (at its hold, the most it can settle at) needs an admin's own tap, whatever the
-       workspace's rule or the job's shot. A token, an MCP client or an agent is refused outright. Judged after the balance and every cap have had their say, so a refusal they would give is still theirs. Nothing is reserved. A job already reserved keeps its reservation. */
-    /* The house pays no credits, so it is judged at cost: the engine's dollars counted in credits at no margin, the unit quotedCredits approves it in
-       (lib/credits.ts), against the same line, worded without a figure. A workspace that is neither the house nor on the platform's credits is not judged. */
-    const house = isHouseWorkspace(ws);
-    if ((paid || house) && !prior && lineJudged && (house ? cost > 0 : held > 0)) {
-      const more = takesToCome(options.batch, siblings);
-      const atCost = billCreditsWith(siblings.usd + cost * keptBand * more, 1, terms.creditUsd);
-      const stop = jobLineVerdict({ credits: house ? atCost : siblings.credits + held * more, lineCredits: jobApprovalLineCredits(terms.creditUsd), machine: machineCaller, isAdmin: adminTap, figures: creditsApply(ws) });
-      if (stop.blocked) throw new SpendReservationError(stop.line, JOB_LINE_STATUS, true);
-    }
+    /* No per-job line (owner, 20 October 2026: guardrail 4 retired, single jobs included): no job is refused here for its size alone.
+       The balance, the workspace's monthly cap, the house's cap and the caps above are the stops. */
     /* Last, once everything else admits it: a take refused here waits only for a slot. Its slot and its
        reservation commit together, and the slot is free again the moment the reservation stops running. */
     if (pool) {

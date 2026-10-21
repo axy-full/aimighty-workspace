@@ -3,7 +3,7 @@ import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
-import { listChats, createChat, engines, requestEffort, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, type AgentMode } from "@/lib/atomik";
+import { listChats, createChat, engines, requestEffort, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, chatModeOf } from "@/lib/atomik";
 import { atomikEffortOptions } from "@/lib/atomik-reasoning";
 import { cleanAttachments } from "@/lib/attachments";
 import { effectiveRules } from "@/lib/rules";
@@ -110,7 +110,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     projectId: await contextProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null),
     model: typeof body.model === "string" && body.model ? body.model : "auto",
     effort: requestEffort(body.effort),
-    agentMode: body.agentMode === "auto" ? "auto" : ("ask" as AgentMode),
+    /* "auto" from an older caller is accepted and stored as "ask": no Auto since 20 Oct 2026. */
+    agentMode: chatModeOf(body.agentMode),
   });
   return NextResponse.json({ id });
   } catch (error) {

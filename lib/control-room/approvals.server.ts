@@ -18,7 +18,6 @@ import { threadTitle } from "@/lib/atomikThreadsText";
 import { runCharges } from "@/lib/generationRequests";
 import { getRun, rigAgentExists, stepsOf, type RunRow } from "@/lib/workbench/rig-agent-store";
 import { RIG_AGENT_OFF, rigAgentEnabled, runView, type RunLedger } from "@/lib/workbench/rig-agent";
-import { rigJobCeiling } from "@/lib/workbench/rig-agent-limits";
 import { stepTitle } from "@/lib/workbench/rig-agent-runs";
 import { planApprovalOf } from "@/lib/workbench/plan-approval";
 import { creditFigure } from "@/lib/runLimit";
@@ -153,11 +152,8 @@ const isDemoTake = (g: Pick<Generation, "params">) => Boolean((g.params as { dem
 /* ── Atomik on a board (lib/workbench/rig-agent*.ts) ───────────────────── */
 
 export async function ledgerOf(run: RunRow): Promise<RunLedger> {
-  const [charges, ceiling] = await Promise.all([
-    run.capCredits == null ? Promise.resolve([]) : runCharges(run.id).catch(() => []),
-    rigJobCeiling().catch(() => null),
-  ]);
-  return { charges, ceiling };
+  const charges = run.capCredits == null ? [] : await runCharges(run.id).catch(() => []);
+  return { charges };
 }
 
 /** A render's price as the run card holds it: its quote, or up to the most it may settle at when that is higher. */
@@ -319,7 +315,7 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
   const first = new Map<string, Row>();
   for (const r of rs.rows as Row[]) if (!first.has(String(r.chat_id))) first.set(String(r.chat_id), r);
   /* A chat step is its own person's (owner, 12 Oct): a member is shown their own steps and nothing of anyone else's, not even that one exists. An admin is shown
-     another MEMBER's step only while it needs an admin's tap (over the workspace's per-shot cap, or over guardrail 4's line), and then only its title and its price:
+     another MEMBER's step only while it needs an admin's tap (over the workspace's per-shot cap), and then only its title and its price:
      never the chat's words, the plan's step bodies or what was asked. Once it no longer needs one it is not shown. Another admin's step needs only its owner. */
   const shown = [...first.values()].filter((r) => {
     if (String(r.chat_owner ?? "") === viewer.id) return true;
@@ -430,7 +426,7 @@ export const missingTable = (error: unknown) => /no such table/i.test(String(err
 async function boardDecisions(since: number): Promise<Found[]> {
   if (!(await rigAgentExists())) return [];
   const found: Found[] = [];
-  /* Renders approved (by a person, or by Auto under the per-job line) or skipped. */
+  /* Renders approved (by a person: a tap or the plan's one approval) or skipped. */
   const steps = (await db().execute({
     sql: `SELECT run_id, seq, node_id, label, state, approved_by, approved_at, job_id, updated_at FROM rig_agent_steps
           WHERE purpose = 'take' AND ((approved_at IS NOT NULL AND approved_at >= ?) OR (state = 'skipped' AND approved_at IS NULL AND updated_at >= ? AND reason LIKE 'Skipped%'))

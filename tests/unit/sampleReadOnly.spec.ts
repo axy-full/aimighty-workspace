@@ -174,7 +174,7 @@ test("every other way in is shut too: cast, treatment, cards, assets, wires, boa
     /* The lifter's run on the sample: asked by the owner. */
     const { rigAgentReady, insertRun } = await import("../../lib/workbench/rig-agent-store");
     await rigAgentReady();
-    await insertRun(db as never, { id: agentRun, productionId: sample, draftId: "d1", owner: "u_owner", requestId: "req1", goal: "The dunes", model: "auto", at: 1, limit: { credits: 50, mode: "ask", jobCeiling: 200 } });
+    await insertRun(db as never, { id: agentRun, productionId: sample, draftId: "d1", owner: "u_owner", requestId: "req1", goal: "The dunes", model: "auto", at: 1, limit: { credits: 50 } });
   }, { user: user("u_owner", "admin") });
   const code = async (res: Response) => [res.status, (await res.clone().json().catch(() => ({}))).code] as const;
   const VIEW = [403, "view_only"] as const;

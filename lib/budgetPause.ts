@@ -1,7 +1,8 @@
 /**
- * A production's budget, pure (no database): the workspace's budget per production as typed, the share at which
- * paid work stops to ask, and where that is. lib/caps.ts reads the settings and enforces; screens word the same
- * figures from here.
+ * A production's budget, pure (no database): the workspace's budget per production as typed, the share at which the
+ * producer is warned (lib/caps.ts checkCap) and the plan card says where a plan would take it, and where that is.
+ * lib/caps.ts reads the settings and enforces the cap; screens word the same figures from here. (Nothing pauses paid
+ * work at the share any more: that ask was Auto's, and Auto went on 20 Oct 2026.)
  */
 
 const whole = (n: number) => Math.round(n).toLocaleString("en-US");
@@ -17,16 +18,16 @@ export function cleanBudget(v: unknown): number | null {
   return n >= 1 && n <= 1_000_000 ? n : null;
 }
 
-/** The share of a production's budget at which paid work stops to ask (the workspace's `capWarnPct`, 80 unless set). */
+/** The share of a production's budget at which the producer is warned (the workspace's `capWarnPct`, 80 unless set). */
 export function cleanWarnPct(v: unknown): number {
   return Math.max(1, Math.min(100, Math.round(Number(v)) || 80));
 }
 
 /**
- * The pause at a share of the budget (Settings › Spending rules: "the 80 % pause asks at 320 cr"), with nothing read.
+ * The share of the budget (Settings › Spending rules: "warns at 320 cr (80 %)"), with nothing read.
  * `pauseAt` is that share of the cap in whole credits (rounded down, so a 401 cr budget pauses at 320 cr, never past
- * it); `reached` is whether this job (`needs`) would take what is spent to it or past it. No cap, no pause. Pure: the
- * run's gate asks a person when it is reached, and the board's card shows the same figures.
+ * it); `reached` is whether this job (`needs`) would take what is spent to it or past it. No cap, no share. Pure: the
+ * budget route and the board's card show these figures; no gate stops at them (Auto's ask went on 20 Oct 2026).
  */
 export type BudgetPause = { cap: number; spent: number; needs: number; pauseAt: number; pct: number; reached: boolean };
 export function budgetPause(o: { cap: number | null; spent: number; needs: number; warnPct: number }): BudgetPause | null {
@@ -43,8 +44,8 @@ export function budgetPauseLine(p: Pick<BudgetPause, "pct" | "spent" | "cap">): 
 }
 
 /**
- * Whether a render's own reason is the budget's ask: the run's gate (lib/workbench/rig-agent-runs.ts) writes it
- * starting with `budgetPauseLine`. Any other reason (a price that moved, a render that asks in Ask mode) is not.
+ * Whether a render's own reason is the budget's ask, a line starting with `budgetPauseLine`. Auto's gate wrote it; since Auto
+ * went (20 Oct 2026) nothing writes it, so only a reason stored before then matches. Any other reason is not.
  */
 export function isBudgetPauseReason(reason: string | null | undefined): boolean {
   return /^Paused at \d{1,3} % of the budget: [\d,.]+ of [\d,]+ cr used\. Continue or stop\./.test(reason ?? "");
@@ -53,7 +54,7 @@ export function isBudgetPauseReason(reason: string | null | undefined): boolean 
 /**
  * Where a plan's "at most" (its ceiling, the server's quote) would take a production against its cap or budget, said
  * before the plan is approved (the plan card at the gate). An approved plan runs without a tap up to the production's
- * cap (lib/workbench/plan-approval.ts); Atomik's 80 % ask is for Auto drafts only. `total` is the plan's renders
+ * cap (lib/workbench/plan-approval.ts); nothing stops at the 80 % share (it warns; Auto's ask there went on 20 Oct 2026). `total` is the plan's renders
  * without fixes (T); `atMost` is its ceiling with every fix (2T). So the card says, in one line:
  *  - "This plan's at most N cr is more than <name> has left (M cr); it will stop at the cap." when even its renders
  *    without fixes don't fit (or "… it goes past the cap with a warning." when the workspace's rule at the cap only warns);

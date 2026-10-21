@@ -748,7 +748,7 @@ test("a listed customer workspace pays exactly the quote in credits, once, and a
   }
 });
 
-test("over MCP: recraft_image and recraft_remove_background are listed only where the engine is on, the SVG tool never; they are never a draft, so Ask and Auto both prepare and start nothing; the caller cannot approve", async () => {
+test("over MCP: recraft_image and recraft_remove_background are listed only where the engine is on, the SVG tool never; whatever the old spending setting holds (no Auto since 20 Oct 2026) and with a capped token too, they prepare and start nothing; the caller cannot approve", async () => {
   const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
   const { setSetting, invalidateSettings } = await import("../../lib/settings");
   const { db, ready } = await import("../../lib/db");
@@ -766,17 +766,22 @@ test("over MCP: recraft_image and recraft_remove_background are listed only wher
     expect(names).not.toContain("recraft_vectorize");
     await expect(runDirectEngineTool("recraft_vectorize", { source_upload_id: "u" }, call)).resolves.toBeNull();
     try {
+      /* Recraft is not started inside a token's ceiling (lip_sync alone is, lib/directEngineMcp.ts): a bearer with a ceiling changes nothing here. */
+      let askedCeiling = 0;
+      for (const options of [undefined, { maySpend: async () => { askedCeiling++; return true; } }])
       for (const mode of [null, "ask", "auto"]) {
         await spend(mode); calls.length = 0;
-        const text = await runDirectEngineTool("recraft_image", { prompt: "a tree", size: "1024x1024" }, call);
+        const text = await runDirectEngineTool("recraft_image", { prompt: "a tree", size: "1024x1024" }, call, options);
         expect(text, String(mode)).toMatch(/^Priced and prepared, not started\.\n\nprice: \$0\.56\nprepared: recraftv4_1 still, 1024x1024\nprepared job: prep_r1/);
         expect(calls.map((c) => [c.quoteOnly === true, c.maxCredits ?? null])).toEqual([[true, null], [false, null]]);
         expect(calls[0]).toMatchObject({ tool: "image", quoteOnly: true });
         calls.length = 0;
-        const cut = await runDirectEngineTool("recraft_remove_background", { source_upload_id: "u1" }, call);
+        const cut = await runDirectEngineTool("recraft_remove_background", { source_upload_id: "u1" }, call, options);
         expect(cut, String(mode)).toMatch(/not started[\s\S]*prepared: background removal of u1[\s\S]*needs a person's approval/);
         expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
       }
+      /* Not even asked: a Recraft call is never started inside a ceiling. */
+      expect(askedCeiling).toBe(0);
       for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) await expect(runDirectEngineTool("recraft_image", { prompt: "a tree", ...bad }, call)).rejects.toThrow(/only a person approves/);
     } finally { await spend(null); }
   });

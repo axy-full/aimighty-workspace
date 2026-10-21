@@ -158,7 +158,7 @@ const proposal = (limit: number, left: number) => ({
   id: "rar_000000000000000000000001", state: "awaiting_approval", reason: null, goal: "Three shots", mine: true,
   proposal: { title: "Three shots", summary: "", groups: [], cards: 0, wires: 0, tidy: false, next: [], fingerprint: FP },
   steps: [], built: { cards: 0, wires: 0 }, held: [], undo: null, canUndo: false, credits: 14,
-  money: { mode: "ask", limit, jobCeiling: 200, spent: 14, inFlight: 0, left, planning: { state: "settled", credits: 14 } },
+  money: { mode: "ask", limit, spent: 14, inFlight: 0, left, planning: { state: "settled", credits: 14 } },
   paid: [step(1, "Opening"), step(2, "The turn"), step(3, "Close")], at: Date.now(),
 });
 const sceneNode = (id: string, title: string, boardShotId: string, engine: string, x: number): CanvasNode => ({
