@@ -18,12 +18,8 @@ export const DEFAULTS = {
   maxRetries: "2",
   /** Whether oversized masters may be sent to an API as a derived copy. */
   deriveForApi: "1",
-  /** Cost approval rule: anyone renders, a cap per shot, or a producer approves. */
   /** The workspace's own mark, shown on a client review page (brief 2.6). */
   brandLogoUploadId: "",
-  approvalRule: "anyone",
-  /** With "cap": a shot may take this many credits before a member needs an admin to press (brief 2.2). */
-  shotCapCredits: "50",
   /** Warn the producer when a production's spend reaches this share of its cap. */
   capWarnPct: "80",
   /** What happens at the cap: the producer unlocks, rendering stops, or a warning only. */
@@ -108,9 +104,17 @@ export function invalidateSettings(): void {
  * `atRiskUnsavableLogged` holds take ids (lib/atRisk.ts), which may be other members' private takes. Add a key here when a setting carries ids or other workings.
  */
 export const INTERNAL_SETTING_KEYS: readonly string[] = ["atRiskUnsavableLogged"];
-/** The settings a member may be sent: every one but the internal ones. */
+/**
+ * Settings that are no longer settings (owner, 21 Oct 2026: "the admin approval rule is retired; every member approves their own spend with their
+ * own tap on the quote"). A row a workspace stored stays where it is, untouched (nothing is erased); nothing reads it, no member is sent it, and
+ * the settings route refuses to write it (app/api/settings/route.ts).
+ */
+export const RETIRED_SETTING_KEYS: readonly string[] = ["approvalRule", "shotCapCredits"];
+/** What the settings route answers a save that names a retired setting. */
+export const RETIRED_SETTING = "That setting is retired: every member approves their own spend on its quote.";
+/** The settings a member may be sent: every one but the internal and the retired ones. */
 export function memberSettings(all: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(all).filter(([key]) => !INTERNAL_SETTING_KEYS.includes(key)));
+  return Object.fromEntries(Object.entries(all).filter(([key]) => !INTERNAL_SETTING_KEYS.includes(key) && !RETIRED_SETTING_KEYS.includes(key)));
 }
 
 export async function allSettings(): Promise<Record<string, string>> {

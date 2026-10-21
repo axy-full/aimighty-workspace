@@ -3,10 +3,9 @@ import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { offeredModels } from "@/lib/models";
 import { requireUser, withTenant } from "@/lib/auth";
 import { activeWriter, gatewayCredits } from "@/lib/enhance";
-import { getSetting, invalidateSettings } from "@/lib/settings";
+import { invalidateSettings } from "@/lib/settings";
 import { ENGINES } from "@/lib/engines";
 import { estimateRefineUsd } from "@/lib/refineGate";
-import { cleanRule, cleanShotCap } from "@/lib/approvalRule";
 import { creditsApply } from "@/lib/credits";
 import { requireTenant } from "@/lib/tenant";
 import { cinemaStudioEnabled, soulCharacterGenerationEnabled } from "@/lib/vendorRates";
@@ -33,8 +32,6 @@ export const GET = withTenant(async function GET() {
     /* Who writes the prompts too thin to film — the workspace's choice on
        Settings › Prompt, resolved to what this deployment can reach. */
     /* And what one of its calls costs at list price — a typical idea, the house style along — so the button can say it. */
-    /* The cost approval rule, so the composer can say it before the press (brief 2.2). */
-    approval: { rule: cleanRule(await getSetting("approvalRule")), shotCapCredits: cleanShotCap(await getSetting("shotCapCredits")) },
     refiner: { ...writer, automatic: !creditWorkspace,
       pricePerCall: creditWorkspace ? null : writer.writer === "none" ? 0 : estimateRefineUsd(writer.model, 60, 1500) },
     engines: PROVIDERS.map((p) => ({

@@ -121,7 +121,6 @@ const stepWorstUsd = (s: StepRow): number | null => { const u = stepQuoteUsd(s);
 function quoteStep(run: RunRow, s: StepRow): QuoteInputStep {
   return {
     seq: s.seq, nodeId: s.nodeId, title: stepTitle(run, s), state: s.state, fixOf: s.fixOf, pause: s.pause, reason: s.reason,
-    /* A render that needs an admin carries its own price with no admission: shown, never in the plan's total. */
     quote: s.quoteCredits,
     worst: s.quoteCredits != null ? fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)) : null,
     fingerprint: s.admission ? s.admission.quote.fingerprint : null,
@@ -157,7 +156,7 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
   const usds = covered.map((s) => (s ? stepWorstUsd(s) : null));
   const totalUsd = usds.length && usds.every((u): u is number => u != null) ? usds.reduce((a, b) => a + b, 0) : null;
   return {
-    quote: { total: quote.total, ceiling: quote.ceiling, approximate: quote.approximate, fingerprint: quote.fingerprint, covered: quote.steps.map((s) => s.seq), asks: quote.asks.map((a) => a.seq),
+    quote: { total: quote.total, ceiling: quote.ceiling, approximate: quote.approximate, fingerprint: quote.fingerprint, covered: quote.steps.map((s) => s.seq),
       ...(totalUsd != null ? { totalUsd } : {}) },
     blocked: null, approval: null,
   };
@@ -171,8 +170,7 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
  *  - after the approval: a step the approval sent or is sending (approved, sending, rendering, with the approval's id), and a listed step that waits only for its
  *    turn (waiting, at the very price the approval lists, with no note: nothing asked of anyone), while the approval is open.
  *
- * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step in the gate's `asks` (over the per-render
- * line, or needing an admin), a fix waiting for its turn, every step while there is no plan quote yet (each one asks on its own), a step whose price moved or that
+ * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step the gate does not cover, a fix waiting for its turn, every step while there is no plan quote yet (each one asks on its own), a step whose price moved or that
  * waits for a tap, and every paused step (a Retry runs at its own price; a limit pause offers Raise from it). Titles, states, outcomes and what was charged stay.
  */
 function onePrice(view: RigAgentRunView, approval: PlanApprovalRow | null): RigAgentRunView {
@@ -201,16 +199,15 @@ function onePrice(view: RigAgentRunView, approval: PlanApprovalRow | null): RigA
 }
 
 /**
- * The words a chips plan shows for a render paused because it could not be priced, or because it needs an admin: fixed, with no engine's name (owner, 16 Oct).
+ * The words a chips plan shows for a render paused because it could not be priced: fixed, with no engine's name (owner, 16 Oct).
  * The pause's own reason is the pricing refusal word for word (lib/workbench/rig-agent-runs.ts priceRender), which can name the engine; it stays on the record.
  */
 export function engineFreeReason(pause: string | null): string | null {
   if (pause === "unpriced") return "Can't be priced yet. Check the shot, then price it again.";
-  if (pause === "admin") return "Needs an admin: it asks on its own, at its own price.";
   return null;
 }
 
-/** A chips run's steps and note with every paused unpriced or admin render's reason in engine-free words (the run's note is that reason when the pause set it). */
+/** A chips run's steps and note with every paused unpriced render's reason in engine-free words (the run's note is that reason when the pause set it). */
 function engineFree(run: RunRow, steps: StepRow[]): { run: RunRow; steps: StepRow[] } {
   const said = new Map<string, string>();
   const safe = steps.map((s) => {

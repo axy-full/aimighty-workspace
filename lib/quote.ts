@@ -1,6 +1,5 @@
 import { billCreditsWith, marginFor, creditUsd, margins } from "./creditTerms";
 import { capVerdict, type CapRule, type CapUnit } from "./caps";
-import { shotCapVerdict, ruleLine, type ApprovalRule } from "./approvalRule";
 import { heldMessage } from "./held";
 import { ALLOWANCE_REACHED } from "./allowance";
 import { HOUSE_CAP_REACHED, houseCapState, houseCapWarning } from "./houseCapText";
@@ -50,8 +49,8 @@ export type Unit = {
   count?: number;
   /**
    * What the shot this job belongs to has already taken, and what it is
-   * called. The per-shot rule is written about one shot's running total, so
-   * judging a set without them is judging a different rule.
+   * called. Part of the quote's stamp (a shot that took more since is a new
+   * quote); no rule judges it since the per-shot cap was retired (21 Oct 2026).
    */
   spent?: number;
   code?: string;
@@ -71,8 +70,7 @@ export type Unit = {
 /**
  * One priced job, carrying what the verdict needs to judge it on its own.
  *
- * The gates are per-job, not per-total: a shot's own running total decides the
- * approval rule, its own production decides the cap, and only the jobs the
+ * The gates are per-job, not per-total: its own production decides the cap, and only the jobs the
  * platform pays for touch the balance. Rolling those up before judging is how
  * a quote starts disagreeing with the press.
  */
@@ -169,7 +167,6 @@ export function quoteOf(units: Unit[], terms: Terms = liveTerms()): Quote {
    Not an approximation of the press: the same walls, in the same order, with
    the same arguments. The order below is app/api/generate/route.ts's own —
 
-     the approval rule      refuses, 403
      the monthly allowance  refuses, 429
      the production's cap   refuses, 409
      the credit balance     does NOT refuse; the take is parked as held
@@ -181,7 +178,7 @@ export function quoteOf(units: Unit[], terms: Terms = liveTerms()): Quote {
    fact accept. */
 
 /** Which wall this ran into, in the order the render path checks them. */
-export type Gate = "ok" | "approval" | "allowance" | "cap" | "held";
+export type Gate = "ok" | "allowance" | "cap" | "held";
 
 export type Verdict = {
   /** Whether the press would be accepted at all. Held work is accepted. */
@@ -216,13 +213,8 @@ export type Context = {
   /** The cap of each production the quote touches, keyed by its id. */
   caps: Record<string, Cap>;
   warnPct: number;
-  /** The workspace's approval rule, the ceiling it uses, and who is asking. */
-  rule: ApprovalRule;
-  shotCap: number;
-  isAdmin: boolean;
 };
 
-const fmt = (n: number): string => `${Math.round(n).toLocaleString("en-US")} cr`;
 
 /**
  * The house's context with the band of each line that holds its ceiling (lib/cinemaHold.ts holdBandOf, from the line's model), so its quote
@@ -249,20 +241,8 @@ export function verdictOf(q: Quote, c: Context): Verdict {
      of room, and a cap it does not spend against must not be what stops it. */
   if (q.totalCredits === 0) return { allow: true, gate: "ok", line: "", notice: "" };
 
-  /* The approval rule, judged one shot at a time against that shot's own
-     running total — which is what the rule says and what the press does.
-     Judging the set on its sum would stop a member under a rule the workspace
-     never set; judging it with no history at all would wave through the second
-     take of a shot already at its ceiling. */
-  if (c.rule === "cap" && !c.isAdmin) {
-    for (const l of q.lines) {
-      const stop = shotCapVerdict({
-        rule: c.rule, isAdmin: c.isAdmin, cap: c.shotCap,
-        shotCredits: l.spent, takeCredits: l.credits, code: l.code || "This shot",
-      }, fmt);
-      if (stop.blocked) return { allow: false, gate: "approval", line: stop.line, notice: "" };
-    }
-  }
+  /* No approval rule judges a quote: the workspace's cost approval rule and its per-shot cap were retired on 21 Oct 2026
+     (owner: "every member approves their own spend with their own tap on the quote"). What follows are the walls that stay. */
 
   /* The workspace's monthly ceiling on the platform's engines. Only the jobs
      the platform actually pays for count against it. */
@@ -323,12 +303,7 @@ export function verdictOf(q: Quote, c: Context): Verdict {
     }
   }
 
-  return {
-    allow: true, gate: "ok", notice,
-    /* Nothing is in the way, so the only thing worth saying is the rule that
-       would have applied, which is what 2.2 asks the composer to show. */
-    line: ruleLine(c.rule, c.shotCap, fmt),
-  };
+  return { allow: true, gate: "ok", notice, line: "" };
 }
 
 /* ── Staleness ──────────────────────────────────────────────────────────── */

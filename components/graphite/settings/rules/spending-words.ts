@@ -1,15 +1,12 @@
 /**
  * The spending rules in words (pure, so the unit specs hold each line to the code). Copy says what the
  * code does (DECISIONS 2, 9, 10): limits by role, never a named person; at the warning share (80 % unless changed) the producer is warned
- * (lib/caps.ts checkCap). Every paid step waits for a person: there is no Auto (owner, 20 Oct 2026).
+ * (lib/caps.ts checkCap). Every paid step waits for a person: there is no Auto (owner, 20 Oct 2026). Every member approves
+ * their own spend: the cost approval rule and its per-shot cap were retired on 21 Oct 2026 (owner).
  */
-import type { ApprovalRule } from "@/lib/approvalRule";
 
 export type SpendingRules = {
   loaded: boolean;
-  rule: ApprovalRule | null;
-  /** Credits a shot may take before a member needs an admin (the "cap" rule). */
-  shotCap: number | null;
   /** Spend without asking: always "ask". There is no Auto (owner, 20 Oct 2026): every paid step waits for a person's approval of its quote. */
   mode: "ask";
   capWarnPct: number | null;
@@ -19,8 +16,6 @@ export type SpendingRules = {
 };
 
 export type SpendingLines = {
-  /** "Members up to 50 cr a shot; an admin above it." */
-  ruleLine: string | null;
   /** "Every paid step waits for a person." */
   modeLine: string;
   /** "Warns at 80% of a production’s budget · at the cap an admin unlocks it" */
@@ -33,20 +28,11 @@ const AT_CAP: Record<"producer" | "stop" | "warn", string> = {
   warn: "the cap only warns",
 };
 
-export function spendingLines(r: SpendingRules, cr: (n: number) => string): SpendingLines {
+export function spendingLines(r: SpendingRules): SpendingLines {
   return {
-    ruleLine: r.rule === null ? null
-      : r.rule === "cap" ? (r.shotCap === null ? null : `Members up to ${cr(r.shotCap)} a shot; an admin above it.`)
-      : r.rule === "producer" ? "A producer signs off on every take."
-      : "Members render freely.",
     modeLine: "Every paid step waits for a person.",
     budgetLine: r.capWarnPct === null || r.atCap === null ? null : `Warns at ${r.capWarnPct}% of a production’s budget · ${AT_CAP[r.atCap]}`,
   };
-}
-
-/** The value the Rule row shows: the cap in credits, or the rule's own word. */
-export function ruleValue(r: Pick<SpendingRules, "rule" | "shotCap">, cr: (n: number) => string): string {
-  return r.rule === "cap" ? (r.shotCap === null ? "cap" : cr(r.shotCap)) : r.rule ?? "—";
 }
 
 /** A cap as a person types it: a whole number of credits, 1 or more (0 too when `zero`), else null. */

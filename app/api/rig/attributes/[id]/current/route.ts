@@ -86,7 +86,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
      them, and only the shots that FOLLOW current, since a shot pinned to a
      version does not move when current does. */
   const impact = await impactOf(String(row.element_id), attributeId, versionId, {
-    projectId: null, following: true, at: now(), isAdmin: got.user.role === "admin",
+    projectId: null, following: true, at: now(),
   });
 
   if (!isChoiceKey(body.choice)) {

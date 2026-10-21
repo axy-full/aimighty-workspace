@@ -7,15 +7,12 @@ import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
 
-const ID = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
-const ASK = z.discriminatedUnion("about", [
-  z.object({ about: z.literal("step"), productionId: ID, runId: ID, seq: z.number().int().min(0).max(10_000) }),
-  z.object({ about: z.literal("rules") }),
-]);
+/* The rules only: no step waits for an admin since the admin approval rule was retired (21 Oct 2026), so a step is not a subject. */
+const ASK = z.object({ about: z.literal("rules") });
 
 /**
- * "Ask an admin": a person who is not an admin asks the owner and admins to look at a step over the per-shot cap,
- * or at the spending rules (lib/control-room/ask-admin.ts). A signed-in person only: an API or MCP token is refused
+ * "Ask an admin": a person who is not an admin asks the owner and admins to look at the spending rules
+ * (lib/control-room/ask-admin.ts). A signed-in person only: an API or MCP token is refused
  * here (requireSession), and Atomik never asks. It tells; it spends, approves and changes nothing.
  */
 export const POST = withTenant(async (req: Request) => {

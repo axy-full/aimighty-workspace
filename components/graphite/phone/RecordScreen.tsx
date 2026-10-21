@@ -139,7 +139,7 @@ export function RecordScreen({ scope, project, items, queue, spendOff = null, no
           <div key={item.id} className="ph-row" data-testid="phone-record-decision">
             <span className="ph-row-text">
               <span className="ph-row-title">{item.title}{item.price && !off ? <> · <Price value={item.price} /></> : null}</span>
-              <span className="ph-row-line">{off ? (unchecked ? CHECK_LINE : SAMPLE_LINE) : item.needsAdmin && !item.canApprove ? "Needs an admin" : "Approve, change or hold"}</span>
+              <span className="ph-row-line">{off ? (unchecked ? CHECK_LINE : SAMPLE_LINE) : "Approve, change or hold"}</span>
             </span>
             {unchecked ? <CheckAgain className="ph-btn" /> : null}
             {!off && item.approve?.kind === "board-approve" ? <button type="button" className="ph-btn" onClick={() => onPlan(item)} data-testid="phone-record-open">Open</button> : null}

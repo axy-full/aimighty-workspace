@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  *
  * Any member may save these. That matches what they could already do when
  * these were browser-local, and Setup is a creative default, not policy: the
- * settings that are policy (the approval rule, the caps) keep requireAdmin.
+ * settings that are policy (the caps) keep requireAdmin.
  */
 
 export const GET = withTenant(async function GET(req: Request) {

@@ -15,7 +15,6 @@ import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./g
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { shotCapAdmin, shotCapGate } from "./shotCap";
 import { uploadOpenableBy, type Viewer } from "./uploadAccess";
 import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { engineEnabled } from "./engineGate";
@@ -200,11 +199,9 @@ export async function executeRecraftAdmission(input: Record<string, unknown>, go
 
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
-  let shotCode: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
-    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
     projectId ??= shot.projectId;
   }
@@ -221,11 +218,6 @@ export async function executeRecraftAdmission(input: Record<string, unknown>, go
   /* The approval unit, through the margin table keyed by the model or tool id. No number of ours here. */
   const estimatedCredits = quotedCredits(usd, marginKey);
   const inCredits = creditsApply(requireTenant());
-  /* The cost approval rule (brief 2.2), as the fal path judges it: with a cap per shot, a take past it needs an admin who is a person: a token, an agent identity or a job marked as approved by Auto is never one (lib/shotCap.ts › shotCapAdmin). Refused before a row is written. */
-  if (shotId && shotCode) {
-    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: marginKey, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
-    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
-  }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model: marginKey, size });
   const wall = await allowanceCheck("recraft", usd, marginKey);
   if (!wall.ok) return admissionReply({ error: wall.error }, { status: wall.status });

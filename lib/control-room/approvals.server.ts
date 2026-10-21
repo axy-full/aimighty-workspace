@@ -1,12 +1,9 @@
-import { createHash } from "node:crypto";
 import { projectLister } from "@/lib/draftProject";
 import { db, ready } from "@/lib/db";
 import { platformDb, platformReady } from "@/lib/platform";
 import { currentTenant } from "@/lib/tenant";
 import { creditsApply, creditState } from "@/lib/credits";
-import { getSetting } from "@/lib/settings";
-import { cleanRule, cleanShotCap } from "@/lib/approvalRule";
-import { needsAdminTap, ownerIsAdmin, shotCap as chatShotCap, stepCredits } from "@/lib/atomikAccess";
+import { stepCredits } from "@/lib/atomikAccess";
 import { isAgentId } from "@/lib/security/people-only";
 import { FREE, exact, shortBy as shortOf, upTo } from "@/lib/shell/price-words";
 import { dollars } from "@/lib/format";
@@ -41,9 +38,10 @@ import {
  * Who may press what is the code's own rule for each record, never a looser
  * one: a held take is released by its maker or an admin (lib/workspace/
  * release.ts), a board's build and renders by the person who asked
- * (lib/workbench/rig-agent.ts), a plan's step by any member at its live price.
- * On top of that, with the workspace's per-shot rule on, a member never gets
- * Approve on an item priced above the cap (an admin presses it).
+ * (lib/workbench/rig-agent.ts), a plan's step by its own person at its live
+ * price. No item waits for an admin: the admin approval rule was retired on
+ * 21 Oct 2026 (owner: "every member approves their own spend with their own
+ * tap on the quote").
  */
 
 type Row = Record<string, unknown>;
@@ -67,12 +65,6 @@ export const shortText = (value: string, max = 60) => {
   const line = value.replace(/\s+/g, " ").trim();
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
 };
-
-/** The per-shot rule as the workspace set it (lib/atomikAccess.ts): the cap in credits when the rule is `cap`, else null. */
-const shotCap = chatShotCap;
-
-/** The rule's own sentence for a member over the cap. */
-const capWords = (cap: number) => `Members up to ${cap.toLocaleString("en-US")} cr a shot; an admin above it`;
 
 /** Production names, and this viewer's own draft of each production (the project Home's cards show). */
 export async function projectsOf(viewer: string, productions: string[]): Promise<Map<string, QueueProject>> {
@@ -103,12 +95,6 @@ export async function projectsOf(viewer: string, productions: string[]): Promise
 
 export const NO_PROJECT: QueueProject = { productionId: null, draftId: null, name: null };
 
-/** Approve, unless the rule puts the price over the cap for this viewer. */
-function capGate(credits: number | null, cap: number | null, admin: boolean): { needsAdmin: boolean; why: string | null } {
-  const needsAdmin = cap !== null && credits !== null && credits > cap;
-  return { needsAdmin, why: needsAdmin && !admin ? capWords(cap!) : null };
-}
-
 /* ── Held takes (lib/held.ts) ──────────────────────────────────────────── */
 
 async function heldItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: QueueItem[]; productions: string[] }> {
@@ -120,7 +106,6 @@ async function heldItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Qu
     /* No figure where the workspace is not billed in credits, or none was kept. */
     const price: QueuePrice = ctx.inCredits ? exact(needs) : null;
     const mine = mayRelease({ id: viewer.id, role: viewer.owner ? "owner" : viewer.role }, g.createdBy);
-    const gate = capGate(needs, ctx.cap, ctx.admin);
     const shortBy = shortOf(ctx.balance, price);
     return {
       id: `held:${g.id}`,
@@ -130,10 +115,9 @@ async function heldItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Qu
       at: g.createdAt,
       project: NO_PROJECT,
       price,
-      needsAdmin: gate.needsAdmin,
       /* Release refuses while the balance is short (lib/held.ts), so a short take waits with Top up instead. */
-      canApprove: mine && !gate.why && !shortBy && needs !== null,
-      why: !mine ? RELEASE_NOT_YOURS : gate.why,
+      canApprove: mine && !shortBy && needs !== null,
+      why: !mine ? RELEASE_NOT_YOURS : null,
       shortBy,
       note: HELD_NOTE,
       step: null,
@@ -180,8 +164,7 @@ export function planGateFigures(
 async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: QueueItem[]; productions: string[] }> {
   if (!(await rigAgentExists())) return { items: [], productions: [] };
   const ids = (await db().execute({
-    /* A running run is read too: under a plan's approval a render that needs an admin waits here while the rest renders. */
-    sql: "SELECT id FROM rig_agent_runs WHERE state IN ('awaiting_approval','needs_you','running') ORDER BY created_at LIMIT ?",
+    sql: "SELECT id FROM rig_agent_runs WHERE state IN ('awaiting_approval','needs_you') ORDER BY created_at LIMIT ?",
     args: [SOURCE_LIMIT],
   })).rows.map((r) => String((r as Row).id));
   const enabled = rigAgentEnabled();
@@ -205,7 +188,6 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
         at: run.updatedAt,
         project: NO_PROJECT,
         price: FREE,
-        needsAdmin: false,
         canApprove: view.mine && enabled,
         why: !enabled ? RIG_AGENT_OFF : !view.mine ? BOARD_NOT_YOURS : null,
         shortBy: null,
@@ -230,7 +212,6 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
         at: run.updatedAt,
         project: NO_PROJECT,
         price,
-        needsAdmin: false,
         canApprove: view.mine && enabled,
         why: !enabled ? RIG_AGENT_OFF : !view.mine ? BOARD_NOT_YOURS : null,
         shortBy: shortOf(ctx.balance, price),
@@ -245,12 +226,9 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
     }
     for (const step of view.paid) {
       if (step.tool !== "render" || (step.state !== "waiting" && step.state !== "paused")) continue;
-      if (run.state === "running" && !(step.state === "paused" && step.pause === "admin")) continue;
       /* A chips plan's covered shot waiting its turn asks nothing of anyone: only the shot that asks is listed, at its own price (lib/workbench/rig-agent.ts onePrice). */
       if (step.planPriced) continue;
       const price = renderPrice(step, ctx.inCredits);
-      const credits = price && price.kind !== "free" ? price.credits : null;
-      const gate = capGate(credits, ctx.cap, ctx.admin);
       const waiting = step.state === "waiting";
       const tappable = waiting && step.canRender && enabled && !!step.fingerprint;
       const shortBy = shortOf(ctx.balance, price);
@@ -262,13 +240,11 @@ async function boardItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: Q
         at: run.updatedAt,
         project: NO_PROJECT,
         price,
-        needsAdmin: gate.needsAdmin || step.pause === "admin",
-        canApprove: tappable && !gate.why,
+        canApprove: tappable,
         why: !enabled ? RIG_AGENT_OFF
           : !view.mine ? RENDER_NOT_YOURS
-          : gate.why
           /* A paused render is retried, priced again or unlocked on its board, in the run card's own words. */
-          ?? (waiting ? null : step.reason ?? "It waits on its board."),
+          : waiting ? null : step.reason ?? "It waits on its board.",
         shortBy,
         note: run.goal ? shortText(run.goal, 90) : null,
         step: null,
@@ -314,45 +290,14 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
   });
   const first = new Map<string, Row>();
   for (const r of rs.rows as Row[]) if (!first.has(String(r.chat_id))) first.set(String(r.chat_id), r);
-  /* A chat step is its own person's (owner, 12 Oct): a member is shown their own steps and nothing of anyone else's, not even that one exists. An admin is shown
-     another MEMBER's step only while it needs an admin's tap (over the workspace's per-shot cap), and then only its title and its price:
-     never the chat's words, the plan's step bodies or what was asked. Once it no longer needs one it is not shown. Another admin's step needs only its owner. */
-  const shown = [...first.values()].filter((r) => {
-    if (String(r.chat_owner ?? "") === viewer.id) return true;
-    if (!ctx.admin || isAgentId(viewer.id)) return false;
-    return !ownerIsAdmin(r.chat_owner, r.owner_role) && needsAdminTap(stepCredits(r, ctx.inCredits), ctx.cap);
-  }).slice(0, SOURCE_LIMIT);
+  /* A chat step is its own person's (owner, 12 Oct): each person is shown their own steps and nothing of anyone else's, not even that one exists. An admin
+     included: the admin approval rule was retired on 21 Oct 2026, so no admin is shown or approves another member's step. */
+  const shown = [...first.values()].filter((r) => String(r.chat_owner ?? "") === viewer.id).slice(0, SOURCE_LIMIT);
   const items = shown.map((r): QueueItem => {
     const credits = stepCredits(r, ctx.inCredits);
     const price: QueuePrice = upTo(credits);
     const shortBy = shortOf(ctx.balance, price);
     const productionId = text(r.project_id);
-    const mine = String(r.chat_owner ?? "") === viewer.id;
-    if (!mine) {
-      /* Title and price, and Approve (owner, 13 Oct: an admin may approve another member's over-line step): the step's id is what the claim needs, and there is no chat id
-         and nothing to open. Not now stays the step's person's. */
-      return {
-        /* An opaque key (stable for this reader), not the chat's or the step's id. */
-        id: `thread-step:${createHash("sha256").update(`${ctx.workspaceId}:${viewer.id}:${String(r.id)}`).digest("hex").slice(0, 16)}`,
-        source: "thread",
-        title: shortText(text(r.title) ?? "A step"),
-        where: "Atomik",
-        at: Number(r.created_at ?? 0),
-        project: NO_PROJECT,
-        price,
-        needsAdmin: true,
-        canApprove: true,
-        why: null,
-        shortBy: shortOf(ctx.balance, price),
-        note: null,
-        step: null,
-        sample: false,
-        approve: { kind: "thread", chatId: null, stepId: String(r.id), productionId: null },
-        decline: null,
-        open: { kind: "none" },
-      };
-    }
-    const gate = capGate(credits, ctx.cap, ctx.admin);
     const n = Number(r.before ?? 0) + 1, of = Math.max(n, Number(r.plan_steps ?? 1));
     const title = text(r.title) ?? "The next step";
     return {
@@ -363,10 +308,9 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
       at: Number(r.created_at ?? 0),
       project: NO_PROJECT,
       price,
-      needsAdmin: gate.needsAdmin,
-      /* Any member continues a plan; Continue prices the step live before anything is sent. */
-      canApprove: !gate.why,
-      why: gate.why,
+      /* The person continues their own plan; Continue prices the step live before anything is sent. */
+      canApprove: true,
+      why: null,
       shortBy,
       note: `Step ${n} of ${of} · ${shortText(title, 80)}`,
       step: { n, of },
@@ -376,7 +320,7 @@ async function threadItems(viewer: ApprovalsViewer, ctx: Ctx): Promise<{ items: 
       open: { kind: "thread", chatId: String(r.chat_id), productionId },
     };
   });
-  return { items, productions: shown.map((r) => (String(r.chat_owner ?? "") === viewer.id ? text(r.project_id) ?? "" : "")) };
+  return { items, productions: shown.map((r) => text(r.project_id) ?? "") };
 }
 
 /* ── What was decided ──────────────────────────────────────────────────── */
@@ -534,7 +478,7 @@ async function decidedItems(viewer: ApprovalsViewer, ctx: Ctx, since: number): P
 
 /* ── The read ──────────────────────────────────────────────────────────── */
 
-type Ctx = { workspaceId: string; inCredits: boolean; admin: boolean; cap: number | null; balance: number | null };
+type Ctx = { workspaceId: string; inCredits: boolean; admin: boolean; balance: number | null };
 
 /** Everything waiting for a person in this workspace, as this viewer may act on it, and the last decisions. */
 export async function readApprovals(viewer: ApprovalsViewer, now = Date.now()): Promise<ApprovalsReply> {
@@ -542,9 +486,9 @@ export async function readApprovals(viewer: ApprovalsViewer, now = Date.now()): 
   const workspace = currentTenant()?.workspace;
   if (!workspace) throw new Error("No workspace.");
   const inCredits = creditsApply(workspace);
-  const [cap, state] = await Promise.all([shotCap(), inCredits ? creditState().catch(() => null) : Promise.resolve(null)]);
+  const state = inCredits ? await creditState().catch(() => null) : null;
   const ctx: Ctx = {
-    workspaceId: workspace.id, inCredits, cap, balance: state ? state.balance : null,
+    workspaceId: workspace.id, inCredits, balance: state ? state.balance : null,
     admin: !isAgentId(viewer.id) && (viewer.owner === true || viewer.role === "admin" || viewer.role === "owner"),
   };
   const [held, board, threads, decided] = await Promise.all([

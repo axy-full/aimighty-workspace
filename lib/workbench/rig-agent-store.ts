@@ -149,7 +149,17 @@ export type LimitRecord = {
 /** The planning turn's charge: reserved at its ceiling while Atomik plans, then settled at what it used, or released. */
 export type PlanCharge = "reserved" | "settled" | "released";
 /** Why a paid step waits for a person. */
-export type PauseKind = "limit" | "credits" | "admin" | "refused" | "unpriced" | "record";
+export type PauseKind = "limit" | "credits" | "refused" | "unpriced" | "record";
+
+/**
+ * A render that waited for an admin goes back to its own person (owner, 21 Oct 2026: the admin approval rule is retired; work already waiting
+ * for an admin "goes back to its own person at a fresh quote and starts only on their tap"). A step stored paused for an admin is read as one
+ * that needs pricing again, with no price and no admission of its own: its person's "Price again" quotes it afresh, and nothing sends it until
+ * they tap. The row itself is left as stored.
+ */
+export const BACK_TO_ITS_PERSON = "This render is yours to approve now. Price it again; it starts only on your tap.";
+/** A run's note that named an admin (stored before 21 Oct 2026), and what it reads as now. */
+const ADMIN_NOTE = /An admin (?:has to press this one|must start it)|Ask an admin to render it|\b(?:waits|wait) for an admin\b/;
 
 export type RunRow = {
   id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; mode: RigAgentMode;
@@ -199,7 +209,8 @@ const str = (v: unknown) => (v == null ? null : String(v));
 function runOf(r: Record<string, unknown>): RunRow {
   return {
     id: String(r.id), productionId: String(r.production_id), draftId: String(r.draft_id), owner: String(r.owner), requestId: String(r.request_id),
-    goal: String(r.goal), mode: runModeOf(r.mode), model: String(r.model), state: String(r.state) as RigAgentState, reason: str(r.reason),
+    goal: String(r.goal), mode: runModeOf(r.mode), model: String(r.model), state: String(r.state) as RigAgentState,
+    reason: ADMIN_NOTE.test(String(r.reason ?? "")) ? BACK_TO_ITS_PERSON : str(r.reason),
     plan: parse<CompiledPlan | null>(r.plan, null), fingerprint: str(r.plan_fingerprint),
     planningStartedAt: num(r.planning_started_at), approvedAt: num(r.approved_at), approvedBy: str(r.approved_by), finishedAt: num(r.finished_at),
     undoneAt: num(r.undone_at), undoneBy: str(r.undone_by), undo: parse<UndoRecord | null>(r.undo, null),
@@ -211,6 +222,9 @@ function runOf(r: Record<string, unknown>): RunRow {
 }
 
 function stepOf(r: Record<string, unknown>): StepRow {
+  /* Paused for an admin (stored before 21 Oct 2026): its person's to price again (BACK_TO_ITS_PERSON). */
+  if (String(r.pause ?? "") === "admin")
+    r = { ...r, pause: "unpriced", reason: BACK_TO_ITS_PERSON, admission: null, quote_credits: null, band: null, approved_at: null, approved_by: null, approved_fingerprint: null, approval_id: null };
   return {
     id: String(r.id), runId: String(r.run_id), seq: Number(r.seq), tool: String(r.tool) as StepTool, label: String(r.label), purpose: String(r.purpose),
     nodeId: str(r.node_id), attempt: Number(r.attempt ?? 0), ops: parse<CanvasOp[]>(r.prepared, []), opId: str(r.op_id),

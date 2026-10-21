@@ -37,8 +37,6 @@ export type PlanStepSummary = {
   total: number | null; ceiling: number | null; approximate: boolean;
   /** The shots in the plan, by title. One price for the plan (`total`); no price per shot. */
   shots: string[];
-  /** Renders that ask on their own: those that need an admin (no per-render line since 20 Oct 2026). */
-  asks: number;
   /** Why it is not priced yet, in fixed words with no engine's name ("2 shots can't be priced yet; open the board."); null once priced. */
   reason: string | null;
   answers: { quality: string; length: number } | null;
@@ -56,10 +54,10 @@ const ID = /^[a-zA-Z0-9-]{1,100}$/;
 export function unpricedWords(takes: readonly Pick<RigAgentPaidStepView, "state" | "quote" | "pause" | "fixOf">[]): string {
   const open = takes.filter((p) => p.fixOf == null && (p.state === "next" || p.state === "waiting" || p.state === "paused"));
   /* Can't be priced: a render the run tried to price and paused. One merely not reached yet (next) is still being priced. */
-  const unpriced = open.filter((p) => p.state === "paused" && p.quote == null && p.pause !== "admin").length;
+  const unpriced = open.filter((p) => p.state === "paused" && p.quote == null).length;
   if (unpriced) return `${unpriced} ${unpriced === 1 ? "shot" : "shots"} can't be priced yet; open the board.`;
   if (open.some((p) => p.state === "next")) return "The plan is still being priced; open the board.";
-  return open.length ? "Every shot here asks on its own; open the board." : "Nothing in this plan is waiting to render; open the board.";
+  return open.length ? "A shot here waits for you; open the board." : "Nothing in this plan is waiting to render; open the board.";
 }
 const REQUEST = /^[A-Za-z0-9._:-]{1,120}$/;
 
@@ -96,7 +94,6 @@ export async function preparePlanStep(userId: string, input: PlanStepInput, deps
     id: made.id, state: view.state, step, priced: !!quote,
     total: quote?.total ?? null, ceiling: quote?.ceiling ?? null, approximate: quote?.approximate ?? false,
     shots: takes.map((p) => p.title),
-    asks: quote?.asks.length ?? 0,
     reason: quote ? null : unpricedWords(takes),
     answers: row?.plan?.setup ?? null,
     replaced: made.replaced === true,

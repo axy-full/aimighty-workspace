@@ -32,8 +32,8 @@ import { neutralCopy } from "./rig";
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 export type NextQuote = { credits: number; fingerprint: string };
-/** What a refusal asks for: a reason to render past an approved take, or an admin (a shot's cost cap). */
-export type NextRefusalDetail = { needsReason?: { title: string; line: string }; needsAdmin?: true };
+/** What a refusal asks for: a reason to render past an approved take. (No refusal asks for an admin: the per-shot cap was retired on 21 Oct 2026.) */
+export type NextRefusalDetail = { needsReason?: { title: string; line: string } };
 
 /** The server answered, and will answer the same way until something changes: its words, and what it asks for. */
 export class NextRefusal extends Error {
@@ -65,8 +65,7 @@ export async function quoteNext(scope: string, body: Record<string, unknown>, si
   } catch (error) {
     if (error instanceof StudioRequestError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
       const data = error.data;
-      const detail: NextRefusalDetail = data.needsReason === true ? { needsReason: { title: error.message, line: typeof data.line === "string" ? data.line : "" } }
-        : data.needsAdmin === true ? { needsAdmin: true } : {};
+      const detail: NextRefusalDetail = data.needsReason === true ? { needsReason: { title: error.message, line: typeof data.line === "string" ? data.line : "" } } : {};
       throw new NextRefusal(neutralCopy(error.message, "This can't be priced here."), detail);
     }
     throw error;

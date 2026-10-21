@@ -18,7 +18,6 @@ import { uploadOpenableBy, type Viewer } from "./uploadAccess";
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { shotCapAdmin, shotCapGate } from "./shotCap";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { engineEnabled } from "./engineGate";
 import { VendorPriceUnavailable, fileVendorQuote } from "./vendorPriceFile";
@@ -191,11 +190,9 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
 
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
-  let shotCode: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
-    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
     projectId ??= shot.projectId;
   }
@@ -213,11 +210,6 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   /* The approval unit (lib/credits.ts quotedCredits), through the margin table, keyed by the model. No figure of ours. */
   const estimatedCredits = quotedCredits(usd, model);
   const inCredits = creditsApply(requireTenant());
-  /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. Refused here, on the quote and the press, before any row is written, so no failed take is left in the Library. */
-  if (shotId && shotCode) {
-    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
-    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
-  }
   if (quoteOnly)
     return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", seconds, model, syncMode });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
