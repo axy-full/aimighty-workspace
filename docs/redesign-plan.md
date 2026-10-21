@@ -1868,3 +1868,22 @@ The Visitor hero line; the genre table rows; the Agent factor's number; rupee vs
 - 21 Oct 2026: **#868** has the standing yes once its run is 24/24 (no money).
 - 21 Oct 2026: **Before deploy #6** (the owner's), a fresh range note for main 62163d76 → release/1 c1fc8568: migrations, every new setting name (names only), what changes for customers' money, and the rollback.
 - 21 Oct 2026: **The monthly spend limit is rule 14's budget ceiling.** It is one setting, owner-only and off by default; #835 builds it. The house cap warns on a raise only. The engine hold stays: an engine is rebuilt on the price file, like #846, only when the demo needs it, and the owner names which.
+
+## Owner, 22 Oct 2026, 00:05 IST: v31.5 review (Amendment (iii))
+
+Recorded in docs/particl-sow-v1.md, Amendment (iii), "The owner's v31.5 review, 22 October 2026 (00:05 IST)", on docs/rule14-band-range (PR to come). The owner's words, verbatim; only the bullets and the bold item ids are added:
+
+- **R24 reversed:** two canvas tools, Select (V) and Hand (H); in Select a drag on empty space is a marquee; Hand pans; Space is Hand in either; wheel pans; ⌘-wheel or pinch zooms about the cursor, damped, never a fixed step; "just copy the canvas of Luma": a fine dot grid fixed under zoom — "it's the cards that get zoomed in and out".
+- **R25 reversed:** "Keep it at the bottom only. I don't want to see any options or text hanging around on the canvas anywhere. If it's information regarding all cards, it should be tucked away in the inspector. If it's per card, it should be in the space bar or double-click preview of the card."
+- **R23 amended:** Script has Cards · List · Page in both modes; Page is the screenplay viewer and editor, hand edits free.
+- **R20 amended:** a question names the cards or beats it is about and offers the real alternatives; one with no concrete alternatives is not asked.
+- **R28** Genre first.
+- **R29 [money]** the plan is charged: free are the person's own "said" rows and the Preflight questions; one quote ("Plan the film", bands as a range or ceiling) is approved before any decided row appears.
+- **R30** a take accepts any number of inputs (rows with roles and ×).
+- **R31** the shot number is an editable control; a drop never renumbers.
+- **R32** Delete/Backspace to Trash with Undo; double-click on empty space makes the step's card, on a card opens Quick Look.
+- **R33** the Director's field is the width of the bar, multi-line, Enhance an icon in it.
+- **R34** the right rail holds the tabs once; the panel shows one tab.
+- **R35** Make: a centred bar with Agent · Director above it; Agent asks "What are we making?" then one quote; Director keeps the generator.
+- **R21 restated:** no selection tool in Director mode anywhere, Quick Look included.
+- Strike R24 and R25 with a dated note
