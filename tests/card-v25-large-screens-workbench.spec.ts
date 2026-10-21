@@ -1,18 +1,17 @@
 import { test, expect } from "@playwright/test";
+import { OWNER_WINDOWS } from "./helpers/ownerSizes";
 
 /**
- * Large screens (owner, 15 Oct 2026, 22:30), for the v25 card on its test-only page app/(test)/v25-board-parts (a 404 outside a local ENGINE_MOCK=1 development server): at 1280x800,
- * 1440x900, 1728x1117, 1920x1080 and 2560x1440 no sideways scroll, every card inside the window, and no word smaller than 12 px. The test page draws gradients, not pictures, so sharpness is checked on the board (#748), where the cards hold real pictures. (The board's canvas scales up above 1440 px on #748; this page is the card alone, drawn at its own size.)
+ * Large screens (owner, 15 Oct 2026, 22:30), for the v25 card on its test-only page app/(test)/v25-board-parts (a 404 outside a local ENGINE_MOCK=1 development server): at the window sizes the owner
+ * reviews (tests/helpers/ownerSizes.ts: 1280x800, 1440x900, 1728x1117, 1920x1080, 2560x1440 and 3008x1692) no sideways scroll, every card inside the window, and no word smaller than 12 px. The test page draws gradients, not pictures, so sharpness is checked on the board (#748), where the cards hold real pictures. (The board's canvas scales up above 1440 px on #748; this page is the card alone, drawn at its own size.)
  */
-const SIZES = [[1280, 800], [1440, 900], [1728, 1117], [1920, 1080], [2560, 1440]] as const;
-
-test("at the five sizes: no sideways scroll, no card outside the window, no word under 12 px", async ({ page }, info) => {
-  test.skip(info.project.name !== "workbench-1440x900", "one project walks all five sizes");
+test("at the owner's window sizes: no sideways scroll, no card outside the window, no word under 12 px", async ({ page }, info) => {
+  test.skip(info.project.name !== "workbench-1440x900", "one project walks all the sizes");
   test.setTimeout(240_000);
   const res = await page.goto("/v25-board-parts");
   test.skip(res?.status() === 404, "requires a local ENGINE_MOCK=1 development server");
   await expect(page.getByTestId("v25-board-shots")).toBeVisible();
-  for (const [w, h] of SIZES) {
+  for (const [w, h] of OWNER_WINDOWS) {
     await page.setViewportSize({ width: w, height: h });
     await page.waitForTimeout(600);
     const m = await page.evaluate(() => {

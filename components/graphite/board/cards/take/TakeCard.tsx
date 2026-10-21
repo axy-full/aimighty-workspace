@@ -198,7 +198,8 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
   return (
     <article className="gx-take" style={{ "--gx-take-well": `${wellHeight(data.grid ? 260 : 340, ctx.project.aspect)}px` } as CSSProperties} data-status={v?.status ?? "empty"} data-dim={v?.status === "changes" || undefined} data-grid={data.grid || undefined} data-render={grid.state?.stage} data-reveal={grid.landed || undefined}
       aria-label={[row.title, v ? `${v.label}` : "no take yet", v && needsReview(v) ? "needs review" : null].filter(Boolean).join(" · ")} data-testid="take-card" data-node={row.nodeId}>
-      <div className="gx-take-media">
+      {/* While it renders, its source picture is blurred and dimmed on purpose (components/v12/render/render.css): the sharpness check skips it (tests/helpers/sharpMedia.ts). */}
+      <div className="gx-take-media" data-sharp-exempt={grid.state?.stage ? "blurred-source" : undefined}>
         <Picture version={v} frame={row.frame} name={row.title} />
         <SampleClipCredit take={v?.genId} over />
         {v && !data.grid ? <Progress version={v} typicalMs={row.typicalMs} /> : null}
