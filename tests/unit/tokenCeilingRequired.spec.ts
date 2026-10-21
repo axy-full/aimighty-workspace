@@ -372,9 +372,10 @@ test("every paid route says how a token is held at it: its ceiling and its appro
    Owner, 20 Oct 2026, answer A: "A person's Release of a held take made by a no-ceiling token IS that person's approval and starts it,
    recorded under the person. Who may release is unchanged."
    This replaces the test that pinned the earlier refusal ("a person releasing ... is told who acts, and the take stays held"). Now:
-    - a person's own Release, at the figure they were shown, starts it at its held price, judged as that person (no token on the
+    - a person's own Release, at the figure they were shown, starts it at exactly that figure, judged as that person (no token on the
       reservation), with `releasedBy` the person and `created_by` still its author;
-    - a price that rose since it was held stays held, nothing reserved;
+    - a press at any other figure (its price moved) is told today's figure, nothing reserved; pressed at that figure, it starts;
+    - a client review link never carries who released it;
     - the automatic release (credits arriving) still leaves it held, saying who acts (HELD_TAKE_NO_CEILING);
     - a token's press and an Atomik (agent:*) press are still refused at the route, and in lib/held.ts too;
     - a take a capped token made is still reserved under its token, and its ceiling still stops it. */
@@ -452,20 +453,18 @@ test("a person's Release of a held take a token with no ceiling made is their ap
   }, { user: person.user });
 });
 
-test("a person's Release never starts a no-ceiling token's take above the price it was held at, nor at a figure they were not shown", async () => {
+/* Review 1 (lead, 21 Oct): no limit at the held price on this path. A press at the figure on the button is the person's approval, as on every
+   other held take ("every job is approved on its quote by the person pressing", owner, 21 Oct 2026); any other figure is answered with today's. */
+test("a no-ceiling token's take whose price rose: a press at the old figure is told the new one, nothing reserved; a press at the new figure starts it at exactly that", async () => {
   const { runInTenant } = await import("../../lib/tenant");
-  const { movedPrice, repriced } = await import("../../lib/held");
+  const { repriced } = await import("../../lib/held");
   const ws = await newWorkspace("held-rose");
   await runInTenant(ws, async () => {
     /* Held at one credit less than it costs now: the price rose while it waited. */
     const { id, needs } = await heldTokenTake({ token: "tok_bare", rose: 1 });
     const submitted: string[] = [];
     const route = await releaseRoute(person, submitted);
-    /* Pressed at today's figure, the one the card shows: above what it was held at, so it stays held. */
-    const rose = await pressRelease(route, id, needs);
-    expect(rose.status).toBe(409);
-    expect(await rose.json()).toEqual({ error: movedPrice(needs), credits: needs });
-    /* Pressed at the figure it was held at: not today's price, so not that either. */
+    /* Pressed at the figure it was held at: not today's price, so it is told today's, and nothing is reserved. */
     const old = await pressRelease(route, id, needs - 1);
     expect(old.status).toBe(409);
     expect(await old.json()).toEqual({ error: repriced(needs), credits: needs });
@@ -474,7 +473,46 @@ test("a person's Release never starts a no-ceiling token's take above the price 
       row: { status: "held", error: null, created_by: "member", token_id: "tok_bare", released_by: null },
       meter: [], reservation: [],
     });
+    /* Pressed again at the figure it was told: that press approves it, at exactly that figure, under the person. */
+    const now = await pressRelease(route, id, needs);
+    expect(now.status).toBe(200);
+    expect(submitted).toEqual([id]);
+    expect(await heldTrace(id)).toEqual({
+      row: { status: "queued", error: null, created_by: "member", token_id: "tok_bare", released_by: "owner" },
+      meter: [{ billed_credits: needs, created_by: "member" }],
+      reservation: [{ token_id: null, approved_by: "owner" }],
+    });
   }, { user: person.user });
+});
+
+/* Who released a take is the workspace's own record (its members read it on the take); a client review link, which opens with no
+   sign-in, names its takes' fields one by one and never carries it. */
+test("a client review link never carries who released a take", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { releaseHeldJobs } = await import("../../lib/held");
+  const { mintShare } = await import("../../lib/shares");
+  const { db } = await import("../../lib/db");
+  const review = await import("../../app/api/review/[token]/route");
+  const releaser = { ...person.user!, id: "usr_releaser_unit", name: "Rae Releaser" };
+  const ws = await newWorkspace("held-review");
+  let take = { id: "", needs: 0 };
+  await runInTenant(ws, async () => {
+    take = await heldTokenTake({ token: "tok_bare" });
+    expect((await releaseHeldJobs({ only: take.id, approved: take.needs, defer: async () => {} })).released).toEqual([take.id]);
+    await db().batch([
+      "INSERT INTO projects(id,name,created_at) VALUES('project','Project',0) ON CONFLICT(id) DO NOTHING",
+      { sql: "UPDATE generations SET project_id='project', status='succeeded', review_state='approved', review_by='Mia Member', stored_url='https://unit.invalid/take.mp4' WHERE id=?", args: [take.id] },
+    ], "write");
+    expect((await heldTrace(take.id)).row.released_by).toBe(releaser.id);
+  }, { user: releaser });
+  const { token } = await mintShare({ workspaceId: ws.id, projectId: "project", by: "Mia Member" });
+  const res = await review.GET(new Request(`http://localhost/api/review/${token}`), { params: Promise.resolve({ token }) });
+  expect(res.status).toBe(200);
+  const text = await res.text();
+  expect((JSON.parse(text) as { takes: { id: string }[] }).takes.map((t) => t.id)).toEqual([take.id]);
+  expect(text).not.toContain(releaser.id);
+  expect(text).not.toContain("releasedBy");
+  expect(text).not.toContain("releasedAt");
 });
 
 test("the automatic release still leaves a no-ceiling token's take held, saying who acts; a token or Atomik press is refused", async () => {

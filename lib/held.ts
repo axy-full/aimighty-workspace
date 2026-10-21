@@ -254,8 +254,8 @@ export function movedPrice(needs: number): string {
  * start comes back with `refused`: why, in the words to show.
  *
  * A take a token with no ceiling made never starts on its own (lib/tokenSpend.ts). A person's own
- * Release of it, at the figure they were shown and never above the price it was held at, is that
- * person's approval and starts it, recorded under them (owner, 20 Oct 2026, answer A).
+ * Release of it, at the figure they were shown, is that person's approval and starts it at that
+ * figure, recorded under them (owner, 20 Oct 2026, answer A).
  *
  * Takes held for credits keep their order among themselves: the first the
  * balance does not cover stops that line. A take that only waited for a
@@ -310,10 +310,10 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
     /* One person's press approves one figure: a price that moved since it was shown starts nothing. */
     if (opts.only && opts.approved != null && r.needs !== opts.approved) { refuse(409, repriced(r.needs), r); continue; }
     /* Made by a token with no ceiling: only a person's own press starts it, and that press is the person's approval (owner, 20 Oct 2026,
-       answer A). It is judged as that person, not the token, and only at the figure they were shown, never above what it was held at:
-       a price that rose since stays held, nothing reserved. Anyone else's release still meets the token's wall below (HELD_TAKE_NO_CEILING). */
-    const approvedBy = person && r.token && !hasSpendingCeiling(r.token, inCredits) ? person : null;
-    if (approvedBy && !(r.heldAt != null && r.needs <= r.heldAt && r.needs === opts.approved)) { refuse(409, movedPrice(r.needs), r); continue; }
+       answer A; "every job is approved on its quote by the person pressing", 21 Oct). It is judged as that person, not the token, and only
+       at the figure they were shown: a press at any other figure was answered just above with the price now, nothing reserved. Anyone
+       else's release still meets the token's wall below (HELD_TAKE_NO_CEILING). */
+    const approvedBy = person && r.token && !hasSpendingCeiling(r.token, inCredits) && r.needs === opts.approved ? person : null;
     /* Nobody approved a price that moved while the take waited for credits: it is left, said, for a person to
        release at the new figure (its card offers Release at it), and it holds up nobody behind it. */
     if (!opts.only && balance != null && r.needs !== r.heldAt) {
