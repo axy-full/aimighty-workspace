@@ -1488,3 +1488,37 @@ f. Design note first — graph shape, checkpointer, handshake, test plan, your e
 "5. The demo comes after LangGraph, and its date follows the work: slices 1–3 green on release/1, deploy #7, a rehearsal, then the demo. Go/no-go on 1 November: if 1–3 are not green on release/1 by then, the demo runs on the old machine on the first date I set, and LangGraph continues behind it. The 31 October date is off. The capture (Thu 22 Oct, 02:00 IST), deploy #6 after it, and Vercel off on the 27th do not move."
 
 "6. Keys and the price file are mine; nothing for you there."
+
+## Owner, 21 Oct 2026, ~10:30 IST: #854, #811, Director, Langfuse, the LangGraph design note's 16 answers, the demo
+
+- 21 Oct 2026: **the demo comes as soon as possible, on the graph, with every element in place.** The owner: "I want the demo asap. I don't care about the date, but it has to be with all elements in place. A full working unit." This drops the fixed date, the 5 November checkpoint and the fallback to today's machine that option [A] in the design note had offered. It replaces the 1 November go/no-go. The lead reads it as: slices 1–3 green on release/1, then deploy #7, then a rehearsal, then the demo, with no date. What "all elements" takes in is asked separately.
+- 21 Oct 2026: **sequence.** The money PRs in flight land first (#854, the guardrail-4 PR, #811, the Director follow-ups, the #815 press fix), and slice 1 rebases on them.
+
+Verbatim:
+
+"#854: fresh yes at 553b10b9. Put it back on the queue; merge on a full 24/24 at that head.
+The Make phone test: yes, fix it to check what the button settles on (stricter), as its own PR, under the standing yes.
+#811 (Director on Shots): yes at 73da41b8. Its questions: (1) no split — a press is at most 24 shots, with the plan's own line ("up to 24 at a time; pick some"); a bigger job is two presses, two approvals. (2) Yes, Atomik may prepare a press: it fills it, prices it, and a person taps. (3) Yes, the approval binds the total: per-shot shifts that keep the total at or under the approved figure run; a higher total asks again.
+Director follow-ups: (a) yes, fix the #815 press route (a repeated press near the cap shows the running press) as its own money PR. (b) Retry's price is only the shots left: what failed unbilled re-runs under the same approval; what was charged stays charged. (c) No — held approvals expire as plans do (7 days); an expired one asks again at the current price. (d) Yes, offer "Render again" on a charged failure, as a new quote and a new approval, with what the failed one cost shown.
+Langfuse: (1) project members are platform admins only. (2) Count both, distinguished: ours as "refused" with sent:false, the provider's as the provider's. (3) Yes, trace the image, video and voice engines later, with the ledger PR; ids only."
+
+"LangGraph design note — by number:
+1 Yes: the per-render functions stay as they are; the graph drives them.
+2 Yes: cut by phase. My "chips plan / board ask" were names; the phases are the units.
+3 Yes: the four packages come along, never imported; the allowlist and the LangSmith refusal are the fences.
+4 (answered separately, below)
+5 Yes: the cron, the card-read nudge and the native worker stay as wakers; wake_at onto step.sleepUntil as its own small PR after slice 2, cron as the safety net.
+6 Yes: keep the database lease.
+7 Yes: amend S2 in slice 1's PR, dated — the gates are plan approval, isPersonApprover, the reservation and admission.
+8 Leave the old run tables; no PR for now.
+9 Plain JSON with no revival is the goal: test both in slice 1 and adopt plain if the suite passes; the default is the fallback, not the choice.
+10 Yes, "final" passes through in slices 1–3 — and the all-in quote (drafts, finals and up to two fixes under one approval, 18 Oct) is the first item after slice 3, on the graph, with its money review.
+11 Yes, drop the 600 ms pause.
+12 Langfuse is merged (#855, #856): slice 1 can start; session.id = runId.
+13 Yes: cap the context node at the cost sheet's planning assumption (30k input tokens) so the "up to N cr" holds; money review and my yes in that PR.
+14 Yes, "remember" does nothing in 1–3; later it proposes, a person keeps.
+15 Yes, the LangSmith refusal pauses the run with its reason on the health page.
+16 I'll confirm Turso's encryption at rest from the console; no design change.
+Sequence: the money PRs in flight (#854, the guardrail-4 PR, #811, the Director follow-ups, the #815 press fix) land first; slice 1 rebases on them. No LangGraph code before 2 and 4 above are answered — they are now."
+
+Question 4: "Okay so answer for 4. I want the demo asap. I don't care about the date, but it has to be with all elements in place. A full working unit"
