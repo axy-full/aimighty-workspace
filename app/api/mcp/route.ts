@@ -3,7 +3,7 @@ import { recoveryRoute } from "@/lib/recovery";
 import { callerFromToken, requireUser, withTenant } from "@/lib/auth";
 import { creditsApply } from "@/lib/credits";
 import { TOOLS, runTool, makeCaller } from "@/lib/mcp";
-import { directEngineMcpTools, directToolStartsInsideCeiling, runDirectEngineTool } from "@/lib/directEngineMcp";
+import { directEngineMcpTools, runDirectEngineTool } from "@/lib/directEngineMcp";
 import { currentTenant } from "@/lib/tenant";
 import { linkOrigin } from "@/lib/site";
 import { hasSpendingCeiling } from "@/lib/tokenCeiling";
@@ -83,7 +83,7 @@ const workspacePost = withTenant(async function POST(req: Request) {
     const unit = { credits: creditsApply(currentTenant()?.workspace) };
     try {
       const text =
-        (await runDirectEngineTool(name, args, call, { spends: directToolStartsInsideCeiling(name) ? await bearerMaySpend(req) : false })) ??
+        (await runDirectEngineTool(name, args, call, { maySpend: () => bearerMaySpend(req) })) ??
         (await runTool(name, args, call, linkOrigin(req), { ...unit, spends: name === "render_shot" ? await bearerMaySpend(req) : false }));
       return ok(id, { content: [{ type: "text", text }] });
     } catch (e) {

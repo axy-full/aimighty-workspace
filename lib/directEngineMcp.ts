@@ -16,7 +16,7 @@ import { RECRAFT_DIRECT_TOOLS } from "./recraftMcp";
  *   setting is no longer read, and whatever it holds ("auto" included) it starts nothing.
  * - **A capped token is the standing approval** (owner, 20 Oct 2026: "A capped token spends inside its ceiling whatever the workspace's Ask setting (ceiling = standing
  *   approval). lip_sync follows the same rule once Auto goes."). A tool declared `startsInsideCeiling` (lip_sync), called with a token that has a monthly ceiling an
- *   admin set (`spends`, read by POST /api/mcp from the bearer the tools act with, as render_shot's), is sent at the price the route just quoted as its `maxCredits`,
+ *   admin set (`maySpend`, which POST /api/mcp answers from the bearer the tools act with, as for render_shot), is sent at the price the route just quoted as its `maxCredits`,
  *   so it can never bill more than it reports; the token's ceiling itself is held at reservation (lib/generationRequests.ts). Any other call (a token with no ceiling,
  *   or a tool not so declared: Recraft's) is priced and prepared for a person, and nothing is started or spent. A token that may not spend is refused by the route
  *   (requireRender, lib/tokenSpend.ts); consent is only ever read by these tools.
@@ -109,16 +109,12 @@ const filedWords = (filed: { id: string } | { refused: string } | null, why?: st
     ? `prepared job: ${filed.id}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections for a person.`
     : `Nothing was filed: ${filed ? filed.refused : why ?? "this tool's arguments are not kept"}\n\nThis needs a person's approval: nothing was started or spent. A person can make this themselves in Particl, where its price is shown before they approve it.`;
 
-/** Whether this tool is started inside a capped token's ceiling (so POST /api/mcp reads whether the bearer has one). */
-export function directToolStartsInsideCeiling(name: string): boolean {
-  return REGISTRY.find((t) => t.def.name === name)?.startsInsideCeiling === true;
-}
-
 /**
- * Runs one of them, or returns null when the name is none of these (the caller then tries its own tools). `spends`: the caller's token has a monthly ceiling an
- * admin set (POST /api/mcp reads it from the bearer the tools act with); absent or false, nothing is started.
+ * Runs one of them, or returns null when the name is none of these (the caller then tries its own tools). `maySpend`: whether the caller's token has a monthly
+ * ceiling an admin set (POST /api/mcp answers it from the bearer the tools act with); asked only of a tool declared `startsInsideCeiling`, after its quote.
+ * Absent, or anything but true, and nothing is started.
  */
-export async function runDirectEngineTool(name: string, args: Args, call: Call, options: { spends?: boolean } = {}): Promise<string | null> {
+export async function runDirectEngineTool(name: string, args: Args, call: Call, options: { maySpend?: () => Promise<boolean> } = {}): Promise<string | null> {
   const tool = REGISTRY.find((t) => t.def.name === name);
   if (!tool) return null;
   if (!(await tool.present())) throw new Error("There is no such tool here.");
@@ -143,7 +139,7 @@ export async function runDirectEngineTool(name: string, args: Args, call: Call, 
   const priceText = quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`;
   /* A token with a ceiling an admin set, on a tool started inside it: the ceiling is the standing approval and the quote is the price inside it,
      sent as `maxCredits` (whatever the workspace's Ask setting; no Auto since 20 Oct 2026). The route and the reservation hold the ceiling. */
-  if (options.spends === true && tool.startsInsideCeiling && tool.describe) {
+  if (tool.startsInsideCeiling && tool.describe && (await options.maySpend?.()) === true) {
     const out = await call(path, { method: "POST", body: { ...clean, maxCredits: quote.estimatedCredits }, headers: requestId ? { "Idempotency-Key": `mcp-${name}:${requestId}` } : undefined });
     return tool.describe(out, { estimatedCredits: quote.estimatedCredits, price: quote.price, unit: String(quote.unit ?? "cr") });
   }

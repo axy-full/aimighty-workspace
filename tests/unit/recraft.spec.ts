@@ -766,8 +766,9 @@ test("over MCP: recraft_image and recraft_remove_background are listed only wher
     expect(names).not.toContain("recraft_vectorize");
     await expect(runDirectEngineTool("recraft_vectorize", { source_upload_id: "u" }, call)).resolves.toBeNull();
     try {
-      /* Recraft is not started inside a token's ceiling (lip_sync alone is, lib/directEngineMcp.ts): `spends` changes nothing here. */
-      for (const options of [undefined, { spends: true }])
+      /* Recraft is not started inside a token's ceiling (lip_sync alone is, lib/directEngineMcp.ts): a bearer with a ceiling changes nothing here. */
+      let askedCeiling = 0;
+      for (const options of [undefined, { maySpend: async () => { askedCeiling++; return true; } }])
       for (const mode of [null, "ask", "auto"]) {
         await spend(mode); calls.length = 0;
         const text = await runDirectEngineTool("recraft_image", { prompt: "a tree", size: "1024x1024" }, call, options);
@@ -779,6 +780,8 @@ test("over MCP: recraft_image and recraft_remove_background are listed only wher
         expect(cut, String(mode)).toMatch(/not started[\s\S]*prepared: background removal of u1[\s\S]*needs a person's approval/);
         expect(calls.some((c) => c.maxCredits !== undefined)).toBe(false);
       }
+      /* Not even asked: a Recraft call is never started inside a ceiling. */
+      expect(askedCeiling).toBe(0);
       for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) await expect(runDirectEngineTool("recraft_image", { prompt: "a tree", ...bad }, call)).rejects.toThrow(/only a person approves/);
     } finally { await spend(null); }
   });

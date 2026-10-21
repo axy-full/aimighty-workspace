@@ -41,6 +41,8 @@ const recorder = (quote: Record<string, unknown> = { estimatedCredits: 5, price:
   return { calls, call };
 };
 const ARGS = { project_id: "prod_a", clip_upload_id: "up_clip", audio_upload_id: "up_voice" };
+/** The bearer has a monthly ceiling an admin set, as POST /api/mcp answers it. */
+const CAPPED = { maySpend: async () => true };
 
 test("lip_sync is in the list, and callable, only where the engine gate and the house wall let this workspace have it (no face check, no consent record)", async () => {
   const { directEngineMcpTools, runDirectEngineTool } = await import("../../lib/directEngineMcp");
@@ -78,9 +80,9 @@ test("a token with no monthly ceiling: every call returns the priced, prepared j
   process.env.SYNC_ENABLED = "1";
   await inTenant(tenant("ws_legacy"), async () => {
     const prepared = /^Priced and prepared, not started\.\n\nprice: \$3\.33[\s\S]*needs a person's approval: nothing was started or spent/;
-    /* Every stored value of the old setting, "auto" exactly included: the setting is no longer read, and with no ceiling (`spends` absent or false,
+    /* Every stored value of the old setting, "auto" exactly included: the setting is no longer read, and with no ceiling (`maySpend` absent or answering false,
        as POST /api/mcp passes it from the bearer) nothing starts. */
-    for (const options of [undefined, { spends: false }])
+    for (const options of [undefined, { maySpend: async () => false }])
     for (const mode of [null, "ask", "auto", "AUTO", "auto ", "yes", "1", ""]) {
       await setSpend(mode);
       const r = recorder({ estimatedCredits: 7, price: PLACEHOLDER_PRICE_B_USD, unit: "usd" });
@@ -110,7 +112,7 @@ test("a token with no monthly ceiling: every call returns the priced, prepared j
     /* The caller never writes the approval, whatever the old setting holds, with a ceiling or without, under either spelling; a bad retry key is refused; an unpriced job starts nothing. */
     for (const mode of ["ask", "auto"]) {
       await setSpend(mode);
-      for (const options of [undefined, { spends: true }])
+      for (const options of [undefined, { maySpend: async () => true }])
         for (const bad of [{ maxCredits: 1 }, { max_credits: 1 }]) { const r = recorder(); await expect(runDirectEngineTool("lip_sync", { ...ARGS, ...bad }, r.call, options)).rejects.toThrow(/only a person approves/); expect(r.calls).toEqual([]); }
     }
     /* A render token cannot file a prepared job (refused by design): the answer is in words only and nothing starts. A prepare token cannot even ask for a price: its call is filed unpriced. */
@@ -151,7 +153,7 @@ test("a token with a monthly ceiling an admin set: lip_sync is priced, then star
         for (const credits of [1, 7, 200, 201, 5000]) {
           await setSpend(mode);
           const r = recorder({ estimatedCredits: credits, price: PLACEHOLDER_PRICE_D_USD, unit: "cr" });
-          const text = await runDirectEngineTool("lip_sync", { ...ARGS, ...(model ? { model } : {}), request_id: "req-3" }, r.call, { spends: true });
+          const text = await runDirectEngineTool("lip_sync", { ...ARGS, ...(model ? { model } : {}), request_id: "req-3" }, r.call, CAPPED);
           const label = `${mode} ${model} ${credits}`;
           expect(text, label).toBe(`Lip-sync started.\n\nid: gen_mcp_1\nprice: ${credits} cr\n\nCall get_render with this id to collect it.`);
           /* The quote, then the job at that quote: nothing filed for a person, nothing more than the quote approved. */
@@ -163,18 +165,21 @@ test("a token with a monthly ceiling an admin set: lip_sync is priced, then star
         }
     /* No retry key: none is sent. */
     const plain = recorder({ estimatedCredits: 9, price: 9, unit: "cr" });
-    await runDirectEngineTool("lip_sync", ARGS, plain.call, { spends: true });
+    await runDirectEngineTool("lip_sync", ARGS, plain.call, CAPPED);
     expect(plain.calls[1].headers).toBeUndefined();
     /* An unpriced answer starts nothing, with a ceiling too. */
     const unpriced = recorder({ price: 1 });
-    await expect(runDirectEngineTool("lip_sync", ARGS, unpriced.call, { spends: true })).rejects.toThrow(/could not be priced/);
+    let asked = 0;
+    await expect(runDirectEngineTool("lip_sync", ARGS, unpriced.call, { maySpend: async () => { asked++; return true; } })).rejects.toThrow(/could not be priced/);
     expect(unpriced.calls).toHaveLength(1);
+    /* The bearer's ceiling is asked only once the job is priced. */
+    expect(asked).toBe(0);
     /* The route's own refusal of the start (past the token's ceiling at the reservation, a stale quote) reaches the agent as it is. */
     const past = async (p: string, init: { body?: unknown } = {}) => {
       if ((init.body as Record<string, unknown>).quoteOnly === true) return { estimatedCredits: 9, price: 9, unit: "cr" };
       void p; throw new Error("This job and the reserved jobs would pass this token's 100 cr monthly ceiling.");
     };
-    await expect(runDirectEngineTool("lip_sync", ARGS, past, { spends: true })).rejects.toThrow(/monthly ceiling/);
+    await expect(runDirectEngineTool("lip_sync", ARGS, past, CAPPED)).rejects.toThrow(/monthly ceiling/);
     await setSpend(null);
   });
 });
@@ -230,12 +235,12 @@ test("an engine job in the prepared-jobs door: filed by a token made to prepare,
 test("the MCP endpoint lists and calls them through the same module, and passes only whether the bearer has a ceiling, for a tool started inside one", () => {
   const route = readFileSync("app/api/mcp/route.ts", "utf8");
   expect(route).toContain("tools: [...TOOLS, ...(await directEngineMcpTools())]");
-  expect(route).toContain("(await runDirectEngineTool(name, args, call, { spends: directToolStartsInsideCeiling(name) ? await bearerMaySpend(req) : false })) ??");
+  expect(route).toContain("(await runDirectEngineTool(name, args, call, { maySpend: () => bearerMaySpend(req) })) ??");
   const source = readFileSync("lib/directEngineMcp.ts", "utf8");
   /* No Auto (owner, 20 Oct 2026): this module never reads the old spend-without-asking setting. It writes one approval only, the quote the route just
-     gave, and only inside a capped token's ceiling (`spends`) on a tool declared to start there. */
+     gave, and only on a tool declared to start inside a capped token's ceiling, when the bearer has one (`maySpend`). */
   expect(source.match(/maxCredits:/g)).toEqual(["maxCredits:"]);
-  expect(source).toContain("if (options.spends === true && tool.startsInsideCeiling && tool.describe) {");
+  expect(source).toContain("if (tool.startsInsideCeiling && tool.describe && (await options.maySpend?.()) === true) {");
   expect(source).toContain("body: { ...clean, maxCredits: quote.estimatedCredits }");
   expect(source).not.toMatch(/allSettings|spendsWithoutAsking|autoLineCredits|rigJobCeiling/);
   expect(source).not.toMatch(/args\.maxCredits|args\.max_credits|a\.max/);
