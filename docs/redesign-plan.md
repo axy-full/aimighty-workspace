@@ -1795,3 +1795,10 @@ These are recorded in docs/particl-sow-v1.md, "Additions, 21 October 2026", in t
 - 21 Oct 2026: **"free"** is lowercase everywhere, the rule 14 spelling.
 - 21 Oct 2026: **4K and reframes.** A crop is free. A 4K master is priced as the upscale unless the takes were made and billed at 4K. A reframe that repaints is priced. Rendering what was already made and billed is free.
 - 21 Oct 2026: **the 4K-refusal fix** is described to the owner in one line, with its PR number, before it moves.
+- 21 Oct 2026, the owner's answers to the scope's three questions:
+  1. Work already waiting for an admin goes back to its own person at a fresh quote: **yes**. It starts only on their tap; a claim already rendering finishes.
+  2. Production caps still need an admin's Unlock: **yes**.
+  3. "Limit is settable by the admin in settings."
+     - The lead's reading, to be built unless the owner corrects it: the limit is in Settings for every workspace, not behind V30_SPEND_LIMIT.
+     - Any admin may set a first limit or lower one (17 Oct). Only the owner raises or removes it (his "owner-only").
+     - A4's manual "pause spending" goes ("no pausing cards").
