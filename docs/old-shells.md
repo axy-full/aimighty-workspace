@@ -21,7 +21,7 @@ Release 1 has one design. `?shell=legacy`, the `particl_shell` cookie, the switc
 A route that names a production project (or a board) is turned into the Studio project that holds its work (the same read as `GET /api/workbench/projects?production=`); when none is linked, the address opens Home.
 
 Owner decision, 6 October (evening): no old page survives Release 1, so the rows the audit left open are redirected too (307; only the page goes, its data stays):
-- `/projects/[id]` → `?view=workspace&tab=rules` (Settings > Spending rules holds the workspace budget per production and the per-shot cap; it does not list projects with their own caps, so a project's own cap has no page yet: owner question)
+- `/projects/[id]` → `?view=workspace&tab=rules` (Settings > Spending rules holds the workspace budget per production; the per-shot cap was retired on 21 Oct 2026; it does not list projects with their own caps, so a project's own cap has no page yet: owner question)
 - `/takes/[id]` → `?project=<studio project>&view=board&region=shots&asset=generation:<id>` (the take in the Inspector); `/shots/[id]` → `…&region=shots`; `/elements/[id]` → `…&region=cast`; with no project found the same address without `project`
 - `/atomik/ideas`, `/treatment`, `/breakdown`, `/shots` → `?view=board&region=brief` (the project when the address named one; saved drafts stay in the database)
 - `/studio/shot` → `?make=video`

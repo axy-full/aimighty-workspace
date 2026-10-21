@@ -404,20 +404,28 @@ nothing can leave a plan, and the two differ only for someone who has.
 
 What replaces it:
 - Every job is approved on its quote before it runs.
-- The only automatic stop is the workspace's monthly spend limit, with its Paused state.
+- ~~The only automatic stop is the workspace's monthly spend limit, with its Paused state.~~ Struck 21 October 2026: the monthly limit stays as a mechanism, off by default, owner-only, with no Paused card; the house cap and the platform allowance stay exactly as they are (see the amendment of 21 October 2026 below).
 - A multi-shot press is one job, with one approval for its total. A press whose total would pass the workspace cap is refused at the quote.
 
 **AMENDED 20 October 2026 — every job, single jobs included.** The owner, verbatim: "Guardrail 4 is retired everywhere, single jobs included: no per-job line in the product. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with Paused. Strike it in CLAUDE.md and the scope with a dated note in the owner's words, and in the code with its own money review; keep the workspace cap and the house cap exactly as they are."
 
-The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by `jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and `lib/quote.ts`) is removed from the code by its own code PR, under its own money review. The workspace cap (its monthly spend limit) and the house cap stay exactly as they are. The workspace's own approval rule (a step over the workspace's own rule cap needs an admin; `lib/approvalRule.ts`) is not guardrail 4 and stays.
+The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by `jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and `lib/quote.ts`) is removed from the code by its own code PR, under its own money review. The workspace cap (its monthly spend limit) and the house cap stay exactly as they are. ~~The workspace's own approval rule (a step over the workspace's own rule cap needs an admin; `lib/approvalRule.ts`) is not guardrail 4 and stays.~~ Retired 21 October 2026: see the amendment of that day below.
 
-**AMENDED 20 October 2026 — Auto goes.** The owner, verbatim: "Q2 Auto goes: every job is approved on its quote; "Ask before every take" off means one approval per step. Q3 a big Atomik step still goes to an admin, keyed to the workspace cap, never to a fixed figure. Q4 the per-render ask over 200 cr goes. Q5 the balance check, token ceilings, run limits, project caps and the per-shot rule stay." The same code PR removes Auto and its no-tap ceiling, and a plan's per-render ask over 200 cr: every render runs on its own tap or a plan's one approval, at its quote. "The workspace cap" in Q3 is the per-shot rule cap in `lib/approvalRule.ts` (owner, 20 October 2026). An API token or an MCP client spends only inside a monthly ceiling an admin set, carrying its approved quote; the owner, verbatim: "C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask setting — the ceiling is the standing approval. lip_sync follows the same rule once Auto goes, so the two tools behave alike."
+**AMENDED 20 October 2026 — Auto goes.** The owner, verbatim: "Q2 Auto goes: every job is approved on its quote; "Ask before every take" off means one approval per step. ~~Q3 a big Atomik step still goes to an admin, keyed to the workspace cap, never to a fixed figure.~~ Q4 the per-render ask over 200 cr goes. Q5 the balance check, token ceilings, run limits, project caps ~~and the per-shot rule~~ stay." The same code PR removes Auto and its no-tap ceiling, and a plan's per-render ask over 200 cr: every render runs on its own tap or a plan's one approval, at its quote. ~~"The workspace cap" in Q3 is the per-shot rule cap in `lib/approvalRule.ts` (owner, 20 October 2026).~~ (Q3, and the per-shot rule in Q5, struck 21 October 2026: the admin approval rule is retired; see below.) An API token or an MCP client spends only inside a monthly ceiling an admin set, carrying its approved quote; the owner, verbatim: "C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask setting — the ceiling is the standing approval. lip_sync follows the same rule once Auto goes, so the two tools behave alike."
 
 **AMENDED 21 October 2026 — a press asked again.** The owner, verbatim: "fix the #815 press route (a repeated press near the cap shows the running press) as its own money PR"; "Retry's price is only the shots left: what failed unbilled re-runs under the same approval; what was charged stays charged"; "held approvals expire as plans do (7 days); an expired one asks again at the current price." With his #811 answer, the approval binds the total: per-shot shifts at or under it run, a higher total asks again.
 
 - Asked again under its key, a press is read before it is priced: shots that started are shown as they stand, at the hold they started at, and are not judged against the cap a second time. Only the shots still to start (never started, or failed at no charge) are priced, capped and checked against the balance (`lib/batchPress.ts`).
 - Retry costs only the shots left, under the approval the press holds, while the press's total stays at or under it; a higher total asks again with the new total.
 - A press's approval is drawn on for 7 days from when it first started something (the plan approval's `PLAN_APPROVAL_MS`). After that, a press that would start anything asks again at today's price.
+
+**AMENDED 21 October 2026 — the admin approval rule is retired.** The owner, verbatim: "the admin approval rule is retired; every member approves their own spend with their own tap on the quote; Atomik, tokens and MCP callers still never approve. This overturns my 20 Oct Q3 ('a big Atomik step still goes to an admin') and rule 14's sentence 'a step over the rule's cap needs an admin' — strike both with this dated note." And: "The monthly limit stays as a mechanism, off by default, owner-only, no Paused card." And: "Auto: retired. Every job is approved on its quote by the person pressing; the 'Ask before every take' setting goes." Asked whether work already waiting for an admin goes back to its own person at a fresh quote and starts only on their tap, with a claim already rendering left to finish, and whether a production at its cap still waits for an admin's Unlock, he answered "yes" to each.
+
+- No step, take or plan waits for an admin. The workspace's cost approval rule and its per-shot cap (the `approvalRule` and `shotCapCredits` settings, read by `lib/approvalRule.ts` and `lib/shotCap.ts`) are removed from the code by their own code PR, under its own money review. A workspace's stored values stay as they are (nothing is erased); nothing reads them, and the settings route refuses them.
+- Work that waited for an admin goes back to its own person at a fresh quote and starts only on their tap; a claim already rendering finishes.
+- A production at its cap still waits for an admin's Unlock.
+- The house cap and the platform allowance stay exactly as they are; so do the balance check, token ceilings and run limits.
+- The monthly spend limit is its own later change: a mechanism, off by default, set by the owner only, with no Paused card.
 
 ---
 
@@ -816,10 +824,20 @@ The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by
 `jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and
 `lib/quote.ts`) is removed from the code by its own code PR, under its own
 money review. The workspace cap (its monthly spend limit) and the house cap
-stay exactly as they are. The workspace's own approval rule (a step over the
+stay exactly as they are. ~~The workspace's own approval rule (a step over the
 workspace's own rule cap needs an admin; `lib/approvalRule.ts`) is not
-guardrail 4 and stays. Auto went on 20 October 2026, with the same code PR:
+guardrail 4 and stays.~~ Auto went on 20 October 2026, with the same code PR:
 see §7A, "AMENDED 20 October 2026 — Auto goes".
+
+**AMENDED 21 October 2026 — the admin approval rule is retired** (§7A,
+"Guardrails in code", AMENDED 21 October 2026). The owner, verbatim: "the
+admin approval rule is retired; every member approves their own spend with
+their own tap on the quote; Atomik, tokens and MCP callers still never approve.
+This overturns my 20 Oct Q3 ('a big Atomik step still goes to an admin') and
+rule 14's sentence 'a step over the rule's cap needs an admin' — strike both
+with this dated note." `lib/approvalRule.ts` and `lib/shotCap.ts` are removed
+by their own code PR, under its own money review; a production at its cap
+still waits for an admin's Unlock.
 # September 2026 amendment: durable published-context pipelines
 
 The additive pipeline executor introduces immutable versioned DAGs and private creator-owned runs from an explicit published production context. It never publishes a private draft. Each ready image/video/audio stage receives a batch quote and explicit approval; later stages require their own approval after inputs resolve. Permanent attempt keys, CAS revisions, fenced leases, and a persisted wakeup outbox prevent lost responses from creating replacement spend. Review selections become fixed once downstream attempts depend on them. Assembly produces an editorial timeline for the existing browser movie renderer, not a falsely completed movie. New tables and the full limits/recovery contract are documented in `docs/durable-production-pipelines.md`; historical recipes and runs remain compatible. This amendment does not introduce Stripe changes.
