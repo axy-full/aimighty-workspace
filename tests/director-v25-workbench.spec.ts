@@ -775,24 +775,56 @@ const ageClaims = (page: Page, ms: number) => page.evaluate((by) => {
 }, ms);
 const DAY = 24 * 60 * 60 * 1000;
 
-test("a held approval expires as a plan's does: after 7 days the lost reply's claim is dropped, and the next press asks at the current price under a new key", async ({ page }) => {
-  const net = await routes(page, { lose: 1 });
+test("a held approval expires as a plan's does (the keyed route): after 7 days the lost reply's key stays, the next press asks at today's price under it, and a shot that started is not started again", async ({ page }) => {
+  const net = await routes(page, { lose: 1, keyed: true });
   await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
   await go(page).click();
   await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
-  expect((await claimOf(page))?.key).toBe(net.sent[0].key);
+  expect(net.started, "the lost reply's press started its shots").toHaveLength(4);
   await ageClaims(page, 7 * DAY);
   net.state.bump = 5;
   await page.reload();
   await pickEngine(page);
-  /* The current price, not the held one. */
+  /* Today's price, not the approval that ran out. */
   await expect(go(page)).toHaveText(/^Render 4 shots · 192 cr$/, { timeout: 30_000 });
   const quoted = net.quotes.length;
   await go(page).click();
   await expect.poll(() => net.sent.length).toBe(2);
   expect(net.quotes.length, "quoted afresh before it was sent").toBeGreaterThan(quoted);
-  expect(net.sent[1].key, "a new press").not.toBe(net.sent[0].key);
+  expect(net.quoteKeys.slice(quoted), "quoted under the press's own key").toContain(net.sent[0].key);
+  expect(net.sent[1].key, "the same press").toBe(net.sent[0].key);
   expect(net.sent[1].body.maxCredits).toBe(192);
+  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  expect(net.started, "nothing started twice").toHaveLength(4);
+  /* The new approval is kept with its own time. */
+  const kept = await claimOf(page);
+  expect(kept?.key).toBe(net.sent[0].key);
+});
+
+test("a held approval expires as a plan's does (today's route): after 7 days the lost reply's key stays, the next press asks at today's price under it, and a shot that started is not started again", async ({ page }) => {
+  const net = await routes(page, { lose: 1 });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  expect(net.started, "the lost reply's press started its shots").toHaveLength(4);
+  await ageClaims(page, 7 * DAY);
+  net.state.bump = 5;
+  await page.reload();
+  await pickEngine(page);
+  /* Today's price, not the approval that ran out. */
+  await expect(go(page)).toHaveText(/^Render 4 shots · 192 cr$/, { timeout: 30_000 });
+  const quoted = net.quotes.length;
+  await go(page).click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.quotes.length, "quoted afresh before it was sent").toBeGreaterThan(quoted);
+  expect(net.quoteKeys.slice(quoted), "quoted under the press's own key").toContain(net.sent[0].key);
+  expect(net.sent[1].key, "the same press").toBe(net.sent[0].key);
+  expect(net.sent[1].body.maxCredits).toBe(192);
+  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  expect(net.started, "nothing started twice").toHaveLength(4);
+  /* The new approval is kept with its own time. */
+  const kept = await claimOf(page);
+  expect(kept?.key).toBe(net.sent[0].key);
 });
 
 test("a held approval younger than 7 days is still the one asked again: the same key and approval, nothing started twice", async ({ page }) => {

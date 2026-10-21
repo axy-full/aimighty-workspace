@@ -9,7 +9,7 @@ import { failureUncharged } from "@/lib/errors";
 import type { TakeFailure } from "@/lib/providerOutcome";
 import { dispatchGate, neutralCopy } from "@/lib/workspace/rig";
 import {
-  cancellable, claimLive, claimSlot, failureCharged, failureNote, failureWords, letGo, pressPrice, readClaim, readClaims, retryPrice, validQuote, validToStart, writeClaim,
+  cancellable, claimNow, claimSlot, failureCharged, failureNote, failureWords, letGo, pressPrice, readClaim, readClaims, retryPrice, validQuote, validToStart, writeClaim,
   type BarState, type BatchQuote, type PressClaim, type ToStart,
 } from "./director-model";
 import { PLAN_APPROVAL_MS } from "@/lib/workbench/rig-agent-plan";
@@ -157,14 +157,14 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
   const [againRead, setAgainRead] = useState<QuoteState | null>(null);
   const [retryRead, setRetryRead] = useState(0);
 
-  /* ── The presses this browser holds (claimSlot): the one in hand, else one a lost reply left behind; none past its time (claimLive) ── */
+  /* ── The presses this browser holds (claimSlot): the one in hand, else one a lost reply left behind; past its time, its key with no approval (claimNow) ── */
   const pressRef = useRef<PressClaim | null>(null);
   const [claims, setClaims] = useState<PressClaim[]>([]);
   const syncHeld = useCallback(() => {
     if (typeof window === "undefined") return;
     const now = Date.now();
     const stored = readClaims(window.localStorage, slot, now);
-    const inHand = pressRef.current && claimLive(pressRef.current, now) ? pressRef.current : null;
+    const inHand = pressRef.current ? claimNow(pressRef.current, now) : null;
     setClaims(inHand ? [...stored.filter((c) => c.shots !== inHand.shots), inHand] : stored);
   }, [slot]);
   useEffect(() => { syncHeld(); }, [syncHeld]);
@@ -236,14 +236,14 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
     })
     : [];
 
-  /** One ask of a press: under the approval it already has, else (a new press, or one whose approval went out of date or past its time) a fresh quote the person is approving now. */
+  /** One ask of a press: under the approval it already has, else (a new press, or one whose approval went out of date or past its time, still under its key) a fresh quote the person is approving now. */
   /** `renew`: Retry under the same key when the press's approval no longer covers the shots left (past its time, or the total moved above it): the person's press
       approves this quote, the press's next approval, as the server asks (its 409 says the same). */
   const ask = useCallback(async (target: Target, mode: "press" | "retry" | "again", renew?: BatchQuote) => {
     if (sending.current || readOnly || !target.members.length) return;
     const storage = window.localStorage;
     const now = Date.now();
-    const inHand = pressRef.current?.shots === target.shotsKey && claimLive(pressRef.current, now) ? pressRef.current : readClaim(storage, slot, target.shotsKey, now);
+    const inHand = pressRef.current?.shots === target.shotsKey ? claimNow(pressRef.current, now) : readClaim(storage, slot, target.shotsKey, now);
     const ofWhole = target.membersKey === whole.membersKey;
     const show = ofWhole ? setRead : setAgainRead;
     const shownRead = ofWhole ? read : againRead;

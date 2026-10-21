@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
-  CLAIMS_KEPT, NO_ENGINE_NOTE, PRESS_LIMIT_NOTE, PRESS_MAX_SHOTS, SHOTS_SETTINGS, barButton, claimLive, failureCharged, failureNote, modelWords, cancellable, cardChips, failureWords,
+  CLAIMS_KEPT, NO_ENGINE_NOTE, PRESS_LIMIT_NOTE, PRESS_MAX_SHOTS, SHOTS_SETTINGS, barButton, claimLive, claimNow, failureCharged, failureNote, modelWords, cancellable, cardChips, failureWords,
   letGo, nextStepLabel, pressPrice, readClaim, readClaims, retryPrice, requestFields, scopeOf, shotSettings, validToStart, valueWords, writeClaim, type PressClaim,
 } from "../../components/v12/board/director-model";
 import { CREDITS_MODE, FREE, NO_AT_COST_FIGURE, priceWords } from "../../lib/shell/price-words";
@@ -167,7 +167,7 @@ test("a failed take is charged only when Particl's ledger settled it above nothi
     .toBe("Shot 2: Did not render · Nothing billed · Render again. Shot 3: Failed.");
 });
 
-test("a held approval lasts as a plan's does (7 days): past it the claim is dropped, so the next press is quoted afresh and approved again", () => {
+test("a held approval lasts as a plan's does (7 days): past it the approval goes and the key stays, so the next press is quoted afresh under that key", () => {
   expect(PLAN_APPROVAL_MS).toBe(7 * 24 * 60 * 60 * 1000);
   const store = new Map<string, string>();
   const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
@@ -176,18 +176,25 @@ test("a held approval lasts as a plan's does (7 days): past it the claim is drop
   const t0 = 1_800_000_000_000;
   const claim = (key: string, shots: string, at: number): PressClaim => ({ key, shots, quote, answered: false, at });
   writeClaim(storage, "slot", claim("k1", "s1", t0), t0);
-  expect(readClaim(storage, "slot", "s1", t0 + PLAN_APPROVAL_MS - 1)?.key).toBe("k1");
-  expect(readClaim(storage, "slot", "s1", t0 + PLAN_APPROVAL_MS), "seven days on: past its time").toBeNull();
+  expect(readClaim(storage, "slot", "s1", t0 + PLAN_APPROVAL_MS - 1)).toMatchObject({ key: "k1", quote });
+  /* Seven days on: the same key, no approval. */
+  const aged = readClaim(storage, "slot", "s1", t0 + PLAN_APPROVAL_MS);
+  expect(aged?.key).toBe("k1");
+  expect(aged?.quote, "past its time: no approval").toBeNull();
   expect(claimLive({ at: t0 }, t0 + PLAN_APPROVAL_MS)).toBe(false);
   expect(claimLive({ at: Number.NaN }, t0)).toBe(false);
-  /* A claim with no time of approval is past it. */
+  expect(claimNow(claim("k1", "s1", t0), t0 + PLAN_APPROVAL_MS)).toMatchObject({ key: "k1", quote: null });
+  expect(claimNow(claim("k1", "s1", t0), t0 + 1).quote).toEqual(quote);
+  /* A claim with no time of approval keeps its key, with no approval. */
   store.set("old", JSON.stringify({ claims: [{ key: "k0", shots: "s0", quote, answered: false }] }));
-  expect(readClaims(storage, "old", t0)).toEqual([]);
-  /* A new claim written after the first ran out leaves the old one behind, and the newest CLAIMS_KEPT stay. */
+  expect(readClaims(storage, "old", t0)).toMatchObject([{ key: "k0", shots: "s0", quote: null }]);
+  /* A claim past its time is still kept beside a new one: only CLAIMS_KEPT bounds the keys. */
   writeClaim(storage, "slot", claim("k2", "s2", t0 + PLAN_APPROVAL_MS), t0 + PLAN_APPROVAL_MS);
-  expect(JSON.parse(store.get("slot")!).claims.map((c: PressClaim) => c.key)).toEqual(["k2"]);
+  expect(readClaims(storage, "slot", t0 + PLAN_APPROVAL_MS).map((c) => [c.key, c.quote ? "approved" : "none"])).toEqual([["k1", "none"], ["k2", "approved"]]);
   for (let i = 0; i < CLAIMS_KEPT + 2; i++) writeClaim(storage, "slot", claim(`n${i}`, `x${i}`, t0 + PLAN_APPROVAL_MS), t0 + PLAN_APPROVAL_MS);
-  expect(readClaims(storage, "slot", t0 + PLAN_APPROVAL_MS)).toHaveLength(CLAIMS_KEPT);
+  const kept = readClaims(storage, "slot", t0 + PLAN_APPROVAL_MS);
+  expect(kept).toHaveLength(CLAIMS_KEPT);
+  expect(kept.map((c) => c.key)).not.toContain("k1");
   letGo(storage, "slot", `n${CLAIMS_KEPT + 1}`, t0 + PLAN_APPROVAL_MS);
   expect(readClaims(storage, "slot", t0 + PLAN_APPROVAL_MS).map((c) => c.key)).not.toContain(`n${CLAIMS_KEPT + 1}`);
 });

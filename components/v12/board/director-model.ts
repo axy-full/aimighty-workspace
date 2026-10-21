@@ -184,10 +184,13 @@ export type PressClaim = { key: string; shots: string; quote: BatchQuote | null;
 /** Claims are kept one per exact set of shots, so a press of other shots never takes the place of one whose reply was lost; the oldest go past this many. */
 export const CLAIMS_KEPT = 8;
 /**
- * A held approval lasts as a plan's does (owner, 21 Oct 2026: lib/workbench/plan-approval.ts, owner decision 4). Past it the claim is dropped, so the next press
- * of those shots is a new one: quoted afresh at the current price, and approved by a person's press. A claim with no time of approval counts as past it.
+ * A held approval lasts as a plan's does (owner, 21 Oct 2026: lib/workbench/plan-approval.ts, owner decision 4). Past it the APPROVAL goes and the press's key
+ * stays (lead, 21 Oct, within the owner's words): the next press of those shots is quoted afresh under that key and asks the person at today's price, and a shot
+ * the press already started is reported, never started twice. An approval with no time counts as past it.
  */
 export const claimLive = (claim: Pick<PressClaim, "at">, now: number) => Number.isFinite(claim.at) && now - claim.at < PLAN_APPROVAL_MS;
+/** The claim as it stands now: past its time, the same key with no approval. */
+export const claimNow = (claim: PressClaim, now: number): PressClaim => (claim.quote && !claimLive(claim, now) ? { ...claim, quote: null } : claim);
 export const claimSlot = (scope: string, projectKey: string) => `particl:director-press:${JSON.stringify([scope, projectKey])}`;
 export function readClaims(storage: Storage, slot: string, now: number): PressClaim[] {
   try {
@@ -198,8 +201,7 @@ export function readClaims(storage: Storage, slot: string, now: number): PressCl
     return list.flatMap((c) => {
       const x = c as Partial<PressClaim>;
       if (!x || typeof x.key !== "string" || typeof x.shots !== "string") return [];
-      const claim = { key: x.key, shots: x.shots, quote: x.quote && validQuote(x.quote, x.quote.members) ? x.quote : null, answered: x.answered === true, at: typeof x.at === "number" ? x.at : Number.NaN };
-      return claimLive(claim, now) ? [claim] : [];
+      return [claimNow({ key: x.key, shots: x.shots, quote: x.quote && validQuote(x.quote, x.quote.members) ? x.quote : null, answered: x.answered === true, at: typeof x.at === "number" ? x.at : Number.NaN }, now)];
     });
   } catch { return []; }
 }
@@ -212,7 +214,7 @@ function storeClaims(storage: Storage, slot: string, claims: PressClaim[]) {
   storage.setItem(slot, text);
   if (storage.getItem(slot) !== text) throw new Error("Enable local storage to safely recover this press.");
 }
-/** Written before anything is sent, in place of the claim for the same shots (the newest last; the oldest past CLAIMS_KEPT, and any past its time, go). Throws when it cannot be kept. */
+/** Written before anything is sent, in place of the claim for the same shots (the newest last; the oldest past CLAIMS_KEPT go). Throws when it cannot be kept. */
 export function writeClaim(storage: Storage, slot: string, claim: PressClaim, now: number) {
   storeClaims(storage, slot, [...readClaims(storage, slot, now).filter((c) => c.shots !== claim.shots && c.key !== claim.key), claim].slice(-CLAIMS_KEPT));
 }
