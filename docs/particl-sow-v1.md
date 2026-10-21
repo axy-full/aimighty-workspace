@@ -1000,7 +1000,7 @@ The strikes of rule 14's "a step over the rule's cap needs an admin" and of the 
 
 **C3** Reference films are read for structure only — cuts, shot sizes, moves, durations, the product moment, pacing, light, music turns — never content; priced by minutes as a ceiling; shown as "What I took from your reference" rows with Change; they set beat lengths, coverage bias and cut rhythm.
 
-**C4** Director mode's detail comes from the record, not the Director: a node shows a "Using" row (look · cast · rules · genre); Enhance · 1 cr turns a short prompt into the full one, shown before the press; with no record, the rail's and the genre's defaults fill the gaps.
+**C4** Director mode's detail comes from the record, not the Director: a node shows a "Using" row (look · cast · rules · genre); Enhance · 1 cr (sample; the figure comes from the quote path only, owner 21 Oct) turns a short prompt into the full one, shown before the press; with no record, the rail's and the genre's defaults fill the gaps.
 
 ## D · Corrections to the morning amendment
 
