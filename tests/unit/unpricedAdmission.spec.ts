@@ -217,10 +217,16 @@ test("an unpriced take is refused rather than parked, even with no credits to ho
 
 test("an API token's unpriced request is refused and spends nothing; its priced one is admitted under the token", async () =>
   scope({ name: "token" }, agent, async (s) => {
-    await refused(await s.generate.POST(post(unpriced, "token-unpriced")), "token");
+    /* A token's request carries its approved quote (owner, 20 Oct 2026; lib/tokenSpend.ts): one without it is refused first, and spends nothing. */
+    const bare = await s.generate.POST(post(priced, "token-bare"));
+    expect(bare.status).toBe(400);
+    expect(await bare.json()).toMatchObject({ code: "quote_required" });
+    /* An unpriced one has no quote to carry; one that names a figure and a fingerprint anyway is still refused for want of a price. */
+    await refused(await s.generate.POST(post({ ...unpriced, maxCredits: 500, quoteFingerprint: "f".repeat(64) }, "token-unpriced")), "token");
     expect(await rows()).toHaveLength(0);
     expect(await meters()).toHaveLength(0);
-    const accepted = await s.generate.POST(post(priced, "token-priced"));
+    const quote = await (await quoteOf(s, priced)).json();
+    const accepted = await s.generate.POST(post({ ...priced, maxCredits: quote.estimatedCredits, quoteFingerprint: quote.fingerprint }, "token-priced"));
     expect(accepted.status).toBe(202);
     const { id } = await accepted.json();
     expect((await rows()).map((row) => [row.id, row.token_id])).toEqual([[id, "tok_agent"]]);
@@ -249,7 +255,8 @@ test("the MCP render tool is refused by its own quote and never sends an unprice
     await expect(runTool("render_shot", { ...args, ratio: "adaptive" }, call, "http://localhost", { credits: true })).rejects.toThrow(NO_PRICE);
     expect(sent).toEqual(["/api/generate/quote"]);
     expect(await rows()).toHaveLength(0);
-    const started = await runTool("render_shot", { ...args, ratio: "16:9", request_id: "mcp-priced" }, call, "http://localhost", { credits: true });
+    /* This token has a ceiling (`spends`), so the tool sends its quote as the approval; without one it would only price it. */
+    const started = await runTool("render_shot", { ...args, ratio: "16:9", request_id: "mcp-priced" }, call, "http://localhost", { credits: true, spends: true });
     expect(started).toMatch(/^Rendering started\./);
     expect(sent).toEqual(["/api/generate/quote", "/api/generate/quote", "/api/generate"]);
     expect(dispatched).toHaveLength(1);

@@ -15,6 +15,7 @@ import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, priceKeyStep } from "@/lib/atomikLibrary";
 import { ARCHIVED_NOTE, ThreadError, archiveThread, renameThread, restoreThread } from "@/lib/atomikThreads";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { tokenSpendRefusal } from "@/lib/tokenSpend";
 import { CHAT_GONE, chatIsMine } from "@/lib/atomikAccess";
 
 export const dynamic = "force-dynamic";
@@ -95,6 +96,8 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
   /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
   if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before the request is claimed. */
+  if (!quoteOnly) { const refused = tokenSpendRefusal({ maxCredits: b?.maxCredits }, got.token); if (refused) return refused; }
   /* A turn in someone else's chat is a paid planning call on it: the chat is gone to anyone but its person, before anything is quoted or claimed (asked after the refusals that do not depend on the chat). */
   if (!(await chatIsMine(id, got.user))) return NextResponse.json({ error: CHAT_GONE }, { status: 404 });
   const run = async () => {

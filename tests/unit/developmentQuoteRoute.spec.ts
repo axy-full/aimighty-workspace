@@ -26,6 +26,8 @@ async function route(quote: Record<string, unknown>): Promise<Record<string, Han
       requireRender: async () => ({ user: { id: "owner" } }),
     },
     "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
+    /* The token gate (lib/tokenSpend.ts), as it ships: a person's request is never asked. */
+    "@/lib/tokenSpend": await import("../../lib/tokenSpend"),
     "@/lib/tenant": await import("../../lib/tenant"),
     "@/lib/db": { db: () => { throw new Error("A quote reads no rows here."); } },
     "@/lib/credits": await import("../../lib/credits"),

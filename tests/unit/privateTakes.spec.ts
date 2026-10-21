@@ -23,7 +23,7 @@ const run = Math.random().toString(36).slice(2, 8);
 const workspace = (id: string) => ({ id, name: id, slug: id, legacy: false, dbUrl: `file:${path.join(dir, id + ".db")}`, dbToken: null, keys: {}, usesPlatformKeys: true }) as TenantWorkspace;
 const user = (id: string, role: "admin" | "member" = "member", owner = false) => ({ id, email: `${id}@example.test`, name: id, role, owner, disabled: false, lastSeen: null, createdAt: 0 });
 type Actor = { user: ReturnType<typeof user>; token?: unknown };
-const as = (id: string, role: "admin" | "member" = "member", token = false, owner = false): Actor => ({ user: user(id, role, owner), ...(token ? { token: { id: `tok_${id}`, name: "agent", scope: "render" as const, capUsd: null } } : {}) });
+const as = (id: string, role: "admin" | "member" = "member", token = false, owner = false): Actor => ({ user: user(id, role, owner), ...(token ? { token: { id: `tok_${id}`, name: "agent", scope: "render" as const, capUsd: null, capCredits: 100_000 } } : {}) });
 
 function loadRoute<T>(file: string, who: () => Actor, extra: Record<string, unknown> = {}): T {
   const root = process.cwd();

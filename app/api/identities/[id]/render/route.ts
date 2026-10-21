@@ -13,6 +13,8 @@ import { withGenerationRequest, claimBinding, reserveGenerationSpend, SpendReser
 import type { InStatement } from "@libsql/client";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { tokenSpendRefusal } from "@/lib/tokenSpend";
+import { quotedCredits } from "@/lib/credits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -27,6 +29,8 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   if (got.response) return got.response;
   /* The sample workspace spends nothing: answered before the request is claimed or a row is written. */
   { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before the request is claimed. */
+  { const refused = tokenSpendRefusal({ maxCredits: (await req.clone().json().catch(() => null))?.maxCredits }, got.token); if (refused) return refused; }
   await ready();
   return withGenerationRequest(req, got.user.id, async (requestClaim) => {
   const { id } = await params;
@@ -56,6 +60,9 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
      Same walls, same order, as every other paid route. */
   const eachUsd = renderUsdForRatio(ratio);
   const estUsd = Math.round(eachUsd * count * 10_000) / 10_000;
+  /* A token's approved quote covers every still at its own price (each is billed as its own job), or nothing is written. */
+  if (got.token && count * quotedCredits(eachUsd, RENDERER) > Number(body.maxCredits))
+    return NextResponse.json({ error: "These stills cost more than the quote this request carries. Price them again and send the new figure as maxCredits.", code: "quote_changed", charged: 0 }, { status: 409 });
   const allowance = await allowanceCheck("fal", estUsd, RENDERER);
   if (!allowance.ok) return NextResponse.json({ error: allowance.error }, { status: allowance.status });
   const lim = await checkLimits();

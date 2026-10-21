@@ -58,6 +58,14 @@ export const GET = withTenant(async function GET() {
       args: [tokenMonthStart(), user.id],
     });
     const prep = await preparing(rs.rows.map((r: any) => String(r.id)));
+    const others = user.role === "admin" ? (await db().execute({
+      sql: `SELECT t.id, t.name, t.cap_usd, t.last_used, t.created_at, u.name AS owner_name,
+                   COALESCE((SELECT SUM(COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0))
+                             FROM generations g WHERE g.token_id = t.id AND g.created_at >= ?), 0) AS spend
+            FROM api_tokens t LEFT JOIN users u ON u.id = t.user_id
+            WHERE t.user_id <> ? AND t.scope = 'render' AND t.revoked_at IS NULL ORDER BY t.created_at DESC`,
+      args: [tokenMonthStart(), user.id],
+    })).rows : null;
     return NextResponse.json({
       unit: "usd",
       tokens: rs.rows.map((r: any) => ({
@@ -68,6 +76,11 @@ export const GET = withTenant(async function GET() {
         lastUsed: r.last_used == null ? null : Number(r.last_used),
         createdAt: Number(r.created_at),
       })),
+      ...(others ? { others: others.map((r: any) => ({
+        id: r.id, name: r.name, scope: "render", owner: r.owner_name == null ? null : String(r.owner_name),
+        spendThisMonth: Number(r.spend), capUsd: r.cap_usd == null ? null : Number(r.cap_usd),
+        lastUsed: r.last_used == null ? null : Number(r.last_used), createdAt: Number(r.created_at),
+      })) } : {}),
     });
   }
   /* The token's month runs on the same boundary its ceiling is enforced on (lib/cycle.ts), and counts
@@ -79,7 +92,22 @@ export const GET = withTenant(async function GET() {
   });
 
   const prep = await preparing(rs.rows.map((r: any) => String(r.id)));
+  /* An admin also sees the other members' tokens that can generate, to set their ceilings (PATCH /api/tokens/[id]/ceiling): a token
+     with none only prepares and prices (lib/tokenSpend.ts). Read-only and prepare tokens spend nothing and are not listed; revoking
+     stays the maker's. No secret is stored, so none can be shown. */
+  const others = user.role === "admin" ? (await db().execute({
+    sql: `SELECT t.id, t.name, t.cap_usd, t.cap_credits, t.last_used, t.created_at, u.name AS owner_name
+          FROM api_tokens t LEFT JOIN users u ON u.id = t.user_id
+          WHERE t.user_id <> ? AND t.scope = 'render' AND t.revoked_at IS NULL ORDER BY t.created_at DESC`,
+    args: [user.id],
+  })).rows : null;
   return NextResponse.json({
+    ...(others ? { others: others.map((r: any) => ({
+      id: r.id, name: r.name, scope: "render", owner: r.owner_name == null ? null : String(r.owner_name),
+      capCredits: r.cap_credits == null ? null : Number(r.cap_credits), legacyCeiling: r.cap_usd != null,
+      spendThisMonth: totals.get(String(r.id)) ?? 0,
+      lastUsed: r.last_used == null ? null : Number(r.last_used), createdAt: Number(r.created_at),
+    })) } : {}),
     unit: "cr",
     tokens: rs.rows.map((r: any) => ({
       id: r.id,
@@ -110,12 +138,18 @@ export const POST = withTenant(async function POST(req: Request) {
      itself grants spending, when a token is made as when it is read. */
   const scope: TokenScope = body.scope === "render" ? "render" : body.scope === "prepare" ? "prepare" : "read";
   /* The ceiling, in the workspace's unit (lib/tokenCeiling.ts). Absent or
-     blank is "no limit"; any other value must read as a figure or nothing is
-     made. A value that did not read used to be stored as no limit: an
+     blank is "no ceiling": the token then only prepares and prices
+     (lib/tokenSpend.ts). Any other value must read as a figure or nothing is
+     made: a value that did not read used to be stored as no ceiling, an
      uncapped spending token from a typo. */
   const ceiling = tokenCeiling(body, { scope, inCredits: creditsApply(requireTenant()) });
   if ("error" in ceiling) return NextResponse.json({ error: ceiling.error }, { status: 400 });
   const { capUsd, capCredits } = ceiling;
+  /* An admin sets a token's ceiling (owner, 20 Oct 2026, Q1 "B"): the ceiling is the standing approval a token spends under. A member
+     makes a token that can generate without one (it only prepares and prices, lib/tokenSpend.ts) and an admin sets it after
+     (PATCH /api/tokens/[id]/ceiling). Nothing is made when a member names one. A token never reaches here (requireSession). */
+  if ((capUsd != null || capCredits != null) && got.user.role !== "admin")
+    return NextResponse.json({ error: "Only an admin sets a token's monthly ceiling. Make the token without one, and ask an admin to set it." }, { status: 403 });
 
   const secret = mintTokenSecret();
   const tid = id("tok");
