@@ -1,6 +1,6 @@
 import { effectiveSetup, overriddenKeys, type SettingValue, type Setup } from "@/lib/v12/board/board-data";
 import type { Stage } from "@/lib/v12/board/stages";
-import { exact, heldUpTo, upTo, type PriceValue } from "@/lib/shell/price-words";
+import { exact, heldUpTo, type PriceValue } from "@/lib/shell/price-words";
 import { failureLine } from "@/lib/errors";
 import type { TakeFailure } from "@/lib/providerOutcome";
 import { PLAN_APPROVAL_MS, PLAN_LIMITS } from "@/lib/workbench/rig-agent-plan";
@@ -113,44 +113,30 @@ export function pressPrice(q: { estimatedCredits: number; ceilingCredits?: numbe
 }
 
 /**
- * The server's own figures per shot, in the shots' order, beside a press's quote: `memberCredits`, each shot's hold in credits (they sum to the quote's
- * ceiling, else its estimate), and, in the house only (`unit: "usd"`), `memberPrices`, each shot's own figure in that unit (they sum to `price`). The batch route
- * does not send them yet (lib/batchPress.ts admitBatch, `quoteOnly`); until it does, Retry reads the whole approval, as before.
+ * The shots still to start, as the batch route quotes them under the press's own key (lib/batchPress.ts admitBatch, `quoteOnly` with the Idempotency-Key; the
+ * press's reply carries it too when shots did not start): never started, or failed at no charge. Started shots and charged failures are not in it.
  */
-export type PerShotFigures = { memberCredits?: unknown; memberPrices?: unknown; unit?: string; /** The press's shot count: the figures must be one per shot. */ members?: number };
-
-const figures = (v: unknown, n: number): number[] | null =>
-  Array.isArray(v) && v.length === n && v.every((x) => typeof x === "number" && Number.isFinite(x) && x >= 0) ? (v as number[]) : null;
-const near = (a: number, b: number) => Math.abs(a - b) <= 1e-5 * Math.max(1, Math.abs(b));
+export type ToStart = { members: number; estimatedCredits: number; ceilingCredits?: number; price?: number; unit?: string };
+export function validToStart(v: unknown): v is ToStart {
+  if (!v || typeof v !== "object") return false;
+  const t = v as Partial<ToStart>;
+  return Number.isInteger(t.members) && t.members! >= 0 && Number.isInteger(t.estimatedCredits) && t.estimatedCredits! >= 0
+    && (t.ceilingCredits == null || (Number.isInteger(t.ceilingCredits) && t.ceilingCredits >= t.estimatedCredits!));
+}
 
 /**
- * Retry's price (owner, 21 Oct 2026): only the shots still to start (`left`, by their place in the press), as a ceiling, "up to N cr". What failed unbilled
- * re-runs under the same approval; what was charged stays charged and is not in it. Read the same way the press's price reads: its own dollars at cost in the
- * house where the server gave them, a hold at a credit's public price; never credits re-priced by hand.
+ * Retry's price (owner, 21 Oct 2026): only the shots still to start. What failed unbilled re-runs under the same approval; what was charged stays charged and
+ * is not in it. It reads as a press's price reads (pressPrice): "N cr", "up to N cr" where a shot holds a ceiling, the house's own dollars at cost.
  *
- * Without the server's figures per shot (`perShot`), or with figures that do not add up to the approval, it is the whole approval: the most Retry can charge,
- * since it asks under that approval and never past it.
+ * Without the server's figure for the shots left (`toStart`; a route that does not send it yet), or with none left to start, it is the press's own approval as a
+ * ceiling, "up to N cr": the most Retry can charge, since it asks under that approval and never past it.
  */
-export function retryPrice(price: PriceValue | null | undefined, perShot?: PerShotFigures | null, left?: readonly number[] | null): PriceValue | null {
+export function retryPrice(price: PriceValue | null | undefined, toStart?: unknown): PriceValue | null {
   /* A free press has nothing to approve again, so Retry carries no price: "up to free" is not a price, and a spend button with no price stays off
      (lib/spend.ts spendAttrsOf). No price, no Retry offered in the bar. */
   if (!price || price.kind === "free") return null;
-  const whole: PriceValue = { ...price, kind: "up-to" };
-  const shots = left ? [...new Set(left)] : [];
-  const n = perShot && Array.isArray(perShot.memberCredits) ? perShot.memberCredits.length : 0;
-  const credits = perShot ? figures(perShot.memberCredits, n) : null;
-  if (!credits || !n || (perShot?.members != null && perShot.members !== n) || !shots.length || shots.some((i) => !Number.isInteger(i) || i < 0 || i >= n)) return whole;
-  if (!near(credits.reduce((a, b) => a + b, 0), price.credits)) return whole;
-  const part = shots.reduce((a, i) => a + credits[i], 0);
-  /* A hold (a ceiling) stays a hold, in credits. */
-  if (price.capped) return heldUpTo(part) ?? whole;
-  /* The house reads the press's own dollars: the shots' own, or the whole approval when they are not there to add. */
-  if (price.usd != null) {
-    const usd = perShot?.unit === "usd" ? figures(perShot.memberPrices, n) : null;
-    if (!usd || !near(usd.reduce((a, b) => a + b, 0), price.usd)) return whole;
-    return upTo(part, Math.round(shots.reduce((a, i) => a + usd[i], 0) * 1e6) / 1e6) ?? whole;
-  }
-  return upTo(part) ?? whole;
+  if (validToStart(toStart) && toStart.members > 0) return pressPrice(toStart) ?? { ...price, kind: "up-to" };
+  return { ...price, kind: "up-to" };
 }
 
 /** A failed take known to have been charged: Particl's own ledger settled it above nothing. It is not asked again under the press's approval; Render again is a new press. */
@@ -174,10 +160,11 @@ export const failureNote = (failures: readonly { name: string; words: string }[]
 
 /* ── The press's claims: each press's key and the approval it was pressed with, kept in this browser until the server has settled it ── */
 
-/** The server's quote for the whole press (lib/batchPress.ts admitBatch with `quoteOnly`), with its figures per shot where it sends them. */
+/** The server's quote for the whole press (lib/batchPress.ts admitBatch with `quoteOnly`): as a new approval would cover it now. */
 export type BatchQuote = {
   estimatedCredits: number; ceilingCredits?: number; price?: number; unit?: string; fingerprint: string; members: number;
-  memberCredits?: unknown; memberPrices?: unknown;
+  /** Quoted under the press's key only: the shots left (Retry's price), and the approval the press holds (`covers`: it still covers the shots left). */
+  toStart?: unknown; approval?: { maxCredits?: number; expiresAt?: number; expired?: boolean; covers?: boolean } | null;
 };
 const FINGERPRINT = /^[a-f0-9]{64}$/;
 export function validQuote(q: unknown, members: number): q is BatchQuote {

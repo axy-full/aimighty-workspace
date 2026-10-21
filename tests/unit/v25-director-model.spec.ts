@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   CLAIMS_KEPT, NO_ENGINE_NOTE, PRESS_LIMIT_NOTE, PRESS_MAX_SHOTS, SHOTS_SETTINGS, barButton, claimLive, failureCharged, failureNote, modelWords, cancellable, cardChips, failureWords,
-  letGo, nextStepLabel, pressPrice, readClaim, readClaims, retryPrice, requestFields, scopeOf, shotSettings, valueWords, writeClaim, type PressClaim,
+  letGo, nextStepLabel, pressPrice, readClaim, readClaims, retryPrice, requestFields, scopeOf, shotSettings, validToStart, valueWords, writeClaim, type PressClaim,
 } from "../../components/v12/board/director-model";
 import { CREDITS_MODE, FREE, NO_AT_COST_FIGURE, priceWords } from "../../lib/shell/price-words";
 import { stagesOf } from "../../lib/v12/board/stages";
@@ -133,34 +133,26 @@ test("a press takes at most as many shots as a plan renders at once, the batch r
   expect(PRESS_LIMIT_NOTE).toBe("Up to 24 shots at a time. Pick some.");
 });
 
-test("Retry's price is only the shots still to start, from the server's figures per shot; without them, or when they do not add up, the whole approval", () => {
-  /* Synthetic figures, built here: a press of four shots at 43 cr each, as the batch route would quote it with its figures per shot. */
+test("Retry's price is only the shots still to start, as the route quotes them under the press's key (toStart); without that figure, or with none left, the whole approval", () => {
+  /* Synthetic figures, built here: a press of four shots approved at 172 cr, and what the batch route would say is left. */
   const HOUSE = { on: true, creditUsd: 0.1 } as const;
-  const q = { estimatedCredits: 172, unit: "cr", price: 172, memberCredits: [43, 43, 43, 43] };
-  const whole = pressPrice(q);
-  expect(priceWords(retryPrice(whole, q, [3]), CREDITS_MODE)).toBe("up to 43 cr");
-  expect(priceWords(retryPrice(whole, q, [1, 3, 3]), CREDITS_MODE)).toBe("up to 86 cr");
-  /* Today's route sends no figures per shot: the whole approval, as before. */
-  expect(priceWords(retryPrice(whole, { estimatedCredits: 172, unit: "cr" }, [3]), CREDITS_MODE)).toBe("up to 172 cr");
-  expect(priceWords(retryPrice(whole, null, [3]), CREDITS_MODE)).toBe("up to 172 cr");
-  expect(priceWords(retryPrice(whole, q, []), CREDITS_MODE)).toBe("up to 172 cr");
-  expect(priceWords(retryPrice(whole, q, null), CREDITS_MODE)).toBe("up to 172 cr");
-  /* Figures that do not add up to the approval, or a shot outside the press: never a smaller figure than the server stands behind. */
-  expect(priceWords(retryPrice(whole, { ...q, memberCredits: [10, 10, 10, 10] }, [3]), CREDITS_MODE)).toBe("up to 172 cr");
-  expect(priceWords(retryPrice(whole, { ...q, memberCredits: [43, 43, 43] }, [2]), CREDITS_MODE)).toBe("up to 172 cr");
-  expect(priceWords(retryPrice(whole, q, [4]), CREDITS_MODE)).toBe("up to 172 cr");
-  expect(priceWords(retryPrice(whole, { ...q, members: 5 }, [3]), CREDITS_MODE), "one figure per shot of the press").toBe("up to 172 cr");
-  expect(priceWords(retryPrice(whole, { ...q, members: 4 }, [3]), CREDITS_MODE)).toBe("up to 43 cr");
-  expect(priceWords(retryPrice(whole, { ...q, memberCredits: [43, 43, 43, -43, 86] }, [0]), CREDITS_MODE)).toBe("up to 172 cr");
-  /* The house: the shots' own dollars at cost; with no dollars per shot, the whole approval's, never credits at a credit's price. */
-  const house = { estimatedCredits: 172, unit: "usd", price: 4.3, memberCredits: [43, 43, 43, 43], memberPrices: [1.1, 1.1, 1.05, 1.05] };
-  expect(priceWords(retryPrice(pressPrice(house), house, [3]), HOUSE)).toBe("up to $1.05");
-  expect(priceWords(retryPrice(pressPrice(house), { ...house, memberPrices: undefined }, [3]), HOUSE)).toBe("up to $4.30");
-  /* A ceiling stays a hold, in credits: in the house at a credit's public price. */
-  const ceiling = { estimatedCredits: 172, ceilingCredits: 240, unit: "usd", price: 4.3, memberCredits: [60, 60, 60, 60] };
-  expect(priceWords(retryPrice(pressPrice(ceiling), ceiling, [0]), HOUSE)).toBe("up to $6.00");
-  expect(priceWords(retryPrice(pressPrice({ ...ceiling, unit: "cr" }), { ...ceiling, unit: "cr" }, [0, 1]), CREDITS_MODE)).toBe("up to 120 cr");
-  expect(retryPrice(FREE, q, [3])).toBeNull();
+  const whole = pressPrice({ estimatedCredits: 172, unit: "cr", price: 172 });
+  expect(priceWords(retryPrice(whole, { members: 1, estimatedCredits: 43, price: 43, unit: "cr" }), CREDITS_MODE)).toBe("43 cr");
+  expect(priceWords(retryPrice(whole, { members: 2, estimatedCredits: 86, price: 86, unit: "cr" }), CREDITS_MODE)).toBe("86 cr");
+  /* A shot left that holds a ceiling: "up to". */
+  expect(priceWords(retryPrice(whole, { members: 1, estimatedCredits: 43, ceilingCredits: 60, unit: "cr" }), CREDITS_MODE)).toBe("up to 60 cr");
+  /* The house: the shots' own dollars at cost. */
+  expect(priceWords(retryPrice(pressPrice({ estimatedCredits: 172, unit: "usd", price: 4.3 }), { members: 1, estimatedCredits: 43, price: 1.05, unit: "usd" }), HOUSE)).toBe("$1.05");
+  /* Today's route sends no toStart: the whole approval, as before. So does a figure that is not one, or none left. */
+  expect(priceWords(retryPrice(whole), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, null), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, { members: 0, estimatedCredits: 0, unit: "cr" }), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, { members: 1, estimatedCredits: -43 }), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, { members: 1, estimatedCredits: 43, ceilingCredits: 10 }), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, { estimatedCredits: 43 }), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(validToStart({ members: 1, estimatedCredits: 43 })).toBe(true);
+  expect(validToStart({ members: 1.5, estimatedCredits: 43 })).toBe(false);
+  expect(retryPrice(FREE, { members: 1, estimatedCredits: 43 })).toBeNull();
 });
 
 test("a failed take is charged only when Particl's ledger settled it above nothing; the lines read one after another", () => {

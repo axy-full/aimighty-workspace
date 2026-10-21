@@ -35,11 +35,18 @@ type Opts = {
   answer?: (n: number) => { status: number; json: Record<string, unknown> } | "partial" | "starting" | null;
   /** The server does not start a failed take again (it does not know it to be free): an ask brings back the same takes. */
   noRestart?: boolean;
-  /** The quote carries each shot's own figure (`memberCredits`), as the proposed route field would; without it, today's route. */
-  perShot?: boolean;
+  /**
+   * The batch route after fix/batch-press-claims-first: a quote under the press's key adds `toStart` (the shots left), `approval` and `pressed`; a press reply
+   * adds `approval` and, when shots did not start, `toStart`; a 409 for a moved total carries the press's next quote. Without it, today's route.
+   */
+  keyed?: boolean;
 };
 async function routes(page: Page, opts: Opts = {}) {
   const quotes: Record<string, unknown>[] = [], sent: Sent[] = [], cancels: string[] = [], single: string[] = [], fingerprints: string[] = [];
+  /* Each quote's Idempotency-Key (undefined: a quote of a new press). */
+  const quoteKeys: (string | undefined)[] = [];
+  /* The total each press was approved at (keyed route only). */
+  const approved = new Map<string, number>();
   /* The server's own record of each press, by its Idempotency-Key: asked again, a shot that started is that take and never starts twice. */
   const presses = new Map<string, (string | null)[]>();
   const started: string[] = [];
@@ -66,20 +73,38 @@ async function routes(page: Page, opts: Opts = {}) {
     const members = body.members as Record<string, unknown>[];
     const total = members.reduce((n, m) => n + priceOf(m) + state.bump, 0);
     const fingerprint = sha({ members, total });
+    /* The keyed route's view of a press: the shots left (never started, or failed at no charge) at today's price, and the approval it holds. */
+    const isFree = (id: string | null) => !opts.noRestart && Boolean(id) && (state.takes[id!]?.failure as { charge?: { credits: number } } | undefined)?.charge?.credits === 0;
+    const keyedOf = (k: string | undefined) => {
+      if (!opts.keyed || !k || !presses.has(k)) return {};
+      const ids = presses.get(k)!;
+      const left = members.flatMap((m, i) => (!ids[i] || isFree(ids[i]) ? [priceOf(m) + state.bump] : []));
+      const credits = left.reduce((n, c) => n + c, 0);
+      const max = approved.get(k);
+      return { toStart: { members: left.length, estimatedCredits: credits, price: credits, unit: "cr" }, approval: max == null ? null : { maxCredits: max, expiresAt: Date.now() + 6 * 86_400_000, expired: false, covers: !left.length || total <= max }, pressed: ids.map((id, index) => (id ? { index, id, status: "queued" } : { index })) };
+    };
     if (body.quoteOnly === true) {
       quotes.push(body);
+      quoteKeys.push(key);
       if (opts.quoteRefusal) return route.fulfill({ status: opts.quoteRefusal.status, json: { error: opts.quoteRefusal.error } });
       if (state.capAtQuote || (opts.capAfterPress && state.pressed)) return route.fulfill({ status: 429, json: { error: CAP_WORDS } });
       fingerprints.push(fingerprint);
-      return route.fulfill({ json: { estimatedCredits: total, price: total, unit: "cr", members: members.length, batchId: `bt_${fingerprint.slice(0, 24)}`, fingerprint, ...(opts.perShot ? { memberCredits: members.map((m) => priceOf(m) + state.bump) } : {}) } });
+      return route.fulfill({ json: { estimatedCredits: total, price: total, unit: "cr", members: members.length, batchId: `bt_${fingerprint.slice(0, 24)}`, fingerprint, ...keyedOf(key) } });
     }
     sent.push({ body, key });
     /* The route's own checks, as lib/batchPress.ts makes them: the approval is the quote's fingerprint and covers the total. */
-    if (body.fingerprint !== fingerprint) return route.fulfill({ status: 409, json: { error: "The shots or their prices changed. Look at the total again before approving.", quoteChanged: true } });
+    if (body.fingerprint !== fingerprint) {
+      if (opts.keyed) fingerprints.push(fingerprint);
+      return route.fulfill({ status: 409, json: { error: "The shots or their prices changed. Look at the total again before approving.", quoteChanged: true, ...(opts.keyed ? { quote: { estimatedCredits: total, price: total, unit: "cr", members: members.length, fingerprint, ...keyedOf(key) } } : {}) } });
+    }
     if (body.maxCredits !== total) return route.fulfill({ status: 409, json: { error: "Approve the price first: the total is above the approved credit amount." } });
     state.pressed = true;
     const answer = opts.answer?.(sent.length) ?? null;
-    if (answer && answer !== "partial" && answer !== "starting") return route.fulfill(answer);
+    if (answer && answer !== "partial" && answer !== "starting") {
+      /* The keyed route records a press's shots and its approval before the first shot is tried, so a press refused whole is still read under its key. */
+      if (opts.keyed && !presses.has(String(key))) { presses.set(String(key), members.map(() => null)); approved.set(String(key), total); }
+      return route.fulfill(answer);
+    }
     /* Each shot not yet started under this key starts now (a free failure starts again, as the server's failedFree allows); one already started is that take. */
     const ids = presses.get(String(key)) ?? members.map(() => null);
     const out: Member[] = members.map((_, index) => {
@@ -91,9 +116,12 @@ async function routes(page: Page, opts: Opts = {}) {
       return { index, id: ids[index]!, status: "queued" };
     });
     presses.set(String(key), ids);
+    if (!approved.has(String(key)) || body.maxCredits !== approved.get(String(key))) approved.set(String(key), total);
     if (state.lose > 0) { state.lose -= 1; return route.abort("connectionreset"); }
     const refused = out.filter((m) => m.error).length;
-    await route.fulfill({ json: { id: `bt_${fingerprint.slice(0, 24)}`, batchId: `bt_${fingerprint.slice(0, 24)}`, status: refused ? "partial" : "started", estimatedCredits: total, members: out } });
+    const leftOver = members.flatMap((m, i) => (out[i].error ? [priceOf(m) + state.bump] : [])).reduce((n, c) => n + c, 0);
+    await route.fulfill({ json: { id: `bt_${fingerprint.slice(0, 24)}`, batchId: `bt_${fingerprint.slice(0, 24)}`, status: refused ? "partial" : "started", estimatedCredits: total, members: out,
+      ...(opts.keyed ? { approval: { maxCredits: approved.get(String(key)), expiresAt: Date.now() + 7 * 86_400_000 }, ...(refused ? { toStart: { members: refused, estimatedCredits: leftOver, price: leftOver, unit: "cr" } } : {}) } : {}) } });
   });
   await page.route("**/api/jobs/gen_dir_*", async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
@@ -102,7 +130,7 @@ async function routes(page: Page, opts: Opts = {}) {
   });
   /* Director opens with no engine (owner, 16 Oct 2026, 2a); the test page's stand-in pick sets one, as PR 9's pop-up will. */
   if (opts.engine !== false) await pickEngine(page);
-  return { quotes, sent, cancels, single, fingerprints, started, state };
+  return { quotes, quoteKeys, sent, cancels, single, fingerprints, started, state };
 }
 /** The newest press claim this browser keeps until the server has settled the press (components/v12/board/use-director-render.ts: one per exact set of shots). */
 const claimOf = (page: Page) => page.evaluate(() => {
@@ -595,14 +623,16 @@ test("more shots than a press takes: the plan's line \"Up to 24 shots at a time.
   expect(net.quotes.at(-1)?.members).toHaveLength(1);
 });
 
-test("Retry's price is only the shots still to start, where the quote gives each shot's figure: partial reads the one shot left, still under the same approval", async ({ page }) => {
-  const net = await routes(page, { perShot: true, answer: (n) => (n === 1 ? "partial" : null) });
+test("Retry's price is only the shots still to start, as the route quotes them under the press's key: partial reads the one shot left, still under the same approval", async ({ page }) => {
+  const net = await routes(page, { keyed: true, answer: (n) => (n === 1 ? "partial" : null) });
   await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
   await go(page).click();
   await expect(page.getByTestId("v12-director-note")).toContainText("Nothing billed for 1 shot that did not start.", { timeout: 30_000 });
   const retry = page.getByTestId("v12-director-retry");
-  await expect(retry).toHaveText("Retry · up to 43 cr");
+  await expect(retry).toHaveText("Retry · 43 cr");
   await expect(retry).toHaveAttribute("data-spend", "priced");
+  /* Retry's own quote went under the press's key. */
+  await expect.poll(() => net.quoteKeys.includes(net.sent[0].key)).toBe(true);
   await retry.click();
   await expect.poll(() => net.sent.length).toBe(2);
   /* Still the same approval: the same key, fingerprint and ceiling; the price only says what is left to start. */
@@ -612,23 +642,62 @@ test("Retry's price is only the shots still to start, where the quote gives each
   await expect.poll(() => net.started.length).toBe(4);
 });
 
-test("Retry's price after a 5xx that started nothing: every shot is still to start, so it reads the whole approval", async ({ page }) => {
-  await routes(page, { perShot: true, answer: (n) => (n === 1 ? { status: 502, json: { status: "refused", members: [0, 1, 2, 3].map((index) => ({ index, error: "Synthetic test refusal: the engine is busy.", code: 502, charged: 0 })) } } : null) });
+test("Retry's price after a 5xx that started nothing: every shot is still to start, so it reads all four", async ({ page }) => {
+  await routes(page, { keyed: true, answer: (n) => (n === 1 ? { status: 502, json: { status: "refused", members: [0, 1, 2, 3].map((index) => ({ index, error: "Synthetic test refusal: the engine is busy.", code: 502, charged: 0 })) } } : null) });
   await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
   await go(page).click();
   await expect(page.getByTestId("v12-director-note")).toContainText("Nothing billed.", { timeout: 30_000 });
-  await expect(go(page)).toHaveText("Retry · up to 172 cr");
+  await expect(go(page)).toHaveText("Retry · 172 cr", { timeout: 30_000 });
+  await expect(go(page)).toHaveAttribute("data-retry", "");
 });
 
-test("Retry's price without the figures per shot (today's route): the whole approval, as before", async ({ page }) => {
+test("Retry's price without the route's toStart (today's route): the whole approval, as before", async ({ page }) => {
   await routes(page, { answer: (n) => (n === 1 ? "partial" : null) });
   await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
   await go(page).click();
   await expect(page.getByTestId("v12-director-retry")).toHaveText("Retry · up to 172 cr", { timeout: 30_000 });
 });
 
+test("Retry when the approval no longer covers the shots left (the total moved above it): the person's press approves the press's next total, under the same key", async ({ page }) => {
+  const net = await routes(page, { keyed: true, answer: (n) => (n === 1 ? "partial" : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-retry")).toHaveText("Retry · 43 cr", { timeout: 30_000 });
+  /* Prices move: the shot left now costs 48 cr, and the whole press 192 cr, above the 172 cr approved. Retry's quote is read again once the takes move on. */
+  net.state.bump = 5;
+  net.state.phase = "succeeded";
+  await expect(go(page)).toHaveText("Next: Edit →", { timeout: 20_000 });
+  await expect(page.getByTestId("v12-director-retry")).toHaveText("Retry · 48 cr", { timeout: 30_000 });
+  await page.getByTestId("v12-director-retry").click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.sent[1].key, "the same press").toBe(net.sent[0].key);
+  expect(net.sent[1].body.maxCredits).toBe(192);
+  expect(net.sent[1].body.fingerprint).toBe(net.fingerprints.at(-1));
+  await expect.poll(() => net.started.length).toBe(4);
+});
+
+test("a press refused as out of date (409) shows the press's next total from the refusal, and is then quoted and sent under its own key", async ({ page }) => {
+  const net = await routes(page, { keyed: true, lose: 1 });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  net.state.bump = 5;
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The shots or their prices changed.", { timeout: 30_000 });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 192 cr$/, { timeout: 30_000 });
+  const before = net.quoteKeys.length;
+  await go(page).click();
+  await expect.poll(() => net.sent.length).toBe(3);
+  /* Every quote after the press is under its key: started shots are never priced as new. */
+  expect(net.quoteKeys.slice(before).length).toBeGreaterThan(0);
+  expect(new Set(net.quoteKeys.slice(before))).toEqual(new Set([net.sent[0].key]));
+  expect(net.sent[2].key).toBe(net.sent[0].key);
+  expect(net.sent[2].body.maxCredits).toBe(192);
+  expect(net.started, "nothing started twice").toHaveLength(4);
+});
+
 test("settled: Retry is priced at the free failure alone; the charged one is offered Render again, a new press of that shot with a new quote and key, and its line keeps what it cost", async ({ page }, info) => {
-  const net = await routes(page, { perShot: true });
+  const net = await routes(page, { keyed: true });
   await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
   await go(page).click();
   await expect.poll(() => net.started.length).toBe(4);
@@ -642,13 +711,13 @@ test("settled: Retry is priced at the free failure alone; the charged one is off
   await expect(note).toContainText("Shot 3:");
   await expect(note).toContainText("43 cr charged");
   /* The free failure (Shot 2) under the same approval, at its own figure; the charged one (Shot 3) is not in it. */
-  await expect(page.getByTestId("v12-director-retry")).toHaveText("Retry · up to 43 cr");
+  await expect(page.getByTestId("v12-director-retry")).toHaveText("Retry · 43 cr", { timeout: 30_000 });
   /* Render again: Shot 3 alone, priced afresh, the person's press. Nothing is sent before it. */
   const anew = page.getByTestId("v12-director-render-again");
   await expect(anew).toHaveText(/^Render again · 43 cr$/, { timeout: 30_000 });
   await expect(anew).toHaveAttribute("data-spend", "priced");
   if (isCompact(info)) expect((await anew.boundingBox())!.height).toBeGreaterThanOrEqual(43.5);
-  expect(net.quotes.at(-1)?.members, "Render again is quoted for the charged shot alone").toHaveLength(1);
+  expect(net.quotes.some((q) => (q.members as unknown[]).length === 1), "Render again is quoted for the charged shot alone").toBe(true);
   expect(net.sent).toHaveLength(1);
   await expect(page.getByTestId("v12-director-bar").locator("button.v12-dirbar-go")).toHaveCount(1);
   await anew.click();
@@ -659,7 +728,9 @@ test("settled: Retry is priced at the free failure alone; the charged one is off
   expect(members).toHaveLength(1);
   expect(members[0].shotId).toBe("d3");
   expect(again.body.maxCredits).toBe(43);
-  expect(again.body.fingerprint).toBe(net.fingerprints.at(-1));
+  /* Its own quote, of that shot alone, as a new press: no key. */
+  const single = net.quotes.map((q, i) => ((q.members as unknown[]).length === 1 ? i : -1)).filter((i) => i >= 0);
+  expect(single.map((i) => net.quoteKeys[i])).toEqual(single.map(() => undefined));
   await expect.poll(() => net.started.length).toBe(5);
   await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
   /* The line keeps what the failed take cost through the new press. */
