@@ -26,3 +26,24 @@
 
 .v12 .v25-parts-btn { height: 32px; padding: 0 12px; border: 1px solid var(--gx-line-control); border-radius: var(--gx-r-btn); background: transparent; color: var(--gx-text); font: inherit; font-size: var(--gx-fs-meta); cursor: pointer; }
 @media (pointer: coarse) { .v12 .v25-parts-btn { min-height: var(--gx-touch); } }
+
+/* Director on Shots: the cards, the column at the right, the bar at the bottom, like the board's canvas. */
+.v12 .v25-parts-director { position: relative; padding-bottom: 150px; min-height: 420px; }
+.v12 .v25-parts-dirgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gx-sp-16); }
+.v12 .v25-parts-dircol { margin-top: var(--gx-sp-16); }
+.v12 .v25-parts-dirbar { position: absolute; left: var(--gx-sp-16); right: var(--gx-sp-16); bottom: var(--gx-sp-16); display: flex; justify-content: center; }
+.v12 .v25-parts-dirbar .v12-dirbar { max-width: 720px; }
+.v12 .v25-parts-ask { height: 40px; min-width: 0; border: 0; background: transparent; color: var(--gx-text); font: inherit; font-size: 15px; padding: 0 var(--gx-sp-8); }
+.v12 .v25-parts-ask:focus-visible { outline: 2px solid var(--gx-text); outline-offset: 2px; }
+.v12 .v25-parts-ask::placeholder { color: var(--gx-placeholder); }
+/* Below 1000 px the bar is in the page's flow, after the column: absolute at the bottom it would lie over the column's last control. */
+@media (max-width: 999px) {
+  .v12 .v25-parts-director { padding-bottom: var(--gx-sp-16); }
+  .v12 .v25-parts-dirbar { position: static; margin-top: var(--gx-sp-24); }
+}
+@media (min-width: 1000px) {
+  .v12 .v25-parts-director { padding-right: 268px; min-height: 560px; }
+  .v12 .v25-parts-dirgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .v12 .v25-parts-dircol { position: absolute; right: var(--gx-sp-16); top: var(--gx-sp-24); margin-top: 0; }
+  .v12 .v25-parts-dirbar { right: 268px; }
+}
