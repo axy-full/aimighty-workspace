@@ -220,6 +220,39 @@ test('Astra releases unsent legacy quotes, retains prior claims and restores acc
  });expect(calls).toBe(1);}finally{engine.render=original;}
 });
 
+test('an Astra take admitted before the 4K rule, whose measured source is already 4K, is let go at dispatch: nothing sent, nothing billed; one already claimed or accepted is left as it is',async()=>{
+ const {runInTenant}=await import('../../lib/tenant'),{engineFor}=await import('../../lib/engines');
+ const {submitVideoJob}=await import('../../lib/submitVideo'),{db}=await import('../../lib/db'),{platformDb}=await import('../../lib/platform');
+ const {ALREADY_4K,ASTRA_MODEL,DEFAULT_ASTRA}=await import('../../lib/astra'),{getModel}=await import('../../lib/models'),{getTask}=await import('../../lib/tasks');
+ const engine=engineFor('fal'),original=engine.render;let calls=0;
+ engine.render=async()=>{calls++;throw new Error('No upscale of a 4K source may reach the provider');};
+ try {for(const [width,height] of [[3840,2160],[2160,3840],[4096,2160],[7680,4320]])await runInTenant(workspace(`astra-at4k-${width}x${height}`),async()=>{
+  const job=await makeJob(`astra-at4k-${width}x${height}`,'fal');job.model=getModel(ASTRA_MODEL);job.task=getTask('upscale');
+  job.params={...job.params,resolution:'4k',fps60:false,astra:{...DEFAULT_ASTRA,fps:30},astraSource:{seconds:1.5,width,height,firstTimestamp:0}};
+  await db().execute({sql:"UPDATE generations SET model=?,task='upscale',params=? WHERE id=?",args:[ASTRA_MODEL,JSON.stringify(job.params),job.genId]});
+  const result=await submitVideoJob(job);
+  expect(result).toEqual({ok:false,cls:'fatal',error:`${ALREADY_4K} Nothing billed.`});
+  const row=(await db().execute({sql:'SELECT status,cost_usd,error FROM generations WHERE id=?',args:[job.genId]})).rows[0];
+  expect(row.status).toBe('failed');expect(row.cost_usd).toBe(0);expect(row.error).toBe(`${ALREADY_4K} Nothing billed.`);
+  const event=(await platformDb().execute({sql:'SELECT engine_cost_usd,status FROM meter_events WHERE id=?',args:[job.genId]})).rows[0];
+  expect(event.engine_cost_usd).toBe(0);expect(event.status).toBe('failed');
+ });
+ /* A row already claimed for payment, or already holding the provider's handle, is never let go here: it is left as it is and keeps its reservation. */
+ for(const kind of ['claimed','accepted'] as const)await runInTenant(workspace(`astra-at4k-${kind}`),async()=>{
+  const job=await makeJob(`astra-at4k-${kind}`,'fal');job.model=getModel(ASTRA_MODEL);job.task=getTask('upscale');
+  job.params={...job.params,resolution:'4k',fps60:false,astra:{...DEFAULT_ASTRA,fps:30},astraSource:{seconds:1.5,width:3840,height:2160,firstTimestamp:0}};
+  await db().execute({sql:"UPDATE generations SET model=?,task='upscale',params=? WHERE id=?",args:[ASTRA_MODEL,JSON.stringify({...job.params,...(kind==='claimed'?{paidClaim:1}:{falRequestId:'already-paid',falModel:ASTRA_MODEL})}),job.genId]});
+  const before=(await db().execute({sql:'SELECT status,cost_usd,error,params FROM generations WHERE id=?',args:[job.genId]})).rows[0];
+  const result=await submitVideoJob(job);
+  if(kind==='claimed')expect(result).toMatchObject({ok:false,cls:'uncertain'});else expect(result).toMatchObject({ok:true,taskId:'already-paid'});
+  const after=(await db().execute({sql:'SELECT status,cost_usd,error,params FROM generations WHERE id=?',args:[job.genId]})).rows[0];
+  expect(after).toEqual(before);expect(after.status).toBe('queued');expect(after.error).toBeNull();
+  const event=(await platformDb().execute({sql:'SELECT engine_cost_usd,status FROM meter_events WHERE id=?',args:[job.genId]})).rows[0];
+  expect(event.engine_cost_usd).toBe(.7);expect(event.status).toBe('running');
+ });
+ expect(calls).toBe(0);}finally{engine.render=original;}
+});
+
 test('a Cinema Studio take that ends uncertain at submit says what is true: nothing charged, its hold back',async()=>{
  const {runInTenant}=await import('../../lib/tenant');const {engineFor}=await import('../../lib/engines');const {submitVideoJob}=await import('../../lib/submitVideo');const {db,ready,now}=await import('../../lib/db');const {platformDb}=await import('../../lib/platform');
  const {getModel}=await import('../../lib/models');const {getTask}=await import('../../lib/tasks');const {reserveGenerationSpend}=await import('../../lib/generationRequests');

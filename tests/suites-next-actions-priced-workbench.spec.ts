@@ -5,6 +5,7 @@ import { newProject, type CanvasNode } from "../lib/workbench/studio";
 import type { Generation } from "../lib/jobs";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, type LibraryRoute } from "./helpers/workspaceFixtures";
 import { labelsUnderFloor } from "./helpers/businessOwn";
+import { ALREADY_4K, ALREADY_4K_CODE } from "../lib/astra";
 
 /**
  * Idea 12, second slice: priced Next actions on a take, in the board's Inspector (SOW 1.2). A still is upscaled, outpainted or
@@ -66,7 +67,7 @@ type Sent = { body: Record<string, unknown>; key: string | null };
  * before it prices another (lib/approval.ts); "cap" — the production at its cap, which only an admin's Unlock lifts
  * (lib/caps.ts capVerdict; the per-shot approval rule this used to stand for was retired on 21 Oct 2026).
  */
-type Rule = "reason" | "cap" | null;
+type Rule = "reason" | "cap" | "already4k" | null;
 type Server = { quotes: Record<string, unknown>[]; sent: Sent[]; writes: string[]; bump: number; failNext: boolean; holdNext: boolean; rule: Rule };
 const ASK = { title: "v1 is approved. Why render another?", line: "Ana approved v1. The reason is kept with the new take, so the shot's record says why it was revisited." };
 const CAP_LINE = "At this production's cap of 60 cr (60 cr spent, this needs 12 cr). An admin can unlock it or raise it.";
@@ -101,6 +102,8 @@ async function mockPaid(page: Page, production: string, library: LibraryRoute): 
     if (server.rule === "reason" && !(typeof body.reason === "string" && body.reason.trim().length >= 3))
       return route.fulfill({ status: 409, json: { error: ASK.title, line: ASK.line, needsReason: true, approvedVersion: 1 } });
     if (server.rule === "cap") return route.fulfill({ status: 409, json: { error: CAP_LINE } });
+    /* The source measured at 4K: admission's refusal, word for word and code for code (tests/unit/generationAdmission.spec.ts pins the real one). */
+    if (server.rule === "already4k" && body.model === ASTRA) return route.fulfill({ status: 400, json: { error: ALREADY_4K, code: ALREADY_4K_CODE } });
     const credits = (ESTIMATE[String(body.model)] ?? 1) + server.bump;
     return route.fulfill({ json: { estimatedCredits: credits, price: credits, unit: "cr", fingerprint: createHash("sha256").update(JSON.stringify(body)).digest("hex") } });
   });
@@ -333,6 +336,32 @@ test("what cannot go says why and sends nothing: a sound's actions are not offer
   expect(server.quotes, "no quote without an open action").toEqual([]);
   expect(server.sent).toEqual([]);
   /* A project not yet saved waits ("Saving this project…", no quote): the row's gate, in unit nextActionsPriced; an unsaved project has no shot to draw a card. */
+  expect(errors).toEqual([]);
+});
+
+test("a clip already at 4K: Upscale shows the line in plain tone where the price would be, offers nothing to try again and sends nothing", async ({ page }, info) => {
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Inspector are the desktop's");
+  const { server, errors } = await open(page);
+  server.rule = "already4k";
+  const row = (await inspect(page, NODES.wide)).getByTestId("next-actions");
+  await row.getByTestId("next-upscale").click();
+  const panel = row.getByTestId("next-panel");
+  await expect(panel).toHaveAttribute("data-action", "upscale");
+  const line = panel.getByTestId("next-refused");
+  await expect(line).toHaveText(ALREADY_4K, { timeout: 20_000 });
+  await expect(line).toHaveAttribute("data-code", ALREADY_4K_CODE);
+  await expect(line).toHaveAttribute("role", "status");
+  await expect(line).not.toHaveAttribute("data-tone", "red");
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  await expect(panel.getByTestId("next-try-again")).toHaveCount(0);
+  const go = panel.getByTestId("next-go");
+  await expect(go).toBeDisabled();
+  await expect(go).toHaveAttribute("data-spend", "unpriced");
+  await expect(go).toHaveText("Upscale");
+  await panelFloors(page, panel, WHERE);
+  expect(server.quotes.length).toBeGreaterThan(0);
+  expect(server.sent).toEqual([]);
+  expect(server.writes).toEqual([]);
   expect(errors).toEqual([]);
 });
 
