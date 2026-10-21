@@ -168,6 +168,8 @@ export type BatchQuote = {
   estimatedCredits: number; ceilingCredits?: number; price?: number; unit?: string; fingerprint: string; members: number;
   /** Quoted under the press's key only: the shots left (Retry's price), and the approval the press holds (`covers`: it still covers the shots left). */
   toStart?: unknown; approval?: { maxCredits?: number; expiresAt?: number; expired?: boolean; covers?: boolean } | null;
+  /** Quoted under the press's key only: each shot as it stands (`id` once it started). */
+  pressed?: unknown;
 };
 const FINGERPRINT = /^[a-f0-9]{64}$/;
 export function validQuote(q: unknown, members: number): q is BatchQuote {

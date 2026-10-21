@@ -9,7 +9,7 @@ import { failureUncharged } from "@/lib/errors";
 import type { TakeFailure } from "@/lib/providerOutcome";
 import { dispatchGate, neutralCopy } from "@/lib/workspace/rig";
 import {
-  cancellable, claimNow, claimSlot, failureCharged, failureNote, failureWords, letGo, nextClaim, pressPrice, readClaim, readClaims, retryPrice, validQuote, validToStart, writeClaim,
+  NOTHING_LEFT_NOTE, cancellable, claimNow, claimSlot, failureCharged, failureNote, failureWords, letGo, nextClaim, pressPrice, readClaim, readClaims, retryPrice, validQuote, validToStart, writeClaim,
   type BarState, type BatchQuote, type PressClaim, type ToStart,
 } from "./director-model";
 import { PLAN_APPROVAL_MS } from "@/lib/workbench/rig-agent-plan";
@@ -51,6 +51,7 @@ type Target = { members: Record<string, unknown>[]; shotIds: string[]; shotsKey:
 const UNREAD = "The price could not be read. Try again.";
 const LOST_REPLY = "The connection dropped before the server answered. Press again to check what became of it; nothing is sent twice.";
 const NOT_SENT = "The shots could not be sent. Nothing more was sent.";
+const SHOTS_CHANGED = "The shots changed; press again to approve.";
 const STILL_STARTING = "A shot is still being accepted. Press Retry in a moment; nothing is sent twice.";
 
 /** The most the press can settle at: what the person approves and what is sent as its ceiling. */
@@ -299,6 +300,8 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
     };
     const madeOf = (out: MemberOut[]) => out.flatMap((m) => (m.id && target.shotIds[m.index] ? [{ shotId: target.shotIds[m.index], jobId: m.id }] : []));
     const forget = (key: string) => { letGo(storage, slot, key, Date.now()); if (pressRef.current?.key === key) pressRef.current = null; setPressKey(null); syncHeld(); };
+    /* A Render again's own lost reply goes only when the server answers that same press. */
+    const clearLost = (key: string) => setLostAgain((lost) => (lost?.key === key ? null : lost));
     /* The server reported this press's shots: kept for Retry, it is let go at Next. */
     const answered = (claim: PressClaim, expiresAt?: unknown) => {
       /* The server counts an approval's 7 days from the press that first started something under it: where it says when that ends, the claim keeps its time. */
@@ -328,8 +331,9 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
            to start; a free failure can grow it while the total stays), sends nothing, and the fresh figure is shown for the next press. */
         if (fresh.fingerprint !== shown!.fingerprint || shownFigure(fresh) !== shownFigure(shown!) || ceilingOf(fresh) !== ceilingOf(shown!)) {
           show({ key: target.membersKey, quote: fresh });
-          const gate = dispatchGate(shownFigure(fresh) === shownFigure(shown!) ? null : shownFigure(shown!), shownFigure(fresh));
-          setProblem(gate.ok ? null : gate.reason);
+          /* The figure the same, the shots or their parts not: said as such, not as a new price. */
+          if (shownFigure(fresh) === shownFigure(shown!)) setProblem(SHOTS_CHANGED);
+          else { const gate = dispatchGate(shownFigure(shown!), shownFigure(fresh)); setProblem(gate.ok ? null : gate.reason); }
           setState("idle");
           return;
         }
@@ -357,14 +361,14 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
         const said = out.find((m) => m.error)?.error ?? error.message;
         if (error.status >= 500) {
           /* Refused whole with every shot listed as not started, at no charge (rule 14): "Nothing billed", and Retry under the same approval. */
-          if (out.length && out.every((m) => !m.id && m.charged === 0)) { if (mode === "again") setLostAgain(null); answered(claim, error.data.approval && (error.data.approval as { expiresAt?: unknown }).expiresAt); begin([], `Nothing billed. ${neutralCopy(said, NOT_SENT)}`, true, false, error.data.toStart); return; }
+          if (out.length && out.every((m) => !m.id && m.charged === 0)) { clearLost(claim.key); answered(claim, error.data.approval && (error.data.approval as { expiresAt?: unknown }).expiresAt); begin([], `Nothing billed. ${neutralCopy(said, NOT_SENT)}`, true, false, error.data.toStart); return; }
           if (mode === "again") setLostAgain(claim);
           setProblem(LOST_REPLY);
           setState("idle");
           return;
         }
         /* The press was cancelled: nothing more starts under its key, so it is let go and the next press is a new one. */
-        if (error.data.cancelled === true) { if (mode === "again") setLostAgain(null); forget(claim.key); begin(madeOf(out), neutralCopy(said, NOT_SENT)); return; }
+        if (error.data.cancelled === true) { clearLost(claim.key); forget(claim.key); begin(madeOf(out), neutralCopy(said, NOT_SENT)); return; }
         /* The shots or their prices changed since this approval: the new total is read and shown; the person approves it, still under this press's key. */
         if (error.data.quoteChanged === true) {
           const stale: PressClaim = { ...claim, quote: null };
@@ -375,20 +379,30 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
           syncHeld();
           /* The server sends the press's next approval with its refusal (quoted under the key; past its 7 days, at today's price): shown as it is. Without it,
              the press is quoted again, under its key. */
-          if (validQuote(error.data.quote, target.members.length)) show({ key: target.membersKey, quote: error.data.quote });
+          const next = validQuote(error.data.quote, target.members.length) ? error.data.quote : null;
+          /* A Render again whose shots all started (its reply was lost, and the server reports them): nothing is left to spend; its takes are shown, and the
+             claim, now answered, goes at Next. */
+          if (mode === "again" && next && validToStart(next.toStart) && next.toStart.members === 0) {
+            const pressed = out.length ? out : Array.isArray(next.pressed) ? (next.pressed as MemberOut[]) : [];
+            clearLost(claim.key);
+            answered(stale);
+            begin(madeOf(pressed), NOTHING_LEFT_NOTE);
+            return;
+          }
+          if (next) show({ key: target.membersKey, quote: next });
           else setRetryRead((n) => n + 1);
           begin([], neutralCopy(said, NOT_SENT));
           return;
         }
         if (error.status === 402 || error.data.short === true) setShort(true);
         /* Refused whole, nothing started (the cap, the balance, a person's approval). A press asked before keeps its key: some of its shots may have started under it. */
-        if (!reused) { forget(claim.key); if (mode === "again") setLostAgain(null); }
+        if (!reused) { forget(claim.key); clearLost(claim.key); }
         begin(madeOf(out), neutralCopy(said, NOT_SENT));
         return;
       }
       const out = reply.members ?? [];
       /* The server reported this press's shots: a Render again's own claim is no longer a lost reply. */
-      if (mode === "again") setLostAgain(null);
+      clearLost(claim.key);
       const refused = out.filter((m) => m.error);
       const starting = out.some((m) => m.status === "starting");
       /* Every shot started: the browser lets the key go (the press stays in hand for a free retry of a take that fails). Otherwise it stays, for Retry;

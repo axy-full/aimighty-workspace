@@ -786,6 +786,72 @@ test("a Render again whose reply was lost keeps its key through a refusal (409):
   expect(net.started, "nothing started twice").toHaveLength(5);
 });
 
+test("a lost Render again that DID start its shot, then a 409, on today's route: Render again under the same key reports the started take and starts nothing", async ({ page }) => {
+  /* Press 2 is the Render again: the server starts its shot, and the reply is lost. */
+  const net = await routes(page, { loseOn: (n) => n === 2 });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.started.length).toBe(4);
+  for (const id of net.started) net.state.takes[id] = { id, status: "succeeded" };
+  net.state.takes[net.started[2]] = { id: net.started[2], status: "failed", failure: failure(43) };
+  const anew = page.getByTestId("v12-director-render-again");
+  await expect(anew).toHaveText(/^Render again · 43 cr$/, { timeout: 30_000 });
+  await anew.click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  const lostKey = net.sent[1].key;
+  expect(net.started, "the lost Render again started its shot").toHaveLength(5);
+  const take = net.started[4];
+  /* Prices move: asked again under its approval, it is refused as out of date. */
+  net.state.bump = 5;
+  await anew.click();
+  await expect.poll(() => net.sent.length).toBe(3);
+  expect(net.sent[2].key).toBe(lostKey);
+  await expect(page.getByTestId("v12-director-note")).toContainText("The shots or their prices changed.", { timeout: 30_000 });
+  /* Today's route sends no figure for what is left: the press's price under its key, and the next Render again asks under that key. */
+  await expect(anew).toHaveText(/^Render again · 48 cr$/, { timeout: 30_000 });
+  await anew.click();
+  await expect.poll(() => net.sent.length).toBe(4);
+  expect(net.sent[3].key, "the lost Render again's own key").toBe(lostKey);
+  /* The server reports the take it started; nothing starts again. */
+  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  expect(net.started, "nothing started twice").toHaveLength(5);
+  net.state.takes[take] = { id: take, status: "succeeded" };
+  await expect(go(page)).toHaveText("Next: Edit →", { timeout: 20_000 });
+  expect(net.started).toHaveLength(5);
+});
+
+test("a lost Render again that DID start its shot, then a 409, on the keyed route: the refusal's own quote says nothing is left to start, so the bar says so and shows the started take; no spend is offered", async ({ page }) => {
+  /* Press 2 is the Render again: the server starts its shot, and the reply is lost. */
+  const net = await routes(page, { keyed: true, loseOn: (n) => n === 2 });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.started.length).toBe(4);
+  for (const id of net.started) net.state.takes[id] = { id, status: "succeeded" };
+  net.state.takes[net.started[2]] = { id: net.started[2], status: "failed", failure: failure(43) };
+  const anew = page.getByTestId("v12-director-render-again");
+  await expect(anew).toHaveText(/^Render again · 43 cr$/, { timeout: 30_000 });
+  await anew.click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  const lostKey = net.sent[1].key;
+  expect(net.started, "the lost Render again started its shot").toHaveLength(5);
+  const take = net.started[4];
+  /* Prices move: asked again under its approval, it is refused as out of date. */
+  net.state.bump = 5;
+  await anew.click();
+  await expect.poll(() => net.sent.length).toBe(3);
+  expect(net.sent[2].key).toBe(lostKey);
+  /* The refusal's quote, under the key: nothing left to start. The bar says so and shows that take; no Render again, nothing priced. */
+  const note = page.getByTestId("v12-director-note");
+  await expect(note).toContainText("Nothing left to start: every shot of this press has started.", { timeout: 30_000 });
+  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  await expect(page.getByTestId("v12-director-render-again")).toHaveCount(0);
+  await page.waitForTimeout(800);
+  expect(net.sent, "nothing more sent").toHaveLength(3);
+  net.state.takes[take] = { id: take, status: "succeeded" };
+  await expect(go(page)).toHaveText("Next: Edit →", { timeout: 20_000 });
+  expect(net.started, "nothing started twice").toHaveLength(5);
+});
+
 test("on the keyed route, what the person approves is what they saw: a free failure that grows what is left to start (the total unchanged) sends nothing and shows the new figure", async ({ page }) => {
   /* The first press starts three shots, refuses the fourth, and its reply is lost. */
   const net = await routes(page, { keyed: true, lose: 1, answer: (n) => (n === 1 ? "partial" : null) });
