@@ -794,9 +794,9 @@ test("the shot cap is judged at the quote and the press, before any row is writt
 });
 
 /* Over MCP, lip_sync is started only by a token with a monthly ceiling an admin set, sent at its quote as maxCredits (lib/directEngineMcp.ts; owner,
-   20 Oct 2026: "A capped token spends inside its ceiling whatever the workspace's Ask setting (ceiling = standing approval). lip_sync follows the same
-   rule once Auto goes."). This is that start at the admission: the ceiling and the quote are what hold it. Ceilings are synthetic, in the house's unit. */
-test("a token with a monthly ceiling starts a lip-sync at its quote, under its token; past its ceiling, or with no ceiling, it is refused at the reservation and nothing is reserved or handed on", async () => {
+   20 Oct 2026, 16:50 IST: "C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask setting — the ceiling is the standing approval.
+   lip_sync follows the same rule once Auto goes, so the two tools behave alike."). This is that start at the admission: the ceiling and the quote are what hold it. Ceilings are synthetic, in the house's unit. */
+test("a token with a monthly ceiling starts a lip-sync at its quote, under its token; past its ceiling, or with no ceiling, it is refused at the reservation: its take settles failed at nothing (a zero ledger line at most) and nothing is handed on", async () => {
   const { admitLipSync } = await import("../../lib/lipSync");
   const { runInTenant } = await import("../../lib/tenant");
   const { db } = await import("../../lib/db");

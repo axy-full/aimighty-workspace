@@ -7,8 +7,8 @@ import type { TenantWorkspace } from "../../lib/tenant";
 /**
  * The direct engines' tools over MCP (lib/directEngineMcp.ts): listed and callable only behind the engine gate, the same route and price as the button, and
  * the caller never writes the approval. A token with no monthly ceiling only prepares; a token with one an admin set starts lip_sync at its quote, whatever
- * the workspace's old spending setting says (owner, 20 Oct 2026: "A capped token spends inside its ceiling whatever the workspace's Ask setting (ceiling =
- * standing approval). lip_sync follows the same rule once Auto goes."). Mocked: the "call" is a recorder standing in for the workspace's own API. Local temporary databases only.
+ * the workspace's old spending setting says (owner, 20 Oct 2026, 16:50 IST: "C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask
+ * setting — the ceiling is the standing approval. lip_sync follows the same rule once Auto goes, so the two tools behave alike."). Mocked: the "call" is a recorder standing in for the workspace's own API. Local temporary databases only.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-direct-mcp-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;

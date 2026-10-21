@@ -14,8 +14,8 @@ import { RECRAFT_DIRECT_TOOLS } from "./recraftMcp";
  * - **Only a person approves spending** (rule 14: "an approval written by agent:* or an MCP caller is refused"). A `maxCredits` in the arguments is refused: the price is
  *   never the caller's to approve. There is no Auto (owner, 20 Oct 2026: "Auto goes: every job is approved on its quote"): the old stored spend-without-asking
  *   setting is no longer read, and whatever it holds ("auto" included) it starts nothing.
- * - **A capped token is the standing approval** (owner, 20 Oct 2026: "A capped token spends inside its ceiling whatever the workspace's Ask setting (ceiling = standing
- *   approval). lip_sync follows the same rule once Auto goes."). A tool declared `startsInsideCeiling` (lip_sync), called with a token that has a monthly ceiling an
+ * - **A capped token is the standing approval** (owner, 20 Oct 2026, 16:50 IST: "C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask
+ *   setting — the ceiling is the standing approval. lip_sync follows the same rule once Auto goes, so the two tools behave alike."). A tool declared `startsInsideCeiling` (lip_sync), called with a token that has a monthly ceiling an
  *   admin set (`maySpend`, which POST /api/mcp answers from the bearer the tools act with, as for render_shot), is sent at the price the route just quoted as its `maxCredits`,
  *   so it can never bill more than it reports; the token's ceiling itself is held at reservation (lib/generationRequests.ts). Any other call (a token with no ceiling,
  *   or a tool not so declared: Recraft's) is priced and prepared for a person, and nothing is started or spent. A token that may not spend is refused by the route

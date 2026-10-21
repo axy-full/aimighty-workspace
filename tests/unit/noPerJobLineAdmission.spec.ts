@@ -194,11 +194,14 @@ const UNDER = { model: "grok-imagine-video", prompt: "A tree in rain", projectId
 /* The press carries the ceiling its price was approved at (Cinema Studio's is approximate, so it must). */
 const press = (service: ReturnType<typeof services>, body: Record<string, unknown>, key: string, maxCredits = 5000) => route("generation", service).POST(request("generation", { ...body, maxCredits }, key));
 const counts = async () => [(await rows()).length, (await meters()).length];
-/* A token's press: the quote route asked first as the same caller, and its fingerprint sent with the press (lib/tokenSpend.ts asks it of a token). */
+/* A token's press: the quote route asked first as the same caller, and the press sent with that quote's own figure as its approval (`maxCredits`: the
+   hold's ceiling where the quote gives one, else its estimate) and its fingerprint, as lib/tokenSpend.ts asks of a token. */
 const pressQuoted = async (service: ReturnType<typeof services>, body: Record<string, unknown>, key: string) => {
   const quoted = await (await quoteRoute(service).POST(quoteRequest(body))).json();
   expect(quoted.fingerprint, JSON.stringify(quoted)).toMatch(/^[a-f0-9]{64}$/);
-  return press(service, { ...body, quoteFingerprint: quoted.fingerprint }, key);
+  const approved = Number(quoted.ceilingCredits ?? quoted.estimatedCredits);
+  expect(Number.isInteger(approved) && approved >= 0, JSON.stringify(quoted)).toBe(true);
+  return press(service, { ...body, quoteFingerprint: quoted.fingerprint }, key, approved);
 };
 
 test("through admission and the quote route: a member's job over 200 cr (at its estimate, and at its hold) is quoted and admitted like any other; no 403, no needsAdmin", async () =>
