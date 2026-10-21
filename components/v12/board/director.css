@@ -52,6 +52,6 @@
 }
 @media (pointer: coarse) {
   .v12 .v12-dircol-row, .v12 .v12-dirpop-choice, .v12 .v12-dirbar-go, .v12 .v12-dirbar-cancel { min-height: var(--gx-touch); }
-  /* Try again, Retry and Top up in the bar's line: 44 px targets on a touch screen. */
+  /* Try again, Retry, Render again, Top up and Start over in the bar's line: 44 px targets on a touch screen. */
   .v12 .v12-dirbar-link { display: inline-flex; align-items: center; justify-content: center; min-height: var(--gx-touch); min-width: var(--gx-touch); padding: 0 var(--gx-sp-6); }
 }

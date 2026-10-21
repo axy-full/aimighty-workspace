@@ -4,7 +4,7 @@ import { spendAttrsOf } from "@/lib/spend";
 import { Price } from "../ui/Price";
 import { knownQuote } from "@/lib/v12/quote";
 import { useEffect } from "react";
-import { NO_ENGINE_NOTE, PRESS_LIMIT_NOTE, PRESS_MAX_SHOTS, barButton, failureNote, nextStepLabel, type Scope } from "./director-model";
+import { NOTHING_LEFT_NOTE, NO_ENGINE_NOTE, PRESS_LIMIT_NOTE, PRESS_MAX_SHOTS, barButton, failureNote, nextStepLabel, type Scope } from "./director-model";
 import { useDirectorRender, type DirectorRender, type DirectorShot } from "./use-director-render";
 import "./director.css";
 
@@ -73,7 +73,7 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, engine = null,
   const failed = state === "done" ? failureNote(failures) : null;
   /* What the takes a Render again is for cost, the press's own words (shots that did not start) and the takes that failed, side by side. */
   const said = [carried, problem, failed].filter(Boolean).join(" ") || null;
-  const note = said ?? (state === "idle" && pricing === "refused" ? render.refusal : state === "idle" && pricing === "error" ? "A price could not be read. Nothing was sent." : null) ?? readOnly
+  const note = said ?? (state === "idle" && render.nothingToStart ? NOTHING_LEFT_NOTE : null) ?? (state === "idle" && pricing === "refused" ? render.refusal : state === "idle" && pricing === "error" ? "A price could not be read. Nothing was sent." : null) ?? readOnly
     ?? (!engine ? NO_ENGINE_NOTE : over ? PRESS_LIMIT_NOTE : null);
   /* Retry asks the press again under the approval it was pressed with, priced at what it can still start (director-model.ts retryPrice). */
   const again = retry ? render.retryPrice : null;
@@ -90,6 +90,7 @@ export function DirectorBar({ scope, scopeKey, projectKey, shots, engine = null,
         {retry && again && !retryInBar ? <> <button type="button" className="v12-dirbar-link" onClick={retry} data-testid="v12-director-retry" {...spendAttrsOf(again)}>Retry · <Price quote={knownQuote(again)} /></button></> : null}
         {anew ? <> <button type="button" className="v12-dirbar-link" onClick={anew.run} data-testid="v12-director-render-again" {...spendAttrsOf(anew.price)}>Render again · <Price quote={knownQuote(anew.price)} /></button></> : null}
         {anewRefused ? <> <span data-testid="v12-director-render-again-refused">{anewRefused}</span></> : null}
+        {state === "idle" && render.startOver ? <> <button type="button" className="v12-dirbar-link" onClick={render.startOver} data-testid="v12-director-start-over">Start over</button></> : null}
         {short && onTopUp ? <> <button type="button" className="v12-dirbar-link" onClick={onTopUp} data-testid="v12-director-top-up">Top up</button></> : null}
       </p> : null}
       <div className="v12-dirbar-row">

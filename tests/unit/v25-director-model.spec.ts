@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   CLAIMS_KEPT, NO_ENGINE_NOTE, PRESS_LIMIT_NOTE, PRESS_MAX_SHOTS, SHOTS_SETTINGS, barButton, claimLive, claimNow, failureCharged, failureNote, modelWords, cancellable, cardChips, failureWords,
-  letGo, nextStepLabel, pressPrice, readClaim, readClaims, retryPrice, requestFields, scopeOf, shotSettings, validToStart, valueWords, writeClaim, type PressClaim,
+  letGo, nextClaim, nextStepLabel, pressPrice, readClaim, readClaims, retryPrice, requestFields, scopeOf, shotSettings, validToStart, valueWords, writeClaim, type PressClaim,
 } from "../../components/v12/board/director-model";
 import { CREDITS_MODE, FREE, NO_AT_COST_FIGURE, priceWords } from "../../lib/shell/price-words";
 import { stagesOf } from "../../lib/v12/board/stages";
@@ -197,4 +197,48 @@ test("a held approval lasts as a plan's does (7 days): past it the approval goes
   expect(kept.map((c) => c.key)).not.toContain("k1");
   letGo(storage, "slot", `n${CLAIMS_KEPT + 1}`, t0 + PLAN_APPROVAL_MS);
   expect(readClaims(storage, "slot", t0 + PLAN_APPROVAL_MS).map((c) => c.key)).not.toContain(`n${CLAIMS_KEPT + 1}`);
+});
+
+test("past CLAIMS_KEPT, a claim the server answered or one with no approval goes before a press never answered (a lost reply)", () => {
+  const store = new Map<string, string>();
+  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
+  /* Synthetic approvals, built here. */
+  const quote = { estimatedCredits: 43, unit: "cr", price: 43, members: 1, fingerprint: "b".repeat(64) };
+  const t0 = 1_800_000_000_000;
+  const lost = (i: number): PressClaim => ({ key: `lost${i}`, shots: `s${i}`, quote, answered: false, at: t0 });
+  /* Seven lost replies and, in the middle, one press the server answered. */
+  for (let i = 0; i < CLAIMS_KEPT; i++) writeClaim(storage, "slot", i === 3 ? { ...lost(i), key: "answered", answered: true } : lost(i), t0);
+  writeClaim(storage, "slot", lost(100), t0);
+  let keys = readClaims(storage, "slot", t0).map((c) => c.key);
+  expect(keys).toHaveLength(CLAIMS_KEPT);
+  expect(keys, "the answered press goes first").not.toContain("answered");
+  expect(keys).toContain("lost0");
+  /* One with no approval (refused as out of date) goes before a lost reply too. */
+  writeClaim(storage, "slot", { ...lost(5), quote: null }, t0);
+  writeClaim(storage, "slot", lost(101), t0);
+  keys = readClaims(storage, "slot", t0).map((c) => c.key);
+  expect(keys).not.toContain("lost5");
+  expect(keys).toContain("lost0");
+  /* Only lost replies left: the oldest goes. */
+  writeClaim(storage, "slot", lost(102), t0);
+  keys = readClaims(storage, "slot", t0).map((c) => c.key);
+  expect(keys).toHaveLength(CLAIMS_KEPT);
+  expect(keys).not.toContain("lost0");
+  expect(keys.at(-1)).toBe("lost102");
+});
+
+test("the claim an ask writes: asked again under its approval it keeps the key and the approval's time; a new press, an approval gone stale or a renewal is approved now", () => {
+  const quote = { estimatedCredits: 172, unit: "cr", price: 172, members: 4, fingerprint: "c".repeat(64) };
+  const next = { ...quote, estimatedCredits: 192, fingerprint: "d".repeat(64) };
+  const t0 = 1_800_000_000_000, t1 = t0 + 3 * 86_400_000;
+  const held: PressClaim = { key: "k", shots: "s", quote, answered: true, at: t0 };
+  const newKey = () => "fresh";
+  /* Re-asked under the approval it holds: same key, same time, unanswered until its own reply. */
+  expect(nextClaim({ inHand: held, shots: "s", approval: quote, renewed: false, now: t1, newKey })).toEqual({ key: "k", shots: "s", quote, answered: false, at: t0 });
+  /* Retry that approves the press's next total: same key, approved now. */
+  expect(nextClaim({ inHand: held, shots: "s", approval: next, renewed: true, now: t1, newKey })).toEqual({ key: "k", shots: "s", quote: next, answered: false, at: t1 });
+  /* An approval that went stale or past its time (no approval in hand): same key, approved now. */
+  expect(nextClaim({ inHand: { ...held, quote: null }, shots: "s", approval: next, renewed: false, now: t1, newKey })).toMatchObject({ key: "k", at: t1, quote: next });
+  /* A new press (Render, Render again): a new key, approved now. */
+  expect(nextClaim({ inHand: null, shots: "s", approval: quote, renewed: false, now: t1, newKey })).toMatchObject({ key: "fresh", at: t1 });
 });

@@ -83,6 +83,9 @@ export function scopeOf(selected: readonly string[], shots: readonly { id: strin
 export const PRESS_MAX_SHOTS = PLAN_LIMITS.next;
 export const PRESS_LIMIT_NOTE = `Up to ${PRESS_MAX_SHOTS} shots at a time. Pick some.`;
 
+/** A press asked again under its key whose shots have all started (the batch route's `toStart` is empty): nothing to spend, and Render stays off. */
+export const NOTHING_LEFT_NOTE = "Nothing left to start: every shot of this press has started.";
+
 export type BarState = "idle" | "sending" | "making" | "done";
 
 /** The bar's one filled button. Idle: what pressing it makes; sending and making: "Making…"; done: the way on. */
@@ -214,9 +217,27 @@ function storeClaims(storage: Storage, slot: string, claims: PressClaim[]) {
   storage.setItem(slot, text);
   if (storage.getItem(slot) !== text) throw new Error("Enable local storage to safely recover this press.");
 }
-/** Written before anything is sent, in place of the claim for the same shots (the newest last; the oldest past CLAIMS_KEPT go). Throws when it cannot be kept. */
+/**
+ * Written before anything is sent, in place of the claim for the same shots, the newest last. Past CLAIMS_KEPT, the claims that go first are those the server
+ * has answered or that hold no approval, oldest first; a press never answered (a lost reply) goes only when every other kept claim is one too, since only it
+ * knows what its shots started. Throws when it cannot be kept.
+ */
 export function writeClaim(storage: Storage, slot: string, claim: PressClaim, now: number) {
-  storeClaims(storage, slot, [...readClaims(storage, slot, now).filter((c) => c.shots !== claim.shots && c.key !== claim.key), claim].slice(-CLAIMS_KEPT));
+  const kept = readClaims(storage, slot, now).filter((c) => c.shots !== claim.shots && c.key !== claim.key);
+  while (kept.length >= CLAIMS_KEPT) {
+    const spare = kept.findIndex((c) => c.answered || !c.quote);
+    kept.splice(spare >= 0 ? spare : 0, 1);
+  }
+  storeClaims(storage, slot, [...kept, claim]);
+}
+
+/**
+ * The claim an ask writes before it is sent. Asked again under the approval it holds, it keeps that approval's key and time; a press that is new, whose approval
+ * went out of date or past its time, or a Retry that approves the press's next total (`renewed`), is approved now. Every ask is unanswered until its own reply.
+ */
+export function nextClaim(input: { inHand: PressClaim | null; shots: string; approval: BatchQuote; renewed: boolean; now: number; newKey: () => string }): PressClaim {
+  const { inHand, shots, approval, renewed, now } = input;
+  return { key: inHand?.key ?? input.newKey(), shots, quote: approval, answered: false, at: !renewed && inHand?.quote ? inHand.at : now };
 }
 export function letGo(storage: Storage, slot: string, key: string, now: number) {
   try {

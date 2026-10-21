@@ -676,15 +676,19 @@ test("Retry when the approval no longer covers the shots left (the total moved a
   await expect.poll(() => net.started.length).toBe(4);
 });
 
-test("a press refused as out of date (409) shows the press's next total from the refusal, and is then quoted and sent under its own key", async ({ page }) => {
-  const net = await routes(page, { keyed: true, lose: 1 });
+test("a press refused as out of date (409), on the keyed route: the button shows what is left to start, and the person's press approves the press's next total under its own key", async ({ page }) => {
+  /* The first press starts three shots, refuses the fourth, and its reply is lost. */
+  const net = await routes(page, { keyed: true, lose: 1, answer: (n) => (n === 1 ? "partial" : null) });
   await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
   await go(page).click();
   await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  expect(net.started).toHaveLength(3);
   net.state.bump = 5;
   await go(page).click();
   await expect(page.getByTestId("v12-director-note")).toContainText("The shots or their prices changed.", { timeout: 30_000 });
-  await expect(go(page)).toHaveText(/^Render 4 shots · 192 cr$/, { timeout: 30_000 });
+  /* The new spend is the one shot left at today's price, not the press's whole total (192 cr), which counts the three that started. */
+  await expect(go(page)).toHaveText(/^Render 4 shots · 48 cr$/, { timeout: 30_000 });
+  await expect(go(page)).toHaveAttribute("data-spend-price", "48 cr");
   const before = net.quoteKeys.length;
   await go(page).click();
   await expect.poll(() => net.sent.length).toBe(3);
@@ -692,8 +696,60 @@ test("a press refused as out of date (409) shows the press's next total from the
   expect(net.quoteKeys.slice(before).length).toBeGreaterThan(0);
   expect(new Set(net.quoteKeys.slice(before))).toEqual(new Set([net.sent[0].key]));
   expect(net.sent[2].key).toBe(net.sent[0].key);
+  /* The approval the route requires: the press's next total. */
   expect(net.sent[2].body.maxCredits).toBe(192);
-  expect(net.started, "nothing started twice").toHaveLength(4);
+  await expect.poll(() => net.started.length).toBe(4);
+});
+
+test("on the keyed route, a press whose shots have all started has nothing left to start: no priced Render, nothing sent; Start over makes the next press a new one", async ({ page }) => {
+  const net = await routes(page, { keyed: true, lose: 1 });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  expect(net.started).toHaveLength(4);
+  await ageClaims(page, 7 * DAY);
+  await page.reload();
+  await pickEngine(page);
+  await expect(page.getByTestId("v12-director-note")).toContainText("Nothing left to start: every shot of this press has started.", { timeout: 30_000 });
+  await expect(go(page)).toHaveText("Render 4 shots");
+  await expect(go(page)).toBeDisabled();
+  await expect(go(page)).toHaveAttribute("data-spend", "unpriced");
+  await go(page).click({ force: true });
+  await page.waitForTimeout(800);
+  expect(net.sent).toHaveLength(1);
+  /* Start over: the press is set aside, and the next press is a new one, quoted without the old key and sent under a new one. */
+  await page.getByTestId("v12-director-start-over").click();
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.sent[1].key).not.toBe(net.sent[0].key);
+  await expect.poll(() => net.started.length).toBe(8);
+});
+
+test("Render again of a one-shot press is a new press every time: a new key, its own quote first, one take; and again for the same shot", async ({ page }) => {
+  const net = await routes(page, { keyed: true });
+  await card(page, "d3").click();
+  await expect(go(page)).toHaveText(/^Render Shot 3 · 43 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.started.length).toBe(1);
+  net.state.takes[net.started[0]] = { id: net.started[0], status: "failed", failure: failure(43) };
+  const anew = page.getByTestId("v12-director-render-again");
+  await expect(anew).toHaveText(/^Render again · 43 cr$/, { timeout: 30_000 });
+  for (const round of [1, 2]) {
+    const quoted = net.quotes.length;
+    await anew.click();
+    await expect.poll(() => net.sent.length).toBe(round + 1);
+    const keys = net.sent.map((x) => x.key);
+    expect(new Set(keys).size, "a new key every time").toBe(keys.length);
+    expect(net.quotes.length, "its own quote first").toBeGreaterThan(quoted);
+    expect(net.quoteKeys.slice(quoted), "quoted as a new press").toEqual(net.quoteKeys.slice(quoted).map(() => undefined));
+    expect(net.sent[round].body.maxCredits).toBe(43);
+    expect(net.sent[round].body.fingerprint).toBe(net.fingerprints.at(-1));
+    await expect.poll(() => net.started.length).toBe(round + 1);
+    /* This take fails, charged, too: Render again is offered for it. */
+    net.state.takes[net.started[round]] = { id: net.started[round], status: "failed", failure: failure(43) };
+    await expect(anew).toHaveText(/^Render again · 43 cr$/, { timeout: 30_000 });
+  }
 });
 
 test("settled: Retry is priced at the free failure alone; the charged one is offered Render again, a new press of that shot with a new quote and key, and its line keeps what it cost", async ({ page }, info) => {
@@ -775,29 +831,28 @@ const ageClaims = (page: Page, ms: number) => page.evaluate((by) => {
 }, ms);
 const DAY = 24 * 60 * 60 * 1000;
 
-test("a held approval expires as a plan's does (the keyed route): after 7 days the lost reply's key stays, the next press asks at today's price under it, and a shot that started is not started again", async ({ page }) => {
-  const net = await routes(page, { lose: 1, keyed: true });
+test("a held approval expires as a plan's does (the keyed route): after 7 days the key stays, the button shows what is left to start at today's price, and the shots that started are not started again", async ({ page }) => {
+  /* The first press starts three shots, refuses the fourth, and its reply is lost. */
+  const net = await routes(page, { keyed: true, lose: 1, answer: (n) => (n === 1 ? "partial" : null) });
   await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
   await go(page).click();
   await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
-  expect(net.started, "the lost reply's press started its shots").toHaveLength(4);
+  expect(net.started).toHaveLength(3);
   await ageClaims(page, 7 * DAY);
   net.state.bump = 5;
   await page.reload();
   await pickEngine(page);
-  /* Today's price, not the approval that ran out. */
-  await expect(go(page)).toHaveText(/^Render 4 shots · 192 cr$/, { timeout: 30_000 });
+  /* Today's price of the one shot left, not the approval that ran out. */
+  await expect(go(page)).toHaveText(/^Render 4 shots · 48 cr$/, { timeout: 30_000 });
   const quoted = net.quotes.length;
   await go(page).click();
   await expect.poll(() => net.sent.length).toBe(2);
   expect(net.quotes.length, "quoted afresh before it was sent").toBeGreaterThan(quoted);
   expect(net.quoteKeys.slice(quoted), "quoted under the press's own key").toContain(net.sent[0].key);
   expect(net.sent[1].key, "the same press").toBe(net.sent[0].key);
-  expect(net.sent[1].body.maxCredits).toBe(192);
-  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  expect(net.sent[1].body.maxCredits, "the press's next total, as the route requires").toBe(192);
+  await expect.poll(() => net.started.length).toBe(4);
   expect(net.started, "nothing started twice").toHaveLength(4);
-  /* Every shot reported as started: the press is answered whole, and the browser lets its key go. */
-  await expect.poll(() => claimOf(page)).toBeNull();
 });
 
 test("a held approval expires as a plan's does (today's route): after 7 days the lost reply's key stays, the next press asks at today's price under it, and a shot that started is not started again", async ({ page }) => {
