@@ -82,12 +82,18 @@ async function routes(page: Page, opts: Opts = {}) {
     /* The keyed route's view of a press: the shots left (never started, or failed at no charge) at today's price, and the approval it holds. */
     const isFree = (id: string | null) => !opts.noRestart && Boolean(id) && (state.takes[id!]?.failure as { charge?: { credits: number } } | undefined)?.charge?.credits === 0;
     const keyedOf = (k: string | undefined) => {
-      if (!opts.keyed || !k || !presses.has(k)) return {};
-      const ids = presses.get(k)!;
+      if (!opts.keyed || !k) return {};
+      /* A key the route has no press under: every shot is left to start, and there is no approval yet. */
+      const ids = presses.get(k) ?? members.map(() => null);
       const left = members.flatMap((m, i) => (!ids[i] || isFree(ids[i]) ? [priceOf(m) + state.bump] : []));
       const credits = left.reduce((n, c) => n + c, 0);
       const max = approved.get(k);
       return { toStart: { members: left.length, estimatedCredits: credits, price: credits, unit: "cr" }, approval: max == null ? null : { maxCredits: max, expiresAt: Date.now() + 6 * 86_400_000, expired: false, covers: !left.length || total <= max }, pressed: ids.map((id, index) => (id ? { index, id, status: "queued" } : { index })) };
+    };
+    /* The route shows a press that already started something beside a refusal (`members`, as lib/batchPress.ts admitBatch's standing()). */
+    const standing = (k: string | undefined) => {
+      const ids = k ? presses.get(k) : undefined;
+      return opts.keyed && ids?.some(Boolean) ? { members: ids.map((id, index) => (id ? { index, id, status: "queued" } : { index })) } : {};
     };
     if (body.quoteOnly === true) {
       quotes.push(body);
@@ -101,7 +107,7 @@ async function routes(page: Page, opts: Opts = {}) {
     /* The route's own checks, as lib/batchPress.ts makes them: the approval is the quote's fingerprint and covers the total. */
     if (body.fingerprint !== fingerprint) {
       if (opts.keyed) fingerprints.push(fingerprint);
-      return route.fulfill({ status: 409, json: { error: "The shots or their prices changed. Look at the total again before approving.", quoteChanged: true, ...(opts.keyed ? { quote: { estimatedCredits: total, price: total, unit: "cr", members: members.length, fingerprint, ...keyedOf(key) } } : {}) } });
+      return route.fulfill({ status: 409, json: { error: "The shots or their prices changed. Look at the total again before approving.", quoteChanged: true, ...(opts.keyed ? { quote: { estimatedCredits: total, price: total, unit: "cr", members: members.length, batchId: `bt_${fingerprint.slice(0, 24)}`, fingerprint, ...keyedOf(key) }, ...standing(key) } : {}) } });
     }
     if (body.maxCredits !== total) return route.fulfill({ status: 409, json: { error: "Approve the price first: the total is above the approved credit amount." } });
     state.pressed = true;
