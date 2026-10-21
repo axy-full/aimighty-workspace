@@ -1690,7 +1690,7 @@ The owner's words, mirrored:
 
 **R8 Two modes, further apart; no third mode.** Agent is the default front door ("What are we making?" — the interview). Director sits behind one line, "I speak film", and opens with Import or a blank board. Agent: plain words; film words underlined with a one-line definition on hover (tap on phone); works in films; one all-in quote per command; review is Keep · Change something · Options; phone-first. Director: film words, engines, settings, the rate card; works in shots; the take grid; desktop-first. One bridge, one direction: a shot opened in Director mode opens with no engine and no prompt. Nothing in Agent ever shows the how.
 
-**R9 "?" on every step.** A card of three lines (what this step is · what you do · what comes next) and a 15-second loop. Opens itself once on a stranger's first visit to a step, then waits behind "?". Last line "Show me on my film" runs Atomik on the person's own project, priced as a planning turn. Cards are static text shipped with the app (D5); loops load lazily from R2; nothing generated live. On the phone, a sheet.
+**R9 "?" on every step.** A card of three lines (what this step is · what you do · what comes next) and a 15-second loop. Opens itself once on a stranger's first visit to a step, then waits behind "?". Last line "Show me on my film" runs Atomik on the person's own project, priced as a planning turn. Cards are static text shipped with the app (D5); loops load lazily from storage (Cloudflare R2); nothing generated live. On the phone, a sheet.
 
 **R10 Director mode, comprehensive:** angle, shot size, move, light, camera, lens, depth of field, frame rate, grain — pickers with pictures, Auto default, folded in the Inspector (rule 13). They write prompt lines through the rule library and set an engine parameter only where one exists. This is the camera bank of ground rule 3: platform list, workspace additions. The panel's "?" says a camera or lens name nudges the look; no engine simulates the glass. None of it appears in Agent mode.
 
@@ -1700,7 +1700,7 @@ The owner's words, mirrored:
 
 **R13 Elements for people who own nothing.** A stock cast and stock places in the platform layer, pickable in one tap; a voice bound to each cast member; a real face needs consent on file; a character sheet from 1–5 photos with one hint: "even lighting and a plain background works best."
 
-**R14 Money copy (owner's call, later):** plan cards in films ("about two 30-second ads a month"); price on the button; Top up on the button when short; a 480p draft row on the rate card.
+**R14 Money copy [money] (owner's call, later):** plan cards in films ("about two 30-second ads a month"); price on the button; Top up on the button when short; a 480p draft row on the rate card.
 
 **R15 Not taken from Artlist:** engines in the user's face, Unlimited tiers, a second canvas, hover-only prices, an agent that names the engine, a prompt asked of the person.
 
@@ -1727,3 +1727,19 @@ The owner's words, mirrored:
 **S1** The per-step catalogue (Script → Deliver, plus the other rails' extra stages) is the example bank for D1, not a fixed list: each stage opens with a proposal, a judging prompt, at most three bare questions only where no default exists and money is attached, and what each answer sets and carries forward.
 
 **S2 Agent mode sequence:** Brief (interview, genre) → read-back "How I'll make it" → Script → Treatment → Look → Elements → Storyboard (shot by shot; play as a cut) → Shots (shot by shot; preflight; one quote) → Sound → Edit → Deliver. A stranger is asked once; nothing is asked twice.
+
+## Owner, 21 Oct 2026: answers on the SOW amendment's conflicts, and #860
+
+- 21 Oct 2026: **#860** yes at 89825b7b, for that head only, and only once the CI rerun is green. A new commit needs a new yes. If the rerun fails again, #860 comes off the queue and the lead says what failed.
+- 21 Oct 2026: **R9** reads "loops load lazily from storage (Cloudflare R2)". #861 was already merged, so this went into the follow-up docs PR #862.
+- 21 Oct 2026: **R11 vs rule 11.** Rule 11 stays: the same tool costs the same through every path. The agent factor is a mode price, keyed on who chose the engine.
+  - A job Atomik routed carries `AGENT_PRICE_FACTOR` whatever path started it; a job whose caller chose the engine never does.
+  - That sentence goes in rule 11 and § Pricing.
+  - The public rate card stays the Director rate card, and Agent prices are the all-in quote.
+  - Platform-admin margin reporting includes the factor; nothing customer-facing shows it.
+- 21 Oct 2026: **R8/R15 vs rule 13.** In Agent mode, the Auto line shows the what and the price ("Final · 5 s · 51 cr · Change"). Rule 13's engine-named example becomes the Director example; the label changes, not the rule.
+- 21 Oct 2026: **R5 vs rule 14.** The self-check is free to the person and absorbed as a cost row in admin reporting (18 Oct: "Atomik's own check of its work is free and is never a line"). The planning-turn sentence covers Atomik's thinking for the person.
+- 21 Oct 2026: **R14** is [money]. The 480p draft row is a rate-card change and gets its own money PR when the owner calls it.
+- 21 Oct 2026: **R7 and tracing.** Ids and timings only, never words. The interview as spoken lives in the film record in Turso and nowhere else; tracing logs row ids.
+- 21 Oct 2026: **R6.** One approval; Keep releases the next item, with no second tap.
+- 21 Oct 2026: **R8.** "No third mode" means Agent and Director, and the Ask/Auto spend setting is a separate thing. The owner also wrote "(Auto's ceiling stays until I decide whether Auto stays)". That conflicts with his 20 Oct "Q2 Auto goes" and his 21 Oct 12:30 "Auto gone everywhere", so the lead has asked him which stands. The guardrail-4 PR, which removes Auto, is held until he answers.
