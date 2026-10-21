@@ -19,7 +19,7 @@ const actions = [
   "session.created", "session.revoked", "session.workspace_changed",
   "account.password_reset", "account.mfa_enabled", "account.mfa_replaced", "account.mfa_disabled", "account.recovery_codes_rotated", "account.recovery_code_used", "account.sessions_revoked", "member.updated", "member.removed",
   "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed", "workspace.mfa_required", "workspace.mfa_optional", "workspace.restored",
-  "api_token.created", "api_token.revoked", "review_link.created", "review_link.revoked",
+  "api_token.created", "api_token.revoked", "api_token.ceiling_set", "review_link.created", "review_link.revoked",
   "identity_consent.recorded", "identity_consent.withdrawn",
   "account.age_confirmed",
 ] as const;
@@ -32,6 +32,12 @@ type Details = {
   mode?: "platform" | "own";
   scope?: "read" | "render" | "prepare";
   expiresAt?: number;
+  /** A token's monthly ceiling as an admin changed it (api_token.ceiling_set): whole credits, or whole cents on a workspace that pays its
+   *  engines itself; null is none. `legacyCleared`: a dollar ceiling left from before credits was replaced. Never a secret. */
+  ceilingUnit?: "cr" | "usd_cents";
+  ceilingBefore?: number | null;
+  ceilingAfter?: number | null;
+  legacyCleared?: boolean;
 };
 export type SecurityAuditInput = {
   workspaceId: string | null;
@@ -58,7 +64,9 @@ export function securityAuditStatement(input: SecurityAuditInput, changedOnly = 
     const valid = key === "role" ? ["admin", "member"].includes(String(value))
       : key === "mode" ? ["platform", "own"].includes(String(value))
       : key === "scope" ? ["read", "render", "prepare"].includes(String(value))
-      : key === "disabled" || key === "unlocked" ? typeof value === "boolean"
+      : key === "disabled" || key === "unlocked" || key === "legacyCleared" ? typeof value === "boolean"
+      : key === "ceilingUnit" ? ["cr", "usd_cents"].includes(String(value))
+      : key === "ceilingBefore" || key === "ceilingAfter" ? value === null || (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
       : key === "expiresAt" ? typeof value === "number" && Number.isSafeInteger(value) && value >= 0
       : false;
     if (!valid) throw new Error("Invalid security history detail");

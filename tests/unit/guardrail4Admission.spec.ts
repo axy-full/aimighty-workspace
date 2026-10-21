@@ -18,6 +18,9 @@ process.env.KEYRING_SECRET = "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 const person = (id: string, role: "admin" | "member"): AdmissionActor => ({ user: { id, email: `${id}@example.invalid`, name: id, role, owner: role === "admin", disabled: false, createdAt: 0, lastSeen: null } });
 const admin = person("owner", "admin"), member = person("u_member", "member");
+/* A token's press carries its approved quote (owner, 20 Oct 2026; lib/tokenSpend.ts): a ceiling, maxCredits and a well-formed fingerprint, so it reaches the line. */
+const ROOMY = { capUsd: 1_000_000, capCredits: 1_000_000 };
+const FINGERPRINT = { quoteFingerprint: "f".repeat(64) };
 let actor: AdmissionActor = admin;
 const nodeRequire = createRequire(path.resolve("package.json"));
 let dispatched: { genId: string; kind: string }[] = [];
@@ -214,8 +217,10 @@ test("through admission: an admin's own tap clears it (the quote answers, the pr
     const viaToken = await quoteRoute(service).POST(quoteRequest(OVER));
     expect(viaToken.status).toBe(403);
     expect(await viaToken.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
-    expect((await press(service, OVER, "g4-token")).status).toBe(403);
-  }, "g4-line", { ...admin, token: { id: "tok_g4", name: "agent", scope: "render", capUsd: null } } as AdmissionActor);
+    const viaPress = await press(service, { ...OVER, ...FINGERPRINT }, "g4-token");
+    expect(viaPress.status).toBe(403);
+    expect(await viaPress.json()).toMatchObject({ needsAdmin: true });
+  }, "g4-line", { ...admin, token: { id: "tok_g4", name: "agent", scope: "render", ...ROOMY } } as AdmissionActor);
 });
 
 /* The house pays no credits and is judged at cost: this clip's hold (3 × its ~$14 estimate, counted in credits at no margin) is over the 200 cr line, so a member is told an admin must start it, in words with no figure. */
@@ -245,8 +250,10 @@ test("the house is judged at cost: a member over the line is told an admin must 
       const viaToken = await quoteRoute(service).POST(quoteRequest(OVER));
       expect(viaToken.status).toBe(403);
       expect(await viaToken.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
-      expect((await press(service, OVER, "g4-house-token")).status).toBe(403);
-    }, "ws_legacy", { ...admin, token: { id: "tok_g4h", name: "agent", scope: "render", capUsd: null } } as AdmissionActor);
+      const viaPress = await press(service, { ...OVER, ...FINGERPRINT }, "g4-house-token");
+      expect(viaPress.status).toBe(403);
+      expect(await viaPress.json()).toMatchObject({ needsAdmin: true });
+    }, "ws_legacy", { ...admin, token: { id: "tok_g4h", name: "agent", scope: "render", ...ROOMY } } as AdmissionActor);
   });
 });
 
@@ -311,7 +318,9 @@ test("one press is one job: an admin's tap clears a press of 4 x 57 cr, every ta
     const q = await quoteRoute(service).POST(quoteRequest(take(id, 1, 4)));
     expect(q.status).toBe(403);
     expect(await q.json()).toMatchObject({ needsAdmin: true, error: expect.stringMatching(/never start it\./) });
-    expect((await press(service, take(id, 1, 4), `g4-token-batch-${id}`)).status).toBe(403);
+    const viaPress = await press(service, { ...take(id, 1, 4), ...FINGERPRINT }, `g4-token-batch-${id}`);
+    expect(viaPress.status).toBe(403);
+    expect(await viaPress.json()).toMatchObject({ needsAdmin: true });
     expect([(await rows()).length, (await meters()).length]).toEqual(before);
-  }, "g4-batch", { ...admin, token: { id: "tok_g4b", name: "agent", scope: "render", capUsd: null } } as AdmissionActor);
+  }, "g4-batch", { ...admin, token: { id: "tok_g4b", name: "agent", scope: "render", ...ROOMY } } as AdmissionActor);
 });

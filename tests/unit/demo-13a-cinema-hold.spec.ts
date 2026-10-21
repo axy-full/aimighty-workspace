@@ -381,7 +381,8 @@ test("a sent take its provider failed with no cost: charged nothing, its hold ba
 
 test("only a person approves the hold: an API token (an MCP client) or an Atomik run's own id may price it, never approve it", async () => {
   const { HOLD_NEEDS_A_PERSON } = await import("../../lib/cinemaHold");
-  const token: TenantToken = { id: "tok_mcp", name: "MCP client", scope: "render", capUsd: null, capCredits: null };
+  /* With a monthly ceiling an admin set (owner, 20 Oct 2026): a token with none is refused before the hold is ever asked about. */
+  const token: TenantToken = { id: "tok_mcp", name: "MCP client", scope: "render", capUsd: null, capCredits: 100_000 };
   const agent: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1", role: "member", owner: false } };
   for (const [name, as] of [["hold_token", { ...OWNER, token }], ["hold_agent", agent]] as const)
     await fixture(name, 100_000, async (f) => {
@@ -400,7 +401,7 @@ test("only a person approves the hold: an API token (an MCP client) or an Atomik
     if (init.body) sent.push(init.body as Record<string, unknown>);
     return pathname.endsWith("/quote") ? { estimatedCredits: 5, price: 5, unit: "cr", fingerprint: "f".repeat(64) } : { id: "gen_mcp" };
   };
-  await runTool("render_shot", { prompt: "A harbour at dawn", model: "Cinema Studio 4.0", resolution: "720p" }, call as never, "https://example.invalid", { credits: true });
+  await runTool("render_shot", { prompt: "A harbour at dawn", model: "Cinema Studio 4.0", resolution: "720p" }, call as never, "https://example.invalid", { credits: true, spends: true });
   expect(sent.length).toBeGreaterThan(0);
   for (const body of sent) expect(body.model).not.toBe(CINEMA);
 });

@@ -7,7 +7,8 @@ import { currentTenant } from "./tenant";
 import { creditState } from "./credits";
 import { billCredits, heldPriceNow, marginKeyOf } from "./creditTerms";
 import { holdBandOf } from "./cinemaHold";
-import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
+import { reserveGenerationSpend, SpendReservationError, TokenNoCeilingError } from "./generationRequests";
+import { HELD_TAKE_NO_CEILING } from "./tokenSpend";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
@@ -341,6 +342,8 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
       }
       console.error(`release ${r.id}: not metered —`, (e as Error).message);
       const status = e instanceof SpendReservationError ? e.status : 503;
+      /* Made by a token with no ceiling (lib/tokenSpend.ts): said to the person at Release, and on the take, in words that name who acts. It stays held. */
+      if (e instanceof TokenNoCeilingError) e.message = HELD_TAKE_NO_CEILING;
       /* Short at the reservation (another take reserved credits meanwhile): said with the balance as it is now. */
       const left = status === 402 && opts.only ? ((await creditState().catch(() => null))?.balance ?? balance) : balance;
       refuse(status, status === 402 ? stillShort(r.needs, left) : e instanceof SpendReservationError ? e.message : "This take could not be started just now. Nothing was charged.", r);

@@ -25,6 +25,9 @@ process.env.ENGINE_MOCK = "1";
 const workspace = (name: string): TenantWorkspace => ({ id: `ws_${name}`, slug: name, name, legacy: false, dbUrl: `file:${path.join(dir, `${name}.db`)}`, dbToken: null,
   keys: {}, usesPlatformKeys: true, allowanceUsd: null, gatewayKeyId: null, ownerId: "u_test", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null,
   flagNote: null, concurrency: null, rendersPerHour: null, storageQuotaBytes: null, deletedAt: null });
+/* A token's monthly ceiling far above every job here (synthetic): since 20 Oct 2026 a token with none only prepares and prices (lib/tokenSpend.ts)
+   and is refused before guardrail 4 is asked, so the token cases below carry one to keep testing the line itself. */
+const ROOMY = { capUsd: 1_000_000, capCredits: 1_000_000 };
 const person = (id: string, role: "admin" | "member"): TenantUser => ({ id, email: `${id}@example.test`, name: id, role, owner: role === "admin", disabled: false, lastSeen: null, createdAt: 0 });
 const LINE = jobApprovalLineCredits(0.1);
 /* Ids and workspace names are this run's own: another spec in the same worker may share the databases, and a job id belongs to one workspace. */
@@ -149,7 +152,7 @@ test("the reservation: a member over the line is refused (403, nothing reserved)
   }, as(person("u_admin", "admin")));
   /* A token, admin's or not, is refused outright; so is an agent identity acting under an admin's session. */
   await runInTenant(await funded("token"), async () => {
-    const t = await refusal(() => reserveGenerationSpend(event(`gen_token_a_${run}`, over), { token: { id: "tok1", capUsd: null, capCredits: null } }));
+    const t = await refusal(() => reserveGenerationSpend(event(`gen_token_a_${run}`, over), { token: { id: "tok1", ...ROOMY } }));
     expect(t?.message).toMatch(/never start it/);
     expect(t).toMatchObject({ status: 403 });
     expect(t!.message).toMatch(/Atomik, an MCP client and API tokens can prepare it, never start it\./);
@@ -157,7 +160,7 @@ test("the reservation: a member over the line is refused (403, nothing reserved)
     expect(a).toMatchObject({ status: 403 });
     expect(await reserved(`gen_token_a_${run}`) + await reserved(`gen_agent_a_${run}`)).toBe(0);
     /* A machine under the line is not stopped by this guardrail. */
-    await reserveGenerationSpend(event(`gen_token_b_${run}`, under), { token: { id: "tok1", capUsd: null, capCredits: null } });
+    await reserveGenerationSpend(event(`gen_token_b_${run}`, under), { token: { id: "tok1", ...ROOMY } });
     expect(await reserved(`gen_token_b_${run}`)).toBe(1);
   }, as(person("u_admin", "admin"), { token: { id: "tok1", name: "agent", scope: "render", capUsd: null } }));
   /* A held take's release decides from its author: an admin author's clears it, a member author's does not. */
@@ -255,7 +258,7 @@ test("the reservation at the line: exactly 200 cr is allowed, 201 cr is refused;
       expect(m!.message).toMatch(/An admin has to start it\./);
       expect(m!.message).not.toMatch(/\bcr\b|\d/);
       await reserveGenerationSpend(event(`gen_house_u_${run}`, 15));
-      const t = await refusal(() => reserveGenerationSpend(event(`gen_house_t_${run}`, 25), { token: { id: "tok_h", capUsd: null, capCredits: null } }));
+      const t = await refusal(() => reserveGenerationSpend(event(`gen_house_t_${run}`, 25), { token: { id: "tok_h", ...ROOMY } }));
       expect(t).toMatchObject({ status: 403 });
       expect(t!.message).toMatch(/never start it/);
       const a = await refusal(() => reserveGenerationSpend(event(`gen_house_a_${run}`, 25, { createdBy: "agent:run_9" })));
@@ -311,7 +314,7 @@ test("one press is one job at the reservation: a press of 4 x 60 cr from a membe
   }, { user: person("u_admin", "admin") });
   await runInTenant(await funded("token"), async () => {
     await ready();
-    const e = await refusal(() => reserveGenerationSpend(event(`gen_press_t1_${run}`, sixty), { batch: batch("k", 4), token: { id: "tok_press", capUsd: null, capCredits: null } }));
+    const e = await refusal(() => reserveGenerationSpend(event(`gen_press_t1_${run}`, sixty), { batch: batch("k", 4), token: { id: "tok_press", ...ROOMY } }));
     expect(e).toMatchObject({ status: 403 });
     expect(e!.message).toMatch(/never start it/);
     expect(await reserved(`gen_press_t1_${run}`)).toBe(0);
@@ -365,8 +368,9 @@ test("one press is one job in the house, at cost: 4 x $6 (60 cr at cost each) fr
       await reserveGenerationSpend(event(`gen_hpress_single_${run}`, 6));
       await reserveGenerationSpend(event(`gen_hpress_edge_${run}`, 5), { batch: { id: `b_he${run}`, size: 4 } });
       expect(await reserved(`gen_hpress_edge_${run}`)).toBe(1);
-      const t = await refusal(() => reserveGenerationSpend(event(`gen_hpress_t_${run}`, 6), { batch: { id: `b_ht${run}`, size: 4 }, token: { id: "tok_hp", capUsd: null, capCredits: null } }));
+      const t = await refusal(() => reserveGenerationSpend(event(`gen_hpress_t_${run}`, 6), { batch: { id: `b_ht${run}`, size: 4 }, token: { id: "tok_hp", ...ROOMY } }));
       expect(t).toMatchObject({ status: 403 });
+      expect(t!.message).toMatch(/never start it/);
       expect(await reserved(`gen_hpress_t_${run}`)).toBe(0);
     }, { user: person("u_member", "member") });
     await runInTenant(house, async () => {
