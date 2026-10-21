@@ -53,20 +53,17 @@ async function elsewhere(values: Record<string, string>) {
     await db().execute({ sql: `INSERT INTO settings(key,value,updated_at) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, args: [key, value] });
 }
 
-test("a per-shot cap switched on by another process applies to the next reservation, not 10 s later", async () => {
+test("a per-shot cap another process stored stops nothing (the admin approval rule was retired on 21 Oct 2026), and its row is left as it was", async () => {
   const ws = await workspace("fresh_shot");
   await inTenant(ws, async () => {
-    const { getSetting } = await import("../../lib/settings");
-    expect(await getSetting("approvalRule")).toBe("anyone"); // this process's memo, now warm
+    const { db } = await import("../../lib/db");
     await elsewhere({ approvalRule: "cap", shotCapCredits: "1" });
-    expect(await getSetting("approvalRule")).toBe("anyone"); // still stale: the memo alone would admit the take
-    expect(await reserve(take("shot_take", { shotId: "shot1" }), { shotCapExempt: false })).toBe("403");
-    expect(await reserved("shot_take")).toBe(false);
-    /* The reservation's read also refreshed this process's memo. */
-    expect(await getSetting("approvalRule")).toBe("cap");
-    /* Switched off again elsewhere: the next take on the shot is admitted at once. */
-    await elsewhere({ approvalRule: "anyone" });
-    expect(await reserve(take("shot_take_2", { shotId: "shot1" }), { shotCapExempt: false })).toBe("admitted");
+    expect(await reserve(take("shot_take", { shotId: "shot1" }))).toBe("admitted");
+    expect(await reserved("shot_take")).toBe(true);
+    expect(await reserve(take("shot_take_2", { shotId: "shot1" })), "a second take of the same shot too").toBe("admitted");
+    /* Nothing erased: the stored rows are untouched. */
+    const rows = (await db().execute(`SELECT key, value FROM settings WHERE key IN ('approvalRule','shotCapCredits') ORDER BY key`)).rows.map((r) => [r.key, r.value]);
+    expect(rows).toEqual([["approvalRule", "cap"], ["shotCapCredits", "1"]]);
   });
 });
 

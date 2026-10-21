@@ -135,7 +135,7 @@ test("the quote: a warning from 80%, a refusal at the cap or for a job that woul
   const { verdictOf } = await import("../../lib/quote");
   const { HOUSE_CAP_REACHED } = await import("../../lib/houseCapText");
   const quote = (usd: number) => ({ totalCredits: 2, unitCredits: 2, units: 1, usd, lines: [{ key: "k", credits: 2, count: 1, usd, spent: 0, code: "S1", projectId: null, platformPays: false }] });
-  const context = { balance: null, allowance: null, caps: {}, warnPct: 80, rule: "anyone" as const, shotCap: 0, isAdmin: true };
+  const context = { balance: null, allowance: null, caps: {}, warnPct: 80 };
   expect(verdictOf(quote(1), { ...context, houseCap: { cap: 500, spent: 100 } })).toMatchObject({ allow: true, notice: "" });
   expect(verdictOf(quote(1), { ...context, houseCap: { cap: 500, spent: 410 } })).toMatchObject({ allow: true, notice: "82% of this month's $500 used ($411)" });
   /* The job itself carries the month over the line: warned before it starts. */
@@ -159,7 +159,7 @@ test("the house quote counts a held take at its band against the house cap, as a
   const SYNTHETIC_TERMS = { perCredit: 0.1, table: { "*": 2 } };
   const held = { key: "shot_held", usd: 4, engine: CINEMA_STUDIO_MODEL_ID };
   const plain = { key: "shot_plain", usd: 4, engine: "gemini-3.1-flash-image" };
-  const base = { balance: null, allowance: null, caps: {}, warnPct: 80, rule: "anyone" as const, shotCap: 0, isAdmin: true };
+  const base = { balance: null, allowance: null, caps: {}, warnPct: 80 };
   const priced = (units: (typeof held)[], context: Parameters<typeof verdictOf>[1]) => verdictOf(quoteOf(units, SYNTHETIC_TERMS), withHouseBands(context, units));
 
   /* The cap: $10 of room. The held take needs its hold ($4 x band), the plain one its quote. */

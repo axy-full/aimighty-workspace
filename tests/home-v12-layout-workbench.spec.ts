@@ -15,7 +15,7 @@ const PLACE = "Opening sequence of the harbour film, second pass over the whole 
 const item = (id: string, title: string, credits: number): QueueItem => ({
   id, title, source: "held", where: PLACE, at: Date.now() - 5 * 60_000,
   project: { productionId: "prod-x", draftId: null, name: "The long-named harbour film with a second cut" },
-  price: { kind: "exact", credits }, needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+  price: { kind: "exact", credits }, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
   approve: { kind: "release", genId: id, credits }, decline: null, open: { kind: "take", genId: id, draftId: null },
 });
 

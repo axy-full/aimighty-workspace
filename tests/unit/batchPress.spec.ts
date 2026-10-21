@@ -327,22 +327,31 @@ test("a press whose reply was lost, asked again under its key with the approval 
   }
 });
 
-test("each shot's own checks still run as before: a shot past the shot cap is refused, named beside the refusal, and nothing starts", async () => {
+test("each shot's own checks still run as before: a shot locked by its approved take is refused, named beside the refusal, and nothing starts; a per-shot cap a workspace stored stops nothing (21 Oct 2026)", async () => {
   const ws = await workspace("shot_cap", 100_000);
   await as(ws, ADMIN, async () => {
     const { db } = await import("../../lib/db");
     await db().execute({ sql: "INSERT INTO shots(id,project_id,code,title,created_at,updated_at) VALUES(?,?,?,?,0,0)", args: ["shot_capped", "project", "SH010", "Capped"] });
+    await db().execute({ sql: "INSERT INTO shots(id,project_id,code,title,created_at,updated_at) VALUES(?,?,?,?,0,0)", args: ["shot_locked", "project", "SH020", "Locked"] });
+    /* SH020 has an approved take: the next take of it must say why (brief 2.1), at the press and in a batch alike. */
+    await db().execute({ sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,project_id,shot_id,review_state,version,deleted) VALUES('gen_approved','mock','x','{}','succeeded',0,0,'video','project','shot_locked','approved',1,0)", args: [] });
+    /* The retired admin approval rule as a workspace stored it (owner, 21 Oct 2026: retired; the rows stay, nothing reads them). */
     for (const [key, value] of [["approvalRule", "cap"], ["shotCapCredits", "1"]])
       await db().execute({ sql: "INSERT INTO settings(key,value,updated_at) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value", args: [key, value] });
   });
-  /* The shot on the capped shot is over its cap alone: the batch is refused at that shot, as the shot alone is. */
-  const alone = await quote(ws, MEMBER, [shot(0, { shotId: "shot_capped" })]);
-  expect(alone).toMatchObject({ status: 403, body: { needsAdmin: true } });
+  /* A shot over the stored cap quotes as any other: nothing needs an admin. */
+  const capped = await quote(ws, MEMBER, [shot(0, { shotId: "shot_capped" })]);
+  expect(capped.status, JSON.stringify(capped.body)).toBe(200);
+  expect(capped.body).not.toHaveProperty("needsAdmin");
+  /* The locked shot is refused alone, and the batch is refused at that shot, as the shot alone is. */
+  const alone = await quote(ws, MEMBER, [shot(0, { shotId: "shot_locked" })]);
+  expect(alone).toMatchObject({ status: 409, body: { needsReason: true } });
   for (const quoteOnly of [true, false]) {
-    const out = await as(ws, MEMBER, () => batchPress.admitBatch({ members: [shot(1), shot(0, { shotId: "shot_capped" })], quoteOnly, maxCredits: 100_000, fingerprint: "0".repeat(64) }, MEMBER, { ...noDefer, pressKey: `press-shot-cap-${run}` }));
-    expect(out, `quoteOnly ${quoteOnly}`).toMatchObject({ status: 403, body: { needsAdmin: true, shot: 2, error: alone.body.error } });
+    const out = await as(ws, MEMBER, () => batchPress.admitBatch({ members: [shot(1), shot(0, { shotId: "shot_locked" })], quoteOnly, maxCredits: 100_000, fingerprint: "0".repeat(64) }, MEMBER, { ...noDefer, pressKey: `press-shot-cap-${run}` }));
+    expect(out, `quoteOnly ${quoteOnly}`).toMatchObject({ status: 409, body: { needsReason: true, shot: 2, error: alone.body.error } });
   }
-  expect(await as(ws, MEMBER, ledger)).toEqual({ takes: [], meters: [], held: 0 });
+  /* Nothing started: the only take is the approved one seeded above. */
+  expect(await as(ws, MEMBER, ledger)).toEqual({ takes: [{ id: "gen_approved", status: "succeeded" }], meters: [], held: 0 });
   /* The shots that are not on it quote as before. */
   expect((await quote(ws, MEMBER, shots(2))).status).toBe(200);
 });

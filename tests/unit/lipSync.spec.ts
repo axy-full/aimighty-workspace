@@ -729,14 +729,13 @@ test("an upload is read only by a person who may open it, for an Atomik run (as 
   }, OWNER as never);
 });
 
-test("the shot cap is judged at the quote and the press, before any row is written: a member past it is refused 403 (needs an admin) with no take left; an admin, a shot under its cap, no shot, and a rule that is not 'cap' go through", async () => {
+test("a per-shot cap a workspace stored stops no one (the admin approval rule was retired on 21 Oct 2026): a member's take on a shot far past it is quoted and pressed at its quote, with nothing said of an admin", async () => {
   const { admitLipSync } = await import("../../lib/lipSync");
   const { setSetting, invalidateSettings } = await import("../../lib/settings");
   const { db, ready } = await import("../../lib/db");
   process.env.SYNC_ENABLED = "1";
   const MEMBER: AdmissionActor = { user: { ...OWNER.user, id: "member_1", role: "member", owner: false } as AdmissionActor["user"] };
   const { runInTenant } = await import("../../lib/tenant");
-  /* The admission judges the actor against the request's own signed-in person, so the member's presses run as the member and the admin's as the admin. */
   await runInTenant(house(), async () => {
     await ready();
     const setRule = async (rule: string | null, cap?: number) => {
@@ -752,43 +751,20 @@ test("the shot cap is judged at the quote and the press, before any row is writt
     const seams = {};
     const press = (actor: AdmissionActor, extra: Record<string, unknown> = {}) => admitLipSync({ ...w.body, shotId, maxCredits: 100000, ...extra }, actor, options(), seams);
     try {
+      /* The retired rule as a workspace stored it, with a cap of 1 cr a shot. */
       await setRule("cap", 1);
-      const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
-      for (const extra of [{ quoteOnly: true }, {}]) {
-        const refused = await press(MEMBER, extra);
-        expect(refused, JSON.stringify(extra)).toMatchObject({ status: 403, body: { needsAdmin: true } });
-        expect(String(refused.body.error)).toMatch(/S01/);
-      }
-      expect(await rows()).toBe(before.rows);
-      expect((await meterRows()).length).toBe(before.meter);
-      expect(deferred.length).toBe(before.handed);
-      /* An admin's goes through; so does a member's take on a shot with no code to speak of, a request with no shot, and any rule but "cap". */
-      await runInTenant(house(), async () => { expect((await press(OWNER, { quoteOnly: true })).status).toBe(200); }, OWNER as never);
-      /* An admin who is not a person at the press (a token, an agent, a step Atomik's Auto approved) never skips the cap. */
-      const TOKEN = { id: "tok_admin", name: "Assistant", scope: "render" as const, capUsd: null };
-      const ADMIN_TOKEN: AdmissionActor = { ...OWNER, token: TOKEN };
-      const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_1" } as AdmissionActor["user"] };
-      /* The run acts for a person (its owner), so the cap is what refuses it. */
-      const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
-      await rigAgentReady();
-      await db().execute({ sql: "INSERT OR IGNORE INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0)", args: ["run_1", "prod_x", "draft_x", "u_runner", "req_cap", "goal", "auto", "finished"] });
-      await runInTenant(house(), async () => {
-        for (const extra of [{ quoteOnly: true }, {}]) expect(await press(ADMIN_TOKEN, extra), `token ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
-      }, { user: ADMIN_TOKEN.user, token: TOKEN } as never);
-      await runInTenant(house(), async () => {
-        for (const extra of [{ quoteOnly: true }, {}]) expect(await press(AGENT, extra), `agent ${JSON.stringify(extra)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
-      }, AGENT as never);
-      await runInTenant(house(), async () => {
-        for (const quoteOnly of [true, undefined]) expect(await admitLipSync({ ...w.body, shotId, maxCredits: 100000, quoteOnly }, OWNER, { ...options(), run: { auto: true } as never }, seams), `auto ${String(quoteOnly)}`).toMatchObject({ status: 403, body: { needsAdmin: true } });
-      }, OWNER as never);
-      expect((await press(MEMBER, { quoteOnly: true, shotId: undefined })).status).toBe(200);
-      await setRule("ask");
-      expect((await press(MEMBER, { quoteOnly: true })).status).toBe(200);
-      await setRule("cap", 100000);
-      expect((await press(MEMBER, { quoteOnly: true })).status).toBe(200);
+      const before = await rows();
+      const quoted = await press(MEMBER, { quoteOnly: true });
+      expect(quoted.status, JSON.stringify(quoted.body)).toBe(200);
+      expect(quoted.body).not.toHaveProperty("needsAdmin");
       const made = await press(MEMBER);
       expect(made.status, JSON.stringify(made.body)).toBe(200);
-      expect(await rows()).toBe(before.rows + 1);
+      expect(made.body).not.toHaveProperty("needsAdmin");
+      expect(await rows()).toBe(before + 1);
+      /* The press still carries the person's approval of its quote: under it, refused before any row. */
+      const under = await press(MEMBER, { maxCredits: 0 });
+      expect(under.status).toBe(409);
+      expect(await rows()).toBe(before + 1);
     } finally { await setRule(null); }
   }, MEMBER as never);
 });

@@ -532,7 +532,7 @@ test("a failure bills nothing: a refusal before work says 'Nothing billed'; an i
   });
 });
 
-test("the shot cap is judged at the press, as the fal path judges it: a member past the shot's cap is refused 403 with no row and no hold; an admin is not", async () => {
+test("a per-shot cap a workspace stored stops no one (the admin approval rule was retired on 21 Oct 2026): a member's take on a shot far past it is quoted and admitted, with nothing said of an admin", async () => {
   process.env.RECRAFT_ENABLED = "1";
   const { setSetting } = await import("../../lib/settings");
   const { db, ready } = await import("../../lib/db");
@@ -546,41 +546,20 @@ test("the shot cap is judged at the press, as the fal path judges it: a member p
     const { executeRecraftAdmission: admitRecraft } = await import("../../lib/recraftImage");
     const asMember = (fn: () => Promise<void>) => runInTenant(house(), fn, member as never);
     try {
+      /* The retired rule as a workspace stored it, with a cap of 1 cr a shot. */
       await setSetting("approvalRule", "cap", "admin");
       await setSetting("shotCapCredits", "1", "admin");
-      const before = (await meterRows()).length;
       const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-      const handedOff = deferred.length;
       const input = { tool: "image", prompt: "a heron", model: "recraftv4_1_pro", shotId, ...approved };
       await asMember(async () => {
-        const refused = await admitRecraft(input, member, options());
-        expect(refused.status, JSON.stringify(refused.body)).toBe(403);
-        expect(refused.body).toMatchObject({ needsAdmin: true });
-        expect(String(refused.body.error)).toMatch(/SH020/);
-        expect((await admitRecraft({ ...input, quoteOnly: true }, member, options())).status).toBe(403);
+        const quoted = await admitRecraft({ ...input, quoteOnly: true }, member, options());
+        expect(quoted.status, JSON.stringify(quoted.body)).toBe(200);
+        expect(quoted.body).not.toHaveProperty("needsAdmin");
+        const made = await admitRecraft(input, member, options());
+        expect(made.status, JSON.stringify(made.body)).toBe(200);
+        expect(made.body).not.toHaveProperty("needsAdmin");
       });
-      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
-      expect((await meterRows()).length).toBe(before);
-      expect(deferred.length).toBe(handedOff);
-      /* An admin is a PERSON here: an admin's token, an agent identity and an Atomik Auto run do not skip the cap (the same test as the job line's). */
-      const admin = OWNER.user;
-      const nonPeople: [string, AdmissionActor, AdmissionExecution][] = [
-        ["token", { user: admin, token: { id: "tok_cap", name: "cap", scope: "render", capUsd: null } }, options()],
-        ["agent", { user: { ...admin, id: "agent:atomik" } as AdmissionActor["user"] }, options()],
-        ["auto", OWNER, { ...options(), run: { auto: true } as never }],
-      ];
-      for (const [name, actor, opts] of nonPeople) {
-        await runInTenant(house(), async () => {
-          const refused = await admitRecraft(input, actor, opts);
-          expect(refused.status, `${name}: ${JSON.stringify(refused.body)}`).toBe(403);
-          expect(refused.body, name).toMatchObject({ needsAdmin: true });
-        }, actor as never);
-      }
-      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
-      expect((await meterRows()).length).toBe(before);
-      expect((await admitRecraft(input, OWNER, options())).status).toBe(200);
-      await setSetting("shotCapCredits", "100000", "admin");
-      await asMember(async () => { expect((await admitRecraft(input, member, options())).status).toBe(200); });
+      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens + 1);
     } finally { await setSetting("approvalRule", "anyone", "admin"); }
   });
 });

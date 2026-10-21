@@ -73,18 +73,15 @@ test("the project cap reads a held take at 3N, at admission and in the reservati
   });
 });
 
-test("the shot cap reads a member's held take at 3N, at admission and in the reservation", async () => {
+test("a per-shot cap a workspace stored holds no member's take at its 3N hold (the admin approval rule was retired on 21 Oct 2026)", async () => {
   const ws = await workspace("hold_ws_shot", 10_000);
   const n = await learnN(ws, "shot_learn");
   await inTenant(ws, async () => {
     const { db } = await import("../../lib/db");
-    const { shotCapGate } = await import("../../lib/shotCap");
+    /* A stored cap under the hold (2N < 3N): it once refused the take with 403. */
     await db().execute({ sql: `INSERT INTO settings(key,value,updated_at) VALUES('approvalRule','cap',0),('shotCapCredits',?,0)`, args: [String(2 * n)] });
-    const gate = (band?: number) => shotCapGate({ shotId: "shot1", code: "S1", takeUsd: USD, modelId: CINEMA, isAdmin: false, ...(band ? { band } : {}) });
-    expect(await gate()).toBeNull();
-    expect(await gate(3)).toMatch(/S1/);
-    expect(await reserve(take("shot_take", USD, { shotId: "shot1" }), { holdBand: 3, shotCapExempt: false })).toBe("403");
-    expect(await row("shot_take")).toBeNull();
+    expect(await reserve(take("shot_take", USD, { shotId: "shot1" }), { holdBand: 3 })).toBe("admitted");
+    expect((await row("shot_take"))!.band).toBe(3);
   });
 });
 
@@ -139,7 +136,7 @@ test("an engine without a hold keeps band 1 under every cap: a take whose estima
     expect(first.band).toBeNull();
     await db().execute({ sql: `INSERT INTO projects(id,name,created_at,cap_credits) VALUES('band1_p','band1_p',0,?)`, args: [first.billed * 2 + 1] });
     await db().execute({ sql: `INSERT INTO settings(key,value,updated_at) VALUES('atCap','stop',0),('approvalRule','cap',0),('shotCapCredits',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, args: [String(first.billed)] });
-    expect(await reserve(other("band1_2", { projectId: "band1_p", shotId: "band1_s" }), { shotCapExempt: false })).toBe("admitted");
+    expect(await reserve(other("band1_2", { projectId: "band1_p", shotId: "band1_s" }), {})).toBe("admitted");
     expect((await row("band1_2"))!.billed).toBe(first.billed);
   });
 });

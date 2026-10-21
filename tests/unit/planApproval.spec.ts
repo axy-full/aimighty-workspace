@@ -10,6 +10,7 @@ import { newProject, type Asset, type CanvasNode, type Project } from "../../lib
 import type { BoardSnapshot } from "../../lib/workbench/rig-agent-plan";
 import { mockPlannerModel, runPlanner, MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL } from "../../lib/workbench/rig-agent-planner";
 import { creditFigure } from "../../lib/runLimit";
+import { BACK_TO_ITS_PERSON } from "../../lib/workbench/rig-agent-store";
 
 /*
  * A plan is approved once (CLAUDE.md rule 14; lib/workbench/plan-approval.ts). Money: one person's approval covers
@@ -74,8 +75,7 @@ async function inRun<T>(name: string, fn: (ws: TenantWorkspace) => Promise<T>, c
 type Behaviour = { throwBeforeClaim?: boolean; throwAfterReply?: boolean; pendingClaim?: boolean };
 
 /** `xai`: shots whose engine settles on what the provider states (worst case 3 × the quote), as an approximate engine does. */
-/** `adminShots`: shots over the workspace's per-shot rule: a member's preparation is refused with needsAdmin, as admission does. */
-function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: ReadonlySet<string> = new Set(), adminShots: ReadonlySet<string> = new Set()) {
+function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: ReadonlySet<string> = new Set()) {
   const calls: { key: string; savedKey: string | null; savedState: string | null; run: RunSpend | undefined; prompt: string }[] = [];
   const behaviour: Behaviour = {};
   /* The price the admission would compute now, per shot: a moved price refuses an old approval. */
@@ -84,8 +84,6 @@ function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: Read
   const prepare = async (body: Record<string, unknown>, actor: AdmissionActor) => {
     const { billCredits } = await import("../../lib/creditTerms");
     const shot = shotOf(body);
-    if (adminShots.has(shot) && actor.user.role !== "admin")
-      return { ok: false as const, status: 403, body: { error: `Shot ${shot} is over the 50 cr a shot may take. An admin has to press this one.`, needsAdmin: true } };
     const usd = priceNow.get(shot) ?? usdOf(shot);
     const credits = billCredits(usd, "mock");
     /* The compile covers the prompt, as a real one does: an edited shot is a different quote fingerprint. */
@@ -187,9 +185,9 @@ const credits = async (usd: number) => (await import("../../lib/creditTerms")).b
 const ATOMIK = (runId: string) => `agent:${runId}`;
 
 /** A run at its plan gate: built, every render priced by the server, waiting for the one approval. */
-async function atGate(ws: TenantWorkspace, usdOf: (shot: string) => number, shots = 2, xai: ReadonlySet<string> = new Set(), adminShots: ReadonlySet<string> = new Set()) {
+async function atGate(ws: TenantWorkspace, usdOf: (shot: string) => number, shots = 2, xai: ReadonlySet<string> = new Set()) {
   const agent = await import("../../lib/workbench/rig-agent");
-  const r = renders(ws, usdOf, xai, adminShots);
+  const r = renders(ws, usdOf, xai);
   const deps = await depsFor(ws, r);
   const runId = await approvedRun(deps, { limit: 500, shots });
   expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
@@ -208,14 +206,15 @@ test("the pure rules: only a person approves; the quote is the server's prices s
   });
   /* 43 + 43 + 7 = 93; at most 186. */
   const q = pa.planQuote([step(1, 43), step(3, 43), step(5, 7)]);
-  expect(q).toMatchObject({ ready: true, total: 93, ceiling: 186, totalTenths: 930, ceilingTenths: 1860, approximate: false, asks: [] });
+  expect(q).toMatchObject({ ready: true, total: 93, ceiling: 186, totalTenths: 930, ceilingTenths: 1860, approximate: false });
+  expect(q, "no render asks on its own for an admin (21 Oct 2026)").not.toHaveProperty("asks");
   if (!q.ready) throw new Error("not ready");
   /* An approximate engine counts at its worst case, and says "up to". */
   expect(pa.planQuote([step(1, 10, { worst: 30 })])).toMatchObject({ ready: true, total: 30, ceiling: 60, approximate: true });
-  /* No per-render line (owner, 20 Oct 2026): a render over 200 cr is listed and in the total like any other; only one that needs an admin asks on its own. */
-  expect(pa.planQuote([step(1, 43), step(3, 250)])).toMatchObject({ ready: true, total: 293, ceiling: 586, asks: [] });
-  expect(pa.planQuote([step(1, 43), step(3, 250, { state: "paused", pause: "admin" })])).toMatchObject({ ready: true, total: 43, asks: [{ seq: 3, why: "admin" }] });
-  expect(pa.planQuote([step(3, 250, { state: "paused", pause: "admin" })])).toEqual({ ready: false, reason: "Every render here needs an admin, so each asks on its own." });
+  /* No per-render line (owner, 20 Oct 2026): a render over 200 cr is listed and in the total like any other; and none asks on its own for an admin (21 Oct 2026). */
+  expect(pa.planQuote([step(1, 43), step(3, 250)])).toMatchObject({ ready: true, total: 293, ceiling: 586 });
+  /* A render that waited for an admin before then is read as its own person's to price again (lib/workbench/rig-agent-store.ts): the plan waits for that price. */
+  expect(pa.planQuote([step(1, 43), step(3, 250, { state: "paused", pause: "unpriced", quote: null, worst: null, fingerprint: null, reason: BACK_TO_ITS_PERSON })])).toEqual({ ready: false, reason: `Shot 3: ${BACK_TO_ITS_PERSON}` });
   /* A render without the server's price: the plan cannot be approved yet. */
   expect(pa.planQuote([step(1, 43), step(3, 0, { state: "next", quote: null, worst: null, fingerprint: null })])).toMatchObject({ ready: false, reason: "Shot 3 is not priced yet." });
   /* The fingerprint covers every price: a moved price is a different plan. */
@@ -286,10 +285,10 @@ test("one approval covers exactly the plan: the gate shows the server's total (t
     /* Both renders priced by the server before anything is sent; nothing reserved. */
     expect(takeSteps(run).map((p) => [p.state, p.quote])).toEqual([["waiting", a], ["waiting", b]]);
     expect(r.calls).toEqual([]);
-    expect(run.plan?.quote).toMatchObject({ total: a + b, ceiling: 2 * (a + b), covered: takeSteps(run).map((p) => p.seq), asks: [] });
+    expect(run.plan?.quote).toMatchObject({ total: a + b, ceiling: 2 * (a + b), covered: takeSteps(run).map((p) => p.seq) });
     /* The card says what the server says: the title, the total and the button are the server's T and 2T. */
     const { planModel } = await import("../../components/graphite/board/cards/plan/model");
-    const model = planModel({ run, enabled: true, balance: await balance(ws), rule: null, readOnly: null })!;
+    const model = planModel({ run, enabled: true, balance: await balance(ws), readOnly: null })!;
     expect(model.phase).toBe("proposal");
     expect(model.total).toEqual({ kind: "exact", credits: a + b });
     expect(model.ceiling).toBe(2 * (a + b));
@@ -350,10 +349,10 @@ test("one approval per step, whatever the price (owner, 20 Oct 2026: the per-ren
     const a = await credits(0.3), big = await credits(bigUsd);
     expect(big).toBeGreaterThan(200);
     /* Both listed, both in the total: nothing asks on its own. */
-    expect(run.plan?.quote).toMatchObject({ total: a + big, ceiling: 2 * (a + big), covered: takeSteps(run).map((p) => p.seq), asks: [] });
+    expect(run.plan?.quote).toMatchObject({ total: a + big, ceiling: 2 * (a + big), covered: takeSteps(run).map((p) => p.seq) });
     const { planModel } = await import("../../components/graphite/board/cards/plan/model");
-    const card = planModel({ run, enabled: true, balance: await balance(ws), rule: null, readOnly: null })!;
-    expect(card.steps.map((s) => s.asksAlone)).toEqual([null, null]);
+    const card = planModel({ run, enabled: true, balance: await balance(ws), readOnly: null })!;
+    for (const s of card.steps) expect(s).not.toHaveProperty("asksAlone");
     expect(JSON.stringify(card)).not.toMatch(/per-render line|a render may cost/);
     await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
     /* Shot 1 goes, then shot 2 (about 250 cr) goes under the same approval, with no further tap. */
@@ -535,11 +534,11 @@ test("an approximate plan keeps 'up to' after its approval (review L3)", async (
   await inRun("approx", async (ws) => {
     const { agent, runId, run } = await atGate(ws, () => 0.3, 1, new Set(["1"]));
     const { planModel } = await import("../../components/graphite/board/cards/plan/model");
-    expect(planModel({ run, enabled: true, balance: 1000, rule: null, readOnly: null })!.total!.kind).toBe("up-to");
+    expect(planModel({ run, enabled: true, balance: 1000, readOnly: null })!.total!.kind).toBe("up-to");
     await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
     const after = await view();
     expect(after.plan!.approval!.approximate).toBe(true);
-    expect(planModel({ run: after, enabled: true, balance: 1000, rule: null, readOnly: null })!.total).toEqual({ kind: "up-to", credits: run.plan!.quote!.total, capped: true });
+    expect(planModel({ run: after, enabled: true, balance: 1000, readOnly: null })!.total).toEqual({ kind: "up-to", credits: run.plan!.quote!.total, capped: true });
   });
 });
 
@@ -615,48 +614,29 @@ test("a render that failed with nothing billed retries free under the same appro
   });
 });
 
-test("a step that needs an admin asks on its own and holds up nothing (owner decision L5): the other two are approved and render; it waits in the queue; the plan's room leaves it out", async () => {
+test("a member's plan renders every shot under its one approval: no step waits for an admin, and the queue has nothing for one (the admin approval rule was retired on 21 Oct 2026)", async () => {
   MEMBERS.add(OWNER);
   try {
     await inRun("admin", async (ws) => {
-      const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3, 3, new Set(), new Set(["2"]));
+      const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3, 3);
       const a = await credits(0.3);
       const [s1, s2, s3] = takeSteps(run);
-      /* At the gate: shot 2 is listed to ask on its own, at its own price; T and 2T cover the other two. */
-      expect(s2).toMatchObject({ state: "paused", pause: "admin", quote: a, fingerprint: null });
-      expect(run.plan!.quote).toMatchObject({ total: 2 * a, ceiling: 4 * a, covered: [s1.seq, s3.seq], asks: [s2.seq] });
+      /* At the gate: all three listed, T and 2T cover all three. */
+      expect(run.plan!.quote).toMatchObject({ total: 3 * a, ceiling: 6 * a, covered: [s1.seq, s2.seq, s3.seq] });
       const { planModel } = await import("../../components/graphite/board/cards/plan/model");
-      const card = planModel({ run, enabled: true, balance: 1000, rule: null, readOnly: null })!;
-      expect(card.title).toBe(`Make 3 shots · ${creditFigure(2 * a)} cr · at most ${creditFigure(4 * a)} cr`);
-      expect(card.primary).toMatchObject({ kind: "plan", label: `Approve the rest · ${creditFigure(2 * a)} cr` });
-      expect(card.steps.map((s) => s.asksAlone)).toEqual([null, "Asks on its own · needs an admin", null]);
-      expect(card.steps[1].price).toEqual({ kind: "exact", credits: a });
-      const planned = (await meterRow(agent.planEventId(runId)))!.credits;
-      const approved = await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
-      /* The room: planning plus 2 × the other two, never shot 2's own price. */
-      expect(approved.money!.limit).toBeCloseTo(planned + 4 * a, 5);
-      const { db } = await import("../../lib/db");
-      const listed = JSON.parse(String((await db().execute({ sql: "SELECT steps FROM rig_plan_approvals WHERE run_id=?", args: [runId] })).rows[0].steps)) as { seq: number }[];
-      expect(listed.map((x) => x.seq)).toEqual([s1.seq, s3.seq]);
+      const card = planModel({ run, enabled: true, balance: 1000, readOnly: null })!;
+      expect(card.primary).toMatchObject({ kind: "plan", label: `Approve · ${creditFigure(3 * a)} cr` });
+      expect(JSON.stringify(card)).not.toMatch(/needs an admin/i);
+      await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
       const { readApprovals } = await import("../../lib/control-room/approvals.server");
       const queued = async () => (await readApprovals({ id: OWNER, role: "member" })).items.filter((i) => i.source === "board-render" || i.source === "board-plan");
-      /* Shot 1 renders; while it does, shot 2 is in the queue for an admin, at its own price, not the member's to press. */
-      await agent.advanceRigAgentRun(runId, deps);
-      expect(r.calls).toHaveLength(1);
-      expect((await queued()).map((i) => [i.id, i.price, i.needsAdmin, i.canApprove])).toEqual([[`board-render:${runId}:${s2.seq}`, { kind: "exact", credits: a }, true, false]]);
-      await settleTake((await renderRows())[0].id, "succeeded", 0.3);
-      /* Shot 3 goes next, past shot 2, with no tap. */
-      await agent.advanceRigAgentRun(runId, deps);
-      expect(r.calls).toHaveLength(2);
-      await settleTake((await renderRows())[1].id, "succeeded", 0.3);
-      expect(await agent.advanceRigAgentRun(runId, deps)).toEqual({ state: "needs_you", more: false });
-      const shown = await view();
-      expect(takeSteps(shown).map((p) => [p.state, p.inPlan])).toEqual([["done", true], ["paused", false], ["done", true]]);
-      expect(shown.reason).toContain("waits for an admin");
-      expect(shown.plan!.approval).toMatchObject({ used: 2 * a, ceiling: 4 * a });
-      expect((await queued()).map((i) => [i.id, i.needsAdmin])).toEqual([[`board-render:${runId}:${s2.seq}`, true]]);
-      /* Nothing for shot 2 was ever sent: it has no admission, only its own price to show. */
-      expect(r.calls.map((c) => c.prompt).some((p) => /Shot 2 of/.test(p))).toBe(false);
+      for (let i = 0; i < 3; i++) {
+        await agent.advanceRigAgentRun(runId, deps);
+        expect(r.calls).toHaveLength(i + 1);
+        expect(await queued(), "nothing waits in the queue while the plan renders").toEqual([]);
+        await settleTake((await renderRows())[i].id, "succeeded", 0.3);
+      }
+      expect(takeSteps(await view()).map((p) => [p.state, p.inPlan])).toEqual([["done", true], ["done", true], ["done", true]]);
     });
   } finally {
     MEMBERS.delete(OWNER);
@@ -755,7 +735,7 @@ test("the balance and the caps still bite: approval waits while the balance is s
     await expect(agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint, userId: OWNER })).rejects.toMatchObject({ status: 402, message: expect.stringMatching(/^Short by [\d.,]+ cr\. Top up, then approve\./) });
     /* The card says so too, and its Approve waits. */
     const { planModel, SHORT_LINE } = await import("../../components/graphite/board/cards/plan/model");
-    expect(planModel({ run: await view(), enabled: true, balance: await balance(ws), rule: null, readOnly: null })!.primary).toMatchObject({ kind: "plan", blocked: SHORT_LINE });
+    expect(planModel({ run: await view(), enabled: true, balance: await balance(ws), readOnly: null })!.primary).toMatchObject({ kind: "plan", blocked: SHORT_LINE });
     /* Topped up (here: that job refunded), the approval goes. */
     await meter({ ...outside, status: "failed", engineCostUsd: 0 });
     await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint, userId: OWNER });

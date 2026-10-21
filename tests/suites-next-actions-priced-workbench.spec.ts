@@ -63,13 +63,13 @@ const store = (production: string, shots: Record<string, string>): LibraryRoute 
 type Sent = { body: Record<string, unknown>; key: string | null };
 /**
  * The workspace's own rules, as admission answers the quote: "reason" — the shot has an approved take, so it asks why
- * before it prices another (lib/approval.ts); "admin" — the cost approval rule's cap per shot, which a member's take
- * would pass, so an admin has to press it (lib/approvalRule.ts).
+ * before it prices another (lib/approval.ts); "cap" — the production at its cap, which only an admin's Unlock lifts
+ * (lib/caps.ts capVerdict; the per-shot approval rule this used to stand for was retired on 21 Oct 2026).
  */
-type Rule = "reason" | "admin" | null;
+type Rule = "reason" | "cap" | null;
 type Server = { quotes: Record<string, unknown>[]; sent: Sent[]; writes: string[]; bump: number; failNext: boolean; holdNext: boolean; rule: Rule };
 const ASK = { title: "v1 is approved. Why render another?", line: "Ana approved v1. The reason is kept with the new take, so the shot's record says why it was revisited." };
-const CAP_LINE = "SH010 is at 60 cr; this take makes it 72 cr, over the 50 cr a shot may take. An admin has to press this one.";
+const CAP_LINE = "At this production's cap of 60 cr (60 cr spent, this needs 12 cr). An admin can unlock it or raise it.";
 
 /** The new take as admission files it: its own row, under its source's shot as the next version, naming its source. */
 function filed(id: string, production: string, body: Record<string, unknown>, library: LibraryRoute): Generation {
@@ -100,7 +100,7 @@ async function mockPaid(page: Page, production: string, library: LibraryRoute): 
     server.quotes.push(body);
     if (server.rule === "reason" && !(typeof body.reason === "string" && body.reason.trim().length >= 3))
       return route.fulfill({ status: 409, json: { error: ASK.title, line: ASK.line, needsReason: true, approvedVersion: 1 } });
-    if (server.rule === "admin") return route.fulfill({ status: 403, json: { error: CAP_LINE, needsAdmin: true } });
+    if (server.rule === "cap") return route.fulfill({ status: 409, json: { error: CAP_LINE } });
     const credits = (ESTIMATE[String(body.model)] ?? 1) + server.bump;
     return route.fulfill({ json: { estimatedCredits: credits, price: credits, unit: "cr", fingerprint: createHash("sha256").update(JSON.stringify(body)).digest("hex") } });
   });
@@ -357,8 +357,8 @@ test("the workspace's rules hold in the panel: an approved shot asks why before 
   await expect(panel.getByTestId("next-landed")).toBeVisible({ timeout: 20_000 });
   await panel.getByTestId("next-close").click();
 
-  /* The cost approval rule: past the shot's cap, a member's take needs an admin. The server's words; the button stays shut. */
-  server.rule = "admin";
+  /* The production at its cap: only an admin's Unlock lifts it. The server's words; the button stays shut. */
+  server.rule = "cap";
   await row.getByTestId("next-upscale").click();
   await expect(panel.getByTestId("next-refused")).toHaveText(CAP_LINE);
   await expect(panel.getByTestId("next-go")).toBeDisabled();
