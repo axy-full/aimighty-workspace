@@ -1764,3 +1764,10 @@ These are recorded in docs/particl-sow-v1.md, "Additions, 21 October 2026", in t
   - The Director's Quick Look judges and compares; the Director fixes by hand through Inputs and the prompt.
 - 21 Oct 2026: **R3 amended.** Options are never free: the three frames are billed, and the ideation behind them is billed as a band.
 - 21 Oct 2026: **D6.** The glossary draft has about 150 words, each marked A or D. The owner edits it; then it ships as data, with a thumbnail or loop per entry.
+
+## Owner, 21 Oct 2026: export and render pricing (restates 13 Oct)
+
+- 21 Oct 2026: **rendering what has already been made and billed is free.** That covers the cut, 1080p masters, cutdowns and reframes that are crops, captions, the technical check, and Export to editor. The button reads "Free", and a receipt carries no line for it.
+- 21 Oct 2026: **another tool's processing inside the render is a priced engine step**, with Particl's markup, quoted before the press. That covers 4K upscale (or a native 4K re-render), Re-frame that repaints, lip-sync, voice and music. The export button then shows one figure, the paid steps' total, and never a breakdown of the free parts.
+- 21 Oct 2026: **4K** is free only if the takes were made and billed at 4K. Otherwise it is priced as the upscale it is.
+- 21 Oct 2026: only the owner changes this. Prices come from the rate card path.
