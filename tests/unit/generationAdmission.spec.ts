@@ -956,7 +956,8 @@ test("a take is marked made in Make only when a person's own request says so, fo
     return reply.body.id;
   };
   const person = actor;
-  const token = { ...actor, token: { id: "tok_made_in", name: "agent", scope: "render", capUsd: null } } as unknown as AdmissionActor;
+  /* With a monthly ceiling an admin set (owner, 20 Oct 2026): a token with none only prepares and prices (lib/tokenSpend.ts). */
+  const token = { ...actor, token: { id: "tok_made_in", name: "agent", scope: "render", capUsd: null, capCredits: 100_000 } } as unknown as AdmissionActor;
   for (const item of base) {
     /* Make's own request, from a person: marked, and only that. */
     expect((await marked(await send(item, { madeIn: "make" }, person))).madeIn).toBe("make");

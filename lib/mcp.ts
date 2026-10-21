@@ -49,7 +49,8 @@ export const TOOLS: ToolDef[] = [
       "Start a video render in Particl. Returns an id immediately — renders take " +
       "roughly one to three minutes — then use wait_for_render to collect it. Every prompt is " +
       "rewritten with Seedance's own prompt recipe before rendering; prefix with 'raw:' to send " +
-      "exact words. This spends real money from the workspace's credit.",
+      "exact words. This spends real money from the workspace's credit, within the monthly ceiling an admin set on the token; a token " +
+      "with no ceiling gets the price and nothing is started.",
     inputSchema: {
       type: "object",
       properties: {
@@ -255,9 +256,13 @@ async function resolveProject(call: Call, nameOrId: string | undefined, use: "re
 /**
  * `credits`: the workspace pays in credits (lib/credits creditsApply), so
  * spend is reported in credits and the engine's dollars are never named.
+ *
+ * `spends`: the caller's token has a monthly ceiling an admin set (read by POST /api/mcp from the bearer the tools act with), the person's standing approval.
+ * Only then does render_shot send the price it was quoted as its `maxCredits`; without it (absent or false) the tool prices the shot and
+ * starts nothing: the tool never invents an approval (owner, 20 Oct 2026, Q1 "B"). The routes refuse a token with no ceiling as well.
  */
 export async function runTool(
-  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean } = {}
+  name: string, args: Args, call: Call, origin: string, options: { credits?: boolean; spends?: boolean } = {}
 ): Promise<string> {
   switch (name) {
     case "plan_step": {
@@ -315,12 +320,21 @@ export async function runTool(
         watermark: false,
         projectId: project?.id ?? null,
       };
-      /* Priced first, and sent with that price as its ceiling: it can never bill more than it reports.
+      /* Priced first, and sent with that price as its `maxCredits` (and the quote's fingerprint) only when the token has a ceiling (`spends`):
+         the admin's ceiling is the standing approval and the quote is the price inside it, so it can never bill more than it reports.
          request_id, when given, is its Idempotency-Key, so a retried call gets back the render it started. */
       const quote = (await call("/api/generate/quote", { method: "POST", body })) as { estimatedCredits?: unknown; price?: unknown; unit?: unknown; fingerprint?: unknown };
       const credits = quote.estimatedCredits, price = quote.price;
       if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || typeof price !== "number" || !Number.isFinite(price))
         throw new Error("This render could not be priced, so nothing was started.");
+      /* No ceiling on this token: it only prepares and prices. The price is told; nothing is sent, so nothing is claimed, reserved or spent. */
+      if (options.spends !== true)
+        return (
+          `Priced, not started.\n\nprice: ${quote.unit === "usd" ? `$${price.toFixed(2)}` : `${credits} cr`}\n` +
+          `model: ${displayModelName(model)} · ${resolution} · ${ratio} · ${duration}s\n\n` +
+          `This token has no monthly ceiling, so it can only prepare and price. An admin can set its ceiling in credits in ` +
+          `Particl › Settings › Connections, or a person can make this shot in Particl, where its price is shown before they approve it. Nothing was started or spent.`
+        );
       const out = (await call("/api/generate", {
         method: "POST",
         body: { ...body, maxCredits: credits, ...(typeof quote.fingerprint === "string" ? { quoteFingerprint: quote.fingerprint } : {}) },

@@ -57,6 +57,8 @@ test("actual token GET, POST and DELETE refuse read and render bearers before da
     ["app/api/tokens/route.ts", "GET"],
     ["app/api/tokens/route.ts", "POST"],
     ["app/api/tokens/[id]/route.ts", "DELETE"],
+    /* An admin sets a token's ceiling (owner, 20 Oct 2026): no token, of any scope, can set its own or another's. */
+    ["app/api/tokens/[id]/ceiling/route.ts", "PATCH"],
   ] as const) {
     const compiled = ts.transpileModule(read(file), {
       compilerOptions: {

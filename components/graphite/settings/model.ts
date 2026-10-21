@@ -159,7 +159,10 @@ const agoWords = (at: number, now: number): string => {
  */
 export function tokenLine(t: ApiToken, unit: TokenUnit, now = Date.now()): string {
   if (unit === "credits") return tokenFacts(t, unit, now);
-  return [scopeWords(t.scope), t.scope === "prepare" ? "a person approves each" : null, t.lastUsed ? `used ${agoWords(t.lastUsed, now)}` : "never used"].filter(Boolean).join(" · ");
+  return [scopeWords(t.scope), t.scope === "prepare" ? "a person approves each" : null,
+    /* A token that can generate spends only inside a ceiling an admin set (lib/tokenSpend.ts); the figure is not shown here. */
+    t.scope === "render" && t.capUsd == null ? "no ceiling · prepares and prices only" : null,
+    t.lastUsed ? `used ${agoWords(t.lastUsed, now)}` : "never used"].filter(Boolean).join(" · ");
 }
 
 /* ── Advanced › Tools ───────────────────────────────────────────────── */

@@ -9,13 +9,16 @@ updated.
 
 ## 1. Make a token
 
-In the workspace: **Atomik › Tools & connections › Claude & ChatGPT › Make a
-token**, with *Can generate* chosen.
+In the workspace: **Settings › Connections › Make a token**, with *Can
+generate* chosen (an admin's choice).
 
 Give it a name (`Claude`), and a monthly ceiling — in credits for a workspace
-on Particl's credits, in dollars for one on its own engine keys. The ceiling is
-the safety rail: an agent that misreads a brief and loops can only ever spend
-up to it. The token is shown once — copy it then. The same page fills your
+on Particl's credits, in dollars for the house workspace. Only an admin
+sets a token's ceiling (Settings › Connections), and a token with no ceiling
+can only prepare and price: `render_shot` tells you the price and starts
+nothing. The ceiling is the safety rail: an agent that misreads a brief and
+loops can only ever spend up to it, and every render it starts carries the
+price it was quoted. The token is shown once — copy it then. The same page fills your
 address and the new token into the setup steps below.
 
 A token acts as *you*, so anything it renders appears under your name, in the
@@ -84,7 +87,8 @@ So does this:
 ## Worth knowing
 
 - **It spends real money.** Every `render_shot` bills the BytePlus account at
-  the same rates the app shows. The ceiling on the token is what bounds it.
+  the same rates the app shows. The ceiling on the token is what bounds it;
+  without one, nothing is started.
 - **Prompts are auto-refined** with ByteDance's Seedance recipe before
   rendering, exactly as in the app. Prefix a prompt with `raw:` to send your
   exact words instead.
@@ -92,6 +96,6 @@ So does this:
   able to look but never bill: it can list, fetch and download, and a render
   request is refused with a clear reason.
 - **Revocation is instant.** Every request checks the token, so revoking one
-  in Atomik › Tools & connections stops it mid-conversation. Revoking disables
+  in Settings › Connections stops it mid-conversation. Revoking disables
   the token; nothing is erased.
 - The token is never logged, and only its SHA-256 is stored in the database.
