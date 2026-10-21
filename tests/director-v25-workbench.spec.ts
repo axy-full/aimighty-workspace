@@ -796,9 +796,8 @@ test("a held approval expires as a plan's does (the keyed route): after 7 days t
   expect(net.sent[1].body.maxCredits).toBe(192);
   await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
   expect(net.started, "nothing started twice").toHaveLength(4);
-  /* The new approval is kept with its own time. */
-  const kept = await claimOf(page);
-  expect(kept?.key).toBe(net.sent[0].key);
+  /* Every shot reported as started: the press is answered whole, and the browser lets its key go. */
+  await expect.poll(() => claimOf(page)).toBeNull();
 });
 
 test("a held approval expires as a plan's does (today's route): after 7 days the lost reply's key stays, the next press asks at today's price under it, and a shot that started is not started again", async ({ page }) => {
@@ -822,9 +821,8 @@ test("a held approval expires as a plan's does (today's route): after 7 days the
   expect(net.sent[1].body.maxCredits).toBe(192);
   await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
   expect(net.started, "nothing started twice").toHaveLength(4);
-  /* The new approval is kept with its own time. */
-  const kept = await claimOf(page);
-  expect(kept?.key).toBe(net.sent[0].key);
+  /* Every shot reported as started: the press is answered whole, and the browser lets its key go. */
+  await expect.poll(() => claimOf(page)).toBeNull();
 });
 
 test("a held approval younger than 7 days is still the one asked again: the same key and approval, nothing started twice", async ({ page }) => {
