@@ -31,6 +31,8 @@ export function isPersonId(id: string | null | undefined): boolean {
 
 export const ASK_NOT_A_PERSON = "Only a person asks an admin. Atomik and outside agents prepare; people approve.";
 export const ASK_ADMIN_ALREADY = "You are an admin: you can change this yourself.";
+/** Said to an ask about anything but the rules: no step waits for an admin since 21 Oct 2026. */
+export const ASK_RULES_ONLY = "An admin is asked about the spending rules only: your own steps are yours to approve.";
 export const ASK_AGAIN_MS = 10 * 60_000;
 export const ASK_TRY_AGAIN = "Try again in a moment.";
 export const askedRecently = (minutes: number) => `You asked about this ${minutes <= 1 ? "a minute" : `${minutes} minutes`} ago. Ask again in a little while.`;
@@ -52,6 +54,8 @@ export type AskDeps = {
 export async function askAdmin(actor: AskActor, ask: AskAbout, deps: AskDeps = {}): Promise<{ asked: number; line: string }> {
   if (!isPersonId(actor.id)) throw new AskAdminError(ASK_NOT_A_PERSON, 403);
   if (actor.admin) throw new AskAdminError(ASK_ADMIN_ALREADY, 409);
+  /* The rules only (a caller that is not the route may send anything): asked before any mark is taken, so a refused subject counts against nothing. */
+  if ((ask as { about?: unknown })?.about !== "rules") throw new AskAdminError(ASK_RULES_ONLY, 400);
   const ws = requireTenant();
   const at = (deps.now ?? Date.now)();
   const key = [ws.id, actor.id, ask.about, ""].join("|");

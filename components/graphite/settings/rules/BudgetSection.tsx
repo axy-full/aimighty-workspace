@@ -13,7 +13,7 @@ import type { SpendingLines, SpendingRules } from "./spending-words";
  * Settings › Spending rules › Budget and cap (design Gaps B: `?view=workspace&ws=rules&edit=rules`, and `&role=member`).
  *
  *  - The budget per production (`productionBudgetCredits`: a production with no cap of its own follows it, and the
- *    producer is warned at `capWarnPct` of it). The per-shot cap before an admin went with the cost approval rule on
+ *    producer is warned at `capWarnPct` of it). The per-shot cap field went with the cost approval rule on
  *    21 Oct 2026 (owner: "every member approves their own spend with their own tap on the quote").
  *  - An admin edits it; the field saves itself when it is left or Enter is pressed (PATCH /api/settings, the route's
  *    own admin-and-person check; the setting keeps who changed it last), never a figure still being typed. "Undo

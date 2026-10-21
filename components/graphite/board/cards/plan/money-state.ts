@@ -13,7 +13,7 @@ import type { PlanModel, PlanPrimary, PlanStep } from "./model";
  *                 nothing; otherwise what it charged, or that it isn't known yet. The take's own card carries Retry.
  *
  * Gone on 21 Oct 2026 (owner): the "admin" state (a step over the workspace's per-shot cap, "Ask an admin") went with the
- * admin approval rule, and the "paused" state (the Paused card, "Paused at 80 % of the budget") goes: "The monthly limit
+ * admin approval rule, and the "paused" state (the Paused card at 80 % of the budget) goes: "The monthly limit
  * stays as a mechanism, off by default, owner-only, no Paused card." A render that waits, waits on its own price and tap.
  *
  * Every figure is the server's (the plan model's prices, the pack list); this only adds them up

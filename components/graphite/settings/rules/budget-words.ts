@@ -5,7 +5,7 @@
  *    own follows it), and the producer is warned at `capWarnPct` of it (lib/caps.ts checkCap; budgetPause, rounded down). There is no Auto since
  *    20 Oct 2026: every render waits for a person, and an approved plan or a person's own render past that share goes on to the budget;
  *    House workspaces, not billed in credits, have no budget (`notEnforced`).
- *  - There is no "Before an admin" any more: the cost approval rule and its per-shot cap were retired on 21 Oct 2026 (owner:
+ *  - There is no per-shot cap field any more: the cost approval rule and its per-shot cap were retired on 21 Oct 2026 (owner:
  *    "every member approves their own spend with their own tap on the quote").
  * Limits are by role (owner, admin, member), never by person; only an admin changes them, and only a person.
  */

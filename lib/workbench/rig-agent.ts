@@ -40,7 +40,7 @@ import { attachedOf, loadPlanAttachmentContent, PlanAttachmentError, resolvePlan
 import { suggestedRunLimit } from "./rig-agent-limits";
 import { advancePaidSteps, closeEndedSteps, MAX_SEND_ATTEMPTS, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
 import {
-  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertFixStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
+  BACK_TO_ITS_PERSON, activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertFixStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
   patchStep, releaseRun, renewRun, rigAgentExists, rigAgentReady, runByRequest, runCanvasChanges, runOfProduction, setSteps, stepOpId, stepsOf, undoOpId,
   type LimitRecord, type RunLease, type RunRow, type StepRow,
 } from "./rig-agent-store";
@@ -211,7 +211,8 @@ export function engineFreeReason(pause: string | null): string | null {
 function engineFree(run: RunRow, steps: StepRow[]): { run: RunRow; steps: StepRow[] } {
   const said = new Map<string, string>();
   const safe = steps.map((s) => {
-    const words = s.purpose === "take" && s.state === "paused" ? engineFreeReason(s.pause) : null;
+    /* A render handed back to its person (BACK_TO_ITS_PERSON, lib/workbench/rig-agent-store.ts) keeps its own fixed words, which name no engine. */
+    const words = s.purpose === "take" && s.state === "paused" && s.reason !== BACK_TO_ITS_PERSON ? engineFreeReason(s.pause) : null;
     if (words == null || s.reason === words) return s;
     if (s.reason) said.set(s.reason, `${stepTitle(run, s)}: ${words}`);
     return { ...s, reason: words };
