@@ -176,6 +176,7 @@ test("a chat and its steps are their person's: lists leave others out, every doo
   for (const body of [{ prompt: "Rewrite" }, { status: "done", genId: "gen_x" }, { status: "failed" }])
     expect(await asking(admin, () => stepRoute.PATCH(req("PATCH", body) as never, ctx("st_ach_big"))), JSON.stringify(body)).toEqual(GONE_STEP);
   expect(await asking(admin, () => settle.POST(req("POST", { status: "done", genId: "gen_x" }) as never, ctx("st_ach_big")))).toEqual([200, { status: "running" }]);
+  expect(await asking(admin, () => settle.POST(req("POST") as never, ctx("st_ach_big")))).toEqual([200, { status: "running" }]);
   expect(await status(), "no render: still running, no take").toMatchObject({ status: "running", gen_id: null });
   expect(await asking(other, () => settle.POST(req("POST") as never, ctx("st_ach_big"))), "its person may settle it too").toEqual([200, { status: "running" }]);
   expect(await asking(owner, () => settle.POST(req("POST") as never, ctx("st_ach_big"))), "a stranger (the workspace owner) may not").toEqual(GONE_STEP);
@@ -183,6 +184,7 @@ test("a chat and its steps are their person's: lists leave others out, every doo
   expect(await asking(other, () => release.POST(req("POST") as never, ctx("st_ach_big"))), "its person is not the claimant").toEqual(GONE_STEP);
   expect(await asking(admin, () => release.POST(req("POST") as never, ctx("st_ach_big")))).toEqual([200, { released: true }]);
   expect(await status()).toMatchObject({ status: "proposed", gen_id: null });
+  expect(await asking(admin, () => release.POST(req("POST") as never, ctx("st_ach_big"))), "a second release").toEqual(GONE_STEP);
   expect(await claimed(admin, "st_ach_big"), "back to its own person: the admin cannot claim it again").toEqual(unknownClaim);
   const own = await claimed(other, "st_ach_big");
   expect(own[0], "its own person claims it").toBe(200);
