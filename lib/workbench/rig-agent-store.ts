@@ -200,6 +200,11 @@ export type StepRow = {
   pause: PauseKind | null;
   settledAt: number | null;
   outcome: "not_billed" | "charged" | "unknown" | null;
+  /**
+   * Stored paused for an admin (before 21 Oct 2026) and read as its person's to price again (BACK_TO_ITS_PERSON). Its stored approval columns
+   * are hidden here; "Price again" clears them in the database too, so no tap or plan approval from before comes back with the fresh quote.
+   */
+  handedBack?: true;
 };
 
 const parse = <T,>(text: unknown, fallback: T): T => { if (text == null) return fallback; try { return JSON.parse(String(text)) as T; } catch { return fallback; } };
@@ -223,7 +228,8 @@ function runOf(r: Record<string, unknown>): RunRow {
 
 function stepOf(r: Record<string, unknown>): StepRow {
   /* Paused for an admin (stored before 21 Oct 2026): its person's to price again (BACK_TO_ITS_PERSON). */
-  if (String(r.pause ?? "") === "admin")
+  const handedBack = String(r.pause ?? "") === "admin";
+  if (handedBack)
     r = { ...r, pause: "unpriced", reason: BACK_TO_ITS_PERSON, admission: null, quote_credits: null, band: null, approved_at: null, approved_by: null, approved_fingerprint: null, approval_id: null };
   return {
     id: String(r.id), runId: String(r.run_id), seq: Number(r.seq), tool: String(r.tool) as StepTool, label: String(r.label), purpose: String(r.purpose),
@@ -235,6 +241,7 @@ function stepOf(r: Record<string, unknown>): StepRow {
     reason: str(r.reason), pause: (str(r.pause) as PauseKind | null), settledAt: num(r.settled_at),
     outcome: r.outcome === "not_billed" || r.outcome === "charged" || r.outcome === "unknown" ? r.outcome : null,
     approvalId: str(r.approval_id), fixOf: num(r.fix_of),
+    ...(handedBack ? { handedBack: true as const } : {}),
   };
 }
 

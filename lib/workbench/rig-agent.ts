@@ -204,6 +204,8 @@ function onePrice(view: RigAgentRunView, approval: PlanApprovalRow | null): RigA
  */
 export function engineFreeReason(pause: string | null): string | null {
   if (pause === "unpriced") return "Can't be priced yet. Check the shot, then price it again.";
+  /* A refusal at pricing (403: who is asking) says it in fixed words too: admission's own words could one day name an engine (R17). */
+  if (pause === "refused") return "Can't be rendered as asked. Open the shot, or skip it.";
   return null;
 }
 
@@ -658,10 +660,13 @@ export async function renderRigAgentStep(input: { productionId: string; runId: s
     } else if (step.state === "paused") {
       const same = !!fingerprint && !!step.admission && fingerprint === step.admission.quote.fingerprint;
       const approval = same ? { approved_at: at, approved_by: input.userId, approved_fingerprint: fingerprint, approval_id: null } : {};
-      /* Retry: its checks run again at the same price; Price again: it is priced afresh. */
+      /* Retry: its checks run again at the same price; Price again: it is priced afresh. A render handed back from an admin (stored before
+         21 Oct 2026) loses every approval it carried, a tap or a plan's, in the database itself: it goes "back to its own person at a fresh
+         quote and starts only on their tap" (owner), so the fresh price waits for that tap. */
+      const forgetApproval = step.handedBack ? { approved_at: null, approved_by: null, approved_fingerprint: null, approval_id: null } : {};
       await patchStep(tx, step.id, step.admission && step.pause !== "unpriced" && step.pause !== "record"
         ? { state: "waiting", reason: null, pause: null, ...approval }
-        : { state: "next", admission: null, quote_credits: null, reason: null, pause: null }, ["paused"]);
+        : { state: "next", admission: null, quote_credits: null, reason: null, pause: null, ...forgetApproval }, ["paused"]);
     } else throw new RigAgentError("That render is not waiting for you.", 409);
     await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at }, ["needs_you", "running"]);
     return true;

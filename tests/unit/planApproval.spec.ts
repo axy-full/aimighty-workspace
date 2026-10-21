@@ -477,6 +477,40 @@ test("an edited shot asks again under the plan (review M1): its prompt, its engi
   });
 });
 
+test("a render handed back from an admin (stored before 21 Oct 2026) starts only on its person's fresh tap: Price again clears any tap or plan approval it carried, in the database; nothing is sent until Render at the price shown", async () => {
+  await inRun("handback", async (ws) => {
+    const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3);
+    const { db } = await import("../../lib/db");
+    const [first, second] = takeSteps(run);
+    const a = await credits(0.3);
+    /* As the retired rule left them: paused for an admin, with an old tap (shot 1) and an old tap under a plan approval's id (shot 2) still stored. */
+    for (const [step, approvalId] of [[first, null], [second, "rpa_before_21oct"]] as const)
+      await db().execute({ sql: `UPDATE rig_agent_steps SET state='paused', pause='admin', reason='An admin has to press this one.', admission=NULL, quote_credits=?,
+            approved_at=1, approved_by=?, approved_fingerprint=?, approval_id=? WHERE run_id=? AND seq=?`, args: [a, OWNER, step.fingerprint, approvalId, runId, step.seq] });
+    const handed = takeSteps(await view());
+    for (const s of handed.slice(0, 2)) expect(s).toMatchObject({ state: "paused", pause: "unpriced", quote: null, fingerprint: null, reason: BACK_TO_ITS_PERSON });
+    /* Price again, by its own person. */
+    for (const step of [first, second]) await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: step.seq, userId: OWNER });
+    const stored = (await db().execute({ sql: "SELECT seq, approved_at, approved_by, approved_fingerprint, approval_id, pause FROM rig_agent_steps WHERE run_id=? AND seq IN (?,?) ORDER BY seq", args: [runId, first.seq, second.seq] })).rows;
+    for (const row of stored) expect([row.approved_at, row.approved_by, row.approved_fingerprint, row.approval_id, row.pause], `step ${row.seq}`).toEqual([null, null, null, null, null]);
+    /* Priced afresh at the very same price (the shot is unchanged): it waits for its tap, and nothing is sent. */
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(0);
+    const repriced = takeSteps(await view());
+    expect(repriced[0]).toMatchObject({ state: "waiting", canRender: true, fingerprint: first.fingerprint });
+    expect(repriced[1]).toMatchObject({ state: "waiting", canRender: true, fingerprint: second.fingerprint });
+    /* Only Render at the price shown sends it: shot 1 goes; shot 2, untapped, waits. */
+    await agent.renderRigAgentStep({ productionId: "prod-1", runId, seq: first.seq, fingerprint: repriced[0].fingerprint, userId: OWNER });
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(1);
+    expect(r.calls[0].prompt).toMatch(/Shot 1 of/);
+    await settleTake((await renderRows())[0].id, "succeeded", 0.3);
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(1);
+    expect(takeSteps(await view())[1]).toMatchObject({ state: "waiting", canRender: true });
+  });
+});
+
 test("a tap is for the request as priced when the render's turn comes: a shot edited after its tap asks again", async () => {
   await inRun("taplate", async (ws) => {
     const { agent, r, deps, runId, run } = await atGate(ws, () => 0.3);
