@@ -15,7 +15,11 @@ import { isCompact } from "./helpers/shellMode";
 async function pickEngine(page: Page) {
   const button = page.getByTestId("v25-parts-pick-engine");
   await button.evaluate((el) => el.scrollIntoView({ block: "center" }));
-  await button.click();
+  /* A click that lands before the page has hydrated does nothing (a busy dev server): pressed again until the model line names the engine. */
+  await expect(async () => {
+    await button.click();
+    await expect(page.getByTestId("v12-director-model")).not.toHaveAttribute("data-empty", /.*/, { timeout: 1500 });
+  }).toPass({ timeout: 20_000 });
 }
 type Sent = { body: Record<string, unknown>; key: string | undefined };
 type Member = { index: number; id?: string; status?: string; error?: string; code?: number; charged?: number };
