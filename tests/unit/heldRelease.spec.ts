@@ -223,6 +223,36 @@ test("the balance still stops the credits line in order, even for a smaller take
   });
 });
 
+/* Owner, 20 Oct 2026, answer A: a take a token with no ceiling made never starts on its own, and a person's own Release of it is that
+   person's approval. Credits arriving pass it by without holding up the line behind it; the person's press then starts it at its held price. */
+test("a no-ceiling token's take waits for a person without holding up the line; their Release then starts it at its held price", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { releaseHeldJobs } = await import("../../lib/held");
+  const { HELD_TAKE_NO_CEILING } = await import("../../lib/tokenSpend");
+  // 30 credits cover two 15-credit takes: the one behind it, then the token's take when a person releases it.
+  const ws = await setup("noceiling", 4, 30);
+  await runInTenant(ws, async () => {
+    const { db, ready } = await import("../../lib/db");
+    await ready();
+    await db().batch([
+      "INSERT INTO users(id,email,name,password_hash,created_at) VALUES('u_test','member@example.invalid','Member','x',0)",
+      "INSERT INTO api_tokens(id,token_hash,name,user_id,created_at) VALUES('tok_bare','hash_bare','assistant','u_test',0)",
+    ], "write");
+    const t = Date.now() - 60_000;
+    await held("gen_bare_first", { why: "credits", token: "tok_bare", at: t });
+    await held("gen_bare_behind", { why: "credits", at: t + 1 });
+    expect((await releaseHeldJobs({ defer: async () => {} })).released).toEqual(["gen_bare_behind"]);
+    expect(await status("gen_bare_first")).toMatchObject({ status: "held", error: HELD_TAKE_NO_CEILING });
+    expect(await metered("gen_bare_first")).toBeUndefined();
+    expect(await metered("gen_bare_behind")).toMatchObject({ status: "running", billed_credits: 15 });
+  });
+  await runInTenant(ws, async () => {
+    expect((await releaseHeldJobs({ only: "gen_bare_first", approved: 15, defer: async () => {} })).released).toEqual(["gen_bare_first"]);
+    expect(await status("gen_bare_first")).toMatchObject({ status: "queued", error: null });
+    expect(await metered("gen_bare_first")).toMatchObject({ status: "running", billed_credits: 15 });
+  }, { user: { id: "u_lead", email: "u_lead@example.invalid", name: "Lead", role: "admin", owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
+});
+
 test("the shot cap follows the take's author, not whoever's request started the line", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { platformDb } = await import("../../lib/platform");
