@@ -47,6 +47,7 @@ import { isBatchId } from "@/lib/variations";
 import { checkCap } from "@/lib/caps";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
+import { movedPriceBody, pressFigure, pressFigureProblem } from "@/lib/pressFigure";
 
 import type {
   AdmissionActor,
@@ -365,19 +366,20 @@ export async function executeAudioAdmission(
       unit: creditsApply(requireTenant()) ? "cr" : "usd",
       ...(voiceChange ? { sourceSeconds: voiceChange.seconds, minutes: Math.max(1, Math.ceil(voiceChange.seconds / 60 - 1e-9)) } : {}),
     });
-  if (
-    body.maxCredits != null &&
-    (!Number.isInteger(body.maxCredits) ||
-      body.maxCredits < 0 ||
-      estimatedCredits > body.maxCredits)
-  ) {
-    return admissionReply(
-      {
-        error:
-          "The audio estimate exceeds the approved credit amount. Review the price before submitting.",
-      },
-      { status: 409 },
-    );
+  /* The figure on the button (lib/pressFigure.ts): one that is not a whole number of credits is no figure; one under today's
+     price is a moved price, refused with the new figure and never admitted above what was shown. A press with no figure at all
+     is refused below, past the checkpoint a preparation stops at, still before anything is filed. */
+  if (body.maxCredits != null) {
+    const figure = pressFigure(body.maxCredits);
+    const problem = pressFigureProblem(figure);
+    if (problem) return admissionReply(problem.body, { status: problem.status });
+    if (estimatedCredits > figure!) {
+      const inCredits = creditsApply(requireTenant());
+      return admissionReply(
+        movedPriceBody({ estimatedCredits, price: inCredits ? estimatedCredits : vendorUsd, unit: inCredits ? "cr" : "usd" }),
+        { status: 409 },
+      );
+    }
   }
   const wall = await allowanceCheck(
     vendor,
@@ -422,6 +424,10 @@ export async function executeAudioAdmission(
     },
   );
   if (stopped) return stopped;
+  /* A press carries the figure that was on its button (owner, 21 Oct 2026; lib/pressFigure.ts). The route refuses one without it
+     before its key is claimed; every other path that reaches here to file a take is refused here, before anything is filed, held,
+     reserved or sent. A prepared request (the pipeline, Atomik) carries its quoted figure (lib/admissionSupport.ts). */
+  { const problem = pressFigureProblem(body.maxCredits); if (problem) return admissionReply(problem.body, { status: problem.status }); }
   const ts = now();
   // The claim is bound in the same write: a claim naming no job proves there is none.
   const binding = await claimBinding(requestClaim, genId);

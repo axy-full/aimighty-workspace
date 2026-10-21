@@ -23,6 +23,7 @@ import { DUBBING_SOURCE_AUTO, isDubbingLanguage, dubbingLanguageLabel } from "./
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
 import { jobLineNow } from "./shotCap";
+import { movedPriceBody, pressFigure, pressFigureProblem } from "./pressFigure";
 
 /**
  * Dubbing: an ASYNCHRONOUS ElevenLabs project, kept as a durable workflow.
@@ -182,8 +183,16 @@ export async function executeDubbingAdmission(
   if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   if (quoteOnly)
     return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : reservedUsd, unit: inCredits ? "cr" : "usd", sourceSeconds: seconds, minutes, mode });
-  if (body.maxCredits != null && (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number)))
-    return admissionReply({ error: "The dubbing estimate exceeds the approved credit amount. Review the price before submitting." }, { status: 409 });
+  /* The figure on the button (lib/pressFigure.ts): one that is not a whole number of credits is no figure; one under today's
+     price is a moved price, refused with the new figure and never admitted above what was shown. A press with no figure at all
+     is refused below, past the checkpoint, still before the take, its job row or any reservation is written. */
+  if (body.maxCredits != null) {
+    const figure = pressFigure(body.maxCredits);
+    const problem = pressFigureProblem(figure);
+    if (problem) return admissionReply(problem.body, { status: problem.status });
+    if (estimatedCredits > figure!)
+      return admissionReply(movedPriceBody({ estimatedCredits, price: inCredits ? estimatedCredits : reservedUsd, unit: inCredits ? "cr" : "usd" }), { status: 409 });
+  }
   const wall = await allowanceCheck("elevenlabs", reservedUsd, "elevenlabs");
   if (!wall.ok) return admissionReply({ error: wall.error }, { status: wall.status });
   const capV = await checkCap(projectId, reservedUsd, "elevenlabs");
@@ -196,6 +205,9 @@ export async function executeDubbingAdmission(
   const compiled = { task: "dub", sourceKind: source.kind, sourceId: source.id, sourceSeconds: seconds, minutes, sourceLang, targetLang, mode, projectId, shotId };
   const stopped = admissionCheckpoint(options, body, got, "audio", reservedUsd, "elevenlabs", compiled);
   if (stopped) return stopped;
+  /* A press carries the figure that was on its button (owner, 21 Oct 2026; lib/pressFigure.ts). The route refuses one without it
+     before its key is claimed; any other path is refused here, before anything is written, reserved or submitted. */
+  { const problem = pressFigureProblem(body.maxCredits); if (problem) return admissionReply(problem.body, { status: problem.status }); }
 
   const genId = newId("gen"), jobId = `dub_${randomUUID().replaceAll("-", "")}`, ts = now();
   const params = {
