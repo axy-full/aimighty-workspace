@@ -1,7 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { NO_ENGINE_NOTE, SHOTS_SETTINGS, barButton, modelWords, cancellable, cardChips, failureWords, nextStepLabel, pressPrice, retryPrice, requestFields, scopeOf, shotSettings, valueWords } from "../../components/v12/board/director-model";
+import {
+  CLAIMS_KEPT, NO_ENGINE_NOTE, PRESS_LIMIT_NOTE, PRESS_MAX_SHOTS, SHOTS_SETTINGS, barButton, claimLive, failureCharged, failureNote, modelWords, cancellable, cardChips, failureWords,
+  letGo, nextStepLabel, pressPrice, readClaim, readClaims, retryPrice, requestFields, scopeOf, shotSettings, valueWords, writeClaim, type PressClaim,
+} from "../../components/v12/board/director-model";
 import { CREDITS_MODE, FREE, NO_AT_COST_FIGURE, priceWords } from "../../lib/shell/price-words";
 import { stagesOf } from "../../lib/v12/board/stages";
+import { BATCH_MAX_MEMBERS } from "../../lib/batchPress";
+import { PLAN_APPROVAL_MS } from "../../lib/workbench/plan-approval";
 
 /* v25 PR 7: Director on Shots (components/v12/board/director-model.ts). Pure. */
 const SHOTS = [{ id: "s1", name: "Shot 1" }, { id: "s2", name: "Shot 2" }, { id: "s4", name: "Shot 4" }];
@@ -120,4 +125,77 @@ test("a failed take's line on the Director's bar says \"Nothing billed\" where t
   expect(failureWords(failure({ credits: 43, settled: true }), false)).toContain("43 cr charged");
   expect(failureWords(null, true)).toBe("Cancelled");
   expect(failureWords(undefined, false)).toBe("Failed");
+});
+
+test("a press takes at most as many shots as a plan renders at once, the batch route's own bound; past it the bar says so in the plan's words", () => {
+  expect(PRESS_MAX_SHOTS).toBe(24);
+  expect(PRESS_MAX_SHOTS, "the client's bound is the route's").toBe(BATCH_MAX_MEMBERS);
+  expect(PRESS_LIMIT_NOTE).toBe("Up to 24 shots at a time. Pick some.");
+});
+
+test("Retry's price is only the shots still to start, from the server's figures per shot; without them, or when they do not add up, the whole approval", () => {
+  /* Synthetic figures, built here: a press of four shots at 43 cr each, as the batch route would quote it with its figures per shot. */
+  const HOUSE = { on: true, creditUsd: 0.1 } as const;
+  const q = { estimatedCredits: 172, unit: "cr", price: 172, memberCredits: [43, 43, 43, 43] };
+  const whole = pressPrice(q);
+  expect(priceWords(retryPrice(whole, q, [3]), CREDITS_MODE)).toBe("up to 43 cr");
+  expect(priceWords(retryPrice(whole, q, [1, 3, 3]), CREDITS_MODE)).toBe("up to 86 cr");
+  /* Today's route sends no figures per shot: the whole approval, as before. */
+  expect(priceWords(retryPrice(whole, { estimatedCredits: 172, unit: "cr" }, [3]), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, null, [3]), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, q, []), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, q, null), CREDITS_MODE)).toBe("up to 172 cr");
+  /* Figures that do not add up to the approval, or a shot outside the press: never a smaller figure than the server stands behind. */
+  expect(priceWords(retryPrice(whole, { ...q, memberCredits: [10, 10, 10, 10] }, [3]), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, { ...q, memberCredits: [43, 43, 43] }, [2]), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, q, [4]), CREDITS_MODE)).toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, { ...q, members: 5 }, [3]), CREDITS_MODE), "one figure per shot of the press").toBe("up to 172 cr");
+  expect(priceWords(retryPrice(whole, { ...q, members: 4 }, [3]), CREDITS_MODE)).toBe("up to 43 cr");
+  expect(priceWords(retryPrice(whole, { ...q, memberCredits: [43, 43, 43, -43, 86] }, [0]), CREDITS_MODE)).toBe("up to 172 cr");
+  /* The house: the shots' own dollars at cost; with no dollars per shot, the whole approval's, never credits at a credit's price. */
+  const house = { estimatedCredits: 172, unit: "usd", price: 4.3, memberCredits: [43, 43, 43, 43], memberPrices: [1.1, 1.1, 1.05, 1.05] };
+  expect(priceWords(retryPrice(pressPrice(house), house, [3]), HOUSE)).toBe("up to $1.05");
+  expect(priceWords(retryPrice(pressPrice(house), { ...house, memberPrices: undefined }, [3]), HOUSE)).toBe("up to $4.30");
+  /* A ceiling stays a hold, in credits: in the house at a credit's public price. */
+  const ceiling = { estimatedCredits: 172, ceilingCredits: 240, unit: "usd", price: 4.3, memberCredits: [60, 60, 60, 60] };
+  expect(priceWords(retryPrice(pressPrice(ceiling), ceiling, [0]), HOUSE)).toBe("up to $6.00");
+  expect(priceWords(retryPrice(pressPrice({ ...ceiling, unit: "cr" }), { ...ceiling, unit: "cr" }, [0, 1]), CREDITS_MODE)).toBe("up to 120 cr");
+  expect(retryPrice(FREE, q, [3])).toBeNull();
+});
+
+test("a failed take is charged only when Particl's ledger settled it above nothing; the lines read one after another", () => {
+  const failure = (charge: { credits: number; settled: boolean } | null) => ({ provider: null, stage: null, code: "unknown", kind: "unknown" as const, message: null, billing: null, payer: null, charge });
+  expect(failureCharged(failure({ credits: 43, settled: true }))).toBe(true);
+  expect(failureCharged(failure({ credits: 0, settled: true }))).toBe(false);
+  expect(failureCharged(failure({ credits: 43, settled: false })), "a hold not yet settled is not a charge").toBe(false);
+  expect(failureCharged(failure(null))).toBe(false);
+  expect(failureCharged(null)).toBe(false);
+  expect(failureNote([])).toBeNull();
+  expect(failureNote([{ name: "Shot 2", words: "Did not render · Nothing billed · Render again" }, { name: "Shot 3", words: "Failed." }]))
+    .toBe("Shot 2: Did not render · Nothing billed · Render again. Shot 3: Failed.");
+});
+
+test("a held approval lasts as a plan's does (7 days): past it the claim is dropped, so the next press is quoted afresh and approved again", () => {
+  expect(PLAN_APPROVAL_MS).toBe(7 * 24 * 60 * 60 * 1000);
+  const store = new Map<string, string>();
+  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
+  /* A synthetic approval, built here. */
+  const quote = { estimatedCredits: 172, unit: "cr", price: 172, members: 4, fingerprint: "a".repeat(64) };
+  const t0 = 1_800_000_000_000;
+  const claim = (key: string, shots: string, at: number): PressClaim => ({ key, shots, quote, answered: false, at });
+  writeClaim(storage, "slot", claim("k1", "s1", t0), t0);
+  expect(readClaim(storage, "slot", "s1", t0 + PLAN_APPROVAL_MS - 1)?.key).toBe("k1");
+  expect(readClaim(storage, "slot", "s1", t0 + PLAN_APPROVAL_MS), "seven days on: past its time").toBeNull();
+  expect(claimLive({ at: t0 }, t0 + PLAN_APPROVAL_MS)).toBe(false);
+  expect(claimLive({ at: Number.NaN }, t0)).toBe(false);
+  /* A claim with no time of approval is past it. */
+  store.set("old", JSON.stringify({ claims: [{ key: "k0", shots: "s0", quote, answered: false }] }));
+  expect(readClaims(storage, "old", t0)).toEqual([]);
+  /* A new claim written after the first ran out leaves the old one behind, and the newest CLAIMS_KEPT stay. */
+  writeClaim(storage, "slot", claim("k2", "s2", t0 + PLAN_APPROVAL_MS), t0 + PLAN_APPROVAL_MS);
+  expect(JSON.parse(store.get("slot")!).claims.map((c: PressClaim) => c.key)).toEqual(["k2"]);
+  for (let i = 0; i < CLAIMS_KEPT + 2; i++) writeClaim(storage, "slot", claim(`n${i}`, `x${i}`, t0 + PLAN_APPROVAL_MS), t0 + PLAN_APPROVAL_MS);
+  expect(readClaims(storage, "slot", t0 + PLAN_APPROVAL_MS)).toHaveLength(CLAIMS_KEPT);
+  letGo(storage, "slot", `n${CLAIMS_KEPT + 1}`, t0 + PLAN_APPROVAL_MS);
+  expect(readClaims(storage, "slot", t0 + PLAN_APPROVAL_MS).map((c) => c.key)).not.toContain(`n${CLAIMS_KEPT + 1}`);
 });

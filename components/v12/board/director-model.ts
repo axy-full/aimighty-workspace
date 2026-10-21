@@ -1,8 +1,9 @@
 import { effectiveSetup, overriddenKeys, type SettingValue, type Setup } from "@/lib/v12/board/board-data";
 import type { Stage } from "@/lib/v12/board/stages";
-import { exact, heldUpTo, type PriceValue } from "@/lib/shell/price-words";
+import { exact, heldUpTo, upTo, type PriceValue } from "@/lib/shell/price-words";
 import { failureLine } from "@/lib/errors";
 import type { TakeFailure } from "@/lib/providerOutcome";
+import { PLAN_APPROVAL_MS, PLAN_LIMITS } from "@/lib/workbench/rig-agent-plan";
 
 /**
  * Director mode on Shots (v25 PR 7; design/particl-prototype-25 README, "Director · Shots": the column, the scope pill and the bar). Pure: no React, no fetch
@@ -74,6 +75,14 @@ export function scopeOf(selected: readonly string[], shots: readonly { id: strin
   return { ids: chosen.map((s) => s.id), all: false, label: words, short: words };
 }
 
+/**
+ * The most shots one press takes: a plan's own bound on what it renders at once (lib/workbench/rig-agent-plan.ts PLAN_LIMITS.next), which is also the batch
+ * route's (lib/batchPress.ts BATCH_MAX_MEMBERS; tests/unit/v25-director-model.spec.ts holds the two equal). Past it nothing is priced or sent, and the bar says
+ * so in the plan's words (owner, 21 Oct 2026).
+ */
+export const PRESS_MAX_SHOTS = PLAN_LIMITS.next;
+export const PRESS_LIMIT_NOTE = `Up to ${PRESS_MAX_SHOTS} shots at a time. Pick some.`;
+
 export type BarState = "idle" | "sending" | "making" | "done";
 
 /** The bar's one filled button. Idle: what pressing it makes; sending and making: "Making…"; done: the way on. */
@@ -104,14 +113,49 @@ export function pressPrice(q: { estimatedCredits: number; ceilingCredits?: numbe
 }
 
 /**
- * Retry's price: the press's own approval as a ceiling, "up to N cr" (it asks again under that approval, and never charges past it). Read the same way the
- * press's price reads: its own dollars at cost in the house where the server gave them, a hold at a credit's public price; never credits re-priced by hand.
+ * The server's own figures per shot, in the shots' order, beside a press's quote: `memberCredits`, each shot's hold in credits (they sum to the quote's
+ * ceiling, else its estimate), and, in the house only (`unit: "usd"`), `memberPrices`, each shot's own figure in that unit (they sum to `price`). The batch route
+ * does not send them yet (lib/batchPress.ts admitBatch, `quoteOnly`); until it does, Retry reads the whole approval, as before.
  */
-export function retryPrice(price: PriceValue | null | undefined): PriceValue | null {
+export type PerShotFigures = { memberCredits?: unknown; memberPrices?: unknown; unit?: string; /** The press's shot count: the figures must be one per shot. */ members?: number };
+
+const figures = (v: unknown, n: number): number[] | null =>
+  Array.isArray(v) && v.length === n && v.every((x) => typeof x === "number" && Number.isFinite(x) && x >= 0) ? (v as number[]) : null;
+const near = (a: number, b: number) => Math.abs(a - b) <= 1e-5 * Math.max(1, Math.abs(b));
+
+/**
+ * Retry's price (owner, 21 Oct 2026): only the shots still to start (`left`, by their place in the press), as a ceiling, "up to N cr". What failed unbilled
+ * re-runs under the same approval; what was charged stays charged and is not in it. Read the same way the press's price reads: its own dollars at cost in the
+ * house where the server gave them, a hold at a credit's public price; never credits re-priced by hand.
+ *
+ * Without the server's figures per shot (`perShot`), or with figures that do not add up to the approval, it is the whole approval: the most Retry can charge,
+ * since it asks under that approval and never past it.
+ */
+export function retryPrice(price: PriceValue | null | undefined, perShot?: PerShotFigures | null, left?: readonly number[] | null): PriceValue | null {
   /* A free press has nothing to approve again, so Retry carries no price: "up to free" is not a price, and a spend button with no price stays off
      (lib/spend.ts spendAttrsOf). No price, no Retry offered in the bar. */
   if (!price || price.kind === "free") return null;
-  return { ...price, kind: "up-to" };
+  const whole: PriceValue = { ...price, kind: "up-to" };
+  const shots = left ? [...new Set(left)] : [];
+  const n = perShot && Array.isArray(perShot.memberCredits) ? perShot.memberCredits.length : 0;
+  const credits = perShot ? figures(perShot.memberCredits, n) : null;
+  if (!credits || !n || (perShot?.members != null && perShot.members !== n) || !shots.length || shots.some((i) => !Number.isInteger(i) || i < 0 || i >= n)) return whole;
+  if (!near(credits.reduce((a, b) => a + b, 0), price.credits)) return whole;
+  const part = shots.reduce((a, i) => a + credits[i], 0);
+  /* A hold (a ceiling) stays a hold, in credits. */
+  if (price.capped) return heldUpTo(part) ?? whole;
+  /* The house reads the press's own dollars: the shots' own, or the whole approval when they are not there to add. */
+  if (price.usd != null) {
+    const usd = perShot?.unit === "usd" ? figures(perShot.memberPrices, n) : null;
+    if (!usd || !near(usd.reduce((a, b) => a + b, 0), price.usd)) return whole;
+    return upTo(part, Math.round(shots.reduce((a, i) => a + usd[i], 0) * 1e6) / 1e6) ?? whole;
+  }
+  return upTo(part) ?? whole;
+}
+
+/** A failed take known to have been charged: Particl's own ledger settled it above nothing. It is not asked again under the press's approval; Render again is a new press. */
+export function failureCharged(failure: TakeFailure | null | undefined): boolean {
+  return Boolean(failure?.charge && failure.charge.settled && failure.charge.credits > 0);
 }
 
 /**
@@ -122,4 +166,72 @@ export function retryPrice(price: PriceValue | null | undefined): PriceValue | n
 export function failureWords(failure: TakeFailure | null | undefined, cancelled: boolean): string {
   const line = failure ? failureLine(failure, { cancelled }).text : cancelled ? "Cancelled" : "Failed";
   return line.replace(/\bNot (?:billed|charged)\b/, "Nothing billed");
+}
+
+/** The failed takes' lines, one after another: "Shot 2: … · Nothing billed · …. Shot 3: … · 43 cr charged · …." */
+export const failureNote = (failures: readonly { name: string; words: string }[]): string | null =>
+  failures.length ? failures.map((f) => `${f.name}: ${f.words.replace(/[.!?]?$/, ".")}`).join(" ") : null;
+
+/* ── The press's claims: each press's key and the approval it was pressed with, kept in this browser until the server has settled it ── */
+
+/** The server's quote for the whole press (lib/batchPress.ts admitBatch with `quoteOnly`), with its figures per shot where it sends them. */
+export type BatchQuote = {
+  estimatedCredits: number; ceilingCredits?: number; price?: number; unit?: string; fingerprint: string; members: number;
+  memberCredits?: unknown; memberPrices?: unknown;
+};
+const FINGERPRINT = /^[a-f0-9]{64}$/;
+export function validQuote(q: unknown, members: number): q is BatchQuote {
+  if (!q || typeof q !== "object") return false;
+  const v = q as Partial<BatchQuote>;
+  return Number.isInteger(v.estimatedCredits) && v.estimatedCredits! >= 0 && FINGERPRINT.test(String(v.fingerprint ?? "")) && v.members === members
+    && (v.ceilingCredits == null || (Number.isInteger(v.ceilingCredits) && v.ceilingCredits >= v.estimatedCredits!));
+}
+
+type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
+/**
+ * One press. `quote`: the approval it carries (its fingerprint and total), or null when the server refused it as out of date and the person must approve the new
+ * total. `answered`: the server has reported this press's shots (which started, which did not); a press never answered (a lost reply, a shot still being accepted)
+ * is kept even after Next, because only the server knows what it started. `at`: when the person gave that approval.
+ */
+export type PressClaim = { key: string; shots: string; quote: BatchQuote | null; answered: boolean; at: number };
+/** Claims are kept one per exact set of shots, so a press of other shots never takes the place of one whose reply was lost; the oldest go past this many. */
+export const CLAIMS_KEPT = 8;
+/**
+ * A held approval lasts as a plan's does (owner, 21 Oct 2026: lib/workbench/plan-approval.ts, owner decision 4). Past it the claim is dropped, so the next press
+ * of those shots is a new one: quoted afresh at the current price, and approved by a person's press. A claim with no time of approval counts as past it.
+ */
+export const claimLive = (claim: Pick<PressClaim, "at">, now: number) => Number.isFinite(claim.at) && now - claim.at < PLAN_APPROVAL_MS;
+export const claimSlot = (scope: string, projectKey: string) => `particl:director-press:${JSON.stringify([scope, projectKey])}`;
+export function readClaims(storage: Storage, slot: string, now: number): PressClaim[] {
+  try {
+    const raw = storage.getItem(slot);
+    const v = raw ? (JSON.parse(raw) as { claims?: unknown } | Partial<PressClaim>) : null;
+    /* A claim written before claims were kept per shots (one object) is read as a list of one. */
+    const list = Array.isArray((v as { claims?: unknown } | null)?.claims) ? ((v as { claims: unknown[] }).claims) : v && typeof (v as Partial<PressClaim>).key === "string" ? [v] : [];
+    return list.flatMap((c) => {
+      const x = c as Partial<PressClaim>;
+      if (!x || typeof x.key !== "string" || typeof x.shots !== "string") return [];
+      const claim = { key: x.key, shots: x.shots, quote: x.quote && validQuote(x.quote, x.quote.members) ? x.quote : null, answered: x.answered === true, at: typeof x.at === "number" ? x.at : Number.NaN };
+      return claimLive(claim, now) ? [claim] : [];
+    });
+  } catch { return []; }
+}
+export function readClaim(storage: Storage, slot: string, shots: string, now: number): PressClaim | null {
+  return readClaims(storage, slot, now).find((c) => c.shots === shots) ?? null;
+}
+function storeClaims(storage: Storage, slot: string, claims: PressClaim[]) {
+  if (!claims.length) { storage.removeItem(slot); return; }
+  const text = JSON.stringify({ claims });
+  storage.setItem(slot, text);
+  if (storage.getItem(slot) !== text) throw new Error("Enable local storage to safely recover this press.");
+}
+/** Written before anything is sent, in place of the claim for the same shots (the newest last; the oldest past CLAIMS_KEPT, and any past its time, go). Throws when it cannot be kept. */
+export function writeClaim(storage: Storage, slot: string, claim: PressClaim, now: number) {
+  storeClaims(storage, slot, [...readClaims(storage, slot, now).filter((c) => c.shots !== claim.shots && c.key !== claim.key), claim].slice(-CLAIMS_KEPT));
+}
+export function letGo(storage: Storage, slot: string, key: string, now: number) {
+  try {
+    const claims = readClaims(storage, slot, now);
+    if (claims.some((c) => c.key === key)) storeClaims(storage, slot, claims.filter((c) => c.key !== key));
+  } catch { /* the next press asks under it, and starts nothing twice */ }
 }

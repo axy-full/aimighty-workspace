@@ -35,6 +35,8 @@ type Opts = {
   answer?: (n: number) => { status: number; json: Record<string, unknown> } | "partial" | "starting" | null;
   /** The server does not start a failed take again (it does not know it to be free): an ask brings back the same takes. */
   noRestart?: boolean;
+  /** The quote carries each shot's own figure (`memberCredits`), as the proposed route field would; without it, today's route. */
+  perShot?: boolean;
 };
 async function routes(page: Page, opts: Opts = {}) {
   const quotes: Record<string, unknown>[] = [], sent: Sent[] = [], cancels: string[] = [], single: string[] = [], fingerprints: string[] = [];
@@ -69,7 +71,7 @@ async function routes(page: Page, opts: Opts = {}) {
       if (opts.quoteRefusal) return route.fulfill({ status: opts.quoteRefusal.status, json: { error: opts.quoteRefusal.error } });
       if (state.capAtQuote || (opts.capAfterPress && state.pressed)) return route.fulfill({ status: 429, json: { error: CAP_WORDS } });
       fingerprints.push(fingerprint);
-      return route.fulfill({ json: { estimatedCredits: total, price: total, unit: "cr", members: members.length, batchId: `bt_${fingerprint.slice(0, 24)}`, fingerprint } });
+      return route.fulfill({ json: { estimatedCredits: total, price: total, unit: "cr", members: members.length, batchId: `bt_${fingerprint.slice(0, 24)}`, fingerprint, ...(opts.perShot ? { memberCredits: members.map((m) => priceOf(m) + state.bump) } : {}) } });
     }
     sent.push({ body, key });
     /* The route's own checks, as lib/batchPress.ts makes them: the approval is the quote's fingerprint and covers the total. */
@@ -567,6 +569,175 @@ test("a press over the route's 24 shots is refused at the quote (400): its words
   await page.waitForTimeout(800);
   expect(net.sent).toEqual([]);
   expect(net.single).toEqual([]);
+});
+
+/* ── Owner's answers, 21 Oct 2026 ── */
+
+test("more shots than a press takes: the plan's line \"Up to 24 shots at a time. Pick some.\", Render off, nothing priced or sent; a pick of some is priced", async ({ page }) => {
+  const net = await routes(page, { engine: false });
+  await page.getByTestId("v25-parts-many-shots").click();
+  await pickEngine(page);
+  await expect(pill(page)).toHaveText("All 26 shots");
+  await expect(page.getByTestId("v12-director-note")).toHaveText("Up to 24 shots at a time. Pick some.");
+  await expect(go(page)).toHaveText("Render 26 shots");
+  await expect(go(page)).toBeDisabled();
+  await expect(go(page)).toHaveAttribute("data-spend", "unpriced");
+  await page.waitForTimeout(1500);
+  expect(net.quotes, "nothing is priced past the press's bound").toEqual([]);
+  await go(page).click({ force: true });
+  await page.waitForTimeout(500);
+  expect(net.sent).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), "horizontal overflow").toBeLessThanOrEqual(0);
+  /* Picked: one shot is priced, and the line goes. */
+  await card(page, "d4").click();
+  await expect(go(page)).toHaveText(/^Render Shot 4 · 43 cr$/, { timeout: 30_000 });
+  await expect(page.getByTestId("v12-director-note")).toHaveCount(0);
+  expect(net.quotes.at(-1)?.members).toHaveLength(1);
+});
+
+test("Retry's price is only the shots still to start, where the quote gives each shot's figure: partial reads the one shot left, still under the same approval", async ({ page }) => {
+  const net = await routes(page, { perShot: true, answer: (n) => (n === 1 ? "partial" : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("Nothing billed for 1 shot that did not start.", { timeout: 30_000 });
+  const retry = page.getByTestId("v12-director-retry");
+  await expect(retry).toHaveText("Retry · up to 43 cr");
+  await expect(retry).toHaveAttribute("data-spend", "priced");
+  await retry.click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  /* Still the same approval: the same key, fingerprint and ceiling; the price only says what is left to start. */
+  expect(net.sent[1].key).toBe(net.sent[0].key);
+  expect(net.sent[1].body.fingerprint).toBe(net.sent[0].body.fingerprint);
+  expect(net.sent[1].body.maxCredits).toBe(172);
+  await expect.poll(() => net.started.length).toBe(4);
+});
+
+test("Retry's price after a 5xx that started nothing: every shot is still to start, so it reads the whole approval", async ({ page }) => {
+  await routes(page, { perShot: true, answer: (n) => (n === 1 ? { status: 502, json: { status: "refused", members: [0, 1, 2, 3].map((index) => ({ index, error: "Synthetic test refusal: the engine is busy.", code: 502, charged: 0 })) } } : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("Nothing billed.", { timeout: 30_000 });
+  await expect(go(page)).toHaveText("Retry · up to 172 cr");
+});
+
+test("Retry's price without the figures per shot (today's route): the whole approval, as before", async ({ page }) => {
+  await routes(page, { answer: (n) => (n === 1 ? "partial" : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-retry")).toHaveText("Retry · up to 172 cr", { timeout: 30_000 });
+});
+
+test("settled: Retry is priced at the free failure alone; the charged one is offered Render again, a new press of that shot with a new quote and key, and its line keeps what it cost", async ({ page }, info) => {
+  const net = await routes(page, { perShot: true });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.started.length).toBe(4);
+  const [a, b, c, d] = net.started;
+  net.state.takes[a] = { id: a, status: "succeeded" };
+  net.state.takes[b] = { id: b, status: "failed", failure: failure(0) };
+  net.state.takes[c] = { id: c, status: "failed", failure: failure(43) };
+  net.state.takes[d] = { id: d, status: "succeeded" };
+  await expect(go(page)).toHaveText("Next: Edit →", { timeout: 20_000 });
+  const note = page.getByTestId("v12-director-note");
+  await expect(note).toContainText("Shot 3:");
+  await expect(note).toContainText("43 cr charged");
+  /* The free failure (Shot 2) under the same approval, at its own figure; the charged one (Shot 3) is not in it. */
+  await expect(page.getByTestId("v12-director-retry")).toHaveText("Retry · up to 43 cr");
+  /* Render again: Shot 3 alone, priced afresh, the person's press. Nothing is sent before it. */
+  const anew = page.getByTestId("v12-director-render-again");
+  await expect(anew).toHaveText(/^Render again · 43 cr$/, { timeout: 30_000 });
+  await expect(anew).toHaveAttribute("data-spend", "priced");
+  if (isCompact(info)) expect((await anew.boundingBox())!.height).toBeGreaterThanOrEqual(43.5);
+  expect(net.quotes.at(-1)?.members, "Render again is quoted for the charged shot alone").toHaveLength(1);
+  expect(net.sent).toHaveLength(1);
+  await expect(page.getByTestId("v12-director-bar").locator("button.v12-dirbar-go")).toHaveCount(1);
+  await anew.click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  const again = net.sent[1];
+  expect(again.key, "a new press: a new key").not.toBe(net.sent[0].key);
+  const members = again.body.members as Record<string, unknown>[];
+  expect(members).toHaveLength(1);
+  expect(members[0].shotId).toBe("d3");
+  expect(again.body.maxCredits).toBe(43);
+  expect(again.body.fingerprint).toBe(net.fingerprints.at(-1));
+  await expect.poll(() => net.started.length).toBe(5);
+  await expect(go(page)).toHaveText(/^Making…/, { timeout: 30_000 });
+  /* The line keeps what the failed take cost through the new press. */
+  await expect(note).toContainText("Shot 3:");
+  await expect(note).toContainText("43 cr charged");
+  net.state.phase = "succeeded";
+  await expect(go(page)).toHaveText("Next: Edit →", { timeout: 20_000 });
+  await expect(note).toContainText("43 cr charged");
+  await expect(page.getByTestId("v12-director-render-again")).toHaveCount(0);
+  expect(net.sent, "nothing else was sent").toHaveLength(2);
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toHaveCount(0);
+});
+
+test("Render again whose price moved sends nothing: the new figure is shown on it, and the person presses again", async ({ page }) => {
+  const net = await routes(page);
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.started.length).toBe(4);
+  for (const id of net.started) net.state.takes[id] = { id, status: "succeeded" };
+  net.state.takes[net.started[2]] = { id: net.started[2], status: "failed", failure: failure(43) };
+  const anew = page.getByTestId("v12-director-render-again");
+  await expect(anew).toHaveText(/^Render again · 43 cr$/, { timeout: 30_000 });
+  net.state.bump = 5;
+  await anew.click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The price is now 48 cr. Press it again to approve it.", { timeout: 30_000 });
+  expect(net.sent).toHaveLength(1);
+  await expect(anew).toHaveText(/^Render again · 48 cr$/);
+  await expect(page.getByTestId("v12-director-note")).toContainText("43 cr charged");
+  await anew.click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.sent[1].body.maxCredits).toBe(48);
+  expect(net.sent[1].key).not.toBe(net.sent[0].key);
+});
+
+/** Moves every kept claim's approval this far into the past, as if it had been given then. */
+const ageClaims = (page: Page, ms: number) => page.evaluate((by) => {
+  for (const key of Object.keys(localStorage).filter((k) => k.startsWith("particl:director-press:"))) {
+    const v = JSON.parse(localStorage.getItem(key)!) as { claims: { at: number }[] };
+    localStorage.setItem(key, JSON.stringify({ claims: v.claims.map((c) => ({ ...c, at: c.at - by })) }));
+  }
+}, ms);
+const DAY = 24 * 60 * 60 * 1000;
+
+test("a held approval expires as a plan's does: after 7 days the lost reply's claim is dropped, and the next press asks at the current price under a new key", async ({ page }) => {
+  const net = await routes(page, { lose: 1 });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  expect((await claimOf(page))?.key).toBe(net.sent[0].key);
+  await ageClaims(page, 7 * DAY);
+  net.state.bump = 5;
+  await page.reload();
+  await pickEngine(page);
+  /* The current price, not the held one. */
+  await expect(go(page)).toHaveText(/^Render 4 shots · 192 cr$/, { timeout: 30_000 });
+  const quoted = net.quotes.length;
+  await go(page).click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.quotes.length, "quoted afresh before it was sent").toBeGreaterThan(quoted);
+  expect(net.sent[1].key, "a new press").not.toBe(net.sent[0].key);
+  expect(net.sent[1].body.maxCredits).toBe(192);
+});
+
+test("a held approval younger than 7 days is still the one asked again: the same key and approval, nothing started twice", async ({ page }) => {
+  const net = await routes(page, { lose: 1 });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  await ageClaims(page, 6 * DAY);
+  await page.reload();
+  await pickEngine(page);
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.sent.length).toBe(2);
+  expect(net.sent[1].key).toBe(net.sent[0].key);
+  expect(net.sent[1].body.fingerprint).toBe(net.sent[0].body.fingerprint);
+  expect(net.started, "nothing started twice").toHaveLength(4);
 });
 
 test("the bar and the column fit the window at every size: no sideways scroll, text 12 px or more, 44 px controls on a touch screen", async ({ page }, info) => {
