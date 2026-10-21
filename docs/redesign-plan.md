@@ -1826,7 +1826,7 @@ The full text is in docs/particl-sow-v1.md, "Amendment, 21 October 2026 (ii)". I
 
 **C3** Reference films are read for structure only — cuts, shot sizes, moves, durations, the product moment, pacing, light, music turns — never content; priced by minutes as a ceiling; shown as "What I took from your reference" rows with Change; they set beat lengths, coverage bias and cut rhythm.
 
-**C4** Director mode's detail comes from the record, not the Director: a node shows a "Using" row (look · cast · rules · genre); Enhance · 1 cr turns a short prompt into the full one, shown before the press; with no record, the rail's and the genre's defaults fill the gaps.
+**C4** Director mode's detail comes from the record, not the Director: a node shows a "Using" row (look · cast · rules · genre); Enhance · 1 cr (sample; the figure comes from the quote path only, owner 21 Oct) turns a short prompt into the full one, shown before the press; with no record, the rail's and the genre's defaults fill the gaps.
 **D3** S2 and D5: the step order is Brief · Script · Treatment · Elements · Look · Storyboard · Shots · Sound · Edit · Deliver (Elements before Look). Update the rails in lib/productionModel/filmTypes.ts, the "Sent → …" targets and the ? cards' order.
 ### E · New rules from the owner's v31.4 review (R19–R27; they shape the build, not only the prototype)
 
