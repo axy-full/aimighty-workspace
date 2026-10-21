@@ -1035,3 +1035,17 @@ The strikes of rule 14's "a step over the rule's cap needs an admin" and of the 
 ## F · Open for the owner, not for the lead
 
 The Visitor hero line; the genre table rows; the Agent factor's number; rupee vs dollar billing; provenance-mark disclosure; the 4K figure.
+
+# Amendment, 21 October 2026 (iii)
+
+The owner's answers of 21 October 2026, 22:15 IST, in his words where quoted. Docs only. Code follows in the PRs named.
+
+1. **Rule 14, a fourth form for bands.** "12–30 cr": rule 14 gets a fourth form, for bands only — N–M cr, reserved at M, settled at what was used ("the cost range can be given, but not the absolute cost"). Recorded under rule 14 in CLAUDE.md and docs/particl-sow-2026-10-04.md in this PR.
+2. **The owner-only allowance (B2)** is a no-tap path on purpose: "bill at the end" — a ceiling the workspace owner approves once, per document, off by default; the same shape as a token's ceiling (#854), not Auto. Build it as a ceiling, never a mode.
+3. **"Enhance · 1 cr" (C4) is a sample** (rule 14: every price in a design is a sample). The figure comes from the quote path only; C4 above is marked "(sample)".
+4. **The visitor bar gets a hard cap:** questions per visitor per day and a house daily ceiling, both settings whose names live in the code and whose values the owner sets in the self-host configuration; at the cap the bar says "Sign in to keep going". It lives in #839. The numbers are the owner's, later.
+5. **C1 "said" lines are tenant data:** workspace-scoped rows, never in Langfuse or telemetry (rule 17: ids and timings only). The schema PR's body says so.
+6. **Recraft over MCP:** no, for now. Recraft stays prepare-only until its first real run has the owner's yes.
+7. **A person's audio or dubbing press carries the figure that was on its button,** like the Director press (#860), in its own small PR under money review.
+8. **The monthly spend limit is rule 14's budget ceiling:** one setting, owner-only, off by default; #835 builds it. The house cap warns on a raise only. The engine hold stays: an engine is rebuilt on the price file (like #846) only when the demo needs it, and the owner names which.
+
