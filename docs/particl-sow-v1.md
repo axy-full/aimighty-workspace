@@ -901,7 +901,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **R12 Recipes by outcome.** The + menu offers five or six outcomes per rail in plain words ("Make my product the hero"); each is upload + ≤4 chips + one quote, built as a board skill (rule 12). Techniques live inside Options at a step, priced. Not a preset gallery.
 
-**R13 Elements for people who own nothing.** A stock cast and stock places in the platform layer, pickable in one tap; a voice bound to each cast member; a real face needs consent on file; a character sheet from 1–5 photos with one hint: "even lighting and a plain background works best."
+**R13 Elements for people who own nothing.** ~~A stock cast and stock places in the platform layer, pickable in one tap;~~ a voice bound to each cast member; a real face needs consent on file; a character sheet from 1–5 photos with one hint: "even lighting and a plain background works best."
 
 **R14 Money copy [money] (owner's call, later):** plan cards in films ("about two 30-second ads a month"); price on the button; Top up on the button when short; a 480p draft row on the rate card.
 
@@ -921,7 +921,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **D6 Glossary** — film words, one-line definition, thumbnail; feeds Agent underlines and Director tooltips. One vocabulary (rule 5).
 
-**D7 Recipes per rail** (R12); stock cast and places (R13).
+**D7 Recipes per rail** (R12); ~~stock cast and places (R13)~~.
 
 **D8 House defaults** — a row a workspace has answered the same way three times becomes its default and stops being asked (from the ledger).
 
@@ -940,3 +940,5 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 5. **R7 and tracing.** Ids and timings only, never words (rule 17). The interview as spoken lives in the film record in Turso and nowhere else; tracing logs row ids.
 - **R6:** one approval; Keep releases the next item, with no second tap.
 - **R8:** "no third mode" means Agent and Director. The Ask/Auto spend setting is a separate thing.
+
+**Correction, 21 October 2026 (the owner): R13 and D7.** Strike "a stock cast and stock places in the platform layer, pickable in one tap" and "stock cast and places (R13)". Particl ships no stock elements, cast or environments. Every element is the person's own, uploaded from references or generated from the script line under the plan's quote, and Atomik teaches the newcomer how (the Elements "?" card, "Show me on my film", the upload hint "even lighting and a plain background works best", the consent tick for a real face). Everything else in R13 stands.
