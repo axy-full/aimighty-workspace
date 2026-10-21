@@ -1834,15 +1834,21 @@ The full text is in docs/particl-sow-v1.md, "Amendment, 21 October 2026 (ii)". I
 
 **R20** Chips and questions are derived from what is on the card: a product never shows a face chip; the chip set comes from the element rows of that picture. At most three questions on any card; "Skip the rest" is "Decide for me".
 
+*Amended 22 October 2026: see Amendment (iii), the owner's v31.5 review, R20.*
+
 **R21** The selection tool (lasso, element selector, "Change this · one quote") exists only where a picture is the subject — Elements, Look, Storyboard, Shots, Make — and only in Agent mode (R18). Never on Sound.
+
+*Restated 22 October 2026: see Amendment (iii), the owner's v31.5 review, R21.*
 
 **R22** Make: Agent's Make is "say it → one quote", no model named. Director's Make is a simple generator — text to image, text to video, image to video — with the model picker, settings and a wide prompt field. Model names in Director's Make only; no board in Make.
 
 **R23** Beats and frames are numbered; the number is the story order; drag to renumber; "Number the beats" when an import had none. Script shows beats only (no pictures), as Cards, List or the Director's Page; no free canvas at Script.
 
-**R24** Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote). One canvas tool: drag on empty pans, drag on a card moves, wheel pans, Space pans; no separate Hand tool.
+*Amended 22 October 2026: see Amendment (iii), the owner's v31.5 review, R23.*
 
-**R25** The bar is a smart box: docked only when nothing is selected; clicking anything opens it beside the thing — Agent: "Tell Atomik about this…" with derived chips; Director: the click's options and a wide prompt field.
+**R24** ~~Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote). One canvas tool: drag on empty pans, drag on a card moves, wheel pans, Space pans; no separate Hand tool.~~ *Struck 22 October 2026 (owner's v31.5 review): reversed, see Amendment (iii), v31.5 review, R24.*
+
+**R25** ~~The bar is a smart box: docked only when nothing is selected; clicking anything opens it beside the thing — Agent: "Tell Atomik about this…" with derived chips; Director: the click's options and a wide prompt field.~~ *Struck 22 October 2026 (owner's v31.5 review): reversed, see Amendment (iii), v31.5 review, R25.*
 
 **R26** Treatment's editor is Keynote-grade on the Polotno tools: a vertical page navigator that follows the scroll, a page canvas, an inspector of Design · Text · Image · Page — never x·y·w·h. Palettes and looks may come from outside (a Pinterest board, an uploaded deck) as a priced Reading turn. Sound's preview is the mixer (video over stacked layers, Add a layer). Edit in Agent mode lays the line-up first, then quoted prompt revisions; Director's Edit has multiple bins. Storyboard keeps the Director's controls and adds Layers.
 
