@@ -15,7 +15,7 @@ import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./g
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow, shotCapAdmin, shotCapGate } from "./shotCap";
+import { shotCapAdmin, shotCapGate } from "./shotCap";
 import { uploadOpenableBy, type Viewer } from "./uploadAccess";
 import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { engineEnabled } from "./engineGate";
@@ -221,9 +221,7 @@ export async function executeRecraftAdmission(input: Record<string, unknown>, go
   /* The approval unit, through the margin table keyed by the model or tool id. No number of ours here. */
   const estimatedCredits = quotedCredits(usd, marginKey);
   const inCredits = creditsApply(requireTenant());
-  const over = jobLineNow({ credits: estimatedCredits, usd, key: "recraft", actor: got, auto: options.run?.auto === true });
-  if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
-  /* The cost approval rule (brief 2.2), as the fal path judges it: with a cap per shot, a take past it needs an admin who is a person: a token, an agent identity or an Atomik Auto run is never one (the same test as jobLineNow's). Refused before a row is written. */
+  /* The cost approval rule (brief 2.2), as the fal path judges it: with a cap per shot, a take past it needs an admin who is a person: a token, an agent identity or a job marked as approved by Auto is never one (lib/shotCap.ts › shotCapAdmin). Refused before a row is written. */
   if (shotId && shotCode) {
     const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: marginKey, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
     if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });

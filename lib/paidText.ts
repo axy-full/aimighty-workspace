@@ -21,7 +21,6 @@ import {
 } from "./generationRequests";
 import type { TextRun } from "./engines/types";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
-import { jobLineNow } from "./shotCap";
 import { noteModelCall, traceModelCall, type ModelCallMeta, type ModelSiteId } from "./modelTrace";
 
 /** The least time a deadline-bound text job must still have for its provider call (runPaidText `deadline`). */
@@ -174,9 +173,6 @@ export async function quotePaidText(input: QuotedTextInput, override?: CatalogMo
   return { model: compiled.model.id, effort: input.effort ?? "auto", estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimate };
 }
 export function paidTextQuoteResponse(quote: PaidTextQuote): Response {
-  /* Guardrail 4 at the quote: a text job over the approval line needs an admin's own tap (lib/shotCap.ts › jobLineNow). */
-  const over = jobLineNow({ credits: quote.estimateCredits, usd: quote.estimateUsd ?? 0, key: textKeyName(quote.model) });
-  if (over) return Response.json({ error: over, needsAdmin: true }, { status: 403, headers: { "Cache-Control": "no-store" } });
   return Response.json(atomikPublicResponse(quote, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
 }
 export function paidTextQuoteScopeFailure(req: Request): Response | null {

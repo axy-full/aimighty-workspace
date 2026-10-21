@@ -194,22 +194,6 @@ export async function checkCap(projectId: string | null, needsUsd: number, engin
   return v;
 }
 
-/**
- * Whether the next paid job of a production reaches the pause at a share of its budget (`budgetPause`), reckoned as
- * the gate reckons spend (`projectCapSpent`). Credits workspaces only; null when there is no cap, the production is
- * unlocked past its cap by an admin, or the job does not reach the pause. The sentence is what the run says.
- */
-export async function budgetAsk(projectId: string | null, needsCredits: number): Promise<{ pause: BudgetPause; line: string } | null> {
-  if (!projectId) return null;
-  const row = await projectCapSpent(projectId);
-  /* An admin's unlock lets a production past its cap; below the cap the ask still stands (an unlock is never a
-     standing exemption from the pause, and any change to the cap or the budget re-locks it: resetCapLocks). */
-  if (!row || row.unit !== "cr" || row.cap == null || (row.unlocked && row.spent >= row.cap)) return null;
-  const pause = budgetPause({ cap: row.cap, spent: row.spent, needs: needsCredits, warnPct: cleanWarnPct(await getSetting("capWarnPct")) });
-  if (!pause || !pause.reached) return null;
-  return { pause, line: budgetPauseLine(pause) };
-}
-
 /* One write transaction on the workspace's database: a cap or budget and its re-lock land together, and an unlock is
    checked against the cap and budget it reads in the same transaction (SQLite serialises writers). */
 async function inWrite<T>(fn: (tx: Awaited<ReturnType<ReturnType<typeof db>["transaction"]>>) => Promise<T>): Promise<T> {

@@ -107,6 +107,10 @@ export type RunSpend = {
   band: number;
   /** Null while the run may spend; otherwise why not, said to the person. */
   live?: () => Promise<string | null>;
-  /** A step Atomik's Auto approved itself, with no person's tap: a machine for guardrail 4 (a job over the approval line is never started by it). */
+  /**
+   * A job marked as approved by Atomik's Auto, with no person's tap. Nothing sets it since Auto was removed (owner, 20 Oct 2026: "every job
+   * is approved on its quote"; lib/workbench/rig-agent-runs.ts runSpend never does). It is kept so that the guards that read it (a machine never
+   * skips the shot cap, lib/shotCap.ts shotCapAdmin; a batch press refuses it, lib/batchPress.ts) still refuse anything carrying it.
+   */
   auto?: boolean;
 };
