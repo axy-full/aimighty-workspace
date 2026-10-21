@@ -251,6 +251,7 @@ Pricing policy (multipliers, margins, floor guard, volume phases) is kept privat
 ### Credits
 - **1 credit = US$0.10, fixed**, the public price. A credit's price is `creditUsd()` (`lib/creditTerms.ts`, overridable by `CREDIT_USD`).
 - Every job is priced from engine cost through the margin table (`margins()` in `lib/creditTerms.ts`, overridable by the `CREDIT_MARGINS` env var) and rounded up to the next whole credit per job. Batches multiply before rounding. The table is keyed by engine, so pricing one engine differently is a config change, not a refactor.
+- **The agent factor (amended 21 October 2026, the owner).** A job Atomik routed (engine chosen by Atomik, the how hidden) carries `AGENT_PRICE_FACTOR` (env-set, default 1.0, the number is the owner's) whatever path started it — button, Make, board, skill or MCP; a job whose caller chose the engine never does. It is a mode price, not a path price (rule 11). The public rate card stays the Director rate card; Agent prices are the all-in quote. Platform-admin margin reporting includes the factor; nothing customer-facing shows it.
 - The ledger stores `engine_cost_usd` and `billed_credits` per job. The rate card is generated from the adapter registry, never hand-edited.
 - Customers never receive vendor costs for work on the platform's keys: no engine cost or margin reaches anyone but a platform admin, and a vendor cost is never shown next to our price. A workspace on its own keys sees its own vendors' dollars.
 - **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (1 cr), draft takes to Kling Standard or Wan (4–8 cr), and hero takes to Seedance or Kling Pro (25–45 cr). The composer's model row defaults from the shot's stage in the recipe.
@@ -892,7 +893,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **R8 Two modes, further apart; no third mode.** Agent is the default front door ("What are we making?" — the interview). Director sits behind one line, "I speak film", and opens with Import or a blank board. Agent: plain words; film words underlined with a one-line definition on hover (tap on phone); works in films; one all-in quote per command; review is Keep · Change something · Options; phone-first. Director: film words, engines, settings, the rate card; works in shots; the take grid; desktop-first. One bridge, one direction: a shot opened in Director mode opens with no engine and no prompt. Nothing in Agent ever shows the how.
 
-**R9 "?" on every step.** A card of three lines (what this step is · what you do · what comes next) and a 15-second loop. Opens itself once on a stranger's first visit to a step, then waits behind "?". Last line "Show me on my film" runs Atomik on the person's own project, priced as a planning turn. Cards are static text shipped with the app (D5); loops load lazily from R2; nothing generated live. On the phone, a sheet.
+**R9 "?" on every step.** A card of three lines (what this step is · what you do · what comes next) and a 15-second loop. Opens itself once on a stranger's first visit to a step, then waits behind "?". Last line "Show me on my film" runs Atomik on the person's own project, priced as a planning turn. Cards are static text shipped with the app (D5); loops load lazily from storage (Cloudflare R2); nothing generated live. On the phone, a sheet.
 
 **R10 Director mode, comprehensive:** angle, shot size, move, light, camera, lens, depth of field, frame rate, grain — pickers with pictures, Auto default, folded in the Inspector (rule 13). They write prompt lines through the rule library and set an engine parameter only where one exists. This is the camera bank of ground rule 3: platform list, workspace additions. The panel's "?" says a camera or lens name nudges the look; no engine simulates the glass. None of it appears in Agent mode.
 
@@ -900,9 +901,9 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **R12 Recipes by outcome.** The + menu offers five or six outcomes per rail in plain words ("Make my product the hero"); each is upload + ≤4 chips + one quote, built as a board skill (rule 12). Techniques live inside Options at a step, priced. Not a preset gallery.
 
-**R13 Elements for people who own nothing.** A stock cast and stock places in the platform layer, pickable in one tap; a voice bound to each cast member; a real face needs consent on file; a character sheet from 1–5 photos with one hint: "even lighting and a plain background works best."
+**R13 Elements for people who own nothing.** ~~A stock cast and stock places in the platform layer, pickable in one tap;~~ a voice bound to each cast member; a real face needs consent on file; a character sheet from 1–5 photos with one hint: "even lighting and a plain background works best."
 
-**R14 Money copy (owner's call, later):** plan cards in films ("about two 30-second ads a month"); price on the button; Top up on the button when short; a 480p draft row on the rate card.
+**R14 Money copy [money] (owner's call, later):** plan cards in films ("about two 30-second ads a month"); price on the button; Top up on the button when short; a 480p draft row on the rate card.
 
 **R15 Not taken from Artlist:** engines in the user's face, Unlimited tiers, a second canvas, hover-only prices, an agent that names the engine, a prompt asked of the person.
 
@@ -920,7 +921,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **D6 Glossary** — film words, one-line definition, thumbnail; feeds Agent underlines and Director tooltips. One vocabulary (rule 5).
 
-**D7 Recipes per rail** (R12); stock cast and places (R13).
+**D7 Recipes per rail** (R12); ~~stock cast and places (R13)~~.
 
 **D8 House defaults** — a row a workspace has answered the same way three times becomes its default and stops being asked (from the ledger).
 
@@ -929,3 +930,15 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 **S1** The per-step catalogue (Script → Deliver, plus the other rails' extra stages) is the example bank for D1, not a fixed list: each stage opens with a proposal, a judging prompt, at most three bare questions only where no default exists and money is attached, and what each answer sets and carries forward.
 
 **S2 Agent mode sequence:** Brief (interview, genre) → read-back "How I'll make it" → Script → Treatment → Look → Elements → Storyboard (shot by shot; play as a cut) → Shots (shot by shot; preflight; one quote) → Sound → Edit → Deliver. A stranger is asked once; nothing is asked twice.
+
+## The owner's answers on this amendment, 21 October 2026
+
+1. **R11 and rule 11.** Rule 11 stays: the same tool costs the same through every path. The factor is a mode price, keyed on who chose the engine. Rule 11 and § Pricing carry the sentence.
+2. **R8, R15 and rule 13.** In Agent mode the Auto line shows the what and the price ("Final · 5 s · 51 cr · Change"). Rule 13's engine-named example becomes the Director example. The example's label changes, not the rule.
+3. **R5 and rule 14.** Decided 18 Oct: "Atomik's own check of its work is free and is never a line." The self-check is free to the person and absorbed as a cost row in admin reporting, as search is. Rule 14's planning-turn sentence covers Atomik's thinking for the person, not its check of its own work.
+4. **R14** is [money]. The 480p draft row is a rate-card change and gets its own money PR when the owner calls it.
+5. **R7 and tracing.** Ids and timings only, never words (rule 17). The interview as spoken lives in the film record in Turso and nowhere else; tracing logs row ids.
+- **R6:** one approval; Keep releases the next item, with no second tap.
+- **R8:** "no third mode" means Agent and Director. The Ask/Auto spend setting is a separate thing.
+
+**Correction, 21 October 2026 (the owner): R13 and D7.** Strike "a stock cast and stock places in the platform layer, pickable in one tap" and "stock cast and places (R13)". Particl ships no stock elements, cast or environments. Every element is the person's own, uploaded from references or generated from the script line under the plan's quote, and Atomik teaches the newcomer how (the Elements "?" card, "Show me on my film", the upload hint "even lighting and a plain background works best", the consent tick for a real face). Everything else in R13 stands.
