@@ -1782,3 +1782,16 @@ These are recorded in docs/particl-sow-v1.md, "Additions, 21 October 2026", in t
   4. "Ask before every take" remains a person's own setting for their own presses. Ask is the default. Auto's fate is still the owner's decision.
   5. Code: one PR removes the approval-rule gate and the Paused card, under a money review. CLAUDE.md § Owner decisions and the SOW get the dated note. The 19–20 Oct sentence "the only automatic stop is the workspace's monthly spend limit with its Paused state" is struck and replaced by lines 2 and 3.
 - What line 1 would change: rule 14's sentence "A plan's approval follows the workspace's rule in lib/approvalRule.ts: a step over the rule's cap needs an admin", the owner's 20 Oct Q3 ("a big Atomik step still goes to an admin, keyed to the workspace cap"), and the guardrail-4 PR, which keeps that admin gate.
+
+## Owner, 21 Oct 2026: spend approvals confirmed; Auto retired; "free"; 4K and reframes
+
+- 21 Oct 2026: **all five lines are confirmed, in the owner's words.**
+  - **Approval:** the admin approval rule is retired. Every member approves their own spend with their own tap on the quote. Atomik, tokens and MCP callers still never approve.
+  - **What this strikes:** his 20 Oct Q3 ("a big Atomik step still goes to an admin") and rule 14's sentence "a step over the rule's cap needs an admin". Both are struck with this dated note.
+  - **The monthly limit** stays as a mechanism: off by default, owner-only, with no Paused card. The button reads "Monthly limit reached · ask <owner>".
+  - **The house cap** stays exactly as it is.
+- 21 Oct 2026: **Auto is retired.** Every job is approved on its quote by the person pressing. The "Ask before every take" setting goes; line 4 becomes "no per-person spend setting".
+- 21 Oct 2026: **order.** Guardrail-4 is no longer held: land it first, then the approval-rule PR on top, each under its own money review. The owner approves the code PRs on their money reviews.
+- 21 Oct 2026: **"free"** is lowercase everywhere, the rule 14 spelling.
+- 21 Oct 2026: **4K and reframes.** A crop is free. A 4K master is priced as the upscale unless the takes were made and billed at 4K. A reframe that repaints is priced. Rendering what was already made and billed is free.
+- 21 Oct 2026: **the 4K-refusal fix** is described to the owner in one line, with its PR number, before it moves.
