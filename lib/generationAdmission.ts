@@ -10,7 +10,7 @@ import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH 
 import { HOLD_NEEDS_A_PERSON, holdBandOf, isAgentApprover } from "@/lib/cinemaHold";
 import { CINEMA_SOUND_UNAVAILABLE, cinemaSoundOffered } from "@/lib/cinemaSoundPricing";
 import { readDraft } from "@/lib/workbench/records";
-import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
+import { ALREADY_4K, ALREADY_4K_CODE, ASTRA_MODEL, alreadyAt4K, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
 import { MediaSourceError } from "@/lib/mediaBindings";
 import { withMediaSources } from "@/lib/mediaMutation";
@@ -894,6 +894,9 @@ export async function executeGenerationAdmission(
           sourceRatio = `${astraSource.width}:${astraSource.height}`;
           sourceResolution = `${Math.min(astraSource.width,astraSource.height)}p`;
         } catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
+        /* A source whose measured short side is already the 4K the upscale makes has nothing to upscale: refused here, for a
+           quote as for a press, before any price, hold, charge or dispatch (owner, 21 Oct 2026; lib/astra.ts). */
+        if (alreadyAt4K(astraSource)) return admissionReply({ error: ALREADY_4K, code: ALREADY_4K_CODE }, { status: 400 });
         notices.push("Topaz Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
       }
       if (genjutsu && sourceRef) {

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { studioRequest } from "@/components/workbench/GenerationDialog";
+import { studioRequest, StudioRequestError } from "@/components/workbench/GenerationDialog";
 import type { AdmissionQuote } from "@/lib/admissionTypes";
 import type { SpendPrice } from "@/lib/spend";
 
@@ -15,7 +15,8 @@ export type BodyQuote =
   | { state: "none" }
   | { state: "reading" }
   | { state: "ready"; quote: AdmissionQuote; body: Record<string, unknown> }
-  | { state: "error"; reason: string };
+  /** `code`: the refusal's own code where the server gave one (for example "already_4k"), so a screen can word it in place of a price. */
+  | { state: "error"; reason: string; code?: string };
 
 const QUOTE_FAULT = "The price could not be read. Try again.";
 
@@ -38,7 +39,8 @@ export function useBodyQuote(scope: string, body: Record<string, unknown> | null
         setAnswer({ key, result: { state: "ready", quote, body: JSON.parse(key) as Record<string, unknown> } });
       }).catch((cause: unknown) => {
         if (controller.signal.aborted) return;
-        setAnswer({ key, result: { state: "error", reason: cause instanceof Error && cause.message ? cause.message : QUOTE_FAULT } });
+        const code = cause instanceof StudioRequestError && typeof cause.data?.code === "string" ? cause.data.code : undefined;
+        setAnswer({ key, result: { state: "error", reason: cause instanceof Error && cause.message ? cause.message : QUOTE_FAULT, ...(code ? { code } : {}) } });
       });
     }, 400);
     return () => { controller.abort(); clearTimeout(timer); };

@@ -1,6 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { join } from "node:path";
 import { PHONES, SIZES, everySpendButtonPriced, floors, noBannedNames, seedPhoneStates, shoot, signedInWarm, watchErrors } from "./helpers/r1-gaps";
+import { syntheticClipOfSize } from "./helpers/syntheticClipSize";
+import { ALREADY_4K, ALREADY_4K_CODE } from "../lib/astra";
 
 /**
  * Release 1 gap 3: Make's Upscale quick tool (the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12): the third tool beside Motion transfer
@@ -119,6 +121,38 @@ test("a clip: Topaz Astra 2 to 4K, priced from the server's quote, one send at t
   expect(sent[0].body).toMatchObject({ task: "upscale", model: "topaz/upscale/video/creative", fps60: true, resolution: "4k", maxCredits: price });
   expect(String(sent[0].body.quoteFingerprint)).toMatch(/^[a-f0-9]{64}$/);
   expect(sent[0].key).toBeTruthy();
+  expect(errors).toEqual([]);
+});
+
+test("a clip already at 4K: the server's line stands where the price would, the button stays off and nothing is sent", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name) || phone(info), "the panel's quick tools are on the board, not on a phone");
+  const errors = watchErrors(page);
+  const sent = await interceptPaid(page);
+  await signedInWarm(page);
+  const seeded = await seedPhoneStates(page, { kinds: ["review"] });
+  await openTool(page, seeded.project.id);
+  await expect(page.getByTestId("upscale-select").locator("option")).not.toHaveCount(1, { timeout: 30_000 });
+  /* A synthetic clip whose header says 3840×2160 (tests/helpers/syntheticClipSize.ts): the server measures it and refuses the quote. */
+  await page.getByLabel("Upload a source").setInputFiles({ name: "Already 4K.mp4", mimeType: "video/mp4", buffer: syntheticClipOfSize(3840, 2160) });
+  await expect(page.getByTestId("upscale-source")).toHaveText("Already 4K.mp4", { timeout: 30_000 });
+  const reason = page.getByTestId("upscale-reason"), go = page.getByTestId("upscale-go");
+  for (const fps of [30, 60]) {
+    await page.getByRole("radio", { name: `4K · ${fps} fps` }).click();
+    await expect(reason).toHaveText(ALREADY_4K, { timeout: 30_000 });
+    await expect(reason).toHaveAttribute("data-code", ALREADY_4K_CODE);
+    /* The line, not a price: no figure on the engine line or the button, and nothing to try again. */
+    await expect(page.getByTestId("upscale-price")).toHaveCount(0);
+    await expect(page.locator(".vr-reason-row .gx-hint")).toHaveCount(0);
+    await expect(go).toBeDisabled();
+    await expect(go).toHaveAttribute("data-spend", "unpriced");
+    await expect(go).not.toContainText("cr");
+  }
+  await everySpendButtonPriced(page, PANEL);
+  await noBannedNames(page, PANEL);
+  await floors(page, PANEL, phone(info));
+  await shoot(page, info.project.name, "make-upscale-already-4k");
+  await go.click({ force: true }).catch(() => {});
+  expect(sent).toEqual([]);
   expect(errors).toEqual([]);
 });
 

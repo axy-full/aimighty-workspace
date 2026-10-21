@@ -9,6 +9,7 @@ import {
   type NextRefusalDetail,
 } from "@/lib/workspace/next-action-run";
 import { EXTEND_MOVES } from "@/lib/tasks";
+import { ALREADY_4K_CODE } from "@/lib/astra";
 import { MAX_REASON } from "@/lib/approval";
 import { TOPAZ_IMAGE_PRESETS, type TopazImageSettings } from "@/lib/topaz";
 import { pendingGenerationKey } from "@/lib/workbench/pending-generation";
@@ -160,7 +161,9 @@ export function NextActionPanel({ id, scope, entry, action, project, onClose, on
           <button type="button" className="gx-hbtn" onClick={() => setNonce((n) => n + 1)} data-testid="next-try-again">Try again</button>
         </div>
       ) : null}
-      {refusal && !following && !(refusal.detail.needsReason && asked) ? <p className="gx-next-note" data-tone="red" role="alert" data-testid="next-refused">{refusal.message}</p> : null}
+      {/* A clip already at 4K is not an error: the server's line stands where the price would, in plain tone, with nothing to try again (lib/astra.ts). */}
+      {refusal && !following && refusal.detail.code === ALREADY_4K_CODE ? <p className="gx-next-note" role="status" data-testid="next-refused" data-code={ALREADY_4K_CODE}>{refusal.message}</p>
+        : refusal && !following && !(refusal.detail.needsReason && asked) ? <p className="gx-next-note" data-tone="red" role="alert" data-testid="next-refused">{refusal.message}</p> : null}
       {note ? <p className="gx-next-note" role="status" data-testid="next-note">{note}</p> : null}
       {run?.phase === "following" ? (
         <p className="gx-next-note" role="status" data-testid="next-following">

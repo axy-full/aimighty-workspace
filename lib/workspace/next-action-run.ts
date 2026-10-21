@@ -33,7 +33,7 @@ import { neutralCopy } from "./rig";
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 export type NextQuote = { credits: number; fingerprint: string };
 /** What a refusal asks for: a reason to render past an approved take, or an admin (a shot's cost cap). */
-export type NextRefusalDetail = { needsReason?: { title: string; line: string }; needsAdmin?: true };
+export type NextRefusalDetail = { needsReason?: { title: string; line: string }; needsAdmin?: true; /** The refusal's own code where the server gave one (for example "already_4k"). */ code?: string };
 
 /** The server answered, and will answer the same way until something changes: its words, and what it asks for. */
 export class NextRefusal extends Error {
@@ -66,7 +66,7 @@ export async function quoteNext(scope: string, body: Record<string, unknown>, si
     if (error instanceof StudioRequestError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
       const data = error.data;
       const detail: NextRefusalDetail = data.needsReason === true ? { needsReason: { title: error.message, line: typeof data.line === "string" ? data.line : "" } }
-        : data.needsAdmin === true ? { needsAdmin: true } : {};
+        : data.needsAdmin === true ? { needsAdmin: true } : typeof data.code === "string" ? { code: data.code } : {};
       throw new NextRefusal(neutralCopy(error.message, "This can't be priced here."), detail);
     }
     throw error;
