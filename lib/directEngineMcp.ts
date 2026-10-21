@@ -1,10 +1,6 @@
 import type { ToolDef } from "./mcp";
 import { lipSyncTools } from "./lipSync";
 import { RECRAFT_DIRECT_TOOLS } from "./recraftMcp";
-import { allSettings } from "./settings";
-import { rigJobCeiling } from "./workbench/rig-agent-limits";
-import { jobApprovalLineCredits } from "./approvalRule";
-import { creditUsd } from "./creditTerms";
 
 /**
  * The direct engines' tools (sync.so, and in the stack above it Sarvam and BFL) as an outside agent over MCP sees them (rule 11: the button, Make, a board
@@ -15,12 +11,15 @@ import { creditUsd } from "./creditTerms";
  *   and a call says there is no such tool.
  * - **The same door and the same price.** A call goes to the engine's own route as the caller (lib/mcp.ts makeCaller: the workspace's own token, its scope and its
  *   monthly ceiling) and asks the route for the quote (`quoteOnly`).
- * - **Only a person approves spending** (rule 14: "an approval written by agent:* or an MCP caller is refused"). The call NEVER sends the quote as `maxCredits` on the caller's
- *   behalf, and a `maxCredits` in the arguments is refused. What follows is the workspace's own spending setting, `spendWithoutAsking` (Ask by default; lib/workbench/
- *   rig-agent-limits.ts): in **Ask** the call returns the priced, prepared job and says it needs a person's approval, and nothing is started or spent; in **Auto** it may start the
- *   job only when its price is at or under the per-job line (the Rig's line, and never above guardrail 4, SOW 7A: 200 cr at $0.10 a credit), the approval then being the workspace
- *   admin's standing choice, not the caller's; above the line it is prepared and asks a person. Nothing in the app yet lets an admin switch the setting to Auto (that screen is
- *   U1's), so until it does every MCP call here is Ask. A token that may not spend is refused by the route (requireRender); consent is only ever read by these tools.
+ * - **Only a person approves spending** (rule 14: "an approval written by agent:* or an MCP caller is refused"). A `maxCredits` in the arguments is refused: the price is
+ *   never the caller's to approve. There is no Auto (owner, 20 Oct 2026: "Auto goes: every job is approved on its quote"): the old stored spend-without-asking
+ *   setting is no longer read, and whatever it holds ("auto" included) it starts nothing.
+ * - **A capped token is the standing approval** (owner, 20 Oct 2026, 16:50 IST: "C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask
+ *   setting — the ceiling is the standing approval. lip_sync follows the same rule once Auto goes, so the two tools behave alike."). A tool declared `startsInsideCeiling` (lip_sync), called with a token that has a monthly ceiling an
+ *   admin set (`maySpend`, which POST /api/mcp answers from the bearer the tools act with, as for render_shot), is sent at the price the route just quoted as its `maxCredits`,
+ *   so it can never bill more than it reports; the token's ceiling itself is held at reservation (lib/generationRequests.ts). Any other call (a token with no ceiling,
+ *   or a tool not so declared: Recraft's) is priced and prepared for a person, and nothing is started or spent. A token that may not spend is refused by the route
+ *   (requireRender, lib/tokenSpend.ts); consent is only ever read by these tools.
  * - Declared once beside each engine's handler (`LIP_SYNC_TOOL`, ...); this file only maps them to MCP's shape. Names are the registry's tool ids.
  */
 type Args = Record<string, string | number | boolean | undefined>;
@@ -31,27 +30,27 @@ type DirectTool = {
   present: () => Promise<boolean>;
   /** The route and the body to send, from the tool's arguments; throws a sentence for an argument that is wrong. */
   request: (args: Args) => { path: string; body: Record<string, unknown> };
-  /** A sentence for the agent from the route's answer to the job. */
-  describe: (out: Record<string, unknown>, quote: { estimatedCredits: number; price: number; unit: string }) => string;
   /** One line saying what was prepared, for the "needs a person" answer. */
   prepared?: (body: Record<string, unknown>) => string;
   /**
-   * Is this call a DRAFT (the engine's cheap, quick model, or a step that renders nothing)? Auto may start only a draft at or under the line (rule 14: "a draft priced at or under the
-   * per-job line runs without a tap"); a hero or full-quality model always asks. Absent means never a draft: it always asks.
+   * Started, at its quote, when the caller's token has a monthly ceiling an admin set (the standing approval; owner, 20 Oct 2026). Absent: every call is priced and
+   * prepared for a person.
    */
-  draft?: (body: Record<string, unknown>) => boolean;
+  startsInsideCeiling?: true;
+  /** A sentence for the agent from the route's answer to a job it started. Needed with `startsInsideCeiling`. */
+  describe?: (out: Record<string, unknown>, quote: { estimatedCredits: number; price: number; unit: string }) => string;
 };
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 
-/** lipsync-2 is the engine's draft model; lipsync-2-pro (the default) and sync-3 are full quality and always ask. */
+/** Lip-sync over MCP, whichever model (lipsync-2, lipsync-2-pro, the default, or sync-3): started at its quote inside a capped token's ceiling, else priced and prepared for a person. */
 const LIP_SYNC: DirectTool = {
   def: {
     name: "lip_sync",
     description:
-      "Match a clip's mouth to a voice track (sync.so). Priced first; the job is sent at that price as its ceiling, and spends from the workspace's credit with a token " +
-      "made to render. No face or voice is checked by Particl; the provider's own filters apply. " +
-      "Returns an id; collect it with get_render.",
+      "Match a clip's mouth to a voice track (sync.so). Priced first; the job is sent at that price as its ceiling, and spends from the workspace's credit within the " +
+      "monthly ceiling an admin set on the token; a token with no ceiling gets the price and nothing is started. No face or voice is checked by Particl; the provider's " +
+      "own filters apply. Returns an id; collect it with get_render.",
     inputSchema: {
       type: "object",
       properties: {
@@ -75,13 +74,13 @@ const LIP_SYNC: DirectTool = {
       model: str(a.model), syncMode: str(a.sync_mode), projectId: str(a.project_id),
     },
   }),
-  draft: (b) => b.model === "lipsync-2",
   prepared: (b) => `prepared: lip-sync (${String(b.model ?? "lipsync-2-pro")}) of ${String(b.clipUploadId ?? b.clipGenId ?? "a clip")} with ${String(b.audioUploadId ?? b.audioGenId ?? "a voice track")}${b.projectId ? ` for production ${String(b.projectId)}` : ""}`,
+  startsInsideCeiling: true,
   describe: (out, quote) => `Lip-sync started.\n\nid: ${String(out.id)}\nprice: ${quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`}\n\nCall get_render with this id to collect it.`,
 };
 
 const REGISTRY: DirectTool[] = [LIP_SYNC,
-  /* Recraft (lib/recraftMcp.ts): declared with no `draft`, so every call asks. */
+  /* Recraft (lib/recraftMcp.ts): not declared `startsInsideCeiling`, so every call is priced and prepared for a person. */
   ...RECRAFT_DIRECT_TOOLS];
 
 /** The direct engines' tools present for this workspace, in MCP's shape. */
@@ -89,15 +88,6 @@ export async function directEngineMcpTools(): Promise<ToolDef[]> {
   const out: ToolDef[] = [];
   for (const tool of REGISTRY) if (await tool.present()) out.push(tool.def);
   return out;
-}
-
-/** The most a call may start without a person: the Rig's per-job line, and never above the approval line (guardrail 4). */
-async function autoLineCredits(): Promise<number> {
-  return Math.min(await rigJobCeiling(), jobApprovalLineCredits(creditUsd()));
-}
-/** The workspace's spending setting: only an exact "auto" lets a call start; anything else, or none, is Ask. */
-async function spendsWithoutAsking(): Promise<boolean> {
-  try { return (await allSettings()).spendWithoutAsking === "auto"; } catch { return false; }
 }
 
 /**
@@ -119,8 +109,12 @@ const filedWords = (filed: { id: string } | { refused: string } | null, why?: st
     ? `prepared job: ${filed.id}\n\nThis needs a person's approval: nothing was started or spent. It waits in Particl › Settings › Connections for a person.`
     : `Nothing was filed: ${filed ? filed.refused : why ?? "this tool's arguments are not kept"}\n\nThis needs a person's approval: nothing was started or spent. A person can make this themselves in Particl, where its price is shown before they approve it.`;
 
-/** Runs one of them, or returns null when the name is none of these (the caller then tries its own tools). */
-export async function runDirectEngineTool(name: string, args: Args, call: Call): Promise<string | null> {
+/**
+ * Runs one of them, or returns null when the name is none of these (the caller then tries its own tools). `maySpend`: whether the caller's token has a monthly
+ * ceiling an admin set (POST /api/mcp answers it from the bearer the tools act with); asked only of a tool declared `startsInsideCeiling`, after its quote.
+ * Absent, or anything but true, and nothing is started.
+ */
+export async function runDirectEngineTool(name: string, args: Args, call: Call, options: { maySpend?: () => Promise<boolean> } = {}): Promise<string | null> {
   const tool = REGISTRY.find((t) => t.def.name === name);
   if (!tool) return null;
   if (!(await tool.present())) throw new Error("There is no such tool here.");
@@ -143,13 +137,14 @@ export async function runDirectEngineTool(name: string, args: Args, call: Call):
   if (typeof quote.estimatedCredits !== "number" || !Number.isInteger(quote.estimatedCredits) || quote.estimatedCredits < 0 || typeof quote.price !== "number" || !Number.isFinite(quote.price))
     throw new Error("This could not be priced, so nothing was started.");
   const priceText = quote.unit === "usd" ? `$${Number(quote.price).toFixed(2)}` : `${quote.estimatedCredits} cr`;
-  /* Ask (the default), Auto over the line, or Auto on anything but a draft: priced and prepared, not started. */
-  if (!(await spendsWithoutAsking()) || !(tool.draft?.(clean) ?? false) || quote.estimatedCredits > (await autoLineCredits())) {
-    const line = tool.prepared ? tool.prepared(clean) : name;
-    const filed = await fileForPerson(name, clean, line, call);
-    return `${"id" in filed ? "Priced and prepared" : "Priced"}, not started.\n\nprice: ${priceText}\n${line}\n${filedWords(filed)}`;
+  /* A token with a ceiling an admin set, on a tool started inside it: the ceiling is the standing approval and the quote is the price inside it,
+     sent as `maxCredits` (whatever the workspace's Ask setting; no Auto since 20 Oct 2026). The route and the reservation hold the ceiling. */
+  if (tool.startsInsideCeiling && tool.describe && (await options.maySpend?.()) === true) {
+    const out = await call(path, { method: "POST", body: { ...clean, maxCredits: quote.estimatedCredits }, headers: requestId ? { "Idempotency-Key": `mcp-${name}:${requestId}` } : undefined });
+    return tool.describe(out, { estimatedCredits: quote.estimatedCredits, price: quote.price, unit: String(quote.unit ?? "cr") });
   }
-  /* Auto, at or under the line: the workspace's own standing setting approves it, at the price the server just gave. */
-  const out = await call(path, { method: "POST", body: { ...clean, maxCredits: quote.estimatedCredits }, headers: requestId ? { "Idempotency-Key": `mcp-${name}:${requestId}` } : undefined });
-  return tool.describe(out, { estimatedCredits: quote.estimatedCredits, price: quote.price, unit: String(quote.unit ?? "cr") });
+  /* Otherwise priced and prepared, never started: a person approves it, at its price. */
+  const line = tool.prepared ? tool.prepared(clean) : name;
+  const filed = await fileForPerson(name, clean, line, call);
+  return `${"id" in filed ? "Priced and prepared" : "Priced"}, not started.\n\nprice: ${priceText}\n${line}\n${filedWords(filed)}`;
 }

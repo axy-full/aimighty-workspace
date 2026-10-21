@@ -73,7 +73,7 @@ export async function approveItem(item: QueueItem, fetcher: Fetcher): Promise<Pr
 /**
  * An admin approves another member's step that needs an admin's tap (owner, 13 Oct): the claim (which marks it running and hands back the step itself, never its chat), its
  * live price from the route that will render it, the render at that price, and the step settled by the server from the render's own record. The request names only the step
- * (`atomikStepId`): the server resolves where it files, so the member's production caps and the 200 cr line apply and the admin never reads the board. If the live price is
+ * (`atomikStepId`): the server resolves where it files, so the member's production caps apply and the admin never reads the board. If the live price is
  * above the one shown, or cannot be had, the claim is handed back (the step is proposed again) and nothing is rendered or charged.
  */
 async function approveAnotherStep(item: QueueItem, stepId: string, fetcher: Fetcher): Promise<PressOutcome> {

@@ -31,7 +31,7 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
   { const off = await sampleWorkspaceOff(); if (off) return off; }
   const { id } = await ctx.params;
   /* Claiming marks a step running, which approves its spend, and hands back its prompt. The step's person claims it (lib/atomikAccess.ts), and an admin claims another
-     member's only while it needs an admin's tap (over the per-shot cap or the 200 cr line; owner, 13 Oct). Anyone else is told it is gone, as an unknown step is, and the step is
+     member's only while it needs an admin's tap (over the per-shot cap; owner, 13 Oct; the 200 cr line it also named was retired on 20 Oct 2026). Anyone else is told it is gone, as an unknown step is, and the step is
      left as it was. Asked after the people-only and sample refusals, which do not depend on the step. */
   const mine = (await stepIsMine(id, got.user)) === true;
   if (!mine && !(await adminStepSheet(id, got.user))) return NextResponse.json({ error: STEP_GONE }, { status: 404 });

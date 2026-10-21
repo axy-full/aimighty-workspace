@@ -109,7 +109,7 @@ export type DecidedItem = {
   id: string;
   title: string;
   project: QueueProject;
-  /** "approved", "released", "skipped", "set aside", "turned down", or Auto's "spent without asking". */
+  /** "approved", "released", "skipped", "set aside", "turned down", or, for a step before Auto went on 20 Oct 2026, Auto's "spent without asking". */
   what: string;
   /** Who decided, under the usage ledger's naming rule; null when the record does not say. */
   by: string | null;

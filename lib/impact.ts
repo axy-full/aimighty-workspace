@@ -10,9 +10,7 @@ import { getSetting } from "./settings";
 import { effectiveModels } from "./defaultModels";
 import { creditsApply, creditState } from "./credits";
 import { projectCapSpent, spentBy } from "./caps";
-import { cleanRule, cleanShotCap, jobApprovalLineCredits } from "./approvalRule";
-import { creditUsd } from "./creditTerms";
-import { isAgentId } from "./security/people-only";
+import { cleanRule, cleanShotCap } from "./approvalRule";
 import { shotCreditsSoFar } from "./shotCap";
 import { quoteOf, verdictOf, liveTerms, stampOf, publicQuote, withHouseBands, type PublicQuote, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
 
@@ -256,7 +254,7 @@ async function describe(dependents: Dependent[]): Promise<Described[]> {
  * two of them is two questions. Answering with one cap is how a set is quoted
  * as allowed and then refused halfway through.
  */
-export async function contextFor(projectIds: (string | null)[], opts: { isAdmin: boolean; machine?: boolean }): Promise<Context> {
+export async function contextFor(projectIds: (string | null)[], opts: { isAdmin: boolean }): Promise<Context> {
   const inCredits = creditsApply(currentTenant()?.workspace);
   const wanted = [...new Set(projectIds.filter((p): p is string => Boolean(p)))];
 
@@ -288,8 +286,6 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
     rule: cleanRule(rule),
     shotCap: cleanShotCap(shotCap),
     isAdmin: opts.isAdmin,
-    /* Guardrail 4: the approval line at this workspace's price of a credit, whoever asks (lib/approvalRule.ts). */
-    jobLine: { credits: jobApprovalLineCredits(creditUsd()), machine: opts.machine ?? (currentTenant()?.token != null || isAgentId(currentTenant()?.user?.id)), house: !inCredits, perCredit: creditUsd() },
   };
 }
 
