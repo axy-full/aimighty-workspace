@@ -32,7 +32,7 @@ export type RunStep = {
   /** Who approved it, under the usage ledger's naming rule; null when the record does not say. */
   by: string | null;
   byYou: boolean;
-  /** Auto ran it without a tap: a draft at or under Auto's ceiling. */
+  /** History only: Auto ran it without a tap, before Auto went on 20 Oct 2026. Nothing new is marked so. */
   auto: boolean;
   at: number | null;
 };

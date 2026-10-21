@@ -51,7 +51,7 @@ function failure(error: unknown) {
  * the light check those windows make every few seconds. `agent=1` answers Atomik's run card:
  * whether building is switched on, the newest run on this production (its limit, what it has
  * spent inside it, and its renders), and with `projectId` (the viewer's project) and no run in
- * progress, what asking would cost: the suggested limit, Auto's ceiling, and planning's price.
+ * progress, what asking would cost: the suggested limit and planning's price (no Auto, and no no-tap ceiling, since 20 Oct 2026).
  * `locks`: the elements its cards stand for that are locked, the masters (from the elements table).
  * `agent=1&board=new` (no production): what asking would cost on a new, empty board, for Home's Start
  * before its project exists. Prices only; nothing is reserved or written.

@@ -100,7 +100,7 @@ const COLUMNS: Record<string, [string, string][]> = {
   rig_agent_steps: [
     ["admission", "TEXT"], ["quote_credits", "REAL"], ["band", "INTEGER"], ["approved_at", "INTEGER"], ["approved_by", "TEXT"],
     ["approved_fingerprint", "TEXT"], ["reason", "TEXT"], ["pause", "TEXT"], ["settled_at", "INTEGER"], ["outcome", "TEXT"],
-    /* The plan approval that covered this render (null: a tap or Auto), and the shot's step a fix re-renders. */
+    /* The plan approval that covered this render (null: a person's own tap, or Auto before 20 Oct 2026), and the shot's step a fix re-renders. */
     ["approval_id", "TEXT"], ["fix_of", "INTEGER"],
   ],
 };
