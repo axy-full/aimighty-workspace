@@ -1522,3 +1522,145 @@ Langfuse: (1) project members are platform admins only. (2) Count both, distingu
 Sequence: the money PRs in flight (#854, the guardrail-4 PR, #811, the Director follow-ups, the #815 press fix) land first; slice 1 rebases on them. No LangGraph code before 2 and 4 above are answered — they are now."
 
 Question 4: "Okay so answer for 4. I want the demo asap. I don't care about the date, but it has to be with all elements in place. A full working unit"
+
+## Owner, 21 Oct 2026, 12:30 IST: today's decisions, in the order to work them
+
+The verbatim text is kept by the lead. It names engines, vendors and operations, which this public file leaves out. The rules for everything below: a design note comes before any code on something new (sections D–I); every PR that spends or touches a money path gets an Opus money review; nothing here moves the money gates; and no prompt text goes into a trace, a checkpoint or a graph.
+
+**A. Today's operations (the owner's; the lead watches and prepares)**
+- 21 Oct 2026: credential rotation before the capture is replaced by a pause. The old hosting project's variables are deleted and the project is paused. The production app keeps its variable names. No key is rotated before the capture.
+- 21 Oct 2026: the recovery fence's points. The old hosting project is paused, not fenced. The production app's id plus its commit is the deployment id. Every worker that holds storage keys is listed. Background dispatch is not paused. The sync cron stays on.
+- 21 Oct 2026: model-call tracing is switched on in production config. There is no deploy before the capture; deploy #6 (the owner's) picks the setting up, and then the owner confirms the traces show numbers and no words.
+- 21 Oct 2026: the render worker moves off the old hosting on Thursday or Friday, following ops/render-worker, with the lead watching. The old-media → R2 copy and its verify run the same day. The 27 Oct cancellation of the old hosting goes ahead only if both are green; otherwise it moves a month.
+- 21 Oct 2026: one app, no staging. Staging (P4) comes after deploy #6, as its own PR.
+
+**B. Money PRs in flight: these land first, in this order**
+1. #857 (the stricter Make phone test), under the standing yes.
+2. #854 at 553b10b9: merge on a full 24/24 run against today's release/1.
+3. #858 at d908e82d: yes on a full 24/24. A first press keeps matching its quote exactly. "Binds the total" applies only to retries and held approvals.
+4. The press-recovery client PR:
+   - Retry costs only the shots left;
+   - a held approval expires after 7 days;
+   - Render again is a new quote that shows what the failed take cost;
+   - "up to 24 at a time", with no split over 24;
+   - Atomik may prepare a press, and a person taps;
+   - the approval binds the total.
+5. The guardrail-4 removal PR, rebased on #854, with its money review posted. Auto is gone everywhere.
+- 21 Oct 2026: rule 14 gains the capped-token wording, as a dated amendment in the owner's words.
+- 21 Oct 2026: engines #777–#787 stay held until after the demo. When they return, they go onto the price file.
+- 21 Oct 2026: model-call tracing (restated). The tracing project's members are platform admins only. Refusals are counted both as ours (sent:false) and as the provider's. Engines are traced later, with the ledger.
+
+**C. LangGraph (final) and the demo**
+- 21 Oct 2026: the design note's 16 answers stand as recorded this morning.
+  - Slice 1 starts after B, and slices are cut by phase.
+  - Each slice deletes the old driving code it replaces. The per-render money code is untouched.
+  - Checkpoints are tenant rows on libSQL, and Inngest owns time.
+  - The serde is plain JSON if it passes.
+  - Slice 3 caps the context node at 30k tokens, with a money review and the owner's yes.
+- 21 Oct 2026: **the demo is a full working unit**:
+  - **The path:** brief in → beats → kit → frames → shots → sound → cut → deliver.
+  - **How it runs:** in Agent mode, end to end on the demo production.
+  - **What that takes:** slices 1–3 plus Import v1 (H), with Chat/Make as it runs today.
+  - **Left out:** Genie and the development kinds.
+  - **Date:** none. Import v1 is estimated, in the design note's style, after slice 1.
+- 21 Oct 2026: the first item after slice 3 is the all-in quote on the graph, with its money review: drafts, finals and up to two fixes per shot under one approval (18 Oct). Next, Verify is wired in as the free self-check, with the fix loop running under the allowance.
+
+**D. The ledger (the truth, in Turso)**
+
+A lane beside slice 1 that touches no `rig-agent*` file. A design note comes first, covering the schema, the index, the lineage tool, the digests, the privacy tests and the backfill.
+
+- 21 Oct 2026: every generation, Director rows included, gets a provenance row. The row records:
+  - the command and who gave it, the mode, and the step and beat;
+  - the inputs with their roles;
+  - the engine, mode and size (agent-private);
+  - the person's words and Atomik's rewrite (the rewrite is agent-private);
+  - the quote and the charge;
+  - the check verdict, the fix number and what changed;
+  - the parent assets;
+  - the person's action (Keep, Sent, or ✕ with a reason);
+  - timestamps.
+- 21 Oct 2026: agent-private fields are never served: not in an API response, an export, a History line, a receipt or an error. A closed-list guard fails CI if a route starts to serve them.
+- 21 Oct 2026: how the planner uses the record.
+  - It reads the record's index (one line per asset) on every call.
+  - `lineage(asset)` is a tool that fetches a chain on demand.
+  - A digest is written at each Sent.
+
+**E. A graph index (decided), after the ledger**
+- 21 Oct 2026: a dependent back-end index. It is never the front end, never the truth, never exposed as a query surface and never offered as a service; under its licence it is an internal component only.
+  - One named graph per workspace, holding ids only.
+  - Projected from the ledger by a sync worker, and rebuildable with one command.
+  - The agent reaches it only through fixed, parameterised queries (lineage, related, where-appears), never free-form queries from a model.
+- 21 Oct 2026: before any PR, a two-day spike on the house's own productions, reported with numbers. Vectors stay in Turso if the graph engine's disappoint.
+- 21 Oct 2026: the graph runs as a container on the droplet's internal network, with no published port and persistence on. Its dump goes into the backup and the capture runbook. A fallback engine is named.
+
+**F. Cross-production search (decided)**
+
+A lane beside slice 1.
+
+- 21 Oct 2026: version 1 lives in the workspace's database, as a take index built from the ledger with a libSQL vector column.
+  - workspace_id is on every row, private boards are excluded, and existing generations are backfilled.
+  - Search is SQL filters plus `vector_top_k`, in one query.
+  - The Library gets a plain-language box; Atomik turns the sentence into filters and a query.
+  - "Use in this production" copies the kept take or still into the current Library, with its lineage.
+- 21 Oct 2026: embeddings come from one pinned model on an existing provider key; models are never mixed. Search is free to the person. The embedding and parse calls are cost rows for the sheet and are traced as ids and counts only.
+
+**G. The interview, the read-back and show-then-ask (design note first)**
+- 21 Oct 2026: the questions are about the film, never the craft. They come from a slot-filling engine: slots are schemas, and the catalogue sits in the platform layer, per film type × step.
+  - **Filling:** every slot is filled first from what already exists.
+  - **What is asked:** only a slot that is empty and changes the money or the film.
+  - **How:** one question at a time, with chips and "Decide for me" beside each. At most three per step.
+  - **Decided slots:** shown together as one line with Change. A slot answered once is never asked again. What the director has already decided is locked.
+- 21 Oct 2026: the Brief interview is the owner's ten groups, answerable in one monologue.
+- 21 Oct 2026: the read-back.
+  - Before any plan, a read-back page shows one page in the director's own words, with Change on every line.
+  - It seeds the Treatment.
+- 21 Oct 2026: show, then ask.
+  - Every craft step opens with a proposal to react to.
+  - A bare question comes only where there is no default and a price is attached.
+  - ✕ reasons feed the next question.
+- 21 Oct 2026: preflight shows the kit it joined, with one-tap fixes.
+  - Shots inherit their beat's kit.
+  - A name that matches nothing is asked about, never rendered silently.
+  - No card says join, wire, reference or element.
+- 21 Oct 2026: hide the how (as decided 16–18 Oct).
+  - **What Agent mode shows:** the what and the price, never the engine, mode, rewritten prompt, fix path or routing.
+  - **Switching modes:** allowed per step, per person. Each mode prices its own work, and no allowance carries across.
+  - **The plan:** a priced band whether or not it runs.
+
+**H. Import v1 (part of the demo unit; design note first)**
+- 21 Oct 2026: "+ Import" goes on Home and on the Script and Storyboard steps, with drop-anywhere on those two steps and the camera roll on the phone.
+  - Anything is accepted, and nothing is ever "unsupported".
+  - Everything imported lands in the Library as uploaded.
+- 21 Oct 2026: Atomik reads an import into beats, in plain words.
+  - Guessed fields are marked, and its questions are batched into one preflight.
+  - Name matching against the Library asks once.
+  - The reading is a priced Reading band, shown before it runs.
+- 21 Oct 2026: two rules for drawings.
+  - A drawing says where things are and what happens, never what things look like.
+  - A drawing is never a first frame. It becomes the beat's storyboard frame first, and the kept frame is what the shot starts on.
+- 21 Oct 2026: an evaluation set of real amateur inputs runs on every change.
+
+**I. Narration (with G; design note first)**
+- 21 Oct 2026: Talk on the bar at every step and on the phone. Clips arrive by tap-to-record or as voice-note uploads.
+  - Transcription runs on existing provider keys, with a language-hinted fallback for Hindi-first clips once it has been tested on the owner's voice.
+  - Audio goes to the workspace's R2. The transcript goes into the production record as the person's own words.
+  - A "Here's what I heard" card shows the open gaps.
+  - The narration is re-read to fill the interview's slots, and later clips override earlier ones.
+  - Narration never spends and never reaches tracing. It is proposed as free to the person, to be confirmed in the note.
+
+**J. Not decided: do not start**
+- 21 Oct 2026: none of these start until the owner sends their own instruction:
+  - the per-step model and effort policy;
+  - the engine-doc mismatches;
+  - model version changes;
+  - Director list changes;
+  - the joining rule as the Auto default;
+  - the business sheet's open items.
+
+**Order of lanes**
+- 21 Oct 2026:
+  1. B first.
+  2. Then, in parallel lanes: C slice 1, D, F, and the G/H/I design notes. None of these touches `rig-agent*`.
+  3. E's spike, once D's schema is agreed.
+- Nothing new merges while a slice's rebase is pending.
+- Every design note goes to the owner, with its estimate, before any code.
