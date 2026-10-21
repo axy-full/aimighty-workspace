@@ -4,9 +4,9 @@ import { RECRAFT_DEFAULT_MODEL, RECRAFT_RASTER_MODELS } from "./recraft";
 
 /**
  * Recraft as an outside agent over MCP sees it (rule 11), in the shape lib/directEngineMcp.ts registers its engines in: a definition, whether the tool is present for this workspace, the route and
- * body a call sends (the quote first, then, only where the workspace's spending setting lets a call start it, the job), and the sentence the agent reads. THIS FILE DECLARES; the registry lists these and
- * runs them. Nothing here approves anything: a caller's `maxCredits` is refused by the registry. **None of these is declared a draft** (no `draft` key: absent means it always asks, in Ask and Auto alike):
- * a still from words is a paid render and background removal is a finishing step on a take that exists. The SVG tools (vector models, vectorize) are NOT in this list at all: they are declared in the
+ * body a call sends (the quote; the registry then prepares the job for a person), and the sentence the agent reads. THIS FILE DECLARES; the registry lists these and runs them. Nothing here
+ * approves anything: a caller's `maxCredits` is refused by the registry. **None of these is started inside a token's ceiling** (no `startsInsideCeiling`: every call is priced and prepared for a
+ * person, whatever the token and the workspace's settings; there is no Auto since 20 Oct 2026): a still from words is a paid render and background removal is a finishing step on a take that exists. The SVG tools (vector models, vectorize) are NOT in this list at all: they are declared in the
  * handler's registry as `unavailable` until an SVG sanitiser exists (lib/recraftImage.ts header), so an outside agent is never offered one.
  */
 type Args = Record<string, string | number | boolean | undefined>;

@@ -37,7 +37,7 @@ export type PlanStepSummary = {
   total: number | null; ceiling: number | null; approximate: boolean;
   /** The shots in the plan, by title. One price for the plan (`total`); no price per shot. */
   shots: string[];
-  /** Renders that ask on their own (over the per-job line, or for an admin). */
+  /** Renders that ask on their own: those that need an admin (no per-render line since 20 Oct 2026). */
   asks: number;
   /** Why it is not priced yet, in fixed words with no engine's name ("2 shots can't be priced yet; open the board."); null once priced. */
   reason: string | null;

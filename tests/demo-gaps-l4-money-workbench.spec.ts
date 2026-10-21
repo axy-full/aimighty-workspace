@@ -28,7 +28,7 @@ const runOf = (state: string, paid: ReturnType<typeof step>[], over: Record<stri
   id: RUN, state, reason: null, goal: "A 15-second film", mine: true,
   proposal: state === "awaiting_approval" ? { title: "Three shots", summary: "", groups: [], cards: 0, wires: 0, tidy: false, next: [], fingerprint: FP } : null,
   steps: [], built: { cards: 0, wires: 0 }, held: [], undo: null, canUndo: false, credits: 9,
-  money: { mode: "ask", limit: 500, jobCeiling: 200, spent: 9, inFlight: 0, left: 491, planning: { state: "settled", credits: 9 } },
+  money: { mode: "ask", limit: 500, spent: 9, inFlight: 0, left: 491, planning: { state: "settled", credits: 9 } },
   paid, at: Date.now(), ...over,
 });
 const proposalSteps = () => [step({ seq: 1, title: "Shot 1" }), step({ seq: 2, title: "Shot 2" }), step({ seq: 3, title: "Shot 3" })];

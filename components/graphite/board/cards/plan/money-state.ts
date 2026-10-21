@@ -15,11 +15,10 @@ import type { PlanModel, PlanPrimary, PlanStep } from "./model";
  *                 another engine of the plan prices it (the server's quote, free to move), or approve the rest.
  *  - failed:      a render of the run failed. "Nothing billed" only where the ledger says the provider billed
  *                 nothing; otherwise what it charged, or that it isn't known yet. The take's own card carries Retry.
- *  - paused:      the next render waits on the budget's ask (its own reason is the gate's "Paused at 80 % of the
- *                 budget…", Settings › Spending rules: 80 % unless an admin changed it) and reaches the pause. A render
- *                 that waits for any other reason (a price that moved, an approved plan running on to the cap) is not
- *                 shown as paused. An admin's unlock lets it past the cap, never past the ask. "Continue · N cr" is
- *                 that render's own tap at its price, or Stop.
+ *  - paused:      a render whose own reason is the budget's ask ("Paused at 80 % of the budget…"). Auto's gate wrote
+ *                 that reason; since Auto went (20 Oct 2026) nothing writes it, so only a reason stored before then
+ *                 matches. A render that waits for any other reason is not shown as paused. "Continue · N cr" is that
+ *                 render's own tap at its price, or Stop. (A legacy leftover, kept until a follow-up removes it.)
  *
  * Every figure is the server's (the plan model's prices, the budget read, the pack list); this only adds them up
  * through price-words and words them. On release/1 Approve is the run's approval and each render then asks at its
@@ -100,7 +99,7 @@ export function planMoneyState(input: MoneyInput): MoneyState | null {
     const price = model.primary.price;
     const next = model.steps.find((s) => s.seq === (model.primary as { seq: number }).seq);
     const needs = price.kind === "free" ? 0 : Math.ceil(price.credits - 1e-9);
-    /* Only the gate's own budget ask is the 80 % pause: the render's reason says why it waits. */
+    /* Only a budget-ask reason stored before 20 Oct 2026 (Auto's gate wrote it; nothing does now) shows as the 80 % pause. */
     if (b.pauseAt != null && b.used + needs >= b.pauseAt && isBudgetPauseReason(next?.reason)) {
       const words = priceWords(price)!;
       return {

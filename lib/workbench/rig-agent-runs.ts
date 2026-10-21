@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AdmissionActor, AdmissionReply, PreparedAdmission, PrepareAdmissionResult } from "../admissionTypes";
 import { preparedClaimFingerprint } from "../admissionSupport";
-import { budgetAsk } from "../caps";
 import { creditState, creditsApply } from "../credits";
 import { creditUsd } from "../creditTerms";
 import { dollars } from "../format";
@@ -19,8 +18,7 @@ import { isShotNode, rigShots } from "../workspace/shots";
 import { generationRequestBody, type GenerationReference } from "./generation-request";
 import { mediaReferenceIdentity } from "./media-reference-input";
 import { mapNodeShot, readDraft } from "./records";
-import { approvalClosed, coverage, planApprovalOf } from "./plan-approval";
-import { effectiveJobCeiling, rigJobCeiling } from "./rig-agent-limits";
+import { approvalClosed, coverage, isPersonApprover, planApprovalOf } from "./plan-approval";
 import { creditFigure, type RigAgentState, type RigAgentStepState } from "./rig-agent-plan";
 import { getRun, patchRun, patchStep, rigAgentReady, stepsOf, type PauseKind, type RunRow, type StepRow } from "./rig-agent-store";
 import { readTeamCanvas } from "./team-canvas";
@@ -41,11 +39,10 @@ import { withTeamCanvas } from "./team-canvas-model";
  *    engine has one; a job with no price is never run.
  *  - approved: by the plan's one approval (lib/workbench/plan-approval.ts:
  *    a listed render at exactly the price approved, or a fix drawn under it),
- *    by a tap from the person who asked (Ask, the default), or in
- *    Auto when it is a draft priced at or under the per-job line
- *    (lib/workbench/rig-agent-limits.ts). Anything over the line asks, and so
- *    does a full-quality render (an engine with no draft). The run's limit is
- *    checked before approval and again before sending.
+ *    or by a tap from the person who asked. Nothing else approves a render:
+ *    there is no Auto since 20 Oct 2026 (owner: "every job is approved on its
+ *    quote"), and a step stored as approved by `auto` is not sent on it. The
+ *    run's limit is checked before approval and again before sending.
  *  - sending: the durable request key is saved first —
  *    `rig-agent:<runId>:<nodeId>:take:<attempt>` — and then the prepared
  *    request is admitted exactly as priced (admitGeneration), with the run's
@@ -130,10 +127,6 @@ export type PaidDeps = {
   /** Prices and gates only: a render already approved, being sent or rendering is left to the run's own drive, and this drive stops there (plan_step's drive, which runs
    *  outside the caller's token, sends nothing). */
   priceOnly?: true;
-  /** The per-job line now (default: lib/workbench/rig-agent-limits.ts). */
-  ceiling?: () => Promise<number>;
-  /** Whether this render reaches the pause at a share of the production's budget (default: lib/caps.ts budgetAsk). */
-  budget?: (productionId: string, credits: number) => Promise<{ line: string } | null>;
 };
 
 export type PaidContext = {
@@ -229,9 +222,9 @@ async function creditsProblem(admission: PreparedAdmission): Promise<string | nu
 }
 
 /** What a reservation needs to count a render toward this run: refused when the run was stopped or switched off meanwhile. */
-function runSpend(run: RunRow, band: number, ctx: Pick<PaidContext, "enabled" | "offReason">, auto = false): RunSpend {
+function runSpend(run: RunRow, band: number, ctx: Pick<PaidContext, "enabled" | "offReason">): RunSpend {
   return {
-    id: run.id, limitCredits: run.capCredits ?? 0, band, ...(auto ? { auto: true } : {}),
+    id: run.id, limitCredits: run.capCredits ?? 0, band,
     live: async () => {
       if (!ctx.enabled()) return ctx.offReason;
       const fresh = await getRun(db(), run.id);
@@ -396,7 +389,7 @@ async function price(run: RunRow, step: StepRow, deps: PaidDeps): Promise<Moved>
   if (!priced.ok) {
     await holdForAdmin(step, priced, ["next"]);
     /* One that needs an admin does not hold up the plan's quote: the rest are priced now, as at any gate. */
-    if (priced.pause === "admin" && run.mode !== "auto" && step.fixOf == null && !(await planApprovalOf(db(), run.id))) await priceAhead(run, step, deps);
+    if (priced.pause === "admin" && step.fixOf == null && !(await planApprovalOf(db(), run.id))) await priceAhead(run, step, deps);
     return pause(run, step, priced.reason, priced.pause, ["next"]);
   }
   await patchStep(db(), step.id, {
@@ -415,7 +408,7 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
   const fresh = await priceRender(run, waiting, deps);
   if (!fresh.ok) {
     await holdForAdmin(waiting, fresh, ["waiting"]);
-    if (fresh.pause === "admin" && run.mode !== "auto" && waiting.fixOf == null && !(await planApprovalOf(db(), run.id))) await priceAhead(run, waiting, deps);
+    if (fresh.pause === "admin" && waiting.fixOf == null && !(await planApprovalOf(db(), run.id))) await priceAhead(run, waiting, deps);
     return pause(run, waiting, fresh.reason, fresh.pause, ["waiting"]);
   }
   let step = waiting;
@@ -432,11 +425,12 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
   /* The plan's one approval, when the person gave it (a plan is approved once). */
   await rigAgentReady();
   const approval = await planApprovalOf(db(), run.id);
-  /* A tap covers exactly this price. One the plan's approval gave holds only while that approval is open (review L2). */
-  const tapped = step.approvedFingerprint === fingerprint
+  /* A tap covers exactly this price, and only a person's (a step stored as approved by `auto`, before 20 Oct 2026, is not). One the plan's
+     approval gave holds only while that approval is open (review L2). */
+  const tapped = step.approvedFingerprint === fingerprint && isPersonApprover(step.approvedBy)
     && (!step.approvalId || (!!approval && approval.id === step.approvalId && !approvalClosed(approval, now())));
-  /* Before it: in Ask, every render the plan names is priced now (free), so the plan can be approved once at its total. */
-  if (!tapped && !approval && run.mode !== "auto" && step.fixOf == null) await priceAhead(run, step, deps);
+  /* Before it: every render the plan names is priced now (free), so the plan can be approved once at its total. */
+  if (!tapped && !approval && step.fixOf == null) await priceAhead(run, step, deps);
   const band = step.band ?? 1;
   const over = await limitProblem(run, quoteCredits, band);
   if (over) return pause(run, step, over, "limit", ["waiting"]);
@@ -447,13 +441,12 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
     await patchStep(db(), step.id, { state: "approved", reason: null }, ["waiting"]);
     return CONTINUE;
   }
-  const line = effectiveJobCeiling(run.perJobCap, await (deps.ceiling ?? rigJobCeiling)());
   const title = stepTitle(run, step);
   /* A take that holds its ceiling (Cinema Studio) is approved at its hold: "about N cr, at most 3N cr" (lib/cinemaHold.ts). */
   const heldPrice = admission.quote.ceilingCredits != null ? heldWords(admission, quoteCredits) : `about ${figure(quoteCredits, quoteUsd(admission))}`;
   if (approval) {
     const worst = quoteCredits * Math.max(1, band);
-    const cover = coverage(approval, { seq: step.seq, fixOf: step.fixOf, quote: quoteCredits, worst, fingerprint }, now(), line);
+    const cover = coverage(approval, { seq: step.seq, fixOf: step.fixOf, quote: quoteCredits, worst, fingerprint }, now());
     if (cover.ok) {
       /* The person's plan approval is this render's approval: no new tap. The hold still checks the balance, the cap, the allowance and the limit. */
       await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: approval.approvedBy, approved_fingerprint: fingerprint, approval_id: approval.id, reason: null }, ["waiting"]);
@@ -463,20 +456,8 @@ async function gate(run: RunRow, waiting: StepRow, deps: PaidDeps): Promise<Move
     await patchStep(db(), step.id, { reason: why }, ["waiting"]);
     return needsYou(run, why);
   }
-  /* Auto spends without a tap only on drafts (plan §8): a shot whose engine has no draft renders at full quality, so it asks. */
-  const draft = admission.request.draft === true;
-  /* At the share of the production's budget where paid work stops to ask (Settings › Spending rules), Auto asks too:
-     a person continues or stops. It only ever adds a tap; it never lets anything through. */
-  const budget = run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line)
-    ? await (deps.budget ?? budgetAsk)(run.productionId, quoteCredits) : null;
-  if (run.mode === "auto" && draft && toTenths(quoteCredits) <= toTenths(line) && !budget) {
-    await patchStep(db(), step.id, { state: "approved", approved_at: now(), approved_by: "auto", approved_fingerprint: fingerprint, reason: null }, ["waiting"]);
-    return CONTINUE;
-  }
-  const why = budget ? `${budget.line} ${title} is next · ${heldPrice}.`
-    : run.mode !== "auto" ? `${title} is ready to render · ${heldPrice}.`
-    : !draft ? `${title} has no draft on its engine, so Atomik asks before rendering it in full · ${heldPrice}. Render it, skip it, or stop.`
-    : `${title} is about ${figure(quoteCredits, quoteUsd(admission))}, over the ${figure(line)} a draft may cost without asking. Render it, skip it, or stop.`;
+  /* Nothing runs without a person (owner, 20 Oct 2026: Auto goes): with no plan approval, the render waits for its own tap at this price. */
+  const why = `${title} is ready to render · ${heldPrice}.`;
   await patchStep(db(), step.id, { reason: why }, ["waiting"]);
   return needsYou(run, why);
 }
@@ -502,7 +483,7 @@ async function priceAhead(run: RunRow, current: StepRow, deps: PaidDeps): Promis
 async function send(run: RunRow, step: StepRow, ctx: PaidContext, deps: PaidDeps): Promise<Moved> {
   const admission = step.admission;
   /* Nothing is sent without a price and an approval that covers exactly it. */
-  if (!admission || step.quoteCredits == null || step.approvedFingerprint !== admission.quote.fingerprint || !step.nodeId) {
+  if (!admission || step.quoteCredits == null || step.approvedFingerprint !== admission.quote.fingerprint || !isPersonApprover(step.approvedBy) || !step.nodeId) {
     await patchStep(db(), step.id, { state: "waiting" }, ["approved"]);
     return CONTINUE;
   }
@@ -525,7 +506,7 @@ async function send(run: RunRow, step: StepRow, ctx: PaidContext, deps: PaidDeps
   let reply: AdmissionReply;
   try {
     reply = await (deps.asOwner ?? defaultAsOwner)(run.owner, (actor) =>
-      (deps.admit ?? defaultAdmit)(admission, actor, { requestKey: key, defer: deps.defer ?? defaultDefer, run: runSpend(run, band, ctx, step.approvedBy === "auto") }));
+      (deps.admit ?? defaultAdmit)(admission, actor, { requestKey: key, defer: deps.defer ?? defaultDefer, run: runSpend(run, band, ctx) }));
   } catch {
     /* Ambiguous: it may have been accepted. The key stays; the next tick asks what became of it. */
     return wakeIn(run, PENDING_CHECK_MS, { state: "running", more: false });

@@ -25,7 +25,7 @@ import { bindSampleLift } from "@/lib/demo/lift.server";
 import { SAMPLE_LINE } from "@/lib/demo/sample";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
 import {
-  ACTIVE_STATES, PLAN_LIMITS, RIG_AGENT_MODES, boardSnapshot, compilePlan, creditFigure, planFingerprintText, proposalView, undoOps, wiresOf,
+  ACTIVE_STATES, PLAN_LIMITS, boardSnapshot, compilePlan, creditFigure, planFingerprintText, proposalView, undoOps, wiresOf,
   type BoardSnapshot, type SnapshotAttachment, type RigAgentMode, type RigAgentMoneyView, type RigAgentPaidStepView, type RigAgentPlanView, type RigAgentRunView, type RigAgentState,
 } from "./rig-agent-plan";
 import {
@@ -37,7 +37,7 @@ import {
   MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, NO_ATTACHMENT_CONTENT, PLANNER_TIMEOUT_MS, type PlannerAttachmentContent, type PlannerOutcome,
 } from "./rig-agent-planner";
 import { attachedOf, loadPlanAttachmentContent, PlanAttachmentError, resolvePlanAttachments, type AttachmentReaders, type PlanAttachment } from "./rig-agent-attachments";
-import { effectiveJobCeiling, rigJobCeiling, suggestedRunLimit } from "./rig-agent-limits";
+import { suggestedRunLimit } from "./rig-agent-limits";
 import { advancePaidSteps, closeEndedSteps, MAX_SEND_ATTEMPTS, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
 import {
   activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertFixStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
@@ -63,9 +63,9 @@ import { readTeamCanvas, requireProduction } from "./team-canvas";
  * kill switch and that the person who asked still belongs to the workspace.
  *
  * Money (plan §5.5, §8; PR 10). Before a run spends anything, the person who
- * asks approves a limit for it ("up to about N credits for this run") and a
- * mode: Ask (the default: every render waits for their tap) or Auto (a draft
- * priced at or under the per-job line runs on its own; anything else asks).
+ * asks approves a limit for it ("up to about N credits for this run"), and
+ * every render is approved by a person on its quote: its own tap, or the plan's
+ * one approval (no Auto since 20 Oct 2026; a run stored "auto" reads as Ask).
  * The planning turn is metered into that limit — reserved at its ceiling,
  * settled at what it used. Placing cards, wiring and tidying stay free. After
  * the build, the renders the plan names run as paid steps inside the limit
@@ -106,9 +106,9 @@ const agentAuthor = (runId: string) => `agent:${runId}`;
 
 const distinct = (items: string[]) => [...new Set(items)];
 
-/** The ledger's view of a run: every charge that named it (planning, renders), and the per-job line now. */
-export type RunLedger = { charges: (RunCharge & { id: string; status: string })[]; ceiling: number | null };
-const NO_LEDGER: RunLedger = { charges: [], ceiling: null };
+/** The ledger's view of a run: every charge that named it (planning, renders). */
+export type RunLedger = { charges: (RunCharge & { id: string; status: string })[] };
+const NO_LEDGER: RunLedger = { charges: [] };
 
 /** The planning turn's meter event: one per run. */
 export const planEventId = (runId: string) => `rigplan_${runId.replace(/^rar_/, "")}`;
@@ -129,7 +129,7 @@ function quoteStep(run: RunRow, s: StepRow): QuoteInputStep {
 }
 
 /** The plan's one approval as the card shows it: the server's quote before it, its record after. */
-function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger, approval: PlanApprovalRow | null, jobLine: number): RigAgentPlanView | null {
+function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedger, approval: PlanApprovalRow | null): RigAgentPlanView | null {
   const takes = steps.filter((s) => s.purpose === "take");
   if (!takes.length) return null;
   if (approval) {
@@ -150,7 +150,7 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
   }
   /* Only once the build is done and the run is at its renders: before that, shots may not exist to price. */
   if (!["running", "needs_you", "paused"].includes(run.state)) return { quote: null, blocked: null, approval: null };
-  const quote = planQuote(takes.map((s) => quoteStep(run, s)), jobLine);
+  const quote = planQuote(takes.map((s) => quoteStep(run, s)));
   if (!quote.ready) return { quote: null, blocked: takes.some((s) => s.state === "waiting" || s.state === "paused") ? quote.reason : null, approval: null };
   /* The house pays in dollars: the covered renders' own dollars, added (display only; the total above stays the credits the approval is made on). */
   const covered = quote.steps.map((q) => takes.find((s) => s.seq === q.seq));
@@ -171,7 +171,7 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
  *  - after the approval: a step the approval sent or is sending (approved, sending, rendering, with the approval's id), and a listed step that waits only for its
  *    turn (waiting, at the very price the approval lists, with no note: nothing asked of anyone), while the approval is open.
  *
- * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step in the gate's `asks` (over the per-job
+ * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step in the gate's `asks` (over the per-render
  * line, or needing an admin), a fix waiting for its turn, every step while there is no plan quote yet (each one asks on its own), a step whose price moved or that
  * waits for a tap, and every paused step (a Retry runs at its own price; a limit pause offers Raise from it). Titles, states, outcomes and what was charged stay.
  */
@@ -240,7 +240,6 @@ function runViewOf(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLed
   const money: RigAgentMoneyView | null = run.capCredits == null ? null : {
     mode: run.mode,
     limit: run.capCredits,
-    jobCeiling: effectiveJobCeiling(run.perJobCap, ledger.ceiling ?? run.perJobCap ?? 0),
     spent: fromTenths(tally.settledTenths),
     inFlight: fromTenths(tally.heldTenths),
     left: fromTenths(Math.max(0, toTenths(run.capCredits) - tally.settledTenths - tally.worstTenths)),
@@ -270,10 +269,9 @@ function runViewOf(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLed
       fixOf: s.fixOf, inPlan: !!s.approvalId,
     };
   });
-  const jobLine = effectiveJobCeiling(run.perJobCap, ledger.ceiling ?? run.perJobCap ?? 0);
   return {
     id: run.id, state: run.state, reason: run.reason, goal: run.goal, kind: run.plan?.kind ?? "ask", step: run.plan?.step ?? null, mine,
-    proposal: run.plan && run.fingerprint ? proposalView(run.plan, run.fingerprint, money) : null,
+    proposal: run.plan && run.fingerprint ? proposalView(run.plan, run.fingerprint) : null,
     steps: steps.filter((s) => s.purpose !== "take" && s.purpose !== "verify").map((s) => ({ seq: s.seq, label: s.label, state: s.state, held: distinct(outcomes(s).map((o) => o.held).filter((h): h is string => !!h)) })),
     built: { cards, wires },
     held,
@@ -282,18 +280,15 @@ function runViewOf(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLed
     credits: money?.spent ?? 0,
     money,
     paid,
-    plan: planView(run, steps, viewer, ledger, approval, jobLine),
+    plan: planView(run, steps, viewer, ledger, approval),
     at: run.updatedAt,
   };
 }
 
 /** What the ledger holds for a run (read-only). A read that fails shows the run without it rather than failing the card. */
 async function ledgerOf(run: RunRow): Promise<RunLedger> {
-  const [charges, ceiling] = await Promise.all([
-    run.capCredits == null ? Promise.resolve([]) : runCharges(run.id).catch(() => []),
-    rigJobCeiling().catch(() => null),
-  ]);
-  return { charges, ceiling };
+  const charges = run.capCredits == null ? [] : await runCharges(run.id).catch(() => []);
+  return { charges };
 }
 
 async function viewOf(runId: string, viewer: string): Promise<RigAgentRunView> {
@@ -311,12 +306,12 @@ export async function planGateQuote(productionId: string, runId: string): Promis
   const run = await runOfProduction(db(), productionId, runId);
   if (!run) return null;
   const ledger = await ledgerOf(run);
-  const view = planView(run, await stepsOf(db(), run.id), "", ledger, await planApprovalOf(db(), run.id), effectiveJobCeiling(run.perJobCap, ledger.ceiling ?? run.perJobCap ?? 0));
+  const view = planView(run, await stepsOf(db(), run.id), "", ledger, await planApprovalOf(db(), run.id));
   return view?.quote ? { total: view.quote.total, ceiling: view.quote.ceiling } : null;
 }
 
-/** What asking costs, for the ask form: the suggested limit, the per-job line, and the planning turn's approximate ceiling. */
-export type RigAgentAskTerms = { limit: number; jobCeiling: number; planning: number | null;
+/** What asking costs, for the ask form: the suggested limit, and the planning turn's approximate ceiling. */
+export type RigAgentAskTerms = { limit: number; planning: number | null;
   /** The planner's ceiling in the engines' own dollars, sent to the house workspace alone (it is never billed in credits and sees every price at cost). Display only: the limit a press approves is `planning`, in credits. */
   planningUsd?: number | null };
 
@@ -339,7 +334,7 @@ export async function rigAgentState(productionId: string, viewer: string, draftI
 }
 
 async function askTerms(productionId: string, draftId: string, viewer: string, attached: readonly SnapshotAttachment[] = []): Promise<RigAgentAskTerms> {
-  const [limit, jobCeiling] = await Promise.all([suggestedRunLimit(), rigJobCeiling()]);
+  const limit = await suggestedRunLimit();
   let planning: number | null = null;
   let planningUsd: number | null = null;
   const draft = await readDraft(viewer, draftId);
@@ -350,7 +345,7 @@ async function askTerms(productionId: string, draftId: string, viewer: string, a
     planning = figure.credits;
     planningUsd = figure.usd;
   }
-  return { limit, jobCeiling, planning, ...(atCost() ? { planningUsd } : {}) };
+  return { limit, planning, ...(atCost() ? { planningUsd } : {}) };
 }
 
 /**
@@ -375,8 +370,8 @@ const atCost = () => !creditsApply(requireTenant());
 export async function newBoardAskTerms(): Promise<{ enabled: boolean; run: null; ask: RigAgentAskTerms | null }> {
   const enabled = rigAgentEnabled();
   if (!enabled) return { enabled, run: null, ask: null };
-  const [limit, jobCeiling, planning] = await Promise.all([suggestedRunLimit(), rigJobCeiling(), planningCredits(newProject(""), { nodes: [], assets: [] })]);
-  return { enabled, run: null, ask: { limit, jobCeiling, planning: planning.credits, ...(atCost() ? { planningUsd: planning.usd } : {}) } };
+  const [limit, planning] = await Promise.all([suggestedRunLimit(), planningCredits(newProject(""), { nodes: [], assets: [] })]);
+  return { enabled, run: null, ask: { limit, planning: planning.credits, ...(atCost() ? { planningUsd: planning.usd } : {}) } };
 }
 
 /** A running run whose wake is due and that nobody holds: one reader claims the wake and dispatches a tick. */
@@ -408,14 +403,13 @@ async function checkedAttachments(productionId: string, ids: readonly string[]):
  * approved yet is replaced; a build in progress must finish or be stopped first.
  *
  * Asking is where the person approves the run's limit ("up to about N credits
- * for this run") and its mode: nothing in the run — the planning turn first —
- * spends beyond it, and in Ask mode every render waits for their tap.
+ * for this run"): nothing in the run — the planning turn first — spends beyond it, and every render waits for their tap
+ * or the plan's one approval. `mode` is accepted for older callers: "auto" reads as "ask" (owner, 20 Oct 2026: Auto goes).
  */
-export async function askRigAgent(input: { productionId: string; draftId: string; userId: string; requestId: string; goal: string; model?: string; limit: number; mode?: RigAgentMode; attachments?: readonly string[] }): Promise<RigAgentRunView> {
+export async function askRigAgent(input: { productionId: string; draftId: string; userId: string; requestId: string; goal: string; model?: string; limit: number; mode?: RigAgentMode | "auto"; attachments?: readonly string[] }): Promise<RigAgentRunView> {
   if (!rigAgentEnabled()) throw new RigAgentError(RIG_AGENT_OFF, 403);
   if (!isRunLimitAmount(input.limit, MAX_RUN_LIMIT)) throw new RigAgentError("Set a limit for this run: a number of credits, in tenths at most.", 400);
-  const mode: RigAgentMode = input.mode ?? "ask";
-  if (!RIG_AGENT_MODES.includes(mode)) throw new RigAgentError("Choose Ask or Auto.", 400);
+  if (input.mode !== undefined && input.mode !== "ask" && input.mode !== "auto") throw new RigAgentError("Choose Ask.", 400);
   /* An ask writes no canvas row itself, it makes a run: in the sample the spend guard below answers it (409), as it always has, not the board's view-only lock. */
   await requireProduction(input.productionId, input.userId, await accessToAsk(input.productionId));
   const draft = await readDraft(input.userId, input.draftId);
@@ -424,14 +418,9 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   /* The files attached to the ask: each must be filed in this production's Library, in this workspace. */
   const attachments = (await checkedAttachments(input.productionId, input.attachments ?? [])).map((a) => a.id);
   await rigAgentReady();
-  /* The per-job line in force as the limit is approved: Auto never goes above it (nor above the line of the day). */
-  const jobCeiling = await rigJobCeiling();
   /* The sample workspace refuses every ask (lib/demo/spend-guard.server.ts) save the one its mark is lifted for: the
      run this ask makes becomes the one run the lift covers, in this same write, or nothing is written. */
   const sampleMarked = (await sampleWorkspaceRefusal()) !== null;
-  /* The lift is for one APPROVED run (owner, 7 Oct): under it every render waits for a person's tap or the plan's one
-     Approve. Auto is never taken from the client there, whatever it sent. */
-  const runMode: RigAgentMode = sampleMarked ? "ask" : mode;
   const at = now();
   const run = await workbenchTransaction(async (tx) => {
     const again = await runByRequest(tx, input.userId, input.requestId);
@@ -450,7 +439,7 @@ export async function askRigAgent(input: { productionId: string; draftId: string
     const id = newRunId();
     await insertRun(tx, {
       id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: input.goal.trim(), model: input.model ?? "auto", at,
-      limit: { credits: input.limit, mode: runMode, jobCeiling }, attachments,
+      limit: { credits: input.limit }, attachments,
     });
     if (sampleMarked && !(await bindSampleLift(tx, { userId: input.userId, runId: id, productionId: input.productionId, at })))
       throw new RigAgentError(SAMPLE_LINE, 409);
@@ -495,7 +484,6 @@ export async function planRigAgentStep(input: { productionId: string; draftId: s
   }
   if (!chosen.length) throw new RigAgentError("Nothing on this board is waiting to render.", 409);
   if (chosen.length > PLAN_LIMITS.next) throw new RigAgentError(`A plan renders up to ${PLAN_LIMITS.next} shots at a time. Pick some.`, 409);
-  const jobCeiling = await rigJobCeiling();
   const at = now();
   let replaced = false;
   const run = await workbenchTransaction(async (tx) => {
@@ -526,7 +514,7 @@ export async function planRigAgentStep(input: { productionId: string; draftId: s
       kind: "chips" as const, step: input.step, setup: answers, ...(input.byTool ? { madeBy: "tool" as const } : {}),
     };
     const fingerprint = createHash("sha256").update(planFingerprintText(plan)).digest("hex");
-    await insertRun(tx, { id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: plan.title, model: "auto", at, limit: { credits: 0, mode: "ask", jobCeiling } });
+    await insertRun(tx, { id, productionId: input.productionId, draftId: input.draftId, owner: input.userId, requestId: input.requestId, goal: plan.title, model: "auto", at, limit: { credits: 0 } });
     /* Nothing to build: the plan is only renders, so the run goes straight to pricing them. The limit stays 0 until a person approves the plan. */
     await patchRun(tx, id, { state: "running", plan, plan_fingerprint: fingerprint, approved_at: at, approved_by: input.userId, wake_at: at });
     await insertSteps(tx, id, plan, at);
@@ -716,7 +704,7 @@ export async function raiseRigAgentLimit(input: { productionId: string; runId: s
     if (!ACTIVE_STATES.includes(run.state)) throw new RigAgentError("This run has ended. Ask again for a new one.", 409);
     if (run.capCredits == null || toTenths(input.limit) <= toTenths(run.capCredits)) throw new RigAgentError(`A new limit must be above this run's ${creditFigure(run.capCredits ?? 0)} cr.`, 409);
     const at = now();
-    const record: LimitRecord = { credits: input.limit, mode: run.mode, jobCeiling: run.perJobCap ?? 0, by: input.userId, at };
+    const record: LimitRecord = { credits: input.limit, mode: "ask", by: input.userId, at };
     await patchRun(tx, run.id, { cap_credits: input.limit, limits: [...run.limits, record] });
     await tx.execute({ sql: "UPDATE rig_agent_steps SET state='waiting',pause=NULL,reason=NULL,updated_at=? WHERE run_id=? AND state='paused' AND pause='limit'", args: [at, run.id] });
     await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at }, ["needs_you"]);
@@ -740,7 +728,6 @@ export async function approveRigAgentPlan(input: { productionId: string; runId: 
   const found = await runFor(input.productionId, input.runId, input.userId);
   if (found.owner !== input.userId) throw new RigAgentError("Only the person who asked Atomik for this plan can approve it.", 403);
   await rigAgentReady();
-  const line = effectiveJobCeiling(found.perJobCap, await rigJobCeiling());
   const [credits, charges] = await Promise.all([creditState(), runCharges(found.id)]);
   const moved = await workbenchTransaction(async (tx) => {
     const run = (await getRun(tx, found.id))!;
@@ -750,7 +737,7 @@ export async function approveRigAgentPlan(input: { productionId: string; runId: 
       throw new RigAgentError("This plan was already approved once. Anything more asks at its own price.", 409);
     }
     if (run.state !== "needs_you" && run.state !== "running") throw new RigAgentError("This plan is not waiting for approval.", 409);
-    const quote = planQuote((await stepsOf(tx, run.id)).filter((s) => s.purpose === "take").map((s) => quoteStep(run, s)), line);
+    const quote = planQuote((await stepsOf(tx, run.id)).filter((s) => s.purpose === "take").map((s) => quoteStep(run, s)));
     if (!quote.ready) throw new RigAgentError(quote.reason, 409);
     if (quote.fingerprint !== input.fingerprint) throw new RigAgentError("The plan's prices changed. Look at it again before approving.", 409);
     /* The balance against the plan's total, before it starts (rule 14); every hold checks it again. */
@@ -762,7 +749,7 @@ export async function approveRigAgentPlan(input: { productionId: string; runId: 
     const limit = fromTenths(planning.settledTenths + planning.worstTenths + quote.ceilingTenths);
     const at = now();
     await insertPlanApproval(tx, { runId: run.id, productionId: run.productionId, approvedBy: input.userId, at, quote, limitCredits: limit });
-    const record: LimitRecord = { credits: limit, mode: run.mode, jobCeiling: run.perJobCap ?? 0, by: input.userId, at };
+    const record: LimitRecord = { credits: limit, mode: "ask", by: input.userId, at };
     await patchRun(tx, run.id, { cap_credits: limit, limits: [...run.limits, record] });
     await tx.execute({ sql: "UPDATE rig_agent_steps SET state='waiting',pause=NULL,reason=NULL,updated_at=? WHERE run_id=? AND purpose='take' AND state='paused' AND pause IN ('limit','credits')", args: [at, run.id] });
     await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at }, ["needs_you", "running"]);

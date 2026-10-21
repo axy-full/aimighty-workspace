@@ -1,45 +1,28 @@
-import { jobApprovalLineCredits } from "../approvalRule";
 import { creditUsd } from "../creditTerms";
 
 /*
- * How much Atomik may spend on the Rig without asking (plan §8).
+ * What a Board run may spend (plan §8): only inside the limit a person approved for it, and every render only on a
+ * person's approval of its quote, given as the render's own tap or as the plan's one approval (rule 14).
  *
- * A run spends only inside the limit a person approved for it. Inside that
- * limit, in Auto mode, one render may run without a tap only when it is a
- * draft priced at or under the per-job line below; anything priced above it,
- * and any full-quality render, always asks. In Ask mode (the default) every
- * paid step asks.
- *
- * The per-job line is the platform's approval line (owner, 29 September: Rig
- * jobs use it): SOW §7A guardrail 4, a job price whose single source is
- * lib/approvalRule.ts (JOB_APPROVAL_LINE_USD), counted in credits at the price
- * of a credit. The run card suggests the same figure as a run's limit.
+ * There is no Auto (owner, 20 Oct 2026: "Auto goes: every job is approved on its quote"). Nothing here lets a render
+ * run without a person: the no-tap ceiling Auto used (200 cr at US$0.10) and the owner's seam for it are gone, and so
+ * is the per-render ask a plan made over that figure.
+ * A run stored with mode "auto" reads as Ask (lib/workbench/rig-agent-plan.ts runModeOf).
  */
 
 /**
- * THE OWNER'S NUMBER: the most one Atomik job may cost without asking, in
- * credits. `null` follows the platform's approval line (above). To give Rig
- * jobs a line of their own, change this one line to that number of credits.
+ * The run limit the ask form suggests, as a price: US$20 of credits, so 200 cr at a credit's US$0.10. A suggestion only:
+ * the person types the limit they approve, and nothing is ever let through or stopped at this figure.
  */
-export const RIG_AGENT_JOB_CEILING_CREDITS: number | null = null;
+export const SUGGESTED_RUN_LIMIT_USD = 20;
 
-/** The per-job line now, in credits: the owner's number when set, else the approval line at today's price of a credit. */
-export async function rigJobCeiling(): Promise<number> {
-  if (RIG_AGENT_JOB_CEILING_CREDITS != null && Number.isFinite(RIG_AGENT_JOB_CEILING_CREDITS) && RIG_AGENT_JOB_CEILING_CREDITS > 0)
-    return RIG_AGENT_JOB_CEILING_CREDITS;
-  return jobApprovalLineCredits(creditUsd());
+/** The suggestion in credits at a price of a credit, in whole tenths (rounded down). */
+export function suggestedRunLimitCredits(perCredit: number): number {
+  if (!(Number.isFinite(perCredit) && perCredit > 0)) return 0;
+  return Math.floor((SUGGESTED_RUN_LIMIT_USD / perCredit) * 10 + 1e-9) / 10;
 }
 
-/** The run limit the card suggests: the same line (the person may change it before asking). */
+/** The run limit the card suggests now (the person may change it before asking). */
 export async function suggestedRunLimit(): Promise<number> {
-  return rigJobCeiling();
-}
-
-/**
- * The line a run's Auto mode uses: the lower of the line approved with the run and the line now,
- * so a line lowered since lowers it for runs in progress, and a raise never widens an approval
- * already given.
- */
-export function effectiveJobCeiling(approved: number | null, now: number): number {
-  return approved != null && Number.isFinite(approved) && approved > 0 ? Math.min(approved, now) : now;
+  return suggestedRunLimitCredits(creditUsd());
 }

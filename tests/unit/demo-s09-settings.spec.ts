@@ -10,8 +10,6 @@ import {
   topUpLabel, topUpPack, workspaceTwoStep,
 } from "../../components/graphite/settings/model";
 import { capInput, productionLine, ruleValue, spendingLines, type SpendingRules } from "../../components/graphite/settings/rules/spending-words";
-import { RIG_AGENT_JOB_CEILING_CREDITS } from "../../lib/workbench/rig-agent-limits";
-import { jobApprovalLineCredits } from "../../lib/approvalRule";
 import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, settingProblem } from "../../lib/settingValues";
 import { PUBLISHING_ACCOUNTS, REACH_PLACES, reachRows, tokenLine, tokenValue } from "../../components/graphite/settings/model";
 import { MCP_TOOL_LINES, PARTICL_REACH, mcpTools } from "../../lib/shell/tools-connections";
@@ -150,28 +148,30 @@ test.describe("Plan & credits, as the code has it", () => {
 });
 
 test.describe("the spending rules, read-only (DECISIONS 1, 10)", () => {
-  const base: SpendingRules = { loaded: true, rule: "cap", shotCap: 50, platformLine: 200, mode: "ask", perJobLine: 200, capWarnPct: 80, atCap: "producer", canChange: false };
+  const base: SpendingRules = { loaded: true, rule: "cap", shotCap: 50, mode: "ask", capWarnPct: 80, atCap: "producer", canChange: false };
   test("each line says what the code does", () => {
     const l = spendingLines(base, creditsText);
     expect(l.ruleLine).toBe("Members up to 50 cr a shot; an admin above it.");
-    expect(l.platformLineText).toBe("Any job over 200 cr needs an admin’s tap, even under Auto.");
+    /* No platform per-job line (owner, 20 Oct 2026: guardrail 4 retired): no line of the rules says a job's size needs an admin. */
+    expect(l).not.toHaveProperty("platformLineText");
+    expect(Object.values(l).join(" ")).not.toMatch(/Any job over|even under Auto/);
     expect(l.modeLine).toBe("Every paid step waits for a person.");
-    expect(l.autoLine).toBe("Auto is picked per Board run, for drafts at or under 200 cr.");
-    expect(l.budgetLine).toBe("Auto drafts ask at 80% of a production’s budget · at the cap an admin unlocks it");
+    /* No Auto (owner, 20 Oct 2026): no line offers a render without a person, and the budget line no longer speaks of Auto. */
+    expect(l).not.toHaveProperty("autoLine");
+    expect(Object.values(l).join(" ")).not.toMatch(/\bAuto\b|without asking|without a tap/);
+    expect(l.budgetLine).toBe("Warns at 80% of a production’s budget · at the cap an admin unlocks it");
     expect(spendingLines({ ...base, rule: "anyone" }, creditsText).ruleLine).toBe("Members render freely.");
     expect(spendingLines({ ...base, rule: "producer" }, creditsText).ruleLine).toBe("A producer signs off on every take.");
-    expect(spendingLines({ ...base, platformLine: null, perJobLine: null }, creditsText)).toMatchObject({ platformLineText: null, autoLine: null });
   });
 
-  test("the per-job line Settings shows is the code's: the owner's number is unset, so it is the platform line", () => {
-    /* If this fails, the owner gave Board jobs their own line: useSpendingRules must read it rather than the platform line. */
-    expect(RIG_AGENT_JOB_CEILING_CREDITS).toBeNull();
-    expect(jobApprovalLineCredits(0.1)).toBe(200);
+  test("there is no Auto to show: the limits module carries no no-tap ceiling (owner, 20 Oct 2026)", async () => {
+    const limits = await import("../../lib/workbench/rig-agent-limits") as Record<string, unknown>;
+    for (const gone of ["RIG_AGENT_JOB_CEILING_CREDITS", "AUTO_NO_TAP_CEILING_USD", "autoNoTapCeilingCredits", "rigJobCeiling"]) expect(limits[gone], gone).toBeUndefined();
   });
 });
 
 test.describe("changing the rules (9.2)", () => {
-  const base: SpendingRules = { loaded: true, rule: "cap", shotCap: 50, platformLine: 200, mode: "ask", perJobLine: 200, capWarnPct: 80, atCap: "producer", canChange: true };
+  const base: SpendingRules = { loaded: true, rule: "cap", shotCap: 50, mode: "ask", capWarnPct: 80, atCap: "producer", canChange: true };
   test("the Rule row's value is the cap in credits, or the rule's own word", () => {
     expect(ruleValue(base, creditsText)).toBe("50 cr");
     expect(ruleValue({ ...base, rule: "producer" }, creditsText)).toBe("producer");

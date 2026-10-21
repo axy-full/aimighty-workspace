@@ -10,10 +10,10 @@ const shot = (id: string, title: string, x: number, y: number): CanvasNode => ({
 type Paid = { seq: number; tool: string; title: string; state: string; quote: number | null; charged: number | null; outcome: string | null; pause: string | null; canRender: boolean; fingerprint: string | null };
 type Run = {
   id: string; state: string; reason: string | null; credits: number;
-  money: { limit: number; mode: string; jobCeiling: number; spent: number; inFlight: number; left: number; planning: { state: string; credits: number | null } | null } | null;
+  money: { limit: number; mode: string; spent: number; inFlight: number; left: number; planning: { state: string; credits: number | null } | null } | null;
   paid: Paid[]; proposal: { fingerprint: string } | null;
 };
-type Agent = { agent: { enabled: boolean; run: Run | null; ask: { limit: number; jobCeiling: number; planning: number | null } | null } };
+type Agent = { agent: { enabled: boolean; run: Run | null; ask: { limit: number; planning: number | null } | null } };
 
 async function setUp(page: Page, name: string) {
   await signInLocally(page.request);

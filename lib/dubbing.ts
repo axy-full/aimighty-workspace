@@ -22,7 +22,6 @@ import { findStoredSource, isSourceRefusal, lookupStoredSource, resolveStoredDur
 import { DUBBING_SOURCE_AUTO, isDubbingLanguage, dubbingLanguageLabel } from "./workbench/dubbing-options";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
 
 /**
  * Dubbing: an ASYNCHRONOUS ElevenLabs project, kept as a durable workflow.
@@ -177,9 +176,6 @@ export async function executeDubbingAdmission(
   /* The approval unit (lib/credits.ts quotedCredits): never a margin beside the dollars in `price`. */
   const estimatedCredits = quotedCredits(reservedUsd, "elevenlabs");
   const inCredits = creditsApply(requireTenant());
-  /* Guardrail 4 at the quote, before the dub take or its job row is written: no failed take is left in the Library (lib/shotCap.ts › jobLineNow). */
-  const over = jobLineNow({ credits: estimatedCredits, usd: reservedUsd, key: "elevenlabs", actor: got, auto: options.run?.auto === true });
-  if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   if (quoteOnly)
     return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : reservedUsd, unit: inCredits ? "cr" : "usd", sourceSeconds: seconds, minutes, mode });
   if (body.maxCredits != null && (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number)))

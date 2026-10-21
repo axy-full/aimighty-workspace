@@ -228,17 +228,18 @@ test("the budget per production: a production with no cap of its own follows it;
     await db().execute("UPDATE projects SET cap_credits=150 WHERE id='prod-l4'");
     expect(await caps.projectCap("prod-l4")).toMatchObject({ cap: 150, from: "production" });
     await db().execute("UPDATE projects SET cap_credits=NULL WHERE id='prod-l4'");
-    /* Nothing spent yet: a 7 cr render is far from the 320 cr pause. */
-    expect(await caps.budgetAsk("prod-l4", 7)).toBeNull();
-    expect(await caps.budgetAsk("prod-l4", 320)).toMatchObject({ pause: { pauseAt: 320, reached: true }, line: "Paused at 80 % of the budget: 0 of 400 cr used. Continue or stop." });
-    /* Unlocked by an admin: past its cap it goes on; below the cap the ask still stands. */
-    await db().execute("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
-    expect(await caps.budgetAsk("prod-l4", 320)).not.toBeNull();
-    await db().execute("UPDATE projects SET cap_unlocked=0 WHERE id='prod-l4'");
+    /* The share as the gate reckons spend (projectCapSpent) and the pure pause (budgetPause): nothing spent yet, a 7 cr render is far from the 320 cr
+       share; a 320 cr one reaches it. (budgetAsk, the Auto gate's ask, went with Auto on 20 Oct 2026; its unlock case went with it.) */
+    const pauseOf = async (needs: number) => { const row = await caps.projectCapSpent("prod-l4"); return row && row.cap != null ? caps.budgetPause({ cap: row.cap, spent: row.spent, needs, warnPct: 80 }) : null; };
+    expect(await pauseOf(7)).toMatchObject({ pauseAt: 320, reached: false });
+    const reached = (await pauseOf(320))!;
+    expect(reached).toMatchObject({ pauseAt: 320, reached: true });
+    expect(caps.budgetPauseLine(reached)).toBe("Paused at 80 % of the budget: 0 of 400 cr used. Continue or stop.");
+    expect((caps as Record<string, unknown>).budgetAsk).toBeUndefined();
     /* Cleared: no budget, no cap, no pause. */
     await setSetting("productionBudgetCredits", "", "boss");
     expect(await caps.projectCap("prod-l4")).toMatchObject({ cap: null, from: null });
-    expect(await caps.budgetAsk("prod-l4", 99999)).toBeNull();
+    expect(await pauseOf(99999)).toBeNull();
   });
 });
 
@@ -297,7 +298,7 @@ test("one cap everywhere: with a workspace budget, the projects list and the pro
   await runInTenant(WS, () => setSetting("productionBudgetCredits", "", "boss"));
 });
 
-test("an unlock belongs to the cap it was given for: a new cap or a new budget re-locks it and re-arms the warning; a stale unlock never silences the 80 % ask (P6)", async () => {
+test("an unlock belongs to the cap it was given for: a new cap or a new budget re-locks it and re-arms the warning; the 80 % share stands at the new cap (P6)", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const caps = await import("../../lib/caps");
   const api = await harness();
@@ -307,13 +308,13 @@ test("an unlock belongs to the cap it was given for: a new cap or a new budget r
   /* Unlocked at the old cap (a direct write: the route's own Unlock is tied to the cap shown, demo-gaps-l4-budget-gate). */
   await exec("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
   await exec("UPDATE projects SET cap_warned_at=1 WHERE id='prod-l4'");
-  /* A new cap: re-locked, the warning re-armed, and the ask at 800 of 1,000 cr stands. */
+  /* A new cap: re-locked, the warning re-armed, and the 80 % share is at 800 of 1,000 cr. */
   expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capCredits: 1000 }), ctx as never)).status).toBe(200);
   expect(await read("SELECT cap_credits,cap_unlocked,cap_warned_at FROM projects WHERE id='prod-l4'")).toEqual([{ cap_credits: 1000, cap_unlocked: 0, cap_warned_at: null }]);
-  expect(await runInTenant(WS, () => caps.budgetAsk("prod-l4", 900))).toMatchObject({ pause: { pauseAt: 800, reached: true } });
-  /* Unlocked again below the cap: the ask still stands (an unlock lets a production past its cap, not past the ask). */
+  /* The share at the new cap, as the gate reckons spend (budgetAsk, the Auto gate's ask, went with Auto on 20 Oct 2026). */
+  const row = (await runInTenant(WS, () => caps.projectCapSpent("prod-l4")))!;
+  expect(caps.budgetPause({ cap: row.cap, spent: row.spent, needs: 900, warnPct: 80 })).toMatchObject({ pauseAt: 800, reached: true });
   await exec("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
-  expect(await runInTenant(WS, () => caps.budgetAsk("prod-l4", 900))).not.toBeNull();
   /* Setting the same cap again changes nothing; clearing it re-locks. */
   expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capCredits: 1000 }), ctx as never)).status).toBe(200);
   expect(await read("SELECT cap_unlocked FROM projects WHERE id='prod-l4'")).toEqual([{ cap_unlocked: 1 }]);

@@ -28,7 +28,7 @@ function run(over: Partial<RigAgentRunView> = {}): RigAgentRunView {
     id: "rar_000000000000000000000009", state: "awaiting_approval", reason: null, goal: "A 15-second film", mine: true,
     proposal: { title: "Three shots", summary: "", groups: [], cards: 0, wires: 0, tidy: false, next: [], fingerprint: FP },
     steps: [], built: { cards: 0, wires: 0 }, held: [], undo: null, canUndo: false, credits: 9,
-    money: { mode: "ask", limit: 500, jobCeiling: 200, spent: 9, inFlight: 0, left: 491, planning: { state: "settled", credits: 9 } },
+    money: { mode: "ask", limit: 500, spent: 9, inFlight: 0, left: 491, planning: { state: "settled", credits: 9 } },
     paid: [step(1, "Shot 1"), step(2, "Shot 2"), step(3, "Shot 3")], at: 0, ...over,
   };
 }
@@ -225,13 +225,13 @@ test("the budget per production is a whole number of credits or none; the per-sh
 });
 
 test("Budget and cap in words: the pause at 320 cr of 400, the cap per shot, and what a typed field saves", () => {
-  /* Said as the code does it: Atomik's Auto drafts ask at 80 %; an approved plan and a person's own render run on to the budget. */
-  expect(budgetLine({ budget: 400, warnPct: 80 }, creditsText)).toBe("Atomik’s Auto drafts ask at 320 cr (80 %)");
+  /* Said as the code does it: the producer is warned at 80 %; there is no Auto (owner, 20 Oct 2026), so nothing "asks" there of its own. */
+  expect(budgetLine({ budget: 400, warnPct: 80 }, creditsText)).toBe("warns at 320 cr (80 %)");
   expect(budgetLine({ budget: null, warnPct: 80 }, creditsText)).toBe("none · a production follows its own cap, if it has one");
   /* A figure typed on the way to another (0) is no budget, never a crash. */
   expect(budgetHelp({ budget: 0, warnPct: 80 }, creditsText)).toBe("No budget: each production follows its own cap, if it has one.");
   expect(budgetLine({ budget: 0, warnPct: 80 }, creditsText)).toBe("none · a production follows its own cap, if it has one");
-  expect(budgetHelp({ budget: 400, warnPct: 80 }, creditsText)).toBe("Atomik’s Auto drafts pause at 80 % (320 cr) and ask whether to continue; an approved plan and a person’s own render run on to the budget.");
+  expect(budgetHelp({ budget: 400, warnPct: 80 }, creditsText)).toBe("Warns at 80 % (320 cr); every render still waits for a person, and an approved plan runs on to the budget.");
   expect(capRow({ rule: "cap", shotCap: 50 }, creditsText)).toEqual({ value: "50 cr", line: "per shot" });
   expect(capRow({ rule: "anyone", shotCap: 50 }, creditsText)).toEqual({ value: "off", line: "anyone on the team may approve a step" });
   expect(capRow({ rule: "producer", shotCap: 50 }, creditsText).value).toBe("producer");
