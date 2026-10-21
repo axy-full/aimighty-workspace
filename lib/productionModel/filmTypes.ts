@@ -127,6 +127,10 @@ const PLUS = ["+Sound", "+Edit", "+Deliver"];
  *   - Q20 and 18 Oct (d): Breakdown is no longer a step anywhere. Its beats are the Beats view inside Script, and Pre-vis
  *     gets a Script step (opened on that view) where it had Breakdown. Music video's Beat map and Trend clip's Format
  *     breakdown are other things and stay (Q22); Microdrama waits for Q21.
+ *   - D3, 21 Oct 2026: Elements before Look. "The step order is Brief · Script · Treatment · Elements · Look · Storyboard ·
+ *     Shots · Sound · Edit · Deliver (Elements before Look)." Every type that lists both has Elements first
+ *     (tests/unit/productionSteps.spec.ts holds every type to that order). A production made before keeps its stored order:
+ *     a step row is known by its id and page id, and its `position` is the person's own rail order.
  * Not here, by design: which steps commit by Kept and which by Sent (plan § 2.8; R3, confirmed 19 Oct: only Look and
  * Elements by Kept, every other step by Sent) is a later A1 follow-up, and nothing reads it yet. Where a Storyboard
  * panel lands (R2, answered 19 Oct: a frame of the shot's Storyboard card, entering a Shots node as its Start frame) is
@@ -136,10 +140,10 @@ const PLUS = ["+Sound", "+Edit", "+Deliver"];
  */
 export const FILM_TYPES_DEFAULT = {
   filmTypes: [
-    filmType("ad_film", "Ad film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]),
-    filmType("feature", "Feature", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]),
-    filmType("short_film", "Short film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]),
-    filmType("music_video", "Music video", ["Track", "Beat map", "Treatment", "Look", "Elements", "Storyboard", "Animatic", "Shots", ...PLUS]),
+    filmType("ad_film", "Ad film", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]),
+    filmType("feature", "Feature", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]),
+    filmType("short_film", "Short film", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]),
+    filmType("music_video", "Music video", ["Track", "Beat map", "Treatment", "Elements", "Look", "Storyboard", "Animatic", "Shots", ...PLUS]),
     filmType("product_video", "Product video", ["Brief", "+Treatment", "Product", "Look", "Storyboard", "Shots", ...PLUS]),
     filmType("ugc", "UGC", ["Brief", "Creator", "Hook", "Script", "+Treatment", "Shots", "Captions", "Deliver"]),
     filmType("microdrama", "Microdrama", ["Series bible", "+Treatment", "Episodes", "Elements", "Storyboard", "Shots", ...PLUS]),
