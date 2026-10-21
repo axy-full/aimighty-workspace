@@ -12,6 +12,15 @@ import { buildFilename } from "@/lib/naming";
 import { getSetting } from "@/lib/settings";
 import { getModel } from "@/lib/models";
 
+/**
+ * The name of an id that names no take: the template with the id alone. A take
+ * the caller may not read is answered with exactly this, so a name never says
+ * whether the take is there (app/api/workbench/export-names).
+ */
+export async function noTakeFilename(genId: string, ext: string): Promise<string> {
+  return buildFilename(await getSetting("namingTemplate"), { id: genId, ext });
+}
+
 export async function downloadFilename(genId: string, ext: string): Promise<string> {
   await ready();
   const rs = await db().execute({
@@ -26,8 +35,8 @@ export async function downloadFilename(genId: string, ext: string): Promise<stri
           WHERE g.id = ?`,
     args: [genId],
   });
+  if (!rs.rows.length) return noTakeFilename(genId, ext);
   const template = await getSetting("namingTemplate");
-  if (!rs.rows.length) return buildFilename(template, { id: genId, ext });
 
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const r = rs.rows[0] as any;
