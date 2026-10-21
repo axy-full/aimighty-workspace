@@ -51,7 +51,7 @@ function failure(error: unknown) {
  * the light check those windows make every few seconds. `agent=1` answers Atomik's run card:
  * whether building is switched on, the newest run on this production (its limit, what it has
  * spent inside it, and its renders), and with `projectId` (the viewer's project) and no run in
- * progress, what asking would cost: the suggested limit, the per-job line, and planning's price.
+ * progress, what asking would cost: the suggested limit and planning's price (no Auto, and no no-tap ceiling, since 20 Oct 2026).
  * `locks`: the elements its cards stand for that are locked, the masters (from the elements table).
  * `agent=1&board=new` (no production): what asking would cost on a new, empty board, for Home's Start
  * before its project exists. Prices only; nothing is reserved or written.
@@ -138,7 +138,8 @@ const ATTACHMENTS_SENT = 50;
 const actionSchema = z.discriminatedUnion("action", [
   tidySchema,
   /* Ask Atomik to build: the project (draft) it is asked from, a request id (asking twice asks once), the request,
-     and the limit the person approves for the run with its mode (Ask, the default, or Auto). */
+     and the limit the person approves for the run. `mode` is accepted for older callers: "ask", or "auto", which is recorded as "ask"
+     (no Auto since 20 Oct 2026: every render waits for a person's tap or the plan's one approval). */
   z.object({
     action: z.literal("agent.plan"), productionId: PRODUCTION, projectId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/),
     requestId: z.string().regex(ACTION_ID), goal: z.string().trim().min(3).max(2000), model: z.string().min(1).max(120).optional(),

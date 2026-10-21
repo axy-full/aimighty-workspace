@@ -11,7 +11,8 @@ export type GenjutsuResolution = (typeof GENJUTSU_RESOLUTIONS)[number];
 export const GENJUTSU_LIMITS = {
   minSeconds: 4,
   /**
-   * The longest source clip Particl takes, for now (owner, 6 October 2026): 8 s keeps a 1080p take under the 200 cr ask line. The
+   * The longest source clip Particl takes, for now (owner, 6 October 2026): 8 s kept a 1080p take under the 200 cr ask line
+   * (that line was retired on 20 October 2026; this limit is unchanged). The
    * one number the picker, the quote and the send all read, so a longer clip is refused before any estimate (lib/genjutsu.ts).
    */
   maxSeconds: 8,

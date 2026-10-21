@@ -5,8 +5,8 @@
  * Additive and optional draft JSON like `boardStages` and `boardRounds` (lib/workbench/studio-schema.ts): saved and merged with
  * the rest of the draft, no table, nothing to migrate. Pure: no React, no server.
  *
- * `boardMode` is how a board is worked, Agent or Director. It is not Atomik's Ask and Auto, which is a spending setting
- * (lib/atomik.ts; rule 14) and stays in Spending rules; nothing here reads or writes it.
+ * `boardMode` is how a board is worked, Agent or Director. It is not a spending setting (rule 14, Spending rules; there is no Auto
+ * since 20 Oct 2026, every paid step waits for a person); nothing here reads or writes one.
  *
  * The mode is kept by person id, so one person's choice never changes another's. What the draft can hold today is narrower:
  * a draft is private to its author, and teammates view a shared board read-only, so only the author's own mode can be saved

@@ -399,12 +399,13 @@ test("a person releasing a held take made by a token with no ceiling is told who
   }, { user: person.user });
 });
 
-/* Recraft's MCP tools (#852) follow the direct-engine registry (lib/directEngineMcp.ts): none is declared a draft, so a call is priced and prepared
-   for a person, never started, and never carries a maxCredits of the caller's or the tool's own. */
+/* Recraft's MCP tools (#852) follow the direct-engine registry (lib/directEngineMcp.ts): none is declared a draft, nor started inside a token's ceiling
+   (`startsInsideCeiling`, lip_sync's alone), so a call is priced and prepared for a person, never started, and never carries a maxCredits of the caller's or the tool's own. */
 test("Recraft's MCP tools never start a job or carry an approval: priced and prepared for a person", async () => {
   const { RECRAFT_DIRECT_TOOLS } = await import("../../lib/recraftMcp");
   expect(RECRAFT_DIRECT_TOOLS.length).toBeGreaterThan(0);
   for (const tool of RECRAFT_DIRECT_TOOLS) expect("draft" in tool, tool.def.name).toBe(false);
+  for (const tool of RECRAFT_DIRECT_TOOLS) expect("startsInsideCeiling" in tool, tool.def.name).toBe(false);
   /* The body each tool sends is built from its arguments alone: it never names an approval, whatever the caller passed. */
   const args = { prompt: "A lighthouse", source_upload_id: "upl_x", project_id: "p1", maxCredits: 999, max_credits: 999 };
   for (const tool of RECRAFT_DIRECT_TOOLS) {

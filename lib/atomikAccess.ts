@@ -2,8 +2,8 @@ import { db, ready } from "./db";
 import { currentTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { getSetting } from "./settings";
-import { cleanRule, cleanShotCap, jobApprovalLineCredits } from "./approvalRule";
-import { billCredits, creditUsd, marginKeyOf } from "./creditTerms";
+import { cleanRule, cleanShotCap } from "./approvalRule";
+import { billCredits, marginKeyOf } from "./creditTerms";
 import { isAgentId } from "./security/people-only";
 
 /**
@@ -12,13 +12,13 @@ import { isAgentId } from "./security/people-only";
  * flag and no count of it leaks either). This is the one check, used by every door: the chat and thread lists, a chat's read, rename, archive, delete and turn,
  * a step's read and edit, the skills' run list, draft, save and run.
  *
- * The one exception: an admin, for another MEMBER's step that is over the workspace's per-shot cap or over guardrail 4's line right now (so it needs an admin's tap),
+ * The one exception: an admin, for another MEMBER's step that is over the workspace's per-shot cap right now (so it needs an admin's tap),
  * who is shown its id, title and price and nothing else (`adminStepSheet`). Once it needs no admin it is gone for them too. Another admin's step needs only its owner.
  *
  * Claiming a step (app/api/atomik/steps/[id]/claim: it marks the step running, which approves its spend, and returns its prompt) is the step's person's, and an admin's
  * for another member's step only while it needs an admin's tap (owner, 13 Oct: "admins may approve another member's over-line step and see its prompt, not the chat").
  * The claim then returns the step's own fields (no chat, message or position) and nothing of its chat; the admin who claimed it settles it (`stepClaimedBy`). Steps
- * under the line, or not proposed, stay gone to an admin, and tokens and agent identities are refused first (people only).
+ * under the cap, or not proposed, stay gone to an admin, and tokens and agent identities are refused first (people only).
  */
 export const CHAT_GONE = "That chat is gone.";
 export const STEP_GONE = "That step is gone.";
@@ -49,11 +49,13 @@ export function stepCredits(row: { est_cost_usd?: unknown; kind?: unknown; model
   return inCredits && est !== null && Number.isFinite(est) ? billCredits(est, marginKeyOf(text(row.kind), text(row.model))) : null;
 }
 
-/** Whether a step priced at `credits` needs an admin's tap: over the per-shot cap, or over guardrail 4's line. The one definition. */
+/**
+ * Whether a step priced at `credits` needs an admin's tap: over the workspace's per-shot cap. The one definition. (No platform per-job
+ * line: guardrail 4 was retired on 20 October 2026, so a step's size alone never sends it to an admin.)
+ */
 export function needsAdminTap(credits: number | null, cap: number | null): boolean {
   if (credits === null) return false;
-  const line = jobApprovalLineCredits(creditUsd());
-  return (cap !== null && credits > cap) || (line > 0 && credits > line);
+  return cap !== null && credits > cap;
 }
 
 /** Whether the owner of a chat is an admin (their step needs only them): the workspace's owner, or a user whose role is admin. */
@@ -85,7 +87,7 @@ export async function adminStepSheet(stepId: string, viewer: ChatViewer): Promis
 /**
  * Where the render of a step the viewer has claimed files: its own chat's project, resolved here and never named by the client. The step must be running, claimed by the
  * viewer, with nothing sent yet. Admission uses this (lib/generationAdmission.ts), so an admin's approval of another member's step lands in that member's project, under its
- * caps and the 200 cr line, and the admin never reads the board. Null when the step is not the viewer's to render.
+ * caps, and the admin never reads the board. Null when the step is not the viewer's to render.
  */
 export type ClaimedStep = {
   projectId: string | null;

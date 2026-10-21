@@ -793,6 +793,52 @@ test("the shot cap is judged at the quote and the press, before any row is writt
   }, MEMBER as never);
 });
 
+/* Over MCP, lip_sync is started only by a token with a monthly ceiling an admin set, sent at its quote as maxCredits (lib/directEngineMcp.ts; owner,
+   20 Oct 2026, 16:50 IST: "C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask setting — the ceiling is the standing approval.
+   lip_sync follows the same rule once Auto goes, so the two tools behave alike."). This is that start at the admission: the ceiling and the quote are what hold it. Ceilings are synthetic, in the house's unit. */
+test("a token with a monthly ceiling starts a lip-sync at its quote, under its token; past its ceiling, or with no ceiling, it is refused at the reservation: its take settles failed at nothing (a zero ledger line at most) and nothing is handed on", async () => {
+  const { admitLipSync } = await import("../../lib/lipSync");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  process.env.SYNC_ENABLED = "1";
+  const quoteUsd = micro(5 * PRO);
+  const SYNTHETIC_ROOMY_CEILING_USD = 1_000_000;
+  const tokenOf = (id: string, capUsd: number | null) => ({ id, name: "agent", scope: "render" as const, capUsd, capCredits: null });
+  const asToken = async (token: ReturnType<typeof tokenOf>, fn: (actor: AdmissionActor) => Promise<void>) =>
+    runInTenant(house(), () => fn({ ...OWNER, token } as AdmissionActor), { user: OWNER.user, token } as never);
+  /* With a ceiling far above the quote: the quote answers, and the press at exactly that quote is started, its take and its meter row under the token. */
+  const roomy = tokenOf(uid("tok_lip_roomy"), SYNTHETIC_ROOMY_CEILING_USD);
+  await asToken(roomy, async (actor) => {
+    const w = await world();
+    const quoted = await admitLipSync({ ...w.body, quoteOnly: true }, actor, options(), {});
+    expect(quoted, JSON.stringify(quoted.body)).toMatchObject({ status: 200, body: { price: quoteUsd } });
+    const before = { meter: (await meterRows()).length, handed: deferred.length };
+    const pressed = await admitLipSync({ ...w.body, maxCredits: quoted.body.estimatedCredits }, actor, options(), {});
+    expect(pressed.status, JSON.stringify(pressed.body)).toBe(200);
+    const id = String(pressed.body.id);
+    expect((await db().execute({ sql: "SELECT token_id FROM generations WHERE id=?", args: [id] })).rows[0].token_id).toBe(roomy.id);
+    expect((await meterRows()).length).toBe(before.meter + 1);
+    expect(deferred.length).toBe(before.handed + 1);
+    deferred.splice(0);
+    expect(await run(id, fakeVendor({ outputDuration: 4 }).deps, 4)).toMatchObject({ status: "done", settled: 1 });
+  });
+  /* A ceiling below the quote, and no ceiling at all: refused at the reservation. The take it opened is settled failed at nothing (a zero ledger line at
+     most), and nothing is handed to the worker. */
+  for (const [token, status] of [[tokenOf(uid("tok_lip_tight"), quoteUsd / 2), 429], [tokenOf(uid("tok_lip_none"), null), 403]] as const) {
+    await asToken(token, async (actor) => {
+      const w = await world();
+      const handed = deferred.length;
+      const pressed = await admitLipSync({ ...w.body, maxCredits: 100000 }, actor, options(), {});
+      expect(pressed.status, `${token.id}: ${JSON.stringify(pressed.body)}`).toBe(status);
+      const takes = (await db().execute({ sql: "SELECT id,status FROM generations WHERE token_id=?", args: [token.id] })).rows;
+      expect(takes.map((t) => t.status), token.id).toEqual(["failed"]);
+      const lines = (await meterRows()).filter((m) => m.id === takes[0].id);
+      for (const line of lines) expect([Number(line.engine_cost_usd), Number(line.billed_credits)], token.id).toEqual([0, 0]);
+      expect(deferred.length, token.id).toBe(handed);
+    });
+  }
+});
+
 test("a claim that never got both inputs up never reached the submit and settles at nothing; one with both inputs and no job id is a lost acknowledgement, held", async () => {
   const { advanceLipSyncJobWith } = await import("../../lib/lipSync");
   const { db } = await import("../../lib/db");

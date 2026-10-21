@@ -207,34 +207,41 @@ test("the pure rules: only a person approves; the quote is the server's prices s
     seq, nodeId: `n${seq}`, title: `Shot ${seq}`, state: "waiting", fixOf: null, quote, worst: quote, fingerprint: `f${seq}`, pause: null, reason: null, ...extra,
   });
   /* 43 + 43 + 7 = 93; at most 186. */
-  const q = pa.planQuote([step(1, 43), step(3, 43), step(5, 7)], 200);
+  const q = pa.planQuote([step(1, 43), step(3, 43), step(5, 7)]);
   expect(q).toMatchObject({ ready: true, total: 93, ceiling: 186, totalTenths: 930, ceilingTenths: 1860, approximate: false, asks: [] });
   if (!q.ready) throw new Error("not ready");
   /* An approximate engine counts at its worst case, and says "up to". */
-  expect(pa.planQuote([step(1, 10, { worst: 30 })], 200)).toMatchObject({ ready: true, total: 30, ceiling: 60, approximate: true });
-  /* Above the per-job line: listed to ask on its own, not in the total. */
-  expect(pa.planQuote([step(1, 43), step(3, 250)], 200)).toMatchObject({ ready: true, total: 43, asks: [{ seq: 3 }] });
+  expect(pa.planQuote([step(1, 10, { worst: 30 })])).toMatchObject({ ready: true, total: 30, ceiling: 60, approximate: true });
+  /* No per-render line (owner, 20 Oct 2026): a render over 200 cr is listed and in the total like any other; only one that needs an admin asks on its own. */
+  expect(pa.planQuote([step(1, 43), step(3, 250)])).toMatchObject({ ready: true, total: 293, ceiling: 586, asks: [] });
+  expect(pa.planQuote([step(1, 43), step(3, 250, { state: "paused", pause: "admin" })])).toMatchObject({ ready: true, total: 43, asks: [{ seq: 3, why: "admin" }] });
+  expect(pa.planQuote([step(3, 250, { state: "paused", pause: "admin" })])).toEqual({ ready: false, reason: "Every render here needs an admin, so each asks on its own." });
   /* A render without the server's price: the plan cannot be approved yet. */
-  expect(pa.planQuote([step(1, 43), step(3, 0, { state: "next", quote: null, worst: null, fingerprint: null })], 200)).toMatchObject({ ready: false, reason: "Shot 3 is not priced yet." });
+  expect(pa.planQuote([step(1, 43), step(3, 0, { state: "next", quote: null, worst: null, fingerprint: null })])).toMatchObject({ ready: false, reason: "Shot 3 is not priced yet." });
   /* The fingerprint covers every price: a moved price is a different plan. */
-  const moved = pa.planQuote([step(1, 43), step(3, 44), step(5, 7)], 200);
+  const moved = pa.planQuote([step(1, 43), step(3, 44), step(5, 7)]);
   expect(moved.ready && moved.fingerprint).not.toBe(q.fingerprint);
   const approval = {
     id: "rpa_x", runId: "rar_x", productionId: "p", approvedBy: "ana", approvedAt: 0, expiresAt: pa.PLAN_APPROVAL_MS, fingerprint: q.fingerprint,
     steps: q.steps, totalTenths: q.totalTenths, ceilingTenths: q.ceilingTenths, fixes: { "1": [9] }, limitCredits: 186, closedAt: null, closedReason: null,
   };
   const at = 1000;
-  expect(pa.coverage(approval, { seq: 1, fixOf: null, quote: 43, worst: 43, fingerprint: "f1" }, at, 200)).toEqual({ ok: true });
+  expect(pa.coverage(approval, { seq: 1, fixOf: null, quote: 43, worst: 43, fingerprint: "f1" }, at)).toEqual({ ok: true });
+  /* A listed render over 200 cr is covered by the one approval at its listed price: no separate tap (owner, 20 Oct 2026). */
+  const big = pa.planQuote([step(1, 250)]);
+  if (!big.ready) throw new Error("not ready");
+  expect(pa.coverage({ ...approval, fingerprint: big.fingerprint, steps: big.steps, totalTenths: big.totalTenths, ceilingTenths: big.ceilingTenths, fixes: {} },
+    { seq: 1, fixOf: null, quote: 250, worst: 250, fingerprint: "f1" }, at)).toEqual({ ok: true });
   /* Render N+1: not listed. A moved price: asks. */
-  expect(pa.coverage(approval, { seq: 7, fixOf: null, quote: 7, worst: 7, fingerprint: "f7" }, at, 200)).toEqual({ ok: false, reason: pa.NOT_IN_PLAN });
-  expect(pa.coverage(approval, { seq: 1, fixOf: null, quote: 43, worst: 43, fingerprint: "other" }, at, 200)).toEqual({ ok: false, reason: pa.PRICE_MOVED });
+  expect(pa.coverage(approval, { seq: 7, fixOf: null, quote: 7, worst: 7, fingerprint: "f7" }, at)).toEqual({ ok: false, reason: pa.NOT_IN_PLAN });
+  expect(pa.coverage(approval, { seq: 1, fixOf: null, quote: 43, worst: 43, fingerprint: "other" }, at)).toEqual({ ok: false, reason: pa.PRICE_MOVED });
   /* A fix drawn on its shot, priced no higher: covered. One priced above its shot, or never drawn: asks. */
-  expect(pa.coverage(approval, { seq: 9, fixOf: 1, quote: 43, worst: 43, fingerprint: "g" }, at, 200)).toEqual({ ok: true });
-  expect(pa.coverage(approval, { seq: 9, fixOf: 1, quote: 44, worst: 44, fingerprint: "g" }, at, 200).ok).toBe(false);
-  expect(pa.coverage(approval, { seq: 11, fixOf: 1, quote: 43, worst: 43, fingerprint: "g" }, at, 200)).toEqual({ ok: false, reason: pa.NOT_IN_PLAN });
+  expect(pa.coverage(approval, { seq: 9, fixOf: 1, quote: 43, worst: 43, fingerprint: "g" }, at)).toEqual({ ok: true });
+  expect(pa.coverage(approval, { seq: 9, fixOf: 1, quote: 44, worst: 44, fingerprint: "g" }, at).ok).toBe(false);
+  expect(pa.coverage(approval, { seq: 11, fixOf: 1, quote: 43, worst: 43, fingerprint: "g" }, at)).toEqual({ ok: false, reason: pa.NOT_IN_PLAN });
   /* Closed or expired: nothing more is drawn on it. */
-  expect(pa.coverage({ ...approval, closedAt: 5, closedReason: "Stopped." }, { seq: 1, fixOf: null, quote: 43, worst: 43, fingerprint: "f1" }, at, 200)).toEqual({ ok: false, reason: "Stopped." });
-  expect(pa.coverage(approval, { seq: 1, fixOf: null, quote: 43, worst: 43, fingerprint: "f1" }, pa.PLAN_APPROVAL_MS, 200).ok).toBe(false);
+  expect(pa.coverage({ ...approval, closedAt: 5, closedReason: "Stopped." }, { seq: 1, fixOf: null, quote: 43, worst: 43, fingerprint: "f1" }, at)).toEqual({ ok: false, reason: "Stopped." });
+  expect(pa.coverage(approval, { seq: 1, fixOf: null, quote: 43, worst: 43, fingerprint: "f1" }, pa.PLAN_APPROVAL_MS).ok).toBe(false);
   expect(pa.fixRoom(approval, 1)).toEqual({ used: 1, left: 1, listed: true });
   expect(pa.fixRoom({ ...approval, fixes: { "1": [9, 11] } }, 1)).toEqual({ used: 2, left: 0, listed: true });
 });
@@ -332,6 +339,32 @@ test("one approval covers exactly the plan: the gate shows the server's total (t
     /* A plan is approved once: another approval of this run is refused. */
     await expect(agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: "1".repeat(64), userId: OWNER })).rejects.toMatchObject({ status: 409 });
   });
+});
+
+test("one approval per step, whatever the price (owner, 20 Oct 2026: the per-render ask over 200 cr goes): a render over 200 cr is listed in the plan's total, approved with it once, and renders with no tap of its own", async () => {
+  await inRun("once-big", async (ws) => {
+    const { creditUsd, marginFor } = await import("../../lib/creditTerms");
+    /* Synthetic dollars, made up for this test: shot 2 comes to about 250 cr, over the old 200 cr line. */
+    const bigUsd = (250 * creditUsd()) / marginFor("mock");
+    const { agent, r, deps, runId, run } = await atGate(ws, (shot) => (shot === "2" ? bigUsd : 0.3));
+    const a = await credits(0.3), big = await credits(bigUsd);
+    expect(big).toBeGreaterThan(200);
+    /* Both listed, both in the total: nothing asks on its own. */
+    expect(run.plan?.quote).toMatchObject({ total: a + big, ceiling: 2 * (a + big), covered: takeSteps(run).map((p) => p.seq), asks: [] });
+    const { planModel } = await import("../../components/graphite/board/cards/plan/model");
+    const card = planModel({ run, enabled: true, balance: await balance(ws), rule: null, readOnly: null })!;
+    expect(card.steps.map((s) => s.asksAlone)).toEqual([null, null]);
+    expect(JSON.stringify(card)).not.toMatch(/per-render line|a render may cost/);
+    await agent.approveRigAgentPlan({ productionId: "prod-1", runId, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
+    /* Shot 1 goes, then shot 2 (about 250 cr) goes under the same approval, with no further tap. */
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(1);
+    await settleTake((await renderRows())[0].id, "succeeded", 0.3);
+    await agent.advanceRigAgentRun(runId, deps);
+    expect(r.calls).toHaveLength(2);
+    const shown = await view();
+    expect(takeSteps(shown).map((p) => p.inPlan)).toEqual([true, true]);
+  }, 5000);
 });
 
 test("an agent, an MCP caller, a token or a teammate cannot approve a plan or draw a fix; the route takes a signed-in person's session only", async () => {

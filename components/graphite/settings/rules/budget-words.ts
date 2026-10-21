@@ -2,8 +2,8 @@
  * Settings › Spending rules › Budget and cap, in words (design Gaps B: "?view=workspace&ws=rules&edit=rules"). Pure, so
  * the unit specs hold each line to the code:
  *  - the budget per production is `productionBudgetCredits` (lib/caps.ts projectCap: a production with no cap of its
- *    own follows it), and Atomik's Auto drafts ask at `capWarnPct` of it; an approved plan runs to the cap (lib/caps.ts budgetPause, rounded down; budgetAsk is
- *    called only by the Auto gate). A person's own render past that share is warned and goes on to the budget;
+ *    own follows it), and the producer is warned at `capWarnPct` of it (lib/caps.ts checkCap; budgetPause, rounded down). There is no Auto since
+ *    20 Oct 2026: every render waits for a person, and an approved plan or a person's own render past that share goes on to the budget;
  *    House workspaces, not billed in credits, have no budget (`notEnforced`);
  *  - "Before an admin" is the cost approval rule's per-shot cap (lib/approvalRule.ts: rule "cap", 50 cr by default).
  *    Typing a figure there turns the rule to "cap"; clearing it turns it to "anyone". A "producer" rule is changed
@@ -15,17 +15,17 @@ import { budgetPause } from "@/lib/budgetPause";
 
 export type BudgetRules = { budget: number | null; warnPct: number | null; rule: ApprovalRule | null; shotCap: number | null };
 
-/** "the 80 % pause asks at 320 cr", or what no budget means. */
+/** "warns at 320 cr (80 %)", or what no budget means. */
 export function budgetLine(r: Pick<BudgetRules, "budget" | "warnPct">, cr: (n: number) => string): string {
   const pause = r.budget == null ? null : budgetPause({ cap: r.budget, spent: 0, needs: 0, warnPct: r.warnPct ?? 80 });
-  return pause ? `Atomik’s Auto drafts ask at ${cr(pause.pauseAt)} (${pause.pct} %)` : "none · a production follows its own cap, if it has one";
+  return pause ? `warns at ${cr(pause.pauseAt)} (${pause.pct} %)` : "none · a production follows its own cap, if it has one";
 }
 
 /** The help under the budget field. */
 export function budgetHelp(r: Pick<BudgetRules, "budget" | "warnPct">, cr: (n: number) => string): string {
   const pause = r.budget == null ? null : budgetPause({ cap: r.budget, spent: 0, needs: 0, warnPct: r.warnPct ?? 80 });
   if (!pause) return "No budget: each production follows its own cap, if it has one.";
-  return `Atomik’s Auto drafts pause at ${pause.pct} % (${cr(pause.pauseAt)}) and ask whether to continue; an approved plan and a person’s own render run on to the budget.`;
+  return `Warns at ${pause.pct} % (${cr(pause.pauseAt)}); every render still waits for a person, and an approved plan runs on to the budget.`;
 }
 
 /** The "Before an admin" row: its value and line. */

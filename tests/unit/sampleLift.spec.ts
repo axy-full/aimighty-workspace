@@ -441,12 +441,12 @@ test("an Auto ask under a lift becomes Ask: nothing renders before the person ap
     await db().execute({ sql: "UPDATE rig_agent_runs SET mode='auto' WHERE id=?", args: [second.id] });
     await expect(mark.liftSampleMark(userOf(OWNER), { runId: second.id })).rejects.toMatchObject({ status: 409 });
   });
-  /* Outside the sample workspace an Auto ask stays Auto: the person's choice is untouched there. */
+  /* Outside the sample workspace an Auto ask becomes Ask too: there is no Auto anywhere since 20 Oct 2026 (owner: "every job is approved on its quote"). */
   await inWorkspace("auto-ask-other", async () => {
     const agent = await import("../../lib/workbench/rig-agent");
     const { db } = await import("../../lib/db");
     const asked = await agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: OWNER, requestId: rid(), goal: "The dunes at dawn, two shots.", limit: 500, mode: "auto" });
-    expect(String((await db().execute({ sql: "SELECT mode FROM rig_agent_runs WHERE id=?", args: [asked.id] })).rows[0].mode)).toBe("auto");
+    expect(String((await db().execute({ sql: "SELECT mode FROM rig_agent_runs WHERE id=?", args: [asked.id] })).rows[0].mode)).toBe("ask");
   }, { sample: false });
 });
 
