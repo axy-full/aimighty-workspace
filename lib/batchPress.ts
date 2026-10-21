@@ -41,7 +41,7 @@ import { QueuedCancelError, cancelQueuedVideo, servedHere, type QueuedCancel } f
  * check a new take meets are not judged on it a second time (they were judged when it started, and its hold is in this month's spend). Only the shots still to start
  * (never started, or failed at no charge) are priced, with every check a single take meets, and only they are judged against the cap and the balance. A press asked
  * again near the cap therefore shows its running takes instead of a refusal, and still starts and bills nothing twice. A shot that started before its hold was recorded
- * is priced again as before.
+ * is priced again as before, and then the approval the press holds starts nothing more: the press's total is not known, so it asks again at today's price.
  *
  * The approval the press was pressed with is recorded once, when it first starts something (`approvalKey`: its fingerprint, its total, when). Asked again under it,
  * the approval binds the TOTAL (owner, #811): the press's total now, its started shots at their holds and the shots left at today's price, may shift per shot and runs
@@ -263,6 +263,7 @@ type MemberOut = { index: number; id?: string; status?: string; error?: string; 
 const MOVED = "The shots or their prices changed. Look at the total again before approving.";
 const ABOVE = "The total is now above the approved total. Look at it again before approving.";
 const EXPIRED = "This approval has expired. Look at the total again before approving.";
+const UNRECORDED = "A shot of this press started before its price was recorded. Look at the total again before approving.";
 const UNAPPROVED = "Approve the price first: the total is above the approved credit amount.";
 
 /**
@@ -352,7 +353,10 @@ export async function admitBatch(input: Record<string, unknown>, got: AdmissionA
   const at = now();
   const expired = held != null && at >= held.at + PRESS_APPROVAL_MS;
   /* The approval the press holds: its total, when it stops being drawn on, and whether it still covers the shots left. */
-  const holding = held ? { maxCredits: held.maxCredits, expiresAt: held.at + PRESS_APPROVAL_MS, expired, covers: !left.length || (!expired && credits <= held.maxCredits) } : null;
+  /* A started shot with no recorded hold (one started before holds were recorded) is priced again at today's price, which is not what it started at: the press's
+     total is then not known, and the approval it holds does not admit anything more. Asked again, the person approves today's total. */
+  const unrecorded = held != null && parts.some((x, i) => states[i].state === "landed" && x.p != null);
+  const holding = held ? { maxCredits: held.maxCredits, expiresAt: held.at + PRESS_APPROVAL_MS, expired, covers: !left.length || (!expired && !unrecorded && credits <= held.maxCredits) } : null;
   const keyed = pressKey ? { toStart: figureOf(left), approval: holding } : {};
 
   if (quoteOnly) {
@@ -375,6 +379,7 @@ export async function admitBatch(input: Record<string, unknown>, got: AdmissionA
   } else if (held && incoming === held.fingerprint) {
     /* Past its time, an approval starts nothing more: asked again at today's price. A press with nothing left to start is only shown. */
     if (left.length && expired) return asked(EXPIRED, { approvalExpired: true });
+    if (left.length && unrecorded) return asked(UNRECORDED);
     if (credits > held.maxCredits) return asked(ABOVE);
     if (ceiling == null || credits > ceiling) return admissionReply({ error: UNAPPROVED }, { status: 409 });
     fresh = false;

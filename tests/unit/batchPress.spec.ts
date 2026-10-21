@@ -626,11 +626,12 @@ const quoteUnder = (ws: TenantWorkspace, actor: AdmissionActor, list: Record<str
   as(ws, actor, () => batchPress.admitBatch({ members: list, quoteOnly: true }, actor, { ...noDefer, pressKey: key }));
 /** A 409's new total, as the person would approve it. */
 const approvalIn = (reply: AdmissionReply) => approvalOf({ status: 200, body: reply.body.quote as Record<string, unknown> });
-/** The press's recorded approval of one round, changed in place by the test (a synthetic edit, named as such where it is used). */
+/** SYNTHETIC DB WRITE: the press's recorded approval of one round, changed in place by the test (its total, or its back-dated `created_at`). Named at each use. */
 async function editApproval(key: string, round: number, sql: string, value: number) {
   const { db } = await import("../../lib/db");
   await db().execute({ sql: `UPDATE generation_requests SET ${sql} WHERE user_id=? AND request_key=?`, args: [value, ADMIN.user.id, batchPress.approvalKey(key, round)] });
 }
+/** SYNTHETIC DB WRITE: a take marked failed (generations.status) with its meter row settled failed at 0 credits and 0 engine cost, as a vendor failure that cost nothing leaves it. */
 const failFree = (ws: TenantWorkspace, id: string) => as(ws, ADMIN, async () => {
   const { db } = await import("../../lib/db");
   const { platformDb } = await import("../../lib/platform");
@@ -738,7 +739,7 @@ test("Retry is priced and admitted at only the shots left: shots that did not st
   expect(third).toBeTruthy();
   const all = await as(ws, ADMIN, ledger);
   expect(all.meters.map((m) => m.credits)).toEqual([each, each, each]);
-  /* The second take fails at no charge: Retry's price is that shot alone, and it re-runs under the same approval as a new take. The others are not touched. */
+  /* SYNTHETIC DB WRITE (failFree): the second take fails at no charge. Retry's price is that shot alone, and it re-runs under the same approval as a new take. The others are not touched. */
   await failFree(ws, started[1]);
   const left = await quoteUnder(ws, ADMIN, shots(3), key);
   expect(left.body).toMatchObject({ toStart: { members: 1, estimatedCredits: each }, approval: { covers: true } });
@@ -763,7 +764,7 @@ test("the approval binds the total: a press total above the approved total asks 
   expect(first.body).toMatchObject({ status: "partial" });
   const once = await as(ws, ADMIN, ledger);
   ws = await withLimits(ws, { rendersPerHour: 100_000 });
-  /* A synthetic edit: the approval the press holds is recorded one credit under its total, so the press's total now is above it. */
+  /* SYNTHETIC DB WRITE: the approval the press holds is recorded one credit under its total (its `maxCredits`), so the press's total now is above it. */
   await as(ws, ADMIN, () => editApproval(key, 0, "response_json=json_set(response_json,'$.maxCredits',?)", total - 1));
   const sentBefore = dispatched.length;
   const asked = await press(ws, ADMIN, shots(3), approvalOf(q), key);
@@ -792,7 +793,7 @@ test("a press's approval is drawn on for 7 days, as a plan's: past that, an ask 
   expect(first.body).toMatchObject({ status: "partial" });
   const once = await as(ws, ADMIN, ledger);
   ws = await withLimits(ws, { rendersPerHour: 100_000 });
-  /* The approval was given 7 days and a moment ago. */
+  /* SYNTHETIC DB WRITE: the approval's `created_at` back-dated to 7 days and a moment ago. */
   await as(ws, ADMIN, () => editApproval(key, 0, "created_at=?", Date.now() - batchPress.PRESS_APPROVAL_MS - 1));
   const sentBefore = dispatched.length;
   for (let i = 0; i < 2; i++) {
@@ -818,7 +819,7 @@ test("a press's approval is drawn on for 7 days, as a plan's: past that, an ask 
   const old = await press(ws, ADMIN, shots(3), approvalOf(q), key);
   expect(old).toMatchObject({ status: 409, body: { quoteChanged: true } });
   expect(members(old).map((m) => m.id)).toEqual(all);
-  /* The new approval runs out too: with nothing left to start, asking again under it only shows the press, and starts nothing. */
+  /* SYNTHETIC DB WRITE: the new approval's `created_at` back-dated too. With nothing left to start, asking again under it only shows the press, and starts nothing. */
   await as(ws, ADMIN, () => editApproval(key, 1, "created_at=?", Date.now() - batchPress.PRESS_APPROVAL_MS - 1));
   const shownOnly = await press(ws, ADMIN, shots(3), approvalOf(shown), key);
   expect(shownOnly.status, JSON.stringify(shownOnly.body)).toBe(200);
@@ -863,4 +864,65 @@ test("a press is its own person's in its own workspace: workspace B, or another 
   const again = await press(a, ADMIN, shots(3), approvalOf(q), key);
   expect(again.body).toMatchObject({ status: "started" });
   expect(members(again).slice(0, 2).map((m) => m.id)).toEqual(idsA);
+});
+
+/** SYNTHETIC DB WRITE: one started shot's recorded hold, changed (`hold`/`estimated`) or removed, as named at each use. */
+async function editHold(key: string, index: number, change: { to: number } | "remove") {
+  const { db } = await import("../../lib/db");
+  const prefix = `${batchPress.memberKey(key, batchPress.pressShots(shots(3)), index, 0)}:hold:`;
+  if (change === "remove") await db().execute({ sql: "DELETE FROM generation_requests WHERE user_id=? AND request_key>=? AND request_key<?", args: [ADMIN.user.id, prefix, `${prefix}~`] });
+  else await db().execute({ sql: "UPDATE generation_requests SET response_json=json_set(response_json,'$.hold',?,'$.estimated',?) WHERE user_id=? AND request_key>=? AND request_key<?", args: [change.to, change.to, ADMIN.user.id, prefix, `${prefix}~`] });
+}
+
+test("a press with a started shot whose hold was never recorded (pressed before holds were recorded) starts nothing more under the approval it holds: it asks again at today's price", async () => {
+  let ws = await workspace("unrecorded", 100_000, { rendersPerHour: 2 });
+  const q = await quote(ws, ADMIN, shots(3));
+  const key = `press-unrecorded-${run}`;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.body).toMatchObject({ status: "partial" });
+  const once = await as(ws, ADMIN, ledger);
+  /* SYNTHETIC DB WRITE: the first shot's recorded hold removed, as a press started before this change left it. */
+  await as(ws, ADMIN, () => editHold(key, 0, "remove"));
+  ws = await withLimits(ws, { rendersPerHour: 100_000 });
+  const shown = await quoteUnder(ws, ADMIN, shots(3), key);
+  expect(shown.body).toMatchObject({ toStart: { members: 1 }, approval: { expired: false, covers: false } });
+  const sentBefore = dispatched.length;
+  const asked = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(asked.status, JSON.stringify(asked.body)).toBe(409);
+  expect(asked.body).toMatchObject({ quoteChanged: true, quote: { estimatedCredits: q.body.estimatedCredits, toStart: { members: 1 }, approval: { covers: false } } });
+  expect(asked.body).not.toHaveProperty("approvalExpired");
+  expect(members(asked).map((m) => m.id)).toEqual([...members(first).slice(0, 2).map((m) => m.id), undefined]);
+  expect(await as(ws, ADMIN, ledger)).toEqual(once);
+  expect(dispatched.length).toBe(sentBefore);
+  /* The person approves today's total: the third starts, once. */
+  const approved = await press(ws, ADMIN, shots(3), approvalIn(asked), key);
+  expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+  expect(approved.body).toMatchObject({ status: "started" });
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+  expect(dispatched.length - sentBefore).toBe(1);
+});
+
+test("the approval binds the total, not each shot: with the press's shots priced differently from the approval but its total at the approved figure, the shot left starts under the approval it holds", async () => {
+  /* The mocks cannot move one shot's price without writing a rate or a margin into the test, which this file never does. The shift is made on the recorded side
+     instead: a started shot recorded one credit under its quote, and the approval recorded one credit under its total, so the press's shots no longer match the
+     approval shot by shot while its total sits exactly at the approved figure. */
+  let ws = await workspace("shift", 100_000, { rendersPerHour: 2 });
+  const q = await quote(ws, ADMIN, shots(3));
+  const each = (q.body.estimatedCredits as number) / 3;
+  const total = approvalOf(q).maxCredits as number;
+  const key = `press-shift-${run}`;
+  const first = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(first.body).toMatchObject({ status: "partial" });
+  /* SYNTHETIC DB WRITE: the first shot's recorded hold one credit lower, and (editApproval) the approval's recorded total one credit lower. */
+  await as(ws, ADMIN, async () => { await editHold(key, 0, { to: each - 1 }); await editApproval(key, 0, "response_json=json_set(response_json,'$.maxCredits',?)", total - 1); });
+  ws = await withLimits(ws, { rendersPerHour: 100_000 });
+  const shown = await quoteUnder(ws, ADMIN, shots(3), key);
+  expect(shown.body).toMatchObject({ estimatedCredits: total - 1, toStart: { members: 1, estimatedCredits: each }, approval: { maxCredits: total - 1, covers: true } });
+  const sentBefore = dispatched.length;
+  const retried = await press(ws, ADMIN, shots(3), approvalOf(q), key);
+  expect(retried.status, JSON.stringify(retried.body)).toBe(200);
+  expect(retried.body).toMatchObject({ status: "started" });
+  expect(members(retried).slice(0, 2).map((m) => m.id)).toEqual(members(first).slice(0, 2).map((m) => m.id));
+  expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
+  expect(dispatched.length - sentBefore).toBe(1);
 });
