@@ -6,9 +6,10 @@ export const ASTRA_OUTPUT_SHORT_SIDE = RESOLUTION_SHORT_SIDE["4k"];
 /**
  * A clip already at that size has nothing to upscale (owner, 21 Oct 2026: "4K: free only if the takes were made and billed at 4K;
  * otherwise priced as the upscale it is"). Measured from the original, never from a label: admission refuses it before any quote,
- * hold or charge, and dispatch refuses one that was held before this rule. Plain words, no engine named.
+ * hold or charge, and dispatch refuses one that was held before this rule. Plain words, no engine named. The line's wording and the
+ * threshold at the 4K tier itself (a 2150-2159 px short side, sent at a rounded 1.00x, is still priced) are the owner's (21 Oct 2026).
  */
-export const ALREADY_4K = "This clip is already 4K: nothing to upscale, and using it at 4K is free.";
+export const ALREADY_4K = "This clip is already 4K: nothing to upscale.";
 /** The refusal's code, so a screen can show the line in place of a price. */
 export const ALREADY_4K_CODE = "already_4k";
 export function alreadyAt4K(source: { width: number; height: number }): boolean {
