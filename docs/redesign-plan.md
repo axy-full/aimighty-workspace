@@ -1744,3 +1744,23 @@ The owner's words, mirrored:
 - 21 Oct 2026: **R6.** One approval; Keep releases the next item, with no second tap.
 - 21 Oct 2026: **R8.** "No third mode" means Agent and Director, and the Ask/Auto spend setting is a separate thing. The owner also wrote "(Auto's ceiling stays until I decide whether Auto stays)". That conflicts with his 20 Oct "Q2 Auto goes" and his 21 Oct 12:30 "Auto gone everywhere", so the lead has asked him which stands. The guardrail-4 PR, which removes Auto, is held until he answers.
 - 21 Oct 2026: **correction to R13 and D7 (the owner):** strike "a stock cast and stock places in the platform layer, pickable in one tap" and "stock cast and places (R13)". Particl ships no stock elements, cast or environments. Every element is the person's own, uploaded from references or generated from the script line under the plan's quote. Atomik teaches the newcomer how: the Elements "?" card, "Show me on my film", the upload hint "even lighting and a plain background works best", and the consent tick for a real face. Everything else in R13 stands.
+
+## Owner, 21 Oct 2026: additions to the amendment (R16–R18, R3 amended, D6)
+
+These are recorded in docs/particl-sow-v1.md, "Additions, 21 October 2026", in the owner's words. The glossary draft is docs/glossary-d6-draft.md. The docs PR comes first, then the code PRs.
+
+- 21 Oct 2026: **R16, file names are Particl's.** Every file a person downloads, exports or sees in the Library is renamed on the way out, to `prtcl-<project>-s<shot>-t<take>-a<asset>-<yyyymmdd>.<ext>`.
+  - For things without a shot, the shot slot names the kind: el, lk, tr, sd or ms.
+  - The vendor's file name never reaches a person.
+  - Metadata fields that name a tool, encoder or software are stripped.
+  - **[legal, owner]** Invisible watermarks and signed provenance manifests stay until the owner decides with counsel.
+  - The code PR lists every reader of a file name.
+- 21 Oct 2026: **R17, failures never name the vendor.**
+  - In Agent mode, a failure reads "Nothing billed" (or what it cost) in Particl's words.
+  - In Director mode, the refusal is rewritten in plain words.
+  - The vendor's own message never appears.
+- 21 Oct 2026: **R18, Quick Look tools by mode.**
+  - The lasso, the element selector and "Change this · one quote" are Agent mode only.
+  - The Director's Quick Look judges and compares; the Director fixes by hand through Inputs and the prompt.
+- 21 Oct 2026: **R3 amended.** Options are never free: the three frames are billed, and the ideation behind them is billed as a band.
+- 21 Oct 2026: **D6.** The glossary draft has about 150 words, each marked A or D. The owner edits it; then it ships as data, with a thumbnail or loop per entry.
