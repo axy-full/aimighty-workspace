@@ -1664,3 +1664,66 @@ A lane beside slice 1.
   3. E's spike, once D's schema is agreed.
 - Nothing new merges while a slice's rebase is pending.
 - Every design note goes to the owner, with its estimate, before any code.
+
+## Owner, 21 Oct 2026 (afternoon): SOW amendment, ruleset, dataset, stepset
+
+- 21 Oct 2026: the owner's ruleset (R1–R15), dataset (D1–D8) and stepset (S1–S2) are added to docs/particl-sow-v1.md as "Amendment, 21 October 2026", in his words. That PR is docs only. **[money]** items (R11, the agent margin factor) get their own code PR under a money review. **[schema]** items (R7, the film record) go to the owner before any migration.
+
+The owner's words, mirrored:
+
+
+### Ruleset
+
+**R1 Positioning (owner):** tools like Artlist cater to those who "walk, talk and speak film"; Particl gives "structured filmmaking in the hands of every other person with a keen interest." Every screen and line of copy is judged against that person (extends ground rule 6).
+
+**R2 Questions are derived, never fixed.** Each step has a checklist of decisions (D1). The agent fills it from everything known (brief, interview, earlier steps, the film record, house defaults); each row is known / assumed / open. Only open rows that change the result or the price are asked — in the film's own nouns, at most three per step, the agent's pick preselected. Assumed rows read "I assumed … · Change". A gap no checklist lists may be asked only in the fixed shapes (something to point at, chips, a default, "talk"). Which rows get asked is deterministic and tested on mocked briefs: a brief that says "Hindi VO" is never asked the language question.
+
+**R3 Judge, don't specify.** Every step shows a proposal first; the question is answered by pointing. "Decide for me" is the default; "Just make it" runs every default to one read-back page and one quote. "Options" is priced, sits at the cheapest stage that answers, and the button says so ("Options · 3 frames · 9 cr"). Options are never free.
+
+**R4 Genre (owner):** "each film comes in its own genre." Set once in the Brief, never asked again; it keys per-genre defaults and chip sets at every step (D2). The three options the agent shows are all inside the genre, differing on the axis the genre cares about.
+
+**R5 Continuity.** The storyboard is planned as coverage from D3. Side of the line, time of day and light are scene rows set once. Frames are drawn from the kept cast stills and the kept look. The free self-check flags a crossed line, a missing reaction or a wrong eyeline with one-tap fixes ("Flip" · "Add reaction frame · 3 cr"). "Play as a cut" (animatic, free) is a view on every rail. A frame is the first frame of its shot; "Continue from here" seeds the next shot from the end of the last.
+
+**R6 Shot by shot (owner: "a very step by step and shot by shot process").** Agent mode runs Storyboard and Shots one item at a time. The plan is approved once as "up to N cr"; the person's Keep on item N releases item N+1; stopping charges only what was made. "Board all" / "Shoot all" are chips at the same per-item price with the self-check as the gate between items — offered, never the default. Director mode is one card at a time; the multi-shot press stays as its batch (#815).
+
+**R7 The film record [schema].** One record per film: every checklist row (value, source), every change (when, why — the chip pressed), the interview as spoken, every kept and rejected take with its reason, every approval. It is the agent's only input: every turn loads the whole record (a digest per step always; full detail on demand from the index). It is the LangGraph state, checkpointed as tenant rows. Changes ripple: a changed row lists what downstream it touches and offers "Carry the change", priced if anything is remade. Test: at Deliver, for every mocked film, the agent answers "what did they say at Brief about X" from the record alone; Langfuse shows which rows each turn read.
+
+**R8 Two modes, further apart; no third mode.** Agent is the default front door ("What are we making?" — the interview). Director sits behind one line, "I speak film", and opens with Import or a blank board. Agent: plain words; film words underlined with a one-line definition on hover (tap on phone); works in films; one all-in quote per command; review is Keep · Change something · Options; phone-first. Director: film words, engines, settings, the rate card; works in shots; the take grid; desktop-first. One bridge, one direction: a shot opened in Director mode opens with no engine and no prompt. Nothing in Agent ever shows the how.
+
+**R9 "?" on every step.** A card of three lines (what this step is · what you do · what comes next) and a 15-second loop. Opens itself once on a stranger's first visit to a step, then waits behind "?". Last line "Show me on my film" runs Atomik on the person's own project, priced as a planning turn. Cards are static text shipped with the app (D5); loops load lazily from R2; nothing generated live. On the phone, a sheet.
+
+**R10 Director mode, comprehensive:** angle, shot size, move, light, camera, lens, depth of field, frame rate, grain — pickers with pictures, Auto default, folded in the Inspector (rule 13). They write prompt lines through the rule library and set an engine parameter only where one exists. This is the camera bank of ground rule 3: platform list, workspace additions. The panel's "?" says a camera or lens name nudges the look; no engine simulates the glass. None of it appears in Agent mode.
+
+**R11 Agent margin [money] (owner: "Agent mode is the money maker").** One factor applied in the quote path to agent-originated jobs: AGENT_PRICE_FACTOR, env-set, default 1.0 until the owner sets the number, read nowhere else, shown nowhere; the all-in quote hides the breakdown. The number is the owner's.
+
+**R12 Recipes by outcome.** The + menu offers five or six outcomes per rail in plain words ("Make my product the hero"); each is upload + ≤4 chips + one quote, built as a board skill (rule 12). Techniques live inside Options at a step, priced. Not a preset gallery.
+
+**R13 Elements for people who own nothing.** A stock cast and stock places in the platform layer, pickable in one tap; a voice bound to each cast member; a real face needs consent on file; a character sheet from 1–5 photos with one hint: "even lighting and a plain background works best."
+
+**R14 Money copy (owner's call, later):** plan cards in films ("about two 30-second ads a month"); price on the button; Top up on the button when short; a 480p draft row on the rate card.
+
+**R15 Not taken from Artlist:** engines in the user's face, Unlimited tiers, a second canvas, hover-only prices, an agent that names the engine, a prompt asked of the person.
+
+### Dataset (tables in code, platform layer, overridable per workspace)
+
+**D1 Checklists** — per rail × step, one row per decision: id · what it sets downstream · default source (brief field / earlier step / rail / house history / none) · money attached · question shape (pick one / A-B / yes-no / tap the frame / upload) · decide-for-me allowed. Beside lib/productionModel/filmTypes.ts.
+
+**D2 Genre table** — ten genres per rail × the steps that vary: Script pacing and beat count; Treatment deck style and "what's off" chips; Look palettes and chips; Storyboard coverage bias; Shots duration and move defaults; Sound moods and voice sets; Edit rhythm and end-on default. The owner writes the rows.
+
+**D3 Coverage patterns** — dialogue → shot/reverse on one side of the line; action → action then reaction; entering → wide then close; product → approach then detail; screen-direction rules.
+
+**D4 Picker vocabularies and the camera bank** (R10), a picture per item.
+
+**D5 "?" cards** — rails × steps × three lines (the Ad film set is written and approved: the product speaks, not Atomik) + one loop per step.
+
+**D6 Glossary** — film words, one-line definition, thumbnail; feeds Agent underlines and Director tooltips. One vocabulary (rule 5).
+
+**D7 Recipes per rail** (R12); stock cast and places (R13).
+
+**D8 House defaults** — a row a workspace has answered the same way three times becomes its default and stops being asked (from the ledger).
+
+### Stepset
+
+**S1** The per-step catalogue (Script → Deliver, plus the other rails' extra stages) is the example bank for D1, not a fixed list: each stage opens with a proposal, a judging prompt, at most three bare questions only where no default exists and money is attached, and what each answer sets and carries forward.
+
+**S2 Agent mode sequence:** Brief (interview, genre) → read-back "How I'll make it" → Script → Treatment → Look → Elements → Storyboard (shot by shot; play as a cut) → Shots (shot by shot; preflight; one quote) → Sound → Edit → Deliver. A stranger is asked once; nothing is asked twice.
