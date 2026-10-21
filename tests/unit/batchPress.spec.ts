@@ -284,7 +284,7 @@ test("asked again, the cap is judged on what is still to start: shots that alrea
   expect((await as(ws, ADMIN, ledger)).takes).toHaveLength(3);
 });
 
-test("a press whose reply was lost, asked again under its key with the approval it was pressed with, near the cap: it never starts or bills a shot twice; refused while the cap is full, it returns the same takes once there is room", async () => {
+test("a press whose reply was lost, asked again under its key with the approval it was pressed with, near the cap: it never starts or bills a shot twice; while the cap is full it returns the same takes, and again once there is room", async () => {
   let ws = await workspace("lost_near_cap", 100_000);
   const usd = await holdUsdOf(ws, ADMIN);
   ws = await withCap(ws, usd * 3.5);
@@ -303,12 +303,15 @@ test("a press whose reply was lost, asked again under its key with the approval 
   const sentOnce = dispatched.length - sentBefore;
   /* The browser never saw that reply. A new quote of the same three shots counts the three running ones a second time, and the cap refuses it. */
   expect((await quote(ws, ADMIN, shots(3))).status).toBe(429);
-  /* Asked again under the press's key with its approval while the cap is full: each shot is priced again on the way in (lib/batchPress.ts admitBatch, prepareGeneration),
-     and that price check counts the running takes against the cap, so the ask is refused in the cap's words. Nothing is started, reserved, metered or sent again. */
+  /* Asked again under the press's key with its approval while the cap is full: the press is read before it is priced (#858, lib/batchPress.ts admitBatch), so its
+     started shots stand at their recorded holds, are not judged against the cap again, and are reported as those takes. Until #858 this ask was refused (429); the
+     guard is unchanged: nothing is started, reserved, metered or sent again. */
   const full = await press(ws, ADMIN, shots(3), approvalOf(q), key);
-  /* This 429 documents TODAY's server behaviour (owner question: read the press's claims before pricing, its own money PR); the guard is the two checks after it,
-     that nothing was started, reserved, metered or sent again. If the server is fixed to return the press's takes here, this status changes and those checks stay. */
-  expect(full.status, JSON.stringify(full.body)).toBe(429);
+  expect(full.status, JSON.stringify(full.body)).toBe(200);
+  expect(full.body).toMatchObject({ status: "started" });
+  expect(members(full).map((m) => m.id), "the same takes").toEqual(started);
+  /* The approval it holds is the one it was pressed with. */
+  expect((full.body as { approval?: { maxCredits?: number } }).approval?.maxCredits).toBe(approvalOf(q).maxCredits);
   expect(await as(ws, ADMIN, ledger)).toEqual(once);
   expect(dispatched.length - sentBefore).toBe(sentOnce);
   /* Room again (the cap raised): asked again, twice, the press returns the same takes and starts nothing. */
