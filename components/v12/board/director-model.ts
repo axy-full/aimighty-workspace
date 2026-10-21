@@ -219,13 +219,13 @@ function storeClaims(storage: Storage, slot: string, claims: PressClaim[]) {
 }
 /**
  * Written before anything is sent, in place of the claim for the same shots, the newest last. Past CLAIMS_KEPT, the claims that go first are those the server
- * has answered or that hold no approval, oldest first; a press never answered (a lost reply) goes only when every other kept claim is one too, since only it
- * knows what its shots started. Throws when it cannot be kept.
+ * has answered, oldest first. A press never answered goes only when every other kept claim is one too, with or without an approval (one past its time, or
+ * refused as out of date, is still a lost reply's key): only its key can tell what its shots started. Throws when it cannot be kept.
  */
 export function writeClaim(storage: Storage, slot: string, claim: PressClaim, now: number) {
   const kept = readClaims(storage, slot, now).filter((c) => c.shots !== claim.shots && c.key !== claim.key);
   while (kept.length >= CLAIMS_KEPT) {
-    const spare = kept.findIndex((c) => c.answered || !c.quote);
+    const spare = kept.findIndex((c) => c.answered);
     kept.splice(spare >= 0 ? spare : 0, 1);
   }
   storeClaims(storage, slot, [...kept, claim]);

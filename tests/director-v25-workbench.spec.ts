@@ -27,6 +27,8 @@ type Opts = {
   credits?: (body: Record<string, unknown>) => number; engine?: boolean; capAtQuote?: boolean;
   /** The first N presses reach the server, which starts them, and their replies are lost. */
   lose?: number;
+  /** The Nth press (1-based) reaches the server and its reply is lost. */
+  loseOn?: (n: number) => boolean;
   /** From the first press on, a quote is refused at the cap (it counts the running shots a second time). */
   capAfterPress?: boolean;
   /** A refusal at the quote: its status and words. */
@@ -118,6 +120,7 @@ async function routes(page: Page, opts: Opts = {}) {
     presses.set(String(key), ids);
     if (!approved.has(String(key)) || body.maxCredits !== approved.get(String(key))) approved.set(String(key), total);
     if (state.lose > 0) { state.lose -= 1; return route.abort("connectionreset"); }
+    if (opts.loseOn?.(sent.length)) return route.abort("connectionreset");
     const refused = out.filter((m) => m.error).length;
     const leftOver = members.flatMap((m, i) => (out[i].error ? [priceOf(m) + state.bump] : [])).reduce((n, c) => n + c, 0);
     await route.fulfill({ json: { id: `bt_${fingerprint.slice(0, 24)}`, batchId: `bt_${fingerprint.slice(0, 24)}`, status: refused ? "partial" : "started", estimatedCredits: total, members: out,
@@ -750,6 +753,60 @@ test("Render again of a one-shot press is a new press every time: a new key, its
     net.state.takes[net.started[round]] = { id: net.started[round], status: "failed", failure: failure(43) };
     await expect(anew).toHaveText(/^Render again · 43 cr$/, { timeout: 30_000 });
   }
+});
+
+test("a Render again whose reply was lost keeps its key through a refusal (409): the next Render again asks under it, and nothing starts twice", async ({ page }) => {
+  /* Press 2 is the Render again: the server refuses its shot (nothing billed) and the reply is lost. */
+  const net = await routes(page, { keyed: true, answer: (n) => (n === 2 ? "partial" : null), loseOn: (n) => n === 2 });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect.poll(() => net.started.length).toBe(4);
+  for (const id of net.started) net.state.takes[id] = { id, status: "succeeded" };
+  net.state.takes[net.started[2]] = { id: net.started[2], status: "failed", failure: failure(43) };
+  const anew = page.getByTestId("v12-director-render-again");
+  await expect(anew).toHaveText(/^Render again · 43 cr$/, { timeout: 30_000 });
+  await anew.click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  const lostKey = net.sent[1].key;
+  expect(lostKey).not.toBe(net.sent[0].key);
+  /* Prices move: asked again under its approval, the Render again is refused as out of date. */
+  net.state.bump = 5;
+  await expect(anew).toHaveText(/^Render again · 43 cr$/);
+  await anew.click();
+  await expect.poll(() => net.sent.length).toBe(3);
+  expect(net.sent[2].key).toBe(lostKey);
+  await expect(page.getByTestId("v12-director-note")).toContainText("The shots or their prices changed.", { timeout: 30_000 });
+  /* Through the refusal it keeps its key: what is left to start is shown, and the next Render again asks under the same key. */
+  await expect(anew).toHaveText(/^Render again · 48 cr$/, { timeout: 30_000 });
+  await anew.click();
+  await expect.poll(() => net.sent.length).toBe(4);
+  expect(net.sent[3].key, "the lost Render again's own key").toBe(lostKey);
+  expect(net.sent[3].body.maxCredits).toBe(48);
+  await expect.poll(() => net.started.length).toBe(5);
+  expect(net.started, "nothing started twice").toHaveLength(5);
+});
+
+test("on the keyed route, what the person approves is what they saw: a free failure that grows what is left to start (the total unchanged) sends nothing and shows the new figure", async ({ page }) => {
+  /* The first press starts three shots, refuses the fourth, and its reply is lost. */
+  const net = await routes(page, { keyed: true, lose: 1, answer: (n) => (n === 1 ? "partial" : null) });
+  await expect(go(page)).toHaveText(/^Render 4 shots · 172 cr$/, { timeout: 30_000 });
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The connection dropped before the server answered.", { timeout: 30_000 });
+  net.state.bump = 5;
+  await go(page).click();
+  await expect(go(page)).toHaveText(/^Render 4 shots · 48 cr$/, { timeout: 30_000 });
+  expect(net.sent).toHaveLength(2);
+  /* Shot 1's take fails at no charge: it is to start again too. The press's total stays 192 cr; what is left grows to 96 cr. */
+  net.state.takes[net.started[0]] = { id: net.started[0], status: "failed", failure: failure(0) };
+  await go(page).click();
+  await expect(page.getByTestId("v12-director-note")).toContainText("The price is now 96 cr. Press it again to approve it.", { timeout: 30_000 });
+  expect(net.sent, "nothing sent at a figure the person did not see").toHaveLength(2);
+  await expect(go(page)).toHaveText(/^Render 4 shots · 96 cr$/);
+  await go(page).click();
+  await expect.poll(() => net.sent.length).toBe(3);
+  expect(net.sent[2].key).toBe(net.sent[0].key);
+  expect(net.sent[2].body.maxCredits).toBe(192);
+  await expect.poll(() => net.started.length).toBe(5);
 });
 
 test("settled: Retry is priced at the free failure alone; the charged one is offered Render again, a new press of that shot with a new quote and key, and its line keeps what it cost", async ({ page }, info) => {

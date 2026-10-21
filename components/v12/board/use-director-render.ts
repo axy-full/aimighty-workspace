@@ -288,7 +288,6 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
       /* A Retry that brought back exactly the takes it had (the server started nothing new): no Retry again, so a disagreement on "free" cannot loop.
          A shot the server says is still being accepted is not that: it is asked again once it has landed. */
       const same = retrying && !pending && made.map((j) => j.jobId).sort().join(",") === before;
-      if (mode === "again") setLostAgain(null);
       setNoNew(same);
       setProblem(words);
       setAgain(retryable && !same);
@@ -325,9 +324,11 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
         /* Under the press's key, the figure shown is what is left to start; the approval is still the whole total. */
         const shownFigure = (q: BatchQuote) => (inHand && validToStart(q.toStart) ? q.toStart.ceilingCredits ?? q.toStart.estimatedCredits : ceilingOf(q));
         if (inHand && validToStart(fresh.toStart) && fresh.toStart.members === 0) { show({ key: target.membersKey, quote: fresh }); setState("idle"); return; }
-        if (ceilingOf(fresh) !== ceilingOf(shown!)) {
+        /* What the person approves is what they saw: a quote of other shots or prices (its fingerprint), or another figure shown (under the key, what is left
+           to start; a free failure can grow it while the total stays), sends nothing, and the fresh figure is shown for the next press. */
+        if (fresh.fingerprint !== shown!.fingerprint || shownFigure(fresh) !== shownFigure(shown!) || ceilingOf(fresh) !== ceilingOf(shown!)) {
           show({ key: target.membersKey, quote: fresh });
-          const gate = dispatchGate(shownFigure(shown!), shownFigure(fresh));
+          const gate = dispatchGate(shownFigure(fresh) === shownFigure(shown!) ? null : shownFigure(shown!), shownFigure(fresh));
           setProblem(gate.ok ? null : gate.reason);
           setState("idle");
           return;
@@ -356,19 +357,21 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
         const said = out.find((m) => m.error)?.error ?? error.message;
         if (error.status >= 500) {
           /* Refused whole with every shot listed as not started, at no charge (rule 14): "Nothing billed", and Retry under the same approval. */
-          if (out.length && out.every((m) => !m.id && m.charged === 0)) { answered(claim, error.data.approval && (error.data.approval as { expiresAt?: unknown }).expiresAt); begin([], `Nothing billed. ${neutralCopy(said, NOT_SENT)}`, true, false, error.data.toStart); return; }
+          if (out.length && out.every((m) => !m.id && m.charged === 0)) { if (mode === "again") setLostAgain(null); answered(claim, error.data.approval && (error.data.approval as { expiresAt?: unknown }).expiresAt); begin([], `Nothing billed. ${neutralCopy(said, NOT_SENT)}`, true, false, error.data.toStart); return; }
           if (mode === "again") setLostAgain(claim);
           setProblem(LOST_REPLY);
           setState("idle");
           return;
         }
         /* The press was cancelled: nothing more starts under its key, so it is let go and the next press is a new one. */
-        if (error.data.cancelled === true) { forget(claim.key); begin(madeOf(out), neutralCopy(said, NOT_SENT)); return; }
+        if (error.data.cancelled === true) { if (mode === "again") setLostAgain(null); forget(claim.key); begin(madeOf(out), neutralCopy(said, NOT_SENT)); return; }
         /* The shots or their prices changed since this approval: the new total is read and shown; the person approves it, still under this press's key. */
         if (error.data.quoteChanged === true) {
           const stale: PressClaim = { ...claim, quote: null };
           writeClaim(storage, slot, stale, Date.now());
           pressRef.current = stale;
+          /* A Render again keeps its key through the refusal: some of its shots may have started under it. */
+          if (mode === "again") setLostAgain(stale);
           syncHeld();
           /* The server sends the press's next approval with its refusal (quoted under the key; past its 7 days, at today's price): shown as it is. Without it,
              the press is quoted again, under its key. */
@@ -379,11 +382,13 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
         }
         if (error.status === 402 || error.data.short === true) setShort(true);
         /* Refused whole, nothing started (the cap, the balance, a person's approval). A press asked before keeps its key: some of its shots may have started under it. */
-        if (!reused) forget(claim.key);
+        if (!reused) { forget(claim.key); if (mode === "again") setLostAgain(null); }
         begin(madeOf(out), neutralCopy(said, NOT_SENT));
         return;
       }
       const out = reply.members ?? [];
+      /* The server reported this press's shots: a Render again's own claim is no longer a lost reply. */
+      if (mode === "again") setLostAgain(null);
       const refused = out.filter((m) => m.error);
       const starting = out.some((m) => m.status === "starting");
       /* Every shot started: the browser lets the key go (the press stays in hand for a free retry of a take that fails). Otherwise it stays, for Retry;
@@ -444,7 +449,9 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
   useQuoted(scope, offered && !readOnly ? offered : null, setAgainRead, retryRead, ownLost && !ownLost.quote ? ownLost.key : null);
   const heldAgain = ownLost?.quote ? ownLost : null;
   const againQuote = againRead?.key === offered?.membersKey ? againRead : null;
-  const againPrice = heldAgain ? priceOfQuote(heldAgain.quote!) : againQuote?.quote ? priceOfQuote(againQuote.quote) : null;
+  /* Its own lost reply, refused as out of date: quoted under its key, it shows what is left to start, as Render does. */
+  const againLeft = ownLost && !ownLost.quote && againQuote?.quote && validToStart(againQuote.quote.toStart) ? againQuote.quote.toStart : null;
+  const againPrice = heldAgain ? priceOfQuote(heldAgain.quote!) : againLeft ? (againLeft.members > 0 ? pressPrice(againLeft) : null) : againQuote?.quote ? priceOfQuote(againQuote.quote) : null;
   const renderAgain: RenderAgain | null = offered && !readOnly && state !== "sending"
     ? {
       price: againPrice, refusal: heldAgain ? null : againQuote?.refusal ?? null,
@@ -467,6 +474,7 @@ export function useDirectorRender({ scope, projectKey, shots, readOnly }: { scop
     retry: retryable && !nothingLeft ? () => void ask(active, "retry", renew) : null,
     retryPrice: retryCost,
     renderAgain, carried, nothingToStart,
+    /* Only the keyed route (#858) says what is left to start, so Start over is never offered on today's route: there a press of these shots asks under its key. */
     startOver: nothingToStart && staleKey
       ? () => {
         /* Every shot of that press has started (the server's own reading): it is set aside, and the next press is a new one, priced and approved afresh. */

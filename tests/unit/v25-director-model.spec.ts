@@ -199,7 +199,7 @@ test("a held approval lasts as a plan's does (7 days): past it the approval goes
   expect(readClaims(storage, "slot", t0 + PLAN_APPROVAL_MS).map((c) => c.key)).not.toContain(`n${CLAIMS_KEPT + 1}`);
 });
 
-test("past CLAIMS_KEPT, a claim the server answered or one with no approval goes before a press never answered (a lost reply)", () => {
+test("past CLAIMS_KEPT, only a claim the server answered is spare: a press never answered (a lost reply), with or without an approval, goes only when all are", () => {
   const store = new Map<string, string>();
   const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
   /* Synthetic approvals, built here. */
@@ -213,18 +213,22 @@ test("past CLAIMS_KEPT, a claim the server answered or one with no approval goes
   expect(keys).toHaveLength(CLAIMS_KEPT);
   expect(keys, "the answered press goes first").not.toContain("answered");
   expect(keys).toContain("lost0");
-  /* One with no approval (refused as out of date) goes before a lost reply too. */
+  /* A lost reply with no approval (refused as out of date, or past its time) is still a lost reply: never spare. Only lost replies left: the oldest goes. */
   writeClaim(storage, "slot", { ...lost(5), quote: null }, t0);
   writeClaim(storage, "slot", lost(101), t0);
   keys = readClaims(storage, "slot", t0).map((c) => c.key);
-  expect(keys).not.toContain("lost5");
-  expect(keys).toContain("lost0");
-  /* Only lost replies left: the oldest goes. */
+  expect(keys).toHaveLength(CLAIMS_KEPT);
+  expect(keys, "an unanswered claim with no approval is kept").toContain("lost5");
+  expect(keys, "the oldest lost reply goes").not.toContain("lost0");
+  expect(keys.at(-1)).toBe("lost101");
+  /* An answered claim, even the newest kept, goes before any of them. */
+  writeClaim(storage, "slot", { ...lost(200), key: "answered2", answered: true }, t0);
+  const before = readClaims(storage, "slot", t0).map((c) => c.key).filter((k) => k !== "answered2");
   writeClaim(storage, "slot", lost(102), t0);
   keys = readClaims(storage, "slot", t0).map((c) => c.key);
-  expect(keys).toHaveLength(CLAIMS_KEPT);
-  expect(keys).not.toContain("lost0");
-  expect(keys.at(-1)).toBe("lost102");
+  expect(keys).not.toContain("answered2");
+  expect(keys.slice(0, -1), "every lost reply kept").toEqual(before);
+  expect(keys).toContain("lost5");
 });
 
 test("the claim an ask writes: asked again under its approval it keeps the key and the approval's time; a new press, an approval gone stale or a renewal is approved now", () => {
