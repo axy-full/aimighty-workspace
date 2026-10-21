@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Client, Transaction } from "@libsql/client";
-import { creditFigure, fromTenths, toTenths } from "../runLimit";
+import { fromTenths, toTenths } from "../runLimit";
 import { PLAN_APPROVAL_MS } from "./rig-agent-plan";
 
 /*
