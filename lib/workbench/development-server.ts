@@ -404,8 +404,8 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   /* The dollars are the model vendor's. They are stated only to a workspace that pays that vendor
      itself; one on the platform's keys is told the same without them. */
   if (estimateUsd > limit) throw new DevelopmentError(paidByPlatform(textKeyName(input.model))
-    ? 'Too long for one request. Nothing billed.'
-    : `Too long for one request: at most $${estimateUsd.toFixed(2)} across ${estimates.length} steps, against $${limit.toFixed(2)} per request. Nothing billed.`, 409);
+    ? "Over one request's limit. Nothing billed."
+    : `Over one request's limit: at most $${estimateUsd.toFixed(2)} across ${estimates.length} steps, against $${limit.toFixed(2)} per request. Nothing billed.`, 409);
   const sourceHash = developmentSourceHash(canonical);
   const estimateCredits = paidByPlatform(textKeyName(input.model)) ? billCredits(estimateUsd, 'text') : 0;
   /* A Verify check is quoted at what one usually uses (lib/workbench/verify-judge.ts verifyLikelyTokens), never above
@@ -787,7 +787,8 @@ export async function runDevelopmentStep(id: string, owner: string, overrides?: 
       if (!submitted || rejection || notSubmitted) cost = 0;
       /* A failed run is never billed: the vendor's cost is kept on the steps and in the meter, the workspace's bill is zero. */
       const message = uncertain ? `This provider attempt could not be confirmed. It will never be submitted again automatically. ${keptForReview(input.kind)} remains reserved for review.` :
-        'This development phase could not complete: ' + ((error as Error).message || 'Invalid response').slice(0, 750) + (Number(row.funded_by_platform) ? ' It was not billed, and it is never sent again on its own.' : ' It is never sent again on its own.');
+        /* Its own words once the provider has answered (the answer did not fit or did not validate); before that the error is the provider's or the SDK's, which can name the model (Amendment (iii) §E), so it is not passed on. */
+        (returned ? 'This development phase could not complete: ' + ((error as Error).message || 'Invalid response').slice(0, 750) : 'This development phase could not complete.') + (Number(row.funded_by_platform) ? ' It was not billed, and it is never sent again on its own.' : ' It is never sent again on its own.');
       const stopped = await db().execute({ sql: "UPDATE workbench_development_steps SET status=?,error=?,cost_usd=?,updated_at=? WHERE job_id=? AND step_index=? AND status='running'", args: [uncertain ? 'uncertain' : 'failed', message, uncertain ? null : cost, now(), id, Number(next.step_index)] });
       if (!stopped.rowsAffected) return { done: false, waiting: true };
       const sum = (await db().execute({ sql: 'SELECT COALESCE(SUM(cost_usd),0) AS cost FROM workbench_development_steps WHERE job_id=?', args: [id] })).rows[0];

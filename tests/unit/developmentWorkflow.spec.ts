@@ -197,7 +197,7 @@ test('the per-request ceiling rejects excessive work without exposing provider a
     priced(150);
     expect((await quoteDevelopmentJob(request, 'owner', h.deps)).estimateUsd).toBeCloseTo(150, 0);
     priced(300);
-    await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow(/^Too long for one request\. Nothing billed\.$/);
+    await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow(/^Over one request's limit\. Nothing billed\.$/);
   });
 });
 
