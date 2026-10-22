@@ -195,3 +195,66 @@ export type BannedName = UiWord & { title: boolean };
 export function bannedNamesIn(fileName: string, source: string, options: { navigation?: boolean; commandK?: boolean } = {}): BannedName[] {
   return walk(fileName, source, (text) => bannedNames(text, !!options.navigation, !!options.commandK), inPageTitle).filter(({ word }) => !processorName(fileName, word));
 }
+
+/* ------------------------------------------------------------------------------------------ */
+/* The design lock (Amendment, 22 October 2026 (iii), C5, E, D12, D13, L2).                    */
+/* ------------------------------------------------------------------------------------------ */
+
+/**
+ * The lines the owner retired on 22 October 2026 (Amendment (iii) C5 and L2). The owner: "Copy like 'Just make it. The same quote.
+ * No questions' is amateur copy." "How many" is "Count" everywhere (v31.13). "Show me on my film" stays only on the ? cards (R9;
+ * C1 keeps it as a teaching device in the product). Matched in any case, as whole words.
+ */
+export const RETIRED_LINES = [
+  "Just make it", "No questions", "the editor is the director's", "Show me on my film", "built for small teams", "How many",
+  "Describe the node", "kept from Look",
+] as const;
+const RETIRED_LINE_RE = new RegExp(`\\b(${RETIRED_LINES.map((line) => line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/'/g, "['’]")).join("|")})\\b`, "gi");
+
+/** The retired lines in one string a person reads, each as listed in RETIRED_LINES. */
+export function retiredLines(text: string): string[] {
+  return [...text.matchAll(RETIRED_LINE_RE)].map((m) => RETIRED_LINES.find((line) => line.toLowerCase() === m[1].toLowerCase().replace(/’/g, "'")) ?? m[1]);
+}
+
+/**
+ * Atomik's thinking models are never named to a person (Amendment (iii) E, the owner: "never disclose to the user the models and
+ * effort settings"): no model id, family-and-version name or reasoning-effort setting in a string a person reads, or in an API
+ * response. The person sees only Thinking · High · Medium · Low. This is the thinking models' counterpart of the engine-name rule;
+ * the engines a Director picks (Seedance 2.5, Kling 3.0, GPT Image 2, Grok Imagine) are named where the Director picks them and are
+ * not matched here.
+ */
+export const THINKING_MODEL_PATTERNS: readonly RegExp[] = [
+  /\bclaude-(?:fable|opus|sonnet|haiku|instant|[0-9])[a-z0-9.\-]*/gi,
+  /\b(?:Claude\s+)?(?:Fable|Opus|Sonnet|Haiku)\s+\d+(?:\.\d+)?\b/g,
+  /\bgpt-?\d+(?:\.\d+)?(?:-(?!image)[a-z0-9]+)*\b/gi,
+  /\bGPT\s+\d+(?:\.\d+)?\b/g,
+  /\bgrok-\d[a-z0-9.\-]*/gi,
+  /\bGrok\s+\d+(?:\.\d+)?\b/g,
+  /\bgemini-\d[a-z0-9.\-]*/gi,
+  /\bGemini\s+\d+(?:\.\d+)?(?!\s*(?:Flash\s+)?Image)\b/g,
+  /\breasoning[_ -]?effort\b/gi,
+  /\bthinking[_ -]?budget\b/gi,
+  /\beffort\s*[:=·]\s*(?:low|medium|high|xhigh|max)\b/gi,
+  /\b(?:low|medium|high|xhigh|max)[- ]effort\b/gi,
+];
+
+/** Every thinking-model id, family-and-version name or effort setting in one string. */
+export function thinkingModelNames(text: string): string[] {
+  return THINKING_MODEL_PATTERNS.flatMap((re) => [...text.matchAll(re)].map((m) => m[0]));
+}
+
+export type UiHit = UiWord & { path: string };
+
+/** Every retired line and every thinking-model name in the user-visible strings of one file (the same walk as the names above). */
+export function lockedCopyIn(fileName: string, source: string): { retired: UiWord[]; models: UiWord[] } {
+  const strip = (hits: (UiWord & { title: boolean })[]) => hits.map(({ word, line, text }) => ({ word, line, text }));
+  return {
+    retired: strip(walk(fileName, source, retiredLines, () => false)),
+    models: strip(walk(fileName, source, thinkingModelNames, () => false)),
+  };
+}
+
+/** Every string a person reads in one file that has a letter in it (the same walk): what a v31.16 component must take from lib/copy.ts. */
+export function uiTextIn(fileName: string, source: string): UiWord[] {
+  return walk(fileName, source, (text) => (/\p{L}/u.test(text) ? [text.trim()] : []), () => false).map(({ word, line }) => ({ word, line, text: word }));
+}

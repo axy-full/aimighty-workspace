@@ -147,7 +147,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "list_projects",
-    description: "The workspace's projects, with how many renders each holds and what they cost.",
+    description: "The workspace's projects, each with its render count and what they cost.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -161,7 +161,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "usage_summary",
-    description: "What the workspace has spent, what credit remains, and how many renders are in flight.",
+    description: "What the workspace has spent, what credit remains, and the renders in flight.",
     inputSchema: { type: "object", properties: {} },
   },
 ];
