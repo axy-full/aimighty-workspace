@@ -368,34 +368,213 @@ test("every paid route says how a token is held at it: its ceiling and its appro
   expect(readFileSync("lib/recraftImage.ts", "utf8")).toMatch(/reserveGenerationSpend\([\s\S]{0,400}\{ token: got\.token \}/);
 });
 
-/* A take a token made and parked (held for credits or a slot) is started by the spend gate when released. Made by a token with no ceiling, it
-   is refused there: the person pressing Release is told who acts and what then, in plain words, and the take stays held (who may release it is
-   an owner question, unchanged here). */
-test("a person releasing a held take made by a token with no ceiling is told who acts, and the take stays held, nothing reserved", async () => {
+/* A take a token made and parked (held for credits or a slot) is started by the spend gate when released. Made by a token with no ceiling:
+   Owner, 20 Oct 2026, answer A: "A person's Release of a held take made by a no-ceiling token IS that person's approval and starts it,
+   recorded under the person. Who may release is unchanged."
+   This replaces the test that pinned the earlier refusal ("a person releasing ... is told who acts, and the take stays held"). Now:
+    - a person's own Release, at the figure they were shown, starts it at exactly that figure, judged as that person (no token on the
+      reservation), with `releasedBy` the person and `created_by` still its author;
+    - a press at any other figure (its price moved) is told today's figure, nothing reserved; pressed at that figure, it starts;
+    - a client review link never carries who released it;
+    - the automatic release (credits arriving) still leaves it held, saying who acts (HELD_TAKE_NO_CEILING);
+    - a token's press and an Atomik (agent:*) press are still refused at the route, and in lib/held.ts too;
+    - a take a capped token made is still reserved under its token, and its ceiling still stops it. */
+const NO_CEILING_MODEL = "dreamina-seedance-2-0-260128";
+/** Synthetic: the engine estimate a held row carries. Its credits are the server's own figure (heldPriceNow), never typed here. */
+const HELD_EST_USD = 1;
+type ReleaseRoute = { POST(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> };
+
+/** `rose`: credits the price rose by while it was held (it was held at that much less than it costs now). */
+async function heldTokenTake(o: { token: string; capCredits?: number | null; rose?: number }): Promise<{ id: string; needs: number }> {
+  const { db, ready } = await import("../../lib/db");
+  const { heldPriceNow } = await import("../../lib/creditTerms");
+  await ready();
+  const needs = heldPriceNow({ estUsd: HELD_EST_USD }, "video", NO_CEILING_MODEL);
+  expect(needs, "the server prices the synthetic estimate").toBeGreaterThan(1);
+  const id = `gen_held_${o.token}_${randomUUID().slice(0, 8)}`;
+  const at = Date.now() - 60_000;
+  await db().batch([
+    "INSERT INTO users(id,email,name,password_hash,created_at) VALUES('owner','owner@example.invalid','Owner','x',0) ON CONFLICT(id) DO NOTHING",
+    "INSERT INTO users(id,email,name,password_hash,created_at) VALUES('member','member@example.invalid','Member','x',0) ON CONFLICT(id) DO NOTHING",
+    { sql: "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,cap_credits,created_at) VALUES(?,?,'assistant','member','render',?,0) ON CONFLICT(id) DO NOTHING",
+      args: [o.token, `hash_${o.token}`, o.capCredits ?? null] },
+    "DELETE FROM settings WHERE key='sampleProduction'",
+    /* Made by the member's token: `created_by` is its author, the member, whoever releases it. */
+    { sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,token_id,billed_to,task)
+            VALUES(?,'video','byteplus',?,'test',?,'held','member',?,?,?,'byteplus','generate')`,
+      args: [id, NO_CEILING_MODEL, JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false,
+        held: { estUsd: HELD_EST_USD, needs: needs - (o.rose ?? 0), at: 1, why: "credits" } }), at, at, o.token] },
+  ], "write");
+  return { id, needs };
+}
+async function heldTrace(id: string) {
+  const { db } = await import("../../lib/db");
+  const { platformDb } = await import("../../lib/platform");
+  const row = (await db().execute({ sql: "SELECT status,error,created_by,token_id,json_extract(params,'$.releasedBy') AS released_by FROM generations WHERE id=?", args: [id] })).rows[0];
+  const meter = (await platformDb().execute({ sql: "SELECT billed_credits,created_by FROM meter_events WHERE id=?", args: [id] })).rows;
+  const reservation = (await platformDb().execute({ sql: "SELECT token_id,approved_by FROM generation_reservations WHERE id=?", args: [id] })).rows;
+  return { row: { ...row }, meter: meter.map((r) => ({ ...r })), reservation: reservation.map((r) => ({ ...r })) };
+}
+/** The release route, signed in as `who`; its paid submission recorded, never run (no engine, mocked or not, is asked). */
+async function releaseRoute(who: AdmissionActor, submitted: string[]): Promise<ReleaseRoute> {
+  const held = await import("../../lib/held");
+  return load<ReleaseRoute>("app/api/jobs/[id]/release/route.ts", {
+    "@/lib/auth": { withTenant: (handler: unknown) => handler, requireUser: async () => who },
+    "@/lib/held": { ...held, releaseHeldJobs: (o: Parameters<typeof held.releaseHeldJobs>[0]) =>
+      held.releaseHeldJobs({ ...o, defer: async () => { submitted.push(o?.only ?? "line"); } }) },
+    "next/server": { NextResponse: Response },
+  });
+}
+const pressRelease = (route: ReleaseRoute, id: string, credits: number) => route.POST(
+  new Request(`http://localhost/api/jobs/${id}/release`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credits }) }),
+  { params: Promise.resolve({ id }) },
+);
+
+test("a person's Release of a held take a token with no ceiling made is their approval: it starts at its held price, recorded under them", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const ws = await newWorkspace("held-person");
+  await runInTenant(ws, async () => {
+    const { id, needs } = await heldTokenTake({ token: "tok_bare" });
+    const submitted: string[] = [];
+    const res = await pressRelease(await releaseRoute(person, submitted), id, needs);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ released: true, id });
+    expect(submitted).toEqual([id]);
+    /* At its held price, one meter row; judged as the person, so no token on the reservation; the person approved it, the member made it. */
+    expect(await heldTrace(id)).toEqual({
+      row: { status: "queued", error: null, created_by: "member", token_id: "tok_bare", released_by: "owner" },
+      meter: [{ billed_credits: needs, created_by: "member" }],
+      reservation: [{ token_id: null, approved_by: "owner" }],
+    });
+    /* A second press charges nothing more. */
+    const again = await pressRelease(await releaseRoute(person, submitted), id, needs);
+    expect(await again.json()).toEqual({ released: true, id, already: true });
+    expect((await heldTrace(id)).meter).toHaveLength(1);
+  }, { user: person.user });
+});
+
+/* Review 1 (lead, 21 Oct): no limit at the held price on this path. A press at the figure on the button is the person's approval, as on every
+   other held take ("every job is approved on its quote by the person pressing", owner, 21 Oct 2026); any other figure is answered with today's. */
+test("a no-ceiling token's take whose price rose: a press at the old figure is told the new one, nothing reserved; a press at the new figure starts it at exactly that", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { repriced } = await import("../../lib/held");
+  const ws = await newWorkspace("held-rose");
+  await runInTenant(ws, async () => {
+    /* Held at one credit less than it costs now: the price rose while it waited. */
+    const { id, needs } = await heldTokenTake({ token: "tok_bare", rose: 1 });
+    const submitted: string[] = [];
+    const route = await releaseRoute(person, submitted);
+    /* Pressed at the figure it was held at: not today's price, so it is told today's, and nothing is reserved. */
+    const old = await pressRelease(route, id, needs - 1);
+    expect(old.status).toBe(409);
+    expect(await old.json()).toEqual({ error: repriced(needs), credits: needs });
+    expect(submitted).toEqual([]);
+    expect(await heldTrace(id)).toEqual({
+      row: { status: "held", error: null, created_by: "member", token_id: "tok_bare", released_by: null },
+      meter: [], reservation: [],
+    });
+    /* Pressed again at the figure it was told: that press approves it, at exactly that figure, under the person. */
+    const now = await pressRelease(route, id, needs);
+    expect(now.status).toBe(200);
+    expect(submitted).toEqual([id]);
+    expect(await heldTrace(id)).toEqual({
+      row: { status: "queued", error: null, created_by: "member", token_id: "tok_bare", released_by: "owner" },
+      meter: [{ billed_credits: needs, created_by: "member" }],
+      reservation: [{ token_id: null, approved_by: "owner" }],
+    });
+  }, { user: person.user });
+});
+
+/* Who released a take is the workspace's own record (its members read it on the take); a client review link, which opens with no
+   sign-in, names its takes' fields one by one and never carries it. */
+test("a client review link never carries who released a take", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { releaseHeldJobs } = await import("../../lib/held");
+  const { mintShare } = await import("../../lib/shares");
+  const { db } = await import("../../lib/db");
+  const review = await import("../../app/api/review/[token]/route");
+  const releaser = { ...person.user!, id: "usr_releaser_unit", name: "Rae Releaser" };
+  const ws = await newWorkspace("held-review");
+  let take = { id: "", needs: 0 };
+  await runInTenant(ws, async () => {
+    take = await heldTokenTake({ token: "tok_bare" });
+    expect((await releaseHeldJobs({ only: take.id, approved: take.needs, defer: async () => {} })).released).toEqual([take.id]);
+    await db().batch([
+      "INSERT INTO projects(id,name,created_at) VALUES('project','Project',0) ON CONFLICT(id) DO NOTHING",
+      { sql: "UPDATE generations SET project_id='project', status='succeeded', review_state='approved', review_by='Mia Member', stored_url='https://unit.invalid/take.mp4' WHERE id=?", args: [take.id] },
+    ], "write");
+    expect((await heldTrace(take.id)).row.released_by).toBe(releaser.id);
+  }, { user: releaser });
+  const { token } = await mintShare({ workspaceId: ws.id, projectId: "project", by: "Mia Member" });
+  const res = await review.GET(new Request(`http://localhost/api/review/${token}`), { params: Promise.resolve({ token }) });
+  expect(res.status).toBe(200);
+  const text = await res.text();
+  expect((JSON.parse(text) as { takes: { id: string }[] }).takes.map((t) => t.id)).toEqual([take.id]);
+  expect(text).not.toContain(releaser.id);
+  expect(text).not.toContain("releasedBy");
+  expect(text).not.toContain("releasedAt");
+});
+
+test("the automatic release still leaves a no-ceiling token's take held, saying who acts; a token or Atomik press is refused", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { releaseHeldJobs } = await import("../../lib/held");
   const { HELD_TAKE_NO_CEILING } = await import("../../lib/tokenSpend");
-  const { db, ready } = await import("../../lib/db");
-  const { platformDb } = await import("../../lib/platform");
-  const ws = await newWorkspace("held");
-  const id = `gen_held_${ws.id}`;
+  const { PEOPLE_ONLY } = await import("../../lib/security/people-only");
+  const ws = await newWorkspace("held-auto");
+  const agent: AdmissionActor = { user: { ...person.user!, id: "agent:run_1", name: "Atomik" } };
+  const viaToken = tokenActor({ capUsd: null, capCredits: null });
+  let take = { id: "", needs: 0 };
   await runInTenant(ws, async () => {
-    await ready();
-    const at = Date.now() - 60_000;
-    await db().batch([
-      "INSERT INTO users(id,email,name,password_hash,created_at) VALUES('owner','owner@example.invalid','Owner','x',0) ON CONFLICT(id) DO NOTHING",
-      "INSERT INTO api_tokens(id,token_hash,name,user_id,scope,created_at) VALUES('tok_bare','hash_bare','assistant','owner','render',0)",
-      { sql: `INSERT INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,token_id,billed_to,task)
-              VALUES(?,'video','byteplus',?,'test',?,'held','owner',?,?,'tok_bare','byteplus','generate')`,
-        args: [id, "dreamina-seedance-2-0-260128", JSON.stringify({ ratio: "16:9", resolution: "720p", duration: 5, watermark: false, held: { estUsd: 1, needs: 15, at: 1, why: "credits" } }), at, at] },
-    ], "write");
-    const out = await releaseHeldJobs({ only: id, defer: async () => {} });
+    take = await heldTokenTake({ token: "tok_bare" });
+    /* Credits arriving (a top-up, the sync): nobody pressed, so nobody approved it. */
+    const out = await releaseHeldJobs({ defer: async () => {} });
     expect(out.released).toEqual([]);
-    expect(out.refused).toMatchObject({ status: 403, error: HELD_TAKE_NO_CEILING });
     expect(HELD_TAKE_NO_CEILING).toBe("This take was made by an API token with no monthly ceiling. An admin sets the ceiling in Settings › Connections, then release it.");
-    const row = (await db().execute({ sql: "SELECT status,error FROM generations WHERE id=?", args: [id] })).rows[0];
-    expect({ ...row }).toEqual({ status: "held", error: HELD_TAKE_NO_CEILING });
-    expect((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE id=?", args: [id] })).rows[0].n).toBe(0);
+    expect((await heldTrace(take.id)).row).toMatchObject({ status: "held", error: HELD_TAKE_NO_CEILING, released_by: null });
+    /* A press with no stated figure is not a person's approval either. */
+    expect((await releaseHeldJobs({ only: take.id, defer: async () => {} })).refused).toMatchObject({ status: 403, error: HELD_TAKE_NO_CEILING });
+    /* A token's press and an Atomik press are refused at the route, before anything is read or reserved. */
+    const submitted: string[] = [];
+    const byToken = await pressRelease(await releaseRoute(viaToken, submitted), take.id, take.needs);
+    expect(byToken.status).toBe(403);
+    expect((await byToken.json()).error).toContain("API tokens cannot release it");
+    const byAgent = await pressRelease(await releaseRoute(agent, submitted), take.id, take.needs);
+    expect(byAgent.status).toBe(403);
+    expect((await byAgent.json()).error).toBe(PEOPLE_ONLY);
+    expect(submitted).toEqual([]);
+  }, { user: person.user });
+  /* And lib/held.ts asks again: called as Atomik, or under a token, with a figure, it is still the token's wall. */
+  await runInTenant(ws, async () => {
+    expect((await releaseHeldJobs({ only: take.id, approved: take.needs, defer: async () => {} })).refused).toMatchObject({ status: 403, error: HELD_TAKE_NO_CEILING });
+  }, { user: agent.user });
+  await runInTenant(ws, async () => {
+    expect((await releaseHeldJobs({ only: take.id, approved: take.needs, defer: async () => {} })).refused).toMatchObject({ status: 403, error: HELD_TAKE_NO_CEILING });
+  }, { user: person.user, token: viaToken.token });
+  await runInTenant(ws, async () => {
+    expect(await heldTrace(take.id)).toMatchObject({ row: { status: "held", released_by: null }, meter: [], reservation: [] });
+  });
+});
+
+test("a person's Release of a capped token's take is still reserved under its token, and its ceiling still stops it", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const ws = await newWorkspace("held-capped");
+  await runInTenant(ws, async () => {
+    const submitted: string[] = [];
+    const route = await releaseRoute(person, submitted);
+    const roomy = await heldTokenTake({ token: "tok_roomy", capCredits: ROOMY });
+    const ok = await pressRelease(route, roomy.id, roomy.needs);
+    expect(ok.status).toBe(200);
+    expect(await heldTrace(roomy.id)).toEqual({
+      row: { status: "queued", error: null, created_by: "member", token_id: "tok_roomy", released_by: null },
+      meter: [{ billed_credits: roomy.needs, created_by: "member" }],
+      reservation: [{ token_id: "tok_roomy", approved_by: null }],
+    });
+    const tight = await heldTokenTake({ token: "tok_tight", capCredits: TIGHT });
+    const stopped = await pressRelease(route, tight.id, tight.needs);
+    expect(stopped.status).toBe(429);
+    expect((await stopped.json()).error).toContain("this token's 1 cr monthly ceiling");
+    expect(submitted).toEqual([roomy.id]);
+    expect(await heldTrace(tight.id)).toMatchObject({ row: { status: "held", released_by: null }, meter: [], reservation: [] });
   }, { user: person.user });
 });
 

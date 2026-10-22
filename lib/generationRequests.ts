@@ -17,6 +17,7 @@ import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./bil
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { freshSettings } from "./settings";
 import { workspaceLimits } from "./limits";
+import { isAgentId } from "./security/people-only";
 import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
 import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
@@ -415,7 +416,8 @@ async function reservationsReady(): Promise<void> {
     await platformDb().execute(`CREATE TABLE IF NOT EXISTS generation_reservations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, token_id TEXT)`);
     /* Additive: the run a job counts toward (an Atomik run's approved limit) and its band (lib/runLimit.ts). */
     const columns = new Set((await platformDb().execute("PRAGMA table_info(generation_reservations)")).rows.map((row) => String(row.name)));
-    for (const [column, type] of [["run_id", "TEXT"], ["run_band", "INTEGER"]] as const) {
+    /* And `approved_by`: the person whose own press approved a job that is not theirs to have approved as its author (a held take's Release, lib/held.ts). */
+    for (const [column, type] of [["run_id", "TEXT"], ["run_band", "INTEGER"], ["approved_by", "TEXT"]] as const) {
       if (columns.has(column)) continue;
       try { await platformDb().execute(`ALTER TABLE generation_reservations ADD COLUMN ${column} ${type}`); }
       catch (error) { if (!/duplicate column/i.test(String(error))) throw error; }
@@ -479,6 +481,11 @@ type ReservationOptions = {
    * once, at band 1.
    */
   holdBand?: number;
+  /**
+   * The person whose own press approved this job, recorded on its reservation: a held take a token with no ceiling made, released by
+   * a person (owner, 20 Oct 2026, answer A; lib/held.ts). The take's author (`created_by`) stays as it is. A token or an agent id is never one.
+   */
+  approvedBy?: string;
 };
 export async function reserveGenerationSpend(event: MeterEvent, options: ReservationOptions = {}): Promise<void> {
   // Local libsql clients share a connection; never interleave transactions on it.
@@ -671,8 +678,9 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     await tx.execute({ sql: `INSERT INTO meter_events(id,workspace_id,project_id,shot_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at,credit_usd,credit_margin,hold_band)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='running',engine_cost_usd=excluded.engine_cost_usd,billed_credits=excluded.billed_credits,paid_by_platform=excluded.paid_by_platform,updated_at=excluded.updated_at,credit_usd=COALESCE(meter_events.credit_usd,excluded.credit_usd),credit_margin=COALESCE(meter_events.credit_margin,excluded.credit_margin),hold_band=COALESCE(excluded.hold_band,meter_events.hold_band)`,
       args: [event.id, ws.id, projectId, event.shotId ?? null, event.kind, event.engine, event.model, "running", cost, held, paid ? 1 : 0, event.createdBy ?? null, ts, ts, terms.creditUsd, terms.margin, heldAtCeiling || houseHeld ? keptBand : null] });
-    await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
-      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? (heldAtCeiling ? 1 : Math.max(1, Math.round(options.run.band))) : null] });
+    await tx.execute({ sql: `INSERT INTO generation_reservations(id,workspace_id,token_id,run_id,run_band,approved_by) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+      args: [event.id, ws.id, options.token?.id ?? null, options.run?.id ?? null, options.run ? (heldAtCeiling ? 1 : Math.max(1, Math.round(options.run.band))) : null,
+        options.approvedBy && !options.token && !isAgentId(options.approvedBy) ? options.approvedBy : null] });
   });
   return houseReserved.at;
 }
