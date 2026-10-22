@@ -732,6 +732,103 @@ test("Astra quotes measured original bytes and explicit FPS, persists controls a
   expect(await service.gen.prepareGeneration({...body,prompt:"Change the actor"},actor)).toMatchObject({ok:false,status:400});
 }));
 
+/* Owner, 21 Oct 2026: "4K: free only if the takes were made and billed at 4K; otherwise priced as the upscale it is." A clip whose
+   MEASURED short side is already the 4K the upscale makes (lib/astra.ts ASTRA_OUTPUT_SHORT_SIDE, lib/models.ts' "4k") is refused at
+   the quote and at the press, in Particl's words, with nothing held, metered or sent. The clips are synthetic (tests/helpers/syntheticClipSize.ts). */
+function quoteRoute(service: ReturnType<typeof services>) {
+  return load<{ POST(req: Request): Promise<Response> }>("app/api/generate/quote/route.ts", {
+    "@/lib/auth": { withTenant: (handler: unknown) => handler, requireRender: async () => actor },
+    "@/lib/generationAdmission": service.gen,
+  });
+}
+async function quoteRequest(body: unknown) {
+  const { requireTenant } = await import("../../lib/tenant");
+  const { workbenchScopeFor } = await import("../../lib/workbench/request-scope");
+  return new Request("http://localhost/api/generate/quote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Workbench-Scope": workbenchScopeFor(requireTenant().id, actor.user.id) },
+    body: JSON.stringify(body),
+  });
+}
+test("Astra refuses a source already at 4K at the quote and the press, before anything is held or sent; below 4K is quoted and admitted as before", async () => {
+  const { syntheticClipOfSize } = await import("../helpers/syntheticClipSize");
+  const { ALREADY_4K, ALREADY_4K_CODE, ASTRA_MODEL, ASTRA_OUTPUT_SHORT_SIDE, DEFAULT_ASTRA } = await import("../../lib/astra");
+  const { dimensionsFor } = await import("../../lib/models");
+  /* The threshold is the code's own 4K tier, not a number typed here. */
+  expect(ASTRA_OUTPUT_SHORT_SIDE).toBe(dimensionsFor("4k", "1:1")!.h);
+  const refusal = { error: ALREADY_4K, code: ALREADY_4K_CODE };
+  await scope("astra-4k", async (service) => {
+    const { db } = await import("../../lib/db");
+    const { storeUpload, storeOriginalBytes } = await import("../../lib/storage");
+    const upload = async (id: string, width: number, height: number) => {
+      const bytes = syntheticClipOfSize(width, height), stored = await storeUpload(id, "mp4", bytes, "video/mp4");
+      await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,width,height,duration_s,created_at) VALUES(?,?,'video/mp4','mp4',?,'hash',?,'video',?,?,1.5,0)", args: [id, `${id}.mp4`, bytes.length, stored.url, width, height] });
+    };
+    /* A take whose row says 1080p: the original is measured, the label is not believed. */
+    const take = async (id: string, width: number, height: number, label: string) => {
+      const bytes = syntheticClipOfSize(width, height), stored = await storeOriginalBytes("video", id, bytes, "video/mp4");
+      await db().execute({ sql: "INSERT INTO generations(id,kind,model,prompt,params,status,stored_url,bytes,created_at,updated_at) VALUES(?,'video','dreamina-seedance-2-0-260128','made',?,'succeeded',?,?,0,0)", args: [id, JSON.stringify({ resolution: label, duration: 1.5, ratio: `${width}:${height}` }), stored.url, bytes.length] });
+    };
+    const body = (source: { sourceUploadId?: string; sourceGenId?: string }, fps: 30 | 60 = 30) => ({ model: ASTRA_MODEL, task: "upscale", ...source, prompt: "", refine: false, resolution: "4k", fps60: fps === 60, astra: { ...DEFAULT_ASTRA, fps }, references: [], projectId: "project" });
+    await upload("clip-uhd-portrait", 2160, 3840);
+    await upload("clip-uhd", 3840, 2160);
+    await upload("clip-dci", 4096, 2160);
+    await upload("clip-8k", 7680, 4320);
+    await take("take-4k", 3840, 2160, "1080p");
+    const fourK = [{ sourceUploadId: "clip-uhd-portrait" }, { sourceUploadId: "clip-uhd" }, { sourceUploadId: "clip-dci" }, { sourceUploadId: "clip-8k" }, { sourceGenId: "take-4k" }];
+    const seeded = (await rows()).map((row) => row.id);
+    for (const [index, source] of fourK.entries()) {
+      for (const fps of [30, 60] as const) {
+        /* The free quote, as admission prepares it and as the route answers it: no price, the line, and its code. */
+        expect(await service.gen.prepareGeneration(body(source, fps), actor)).toEqual({ ok: false, status: 400, body: refusal });
+        const quoted = await quoteRoute(service).POST(await quoteRequest(body(source, fps)));
+        expect(quoted.status).toBe(400);
+        expect(await quoted.json()).toEqual(refusal);
+      }
+      /* The press, with a ceiling a client could send: refused the same way. */
+      const pressed = await route("generation", service).POST(request("generate", { ...body(source), maxCredits: 1000 }, `astra-4k-${index}`));
+      expect(pressed.status).toBe(400);
+      expect(await pressed.json()).toEqual(refusal);
+    }
+    /* Nothing held, metered, filed or sent. */
+    expect((await rows()).map((row) => row.id)).toEqual(seeded);
+    expect(await meters()).toHaveLength(0);
+    expect(dispatched).toHaveLength(0);
+
+    /* Just below the tier, and 1080p: quoted and admitted exactly as before (the fixture's 1.5 s at the 4K tier: 12 cr at 30 fps, 23 at 60). */
+    await upload("clip-1080", 1080, 1920);
+    await upload("clip-under", 3838, 2158);
+    await take("take-labelled-4k", 1920, 1080, "4k");
+    for (const [source, key] of [[{ sourceUploadId: "clip-1080" }, "astra-1080"], [{ sourceUploadId: "clip-under" }, "astra-under"], [{ sourceGenId: "take-labelled-4k" }, "astra-labelled"]] as const) {
+      expect(value(await service.gen.prepareGeneration(body(source, 60), actor)).quote.estimatedCredits).toBe(23);
+      const quoted = await quoteRoute(service).POST(await quoteRequest(body(source)));
+      expect(quoted.status).toBe(200);
+      const quote = await quoted.json();
+      expect(quote.estimatedCredits).toBe(12);
+      const accepted = await route("generation", service).POST(request("generate", { ...body(source), maxCredits: quote.estimatedCredits, quoteFingerprint: quote.fingerprint }, key));
+      expect(accepted.status, await accepted.clone().text()).toBe(202);
+    }
+    expect(dispatched).toHaveLength(3);
+    expect(await meters()).toHaveLength(3);
+
+    /* A clip whose size cannot be read keeps today's answer: refused before a price, in the reader's words, not as 4K. */
+    await db().execute({ sql: "INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,created_at) VALUES('clip-unread','clip.mp4','video/mp4','mp4',4096,'hash','missing','video',0)" });
+    const unread = await service.gen.prepareGeneration(body({ sourceUploadId: "clip-unread" }), actor);
+    expect(unread).toMatchObject({ ok: false, status: 400 });
+    expect(JSON.stringify(unread)).not.toContain(ALREADY_4K_CODE);
+    expect(dispatched).toHaveLength(3);
+  });
+  /* Workspace scoping is unchanged: another workspace naming the first one's 4K clip is told it does not exist, never what size it is. */
+  await scope("astra-4k-other", async (service) => {
+    const body = { model: ASTRA_MODEL, task: "upscale", sourceUploadId: "clip-uhd", prompt: "", refine: false, resolution: "4k", fps60: false, astra: DEFAULT_ASTRA, references: [], projectId: "project" };
+    const other = await service.gen.prepareGeneration(body, actor);
+    expect(other).toEqual({ ok: false, status: 400, body: { error: "That uploaded clip no longer exists." } });
+    expect(await rows()).toHaveLength(0);
+    expect(await meters()).toHaveLength(0);
+    expect(dispatched).toHaveLength(0);
+  });
+});
+
 test("Astra reconciles measured output below its quote, leases collection and retains uncertain delivery without a second provider call",async()=>scope("astra-settle",async service=>{
   const {db}=await import("../../lib/db"),{storeUpload}=await import("../../lib/storage"),{ASTRA_MODEL,DEFAULT_ASTRA}=await import("../../lib/astra");
   const {getGeneration}=await import("../../lib/jobs"),{syncFalVideo}=await import("../../lib/falVideo"),{engineFor}=await import("../../lib/engines");

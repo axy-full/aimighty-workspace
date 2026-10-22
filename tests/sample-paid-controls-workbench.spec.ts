@@ -95,10 +95,10 @@ const QUEUE = {
   inCredits: true,
   items: [
     { id: "held:gen_fx_a", source: "held", title: "Keyframe retake", at: Date.now() - 3_000_000, price: { kind: "exact", credits: 3 }, where: "Make", project: { productionId: "prod_fx", draftId: null, name: "Project one" },
-      needsAdmin: false, canApprove: true, why: null, shortBy: null, step: null, sample: false, note: "It starts when credits arrive; nothing is spent until then",
+      canApprove: true, why: null, shortBy: null, step: null, sample: false, note: "It starts when credits arrive; nothing is spent until then",
       approve: { kind: "release", genId: "gen_fx_a", credits: 3 }, decline: { kind: "discard", genId: "gen_fx_a" }, open: { kind: "take", genId: "gen_fx_a", draftId: null } },
     { id: "thread:ach_fx", source: "thread", title: "Plan three takes", at: Date.now() - 2_000_000, price: { kind: "up-to", credits: 2 }, where: "Atomik", project: { productionId: "prod_fx", draftId: null, name: "Project one" },
-      needsAdmin: false, canApprove: true, why: null, shortBy: null, step: { n: 1, of: 3 }, sample: false, note: "Step 1 of 3 · Keyframes",
+      canApprove: true, why: null, shortBy: null, step: { n: 1, of: 3 }, sample: false, note: "Step 1 of 3 · Keyframes",
       approve: { kind: "thread", chatId: "ach_fx", stepId: "astp_fx", productionId: "prod_fx" }, decline: { kind: "thread-stop", stepId: "astp_fx" }, open: { kind: "thread", chatId: "ach_fx", productionId: "prod_fx" } },
   ],
   decided: [],

@@ -33,7 +33,6 @@ test("deleted takes, moved takes and metered text count toward a production's an
   await alignLedgerUnit();
   const { meter } = await import("../../lib/meter");
   const { projectCap, projectCapSpent, checkCap, spentBy } = await import("../../lib/caps");
-  const { shotCreditsSoFar } = await import("../../lib/shotCap");
   const { reserveGenerationSpend, SpendReservationError } = await import("../../lib/generationRequests");
   await platformReady();
   await platformDb().execute({
@@ -68,7 +67,7 @@ test("deleted takes, moved takes and metered text count toward a production's an
     expect(row).toEqual({ unit: "cr", cap: 30, unlocked: false, warnedAt: null, name: "Rooftop", from: "production" });
     expect(await projectCapSpent("p2")).toMatchObject({ cap: null, spent: 0 });
     expect(await checkCap("p2", 5, SEEDANCE)).toEqual({ allow: true, pct: null, warned: false });
-    expect(await shotCreditsSoFar("s1")).toBe(24);
+    expect((await spentBy("shot_id", ["s1"])).get("s1")?.credits ?? 0).toBe(24);
 
     // The pre-check and the gate refuse the same take with the same sentence.
     const pre = await checkCap("p1", 0.1, SEEDANCE);

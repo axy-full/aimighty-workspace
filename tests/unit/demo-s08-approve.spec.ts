@@ -18,7 +18,7 @@ function held(over: Partial<QueueItem> = {}): QueueItem {
   return {
     id: `held:gen_${n}`, source: "held", title: `Take ${n}`, where: "Make", at: n,
     project: { productionId: "prod", draftId: "draft", name: "P" },
-    price: exact(3), needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+    price: exact(3), canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
     approve: { kind: "release", genId: `gen_${n}`, credits: 3 }, decline: { kind: "discard", genId: `gen_${n}` },
     open: { kind: "take", genId: `gen_${n}`, draftId: "draft" }, ...over,
   };
@@ -100,11 +100,12 @@ test("a lost answer stops the batch and is never sent again from here", async ()
 });
 
 test("an item that may not go in a batch stops it before anything is sent for it", async () => {
-  const ok = held(), admin = held({ needsAdmin: true }), after = held();
+  /* A short balance keeps an item out of a batch (the per-shot rule that did too was retired on 21 Oct 2026). */
+  const ok = held(), short = held({ shortBy: 2 }), after = held();
   const { calls, fetcher } = recorder();
-  const out = await approveBatch([ok, admin, after], fetcher);
+  const out = await approveBatch([ok, short, after], fetcher);
   expect(out.approved).toEqual([ok]);
-  expect(out.refused?.item).toBe(admin);
+  expect(out.refused?.item).toBe(short);
   expect(calls).toHaveLength(1);
 });
 

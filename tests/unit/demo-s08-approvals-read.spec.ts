@@ -98,6 +98,7 @@ async function seed(ws: TenantWorkspace, opts: { credits?: number; rich?: boolea
       args: [`${runId}:${seq}`, runId, seq, quote, JSON.stringify({ quote: { fingerprint: fp } }), now - 30_000, now - 30_000],
     });
     await db().batch([run(RUN_ONE, "prod_a", "needs_you"), render(RUN_ONE, 4, 30, FP("a")), run(RUN_TWO, "prod_b", "needs_you"), render(RUN_TWO, 2, 43, FP("b"))], "write");
+    /* The retired rule as a workspace stored it (owner, 21 Oct 2026: retired; the rows stay, nothing reads them). */
     await setSetting("approvalRule", "cap", "u_admin");
     await setSetting("shotCapCredits", "40", "u_admin");
   });
@@ -158,7 +159,7 @@ test("prices are the server's own, in credits, worded kinds only; no dollar figu
   expect(a.items.find((i) => i.id === "held:gen_demo")?.sample).toBe(true);
 });
 
-test("who may press follows each record's own rule, and the per-shot rule never gives a member more", async () => {
+test("who may press follows each record's own rule; a stored per-shot cap takes nothing from a member (retired 21 Oct 2026)", async () => {
   const member = await read(A, { id: "u_member", role: "member" });
   const other = await read(A, { id: "u_other", role: "member" });
   const admin = await read(A, { id: "u_admin", role: "admin" });
@@ -167,10 +168,12 @@ test("who may press follows each record's own rule, and the per-shot rule never 
   expect(pick(member, "held:gen_a")).toMatchObject({ canApprove: true, why: null });
   expect(pick(other, "held:gen_a")).toMatchObject({ canApprove: false, why: "Only the person who made this take, or an admin, can release it.", decline: null });
   expect(pick(admin, "held:gen_a").canApprove).toBe(true);
-  /* A board render: only the person who asked, and under the 40 cr rule for a member. */
-  expect(pick(member, `board-render:${RUN_ONE}:4`)).toMatchObject({ canApprove: true, needsAdmin: false });
+  /* A board render: only the person who asked, at any price (the stored 40 cr cap stops nothing). */
+  expect(pick(member, `board-render:${RUN_ONE}:4`)).toMatchObject({ canApprove: true, why: null });
+  expect(pick(member, `board-render:${RUN_ONE}:4`)).not.toHaveProperty("needsAdmin");
   expect(pick(other, `board-render:${RUN_ONE}:4`)).toMatchObject({ canApprove: false, why: "Only the person who asked Atomik for this run can approve its renders." });
-  expect(pick(member, `board-render:${RUN_TWO}:2`)).toMatchObject({ canApprove: false, needsAdmin: true, why: "Members up to 40 cr a shot; an admin above it" });
+  expect(pick(member, `board-render:${RUN_TWO}:2`)).toMatchObject({ canApprove: true, why: null });
+  expect(JSON.stringify(member)).not.toMatch(/an admin above it|needs an admin/i);
   /* A plan's step is its own person's (owner, 12 Oct): another member does not see it, and an admin does not either while it needs nobody's tap above the member's. */
   expect(other.items.find((i) => i.id === "thread:ach_1")).toBeUndefined();
   expect(admin.items.find((i) => i.id === "thread:ach_1")).toBeUndefined();

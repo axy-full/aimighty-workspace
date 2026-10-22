@@ -70,7 +70,7 @@ export const GET = withTenant(async function GET(_req: Request, { params }: Ctx)
             LIMIT 1`,
       args: [shotId],
     }),
-    quoteShots([shotId], { at: now(), isAdmin: got.user.role === "admin" }),
+    quoteShots([shotId], { at: now() }),
   ]);
 
   let take = null as null | { id: string; version: number; state: string; approved: boolean; kind: string; seconds: number | null; credits: number };
@@ -238,7 +238,7 @@ export const PUT = withTenant(async function PUT(req: Request, { params }: Ctx) 
 
   /* Re-quoted after the write, not before: the surface's next press is the
      one that spends, and it has to carry the price of the shot as it now is. */
-  const quoted = await quoteShots([shotId], { at: now(), isAdmin: got.user.role === "admin" });
+  const quoted = await quoteShots([shotId], { at: now() });
   return NextResponse.json({
     ok: true, changed,
     bindings: await listBindings(shotId),

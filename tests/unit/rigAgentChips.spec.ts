@@ -76,8 +76,7 @@ async function inRun<T>(name: string, fn: (ws: TenantWorkspace) => Promise<T>, c
 type Behaviour = { throwBeforeClaim?: boolean; throwAfterReply?: boolean; pendingClaim?: boolean };
 
 /** `xai`: shots whose engine settles on what the provider states (worst case 3 × the quote), as an approximate engine does. */
-/** `adminShots`: shots over the workspace's per-shot rule: a member's preparation is refused with needsAdmin, as admission does. */
-function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: ReadonlySet<string> = new Set(), adminShots: ReadonlySet<string> = new Set()) {
+function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: ReadonlySet<string> = new Set()) {
   const calls: { key: string; savedKey: string | null; savedState: string | null; run: RunSpend | undefined; prompt: string }[] = [];
   const behaviour: Behaviour = {};
   /* The price the admission would compute now, per shot: a moved price refuses an old approval. */
@@ -86,8 +85,6 @@ function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: Read
   const prepare = async (body: Record<string, unknown>, actor: AdmissionActor) => {
     const { billCredits } = await import("../../lib/creditTerms");
     const shot = shotOf(body);
-    if (adminShots.has(shot) && actor.user.role !== "admin")
-      return { ok: false as const, status: 403, body: { error: `Shot ${shot} is over the 50 cr a shot may take. An admin has to press this one.`, needsAdmin: true } };
     const usd = priceNow.get(shot) ?? usdOf(shot);
     const credits = billCredits(usd, "mock");
     /* The compile covers the prompt, as a real one does: an edited shot is a different quote fingerprint. */
@@ -209,7 +206,8 @@ test("a chips plan costs no thinking turn and reserves nothing: priced by the se
     const takes = run.paid.filter((p) => p.tool === "render");
     /* The first waits on the run's limit (there is none until a person approves); the rest are priced ahead, so the plan has its total. Both are covered by the plan's gate, so neither shows a price of its own. */
     expect(takes.map((p) => [p.title, p.state, p.pause])).toEqual([["Pier", "paused", "limit"], ["Deck", "waiting", null]]);
-    expect(run.plan?.quote).toMatchObject({ total: a + b, ceiling: 2 * (a + b), asks: [] });
+    expect(run.plan?.quote).toMatchObject({ total: a + b, ceiling: 2 * (a + b) });
+    expect(run.plan?.quote).not.toHaveProperty("asks");
     /* ONE price for the plan (owner, 16 Oct): the client is told the total and no step's price, no step's note about a price, and no engine's name; the server keeps each step's quote on its record, and their sum is the total. */
     expect(takes.every((p) => p.quote === null && p.worst === null && p.reason === null && !("quoteUsd" in p))).toBe(true);
     expect(run.reason).toBeNull();
@@ -249,15 +247,15 @@ test("one price for the whole plan, a shot over 200 cr included (owner, 20 Oct 2
     const kept = new Map((await stepsOf(db(), asked.id)).filter((s) => s.purpose === "take").map((s) => [s.seq, s.quoteCredits]));
     const a = await credits(0.3), b = kept.get(s2.seq)!;
     expect(b).toBeGreaterThan(200);
-    expect(run.plan?.quote).toMatchObject({ total: a + b, covered: [s1.seq, s2.seq], asks: [] });
+    expect(run.plan?.quote).toMatchObject({ total: a + b, covered: [s1.seq, s2.seq] });
     /* Both are covered by the plan: no price of their own until they settle. */
     expect([s1.quote, s1.worst, s1.reason]).toEqual([null, null, null]);
     expect([s2.quote, s2.worst]).toEqual([null, null]);
     /* The card: no client estimate for a chips run; both shots read "in the plan". */
     expect(wantsEstimates(run)).toBe(false);
     expect(wantsEstimates({ kind: "ask" })).toBe(true);
-    const card = planModel({ run, enabled: true, estimates: { [s1.seq]: { credits: 1, approximate: false }, [s2.seq]: { credits: 1, approximate: false } }, balance: 2000, rule: null, readOnly: null })!;
-    expect(card.steps.map((s) => [s.price, s.source, s.asksAlone])).toEqual([[null, "plan", null], [null, "plan", null]]);
+    const card = planModel({ run, enabled: true, estimates: { [s1.seq]: { credits: 1, approximate: false }, [s2.seq]: { credits: 1, approximate: false } }, balance: 2000, readOnly: null })!;
+    expect(card.steps.map((s) => [s.price, s.source])).toEqual([[null, "plan"], [null, "plan"]]);
     expect(card.primary).toMatchObject({ kind: "plan", label: `Approve · ${creditFigure(a + b)} cr` });
     /* The person approves the plan once; shot 1 renders, then shot 2 (over 200 cr) under the same approval, with no tap of its own. */
     await agent.approveRigAgentPlan({ productionId: "prod-1", runId: asked.id, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
@@ -292,7 +290,7 @@ test("after the approval, one price still: a covered shot waiting behind a rende
     expect([s1.state, s1.inPlan, s1.quote, s1.planPriced]).toEqual(["rendering", true, null, true]);
     expect([s2.state, s2.inPlan, s2.quote, s2.worst, s2.reason, s2.planPriced]).toEqual(["waiting", false, null, null, null, true]);
     expect(run.plan?.approval).toMatchObject({ open: true });
-    const card = planModel({ run, enabled: true, balance: 2000, rule: null, readOnly: null })!;
+    const card = planModel({ run, enabled: true, balance: 2000, readOnly: null })!;
     expect(card.steps.map((s) => [s.price, s.source])).toEqual([[null, "plan"], [null, "plan"]]);
     const history = (await readActivity({ id: OWNER, role: "admin", owner: true }, null)).runs.find((x) => x.id === `board:${asked.id}`)!;
     expect(history.steps.filter((x) => x.kind === "paid").map((x) => x.priced)).toEqual([null, null]);
@@ -305,7 +303,7 @@ test("after the approval, one price still: a covered shot waiting behind a rende
       const paused = await view();
       const step = paused.paid.find((p) => p.seq === s2.seq)!;
       expect([step.state, step.pause, step.inPlan, step.quote, step.planPriced], pause).toEqual(["paused", pause, true, b, undefined]);
-      const m = planModel({ run: paused, enabled: true, balance: 2000, rule: null, readOnly: null })!;
+      const m = planModel({ run: paused, enabled: true, balance: 2000, readOnly: null })!;
       expect(m.steps[1].price, pause).toEqual({ kind: "exact", credits: b });
       /* A limit pause offers Raise from this price when the room is short (tests/unit/demo-s04-plan-model.spec.ts); here the faked pause has room, so no button is made up. */
       if (pause === "limit") expect(m.primary?.kind ?? null, pause).not.toBe("render");
@@ -358,28 +356,35 @@ test("the approvals queue lists only the shot that asks: after the approval of t
   });
 });
 
-test("a shot that needs an admin keeps its own server price on a chips plan, in the queue too with the admin marker; its note names no engine", async () => {
+test("a chips plan's shot stored as waiting for an admin (before 21 Oct 2026) goes back to its own person at a fresh quote: no price, no admin marker, nothing sent until they price it again and approve", async () => {
   MEMBERS.add(OWNER);
   try {
     await inRun("chips-admin", async (ws) => {
       const agent = await import("../../lib/workbench/rig-agent");
+      const { BACK_TO_ITS_PERSON } = await import("../../lib/workbench/rig-agent-store");
       const { readApprovals } = await import("../../lib/control-room/approvals.server");
-      const r = renders(ws, () => 0.3, new Set(), new Set(["1"]));
+      const { db } = await import("../../lib/db");
+      const r = renders(ws, () => 0.3);
       const deps = await depsFor(ws, r);
       const asked = await plan();
       await agent.advanceRigAgentRun(asked.id, deps);
+      const [s1] = (await view()).paid.filter((p) => p.tool === "render");
+      /* Shot 1 as the retired rule left it: paused for an admin, with the price an admin was quoted and no admission. */
+      await db().execute({ sql: "UPDATE rig_agent_steps SET state='paused', pause='admin', reason='Needs an admin: it asks on its own, at its own price.', admission=NULL, quote_credits=? WHERE run_id=? AND seq=?", args: [await credits(0.3), asked.id, s1.seq] });
       const run = await view();
-      const a = await credits(0.3);
-      const [s1, s2] = run.paid.filter((p) => p.tool === "render");
-      expect(run.plan?.quote).toMatchObject({ total: a, covered: [s2.seq], asks: [s1.seq] });
-      expect(s1).toMatchObject({ state: "paused", pause: "admin", quote: a, reason: "Needs an admin: it asks on its own, at its own price." });
-      expect(s2.quote).toBeNull();
-      await agent.approveRigAgentPlan({ productionId: "prod-1", runId: asked.id, fingerprint: run.plan!.quote!.fingerprint, userId: OWNER });
-      await agent.advanceRigAgentRun(asked.id, deps);
-      expect(r.calls).toHaveLength(1);
+      const shot1 = run.paid.find((p) => p.seq === s1.seq)!;
+      expect(shot1).toMatchObject({ state: "paused", pause: "unpriced", quote: null, worst: null, fingerprint: null, reason: BACK_TO_ITS_PERSON });
+      /* The plan waits for that price: no gate quote covers a shot with none. */
+      expect(run.plan?.quote ?? null).toBeNull();
       const queued = (await readApprovals({ id: OWNER, role: "member" })).items.filter((i) => i.source === "board-render" || i.source === "board-plan");
-      expect(queued.map((i) => [i.id, i.price, i.needsAdmin, i.canApprove])).toEqual([[`board-render:${asked.id}:${s1.seq}`, { kind: "exact", credits: a }, true, false]]);
-      expect(JSON.stringify(queued)).not.toMatch(/over the 50 cr/);
+      for (const item of queued) expect(item).not.toHaveProperty("needsAdmin");
+      expect(JSON.stringify([run, queued])).not.toMatch(/needs an admin|for an admin/i);
+      /* Its own person prices it again: it is priced afresh, and nothing is sent until the plan is approved. */
+      await agent.renderRigAgentStep({ productionId: "prod-1", runId: asked.id, seq: s1.seq, userId: OWNER });
+      await agent.advanceRigAgentRun(asked.id, deps);
+      const again = await view();
+      expect(again.plan?.quote).toMatchObject({ total: 2 * (await credits(0.3)) });
+      expect(r.calls).toHaveLength(0);
     });
   } finally {
     MEMBERS.delete(OWNER);

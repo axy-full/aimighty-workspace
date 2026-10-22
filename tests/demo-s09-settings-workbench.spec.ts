@@ -65,7 +65,7 @@ async function open(page: Page, path: string, opts: { on?: boolean; member?: API
   await page.route("**/api/workspaces/security", (route) => route.fulfill({ json: { requiresMfa: false, ownerEnrolled: true, members: 2, unenrolled: 1 } }));
   await page.route(/\/api\/workspaces\/audit(\?.*)?$/, (route) => route.fulfill({ json: { events: [{ id: "e1", workspaceId: "w", actorId: "u1", action: "member.updated", targetType: "member", targetId: "u2", details: { role: "admin" }, createdAt: Date.now() }], nextCursor: null, actors: {} } }));
   /* GET and PATCH /api/settings: the workspace's own rules, kept as the route keeps them. */
-  const stored: Record<string, string> = { approvalRule: "cap", shotCapCredits: "50", capWarnPct: "80", atCap: "producer" };
+  const stored: Record<string, string> = { capWarnPct: "80", atCap: "producer" };
   await page.route("**/api/settings", async (route) => {
     if (route.request().method() === "PATCH") {
       const body = route.request().postDataJSON() as Record<string, string>;
@@ -73,7 +73,7 @@ async function open(page: Page, path: string, opts: { on?: boolean; member?: API
       Object.assign(stored, body);
       return route.fulfill({ json: { settings: stored, changed: Object.keys(body) } });
     }
-    return route.fulfill({ json: { settings: stored, defaults: { approvalRule: "anyone", shotCapCredits: "50", capWarnPct: "80", atCap: "producer" }, models: {}, platformModels: {} } });
+    return route.fulfill({ json: { settings: stored, defaults: { capWarnPct: "80", atCap: "producer" }, models: {}, platformModels: {} } });
   });
   /* GET /api/projects (a workspace billed in credits) and PATCH /api/projects/:id. */
   const caps: Record<string, number | null> = { pa: 200, pb: null };
@@ -269,13 +269,16 @@ test("old links land on their section; the design's ws= spelling and open= work;
   expect(errors).toEqual([]);
 });
 
-test("Spending rules: the rule, no platform line, and Ask, read as the code has them; an admin changes them with Undo; an admin's cap per production", async ({ page }, info) => {
+test("Spending rules: each person approves their own spend, no platform line, and Ask, read as the code has them; an admin changes the budget rules with Undo; an admin's cap per production", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, writes } = await open(page, "/suites?view=workspace&tab=rules");
   await expect(page.getByTestId("settings-title")).toHaveText("Spending rules");
   await expect(page.getByTestId("settings-approve")).toContainText("people only · Atomik never approves");
-  await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot; an admin above it.");
-  await expect(page.getByTestId("settings-rule").locator(".gs-row-v")).toHaveText("50 cr");
+  /* No cost approval rule and no per-shot cap (owner, 21 Oct 2026): each person approves their own spend; nothing to choose. */
+  await expect(page.getByTestId("settings-approve-own")).toContainText("Each person approves their own spend.");
+  await expect(page.getByTestId("settings-rule")).toHaveCount(0);
+  await expect(page.getByTestId("settings-rule-change")).toHaveCount(0);
+  await expect(page.getByTestId("settings-view")).not.toContainText(/an admin above it|a shot may take|producer signs off|needs an admin/i);
   /* No platform per-job line (owner, 20 Oct 2026: guardrail 4 retired): no row of it, and no sentence that a job's size needs an admin. */
   await expect(page.getByTestId("settings-platform-line")).toHaveCount(0);
   await expect(page.getByTestId("settings-view")).not.toContainText(/Platform line|Any job over|even under Auto/);
@@ -291,23 +294,18 @@ test("Spending rules: the rule, no platform line, and Ask, read as the code has 
   await floors(page, "Spending rules");
   await shot(page, "rules");
 
-  /* Change the rule: it saves itself, a toast offers Undo, and Undo writes the old values back. */
-  await page.getByTestId("settings-rule-change").click();
-  await page.getByTestId("settings-rule-producer").click();
-  await expect.poll(() => writes.find((w) => w.url === "/api/settings")?.body).toEqual({ approvalRule: "producer" });
-  await expect(page.getByTestId("settings-rule")).toContainText("A producer signs off on every take.");
-  await shot(page, "rules-editing");
-  await page.getByRole("button", { name: "Undo" }).click();
-  await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ approvalRule: "cap", shotCapCredits: "50" });
-  await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot");
-  await page.getByTestId("settings-shot-cap").fill("40");
-  await page.getByTestId("settings-shot-cap-set").click();
-  await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ shotCapCredits: "40" });
-  await expect(page.getByTestId("settings-rule")).toContainText("Members up to 40 cr a shot");
-
+  /* Change a budget rule: it saves itself, a toast offers Undo, and Undo writes the old values back. */
   await page.getByTestId("settings-budget-change").click();
   await page.getByTestId("settings-warn-90").click();
   await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ capWarnPct: "90" });
+  await shot(page, "rules-editing");
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ capWarnPct: "80", atCap: "producer" });
+  await expect(page.getByTestId("settings-budget")).toContainText("Warns at 80% of a production’s budget");
+  await page.getByTestId("settings-warn-90").click();
+  await expect.poll(() => writes.filter((w) => w.url === "/api/settings").at(-1)?.body).toEqual({ capWarnPct: "90" });
+  /* Nothing here ever writes the retired keys. */
+  expect(writes.filter((w) => w.url === "/api/settings").flatMap((w) => Object.keys(w.body as object))).not.toContain("approvalRule");
   await page.getByTestId("settings-atcap-stop").click();
   await expect(page.getByTestId("settings-budget")).toContainText("Warns at 90% of a production’s budget · rendering stops at the cap");
   await floors(page, "Spending rules, editing");
@@ -437,7 +435,7 @@ test("Advanced: Models, Tools and Workspace in folds, from the routes that serve
 test("a member reads Team, Plan & credits and Spending rules, and changes nothing", async ({ page, request }, info) => {
   test.skip(!SIZES.includes(info.project.name), "every configured viewport");
   const { errors, writes } = await open(page, "/suites?view=workspace&tab=rules", { member: request });
-  await expect(page.getByTestId("settings-rule")).toContainText("Members up to 50 cr a shot");
+  await expect(page.getByTestId("settings-approve-own")).toContainText("Each person approves their own spend.");
   await expect(page.getByTestId("settings-rule-change")).toHaveCount(0);
   await expect(page.getByTestId("settings-budget-change")).toHaveCount(0);
   await expect(page.getByTestId("settings-rules-readonly")).toContainText("Only an admin changes these.");

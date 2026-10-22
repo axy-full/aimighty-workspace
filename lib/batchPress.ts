@@ -119,7 +119,7 @@ async function capVerdict(members: { p: PreparedAdmission; holdUsd: number }[]):
     balance: null,
     allowance: cap == null ? null : { cap, spent: await platformSpendThisMonth() },
     houseCap: houseCap == null ? null : { cap: houseCap, spent: await houseSpendSince(houseMonthStart()) },
-    caps: {}, warnPct: 80, rule: "anyone", shotCap: 0, isAdmin: false,
+    caps: {}, warnPct: 80,
   });
   return verdict.allow ? { refusal: null, notice: verdict.notice } : { refusal: verdict.line, notice: "" };
 }

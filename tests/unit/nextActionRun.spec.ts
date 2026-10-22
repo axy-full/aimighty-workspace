@@ -57,9 +57,11 @@ test("the estimate is exactly the request's, and asking is free; a refusal comes
     expect((refused as NextRefusal).message).toBe("v3 is approved. Why render another?");
     expect((refused as NextRefusal).detail).toEqual({ needsReason: { title: "v3 is approved. Why render another?", line: "Ana approved v3. The reason is kept with the new take." } });
   });
-  await withServer({ "/api/generate/quote": () => ({ status: 403, json: { error: "SH010 is past its cap; an admin runs this take.", needsAdmin: true } }) }, async () => {
+  /* A refusal asks for no admin any more (the per-shot cap was retired on 21 Oct 2026): a stray needsAdmin flag in a reply is a refusal with its words and no detail. */
+  await withServer({ "/api/generate/quote": () => ({ status: 403, json: { error: "This actor is not authorized to render in this workspace.", needsAdmin: true } }) }, async () => {
     const refused = (await quoteNext(SCOPE, BODY).catch((e: unknown) => e)) as NextRefusal;
-    expect(refused.detail).toEqual({ needsAdmin: true });
+    expect(refused).toBeInstanceOf(NextRefusal);
+    expect(refused.detail).toEqual({});
   });
   await withServer({ "/api/generate/quote": () => ({ status: 400, json: { error: "Luma Ray 2 isn't connected for this workspace. Ask the platform to connect it." } }) }, async () => {
     const refused = (await quoteNext(SCOPE, BODY).catch((e: unknown) => e)) as NextRefusal;

@@ -40,11 +40,12 @@ test("seam a: the board's source takes Atomik's run from stream 7's seam, with n
   expect(read("components/graphite/board/cards/plan/use-plan.ts")).toContain("AGENT_CHANGED");
 });
 
-test("seam f: the control room reads Settings' section ids from lib/shell/settings.ts, and the spending rules from stream 9's hook", () => {
+test("seam f: the control room reads Settings' section ids from lib/shell/settings.ts, and no retired admin approval rule or per-shot cap (owner, 21 Oct 2026)", () => {
   const approvals = read("components/graphite/control-room/ApprovalsView.tsx");
   expect(approvals).toContain('import type { SettingsSectionId } from "@/lib/shell/settings";');
   expect(approvals).not.toContain("WorkspaceTabId");
-  expect(approvals).toContain("useSpendingRules");
+  /* Who may approve is each person, their own spend (owner, 21 Oct 2026, D1): the admin rule and its per-shot cap are retired, so nothing here reads them. */
+  expect(approvals).not.toMatch(/approvalRule|shotCap|needsAdmin/);
   expect(read("components/graphite/settings/rules/spending.ts")).not.toContain("LOCAL STUB");
 });
 

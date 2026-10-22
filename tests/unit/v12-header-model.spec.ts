@@ -81,7 +81,7 @@ const job = (over: Partial<TrayJob>): TrayJob => ({
 });
 const item = (over: Partial<QueueItem>): QueueItem => ({
   id: "q1", source: "board", title: "Approve the cast", where: "Board", at: 0, project: { productionId: "p1", draftId: "b2", name: "Launch clips" },
-  price: null, needsAdmin: false, canApprove: true, why: null, shortBy: null, note: "Cast", step: null, sample: false, approve: null, decline: null,
+  price: null, canApprove: true, why: null, shortBy: null, note: "Cast", step: null, sample: false, approve: null, decline: null,
   open: { kind: "board", productionId: "p1", draftId: "b2" }, ...over,
 } as QueueItem);
 

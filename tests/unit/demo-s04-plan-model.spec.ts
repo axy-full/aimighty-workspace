@@ -28,7 +28,7 @@ function run(over: Partial<RigAgentRunView> = {}): RigAgentRunView {
   };
 }
 const estimates = { 1: { credits: 43, approximate: false }, 3: { credits: 43, approximate: false }, 5: { credits: 7, approximate: false } };
-const base = (over: Partial<PlanInput> = {}): PlanInput => ({ run: run(), enabled: true, estimates, balance: 2000, rule: null, readOnly: null, ...over });
+const base = (over: Partial<PlanInput> = {}): PlanInput => ({ run: run(), enabled: true, estimates, balance: 2000, readOnly: null, ...over });
 
 test("before the gate (review L2) the proposal lists each take at the server's own quote, and adds nothing up: no total, no 'at most', no fix line, no balance after; Build · free only", () => {
   const m = planModel(base())!;
@@ -72,7 +72,7 @@ function gate(over: Partial<RigAgentRunView> = {}): RigAgentRunView {
       step(3, "Shot 2", { state: "waiting", quote: 43, worst: 43, canRender: true, fingerprint: FP }), verify(4, "Shot 2"),
       step(5, "Shot 3", { state: "waiting", quote: 7, worst: 7, canRender: true, fingerprint: FP }), verify(6, "Shot 3"),
     ],
-    plan: { quote: { total: 93, ceiling: 186, approximate: false, fingerprint: GATE_FP, covered: [1, 3, 5], asks: [] }, blocked: null, approval: null },
+    plan: { quote: { total: 93, ceiling: 186, approximate: false, fingerprint: GATE_FP, covered: [1, 3, 5] }, blocked: null, approval: null },
     ...over,
   });
 }
@@ -91,12 +91,11 @@ test("the plan gate: the title and the button are the server's figures, Make 3 s
   /* Short of the total: Approve waits. Someone else's plan: theirs. */
   expect(planModel(base({ run: gate(), balance: 50 }))!.primary?.blocked).toBe(SHORT_LINE);
   expect(planModel(base({ run: gate({ mine: false }) }))!.primary?.blocked).toBe(NOT_MINE);
-  /* An approximate engine: up to. A render the server lists to ask on its own (since 20 Oct 2026 only one that needs an admin: no per-render line) is marked. */
-  const approx = planModel(base({ run: gate({ plan: { quote: { total: 179, ceiling: 358, approximate: true, fingerprint: GATE_FP, covered: [1, 3], asks: [5] }, blocked: null, approval: null } }) }))!;
+  /* An approximate engine: up to. No render asks on its own for an admin (the admin approval rule was retired on 21 Oct 2026), so the button is never "the rest". */
+  const approx = planModel(base({ run: gate({ plan: { quote: { total: 179, ceiling: 358, approximate: true, fingerprint: GATE_FP, covered: [1, 3, 5] }, blocked: null, approval: null } }) }))!;
   expect(approx.title).toBe("Make 3 shots · up to 179 cr · at most 358 cr");
-  /* A render that asks on its own leaves "the rest" for the one approval. */
-  expect(approx.primary).toMatchObject({ kind: "plan", label: "Approve the rest · up to 179 cr" });
-  expect(approx.steps.map((s) => s.asksAlone)).toEqual([null, null, "Asks on its own · needs an admin"]);
+  expect(approx.primary).toMatchObject({ kind: "plan", label: "Approve · up to 179 cr" });
+  expect(JSON.stringify(approx)).not.toMatch(/needs an admin|Approve the rest/);
   /* No step is ever said to be over a per-render line. */
   expect(JSON.stringify(approx)).not.toMatch(/per-render line|over 200 cr/);
 });
@@ -149,11 +148,11 @@ test("an unavailable engine says why and carries no price", () => {
   expect(m.steps[2].price).toBeNull();
 });
 
-test("the per-shot rule marks the steps over it, worded by role", () => {
-  const m = planModel(base({ rule: { rule: "cap", cap: 40, admin: false } }))!;
-  expect(m.steps.map((s) => s.needsAdmin)).toEqual([true, true, false]);
-  expect(m.ruleLine).toBe("Members up to 40 cr a shot; an admin above it.");
-  expect(planModel(base({ rule: { rule: "anyone", cap: 50, admin: false } }))!.ruleLine).toBeNull();
+test("no step is marked for an admin and no rule line is shown: the per-shot rule was retired on 21 Oct 2026", () => {
+  const m = planModel(base())!;
+  for (const s of m.steps) for (const gone of ["needsAdmin", "asksAlone"]) expect(s, gone).not.toHaveProperty(gone);
+  for (const gone of ["ruleLine", "adminLine"]) expect(m, gone).not.toHaveProperty(gone);
+  expect(JSON.stringify(m)).not.toMatch(/needs an admin|an admin above/i);
 });
 
 test("only the person who asked builds, never while switched off or read-only; the balance is not judged before the plan is priced", () => {
@@ -205,10 +204,10 @@ test("a chips plan (Agent mode's quick plan) has ONE price: no pre-quote of any 
   const chips = gate({ kind: "chips", paid: [
     step(1, "Shot 1", { state: "waiting", canRender: true, fingerprint: FP }),
     step(3, "Shot 2", { state: "waiting", quote: 250, worst: 250, canRender: true, fingerprint: FP }),
-  ], plan: { quote: { total: 43, ceiling: 86, approximate: false, fingerprint: GATE_FP, covered: [1], asks: [3] }, blocked: null, approval: null } });
+  ], plan: { quote: { total: 43, ceiling: 86, approximate: false, fingerprint: GATE_FP, covered: [1] }, blocked: null, approval: null } });
   const m = planModel(base({ run: chips }))!;
   expect(m.steps.map((s) => [s.price, s.source])).toEqual([[null, "plan"], [{ kind: "exact", credits: 250 }, "run"]]);
-  expect(m.primary).toMatchObject({ kind: "plan", label: "Approve the rest · 43 cr" });
+  expect(m.primary).toMatchObject({ kind: "plan", label: "Approve · 43 cr" });
   /* After the approval: a step the server says the plan covers (planPriced) shows no price of its own until it settles. */
   const approved = run({ kind: "chips", state: "running", paid: [
     step(1, "Shot 1", { state: "rendering", inPlan: true, planPriced: true }),

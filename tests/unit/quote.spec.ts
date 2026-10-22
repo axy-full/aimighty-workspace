@@ -66,48 +66,36 @@ test("the margin is the engine's own, and the fallback covers the rest", () => {
 
 /* ── The verdict ──────────────────────────────────────────────────────────
    Not an approximation of the press but the same walls in the same order:
-   the approval rule refuses, the monthly allowance refuses, the production's
+   the monthly allowance refuses, the production's
    cap refuses, and running out of credits does NOT refuse — the take is
    parked as held and released on a top-up. */
 
 const CTX: Context = {
   balance: 1000, allowance: null, caps: {}, warnPct: 80,
-  rule: "anyone", shotCap: 50, isAdmin: false,
 };
 const inProject = (id: string, cap: Partial<Context["caps"][string]> = {}) => ({
   [id]: { cap: null, unit: "cr" as const, spent: 0, rule: "producer" as const, unlocked: false, ...cap },
 });
 
-test("a quote inside every rule is allowed, and says only the rule that applies", () => {
+test("a quote inside every rule is allowed, and says nothing", () => {
   const q = quoteOf([shot("a", 2.90)], TERMS);
   expect(verdictOf(q, CTX)).toMatchObject({ allow: true, gate: "ok", line: "" });
-  const v = verdictOf(q, { ...CTX, rule: "cap" });
-  expect(v.allow).toBe(true);
-  expect(v.line).toContain("50 cr");
 });
 
-/* The per-shot rule is about ONE shot's running total. Zeroing that total
-   waves through the second take of a shot already at its ceiling; judging the
-   set on its sum stops people under a rule the workspace never set. */
-test("the approval rule is judged per shot, against that shot's own history", () => {
+/* The per-shot approval rule was retired on 21 Oct 2026 (owner: "every member
+   approves their own spend with their own tap on the quote"): a shot's own
+   history stops nothing, and no line names an admin. */
+test("a shot's own history stops nothing: there is no per-shot approval rule", () => {
   const many = quoteOf(
     Array.from({ length: 14 }, (_, i) => ({ ...shot(`s${i}`, 2.90), code: `SH${i}`, spent: 0 })), TERMS);
-  expect(verdictOf(many, { ...CTX, rule: "cap", shotCap: 50 }).allow).toBe(true);
+  expect(verdictOf(many, CTX).allow).toBe(true);
 
-  // One shot already at 40 credits: a second 29-credit take puts it over 50.
+  // One shot already at 40 credits: a second 29-credit take once put it over a stored 50 cr cap.
   const withHistory = quoteOf([
     { ...shot("a", 2.90), code: "SH01", spent: 0 },
     { ...shot("b", 2.90), code: "SH07", spent: 40 },
   ], TERMS);
-  const v = verdictOf(withHistory, { ...CTX, rule: "cap", shotCap: 50 });
-  expect(v).toMatchObject({ allow: false, gate: "approval" });
-  expect(v.line).toContain("SH07");
-  expect(v.line).toContain("69 cr");
-
-  // An admin is who the rule defers to, so an admin is never stopped by it.
-  expect(verdictOf(withHistory, { ...CTX, rule: "cap", shotCap: 50, isAdmin: true }).allow).toBe(true);
-  // And no rule means no gate.
-  expect(verdictOf(withHistory, { ...CTX, rule: "anyone", shotCap: 50 }).allow).toBe(true);
+  expect(verdictOf(withHistory, CTX)).toEqual({ allow: true, gate: "ok", line: "", notice: "" });
 });
 
 test("the monthly ceiling on the platform's engines refuses, and counts only what it pays for", () => {

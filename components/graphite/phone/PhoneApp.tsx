@@ -107,7 +107,6 @@ export function PhoneApp({ scope, account, data, project, items, projectActions,
   const [pendingChat, setPendingChat] = useState<OpenChat | null>(null);
   const openThread = (item: QueueItem) => {
     if (item.project.draftId && item.project.draftId !== project?.id) projectActions.onPick(item.project.draftId);
-    if (item.open.kind === "none") return;
     if (item.open.kind === "thread") setPendingChat({ chatId: item.open.chatId, projectId: item.open.productionId });
     openAtomik();
   };

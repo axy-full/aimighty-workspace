@@ -1,4 +1,3 @@
-import type { ApprovalRule } from "@/lib/approvalRule";
 import { FREE, creditsText, exact, heldExact, heldUpTo, priceWords, shortBy, upTo, type PriceValue } from "@/lib/shell/price-words";
 import { STATED_CHARGE_BAND, ceilTenths, fromTenths, toTenths } from "@/lib/runLimit";
 import type { RigAgentPaidStepView, RigAgentRunView, RigAgentStepState } from "@/lib/workbench/rig-agent-plan";
@@ -13,8 +12,9 @@ import type { RigAgentPaidStepView, RigAgentRunView, RigAgentStepState } from "@
  *    send. "Make 3 shots · 93 cr · at most 186 cr", and the button is the price: Approve · 93 cr
  *    (`agent.approvePlan` with the server's quote fingerprint). That one approval covers the listed renders at those
  *    prices and up to two fixes per shot, within the ceiling (2 × the total). The server enforces it, not this card.
- *  - After it: what the plan has used of its ceiling. A render outside the approval (a price that moved, one that
- *    needs an admin) asks at its own price. There is no per-render line and no Auto (owner, 20 Oct 2026).
+ *  - After it: what the plan has used of its ceiling. A render outside the approval (a price that moved) asks its
+ *    own person at its own price. There is no per-render line and no Auto (owner, 20 Oct 2026), and no render waits
+ *    for an admin: the admin approval rule was retired on 21 Oct 2026.
  *  - Every price is the server's: the plan's quote, the run's own pricing of a step, or (before the build) a
  *    pre-quote of the exact request it will price. Words come from lib/shell/price-words.ts only.
  *  - A chips plan (Agent mode's quick plan) has ONE price (owner, 16 Oct): no pre-quotes, and a step the plan covers
@@ -44,10 +44,6 @@ export type PlanStep = {
   source: "settled" | "run" | "estimate" | "plan" | "none";
   /** Why it can't be priced, when it can't ("Unavailable · …"). */
   unavailable: string | null;
-  /** Over the workspace's per-shot rule: a member can't render it; an admin can. */
-  needsAdmin: boolean;
-  /** Priced, but outside the plan's one approval: it asks at its own price ("Asks on its own · needs an admin"). */
-  asksAlone: string | null;
   state: RigAgentStepState;
   /** Where it is, in a few words. */
   status: string;
@@ -87,10 +83,6 @@ export type PlanModel = {
   thinking: string | null;
   /** How the renders ask, said plainly. */
   modeLine: string | null;
-  /** "Members up to 40 cr a shot; an admin above it." when the workspace has that rule. */
-  ruleLine: string | null;
-  /** The words under a step over the rule: "Needs an admin · over 40 cr on a shot". */
-  adminLine: string;
   primary: PlanPrimary | null;
   /** The run's own words when it waits for someone or stopped. */
   note: string | null;
@@ -109,8 +101,6 @@ export type PlanInput = {
   stills?: ReadonlySet<number>;
   /** The workspace's balance in credits, or null when unknown (or not a credit workspace). */
   balance: number | null;
-  /** The cost approval rule as the workspace sets it, and whether the viewer is an admin. */
-  rule: { rule: ApprovalRule; cap: number; admin: boolean } | null;
   /** Nothing can be pressed: the sample production's line, or "Needs a connection" offline. */
   readOnly: string | null;
 };
@@ -177,11 +167,6 @@ function modeLine(run: RigAgentRunView, gate: boolean): string | null {
   return "Each shot asks at its price before it renders.";
 }
 
-function ruleLine(rule: PlanInput["rule"]): string | null {
-  if (!rule || rule.rule !== "cap") return null;
-  return `Members up to ${creditsText(rule.cap)} a shot; an admin above it.`;
-}
-
 export function phaseOf(run: RigAgentRunView): PlanPhase {
   /* The plan gate: the build is done and the server's quote waits for the one approval. */
   if (run.state === "needs_you" && run.plan?.quote && !run.plan.approval) return "proposal";
@@ -213,8 +198,6 @@ export function planModel(input: PlanInput): PlanModel | null {
     const estimated = !fromRun && estimate && !("unavailable" in estimate) ? estimatePrice(estimate) : null;
     const price = fromRun ?? estimated;
     const source: PlanStep["source"] = fromRun ? (p.state === "done" || p.state === "failed" ? "settled" : "run") : estimated ? "estimate" : coveredByPlan(p) ? "plan" : "none";
-    const credits = price ? ceilingOf(price) : null;
-    const overCap = Boolean(input.rule && input.rule.rule === "cap" && credits != null && credits > input.rule.cap);
     const settled = p.state === "done" && fromRun ? ` · ${priceWords(fromRun)} settled` : "";
     const status = p.state === "failed"
       ? (p.outcome === "not_billed" ? "Failed · nothing billed" : p.outcome === "charged" ? "Failed · charged" : "Failed")
@@ -222,14 +205,11 @@ export function planModel(input: PlanInput): PlanModel | null {
     return {
       seq: p.seq, nodeId: p.nodeId ?? null, kind: input.stills?.has(p.seq) ? "still" : "take", title: p.title, meta: input.meta?.[p.seq] ?? "", price, source,
       unavailable: unavailable ? `Unavailable · ${unavailable}` : null,
-      needsAdmin: overCap || (p.state === "paused" && p.pause === "admin"),
-      /* Outside the plan's one approval, with its own price (owner decision L5): it needs an admin (the only render that asks on its own). */
-      asksAlone: !gate?.asks.includes(p.seq) ? null : "Asks on its own · needs an admin",
       state: p.state, status, reason: p.reason, canRender: p.canRender, fingerprint: p.fingerprint,
     };
   });
 
-  const counted = steps.filter((s) => s.state !== "skipped" && !s.unavailable && !s.asksAlone);
+  const counted = steps.filter((s) => s.state !== "skipped" && !s.unavailable);
   const approval = plan?.approval ?? null;
   /* The plan's figures are the server's only (review L2): its quote at the gate, then the approved total. Before the gate
      (the proposal, Build · free) the card adds nothing up: no total, no "at most", no fix line, no balance after. */
@@ -252,7 +232,7 @@ export function planModel(input: PlanInput): PlanModel | null {
   if (gate) {
     /* The plan gate: the button is the price, the server's total. One approval; the server holds it to the ceiling. */
     primary = {
-      kind: "plan", label: `${gate.asks.length ? "Approve the rest" : "Approve"} · ${priceWords(total!)}`, price: total!, fingerprint: gate.fingerprint,
+      kind: "plan", label: `Approve · ${priceWords(total!)}`, price: total!, fingerprint: gate.fingerprint,
       blocked: offBlock ?? (balance?.short != null ? SHORT_LINE : null),
     };
   } else if (phase === "proposal" && run.proposal) {
@@ -262,8 +242,7 @@ export function planModel(input: PlanInput): PlanModel | null {
       blocked: offBlock,
     };
   } else if (phase === "needs-you") {
-    /* A render that needs an admin waits in the queue on its own; the card's tap is for the person's own renders. */
-    const open = steps.find((s) => s.state === "waiting" || (s.state === "paused" && takes.find((p) => p.seq === s.seq)?.pause !== "admin"));
+    const open = steps.find((s) => s.state === "waiting" || s.state === "paused");
     const paused = open ? takes.find((p) => p.seq === open.seq) : undefined;
     if (open && paused?.state === "paused" && paused.pause === "limit" && money) {
       const worst = open.price ? toTenths(ceilingOf(open.price)) : null;
@@ -288,8 +267,7 @@ export function planModel(input: PlanInput): PlanModel | null {
   return {
     runId: run.id, phase, title: title || run.proposal?.title || "", steps, total, ceiling, used: approval ? approval.used : null, balance,
     totalLine: gate ? null : totalLineOf(total, takesCounted.length),
-    thinking: thinkingLine(run), modeLine: steps.length ? modeLine(run, Boolean(gate)) : null, ruleLine: ruleLine(input.rule),
-    adminLine: input.rule?.rule === "cap" ? `Needs an admin · over ${creditsText(input.rule.cap)} on a shot` : "Needs an admin", primary,
+    thinking: thinkingLine(run), modeLine: steps.length ? modeLine(run, Boolean(gate)) : null, primary,
     note: phase === "needs-you" || phase === "paused" || phase === "ended" ? run.reason : null,
     mine: run.mine,
   };

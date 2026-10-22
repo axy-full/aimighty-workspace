@@ -370,7 +370,7 @@ From README §5, with what is new.
 
 | Rule | New handoff | Previous handoff |
 |---|---|---|
-| Per-shot admin rule | Over **40 cr** on a shot needs an admin; marked on the step; left out of one-tap batch approvals | **New.** Not in `CLAUDE.md § Pricing`; README §5 attributes it to "this round" |
+| Per-shot admin rule | Over **40 cr** on a shot needs an admin; marked on the step; left out of one-tap batch approvals | **New.** Not in `CLAUDE.md § Pricing`; README §5 attributes it to "this round"  **Retired 21 Oct 2026** (owner: the admin approval rule is retired; every member approves their own spend). |
 | Platform line | Any job over **200 cr** needs a person, even under Auto | Present as the Workspace "threshold 200"; matches `CLAUDE.md` Guardrail 4 |
 | Production budget | 200 cr sample, **pause at 80 %** (160 cr): Continue or Stop | **New** |
 | Ask / Auto | Ask = every step waits; Auto = steps under the limit (10 cr sample) run and are marked "spent without asking". Set by a person in Settings › Spending rules; the default is Ask (open decision 3) | **New** |

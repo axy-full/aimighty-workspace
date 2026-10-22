@@ -6,16 +6,21 @@ import ts from "typescript";
 import * as enhancer from "../../lib/shell/enhancer";
 import * as settingValues from "../../lib/settingValues";
 import { cleanBudget } from "../../lib/budgetPause";
+import { RETIRED_SETTING, RETIRED_SETTING_KEYS } from "../../lib/settings";
 
 /*
  * PATCH /api/settings refuses a value its readers do not understand, and
  * checks every value before it writes any. The old Suites select saved
  * approvalRule "always", which cleanRule read back as "anyone": approvals
- * silently off. The route itself is run here, with the settings store and
- * auth stubbed, so deleting the check (or writing before it) fails a test.
+ * silently off. Since 21 Oct 2026 the approval rule and its per-shot cap are
+ * retired (owner: "every member approves their own spend with their own tap
+ * on the quote"): a save that names either is refused whole (410, "retired"),
+ * and the rows a workspace stored stay as they are. The route itself is run
+ * here, with the settings store and auth stubbed, so deleting the check (or
+ * writing before it) fails a test.
  */
 
-const DEFAULTS = { approvalRule: "anyone", shotCapCredits: "50", capWarnPct: "80", atCap: "producer", defaultVideoModel: "", defaultImageModel: "", editOutputFormat: "mp4", promptWriter: "claude", promptEnhancer: "higgsfield", productionBudgetCredits: "" };
+const DEFAULTS = { capWarnPct: "80", atCap: "producer", defaultVideoModel: "", defaultImageModel: "", editOutputFormat: "mp4", promptWriter: "claude", promptEnhancer: "higgsfield", productionBudgetCredits: "" };
 
 function load(role: "admin" | "member" = "admin") {
   const writes: [string, string, string][] = [];
@@ -30,7 +35,7 @@ function load(role: "admin" | "member" = "admin") {
       requireAdmin: async () => (role === "admin" ? { user: { id: "u1", role } } : { response: Response.json({ error: "Admins only" }, { status: 403 }) }),
     },
     "@/lib/settings": {
-      DEFAULTS,
+      DEFAULTS, RETIRED_SETTING, RETIRED_SETTING_KEYS,
       allSettings: async () => Object.fromEntries(writes.map(([k, v]) => [k, v])),
       setSetting: async (key: string, value: string, by: string) => { writes.push([key, value, by]); },
       getSetting: async (key: string) => writes.filter(([k]) => k === key).at(-1)?.[1] ?? "",
@@ -66,12 +71,19 @@ function load(role: "admin" | "member" = "admin") {
   return { writes, patch, relocks };
 }
 
-test("an unknown approval rule is refused with a 400, and nothing in the same save is written", async () => {
+test("the retired approval rule and per-shot cap are refused whole (410, retired), whatever their value, and nothing in the same save is written", async () => {
   const { writes, patch } = load();
-  const response = await patch({ approvalRule: "always", promptEnhancer: "claude" });
-  expect(response.status).toBe(400);
-  expect((await response.json()).error).toBe("Choose anyone, cap or producer.");
+  expect(RETIRED_SETTING_KEYS).toEqual(["approvalRule", "shotCapCredits"]);
+  for (const body of [{ approvalRule: "always", promptEnhancer: "claude" }, { approvalRule: "cap" }, { approvalRule: "anyone" }, { promptEnhancer: "claude", shotCapCredits: "50" }, { capWarnPct: "70", approvalRule: "producer", shotCapCredits: "120" }]) {
+    const response = await patch(body);
+    expect(response.status, JSON.stringify(body)).toBe(410);
+    expect(await response.json()).toEqual({ error: RETIRED_SETTING, code: "retired" });
+  }
   expect(writes).toEqual([]);
+});
+
+test("a value its reader does not understand is refused with a 400, and nothing in the same save is written", async () => {
+  const { writes, patch } = load();
   /* The refused key may come last: still nothing written. */
   const later = await patch({ promptEnhancer: "claude", atCap: "pause" });
   expect(later.status).toBe(400);
@@ -83,20 +95,21 @@ test("an unknown approval rule is refused with a 400, and nothing in the same sa
 });
 
 test("every rule the gate enforces is stored as sent, with the rest of the save", async () => {
-  for (const rule of ["anyone", "cap", "producer"]) {
+  for (const atCap of ["producer", "stop", "warn"]) {
     const { writes, patch } = load();
-    const response = await patch({ approvalRule: rule, shotCapCredits: "120", capWarnPct: "70", atCap: "stop", editOutputFormat: "mov", defaultVideoModel: "video-engine", notASetting: "x" });
-    expect(response.status, rule).toBe(200);
+    const response = await patch({ capWarnPct: "70", atCap, editOutputFormat: "mov", defaultVideoModel: "video-engine", notASetting: "x" });
+    expect(response.status, atCap).toBe(200);
     expect(writes).toEqual([
-      ["approvalRule", rule, "u1"], ["shotCapCredits", "120", "u1"], ["capWarnPct", "70", "u1"], ["atCap", "stop", "u1"], ["editOutputFormat", "mov", "u1"], ["defaultVideoModel", "video-engine", "u1"],
+      ["capWarnPct", "70", "u1"], ["atCap", atCap, "u1"], ["editOutputFormat", "mov", "u1"], ["defaultVideoModel", "video-engine", "u1"],
     ]);
-    expect((await response.json()).changed).toEqual(["approvalRule", "shotCapCredits", "capWarnPct", "atCap", "editOutputFormat", "defaultVideoModel"]);
+    expect((await response.json()).changed).toEqual(["capWarnPct", "atCap", "editOutputFormat", "defaultVideoModel"]);
   }
 });
 
 test("a member cannot change workspace settings", async () => {
   const { writes, patch } = load("member");
-  expect((await patch({ approvalRule: "producer" })).status).toBe(403);
+  expect((await patch({ atCap: "stop" })).status).toBe(403);
+  expect((await patch({ approvalRule: "producer" })).status, "an admin's route first: a member is refused as before").toBe(403);
   expect(writes).toEqual([]);
 });
 
