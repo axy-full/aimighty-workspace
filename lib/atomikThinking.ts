@@ -2,7 +2,7 @@ import { catalog } from "./catalog";
 import { getSetting } from "./settings";
 import { PaidTextError } from "./paidText";
 import {
-  DEFAULT_THINKING, THINKING_UNAVAILABLE, TREATMENT_WRITER_UNAVAILABLE, TreatmentWriterOff,
+  ATOMIK_THINKING, DEFAULT_THINKING, THINKING_UNAVAILABLE, TREATMENT_WRITER_UNAVAILABLE, TreatmentWriterOff,
   isThinking, offersEffort, selectAtomikThinking, treatmentWriter, type AtomikTurn, type Thinking,
 } from "./atomikModelPolicy";
 
@@ -46,15 +46,20 @@ export async function textJobPick(turn: TextJobTurn): Promise<{ model: string; e
 }
 
 /**
- * How a text job runs `model` (what lib/atomik › resolveModel returned): `ours` when it is the pick (Atomik's thinking, or the Treatment
- * writer), and then the pick's effort. Every run of Atomik's thinking needs the ceiling its person approved on the quote, whatever the
- * caller sent (`ours`; lib/paidText.ts ceilingRequired). A model that is not the pick (none here) gets no effort and no ceiling rule.
+ * How a text job runs `model` (what lib/atomik › resolveModel returned): `ours` when it is Atomik's thinking or the Treatment writer, and then
+ * the pick's effort. Every run of Atomik's thinking needs the ceiling its person approved on the quote, whatever the caller sent (`ours`;
+ * lib/paidText.ts ceilingRequired). It fails closed: a model that is any setting's (so a setting changed between the two reads still counts),
+ * or a read of the setting or the catalogue that throws, is ours. Only a model that is neither the pick nor any setting's (none in the
+ * product) is not, and a Treatment writer that is not set up is not.
  */
 export async function thinkingRun(turn: TextJobTurn, model: string): Promise<{ ours: boolean; effort?: string }> {
+  const anySetting = Object.values(ATOMIK_THINKING).some((t) => t.model === model);
   try {
     const pick = await textJobPick(turn);
-    return pick.model === model ? { ours: true, ...(pick.effort ? { effort: pick.effort } : {}) } : { ours: false };
-  } catch {
-    return { ours: false };
+    return pick.model === model ? { ours: true, ...(pick.effort ? { effort: pick.effort } : {}) } : { ours: anySetting };
+  } catch (error) {
+    if (error instanceof TreatmentWriterOff) return { ours: false };
+    /* The setting or the catalogue could not be read: fail closed, the run still needs its approved ceiling. */
+    return { ours: true };
   }
 }

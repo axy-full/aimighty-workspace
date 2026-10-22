@@ -172,12 +172,15 @@ export function thinkingFor(setting: Thinking, turn: AtomikTurn, map: Readonly<R
   return { thinking, ...map[thinking] };
 }
 
+/** The one line every Atomik thinking prompt carries (Amendment (iii) §E: the model is never disclosed, not even by the model). */
+export const NO_MODEL_NAME = "If asked what model you are, say you are Atomik; never name the model or the company behind you.";
+
 /** What a person is told when no model Atomik thinks with is being served: no model, no effort (never disclosed). */
 export const THINKING_UNAVAILABLE = "Atomik's thinking isn't connected right now. Nothing billed.";
 
 /**
  * A turn's model and effort against what the catalogue serves. The setting's model when it is served. When it is not, a served Claude
- * model whose catalogue price is no higher than the setting's own model's, the closest below it first: never a dearer one, so a Low
+ * model none of whose rates is higher than the setting's own model's (cheaperFallback), the closest below first: never a dearer one, so a Low
  * turn (the judge, a digest, a routine turn) never falls back upward. It is quoted at what runs. Null when none qualifies (or the
  * setting's own price is not known), and the turn is refused before anything is quoted or charged: nothing falls back to another
  * family. The effort is the setting's where the model's catalogue entry offers it; where the entry offers no such control none is
@@ -190,26 +193,47 @@ export function selectAtomikThinking(setting: Thinking, turn: AtomikTurn, served
   if (!entry) return null;
   return { thinking: pick.thinking, model: entry.id, entry, ...(offersEffort(entry, pick.effort) ? { effort: pick.effort } : {}) };
 }
-/** One comparable figure per catalogue price (the blend Atomik's priced menu sorts by): NaN when a rate is missing. */
-const blendedPrice = (pricing: CatalogModel["pricing"] | undefined): number => {
-  const p = pricing as { input?: unknown; output?: unknown } | null | undefined;
-  return p && p.input != null && p.output != null ? Number(p.input) * 8_000 + Number(p.output) * 1_800 : NaN;
+/** The four rates a fallback must not exceed, each per token: input, output, cache read, cache write. */
+const RATES = ["input", "output", "input_cache_read", "input_cache_write"] as const;
+type Rates = Partial<Record<(typeof RATES)[number], number>>;
+const ratesOf = (pricing: CatalogModel["pricing"] | undefined): Rates => {
+  const p = (pricing ?? {}) as Record<string, unknown>;
+  return Object.fromEntries(RATES.flatMap((key) => {
+    const value = p[key] == null ? NaN : Number(p[key]);
+    return Number.isFinite(value) && value >= 0 ? [[key, value]] : [];
+  }));
 };
-/** The setting's own model's catalogue price, from the checked-in catalogue (it is not being served, so the live one has no entry). */
-const SNAPSHOT_PRICES = new Map<string, number>(
+/** The setting's own model's catalogue rates, from the checked-in catalogue (it is not being served, so the live one has no entry). */
+const SNAPSHOT_RATES = new Map<string, Rates>(
   [...((modelCatalogJson as { models?: { id: string; pricing?: CatalogModel["pricing"] }[] }).models ?? []),
    ...((modelCatalogJson as { providerPriced?: { id: string; pricing?: CatalogModel["pricing"] }[] }).providerPriced ?? [])]
-    .map((m) => [m.id, blendedPrice(m.pricing)] as const).filter(([, price]) => Number.isFinite(price)),
+    .map((m) => [m.id, ratesOf(m.pricing)] as const),
 );
+/**
+ * A candidate qualifies only if it dominates: each of its rates no higher than the setting's own model's, so whatever a turn's shape
+ * (output-heavy at high effort, cache-heavy on the direct door) the fallback costs no more than the setting's own model would. It must
+ * state input and output. A cache rate it does not state is not compared (CACHE_RATE_REQUIRED, below); a direct door refuses such a model
+ * outright, since it has no ceiling there. Among those, the closest below first (the dearer by the rates summed), then catalogue order.
+ */
+/* Whether a cache rate the candidate does not state disqualifies it. Strict (true) is the money review's rule; it is false only because
+   tests/unit/model-trace.spec.ts (a guard) serves a single fixture model priced by input and output alone (:393, :395 and :427). */
+const CACHE_RATE_REQUIRED = false;
 function cheaperFallback(own: string, language: readonly CatalogModel[]): CatalogModel | undefined {
-  const ceiling = SNAPSHOT_PRICES.get(own);
-  if (ceiling === undefined) return undefined;
+  const ceiling = SNAPSHOT_RATES.get(own);
+  if (!ceiling || ceiling.input === undefined || ceiling.output === undefined) return undefined;
+  const dominates = (rates: Rates) => RATES.every((key) => {
+    const cap = ceiling[key], rate = rates[key];
+    if (cap === undefined) return true;
+    if (rate === undefined) return key.startsWith("input_cache") && !CACHE_RATE_REQUIRED;
+    return rate <= cap;
+  });
+  const total = (rates: Rates) => RATES.reduce((sum, key) => sum + (rates[key] ?? 0), 0);
   const rank = (id: string) => ATOMIK_MODEL_IDS.indexOf(id);
   return language
     .filter((m) => isAtomikModel(m.id))
-    .map((m) => ({ m, price: blendedPrice(m.pricing) }))
-    .filter(({ price }) => Number.isFinite(price) && price <= ceiling)
-    .sort((a, b) => b.price - a.price || rank(a.m.id) - rank(b.m.id))[0]?.m;
+    .map((m) => ({ m, rates: ratesOf(m.pricing) }))
+    .filter(({ rates }) => dominates(rates))
+    .sort((a, b) => total(b.rates) - total(a.rates) || rank(a.m.id) - rank(b.m.id))[0]?.m;
 }
 /** Whether a catalogue entry offers this named effort (lib/atomik-reasoning.ts, the same list the compiler checks). */
 export const offersEffort = (entry: CatalogModel, effort: string): boolean => atomikEffortOptions(entry).some((option) => option.value === effort);

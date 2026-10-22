@@ -108,6 +108,12 @@ test("Grok and OpenAI are never Atomik's thinking: refused as overrides, never p
   /* Cheaper Claude models: the closest below the setting's own price first. */
   expect(selectAtomikThinking("low", "routine", [...others, priced(HAIKU, { pricing: at(LOW, 0.5) })])?.model).toBe(HAIKU);
   expect(selectAtomikThinking("medium", "plan", [...others, priced(SONNET_46, { pricing: at(MEDIUM, 0.5) }), priced(HAIKU, { pricing: at(MEDIUM, 0.9) })])?.model).toBe(HAIKU);
+  /* It must dominate, not just blend lower: the review's example, a quarter of the input rate at one and a half times the output rate (an
+     output-heavy, high-effort turn costs more), is refused; so is any cache rate above the setting's own. */
+  const rates = own(MEDIUM) as unknown as Record<string, string | number>;
+  expect(selectAtomikThinking("medium", "plan", [...others, priced(SONNET_46, { pricing: { input: Number(rates.input) / 4, output: Number(rates.output) * 1.5 } })])).toBeNull();
+  expect(selectAtomikThinking("medium", "plan", [...others, priced(SONNET_46, { pricing: { ...at(MEDIUM, 0.5), input_cache_read: Number(rates.input_cache_read) * 2 } })])).toBeNull();
+  expect(selectAtomikThinking("medium", "plan", [...others, priced(SONNET_46, { pricing: { ...at(MEDIUM, 0.5), input_cache_read: Number(rates.input_cache_read) / 2, input_cache_write: Number(rates.input_cache_write) / 2 } })])?.model).toBe(SONNET_46);
   /* A model with no catalogue price is never a fallback. */
   expect(selectAtomikThinking("medium", "plan", [...others, { ...priced(SONNET_46), pricing: null }])).toBeNull();
   expect(THINKING_UNAVAILABLE).not.toMatch(/claude|fable|opus|sonnet|effort|high|medium|low/i);
@@ -327,4 +333,33 @@ test("the Treatment writer: unset, a scene rewrite is refused before anything is
     process.env.TREATMENT_WRITER_MODEL = "gpt-99-not-served";
     await expect(inTenant(ws, () => textJobPick("treatment"))).rejects.toThrow("The Treatment writer isn't connected right now. Nothing billed.");
   } finally { if (prior === undefined) delete process.env.TREATMENT_WRITER_MODEL; else process.env.TREATMENT_WRITER_MODEL = prior; }
+});
+
+test("ideas, shot lists and a scene need the approved ceiling even when the second read of the setting or the catalogue throws, or the setting changed between the reads", async () => {
+  const ws = await funded("closed");
+  const atomik = await import("../../lib/atomik");
+  const { setSetting } = await import("../../lib/settings");
+  const { forgetCatalogCache } = await import("../../lib/catalog");
+  const { thinkingRun } = await import("../../lib/atomikThinking");
+  /* The first read gave the setting's model; the second disagrees (an admin changed the setting meanwhile): still ours, still ceilinged. */
+  await inTenant(ws, () => setSetting("atomikThinking", "low", admin.id));
+  expect(await inTenant(ws, () => thinkingRun("writing", MEDIUM))).toMatchObject({ ours: true });
+  /* A model that is neither the pick nor any setting's (a test's stand-in) is not Atomik's thinking. */
+  expect(await inTenant(ws, () => thinkingRun("writing", "test/stand-in"))).toEqual({ ours: false });
+  await inTenant(ws, () => setSetting("atomikThinking", "medium", admin.id));
+  const ideas = await route("app/api/atomik/ideas/draft/route.ts", { "@/lib/atomik": { ...atomik, resolveModel: async () => MEDIUM } });
+  const saved = { catalog: process.env.MODEL_CATALOG, fetch: globalThis.fetch };
+  try {
+    /* The catalogue read fails (the live list, unreachable): the second read throws, and the run fails closed. */
+    process.env.MODEL_CATALOG = "gateway"; forgetCatalogCache();
+    globalThis.fetch = (async () => { throw new Error("No network in this test."); }) as typeof fetch;
+    expect(await inTenant(ws, () => thinkingRun("writing", MEDIUM))).toEqual({ ours: true });
+    const refused = await inTenant(ws, async () => answer(await ideas.POST!(post("https://particl.test/api/atomik/ideas/draft", { brief: "A lighthouse keeper's last night." }))));
+    expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+    expect(refused.body.error).toBe("Review a writing quote before running with reasoning effort.");
+  } finally {
+    globalThis.fetch = saved.fetch;
+    if (saved.catalog === undefined) delete process.env.MODEL_CATALOG; else process.env.MODEL_CATALOG = saved.catalog;
+    forgetCatalogCache();
+  }
 });
