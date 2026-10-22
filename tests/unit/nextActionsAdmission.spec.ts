@@ -181,12 +181,12 @@ test("sent at its estimate, an action files a NEW take under its source's shot a
   expect(await row(clip)).toEqual(before.clip);
 }));
 
-test("the workspace's cost approval rule holds for a Next action: a member's take past the shot's cap needs an admin; an admin's is priced", async () => scope("capped", async (s, { still, clip }) => {
+test("a per-shot cap a workspace stored holds nothing for a Next action (the admin approval rule was retired on 21 Oct 2026): a member's take on a shot far past it is priced like an admin's", async () => scope("capped", async (s, { still, clip }) => {
   const { db } = await import("../../lib/db");
   const { invalidateSettings } = await import("../../lib/settings");
   const { currentTenant, runInTenant } = await import("../../lib/tenant");
   await db().execute("INSERT INTO settings(key,value,updated_at) VALUES('approvalRule','cap',0),('shotCapCredits','1',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
-  /* SH010 has spent past its cap already (its still was billed), so any take more on it is past the cap. */
+  /* The retired rule as a workspace stored it; SH010 has spent past its cap already (its still was billed), so any take more on it used to need an admin. */
   await db().execute({ sql: "UPDATE generations SET cost_usd=0.5 WHERE id=?", args: [still] });
   invalidateSettings();
   try {
@@ -199,12 +199,11 @@ test("the workspace's cost approval rule holds for a Next action: a member's tak
       body({ action: "extend", direction: "forward", prompt: "the ferry clears the harbour", resolution: "720p", duration: 5, audio: false }, { genId: clip }, "shot_1"),
     ];
     for (const request of requests) {
-      const refused = await asMember(request);
-      expect(refused).toMatchObject({ ok: false, status: 403, body: { needsAdmin: true } });
-      if (!refused.ok) expect(String(refused.body.error)).toContain("An admin has to press this one.");
-      expect(value(await s.gen.prepareGeneration(request, actor)).quote.estimatedCredits).toBeGreaterThan(0);
+      const theirs = value(await asMember(request)).quote.estimatedCredits;
+      expect(theirs).toBeGreaterThan(0);
+      expect(value(await s.gen.prepareGeneration(request, actor)).quote.estimatedCredits, "the same price as an admin's").toBe(theirs);
     }
-    /* A take filed under no shot is outside a shot's cap. */
+    /* A take filed under no shot, as before. */
     expect((await asMember(body({ action: "outpaint", ratio: "1:1", prompt: "" }, { genId: still }, ""))).ok).toBe(true);
   } finally {
     await db().execute("DELETE FROM settings WHERE key IN ('approvalRule','shotCapCredits')");

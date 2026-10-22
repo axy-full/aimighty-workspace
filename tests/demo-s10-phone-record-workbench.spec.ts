@@ -37,7 +37,7 @@ const RUNS: ActivityRun[] = [
 const ACTIVITY: ActivityReply = { inCredits: true, productionId: "prod-rec", projects: [{ project: ref, settled: 50 }], runs: RUNS };
 const PLAN_ITEM: QueueItem = {
   id: "board-plan:r2", source: "board-plan", where: "Board", title: "Plan the next takes", at: NOW - 600_000, project: ref, price: { kind: "exact", credits: 66 },
-  needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+  canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
   approve: { kind: "board-approve", productionId: "prod-rec", runId: "rar_aaaaaaaaaaaaaaaaaaaaaaaa", fingerprint: "a".repeat(64) }, decline: null,
   open: { kind: "board", productionId: "prod-rec", draftId: "ws-rec" },
 };

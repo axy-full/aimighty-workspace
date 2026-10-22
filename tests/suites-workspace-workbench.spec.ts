@@ -11,8 +11,9 @@ import { isCompact } from "./helpers/shellMode";
  * checked, on the routes that still serve it, at the section that holds it now: Settings saves through /api/settings in the vocabulary
  * the gate reads and renames through /api/workspaces, Team reads /api/team and invites, disables and revokes, Plan & credits reads
  * /api/billing, /api/statements and /api/workspaces/topups, Usage reads /api/usage, Engines lists /api/workspaces/keys and the xAI row,
- * Security reads /api/account/security. The one page a section opens is a month's printable statement. The approval rule, the per-shot
- * cap and the warn/at-cap choices that General held are Spending rules now, and tests/demo-s09-settings-workbench.spec.ts holds them.
+ * Security reads /api/account/security. The one page a section opens is a month's printable statement. The warn/at-cap choices that
+ * General held are Spending rules now, and tests/demo-s09-settings-workbench.spec.ts holds them; the approval rule and the per-shot cap
+ * it held too were retired on 21 Oct 2026 (General no longer offers them).
  */
 const SIZES = ["workbench-360x640", "workbench-390x844", "workbench-844x390", "workbench-1440x900", "workbench-1920x1080"];
 const fixture = (): Project => ({ ...newProject("Coastal light study"), id: "ws-tabs", productionProjectId: "prod-ws", shotMappings: {} });
@@ -28,8 +29,8 @@ async function open(page: Page, path: string) {
   /* Every mock below is the route's real response shape (the audit found mocks that had drifted from it). */
   await page.route("**/api/settings", async (route) => {
     if (route.request().method() === "PATCH") { patches.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true, changed: Object.keys(route.request().postDataJSON()) } }); }
-    /* A fresh workspace stores the default "anyone"; an older one may still hold a value the old select saved. */
-    return route.fulfill({ json: { settings: { promptEnhancer: "higgsfield", approvalRule: "anyone", editOutputFormat: "webm" }, defaults: { promptEnhancer: "higgsfield", approvalRule: "anyone", shotCapCredits: "40", capWarnPct: "80", atCap: "producer", defaultVideoModel: "", defaultImageModel: "", editOutputFormat: "mp4" }, models: null } });
+    /* An older workspace may still hold a value the old select saved. (The cost approval rule and per-shot cap are no settings since 21 Oct 2026: the route sends neither.) */
+    return route.fulfill({ json: { settings: { promptEnhancer: "higgsfield", editOutputFormat: "webm" }, defaults: { promptEnhancer: "higgsfield", capWarnPct: "80", atCap: "producer", defaultVideoModel: "", defaultImageModel: "", editOutputFormat: "mp4" }, models: null } });
   });
   await page.route("**/api/workspaces", async (route) => {
     if (route.request().method() === "PATCH") { writes.push({ url: "/api/workspaces", method: "PATCH", body: route.request().postDataJSON() }); return route.fulfill({ json: { ok: true, workspace: { id: "w", name: route.request().postDataJSON().name, slug: "w" } } }); }

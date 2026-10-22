@@ -1,10 +1,10 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePriceTitle } from "@/components/graphite/Price";
 import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 import { useShell } from "@/lib/shell/state";
 import { spendAttrsOf } from "@/lib/spend";
-import { DraftRequestError, draftRequest } from "@/lib/workbench/draft-request";
+import { draftRequest } from "@/lib/workbench/draft-request";
 import type { RigAgentRunView } from "@/lib/workbench/rig-agent-plan";
 import { shotEngine } from "@/lib/workspace/engines";
 import { rigShots } from "@/lib/workspace/shots";
@@ -13,21 +13,17 @@ import { topUpLabel, topUpPack } from "../../../settings/model";
 import type { BoardCtx } from "../types";
 import { stepRequest, stepShots } from "./estimates";
 import type { PlanModel, PlanPrimary } from "./model";
-import { movePrice, type BudgetRead, type MoneyState, type MoveOffer } from "./money-state";
+import { movePrice, type MoneyState, type MoveOffer } from "./money-state";
 import { AGENT_CHANGED } from "./use-run";
 
 /*
  * The plan card's money states, drawn (./money-state.ts says which and with what words). Every action here is one the
  * code already has, done by a person in this browser:
  *  - Top up opens Settings › Plan & credits; the request for credits is made there by the owner or an admin.
- *  - Ask an admin: POST /api/workbench/ask-admin (a signed-in person only; it tells, and spends nothing).
  *  - Move Shot N: the shot's engine on the board (the Rig's patchShot, free); the plan prices it again.
- *  - Approve (the rest), Continue · N cr: the plan card's own primary, the run's approval and the render's tap.
- *  - Stop: the run's own stop (POST /api/workbench/team-canvas agent.stop): what is made stays.
+ *  - Approve (the rest): the plan card's own primary, the run's approval.
  * Atomik and outside agents never reach these: the routes take a browser session only.
  */
-
-const TEAM = "/api/workbench/team-canvas";
 
 /** The smallest pack's "Top up · 500 cr · $50", from the platform's pack list; plain "Top up" until it is read. */
 export function useTopUpLabel(scope: string, wanted: boolean): string {
@@ -41,23 +37,6 @@ export function useTopUpLabel(scope: string, wanted: boolean): string {
     return () => { alive = false; };
   }, [scope, wanted]);
   return label;
-}
-
-/** The production's budget as the gate reckons it (GET /api/workbench/budget), read again when the run moves. */
-export function usePlanBudget(scope: string, productionId: string | null, wanted: boolean): BudgetRead | null {
-  const [budget, setBudget] = useState<{ id: string; value: BudgetRead | null } | null>(null);
-  const read = useCallback(() => {
-    if (!productionId || !wanted) return;
-    void draftRequest<{ budget: BudgetRead | null }>(`/api/workbench/budget?productionId=${encodeURIComponent(productionId)}`, scope)
-      .then((r) => setBudget({ id: productionId, value: r?.budget ?? null }))
-      .catch(() => { /* no figure, no paused state: the gate still asks on its own */ });
-  }, [scope, productionId, wanted]);
-  useEffect(() => {
-    read();
-    window.addEventListener(AGENT_CHANGED, read);
-    return () => window.removeEventListener(AGENT_CHANGED, read);
-  }, [read]);
-  return budget && budget.id === productionId ? budget.value : null;
 }
 
 /**
@@ -109,7 +88,6 @@ export function useMoveOffer(ctx: BoardCtx, run: RigAgentRunView | null, model: 
 type Props = {
   state: MoneyState;
   ctx: BoardCtx;
-  run: RigAgentRunView | null;
   primary: PlanPrimary | null;
   busy: boolean;
   readOnly: string | null;
@@ -119,63 +97,18 @@ type Props = {
 
 /** The state's line: an amber dot and the words ("Short by 53 cr"). */
 export function MoneyLine({ state }: { state: MoneyState }) {
-  if (state.kind === "paused") return null;
   return <div className="gx-plan-state" role="status" data-testid="board-plan-money" data-state={state.kind}><span className="gx-plan-dot" aria-hidden="true" />{state.line}</div>;
 }
 
-/** The paused state's body: what is used of the budget, the bar, the next render and where the budget is set. */
-export function PausedBody({ state }: { state: Extract<MoneyState, { kind: "paused" }> }) {
-  return (
-    <>
-      <div className="gx-plan-state" role="status" data-testid="board-plan-money" data-state="paused"><span className="gx-plan-dot" aria-hidden="true" />{state.line}</div>
-      <div className="gx-plan-bar" role="progressbar" aria-label={state.sub} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(state.fraction * 100)}>
-        <span style={{ width: `${state.fraction * 100}%` }} />
-      </div>
-      <div className="gx-plan-steps">
-        {state.rows.map((r) => (
-          <div key={r.name} className="gx-plan-step gx-plan-step--quiet" data-testid="board-plan-budget-row">
-            <span>{r.name}</span><span className="gx-plan-step-value">{r.value}</span>
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
 /** The state's buttons. Exactly one is filled: the next step. */
-export function MoneyActions({ state, ctx, run, primary, busy, readOnly, onPrimary, move }: Props) {
+export function MoneyActions({ state, ctx, primary, busy, readOnly, onPrimary, move }: Props) {
   const shell = useShell();
-  const [asking, setAsking] = useState(false);
-  const [stopping, setStopping] = useState(false);
   const blocked = Boolean(readOnly);
-  const continueTitle = usePriceTitle(state.kind === "paused" ? state.price : null);
   const moveTitle = usePriceTitle(state.kind === "unavailable" ? state.move?.price ?? null : null);
 
-  const ask = async (seq: number) => {
-    if (asking || !run || !ctx.productionId) return;
-    setAsking(true);
-    try {
-      const r = await draftRequest<{ line: string }>("/api/workbench/ask-admin", ctx.scope, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ about: "step", productionId: ctx.productionId, runId: run.id, seq }),
-      });
-      ctx.toast(r.line);
-    } catch (error) {
-      ctx.toast(error instanceof DraftRequestError && error.status && error.status < 500 ? error.message : "The ask did not go. Try again.");
-    } finally { setAsking(false); }
-  };
-  const stop = async () => {
-    if (stopping || !run || !ctx.productionId) return;
-    setStopping(true);
-    try {
-      await draftRequest(TEAM, ctx.scope, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productionId: ctx.productionId, action: "agent.stop", runId: run.id }) });
-      ctx.toast("Stopped. What is made stays; nothing more is spent.");
-    } catch {
-      ctx.toast("The stop did not go. Try again.");
-    } finally { setStopping(false); window.dispatchEvent(new Event(AGENT_CHANGED)); }
-  };
   const approveBlocked = busy || blocked || Boolean(primary?.blocked);
   /* The plan's own button (lib/workbench/plan-approval.ts through the plan model): Build · free before the build, and at the
-     plan gate the server's total, "Approve · 93 cr" or "Approve the rest · 50 cr" with an admin's step left out. The money
+     plan gate the server's total, "Approve · 93 cr". The money
      states never word it themselves once the model has; they only place it. */
   const plan = primary && (primary.kind === "approve" || primary.kind === "plan") ? primary : null;
   const planAttrs = plan?.kind === "plan" ? spendAttrsOf(plan.price) : {};
@@ -189,14 +122,6 @@ export function MoneyActions({ state, ctx, run, primary, busy, readOnly, onPrima
       </>
     );
   }
-  if (state.kind === "admin") {
-    return (
-      <>
-        <button type="button" className="gx-plan-primary nodrag" disabled={asking || blocked} aria-busy={asking || undefined} onClick={() => void ask(state.seqs[0])} data-testid="board-plan-ask-admin">{asking ? "Asking…" : "Ask an admin"}</button>
-        {plan ? <button type="button" className="gx-plan-btn nodrag" title={planTitle ?? undefined} disabled={approveBlocked} onClick={onPrimary} data-testid="board-plan-primary" {...planAttrs}>{busy ? "Sending…" : plan.label}</button> : null}
-      </>
-    );
-  }
   if (state.kind === "unavailable") {
     return (
       <>
@@ -206,15 +131,6 @@ export function MoneyActions({ state, ctx, run, primary, busy, readOnly, onPrima
             onClick={() => { const nodeId = move.nodeId!; const said = ctx.rig.patchShot(nodeId, { engine: state.move!.engine }); ctx.toast(said ?? `${state.move!.label.replace(/^Move /, "Moved ").replace(/ · .*$/, "")}. The plan is priced again.`); window.dispatchEvent(new Event(AGENT_CHANGED)); }}
             data-testid="board-plan-move">{state.move.label}</button>
         ) : null}
-      </>
-    );
-  }
-  if (state.kind === "paused") {
-    return (
-      <>
-        <button type="button" className="gx-plan-primary nodrag" title={continueTitle ?? undefined} disabled={approveBlocked} onClick={onPrimary} data-testid="board-plan-primary"
-          {...spendAttrsOf(state.price)}>{busy ? "Sending…" : state.continueLabel}</button>
-        <button type="button" className="gx-plan-btn nodrag" disabled={stopping || blocked} onClick={() => void stop()} data-testid="board-plan-stop">{stopping ? "Stopping…" : "Stop · keep what’s made"}</button>
       </>
     );
   }

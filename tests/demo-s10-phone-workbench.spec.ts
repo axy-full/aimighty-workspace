@@ -36,13 +36,13 @@ const TAKES = [
 
 const item = (over: Partial<QueueItem> & { id: string; title: string }): QueueItem => ({
   source: "held", where: "Make", at: Date.UTC(2026, 9, 5, 9, 40), project: { productionId: "prod-ws", draftId: "ws-phone", name: "Harbour at dusk" },
-  price: { kind: "exact", credits: 3 }, needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+  price: { kind: "exact", credits: 3 }, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
   approve: { kind: "release", genId: "gen_held", credits: 3 }, decline: { kind: "discard", genId: "gen_held" },
   open: { kind: "take", genId: "gen_held", draftId: "ws-phone" }, ...over,
 });
 const QUEUE: QueueItem[] = [
   item({ id: "held:gen_held", title: "Keyframe · Shot 3 · retake" }),
-  item({ id: "board-render:r1:2", source: "board-render", where: "Board", title: "Hero take · Shot 4", at: Date.UTC(2026, 9, 5, 9, 51), price: { kind: "exact", credits: 43 }, needsAdmin: true, canApprove: false, why: "Over the per-shot rule: an admin presses this one.",
+  item({ id: "board-render:r1:2", source: "board-render", where: "Board", title: "Hero take · Shot 4", at: Date.UTC(2026, 9, 5, 9, 51), price: { kind: "exact", credits: 43 }, canApprove: false, why: "Only the person who asked Atomik for this run can approve its renders.",
     approve: { kind: "board-render", productionId: "prod-ws", runId: "rar_aaaaaaaaaaaaaaaaaaaaaaaa", seq: 2, fingerprint: "a".repeat(64) }, decline: null }),
 ];
 const TRAY = [{ id: "gen_live", source: "engine", kind: "video", name: "Shot 4 · the encounter", mediaUrl: null, stage: "rendering", label: "Rendering", tone: "blue", reason: null,
@@ -100,8 +100,9 @@ test("phone Home: what needs you first, with the price as the button; renders wi
   await expect(rows.first()).toContainText("Keyframe · Shot 3 · retake");
   await expect(rows.first().getByTestId("phone-row-approve")).toHaveText("3 cr");
   await expect(rows.first().getByTestId("phone-row-approve")).toHaveAttribute("data-spend-price", "3 cr");
-  /* Over the per-shot rule: a member sees who presses it, never a button. */
-  await expect(rows.nth(1)).toContainText("Needs an admin");
+  /* Someone else's render: the viewer sees whose it is, never a button (no item needs an admin since 21 Oct 2026). */
+  await expect(rows.nth(1)).toContainText("Only the person who asked Atomik for this run can approve its renders.");
+  await expect(rows.nth(1)).not.toContainText(/needs an admin/i);
   await expect(rows.nth(1).getByRole("button")).toHaveCount(0);
   await expect(page.getByTestId("phone-render-row")).toContainText("Shot 4 · the encounter");
   await expect(page.getByTestId("phone-render-row").getByTestId("phone-notify")).toHaveText("Notify me");

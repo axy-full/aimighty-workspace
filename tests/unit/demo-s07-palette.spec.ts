@@ -88,15 +88,15 @@ test("the thinking line says what thinking may cost, or that a question is free"
 /* ⌘K's approve card reads the one queue (stream 8): what it covers is selectBatch's, never a list of its own. */
 const item = (id: string, credits: number, more: Partial<QueueItem> = {}): QueueItem => ({
   id, source: "held", title: id, where: "Make", at: 1, project: { productionId: "p", draftId: "d", name: "A project" },
-  price: { kind: "exact", credits }, needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+  price: { kind: "exact", credits }, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
   approve: { kind: "release", genId: id, credits }, decline: { kind: "discard", genId: id }, open: { kind: "take", genId: id, draftId: "d" }, ...more,
 });
-test("approve everything under N cr: strictly under, admin items left out, the total in price words", () => {
-  const items = [item("a", 3), item("b", 9), item("c", 10), item("d", 43, { needsAdmin: true }), item("e", 1, { sample: true })];
+test("approve everything under N cr: strictly under, the sample left out, the total in price words; nothing is left out for an admin (21 Oct 2026)", () => {
+  const items = [item("a", 3), item("b", 9), item("c", 10), item("d", 43), item("e", 1, { sample: true })];
   const under10 = selectBatch(items, 10);
   expect(under10.items.map((i) => i.id)).toEqual(["a", "b"]);
   expect(under10.total).toEqual({ kind: "exact", credits: 12 });
   const under50 = selectBatch(items, 50);
-  expect(under50.adminOut.map((i) => i.id)).toEqual(["d"]);
-  expect(under50.items.map((i) => i.id)).toEqual(["a", "b", "c"]);
+  expect(under50).not.toHaveProperty("adminOut");
+  expect(under50.items.map((i) => i.id)).toEqual(["a", "b", "c", "d"]);
 });

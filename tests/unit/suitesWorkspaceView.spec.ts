@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { cleanRule } from "../../lib/approvalRule";
-import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, EDIT_FORMAT_OPTIONS, settingProblem } from "../../lib/settingValues";
+import * as settingValues from "../../lib/settingValues";
+import { AT_CAP_OPTIONS, CAP_WARN_OPTIONS, EDIT_FORMAT_OPTIONS, settingProblem } from "../../lib/settingValues";
 import { withoutVendorCost } from "../../lib/analyticsRedact";
 import {
   auditEntries, checkoutUrl, connectionOutcome, consumerAuthorizeUrl, keyStatus, packLine, planLine, sessionRows,
@@ -13,14 +13,9 @@ import {
  * from it) and the settings route to the vocabulary its readers understand.
  */
 
-test("Cost approval offers only rules the gate enforces, and the settings route refuses the rest", () => {
-  /* Every option survives cleanRule unchanged: none is silently read as "anyone". */
-  for (const [value] of APPROVAL_OPTIONS) expect(cleanRule(value)).toBe(value);
-  expect(APPROVAL_OPTIONS.map(([v]) => v)).toEqual(["anyone", "cap", "producer"]);
-  for (const [value] of APPROVAL_OPTIONS) expect(settingProblem("approvalRule", value)).toBeNull();
-  /* What the old Suites select saved. */
-  expect(settingProblem("approvalRule", "always")).toBe("Choose anyone, cap or producer.");
-  expect(settingProblem("approvalRule", "never")).not.toBeNull();
+test("Cost approval is offered nowhere (retired 21 Oct 2026; the settings route refuses it whole), and the settings route refuses what its readers do not understand", () => {
+  /* No list of approval rules is left to offer (tests/unit/settingsRoute.spec.ts pins the 410 for approvalRule and shotCapCredits). */
+  expect(settingValues).not.toHaveProperty("APPROVAL_OPTIONS");
   /* Edits and extensions come back as mp4 or mov; WebM was never read. */
   expect(EDIT_FORMAT_OPTIONS.map(([v]) => v)).toEqual(["mp4", "mov"]);
   expect(settingProblem("editOutputFormat", "webm")).not.toBeNull();

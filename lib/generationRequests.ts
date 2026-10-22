@@ -17,7 +17,6 @@ import { creditsAtTerms, currentBillingTerms, recordedBillingTerms } from "./bil
 import { capVerdict, projectCap, type CapRule } from "./caps";
 import { freshSettings } from "./settings";
 import { workspaceLimits } from "./limits";
-import { cleanRule, cleanShotCap } from "./approvalRule";
 import type { MeterEvent } from "./meter";
 import { billingTransaction, syncBillingLedger, setCreditDebitTx, CreditBalanceError } from "./billingLedger";
 import { admitToPoolTx, providerPoolReady, sharedPoolOf } from "./providerPool";
@@ -465,9 +464,6 @@ type ReservationOptions = {
      the credits a workspace on the platform's keys pays (either or both). */
   token?: { id: string; capUsd: number | null; capCredits?: number | null };
   projectId?: string | null;
-  /** Whether the shot's credit cap is skipped. Omitted, the signed-in admin skips it;
-   * a held take's release decides from its author instead of whoever's request released it. */
-  shotCapExempt?: boolean;
   /**
    * The run this job counts toward (an Atomik run on a Rig board): refused when the run's
    * settled and in-flight jobs, at their worst case, plus this one would pass the limit a
@@ -517,17 +513,14 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   /* A still or video on the platform's shared provider key also takes a slot of its pool, in this same write. */
   const pool = sharedPoolOf(event);
   if (pool) await providerPoolReady();
-  /* The caps and rules below as the database holds them now, never the 10 s memo: a cap an admin lowered, or a
-     per-shot cap switched on, on another server process a moment ago applies to this reservation. */
-  const settings = projectId || event.shotId ? await freshSettings() : null;
+  /* The caps and rules below as the database holds them now, never the 10 s memo: a cap an admin lowered on another
+     server process a moment ago applies to this reservation. (The per-shot cap it also read was retired on 21 Oct 2026.) */
+  const settings = projectId ? await freshSettings() : null;
   const cap = projectId ? await projectCap(projectId, settings!) : null;
   // Retain a pre-migration spending ceiling until the owner sets a credit cap.
   // Its private unit never appears in the refusal sent to customers.
   const legacyCap = projectId ? (await db().execute({ sql: "SELECT cap_usd,cap_credits,cap_unlocked FROM projects WHERE id=?", args: [projectId] })).rows[0] : null;
   const limits = await workspaceLimits();
-  const shotCapExempt = options.shotCapExempt ?? currentTenant()?.user?.role === "admin";
-  const shotCap = event.shotId && !shotCapExempt && cleanRule(settings!.approvalRule) === "cap"
-    ? cleanShotCap(settings!.shotCapCredits) : null;
   const ruleRaw = cap ? settings!.atCap : null;
   const rule: CapRule = ruleRaw === "stop" || ruleRaw === "warn" ? ruleRaw : "producer";
   const monthlyCap = paid ? allowanceUsd() : null;
@@ -615,10 +608,6 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
     const recent = [...merged.values()].filter((r) => r.status !== "held" && r.createdAt >= now() - 3_600_000).length;
     if (recent >= limits.rendersPerHour) throw new SpendReservationError("This workspace has reached its hourly job limit, including reserved jobs. Try again later.", 429);
     if (running >= limits.concurrency) throw new SpendReservationError("Every job slot is reserved. Wait for an active job to finish, then try again.", 409);
-    if (shotCap != null) {
-      const shotCredits = [...merged.values()].filter((r) => r.shotId === event.shotId).reduce((sum, r) => sum + r.credits, 0);
-      if (shotCredits + charge(cost) * band > shotCap) throw new SpendReservationError("This take and reserved takes exceed the shot's credit cap. An admin must start it.", 403, true);
-    }
     if (houseCapNow != null) {
       /* Every house job this month at what the engines charge (the meter's rows, which the customer allowance never counts), and this one at its hold. */
       const houseSpent = existing.rows.filter((r) => Number(r.created_at) >= since).reduce((sum, r) => sum + houseSpendOfRow(r), 0);

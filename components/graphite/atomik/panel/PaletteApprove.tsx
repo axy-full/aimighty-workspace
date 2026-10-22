@@ -12,8 +12,8 @@ import { Price, usePriceTitle } from "../../Price";
 
 /**
  * ⌘K's "approve everything under N cr" (Atomik frames d and e; README § 4 "Confirm · approve N items"). Atomik
- * lists what the words cover from the one approvals queue (stream 8, lib/control-room): project · step · price, the
- * items an admin must press (left out), and the total. Only the person's tap on the button approves: it sends each
+ * lists what the words cover from the one approvals queue (stream 8, lib/control-room): project · step · price, and
+ * the total. Only the person's tap on the button approves: it sends each
  * listed item through its own existing person-only path at its own price, one at a time, and stops at the first
  * refusal (lib/control-room/approve.ts). Enter only shows the list. Plan steps keep their own Continue.
  *
@@ -63,13 +63,6 @@ export function PaletteApproveCard({ under, onDone, enterRef }: { under: number;
         <p className="ak-pcard-line" role="alert">{approvals.error} <button type="button" className="ak-link" onClick={() => void approvals.refresh()}>Try again</button></p>
       ) : null}
       {batch.items.length ? <div className="ak-prows" data-testid="palette-approve-rows">{batch.items.map((item) => <Row key={item.id} item={item} />)}</div> : null}
-      {batch.adminOut.length ? (
-        <div className="ak-prows" data-testid="palette-approve-admin">
-          <span className="ak-eyebrow ak-warn">Needs an admin</span>
-          {batch.adminOut.map((item) => <Row key={item.id} item={item} />)}
-          <span className="ak-pcard-note">Over the workspace’s rule for a shot, so an admin presses these · left out of this approval</span>
-        </div>
-      ) : null}
       {batch.inPlan.length ? (
         <span className="ak-pcard-note" data-testid="palette-approve-in-plan">
           {batch.inPlan.length} {batch.inPlan.length === 1 ? "plan step waits" : "plan steps wait"} for its plan’s own Continue, in Approvals

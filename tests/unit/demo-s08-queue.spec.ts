@@ -18,7 +18,7 @@ function item(over: Partial<QueueItem> = {}): QueueItem {
   return {
     id, source: "held", title: `Item ${n}`, where: "Make", at: 1_000 + n,
     project: { productionId: "prod_a", draftId: "draft_a", name: "Project A" },
-    price: exact(3), needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+    price: exact(3), canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
     approve: { kind: "release", genId: `gen_${n}`, credits: 3 }, decline: { kind: "discard", genId: `gen_${n}` },
     open: { kind: "take", genId: `gen_${n}`, draftId: "draft_a" },
     ...over,
@@ -59,8 +59,7 @@ test("everything under N cr covers the priced items a person may press, in the o
   expect(selectBatch([], 10).total).toBeNull();
 });
 
-test("one tap never covers an item over the per-shot rule, a plan's step, a proposed build, the sample, a short balance or someone else's", () => {
-  const admin = item({ price: exact(5), needsAdmin: true });
+test("one tap never covers a plan's step, a proposed build, the sample, a short balance or someone else's; no item is left out for an admin (21 Oct 2026)", () => {
   const step = thread({ price: upTo(2) });
   const build = plan();
   const sample = item({ sample: true });
@@ -68,12 +67,12 @@ test("one tap never covers an item over the per-shot rule, a plan's step, a prop
   const notMine = render({ canApprove: false, why: "Only the person who asked Atomik for this run can approve its renders." });
   const unpriced = render({ price: null });
   const ok = item({ price: exact(1) });
-  const batch = selectBatch([admin, step, build, sample, short, notMine, unpriced, ok], 10);
+  const batch = selectBatch([step, build, sample, short, notMine, unpriced, ok], 10);
   expect(batch.items.map((i) => i.id)).toEqual([ok.id]);
-  /* Listed, so a person sees what was left out and why. */
-  expect(batch.adminOut.map((i) => i.id)).toEqual([admin.id]);
+  /* Listed, so a person sees what was left out and why; there is no "needs an admin" list any more. */
   expect(batch.inPlan.map((i) => i.id)).toEqual([step.id]);
-  for (const out of [admin, step, build, sample, short, notMine, unpriced]) expect(batchable(out)).toBe(false);
+  expect(batch).not.toHaveProperty("adminOut");
+  for (const out of [step, build, sample, short, notMine, unpriced]) expect(batchable(out)).toBe(false);
   expect(batchable(ok)).toBe(true);
 });
 

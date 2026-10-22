@@ -1,7 +1,7 @@
 import { isEnhancerProvider } from "@/lib/shell/enhancer";
 import { NextResponse } from "next/server";
 import { requireUser, requireAdmin, withTenant } from "@/lib/auth";
-import { allSettings, setSetting, memberSettings, DEFAULTS } from "@/lib/settings";
+import { allSettings, setSetting, memberSettings, DEFAULTS, RETIRED_SETTING, RETIRED_SETTING_KEYS } from "@/lib/settings";
 import { getPlatformLayer } from "@/lib/platform";
 import { resolveModels, modelOfKind } from "@/lib/platformLayer";
 import { settingProblem } from "@/lib/settingValues";
@@ -25,6 +25,9 @@ export const PATCH = withTenant(async function PATCH(req: Request) {
   const got = await requireAdmin();
   if (got.response) return got.response;
   const body = await req.json().catch(() => ({}));
+  /* Who may approve is no longer a setting (owner, 21 Oct 2026): a save that names it is refused whole, before anything is written. */
+  if (body && typeof body === "object" && Object.keys(body).some((k) => RETIRED_SETTING_KEYS.includes(k)))
+    return NextResponse.json({ error: RETIRED_SETTING, code: "retired" }, { status: 410 });
   const keys = Object.keys(DEFAULTS);
   const changed: string[] = [];
   const entries = Object.entries(body).filter(([k]) => keys.includes(k));

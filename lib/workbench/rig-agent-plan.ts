@@ -396,7 +396,7 @@ export function undoOps(canvas: Pick<TeamCanvas, "nodes" | "serverMade">, author
 
 /* ── What the run card shows (never a model, a cost or a key) ─────────── */
 
-/** `needs_you`: the run waits for a person — a render to tap, one that needs an admin, the limit, or a refusal. */
+/** `needs_you`: the run waits for a person — a render to tap, the limit, or a refusal. */
 export type RigAgentState = "planning" | "awaiting_approval" | "running" | "paused" | "needs_you" | "done" | "stopped" | "failed";
 export const ACTIVE_STATES: readonly RigAgentState[] = ["planning", "awaiting_approval", "running", "paused", "needs_you"];
 /**
@@ -449,8 +449,8 @@ export type RigAgentPaidStepView = {
   /** The same two in the engines' dollars, for the house workspace only (it pays at cost, in dollars). Display only: nothing is quoted, held or billed from it. */
   quoteUsd?: number | null;
   worstUsd?: number | null;
-  /** Why it paused, when it did: the limit, the balance, an admin, a refusal, a price it has not got, or its record. */
-  pause: "limit" | "credits" | "admin" | "refused" | "unpriced" | "record" | null;
+  /** Why it paused, when it did: the limit, the balance, a refusal, a price it has not got, or its record. */
+  pause: "limit" | "credits" | "refused" | "unpriced" | "record" | null;
   /** What it was charged, once the ledger has settled it. */
   charged: number | null;
   /** For a take that failed: what the ledger shows the provider did with the charge. */
@@ -477,7 +477,7 @@ export type RigAgentPaidStepView = {
  */
 export type RigAgentPlanView = {
   /** The server's quote while the plan waits for its approval; null once approved, or while a render has no price. */
-  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; asks: number[]; totalUsd?: number | null } | null;
+  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; totalUsd?: number | null } | null;
   /** Why the plan cannot be approved yet (a render not priced), when it cannot. */
   blocked: string | null;
   approval: {

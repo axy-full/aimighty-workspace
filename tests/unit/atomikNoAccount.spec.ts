@@ -296,7 +296,7 @@ async function route(file: string, fake: Record<string, unknown>): Promise<Recor
     /* The claim route is people-only (a signed-in person, never a token): the owner here is one. */
     "@/lib/security/people-only": await import("../../lib/security/people-only"),
     /* A step is its chat's person's (lib/atomikAccess.ts); this spec is about the account step's refusal, so the step is the caller's own here. */
-    "@/lib/atomikAccess": { STEP_GONE: "That step is gone.", stepIsMine: async () => true, adminStepSheet: async () => null },
+    "@/lib/atomikAccess": { STEP_GONE: "That step is gone.", stepIsMine: async () => true },
     /* The claim route also refuses a step of an archived thread (lib/atomikThreads.ts); an account step is refused first. */
     "@/lib/atomikThreads": { ARCHIVED_NOTE: (await import("../../lib/atomikThreadsText")).ARCHIVED_NOTE, threadArchived: (fake.threadArchived as (() => Promise<boolean>) | undefined) ?? (async () => false) },
   };
