@@ -265,11 +265,11 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
 
 test('defaults: enhancement, ideas and shots on Opus 5.5 (the owner, 16 Oct 2026, for enhancement); Atomik thinks at Medium, Opus 5.5, by default', () => {
   expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-opus-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
-  /* Auto's list is gone (owner, 22 Oct 2026): the setting's model runs; without it, the first served Claude, never OpenAI. */
+  /* Auto's list is gone (owner, 22 Oct 2026): the setting's model runs; without it, only a Claude model no dearer than it, never OpenAI (these entries carry no price, so none qualifies). */
   const entry = (id: string) => ({ id, name: id, owner: id.split('/')[0], type: 'language' as const, description: '', contextWindow: 200_000, maxTokens: 8_000, pricing: null });
   expect(selectAtomikThinking('medium', 'plan', ['anthropic/claude-opus-5.5', 'openai/gpt-5.5'].map(entry))?.model).toBe('anthropic/claude-opus-5.5');
-  expect(selectAtomikThinking('medium', 'plan', ['anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-5', 'openai/gpt-5.5'].map(entry))?.model).toBe('anthropic/claude-sonnet-4.6');
-  expect(selectAtomikThinking('medium', 'plan', ['anthropic/claude-sonnet-4.6', 'openai/gpt-5.5'].map(entry))?.model).toBe('anthropic/claude-sonnet-4.6');
+  expect(selectAtomikThinking('medium', 'plan', ['anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-5', 'openai/gpt-5.5'].map(entry))).toBeNull();
+  expect(selectAtomikThinking('medium', 'plan', ['anthropic/claude-sonnet-4.6', 'openai/gpt-5.5'].map(entry))).toBeNull();
   expect(selectAtomikThinking('medium', 'plan', ['openai/gpt-5.5'].map(entry))).toBeNull();
   for (const id of Object.values(DEFAULT_TEXT_MODELS)) expect(TEXT_MODEL_IDS).toContain(id);
   expect(TEXT_MODEL_IDS).toEqual(expect.arrayContaining(['openai/gpt-5.5', 'openai/gpt-5.4', 'spacexai/grok-4.7', 'google/gemini-3.6-flash']));

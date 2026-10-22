@@ -1,6 +1,7 @@
 import { aliasModel } from "./modelAliases";
 import { atomikEffortOptions } from "./atomik-reasoning";
 import type { CatalogModel } from "./catalog";
+import modelCatalogJson from "./modelCatalog.json";
 
 /** Claude, OpenAI, Gemini and Grok text/planning models verified against
  * Gateway on 2026-09-15 (Grok's reasoning models on 2026-09-23, listed there
@@ -175,21 +176,41 @@ export function thinkingFor(setting: Thinking, turn: AtomikTurn, map: Readonly<R
 export const THINKING_UNAVAILABLE = "Atomik's thinking isn't connected right now. Nothing billed.";
 
 /**
- * A turn's model and effort against what the catalogue serves. The setting's model when it is served. When it is not, the first served
- * of the other settings' models (Medium, then Low, then High), then the first served Claude model of the verified catalogue, in its
- * order: Atomik still thinks, on Claude only, and the quote is the price of the model that runs, so nothing is charged for a model that
- * did not run. Null when no Claude model is served: nothing falls back to another family. The effort is the setting's where the
- * model's catalogue entry offers it; where the entry offers no such control none is sent, and the model thinks at its own default.
+ * A turn's model and effort against what the catalogue serves. The setting's model when it is served. When it is not, a served Claude
+ * model whose catalogue price is no higher than the setting's own model's, the closest below it first: never a dearer one, so a Low
+ * turn (the judge, a digest, a routine turn) never falls back upward. It is quoted at what runs. Null when none qualifies (or the
+ * setting's own price is not known), and the turn is refused before anything is quoted or charged: nothing falls back to another
+ * family. The effort is the setting's where the model's catalogue entry offers it; where the entry offers no such control none is
+ * sent, and the model thinks at its own default.
  */
 export function selectAtomikThinking(setting: Thinking, turn: AtomikTurn, served: readonly CatalogModel[]): (Omit<ThinkingPick, "effort"> & { entry: CatalogModel; effort?: Effort }) | null {
   const pick = thinkingFor(setting, turn);
   const language = served.filter((m) => m.type === "language");
-  const order = [pick.model, ...FALLBACK_ORDER.map((t) => ATOMIK_THINKING[t].model), ...ATOMIK_MODEL_IDS];
-  const entry = order.map((id) => language.find((m) => m.id === id)).find((m): m is CatalogModel => Boolean(m));
+  const entry = language.find((m) => m.id === pick.model) ?? cheaperFallback(pick.model, language);
   if (!entry) return null;
   return { thinking: pick.thinking, model: entry.id, entry, ...(offersEffort(entry, pick.effort) ? { effort: pick.effort } : {}) };
 }
-const FALLBACK_ORDER: readonly Thinking[] = ["medium", "low", "high"];
+/** One comparable figure per catalogue price (the blend Atomik's priced menu sorts by): NaN when a rate is missing. */
+const blendedPrice = (pricing: CatalogModel["pricing"] | undefined): number => {
+  const p = pricing as { input?: unknown; output?: unknown } | null | undefined;
+  return p && p.input != null && p.output != null ? Number(p.input) * 8_000 + Number(p.output) * 1_800 : NaN;
+};
+/** The setting's own model's catalogue price, from the checked-in catalogue (it is not being served, so the live one has no entry). */
+const SNAPSHOT_PRICES = new Map<string, number>(
+  [...((modelCatalogJson as { models?: { id: string; pricing?: CatalogModel["pricing"] }[] }).models ?? []),
+   ...((modelCatalogJson as { providerPriced?: { id: string; pricing?: CatalogModel["pricing"] }[] }).providerPriced ?? [])]
+    .map((m) => [m.id, blendedPrice(m.pricing)] as const).filter(([, price]) => Number.isFinite(price)),
+);
+function cheaperFallback(own: string, language: readonly CatalogModel[]): CatalogModel | undefined {
+  const ceiling = SNAPSHOT_PRICES.get(own);
+  if (ceiling === undefined) return undefined;
+  const rank = (id: string) => ATOMIK_MODEL_IDS.indexOf(id);
+  return language
+    .filter((m) => isAtomikModel(m.id))
+    .map((m) => ({ m, price: blendedPrice(m.pricing) }))
+    .filter(({ price }) => Number.isFinite(price) && price <= ceiling)
+    .sort((a, b) => b.price - a.price || rank(a.m.id) - rank(b.m.id))[0]?.m;
+}
 /** Whether a catalogue entry offers this named effort (lib/atomik-reasoning.ts, the same list the compiler checks). */
 export const offersEffort = (entry: CatalogModel, effort: string): boolean => atomikEffortOptions(entry).some((option) => option.value === effort);
 

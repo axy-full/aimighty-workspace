@@ -15,6 +15,9 @@ import { billCredits } from '../../lib/creditTerms';
 import { MockLanguageModelV4 } from 'ai/test';
 import type { LanguageModelV4GenerateResult } from '@ai-sdk/provider';
 import { createSuiteAgent, suiteAgentMessages } from '../../lib/workbench/suite-agent';
+import { ATOMIK_THINKING } from '../../lib/atomikModelPolicy';
+/* The setting's own model (Medium): it runs whatever its price; a fallback is never dearer (owner, 22 Oct 2026). */
+const MEDIUM = ATOMIK_THINKING.medium.model;
 
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-workbench-atomik-'));
 const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Economy', owner: 'test', type: 'language', inputModalities: ['text', 'image'], description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000001', output: '0.0000003' } };
@@ -169,7 +172,7 @@ test('reservation failure and a per-request budget ceiling prevent provider call
     await expect(prepareAtomikJob(input, 'owner', undefined, h.deps)).rejects.toThrow('No credits');
     expect(h.calls()).toBe(0);
     expect((await listAtomikJobs('owner', input.projectId))[0].costUsd).toBe(0);
-    h.deps.models = async () => [{ ...model, pricing: { input: 1, output: 1 } }];
+    h.deps.models = async () => [{ ...model, id: MEDIUM, pricing: { input: 1, output: 1 } }];
     await expect(prepareAtomikJob({ ...input, requestId: randomUUID() }, 'owner', undefined, h.deps)).rejects.toThrow('spending limit');
     expect(h.calls()).toBe(0);
   });
@@ -361,7 +364,7 @@ test('premium models can quote with effort but cannot use the larger ceiling wit
     const { input } = await fixture();
     const h = harness();
     /* The setting's model at its effort (an OpenAI model and "max" in the request are ignored), priced as a premium thinker. */
-    const premium: CatalogModel = { ...model, maxTokens: 128000, pricing: { input: .00001, output: .00005 }, reasoningOptions: [{ type: 'effort', values: ['low','medium','high','xhigh','max'] }] };
+    const premium: CatalogModel = { ...model, id: MEDIUM, maxTokens: 128000, pricing: { input: .00001, output: .00005 }, reasoningOptions: [{ type: 'effort', values: ['low','medium','high','xhigh','max'] }] };
     h.deps.models = async () => [premium];
     const request = { ...input, model: 'openai/gpt-6-astra', effort: 'max' };
     const quote = await quoteAtomikJob(request, 'owner', h.deps);
@@ -381,7 +384,7 @@ test('unknown declared context-tier prices cannot become a free quote or reserva
   await runInTenant(workspace(), async () => {
     const { input } = await fixture();
     const h = harness();
-    h.deps.models = async () => [{ ...model, pricing: { input: .00001, output: .00005, input_tiers: [{ min: 0, cost: 'unknown' }] } }];
+    h.deps.models = async () => [{ ...model, id: MEDIUM, pricing: { input: .00001, output: .00005, input_tiers: [{ min: 0, cost: 'unknown' }] } }];
     await expect(quoteAtomikJob(input, 'owner', h.deps)).rejects.toThrow('no confirmed price');
     await expect(prepareAtomikJob(input, 'owner', undefined, h.deps)).rejects.toThrow('no confirmed price');
     expect(h.reservations()).toBe(0);
@@ -783,6 +786,43 @@ for (const agentKind of ['raw', 'suite'] as const) test(`a TEXT_DIRECT ${agentKi
       const [refused] = await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter }, earlier.job.requestId);
       expect(refused).toMatchObject({ status: 'failed', costUsd: 0 });
       expect(h.events.at(-1)).toMatchObject({ engine: 'anthropic', status: 'failed', engineCostUsd: 0 });
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+    for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
+});
+
+/* The unknown-receipt half of the direct test above, on the Claude door (raw and suite jobs think with Claude since 22 Oct 2026). */
+for (const agentKind of ['raw', 'suite'] as const) test(`a TEXT_DIRECT ${agentKind} job with an unknown cache receipt stays uncertain at its estimate, keeps the receipt and is never replayed`, async () => {
+  const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
+  delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent'; process.env.TEXT_DIRECT = 'anthropic';
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('No provider call is allowed in this test.'); };
+  try {
+    await runInTenant(workspace(), async () => {
+      const { input } = await fixture(), h = harness();
+      const priced: CatalogModel = { ...model, pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      h.deps.models = async () => [priced];
+      const request = { ...input, model: model.id, refs: [], ...(agentKind === 'suite' ? { suite: 'particl' as const } : {}) };
+      const quote = await quoteAtomikJob(request, 'owner', h.deps);
+      const prepared = await prepareAtomikJob({ ...request, maxCredits: quote.estimateCredits }, 'owner', undefined, h.deps);
+      /* No cache-write count: what the cached prompt cost cannot be known, so the job is not settled at a guess. */
+      const usage = { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30 } };
+      const result = agentKind === 'suite' ? { ...validReply, actions: [{ kind: 'image', title: 'Hero', prompt: 'Motivated soft light.', referenceIds: [] }], hooks: [], assumptions: [] } : validReply;
+      let calls = 0;
+      const reply = async () => { calls++; return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: agentKind === 'raw' ? usage : { steps: [usage, usage] } }) }; };
+      h.deps.run = reply; h.deps.runSuite = reply;
+      h.deps.models = async () => { throw new Error('Must use the saved price, never a new catalog lookup.'); };
+      await runAtomikJob(prepared.job.id, 'owner', h.deps);
+      await runAtomikJob(prepared.job.id, 'owner', h.deps);
+      const [job] = await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter }, request.requestId);
+      expect(calls).toBe(1);
+      expect(job.status).toBe('uncertain');
+      expect(job.costUsd).toBeNull();
+      expect(h.events.at(-1)?.engineCostUsd).toBe(prepared.job.estimateUsd);
+      const receipt = (await db().execute({ sql: 'SELECT provider_response,usage FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
+      expect(String(receipt.provider_response)).toContain('cached_tokens'); expect(String(receipt.usage)).toContain('cached_tokens');
     });
   } finally {
     globalThis.fetch = realFetch;
