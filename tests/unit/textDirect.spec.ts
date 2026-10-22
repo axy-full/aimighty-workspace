@@ -330,8 +330,10 @@ test('direct text is billed (PR 3): the rig planner prices a direct turn from ra
   const { ATOMIK_THINKING } = await import('../../lib/atomikModelPolicy');
   const price = await plannerPrice('anthropic/claude-sonnet-5');
   expect(price).toMatchObject({ id: ATOMIK_THINKING.medium.model, direct: true, engine: 'anthropic' });
-  // Claude Opus 5.5 at the snapshot (tests/unit/textDirectRequests.spec.ts), for the same usage.
-  const plannerUsd = 100 * 0.000004 + 60 * 0.0000002 + 40 * 0.000005 + 25 * 0.00002;
+  // The same usage at the planner's own catalogue entry (its prices read from the entry, not written here).
+  const rate = (key: string) => Number((price.catalog.pricing as Record<string, unknown>)[key]);
+  const plannerUsd = 100 * rate('input') + 60 * rate('input_cache_read') + 40 * rate('input_cache_write') + 25 * rate('output');
+  for (const key of ['input', 'input_cache_read', 'input_cache_write', 'output']) expect(rate(key), key).toBeGreaterThan(0);
   // The SDK's normalised totals leave the cache out; the raw usage does not.
   const step = { inputTokens: 100, outputTokens: 25, totalTokens: 125, raw: anthropicReply().usage } as unknown as LanguageModelUsage;
   expect(stepTextUsage(price.id, step, true)).toMatchObject({ prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } });

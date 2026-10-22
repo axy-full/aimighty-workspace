@@ -16,6 +16,7 @@ import { TEXT_JOBS, type TextJob } from "./platformLayer";
 
 /** Whether a job runs this model as chosen, with no substitution. */
 export function jobRunsModel(job: TextJob, id: string): boolean {
+  /* The platform admin's display shows the Medium default: a workspace on Low or High runs that setting's model instead (lib/atomikThinking.ts). */
   return job === "enhance" ? enhanceRunsModel(id) && textRouteWorks(id) : id === thinkingFor(DEFAULT_THINKING, "writing").model;
 }
 
