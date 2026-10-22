@@ -64,8 +64,10 @@ const NEVER = [
    API route is not presentational: full. ("placeholder" is not a hold.) */
 const MONEY_TEXT = /quote|price|\bcr\b|credit|charge|billed|\bhold|\bheld|refund|cancel|approv|ledger|workspace_id|fetch\(|\/api\//i;
 
-/* A guard or safety test: any change to one is a full run, and the plan says so for the owner's review. */
-const GUARD_TEST = /^tests\/.*(spend-buttons|spend-ratchet|paidRoutes|helpers\/spend|privacy|switch-off|newInterfaceSwitch|one-design|ui-names|tooltip-audit|signin.?retired|audit-money|r1-port-paid-sends)/i;
+/* A guard or safety test: any change to one is a full run, and the plan says so for the owner's review. The review client link's
+   tenant-separation spec counts as a privacy guard though its name does not say so (owner, 22 Oct 2026: "teach scripts/ci-select.mjs
+   to count this test as a privacy guard, so the next change to it runs full"). */
+const GUARD_TEST = /^tests\/.*(spend-buttons|spend-ratchet|paidRoutes|helpers\/spend|privacy|switch-off|newInterfaceSwitch|one-design|ui-names|tooltip-audit|signin.?retired|audit-money|r1-port-paid-sends|unit\/demo-gaps-l5-client-link\.spec)/i;
 export const isGuardTest = (path) => GUARD_TEST.test(path);
 const isDocs = (path) => DOCS.some((re) => re.test(path));
 const isTest = (path) => TESTS.some((re) => re.test(path));
