@@ -1049,7 +1049,7 @@ The strikes of rule 14's "a step over the rule's cap needs an admin" and of the 
 
 *Amended 22 October 2026: see Amendment (iii), the owner's v31.5 review, R23.*
 
-**R24** ~~Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote). One canvas tool: drag on empty pans, drag on a card moves, wheel pans, Space pans; no separate Hand tool.~~ *Struck 22 October 2026 (owner's v31.5 review): reversed, see Amendment (iii), v31.5 review, R24.*
+**R24** ~~Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote). One canvas tool: drag on empty pans, drag on a card moves, wheel pans, Space pans; no separate Hand tool.~~ *Struck 22 October 2026 (owner's v31.5 review): reversed, see Amendment (iii), v31.5 review, R24.* *Its first sentence returns as its own rule, R36 (owner, 22 October 2026, 08:45 IST); see Amendment (iii).*
 
 **R25** ~~The bar is a smart box: docked only when nothing is selected; clicking anything opens it beside the thing — Agent: "Tell Atomik about this…" with derived chips; Director: the click's options and a wide prompt field.~~ *Struck 22 October 2026 (owner's v31.5 review): reversed, see Amendment (iii), v31.5 review, R25.*
 
@@ -1092,3 +1092,11 @@ The owner's words, verbatim; only the bullets and the bold item ids are added. R
 - **R35** Make: a centred bar with Agent · Director above it; Agent asks "What are we making?" then one quote; Director keeps the generator.
 - **R21 restated:** no selection tool in Director mode anywhere, Quick Look included.
 - Strike R24 and R25 with a dated note
+
+## The owner, 22 October 2026 (08:45 IST): R36
+
+The owner's words, verbatim; only the bold item id is added. R24 stays struck, and R31 is unchanged.
+
+"The R24 drop sentence comes back as its own rule, R36: "Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote)." R24 itself stays struck. R31 is unchanged."
+
+- **R36** Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote).
