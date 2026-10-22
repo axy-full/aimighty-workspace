@@ -235,7 +235,7 @@ test("whatever path reaches admission, a press without the figure is refused the
     expect(await traces()).toEqual(NOTHING);
   }));
 
-test("a sound pressed with the figure on its button runs at it and is never billed above it; a higher figure is held to the quote", async () =>
+test("a sound pressed with the figure on its button is reserved at it (under the mock, where the report equals the quote, settled at no more); a higher figure is held to the quote", async () =>
   doors("sound", person, async (d) => {
     const { loadJob, produce, seal } = await import("../../lib/renderWork");
     const shown = await quoted(d.audio, "/api/audio", SFX);
@@ -250,7 +250,8 @@ test("a sound pressed with the figure on its button runs at it and is never bill
     const { db } = await import("../../lib/db");
     const params = JSON.parse(String((await db().execute({ sql: "SELECT params FROM generations WHERE id=?", args: [made.id] })).rows[0].params));
     expect(params.quote).toEqual({ credits: shown, maxCredits: shown });
-    /* The mocked engine renders it; settled, it is billed no more than the figure shown. */
+    /* The mocked engine renders it; settled, it is billed no more than the figure shown. This holds under the mock only, where the vendor's report
+       equals the quote: a sound still settles at what the vendor reports, and capping it at the figure is a separate PR (owner, 22 Oct 2026). */
     const job = (await loadJob(made.id))!;
     const out = (await produce(job))!;
     written.push(path.join(GENERATIONS, `${made.id}.mp3`));
