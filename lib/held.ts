@@ -17,7 +17,7 @@ import { submitVideoRow } from "./submitVideo";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { sendMail, mailConfigured } from "./mail";
 import { backgroundMailOrigin } from "./site";
-import { membershipRole, workspaceAdmins } from "./platform";
+import { workspaceAdmins } from "./platform";
 import { workspaceLimits, standing } from "./limits";
 import { notify } from "./push";
 import { SETTINGS_CREDITS } from "./shell/settings";
@@ -161,24 +161,6 @@ type HeldRow = {
   pool: boolean; since: number;
 };
 
-/**
- * Whether a released take skips the shot's credit cap. That is its author's
- * standing (an admin's take was never capped), or an admin pressing Release
- * on it — never whoever's poll happened to settle another take and start
- * the line. An author who has left the workspace is capped.
- */
-function shotCapExemption(adminReleasing: boolean): (author: string | null) => Promise<boolean> {
-  const roles = new Map<string, Promise<boolean>>();
-  return async (author) => {
-    if (adminReleasing) return true;
-    const ws = currentTenant()?.workspace;
-    if (!author || !ws) return false;
-    if (!roles.has(author))
-      roles.set(author, membershipRole(ws.id, author).then((role) => role === "owner" || role === "admin").catch(() => false));
-    return roles.get(author)!;
-  };
-}
-
 async function heldRows(only?: string): Promise<HeldRow[]> {
   await ready();
   const rs = await db().execute({
@@ -277,7 +259,6 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
   const [limits, st] = await Promise.all([workspaceLimits(), standing()]);
   let running = st.running;
   const defer: Defer = opts.defer ?? continueAfterResponse();
-  const exempt = shotCapExemption(opts.only ? currentTenant()?.user?.role === "admin" : false);
   const released: string[] = [];
   let creditsStalled = false;
   let refusal: ReleaseRefusal | undefined;
@@ -341,7 +322,7 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
       await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
                     engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy },
                     /* A take that holds its ceiling (Cinema Studio) starts at the hold its `needs` approved. */
-                    { token: approvedBy ? undefined : r.token, ...(approvedBy ? { approvedBy } : {}), shotCapExempt: r.shotId ? await exempt(r.createdBy) : false, holdBand: holdBandOf(r.model) });
+                    { token: approvedBy ? undefined : r.token, ...(approvedBy ? { approvedBy } : {}), holdBand: holdBandOf(r.model) });
     } catch (e) {
       /* Nothing else stops it, only a shared slot: it waits in that line (from its own hold time), unreserved and unsent. */
       if (e instanceof ProviderPoolBusyError) {

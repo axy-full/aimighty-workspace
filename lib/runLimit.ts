@@ -109,8 +109,8 @@ export type RunSpend = {
   live?: () => Promise<string | null>;
   /**
    * A job marked as approved by Atomik's Auto, with no person's tap. Nothing sets it since Auto was removed (owner, 20 Oct 2026: "every job
-   * is approved on its quote"; lib/workbench/rig-agent-runs.ts runSpend never does). It is kept so that the guards that read it (a machine never
-   * skips the shot cap, lib/shotCap.ts shotCapAdmin; a batch press refuses it, lib/batchPress.ts) still refuse anything carrying it.
+   * is approved on its quote"; lib/workbench/rig-agent-runs.ts runSpend never does). It is kept so that the guard that reads it (a batch press
+   * refuses it, lib/batchPress.ts) still refuses anything carrying it.
    */
   auto?: boolean;
 };

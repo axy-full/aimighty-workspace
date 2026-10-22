@@ -74,8 +74,6 @@ export type PlanQuote =
     ready: true;
     /** The renders one approval covers. */
     steps: PlanStepQuote[];
-    /** Renders that ask on their own: those needing an admin under the workspace's own rule (with their own price, when known). No render asks for its size alone (owner, 20 Oct 2026: the per-render ask over 200 cr is gone). */
-    asks: { seq: number; title: string; worst: number | null; why: "admin" }[];
     totalTenths: number;
     ceilingTenths: number;
     total: number;
@@ -95,17 +93,15 @@ const KEEPS_PRICE: readonly string[] = ["limit", "credits"];
 /**
  * The plan's quote from its render steps: every original render not yet sent must carry the server's price.
  * Every priced render is listed and in the total, whatever its price (rule 14: a plan is approved once, its listed renders at their listed
- * prices up to its total; the per-render ask over 200 cr was removed on 20 Oct 2026). Only a render that needs an admin asks on its own.
+ * prices up to its total; the per-render ask over 200 cr was removed on 20 Oct 2026). No render asks on its own for an admin: the admin
+ * approval rule was retired on 21 Oct 2026 (owner: "every member approves their own spend with their own tap on the quote").
  */
 export function planQuote(steps: readonly QuoteInputStep[]): PlanQuote {
   const open = steps.filter((s) => s.fixOf == null && OPEN.includes(s.state));
   if (!open.length) return { ready: false, reason: "Nothing in this plan is waiting to render." };
   const listed: PlanStepQuote[] = [];
-  const asks: { seq: number; title: string; worst: number | null; why: "admin" }[] = [];
   let approximate = false;
   for (const s of open) {
-    /* One that needs an admin asks on its own and holds up nothing else (owner decision L5): never in T, never in the plan's room. */
-    if (s.state === "paused" && s.pause === "admin") { asks.push({ seq: s.seq, title: s.title, worst: s.worst, why: "admin" }); continue; }
     const priced = s.quote != null && s.worst != null && !!s.fingerprint && !!s.nodeId && (s.state === "waiting" || (s.state === "paused" && KEEPS_PRICE.includes(s.pause ?? "")));
     if (!priced) {
       return { ready: false, reason: s.state === "paused" && s.reason ? `${s.title}: ${s.reason}` : `${s.title} is not priced yet.` };
@@ -113,13 +109,13 @@ export function planQuote(steps: readonly QuoteInputStep[]): PlanQuote {
     if (toTenths(s.worst!) > toTenths(s.quote!)) approximate = true;
     listed.push({ seq: s.seq, nodeId: s.nodeId!, title: s.title, quote: s.quote!, worst: s.worst!, fingerprint: s.fingerprint! });
   }
-  if (!listed.length) return { ready: false, reason: "Every render here needs an admin, so each asks on its own." };
   const totalTenths = listed.reduce((sum, s) => sum + toTenths(s.worst), 0);
   const ceilingTenths = totalTenths * PLAN_CEILING_MULTIPLE;
   const fingerprint = createHash("sha256").update(JSON.stringify({
-    v: 1, steps: listed.map((s) => [s.seq, s.fingerprint, toTenths(s.worst)]), asks: asks.map((a) => a.seq), ceilingTenths,
+    /* `asks` stays in the hashed record, always empty since 21 Oct 2026 (it listed renders that waited for an admin), so a plan's fingerprint is what it was. */
+    v: 1, steps: listed.map((s) => [s.seq, s.fingerprint, toTenths(s.worst)]), asks: [] as number[], ceilingTenths,
   })).digest("hex");
-  return { ready: true, steps: listed, asks, totalTenths, ceilingTenths, total: fromTenths(totalTenths), ceiling: fromTenths(ceilingTenths), approximate, fingerprint };
+  return { ready: true, steps: listed, totalTenths, ceilingTenths, total: fromTenths(totalTenths), ceiling: fromTenths(ceilingTenths), approximate, fingerprint };
 }
 
 /* ── The approval, and what it covers ─────────────────────────────────── */

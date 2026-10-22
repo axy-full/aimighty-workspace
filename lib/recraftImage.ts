@@ -15,7 +15,8 @@ import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./g
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { shotCapAdmin, shotCapGate } from "./shotCap";
+import { isPersonApprover } from "./workbench/plan-approval";
+import { PEOPLE_ONLY, isAgentId } from "./security/people-only";
 import { uploadOpenableBy, type Viewer } from "./uploadAccess";
 import { actingViewer, NO_ACTING_PERSON } from "./actingViewer";
 import { engineEnabled } from "./engineGate";
@@ -170,6 +171,13 @@ export async function executeRecraftAdmission(input: Record<string, unknown>, go
   const tool = body.tool;
   if (tool !== "image" && tool !== "remove_background" && tool !== "vectorize") return admissionReply({ error: "Pick image, remove_background or vectorize." }, { status: 400 });
   const quoteOnly = body.quoteOnly === true;
+  /* Approving spend is a person's (CLAUDE.md rule 14): an Atomik identity (`agent:*`, or any machine id) and a run marked as approved by
+     Auto never press here, whatever role they carry. The per-shot cap used to be the only thing at this door that refused one (it was
+     retired on 21 Oct 2026), so the refusal is said here, before anything is priced, held or written. Pricing stays open to them (a quote,
+     or a preparation that stops at its checkpoint). A token's press is a person's token: it is held to the token's own ceiling below (#854). */
+  const pressing = !quoteOnly && !(options.checkpoint && !options.requestClaim);
+  if (pressing && (!isPersonApprover(got.user.id) || isAgentId(got.user.id) || options.run?.auto === true))
+    return admissionReply({ error: PEOPLE_ONLY }, { status: 403 });
   await ready();
   /* An SVG is refused before anything else is read or written (see the header). */
   if (tool === "vectorize") return admissionReply({ error: SVG_REFUSAL, code: "svg-sanitiser-missing" }, { status: 422 });
@@ -200,11 +208,9 @@ export async function executeRecraftAdmission(input: Record<string, unknown>, go
 
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
-  let shotCode: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
-    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
     projectId ??= shot.projectId;
   }
@@ -221,11 +227,6 @@ export async function executeRecraftAdmission(input: Record<string, unknown>, go
   /* The approval unit, through the margin table keyed by the model or tool id. No number of ours here. */
   const estimatedCredits = quotedCredits(usd, marginKey);
   const inCredits = creditsApply(requireTenant());
-  /* The cost approval rule (brief 2.2), as the fal path judges it: with a cap per shot, a take past it needs an admin who is a person: a token, an agent identity or a job marked as approved by Auto is never one (lib/shotCap.ts › shotCapAdmin). Refused before a row is written. */
-  if (shotId && shotCode) {
-    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: marginKey, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
-    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
-  }
   if (quoteOnly) return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", tool, model: marginKey, size });
   const wall = await allowanceCheck("recraft", usd, marginKey);
   if (!wall.ok) return admissionReply({ error: wall.error }, { status: wall.status });

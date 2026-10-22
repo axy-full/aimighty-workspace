@@ -602,7 +602,7 @@ README "CONFIRM" items: Nano Banana 2 2 cr in the brief vs 1 cr on the rate card
 - Font order (Geist first) differs from graphite and the repo (SF first, Geist fallback).
 - The Social "Script" stage reuses the Film script card (placeholder).
 - The Settings item in the account menu has no target. The library brand picker is a stub.
-- Graphite money rules not represented in v12: per-shot admin cap (code default 50 cr, `lib/approvalRule.ts`), 200 cr platform line, 80% budget pause, "Short by N cr / Top up" beside Approve, offline state, consent record. Keep them (owner decision).
+- Graphite money rules not represented in v12: per-shot admin cap (code default 50 cr, `lib/approvalRule.ts`; retired 21 Oct 2026 with the admin approval rule), 200 cr platform line, 80% budget pause, "Short by N cr / Top up" beside Approve, offline state, consent record. Keep them (owner decision).
 
 ---
 

@@ -2,7 +2,7 @@
  * A production's budget, pure (no database): the workspace's budget per production as typed, the share at which the
  * producer is warned (lib/caps.ts checkCap) and the plan card says where a plan would take it, and where that is.
  * lib/caps.ts reads the settings and enforces the cap; screens word the same figures from here. (Nothing pauses paid
- * work at the share any more: that ask was Auto's, and Auto went on 20 Oct 2026.)
+ * work at the share any more: that ask was Auto's, and Auto went on 20 Oct 2026; its Paused card went on 21 Oct 2026.)
  */
 
 const whole = (n: number) => Math.round(n).toLocaleString("en-US");
@@ -36,19 +36,6 @@ export function budgetPause(o: { cap: number | null; spent: number; needs: numbe
   const pauseAt = Math.floor((o.cap * pct) / 100 + 1e-9);
   const spent = Math.max(0, o.spent), needs = Math.max(0, o.needs);
   return { cap: o.cap, spent, needs, pauseAt, pct, reached: spent + needs >= pauseAt - 1e-9 };
-}
-
-/** "Paused at 80 % of the budget: 320 of 400 cr used. Continue or stop." (used: settled, and held for work in flight, as the gate counts it) */
-export function budgetPauseLine(p: Pick<BudgetPause, "pct" | "spent" | "cap">): string {
-  return `Paused at ${p.pct} % of the budget: ${whole(p.spent)} of ${whole(p.cap)} cr used. Continue or stop.`;
-}
-
-/**
- * Whether a render's own reason is the budget's ask, a line starting with `budgetPauseLine`. Auto's gate wrote it; since Auto
- * went (20 Oct 2026) nothing writes it, so only a reason stored before then matches. Any other reason is not.
- */
-export function isBudgetPauseReason(reason: string | null | undefined): boolean {
-  return /^Paused at \d{1,3} % of the budget: [\d,.]+ of [\d,]+ cr used\. Continue or stop\./.test(reason ?? "");
 }
 
 /**

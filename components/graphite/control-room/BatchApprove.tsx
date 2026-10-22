@@ -12,9 +12,8 @@ import { Price, usePriceTitle } from "../Price";
  * items"): everything under a figure, listed with each price and the total,
  * confirmed by a person's one tap. There is no batch route: the tap sends each
  * listed item through its own route at its own price, one at a time, and the
- * first refusal stops it. Left out: items over the per-shot rule (an admin
- * presses those), a plan's steps (their own Continue), proposed builds, and
- * anything this person may not press.
+ * first refusal stops it. Left out: a plan's steps (their own Continue),
+ * proposed builds, and anything this person may not press.
  */
 export function BatchApprove({ items, run }: {
   items: readonly QueueItem[];
@@ -55,9 +54,6 @@ export function BatchApprove({ items, run }: {
           ? batch.items.map((item, i) => <span key={item.id}>{i ? " · " : ""}{item.title} (<Price value={item.price} />)</span>)
           : <>Nothing under <Price value={exact(under)} /> is waiting</>}
       </div>
-      {batch.adminOut.length ? (
-        <p className="cr-text" data-testid="batch-admin-out">Needs an admin, left out: {batch.adminOut.map((item) => item.title).join(" · ")}</p>
-      ) : null}
       {batch.inPlan.length ? (
         <p className="cr-text" data-testid="batch-in-plan">Approved in their plans, left out: {batch.inPlan.map((item) => item.title).join(" · ")}</p>
       ) : null}

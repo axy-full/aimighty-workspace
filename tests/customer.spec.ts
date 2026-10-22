@@ -50,8 +50,6 @@ async function customerFixture(page: Page) {
       namingTemplate: "{project}_{shot}_v{version}",
       defaultVideoModel: "",
       defaultImageModel: "",
-      approvalRule: "cap",
-      shotCapCredits: "50",
       capWarnPct: "80",
       atCap: "producer",
       atomikEngines: "[]",

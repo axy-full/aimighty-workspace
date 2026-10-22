@@ -8,10 +8,11 @@ import { joinLocallyAsMember, localPlatformDbUrl, signInLocally } from "./helper
 /*
  * Gap screens, lane 4 · Settings › Spending rules › Budget and cap (design Gaps B: ?view=workspace&ws=rules&edit=rules,
  * and &role=member), on the real routes of the local ENGINE_MOCK=1 server, nothing answered by the browser:
- *  - an admin edits the budget per production and the per-shot cap; a field saves when it is left or on Enter (PATCH
- *    /api/settings), never a figure still being typed; "Undo changes" puts back what was there, "Done" closes;
- *  - a member reads the same figures, can't change them (the route refuses them too), and "Ask an admin" tells the owner.
- * Owner values (6 Oct): budget 400 cr with the pause at 320 cr; the per-shot cap 50 cr. (The 200 cr ask line was retired on 20 Oct 2026: no per-job line.)
+ *  - an admin edits the budget per production; the field saves when it is left or on Enter (PATCH /api/settings), never a
+ *    figure still being typed; "Undo changes" puts back what was there, "Done" closes;
+ *  - a member reads the same figure, can't change it (the route refuses it too), and "Ask an admin" tells the owner.
+ * Owner values (6 Oct): budget 400 cr with the warning at 320 cr. (The 200 cr ask line was retired on 20 Oct 2026: no per-job line. The per-shot cap
+ * "before an admin" was retired on 21 Oct 2026 with the admin approval rule: no field, no row, and the route refuses it.)
  */
 const SHOTS = process.env.L4_SHOTS || join(tmpdir(), "claude-gaps-l4-shots");
 const size = (name: string) => name.replace("workbench-", "");
@@ -43,7 +44,7 @@ async function panelFloors(page: Page) {
   expect(await overflow(page)).toBeLessThanOrEqual(0);
 }
 
-test("an admin edits the budget per production and the per-shot cap; a field saves on Enter or when left, never mid-figure; Undo changes puts them back; Done closes", async ({ page }, info) => {
+test("an admin edits the budget per production; the field saves on Enter or when left, never mid-figure; Undo changes puts it back; Done closes; there is no per-shot cap to set (21 Oct 2026)", async ({ page }, info) => {
   const { workspace } = await signInLocally(page.request, "Rules Admin");
   const me = await (await page.request.get("/api/me")).json() as { id: string };
   const errors: string[] = [];
@@ -53,12 +54,15 @@ test("an admin edits the budget per production and the per-shot cap; a field sav
   await expect(section).toBeVisible({ timeout: 20_000 });
   await expect(section).toContainText("admins only");
   await expect(page.getByTestId("settings-budget-value").locator(".gs-row-v")).toHaveText("none");
-  await expect(page.getByTestId("settings-cap-value").locator(".gs-row-v")).toHaveText("off");
+  await expect(page.getByTestId("settings-cap-value")).toHaveCount(0);
   await expect(page.getByTestId("settings-budget-open")).toHaveText("Edit");
   await page.getByTestId("settings-budget-open").click();
   const panel = page.getByTestId("settings-budget-panel");
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("Admins only. A field saves when you leave it or press Enter.");
+  await expect(panel).toContainText("Admins only. The field saves when you leave it or press Enter.");
+  /* No "Before an admin" field: the per-shot cap went with the admin approval rule. */
+  await expect(page.getByTestId("settings-cap-field")).toHaveCount(0);
+  await expect(panel).not.toContainText(/Before an admin|needs an admin/i);
   /* No platform per-job line (owner, 20 Oct 2026: guardrail 4 retired): the panel shows no line field and no line sentence. */
   await expect(page.getByTestId("settings-line-field")).toHaveCount(0);
   await expect(panel).not.toContainText(/Platform line|Any job over|even under Auto/);
@@ -75,14 +79,12 @@ test("an admin edits the budget per production and the per-shot cap; a field sav
   /* No Auto (owner, 20 Oct 2026): the budget warns; nothing is said to run or pause on its own. */
   await expect(panel).toContainText("Warns at 80 % (320 cr); every render still waits for a person, and an approved plan runs on to the budget.");
   await expect(panel).not.toContainText(/\bAuto\b/);
-  /* Leaving the field saves it. */
-  await page.getByTestId("settings-cap-field").pressSequentially("50");
-  await page.getByTestId("settings-budget-field").focus();
-  await expect.poll(async () => { const s = await settingsOf(page.request); return [s.approvalRule, s.shotCapCredits]; }).toEqual(["cap", "50"]);
-  await expect(panel).toContainText("A step over this needs an admin’s approval.");
   await expect(page.getByTestId("settings-budget-value")).toContainText("warns at 320 cr (80 %)");
   await expect(page.getByTestId("settings-budget-value").locator(".gs-row-v")).toHaveText("400 cr");
-  await expect(page.getByTestId("settings-cap-value").locator(".gs-row-v")).toHaveText("50 cr");
+  /* The retired keys are never sent, nor shown by the settings route. */
+  const s0 = await settingsOf(page.request);
+  expect(s0).not.toHaveProperty("approvalRule");
+  expect(s0).not.toHaveProperty("shotCapCredits");
   /* A figure the route would refuse is said, and not saved. */
   await page.getByTestId("settings-budget-field").fill("0");
   await page.getByTestId("settings-budget-field").press("Enter");
@@ -97,14 +99,13 @@ test("an admin edits the budget per production and the per-shot cap; a field sav
   /* Undo changes: what was there when the panel opened, written back. */
   await page.getByTestId("settings-budget-undo").click();
   await expect(page.getByTestId("settings-budget-state")).toHaveText("Put back as it was.");
-  await expect.poll(async () => { const s = await settingsOf(page.request); return [s.productionBudgetCredits ?? "", s.approvalRule]; }).toEqual(["", "anyone"]);
+  await expect.poll(async () => (await settingsOf(page.request)).productionBudgetCredits ?? "").toBe("");
   await expect(page.getByTestId("settings-budget-field")).toHaveValue("");
-  /* The owner's sample values again, then Done. */
+  /* The owner's sample value again, then Done: it saves what is waiting. */
   await page.getByTestId("settings-budget-field").pressSequentially("400");
-  await page.getByTestId("settings-cap-field").pressSequentially("50");
   await page.getByTestId("settings-budget-done").click();
   await expect(panel).toHaveCount(0);
-  await expect.poll(async () => { const s = await settingsOf(page.request); return [s.productionBudgetCredits, s.approvalRule, s.shotCapCredits]; }).toEqual(["400", "cap", "50"]);
+  await expect.poll(async () => (await settingsOf(page.request)).productionBudgetCredits).toBe("400");
   await shoot(page, "rules-page", info.project.name);
   expect(await overflow(page)).toBeLessThanOrEqual(0);
 
@@ -116,11 +117,16 @@ test("an admin edits the budget per production and the per-shot cap; a field sav
   void workspace; void me;
 });
 
-test("a member reads the budget and the cap, can't change them, and asks an admin", async ({ page, playwright }, info) => {
+test("a member reads the budget, can't change it, and asks an admin; the retired per-shot cap is refused even to the owner", async ({ page, playwright }, info) => {
   const owner = await playwright.request.newContext({ baseURL: process.env.PW_BASE_URL });
   const { workspace } = await joinLocallyAsMember(owner, page.request);
   const ownerMe = await (await owner.get("/api/me")).json() as { id: string };
-  const set = await owner.patch("/api/settings", { headers: { "X-Workbench-Scope": `particl-active-${workspace.id}-${ownerMe.id}` }, data: { productionBudgetCredits: "400", approvalRule: "cap", shotCapCredits: "50" } });
+  const scope = { "X-Workbench-Scope": `particl-active-${workspace.id}-${ownerMe.id}` };
+  /* The retired keys are refused whole, even to the owner (410, "retired"), and nothing in the save is written. */
+  const retired = await owner.patch("/api/settings", { headers: scope, data: { productionBudgetCredits: "400", approvalRule: "cap", shotCapCredits: "50" } });
+  expect(retired.status(), await retired.text()).toBe(410);
+  expect(await retired.json()).toMatchObject({ code: "retired" });
+  const set = await owner.patch("/api/settings", { headers: scope, data: { productionBudgetCredits: "400" } });
   expect(set.ok(), await set.text()).toBe(true);
   const member = await (await page.request.get("/api/me")).json() as { id: string };
   /* The route refuses a member, whatever the screen shows. */
@@ -134,8 +140,7 @@ test("a member reads the budget and the cap, can't change them, and asks an admi
   await expect(panel).toContainText("Only an admin can change these. Ask the owner or an admin.");
   await expect(page.getByTestId("settings-budget-field")).toHaveValue("400");
   await expect(page.getByTestId("settings-budget-field")).toHaveAttribute("readonly", "");
-  await expect(page.getByTestId("settings-cap-field")).toHaveValue("50");
-  await expect(page.getByTestId("settings-cap-field")).toHaveAttribute("readonly", "");
+  await expect(page.getByTestId("settings-cap-field")).toHaveCount(0);
   await expect(page.getByTestId("settings-budget-undo")).toHaveCount(0);
   await expect(page.getByTestId("settings-budget-done")).toHaveCount(0);
   await panelFloors(page);
@@ -153,7 +158,9 @@ test("a member reads the budget and the cap, can't change them, and asks an admi
   await expect(panel).toHaveCount(0);
   await expect(page.getByTestId("settings-budget-cap")).toContainText("only an admin can change these");
   await expect(page.getByTestId("settings-budget-open")).toHaveText("View");
-  expect(await settingsOf(page.request)).toMatchObject({ productionBudgetCredits: "400", approvalRule: "cap", shotCapCredits: "50" });
+  const after = await settingsOf(page.request);
+  expect(after).toMatchObject({ productionBudgetCredits: "400" });
+  expect(after).not.toHaveProperty("approvalRule");
   await owner.dispose();
 });
 

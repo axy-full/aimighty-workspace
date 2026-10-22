@@ -802,8 +802,11 @@ export function costUsd(totalTokens: number, usdPerMillionTokens: number): numbe
 const DEFAULT_FPS = FPS;
 const up16 = (n: number) => Math.ceil(n / 16) * 16;
 
+/** Each resolution tier's SHORT side in pixels: what "1080p" or "4k" means everywhere a frame is sized (dimensionsFor below, the upscale's output in lib/astra.ts). */
+export const RESOLUTION_SHORT_SIDE: Readonly<Record<"480p" | "720p" | "1080p" | "2k" | "4k", number>> = Object.freeze({ "480p": 480, "720p": 720, "1080p": 1080, "2k": 1440, "4k": 2160 });
+
 export function dimensionsFor(resolution: string, ratio: string): { w: number; h: number } | null {
-  const base = { "480p": 480, "720p": 720, "1080p": 1080, "2k": 1440, "4k": 2160 }[
+  const base = (RESOLUTION_SHORT_SIDE as Record<string, number>)[
     resolution.toLowerCase()
   ];
   if (!base) return null;

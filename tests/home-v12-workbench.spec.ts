@@ -14,7 +14,7 @@ const PHONE = ["workbench-360x640", "workbench-390x844", "workbench-844x390"];
 const item = (over: Partial<QueueItem> & Pick<QueueItem, "id" | "title">): QueueItem => ({
   source: "held", where: "Make", at: Date.now() - 5 * 60_000,
   project: { productionId: "prod-x", draftId: null, name: "Harbour film" },
-  price: { kind: "exact", credits: 3 }, needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+  price: { kind: "exact", credits: 3 }, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
   approve: { kind: "release", genId: "gen_held_1", credits: 3 }, decline: { kind: "discard", genId: "gen_held_1" },
   open: { kind: "take", genId: "gen_held_1", draftId: null },
   ...over,

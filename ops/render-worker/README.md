@@ -22,6 +22,7 @@ Tests: `node --test tests/ops/render-worker.test.mjs tests/ops/render-relay.test
 | `ASTRA_WORKER_SECRET_1` | the worker stack | A random value of at least 32 characters (`openssl rand -hex 32` on your own machine). `render-1` reads it as its `ASTRA_WORKER_SECRET`. Runtime only: never a build variable, never in git or chat. The relay never sees one. |
 | `ASTRA_WORKER_URLS` | the production app only | The relay's address: `http://<relay name>:8081`. |
 | `ASTRA_WORKER_SECRETS` | the production app only | Comma list of the secrets **in the same order** as `ASTRA_WORKER_URLS`. Runtime only. |
+| `ASTRA_RENDER_BACKEND` | the production app only | `selfhost`, so the app sends renders to these workers (setup step 6). |
 | `RENDER_CPUSET_1` | the worker stack | The cores `render-1` is pinned to. Default `6,7` (see "How many workers" before changing it). |
 
 ## Networking: option (c), the relay (owner's choice)
@@ -59,7 +60,7 @@ Nothing here costs money. **Nothing is set up until the owner approves.**
 3. **Variables on the stack (owner).** `ASTRA_WORKER_SECRET_1`. Runtime only: leave **Build Variable** ("Available at Buildtime") unticked. Leave the rest unset for the worker on cores 6,7; set `RENDER_CPUSET_1` only if the cores differ (see "How many workers").
 4. **Deploy (owner).** The first build downloads Blender (about 370 MB) and renders a 32 px test image; a few minutes. Wait until the relay and `render-1` show **healthy**.
 5. **Run Verify step 1 and 1b (owner).** Stop here if either fails.
-6. **Production app (owner).** Set `ASTRA_WORKER_URLS` (`http://<relay name>:8081`) and `ASTRA_WORKER_SECRETS` (the secret), both runtime only. Read the relay's container name on the stack's page (Coolify may add a suffix to `render-relay`). Redeploy the app.
+6. **Production app (owner).** Set `ASTRA_WORKER_URLS` (`http://<relay name>:8081`), `ASTRA_WORKER_SECRETS` (the secret) and `ASTRA_RENDER_BACKEND=selfhost`, all runtime only. If `ASTRA_RENDER_BACKEND` is unset, the app keeps sending renders to the old host (Vercel Sandbox). Read the relay's container name on the stack's page (Coolify may add a suffix to `render-relay`). Redeploy the app.
 7. **Run Verify steps 2 to 4.**
 
 ## Verify

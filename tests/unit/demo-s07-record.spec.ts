@@ -42,7 +42,7 @@ test("who approved reads 'you' for the viewer, else the ledger's name; Auto says
 });
 
 const queued = (id: string, productionId: string | null, more: Partial<QueueItem> = {}): QueueItem => ({
-  id, source: "board-render", title: id, where: "Board", at: 1, project: { productionId, draftId: null, name: null }, price: { kind: "exact", credits: 8 }, needsAdmin: false, canApprove: true,
+  id, source: "board-render", title: id, where: "Board", at: 1, project: { productionId, draftId: null, name: null }, price: { kind: "exact", credits: 8 }, canApprove: true,
   why: null, shortBy: null, note: null, step: null, sample: false, approve: null, decline: null, open: { kind: "board", productionId: productionId ?? "", draftId: null }, ...more,
 });
 test("open decisions are this production's queue items only, and never the sample's", () => {

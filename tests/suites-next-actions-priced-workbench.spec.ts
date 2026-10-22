@@ -5,6 +5,7 @@ import { newProject, type CanvasNode } from "../lib/workbench/studio";
 import type { Generation } from "../lib/jobs";
 import { forbidPaidWork, generation, mockLibrary, mockMedia, type LibraryRoute } from "./helpers/workspaceFixtures";
 import { labelsUnderFloor } from "./helpers/businessOwn";
+import { ALREADY_4K, ALREADY_4K_CODE } from "../lib/astra";
 
 /**
  * Idea 12, second slice: priced Next actions on a take, in the board's Inspector (SOW 1.2). A still is upscaled, outpainted or
@@ -63,13 +64,13 @@ const store = (production: string, shots: Record<string, string>): LibraryRoute 
 type Sent = { body: Record<string, unknown>; key: string | null };
 /**
  * The workspace's own rules, as admission answers the quote: "reason" — the shot has an approved take, so it asks why
- * before it prices another (lib/approval.ts); "admin" — the cost approval rule's cap per shot, which a member's take
- * would pass, so an admin has to press it (lib/approvalRule.ts).
+ * before it prices another (lib/approval.ts); "cap" — the production at its cap, which only an admin's Unlock lifts
+ * (lib/caps.ts capVerdict; the per-shot approval rule this used to stand for was retired on 21 Oct 2026).
  */
-type Rule = "reason" | "admin" | null;
+type Rule = "reason" | "cap" | "already4k" | null;
 type Server = { quotes: Record<string, unknown>[]; sent: Sent[]; writes: string[]; bump: number; failNext: boolean; holdNext: boolean; rule: Rule };
 const ASK = { title: "v1 is approved. Why render another?", line: "Ana approved v1. The reason is kept with the new take, so the shot's record says why it was revisited." };
-const CAP_LINE = "SH010 is at 60 cr; this take makes it 72 cr, over the 50 cr a shot may take. An admin has to press this one.";
+const CAP_LINE = "At this production's cap of 60 cr (60 cr spent, this needs 12 cr). An admin can unlock it or raise it.";
 
 /** The new take as admission files it: its own row, under its source's shot as the next version, naming its source. */
 function filed(id: string, production: string, body: Record<string, unknown>, library: LibraryRoute): Generation {
@@ -100,7 +101,9 @@ async function mockPaid(page: Page, production: string, library: LibraryRoute): 
     server.quotes.push(body);
     if (server.rule === "reason" && !(typeof body.reason === "string" && body.reason.trim().length >= 3))
       return route.fulfill({ status: 409, json: { error: ASK.title, line: ASK.line, needsReason: true, approvedVersion: 1 } });
-    if (server.rule === "admin") return route.fulfill({ status: 403, json: { error: CAP_LINE, needsAdmin: true } });
+    if (server.rule === "cap") return route.fulfill({ status: 409, json: { error: CAP_LINE } });
+    /* The source measured at 4K: admission's refusal, word for word and code for code (tests/unit/generationAdmission.spec.ts pins the real one). */
+    if (server.rule === "already4k" && body.model === ASTRA) return route.fulfill({ status: 400, json: { error: ALREADY_4K, code: ALREADY_4K_CODE } });
     const credits = (ESTIMATE[String(body.model)] ?? 1) + server.bump;
     return route.fulfill({ json: { estimatedCredits: credits, price: credits, unit: "cr", fingerprint: createHash("sha256").update(JSON.stringify(body)).digest("hex") } });
   });
@@ -336,6 +339,32 @@ test("what cannot go says why and sends nothing: a sound's actions are not offer
   expect(errors).toEqual([]);
 });
 
+test("a clip already at 4K: Upscale shows the line in plain tone where the price would be, offers nothing to try again and sends nothing", async ({ page }, info) => {
+  test.skip(!DESKTOPS.includes(info.project.name), "the board and its Inspector are the desktop's");
+  const { server, errors } = await open(page);
+  server.rule = "already4k";
+  const row = (await inspect(page, NODES.wide)).getByTestId("next-actions");
+  await row.getByTestId("next-upscale").click();
+  const panel = row.getByTestId("next-panel");
+  await expect(panel).toHaveAttribute("data-action", "upscale");
+  const line = panel.getByTestId("next-refused");
+  await expect(line).toHaveText(ALREADY_4K, { timeout: 20_000 });
+  await expect(line).toHaveAttribute("data-code", ALREADY_4K_CODE);
+  await expect(line).toHaveAttribute("role", "status");
+  await expect(line).not.toHaveAttribute("data-tone", "red");
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  await expect(panel.getByTestId("next-try-again")).toHaveCount(0);
+  const go = panel.getByTestId("next-go");
+  await expect(go).toBeDisabled();
+  await expect(go).toHaveAttribute("data-spend", "unpriced");
+  await expect(go).toHaveText("Upscale");
+  await panelFloors(page, panel, WHERE);
+  expect(server.quotes.length).toBeGreaterThan(0);
+  expect(server.sent).toEqual([]);
+  expect(server.writes).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("the workspace's rules hold in the panel: an approved shot asks why before it is priced; past the shot's cap, an admin has to press it", async ({ page }, info) => {
   test.skip(!DESKTOPS.includes(info.project.name), "the board and its Inspector are the desktop's");
   const { server, errors } = await open(page);
@@ -357,8 +386,8 @@ test("the workspace's rules hold in the panel: an approved shot asks why before 
   await expect(panel.getByTestId("next-landed")).toBeVisible({ timeout: 20_000 });
   await panel.getByTestId("next-close").click();
 
-  /* The cost approval rule: past the shot's cap, a member's take needs an admin. The server's words; the button stays shut. */
-  server.rule = "admin";
+  /* The production at its cap: only an admin's Unlock lifts it. The server's words; the button stays shut. */
+  server.rule = "cap";
   await row.getByTestId("next-upscale").click();
   await expect(panel.getByTestId("next-refused")).toHaveText(CAP_LINE);
   await expect(panel.getByTestId("next-go")).toBeDisabled();

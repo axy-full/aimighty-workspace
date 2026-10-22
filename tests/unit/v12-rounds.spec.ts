@@ -44,8 +44,8 @@ const SHOTS = shotOfNodeMap(Array.from({ length: 9 }, (_, i) => ({ nodeId: `card
 
 const model = (over: Partial<PlanModel> = {}): PlanModel => ({
   runId: "run-1", phase: "proposal", title: "Make 3 shots",
-  steps: [2, 4, 7].map((n, i) => ({ seq: i + 1, nodeId: `card-${n}`, kind: "take", title: `0${i + 1} — ${["Opening", "The turn", "Close"][i]}`, meta: "Seedance", price: null, source: "estimate", unavailable: null, needsAdmin: false, asksAlone: null, state: "proposed", status: "Planned", reason: null, canRender: false, fingerprint: null })),
-  total: null, ceiling: null, used: null, balance: null, totalLine: null, thinking: null, modeLine: null, ruleLine: null, adminLine: "", note: null, mine: true,
+  steps: [2, 4, 7].map((n, i) => ({ seq: i + 1, nodeId: `card-${n}`, kind: "take", title: `0${i + 1} — ${["Opening", "The turn", "Close"][i]}`, meta: "Seedance", price: null, source: "estimate", unavailable: null, state: "proposed", status: "Planned", reason: null, canRender: false, fingerprint: null })),
+  total: null, ceiling: null, used: null, balance: null, totalLine: null, thinking: null, modeLine: null, note: null, mine: true,
   primary: { kind: "plan", label: "Approve · 93 cr", price: { kind: "exact", credits: 93 } as never, fingerprint: "f", blocked: null }, ...over,
 });
 

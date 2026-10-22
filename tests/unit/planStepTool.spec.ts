@@ -74,8 +74,7 @@ async function inRun<T>(name: string, fn: (ws: TenantWorkspace) => Promise<T>, c
 type Behaviour = { throwBeforeClaim?: boolean; throwAfterReply?: boolean; pendingClaim?: boolean };
 
 /** `xai`: shots whose engine settles on what the provider states (worst case 3 × the quote), as an approximate engine does. */
-/** `adminShots`: shots over the workspace's per-shot rule: a member's preparation is refused with needsAdmin, as admission does. */
-function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: ReadonlySet<string> = new Set(), adminShots: ReadonlySet<string> = new Set()) {
+function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: ReadonlySet<string> = new Set()) {
   const calls: { key: string; savedKey: string | null; savedState: string | null; run: RunSpend | undefined; prompt: string }[] = [];
   const behaviour: Behaviour = {};
   /* The price the admission would compute now, per shot: a moved price refuses an old approval. */
@@ -84,8 +83,6 @@ function renders(ws: TenantWorkspace, usdOf: (node: string) => number, xai: Read
   const prepare = async (body: Record<string, unknown>, actor: AdmissionActor) => {
     const { billCredits } = await import("../../lib/creditTerms");
     const shot = shotOf(body);
-    if (adminShots.has(shot) && actor.user.role !== "admin")
-      return { ok: false as const, status: 403, body: { error: `Shot ${shot} is over the 50 cr a shot may take. An admin has to press this one.`, needsAdmin: true } };
     const usd = priceNow.get(shot) ?? usdOf(shot);
     const credits = billCredits(usd, "mock");
     /* The compile covers the prompt, as a real one does: an edited shot is a different quote fingerprint. */
@@ -187,7 +184,8 @@ test("it prepares and prices and nothing more: the server's quote for each shot,
     const before = await balance(ws);
     const out = await preparePlanStep(OWNER, { boardId: "draft-1", answers: { length: 8 } }, deps);
     const a = await credits(0.3), b = await credits(0.45);
-    expect(out).toMatchObject({ step: "shots", priced: true, total: a + b, ceiling: 2 * (a + b), state: "needs_you", asks: 0, reason: null, answers: { quality: "draft", length: 8 } });
+    expect(out).toMatchObject({ step: "shots", priced: true, total: a + b, ceiling: 2 * (a + b), state: "needs_you", reason: null, answers: { quality: "draft", length: 8 } });
+    expect(out, "no shot asks on its own for an admin (21 Oct 2026)").not.toHaveProperty("asks");
     expect(out.shots).toEqual(["Pier", "Deck"]);
     /* One price: the plan's total. No shot's price and no engine's name in the reply. */
     expect(JSON.stringify(out)).not.toMatch(/credits|seedance|kling|veo|flux|banana|gemini|byteplus/i);
@@ -238,13 +236,15 @@ test("plan_step's reason counts only shots it tried to price and could not; one 
   const t = (state: string, extra: Record<string, unknown> = {}) => ({ state, quote: null, pause: null, fixOf: null, ...extra }) as never;
   expect(unpricedWords([t("paused", { pause: "unpriced" }), t("next"), t("next")])).toBe("1 shot can't be priced yet; open the board.");
   expect(unpricedWords([t("next"), t("next")])).toBe("The plan is still being priced; open the board.");
-  expect(unpricedWords([t("waiting", { quote: 300 }), t("paused", { pause: "admin", quote: 40 })])).toBe("Every shot here asks on its own; open the board.");
+  /* A shot stored as waiting for an admin is read as its person's to price again (pause "unpriced", no price): it counts as one that can't be priced yet. */
+  expect(unpricedWords([t("waiting", { quote: 300 }), t("paused", { pause: "unpriced", quote: null })])).toBe("1 shot can't be priced yet; open the board.");
+  expect(unpricedWords([t("waiting", { quote: 300 })])).toBe("A shot here waits for you; open the board.");
 });
 
 test("over MCP: one call to the board route as the caller, never an approval; an approval in the arguments is refused; the answer says the person approves it and nothing was rendered", async () => {
   const { runTool } = await import("../../lib/mcp");
   const calls: { path: string; method?: string; body?: Record<string, unknown> }[] = [];
-  const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 12, ceiling: 24, approximate: false, shots: ["Pier", "Deck"], asks: 0, reason: null, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
+  const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 12, ceiling: 24, approximate: false, shots: ["Pier", "Deck"], reason: null, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
   const call = async (path: string, init: { method?: string; body?: unknown } = {}) => { calls.push({ path, method: init.method, body: init.body as Record<string, unknown> }); return reply; };
   const text = await runTool("plan_step", { board_id: "draft-1", quality: "final", length: 8, cards: "s1, s2", request_id: "r1" }, call as never, "https://example.invalid");
   expect(calls).toEqual([{ path: "/api/board-agent/plan", method: "POST", body: { boardId: "draft-1", step: undefined, answers: { quality: "final", length: 8 }, cards: ["s1", "s2"], requestId: "r1" } }]);
@@ -291,7 +291,7 @@ test("a tool's plan never replaces a plan waiting on the board; it may replace a
   });
   /* The words an agent reads. */
   const { runTool } = await import("../../lib/mcp");
-  const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 5, ceiling: 10, approximate: false, shots: ["Pier"], asks: 0, reason: null, replaced: true, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
+  const reply = { plan: { id: "rar_x", state: "needs_you", step: "shots", priced: true, total: 5, ceiling: 10, approximate: false, shots: ["Pier"], reason: null, replaced: true, needs: "A person approves this plan in Particl. Nothing is spent until they do." } };
   expect(await runTool("plan_step", { board_id: "draft-1" }, (async () => reply) as never, "https://example.invalid")).toContain("Replaced the plan waiting on the board.");
 });
 

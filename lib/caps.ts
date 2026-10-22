@@ -6,9 +6,9 @@ import { creditsFor, type EstimateTerms } from "./billingTerms";
 import { getSetting, invalidateSettings } from "./settings";
 import { workspaceAdmins, platformDb, platformReady } from "./platform";
 import { notify } from "./push";
-import { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, type BudgetPause } from "./budgetPause";
+import { budgetPause, cleanBudget, cleanWarnPct, type BudgetPause } from "./budgetPause";
 
-export { budgetPause, budgetPauseLine, cleanBudget, cleanWarnPct, type BudgetPause };
+export { budgetPause, cleanBudget, cleanWarnPct, type BudgetPause };
 
 /**
  * A production's cap, in the workspace's unit.

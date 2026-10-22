@@ -3,23 +3,22 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/lib/session";
 import { useWorkspace } from "@/lib/workspace/state";
 import { creditRate, creditsText, creditsUsd } from "@/lib/shell/price-words";
-import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, settingProblem } from "@/lib/settingValues";
-import type { ApprovalRule } from "@/lib/approvalRule";
+import { AT_CAP_OPTIONS, CAP_WARN_OPTIONS, settingProblem } from "@/lib/settingValues";
 import { Btn, Fold, Note, Problem, Row, Section } from "../parts";
 import { useRead, useWrite } from "../use-settings";
 import { useSpendingRules } from "./spending";
 import type { SettingsFold } from "@/lib/shell/settings";
 import { BudgetSection } from "./BudgetSection";
 import { SampleLiftSection } from "./SampleLift";
-import { atItsCap, capInput, productionLine, ruleValue, type ProductionBudget } from "./spending-words";
+import { atItsCap, capInput, productionLine, type ProductionBudget } from "./spending-words";
 
 /**
  * Settings › Spending rules (README § 3.5, § 4 "Ask / Auto", "Spending rules"): the one place the workspace's
  * rules for who may press a paid step are read in full and changed (DECISIONS 1). The control room's Approvals
  * shows the same lines read-only, from `useSpendingRules()`, with a link here.
  *
- *  - Who may approve: the cost approval rule and its cap (limits are by role: members up to the cap, an admin
- *    above it), and the workspace's warning and at-cap rules for a production's budget.
+ *  - Who may approve: each person, their own spend (owner, 21 Oct 2026: the cost approval rule and its per-shot cap
+ *    are retired, so there is nothing to choose), and the workspace's warning and at-cap rules for a production's budget.
  *    A change saves itself through PATCH /api/settings (an admin's, with the route's own checks) and a toast
  *    with Undo; a member reads the same lines and "Only an admin changes these."
  *  - Spend without asking: Ask, always: there is no Auto (owner, 20 Oct 2026). Every paid step waits for a person, so there is no
@@ -34,12 +33,10 @@ export function RulesSection({ open = null }: { open?: SettingsFold | null } = {
   const session = useSession();
   const write = useWrite();
   const { toast } = useWorkspace();
-  const [editing, setEditing] = useState<"rule" | "budget" | null>(null);
-  const [cap, setCap] = useState<string | null>(null);
+  const [editing, setEditing] = useState<"budget" | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const pressing = useRef(false);
-  const rate = creditRate(session.rates.creditUsd);
   const inCredits = session.rates.unit !== "usd";
 
   /* One save at a time; the route checks the values again, and the toast's Undo writes the old ones back. */
@@ -60,21 +57,10 @@ export function RulesSection({ open = null }: { open?: SettingsFold | null } = {
     });
   };
 
-  const ruleBefore = (): Record<string, string> => ({ approvalRule: rules.rule ?? "anyone", ...(rules.shotCap != null ? { shotCapCredits: String(rules.shotCap) } : {}) });
-  const chooseRule = (next: ApprovalRule) => {
-    if (next === rules.rule) return;
-    void save({ approvalRule: next }, ruleBefore(), `Spending rule: ${APPROVAL_OPTIONS.find(([v]) => v === next)?.[1] ?? next}.`);
-  };
-  const setShotCap = () => {
-    const n = capInput(cap ?? String(rules.shotCap ?? ""));
-    if (n === null) { setNote({ ok: false, text: "The cap is a whole number of credits, 1 or more." }); return; }
-    void save({ shotCapCredits: String(n) }, ruleBefore(), `Members may take up to ${creditsText(n)} a shot.`).then(() => setCap(null));
-  };
   const budgetBefore = (): Record<string, string> => ({ capWarnPct: String(rules.capWarnPct ?? 80), atCap: rules.atCap ?? "producer" });
 
   const canChange = rules.canChange;
   const loaded = rules.loaded;
-  const ruleValueText = loaded ? ruleValue(rules, creditsText) : rules.error ? "—" : "Reading…";
 
   return (
     <>
@@ -82,28 +68,7 @@ export function RulesSection({ open = null }: { open?: SettingsFold | null } = {
       <BudgetSection rules={rules} openAtStart={openAtStart} />
       <Section label="Who may approve" meta="people only · Atomik never approves" testId="settings-approve">
         {rules.error ? <Problem text={rules.error} onRetry={rules.retry} testId="settings-rules-error" /> : null}
-        <Row name="Rule" line={loaded ? rules.ruleLine ?? undefined : undefined} value={ruleValueText} valueTitle={loaded && rules.rule === "cap" && rules.shotCap != null ? creditsUsd(rules.shotCap, rate) : null} testId="settings-rule">
-          {canChange && loaded ? <Btn pressed={editing === "rule"} onClick={() => setEditing(editing === "rule" ? null : "rule")} testId="settings-rule-change">Change</Btn> : null}
-        </Row>
-        {editing === "rule" && canChange ? (
-          <div className="gs-edit" data-testid="settings-rule-edit">
-            <div className="gs-choice gs-choice-wrap" role="radiogroup" aria-label="Who may approve">
-              {APPROVAL_OPTIONS.map(([id, label]) => (
-                <button key={id} type="button" role="radio" aria-checked={rules.rule === id} className="gs-btn" disabled={busy}
-                  onClick={() => chooseRule(id)} data-testid={`settings-rule-${id}`}>{label}</button>
-              ))}
-            </div>
-            {rules.rule === "cap" ? (
-              <form className="gs-capform" onSubmit={(e) => { e.preventDefault(); setShotCap(); }}>
-                <label className="gs-label"><span className="gs-eyebrow">A shot may take, before an admin presses (cr)</span>
-                  <input className="gs-field" inputMode="numeric" value={cap ?? String(rules.shotCap ?? "")} onChange={(e) => setCap(e.target.value.replace(/[^0-9]/g, ""))} data-testid="settings-shot-cap" />
-                </label>
-                <button type="submit" className="gs-btn" data-hot disabled={busy || cap === null || cap === String(rules.shotCap ?? "")} data-testid="settings-shot-cap-set">Set cap</button>
-              </form>
-            ) : null}
-            <p className="gs-row-line">Limits are by role, not by person: every member follows the rule, and an admin may press above it.</p>
-          </div>
-        ) : null}
+        <Row name="Each person approves their own spend." testId="settings-approve-own" />
         <Row name="At a production’s budget" line={loaded ? rules.budgetLine ?? undefined : undefined} testId="settings-budget">
           {canChange && loaded ? <Btn pressed={editing === "budget"} onClick={() => setEditing(editing === "budget" ? null : "budget")} testId="settings-budget-change">Change</Btn> : null}
         </Row>

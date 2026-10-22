@@ -7,10 +7,10 @@ import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
 
 /**
- * A render filed from an Atomik step goes into its chat's project (lib/atomikAccess.ts claimedStepFiling), and the chat's maker names that project. It is checked as the maker's board
- * to file into, whoever approves (lib/generationAdmission.ts): a member or an admin cannot make a chat on someone else's private board and have its step renders filed and charged
- * there; an admin approving a member's own step still files into the member's own board (owner, 13 Oct); and a chat made or patched with a project the person may not file into stores
- * none, with the same answer for a private board and an id that is none. Real temporary databases; the engine is mocked; nothing is sent or spent.
+ * A chat and its steps file under a project its person may file into. A render request that names an Atomik step (`atomikStepId`, the path an admin used to approve a
+ * member's step, owner 13 Oct) is refused for everyone since 21 Oct 2026 (owner: "the admin approval rule is retired; every member approves their own spend with their own
+ * tap on the quote"): the same "That step is gone." whatever board it is on, with nothing held, reserved or metered. A chat made or patched with a project the person may not
+ * file into stores none, with the same answer for a private board and an id that is none. Real temporary databases; the engine is mocked; nothing is sent or spent.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-step-reach-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -62,7 +62,7 @@ async function fixture(name: string) {
   return { ws, tenant, database, boardOf, ghost, platformDb };
 }
 
-test("a step's render is filed only where the chat's maker may file: someone else's private board is refused for a member and an admin alike, with nothing held, reserved or metered; their own board, and an admin approving a member's own step there, still work", async () => {
+test("a render request naming a step is refused for a member and an admin alike, on any board, with one answer and nothing held, reserved or metered", async () => {
   const f = await fixture("reach");
   const { prepareGeneration } = await import("../../lib/generationAdmission");
   const body = (extra: Record<string, unknown>) => ({ model: "grok-imagine-video", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, ...extra });
@@ -74,19 +74,16 @@ test("a step's render is filed only where the chat's maker may file: someone els
     reservations: Number((await f.platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM generation_reservations WHERE workspace_id=?", args: [f.ws.id] })).rows[0].n),
   }), { user: user("u_member") });
   const before = await money();
-  const refused = { ok: false, status: 404, body: { error: "No such project." } };
-  /* A member's chat on someone else's private board, and an admin's chat on the member's: refused. */
-  expect(await ask(as("u_member"), "st_cross")).toEqual(refused);
-  expect(await ask(as("u_admin", "admin"), "st_admin_cross")).toEqual(refused);
-  /* A board that is none (a private-board id nobody owns) is refused with the very same answer: nothing says whether it exists. */
-  expect(await ask(as("u_member"), "st_ghost")).toEqual(refused);
-  /* A teammate's shared board is for looking at: a render is not filed into it. */
-  expect(await ask(as("u_member"), "st_shared")).toEqual(refused);
+  const gone = { ok: false, status: 404, body: { error: "That step is gone." } };
+  /* Someone else's private board, a board that is none, a teammate's shared board, the maker's own board, a shared production, and an admin's claim of a member's step. */
+  expect(await ask(as("u_member"), "st_cross")).toEqual(gone);
+  expect(await ask(as("u_admin", "admin"), "st_admin_cross")).toEqual(gone);
+  expect(await ask(as("u_member"), "st_ghost")).toEqual(gone);
+  expect(await ask(as("u_member"), "st_shared")).toEqual(gone);
+  expect(await ask(as("u_member"), "st_own")).toEqual(gone);
+  expect(await ask(as("u_member"), "st_plain")).toEqual(gone);
+  expect(await ask(as("u_admin", "admin"), "st_apprv")).toEqual(gone);
   expect(await money(), "nothing was held, reserved or metered").toEqual(before);
-  /* The maker's own board works; so does a shared production; so does an admin approving the member's own step on the member's own board (owner, 13 Oct). */
-  expect(await ask(as("u_member"), "st_own")).toMatchObject({ ok: true, project: f.boardOf("u_member") });
-  expect(await ask(as("u_member"), "st_plain")).toMatchObject({ ok: true, project: "proj_plain" });
-  expect(await ask(as("u_admin", "admin"), "st_apprv")).toMatchObject({ ok: true, project: f.boardOf("u_member") });
 });
 
 function loadRoute<T>(file: string, who: () => { user: ReturnType<typeof user> }, extra: Record<string, unknown> = {}): T {

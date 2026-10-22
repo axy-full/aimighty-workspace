@@ -18,7 +18,8 @@ import { uploadOpenableBy, type Viewer } from "./uploadAccess";
 import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { shotCapAdmin, shotCapGate } from "./shotCap";
+import { isPersonApprover } from "./workbench/plan-approval";
+import { PEOPLE_ONLY, isAgentId } from "./security/people-only";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { engineEnabled } from "./engineGate";
 import { VendorPriceUnavailable, fileVendorQuote } from "./vendorPriceFile";
@@ -170,6 +171,13 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   if (!(await lipSyncOnHere(undefined, seams))) return admissionReply({ error: "There is no such tool here." }, { status: 404 });
   const body = structuredClone(input) as Record<string, unknown>;
   const quoteOnly = body.quoteOnly === true;
+  /* Approving spend is a person's (CLAUDE.md rule 14): an Atomik identity (`agent:*`, or any machine id) and a run marked as approved by
+     Auto never press here, whatever role they carry. The per-shot cap used to be the only thing at this door that refused one (it was
+     retired on 21 Oct 2026), so the refusal is said here, before anything is priced, held or written. Pricing stays open to them (a quote,
+     or a preparation that stops at its checkpoint). A token's press is a person's token: it is held to the token's own ceiling below (#854). */
+  const pressing = !quoteOnly && !(options.checkpoint && !options.requestClaim);
+  if (pressing && (!isPersonApprover(got.user.id) || isAgentId(got.user.id) || options.run?.auto === true))
+    return admissionReply({ error: PEOPLE_ONLY }, { status: 403 });
   await ready();
   /* The person this request acts for (the signed-in person, or an Atomik run's owner): none, and nothing is read. */
   const viewer = await actingViewer();
@@ -191,11 +199,9 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
 
   let projectId = body.projectId ? String(body.projectId) : null;
   const shotId = body.shotId ? String(body.shotId) : null;
-  let shotCode: string | null = null;
   if (shotId) {
     const shot = await getShot(shotId);
     if (!shot) return admissionReply({ error: "That shot is gone." }, { status: 400 });
-    shotCode = shot.code;
     if (projectId && shot.projectId && shot.projectId !== projectId) return admissionReply({ error: "That shot belongs to another production." }, { status: 400 });
     projectId ??= shot.projectId;
   }
@@ -213,11 +219,6 @@ export async function admitLipSync(input: Record<string, unknown>, got: Admissio
   /* The approval unit (lib/credits.ts quotedCredits), through the margin table, keyed by the model. No figure of ours. */
   const estimatedCredits = quotedCredits(usd, model);
   const inCredits = creditsApply(requireTenant());
-  /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. Refused here, on the quote and the press, before any row is written, so no failed take is left in the Library. */
-  if (shotId && shotCode) {
-    const stop = await shotCapGate({ shotId, code: shotCode, takeUsd: usd, modelId: model, isAdmin: shotCapAdmin(got, options.run?.auto === true) });
-    if (stop) return admissionReply({ error: stop, needsAdmin: true }, { status: 403 });
-  }
   if (quoteOnly)
     return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : usd, unit: inCredits ? "cr" : "usd", seconds, model, syncMode });
   if (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number))
