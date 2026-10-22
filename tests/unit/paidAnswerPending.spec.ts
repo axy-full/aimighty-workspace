@@ -436,14 +436,18 @@ test("POST /api/atomik/treatment/scene opts in: pending past the deadline, finis
   const atomikDocs = await import("../../lib/atomikDocs");
   const treatment = { logline: `A courier on the last night train ${SLOW}`, setup: {}, scenes: [{ n: 1, title: "Platform", secs: 12, prose: "Rain on the platform." }], updatedAt: 1 };
   /* The Treatment's prose is the Treatment writer's (owner, 22 Oct 2026): one set up here, an OpenAI catalogue id under the mocked engines. */
-  const prior = process.env.TREATMENT_WRITER_MODEL;
-  process.env.TREATMENT_WRITER_MODEL = "gpt-5.6-sol";
+  const prior = process.env.TREATMENT_WRITER_MODEL, priorCatalog = process.env.MODEL_CATALOG;
+  /* Read off the checked-in catalogue snapshot (served whole under the mocked engines), never the gateway's live list. */
+  process.env.TREATMENT_WRITER_MODEL = "gpt-5.6-sol"; process.env.MODEL_CATALOG = "static";
   try {
     const loaded = await route("app/api/atomik/treatment/scene/route.ts", ws, { "@/lib/atomikDocs": { ...atomikDocs, getTreatment: async () => treatment } });
     const { reply, settled } = await pressedPastDeadline(ws, loaded, "http://localhost/api/atomik/treatment/scene", { projectId: "p1", n: 1, maxCredits: APPROVED });
     expect(reply.scene.title).toBe("Mocked scene");
     expect(reply.writingCredits).toBe(settled.events[0].credits);
-  } finally { if (prior === undefined) delete process.env.TREATMENT_WRITER_MODEL; else process.env.TREATMENT_WRITER_MODEL = prior; }
+  } finally {
+    if (prior === undefined) delete process.env.TREATMENT_WRITER_MODEL; else process.env.TREATMENT_WRITER_MODEL = prior;
+    if (priorCatalog === undefined) delete process.env.MODEL_CATALOG; else process.env.MODEL_CATALOG = priorCatalog;
+  }
 });
 
 test("POST /api/atomik/memory/read opts in: pending past the deadline, finished after the reply, charged once", async () => {
