@@ -38,7 +38,9 @@ The setting's effort is sent wherever the model's catalogue entry offers it. Whe
 
 ## A model a request names is not a choice
 
-Every Atomik turn's model and effort come from the setting. A model or effort a request sends (older pages echo the quote's back) is ignored, never refused. A chat stored on any model still answers: its stored model is not asked, and each turn stores what it ran. If the setting's model is not being served, the turn is refused before anything is quoted or charged, in plain words that name no model. Nothing falls back to another paid model.
+Every Atomik turn's model and effort come from the setting. A model or effort a request sends (older pages echo the quote's back) is ignored, never refused. A chat stored on any model still answers: its stored model is not asked, and each turn stores what it ran.
+
+If the setting's model is not being served, Atomik thinks with the first served of the other settings' models (Medium, then Low, then High), then with the first served Claude model of the verified catalogue, in its order (`selectAtomikThinking`). The quote is the price of the model that runs, so nothing is charged for a model that did not run. If no Claude model is served, the turn is refused before anything is quoted or charged, in plain words that name no model: nothing falls back to another family. (The owner may prefer a refusal to this fallback; it is one rule in `selectAtomikThinking`.)
 
 ## Families
 
@@ -54,6 +56,6 @@ Every Atomik turn's model and effort come from the setting. A model or effort a 
 
 ## Money
 
-Nothing is charged for the setting itself. Each turn is priced through the price path at what it runs, and settled at what it used. This policy carries no band figure: each setting's band rates sit in the private policy and come with their own money PR.
+Nothing is charged for the setting itself. Each turn is priced through the price path at what it runs (its estimate includes the setting's effort), and settled at what it used. A turn runs under the ceiling its person approved on the quote, as before: every page sends one, and a request that sends an effort without one is refused before anything is claimed. A request that sends neither keeps the older, lower safety cap. This policy carries no band figure: each setting's band rates sit in the private policy and come with their own money PR.
 
 This policy does not change generation-engine selection, the rate card or already accepted job identity. Future model additions require an explicit policy update with evidence. Atomik never uses a signed-in Higgsfield account (owner, 28 September 2026).
