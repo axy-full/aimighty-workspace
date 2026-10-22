@@ -188,13 +188,16 @@ test('a breakdown phase has room for its whole result; a fenced answer with a tr
 test('the per-request ceiling rejects excessive work without exposing provider amounts', async () => {
   await runInTenant(workspace(), async () => {
     const { request } = await fixture(), h = harness();
+    /* The setting's own model (Medium), priced up: it is always the one that runs, whatever its price (a fallback never is dearer). */
+    const { ATOMIK_THINKING } = await import('../../lib/atomikModelPolicy');
+    h.deps.models = async () => [{ ...model, id: ATOMIK_THINKING.medium.model }];
     const base = Number((await quoteDevelopmentJob(request, 'owner', h.deps)).estimateUsd);
     const { input, output } = model.pricing as { input: number; output: number };
-    const priced = (usd: number) => { const k = usd / base; h.deps.models = async () => [{ ...model, pricing: { input: input * k, output: output * k } }]; };
+    const priced = (usd: number) => { const k = usd / base; h.deps.models = async () => [{ ...model, id: ATOMIK_THINKING.medium.model, pricing: { input: input * k, output: output * k } }]; };
     priced(150);
     expect((await quoteDevelopmentJob(request, 'owner', h.deps)).estimateUsd).toBeCloseTo(150, 0);
     priced(300);
-    await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow('The full development workflow is more than one request may spend: 3 agent steps with Claude. Choose a less expensive model or lower effort.');
+    await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow(/^Too long for one request\. Nothing billed\.$/);
   });
 });
 
@@ -505,4 +508,61 @@ test('a TEXT_DIRECT development job is quoted at its cold cache ceiling and sett
   } finally {
     for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
   }
+});
+
+/* The unknown-usage half of the direct test above, on the Claude door (development thinks with Claude since 22 Oct 2026). */
+test('a TEXT_DIRECT development job stops on unknown direct usage: uncertain at its estimate, one call, its receipt kept', async () => {
+  const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
+  delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = 'test-anthropic-key-never-sent'; process.env.TEXT_DIRECT = 'anthropic';
+  try {
+    await runInTenant(workspace(), async () => {
+      const { request } = await fixture();
+      const h = harness();
+      const priced: CatalogModel = { ...model, pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      h.deps.models = async () => [priced];
+      const { job } = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
+      h.deps.models = async () => { throw new Error('Must use saved model snapshot.'); };
+      /* No cache-write count: what the cached prompt cost cannot be known. */
+      h.deps.call = async input => { h.calls.push(input); return { text: JSON.stringify(input.stage === 'critique' ? { issues: ['Check.'], revisions: ['Preserve.'] } : output(input)),
+        inputTokens: 100, outputTokens: 20, directUsage: { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30 } } }; };
+      for (let index = 0; index < 4; index++) await runDevelopmentStep(job.id, 'owner', h.deps);
+      const [stopped] = await listDevelopmentJobs('owner', request.projectId, undefined, h.deps);
+      expect(stopped.status).toBe('uncertain');
+      expect(h.calls).toHaveLength(1);
+      expect(stopped.costUsd).toBeNull();
+      expect(h.events.at(-1)?.engineCostUsd).toBe(job.estimateUsd);
+      const receipt = (await db().execute({ sql: 'SELECT usage,response FROM workbench_development_steps WHERE job_id=? AND step_index=0', args: [job.id] })).rows[0];
+      expect(String(receipt.usage)).toContain('cached_tokens'); expect(String(receipt.response)).toContain('summary');
+    });
+  } finally {
+    for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
+});
+
+test('a retry after the Thinking setting changes finds its job: fingerprinted on the body as sent, never a 409 while the first one bills', async () => {
+  const { setSetting } = await import('../../lib/settings');
+  const { ATOMIK_THINKING } = await import('../../lib/atomikModelPolicy');
+  await runInTenant(workspace(), async () => {
+    const { request } = await fixture();
+    const h = harness();
+    /* Both settings' models served, each cheap enough: Medium runs the screenplay now, Low would after the change. */
+    h.deps.models = async () => [{ ...model, id: ATOMIK_THINKING.medium.model }, { ...model, id: ATOMIK_THINKING.low.model }];
+    await setSetting('atomikThinking', 'medium', 'admin');
+    const approved = await approve(request, h.deps);
+    const first = await prepareDevelopmentJob(approved, 'owner', undefined, h.deps);
+    expect(first.scheduled).toBe(true);
+    const stored = (await db().execute({ sql: 'SELECT fingerprint, request_body FROM workbench_development_jobs WHERE id=?', args: [first.job.id] })).rows[0];
+    expect(String(stored.fingerprint)).toBe(developmentSourceHash(JSON.stringify(approved)));
+    expect(JSON.parse(String(stored.request_body)).model).toBe(ATOMIK_THINKING.medium.model);
+    /* An admin flips the workspace to Low; the page retries the same body (a lost reply): the same job, not a conflict, not a second reservation. */
+    await setSetting('atomikThinking', 'low', 'admin');
+    const retry = await prepareDevelopmentJob(approved, 'owner', undefined, h.deps);
+    expect(retry).toMatchObject({ scheduled: false, job: { id: first.job.id } });
+    /* The served list changes too (Medium's model gone): still the same job. */
+    h.deps.models = async () => [{ ...model, id: ATOMIK_THINKING.low.model }];
+    expect((await prepareDevelopmentJob(approved, 'owner', undefined, h.deps)).job.id).toBe(first.job.id);
+    expect(h.reservations()).toBe(1);
+    /* A different body under the same request id is still refused. */
+    await expect(prepareDevelopmentJob({ ...approved, instructions: 'Something else.' }, 'owner', undefined, h.deps)).rejects.toThrow('different workflow');
+  });
 });

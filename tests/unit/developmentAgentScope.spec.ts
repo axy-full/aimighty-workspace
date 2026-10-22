@@ -132,7 +132,7 @@ test('a script too long for the writer to return whole is refused before any quo
     await save(p);
     const h = harness(() => ({}));
     const pages = Math.ceil(p.script.length / 1800);
-    await expect(quoteDevelopmentJob(request(p, 'write', { fromBeats: true }), 'owner', h.deps)).rejects.toThrow(`too long to redraft in one pass: about ${pages} pages, and Claude returns up to about 46`);
+    await expect(quoteDevelopmentJob(request(p, 'write', { fromBeats: true }), 'owner', h.deps)).rejects.toThrow(`Too long to redraft in one request: about ${pages} pages, and up to about 46 fit. Edit it in Brief & Script. Nothing billed.`);
     expect(h.calls).toHaveLength(0);
     expect(h.reservations()).toBe(0);
   });
@@ -307,7 +307,7 @@ test('a redraft is sized by the room the reasoning leaves, not the whole output 
       /* A lower effort in the request is not a way round it: the setting's effort is what the script has to fit beside. */
       const asked = request(p, 'write', { fromBeats: true, model: 'openai/gpt-5.6-sol', effort: 'low' });
       if (fits) expect((await quoteDevelopmentJob(asked, 'owner', h.deps)).calls).toBe(3);
-      else await expect(quoteDevelopmentJob(asked, 'owner', h.deps)).rejects.toThrow(`too long for ${effortful.name} to redraft whole at this effort`);
+      else await expect(quoteDevelopmentJob(asked, 'owner', h.deps)).rejects.toThrow(/^Too long to redraft in one request: about \d+ pages\. Edit it in Brief & Script\. Nothing billed\.$/);
       expect(h.calls).toHaveLength(0);
       expect(h.reservations()).toBe(0);
     });

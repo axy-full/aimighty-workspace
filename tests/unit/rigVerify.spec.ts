@@ -21,6 +21,7 @@ import { ATOMIK_IMAGE_TOKENS } from '../../lib/workbench/atomik-reference-types'
 import { textCostUsd, type CatalogModel } from '../../lib/catalog';
 import { billCredits } from '../../lib/creditTerms';
 import type { MeterEvent } from '../../lib/meter';
+import { ATOMIK_THINKING } from '../../lib/atomikModelPolicy';
 
 /* The agentic Rig, step 5 (plan PR 7): a Verify card checks a take against its masters, priced first, free to read again. */
 
@@ -32,7 +33,8 @@ const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude',
   pricing: { input: .0000001, output: .0000003 }, inputModalities: ['text', 'image'], outputModalities: ['text'] };
 const blind: CatalogModel = { ...model, inputModalities: ['text'] };
 /** Test fixture only: a vision model that thinks, priced so its ceiling and its usual use differ by whole credits (the fixture's prices, not a real rate card). */
-const thinker: CatalogModel = { ...model, tags: ['reasoning'], pricing: { input: .00002, output: .0001 } };
+/* A pricier thinker is the judge's own model (Low; owner, 22 Oct 2026): a fallback is never dearer than the setting's model. */
+const thinker: CatalogModel = { ...model, id: ATOMIK_THINKING.low.model, tags: ['reasoning'], pricing: { input: .00002, output: .0001 } };
 /** A workspace on the platform's keys: its checks are priced and charged in credits. */
 function workspace(): TenantWorkspace {
   const id = randomUUID();
@@ -313,7 +315,7 @@ test('an unsure check needs a person; a check needs a model that can see; frames
     const other = fixture();
     other.assets = other.assets.map((a) => (a.id === 'take' ? { ...a, url: '/campaign/hero.webp' } : a));
     await save(other);
-    await expect(quoteDevelopmentJob(request(other), 'owner', harness({}, [blind]).deps)).rejects.toThrow(/cannot see images/);
+    await expect(quoteDevelopmentJob(request(other), 'owner', harness({}, [blind]).deps)).rejects.toThrow("Atomik can't see the take and its masters right now. Nothing billed.");
     await expect(quoteDevelopmentJob(request(other, { attachmentAssetIds: ['frame'] }), 'owner', h.deps)).rejects.toThrow(/take and its masters only/);
     await expect(quoteDevelopmentJob(request(other, { videoFrames: [{ assetId: 'take', uploadId: 'up-1', timeSeconds: 1 }] }), 'owner', h.deps)).rejects.toThrow(/Only a video take/);
     await expect(quoteDevelopmentJob({ ...request(other), kind: 'condense', videoFrames: [{ assetId: 'take', uploadId: 'up-1', timeSeconds: 1 }] }, 'owner', h.deps)).rejects.toThrow(/Only a Verify check takes sampled frames/);
@@ -369,7 +371,8 @@ test('a check is quoted at what one usually uses while its job holds the ceiling
     expect(u.events.map((e) => [e.status, e.engineCostUsd, e.unbilled])).toEqual([['failed', u.reserved[0].engineCostUsd, undefined]]);
     /* Every other agent step is still quoted at its ceiling, with nothing more held. */
     await save({ ...project, brief: 'A courier crosses the dunes at dawn.' });
-    const idea = await quoteDevelopmentJob({ ...request(project), kind: 'idea', nodeId: undefined }, 'owner', h.deps);
+    /* An idea is a Writing turn, at the setting (Medium): its own model, at the same fixture price. */
+    const idea = await quoteDevelopmentJob({ ...request(project), kind: 'idea', nodeId: undefined }, 'owner', harness({}, [{ ...thinker, id: ATOMIK_THINKING.medium.model }]).deps);
     expect(idea.estimateCredits).toBeGreaterThan(0);
     expect(idea.holdCredits).toBeUndefined();
   });

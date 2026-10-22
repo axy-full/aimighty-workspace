@@ -31,6 +31,8 @@ import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
 import { claimVerifyKey, compileVerify, mockVerifyReply, storedVerificationFor, verificationStatements, VerifyError } from './verify-server';
 import { THINKING_UNAVAILABLE, selectAtomikThinking, type AtomikTurn } from '../atomikModelPolicy';
+import { aliasModel } from '../modelAliases';
+import { DEFAULT_TEXT_MODELS } from '../platformLayer';
 import { workspaceThinking } from '../atomikThinking';
 import { verifyLikelyTokens, verifyPrompt, type VerifySnapshot } from './verify-judge';
 import { FRAMES_PER_CHUNK, developmentStages, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
@@ -369,8 +371,10 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   catch (error) { throw new DevelopmentError((error as Error).message); }
   const models = await deps.models(), menu = developmentModels(models);
   const model = models.find(model => model.id === input.model && menu.some(entry => entry.id === model.id));
-  if (!model) throw new DevelopmentError('Choose an available thinking model with confirmed pricing.', 422);
-  if (images && !canSee(model)) throw new DevelopmentError(`${model.name} cannot see images. Choose an agent model that can ${input.kind === 'verify' ? 'see the take and its masters' : 'read the drawing'}.`, 422);
+  /* Every refusal in here comes before anything is reserved or sent (a quote, or a start before its claim): "Nothing billed" is true. None
+     names the model or offers a choice the person does not have (Amendment (iii) §E: the model and effort are the Thinking setting's). */
+  if (!model) throw new DevelopmentError(THINKING_UNAVAILABLE, 503);
+  if (images && !canSee(model)) throw new DevelopmentError(`Atomik can't ${input.kind === 'verify' ? 'see the take and its masters' : 'read the drawing'} right now. Nothing billed.`, 422);
   const answer = developmentAnswerTokens(input.kind);
   const reasoning = atomikReasoningRequest(model, input.effort, answer, answer);
   /* A redraft returns the whole script: one too long for the answer would fail only after it is paid for.
@@ -379,8 +383,8 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     const room = Math.min(answer, reasoning.maxTokens - atomikReasoningAllowance(model, input.effort));
     const tooLong = redraftTooLong(base.length, room);
     if (tooLong && !redraftTooLong(base.length, Math.min(answer, reasoning.maxTokens)))
-      throw new DevelopmentError(`This script is too long for ${model.name} to redraft whole at this effort: about ${tooLong.pages} pages. Choose a lower effort, or edit it in Brief & Script.`, 422);
-    if (tooLong) throw new DevelopmentError(`This script is too long to redraft in one pass: about ${tooLong.pages} pages, and ${model.name} returns up to about ${tooLong.maxPages}. Edit it in Brief & Script instead.`, 422);
+      throw new DevelopmentError(`Too long to redraft in one request: about ${tooLong.pages} pages. Edit it in Brief & Script. Nothing billed.`, 422);
+    if (tooLong) throw new DevelopmentError(`Too long to redraft in one request: about ${tooLong.pages} pages, and up to about ${tooLong.maxPages} fit. Edit it in Brief & Script. Nothing billed.`, 422);
   }
   /* A critique is saved within 12,000 bytes, so it never needs a long answer's room. */
   const critiqueReasoning = atomikReasoningRequest(model, input.effort, 4000);
@@ -390,9 +394,9 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     const base = Buffer.byteLength(promptFor(snapshot, input, chunk) + developmentInstructions(input.kind, stage), 'utf8') + 2048;
     const prior = stage === 'draft' ? 0 : stage === 'critique' ? resultBytes : resultBytes + DEVELOPMENT_CRITIQUE_BYTES;
     const inputTokens = base + prior + images * ATOMIK_IMAGE_TOKENS;
-    if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) throw new DevelopmentError('This model has too little context for the complete source and review stages. Choose a larger-context model or shorten the project brief.', 422);
+    if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) throw new DevelopmentError('Too long for one request: shorten the project brief. Nothing billed.', 422);
     const cost = textQuoteCostUsd(model, inputTokens, maxTokens, isDirectText(model.id));
-    if (cost == null || !Number.isFinite(cost) || cost < 0) throw new DevelopmentError('The selected model has no confirmed token price.', 503);
+    if (cost == null || !Number.isFinite(cost) || cost < 0) throw new DevelopmentError("Atomik's thinking has no confirmed price right now. Nothing billed.", 503);
     return { chunk: chunk.index, stage, cost, maxTokens };
   }));
   const estimateUsd = estimates.reduce((sum, step) => sum + step.cost, 0);
@@ -400,8 +404,8 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
   /* The dollars are the model vendor's. They are stated only to a workspace that pays that vendor
      itself; one on the platform's keys is told the same without them. */
   if (estimateUsd > limit) throw new DevelopmentError(paidByPlatform(textKeyName(input.model))
-    ? `The full development workflow is more than one request may spend: ${estimates.length} agent steps with ${model.name}. Choose a less expensive model or lower effort.`
-    : `The full development workflow exceeds the per-request spending ceiling: at most $${estimateUsd.toFixed(2)} across ${estimates.length} agent steps with ${model.name}, against $${limit.toFixed(2)} per request. Choose a less expensive model or lower effort.`, 409);
+    ? 'Too long for one request. Nothing billed.'
+    : `Too long for one request: at most $${estimateUsd.toFixed(2)} across ${estimates.length} steps, against $${limit.toFixed(2)} per request. Nothing billed.`, 409);
   const sourceHash = developmentSourceHash(canonical);
   const estimateCredits = paidByPlatform(textKeyName(input.model)) ? billCredits(estimateUsd, 'text') : 0;
   /* A Verify check is quoted at what one usually uses (lib/workbench/verify-judge.ts verifyLikelyTokens), never above
@@ -411,7 +415,7 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
     const tokens = verifyLikelyTokens({ textBytes: Buffer.byteLength(promptFor(snapshot, input, chunks[0]) + developmentInstructions(input.kind, 'refine'), 'utf8'),
       images, checks: snapshot.verify?.checks.length ?? 0, thinkingAllowance: atomikReasoningAllowance(model, input.effort) });
     const usd = textCostUsd(model, tokens.inputTokens, tokens.outputTokens);
-    if (usd == null || !Number.isFinite(usd) || usd < 0) throw new DevelopmentError('The selected model has no confirmed token price.', 503);
+    if (usd == null || !Number.isFinite(usd) || usd < 0) throw new DevelopmentError("Atomik's thinking has no confirmed price right now. Nothing billed.", 503);
     const capped = Math.min(usd, estimateUsd);
     likely = { usd: capped, credits: paidByPlatform(textKeyName(input.model)) ? Math.min(billCredits(capped, 'text'), estimateCredits) : 0 };
   }
@@ -457,7 +461,8 @@ async function publicJob(row: Row, offset = 0, withResult = true, preloaded?: Pr
   const result = preloaded ? (preloaded.result == null ? null : { result: preloaded.result })
     : row.status === 'succeeded' && withResult ? (await db().execute({ sql: "SELECT result FROM workbench_development_steps WHERE job_id=? AND chunk_index=? AND stage='refine' AND status='succeeded'", args: [String(row.id), offset] })).rows[0] : null;
   return { id: String(row.id), requestId: input.requestId, projectId: input.projectId,
-    productionProjectId: String(row.production_project_id), kind: input.kind, model: input.model, effort: input.effort,
+    /* No thinking model or effort in what a member is sent (Amendment (iii) §E); the job row keeps them. */
+    productionProjectId: String(row.production_project_id), kind: input.kind,
     ...(input.kind === 'write' ? { source: input.fromBeats ? 'beats' as const : input.fromJobId ? 'draft' as const : 'prompt' as const } : {}),
     ...(input.kind === 'sketch' ? { shotId: input.shotId, sketchAssetId: input.sketchAssetId } : {}),
     ...(input.kind === 'frames' && input.shotId ? { shotId: input.shotId } : {}),
@@ -509,20 +514,27 @@ export async function prepareDevelopmentJob(input: DevelopmentRequest, owner: st
   let release!: () => void;
   const tail = new Promise<void>(resolve => { release = resolve; }); preparationTails.set(key, tail);
   await previous;
-  /* A job is fingerprinted on the body as it runs (the setting's model and effort) and on the body as sent: a retry of either still finds it. */
-  const accepted = new Set([developmentSourceHash(JSON.stringify(input))]);
-  try { return await prepareUnlocked(await developmentThinking(input, dependencies(overrides)), owner, token, overrides, accepted); }
+  try { return await prepareUnlocked(input, owner, token, overrides); }
   finally { release(); if (preparationTails.get(key) === tail) preparationTails.delete(key); }
 }
-async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>, accepted = new Set<string>()) {
+/* A job saved before 22 Oct 2026 was fingerprinted on its body after the old alias step (a dropped id as its alias; Auto as the platform's
+   default for ideas): its retry still finds it. */
+const legacyFingerprint = (sent: DevelopmentRequest) => {
+  const model = aliasModel(sent.model);
+  return developmentSourceHash(JSON.stringify({ ...sent, model: model === 'auto' ? DEFAULT_TEXT_MODELS.idea : model }));
+};
+async function prepareUnlocked(sent: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>) {
   await developmentReady();
-  const deps = dependencies(overrides), fingerprint = developmentSourceHash(JSON.stringify(input));
-  accepted.add(fingerprint);
-  const found = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE owner=? AND request_id=?', args: [owner, input.requestId] })).rows[0];
+  /* Fingerprinted on the body as sent, as the workbench agent is (atomik-server): the same request sent again finds its job whatever the
+     Thinking setting, or the models served, became meanwhile. What runs is decided only for a new job, below. */
+  const deps = dependencies(overrides), fingerprint = developmentSourceHash(JSON.stringify(sent));
+  const accepted = new Set([fingerprint, legacyFingerprint(sent)]);
+  const found = (await db().execute({ sql: 'SELECT * FROM workbench_development_jobs WHERE owner=? AND request_id=?', args: [owner, sent.requestId] })).rows[0];
   if (found) {
     if (!accepted.has(String(found.fingerprint))) throw new DevelopmentError('This request ID belongs to a different workflow. Start a new request.', 409);
     return { job: await publicJob(found), scheduled: false };
   }
+  const input = await developmentThinking(sent, deps);
   if (!input.sourceHash || input.maxCredits == null || (!paidByPlatform(textKeyName(input.model)) && input.maxUsd == null)) throw new DevelopmentError('Review the complete workflow quote before starting.');
   const compiled = await compile(input, owner, deps);
   await deps.auth(input.model);
