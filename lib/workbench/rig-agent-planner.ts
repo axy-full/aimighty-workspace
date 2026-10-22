@@ -2,7 +2,7 @@ import { ToolLoopAgent, Output, isStepCount, tool, type LanguageModel, type Lang
 import { finalToolStep } from "../language-provider";
 import type { LanguageModelV4, LanguageModelV4Content, LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { z } from "zod";
-import { THINKING_UNAVAILABLE, isAtomikModel } from "../atomikModelPolicy";
+import { NO_MODEL_NAME, THINKING_UNAVAILABLE, isAtomikModel } from "../atomikModelPolicy";
 import { textCostUsd, textQuoteCostUsd, type CatalogModel } from "../catalog";
 import { ATOMIK_IMAGE_TOKENS, ATOMIK_MAX_VISUALS } from "./atomik-reference-types";
 import { directTextCostUsd } from "../openai-direct";
@@ -46,6 +46,7 @@ export class PlannerError extends Error {
 export function plannerInstructions(): string {
   return [
     "You are Atomik, laying out a production's Rig board for a film team. The board is shared: your cards appear for everyone once a person approves your proposal.",
+    NO_MODEL_NAME,
     "Plan with the tools. create_node makes a card: kind cast (a person), environment (a place), element (a prop or thing), ref (any other reference picture), shot (a render card; its text is the shot's prompt), note (a direction note) or section (a heading). A reference card may hold a picture: pass its id from the board as `from`.",
     "wire({from, to}) feeds one card into another: wire the cast, places, elements and refs into the shots that use them, and notes into the shots they direct. Use a card already on the board by its id instead of making a duplicate. End with tidy().",
     "Rendering costs credits and is never part of this build: to name a shot to render next, call render({shot}); it is shown to the team as a priced next step. To suggest keeping a reference as a master, call lock({card}); a person does that.",

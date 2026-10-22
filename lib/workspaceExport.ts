@@ -10,6 +10,23 @@ import { publicRun } from "./pipeline/public";
 import type { CompiledPipeline } from "./pipeline/schema";
 
 // An allowlist keeps new credential/session tables out of customer exports.
+/**
+ * A Studio Atomik job as the export carries it: no thinking model and no effort, in the request or in its plan (Amendment (iii) §E:
+ * never disclosed). The job row keeps them, for settlement and the platform admin.
+ */
+function exportedAtomikJob(row: Row): Row {
+  const parse = (value: unknown): Record<string, unknown> | null => {
+    try { const parsed = JSON.parse(String(value)); return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null; } catch { return null; }
+  };
+  const request = parse(row.request_body), plan = row.result == null ? null : parse(row.result);
+  if (request) { delete request.model; delete request.effort; }
+  if (plan) {
+    delete plan.effort; plan.model = "atomik";
+    if (plan.referenceAdAnalysis && typeof plan.referenceAdAnalysis === "object") (plan.referenceAdAnalysis as Record<string, unknown>).model = "atomik";
+  }
+  return { ...row, ...(request ? { request_body: JSON.stringify(request) } : {}), ...(plan ? { result: JSON.stringify(plan) } : {}) };
+}
+
 const SHARED_TABLES = [
   "projects",
   "productions",
@@ -144,11 +161,11 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     contents.workbench_atomik_jobs = tables.has("workbench_atomik_jobs")
       ? (
           await tx.execute({
-            sql: `SELECT id,project_id,production_project_id,request_id,request_body,model,status,
+            sql: `SELECT id,project_id,production_project_id,request_id,request_body,status,
         estimate_credits,credits,result,error,created_at,updated_at FROM workbench_atomik_jobs WHERE owner=?`,
             args: [ownerId],
           })
-        ).rows.map((row) => ({ ...row }))
+        ).rows.map((row) => exportedAtomikJob({ ...row }))
       : [];
     // Pipelines are creator-private, unlike legacy shared recipe/run rows.
     // Child attempts, quote summaries, selections and timelines are sanitized

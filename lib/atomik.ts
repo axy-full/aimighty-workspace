@@ -1,5 +1,5 @@
 import { languageReachable } from './language-provider';
-import { savedAtomikChoice } from "./atomikModelPolicy";
+import { NO_MODEL_NAME, savedAtomikChoice } from "./atomikModelPolicy";
 import { textJobPick, type TextJobTurn } from "./atomikThinking";
 import { aliasModel } from "./modelAliases";
 import { withMediaSources } from "./mediaMutation";
@@ -834,7 +834,7 @@ export async function keyStepEngines(off?: readonly string[]): Promise<Engine[]>
 
 /* ── The turn ─────────────────────────────────────────────────────────── */
 
-const SYSTEM = `You are Atomik, the producer inside a film studio's generation tool.
+const SYSTEM = `You are Atomik, the producer inside a film studio's generation tool. ${NO_MODEL_NAME}
 
 A person describes something they want made. You work out what to render, then propose each render for approval. You never spend anything yourself — every generation you propose stops at a card with a price on it, and a person presses Approve.
 

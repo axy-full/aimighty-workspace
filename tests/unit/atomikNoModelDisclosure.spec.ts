@@ -196,6 +196,130 @@ test("Studio Atomik and development: the quote, the accepted job and the job rea
   });
 });
 
+test("refusals and failures: the 409 when the estimate changed, the 502 unusable answer, and a failed job's error carry no thinking model, even when the provider's message names it", async () => {
+  const ws = await funded("errors");
+  const paidText = await import("../../lib/paidText");
+  const atomik = await import("../../lib/atomik");
+  const ideas = await route("app/api/atomik/ideas/draft/route.ts");
+  const turn = await route("app/api/atomik/[id]/route.ts");
+  /* The writer answers, but not with a logline: refused at zero (502), in words that name no model. */
+  const unusable = await route("app/api/atomik/ideas/draft/route.ts", { "@/lib/paidText": { ...paidText, runPaidText: async () => ({ id: "text_x", text: "not a logline", costUsd: 0, engine: "anthropic", credits: 0 }) } });
+  await inTenant(ws, async () => {
+    const quote = await answer(await ideas.POST!(json("/api/atomik/ideas/draft", { brief: "A lighthouse.", quoteOnly: true })));
+    const changed = await answer(await ideas.POST!(json("/api/atomik/ideas/draft", { brief: "A lighthouse.", maxCredits: 0, ...SENT })));
+    expect(Number(quote.body.estimateCredits)).toBeGreaterThan(0);
+    expect(changed.status).toBe(409);
+    expectNothingDisclosed("ideas 409 estimate changed", changed.body);
+    const bad = await answer(await unusable.POST!(json("/api/atomik/ideas/draft", { brief: "A lighthouse.", maxCredits: 100 })));
+    expect(bad.status).toBe(502);
+    expectNothingDisclosed("ideas 502 unusable answer", bad.body);
+    const id = await atomik.createChat({ userId: person.id, projectId: null, model: "auto", agentMode: "ask" });
+    const turnChanged = await answer(await turn.POST!(json(`/api/atomik/${id}`, { text: "Plan two shots.", maxCredits: 0 }), { params: Promise.resolve({ id }) }));
+    expect(turnChanged.status).toBe(409);
+    expectNothingDisclosed("chat turn 409 estimate changed", turnChanged.body);
+  });
+
+  /* A Studio Atomik job the provider refuses with a message that names the model and its effort. */
+  const { db } = await import("../../lib/db");
+  const { seedProject } = await import("../../lib/workbench/studio");
+  const server = await import("../../lib/workbench/atomik-server");
+  const dev = await import("../../lib/workbench/development-server");
+  const workbench = await route("app/api/workbench/atomik/route.ts");
+  const development = await route("app/api/workbench/development/route.ts");
+  const providerSays = JSON.stringify({ provider: "anthropic", error: { type: "invalid_request_error", message: `${ATOMIK_THINKING.medium.model} (claude-opus-5-5) does not accept reasoning_effort: high` } });
+  await inTenant(ws, async () => {
+    await server.atomikReady();
+    const project = seedProject();
+    project.id = `nd-${randomUUID()}`; project.productionProjectId = `real-${randomUUID()}`;
+    project.script = "EXT. DUNES - DAY\nWren follows her reflection.";
+    await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`${person.id}:${project.id}`, person.id, project.id, project.name, JSON.stringify(project), Date.now()] });
+    const ask = { projectId: project.id, requestId: `req_${randomUUID()}`, request: "Make a shot proposal for the dunes", depth: "Quick", refs: [] };
+    const quote = await answer(await workbench.POST!(json("/api/workbench/atomik", { ...ask, quoteOnly: true })));
+    const job = (await answer(await workbench.POST!(json("/api/workbench/atomik", { ...ask, maxCredits: quote.body.estimateCredits })))).body.job as { id: string };
+    await server.runAtomikJob(job.id, person.id, { run: async () => ({ ok: false, status: 400, text: providerSays }) });
+    const listed = await answer(await workbench.GET!(new Request(`https://particl.test/api/workbench/atomik?${new URLSearchParams({ projectId: project.id, requestId: ask.requestId })}`)));
+    const failed = (listed.body.jobs as { status: string; error: string }[])[0];
+    expect(failed.status).toBe("failed");
+    expect(failed.error).toContain("Nothing billed.");
+    expectNothingDisclosed("a failed Studio Atomik job", listed.body);
+
+    /* A development step whose provider call fails with the same words. */
+    const develop = { projectId: project.id, requestId: `req_${randomUUID()}`, kind: "screenplay" as const, model: "auto", effort: "auto" };
+    const devQuote = await dev.quoteDevelopmentJob(develop, person.id);
+    const { job: devJob } = await dev.prepareDevelopmentJob({ ...develop, sourceHash: devQuote.sourceHash, maxCredits: devQuote.estimateCredits }, person.id);
+    await dev.runDevelopmentStep(devJob.id, person.id, { call: async () => { throw Object.assign(new Error(providerSays), { statusCode: 400 }); } });
+    const read = await answer(await development.GET!(new Request(`https://particl.test/api/workbench/development?${new URLSearchParams({ projectId: project.id, jobId: devJob.id })}`)));
+    expect((read.body.job as { status: string }).status).toBe("failed");
+    expectNothingDisclosed("a failed development job", read.body);
+    /* The development state's job list, on its own (its model menu is the picker's until the Thinking control). */
+    const state = await answer(await development.GET!(new Request(`https://particl.test/api/workbench/development?${new URLSearchParams({ projectId: project.id })}`)));
+    expect((state.body.jobs as unknown[]).length).toBeGreaterThan(0);
+    expectNothingDisclosed("GET /api/workbench/development jobs", state.body.jobs);
+  });
+});
+
+test("the chat list, Verify scorecards, statements, the usage ledger and the export carry no thinking model or effort", async () => {
+  const ws = await funded("records");
+  const index = await route("app/api/atomik/route.ts");
+  const turn = await route("app/api/atomik/[id]/route.ts");
+  const { db } = await import("../../lib/db");
+  await inTenant(ws, async () => {
+    /* A turn that ran, so the chat, the meter and the ledgers hold a line of Atomik's thinking. */
+    const made = await answer(await index.POST!(json("/api/atomik", { projectId: null, ...SENT })));
+    const id = String(made.body.id), ctx = { params: Promise.resolve({ id }) };
+    const quote = await answer(await turn.POST!(json(`/api/atomik/${id}`, { quoteOnly: true, text: "Plan two shots." }), ctx));
+    expect((await turn.POST!(json(`/api/atomik/${id}`, { text: "Plan two shots.", maxCredits: quote.body.estimateCredits }), ctx)).status).toBe(200);
+    const listed = await answer(await index.GET!(new Request("https://particl.test/api/atomik")));
+    expect((listed.body.chats as unknown[]).length).toBeGreaterThan(0);
+    expectNothingDisclosed("GET /api/atomik chats", listed.body.chats);
+
+    /* A Verify scorecard stored with its judge's model: the list and a check already stored never send it. */
+    const { seedProject } = await import("../../lib/workbench/studio");
+    const server = await import("../../lib/workbench/atomik-server");
+    const verify = await import("../../lib/workbench/verify-server");
+    const development = await route("app/api/workbench/development/route.ts");
+    await server.atomikReady(); await verify.verifyReady();
+    const project = seedProject();
+    project.id = `nd-${randomUUID()}`; project.productionProjectId = `real-${randomUUID()}`;
+    await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`${person.id}:${project.id}`, person.id, project.id, project.name, JSON.stringify(project), Date.now()] });
+    const key = { takeId: "take_nd", masterSet: "[]", rubric: 1, framesKey: "" };
+    const hashes = verify.verifyKeyHashes(key);
+    await db().execute({ sql: `INSERT INTO take_verifications(id,production_id,project_id,verify_node_id,take_id,master_set_hash,master_set,masters,rubric,frames_hash,frames_key,frames,checks,verdict,judge_model,meter_event_id,credits,funded_by_platform,created_by,created_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [`tv_${randomUUID()}`, project.productionProjectId, project.id, "check", key.takeId, hashes.masterSetHash, key.masterSet, "[]", key.rubric, hashes.framesHash, key.framesKey, "[]", "[]", "pass", ATOMIK_THINKING.low.model, "m_nd", 2, 1, person.id, Date.now()] });
+    const list = await answer(await development.GET!(new Request(`https://particl.test/api/workbench/development?${new URLSearchParams({ projectId: project.id, verifications: "1" })}`)));
+    expect((list.body.verifications as unknown[]).length).toBe(1);
+    expectNothingDisclosed("GET /api/workbench/development?verifications=1", list.body);
+    /* The stored check a Verify quote answers with (development-server › storedVerificationFor reads it through the same mapper). */
+    expectNothingDisclosed("a stored check", await verify.storedVerification(key));
+
+    /* Statements, the usage ledger and the usage page: a line of Atomik's thinking says "Thinking". */
+    const { statementFor } = await import("../../lib/statements");
+    const { usageLedgerPage } = await import("../../lib/usageLedger");
+    const { creditUsage } = await import("../../lib/creditUsage");
+    const month = new Date().toISOString().slice(0, 7);
+    const statement = await statementFor(month, null);
+    expect(JSON.stringify(statement)).toContain("Thinking");
+    expectNothingDisclosed("a statement", statement);
+    const ledger = await usageLedgerPage({ source: "ledger", month: null, range: null, cursor: null, limit: 50, id: null, csv: false }, { id: person.id, admin: true });
+    expect(JSON.stringify(ledger.rows)).toContain("Atomik · Thinking");
+    expectNothingDisclosed("the usage ledger", ledger);
+    expectNothingDisclosed("the usage page", await creditUsage({ id: person.id, admin: true }));
+
+    /* The export: a Studio Atomik job without its model or effort, in its request or its plan. */
+    const workbench = await route("app/api/workbench/atomik/route.ts");
+    const ask = { projectId: project.id, requestId: `req_${randomUUID()}`, request: "Make a shot proposal", depth: "Quick", refs: [], ...SENT };
+    const wq = await answer(await workbench.POST!(json("/api/workbench/atomik", { ...ask, quoteOnly: true })));
+    const accepted = (await answer(await workbench.POST!(json("/api/workbench/atomik", { ...ask, maxCredits: wq.body.estimateCredits })))).body.job as { id: string };
+    const proposal = { intent: "shots", summary: "Wren at the dunes.", steps: ["Open wide."] };
+    await server.runAtomikJob(accepted.id, person.id, { run: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(proposal) } }], usage: { prompt_tokens: 10, completion_tokens: 10, cost: 0.001 } }) }) });
+    const { workspaceExport } = await import("../../lib/workspaceExport");
+    const exported = await workspaceExport(person.id, person.email) as unknown as { contents?: Record<string, unknown[]> } & Record<string, unknown>;
+    const jobs = (exported.contents ?? exported).workbench_atomik_jobs as Record<string, unknown>[];
+    expect(jobs.length).toBeGreaterThan(0);
+    expectNothingDisclosed("the export's workbench_atomik_jobs", jobs);
+  });
+});
+
 test("the matcher finds what it must and lets engines through", () => {
   expect(thinkingModelNames("Claude Opus 5.5 · High · up to 4 cr")).toEqual(["Claude Opus 5.5"]);
   expect(thinkingModelNames('{"model":"anthropic/claude-sonnet-5.5","x":"openai/gpt-5.6-sol"}')).toEqual(["claude-sonnet-5.5", "gpt-5.6-sol"]);

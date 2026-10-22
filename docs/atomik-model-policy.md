@@ -11,7 +11,13 @@ What a member is sent no longer names them:
 - a chat and its turns carry no model or effort;
 - the ideas, shot-list, Treatment-scene and memory-read replies carry none;
 - a Studio Atomik job, its plan and its quote carry none (a plan's `model` says only `atomik`);
-- a development quote and job carry none.
+- a development quote and job carry none;
+- a Verify scorecard (its list, and a check already stored) carries no judge model;
+- a statement line, a usage-ledger line and a usage page line for Atomik's thinking say "Thinking";
+- a failed job's error is Atomik's own words, never the provider's message ("Atomik could not finish this request. Nothing billed." where true, or what it was charged);
+- the workspace export carries a Studio Atomik job without its model or effort, in its request or its plan.
+
+Every Atomik thinking prompt also tells the model not to name itself (`NO_MODEL_NAME`).
 
 The rows behind them keep the model and effort, for settlement and the platform admin. tests/unit/atomikNoModelDisclosure.spec.ts drives each route and checks it.
 
@@ -19,9 +25,7 @@ The model and effort pickers stay on the screens until the Thinking control repl
 
 Still to strip (they predate this policy and are left for their own PR):
 - the pickers' menus (GET `/api/atomik`, `/api/workbench/atomik`, `/api/workbench/development`);
-- an idea's saved model (GET `/api/atomik/ideas`);
-- statements;
-- the usage ledger;
+- an idea's saved model (GET `/api/atomik/ideas`), and an idea or a Treatment scene saved before this policy, in the export;
 - `/api/settings` `models.text`;
 - the `/api/engines` refiner;
 - `/api/platform`;
@@ -65,7 +69,7 @@ The setting's effort is sent wherever the model's catalogue entry offers it. Whe
 
 Every Atomik turn's model and effort come from the setting. A model or effort a request sends is ignored, never refused. A chat stored on any model still answers: its stored model is not asked, and each turn stores what it ran.
 
-If the setting's model is not being served, Atomik thinks with a served Claude model whose catalogue price is no higher than the setting's own model's, the closest below it first (`selectAtomikThinking`). It never falls back to a dearer model, so a Low turn never falls back upward. The quote is the price of the model that runs. If none qualifies, the turn is refused before anything is quoted or charged, in plain words that name no model. Nothing falls back to another family.
+If the setting's model is not being served, Atomik thinks with a served Claude model none of whose rates (input, output, cache read, cache write) is higher than the setting's own model's catalogue rates, the closest below first (`selectAtomikThinking`). A cache rate the candidate does not state is not compared yet (`CACHE_RATE_REQUIRED`, pending the owner: tests/unit/model-trace.spec.ts, a guard, serves a model priced by input and output alone); a direct door refuses such a model in any case. It never falls back to a dearer model, so a Low turn never falls back upward. The quote is the price of the model that runs. If none qualifies, the turn is refused before anything is quoted or charged, in plain words that name no model. Nothing falls back to another family.
 
 ## Families
 
@@ -90,8 +94,9 @@ Nothing is charged for the setting itself. Each turn is priced through the price
 Every run of Atomik's thinking for ideas, shot lists, a Treatment scene and the memory read needs the ceiling its person approved on the quote, whatever the caller sent. Without one it is refused before anything is claimed or charged.
 
 A chat turn keeps the earlier rule, pending the owner:
-- one that sends an effort (every page does) needs the approved ceiling;
-- one that sends neither runs under the older, lower safety cap.
+- one that carries `maxCredits` runs under that approved ceiling (the page sends it with every turn; the page no longer sends an effort);
+- one that sends an effort without `maxCredits` is refused;
+- one that sends neither runs under `ATOMIK_MAX_REQUEST_USD` alone: $1 when it is unset, at most $5 when it is set.
 
 This policy carries no band figure: each setting's band rates sit in the private policy and come with their own money PR.
 

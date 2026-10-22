@@ -8,6 +8,9 @@ import { PROVIDERS } from "./providers";
 import { spendByPerson, type LedgerViewer } from "./usageLedger";
 import { visibleUsageParams } from "./usageParams";
 
+/** A usage line's model as a member reads it: Atomik's thinking says "Thinking", never its model (Amendment (iii) §E); the meter row keeps it. */
+const shownModel = (kind: string, model: string) => (kind === "text" ? { model: "atomik", label: "Thinking" } : { model, label: modelLabel(model) });
+
 type Row = Record<string, unknown>;
 const charge =
   "CASE WHEN paid_by_platform=1 THEN COALESCE(billed_credits,0) ELSE 0 END";
@@ -153,8 +156,7 @@ export async function creditUsage(viewer: LedgerViewer) {
     timing,
     refines: [],
     byModel: models.rows.map((r) => ({
-      model: String(r.model),
-      label: modelLabel(String(r.model)),
+      ...shownModel(String(r.kind), String(r.model)),
       provider: String(r.engine),
       kind: String(r.kind),
       ...amount(r),
@@ -176,12 +178,11 @@ export async function creditUsage(viewer: LedgerViewer) {
       /* Where the take is NOW (generations.project_id: it may have been moved into a private board since the meter line was written); a line with no take behind it (text, training) has the meter's own project. */
       const now_ = take ? take.project_id : r.project_id;
       if (now_ != null && !takesListed(String(now_)))
-        return { id: "", model: String(r.model), label: modelLabel(String(r.model)), provider: String(r.engine), kind: String(r.kind), status: String(r.status), title: "A private board", prompt: "", credits: Number(r.credits), params: {}, createdAt: Number(r.created_at), refineLabel: null };
+        return { id: "", ...shownModel(String(r.kind), String(r.model)), provider: String(r.engine), kind: String(r.kind), status: String(r.status), title: "A private board", prompt: "", credits: Number(r.credits), params: {}, createdAt: Number(r.created_at), refineLabel: null };
       const detail = descriptionsById.get(String(r.id));
       return {
         id: String(r.id),
-        model: String(r.model),
-        label: modelLabel(String(r.model)),
+        ...shownModel(String(r.kind), String(r.model)),
         provider: String(r.engine),
         kind: String(r.kind),
         status: String(r.status),
