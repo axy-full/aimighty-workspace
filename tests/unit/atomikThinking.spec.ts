@@ -24,8 +24,10 @@ process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
 process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
-/* The checked-in catalogue snapshot, never the gateway's live list: nothing here reaches the network. */
-process.env.MODEL_CATALOG = "static";
+/* The checked-in catalogue snapshot, never the gateway's live list: nothing here reaches the network. Put back for the specs after this one. */
+const priorCatalog = process.env.MODEL_CATALOG;
+test.beforeAll(() => { process.env.MODEL_CATALOG = "static"; });
+test.afterAll(() => { if (priorCatalog === undefined) delete process.env.MODEL_CATALOG; else process.env.MODEL_CATALOG = priorCatalog; });
 
 const HIGH = "anthropic/claude-fable-5.1", MEDIUM = "anthropic/claude-opus-5.5", LOW = "anthropic/claude-sonnet-5.5";
 
