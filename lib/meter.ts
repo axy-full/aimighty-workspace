@@ -64,9 +64,9 @@ export type MeterEvent = {
    */
   providerOutcome?: ProviderOutcome | null;
   /**
-   * What the vendor charged past the hold a person approved (lib/cinemaStudio.ts cinemaStudioSettlement),
-   * in its dollars, when `engineCostUsd` is already the figure capped at the hold. Information only: the
-   * platform absorbs it; it never changes `billed_credits`, and only the platform admin desk reads it back.
+   * What the vendor charged past the hold a person approved (lib/cinemaStudio.ts cinemaStudioSettlement), or past
+   * a sound's reservation (lib/renderWork.ts seal), in its dollars, when `engineCostUsd` is already the figure
+   * capped at it. Information only: the platform absorbs it; it never changes `billed_credits`, and only the platform admin desk reads it back.
    */
   overrunUsd?: number | null;
 };

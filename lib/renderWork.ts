@@ -818,7 +818,14 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     }
     const credits = produced.credits;
     // A per-minute task states its dollars itself; the credit tasks price from the plan.
-    const cost = produced.costUsd != null ? produced.costUsd : usdForCredits(credits, tier);
+    const reported = produced.costUsd != null ? produced.costUsd : usdForCredits(credits, tier);
+    /* A sound settles at what it cost, never past what was reserved for it: the figure its quote was priced from
+       (lib/audioAdmission.ts vendorUsd), so nobody is charged above the price they approved (rule 14), as a dub
+       settles at its reservation. What the vendor charged past it is the platform's, recorded for its admin desk
+       (lib/meter.ts overrunUsd). */
+    const reserved = job.kind === "audio" ? job.estUsd ?? usdForCredits(job.estCredits, null) : reported;
+    const over = reported > reserved;
+    const cost = over ? reserved : reported;
     await writeGenerationOutcome(
       {
         sql: `UPDATE generations
@@ -852,6 +859,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
         model: job.modelId,
         status: "succeeded",
         engineCostUsd: cost,
+        ...(over ? { overrunUsd: reported - reserved } : {}),
         durationMs: ms,
       },
     );
