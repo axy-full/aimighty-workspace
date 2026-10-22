@@ -117,6 +117,7 @@ test("any change to a guard or safety test is a full run, and the plan says it n
     "tests/unit/spend-buttons.spec.ts", "tests/unit/spend-ratchet.json", "tests/spend-buttons-workbench.spec.ts", "tests/helpers/paidRoutes.ts", "tests/unit/platformOwnerPrivacy.spec.ts",
     "tests/unit/v12-privacy.spec.ts", "tests/unit/new-interface-switch-off.spec.ts", "tests/unit/newInterfaceSwitch.spec.ts", "tests/unit/one-design-guard.spec.ts", "tests/unit/ui-names-guard.spec.ts",
     "tests/unit/v12-tooltip-audit.spec.ts", "tests/signin-retired-workbench.spec.ts", "tests/unit/signinRetiredGuard.spec.ts", "tests/audit-money-workbench.spec.ts", "tests/r1-port-paid-sends-workbench.spec.ts",
+    "tests/unit/demo-gaps-l5-client-link.spec.ts",
   ];
   for (const file of guards) {
     const plan = await pr([file], "release/1", "pull_request", unexposed);
