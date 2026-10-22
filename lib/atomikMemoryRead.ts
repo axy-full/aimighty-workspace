@@ -11,7 +11,7 @@ import { MEMORY_LIMITS, readFence, readProposals, type ReadResult } from "./atom
  *
  * It is a routine turn of Atomik's thinking (Low, or High when that is the
  * workspace's setting), which the route resolves with lib/atomik › resolveModel
- * and lib/atomikThinking › thinkingEffort — through the shared paid-text path
+ * and lib/atomikThinking › thinkingRun — through the shared paid-text path
  * (lib/paidText): a read-only quote first, which the page shows as about N
  * credits; then one bounded submission under the ceiling the person approved,
  * reserved before it is sent and charged, through the meter, what it actually

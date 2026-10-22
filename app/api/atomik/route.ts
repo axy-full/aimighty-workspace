@@ -3,12 +3,12 @@ import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
-import { listChats, createChat, engines, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, chatModeOf } from "@/lib/atomik";
+import { listChats, createChat, engines, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, chatModeOf, memberChat } from "@/lib/atomik";
 import { atomikEffortOptions } from "@/lib/atomik-reasoning";
 import { cleanAttachments } from "@/lib/attachments";
 import { effectiveRules } from "@/lib/rules";
 import { writerRulesByScope } from "@/lib/platformLayer";
-import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
+import { paidTextFailure, atomikQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
 import { menuFor, type CatalogModel } from "@/lib/catalog";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, plannerPresetsStale, refreshPlannerPresets } from "@/lib/atomikLibrary";
@@ -67,7 +67,8 @@ export const GET = withTenant(async function GET() {
     after(await reserveRecoveryContinuation("after-response", () => runWithStore(store, refreshPlannerPresets)));
   }
   return NextResponse.json({
-    chats,
+    /* No thinking model or effort on a chat a person is sent (lib/atomik › memberChat). The menu below is the picker's until the Thinking control replaces it. */
+    chats: chats.map((chat) => memberChat(chat)),
     engines: eng,
     models: {
       featured: menu.featured.map(shape),
@@ -95,7 +96,7 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     const inputs = await plannerInputs(auth.user.id, projectId);
     const viewOnly = Boolean(readProject && !projectId);
     /* The model and effort are the workspace's Thinking setting (lib/atomikThinking.ts): a sent model or effort is not a choice, and is ignored. */
-    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, viewOnly,
+    return atomikQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, viewOnly,
       context: [viewOnly ? VIEW_ONLY_INSTRUCTION : "", await projectContext(readProject)].filter(Boolean).join("\n\n"), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
       memory: await plannerMemoryText({ projectId: readProject, query: text, viewer: got.user.id }).catch(() => ""),

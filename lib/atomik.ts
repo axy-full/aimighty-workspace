@@ -232,6 +232,20 @@ export async function createChat(opts: {
   return chatId;
 }
 
+/**
+ * A chat as its person is sent it: no thinking model and no effort, on the chat or on any of its turns (Amendment (iii) §E: never
+ * disclosed). The rows keep them, for settlement and the platform admin; a step keeps its engine, which the person picks.
+ */
+export function memberChat<C extends Pick<Chat, "model" | "effort">>(chat: C): Omit<C, "model" | "effort"> {
+  const { model: _model, effort: _effort, ...rest } = chat;
+  void _model; void _effort;
+  return rest;
+}
+export function memberThread<T extends { chat: Chat; messages: Message[] }>(loaded: T | null): (Omit<T, "chat" | "messages"> & { chat: Omit<T["chat"], "model" | "effort">; messages: Omit<Message, "model" | "effort">[] }) | null {
+  if (!loaded) return null;
+  return { ...loaded, chat: memberChat(loaded.chat), messages: loaded.messages.map((m) => memberChat(m)) };
+}
+
 export async function getChat(chatId: string): Promise<{
   chat: Chat; messages: Message[]; steps: Step[];
 } | null> {

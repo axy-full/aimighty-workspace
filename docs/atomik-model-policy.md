@@ -1,24 +1,41 @@
 # Atomik's thinking
 
-Owner, 22 October 2026 (Amendment (iii), section E): "lets have 3 settings. High (Fable 5.1/55 high when it launches) Medium (Opus 5.5 high) Low (Sonnet 5.5 high) (never disclose to the user the models and effort settings".
+Owner, 22 October 2026 (Amendment (iii), section E): Atomik's thinking has three settings, and the models and effort settings behind them are never disclosed to the user.
 
 ## What a person sees
 
-Atomik's thinking has three settings, shown only as **High · Medium · Low** under the word Thinking. The model behind each setting and its effort are never shown to a person: not in the UI, History, receipts, exports, the API, error messages or "How Particl works". (Until the Thinking control replaces it in its own PR, the screens still show the older model picker, whose choice is now ignored; until a later PR strips them, API responses still carry model ids.)
+Atomik's thinking has three settings, shown only as **High · Medium · Low** under the word Thinking. The model behind each setting and its effort are never shown to a person: not in the UI, History, receipts, exports, the API, error messages or "How Particl works".
+
+What a member is sent no longer names them:
+- a quote carries its price only;
+- a chat and its turns carry no model or effort;
+- the ideas, shot-list, Treatment-scene and memory-read replies carry none;
+- a Studio Atomik job, its plan and its quote carry none (a plan's `model` says only `atomik`);
+- a development quote and job carry none.
+
+The rows behind them keep the model and effort, for settlement and the platform admin. tests/unit/atomikNoModelDisclosure.spec.ts drives each route and checks it.
+
+The model and effort pickers stay on the screens until the Thinking control replaces them (its own PR). Until then what a person picks there is ignored: every turn runs the setting.
+
+Still to strip (they predate this policy and are left for their own PR):
+- the pickers' menus (GET `/api/atomik`, `/api/workbench/atomik`, `/api/workbench/development`);
+- an idea's saved model (GET `/api/atomik/ideas`);
+- statements;
+- the usage ledger;
+- `/api/settings` `models.text`;
+- the `/api/engines` refiner;
+- `/api/platform`;
+- Crew;
+- the paid-text and Studio refusals that still suggest "lower effort" or "an economy model".
 
 ## Where the mapping lives
 
-`lib/atomikModelPolicy.ts`, and nowhere else. `ATOMIK_THINKING` maps each setting to a model id and an effort:
+`lib/atomikModelPolicy.ts`, and nowhere else: `ATOMIK_THINKING` maps each setting to a model id and an effort.
 
-| Setting | Model | Effort |
-|---|---|---|
-| High | Claude Fable 5.1 (`anthropic/claude-fable-5.1`) | high |
-| Medium (the default) | Claude Opus 5.5 (`anthropic/claude-opus-5.5`) | high |
-| Low | Claude Sonnet 5.5 (`anthropic/claude-sonnet-5.5`) | high |
-
-High moves to Fable 5.5 when it ships, by a policy update with evidence.
-
-Each entry can be overridden by env: `ATOMIK_THINKING_HIGH_MODEL` and `ATOMIK_THINKING_HIGH_EFFORT`, and the same for `MEDIUM` and `LOW`. A model override must be a verified Claude id from the catalogue (`VERIFIED_TEXT_MODEL_IDS`, written the catalogue's way, `anthropic/…`; the direct Anthropic door maps it to Anthropic's own id in `lib/textRoute.ts`). An effort override must be a named effort the reasoning compiler knows: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. Anything else is ignored and the default kept. A bad value never stops the app from starting.
+Each entry can be overridden by env: `ATOMIK_THINKING_HIGH_MODEL` and `ATOMIK_THINKING_HIGH_EFFORT`, and the same for `MEDIUM` and `LOW`.
+- A model override must be a verified Claude id from the catalogue (`VERIFIED_TEXT_MODEL_IDS`, written the catalogue's way, `anthropic/…`). The direct Anthropic door maps it to Anthropic's own id in `lib/textRoute.ts`.
+- An effort override must be a named effort the reasoning compiler knows: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`.
+- Anything else is ignored and the default kept. A bad value never stops the app from starting.
 
 ## Which turns run at which setting
 
@@ -27,7 +44,15 @@ Each entry can be overridden by env: `ATOMIK_THINKING_HIGH_MODEL` and `ATOMIK_TH
 - The interview (the Brief's questions), the plan and every Writing and Design turn run at the setting.
 - The judge (Reviewing), digests and routine turns run at Low, unless the setting is High.
 
-Today's turns: a chat turn and a board plan are plans. Ideas, shot lists and the development agent's writing steps are Writing. The development agent's frames, sketch, cast, environment and Rig steps, and a reference-ad review, are Design. The memory read and a condense are routine. A Verify check is the judge.
+Today's turns:
+
+| Turn kind | Turns |
+|---|---|
+| Plan | a chat turn, a board plan |
+| Writing | ideas, shot lists, the development agent's writing steps |
+| Design | the development agent's frames, sketch, cast, environment and Rig steps; a reference-ad review |
+| Routine | the memory read, a condense |
+| Judge | a Verify check |
 
 The setting's effort is sent wherever the model's catalogue entry offers it. Where the entry offers no effort control, none is sent and the model thinks at its own default. The board planner sends no effort of its own: its fixed output ceiling holds both the thinking and the answer.
 
@@ -38,9 +63,9 @@ The setting's effort is sent wherever the model's catalogue entry offers it. Whe
 
 ## A model a request names is not a choice
 
-Every Atomik turn's model and effort come from the setting. A model or effort a request sends (older pages echo the quote's back) is ignored, never refused. A chat stored on any model still answers: its stored model is not asked, and each turn stores what it ran.
+Every Atomik turn's model and effort come from the setting. A model or effort a request sends is ignored, never refused. A chat stored on any model still answers: its stored model is not asked, and each turn stores what it ran.
 
-If the setting's model is not being served, Atomik thinks with the first served of the other settings' models (Medium, then Low, then High), then with the first served Claude model of the verified catalogue, in its order (`selectAtomikThinking`). The quote is the price of the model that runs, so nothing is charged for a model that did not run. If no Claude model is served, the turn is refused before anything is quoted or charged, in plain words that name no model: nothing falls back to another family. (The owner may prefer a refusal to this fallback; it is one rule in `selectAtomikThinking`.)
+If the setting's model is not being served, Atomik thinks with a served Claude model whose catalogue price is no higher than the setting's own model's, the closest below it first (`selectAtomikThinking`). It never falls back to a dearer model, so a Low turn never falls back upward. The quote is the price of the model that runs. If none qualifies, the turn is refused before anything is quoted or charged, in plain words that name no model. Nothing falls back to another family.
 
 ## Families
 
@@ -52,10 +77,22 @@ If the setting's model is not being served, Atomik thinks with the first served 
 
 ## The Treatment writer
 
-`TREATMENT_WRITER` (`treatmentWriter()` in `lib/atomikModelPolicy.ts`) writes the Treatment deck's prose and nothing else; Claude, at the Thinking setting, does everything else. The owner sets it by env: `TREATMENT_WRITER_MODEL` (an OpenAI id, `openai/<id>` or a bare `gpt-…`) and `TREATMENT_WRITER_EFFORT` (default `high`). It is read when it is needed. With no writer set up, or one the catalogue does not serve, the Treatment's prose is refused before anything is quoted, held or charged: "The Treatment writer is not set up. Nothing billed."
+`TREATMENT_WRITER` (`treatmentWriter()` in `lib/atomikModelPolicy.ts`) writes the Treatment deck's prose and nothing else; Claude, at the Thinking setting, does everything else.
+
+The owner sets it by env: `TREATMENT_WRITER_MODEL` (an OpenAI id, `openai/<id>` or a bare `gpt-…`) and `TREATMENT_WRITER_EFFORT` (default `high`). It is read when it is needed.
+
+With no writer set up, or one the catalogue does not serve, the Treatment's prose is refused before anything is quoted, held or charged: "The Treatment writer is not set up. Nothing billed."
 
 ## Money
 
-Nothing is charged for the setting itself. Each turn is priced through the price path at what it runs (its estimate includes the setting's effort), and settled at what it used. A turn runs under the ceiling its person approved on the quote, as before: every page sends one, and a request that sends an effort without one is refused before anything is claimed. A request that sends neither keeps the older, lower safety cap. This policy carries no band figure: each setting's band rates sit in the private policy and come with their own money PR.
+Nothing is charged for the setting itself. Each turn is priced through the price path at what it runs (its estimate includes the setting's effort), and settled at what it used.
+
+Every run of Atomik's thinking for ideas, shot lists, a Treatment scene and the memory read needs the ceiling its person approved on the quote, whatever the caller sent. Without one it is refused before anything is claimed or charged.
+
+A chat turn keeps the earlier rule, pending the owner:
+- one that sends an effort (every page does) needs the approved ceiling;
+- one that sends neither runs under the older, lower safety cap.
+
+This policy carries no band figure: each setting's band rates sit in the private policy and come with their own money PR.
 
 This policy does not change generation-engine selection, the rate card or already accepted job identity. Future model additions require an explicit policy update with evidence. Atomik never uses a signed-in Higgsfield account (owner, 28 September 2026).

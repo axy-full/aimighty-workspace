@@ -87,7 +87,12 @@ export const POST = withTenant(async (req: Request) => {
     const { quoteOnly, ...input } = parsed.data;
     /* A model on the workspace's own key bills its dollars, not credits: the quote keeps the dollar ceiling the start must lock.
        The model is the one the quote runs (the Thinking setting's), not the one the body named. */
-    if (quoteOnly) { const quote = await quoteDevelopmentJob(input, auth.user.id); return response(quote, 200, creditsApply(currentTenant()?.workspace) && paidByPlatform(textKeyName(quote.model))); }
+    if (quoteOnly) {
+      /* The thinking model and effort stay on the server (Amendment (iii) §E: never disclosed): the quote is sent without them. */
+      const { model, effort: _effort, ...quote } = await quoteDevelopmentJob(input, auth.user.id);
+      void _effort;
+      return response(quote, 200, creditsApply(currentTenant()?.workspace) && paidByPlatform(textKeyName(model)));
+    }
     /* The sample workspace spends nothing: answered before a job is written or reserved. */
     { const off = await sampleWorkspaceOff(); if (off) return off; }
     /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before a job is written. */

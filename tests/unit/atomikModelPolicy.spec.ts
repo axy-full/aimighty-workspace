@@ -43,7 +43,7 @@ test("every Atomik text entry point resolves through the policy, and a workspace
   for (const [route, turn] of [["ideas/draft", "writing"], ["shots/draft", "writing"], ["treatment/scene", "treatment"], ["memory/read", "routine"]] as const) {
     const source = readFileSync(`app/api/atomik/${route}/route.ts`, "utf8");
     expect(source, route).toContain(`await resolveModel("auto", "${turn}")`);
-    expect(source, route).toContain(`await thinkingEffort("${turn}", model)`);
+    expect(source, route).toContain(`await thinkingRun("${turn}", model)`);
     expect(source, `${route}: the body's model is not read`).not.toMatch(/body\.model/);
   }
 

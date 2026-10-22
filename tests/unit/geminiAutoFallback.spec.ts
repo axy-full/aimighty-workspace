@@ -149,7 +149,9 @@ test("the quote for a chat saved on any of the seven removed Geminis is Auto's o
   }, { user: { ...me, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
   const auto = await quote("auto");
   expect(auto.status, "Auto's own quote answers").toBe(200);
-  expect(auto.body, "a model and a price to compare").toMatchObject({ model: expect.any(String), estimateCredits: expect.any(Number) });
+  /* A price to compare; the model that runs is never sent (Amendment (iii) §E, owner 22 Oct 2026). */
+  expect(auto.body, "a price to compare").toMatchObject({ estimateCredits: expect.any(Number) });
+  expect(auto.body).not.toHaveProperty("model");
   for (const id of REMOVED) {
     const saved = await quote(id);
     expect(saved.status, `${id}: no error`).toBe(200);

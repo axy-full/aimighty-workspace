@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 
 import { resolveModel } from "@/lib/atomik";
-import { thinkingEffort } from "@/lib/atomikThinking";
+import { thinkingRun } from "@/lib/atomikThinking";
 
-import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
+import { runPaidText, quotePaidText, atomikQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 import { textRunCost } from "@/lib/textRunCost";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
@@ -76,19 +76,20 @@ export const POST = withTenant(async function POST(req: Request) {
 
   /* Atomik's thinking for a Writing turn, at the workspace's setting (lib/atomikThinking.ts): a model or effort in the body is not a choice, and is ignored. */
   const model = await resolveModel("auto", "writing");
-  const effort = await thinkingEffort("writing", model);
+  const thinking = await thinkingRun("writing", model), effort = thinking.effort;
   const user = [`NOTE: ${brief}`, toneIn ? `TONE WORDS: ${toneIn}` : ""].filter(Boolean).join("\n");
   const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 600, kind: "idea", mock: "idea" as const, createdBy: got.user.id,
     /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.ideas" as const, step: "idea", model, effort: effort ?? "auto" } };
-  if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
-  /* The approved ceiling is asked for as before, where the caller sent an effort; without one the run keeps the older safety cap (lib/paidText.ts). */
-  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined), ceilingRequired: body.effort !== undefined });
+  if (quoteOnly) return atomikQuoteResponse(await quotePaidText(input));
+  /* A run of Atomik's thinking (or the Treatment writer) needs the ceiling its person approved on the quote, whatever the caller sent: refused before the run, nothing billed. */
+  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, thinking.ours), ceilingRequired: thinking.ours });
   const text = result.text;
   const out = extract(text);
   if (!out) return NextResponse.json({ error: "Atomik answered, but not with a logline. Try once more." }, { status: 502 });
 
   /* Credits as billed for a workspace on credits; dollars only for one on its own keys. */
-  return NextResponse.json({ ...out, model, effort: effort ?? "auto", ...(await textRunCost(result)) });
+  /* The model and effort stay on the server (Amendment (iii) §E: never disclosed). */
+  return NextResponse.json({ ...out, ...(await textRunCost(result)) });
   } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });

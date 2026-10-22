@@ -3,13 +3,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
-  getChat, patchChat, clearChatProject, deleteChat, VIEW_ONLY_INSTRUCTION, addUserMessage, runTurn, projectContext, reconcileRunningSteps,
+  getChat, patchChat, clearChatProject, deleteChat, VIEW_ONLY_INSTRUCTION, addUserMessage, runTurn, projectContext, reconcileRunningSteps, memberThread,
   chatModeOf,
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { effectiveRules } from "@/lib/rules";
 import { withGenerationRequest, SpendReservationError, ANSWER_AFTER_MS } from "@/lib/generationRequests";
-import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, paidTextQuoteResponse, requestMaxCredits } from "@/lib/paidText";
+import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, atomikQuoteResponse, requestMaxCredits } from "@/lib/paidText";
 import { cleanAttachments } from "@/lib/attachments";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, priceKeyStep } from "@/lib/atomikLibrary";
@@ -34,7 +34,8 @@ export const GET = withTenant(async function GET(_req: NextRequest, ctx: Ctx) {
   await reconcileRunningSteps(id);
   const loaded = await getChat(id);
   if (!loaded) return NextResponse.json({ error: "That chat is gone." }, { status: 404 });
-  return NextResponse.json(loaded);
+  /* The thinking model and effort stay on the server (lib/atomik › memberThread). */
+  return NextResponse.json(memberThread(loaded));
 });
 
 export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx) {
@@ -56,7 +57,7 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
     /* As at creation: only a project this person may read is kept; anything else clears it. */
     projectId: b.projectId === undefined ? undefined : await contextProjectOr(got.user, typeof b.projectId === "string" ? b.projectId : null),
   });
-  return NextResponse.json(await getChat(id));
+  return NextResponse.json(memberThread(await getChat(id)));
   } catch (error) {
     if (error instanceof ThreadError) return NextResponse.json({ error: error.message }, { status: error.status });
     return paidTextFailure(error);
@@ -107,7 +108,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   const loaded = await getChat(id);
   if (!loaded) return NextResponse.json({ error: "That chat is gone." }, { status: 404 });
   /* An archived thread is hidden: nothing is planned in it, or paid for, until it is restored. */
-  if (!quoteOnly && loaded.chat.archivedAt != null) return NextResponse.json({ error: ARCHIVED_NOTE, chat: loaded }, { status: 409 });
+  if (!quoteOnly && loaded.chat.archivedAt != null) return NextResponse.json({ error: ARCHIVED_NOTE, chat: memberThread(loaded) }, { status: 409 });
 
   try {
     /* The turn's model and effort are the workspace's Thinking setting (lib/atomikThinking.ts): a model or effort in the body
@@ -126,7 +127,7 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const rules = writerRulesByScope(await effectiveRules());
     /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
     const inputs = await plannerInputs(got.user.id, projectId);
-    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, viewOnly, context, memory, rules,
+    if (quoteOnly) return atomikQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, viewOnly, context, memory, rules,
       library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
     /* A sent effort asks for the approved ceiling, as before, before the message is saved. The turn thinks at the setting's effort either
@@ -141,11 +142,11 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     if (!quoteOnly) await patchChat(id, { status: "failed" });
     const known = e instanceof PaidTextError || e instanceof SpendReservationError || e instanceof TextNotSentError;
     return NextResponse.json(
-      { error: known ? e.message : "The planning request could not finish. Recover this request before starting another.", chat: await getChat(id) },
+      { error: known ? e.message : "The planning request could not finish. Recover this request before starting another.", chat: memberThread(await getChat(id)) },
       { status: known ? e.status : 502 },
     );
   }
-  return NextResponse.json(await getChat(id));
+  return NextResponse.json(memberThread(await getChat(id)));
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });
 });

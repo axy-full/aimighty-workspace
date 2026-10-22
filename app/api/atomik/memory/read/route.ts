@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { resolveModel } from "@/lib/atomik";
-import { thinkingEffort } from "@/lib/atomikThinking";
+import { thinkingRun } from "@/lib/atomikThinking";
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
-import { PaidTextError, paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure, requestMaxCredits } from "@/lib/paidText";
+import { PaidTextError, paidTextFailure, atomikQuoteResponse, paidTextQuoteScopeFailure, requestMaxCredits } from "@/lib/paidText";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import { textRunCost } from "@/lib/textRunCost";
 import { PROJECT_ID } from "@/lib/atomikMemoryText";
@@ -57,8 +57,8 @@ export const POST = withTenant(async (req: Request) => {
         return NextResponse.json({ error: "Atomik's reader isn't connected for this workspace. Use the free import, or ask the platform to connect it." }, { status: 503 });
       /* A routine turn: Atomik's thinking at Low, or at High when that is the setting (lib/atomikThinking.ts). A model in the body is ignored; nothing is swapped for another paid model. */
       const model = await resolveModel("auto", "routine");
-      const effort = await thinkingEffort("routine", model);
-      if (quoteOnly) return paidTextQuoteResponse(await quoteMemoryRead({ text, model, effort }));
+      const thinking = await thinkingRun("routine", model), effort = thinking.effort;
+      if (quoteOnly) return atomikQuoteResponse(await quoteMemoryRead({ text, model, effort }));
       /* Never without the price the person approved: the read is reserved and refused against it. */
       if (body.maxCredits === undefined) throw new PaidTextError("Review the price before Atomik reads this.", 409);
       const maxCredits = requestMaxCredits(body.maxCredits)!;
@@ -67,7 +67,8 @@ export const POST = withTenant(async (req: Request) => {
       const projectId = asked && (await mayReachProject(got.user, asked, "admit")) ? asked : null;
       const result = await runMemoryRead({ text, model, effort, maxCredits, projectId, createdBy: got.user.id });
       /* Credits as billed for a workspace on credits; dollars only for one on its own keys. */
-      return NextResponse.json({ id: result.id, model, entries: result.read.entries, skipped: result.read.skipped, ...(await textRunCost(result)) });
+      /* The model that read it stays on the server (Amendment (iii) §E: never disclosed). */
+      return NextResponse.json({ id: result.id, entries: result.read.entries, skipped: result.read.skipped, ...(await textRunCost(result)) });
     } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });

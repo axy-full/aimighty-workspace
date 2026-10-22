@@ -46,14 +46,15 @@ export async function textJobPick(turn: TextJobTurn): Promise<{ model: string; e
 }
 
 /**
- * The effort a text job runs its model at: the pick's, when `model` is the model the pick runs (what lib/atomik › resolveModel
- * returned); otherwise none, and the model thinks at its own default.
+ * How a text job runs `model` (what lib/atomik › resolveModel returned): `ours` when it is the pick (Atomik's thinking, or the Treatment
+ * writer), and then the pick's effort. Every run of Atomik's thinking needs the ceiling its person approved on the quote, whatever the
+ * caller sent (`ours`; lib/paidText.ts ceilingRequired). A model that is not the pick (none here) gets no effort and no ceiling rule.
  */
-export async function thinkingEffort(turn: TextJobTurn, model: string): Promise<string | undefined> {
+export async function thinkingRun(turn: TextJobTurn, model: string): Promise<{ ours: boolean; effort?: string }> {
   try {
     const pick = await textJobPick(turn);
-    return pick.model === model ? pick.effort : undefined;
+    return pick.model === model ? { ours: true, ...(pick.effort ? { effort: pick.effort } : {}) } : { ours: false };
   } catch {
-    return undefined;
+    return { ours: false };
   }
 }

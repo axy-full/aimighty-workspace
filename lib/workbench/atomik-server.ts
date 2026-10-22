@@ -595,6 +595,27 @@ function atomikJobVariant(body: string): string | null {
   } catch { return null; }
 }
 
+/**
+ * What a member is sent of a job, a plan or a quote: no thinking model and no effort (Amendment (iii) §E: never disclosed). The job
+ * row, its request and its ledger line keep them, for settlement and the platform admin. A plan keeps a `model` (a saved project's
+ * plans require one) that says only "atomik".
+ */
+export function publicAtomikPlan<P extends Plan>(plan: P): P {
+  const { effort: _effort, ...rest } = plan;
+  void _effort;
+  return { ...rest, model: 'atomik', ...(rest.referenceAdAnalysis ? { referenceAdAnalysis: { ...rest.referenceAdAnalysis, model: 'atomik' } } : {}) } as P;
+}
+export function publicAtomikJob<J extends Pick<AtomikJob, 'model' | 'effort' | 'plan'>>(job: J): Omit<J, 'model' | 'effort'> {
+  const { model: _model, effort: _effort, ...rest } = job;
+  void _model; void _effort;
+  return { ...rest, plan: rest.plan ? publicAtomikPlan(rest.plan) : rest.plan };
+}
+export function publicAtomikQuote<Q extends { model: string; effort?: string }>(quote: Q): Omit<Q, 'model' | 'effort'> {
+  const { model: _model, effort: _effort, ...rest } = quote;
+  void _model; void _effort;
+  return rest;
+}
+
 export async function listAtomikJobs(owner: string, projectId: string, overrides?: Pick<AtomikDependencies, 'meter'>, requestId?: string) {
   const writeMeter = overrides?.meter ?? meter;
   await getAtomikProject(owner, projectId);

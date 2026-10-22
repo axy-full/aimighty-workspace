@@ -75,7 +75,8 @@ export type DevelopmentQuote = {
 };
 export type DevelopmentJob = {
   id: string; requestId: string; projectId: string; productionProjectId: string | null;
-  kind: DevelopmentKind; model: string; effort: string; instructions: string;
+  /** No thinking model or effort: they stay on the server (Amendment (iii) §E: never disclosed). */
+  kind: DevelopmentKind; instructions: string;
   /** `write` only: what the draft was written from. */
   source?: 'prompt' | 'draft' | 'beats';
   /** `sketch` only: the shot and the drawing it read. */

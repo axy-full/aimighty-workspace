@@ -7,13 +7,13 @@ import { requireRender, withTenant } from "@/lib/auth";
 import { getTreatment } from "@/lib/atomikDocs";
 import { listCast } from "@/lib/cast";
 import { resolveModel } from "@/lib/atomik";
-import { thinkingEffort } from "@/lib/atomikThinking";
+import { thinkingRun } from "@/lib/atomikThinking";
 import { specToPhrase } from "@/lib/studio";
 import { shotsFromReply, setupVocabulary, suggestEngine } from "@/lib/shotBuilder";
 import { creditsApply } from "@/lib/credits";
 import { currentTenant } from "@/lib/tenant";
 
-import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
+import { runPaidText, quotePaidText, atomikQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import { tokenSpendRefusal } from "@/lib/tokenSpend";
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
@@ -68,7 +68,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const castNames = (await listCast(projectId)).map((c) => c.name);
   /* Atomik's thinking for a Writing turn, at the workspace's setting (lib/atomikThinking.ts): a model or effort in the body is not a choice, and is ignored. */
   const model = await resolveModel("auto", "writing");
-  const effort = await thinkingEffort("writing", model);
+  const thinking = await thinkingRun("writing", model), effort = thinking.effort;
   const hint = suggestEngine(`${scene.title} ${scene.prose}`);
   const user = [
     `LOGLINE: ${t.logline || "(none yet)"}`,
@@ -80,9 +80,9 @@ export const POST = withTenant(async function POST(req: Request) {
   ].filter(Boolean).join("\n\n");
   const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 2400, kind: "shots", mock: "shots" as const, createdBy: got.user.id,
     /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.shots" as const, step: "shots", model, effort: effort ?? "auto" }, projectId };
-  if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
-  /* The approved ceiling is asked for as before, where the caller sent an effort; without one the run keeps the older safety cap (lib/paidText.ts). */
-  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined), ceilingRequired: body.effort !== undefined });
+  if (quoteOnly) return atomikQuoteResponse(await quotePaidText(input));
+  /* A run of Atomik's thinking (or the Treatment writer) needs the ceiling its person approved on the quote, whatever the caller sent: refused before the run, nothing billed. */
+  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, thinking.ours), ceilingRequired: thinking.ours });
   const shots = shotsFromReply(result.text, castNames);
   if (!shots) return NextResponse.json({ error: "Atomik answered, but not with shots. Try once more." }, { status: 502 });
 
@@ -93,7 +93,8 @@ export const POST = withTenant(async function POST(req: Request) {
      credit price, gave the margin away. The writing is the ledger's figure:
      credits on credits, dollars only to a workspace that pays its vendors. */
   const writing = creditsApply(currentTenant()?.workspace) ? { writingCredits: result.credits } : { costUsd: result.costUsd };
-  return NextResponse.json({ scene: n, shots, model, effort: effort ?? "auto", ...writing });
+  /* The model and effort stay on the server (Amendment (iii) §E: never disclosed). */
+  return NextResponse.json({ scene: n, shots, ...writing });
   } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });
