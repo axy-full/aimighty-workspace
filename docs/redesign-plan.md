@@ -120,3 +120,35 @@ The last graphite files (`Particl Suites.dc.html`, README, PROMPT and assets) go
 For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signInToRedesign()`, sets the state, and calls `captureBeside(page, "<screen>", "<prototype query>")`.
 - Run it with `-c playwright.redesign.config.ts` against a local mock server, through heavy.sh.
 - Then run `node scripts/redesign/publish-shots.mjs --pr <n> --from ../redesign-shots/<screen>`, which pushes the images to the `redesign-screenshots` branch (images only, never merged) and prints the table for the PR body.
+
+## Owner decisions (Akshay, 22 Oct 2026: the design lock, Amendment (iii))
+
+The earlier "Owner decisions" sections (10 Oct to 21 Oct) are on `redesign/integration`. This section records the decisions in Amendment, 22 October 2026 (iii). The full text is in docs/particl-sow-v1.md and `docs/Particl-SOW-amendment-iii-22Oct2026.md`. These decisions win over older documents, the 18 Oct design decision (v31.2) included.
+
+1. **The design lock (F, 22 Oct 23:53).** The owner: "lets put this into lead."
+   - v31.16 is THE design: `docs/design/v31.16/`. README.txt is the screen map; CHANGES.txt is the change record; the prompts v31.7–v31.16 are in `docs/design/prompts/`.
+   - The p311-*.js files are a throwaway rendering, never a source.
+   - Locked: the step order; pill · rail · canvas · bar · panel; Keep and Sent; the money surfaces; the Atomik tab; the record. Adjustable: words, the How page, pill sizes, which quick starts show.
+   - All copy lives in one strings table. "How Particl works" is static and built last.
+   - Three v31.16 defects are not reproduced: a node landing over another card; the `{{ p.d }}` console warning; the Thinking row below the fold at 1440.
+2. **How Atomik asks (A).**
+   - The owner: "The agent will think and ask each question separately. Not present 3 questions at once to the user." Every three-question cap is struck (R2, S1, C2); "Dont show too many options in agentic mode", so at most four pills and a field.
+   - "Take your time to study the output once created and then suggest questions basis what you see." A job shows Thinking · Making · Reviewing at one quote.
+   - Nothing crowds the one-line bar. Storyboard carries the Look and Elements.
+   - **[money] NEEDS AKSHAY:** the judge's scope (A2 against B4).
+3. **The floor (H).** The checklist is the floor, not the ceiling: twenty-two floor rows, seven at the Brief, tested on mocked briefs. Above the floor, Atomik asks one question at a time, from no list. "Decide for me" is the default and the one multi-word button; "Just make it" is struck from R3.
+4. **Director mode (B, J).**
+   - Remembered settings and one Generate · N cr.
+   - The Take tab first on Shots. On Elements the kind comes first. Sound shows sound only.
+   - The Treatment's right column is Design · Text · Image · Page · Versions · Export.
+   - "The Director never starts from a blank prompt": nodes are born filled from the record. The Prompt row is free; Enhance and Compose are priced live **[money]**.
+   - The bar is for the change. Again with… duplicates a take. Wires are never required. No agent factor on a Director job.
+5. **Engines and vendors (D).**
+   - Ideogram 4.5 **[money]** and World Labs Marble **[money] [schema]**, each a registry tool first. Docling replaces LibreOffice + Tesseract. SAM on fal for selections.
+   - Edit engines are chosen by bake-off only on the owner's yes, under $20 each, in the house workspace. Runway's and Luma's attribution clauses go to counsel.
+   - The Remotion Editor Starter waits on a check of Edit's transitions. Gemini stays on AI Studio.
+6. **Thinking, three settings (E) [money].** The owner: "lets have 3 settings. High (Fable 5.1/55 high when it launches) Medium (Opus 5.5 high) Low (Sonnet 5.5 high) (never disclose to the user the models and effort settings".
+   - The mapping lives in `lib/atomikModelPolicy.ts` only.
+   - The Treatment's prose goes to `TREATMENT_WRITER`.
+   - xAI leaves the Atomik allowlist (NEEDS AKSHAY: confirm). Band rates stay in the private policy.
+7. **The PR plan (L).** Docs; the copy table and strings test; the model policy; the record **[schema]**; the question engine on the Brief; one step a PR in S2 order; adapters on a second lane; the judge; "How Particl works"; measurement.
