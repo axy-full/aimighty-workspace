@@ -289,24 +289,27 @@ test('the Rig agent is offered every chosen look and every place before any entr
 test('a redraft is sized by the room the reasoning leaves, not the whole output ceiling', async () => {
   /* Sonnet 4.5 answers within 8,192 tokens; a 4,096 thinking budget leaves about 4,096 for the script (about 14,000 characters). */
   const sonnet: CatalogModel = { ...model, id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', maxTokens: 64_000 };
-  /* A 32k model at high effort keeps 16,384 tokens for the answer (about 57,000 characters). */
-  const effortful: CatalogModel = { ...model, id: 'openai/gpt-5.6-sol', name: 'GPT Sol', owner: 'openai', maxTokens: 32_768, reasoningOptions: [{ type: 'effort', values: ['low', 'medium', 'high'] }] };
+  /* A 32k model at high effort keeps 16,384 tokens for the answer (about 57,000 characters). Since 22 Oct 2026 the model and the
+     effort are Atomik's thinking's (the setting's effort is high), whatever the request names. */
+  const effortful: CatalogModel = { ...model, name: 'Claude Effort', maxTokens: 32_768, reasoningOptions: [{ type: 'effort', values: ['low', 'medium', 'high'] }] };
   expect(atomikReasoningAllowance(sonnet, 'budget:4096')).toBe(4096);
   expect(atomikReasoningAllowance(sonnet, 'none')).toBe(0);
   expect(atomikReasoningAllowance(effortful, 'high')).toBe(16_384);
   expect(atomikReasoningAllowance(model, 'auto')).toBe(0);
   const scene = 'The fox crosses the ice, one careful step at a time.\n\n';
-  for (const [chosen, chars, heavy, light] of [[sonnet, 20_000, 'budget:4096', 'none'], [effortful, 60_000, 'high', 'low']] as const) {
+  for (const [chars, fits] of [[60_000, false], [20_000, true]] as const) {
     await runInTenant(workspace(), async () => {
       const p = project();
       p.script = 'EXT. HARBOUR - DUSK\n\n' + scene.repeat(Math.ceil(chars / scene.length));
       p.production = { beats: sheet };
       await save(p);
-      const h = harness(() => ({}), [chosen]);
-      await expect(quoteDevelopmentJob(request(p, 'write', { fromBeats: true, model: chosen.id, effort: heavy }), 'owner', h.deps)).rejects.toThrow(`too long for ${chosen.name} to redraft whole at this effort`);
+      const h = harness(() => ({}), [effortful]);
+      /* A lower effort in the request is not a way round it: the setting's effort is what the script has to fit beside. */
+      const asked = request(p, 'write', { fromBeats: true, model: 'openai/gpt-5.6-sol', effort: 'low' });
+      if (fits) expect((await quoteDevelopmentJob(asked, 'owner', h.deps)).calls).toBe(3);
+      else await expect(quoteDevelopmentJob(asked, 'owner', h.deps)).rejects.toThrow(`too long for ${effortful.name} to redraft whole at this effort`);
       expect(h.calls).toHaveLength(0);
       expect(h.reservations()).toBe(0);
-      expect((await quoteDevelopmentJob(request(p, 'write', { fromBeats: true, model: chosen.id, effort: light }), 'owner', h.deps)).calls).toBe(3);
     });
   }
 });

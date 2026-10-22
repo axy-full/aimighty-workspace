@@ -1,0 +1,300 @@
+import { test, expect } from "@playwright/test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
+import type { CatalogModel } from "../../lib/catalog";
+import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
+import { loadRouteModule } from "../helpers/vendorCostScan";
+import {
+  ATOMIK_MODEL_IDS, ATOMIK_THINKING, ATOMIK_TURNS, DEFAULT_THINKING, THINKING_SETTINGS, THINKING_UNAVAILABLE, TREATMENT_WRITER_OFF,
+  isAtomikModel, offersEffort, selectAtomikThinking, thinkingFor, thinkingMap, treatmentWriter, type AtomikTurn, type Thinking,
+} from "../../lib/atomikModelPolicy";
+import { THINKING_OPTIONS, settingProblem } from "../../lib/settingValues";
+
+/*
+ * Atomik's thinking: three settings (owner, 22 Oct 2026; Amendment (iii) §E). "lets have 3 settings. High (Fable 5.1/55 high when it
+ * launches) Medium (Opus 5.5 high) Low (Sonnet 5.5 high) (never disclose to the user the models and effort settings". The mapping, its
+ * env overrides, the turn rules, the Treatment writer, the workspace's setting and the routes that read it. Real temporary databases
+ * and the mocked engines (ENGINE_MOCK=1): nothing is sent anywhere, and nothing is billed for real.
+ */
+const dir = mkdtempSync(path.join(tmpdir(), "particl-atomik-thinking-"));
+process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
+process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
+process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
+process.env.ENGINE_MOCK = "1";
+/* The checked-in catalogue snapshot, never the gateway's live list: nothing here reaches the network. */
+process.env.MODEL_CATALOG = "static";
+
+const HIGH = "anthropic/claude-fable-5.1", MEDIUM = "anthropic/claude-opus-5.5", LOW = "anthropic/claude-sonnet-5.5";
+
+test("the three settings and their mapping: High is Fable 5.1, Medium Opus 5.5, Low Sonnet 5.5, each at high effort; Medium is the default", () => {
+  expect([...THINKING_SETTINGS]).toEqual(["high", "medium", "low"]);
+  expect(DEFAULT_THINKING).toBe("medium");
+  expect(ATOMIK_THINKING).toEqual({ high: { model: HIGH, effort: "high" }, medium: { model: MEDIUM, effort: "high" }, low: { model: LOW, effort: "high" } });
+  /* The words a person is shown are the three settings, never a model or an effort; the settings list holds the same values. */
+  expect(THINKING_OPTIONS).toEqual([["high", "High"], ["medium", "Medium"], ["low", "Low"]]);
+  expect(THINKING_OPTIONS.map(([value]) => value)).toEqual([...THINKING_SETTINGS]);
+  for (const { model } of Object.values(ATOMIK_THINKING)) expect(isAtomikModel(model), model).toBe(true);
+});
+
+test("each setting's model is in the catalogue and offers its effort, so the effort is sent", async () => {
+  const { staticCatalog } = await import("../../lib/catalog");
+  const served = staticCatalog();
+  for (const setting of THINKING_SETTINGS) {
+    const { model, effort } = ATOMIK_THINKING[setting];
+    const entry = served.find((m) => m.id === model);
+    expect(entry, model).toBeTruthy();
+    expect(offersEffort(entry!, effort), `${model} ${effort}`).toBe(true);
+    expect(selectAtomikThinking(setting, "plan", served)).toMatchObject({ thinking: setting, model, effort });
+  }
+});
+
+test("env overrides: a verified Claude id and a named effort apply; anything else is ignored with the default kept, never thrown", () => {
+  expect(thinkingMap({})).toEqual(ATOMIK_THINKING);
+  expect(thinkingMap({ ATOMIK_THINKING_HIGH_MODEL: "anthropic/claude-opus-5", ATOMIK_THINKING_HIGH_EFFORT: "max", ATOMIK_THINKING_LOW_EFFORT: "medium" })).toEqual({
+    high: { model: "anthropic/claude-opus-5", effort: "max" }, medium: { model: MEDIUM, effort: "high" }, low: { model: LOW, effort: "medium" },
+  });
+  /* Grok and OpenAI are not Atomik's thinking; a vendor's own spelling, a made-up id and garbage are not verified catalogue ids. */
+  for (const model of ["spacexai/grok-4.7", "xai/grok-4.7", "openai/gpt-5.5", "openai/gpt-6-astra", "google/gemini-3.1-pro-preview", "claude-opus-5-5", "anthropic/claude-made-up", "", "  ", "{}"])
+    expect(thinkingMap({ ATOMIK_THINKING_MEDIUM_MODEL: model }).medium, JSON.stringify(model)).toEqual({ model: MEDIUM, effort: "high" });
+  /* "none", token budgets, "auto" and anything unknown are not thinking efforts. */
+  for (const effort of ["none", "auto", "budget:4096", "ultra", "HIGH ", "", "0"])
+    expect(thinkingMap({ ATOMIK_THINKING_LOW_EFFORT: effort }).low, JSON.stringify(effort)).toEqual({ model: LOW, effort: "high" });
+  /* Surrounding space is trimmed; case is not folded. */
+  expect(thinkingMap({ ATOMIK_THINKING_LOW_MODEL: ` ${"anthropic/claude-haiku-5.5"} `, ATOMIK_THINKING_LOW_EFFORT: " low " }).low).toEqual({ model: "anthropic/claude-haiku-5.5", effort: "low" });
+  expect(thinkingMap({ ATOMIK_THINKING_LOW_EFFORT: "LOW" }).low.effort).toBe("high");
+});
+
+test("thinkingFor: the interview, the plan, writing and design run at the setting; the judge, digests and routine turns at Low unless the setting is High", () => {
+  const atSetting: AtomikTurn[] = ["interview", "plan", "writing", "design"];
+  const atLow: AtomikTurn[] = ["judge", "digest", "routine"];
+  expect([...ATOMIK_TURNS].sort()).toEqual([...atSetting, ...atLow].sort());
+  for (const setting of THINKING_SETTINGS) {
+    for (const turn of atSetting) expect(thinkingFor(setting, turn), `${setting} ${turn}`).toEqual({ thinking: setting, ...ATOMIK_THINKING[setting] });
+    for (const turn of atLow) {
+      const expected: Thinking = setting === "high" ? "high" : "low";
+      expect(thinkingFor(setting, turn), `${setting} ${turn}`).toEqual({ thinking: expected, ...ATOMIK_THINKING[expected] });
+    }
+  }
+  /* A value that is not a setting reads as the default. */
+  expect(thinkingFor("ultra" as Thinking, "plan")).toEqual({ thinking: "medium", ...ATOMIK_THINKING.medium });
+  expect(thinkingFor("ultra" as Thinking, "judge")).toEqual({ thinking: "low", ...ATOMIK_THINKING.low });
+});
+
+test("Grok and OpenAI are never Atomik's thinking: refused as overrides, never picked when served, and only Claude is on the allowlist", () => {
+  expect(new Set(ATOMIK_MODEL_IDS.map((id) => id.split("/")[0]))).toEqual(new Set(["anthropic"]));
+  const priced = (id: string, extra: Partial<CatalogModel> = {}): CatalogModel => ({ id, name: id, owner: id.split("/")[0], type: "language", description: "", contextWindow: 200_000, maxTokens: 32_000, pricing: { input: "0.000001", output: "0.000002" }, ...extra });
+  const others = ["spacexai/grok-4.7", "spacexai/grok-4.20-reasoning", "openai/gpt-5.5", "openai/gpt-6-astra", "google/gemini-3.6-flash"].map((id) => priced(id));
+  for (const setting of THINKING_SETTINGS) for (const turn of ATOMIK_TURNS) expect(selectAtomikThinking(setting, turn, others), `${setting} ${turn}`).toBeNull();
+  /* Served beside them, the setting's own model is picked, and nothing else. A catalogue entry that offers no effort control sends none. */
+  const withClaude = [...others, priced(MEDIUM), priced(LOW, { reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }] })];
+  expect(selectAtomikThinking("medium", "plan", withClaude)).toMatchObject({ thinking: "medium", model: MEDIUM });
+  expect(selectAtomikThinking("medium", "plan", withClaude)?.effort).toBeUndefined();
+  expect(selectAtomikThinking("medium", "routine", withClaude)).toMatchObject({ thinking: "low", model: LOW, effort: "high" });
+  /* High's model is not served here: it falls back to the other settings' models (Medium, then Low, then High), still at High's effort where offered. */
+  expect(selectAtomikThinking("high", "plan", withClaude)).toMatchObject({ thinking: "high", model: MEDIUM });
+  expect(selectAtomikThinking("high", "plan", [...others, priced(LOW)])).toMatchObject({ thinking: "high", model: LOW });
+  /* None of the settings' models served: the first served Claude model of the verified catalogue, in its order; never Grok, OpenAI or Gemini. */
+  expect(selectAtomikThinking("medium", "plan", [...others, priced("anthropic/claude-sonnet-4.6"), priced("anthropic/claude-haiku-5.5")])?.model).toBe("anthropic/claude-haiku-5.5");
+  expect(selectAtomikThinking("low", "judge", [...others, priced("anthropic/claude-opus-4.7")])?.model).toBe("anthropic/claude-opus-4.7");
+  expect(THINKING_UNAVAILABLE).not.toMatch(/claude|fable|opus|sonnet|effort|high|medium|low/i);
+});
+
+test("TREATMENT_WRITER: an OpenAI id, read when asked; unset or outside OpenAI is null; its effort defaults to high", () => {
+  expect(treatmentWriter({})).toBeNull();
+  expect(treatmentWriter({ TREATMENT_WRITER_MODEL: "" })).toBeNull();
+  expect(treatmentWriter({ TREATMENT_WRITER_MODEL: "gpt-6.1-sol" })).toEqual({ model: "openai/gpt-6.1-sol", effort: "high" });
+  expect(treatmentWriter({ TREATMENT_WRITER_MODEL: " openai/gpt-6.1-sol ", TREATMENT_WRITER_EFFORT: "medium" })).toEqual({ model: "openai/gpt-6.1-sol", effort: "medium" });
+  expect(treatmentWriter({ TREATMENT_WRITER_MODEL: "openai/gpt-5.6-sol", TREATMENT_WRITER_EFFORT: "budget:4096" })).toEqual({ model: "openai/gpt-5.6-sol", effort: "high" });
+  for (const model of ["anthropic/claude-opus-5.5", "spacexai/grok-4.7", "google/gemini-3.6-flash", "o3", "openai/", "openai/gpt 6", "openai/../x", "sol"])
+    expect(treatmentWriter({ TREATMENT_WRITER_MODEL: model }), model).toBeNull();
+  /* Lazily: the env as it is when asked. */
+  const prior = process.env.TREATMENT_WRITER_MODEL;
+  try {
+    delete process.env.TREATMENT_WRITER_MODEL;
+    expect(treatmentWriter()).toBeNull();
+    process.env.TREATMENT_WRITER_MODEL = "gpt-6.1-sol";
+    expect(treatmentWriter()?.model).toBe("openai/gpt-6.1-sol");
+  } finally { if (prior === undefined) delete process.env.TREATMENT_WRITER_MODEL; else process.env.TREATMENT_WRITER_MODEL = prior; }
+  expect(TREATMENT_WRITER_OFF).toBe("The Treatment writer is not set up. Nothing billed.");
+});
+
+/* ── The workspace's setting, and the routes that read it ─────────────── */
+
+const admin = { id: "u_think_admin", email: "u_think_admin@example.test", name: "Ada", role: "admin", owner: true, disabled: false, lastSeen: null, createdAt: 0 } as TenantUser;
+const member = { ...admin, id: "u_think_member", email: "u_think_member@example.test", name: "Mo", role: "member", owner: false } as TenantUser;
+function workspace(name: string): TenantWorkspace {
+  const id = `ws_think_${name}_${randomUUID().slice(0, 8)}`;
+  return { id, slug: id, name, legacy: false, dbUrl: `file:${path.join(dir, `${id}.db`)}`, dbToken: null,
+    keys: {}, usesPlatformKeys: true, allowanceUsd: null, gatewayKeyId: null, ownerId: admin.id, createdAt: 0,
+    suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: null, rendersPerHour: null, storageQuotaBytes: null, deletedAt: null };
+}
+async function inTenant<T>(ws: TenantWorkspace, fn: () => Promise<T>, user: TenantUser = admin): Promise<T> {
+  const { runInTenant } = await import("../../lib/tenant");
+  return runInTenant(ws, fn, { user });
+}
+async function funded(name: string): Promise<TenantWorkspace> {
+  const ws = workspace(name);
+  const { ready } = await import("../../lib/db");
+  const { platformDb, platformReady } = await import("../../lib/platform");
+  await platformReady();
+  for (const who of [admin, member]) {
+    await platformDb().execute({ sql: "INSERT OR IGNORE INTO accounts(id,email,name,password_hash,created_at) VALUES(?,?,?,?,0)", args: [who.id, who.email, who.name, "x"] });
+    await platformDb().execute({ sql: "INSERT OR REPLACE INTO memberships(workspace_id,account_id,role,disabled,created_at) VALUES(?,?,?,0,0)", args: [ws.id, who.id, who.role] });
+  }
+  await inTenant(ws, async () => { await ready(); await fundFixtureWorkspace(); });
+  return ws;
+}
+type Handler = (req: Request, ctx?: { params: Promise<Record<string, string>> }) => Promise<Response>;
+async function route(file: string, who: TenantUser = admin) {
+  const auth = await import("../../lib/auth");
+  return loadRouteModule<{ POST?: Handler; PATCH?: Handler }>(file, {
+    "@/lib/auth": { ...auth, withTenant: (fn: Handler) => fn, requireUser: async () => ({ user: who }), requireRender: async () => ({ user: who }) },
+  });
+}
+const post = (url: string, body: unknown, method = "POST") => new Request(url, { method, headers: { "Content-Type": "application/json", "Idempotency-Key": `think-${randomUUID()}` }, body: JSON.stringify(body) });
+const answer = async (res: Response) => ({ status: res.status, body: await res.json() as Record<string, unknown> });
+
+test("the workspace's setting: Medium by default, set by an admin only, and only to High, Medium or Low", async () => {
+  const ws = await funded("setting");
+  const { workspaceThinking } = await import("../../lib/atomikThinking");
+  const { DEFAULTS } = await import("../../lib/settings");
+  expect(DEFAULTS.atomikThinking).toBe("medium");
+  expect(await inTenant(ws, workspaceThinking)).toBe("medium");
+  /* Outside any workspace, or with nothing readable, it is the default. */
+  expect(await workspaceThinking()).toBe("medium");
+  for (const value of ["high", "medium", "low"]) expect(settingProblem("atomikThinking", value), value).toBeNull();
+  for (const value of ["High", "ultra", "", "anthropic/claude-opus-5.5", 3, null]) expect(settingProblem("atomikThinking", value), String(value)).toBe("Choose High, Medium or Low.");
+
+  const settings = await route("app/api/settings/route.ts");
+  const patch = (who: TenantUser, body: unknown) => inTenant(ws, async () => answer(await settings.PATCH!(post("https://particl.test/api/settings", body, "PATCH"))), who);
+  /* A member is refused (requireAdmin, as for every workspace setting), and nothing changes. */
+  expect((await patch(member, { atomikThinking: "high" })).status).toBe(403);
+  expect(await inTenant(ws, workspaceThinking)).toBe("medium");
+  /* An admin's unknown value is refused whole, before anything is written. */
+  expect(await patch(admin, { atomikThinking: "ultra" })).toMatchObject({ status: 400, body: { error: "Choose High, Medium or Low." } });
+  expect(await inTenant(ws, workspaceThinking)).toBe("medium");
+  expect((await patch(admin, { atomikThinking: "low" })).status).toBe(200);
+  expect(await inTenant(ws, workspaceThinking)).toBe("low");
+  /* A stored value that is not a setting (written behind the route) reads as the default. */
+  const { setSetting } = await import("../../lib/settings");
+  await inTenant(ws, () => setSetting("atomikThinking", "anthropic/claude-opus-4", admin.id));
+  expect(await inTenant(ws, workspaceThinking)).toBe("medium");
+});
+
+test("a sent model or effort is ignored, never refused: every route runs the setting's model, at its effort", async () => {
+  const ws = await funded("routes");
+  const { setSetting } = await import("../../lib/settings");
+  const atomik = await import("../../lib/atomik");
+  const turn = await route("app/api/atomik/[id]/route.ts");
+  const ideas = await route("app/api/atomik/ideas/draft/route.ts");
+  const memory = await route("app/api/atomik/memory/read/route.ts");
+  const SENT = [{}, { model: "spacexai/grok-4.7", effort: "low" }, { model: "openai/gpt-5.5", effort: "max" }, { model: "google/gemini-2.5-pro" }, { model: "anthropic/claude-haiku-4.5", effort: "none" }, { model: 7, effort: "not an effort!" }];
+  for (const [setting, plan, routine] of [["medium", MEDIUM, LOW], ["low", LOW, LOW], ["high", HIGH, HIGH]] as const) {
+    await inTenant(ws, () => setSetting("atomikThinking", setting, admin.id));
+    for (const sent of SENT) {
+      const label = `${setting} ${JSON.stringify(sent)}`;
+      const chat = await inTenant(ws, async () => {
+        const id = await atomik.createChat({ userId: admin.id, projectId: null, model: "openai/gpt-5.5", agentMode: "ask" });
+        return answer(await turn.POST!(post(`https://particl.test/api/atomik/${id}`, { quoteOnly: true, text: "Plan two shots at the market.", ...sent }), { params: Promise.resolve({ id }) }));
+      });
+      expect(chat, `chat turn: ${label}`).toMatchObject({ status: 200, body: { model: plan, effort: "high" } });
+      const idea = await inTenant(ws, async () => answer(await ideas.POST!(post("https://particl.test/api/atomik/ideas/draft", { quoteOnly: true, brief: "A lighthouse keeper's last night.", ...sent }))));
+      expect(idea, `ideas: ${label}`).toMatchObject({ status: 200, body: { model: plan, effort: "high" } });
+      const read = await inTenant(ws, async () => answer(await memory.POST!(post("https://particl.test/api/atomik/memory/read", { quoteOnly: true, text: "Our tone is warm and quiet.", ...sent }))));
+      expect(read, `memory read: ${label}`).toMatchObject({ status: 200, body: { model: routine } });
+    }
+  }
+  /* A paid run: the quote's ceiling approved, the setting's model run (the mocked engine), whatever the body named. */
+  await inTenant(ws, () => setSetting("atomikThinking", "medium", admin.id));
+  const quote = await inTenant(ws, async () => answer(await ideas.POST!(post("https://particl.test/api/atomik/ideas/draft", { quoteOnly: true, brief: "A lighthouse keeper's last night." }))));
+  const ran = await inTenant(ws, async () => answer(await ideas.POST!(post("https://particl.test/api/atomik/ideas/draft", { brief: "A lighthouse keeper's last night.", model: "openai/gpt-5.5", effort: "low", maxCredits: quote.body.estimateCredits }))));
+  expect(ran, JSON.stringify(ran.body)).toMatchObject({ status: 200, body: { model: MEDIUM, effort: "high" } });
+  const { db } = await import("../../lib/db");
+  const job = await inTenant(ws, async () => (await db().execute("SELECT model, effort FROM paid_text_jobs ORDER BY created_at DESC LIMIT 1")).rows[0]);
+  expect({ model: job.model, effort: job.effort }).toEqual({ model: MEDIUM, effort: "high" });
+  /* A caller that sends an effort (as every page does) runs only under the ceiling its person approved: without one it is refused before anything is claimed. */
+  const unapproved = await inTenant(ws, async () => answer(await ideas.POST!(post("https://particl.test/api/atomik/ideas/draft", { brief: "Another night.", effort: "auto" }))));
+  expect(unapproved.status).toBe(409);
+});
+
+test("the setting's effort makes the estimate, and without an approved ceiling a run keeps the older $1 safety cap", async () => {
+  const ws = await funded("cap");
+  const { quotePaidText, runPaidText } = await import("../../lib/paidText");
+  /* A fixture writer at the setting's model and effort, priced (a made-up rate) so its estimate sits between the two caps. */
+  const writer: CatalogModel = { id: MEDIUM, name: "Fixture", owner: "anthropic", type: "language", description: "", contextWindow: 1_000_000, maxTokens: 128_000,
+    pricing: { input: "0.0000001", output: "0.0002" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }] };
+  const call = { model: MEDIUM, effort: "high", maxTokens: 900, kind: "idea", mock: "idea" as const, messages: [{ role: "user", content: "A lighthouse." }] };
+  await inTenant(ws, async () => {
+    const quote = await quotePaidText(call, writer);
+    expect(quote.estimateUsd).toBeGreaterThan(1);
+    expect(quote.estimateUsd).toBeLessThan(10);
+    let sent = 0;
+    const submit = async () => { sent++; return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: '{"logline":"A film"}' } }], usage: { cost: 0.01 } }) }; };
+    /* No approved ceiling, none required (the caller sent no effort): the older cap refuses it before anything is claimed or sent. */
+    await expect(runPaidText({ ...call, id: `cap_none_${randomUUID()}`, ceilingRequired: false }, { model: writer, submit })).rejects.toThrow("request budget");
+    /* A ceiling required and missing: refused the same way, before anything is claimed. */
+    await expect(runPaidText({ ...call, id: `cap_req_${randomUUID()}` }, { model: writer, submit })).rejects.toThrow("Review a writing quote");
+    expect(sent).toBe(0);
+    /* Under the ceiling its person approved on the quote, it runs. */
+    await runPaidText({ ...call, id: `cap_ok_${randomUUID()}`, maxCredits: quote.estimateCredits }, { model: writer, submit });
+    expect(sent).toBe(1);
+  });
+});
+
+test("a chat saved on any model still answers: its stored model is not asked, never refused, and the turn's row keeps what ran", async () => {
+  const ws = await funded("chats");
+  const atomik = await import("../../lib/atomik");
+  for (const stored of ["google/gemini-3.1-pro-preview", "spacexai/grok-4.7", "openai/gpt-5.5-pro", "anthropic/claude-opus-4.7", "auto", "nonsense/model"]) {
+    const loaded = await inTenant(ws, async () => {
+      const id = await atomik.createChat({ userId: admin.id, projectId: null, model: stored, effort: "xhigh", agentMode: "ask" });
+      /* A PATCH naming a model saves nothing and refuses nothing. */
+      await atomik.patchChat(id, { title: "Renamed" });
+      return atomik.getChat(id);
+    });
+    expect(loaded?.chat.modelNote, stored).toBeUndefined();
+    expect(loaded?.chat.model, stored).toBe(stored === "anthropic/claude-opus-4.7" ? stored : "auto");
+  }
+  /* A turn in a chat stored on Grok, sent with an OpenAI id: it runs the setting's model, and the chat row and the turn keep what ran. */
+  const turn = await route("app/api/atomik/[id]/route.ts");
+  const { db } = await import("../../lib/db");
+  const after = await inTenant(ws, async () => {
+    const id = await atomik.createChat({ userId: admin.id, projectId: null, model: "spacexai/grok-4.7", agentMode: "ask" });
+    const quoted = await answer(await turn.POST!(post(`https://particl.test/api/atomik/${id}`, { quoteOnly: true, text: "Plan one shot." }), { params: Promise.resolve({ id }) }));
+    const sent = await answer(await turn.POST!(post(`https://particl.test/api/atomik/${id}`, { text: "Plan one shot.", model: "openai/gpt-5.5", effort: "low", maxCredits: quoted.body.estimateCredits }), { params: Promise.resolve({ id }) }));
+    expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+    const row = (await db().execute({ sql: "SELECT model, effort FROM atomik_chats WHERE id=?", args: [id] })).rows[0];
+    const message = (await db().execute({ sql: "SELECT model, effort FROM atomik_messages WHERE chat_id=? AND role='assistant'", args: [id] })).rows[0];
+    /* A turn that sends an effort (as the page does) without the approved ceiling is refused before anything is claimed. */
+    const unapproved = await answer(await turn.POST!(post(`https://particl.test/api/atomik/${id}`, { text: "And another.", effort: "auto" }), { params: Promise.resolve({ id }) }));
+    return { row: { ...row }, message: { ...message }, unapproved: unapproved.status };
+  });
+  expect(after).toEqual({ row: { model: MEDIUM, effort: "high" }, message: { model: MEDIUM, effort: "high" }, unapproved: 409 });
+});
+
+test("the Treatment writer: unset, a scene rewrite is refused before anything is quoted or charged, naming no model; set, it writes the prose", async () => {
+  const ws = await funded("treatment");
+  const prior = process.env.TREATMENT_WRITER_MODEL;
+  const { platformDb } = await import("../../lib/platform");
+  const money = async () => Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", args: [ws.id] })).rows[0].n);
+  try {
+    delete process.env.TREATMENT_WRITER_MODEL;
+    const scene = await route("app/api/atomik/treatment/scene/route.ts");
+    for (const body of [{ projectId: "p1", n: 1, quoteOnly: true }, { projectId: "p1", n: 1, maxCredits: 50 }, { projectId: "p1", n: 1, maxCredits: 50, model: "openai/gpt-5.5" }]) {
+      const refused = await inTenant(ws, async () => answer(await scene.POST!(post("https://particl.test/api/atomik/treatment/scene", body))));
+      expect(refused, JSON.stringify(body)).toEqual({ status: 503, body: { error: "The Treatment writer is not set up. Nothing billed.", code: "treatment_writer_off", charged: 0, nothingBilled: true } });
+    }
+    expect(await money()).toBe(0);
+    const { db } = await import("../../lib/db");
+    expect(await inTenant(ws, async () => (await db().execute("SELECT COUNT(*) AS n FROM generation_requests").catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n)).toBe(0);
+    /* Set (an OpenAI id from the owner's console; a catalogue one here), the scene's prose runs on it: the policy's model, not Atomik's thinking. */
+    process.env.TREATMENT_WRITER_MODEL = "gpt-5.6-sol";
+    const { textJobPick } = await import("../../lib/atomikThinking");
+    expect(await inTenant(ws, () => textJobPick("treatment"))).toMatchObject({ model: "openai/gpt-5.6-sol" });
+    /* An id the catalogue does not serve is refused the same way, in its own plain words. */
+    process.env.TREATMENT_WRITER_MODEL = "gpt-99-not-served";
+    await expect(inTenant(ws, () => textJobPick("treatment"))).rejects.toThrow("The Treatment writer isn't connected right now. Nothing billed.");
+  } finally { if (prior === undefined) delete process.env.TREATMENT_WRITER_MODEL; else process.env.TREATMENT_WRITER_MODEL = prior; }
+});

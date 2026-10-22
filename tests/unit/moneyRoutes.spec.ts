@@ -144,6 +144,9 @@ async function writerRoutes(ws: TenantWorkspace, text: string) {
     "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/security/people-only": await import("../../lib/security/people-only"),
     "@/lib/atomik": { requestEffort: () => undefined, resolveModel: async () => "test/text" },
+    /* The Thinking setting's effort and the Treatment writer (owner, 22 Oct 2026): the stubbed model above is neither's, so no effort is sent. */
+    "@/lib/atomikThinking": { thinkingEffort: async () => undefined },
+    "@/lib/atomikModelPolicy": await import("../../lib/atomikModelPolicy"),
     "@/lib/gateway": { gatewayReachable: () => true },
     "@/lib/language-provider": { languageReachable: () => true },
     "@/lib/studio": await import("../../lib/studio"),

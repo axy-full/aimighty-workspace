@@ -6,7 +6,7 @@ import path from "node:path";
 import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
 import { AUTO_MODEL_IDS, aliasModel, MODEL_ALIASES, readsAsAuto } from "../../lib/modelAliases";
-import { ATOMIK_AUTO_MODEL_IDS, ATOMIK_MODEL_IDS, savedAtomikChoice, selectAtomikModel } from "../../lib/atomikModelPolicy";
+import { ATOMIK_MODEL_IDS, ATOMIK_THINKING, isAtomikModel, savedAtomikChoice, thinkingFor } from "../../lib/atomikModelPolicy";
 import { selectPlannerModel } from "../../lib/workbench/rig-agent-planner";
 import { DEFAULT_TEXT_MODELS, TEXT_JOBS, cleanModels, textModelFor } from "../../lib/platformLayer";
 import { PROMPT_MODELS, enhanceModelFor } from "../../lib/enhance";
@@ -57,17 +57,14 @@ test("none of the seven is on any menu: no route works for them with every key s
   }
 });
 
-test("a saved Atomik choice reads as Auto: no note, no error, the same model Auto picks", () => {
-  for (const id of REMOVED) {
-    expect(savedAtomikChoice(id), id).toEqual({ model: "auto", note: null });
-    expect(selectAtomikModel(id, served), id).toBe(selectAtomikModel("auto", served));
-    expect(selectAtomikModel("auto", served, id), `${id}: routed`).toBe(selectAtomikModel("auto", served));
-    expect(() => selectPlannerModel(id, served.map((m) => ({ id: m }))), id).not.toThrow();
-    expect(selectPlannerModel(id, served.map((m) => ({ id: m }))), id).toBe(selectPlannerModel("auto", served.map((m) => ({ id: m }))));
-  }
-  expect(selectAtomikModel("auto", served)).toBe(ATOMIK_AUTO_MODEL_IDS[0]);
-  /* A Gemini that stays on the menus is not Auto, and Atomik still refuses it by name as before. */
-  expect(() => selectAtomikModel("google/gemini-3.6-flash", served)).toThrow();
+test("a saved Atomik choice reads as Auto: no note, no error, the same model Auto runs", () => {
+  /* Since 22 Oct 2026 a saved or sent model is not asked at all: every Atomik turn runs the Thinking setting's model (lib/atomikModelPolicy › thinkingFor). */
+  for (const id of REMOVED) expect(savedAtomikChoice(id), id).toEqual({ model: "auto", note: null });
+  const plan = thinkingFor("medium", "plan").model;
+  expect(plan).toBe(ATOMIK_THINKING.medium.model);
+  expect(selectPlannerModel(plan, served.map((m) => ({ id: m })))).toBe(plan);
+  /* A Gemini that stays on the menus is not Atomik's thinking. */
+  expect(isAtomikModel("google/gemini-3.6-flash")).toBe(false);
 });
 
 test("the platform's saved routing and the job defaults: each job reads the default, whatever the saved id", () => {

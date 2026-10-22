@@ -326,12 +326,16 @@ test('direct text is billed (PR 3): the rig planner prices a direct turn from ra
   // The rig agent prices its planning turn on the direct door and reads the provider's raw counts.
   const { plannerPrice } = await import('../../lib/workbench/rig-agent');
   const { plannerCostUsd } = await import('../../lib/workbench/rig-agent-planner');
+  /* The planning turn is priced at Atomik's thinking for a plan (owner, 22 Oct 2026: the setting's model, Medium = Opus 5.5 by default), not the run's saved model. */
+  const { ATOMIK_THINKING } = await import('../../lib/atomikModelPolicy');
   const price = await plannerPrice('anthropic/claude-sonnet-5');
-  expect(price).toMatchObject({ id: 'anthropic/claude-sonnet-5', direct: true, engine: 'anthropic' });
+  expect(price).toMatchObject({ id: ATOMIK_THINKING.medium.model, direct: true, engine: 'anthropic' });
+  // Claude Opus 5.5 at the snapshot (tests/unit/textDirectRequests.spec.ts), for the same usage.
+  const plannerUsd = 100 * 0.000004 + 60 * 0.0000002 + 40 * 0.000005 + 25 * 0.00002;
   // The SDK's normalised totals leave the cache out; the raw usage does not.
   const step = { inputTokens: 100, outputTokens: 25, totalTokens: 125, raw: anthropicReply().usage } as unknown as LanguageModelUsage;
   expect(stepTextUsage(price.id, step, true)).toMatchObject({ prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } });
-  expect(plannerCostUsd(price.catalog, [step], price.direct)).toBeCloseTo(usd, 15);
+  expect(plannerCostUsd(price.catalog, [step], price.direct)).toBeCloseTo(plannerUsd, 15);
   // On the gateway the same turn keeps its gateway engine and the SDK's totals.
   delete process.env.TEXT_DIRECT;
   expect(await plannerPrice('anthropic/claude-sonnet-5')).toMatchObject({ direct: false, engine: 'vercel' });

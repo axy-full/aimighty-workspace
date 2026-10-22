@@ -31,6 +31,8 @@ process.env.PARTICL_TEST_MOCK_DELAYS = "1";
 
 test.beforeAll(async () => { await alignLedgerUnit(); });
 
+/** A ceiling the person approved, roomy enough for any of these mocked writing quotes. */
+const APPROVED = 1_000;
 /** The shortened deadline, and a mocked reply that outlasts it. */
 const DEADLINE_MS = 150;
 const SLOW = "[[mock-delay:1500]]";
@@ -413,7 +415,8 @@ async function pressedPastDeadline(ws: TenantWorkspace, loaded: Awaited<ReturnTy
 test("POST /api/atomik/ideas/draft opts in: pending past the deadline, finished after the reply, charged once", async () => {
   const ws = await funded("ideas");
   const loaded = await route("app/api/atomik/ideas/draft/route.ts", ws);
-  const { reply, settled } = await pressedPastDeadline(ws, loaded, "http://localhost/api/atomik/ideas/draft", { brief: `Car ad at dawn ${SLOW}` });
+  /* Atomik's thinking runs at the setting's effort (owner, 22 Oct 2026), so the press carries the approved ceiling. */
+  const { reply, settled } = await pressedPastDeadline(ws, loaded, "http://localhost/api/atomik/ideas/draft", { brief: `Car ad at dawn ${SLOW}`, maxCredits: APPROVED });
   expect(reply.logline).toMatch(/^Mocked logline/);
   expect(reply.writingCredits ?? reply.credits).toBe(settled.events[0].credits);
 });
@@ -423,7 +426,7 @@ test("POST /api/atomik/shots/draft opts in: pending past the deadline, finished 
   const atomikDocs = await import("../../lib/atomikDocs");
   const treatment = { logline: `A courier on the last night train ${SLOW}`, setup: {}, scenes: [{ n: 1, title: "Platform", secs: 12, prose: "Rain on the platform." }], updatedAt: 1 };
   const loaded = await route("app/api/atomik/shots/draft/route.ts", ws, { "@/lib/atomikDocs": { ...atomikDocs, getTreatment: async () => treatment } });
-  const { reply, settled } = await pressedPastDeadline(ws, loaded, "http://localhost/api/atomik/shots/draft", { projectId: "p1", scene: 1 });
+  const { reply, settled } = await pressedPastDeadline(ws, loaded, "http://localhost/api/atomik/shots/draft", { projectId: "p1", scene: 1, maxCredits: APPROVED });
   expect(reply.shots.length).toBeGreaterThan(0);
   expect(reply.writingCredits).toBe(settled.events[0].credits);
 });
@@ -432,10 +435,15 @@ test("POST /api/atomik/treatment/scene opts in: pending past the deadline, finis
   const ws = await funded("scene");
   const atomikDocs = await import("../../lib/atomikDocs");
   const treatment = { logline: `A courier on the last night train ${SLOW}`, setup: {}, scenes: [{ n: 1, title: "Platform", secs: 12, prose: "Rain on the platform." }], updatedAt: 1 };
-  const loaded = await route("app/api/atomik/treatment/scene/route.ts", ws, { "@/lib/atomikDocs": { ...atomikDocs, getTreatment: async () => treatment } });
-  const { reply, settled } = await pressedPastDeadline(ws, loaded, "http://localhost/api/atomik/treatment/scene", { projectId: "p1", n: 1 });
-  expect(reply.scene.title).toBe("Mocked scene");
-  expect(reply.writingCredits).toBe(settled.events[0].credits);
+  /* The Treatment's prose is the Treatment writer's (owner, 22 Oct 2026): one set up here, an OpenAI catalogue id under the mocked engines. */
+  const prior = process.env.TREATMENT_WRITER_MODEL;
+  process.env.TREATMENT_WRITER_MODEL = "gpt-5.6-sol";
+  try {
+    const loaded = await route("app/api/atomik/treatment/scene/route.ts", ws, { "@/lib/atomikDocs": { ...atomikDocs, getTreatment: async () => treatment } });
+    const { reply, settled } = await pressedPastDeadline(ws, loaded, "http://localhost/api/atomik/treatment/scene", { projectId: "p1", n: 1, maxCredits: APPROVED });
+    expect(reply.scene.title).toBe("Mocked scene");
+    expect(reply.writingCredits).toBe(settled.events[0].credits);
+  } finally { if (prior === undefined) delete process.env.TREATMENT_WRITER_MODEL; else process.env.TREATMENT_WRITER_MODEL = prior; }
 });
 
 test("POST /api/atomik/memory/read opts in: pending past the deadline, finished after the reply, charged once", async () => {

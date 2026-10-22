@@ -62,13 +62,17 @@ test('catalog selection uses priced language models and chooses economy by cost'
   expect(atomikModels([expensive, { ...model, id: 'anthropic/claude-opus-4.6', pricing: null }, { ...model, id: 'openai/gpt-5.5-pro', type: 'image' }, { ...model, id: 'test/unapproved', pricing: { input: 0, output: 0 } }, model]).map(m => m.id)).toEqual(['anthropic/claude-sonnet-4.6','anthropic/claude-opus-4.7']);
 });
 
-test('an unapproved catalog model cannot quote or reserve Atomik work', async () => {
+test('an unapproved catalog model in a request is not a choice: the setting\'s model is quoted, and without it nothing is quoted or reserved', async () => {
   await runInTenant(workspace(), async () => {
     const {input}=await fixture();
     const h=harness();
+    /* Owner, 22 Oct 2026: the model a request names is ignored, never refused; the Thinking setting's runs. */
     h.deps.models=async()=>[model,{...model,id:'test/unapproved'}];
-    await expect(quoteAtomikJob({...input,model:'test/unapproved'},'owner',h.deps)).rejects.toThrow('not offered in Atomik');
-    await expect(prepareAtomikJob({...input,model:'test/unapproved'},'owner',undefined,h.deps)).rejects.toThrow('not offered in Atomik');
+    expect((await quoteAtomikJob({...input,model:'test/unapproved'},'owner',h.deps)).model).toBe(model.id);
+    /* No Claude model served: refused in plain words before anything is quoted or reserved, never run on another family. */
+    h.deps.models=async()=>[{...model,id:'test/unapproved'},{...model,id:'openai/gpt-5.5',owner:'openai'}];
+    await expect(quoteAtomikJob({...input,model:'test/unapproved'},'owner',h.deps)).rejects.toThrow("Atomik's thinking isn't connected right now. Nothing billed.");
+    await expect(prepareAtomikJob({...input,model:'openai/gpt-5.5'},'owner',undefined,h.deps)).rejects.toThrow("Atomik's thinking isn't connected right now. Nothing billed.");
     expect(h.reservations()).toBe(0);
     expect(h.calls()).toBe(0);
     expect(await listAtomikJobs('owner',input.projectId)).toEqual([]);
@@ -267,23 +271,25 @@ test('request identity lookup recovers an older job outside the recent history w
   });
 });
 
-test('effort is quoted, persisted and submitted exactly once with its approved model', async () => {
+test('the setting\'s effort is quoted, persisted and submitted exactly once with the setting\'s model, whatever the request sent', async () => {
   await runInTenant(workspace(), async () => {
     const { input } = await fixture();
     const h = harness();
-    /* Atomik plans on Claude, OpenAI and Grok: an OpenAI thinker carries the effort here. */
-    const thinker: CatalogModel = { ...model, id: 'openai/gpt-5.5', owner: 'openai', name: 'GPT-5.5', reasoningOptions: [{ type: 'effort', values: ['low','medium','high'] }] };
-    h.deps.models = async () => [thinker];
-    const request = { ...input, model: thinker.id, effort: 'medium', maxCredits: 100 };
+    /* Atomik thinks with Claude at the Thinking setting, at its effort (high); the OpenAI model and the effort the request sends are ignored. */
+    const thinker: CatalogModel = { ...model, reasoningOptions: [{ type: 'effort', values: ['low','medium','high'] }] };
+    h.deps.models = async () => [thinker, { ...model, id: 'openai/gpt-5.5', owner: 'openai', reasoningOptions: [{ type: 'effort', values: ['low','medium','high'] }] }];
+    const request = { ...input, model: 'openai/gpt-5.5', effort: 'medium', maxCredits: 100 };
     const quote = await quoteAtomikJob(request, 'owner', h.deps);
-    expect(quote.effort).toBe('medium');
+    expect(quote.model).toBe(thinker.id);
+    expect(quote.effort).toBe('high');
     expect(quote.maxTokens).toBeGreaterThan(900);
     expect(h.reservations()).toBe(0);
     const prepared = await prepareAtomikJob(request, 'owner', undefined, h.deps);
     const row = (await db().execute({ sql: 'SELECT provider_body,request_body FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
-    expect(JSON.parse(String(row.request_body)).effort).toBe('medium');
+    expect(JSON.parse(String(row.request_body))).toMatchObject({ model: thinker.id, effort: 'high' });
     const body = JSON.parse(String(row.provider_body));
-    expect(body.reasoning_effort).toBe('medium');
+    expect(body.model).toBe(thinker.id);
+    expect(body.reasoning_effort).toBe('high');
     expect(body.providerOptions).toBeUndefined();
     expect(body.max_tokens).toBe(quote.maxTokens);
     await expect(prepareAtomikJob({ ...request, effort: 'high' }, 'owner', undefined, h.deps)).rejects.toThrow('different instructions');
@@ -292,23 +298,25 @@ test('effort is quoted, persisted and submitted exactly once with its approved m
     await runAtomikJob(prepared.job.id, 'owner', h.deps);
     const restored = await prepareAtomikJob(request, 'owner', undefined, h.deps);
     expect(restored.scheduled).toBe(false);
-    expect(restored.job.effort).toBe('medium');
-    expect(restored.job.plan?.effort).toBe('medium');
+    expect(restored.job.effort).toBe('high');
+    expect(restored.job.plan?.effort).toBe('high');
     expect(h.calls()).toBe(1);
     expect(h.reservations()).toBe(1);
   });
 });
 
-test('unsupported model effort and effort with Auto fail before a paid claim', async () => {
+test('a sent effort, one the model does not offer or one with Auto, is ignored and never refused: the setting\'s effort runs', async () => {
   await runInTenant(workspace(), async () => {
     const { input } = await fixture();
     const h = harness();
     h.deps.models = async () => [{ ...model, reasoningOptions: [{ type: 'effort', values: ['low','medium','high'] }] }];
-    await expect(prepareAtomikJob({ ...input, model: model.id, effort: 'max', maxCredits: 100 }, 'owner', undefined, h.deps)).rejects.toThrow(/effort/i);
-    await expect(quoteAtomikJob({ ...input, effort: 'high' }, 'owner', h.deps)).rejects.toThrow('Choose a model');
+    /* Owner, 22 Oct 2026: the effort is the Thinking setting's, not the person's. */
+    expect(await quoteAtomikJob({ ...input, effort: 'high' }, 'owner', h.deps)).toMatchObject({ model: model.id, effort: 'high' });
+    expect(await quoteAtomikJob({ ...input, model: model.id, effort: 'max' }, 'owner', h.deps)).toMatchObject({ model: model.id, effort: 'high' });
+    const prepared = await prepareAtomikJob({ ...input, model: model.id, effort: 'max', maxCredits: 100 }, 'owner', undefined, h.deps);
+    expect(prepared.job.effort).toBe('high');
     expect(h.calls()).toBe(0);
-    expect(h.reservations()).toBe(0);
-    expect(await listAtomikJobs('owner', input.projectId)).toEqual([]);
+    expect(h.reservations()).toBe(1);
   });
 });
 
@@ -323,7 +331,8 @@ test('old submissions without effort retain their serialized request and fingerp
     expect(JSON.stringify(replay)).toBe(before);
     expect((await prepareAtomikJob(replay, 'owner', undefined, h.deps)).scheduled).toBe(false);
     const row = (await db().execute({ sql: 'SELECT request_body,provider_body FROM workbench_atomik_jobs WHERE id=?', args: [first.job.id] })).rows[0];
-    expect(row.request_body).toBe(before);
+    /* The saved request records what ran (the setting's model; this catalogue entry offers no effort control, so none); the fingerprint is the body as sent, so the replay above found it. */
+    expect(row.request_body).toBe(JSON.stringify({ ...JSON.parse(before), model: model.id }));
     expect(JSON.parse(String(row.provider_body)).max_tokens).toBe(900);
   });
 });
@@ -351,9 +360,10 @@ test('premium models can quote with effort but cannot use the larger ceiling wit
   await runInTenant(workspace(), async () => {
     const { input } = await fixture();
     const h = harness();
-    const premium: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', name: 'GPT-6 Astra', maxTokens: 128000, pricing: { input: .00001, output: .00005 }, reasoningOptions: [{ type: 'effort', values: ['low','medium','high','xhigh','max'] }] };
+    /* The setting's model at its effort (an OpenAI model and "max" in the request are ignored), priced as a premium thinker. */
+    const premium: CatalogModel = { ...model, maxTokens: 128000, pricing: { input: .00001, output: .00005 }, reasoningOptions: [{ type: 'effort', values: ['low','medium','high','xhigh','max'] }] };
     h.deps.models = async () => [premium];
-    const request = { ...input, model: premium.id, effort: 'max' };
+    const request = { ...input, model: 'openai/gpt-6-astra', effort: 'max' };
     const quote = await quoteAtomikJob(request, 'owner', h.deps);
     expect(quote.estimateUsd).toBeGreaterThan(.25);
     expect(quote.estimateUsd).toBeLessThan(10);
@@ -455,8 +465,8 @@ test('suite agent refuses unselected references and cannot silently switch to Ge
     const { input } = await fixture(), h = harness();
     const request = { ...input, suite: 'particl' as const, refs: [], effort: 'auto', maxCredits: 10000 };
     h.deps.models = async () => [model, { ...model, id: 'google/gemini-3.1-pro-preview' }];
-    /* Gemini is no longer Atomik's at all (Claude, OpenAI and Grok only): refused with the reason, never swapped. */
-    await expect(quoteAtomikJob({ ...request, model: 'google/gemini-3.1-pro-preview' }, 'owner', h.deps)).rejects.toThrow('no longer offered in Atomik');
+    /* Gemini is not Atomik's thinking: a request naming it is quoted, and runs, on the setting's model, never on Gemini. */
+    expect((await quoteAtomikJob({ ...request, model: 'google/gemini-3.1-pro-preview' }, 'owner', h.deps)).model).toBe(model.id);
     h.deps.runSuite = async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...validReply, actions: [{ kind: 'image', title: 'Hero', prompt: 'Cinematic image.', referenceIds: ['another-project-secret'] }], hooks: [], assumptions: [] }) } }], usage: { cost: .01 } }) });
     const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
     await runAtomikJob(job.id, 'owner', h.deps);
@@ -510,19 +520,21 @@ test('SDK suite steps settle using their own context tiers and the saved price, 
   });
 });
 
-test('a Claude suite step with a thinking budget stays inside its quoted ceiling: the budget is taken off maxOutputTokens', async () => {
-  const { atomikEffortOptions } = await import('../../lib/atomik-reasoning');
+test('a Claude suite step thinks at the setting\'s effort inside its quoted ceiling; a thinking budget is taken off maxOutputTokens', async () => {
   const { suiteAgentMaxOutputTokens } = await import('../../lib/workbench/suite-agent');
   await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
     const { input } = await fixture(), h = harness();
-    const budgeted: CatalogModel = { ...model, owner: 'anthropic', maxTokens: 64000, reasoningOptions: [{ type: 'budget_tokens', min: 1024, max: 32000 }] };
-    h.deps.models = async () => [budgeted];
-    const effort = atomikEffortOptions(budgeted).find(option => option.value.startsWith('budget:'))!.value;
-    const budget = Number(effort.slice('budget:'.length));
-    const request = { ...input, model: budgeted.id, suite: 'particl' as const, refs: [], effort, maxCredits: 10000 };
+    /* A request no longer picks a token budget (owner, 22 Oct 2026: the effort is the Thinking setting's): the suite step thinks adaptively at it, and its whole ceiling is the answer's. */
+    const thinker: CatalogModel = { ...model, owner: 'anthropic', maxTokens: 64000, contextWindow: 1_000_000, reasoningOptions: [{ type: 'effort', values: ['low', 'medium', 'high'] }] };
+    h.deps.models = async () => [thinker];
+    const request = { ...input, model: thinker.id, suite: 'particl' as const, refs: [], effort: 'budget:4096', maxCredits: 10000 };
     const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
-    const envelope = JSON.parse(String((await db().execute({ sql: 'SELECT provider_body FROM workbench_atomik_jobs WHERE id=?', args: [job.id] })).rows[0].provider_body));
-    // The quote's per-step ceiling counts the thinking budget inside maxTokens.
+    const adaptive = JSON.parse(String((await db().execute({ sql: 'SELECT provider_body FROM workbench_atomik_jobs WHERE id=?', args: [job.id] })).rows[0].provider_body));
+    expect(adaptive.providerOptions.anthropic).toEqual({ thinking: { type: 'adaptive' }, effort: 'high' });
+    expect(suiteAgentMaxOutputTokens(adaptive)).toBe(adaptive.maxTokens);
+    /* An envelope with a thinking budget (one saved before, or an older model's): the quote's per-step ceiling counts the budget inside maxTokens. */
+    const budget = 4096;
+    const envelope = { ...adaptive, providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: budget } } } };
     expect(envelope.providerOptions.anthropic.thinking).toEqual({ type: 'enabled', budgetTokens: budget });
     expect(envelope.maxTokens).toBeGreaterThan(budget);
     expect(suiteAgentMaxOutputTokens(envelope)).toBe(envelope.maxTokens - budget);
@@ -672,7 +684,8 @@ test('Astra proposals use durable paid accounting and do not replay a duplicate 
 });
 
 
-for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agentKind} usage settles each saved price snapshot and preserves unknown cache receipts`, async () => {
+/* Raw and suite jobs no longer think on OpenAI (owner, 22 Oct 2026: Claude only); their direct door is Claude's, below (PR 3). 3D blocking keeps its OpenAI engine. */
+for (const agentKind of ['astra'] as ('raw' | 'suite' | 'astra')[]) test(`direct ${agentKind} usage settles each saved price snapshot and preserves unknown cache receipts`, async () => {
   const { createHash } = await import('node:crypto');
   const { createAstraScene } = await import('../../lib/astra-blender/scene');
   const { serializeAstraScene } = await import('../../lib/astra-blender/proposal');

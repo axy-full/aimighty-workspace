@@ -85,9 +85,10 @@ test('source identity includes whole script, context, format and direction; irre
   expect(sourceCanonical({ ...project, script: 'different' }, 'idea')).toBe(sourceCanonical(project, 'idea'));
 });
 
-test('the model menu offers priced Claude/OpenAI models and native effort retains its provider value', () => {
+test('the model menu offers priced Claude models and native effort retains its provider value', () => {
+  /* OpenAI and Grok left Atomik's thinking (owner, 22 Oct 2026): the development agent runs Claude, at the Thinking setting. */
   const openai = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', reasoningOptions: [{ type: 'effort' as const, values: ['low', 'medium', 'high', 'max'] }] };
-  expect(developmentModels([model, openai, { ...model, id: 'google/gemini-3.1-pro-preview' }, { ...model, id: 'anthropic/claude-opus-4.6', pricing: null }]).map(model => model.id)).toEqual([model.id, openai.id]);
+  expect(developmentModels([model, openai, { ...model, id: 'spacexai/grok-4.7' }, { ...model, id: 'google/gemini-3.1-pro-preview' }, { ...model, id: 'anthropic/claude-opus-4.6', pricing: null }]).map(model => model.id)).toEqual([model.id]);
   expect(developmentProviderOptions(openai, 'medium')).toEqual({ openai: { reasoningEffort: 'medium' } });
   expect(developmentProviderOptions(openai, 'max')).toEqual({ gateway: { only: ['openai'] }, openai: { reasoningEffort: 'max' } });
   expect(developmentInstructions('adfilm', 'draft')).toContain('call to action');
@@ -452,29 +453,22 @@ test('a failed run on the platform\'s keys is never billed: the vendor\'s cost i
 });
 
 
-test('direct development prices its saved per-step cache receipt and stops on unknown usage', async () => {
+test('an OpenAI key does not make OpenAI a development model: with only OpenAI served, nothing is quoted, reserved or sent', async () => {
+  /* Development thinks with Claude at the Thinking setting (owner, 22 Oct 2026); its direct door is Claude's (the TEXT_DIRECT test below). */
   const priorKey = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = 'unit-only-managed';
   const prior = process.env.ENGINE_MOCK; delete process.env.ENGINE_MOCK;
-  try { for (const unknown of [false, true]) {
+  try {
     const ws = workspace(); ws.keys.openai = 'test-only-never-sent';
     await runInTenant(ws, async () => {
       const { request } = await fixture(), h = harness();
       const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
       h.deps.models = async () => [priced]; request.model = priced.id;
-      const { job } = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
-      h.deps.models = async () => { throw new Error('Must use saved model snapshot.'); };
-      h.deps.call = async input => { h.calls.push(input); return { text: JSON.stringify(input.stage === 'critique' ? { issues: ['Check.'], revisions: ['Preserve.'] } : output(input)),
-        inputTokens: 100, outputTokens: 20, directUsage: { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30, ...(unknown ? {} : { cache_write_tokens: 40 }) } } }; };
-      for (let index = 0; index < 4; index++) await runDevelopmentStep(job.id, 'owner', h.deps);
-      const [saved] = await listDevelopmentJobs('owner', request.projectId, undefined, h.deps);
-      expect(saved.status).toBe(unknown ? 'uncertain' : 'succeeded');
-      expect(h.calls).toHaveLength(unknown ? 1 : 3);
-      if (unknown) { expect(saved.costUsd).toBeNull(); expect(h.events.at(-1)?.engineCostUsd).toBe(job.estimateUsd); }
-      else expect(saved.costUsd).toBeCloseTo(3 * (30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003), 12);
-      const receipt = (await db().execute({ sql: 'SELECT usage,response FROM workbench_development_steps WHERE job_id=? AND step_index=0', args: [job.id] })).rows[0];
-      expect(String(receipt.usage)).toContain('cached_tokens'); expect(String(receipt.response)).toContain('summary');
+      await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow("Atomik's thinking isn't connected right now. Nothing billed.");
+      await expect(prepareDevelopmentJob({ ...request, sourceHash: 'a'.repeat(64), maxCredits: 100, maxUsd: 1 }, 'owner', undefined, h.deps)).rejects.toThrow("Atomik's thinking isn't connected right now. Nothing billed.");
+      expect(h.calls).toHaveLength(0);
+      expect(await listDevelopmentJobs('owner', request.projectId, undefined, h.deps)).toEqual([]);
     });
-  } } finally { if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey; if (prior === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = prior; }
+  } finally { if (priorKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = priorKey; if (prior === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = prior; }
 });
 
 test('a TEXT_DIRECT development job is quoted at its cold cache ceiling and settled from its own usage on its vendor (PR 3)', async () => {

@@ -9,7 +9,7 @@ import type { CatalogModel, CatalogSnapshot } from "../../lib/catalog";
 import { textQuoteCostUsd } from "../../lib/catalog";
 import { DROPPED_MODEL_IDS, MODEL_ALIASES, aliasModel, isDroppedModel } from "../../lib/modelAliases";
 import {
-  ATOMIK_AUTO_MODEL_IDS, ATOMIK_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS, isAtomikModel, savedAtomikChoice, selectAtomikModel,
+  ATOMIK_MODEL_IDS, ATOMIK_THINKING, THINKING_UNAVAILABLE, VERIFIED_TEXT_MODEL_IDS, isAtomikModel, isVerifiedTextModel, savedAtomikChoice,
 } from "../../lib/atomikModelPolicy";
 import { ENHANCER_MODELS } from "../../lib/shell/enhancer";
 import { DEFAULT_TEXT_MODELS, TEXT_MODEL_IDS, cleanModels, mergeLayer, textModelFor } from "../../lib/platformLayer";
@@ -29,7 +29,8 @@ process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 
 const committed = committedJson as unknown as CatalogSnapshot;
 const entry = (id: string): CatalogModel => {
-  const m = committed.models.find((x) => x.id === id);
+  /* The catalogue's own entries, and the provider-priced ones (Claude 5.5, which Atomik's Thinking settings run on). */
+  const m = committed.models.find((x) => x.id === id) ?? (committed as unknown as { providerPriced?: CatalogModel[] }).providerPriced?.find((x) => x.id === id);
   if (!m) throw new Error(`${id} is not in lib/modelCatalog.json`);
   return m as CatalogModel;
 };
@@ -62,7 +63,8 @@ test("the alias map: nine dropped ids, each moved to an offered model of the sam
   for (const [from, to] of Object.entries(MODEL_ALIASES)) {
     expect(isDroppedModel(to), to).toBe(false);
     expect(to.split("/")[0], from).toBe(from.split("/")[0]);
-    expect(isAtomikModel(to), to).toBe(true);
+    /* An offered text model (Atomik thinks with the Claude ones since 22 Oct 2026; OpenAI's are the enhancer's and the Treatment writer's). */
+    expect(isVerifiedTextModel(to), to).toBe(true);
     const m = entry(to);
     expect(Number(m.pricing?.input), to).toBeGreaterThan(0);
     expect(Number(m.pricing?.output), to).toBeGreaterThan(0);
@@ -92,7 +94,7 @@ test("no offered list, default or Auto list names a dropped id; the catalogue ke
   delete process.env.GATEWAY_PROMPT_MODELS;
   const everything = committed.models as CatalogModel[];
   const lists: Record<string, readonly string[]> = {
-    VERIFIED_TEXT_MODEL_IDS, ATOMIK_MODEL_IDS, ATOMIK_AUTO_MODEL_IDS, "FEATURED.planner": FEATURED.planner,
+    VERIFIED_TEXT_MODEL_IDS, ATOMIK_MODEL_IDS, ATOMIK_THINKING: Object.values(ATOMIK_THINKING).map((t) => t.model), "FEATURED.planner": FEATURED.planner,
     ENHANCER_MODELS: Object.values(ENHANCER_MODELS).flat(), DEFAULT_TEXT_MODELS: Object.values(DEFAULT_TEXT_MODELS),
     TEXT_MODEL_IDS, PRICED_TEXT_IDS, OFFERED_CATALOG_IDS, GATEWAY_MODELS: GATEWAY_MODELS(),
     "atomikModels(catalogue)": atomikModels(everything).map((m) => m.id),
@@ -106,37 +108,22 @@ test("no offered list, default or Auto list names a dropped id; the catalogue ke
   }
 });
 
-test("Auto keeps its choices with GPT-5.5 where GPT-5.5 Pro was, and never plans on a dropped id", async () => {
-  expect([...ATOMIK_AUTO_MODEL_IDS]).toEqual(["anthropic/claude-sonnet-5.5", "anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5", "anthropic/claude-opus-5", "openai/gpt-5.5"]);
-  /* An OpenAI-only workspace keeps an OpenAI Auto choice, not the cheapest model on the menu. */
-  {
-    const { atomikModels } = await import("../../lib/workbench/atomik-server");
-    const { selectPlannerModel } = await import("../../lib/workbench/rig-agent-planner");
-    const menu = atomikModels(["openai/gpt-5-nano", "openai/gpt-4.1-nano", "openai/gpt-5.5", "openai/gpt-5.5-pro"].map(entry));
-    expect(menu[0].id).not.toBe("openai/gpt-5.5");
-    expect(selectPlannerModel("auto", menu)).toBe("openai/gpt-5.5");
-  }
-  const { selectPlannerModel } = await import("../../lib/workbench/rig-agent-planner");
+test("Atomik's thinking never plans on a dropped id: no setting names one, and OpenAI's ids, the Pro among them, are not Atomik's", async () => {
+  /* Owner, 22 Oct 2026: Atomik thinks with Claude at the Thinking setting; Auto's old list (and GPT-5.5 where GPT-5.5 Pro was) is gone with it. */
+  for (const { model } of Object.values(ATOMIK_THINKING)) expect(isDroppedModel(model), model).toBe(false);
   const { atomikModels } = await import("../../lib/workbench/atomik-server");
-  const openaiOnly = atomikModels(["openai/gpt-5.5-pro", "openai/gpt-5.5"].map(entry));
-  expect(openaiOnly.map((m) => m.id)).toEqual(["openai/gpt-5.5"]);
-  expect(selectPlannerModel("auto", openaiOnly)).toBe("openai/gpt-5.5");
-  expect(selectPlannerModel("auto", atomikModels(["openai/gpt-5.5-pro", "openai/gpt-5.5", "anthropic/claude-sonnet-5"].map(entry)))).toBe("anthropic/claude-sonnet-5");
-  expect(selectAtomikModel("auto", ["openai/gpt-5.5-pro", "openai/gpt-5.5"])).toBe("openai/gpt-5.5");
+  const { selectPlannerModel } = await import("../../lib/workbench/rig-agent-planner");
+  expect(atomikModels(["openai/gpt-5-nano", "openai/gpt-4.1-nano", "openai/gpt-5.5", "openai/gpt-5.5-pro"].map(entry))).toEqual([]);
+  expect(() => selectPlannerModel("openai/gpt-5.5", [{ id: "openai/gpt-5.5" }])).toThrow(THINKING_UNAVAILABLE);
+  const menu = atomikModels(["openai/gpt-5.5", "anthropic/claude-sonnet-5", ATOMIK_THINKING.medium.model].map(entry));
+  expect(menu.map((m) => m.id).sort()).toEqual(["anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5"]);
+  expect(selectPlannerModel(ATOMIK_THINKING.medium.model, menu)).toBe(ATOMIK_THINKING.medium.model);
 });
 
 test("each read point resolves a dropped id to its alias before the check, without refusing or falling back", async () => {
-  /* atomik_chats.model (and a request's model): Atomik's saved choice and selection. */
-  for (const [from, to] of Object.entries(MODEL_ALIASES)) {
-    expect(savedAtomikChoice(from), from).toEqual({ model: to, note: null });
-    expect(selectAtomikModel(from, [to]), from).toBe(to);
-  }
-  /* The platform's routing, passed in as Auto's route. */
-  expect(selectAtomikModel("auto", ["openai/gpt-5.5", "anthropic/claude-sonnet-4.6"], "openai/gpt-5.5-pro")).toBe("openai/gpt-5.5");
-  /* rig_agent_runs.model: read again when a board plan is priced and approved. */
-  const { selectPlannerModel } = await import("../../lib/workbench/rig-agent-planner");
-  expect(selectPlannerModel("openai/o3-pro", [{ id: "openai/o3" }])).toBe("openai/o3");
-  expect(selectPlannerModel("anthropic/claude-opus-5-fast", [{ id: "anthropic/claude-opus-5" }])).toBe("anthropic/claude-opus-5");
+  /* atomik_chats.model: what a chat last ran, read as its alias where Atomik still thinks with it, else as Auto; never a choice. */
+  for (const [from, to] of Object.entries(MODEL_ALIASES)) expect(savedAtomikChoice(from), from).toEqual({ model: isAtomikModel(to) ? to : "auto", note: null });
+  /* rig_agent_runs.model is no longer read when a board plan is priced: the Thinking setting's model is (lib/workbench/rig-agent.ts plannerPrice). */
   /* platform_layer "models".text: cleaned on read, and the route read from it. */
   const stored = { text: { enhance: "anthropic/claude-3-haiku", idea: "anthropic/claude-opus-5-fast", shot: "openai/gpt-5.5-pro" } };
   /* Any verified text model can be routed now (admin lists the routable ones), so the Pro alias GPT-5.5 stands. */
@@ -165,9 +152,11 @@ test("a chat and an idea saved on a dropped id read as the alias; the stored row
       args: ["pro", "openai/gpt-5.5-pro", "high"],
     });
     const loaded = (await getChat("pro"))!;
-    expect(loaded.chat).toMatchObject({ model: "openai/gpt-5.5", effort: "high" });
+    /* OpenAI is not Atomik's thinking since 22 Oct 2026: the alias reads as Auto, with nothing to say and without its effort. */
+    expect(loaded.chat).toMatchObject({ model: "auto" });
+    expect(loaded.chat.effort).toBeUndefined();
     expect(loaded.chat.modelNote).toBeUndefined();
-    expect((await listChats("owner")).find((c) => c.id === "pro")).toMatchObject({ model: "openai/gpt-5.5" });
+    expect((await listChats("owner")).find((c) => c.id === "pro")).toMatchObject({ model: "auto" });
     expect((await db().execute({ sql: "SELECT model FROM atomik_chats WHERE id = ?", args: ["pro"] })).rows[0]).toMatchObject({ model: "openai/gpt-5.5-pro" });
     await patchChat("pro", { model: "anthropic/claude-opus-4.8-fast" });
     expect((await db().execute({ sql: "SELECT model FROM atomik_chats WHERE id = ?", args: ["pro"] })).rows[0]).toMatchObject({ model: "anthropic/claude-opus-4.8" });
@@ -179,11 +168,11 @@ test("a chat and an idea saved on a dropped id read as the alias; the stored row
   });
 });
 
-test("a quote for a dropped id is the alias's quote: the model that runs is the model priced", async () => {
+test("a quote for a dropped id is the alias's quote, which is the Thinking setting's: the model that runs is the model priced", async () => {
   const { seedProject } = await import("../../lib/workbench/studio");
   const { atomikRequestSchema, quoteAtomikJob } = await import("../../lib/workbench/atomik-server");
   const { quoteDevelopmentJob } = await import("../../lib/workbench/development-server");
-  const models = ["openai/gpt-5.5-pro", "openai/gpt-5.5", "anthropic/claude-opus-5-fast", "anthropic/claude-opus-5"].map(entry);
+  const models = ["openai/gpt-5.5-pro", "openai/gpt-5.5", "anthropic/claude-opus-5-fast", "anthropic/claude-opus-5", ATOMIK_THINKING.medium.model].map(entry);
   await inTenant(async () => {
     const { db, ready } = await import("../../lib/db");
     await ready(); await fundFixtureWorkspace();
@@ -205,7 +194,9 @@ test("a quote for a dropped id is the alias's quote: the model that runs is the 
     for (const [from, to] of [["openai/gpt-5.5-pro", "openai/gpt-5.5"], ["anthropic/claude-opus-5-fast", "anthropic/claude-opus-5"]]) {
       const dropped = await quoteAtomikJob(ask(from), "owner", deps as never);
       const alias = await quoteAtomikJob(ask(to), "owner", deps as never);
-      expect(dropped.model, from).toBe(to);
+      /* Neither is asked (owner, 22 Oct 2026): both run, and are priced at, the setting's model. */
+      expect(dropped.model, from).toBe(ATOMIK_THINKING.medium.model);
+      expect(alias.model, to).toBe(ATOMIK_THINKING.medium.model);
       expect(dropped.estimateUsd, from).toBe(alias.estimateUsd);
       expect(dropped.estimateCredits, from).toBe(alias.estimateCredits);
     }
@@ -223,7 +214,8 @@ test("a quote for a dropped id is the alias's quote: the model that runs is the 
     const develop = (model: string) => ({ projectId: project.id, requestId: randomUUID(), kind: "screenplay" as const, model, effort: "high" });
     const dropped = await quoteDevelopmentJob(develop("openai/gpt-5.5-pro"), "owner", devDeps as never);
     const alias = await quoteDevelopmentJob(develop("openai/gpt-5.5"), "owner", devDeps as never);
-    expect(dropped.model).toBe("openai/gpt-5.5");
+    expect(dropped.model).toBe(ATOMIK_THINKING.medium.model);
+    expect(alias.model).toBe(ATOMIK_THINKING.medium.model);
     expect(dropped.estimateUsd).toBe(alias.estimateUsd);
     expect(dropped.estimateCredits).toBe(alias.estimateCredits);
   });
@@ -232,7 +224,7 @@ test("a quote for a dropped id is the alias's quote: the model that runs is the 
 test("a development request saved before the drop, naming a dropped id, finds its job on retry instead of a conflict", async () => {
   const { seedProject } = await import("../../lib/workbench/studio");
   const { developmentSourceHash, prepareDevelopmentJob, quoteDevelopmentJob } = await import("../../lib/workbench/development-server");
-  const models = ["openai/gpt-5.5"].map(entry);
+  const models = ["openai/gpt-5.5", ATOMIK_THINKING.medium.model].map(entry);
   let reservations = 0;
   const deps = {
     models: async () => models, allowance: async () => ({ ok: true as const }),
@@ -252,8 +244,8 @@ test("a development request saved before the drop, naming a dropped id, finds it
     const raw = { ...asked, sourceHash: quote.sourceHash, maxCredits: quote.estimateCredits, maxUsd: quote.estimateUsd };
     const first = await prepareDevelopmentJob(raw, "owner", undefined, deps as never);
     expect(first.scheduled).toBe(true);
-    /* Saved now, the job carries the alias, and a retry of the same body finds it. */
-    expect((await db().execute({ sql: "SELECT request_body FROM workbench_development_jobs WHERE id = ?", args: [first.job.id] })).rows[0].request_body).toContain('"model":"openai/gpt-5.5"');
+    /* Saved now, the job carries the model that runs (the Thinking setting's), and a retry of the same body finds it. */
+    expect((await db().execute({ sql: "SELECT request_body FROM workbench_development_jobs WHERE id = ?", args: [first.job.id] })).rows[0].request_body).toContain(`"model":"${ATOMIK_THINKING.medium.model}"`);
     expect((await prepareDevelopmentJob(raw, "owner", undefined, deps as never)).job.id).toBe(first.job.id);
     /* As a job saved before this change was: fingerprinted on the body as sent, dropped id and all. */
     await db().execute({ sql: "UPDATE workbench_development_jobs SET fingerprint = ? WHERE id = ?", args: [developmentSourceHash(JSON.stringify(raw)), first.job.id] });
