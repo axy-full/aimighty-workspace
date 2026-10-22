@@ -202,59 +202,111 @@ export function bannedNamesIn(fileName: string, source: string, options: { navig
 
 /**
  * The lines the owner retired on 22 October 2026 (Amendment (iii) C5 and L2). The owner: "Copy like 'Just make it. The same quote.
- * No questions' is amateur copy." "How many" is "Count" everywhere (v31.13). "Show me on my film" stays only on the ? cards (R9;
- * C1 keeps it as a teaching device in the product). Matched in any case, as whole words.
+ * No questions' is amateur copy." "How many" is "Count" everywhere (v31.13). Matched in any case, as whole words, across any run of
+ * whitespace (a JSX line break included).
  */
 export const RETIRED_LINES = [
   "Just make it", "No questions", "the editor is the director's", "Show me on my film", "built for small teams", "How many",
   "Describe the node", "kept from Look",
 ] as const;
-const RETIRED_LINE_RE = new RegExp(`\\b(${RETIRED_LINES.map((line) => line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/'/g, "['’]")).join("|")})\\b`, "gi");
+/**
+ * L2 retires "Show me on my film" outside the ? cards only (R9; C1 keeps it as a teaching device in the product). The ? cards'
+ * file goes here when it is built; nothing else may say it. No ? card file exists yet.
+ */
+export const QUESTION_CARD_FILES: readonly string[] = [];
+const RETIRED_LINE_RE = new RegExp(`\\b(${RETIRED_LINES.map((line) => line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/'/g, "['’]").replace(/ /g, "\\s+")).join("|")})\\b`, "gi");
+const normalLine = (text: string) => text.toLowerCase().replace(/’/g, "'").replace(/\s+/g, " ");
 
 /** The retired lines in one string a person reads, each as listed in RETIRED_LINES. */
 export function retiredLines(text: string): string[] {
-  return [...text.matchAll(RETIRED_LINE_RE)].map((m) => RETIRED_LINES.find((line) => line.toLowerCase() === m[1].toLowerCase().replace(/’/g, "'")) ?? m[1]);
+  return [...text.matchAll(RETIRED_LINE_RE)].map((m) => RETIRED_LINES.find((line) => line.toLowerCase() === normalLine(m[1])) ?? m[1]);
 }
 
 /**
  * Atomik's thinking models are never named to a person (Amendment (iii) E, the owner: "never disclose to the user the models and
  * effort settings"): no model id, family-and-version name or reasoning-effort setting in a string a person reads, or in an API
- * response. The person sees only Thinking · High · Medium · Low. This is the thinking models' counterpart of the engine-name rule;
- * the engines a Director picks (Seedance 2.5, Kling 3.0, GPT Image 2, Grok Imagine) are named where the Director picks them and are
- * not matched here.
+ * response. The person sees only Thinking · High · Medium · Low. This is the thinking models' counterpart of the engine-name rule:
+ * the engines a Director picks (Seedance 2.5, Kling 3.0, GPT Image 2, Grok Imagine, Nano Banana, the Gemini image engines) are named
+ * where the Director picks them, so a match followed by "Image" or "Imagine" is an engine and is not counted.
+ * Used only through thinkingModelNames (the patterns are global: never call .test on them).
  */
-export const THINKING_MODEL_PATTERNS: readonly RegExp[] = [
-  /\bclaude-(?:fable|opus|sonnet|haiku|instant|[0-9])[a-z0-9.\-]*/gi,
-  /\b(?:Claude\s+)?(?:Fable|Opus|Sonnet|Haiku)\s+\d+(?:\.\d+)?\b/g,
-  /\bgpt-?\d+(?:\.\d+)?(?:-(?!image)[a-z0-9]+)*\b/gi,
-  /\bGPT\s+\d+(?:\.\d+)?\b/g,
-  /\bgrok-\d[a-z0-9.\-]*/gi,
-  /\bGrok\s+\d+(?:\.\d+)?\b/g,
-  /\bgemini-\d[a-z0-9.\-]*/gi,
-  /\bGemini\s+\d+(?:\.\d+)?(?!\s*(?:Flash\s+)?Image)\b/g,
+const HYPHEN = "[-‐‑–]";
+export const THINKING_MODEL_PATTERNS: readonly RegExp[] = Object.freeze([
+  new RegExp(`\\bclaude${HYPHEN}(?:fable|opus|sonnet|haiku|instant|mythos|[0-9])[a-z0-9.\\-]*`, "gi"),
+  /\b(?:Claude\s+)?(?:Fable|Opus|Sonnet|Haiku|Mythos)\s+\d+(?:\.\d+)?(?![\d.])/gi,
+  new RegExp(`\\bgpt${HYPHEN}?\\d+(?:\\.\\d+)?[a-z]*(?:${HYPHEN}[a-z0-9]+)*`, "gi"),
+  /\bGPT\s+\d+(?:\.\d+)?(?![\d.])/g,
+  /\bo[1-9](?:-(?:mini|pro|fast|preview))*\b/g,
+  new RegExp(`\\bgrok${HYPHEN}\\d[a-z0-9.\\-]*`, "gi"),
+  /\bGrok\s+\d+(?:\.\d+)?(?![\d.])/g,
+  new RegExp(`\\bgemini${HYPHEN}\\d[a-z0-9.\\-]*`, "gi"),
+  /\bGemini\s+\d+(?:\.\d+)?(?![\d.])/g,
   /\breasoning[_ -]?effort\b/gi,
   /\bthinking[_ -]?budget\b/gi,
-  /\beffort\s*[:=·]\s*(?:low|medium|high|xhigh|max)\b/gi,
+  /\beffort\s*[:=·]?\s*(?:low|medium|high|xhigh|max)\b/gi,
   /\b(?:low|medium|high|xhigh|max)[- ]effort\b/gi,
-];
+]);
+/** An engine, not a thinking model: the match is followed (in the same name) by Image or Imagine. */
+const isImageEngine = (text: string, end: number) => /^[\w.\s\-‐‑–]{0,24}?\bimag(?:e|ine)\b/i.test(text.slice(end, end + 32));
 
 /** Every thinking-model id, family-and-version name or effort setting in one string. */
 export function thinkingModelNames(text: string): string[] {
-  return THINKING_MODEL_PATTERNS.flatMap((re) => [...text.matchAll(re)].map((m) => m[0]));
+  return THINKING_MODEL_PATTERNS.flatMap((re) => [...text.matchAll(re)].filter((m) => !isImageEngine(text, (m.index ?? 0) + m[0].length) && !/image/i.test(m[0])).map((m) => m[0]));
 }
 
-export type UiHit = UiWord & { path: string };
+/** JSX attributes the walk above treats as code that a settings row shows as words (`<Row name="…" value="…">`). */
+const SKIPPED_WORD_ATTRS = new Set(["name", "value"]);
 
-/** Every retired line and every thinking-model name in the user-visible strings of one file (the same walk as the names above). */
-export function lockedCopyIn(fileName: string, source: string): { retired: UiWord[]; models: UiWord[] } {
+/**
+ * Every string a person reads in one file for the design-lock checks: the walk above, plus the string values of `name` and `value` (SKIPPED_WORD_ATTRS),
+ * which that walk skips as code and a settings row shows as words.
+ */
+function lockedWalk(fileName: string, source: string, find: Matcher): UiWord[] {
   const strip = (hits: (UiWord & { title: boolean })[]) => hits.map(({ word, line, text }) => ({ word, line, text }));
+  const found = strip(walk(fileName, source, find, () => false));
+  if (!fileName.endsWith(".tsx")) return found;
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxAttribute(node) && node.initializer && SKIPPED_WORD_ATTRS.has(node.name.getText())) {
+      const init = node.initializer;
+      const literal = ts.isStringLiteral(init) ? init : ts.isJsxExpression(init) && init.expression && (ts.isStringLiteral(init.expression) || ts.isNoSubstitutionTemplateLiteral(init.expression)) ? init.expression : null;
+      if (literal) for (const word of find(literal.text)) found.push({ word, line: sf.getLineAndCharacterOfPosition(literal.getStart(sf)).line + 1, text: literal.text.replace(/\s+/g, " ").trim().slice(0, 120) });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+
+/** Every retired line and every thinking-model name in the strings a person reads in one file. */
+export function lockedCopyIn(fileName: string, source: string): { retired: UiWord[]; models: UiWord[] } {
   return {
-    retired: strip(walk(fileName, source, retiredLines, () => false)),
-    models: strip(walk(fileName, source, thinkingModelNames, () => false)),
+    retired: lockedWalk(fileName, source, retiredLines).filter(({ word }) => !(word === "Show me on my film" && QUESTION_CARD_FILES.includes(fileName))),
+    models: lockedWalk(fileName, source, thinkingModelNames),
   };
 }
 
-/** Every string a person reads in one file that has a letter in it (the same walk): what a v31.16 component must take from lib/copy.ts. */
+/**
+ * What a v31.16 component writes as words of its own (they must come from lib/copy.ts): JSX text with a letter in it, a string
+ * literal placed as a JSX child, and the string value of an attribute a person reads (aria-label, title, placeholder, alt). Code
+ * strings ("use client", a route, a method, a class name, a state value) are not read.
+ */
 export function uiTextIn(fileName: string, source: string): UiWord[] {
-  return walk(fileName, source, (text) => (/\p{L}/u.test(text) ? [text.trim()] : []), () => false).map(({ word, line }) => ({ word, line, text: word }));
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const found: UiWord[] = [];
+  const letters = (text: string) => /\p{L}/u.test(text);
+  const add = (node: ts.Node, text: string) => { if (letters(text)) found.push({ word: text.trim(), line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, text: text.trim() }); };
+  const READ = new Set(["aria-label", "title", "placeholder", "alt"]);
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxText(node)) add(node, node.text);
+    else if (ts.isJsxExpression(node) && node.expression && (ts.isStringLiteral(node.expression) || ts.isNoSubstitutionTemplateLiteral(node.expression)) && !ts.isJsxAttribute(node.parent)) add(node, node.expression.text);
+    else if (ts.isJsxAttribute(node) && READ.has(node.name.getText()) && node.initializer) {
+      const init = node.initializer;
+      if (ts.isStringLiteral(init)) add(init, init.text);
+      else if (ts.isJsxExpression(init) && init.expression && (ts.isStringLiteral(init.expression) || ts.isNoSubstitutionTemplateLiteral(init.expression))) add(init, init.expression.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
 }

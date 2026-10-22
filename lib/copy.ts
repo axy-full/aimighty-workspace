@@ -5,8 +5,8 @@
  *  - a button is one word; "Decide for me" is the one multi-word button (R3);
  *  - a label is a noun; no line is longer than eight words; "free" is lowercase;
  *  - no engine, vendor, thinking model, effort setting or retired line, and none of the design's forbidden words.
- * tests/unit/copy-table.spec.ts holds every value to those rules, and fails a new-interface component (components/v31/) that
- * writes a string of its own. A copy change is a data PR on this file.
+ * tests/unit/copy-table.spec.ts holds every value to those rules. The v31.16 build lives in components/v31/ (the step PRs build
+ * their screens there), and the same test fails a component there that writes words of its own. A copy change is a data PR on this file.
  *
  * Prices are never written here: a price comes from the quote path and is joined to its label at the call site
  * ("Generate · 43 cr"). The words come from docs/design/v31.16 (README.txt and the prompts); every figure in the design is a sample.
@@ -34,6 +34,7 @@ export const BUTTONS = {
   cancel: "Cancel",
   keep: "Keep",
   revise: "Revise",
+  /** Keep and Sent are locked (Amendment (iii) F; owner, 19 Oct); "Send" is one of v31.12's one-word buttons (rule 3). */
   send: "Send",
   generate: "Generate",
   create: "Create",
@@ -132,6 +133,7 @@ export const LIBRARY = {
 /** Placeholders for the bar and Make's composer. */
 export const PLACEHOLDERS = {
   directorBar: "Change something · tighter, from below, warmer",
+  /** The design's line ("Say it · @ a face, a product or a look from the Library") cut to eight words (C5). */
   make: "Say it · @ a face, product or look",
   makeHeadline: "What are we making?",
 } as const;

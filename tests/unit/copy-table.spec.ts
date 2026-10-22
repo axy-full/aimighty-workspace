@@ -50,25 +50,37 @@ test("the matchers: the retired lines and the thinking models are caught, the Di
   expect(retiredLines("Invite-only, built for small teams.")).toEqual(["built for small teams"]);
   expect(retiredLines("the editor is the director’s")).toEqual(["the editor is the director's"]);
   expect(retiredLines("Count · 1 · 2 · 3 · 4")).toEqual([]);
-  for (const name of ["claude-opus-5-5", "anthropic/claude-sonnet-5.5", "Claude Fable 5.1", "Opus 5.5", "gpt-6.1-sol", "GPT 6.1", "grok-4.7", "gemini-3.5-flash", "Reasoning effort", "effort: high", "high effort"]) {
+  expect(retiredLines("Just make\n    it")).toEqual(["Just make it"]);
+  for (const name of [
+    "claude-opus-5-5", "anthropic/claude-sonnet-5.5", "Claude Fable 5.1", "Opus 5.5", "opus 5.5", "fable 5", "gpt-6.1-sol", "GPT 6.1", "GPT‑6",
+    "gpt-4o", "GPT-4o mini", "o3", "o4-mini", "grok-4.7", "gemini-3.5-flash", "Gemini 3.5 Flash", "Reasoning effort", "effort: high", "effort high",
+    "high effort",
+  ]) {
     expect(thinkingModelNames(name), name).not.toEqual([]);
   }
-  for (const engine of ["Seedance 2.5 · 1080p · 5 s", "Kling 3.0 Pro", "GPT Image 2", "gpt-image-2", "Grok Imagine 2", "Ideogram 4.5", "World Labs Marble", "Nano Banana Pro", "Thinking · Medium", "Medium"]) {
+  for (const engine of [
+    "Seedance 2.5 · 1080p · 5 s", "Kling 3.0 Pro", "GPT Image 2", "gpt-image-2", "GPT 5.1 Image", "gpt-4.1-image", "Grok Imagine 2", "Ideogram 4.5",
+    "World Labs Marble", "Nano Banana Pro", "Gemini 2.5 Flash Image", "Gemini 3 Pro Image", "Gemini 3.5 Image", "gemini-2.5-flash-image",
+    "gemini-3-pro-image-preview", "Thinking · Medium", "Medium",
+  ]) {
     expect(thinkingModelNames(engine), engine).toEqual([]);
   }
   expect(RETIRED_LINES).toContain("Describe the node");
 });
 
-/* What the model-policy PR (Amendment (iii) L3) removes with the model picker: until then these lines are allowed, by name only. */
-const UNTIL_MODEL_POLICY: readonly { path: string; text: string }[] = [
-  { path: "components/atomik/ChatComposer.tsx", text: "Chat reasoning effort" },
-  { path: "components/atomik/ModelPicker.tsx", text: "Reasoning effort" },
-  { path: "components/atomik/ModelPicker.tsx", text: "Choose a model to set its reasoning effort." },
-  { path: "components/workbench/AtomikRunDialog.tsx", text: "Reasoning effort" },
-  /* The crew's per-member agent (xAI) and its effort: xAI leaves the Atomik allowlist in the same PR (Amendment (iii) E). */
-  { path: "app/api/crew/members/route.ts", text: "Choose low, medium or high effort." },
+/*
+ * What the model-policy PR (Amendment (iii) L3) removes with the model picker: until then these lines are allowed, each by file, text
+ * and the number of times it is found there, so a new one in the same file still fails.
+ */
+const UNTIL_MODEL_POLICY: readonly { path: string; text: string; count: number }[] = [
+  { path: "components/atomik/ChatComposer.tsx", text: "Chat reasoning effort", count: 1 },
+  { path: "components/atomik/ModelPicker.tsx", text: "Reasoning effort", count: 2 },
+  { path: "components/atomik/ModelPicker.tsx", text: "Choose a model to set its reasoning effort.", count: 1 },
+  { path: "components/workbench/AtomikRunDialog.tsx", text: "Reasoning effort", count: 1 },
+  { path: "components/graphite/settings/advanced/AdvancedSection.tsx", text: "Reasoning effort", count: 1 },
+  /* The crew's per-member agent and its effort setting: the owner's call in the model-policy PR (Crew runs on xAI; E says xAI leaves Atomik). */
+  { path: "app/api/crew/members/route.ts", text: "Choose low, medium or high effort.", count: 1 },
 ];
-const allowed = (path: string, text: string) => UNTIL_MODEL_POLICY.some((entry) => entry.path === path && entry.text === text);
 
 const files = () => scannedFiles(repoFiles());
 
@@ -78,24 +90,33 @@ test("no string a person reads carries a retired line", () => {
 });
 
 test("no string a person reads in app/ or components/ names a thinking model or its effort", () => {
-  const hits: string[] = [];
-  const used = new Set<string>();
+  const found = new Map<string, string[]>();
   for (const path of files().filter((file) => file.startsWith("app/") || file.startsWith("components/"))) {
     for (const hit of lockedCopyIn(path, readFileSync(path, "utf8")).models) {
-      if (allowed(path, hit.text)) used.add(`${path}|${hit.text}`);
-      else hits.push(`${path}:${hit.line} "${hit.word}" in ${hit.text}`);
+      const key = `${path}|${hit.text}`;
+      found.set(key, [...(found.get(key) ?? []), `${path}:${hit.line} "${hit.word}" in ${hit.text}`]);
     }
   }
+  const hits: string[] = [];
+  for (const [key, lines] of found) {
+    const entry = UNTIL_MODEL_POLICY.find((allowance) => `${allowance.path}|${allowance.text}` === key);
+    /* A string with two names in it is one line found twice: count the lines, not the names. */
+    const count = new Set(lines.map((line) => line.split(" ")[0])).size;
+    if (!entry || count > entry.count) hits.push(...lines);
+  }
   expect(hits).toEqual([]);
-  const stale = UNTIL_MODEL_POLICY.filter((entry) => !used.has(`${entry.path}|${entry.text}`)).map((entry) => `${entry.path}: ${entry.text}`);
-  expect(stale, "an allowance whose line is gone is deleted from UNTIL_MODEL_POLICY").toEqual([]);
+  const stale = UNTIL_MODEL_POLICY.filter((entry) => !found.has(`${entry.path}|${entry.text}`) || new Set(found.get(`${entry.path}|${entry.text}`)!.map((line) => line.split(" ")[0])).size < entry.count);
+  expect(stale.map((entry) => `${entry.path}: ${entry.text} × ${entry.count}`), "an allowance whose lines are gone is lowered or deleted").toEqual([]);
 });
 
+/* Where the v31.16 build lives (the lead's choice, 23 Oct 2026; recorded in lib/copy.ts): the step PRs build their screens here. */
 const V31 = "components/v31/";
 
 test("a v31.16 component writes no string of its own: its words come from lib/copy.ts", () => {
-  const sample = `import { BUTTONS } from "@/lib/copy";\nexport const A = () => <button aria-label="Keep it">{BUTTONS.keep} · <b>Keep</b></button>;`;
-  expect(uiTextIn("components/v31/Sample.tsx", sample).map((hit) => hit.text)).toEqual(["Keep it", "Keep"]);
+  const sample = `"use client";\nimport { BUTTONS } from "@/lib/copy";\nexport const A = () => <button aria-label="Keep it" className="pill" data-state="idle">{BUTTONS.keep} · <b>Keep</b>{"Again"}</button>;`;
+  expect(uiTextIn("components/v31/Sample.tsx", sample).map((hit) => hit.text)).toEqual(["Keep it", "Keep", "Again"]);
+  const code = `"use client";\nexport function B() { const [s] = useState("idle"); void fetch("/api/quote", { method: "POST", headers: { "Content-Type": "application/json" } }); return <i className={cn("pill")} style={{ color: "var(--gx-accent)" }} />; }`;
+  expect(uiTextIn("components/v31/Code.tsx", code), "code strings are not words").toEqual([]);
   expect(uiTextIn("components/v31/Sample.tsx", `export const B = () => <span>{BUTTONS.keep} · {price}</span>;`)).toEqual([]);
   const hits = files().filter((path) => path.startsWith(V31)).flatMap((path) => uiTextIn(path, readFileSync(path, "utf8")).map((hit) => `${path}:${hit.line} ${hit.text}`));
   expect(hits).toEqual([]);
