@@ -297,9 +297,9 @@ test("no Auto: the ask form suggests a run limit (SUGGESTED_RUN_LIMIT_USD, 200 c
   const { creditUsd } = await import("../../lib/creditTerms");
   /* Gone with Auto: the no-tap ceiling, the owner's seam for it, and the line a run kept. */
   for (const gone of ["AUTO_NO_TAP_CEILING_USD", "autoNoTapCeilingCredits", "RIG_AGENT_JOB_CEILING_CREDITS", "rigJobCeiling", "effectiveJobCeiling"]) expect((limits as Record<string, unknown>)[gone], gone).toBeUndefined();
-  /* The platform's per-job line is gone too (owner, 20 Oct 2026): approvalRule no longer exports one. */
-  const rule = await import("../../lib/approvalRule") as Record<string, unknown>;
-  for (const gone of ["JOB_APPROVAL_LINE_USD", "jobApprovalLineCredits", "jobLineVerdict", "JOB_LINE_STATUS"]) expect(rule[gone], gone).toBeUndefined();
+  /* The platform's per-job line is gone too (owner, 20 Oct 2026), and the module that held its names went with the admin approval rule (21 Oct 2026). */
+  const { existsSync } = await import("node:fs");
+  expect(existsSync("lib/approvalRule.ts")).toBe(false);
   /* The suggestion: US$20 of credits, counted at whatever a credit costs, in whole tenths rounded down. */
   expect(SUGGESTED_RUN_LIMIT_USD).toBe(20);
   expect(suggestedRunLimitCredits(0.1)).toBe(200);
@@ -316,7 +316,7 @@ test("no Auto: the ask form suggests a run limit (SUGGESTED_RUN_LIMIT_USD, 200 c
     const { db } = await import("../../lib/db");
     const suggested = suggestedRunLimitCredits(creditUsd());
     expect(await limits.suggestedRunLimit()).toBe(suggested);
-    /* A workspace's per-shot cap is its own rule (enforced at admission): it does not move the suggestion. */
+    /* A per-shot cap a workspace stored (retired 21 Oct 2026; nothing reads it) does not move the suggestion. */
     await setSetting("shotCapCredits", "17", OWNER);
     const state = await agent.rigAgentState("prod-1", OWNER, "draft-1");
     expect(state.ask).toMatchObject({ limit: suggested });

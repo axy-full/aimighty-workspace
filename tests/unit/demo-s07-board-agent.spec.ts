@@ -10,7 +10,7 @@ const run = (more: Partial<RigAgentRunView> = {}): RigAgentRunView => ({
 });
 const item = (id: string, more: Partial<QueueItem> = {}): QueueItem => ({
   id, source: "board-render", title: "t", where: "Board", at: 1, project: { productionId: "p", draftId: "d", name: "n" }, price: { kind: "exact", credits: 8 },
-  needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false, approve: null, decline: null, open: { kind: "board", productionId: "p", draftId: "d" }, ...more,
+  canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false, approve: null, decline: null, open: { kind: "board", productionId: "p", draftId: "d" }, ...more,
 });
 
 test("a proposal's and a render's queue rows are found by run and step, never by title", () => {

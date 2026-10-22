@@ -224,7 +224,7 @@ export function makeCaller(origin: string, authorization: string) {
 
 type Call = ReturnType<typeof makeCaller>;
 /** What /api/board-agent/plan answers (lib/workbench/plan-step-tool.ts). */
-type PlanStepReply = { id: string; step: string; priced: boolean; total: number | null; ceiling: number | null; approximate: boolean; shots: string[]; asks: number; reason: string | null; replaced?: boolean; needs: string };
+type PlanStepReply = { id: string; step: string; priced: boolean; total: number | null; ceiling: number | null; approximate: boolean; shots: string[]; reason: string | null; replaced?: boolean; needs: string };
 type Args = Record<string, string | number | boolean | undefined>;
 
 /**
@@ -274,7 +274,7 @@ export async function runTool(
       const replaced = p.replaced ? "Replaced the plan waiting on the board.\n" : "";
       const shots = p.shots.map((title) => `- ${title}`).join("\n");
       if (!p.priced) return `${replaced}Plan ${p.id} made for ${p.step}, not priced yet${p.reason ? `: ${p.reason}` : ""}.\n${shots}\n\n${p.needs}`;
-      return `${replaced}Plan ${p.id} · ${p.shots.length} ${p.shots.length === 1 ? "shot" : "shots"} · ${p.approximate ? "up to " : ""}${p.total} cr, at most ${p.ceiling} cr with fixes.\n${shots}${p.asks ? `\n${p.asks} ask${p.asks === 1 ? "s" : ""} on its own (needs an admin).` : ""}\n\n${p.needs} Nothing was rendered or reserved.`;
+      return `${replaced}Plan ${p.id} · ${p.shots.length} ${p.shots.length === 1 ? "shot" : "shots"} · ${p.approximate ? "up to " : ""}${p.total} cr, at most ${p.ceiling} cr with fixes.\n${shots}\n\n${p.needs} Nothing was rendered or reserved.`;
     }
     case "prepare_shot": {
       /* Files the job for a person (POST /api/prepared-jobs, a prepare token only); nothing is priced or sent. */

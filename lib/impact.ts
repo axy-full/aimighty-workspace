@@ -10,8 +10,6 @@ import { getSetting } from "./settings";
 import { effectiveModels } from "./defaultModels";
 import { creditsApply, creditState } from "./credits";
 import { projectCapSpent, spentBy } from "./caps";
-import { cleanRule, cleanShotCap } from "./approvalRule";
-import { shotCreditsSoFar } from "./shotCap";
 import { quoteOf, verdictOf, liveTerms, stampOf, publicQuote, withHouseBands, type PublicQuote, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
 
 /**
@@ -74,7 +72,7 @@ export type Impact = {
  */
 export async function impactOf(
   elementId: string, attributeId: string, versionId: string,
-  opts: { projectId?: string | null; at: number; isAdmin?: boolean; following?: boolean },
+  opts: { projectId?: string | null; at: number; following?: boolean },
 ): Promise<Impact> {
   await ready();
 
@@ -92,7 +90,7 @@ export async function impactOf(
     platformPays: d.platformPays,
   });
   /* The house counts a held take at its band, as admission does; any other workspace's context is unchanged. */
-  const context = withHouseBands(await contextFor(described.map((d) => d.shot.projectId), { isAdmin: opts.isAdmin === true }), described.map(unitOf));
+  const context = withHouseBands(await contextFor(described.map((d) => d.shot.projectId)), described.map(unitOf));
   const priced = (list: Described[]) => {
     const q = quoteOf(list.map(unitOf), terms);
     return { q, v: verdictOf(q, context) };
@@ -155,7 +153,7 @@ type Described = {
   usd: number;
   /** The MODEL id this is priced at — never the shot's short engine alias. */
   engine: string;
-  /** What this shot has already taken, for the per-shot approval rule. */
+  /** What this shot has already taken (in the quote's stamp; the per-shot rule that judged it was retired on 21 Oct 2026). */
   spent: number;
   /** Whether the platform's money pays for this engine's vendor. */
   platformPays: boolean;
@@ -199,10 +197,9 @@ async function describe(dependents: Dependent[]): Promise<Described[]> {
             WHERE shot_id IN (${holes}) AND review_state = 'approved' AND deleted = 0`,
       args: ids,
     }),
-    /* What each shot has already taken, in one pass rather than one per shot.
-       The per-shot approval rule is about this running total, and the press
-       and the reservation gate read exactly the same figure before they
-       decide — hidden takes included, because they were paid for. */
+    /* What each shot has already taken, in one pass rather than one per shot,
+       hidden takes included, because they were paid for. It goes into the
+       quote's stamp; no rule judges it since the per-shot cap was retired. */
     spentBy("shot_id", ids),
     /* The engine a shot would actually run on when it does not name one:
        this workspace's own default, falling back to the platform's. The same
@@ -254,14 +251,12 @@ async function describe(dependents: Dependent[]): Promise<Described[]> {
  * two of them is two questions. Answering with one cap is how a set is quoted
  * as allowed and then refused halfway through.
  */
-export async function contextFor(projectIds: (string | null)[], opts: { isAdmin: boolean }): Promise<Context> {
+export async function contextFor(projectIds: (string | null)[]): Promise<Context> {
   const inCredits = creditsApply(currentTenant()?.workspace);
   const wanted = [...new Set(projectIds.filter((p): p is string => Boolean(p)))];
 
-  const [state, rule, shotCap, warn, atCap, allowanceSpent, capRows] = await Promise.all([
+  const [state, warn, atCap, allowanceSpent, capRows] = await Promise.all([
     inCredits ? creditState() : Promise.resolve(null),
-    getSetting("approvalRule"),
-    getSetting("shotCapCredits"),
     getSetting("capWarnPct"),
     getSetting("atCap"),
     allowanceUsd() == null ? Promise.resolve(0) : platformSpendThisMonth(),
@@ -283,15 +278,7 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
     houseCap: house ? { cap: house.capUsd, spent: house.spentUsd } : null,
     caps,
     warnPct: Number(warn) || 80,
-    rule: cleanRule(rule),
-    shotCap: cleanShotCap(shotCap),
-    isAdmin: opts.isAdmin,
   };
-}
-
-/** What one shot has already taken, for a quote that is about that shot alone. */
-export async function shotSpent(shotId: string): Promise<number> {
-  return shotCreditsSoFar(shotId);
 }
 
 /**
@@ -306,7 +293,7 @@ export async function shotSpent(shotId: string): Promise<number> {
  * changes the library and a producer would be right not to trust either.
  */
 export async function quoteShots(
-  shotIds: string[], opts: { at: number; isAdmin?: boolean },
+  shotIds: string[], opts: { at: number },
 ): Promise<{ quote: Quote; verdict: Verdict; shots: ImpactShot[]; pricedAt: number; stamp: string }> {
   await ready();
   const wanted = [...new Set(shotIds.filter(Boolean))];
@@ -324,7 +311,7 @@ export async function quoteShots(
     platformPays: d.platformPays,
   }));
   /* The house counts a held take at its band, as admission does; any other workspace's context is unchanged. */
-  const context = withHouseBands(await contextFor(described.map((d) => d.shot.projectId), { isAdmin: opts.isAdmin === true }), units);
+  const context = withHouseBands(await contextFor(described.map((d) => d.shot.projectId)), units);
 
   const quote = quoteOf(units, terms);
   return {

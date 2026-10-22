@@ -63,8 +63,8 @@ type Names = { names: Map<string, string>; viewer: LedgerViewer };
 const who = (author: string | null, n: Names) => (author ? nameFor(n.viewer, author, n.names) : null);
 
 /* ── Threads: a request in Atomik's panel and the plans it made (lib/atomik.ts) ──
-   A chat is its own person's here (owner, 12 Oct): the viewer's own chats only, whoever they are. What of another member's step needs an admin's tap is in the approvals
-   queue, as a title and a price (lib/control-room/approvals.server.ts). */
+   A chat is its own person's here (owner, 12 Oct): the viewer's own chats only, whoever they are. No admin is shown another member's step (owner, 21 Oct 2026:
+   the admin approval rule is retired). */
 
 async function threadRuns(production: string | null, inCredits: boolean, workspaceId: string, viewerId: string): Promise<{ runs: Omit<ActivityRun, "n" | "project">[]; authors: string[]; productions: string[]; meter: Map<string, MeterRow> }> {
   const chats = (await db().execute({

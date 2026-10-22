@@ -4,16 +4,9 @@
  * else) and every screen that offers the choice, so a screen can never save a
  * value the gate does not understand.
  *
- * `approvalRule` and `shotCapCredits` are read by lib/approvalRule.ts (`cleanRule`, `cleanShotCap`), `atCap`,
- * `capWarnPct` and `productionBudgetCredits` by lib/caps.ts, `editOutputFormat` by lib/generationAdmission.ts.
+ * `atCap`, `capWarnPct` and `productionBudgetCredits` are read by lib/caps.ts, `editOutputFormat` by lib/generationAdmission.ts.
+ * (`approvalRule` and `shotCapCredits` were retired on 21 Oct 2026: lib/settings.ts RETIRED_SETTING_KEYS.)
  */
-import type { ApprovalRule } from "./approvalRule";
-
-export const APPROVAL_OPTIONS: readonly (readonly [ApprovalRule, string])[] = [
-  ["anyone", "Members render freely"],
-  ["cap", "An admin presses past the per-shot cap"],
-  ["producer", "A producer signs off on every take"],
-];
 
 /** The container an edit or extension comes back in; no other delivery reads it. */
 export const EDIT_FORMAT_OPTIONS: readonly (readonly [string, string])[] = [
@@ -45,11 +38,9 @@ export function wholeCredits(value: unknown): boolean {
 /** Why a value cannot be stored under this key, or null when it can. */
 export function settingProblem(key: string, value: unknown): string | null {
   switch (key) {
-    case "approvalRule": return allowed(APPROVAL_OPTIONS, value) ? null : "Choose anyone, cap or producer.";
     case "editOutputFormat": return allowed(EDIT_FORMAT_OPTIONS, value) ? null : "Choose mp4 or mov.";
     case "atCap": return allowed(AT_CAP_OPTIONS, value) ? null : "Choose producer, stop or warn.";
     case "enhanceDefault": return allowed(ENHANCE_DEFAULT_OPTIONS, value) ? null : "Choose on or off.";
-    case "shotCapCredits": return wholeCredits(value) ? null : "The cap is a whole number of credits, 1 or more.";
     case "productionBudgetCredits": return String(value ?? "").trim() === "" || wholeCredits(value) ? null : "The budget is a whole number of credits, 1 or more, or none.";
     case "capWarnPct": {
       const n = Number(value);

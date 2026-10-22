@@ -532,7 +532,7 @@ test("a failure bills nothing: a refusal before work says 'Nothing billed'; an i
   });
 });
 
-test("the shot cap is judged at the press, as the fal path judges it: a member past the shot's cap is refused 403 with no row and no hold; an admin is not", async () => {
+test("a per-shot cap a workspace stored stops no one (the admin approval rule was retired on 21 Oct 2026): a member's take on a shot far past it is quoted and admitted, with nothing said of an admin", async () => {
   process.env.RECRAFT_ENABLED = "1";
   const { setSetting } = await import("../../lib/settings");
   const { db, ready } = await import("../../lib/db");
@@ -546,42 +546,51 @@ test("the shot cap is judged at the press, as the fal path judges it: a member p
     const { executeRecraftAdmission: admitRecraft } = await import("../../lib/recraftImage");
     const asMember = (fn: () => Promise<void>) => runInTenant(house(), fn, member as never);
     try {
+      /* The retired rule as a workspace stored it, with a cap of 1 cr a shot. */
       await setSetting("approvalRule", "cap", "admin");
       await setSetting("shotCapCredits", "1", "admin");
-      const before = (await meterRows()).length;
       const gens = Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
-      const handedOff = deferred.length;
       const input = { tool: "image", prompt: "a heron", model: "recraftv4_1_pro", shotId, ...approved };
       await asMember(async () => {
-        const refused = await admitRecraft(input, member, options());
-        expect(refused.status, JSON.stringify(refused.body)).toBe(403);
-        expect(refused.body).toMatchObject({ needsAdmin: true });
-        expect(String(refused.body.error)).toMatch(/SH020/);
-        expect((await admitRecraft({ ...input, quoteOnly: true }, member, options())).status).toBe(403);
+        const quoted = await admitRecraft({ ...input, quoteOnly: true }, member, options());
+        expect(quoted.status, JSON.stringify(quoted.body)).toBe(200);
+        expect(quoted.body).not.toHaveProperty("needsAdmin");
+        const made = await admitRecraft(input, member, options());
+        expect(made.status, JSON.stringify(made.body)).toBe(200);
+        expect(made.body).not.toHaveProperty("needsAdmin");
       });
-      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
-      expect((await meterRows()).length).toBe(before);
-      expect(deferred.length).toBe(handedOff);
-      /* An admin is a PERSON here: an admin's token, an agent identity and an Atomik Auto run do not skip the cap (the same test as the job line's). */
-      const admin = OWNER.user;
-      const nonPeople: [string, AdmissionActor, AdmissionExecution][] = [
-        ["token", { user: admin, token: { id: "tok_cap", name: "cap", scope: "render", capUsd: null } }, options()],
-        ["agent", { user: { ...admin, id: "agent:atomik" } as AdmissionActor["user"] }, options()],
-        ["auto", OWNER, { ...options(), run: { auto: true } as never }],
-      ];
-      for (const [name, actor, opts] of nonPeople) {
-        await runInTenant(house(), async () => {
-          const refused = await admitRecraft(input, actor, opts);
-          expect(refused.status, `${name}: ${JSON.stringify(refused.body)}`).toBe(403);
-          expect(refused.body, name).toMatchObject({ needsAdmin: true });
-        }, actor as never);
-      }
-      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens);
-      expect((await meterRows()).length).toBe(before);
-      expect((await admitRecraft(input, OWNER, options())).status).toBe(200);
-      await setSetting("shotCapCredits", "100000", "admin");
-      await asMember(async () => { expect((await admitRecraft(input, member, options())).status).toBe(200); });
+      expect(Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n)).toBe(gens + 1);
     } finally { await setSetting("approvalRule", "anyone", "admin"); }
+  });
+});
+
+test("an Atomik identity never presses Recraft, whatever role it carries, and neither does a run marked Auto: refused 403 (people only) before anything is held, written or metered; it may still price; a person's press goes", async () => {
+  /* The per-shot cap was this door's only refusal of one (retired 21 Oct 2026, owner); rule 14 says it in its own words now. */
+  process.env.RECRAFT_ENABLED = "1";
+  const { PEOPLE_ONLY } = await import("../../lib/security/people-only");
+  const { db, ready } = await import("../../lib/db");
+  const { runInTenant } = await import("../../lib/tenant");
+  const { executeRecraftAdmission: admitRecraft } = await import("../../lib/recraftImage");
+  const AGENT: AdmissionActor = { user: { ...OWNER.user, id: "agent:run_recraft_press", role: "admin", owner: false } as AdmissionActor["user"] };
+  await asTenant(house(), async () => {
+    await ready();
+    const input = { tool: "image", prompt: "a heron", model: "recraftv4_1_pro", ...approved };
+    const rows = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n);
+    const before = { rows: await rows(), meter: (await meterRows()).length, handed: deferred.length };
+    await runInTenant(house(), async () => {
+      expect(await admitRecraft(input, AGENT, options())).toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
+      expect((await admitRecraft({ ...input, quoteOnly: true }, AGENT, options())).status, "pricing stays open to it").toBe(200);
+    }, { user: AGENT.user } as never);
+    await runInTenant(house(), async () => {
+      expect(await admitRecraft(input, OWNER, { ...options(), run: { auto: true } as never })).toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
+    }, OWNER as never);
+    expect({ rows: await rows(), meter: (await meterRows()).length, handed: deferred.length }, "nothing held, written or metered").toEqual(before);
+    await runInTenant(house(), async () => {
+      const made = await admitRecraft(input, OWNER, options());
+      expect(made.status, JSON.stringify(made.body)).toBe(200);
+    }, OWNER as never);
+    expect(await rows()).toBe(before.rows + 1);
+    deferred.splice(0);
   });
 });
 
@@ -661,6 +670,7 @@ test("remove background: the still is read from this workspace and sent as data;
 
 test("an upload is cut out only for a person who may open it, for an Atomik run (as its owner, a member) as for a person; with no person behind the request nothing is read, written or reserved", async () => {
   const { executeRecraftAdmission: admitRecraft } = await import("../../lib/recraftImage");
+  const { PEOPLE_ONLY } = await import("../../lib/security/people-only");
   const { runInTenant } = await import("../../lib/tenant");
   const { rigAgentReady } = await import("../../lib/workbench/rig-agent-store");
   const { db, ready } = await import("../../lib/db");
@@ -678,11 +688,14 @@ test("an upload is cut out only for a person who may open it, for an Atomik run 
     /* The run acts for the person who started it: their own upload, yes; another person's private one, no (the words a missing one gets). */
     await runInTenant(house(), async () => {
       expect((await cut(agent("run_recraft_owned"), mine.id)).status).toBe(200);
-      for (const extra of [{ quoteOnly: true }, approved]) expect(await cut(agent("run_recraft_owned"), theirs.id, extra), JSON.stringify(extra)).toMatchObject({ status: 404, body: { error: "That still is not in this workspace." } });
+      expect(await cut(agent("run_recraft_owned"), theirs.id), "quote").toMatchObject({ status: 404, body: { error: "That still is not in this workspace." } });
+      /* A press by an Atomik identity is refused first, as people only, before any source is read (rule 14; since 21 Oct 2026 said at this door itself). */
+      expect(await cut(agent("run_recraft_owned"), theirs.id, approved), "press").toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
     }, { user: agentUser("run_recraft_owned") } as never);
     /* No person behind the run (an unknown run): refused before the source is looked at, quote or press. */
     await runInTenant(house(), async () => {
-      for (const extra of [{ quoteOnly: true }, approved]) expect(await cut(agent("run_recraft_none"), mine.id, extra), JSON.stringify(extra)).toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+      expect(await cut(agent("run_recraft_none"), mine.id), "quote").toMatchObject({ status: 403, body: { error: "A person must be behind this request to use their uploads." } });
+      expect(await cut(agent("run_recraft_none"), mine.id, approved), "press").toMatchObject({ status: 403, body: { error: PEOPLE_ONLY } });
       expect(await cut(agent("run_recraft_none"), "../x")).toMatchObject({ status: 403 });
     }, { user: agentUser("run_recraft_none") } as never);
     /* A signed-in person is judged the same way: their own, yes; another person's private upload, no. */

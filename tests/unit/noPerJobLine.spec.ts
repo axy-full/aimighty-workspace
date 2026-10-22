@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
-import { ruleLine, shotCapVerdict } from "../../lib/approvalRule";
 import { quoteOf, verdictOf, type Context, type Unit } from "../../lib/quote";
 import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { keepingHouseJobsClean } from "../helpers/houseJobs";
@@ -15,8 +14,12 @@ import { keepingHouseJobsClean } from "../helpers/houseJobs";
  * This file pinned guardrail 4 (SOW §7A: a single job above US$20, 200 cr at a credit's US$0.10, needed an admin's own tap; a token, an MCP
  * client or Atomik was refused outright). It now pins its retirement: no job is refused, parked or sent to an admin for its size alone, at
  * the quote, the press, the reservation, a held take's release, or the audio, dubbing and text quotes. What still stops a job is pinned
- * here as unchanged: the balance, the workspace's monthly cap, the house's cap, the workspace's OWN per-shot rule, a token's own ceiling
- * and a run's approved limit; and approving stays a person's (an agent, an MCP client or a token can prepare, never approve).
+ * here as unchanged: the balance, the workspace's monthly cap, the house's cap, a token's own ceiling and a run's approved limit; and
+ * approving stays a person's (an agent, an MCP client or a token can prepare, never approve).
+ *
+ * Amended 21 Oct 2026 (owner): "the admin approval rule is retired; every member approves their own spend with their own tap on the quote;
+ * Atomik, tokens and MCP callers still never approve." The workspace's own per-shot rule, which this file pinned as what remained, went with it:
+ * no module carries it and a stored cap stops no one. And "The monthly limit stays as a mechanism, off by default, owner-only, no Paused card."
  * Mocked providers only: no engine is called, no credit is spent; real temporary databases for the reservation.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-no-per-job-line-"));
@@ -54,11 +57,9 @@ function sources(folder: string): string[] {
   return out;
 }
 
-test("the code carries no per-job line and no Auto ceiling: no constant, verdict or gate of either is exported or used anywhere in the product, and the old Auto setting is not read; the workspace's own rule is what remains", async () => {
-  const rule = await import("../../lib/approvalRule") as Record<string, unknown>;
-  for (const gone of ["JOB_APPROVAL_LINE_USD", "jobApprovalLineCredits", "jobLineVerdict", "JOB_LINE_STATUS"]) expect(rule[gone], gone).toBeUndefined();
-  const shotCap = await import("../../lib/shotCap") as Record<string, unknown>;
-  for (const gone of ["jobLineGate", "jobLineGateAt", "jobLineNow"]) expect(shotCap[gone], gone).toBeUndefined();
+test("the code carries no per-job line and no Auto ceiling: no constant, verdict or gate of either is exported or used anywhere in the product, and the old Auto setting is not read; the admin approval rule went after them (21 Oct 2026)", async () => {
+  /* The modules that held the line's names, the workspace's approval rule and its per-shot gate, are gone with the admin approval rule. */
+  for (const gone of ["lib/approvalRule.ts", "lib/shotCap.ts"]) expect(existsSync(path.join(repoRoot, gone)), gone).toBe(false);
   /* One press counted as one job was the line's alone; it is gone with it. */
   expect(existsSync(path.join(repoRoot, "lib/batchLine.ts"))).toBe(false);
   /* Tripwire: nothing in the product names the line again. */
@@ -71,18 +72,11 @@ test("the code carries no per-job line and no Auto ceiling: no constant, verdict
   /* And the old Auto setting is neither read nor written: its key appears nowhere in the product, in any form (string, property, destructured or bare). */
   const setting = /\bspendWithoutAsking\b/;
   expect(product.filter((f) => setting.test(f.text)).map((f) => f.file)).toEqual([]);
-  /* What stays: the workspace's own rule. With "cap per shot", a member's take that carries a shot past the cap needs an admin; an admin's goes. */
-  const cr = (n: number) => `${n} cr`;
-  expect(shotCapVerdict({ rule: "cap", isAdmin: false, cap: 50, shotCredits: 40, takeCredits: 20, code: "SH010" }, cr))
-    .toEqual({ blocked: true, line: "SH010 is at 40 cr; this take makes it 60 cr, over the 50 cr a shot may take. An admin has to press this one." });
-  expect(shotCapVerdict({ rule: "cap", isAdmin: true, cap: 50, shotCredits: 40, takeCredits: 20, code: "SH010" }, cr).blocked).toBe(false);
-  /* The rule decides alone: "anyone" and "producer" stop no one, at any size. */
-  for (const r of ["anyone", "producer"] as const) expect(shotCapVerdict({ rule: r, isAdmin: false, cap: 50, shotCredits: 0, takeCredits: 5000, code: "SH010" }, cr).blocked, r).toBe(false);
-  expect(ruleLine("cap", 50, cr)).toBe("Over 50 cr on a shot needs an admin.");
-  expect(ruleLine("anyone", 50, cr)).toBe("");
+  /* Nor the admin approval rule's gate (tests/unit/noAdminApprovalRule.spec.ts reads the product for its settings and words). */
+  expect(product.filter((f) => /\b(shotCapVerdict|shotCapGate|shotCapAdmin|cleanShotCap|cleanRule)\b/.test(f.text)).map((f) => f.file)).toEqual([]);
 });
 
-const base: Context = { balance: 10_000, allowance: null, caps: {}, warnPct: 80, rule: "anyone", shotCap: 50, isAdmin: false };
+const base: Context = { balance: 10_000, allowance: null, caps: {}, warnPct: 80 };
 const unit = (usd: number, key = "s1"): Unit => ({ key, usd, engine: "dreamina-seedance-2-5-260628", spent: 0, code: "SH010", projectId: null, platformPays: true });
 
 /** The dollars of an engine cost that price at about `credits` (the quote's own pricing, margin and rounding included). */
@@ -92,17 +86,12 @@ function usdFor(credits: number): number {
   return usd;
 }
 
-test("the quote: a job far over 200 cr is allowed for a member under any rule that allows it; the workspace's own per-shot cap still stops a member and not an admin; takes multiplied are one line, still allowed", () => {
+test("the quote: a job far over 200 cr is allowed for a member, with nothing said about an admin; a shot that has already taken a lot is no different (no per-shot cap since 21 Oct 2026); takes multiplied are one line, still allowed", () => {
   const big = quoteOf([unit(usdFor(250))]);
   expect(big.totalCredits).toBeGreaterThan(200);
-  /* No rule, a producer's sign-off, or a cap the job fits under: the member is allowed, whatever the job's size. */
-  for (const c of [{ ...base, rule: "anyone" }, { ...base, rule: "producer" }, { ...base, rule: "cap", shotCap: 1000 }] as const)
-    expect(verdictOf(big, c), c.rule).toMatchObject({ allow: true });
-  /* The workspace's own per-shot cap, unchanged: a member past it is stopped with its own words, an admin is not. */
-  const capped = verdictOf(big, { ...base, rule: "cap", shotCap: 50 });
-  expect(capped).toMatchObject({ allow: false, gate: "approval" });
-  expect(capped.line).toMatch(/over the 50 cr a shot may take\. An admin has to press this one\./);
-  expect(verdictOf(big, { ...base, rule: "cap", shotCap: 50, isAdmin: true }).allow).toBe(true);
+  expect(verdictOf(big, base)).toEqual({ allow: true, gate: "ok", line: "", notice: "" });
+  /* The shot already holds far more than any cap a workspace stored: the verdict is the same. */
+  expect(verdictOf(quoteOf([{ ...unit(usdFor(250)), spent: 5000 }]), base)).toEqual({ allow: true, gate: "ok", line: "", notice: "" });
   /* Four takes of ~70 cr (~280 cr as one line): allowed. */
   const batch = quoteOf([{ ...unit(usdFor(70)), count: 4 }]);
   expect(batch.lines[0].count).toBe(4);
@@ -128,8 +117,9 @@ test("the quote's context carries no line: a token's, an agent's and a person's 
   ]) {
     await runInTenant(ws, async () => {
       await ready();
-      const ctx = await contextFor([], { isAdmin: who.user.role === "admin" });
+      const ctx = await contextFor([]);
       expect(ctx).not.toHaveProperty("jobLine");
+      for (const gone of ["rule", "shotCap", "isAdmin"]) expect(ctx, gone).not.toHaveProperty(gone);
       verdicts.push(verdictOf(big, ctx));
     }, who);
   }
@@ -159,7 +149,7 @@ async function reservation() {
   return { reserveGenerationSpend, SpendReservationError, RUN_LIMIT_REACHED, runInTenant, ready, funded, reserved, refusal };
 }
 
-test("the reservation: a job far over 200 cr is reserved for a member, an admin, a token, an agent identity and a reservation with nobody behind it, with no admin rule firing when the workspace's own rule allows it", async () => {
+test("the reservation: a job far over 200 cr is reserved for a member, an admin, a token, an agent identity and a reservation with nobody behind it, with no admin rule firing", async () => {
   const { reserveGenerationSpend, runInTenant, ready, funded, reserved } = await reservation();
   const { over, under } = await costs();
   const cases: [string, Parameters<typeof runInTenant>[2], Record<string, unknown>, Record<string, unknown>][] = [
@@ -209,7 +199,7 @@ test("the reservation either side of the old line: 200 cr and 201 cr are both re
   });
 });
 
-test("what still stops a job over 200 cr, exactly as before: the balance, the workspace's monthly cap, the house's cap, the workspace's own per-shot cap, a token's own ceiling and a run's approved limit", async () => {
+test("what still stops a job over 200 cr, exactly as before: the balance, the workspace's monthly cap, the house's cap, a token's own ceiling and a run's approved limit; a per-shot cap a workspace stored stops no one (21 Oct 2026)", async () => {
   const { reserveGenerationSpend, SpendReservationError, RUN_LIMIT_REACHED, runInTenant, ready, funded, reserved, refusal } = await reservation();
   const { HOUSE_CAP_REACHED, HOUSE_CAP_DEFAULT_USD } = await import("../../lib/houseCap");
   const { setSetting } = await import("../../lib/settings");
@@ -238,24 +228,16 @@ test("what still stops a job over 200 cr, exactly as before: the balance, the wo
       expect(await reserved(`gen_housecap_${run}`)).toBe(0);
     }, { user: person("u_admin", "admin") });
   });
-  /* The workspace's own per-shot cap ("cap per shot", 50 cr): a member's take past it needs an admin; an admin's goes; with no rule the member's goes. */
+  /* A per-shot cap a workspace stored before 21 Oct 2026 ("cap per shot", 50 cr): it stops no one now, a member's take past it included. */
   const capped = await funded("shotcap");
   await runInTenant(capped, async () => {
     await ready();
     await setSetting("approvalRule", "cap", "u_admin");
     await setSetting("shotCapCredits", "50", "u_admin");
-    const e = await refusal(() => reserveGenerationSpend(event(`gen_shotcap_m_${run}`, over, { shotId: "shot_c" })));
-    expect(e).toMatchObject({ status: 403, message: "This take and reserved takes exceed the shot's credit cap. An admin must start it." });
-    expect(await reserved(`gen_shotcap_m_${run}`)).toBe(0);
-  }, { user: person("u_member", "member") });
-  await runInTenant(capped, async () => {
-    await reserveGenerationSpend(event(`gen_shotcap_a_${run}`, over, { shotId: "shot_c" }));
-    expect(await reserved(`gen_shotcap_a_${run}`)).toBe(1);
-    await setSetting("approvalRule", "anyone", "u_admin");
-  }, { user: person("u_admin", "admin") });
-  await runInTenant(capped, async () => {
-    await reserveGenerationSpend(event(`gen_shotcap_free_${run}`, over, { shotId: "shot_d" }));
-    expect(await reserved(`gen_shotcap_free_${run}`)).toBe(1);
+    await reserveGenerationSpend(event(`gen_shotcap_m_${run}`, over, { shotId: "shot_c" }));
+    expect(await reserved(`gen_shotcap_m_${run}`)).toBe(1);
+    await reserveGenerationSpend(event(`gen_shotcap_m2_${run}`, over, { shotId: "shot_c" }));
+    expect(await reserved(`gen_shotcap_m2_${run}`), "a second take of the same shot too").toBe(1);
   }, { user: person("u_member", "member") });
   /* A token's own monthly ceiling in credits. */
   await runInTenant(await funded("tokcap"), async () => {

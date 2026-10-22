@@ -250,7 +250,7 @@ const gate = (prices: [number, number, number]) => {
   return {
     ...base, state: "needs_you", reason: "Opening is ready to render · about 43 cr.",
     paid: base.paid.map((p, i) => ({ ...p, state: "waiting", quote: prices[i], worst: prices[i], canRender: true, fingerprint: FP })),
-    plan: { quote: { total, ceiling: 2 * total, approximate: false, fingerprint: QUOTE_FP, covered: [1, 2, 3], asks: [] }, blocked: null, approval: null },
+    plan: { quote: { total, ceiling: 2 * total, approximate: false, fingerprint: QUOTE_FP, covered: [1, 2, 3] }, blocked: null, approval: null },
   };
 };
 

@@ -54,10 +54,6 @@ test("Ask an admin counts one ask per person and subject every ten minutes acros
     "../tenant": { requireTenant: () => ({ id: "ws_multi" }) },
     "../platform": { workspaceAdmins: async () => [] },
     "../push": { notify: async () => { throw new Error("not in this test"); } },
-    "../settings": { getSetting: async () => "" },
-    "../workbench/rig-agent-runs": { priceRender: async () => ({ ok: false }), stepTitle: () => "" },
-    "../shotCap": { shotCreditsSoFar: async () => 0 },
-    "../workbench/rig-agent-store": { rigAgentExists: async () => false, runOfProduction: async () => null, stepsOf: async () => [] },
   });
   const one = process(a), two = process(b);
   const told: string[][] = [];
@@ -95,10 +91,6 @@ test("Ask an admin answers 503 \"try again\" when the database cannot take the m
     "../tenant": { requireTenant: () => ({ id: "ws_down" }) },
     "../platform": { workspaceAdmins: async () => [] },
     "../push": { notify: async () => {} },
-    "../settings": { getSetting: async () => "" },
-    "../workbench/rig-agent-runs": { priceRender: async () => ({ ok: false }), stepTitle: () => "" },
-    "../shotCap": { shotCreditsSoFar: async () => 0 },
-    "../workbench/rig-agent-store": { rigAgentExists: async () => false, runOfProduction: async () => null, stepsOf: async () => [] },
   });
   const me = { id: "mem", name: "Member", admin: false };
   const down = process(failing(new Error("SQLITE_IOERR: secret detail")));

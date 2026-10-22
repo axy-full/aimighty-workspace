@@ -337,14 +337,15 @@ test("the step list comes from config: the setting when set, else the owner's de
  * for Ad film, Feature, Short film, Music video, Product video and Microdrama; no for UGC, Trend clip, Social and
  * Pre-vis, whose last steps are on the rail as in the 19 Oct lists"). "+" marks a step that is listed but behind the +
  * tile, not opened in a new production: "+ Sound · Edit · Deliver" is all three; "(Treatment optional)" is Treatment,
- * right after Script where the type has one, else right after the first step.
+ * right after Script where the type has one, else right after the first step. Elements before Look, by his decision D3
+ * (21 Oct 2026; the test below holds every type to it).
  */
 const PLUS = ["+Sound", "+Edit", "+Deliver"];
 const OWNER_TABLE: [string, string, string[]][] = [
-  ["ad_film", "Ad film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]],
-  ["feature", "Feature", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]],
-  ["short_film", "Short film", ["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]],
-  ["music_video", "Music video", ["Track", "Beat map", "Treatment", "Look", "Elements", "Storyboard", "Animatic", "Shots", ...PLUS]],
+  ["ad_film", "Ad film", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]],
+  ["feature", "Feature", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]],
+  ["short_film", "Short film", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]],
+  ["music_video", "Music video", ["Track", "Beat map", "Treatment", "Elements", "Look", "Storyboard", "Animatic", "Shots", ...PLUS]],
   ["product_video", "Product video", ["Brief", "+Treatment", "Product", "Look", "Storyboard", "Shots", ...PLUS]],
   ["ugc", "UGC", ["Brief", "Creator", "Hook", "Script", "+Treatment", "Shots", "Captions", "Deliver"]],
   ["microdrama", "Microdrama", ["Series bible", "+Treatment", "Episodes", "Elements", "Storyboard", "Shots", ...PLUS]],
@@ -384,10 +385,50 @@ test("the default is the owner's ten film types, final for A1b: his steps in his
   const client = await existingDatabase(ws);
   await m.runInTenant(ws, async () => {
     const steps = await m.stepStoreForTests(client, ws.id, {}).ensureSteps("prj_one", "ad_film", "person_a");
-    expect(steps.map((s) => s.pageId)).toEqual(["brief", "script", "treatment", "look", "elements", "storyboard", "shots"]);
+    expect(steps.map((s) => s.pageId)).toEqual(["brief", "script", "treatment", "elements", "look", "storyboard", "shots"]);
     expect(steps.map((s) => s.position)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(steps.filter((s) => s.frame === null).map((s) => [s.label, s.surface])).toEqual([["Brief", "document"], ["Script", "document"], ["Treatment", "deck"]]);
     expect(steps.filter((s) => s.frame !== null)).toHaveLength(4);
+  });
+});
+
+/* The owner's step order, D3 (21 Oct 2026), verbatim: "the step order is Brief · Script · Treatment · Elements · Look ·
+   Storyboard · Shots · Sound · Edit · Deliver (Elements before Look)". */
+const OWNER_ORDER = "Brief · Script · Treatment · Elements · Look · Storyboard · Shots · Sound · Edit · Deliver".split(" · ");
+
+test("D3: every film type lists the owner's steps it has in his order, Elements before Look; Ad film, Feature and Short film are exactly his list", async () => {
+  const m = await mods();
+  const config = m.filmTypeConfig({});
+  for (const type of config.filmTypes) {
+    const labels = type.steps.map((s) => s.label);
+    // The owner's steps this type has, in the type's rail order, are his list with the others left out.
+    expect(labels.filter((l) => OWNER_ORDER.includes(l)), type.id).toEqual(OWNER_ORDER.filter((l) => labels.includes(l)));
+    if (labels.includes("Elements") && labels.includes("Look")) expect(labels.indexOf("Look") - labels.indexOf("Elements"), type.id).toBe(1);
+  }
+  for (const id of ["ad_film", "feature", "short_film"]) expect(config.filmTypes.find((t) => t.id === id)!.steps.map((s) => s.label), id).toEqual(OWNER_ORDER);
+  // Every type that has both: Ad film, Feature, Short film and Music video.
+  expect(config.filmTypes.filter((t) => ["elements", "look"].every((k) => t.steps.some((s) => s.kind === k))).map((t) => t.id)).toEqual(["ad_film", "feature", "short_film", "music_video"]);
+});
+
+test("D3: a production made with Look before Elements keeps its stored order, ids and page ids; a step put back goes by today's list", async () => {
+  const m = await mods();
+  // The Ad film before D3, written out here as a synthetic deployment setting.
+  const BEFORE = { V30_FILM_TYPES: JSON.stringify({ filmTypes: [{ id: "ad_film", label: "Ad film", steps: stepsOf(["Brief", "Script", "Treatment", "Look", "Elements", "Storyboard", "Shots", ...PLUS]) }] }) };
+  const ws = workspace("before-d3");
+  const client = await existingDatabase(ws);
+  await m.runInTenant(ws, async () => {
+    const made = await m.stepStoreForTests(client, ws.id, BEFORE).ensureSteps("prj_one", "ad_film", "person_a");
+    expect(made.map((s) => s.pageId)).toEqual(["brief", "script", "treatment", "look", "elements", "storyboard", "shots"]);
+    const today = m.stepStoreForTests(client, ws.id, {});
+    // Nothing rewritten: the same rows, at the same positions, still Look then Elements.
+    const again = await today.ensureSteps("prj_one", "ad_film", "person_a");
+    expect(again.map((s) => [s.id, s.pageId, s.position])).toEqual(made.map((s) => [s.id, s.pageId, s.position]));
+    expect(await count(client)).toBe(7);
+    // Elements removed and restored lands at today's place: after Treatment, before Look.
+    const elements = made.find((s) => s.kind === "elements")!;
+    await today.remove(elements.id, "person_a");
+    expect(await today.restore(elements.id)).toMatchObject({ id: elements.id, pageId: "elements", position: 3 });
+    expect((await today.list("prj_one")).map((s) => s.pageId)).toEqual(["brief", "script", "treatment", "elements", "look", "storyboard", "shots"]);
   });
 });
 
@@ -523,7 +564,7 @@ test("one deck per production (Q18): a second Treatment is refused in words, liv
     expect(await decks("prj_one")).toBe(1);
     // Undo: the same step, the same page id, back after Script.
     expect(await store.restore(treatment.id)).toMatchObject({ id: treatment.id, pageId: "treatment", removedAt: null, position: 2 });
-    expect((await store.list("prj_one")).map((s) => s.pageId)).toEqual(["brief", "script", "treatment", "look", "elements", "storyboard", "shots"]);
+    expect((await store.list("prj_one")).map((s) => s.pageId)).toEqual(["brief", "script", "treatment", "elements", "look", "storyboard", "shots"]);
     expect(await decks("prj_one")).toBe(1);
 
     // UGC, where Treatment is optional: the first one is added, a second is refused.
@@ -546,21 +587,21 @@ test("restore puts a step back at its list place, as add does; a step the list n
     const made = await store.ensureSteps("prj_one", "ad_film", "person_a");
     const byKind = (k: string) => made.find((s) => s.kind === k)!;
 
-    // Look, removed and restored: back between Treatment and Elements, not at the end.
+    // Look, removed and restored: back between Elements and Storyboard, not at the end.
     await store.remove(byKind("look").id, "person_a");
-    expect((await store.restore(byKind("look").id)).position).toBe(3);
-    expect(await pages("prj_one")).toEqual(["brief", "script", "treatment", "look", "elements", "storyboard", "shots"]);
+    expect((await store.restore(byKind("look").id)).position).toBe(4);
+    expect(await pages("prj_one")).toEqual(["brief", "script", "treatment", "elements", "look", "storyboard", "shots"]);
 
     // After a reorder, Script comes back right after Brief, wherever Brief now is; with Brief removed too, first.
     const ids = made.map((s) => s.id);
     await store.reorder("prj_one", [ids[3], ids[0], ids[1], ids[2], ...ids.slice(4)]);
     await store.remove(byKind("script").id, "person_a");
     await store.restore(byKind("script").id);
-    expect(await pages("prj_one")).toEqual(["look", "brief", "script", "treatment", "elements", "storyboard", "shots"]);
+    expect(await pages("prj_one")).toEqual(["elements", "brief", "script", "treatment", "look", "storyboard", "shots"]);
     await store.remove(byKind("brief").id, "person_a");
     await store.remove(byKind("script").id, "person_a");
     await store.restore(byKind("script").id);
-    expect(await pages("prj_one")).toEqual(["script", "look", "treatment", "elements", "storyboard", "shots"]);
+    expect(await pages("prj_one")).toEqual(["script", "elements", "treatment", "look", "storyboard", "shots"]);
     expect((await store.list("prj_one")).map((s) => s.position)).toEqual([0, 1, 2, 3, 4, 5]);
 
     // A production made from an older list: its Breakdown, which today's list does not name, comes back at the end.

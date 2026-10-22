@@ -9,7 +9,7 @@ const endedUnknown = (modelId: string) => (holds(modelId) ? "Nothing was charged
 import { higgsfieldSubmissionRejected } from "./higgsfield";
 import { saveHiggsfieldGenerationReceipt, restoreHiggsfieldGenerationReceipt } from "./higgsfieldGenerationReceipts";
 import type { RenderHandle } from "./engines/types";
-import { ASTRA_MODEL, astraSettings } from "./astra";
+import { ALREADY_4K, ASTRA_MODEL, alreadyAt4K, astraSettings } from "./astra";
 import { withRecoveryJob } from "./recovery";
 import { db, ready, now } from "./db";
 import { type VideoParams, type Reference, type ImageRole } from "./ark";
@@ -261,12 +261,15 @@ export async function submitVideoJob(job: VideoJob): Promise<SubmitOutcome> {
         cls: "fatal",
       };
     if (job.model.id === ASTRA_MODEL) {
+      /* A source already at 4K has nothing to upscale (lib/astra.ts): admission refuses it, and a take admitted before that rule is let go here, unsent and unbilled. */
+      let at4K = false;
       try {
         const settings = astraSettings(job.params.astra), source = job.params.astraSource;
         if (job.params.resolution !== "4k" || job.params.fps60 !== (settings.fps === 60) || !source || ![source.width,source.height,source.seconds].every(n=>Number.isFinite(n)&&n>0) || source.seconds>300)
           throw new Error("Topaz Astra source and output settings need a new quote.");
+        if ((at4K = alreadyAt4K(source))) throw new Error(ALREADY_4K);
       } catch {
-        const message = "Topaz Astra's output requirements changed. Review this source again in Make before submitting a new upscale. No provider request was sent.";
+        const message = at4K ? `${ALREADY_4K} Nothing billed.` : "Topaz Astra's output requirements changed. Review this source again in Make before submitting a new upscale. No provider request was sent.";
         await failVideoDispatch(job.genId, message);
         const current = await submissionRow(job.genId);
         const handle = current && knownTask(current);

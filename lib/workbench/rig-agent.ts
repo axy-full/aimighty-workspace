@@ -40,7 +40,7 @@ import { attachedOf, loadPlanAttachmentContent, PlanAttachmentError, resolvePlan
 import { suggestedRunLimit } from "./rig-agent-limits";
 import { advancePaidSteps, closeEndedSteps, MAX_SEND_ATTEMPTS, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
 import {
-  activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertFixStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
+  BACK_TO_ITS_PERSON, activeRun, attemptStep, claimRun, dueRuns, finishStep, getRun, getStep, insertFixStep, insertRun, insertSteps, latestRun, looseCharges, looseSteps, newRunId, patchRun,
   patchStep, releaseRun, renewRun, rigAgentExists, rigAgentReady, runByRequest, runCanvasChanges, runOfProduction, setSteps, stepOpId, stepsOf, undoOpId,
   type LimitRecord, type RunLease, type RunRow, type StepRow,
 } from "./rig-agent-store";
@@ -121,7 +121,6 @@ const stepWorstUsd = (s: StepRow): number | null => { const u = stepQuoteUsd(s);
 function quoteStep(run: RunRow, s: StepRow): QuoteInputStep {
   return {
     seq: s.seq, nodeId: s.nodeId, title: stepTitle(run, s), state: s.state, fixOf: s.fixOf, pause: s.pause, reason: s.reason,
-    /* A render that needs an admin carries its own price with no admission: shown, never in the plan's total. */
     quote: s.quoteCredits,
     worst: s.quoteCredits != null ? fromTenths(toTenths(s.quoteCredits) * Math.max(1, s.band ?? 1)) : null,
     fingerprint: s.admission ? s.admission.quote.fingerprint : null,
@@ -157,7 +156,7 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
   const usds = covered.map((s) => (s ? stepWorstUsd(s) : null));
   const totalUsd = usds.length && usds.every((u): u is number => u != null) ? usds.reduce((a, b) => a + b, 0) : null;
   return {
-    quote: { total: quote.total, ceiling: quote.ceiling, approximate: quote.approximate, fingerprint: quote.fingerprint, covered: quote.steps.map((s) => s.seq), asks: quote.asks.map((a) => a.seq),
+    quote: { total: quote.total, ceiling: quote.ceiling, approximate: quote.approximate, fingerprint: quote.fingerprint, covered: quote.steps.map((s) => s.seq),
       ...(totalUsd != null ? { totalUsd } : {}) },
     blocked: null, approval: null,
   };
@@ -171,8 +170,7 @@ function planView(run: RunRow, steps: StepRow[], viewer: string, ledger: RunLedg
  *  - after the approval: a step the approval sent or is sending (approved, sending, rendering, with the approval's id), and a listed step that waits only for its
  *    turn (waiting, at the very price the approval lists, with no note: nothing asked of anyone), while the approval is open.
  *
- * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step in the gate's `asks` (over the per-render
- * line, or needing an admin), a fix waiting for its turn, every step while there is no plan quote yet (each one asks on its own), a step whose price moved or that
+ * Every step that spends on its own tap keeps its server price, so the button that spends shows it first (rule 14): a step the gate does not cover, a fix waiting for its turn, every step while there is no plan quote yet (each one asks on its own), a step whose price moved or that
  * waits for a tap, and every paused step (a Retry runs at its own price; a limit pause offers Raise from it). Titles, states, outcomes and what was charged stay.
  */
 function onePrice(view: RigAgentRunView, approval: PlanApprovalRow | null): RigAgentRunView {
@@ -201,20 +199,22 @@ function onePrice(view: RigAgentRunView, approval: PlanApprovalRow | null): RigA
 }
 
 /**
- * The words a chips plan shows for a render paused because it could not be priced, or because it needs an admin: fixed, with no engine's name (owner, 16 Oct).
+ * The words a chips plan shows for a render paused because it could not be priced: fixed, with no engine's name (owner, 16 Oct).
  * The pause's own reason is the pricing refusal word for word (lib/workbench/rig-agent-runs.ts priceRender), which can name the engine; it stays on the record.
  */
 export function engineFreeReason(pause: string | null): string | null {
   if (pause === "unpriced") return "Can't be priced yet. Check the shot, then price it again.";
-  if (pause === "admin") return "Needs an admin: it asks on its own, at its own price.";
+  /* A refusal at pricing (403: who is asking) says it in fixed words too: admission's own words could one day name an engine (R17). */
+  if (pause === "refused") return "Can't be rendered as asked. Open the shot, or skip it.";
   return null;
 }
 
-/** A chips run's steps and note with every paused unpriced or admin render's reason in engine-free words (the run's note is that reason when the pause set it). */
+/** A chips run's steps and note with every paused unpriced render's reason in engine-free words (the run's note is that reason when the pause set it). */
 function engineFree(run: RunRow, steps: StepRow[]): { run: RunRow; steps: StepRow[] } {
   const said = new Map<string, string>();
   const safe = steps.map((s) => {
-    const words = s.purpose === "take" && s.state === "paused" ? engineFreeReason(s.pause) : null;
+    /* A render handed back to its person (BACK_TO_ITS_PERSON, lib/workbench/rig-agent-store.ts) keeps its own fixed words, which name no engine. */
+    const words = s.purpose === "take" && s.state === "paused" && s.reason !== BACK_TO_ITS_PERSON ? engineFreeReason(s.pause) : null;
     if (words == null || s.reason === words) return s;
     if (s.reason) said.set(s.reason, `${stepTitle(run, s)}: ${words}`);
     return { ...s, reason: words };
@@ -660,10 +660,13 @@ export async function renderRigAgentStep(input: { productionId: string; runId: s
     } else if (step.state === "paused") {
       const same = !!fingerprint && !!step.admission && fingerprint === step.admission.quote.fingerprint;
       const approval = same ? { approved_at: at, approved_by: input.userId, approved_fingerprint: fingerprint, approval_id: null } : {};
-      /* Retry: its checks run again at the same price; Price again: it is priced afresh. */
+      /* Retry: its checks run again at the same price; Price again: it is priced afresh. A render handed back from an admin (stored before
+         21 Oct 2026) loses every approval it carried, a tap or a plan's, in the database itself: it goes "back to its own person at a fresh
+         quote and starts only on their tap" (owner), so the fresh price waits for that tap. */
+      const forgetApproval = step.handedBack ? { approved_at: null, approved_by: null, approved_fingerprint: null, approval_id: null } : {};
       await patchStep(tx, step.id, step.admission && step.pause !== "unpriced" && step.pause !== "record"
         ? { state: "waiting", reason: null, pause: null, ...approval }
-        : { state: "next", admission: null, quote_credits: null, reason: null, pause: null }, ["paused"]);
+        : { state: "next", admission: null, quote_credits: null, reason: null, pause: null, ...forgetApproval }, ["paused"]);
     } else throw new RigAgentError("That render is not waiting for you.", 409);
     await patchRun(tx, run.id, { state: "running", reason: null, wake_at: at }, ["needs_you", "running"]);
     return true;

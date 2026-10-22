@@ -9,8 +9,8 @@ import {
   creditPriceLine, creditsWithUsd, inviteLine, memberLine, monthKey, monthLine, monthTotalsOf, peopleMeta, planView, roleChangeable, roleOf,
   topUpLabel, topUpPack, workspaceTwoStep,
 } from "../../components/graphite/settings/model";
-import { capInput, productionLine, ruleValue, spendingLines, type SpendingRules } from "../../components/graphite/settings/rules/spending-words";
-import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, settingProblem } from "../../lib/settingValues";
+import { capInput, productionLine, spendingLines, type SpendingRules } from "../../components/graphite/settings/rules/spending-words";
+import { AT_CAP_OPTIONS, CAP_WARN_OPTIONS, settingProblem } from "../../lib/settingValues";
 import { PUBLISHING_ACCOUNTS, REACH_PLACES, reachRows, tokenLine, tokenValue } from "../../components/graphite/settings/model";
 import { MCP_TOOL_LINES, PARTICL_REACH, mcpTools } from "../../lib/shell/tools-connections";
 import { creditsText } from "../../lib/shell/price-words";
@@ -148,10 +148,12 @@ test.describe("Plan & credits, as the code has it", () => {
 });
 
 test.describe("the spending rules, read-only (DECISIONS 1, 10)", () => {
-  const base: SpendingRules = { loaded: true, rule: "cap", shotCap: 50, mode: "ask", capWarnPct: 80, atCap: "producer", canChange: false };
+  const base: SpendingRules = { loaded: true, mode: "ask", capWarnPct: 80, atCap: "producer", canChange: false };
   test("each line says what the code does", () => {
-    const l = spendingLines(base, creditsText);
-    expect(l.ruleLine).toBe("Members up to 50 cr a shot; an admin above it.");
+    const l = spendingLines(base);
+    /* No approval rule (owner, 21 Oct 2026: retired; every member approves their own spend): no line says who may approve by role or cap. */
+    expect(l).not.toHaveProperty("ruleLine");
+    expect(Object.values(l).join(" ")).not.toMatch(/an admin above|a shot;|producer signs off|render freely/);
     /* No platform per-job line (owner, 20 Oct 2026: guardrail 4 retired): no line of the rules says a job's size needs an admin. */
     expect(l).not.toHaveProperty("platformLineText");
     expect(Object.values(l).join(" ")).not.toMatch(/Any job over|even under Auto/);
@@ -160,8 +162,6 @@ test.describe("the spending rules, read-only (DECISIONS 1, 10)", () => {
     expect(l).not.toHaveProperty("autoLine");
     expect(Object.values(l).join(" ")).not.toMatch(/\bAuto\b|without asking|without a tap/);
     expect(l.budgetLine).toBe("Warns at 80% of a production’s budget · at the cap an admin unlocks it");
-    expect(spendingLines({ ...base, rule: "anyone" }, creditsText).ruleLine).toBe("Members render freely.");
-    expect(spendingLines({ ...base, rule: "producer" }, creditsText).ruleLine).toBe("A producer signs off on every take.");
   });
 
   test("there is no Auto to show: the limits module carries no no-tap ceiling (owner, 20 Oct 2026)", async () => {
@@ -171,12 +171,6 @@ test.describe("the spending rules, read-only (DECISIONS 1, 10)", () => {
 });
 
 test.describe("changing the rules (9.2)", () => {
-  const base: SpendingRules = { loaded: true, rule: "cap", shotCap: 50, mode: "ask", capWarnPct: 80, atCap: "producer", canChange: true };
-  test("the Rule row's value is the cap in credits, or the rule's own word", () => {
-    expect(ruleValue(base, creditsText)).toBe("50 cr");
-    expect(ruleValue({ ...base, rule: "producer" }, creditsText)).toBe("producer");
-    expect(ruleValue({ ...base, rule: "anyone" }, creditsText)).toBe("anyone");
-  });
   test("a cap is a whole number of credits; a production's may also be none", () => {
     expect(capInput("40")).toBe(40);
     expect(capInput(" 40 ")).toBe(40);
@@ -184,10 +178,8 @@ test.describe("changing the rules (9.2)", () => {
     expect(capInput("0", true)).toBe(0);
   });
   test("the settings route takes exactly the values the rules editor offers", () => {
-    for (const [id] of APPROVAL_OPTIONS) expect(settingProblem("approvalRule", id)).toBeNull();
     for (const [id] of AT_CAP_OPTIONS) expect(settingProblem("atCap", id)).toBeNull();
     for (const [id] of CAP_WARN_OPTIONS) expect(settingProblem("capWarnPct", id)).toBeNull();
-    expect(settingProblem("approvalRule", "always")).not.toBeNull();
   });
   test("each production reads as spent against its cap, in credits", () => {
     expect(productionLine({ id: "p", name: "A", credits: 40, capCredits: 200 }, creditsText)).toEqual({ value: "40 of 200 cr", sub: "160 cr left of its own cap" });

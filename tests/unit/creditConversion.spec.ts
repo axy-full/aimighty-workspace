@@ -263,7 +263,7 @@ test("a reversal is its own row and gives back the exact numbers; converting aga
   expect(await ledgerUnitTx(await platform())).toBe(0.1);
 });
 
-test("the workspace's own credit figures follow: caps, ceilings and held takes", async () => {
+test("the workspace's own credit figures follow: caps, ceilings and held takes; the retired per-shot cap is not listed or touched (21 Oct 2026), save to reverse what an older conversion recorded", async () => {
   const { convertTenantFigures } = await import("../../lib/creditConversionTenant");
   const { getWorkspace } = await import("../../lib/platform");
   const { runInTenant } = await import("../../lib/tenant");
@@ -284,7 +284,8 @@ test("the workspace's own credit figures follow: caps, ceilings and held takes",
     caps: { "settings:shotCapCredits": "x8" as const, "api_tokens:tok": "x8" as const } };
   process.env.CREDIT_USD = "0.10";
   const figures = await convertTenantFigures(ws, plan);
-  expect(figures.find((f) => f.what === "settings.shotCapCredits")).toMatchObject({ before: 25, after: 200, cap: { id: "settings:shotCapCredits", choice: "x8" } });
+  /* The per-shot cap is no setting since 21 Oct 2026 (the admin approval rule is retired): not listed, not multiplied, even when named. */
+  expect(figures.find((f) => f.what === "settings.shotCapCredits")).toBeUndefined();
   expect(figures.filter((f) => f.what === "api_tokens.cap_credits").map((f) => [f.id, f.after, f.cap?.choice]).sort()).toEqual([["tok", 400, "x8"], ["tok_old", 50, "keep"]]);
   // Re-priced from its held dollars at $0.10 a credit, exactly as Release will charge it.
   const { heldPriceNow } = await import("../../lib/creditTerms");
@@ -294,7 +295,7 @@ test("the workspace's own credit figures follow: caps, ceilings and held takes",
   // Run again: nothing more changes.
   expect(await convertTenantFigures(ws, plan)).toEqual([]);
   await runInTenant(ws, async () => {
-    expect(String((await db().execute(`SELECT value FROM settings WHERE key='shotCapCredits'`)).rows[0].value)).toBe("200");
+    expect(String((await db().execute(`SELECT value FROM settings WHERE key='shotCapCredits'`)).rows[0].value), "the retired row, untouched").toBe("25");
   });
   // Reversal divides what was multiplied.
   await convertTenantFigures(ws, { ...plan, conversionId: "unit:test:2", reverses: "unit:test:1" });
@@ -302,6 +303,15 @@ test("the workspace's own credit figures follow: caps, ceilings and held takes",
     expect(String((await db().execute(`SELECT value FROM settings WHERE key='shotCapCredits'`)).rows[0].value)).toBe("25");
     expect(Number((await db().execute(`SELECT cap_credits FROM api_tokens WHERE id='tok'`)).rows[0].cap_credits)).toBe(50);
     expect(Number((await db().execute(`SELECT json_extract(params,'$.held.needs') AS n FROM generations WHERE id='held1'`)).rows[0].n)).toBe(1);
+  });
+  /* A conversion run before 21 Oct 2026 that multiplied the per-shot cap is still reversed exactly: what was multiplied is divided back. */
+  await runInTenant(ws, async () => {
+    await db().execute(`UPDATE settings SET value='200' WHERE key='shotCapCredits'`);
+    await db().execute(`INSERT INTO credit_unit_rows(conversion_id,tbl,row_key,factor) VALUES('unit:old:1','settings','shotCapCredits',8)`);
+  });
+  await convertTenantFigures(ws, { ...plan, conversionId: "unit:old:2", reverses: "unit:old:1" });
+  await runInTenant(ws, async () => {
+    expect(String((await db().execute(`SELECT value FROM settings WHERE key='shotCapCredits'`)).rows[0].value)).toBe("25");
   });
 });
 
@@ -526,18 +536,24 @@ test.describe("second review fixes", () => {
     await sync(id, AFTER);
   };
   const run = (body: Record<string, unknown>) => ({ fromUsd: 0.8, toUsd: 0.1, mode: "per-row" as const, cutoverAt: CUTOVER, dryRun: false, by: "owner", ...body });
+  /* A cap a person saved, as the example a conversion multiplies and a reversal divides: an API token's monthly ceiling in credits.
+     (These used the per-shot cap setting until it was retired on 21 Oct 2026; the conversion no longer lists it.) */
   const shotCap = async (id: string) => {
     const { runInTenant } = await import("../../lib/tenant");
     const { db } = await import("../../lib/db");
-    return runInTenant(await tenantOf(id), async () => String((await db().execute(`SELECT value FROM settings WHERE key='shotCapCredits'`)).rows[0]?.value));
+    return runInTenant(await tenantOf(id), async () => {
+      const v = (await db().execute(`SELECT cap_credits FROM api_tokens WHERE id='cap_tok'`)).rows[0]?.cap_credits;
+      return v == null ? "undefined" : String(Number(v));
+    });
   };
   const saveShotCap = async (id: string, value: string, at: number) => {
     const { runInTenant } = await import("../../lib/tenant");
     const { db, ready } = await import("../../lib/db");
     await runInTenant(await tenantOf(id), async () => {
       await ready();
-      await db().execute({ sql: `INSERT INTO settings(key,value,updated_by,updated_at) VALUES('shotCapCredits',?,'admin',?)
-        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, args: [value, at] });
+      await db().execute({ sql: `INSERT OR IGNORE INTO users(id,email,name,password_hash,role,disabled,created_at) VALUES('u_cap','cap@example.test','Cap','!','admin',0,?)`, args: [at] });
+      await db().execute({ sql: `INSERT INTO api_tokens(id,token_hash,name,user_id,scope,cap_credits,created_at) VALUES('cap_tok','h_cap','t','u_cap','render',?,?)
+        ON CONFLICT(id) DO UPDATE SET cap_credits=excluded.cap_credits`, args: [Number(value), at] });
     });
   };
 
@@ -597,12 +613,12 @@ test.describe("second review fixes", () => {
     await saveShotCap("ws_s2", "25", AFTER);
     process.env.CREDIT_USD = "0.10";
     const p = await platform();
-    const caps = { "ws_s2/settings:shotCapCredits": "x8" as const };
+    const caps = { "ws_s2/api_tokens:cap_tok": "x8" as const };
     await convertAllCredits(run({ endAt: END, at: NOW, universe: ["ws_s2"], caps }));
     expect(await shotCap("ws_s2")).toBe("200");
     // Its own database refuses the reversal's write (an outage, simulated with a trigger).
     const outage = async (on: boolean) => runInTenant(await tenantOf("ws_s2"), () =>
-      db().execute(on ? `CREATE TRIGGER s2_outage BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT,'simulated outage'); END` : `DROP TRIGGER s2_outage`));
+      db().execute(on ? `CREATE TRIGGER s2_outage BEFORE UPDATE ON api_tokens BEGIN SELECT RAISE(ABORT,'simulated outage'); END` : `DROP TRIGGER s2_outage`));
     await outage(true);
     const failed = await reverseAllCredits({ dryRun: false, at: NOW + 1000, by: "owner", universe: ["ws_s2"] });
     expect(failed.results[0]).toMatchObject({ status: "reversed", tenantDone: false });
@@ -705,7 +721,7 @@ test.describe("second review fixes", () => {
     await granted("ws_s6");
     await saveShotCap("ws_s6", "25", AFTER);
     process.env.CREDIT_USD = "0.10";
-    await convertAllCredits(run({ endAt: END, at: NOW, universe: ["ws_s6"], caps: { "ws_s6/settings:shotCapCredits": "x8" } }));
+    await convertAllCredits(run({ endAt: END, at: NOW, universe: ["ws_s6"], caps: { "ws_s6/api_tokens:cap_tok": "x8" } }));
     expect(await shotCap("ws_s6")).toBe("200");
     // Paid work resumed: an Atomik run approved at 480 cr ($48) and the shot cap edited to 300 cr, in $0.10 credits. No job yet.
     const t = NOW + 60_000;
@@ -719,7 +735,7 @@ test.describe("second review fixes", () => {
     const before = (await balance("ws_s6", t)).balance;
     const out = await reverseAllCredits({ dryRun: false, at: NOW + 120_000, by: "owner", universe: ["ws_s6"] });
     expect(out.results[0].status).toBe("refused");
-    expect(out.results[0].activity?.map((a) => [a.what, a.id]).sort()).toEqual([["Atomik run limit", "s6_run"], ["cap", "settings:shotCapCredits"]]);
+    expect(out.results[0].activity?.map((a) => [a.what, a.id]).sort()).toEqual([["Atomik run limit", "s6_run"], ["cap", "api_tokens:cap_tok"]]);
     expect(await ledgerUnitTx(await platform())).toBe(0.1);
     expect((await balance("ws_s6", NOW + 130_000)).balance).toBe(before);
     expect(await shotCap("ws_s6")).toBe("300");

@@ -1,4 +1,21 @@
+import { RESOLUTION_SHORT_SIDE } from "./models";
+
 export const ASTRA_MODEL = "topaz/upscale/video/creative";
+/** The short side of what the video upscale makes: the code's own 4K tier (lib/models.ts), the one it is quoted at and asked for. */
+export const ASTRA_OUTPUT_SHORT_SIDE = RESOLUTION_SHORT_SIDE["4k"];
+/**
+ * A clip already at that size has nothing to upscale (owner, 21 Oct 2026: "4K: free only if the takes were made and billed at 4K;
+ * otherwise priced as the upscale it is"). Measured from the original, never from a label: admission refuses it before any quote,
+ * hold or charge, and dispatch refuses one that was held before this rule. Plain words, no engine named. The line's wording and the
+ * threshold at the 4K tier itself (a 2150-2159 px short side, sent at a rounded 1.00x, is still priced) are the owner's (21 Oct 2026).
+ */
+export const ALREADY_4K = "This clip is already 4K: nothing to upscale.";
+/** The refusal's code, so a screen can show the line in place of a price. */
+export const ALREADY_4K_CODE = "already_4k";
+export function alreadyAt4K(source: { width: number; height: number }): boolean {
+  const short = Math.min(source.width, source.height);
+  return Number.isFinite(short) && short >= ASTRA_OUTPUT_SHORT_SIDE;
+}
 export type AstraSettings = {
   creativity: number;
   realism: number;
@@ -45,7 +62,7 @@ export function astraInput(
     video_url: url,
     upscale_factor: Math.min(
       4,
-      Math.max(1, Math.round((2160 / sourceHeight) * 100) / 100),
+      Math.max(1, Math.round((ASTRA_OUTPUT_SHORT_SIDE / sourceHeight) * 100) / 100),
     ),
     creativity: settings.creativity,
     realism: settings.realism,

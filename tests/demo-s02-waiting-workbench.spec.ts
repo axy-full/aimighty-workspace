@@ -60,7 +60,7 @@ async function queue(page: Page, items: () => QueueItem[]) {
 const item = (over: Partial<QueueItem> & Pick<QueueItem, "id" | "title">): QueueItem => ({
   source: "held", where: "Make", at: Date.now() - 5 * 60_000,
   project: { productionId: "prod-x", draftId: null, name: "Harbour test" },
-  price: { kind: "exact", credits: 3 }, needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+  price: { kind: "exact", credits: 3 }, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
   approve: { kind: "release", genId: "gen_held_1", credits: 3 }, decline: { kind: "discard", genId: "gen_held_1" },
   open: { kind: "take", genId: "gen_held_1", draftId: null },
   ...over,
@@ -207,7 +207,7 @@ test("with Atomik off for the workspace, Home says so and Start can't be pressed
   await expect(page.getByTestId("home-templates").getByRole("button")).toHaveCount(4);
 });
 
-test("Waiting for you: each item at its own price, approved alone through its own route; admin, short and plan steps say so", async ({ page }, info) => {
+test("Waiting for you: each item at its own price, approved alone through its own route; someone else's, short and plan steps say so (no item needs an admin since 21 Oct 2026)", async ({ page }, info) => {
   test.skip(isCompact(info), "the phone's waiting rows have the price as the button and no 'Approve ·' label, no Open: the twin 'phone Home: each waiting item…' below, and demo-s10-phone-workbench 'phone Home: what needs you first…' and 'a single item approves from Home…'");
   const { headers } = await account(page);
   await forbidPaidWork(page);
@@ -215,7 +215,7 @@ test("Waiting for you: each item at its own price, approved alone through its ow
   const mine = await saveProject(page, headers, "Kitchen at dawn");
   let items: QueueItem[] = [
     item({ id: "held:gen_held_1", title: "Keyframe · retake", project: { productionId: "prod-k", draftId: mine.id, name: "Kitchen at dawn" } }),
-    item({ id: "board-render:r1:2", title: "Shot 2 · render", source: "board-render", where: "Board", price: { kind: "up-to", credits: 43 }, needsAdmin: true, canApprove: false, why: "An admin has to press this one.",
+    item({ id: "board-render:r1:2", title: "Shot 2 · render", source: "board-render", where: "Board", price: { kind: "up-to", credits: 43 }, canApprove: false, why: "Only the person who asked Atomik for this run can approve its renders.",
       approve: { kind: "board-render", productionId: "prod-k", runId: "rar_" + "a".repeat(24), seq: 2, fingerprint: "b".repeat(64) }, decline: null, open: { kind: "board", productionId: "prod-k", draftId: mine.id },
       project: { productionId: "prod-k", draftId: mine.id, name: "Kitchen at dawn" } }),
     item({ id: "held:gen_held_2", title: "Hero take · retake", price: { kind: "exact", credits: 43 }, shortBy: 12, approve: { kind: "release", genId: "gen_held_2", credits: 43 } }),
@@ -240,7 +240,8 @@ test("Waiting for you: each item at its own price, approved alone through its ow
   await expect(held.getByTestId("home-waiting-approve")).toHaveText("Approve · 3 cr");
   await expect(held.getByTestId("home-waiting-approve")).toHaveAttribute("data-spend-price", "3 cr");
   await expect(held.getByTestId("home-waiting-approve")).toHaveAttribute("title", /^\$\d+\.\d\d$/);
-  await expect(page.locator('[data-item="board-render:r1:2"]').getByTestId("home-waiting-why")).toHaveText("Needs an admin");
+  await expect(page.locator('[data-item="board-render:r1:2"]').getByTestId("home-waiting-why")).toHaveText("Only the person who asked Atomik for this run can approve its renders.");
+  await expect(page.getByTestId("home-waiting-row").filter({ hasText: /needs an admin/i })).toHaveCount(0);
   await expect(page.locator('[data-item="board-render:r1:2"]').getByTestId("home-waiting-approve")).toHaveCount(0);
   const short = page.locator('[data-item="held:gen_held_2"]');
   await expect(short.getByTestId("home-waiting-short")).toContainText("Short by 12 cr · Top up");
@@ -300,7 +301,7 @@ test("more than five waiting: five rows and All approvals", async ({ page }, inf
 
 /* ── The phone's Home: the same waiting items, drawn by the phone app (components/graphite/phone/HomeScreen.tsx) ─────────────────── */
 
-test("phone Home: each waiting item at its own price as the button, approved alone through its own route; admin, short and plan steps say so", async ({ page }, info) => {
+test("phone Home: each waiting item at its own price as the button, approved alone through its own route; someone else's, short and plan steps say so (no item needs an admin since 21 Oct 2026)", async ({ page }, info) => {
   test.skip(!isCompact(info), "desktop widths: 'Waiting for you: each item at its own price…' above");
   const { headers } = await account(page);
   await forbidPaidWork(page);
@@ -308,7 +309,7 @@ test("phone Home: each waiting item at its own price as the button, approved alo
   const mine = await saveProject(page, headers, "Kitchen at dawn");
   let items: QueueItem[] = [
     item({ id: "held:gen_held_1", title: "Keyframe · retake", project: { productionId: "prod-k", draftId: mine.id, name: "Kitchen at dawn" } }),
-    item({ id: "board-render:r1:2", title: "Shot 2 · render", source: "board-render", where: "Board", price: { kind: "up-to", credits: 43 }, needsAdmin: true, canApprove: false, why: "An admin has to press this one.",
+    item({ id: "board-render:r1:2", title: "Shot 2 · render", source: "board-render", where: "Board", price: { kind: "up-to", credits: 43 }, canApprove: false, why: "Only the person who asked Atomik for this run can approve its renders.",
       approve: { kind: "board-render", productionId: "prod-k", runId: "rar_" + "a".repeat(24), seq: 2, fingerprint: "b".repeat(64) }, decline: null, open: { kind: "board", productionId: "prod-k", draftId: mine.id },
       project: { productionId: "prod-k", draftId: mine.id, name: "Kitchen at dawn" } }),
     item({ id: "held:gen_held_2", title: "Hero take · retake", price: { kind: "exact", credits: 43 }, shortBy: 12, approve: { kind: "release", genId: "gen_held_2", credits: 43 } }),
@@ -336,7 +337,8 @@ test("phone Home: each waiting item at its own price as the button, approved alo
   await expect(held.getByTestId("phone-row-approve")).toHaveText("3 cr");
   await expect(held.getByTestId("phone-row-approve").locator("[data-price]")).toHaveAttribute("title", /^\$\d+\.\d\d$/);
   const admin = rows.filter({ hasText: "Shot 2 · render" });
-  await expect(admin).toContainText("Needs an admin");
+  await expect(admin).toContainText("Only the person who asked Atomik for this run can approve its renders.");
+  await expect(admin).not.toContainText(/needs an admin/i);
   await expect(admin.getByRole("button")).toHaveCount(0);
   const short = rows.filter({ hasText: "Hero take · retake" });
   await expect(short).toContainText("Short by 12 cr");

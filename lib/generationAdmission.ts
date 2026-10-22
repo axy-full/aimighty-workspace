@@ -1,5 +1,3 @@
-import { claimedStepFiling } from "@/lib/atomikAccess";
-import { stepRender } from "@/lib/atomikStepRender";
 import { mayReachProject } from "@/lib/draftProject";
 import { ENHANCE_MAX_PROMPT } from "./shell/enhancer";
 import { enhancementRan } from "./enhanceProof";
@@ -10,7 +8,7 @@ import { cinemaStudioEnabled, cinemaStudioQuoteUsd, CINEMA_STUDIO_PRICING_WATCH 
 import { HOLD_NEEDS_A_PERSON, holdBandOf, isAgentApprover } from "@/lib/cinemaHold";
 import { CINEMA_SOUND_UNAVAILABLE, cinemaSoundOffered } from "@/lib/cinemaSoundPricing";
 import { readDraft } from "@/lib/workbench/records";
-import { ASTRA_MODEL, astraSettings, type AstraSettings } from "@/lib/astra";
+import { ALREADY_4K, ALREADY_4K_CODE, ASTRA_MODEL, alreadyAt4K, astraSettings, type AstraSettings } from "@/lib/astra";
 import { inspectOriginalVideo, type VideoMetadata } from "@/lib/videoMetadata.server";
 import { MediaSourceError } from "@/lib/mediaBindings";
 import { withMediaSources } from "@/lib/mediaMutation";
@@ -116,7 +114,6 @@ import {
 } from "@/lib/identities";
 import { isBatchId } from "@/lib/variations";
 import { uploadSourceParams } from "@/lib/sourceClip";
-import { shotCapGate } from "@/lib/shotCap";
 import { isAgentId } from "@/lib/security/people-only";
 import { madeInOf } from "@/lib/madeIn";
 import { jobHint, jobOf, type Job } from "@/lib/takeJob";
@@ -462,31 +459,10 @@ export async function executeGenerationAdmission(
       body.shotId = final.shotId ?? undefined;
     }
 
-    /* An approval of another member's step (owner, 13 Oct): the render files into that step's own chat's project, resolved here from a step this caller claimed and has
-       not sent, never named by the client, so its caps apply as on any render there and the approver never reads the board. */
-    let stepFiled = false;
-    /* Who made the step's chat: the filing target is checked as THEIR board to file into, whoever approves (below). */
-    let stepCreator = "";
-    if (body.atomikStepId !== undefined) {
-      const filing = typeof body.atomikStepId === "string" ? await claimedStepFiling(body.atomikStepId, got.user) : null;
-      if (!filing) return admissionReply({ error: "That step is gone." }, { status: 404 });
-      /* One render per claim: a render goes only under the key the claim set (so release and reconcile can fence it), and a final is not a step's render. */
-      if (body.finalOf != null) return admissionReply({ error: "A step's render is made from the step." }, { status: 400 });
-      if (options.requestClaim && options.requestClaim.key !== filing.requestKey) return admissionReply({ error: "That step is gone." }, { status: 404 });
-      /* Built from the step's own kind, model, prompt, settings and references, whatever the client sent; only its ceiling (`maxCredits`) and the step's id are kept. */
-      const keep: Record<string, unknown> = { atomikStepId: body.atomikStepId };
-      /* The most it may charge is the figure the queue showed: the lower of the client's ceiling and the step's own "up to" price, so a live price above it refuses the render. */
-      if (body.maxCredits != null && typeof body.maxCredits !== "number") keep.maxCredits = body.maxCredits;
-      else {
-        const ceiling = Math.min(typeof body.maxCredits === "number" ? body.maxCredits : Infinity, filing.ceilingCredits ?? Infinity);
-        if (Number.isFinite(ceiling)) keep.maxCredits = ceiling;
-      }
-      for (const key of Object.keys(body)) delete body[key];
-      Object.assign(body, stepRender({ kind: filing.step.kind as never, title: filing.step.title, prompt: filing.step.prompt, model: filing.step.model, params: filing.step.params as never, refs: filing.step.refs as never }, filing.projectId).body, keep);
-      if (body.projectId == null) delete body.projectId;
-      stepFiled = true;
-      stepCreator = filing.createdBy;
-    }
+    /* A render of an Atomik step named by its id was an admin's approval of another member's step. That went with the admin
+       approval rule (owner, 21 Oct 2026: "every member approves their own spend with their own tap on the quote"): a body
+       naming a step is refused as a missing one, before anything is quoted, held or reserved. */
+    if (body.atomikStepId !== undefined) return admissionReply({ error: "That step is gone." }, { status: 404 });
     if (body.projectId) {
       const project = await db().execute({
         sql: `SELECT id FROM projects WHERE id=?`,
@@ -494,9 +470,7 @@ export async function executeGenerationAdmission(
       });
       /* A private board is its owner's, and a shared one a teammate's to look at (lib/draftProject.ts): filing into either is refused as a missing project is,
          before anything is quoted, held or reserved, so the answer says nothing about whether it exists. An Atomik run (no person) is not asked. */
-      /* A step's render is filed into its chat's project, which the chat's maker named: it is reachable if THEY may file there (their own board, or any shared project), never because an
-         approver claimed it (an admin approving a member's own step still files into the member's own board). A private board of someone else is refused as a missing project is. */
-      const reach = stepFiled ? await mayReachProject({ id: stepCreator }, String(body.projectId), "admit") : await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "admit");
+      const reach = await mayReachProject(isAgentId(got.user.id) ? null : got.user, String(body.projectId), "admit");
       if (!project.rows.length || !reach)
         return admissionReply({ error: "No such project." }, { status: 404 });
     }
@@ -894,6 +868,9 @@ export async function executeGenerationAdmission(
           sourceRatio = `${astraSource.width}:${astraSource.height}`;
           sourceResolution = `${Math.min(astraSource.width,astraSource.height)}p`;
         } catch(error) { return admissionReply({error:(error as Error).message},{status:400}); }
+        /* A source whose measured short side is already the 4K the upscale makes has nothing to upscale: refused here, for a
+           quote as for a press, before any price, hold, charge or dispatch (owner, 21 Oct 2026; lib/astra.ts). */
+        if (alreadyAt4K(astraSource)) return admissionReply({ error: ALREADY_4K, code: ALREADY_4K_CODE }, { status: 400 });
         notices.push("Topaz Astra chooses its final dimensions. This quote uses the 4K tier and the selected output frame rate.");
       }
       if (genjutsu && sourceRef) {
@@ -1379,13 +1356,11 @@ export async function executeGenerationAdmission(
       const stillProject = body.projectId ? String(body.projectId) : null;
       const stillShot = body.shotId ? String(body.shotId) : null;
       let stillVersion = 1;
-      let stillShotCode: string | null = null;
       let stillReason: string | null = null;
       if (stillShot) {
         const shot = await getShot(stillShot);
         if (!shot)
           return admissionReply({ error: "No such shot." }, { status: 400 });
-        stillShotCode = shot.code;
         const approved = await approvedTakeOf(stillShot);
         if (
           reasonNeeded({
@@ -1475,21 +1450,6 @@ export async function executeGenerationAdmission(
           },
           { status: 409 },
         );
-      }
-      /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
-      if (stillShot && stillShotCode) {
-        const stop = await shotCapGate({
-          shotId: stillShot,
-          code: stillShotCode,
-          takeUsd: estStillUsd,
-          modelId,
-          isAdmin: got.user.role === "admin",
-        });
-        if (stop)
-          return admissionReply(
-            { error: stop, needsAdmin: true },
-            { status: 403 },
-          );
       }
       const wallStill = await allowanceCheck(
         renderKeyNameFor(model.provider),
@@ -2081,13 +2041,11 @@ export async function executeGenerationAdmission(
      * ------------------------------------------------------------------ */
     const shotId = body.shotId ? String(body.shotId) : null;
     let version = 1;
-    let shotCode: string | null = null;
     let reason: string | null = null;
     if (shotId) {
       const shot = await getShot(shotId);
       if (!shot)
         return admissionReply({ error: "No such shot." }, { status: 400 });
-      shotCode = shot.code;
       /* A shot with an approved take is locked: the next take says why (brief 2.1). */
       const approved = await approvedTakeOf(shotId);
       if (
@@ -2163,23 +2121,6 @@ export async function executeGenerationAdmission(
         },
         { status: 409 },
       );
-    }
-    /* The cost approval rule (brief 2.2): with a cap per shot, a member's take past it needs an admin. */
-    if (shotId && shotCode) {
-      const stop = await shotCapGate({
-        shotId: shotId,
-        code: shotCode,
-        takeUsd: estUsd,
-        modelId,
-        isAdmin: got.user.role === "admin",
-        /* A take that holds its ceiling counts at its hold (lib/cinemaHold.ts). */
-        band,
-      });
-      if (stop)
-        return admissionReply(
-          { error: stop, needsAdmin: true },
-          { status: 403 },
-        );
     }
     const wall = await allowanceCheck(
       renderKeyNameFor(model.provider),

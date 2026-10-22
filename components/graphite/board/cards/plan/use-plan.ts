@@ -1,6 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { cleanRule, cleanShotCap, type ApprovalRule } from "@/lib/approvalRule";
+import { useCallback, useMemo, useState } from "react";
 import { useStageQuotes } from "@/lib/production/use-stage-quotes";
 import { useSession } from "@/lib/session";
 import { DraftRequestError, draftRequest } from "@/lib/workbench/draft-request";
@@ -16,7 +15,7 @@ import { AGENT_CHANGED } from "./use-run";
  *    plan quote at the gate and the approval's record after it;
  *  - before the build, renders not yet priced are pre-quoted on the request the run will price (./estimates.ts); never for a chips plan (Agent mode's
  *    quick plan), which has ONE price, the server's (owner, 16 Oct): a step its gate covers shows none, and one that asks on its own shows the server's;
- *  - the balance is the session's; the approval rule is the workspace's (GET /api/engines, as the composer reads it);
+ *  - the balance is the session's (no approval rule: retired on 21 Oct 2026; the person who asked approves);
  *  - every action is the run's own, through POST /api/workbench/team-canvas, which takes a person's session only
  *    and only the person who asked: `agent.approve` (build, free); `agent.approvePlan` (the plan once, at the
  *    server's quote fingerprint); `agent.render` (a render outside the plan); `agent.limit`.
@@ -24,22 +23,6 @@ import { AGENT_CHANGED } from "./use-run";
  */
 
 const API = "/api/workbench/team-canvas";
-
-/** The workspace's cost approval rule and the viewer's role, as the composer reads them. Null until read. */
-function useApprovalRule(scope: string): { rule: ApprovalRule; cap: number } | null {
-  const [rule, setRule] = useState<{ rule: ApprovalRule; cap: number } | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void fetch("/api/engines", { headers: { "X-Workbench-Scope": scope } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((body: { approval?: { rule?: unknown; shotCapCredits?: unknown } } | null) => {
-        if (alive && body?.approval) setRule({ rule: cleanRule(body.approval.rule), cap: cleanShotCap(body.approval.shotCapCredits) });
-      })
-      .catch(() => { /* no rule read: no marks, the server still enforces it */ });
-    return () => { alive = false; };
-  }, [scope]);
-  return rule;
-}
 
 export type PlanState = {
   model: PlanModel | null;
@@ -49,16 +32,11 @@ export type PlanState = {
   setHeld: (held: boolean) => void;
   /** Sends the press; answers whether the server took it (false: refused, or not sent). */
   act: (primary: PlanPrimary) => Promise<boolean>;
-  /** The workspace's approval rule as read (null until read): the money states name its per-shot cap. */
-  rule: { rule: ApprovalRule; cap: number } | null;
-  /** The viewer is the owner or an admin. */
-  admin: boolean;
 };
 
 export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: string | null): PlanState {
   /* A null run (the sample) quotes nothing and acts on nothing. */
   const session = useSession();
-  const rule = useApprovalRule(ctx.scope);
   const [held, setHeld] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -95,10 +73,9 @@ export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: st
     if (req.still) stills.add(seq);
   }
   const inCredits = session.rates.unit === "cr";
-  const admin = session.role === "owner" || session.role === "admin";
   const model = planModel({
     run, enabled: true, estimates, meta, stills, balance: inCredits && session.credits ? session.credits.balance : null,
-    rule: rule ? { ...rule, admin } : null, readOnly,
+    readOnly,
   });
 
   const post = useCallback(async (body: Record<string, unknown>) => {
@@ -131,5 +108,5 @@ export function usePlan(ctx: BoardCtx, run: RigAgentRunView | null, readOnly: st
     }
   }, [run, busy, post]);
 
-  return { model, busy, problem, held, setHeld, act, rule, admin };
+  return { model, busy, problem, held, setHeld, act };
 }

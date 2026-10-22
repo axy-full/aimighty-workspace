@@ -110,7 +110,7 @@ test("make …: Make opens filled with the words; nothing is made", async ({ pag
 const item = (id: string, title: string, credits: number, more: Partial<QueueItem> = {}): QueueItem => ({
   id: `held:${id}`, source: "held", title, where: "Make", at: Number(id.replace(/\D/g, "")) || 1,
   project: { productionId: "prod-a", draftId: null, name: "Market film" }, price: { kind: "exact", credits },
-  needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+  canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
   approve: { kind: "release", genId: `gen-${id}`, credits }, decline: { kind: "discard", genId: `gen-${id}` }, open: { kind: "take", genId: `gen-${id}`, draftId: null }, ...more,
 });
 const QUEUE: ApprovalsReply = {
@@ -118,7 +118,7 @@ const QUEUE: ApprovalsReply = {
   items: [
     item("1", "Keyframe · retake", 3),
     item("2", "Dialogue line", 1, { price: { kind: "up-to", credits: 1 }, project: { productionId: "prod-b", draftId: null, name: "Station spot" } }),
-    item("3", "Hero take", 43, { needsAdmin: true, project: { productionId: "prod-b", draftId: null, name: "Station spot" } }),
+    item("3", "Hero take", 43, { project: { productionId: "prod-b", draftId: null, name: "Station spot" } }),
   ],
 };
 
@@ -161,21 +161,22 @@ test("approve everything under 10 cr: the list and its total; Enter only shows i
   await expect(page.getByTestId("toast")).toContainText("Approved 2 items · up to 4 cr");
 });
 
-test("approve everything under 50 cr: an item an admin must press is listed apart and left out", async ({ page }, info) => {
+test("approve everything under 50 cr: the 43 cr item is listed with the rest, nothing is set apart for an admin (21 Oct 2026)", async ({ page }, info) => {
   const { project } = await setUp(page);
   const released = await approvalsFixture(page, "gen-2");
   await page.goto(`/suites?project=${project.id}&palette=1&q=${encodeURIComponent("approve everything under 50 cr")}`);
   const card = page.getByTestId("palette-approve-card");
-  const admin = card.getByTestId("palette-approve-admin");
-  await expect(admin).toContainText("Needs an admin");
-  await expect(admin).toContainText("Hero take");
-  await expect(admin).toContainText("43 cr");
-  await expect(card.getByTestId("palette-approve-confirm")).toHaveText("Approve 2 items · up to 4 cr");
+  await expect(card.getByTestId("palette-approve-row")).toHaveCount(3);
+  await expect(card.getByTestId("palette-approve-rows")).toContainText("Hero take");
+  await expect(card.getByTestId("palette-approve-admin")).toHaveCount(0);
+  await expect(card).not.toContainText(/needs an admin/i);
+  await expect(card.getByTestId("palette-approve-total")).toHaveText("Total · up to 47 cr");
+  await expect(card.getByTestId("palette-approve-confirm")).toHaveText("Approve 3 items · up to 47 cr");
   await floors(page, "⌘K approve under 50");
   await shot(page, "palette-approve-50", info);
   /* The second is refused: the first stays approved, the card says where it stopped, nothing after it is sent. */
   await card.getByTestId("palette-approve-confirm").click();
-  await expect(card.getByTestId("palette-approve-refusal")).toHaveText("Approved 1 of 2 · Dialogue line: The balance changed. Nothing was charged.");
+  await expect(card.getByTestId("palette-approve-refusal")).toHaveText("Approved 1 of 3 · Dialogue line: The balance changed. Nothing was charged.");
   expect(released.map((r) => r.id)).toEqual(["gen-1", "gen-2"]);
 });
 
