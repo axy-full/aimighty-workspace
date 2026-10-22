@@ -54,7 +54,7 @@ test("the matchers: the retired lines and the thinking models are caught, the Di
   for (const name of [
     "claude-opus-5-5", "anthropic/claude-sonnet-5.5", "Claude Fable 5.1", "Opus 5.5", "opus 5.5", "fable 5", "gpt-6.1-sol", "GPT 6.1", "GPT‑6",
     "gpt-4o", "GPT-4o mini", "o3", "o4-mini", "grok-4.7", "gemini-3.5-flash", "Gemini 3.5 Flash", "Reasoning effort", "effort: high", "effort high",
-    "high effort",
+    "high effort", "Opus 5.5 and GPT Image 2", "Claude Opus 5.5 plans the image", "Sonnet 5.5 for image work", "gpt-6.1-sol writes the image prompt",
   ]) {
     expect(thinkingModelNames(name), name).not.toEqual([]);
   }

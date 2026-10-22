@@ -246,8 +246,8 @@ export const THINKING_MODEL_PATTERNS: readonly RegExp[] = Object.freeze([
   /\beffort\s*[:=·]?\s*(?:low|medium|high|xhigh|max)\b/gi,
   /\b(?:low|medium|high|xhigh|max)[- ]effort\b/gi,
 ]);
-/** An engine, not a thinking model: the match is followed (in the same name) by Image or Imagine. */
-const isImageEngine = (text: string, end: number) => /^[\w.\s\-‐‑–]{0,24}?\bimag(?:e|ine)\b/i.test(text.slice(end, end + 32));
+/** An engine, not a thinking model: the version is followed directly by Image or Imagine, with at most the model's own qualifiers between. */
+const isImageEngine = (text: string, end: number) => /^(?:[\s\-‐‑–]+(?:flash|pro|preview|mini|lite|ultra))*[\s\-‐‑–]+imag(?:e|ine)\b/i.test(text.slice(end, end + 48));
 
 /** Every thinking-model id, family-and-version name or effort setting in one string. */
 export function thinkingModelNames(text: string): string[] {
