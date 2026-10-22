@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { readBoundedText, RequestBodyError } from "@/lib/requestBody";
 import { resolveModel } from "@/lib/atomik";
+import { thinkingEffort } from "@/lib/atomikThinking";
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 import { PaidTextError, paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure, requestMaxCredits } from "@/lib/paidText";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
@@ -54,16 +55,17 @@ export const POST = withTenant(async (req: Request) => {
       const text = readText(body.text);
       if (!languageReachable())
         return NextResponse.json({ error: "Atomik's reader isn't connected for this workspace. Use the free import, or ask the platform to connect it." }, { status: 503 });
-      /* Atomik's model policy: Claude, OpenAI or Grok (lib/atomikModelPolicy), Auto by default; never swapped for another paid model. */
-      const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
-      if (quoteOnly) return paidTextQuoteResponse(await quoteMemoryRead({ text, model }));
+      /* A routine turn: Atomik's thinking at Low, or at High when that is the setting (lib/atomikThinking.ts). A model in the body is ignored; nothing is swapped for another paid model. */
+      const model = await resolveModel("auto", "routine");
+      const effort = await thinkingEffort("routine", model);
+      if (quoteOnly) return paidTextQuoteResponse(await quoteMemoryRead({ text, model, effort }));
       /* Never without the price the person approved: the read is reserved and refused against it. */
       if (body.maxCredits === undefined) throw new PaidTextError("Review the price before Atomik reads this.", 409);
       const maxCredits = requestMaxCredits(body.maxCredits)!;
       /* A read is paid and billed against a project: only one the person may file into (their own board, any project that is not a private board); someone else's private board is none, the same as an unknown id. */
       const asked = typeof body.projectId === "string" && PROJECT_ID.test(body.projectId) ? body.projectId : null;
       const projectId = asked && (await mayReachProject(got.user, asked, "admit")) ? asked : null;
-      const result = await runMemoryRead({ text, model, maxCredits, projectId, createdBy: got.user.id });
+      const result = await runMemoryRead({ text, model, effort, maxCredits, projectId, createdBy: got.user.id });
       /* Credits as billed for a workspace on credits; dollars only for one on its own keys. */
       return NextResponse.json({ id: result.id, model, entries: result.read.entries, skipped: result.read.skipped, ...(await textRunCost(result)) });
     } catch (error) { return paidTextFailure(error); }

@@ -2,8 +2,7 @@ import { ToolLoopAgent, Output, isStepCount, tool, type LanguageModel, type Lang
 import { finalToolStep } from "../language-provider";
 import type { LanguageModelV4, LanguageModelV4Content, LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { z } from "zod";
-import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel } from "../atomikModelPolicy";
-import { aliasModel } from "../modelAliases";
+import { THINKING_UNAVAILABLE, isAtomikModel } from "../atomikModelPolicy";
 import { textCostUsd, textQuoteCostUsd, type CatalogModel } from "../catalog";
 import { ATOMIK_IMAGE_TOKENS, ATOMIK_MAX_VISUALS } from "./atomik-reference-types";
 import { directTextCostUsd } from "../openai-direct";
@@ -18,8 +17,8 @@ import { DryBoard, createNodeInput, lockInput, renderInput, wireInput, type Boar
  * writes to the canvas, renders or spends. At most three model steps; the last
  * one has no tools and returns the proposal's title and summary.
  *
- * Atomik thinks with Claude, OpenAI and Grok (owner, 28 September): a model
- * from Atomik's policy in those three families, Auto by default. Under
+ * Atomik thinks with Claude at the workspace's Thinking setting (owner, 22
+ * October: High · Medium · Low, lib/atomikModelPolicy.ts), a plan turn. Under
  * ENGINE_MOCK=1 a scripted model stands in (mockPlannerModel), through the same
  * loop and the same tools, and no provider is called.
  */
@@ -29,8 +28,8 @@ export const PLANNER_MAX_OUTPUT_TOKENS = 6000;
 /** Tool calls one plan may make, across its steps. */
 export const PLANNER_TOOL_CALLS = 160;
 export const PLANNER_TIMEOUT_MS = 120_000;
-/** The families Atomik plans with: Claude, OpenAI and Grok (listed under `spacexai/`). */
-export const RIG_AGENT_FAMILIES = /^(anthropic|openai|spacexai)\//;
+/** The family Atomik plans with: Claude (owner, 22 Oct 2026; Grok and OpenAI left Atomik's thinking). */
+export const RIG_AGENT_FAMILIES = /^anthropic\//;
 export const MOCK_PLANNER_MODEL = "mock/rig-agent";
 
 export const plannerResultSchema = z.object({
@@ -260,22 +259,12 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
 }
 
 /**
- * The thinking model for a plan: an explicit choice from Atomik's policy in the
- * three families, never swapped for another; Auto takes Atomik's own economy
- * choice among them, else the first priced one.
+ * The thinking model for a plan: the one the workspace's Thinking setting names for a plan turn (lib/atomikModelPolicy › thinkingFor),
+ * when the priced menu serves it; never swapped for another paid model. A run's saved model is not asked (it is not a choice).
  */
-export function selectPlannerModel(wanted: string, menu: readonly { id: string }[]): string {
-  /* A run saved on a dropped id is priced and run on its alias (lib/modelAliases.ts). */
-  const want = aliasModel(wanted);
-  const offered = menu.filter((m) => RIG_AGENT_FAMILIES.test(m.id) && isAtomikModel(m.id));
-  if (want && want !== "auto") {
-    if (!RIG_AGENT_FAMILIES.test(want) || !isAtomikModel(want)) throw new PlannerError("Atomik builds boards with Claude, OpenAI or Grok models. Choose one of those, or Auto.");
-    if (!offered.some((m) => m.id === want)) throw new PlannerError("That thinking model is not available right now. Choose another, or Auto.");
-    return want;
-  }
-  const auto = offered.find((m) => (ATOMIK_AUTO_MODEL_IDS as readonly string[]).includes(m.id)) ?? offered[0];
-  if (!auto) throw new PlannerError("No Claude, OpenAI or Grok thinking model is connected for Atomik right now.");
-  return auto.id;
+export function selectPlannerModel(setting: string, menu: readonly { id: string }[]): string {
+  if (!RIG_AGENT_FAMILIES.test(setting) || !isAtomikModel(setting) || !menu.some((m) => m.id === setting)) throw new PlannerError(THINKING_UNAVAILABLE);
+  return setting;
 }
 
 /* ── The mock planner (ENGINE_MOCK=1): a scripted model through the same loop ── */

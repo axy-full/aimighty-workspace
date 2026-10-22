@@ -3,7 +3,7 @@ import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
-import { listChats, createChat, engines, requestEffort, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, chatModeOf } from "@/lib/atomik";
+import { listChats, createChat, engines, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, chatModeOf } from "@/lib/atomik";
 import { atomikEffortOptions } from "@/lib/atomik-reasoning";
 import { cleanAttachments } from "@/lib/attachments";
 import { effectiveRules } from "@/lib/rules";
@@ -94,8 +94,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     /* The project's library and presets for library steps, read as the turn will read them. */
     const inputs = await plannerInputs(auth.user.id, projectId);
     const viewOnly = Boolean(readProject && !projectId);
+    /* The model and effort are the workspace's Thinking setting (lib/atomikThinking.ts): a sent model or effort is not a choice, and is ignored. */
     return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, viewOnly,
-      model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
       context: [viewOnly ? VIEW_ONLY_INSTRUCTION : "", await projectContext(readProject)].filter(Boolean).join("\n\n"), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
       memory: await plannerMemoryText({ projectId: readProject, query: text, viewer: got.user.id }).catch(() => ""),
@@ -108,8 +108,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     userId: got.user.id,
     /* The project a chat keeps: one its maker may READ (their own board, a teammate's shared board, any project that is not a private board); a private board of someone else's, or an id that is none, is stored as no project (the same answer for both). Spending, step filing and memory writes need more, and are decided separately (admission, and the turn). */
     projectId: await contextProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null),
-    model: typeof body.model === "string" && body.model ? body.model : "auto",
-    effort: requestEffort(body.effort),
+    /* A new chat follows the Thinking setting; each turn stores what it ran. A sent model or effort is ignored. */
+    model: "auto",
     /* "auto" from an older caller is accepted and stored as "ask": no Auto since 20 Oct 2026. */
     agentMode: chatModeOf(body.agentMode),
   });

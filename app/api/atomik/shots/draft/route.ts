@@ -6,7 +6,8 @@ import { requireRender, withTenant } from "@/lib/auth";
 
 import { getTreatment } from "@/lib/atomikDocs";
 import { listCast } from "@/lib/cast";
-import { requestEffort, resolveModel } from "@/lib/atomik";
+import { resolveModel } from "@/lib/atomik";
+import { thinkingEffort } from "@/lib/atomikThinking";
 import { specToPhrase } from "@/lib/studio";
 import { shotsFromReply, setupVocabulary, suggestEngine } from "@/lib/shotBuilder";
 import { creditsApply } from "@/lib/credits";
@@ -65,8 +66,9 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!languageReachable()) return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
 
   const castNames = (await listCast(projectId)).map((c) => c.name);
-  const effort = requestEffort(body.effort);
-  const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "shot");
+  /* Atomik's thinking for a Writing turn, at the workspace's setting (lib/atomikThinking.ts): a model or effort in the body is not a choice, and is ignored. */
+  const model = await resolveModel("auto", "writing");
+  const effort = await thinkingEffort("writing", model);
   const hint = suggestEngine(`${scene.title} ${scene.prose}`);
   const user = [
     `LOGLINE: ${t.logline || "(none yet)"}`,
@@ -79,9 +81,9 @@ export const POST = withTenant(async function POST(req: Request) {
   const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 2400, kind: "shots", mock: "shots" as const, createdBy: got.user.id,
     /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.shots" as const, step: "shots", model, effort: effort ?? "auto" }, projectId };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
-  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
+  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, effort !== undefined) });
   const shots = shotsFromReply(result.text, castNames);
-  if (!shots) return NextResponse.json({ error: `${model} answered, but not with shots. Try once more, or another model.` }, { status: 502 });
+  if (!shots) return NextResponse.json({ error: "Atomik answered, but not with shots. Try once more." }, { status: 502 });
 
   /* No take is priced here. The page prices each one off the rate table the
      session already holds, which is in the unit this workspace pays in. This

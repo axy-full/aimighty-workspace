@@ -5,7 +5,9 @@ import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { now } from "@/lib/db";
 import { getTreatment, sceneFromReply } from "@/lib/atomikDocs";
-import { requestEffort, resolveModel } from "@/lib/atomik";
+import { resolveModel } from "@/lib/atomik";
+import { thinkingEffort } from "@/lib/atomikThinking";
+import { TreatmentWriterOff } from "@/lib/atomikModelPolicy";
 import { specToPhrase } from "@/lib/studio";
 import { creditsApply } from "@/lib/credits";
 import { currentTenant } from "@/lib/tenant";
@@ -30,6 +32,11 @@ const SYSTEM = [
  * Regenerate one scene (brief 1.8): a proposal comes back, priced and
  * metered as text; nothing is written to the treatment here — the person
  * chooses to use it, so a human edit is never overwritten by a machine.
+ *
+ * A scene's words are the Treatment's prose, which the Treatment writer
+ * writes and nothing else does (lib/atomikModelPolicy › treatmentWriter;
+ * Amendment (iii) §E). With no writer set up it is refused before anything
+ * is quoted, claimed or charged, in plain words and naming no model.
  */
 export const POST = withTenant(async function POST(req: Request) {
   /* requireRender, not requireUser. This spends the platform's AI-Gateway
@@ -47,6 +54,14 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
   /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before the request is claimed. */
   if (!quoteOnly) { const refused = tokenSpendRefusal({ maxCredits: body?.maxCredits }, got.token); if (refused) return refused; }
+  /* The Treatment writer (lib/atomik › resolveModel, "treatment"), asked before the request is claimed: none set up, or none served, is refused with nothing quoted, claimed or charged. A model in the body is ignored. */
+  let model: string;
+  try { model = await resolveModel("auto", "treatment"); }
+  catch (error) {
+    if (error instanceof TreatmentWriterOff) return NextResponse.json({ error: error.message, code: "treatment_writer_off", charged: 0, nothingBilled: true }, { status: error.status });
+    return paidTextFailure(error);
+  }
+  const effort = await thinkingEffort("treatment", model);
   const run = async () => {
   try {
   const projectId = String(body.projectId ?? "");
@@ -59,8 +74,6 @@ export const POST = withTenant(async function POST(req: Request) {
   if (!t || !scene || !reach) return NextResponse.json({ error: "No such scene." }, { status: 404 });
   if (!languageReachable()) return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
 
-  const effort = requestEffort(body.effort);
-  const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
   const user = [
     `LOGLINE: ${t.logline || "(none yet)"}`,
     Object.keys(t.setup).length ? `SETUP: ${specToPhrase(t.setup)}` : "",
@@ -71,9 +84,9 @@ export const POST = withTenant(async function POST(req: Request) {
   const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 900, kind: "scene", mock: "scene" as const, createdBy: got.user.id,
     /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.treatment_scene" as const, step: "scene", model, effort: effort ?? "auto" }, projectId };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
-  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
+  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, effort !== undefined) });
   const out = sceneFromReply(result.text);
-  if (!out) return NextResponse.json({ error: `${model} answered, but not with a scene. Try once more, or another model.` }, { status: 502 });
+  if (!out) return NextResponse.json({ error: "The Treatment writer answered, but not with a scene. Try once more." }, { status: 502 });
 
   /* The writing in this workspace's unit: the credits the ledger billed, or the dollars a workspace on its own keys paid. Never the vendor's dollars to a workspace on credits. */
   const writing = creditsApply(currentTenant()?.workspace) ? { writingCredits: result.credits } : { costUsd: result.costUsd };

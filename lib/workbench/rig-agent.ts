@@ -36,6 +36,8 @@ import {
   mockPlannerModel, plannerCeilingUsd, plannerCostUsd, PlannerError, runPlanner, selectPlannerModel,
   MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, NO_ATTACHMENT_CONTENT, PLANNER_TIMEOUT_MS, type PlannerAttachmentContent, type PlannerOutcome,
 } from "./rig-agent-planner";
+import { THINKING_UNAVAILABLE, thinkingFor } from "../atomikModelPolicy";
+import { workspaceThinking } from "../atomikThinking";
 import { attachedOf, loadPlanAttachmentContent, PlanAttachmentError, resolvePlanAttachments, type AttachmentReaders, type PlanAttachment } from "./rig-agent-attachments";
 import { suggestedRunLimit } from "./rig-agent-limits";
 import { advancePaidSteps, closeEndedSteps, MAX_SEND_ATTEMPTS, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
@@ -1111,14 +1113,20 @@ async function releasePlanning(run: Pick<RunRow, "id" | "productionId" | "owner"
   await patchRun(db(), run.id, { plan_charge: "released" });
 }
 
-/** The model a plan is priced at: the mock planner's price under ENGINE_MOCK=1, else Atomik's policy in the three families. */
+/**
+ * The model a plan is priced at: the mock planner's price under ENGINE_MOCK=1, else Atomik's thinking for a plan at the workspace's
+ * setting (lib/atomikModelPolicy › thinkingFor). `want` (a run's saved model) is not a choice and is not asked. The board planner
+ * sends no effort of its own: its fixed output ceiling (PLANNER_MAX_OUTPUT_TOKENS) holds the thinking and the answer, and Claude
+ * thinks at its own default there.
+ */
 export async function plannerPrice(want: string): Promise<PlannerPrice> {
+  void want;
   if (engineMock()) return { id: MOCK_PLANNER_MODEL, catalog: MOCK_PLANNER_CATALOG, direct: false };
   const { atomikModels } = await import("./atomik-server");
   const models = await catalog();
-  const id = selectPlannerModel(want, atomikModels(models));
+  const id = selectPlannerModel(thinkingFor(await workspaceThinking(), "plan").model, atomikModels(models));
   const model = models.find((m) => m.id === id);
-  if (!model) throw new PlannerError("That thinking model is not available right now. Choose another, or Auto.");
+  if (!model) throw new PlannerError(THINKING_UNAVAILABLE);
   /* A direct door (any vendor) is quoted at its cold cache-write ceiling and settled at its usage × this snapshot. */
   return { id, catalog: model, direct: isDirectText(id), engine: textEngine(id) };
 }

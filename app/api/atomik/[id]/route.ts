@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
-  getChat, patchChat, clearChatProject, deleteChat, VIEW_ONLY_INSTRUCTION, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
+  getChat, patchChat, clearChatProject, deleteChat, VIEW_ONLY_INSTRUCTION, addUserMessage, runTurn, projectContext, reconcileRunningSteps,
   chatModeOf,
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
@@ -49,9 +49,8 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
      spends, and archiving keeps everything in the thread. */
   if (typeof b.title === "string") await renameThread(id, b.title);
   if (typeof b.archived === "boolean") await (b.archived ? archiveThread(id, got.user.id) : restoreThread(id));
+  /* A model or effort in the body is not saved: every turn runs the workspace's Thinking setting (lib/atomikThinking.ts). */
   await patchChat(id, {
-    model: typeof b.model === "string" ? b.model : undefined,
-    effort: requestEffort(b.effort),
     /* "ask", or "auto" from an older caller, is stored as "ask": no Auto since 20 Oct 2026. */
     agentMode: b.agentMode === "ask" || b.agentMode === "auto" ? chatModeOf(b.agentMode) : undefined,
     /* As at creation: only a project this person may read is kept; anything else clears it. */
@@ -111,9 +110,8 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   if (!quoteOnly && loaded.chat.archivedAt != null) return NextResponse.json({ error: ARCHIVED_NOTE, chat: loaded }, { status: 409 });
 
   try {
-    const effort = requestEffort(b.effort);
-    if (b.model !== undefined && (typeof b.model !== "string" || !b.model || b.model.length > 120))
-      return NextResponse.json({ error: "Choose an available Atomik model." }, { status: 400 });
+    /* The turn's model and effort are the workspace's Thinking setting (lib/atomikThinking.ts): a model or effort in the body
+       (an older page echoes the quote's back) is ignored, never refused. */
     /* Two questions, asked of this person alone (an admin is no exception here), before anything is reserved (lib/draftProject.ts): the project they may READ (their own board, a teammate's shared
        board) feeds the model's CONTEXT only; the project they may FILE into (their own board, any project that is not a private board) is the one a turn spends against, proposes and prices steps
        for, and writes memory under. Someone else's private board gives neither. The chat's own project is dropped only when it is not even readable. */
@@ -128,13 +126,14 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const rules = writerRulesByScope(await effectiveRules());
     /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
     const inputs = await plannerInputs(got.user.id, projectId);
-    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, viewOnly, context, memory, model: b.model, effort, rules,
+    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, viewOnly, context, memory, rules,
       library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
-    const maxCredits = requestMaxCredits(b.maxCredits, b.effort !== undefined);
+    /* Every turn thinks at the setting's effort, so every turn runs under the ceiling its person approved on the quote. */
+    const maxCredits = requestMaxCredits(b.maxCredits, true);
     await addUserMessage(id, text, cleanAttachments(b.attachments));
     /* A library step is proposed only at a price: the admission quote, as this person, for its exact render. */
-    await runTurn(id, { projectId, viewOnly, context, memory, model: b.model, effort, maxCredits, rules,
+    await runTurn(id, { projectId, viewOnly, context, memory, maxCredits, rules,
       library: inputs.library, presets: inputs.presets, workbenchProjectId: inputs.studioProjectId,
       priceKeyStep: (body) => priceKeyStep(body, got) });
   } catch (e) {

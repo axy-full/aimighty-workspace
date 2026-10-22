@@ -1,10 +1,11 @@
 import { languageReachable } from './language-provider';
-import { savedAtomikChoice, selectAtomikModel } from "./atomikModelPolicy";
+import { savedAtomikChoice } from "./atomikModelPolicy";
+import { textJobPick, type TextJobTurn } from "./atomikThinking";
 import { aliasModel } from "./modelAliases";
 import { withMediaSources } from "./mediaMutation";
 import { MediaSourceError } from "./mediaBindings";
 import { db, ready, now, id as newId } from "./db";
-import { catalog, findModel, videoCostUsd, imageCostUsd } from "./catalog";
+import { findModel, videoCostUsd, imageCostUsd } from "./catalog";
 import { MODELS, type ModelDef } from "./models";
 import { getSetting } from "./settings";
 import { fenceGenerationRequest, generationRequestsReady } from "./generationRequests";
@@ -13,13 +14,12 @@ import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { cinemaStudioEnabled } from "./vendorRates";
 import { PaidTextError, runPaidText, quotePaidText, type PaidTextQuote } from "./paidText";
 import { meter } from "./meter";
-import { getPlatformLayer, platformDb, platformReady } from "./platform";
+import { platformDb, platformReady } from "./platform";
 import { currentTenant, requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
 import { billCredits, marginKeyOf } from "./creditTerms";
 import { musicCredits, sfxCredits, usdForCredits } from "./elevenlabs";
 import { stepAudioTask, stepRender } from "./atomikStepRender";
-import { textModelFor } from "./platformLayer";
 import { modelConfigured } from "./providers";
 import { cleanAttachments, attachmentLine, seenByModel, stepReferences, type Attachment, type StepRef } from "./attachments";
 import { GENJUTSU_LIMITS } from "./genjutsuTypes";
@@ -45,10 +45,10 @@ import { proposeMemory } from "./atomikMemory";
  * shots, and it proposes each generation to you one at a time with the
  * price on the button. Nothing is spent until someone presses Approve.
  *
- * The planner is a supported thinking model — Claude, OpenAI or Grok, through
- * the gateway (lib/atomikModelPolicy) — and that is the point of the section:
- * the reasoning that used to need a Claude subscription now comes out of a
- * menu, with Claude as one row in it rather than a prerequisite.
+ * The planner thinks with Claude at the workspace's Thinking setting (High ·
+ * Medium · Low; lib/atomikModelPolicy), on Particl's own keys: the reasoning
+ * that used to need a Claude subscription is part of the product, and the
+ * model behind each setting is never shown.
  *
  * Turns use a validated JSON protocol shared by the supported models.
  * Proposals still need explicit approval before their generation is run, and
@@ -104,7 +104,7 @@ export type Message = {
 export type Chat = {
   id: string; projectId: string | null; title: string;
   model: string; effort?: string; agentMode: AgentMode; status: ChatStatus;
-  /** Set when the chat was saved on a model Atomik no longer offers: it now plans with Auto (lib/atomikModelPolicy › savedAtomikChoice). */
+  /** No longer set (22 Oct 2026): a stored model is not a choice, every turn runs the Thinking setting. Kept for older readers. */
   modelNote?: string;
   /** The vendor's dollars for planning; absent for a workspace that pays in credits (chatForBrowser). */
   textCostUsd?: number; createdBy: string;
@@ -151,15 +151,13 @@ const toMessage = (r: Row): Message => ({
 });
 
 const toChat = (r: Row): Chat => {
-  /* A chat saved on a model Atomik no longer offers reads as Auto, with the
-     note that says so; the stored row is left as it was. Its effort was that
-     model's, so it goes too. One saved on a dropped id reads as its alias and
-     keeps its effort, which the alias also offers (tests/unit/modelAliases.spec.ts). */
+  /* What the chat last ran, as stored (lib/atomikModelPolicy › savedAtomikChoice): never a choice and never refused, since every
+     turn runs the workspace's Thinking setting. One saved on a model Atomik no longer thinks with reads as Auto, with nothing to say,
+     and without that model's effort; the stored row is left as it was. */
   const saved = savedAtomikChoice(String(r.model ?? "auto"));
   return {
     id: String(r.id), projectId: r.project_id ? String(r.project_id) : null,
-    title: String(r.title ?? "New chat"), model: saved.model, effort: !saved.note && typeof r.effort === "string" ? r.effort : undefined,
-    ...(saved.note ? { modelNote: saved.note } : {}),
+    title: String(r.title ?? "New chat"), model: saved.model, effort: saved.model !== "auto" && typeof r.effort === "string" ? r.effort : undefined,
     agentMode: chatModeOf(r.agent_mode),
     status: String(r.status ?? "idle") as ChatStatus,
     textCostUsd: Number(r.text_cost_usd ?? 0), createdBy: String(r.created_by ?? ""),
@@ -316,13 +314,10 @@ export async function patchChat(chatId: string, patch: {
   status?: ChatStatus; projectId?: string | null;
 }): Promise<void> {
   await ready();
-  /* A model Atomik no longer offers is not saved as a new choice. */
-  if (patch.model != null && savedAtomikChoice(patch.model).note)
-    throw new PaidTextError("That thinking model is no longer offered in Atomik. Choose a Claude, OpenAI or Grok model, or Auto.", 400);
   const sets: string[] = [];
   const args: (string | number | null)[] = [];
   if (patch.title != null) { sets.push("title = ?"); args.push(patch.title.slice(0, 80)); }
-  /* A dropped id is saved as its alias, the model that will run (lib/modelAliases.ts). */
+  /* What a turn ran (the routes no longer pass a person's pick: the Thinking setting decides). A dropped id is saved as its alias. */
   if (patch.model != null) { sets.push("model = ?"); args.push(aliasModel(patch.model)); }
   if (patch.effort != null) { sets.push("effort = ?"); args.push(patch.effort); }
   if (patch.agentMode != null) { sets.push("agent_mode = ?"); args.push(chatModeOf(patch.agentMode)); }
@@ -906,15 +901,15 @@ export type TurnResult = {
 /**
  * One turn: read the transcript, ask the model, persist what came back.
  *
- * The model that answers is the one the chat is set to; "auto" resolves to
- * the first featured planner the gateway is actually serving, so a chat
- * started before a model was retired still answers.
+ * The model that answers, and its effort, are the workspace's Thinking
+ * setting for a plan (lib/atomikThinking › textJobPick); the chat's stored
+ * model is not asked, so a chat started on any model still answers.
  */
 /** What the plan says when a board is view-only for the person (a teammate's shared board): plain words, no model name. */
 export const VIEW_ONLY_LINE = "This board is view-only for you, so I won't set up renders on it.";
 /** The instruction the planner is given on such a board, so it plans in words and does not propose renders. */
 export const VIEW_ONLY_INSTRUCTION = `This board is view-only for the person you are talking to. Do not propose any render step (no video, image or audio); answer in words, and say once that renders cannot be set up on this board. ${VIEW_ONLY_LINE}`;
-type TurnOptions = { context?: string; rules?: string; model?: string; effort?: string; maxCredits?: number;
+type TurnOptions = { context?: string; rules?: string; maxCredits?: number;
   /** The workspace's memory for this turn (lib/atomikMemory › plannerMemoryText): ranked, small, never money. The quote and the turn read the same. */
   memory?: string;
   /** This project's library and the Marketing Studio presets, for library steps (lib/atomikLibrary.ts › plannerInputs). The quote and the turn read the same. */
@@ -945,8 +940,8 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
     );
   }
 
-  const model = await resolveModel(opts.model ?? chat.model, "shot");
-  const effort = opts.effort;
+  /* Atomik's thinking for a plan, at the workspace's setting: never a model the person or an older page sent. */
+  const { model, effort } = await textJobPick("plan");
   /* What the reply is checked against: the same list the planner was shown. The
      library steps are on it only beside what they work from: a transform needs a
      clip and a still in this project's library (lib/atomikKeySteps.ts). */
@@ -1014,7 +1009,7 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
     /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.turn", chatId, step: "turn", model, effort: effort ?? "auto" } });
   const costUsd = result.costUsd;
   const turn = extractTurn(result.text, allowed, { library, presets }) ?? {
-    say: `${model} completed but did not return a usable proposal. The response has been saved; choose another planner for a new request.`,
+    say: "Atomik finished but did not return a usable proposal. The response has been saved; ask again for a new one.",
     activity: [], propose: [], ask: null, title: null, remember: [], declined: [],
   };
   /* A board its person may only look at has no renders to set up: none is proposed (a step files into the chat's board at approval, which a view-only board refuses), and the plan says so. */
@@ -1082,12 +1077,13 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
 
   await db().execute({
     sql: `UPDATE atomik_chats
-            SET status = ?, text_cost_usd = text_cost_usd + ?, updated_at = ?
+            SET status = ?, text_cost_usd = text_cost_usd + ?, updated_at = ?, model = ?, effort = ?
                 ${turn.title && chat.title === "New chat" ? ", title = ?" : ""}
           WHERE id = ?`,
+    /* The chat row keeps what its last turn ran (the setting's model and effort). */
     args: turn.title && chat.title === "New chat"
-      ? [saved.length ? "waiting" : "idle", costUsd, ts, turn.title.slice(0, 80), chatId]
-      : [saved.length ? "waiting" : "idle", costUsd, ts, chatId],
+      ? [saved.length ? "waiting" : "idle", costUsd, ts, model, effort ?? null, turn.title.slice(0, 80), chatId]
+      : [saved.length ? "waiting" : "idle", costUsd, ts, model, effort ?? null, chatId],
   });
 
   const after = await getChat(chatId);
@@ -1096,14 +1092,14 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
   return { message, steps: saved, chat: after.chat };
 }
 
-/** "auto" → the first featured planner the gateway is actually serving. */
-export async function resolveModel(want: string, job: "idea" | "shot" = "idea"): Promise<string> {
-  const cat = await catalog();
-  const routed = !want || want === "auto"
-    ? textModelFor((await getPlatformLayer().catch(() => null))?.models ?? null, job)
-    : undefined;
-  try { return selectAtomikModel(want, cat.filter(m => m.type === "language").map(m => m.id), routed); }
-  catch (error) { throw new PaidTextError(error instanceof Error ? error.message : "Choose an available Atomik model.", 400); }
+/**
+ * The model a text job runs (lib/atomikThinking › textJobPick): the workspace's Thinking setting for an Atomik turn, the Treatment
+ * writer for the Treatment's prose. `sent` is what the request carried (an older page echoes the quote's model back); it is not a
+ * choice, and it is ignored rather than refused. "idea" and "shot" are the older names for a Writing turn.
+ */
+export async function resolveModel(sent: string, job: TextJobTurn | "idea" | "shot" = "writing"): Promise<string> {
+  void sent;
+  return (await textJobPick(job === "idea" || job === "shot" ? "writing" : job)).model;
 }
 
 type ParsedTurn = {

@@ -320,7 +320,7 @@ export async function findModel(id: string): Promise<CatalogModel | null> {
  * is silently dropped, so a retirement costs nothing.
  */
 export const FEATURED = {
-  /** Atomik's planning catalogue: the verified Claude, OpenAI and Grok models (lib/atomikModelPolicy). */
+  /** Atomik's planning catalogue: the verified Claude models (lib/atomikModelPolicy). Which one runs is the Thinking setting's. */
   planner: ATOMIK_MODEL_IDS,
 } as const;
 

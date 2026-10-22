@@ -9,8 +9,8 @@ import { runSuiteAgent, checkSuiteProposal, suiteAgentInstructions, suiteAgentBo
 import { suiteAgentResultSchema } from './suite-agent-plan';
 import { REFERENCE_AD_FRAMES, referenceAnalysisWireSchema, referenceAnalysisSourceSchema, referenceAnalysisResultSchema, referenceAnalysisEvidenceSchema, referenceAnalysisInstructions, referenceAdAnalysisSchema } from './reference-ad-analysis';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
-import { ATOMIK_AUTO_MODEL_IDS, isAtomikModel, isRetiredAtomikModel } from "../atomikModelPolicy";
-import { aliasModel } from "../modelAliases";
+import { THINKING_UNAVAILABLE, isAtomikModel, selectAtomikThinking } from "../atomikModelPolicy";
+import { workspaceThinking } from "../atomikThinking";
 import { atomikEffortOptions, atomikReasoningRequest } from "../atomik-reasoning";
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -42,6 +42,8 @@ export const atomikRequestSchema = z.object({
   requestId: z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),
   request: z.string().trim().min(3).max(12000),
   role: z.enum(['director', 'dop', 'editor', 'design', 'costume', 'producer', 'continuity', 'marketing']).optional(),
+  /* What the page sent (an older page echoes the quote's model and effort back). Not a choice: the job runs the workspace's Thinking
+     setting (lib/atomikThinking.ts), and its saved request records what ran. Only 3D blocking names its own engine here. */
   model: z.string().min(1).max(120).default('auto'),
   depth: z.enum(['Quick', 'Considered', 'Deep']).default('Quick'),
   // Optional preserves fingerprints and exact recovery bodies created before effort controls.
@@ -151,6 +153,7 @@ function prices(model: CatalogModel) {
   return Number.isFinite(input) && input >= 0 && Number.isFinite(output) && output >= 0
     ? { input, output } : null;
 }
+const textEntry = (m: CatalogModel) => m.type === 'language' && (!m.outputModalities?.length || m.outputModalities.includes('text')) && !m.tags?.some(tag => ['image-generation','video-generation'].includes(tag)) && !!prices(m);
 /** Only catalogued language models with both known token prices can incur spend. */
 export function atomikModels(models: CatalogModel[]) {
   return models.filter(m => isAtomikModel(m.id) && m.type === 'language' && (!m.outputModalities?.length || m.outputModalities.includes('text')) && !m.tags?.some(tag => ['image-generation','video-generation'].includes(tag)) && prices(m))
@@ -273,10 +276,11 @@ const eventFor = (job: AtomikJob, owner: string, status: MeterEvent['status'], c
 async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: AtomikDependencies) {
   if (input.astraBlender && (input.suite || input.referenceAd || input.model !== ASTRA_BLENDER_MODEL || input.refs.length || input.videoFrames?.length)) throw new AtomikError('A 3D blocking request uses its own thinking model and the saved 3D scene. Start it from 3D blocking.', 422);
   if (input.referenceAd && input.suite) throw new AtomikError('Reference-ad analysis is a separate bounded review, not a suite-agent run.', 422);
-  /* A dropped id (a pending request saved by an older page) is its alias before any check: the model quoted and run (lib/modelAliases.ts). */
-  const want = aliasModel(input.model);
-  if (want !== 'auto' && isRetiredAtomikModel(want)) throw new AtomikError('That thinking model is no longer offered in Atomik, which now plans with Claude, OpenAI and Grok. Choose one of those, or Auto.', 422);
-  if (want !== 'auto' && !isAtomikModel(want)) throw new AtomikError('That thinking model is not offered in Atomik. Choose a supported model.', 422);
+  /* Atomik's thinking is the workspace's setting (lib/atomikModelPolicy › thinkingFor): a plan or a suite run at the setting, a
+     reference-ad review as a Design turn. The model and effort the request carries are ignored, never refused (an older page
+     echoes the quote's back). 3D blocking keeps its own engine, which is a tool, not Atomik's thinking. */
+  const turn = input.referenceAd ? 'design' as const : 'plan' as const;
+  const setting = input.astraBlender ? null : await workspaceThinking();
   const project = await getAtomikProject(owner, input.projectId);
   if (!project.productionProjectId) throw new AtomikError('Save this project to link its budget before starting Atomik.', 409);
   const astraScene = input.astraBlender ? project.astraBlender ?? createAstraScene('product') : null;
@@ -290,18 +294,18 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
      covers it; a memory that cannot be read leaves the request as it was. */
   const memory = input.astraBlender || input.referenceAd ? [] : await plannerMemory({ projectId: project.productionProjectId, query: input.request, viewer: owner }).catch(() => []);
   const models = await deps.models();
-  const menu = atomikModels(models).filter(model => (!input.suite || /^(anthropic|openai)\//.test(model.id)) && (!references.images.length || model.vision));
-  if (want === 'auto' && input.effort && input.effort !== 'auto') throw new AtomikError('Choose a model before setting its reasoning effort.', 422);
-  const economy = menu.find(m => (ATOMIK_AUTO_MODEL_IDS as readonly string[]).includes(m.id)) ?? menu[0];
-  const selectedId = want === 'auto' ? economy?.id : want;
-  const model = models.find(m => m.id === selectedId && menu.some(c => c.id === m.id));
-  if (!model && references.images.length) throw new AtomikError('Choose Auto or a connected vision-capable model to inspect the selected images and video frames.', 422);
+  const pick = setting ? selectAtomikThinking(setting, turn, models.filter(textEntry)) : null;
+  if (setting && !pick) throw new AtomikError(THINKING_UNAVAILABLE, 503);
+  const model = pick ? pick.entry : models.find(m => m.id === ASTRA_BLENDER_MODEL && textEntry(m));
+  /* The setting's effort; 3D blocking keeps the effort its own quote was asked at. */
+  const effort = pick ? pick.effort : input.effort;
+  if (model && references.images.length && !model.inputModalities?.includes('image')) throw new AtomikError(pick ? "Atomik's thinking can't inspect images right now. Remove the selected images and video frames, or try again later." : 'This 3D model cannot inspect the selected images. Remove them, or try again later.', 422);
   if (!model) throw new AtomikError('No priced language model is connected for this selection. Refresh the model menu or check the provider connection in Workspace → Engines.', 503);
   const system = input.astraBlender ? astraAgentInstructions(input.astraBlender.mode) : input.referenceAd ? referenceAnalysisInstructions() : input.suite ? suiteAgentInstructions(input.suite) : atomikSystem(input);
   const user = input.astraBlender ? JSON.stringify({ request: input.request, project: project.name, brief: project.brief.slice(0, 4000), direction: project.direction.slice(0, 4000) }) : atomikContext(project, input, references.text, references.images, memory);
   // UTF-8 byte count is a conservative token upper bound, including non-Latin scripts.
   const inputTokens = Buffer.byteLength(system + user, 'utf8') + 512 + references.inputTokens;
-  const reasoning = atomikReasoningRequest(model, input.effort, LIMITS[input.depth].maxTokens);
+  const reasoning = atomikReasoningRequest(model, effort, LIMITS[input.depth].maxTokens);
   const maxTokens = input.astraBlender ? Math.min(32768, reasoning.maxTokens + 8000, model.maxTokens ?? 32768) : reasoning.maxTokens;
   if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) {
     throw new AtomikError('This model has too little context for the project. Choose a larger-context model or fewer references.');
@@ -312,7 +316,8 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const perCallEstimate = textQuoteCostUsd(model, input.astraBlender ? ASTRA_AGENT_INPUT_TOKENS : input.suite ? bounds.perStepInputTokens : inputTokens, maxTokens, isDirectText(model.id));
   const estimateUsd = perCallEstimate == null ? null : perCallEstimate * (input.astraBlender ? ASTRA_AGENT_STEPS : input.suite ? SUITE_AGENT_STEPS : 1);
   if (estimateUsd == null || !Number.isFinite(estimateUsd) || estimateUsd < 0) throw new AtomikError('This model has no confirmed price for the current context. Choose another model or refresh the catalogue.', 503);
-  const budgets = atomikBudgets(input.effort !== undefined || !!input.astraBlender);
+  /* The setting's effort always applies where the model offers it, so the request is held to the quoted-effort ceilings. */
+  const budgets = atomikBudgets(effort !== undefined || !!input.astraBlender);
   if (estimateUsd > budgets.maxRequestUsd) throw new AtomikError('This request exceeds the Atomik spending limit. Choose a less expensive model, lower effort, shorter response detail, or fewer references.', 409);
   let providerBody = JSON.stringify({
     model: model.id, max_tokens: maxTokens, ...(isDirectText(model.id) ? { pricingModel: model } : {}),
@@ -364,14 +369,14 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   if (input.maxCredits != null && estimateCredits > input.maxCredits) {
     throw new AtomikError('The estimate changed since it was shown. Review the new quote before starting this request.', 409);
   }
-  return { project, model, providerBody, estimateUsd, estimateCredits, budgets, maxTokens, visualCount: references.images.length };
+  return { project, model, effort, providerBody, estimateUsd, estimateCredits, budgets, maxTokens, visualCount: references.images.length };
 }
 
 /** A read-only quote performs no claim, reservation, metering or provider submission. */
 export async function quoteAtomikJob(input: AtomikRequest, owner: string, overrides?: Partial<AtomikDependencies>) {
   const compiled = await compileAtomikRequest(input, owner, withDependencies(overrides));
   return { estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimateUsd, model: compiled.model.id,
-    depth: input.depth, effort: input.effort ?? 'auto', visualCount: compiled.visualCount, maxTokens: compiled.maxTokens,
+    depth: input.depth, effort: compiled.effort ?? 'auto', visualCount: compiled.visualCount, maxTokens: compiled.maxTokens,
     screenplay: screenplayWindow(compiled.project, input.depth), quoteOnly: true };
 }
 
@@ -385,8 +390,11 @@ async function prepareAtomikJobUnlocked(input: AtomikRequest, owner: string, tok
     if (existing.fingerprint !== fingerprint) throw new AtomikError('This request ID belongs to different instructions. Start a new request.', 409);
     return { job: asJob(existing), scheduled: false };
   }
-  if ((input.effort !== undefined || input.suite || input.referenceAd || input.astraBlender) && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
-  const { project, model, providerBody, estimateUsd, estimateCredits, budgets } = await compileAtomikRequest(input, owner, deps);
+  const { project, model, effort, providerBody, estimateUsd, estimateCredits, budgets } = await compileAtomikRequest(input, owner, deps);
+  /* A request that thinks at an effort (every Atomik turn whose model offers the setting's), a suite, a review or 3D blocking runs only under the ceiling its person approved. */
+  if ((effort !== undefined || input.suite || input.referenceAd || input.astraBlender) && input.maxCredits === undefined) throw new AtomikError('Review the credit estimate before starting this request.', 400);
+  /* The saved request records what runs (the setting's model and effort); its fingerprint stays the body as sent, so the same request sent again still finds it. */
+  const ran = input.astraBlender ? input : { ...input, model: model.id, ...(effort === undefined ? { effort: undefined } : { effort }) };
   const wall = await deps.allowance(textKeyName(model.id), estimateUsd, model.id);
   if (!wall.ok) throw new AtomikError(wall.error, wall.status);
   const lim = await deps.limits();
@@ -407,9 +415,9 @@ async function prepareAtomikJobUnlocked(input: AtomikRequest, owner: string, tok
     const spent = (await tx.execute({ sql: 'SELECT COALESCE(SUM(COALESCE(cost_usd,estimate_usd)),0) AS spend FROM workbench_atomik_jobs WHERE production_project_id=?', args: [project.productionProjectId!] })).rows[0];
     if (Number(spent.spend) + estimateUsd > budgets.maxProjectUsd) throw new AtomikError('This project has reached its Atomik spending limit.', 409);
     await tx.execute({ sql: `INSERT INTO workbench_atomik_jobs (id,owner,project_id,production_project_id,request_id,fingerprint,request_body,model,status,provider_body,estimate_usd,estimate_credits,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?,?,?)`,
-      args: [id, owner, input.projectId, project.productionProjectId ?? null, input.requestId, fingerprint, JSON.stringify(input), model.id, providerBody, estimateUsd, estimateCredits, ts, ts] });
+      args: [id, owner, input.projectId, project.productionProjectId ?? null, input.requestId, fingerprint, JSON.stringify(ran), model.id, providerBody, estimateUsd, estimateCredits, ts, ts] });
     await tx.commit();
-    job = asJob({ id, production_project_id: project.productionProjectId, request_body: JSON.stringify(input), model: model.id, status: 'queued', estimate_usd: estimateUsd, estimate_credits: estimateCredits, created_at: ts, updated_at: ts });
+    job = asJob({ id, production_project_id: project.productionProjectId, request_body: JSON.stringify(ran), model: model.id, status: 'queued', estimate_usd: estimateUsd, estimate_credits: estimateCredits, created_at: ts, updated_at: ts });
   } catch (error) { await tx.rollback(); throw error; }
   finally { tx.close(); }
   let reserved = false;

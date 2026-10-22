@@ -9,8 +9,9 @@ import { MEMORY_LIMITS, readFence, readProposals, type ReadResult } from "./atom
  * sorts lines on the page (lib/atomikMemoryText › parseImport) stays the
  * default.
  *
- * It runs on Atomik's model policy — Claude, OpenAI or Grok, which the route
- * resolves with lib/atomik › resolveModel — through the shared paid-text path
+ * It is a routine turn of Atomik's thinking (Low, or High when that is the
+ * workspace's setting), which the route resolves with lib/atomik › resolveModel
+ * and lib/atomikThinking › thinkingEffort — through the shared paid-text path
  * (lib/paidText): a read-only quote first, which the page shows as about N
  * credits; then one bounded submission under the ceiling the person approved,
  * reserved before it is sent and charged, through the meter, what it actually
@@ -53,9 +54,9 @@ export function memoryReadMessages(text: string) {
   ];
 }
 
-type ReadInput = { text: string; model: string };
+type ReadInput = { text: string; model: string; effort?: string };
 const paidInput = (input: ReadInput) => ({
-  model: input.model, messages: memoryReadMessages(readText(input.text)), maxTokens: MEMORY_READ_MAX_TOKENS,
+  model: input.model, effort: input.effort, messages: memoryReadMessages(readText(input.text)), maxTokens: MEMORY_READ_MAX_TOKENS,
   kind: MEMORY_READ_KIND, mock: "memory" as TextRun["mock"],
 });
 
@@ -83,7 +84,7 @@ export async function runMemoryRead(
 ): Promise<{ id: string; costUsd: number; credits: number; read: ReadResult }> {
   const result = await runPaidText(
     { ...paidInput(input), id: input.id, maxCredits: input.maxCredits, projectId: input.projectId, createdBy: input.createdBy,
-      /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.memory_read", step: MEMORY_READ_KIND, model: input.model } },
+      /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.memory_read", step: MEMORY_READ_KIND, model: input.model, ...(input.effort ? { effort: input.effort } : {}) } },
     { ...overrides, accept: usable },
   );
   return { id: result.id, costUsd: result.costUsd, credits: result.credits, read: readProposals(result.text)! };

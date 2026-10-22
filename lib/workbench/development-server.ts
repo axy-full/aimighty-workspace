@@ -30,8 +30,8 @@ import { loadAtomikReferences } from './atomik-references';
 import { ATOMIK_IMAGE_TOKENS } from './atomik-reference-types';
 import type { Project } from './studio';
 import { claimVerifyKey, compileVerify, mockVerifyReply, storedVerificationFor, verificationStatements, VerifyError } from './verify-server';
-import { aliasModel } from '../modelAliases';
-import { DEFAULT_TEXT_MODELS } from '../platformLayer';
+import { THINKING_UNAVAILABLE, selectAtomikThinking, type AtomikTurn } from '../atomikModelPolicy';
+import { workspaceThinking } from '../atomikThinking';
 import { verifyLikelyTokens, verifyPrompt, type VerifySnapshot } from './verify-judge';
 import { FRAMES_PER_CHUNK, developmentStages, DEVELOPMENT_CRITIQUE_BYTES, DEVELOPMENT_REQUEST_CEILING_USD, AGENT_SCRIPT_CHARS, developmentAnswerTokens, parseAgentJson, developmentResultBytes, developmentChunks, developmentInstructions, developmentCritiqueSchema, redraftTooLong, validateDevelopmentResult, type DevelopmentChunk } from './development-plan';
 
@@ -126,17 +126,20 @@ export async function developmentReady() {
 }
 
 /**
- * The agents a director can choose — Claude, Grok (the Gateway's `spacexai/`
- * reasoning models) or OpenAI — each priced by the live catalogue. Grok runs
- * at its provider's default reasoning: its effort controls are not verified
- * through this path, so none is offered rather than one that might be ignored.
+ * The models the development agent can run: Atomik's (Claude; Grok and OpenAI left on 22 Oct 2026), each priced by the live
+ * catalogue. Which one runs is never the director's pick: it is the workspace's Thinking setting (developmentThinking).
  */
 export function developmentModels(models: CatalogModel[]) {
   const byId = new Map(models.map((model) => [model.id, model]));
-  return atomikModels(models).filter(model => /^(anthropic\/claude-|openai\/|spacexai\/grok-)/.test(model.id))
-    .map(model => ({ ...model, vision: canSee(byId.get(model.id)!) }))
-    .map(model => (model.id.startsWith('spacexai/') ? { ...model, efforts: model.efforts.filter(option => option.value === 'auto') } : model));
+  return atomikModels(models).filter(model => /^anthropic\/claude-/.test(model.id))
+    .map(model => ({ ...model, vision: canSee(byId.get(model.id)!) }));
 }
+/** The kind of Atomik turn each development step is: writing at the setting, design at the setting, a condense as a routine turn and a Verify check as the judge (both at Low unless the setting is High). */
+const DEVELOPMENT_TURN: Record<DevelopmentRequest['kind'], AtomikTurn> = {
+  idea: 'writing', screenplay: 'writing', adfilm: 'writing', write: 'writing', beatsheet: 'writing',
+  frames: 'design', sketch: 'design', cast: 'design', environment: 'design', rig: 'design',
+  condense: 'routine', verify: 'judge',
+};
 /** A model that takes image input: the catalogue's input modalities, or (Grok lists none) its vision tag. */
 export function canSee(model: CatalogModel): boolean {
   return Boolean(model.inputModalities?.includes('image') || model.tags?.includes('vision'));
@@ -417,12 +420,16 @@ async function compile(input: DevelopmentRequest, owner: string, deps: Developme
 /** The price a person is shown and approves: a Verify check's usual use ("about N cr"), every other step's ceiling. */
 const shownPrice = (compiled: { estimateUsd: number; estimateCredits: number; likely?: { usd: number; credits: number } }) =>
   compiled.likely ?? { usd: compiled.estimateUsd, credits: compiled.estimateCredits };
-/* A request naming a dropped id (a page or Make plan from before 8 October) is quoted, saved and run on its
-   alias, the nearest model still offered (lib/modelAliases.ts): one model from the quote to the ledger. */
-/* A Gemini id that left the menus reads as Auto (lib/modelAliases.ts); a development step has no Auto of its own, so it runs on the platform's default for ideas. */
-const onAlias = (input: DevelopmentRequest): DevelopmentRequest => { const model = aliasModel(input.model); return { ...input, model: model === 'auto' ? DEFAULT_TEXT_MODELS.idea : model }; };
+/* The request as it runs: the workspace's Thinking setting's model and effort for this kind of step (lib/atomikModelPolicy ›
+   thinkingFor), whatever model or effort the body named (an older page or Make plan sends one; it is ignored, never refused).
+   The effort is the setting's where the model offers it, else the model's own default. One model from the quote to the ledger. */
+async function developmentThinking(input: DevelopmentRequest, deps: DevelopmentDependencies): Promise<DevelopmentRequest> {
+  const pick = selectAtomikThinking(await workspaceThinking(), DEVELOPMENT_TURN[input.kind], (await deps.models()).filter((model) => model.type === 'language'));
+  if (!pick) throw new DevelopmentError(THINKING_UNAVAILABLE, 503);
+  return { ...input, model: pick.model, effort: pick.effort ?? 'auto' };
+}
 export async function quoteDevelopmentJob(request: DevelopmentRequest, owner: string, overrides?: Partial<DevelopmentDependencies>): Promise<DevelopmentQuote> {
-  const input = onAlias(request);
+  const input = await developmentThinking(request, dependencies(overrides));
   /* A take checked against these masters already: the stored scorecard, free. Nothing is priced or started. */
   if (input.kind === 'verify') {
     const stored = await storedVerificationFor(await getAtomikProject(owner, input.projectId), input.nodeId);
@@ -502,9 +509,9 @@ export async function prepareDevelopmentJob(input: DevelopmentRequest, owner: st
   let release!: () => void;
   const tail = new Promise<void>(resolve => { release = resolve; }); preparationTails.set(key, tail);
   await previous;
-  /* A job saved before 8 October under a dropped id was fingerprinted on the body as sent: its retry still finds it. */
+  /* A job is fingerprinted on the body as it runs (the setting's model and effort) and on the body as sent: a retry of either still finds it. */
   const accepted = new Set([developmentSourceHash(JSON.stringify(input))]);
-  try { return await prepareUnlocked(onAlias(input), owner, token, overrides, accepted); }
+  try { return await prepareUnlocked(await developmentThinking(input, dependencies(overrides)), owner, token, overrides, accepted); }
   finally { release(); if (preparationTails.get(key) === tail) preparationTails.delete(key); }
 }
 async function prepareUnlocked(input: DevelopmentRequest, owner: string, token?: TenantToken, overrides?: Partial<DevelopmentDependencies>, accepted = new Set<string>()) {

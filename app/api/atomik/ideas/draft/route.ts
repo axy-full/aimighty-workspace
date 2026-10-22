@@ -2,7 +2,8 @@ import { languageReachable } from '@/lib/language-provider';
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 
-import { requestEffort, resolveModel } from "@/lib/atomik";
+import { resolveModel } from "@/lib/atomik";
+import { thinkingEffort } from "@/lib/atomikThinking";
 
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
@@ -73,16 +74,17 @@ export const POST = withTenant(async function POST(req: Request) {
     return NextResponse.json({ error: "The prompt writer isn't connected for this workspace. Ask the platform to connect it." }, { status: 503 });
   }
 
-  const effort = requestEffort(body.effort);
-  const model = await resolveModel(typeof body.model === "string" ? body.model.slice(0, 120) : "auto", "idea");
+  /* Atomik's thinking for a Writing turn, at the workspace's setting (lib/atomikThinking.ts): a model or effort in the body is not a choice, and is ignored. */
+  const model = await resolveModel("auto", "writing");
+  const effort = await thinkingEffort("writing", model);
   const user = [`NOTE: ${brief}`, toneIn ? `TONE WORDS: ${toneIn}` : ""].filter(Boolean).join("\n");
   const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 600, kind: "idea", mock: "idea" as const, createdBy: got.user.id,
     /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.ideas" as const, step: "idea", model, effort: effort ?? "auto" } };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
-  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
+  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, effort !== undefined) });
   const text = result.text;
   const out = extract(text);
-  if (!out) return NextResponse.json({ error: `${model} answered, but not with a logline. Try once more, or another model.` }, { status: 502 });
+  if (!out) return NextResponse.json({ error: "Atomik answered, but not with a logline. Try once more." }, { status: 502 });
 
   /* Credits as billed for a workspace on credits; dollars only for one on its own keys. */
   return NextResponse.json({ ...out, model, effort: effort ?? "auto", ...(await textRunCost(result)) });
