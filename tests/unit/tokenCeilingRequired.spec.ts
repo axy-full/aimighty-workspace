@@ -565,7 +565,7 @@ test("a person's Release of a capped token's take is still reserved under its to
     const ok = await pressRelease(route, roomy.id, roomy.needs);
     expect(ok.status).toBe(200);
     expect(await heldTrace(roomy.id)).toEqual({
-      row: { status: "queued", error: null, created_by: "member", token_id: "tok_roomy", released_by: null },
+      row: { status: "queued", error: null, created_by: "member", token_id: "tok_roomy", released_by: "owner" },
       meter: [{ billed_credits: roomy.needs, created_by: "member" }],
       reservation: [{ token_id: "tok_roomy", approved_by: null }],
     });
