@@ -125,7 +125,10 @@ test("a render, a still and a sound in the sample workspace are refused with its
   await scope(name("doors-elsewhere"), {}, async (service) => {
     let key = 0;
     for (const [kind, make] of [["generation", video], ["generation", still], ["audio", sound]] as const) {
-      const accepted = await route(kind, service, OWNER).POST(request(kind, make({ projectId: "film" }), `request-elsewhere-${key++}`));
+      const body: Record<string, unknown> = make({ projectId: "film" });
+      /* A person's sound press carries the figure that was on its button (owner, 21 Oct 2026, lib/pressFigure.ts): the route's own quote. */
+      if (kind === "audio") body.maxCredits = (await (await route(kind, service, OWNER).POST(request(kind, { ...body, quoteOnly: true }, `quote-elsewhere-${key}`))).json()).estimatedCredits;
+      const accepted = await route(kind, service, OWNER).POST(request(kind, body, `request-elsewhere-${key++}`));
       expect(accepted.status, await accepted.clone().text()).toBeLessThan(300);
     }
     expect(dispatched).toHaveLength(3);

@@ -101,7 +101,8 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string; quote?: 
   { dir: "generate", body: { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" } },
   /* Quoted first, then pressed with the quote's own approval, so the press reaches the hold (not a fingerprint that stops it before). */
   { dir: "generate/batch", quote: true, body: { members: [{ model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }, { model: "dreamina-seedance-2-0-260128", prompt: "A tree in sun", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }] } },
-  { dir: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 5, projectId: "film" } },
+  /* A person's sound press carries the figure that was on its button (owner, 21 Oct 2026, lib/pressFigure.ts): quoted first, then pressed at that figure. */
+  { dir: "audio", quote: true, body: { task: "sound", text: "Soft rain", durationSeconds: 5, projectId: "film" } },
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
   /* Lip-sync is off unless its engine is on for the workspace, so THIS press only proves the door is shut while it is off: it stops at "no such tool" and spends nothing, at any cap.
      The cap wall with the engine ON is proved in tests/unit/lipSync.spec.ts: a listed workspace at its own $0 cap is refused 429 in the cap's words, nothing held, written or sent. */

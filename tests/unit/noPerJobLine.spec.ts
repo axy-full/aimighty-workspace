@@ -381,7 +381,7 @@ test("dubbing, run for real: an hour of source (about $30, far over 200 cr) is q
       await ready();
       const reply = await executeDubbingAdmission({ ...body(), maxCredits: Math.floor(quoted) - 50 }, member, noop);
       expect(reply.status, JSON.stringify(reply.body)).toBe(409);
-      expect(String(reply.body.error)).toMatch(/exceeds the approved credit amount/);
+      expect(reply.body).toMatchObject({ code: "price_moved", quoteChanged: true, estimatedCredits: quoted, charged: 0, error: `The price is now ${quoted.toLocaleString("en-US")} cr. Press again to approve it.` });
       expect(await rows("generations")).toBe(0);
       expect(await rows("dubbing_jobs")).toBe(0);
     }, member);
