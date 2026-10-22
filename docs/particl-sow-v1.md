@@ -1019,7 +1019,7 @@ The strikes of rule 14's "a step over the rule's cap needs an admin" and of the 
 
 **C3** Reference films are read for structure only — cuts, shot sizes, moves, durations, the product moment, pacing, light, music turns — never content; priced by minutes as a ceiling; shown as "What I took from your reference" rows with Change; they set beat lengths, coverage bias and cut rhythm.
 
-**C4** Director mode's detail comes from the record, not the Director: a node shows a "Using" row (look · cast · rules · genre); Enhance · 1 cr turns a short prompt into the full one, shown before the press; with no record, the rail's and the genre's defaults fill the gaps.
+**C4** Director mode's detail comes from the record, not the Director: a node shows a "Using" row (look · cast · rules · genre); Enhance · 1 cr (sample; the figure comes from the quote path only, owner 21 Oct) turns a short prompt into the full one, shown before the press; with no record, the rail's and the genre's defaults fill the gaps.
 
 ## D · Corrections to the morning amendment
 
@@ -1037,15 +1037,21 @@ The strikes of rule 14's "a step over the rule's cap needs an admin" and of the 
 
 **R20** Chips and questions are derived from what is on the card: a product never shows a face chip; the chip set comes from the element rows of that picture. At most three questions on any card; "Skip the rest" is "Decide for me".
 
+*Amended 22 October 2026: see Amendment (iii), the owner's v31.5 review, R20.*
+
 **R21** The selection tool (lasso, element selector, "Change this · one quote") exists only where a picture is the subject — Elements, Look, Storyboard, Shots, Make — and only in Agent mode (R18). Never on Sound.
+
+*Restated 22 October 2026: see Amendment (iii), the owner's v31.5 review, R21.*
 
 **R22** Make: Agent's Make is "say it → one quote", no model named. Director's Make is a simple generator — text to image, text to video, image to video — with the model picker, settings and a wide prompt field. Model names in Director's Make only; no board in Make.
 
 **R23** Beats and frames are numbered; the number is the story order; drag to renumber; "Number the beats" when an import had none. Script shows beats only (no pictures), as Cards, List or the Director's Page; no free canvas at Script.
 
-**R24** Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote). One canvas tool: drag on empty pans, drag on a card moves, wheel pans, Space pans; no separate Hand tool.
+*Amended 22 October 2026: see Amendment (iii), the owner's v31.5 review, R23.*
 
-**R25** The bar is a smart box: docked only when nothing is selected; clicking anything opens it beside the thing — Agent: "Tell Atomik about this…" with derived chips; Director: the click's options and a wide prompt field.
+**R24** ~~Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote). One canvas tool: drag on empty pans, drag on a card moves, wheel pans, Space pans; no separate Hand tool.~~ *Struck 22 October 2026 (owner's v31.5 review): reversed, see Amendment (iii), v31.5 review, R24.* *Its first sentence returns as its own rule, R36 (owner, 22 October 2026, 08:45 IST); see Amendment (iii).*
+
+**R25** ~~The bar is a smart box: docked only when nothing is selected; clicking anything opens it beside the thing — Agent: "Tell Atomik about this…" with derived chips; Director: the click's options and a wide prompt field.~~ *Struck 22 October 2026 (owner's v31.5 review): reversed, see Amendment (iii), v31.5 review, R25.*
 
 **R26** Treatment's editor is Keynote-grade on the Polotno tools: a vertical page navigator that follows the scroll, a page canvas, an inspector of Design · Text · Image · Page — never x·y·w·h. Palettes and looks may come from outside (a Pinterest board, an uploaded deck) as a priced Reading turn. Sound's preview is the mixer (video over stacked layers, Add a layer). Edit in Agent mode lays the line-up first, then quoted prompt revisions; Director's Edit has multiple bins. Storyboard keeps the Director's controls and adds Layers.
 
@@ -1054,3 +1060,43 @@ The strikes of rule 14's "a step over the rule's cap needs an admin" and of the 
 ## F · Open for the owner, not for the lead
 
 The Visitor hero line; the genre table rows; the Agent factor's number; rupee vs dollar billing; provenance-mark disclosure; the 4K figure.
+
+# Amendment, 21 October 2026 (iii)
+
+The owner's answers of 21 October 2026, 22:15 IST, in his words where quoted. Docs only. Code follows in the PRs named.
+
+1. **Rule 14, a fourth form for bands.** "12–30 cr": rule 14 gets a fourth form, for bands only — N–M cr, reserved at M, settled at what was used ("the cost range can be given, but not the absolute cost"). Recorded under rule 14 in CLAUDE.md and docs/particl-sow-2026-10-04.md in this PR.
+2. **The owner-only allowance (B2)** is a no-tap path on purpose: "bill at the end" — a ceiling the workspace owner approves once, per document, off by default; the same shape as a token's ceiling (#854), not Auto. Build it as a ceiling, never a mode.
+3. **"Enhance · 1 cr" (C4) is a sample** (rule 14: every price in a design is a sample). The figure comes from the quote path only; C4 above is marked "(sample)".
+4. **The visitor bar gets a hard cap:** questions per visitor per day and a house daily ceiling, both settings whose names live in the code and whose values the owner sets in the self-host configuration; at the cap the bar says "Sign in to keep going". It lives in #839. The numbers are the owner's, later.
+5. **C1 "said" lines are tenant data:** workspace-scoped rows, never in Langfuse or telemetry (rule 17: ids and timings only). The schema PR's body says so.
+6. **Recraft over MCP:** no, for now. Recraft stays prepare-only until its first real run has the owner's yes.
+7. **A person's audio or dubbing press carries the figure that was on its button,** like the Director press (#860), in its own small PR under money review.
+8. **The monthly spend limit is rule 14's budget ceiling:** one setting, owner-only, off by default; #835 builds it. The house cap warns on a raise only. The engine hold stays: an engine is rebuilt on the price file (like #846) only when the demo needs it, and the owner names which.
+
+## The owner's v31.5 review, 22 October 2026 (00:05 IST)
+
+The owner's words, verbatim; only the bullets and the bold item ids are added. R24 and R25 are struck in Amendment (ii) E above with a dated note; R20, R21 and R23 there point here. R29 is **[money]**: its code PR goes under a money review.
+
+- **R24 reversed:** two canvas tools, Select (V) and Hand (H); in Select a drag on empty space is a marquee; Hand pans; Space is Hand in either; wheel pans; ⌘-wheel or pinch zooms about the cursor, damped, never a fixed step; "just copy the canvas of Luma": a fine dot grid fixed under zoom — "it's the cards that get zoomed in and out".
+- **R25 reversed:** "Keep it at the bottom only. I don't want to see any options or text hanging around on the canvas anywhere. If it's information regarding all cards, it should be tucked away in the inspector. If it's per card, it should be in the space bar or double-click preview of the card."
+- **R23 amended:** Script has Cards · List · Page in both modes; Page is the screenplay viewer and editor, hand edits free.
+- **R20 amended:** a question names the cards or beats it is about and offers the real alternatives; one with no concrete alternatives is not asked.
+- **R28** Genre first.
+- **R29 [money]** the plan is charged: free are the person's own "said" rows and the Preflight questions; one quote ("Plan the film", bands as a range or ceiling) is approved before any decided row appears.
+- **R30** a take accepts any number of inputs (rows with roles and ×).
+- **R31** the shot number is an editable control; a drop never renumbers.
+- **R32** Delete/Backspace to Trash with Undo; double-click on empty space makes the step's card, on a card opens Quick Look.
+- **R33** the Director's field is the width of the bar, multi-line, Enhance an icon in it.
+- **R34** the right rail holds the tabs once; the panel shows one tab.
+- **R35** Make: a centred bar with Agent · Director above it; Agent asks "What are we making?" then one quote; Director keeps the generator.
+- **R21 restated:** no selection tool in Director mode anywhere, Quick Look included.
+- Strike R24 and R25 with a dated note
+
+## The owner, 22 October 2026 (08:45 IST): R36
+
+The owner's words, verbatim; only the bold item id is added. R24 stays struck, and R31 is unchanged.
+
+"The R24 drop sentence comes back as its own rule, R36: "Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote)." R24 itself stays struck. R31 is unchanged."
+
+- **R36** Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote).
