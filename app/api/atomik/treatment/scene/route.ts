@@ -84,7 +84,8 @@ export const POST = withTenant(async function POST(req: Request) {
   const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 900, kind: "scene", mock: "scene" as const, createdBy: got.user.id,
     /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.treatment_scene" as const, step: "scene", model, effort: effort ?? "auto" }, projectId };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
-  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, effort !== undefined) });
+  /* The approved ceiling is asked for as before, where the caller sent an effort; without one the run keeps the older safety cap (lib/paidText.ts). */
+  const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined), ceilingRequired: body.effort !== undefined });
   const out = sceneFromReply(result.text);
   if (!out) return NextResponse.json({ error: "The Treatment writer answered, but not with a scene. Try once more." }, { status: 502 });
 

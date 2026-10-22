@@ -171,20 +171,25 @@ export function thinkingFor(setting: Thinking, turn: AtomikTurn, map: Readonly<R
   return { thinking, ...map[thinking] };
 }
 
-/** What a person is told when the setting's model is not being served: no model, no effort (never disclosed). */
+/** What a person is told when no model Atomik thinks with is being served: no model, no effort (never disclosed). */
 export const THINKING_UNAVAILABLE = "Atomik's thinking isn't connected right now. Nothing billed.";
 
 /**
- * A turn's model and effort against what the catalogue serves: the setting's model, never another (no fallback to a different paid
- * model), or null when it is not served. The effort is the setting's where the model's catalogue entry offers it; where the entry
- * offers no such control none is sent, and the model thinks at its own default.
+ * A turn's model and effort against what the catalogue serves. The setting's model when it is served. When it is not, the first served
+ * of the other settings' models (Medium, then Low, then High), then the first served Claude model of the verified catalogue, in its
+ * order: Atomik still thinks, on Claude only, and the quote is the price of the model that runs, so nothing is charged for a model that
+ * did not run. Null when no Claude model is served: nothing falls back to another family. The effort is the setting's where the
+ * model's catalogue entry offers it; where the entry offers no such control none is sent, and the model thinks at its own default.
  */
 export function selectAtomikThinking(setting: Thinking, turn: AtomikTurn, served: readonly CatalogModel[]): (Omit<ThinkingPick, "effort"> & { entry: CatalogModel; effort?: Effort }) | null {
   const pick = thinkingFor(setting, turn);
-  const entry = served.find((m) => m.id === pick.model && m.type === "language");
+  const language = served.filter((m) => m.type === "language");
+  const order = [pick.model, ...FALLBACK_ORDER.map((t) => ATOMIK_THINKING[t].model), ...ATOMIK_MODEL_IDS];
+  const entry = order.map((id) => language.find((m) => m.id === id)).find((m): m is CatalogModel => Boolean(m));
   if (!entry) return null;
-  return { thinking: pick.thinking, model: pick.model, entry, ...(offersEffort(entry, pick.effort) ? { effort: pick.effort } : {}) };
+  return { thinking: pick.thinking, model: entry.id, entry, ...(offersEffort(entry, pick.effort) ? { effort: pick.effort } : {}) };
 }
+const FALLBACK_ORDER: readonly Thinking[] = ["medium", "low", "high"];
 /** Whether a catalogue entry offers this named effort (lib/atomik-reasoning.ts, the same list the compiler checks). */
 export const offersEffort = (entry: CatalogModel, effort: string): boolean => atomikEffortOptions(entry).some((option) => option.value === effort);
 

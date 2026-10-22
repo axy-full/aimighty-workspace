@@ -910,6 +910,8 @@ export const VIEW_ONLY_LINE = "This board is view-only for you, so I won't set u
 /** The instruction the planner is given on such a board, so it plans in words and does not propose renders. */
 export const VIEW_ONLY_INSTRUCTION = `This board is view-only for the person you are talking to. Do not propose any render step (no video, image or audio); answer in words, and say once that renders cannot be set up on this board. ${VIEW_ONLY_LINE}`;
 type TurnOptions = { context?: string; rules?: string; maxCredits?: number;
+  /** Whether the caller sent an effort, so the turn needs the ceiling its person approved (the route asks first; lib/paidText.ts). */
+  ceilingRequired?: boolean;
   /** The workspace's memory for this turn (lib/atomikMemory › plannerMemoryText): ranked, small, never money. The quote and the turn read the same. */
   memory?: string;
   /** This project's library and the Marketing Studio presets, for library steps (lib/atomikLibrary.ts › plannerInputs). The quote and the turn read the same. */
@@ -1004,7 +1006,7 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
 
   if (opts.quoteOnly) return quotePaidText({ model, effort, messages: base, maxTokens: 4000 });
   if (!chatId) throw new Error("A saved conversation is required to run the planner.");
-  const result = await runPaidText({ model, effort, maxCredits: opts.maxCredits, messages: base, maxTokens: 4000, kind: "turn", mock: "turn", timeoutMs: 270_000,
+  const result = await runPaidText({ model, effort, maxCredits: opts.maxCredits, ceilingRequired: opts.ceilingRequired ?? opts.maxCredits !== undefined, messages: base, maxTokens: 4000, kind: "turn", mock: "turn", timeoutMs: 270_000,
     projectId: chat.projectId, createdBy: chat.createdBy, recordSpend: false,
     /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.turn", chatId, step: "turn", model, effort: effort ?? "auto" } });
   const costUsd = result.costUsd;

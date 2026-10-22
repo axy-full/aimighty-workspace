@@ -36,7 +36,7 @@ import {
   mockPlannerModel, plannerCeilingUsd, plannerCostUsd, PlannerError, runPlanner, selectPlannerModel,
   MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, NO_ATTACHMENT_CONTENT, PLANNER_TIMEOUT_MS, type PlannerAttachmentContent, type PlannerOutcome,
 } from "./rig-agent-planner";
-import { THINKING_UNAVAILABLE, thinkingFor } from "../atomikModelPolicy";
+import { THINKING_UNAVAILABLE, selectAtomikThinking } from "../atomikModelPolicy";
 import { workspaceThinking } from "../atomikThinking";
 import { attachedOf, loadPlanAttachmentContent, PlanAttachmentError, resolvePlanAttachments, type AttachmentReaders, type PlanAttachment } from "./rig-agent-attachments";
 import { suggestedRunLimit } from "./rig-agent-limits";
@@ -1115,7 +1115,7 @@ async function releasePlanning(run: Pick<RunRow, "id" | "productionId" | "owner"
 
 /**
  * The model a plan is priced at: the mock planner's price under ENGINE_MOCK=1, else Atomik's thinking for a plan at the workspace's
- * setting (lib/atomikModelPolicy › thinkingFor). `want` (a run's saved model) is not a choice and is not asked. The board planner
+ * setting (lib/atomikModelPolicy › selectAtomikThinking). `want` (a run's saved model) is not a choice and is not asked. The board planner
  * sends no effort of its own: its fixed output ceiling (PLANNER_MAX_OUTPUT_TOKENS) holds the thinking and the answer, and Claude
  * thinks at its own default there.
  */
@@ -1124,7 +1124,10 @@ export async function plannerPrice(want: string): Promise<PlannerPrice> {
   if (engineMock()) return { id: MOCK_PLANNER_MODEL, catalog: MOCK_PLANNER_CATALOG, direct: false };
   const { atomikModels } = await import("./atomik-server");
   const models = await catalog();
-  const id = selectPlannerModel(thinkingFor(await workspaceThinking(), "plan").model, atomikModels(models));
+  const menu = atomikModels(models);
+  const pick = selectAtomikThinking(await workspaceThinking(), "plan", models.filter((m) => menu.some((entry) => entry.id === m.id)));
+  if (!pick) throw new PlannerError(THINKING_UNAVAILABLE);
+  const id = selectPlannerModel(pick.model, menu);
   const model = models.find((m) => m.id === id);
   if (!model) throw new PlannerError(THINKING_UNAVAILABLE);
   /* A direct door (any vendor) is quoted at its cold cache-write ceiling and settled at its usage × this snapshot. */

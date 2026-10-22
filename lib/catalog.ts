@@ -12,8 +12,8 @@ import modelCatalogJson from './modelCatalog.json';
  * Everything the Vercel AI Gateway will run, read from the gateway itself.
  *
  * Provider-specific media contracts live in lib/models.ts. This catalogue
- * supplies live availability and prices; Atomik applies a separate verified
- * catalogue of Claude, OpenAI and Grok planning models.
+ * supplies live availability and prices; Atomik thinks with the Claude part of
+ * a separate verified catalogue, at its Thinking setting (lib/atomikModelPolicy.ts).
  * Retired or disconnected models disappear from the menu.
  *
  * MODEL_CATALOG=static serves the same entries from lib/modelCatalog.json, a

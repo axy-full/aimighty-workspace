@@ -259,8 +259,8 @@ export async function runPlanner(snapshot: BoardSnapshot, model: LanguageModel, 
 }
 
 /**
- * The thinking model for a plan: the one the workspace's Thinking setting names for a plan turn (lib/atomikModelPolicy › thinkingFor),
- * when the priced menu serves it; never swapped for another paid model. A run's saved model is not asked (it is not a choice).
+ * The thinking model for a plan: the one Atomik's thinking picks for a plan turn at the workspace's setting (lib/atomikModelPolicy ›
+ * selectAtomikThinking), checked against the priced menu: a Claude model on it, or refused. A run's saved model is not asked.
  */
 export function selectPlannerModel(setting: string, menu: readonly { id: string }[]): string {
   if (!RIG_AGENT_FAMILIES.test(setting) || !isAtomikModel(setting) || !menu.some((m) => m.id === setting)) throw new PlannerError(THINKING_UNAVAILABLE);

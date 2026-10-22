@@ -129,11 +129,12 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, viewOnly, context, memory, rules,
       library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
-    /* Every turn thinks at the setting's effort, so every turn runs under the ceiling its person approved on the quote. */
-    const maxCredits = requestMaxCredits(b.maxCredits, true);
+    /* A sent effort asks for the approved ceiling, as before, before the message is saved. The turn thinks at the setting's effort either
+       way; without an approved ceiling it keeps the older safety cap (lib/paidText.ts textRequestEstimate). */
+    const maxCredits = requestMaxCredits(b.maxCredits, b.effort !== undefined);
     await addUserMessage(id, text, cleanAttachments(b.attachments));
     /* A library step is proposed only at a price: the admission quote, as this person, for its exact render. */
-    await runTurn(id, { projectId, viewOnly, context, memory, maxCredits, rules,
+    await runTurn(id, { projectId, viewOnly, context, memory, maxCredits, ceilingRequired: b.effort !== undefined, rules,
       library: inputs.library, presets: inputs.presets, workbenchProjectId: inputs.studioProjectId,
       priceKeyStep: (body) => priceKeyStep(body, got) });
   } catch (e) {

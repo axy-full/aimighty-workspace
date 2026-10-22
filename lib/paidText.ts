@@ -121,6 +121,12 @@ export function textRequestEstimate(
 export type PaidTextQuote = { model: string; effort: string; estimateCredits: number; estimateUsd?: number };
 type QuotedTextInput = {
   model: string; effort?: string; maxTokens: number; messages: unknown[]; maxCredits?: number;
+  /**
+   * Whether a run needs the ceiling its person approved (`maxCredits`). Default: whenever an effort is sent. Atomik's routes pass
+   * whether the CALLER sent one: the Thinking setting's effort now applies to every turn (lib/atomikThinking.ts), and a run without
+   * an approved ceiling keeps the old $1 safety cap below rather than the quoted-effort one.
+   */
+  ceilingRequired?: boolean;
   /** A short rewrite that must come back fast (the prompt enhancer): the lightest reasoning the model offers, with a small, fixed room to think. Quoted and run the same way. */
   quick?: boolean;
 };
@@ -129,7 +135,7 @@ export function quickEffort(model: CatalogModel): string | undefined {
   const offered = atomikEffortOptions(model).map((option) => option.value);
   return ["none", "minimal", "low"].find((value) => offered.includes(value));
 }
-async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) {
+async function compilePaidText(input: QuotedTextInput, override?: CatalogModel, quote = false) {
   const model = override ?? (await findModel(input.model));
   if (!model)
     throw new PaidTextError(
@@ -153,7 +159,10 @@ async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) 
   });
   if (usesImages && !model.inputModalities?.includes("image"))
     throw new PaidTextError("This model cannot read image references. Choose a model with image input or remove the references.", 422);
-  const estimate = textRequestEstimate(model, input.messages, reasoning.maxTokens, input.effort !== undefined);
+  /* The quoted-effort safety cap holds for a quote, and for a run that carries (or must carry) the ceiling its person approved on one; a run that
+     needs no ceiling (ceilingRequired false) and has none keeps the older cap. */
+  const estimate = textRequestEstimate(model, input.messages, reasoning.maxTokens,
+    input.effort !== undefined && (quote || input.maxCredits !== undefined || input.ceilingRequired !== false));
   const estimateCredits = paidByPlatform(textKeyName(input.model)) ? billCredits(estimate, "text") : 0;
   if (input.maxCredits !== undefined && (!Number.isInteger(input.maxCredits) || input.maxCredits < 0 || estimateCredits > input.maxCredits))
     throw new PaidTextError("The writing estimate changed. Review the new quote before running.", 409);
@@ -169,7 +178,7 @@ async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) 
 }
 /** A read-only quote: no request claim, reservation, provider call or spend row. */
 export async function quotePaidText(input: QuotedTextInput, override?: CatalogModel): Promise<PaidTextQuote> {
-  const compiled = await compilePaidText(input, override);
+  const compiled = await compilePaidText(input, override, true);
   return { model: compiled.model.id, effort: input.effort ?? "auto", estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimate };
 }
 export function paidTextQuoteResponse(quote: PaidTextQuote): Response {
@@ -223,6 +232,8 @@ export async function runPaidText(
     maxTokens: number;
     effort?: string;
     maxCredits?: number;
+    /** See QuotedTextInput. */
+    ceilingRequired?: boolean;
     kind: string;
     projectId?: string | null;
     createdBy?: string | null;
@@ -287,7 +298,7 @@ return await withRecoveryActivity('paid-text', async () => {
   const { model, estimate, estimateCredits, requestBody } = await compilePaidText(input, overrides.model);
   /* A job whose estimate stands for now: what is held (credits on the platform's key, none on the workspace's own). */
   const held: PaidTextBilling = { heldCredits: estimateCredits };
-  requestMaxCredits(input.maxCredits, input.effort !== undefined);
+  requestMaxCredits(input.maxCredits, input.ceilingRequired ?? input.effort !== undefined);
   await paidTextReady();
   const id = input.id ?? newId("text");
   /* The model call in scope (lib/modelTrace.ts) is told the job's id; nothing here changes for it. */
