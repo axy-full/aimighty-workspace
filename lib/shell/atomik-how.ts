@@ -53,7 +53,7 @@ const TOPICS: readonly Topic[] = [
   },
   {
     id: "identity", when: /identit|consent|\bface\b|\bvoice\b|\bcast\b|actor|same person/i,
-    answer: (f) => `An identity keeps a person looking the same in every shot. Build one from the Cast card once their consent is on record; only a person records consent.${priceWords(f.identity) ? ` Training one is ${priceWords(f.identity)}.` : ""}`,
+    answer: (f) => `An identity keeps a person looking the same in every shot. Build one from the Cast card. Their consent is a tick there, and only a person ticks it.${priceWords(f.identity) ? ` Training one is ${priceWords(f.identity)}.` : ""}`,
     offer: { label: "Go to Cast", action: { kind: "region", region: "cast" } },
   },
   {

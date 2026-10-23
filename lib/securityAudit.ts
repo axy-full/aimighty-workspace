@@ -20,7 +20,7 @@ const actions = [
   "account.password_reset", "account.mfa_enabled", "account.mfa_replaced", "account.mfa_disabled", "account.recovery_codes_rotated", "account.recovery_code_used", "account.sessions_revoked", "member.updated", "member.removed",
   "vendor_key.updated", "vendor_key.removed", "workspace.mode_changed", "workspace.mfa_required", "workspace.mfa_optional", "workspace.restored",
   "api_token.created", "api_token.revoked", "api_token.ceiling_set", "review_link.created", "review_link.revoked",
-  "identity_consent.recorded", "identity_consent.withdrawn",
+  "identity_consent.recorded", "identity_consent.updated", "identity_consent.withdrawn",
   "account.age_confirmed",
 ] as const;
 export type SecurityAction = (typeof actions)[number];

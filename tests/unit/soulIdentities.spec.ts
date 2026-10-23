@@ -210,6 +210,39 @@ test("training reserves once before submission, concurrent request replay recove
     ).toBe(409);
   }));
 
+test("a tick, not a gate (owner, 23 Oct 2026): an unticked training is sent and reads back as not ticked; a token is refused, ticked or not, before anything is sent", async () =>
+  scope("tick", async (ws, project) => {
+    let calls = 0;
+    const deps = { submit: async () => { calls++; return { id: providerId, status: "queued" as const }; } };
+    const unticked: CreateSoulIdentityInput = { ...input(project), name: "Unticked character" };
+    delete unticked.consent;
+    const sent = await submit(unticked, "tick-none", deps);
+    expect(sent.status).toBe(202);
+    const identity = await read(sent);
+    expect(calls).toBe(1);
+    /* Not ticked: no time and no name, and the stored column says so with 0 (it is NOT NULL), never a time. */
+    expect(identity.consentAt).toBeNull();
+    expect(identity.consentBy).toBeNull();
+    const { db } = await import("../../lib/db");
+    expect(Number((await db().execute({ sql: "SELECT consent_at FROM soul_identities WHERE id=?", args: [identity.id] })).rows[0].consent_at)).toBe(0);
+    /* A person's tick: when, at the press. */
+    const before = Date.now();
+    const ticked = await read(await submit({ ...input(project), name: "Ticked character" }, "tick-person", deps));
+    expect(ticked.consentAt).toBeGreaterThanOrEqual(before);
+    expect(calls).toBe(2);
+    /* Rule 11: a tick under an API or MCP token is not a person's. Refused, with nothing sent or reserved. */
+    const { runInTenant } = await import("../../lib/tenant");
+    const byToken = await runInTenant(ws, () => submit({ ...input(project), name: "Token tick" }, "tick-token", deps),
+      { user, token: { id: "tok_tick", name: "Agent", scope: "render", capUsd: null } });
+    expect(byToken.status).toBe(403);
+    /* Unticked under a token is refused too: the press is a person's (defence in depth behind the people-only route). */
+    const untickedByToken = await runInTenant(ws, () => submit({ ...unticked, name: "Token press" }, "tick-token-none", deps),
+      { user, token: { id: "tok_tick", name: "Agent", scope: "render", capUsd: null } });
+    expect(untickedByToken.status).toBe(403);
+    expect(calls).toBe(2);
+    expect((await db().execute({ sql: "SELECT COUNT(*) AS n FROM soul_identities WHERE name=?", args: ["Token tick"] })).rows[0].n).toBe(0);
+  }));
+
 test("ambiguous POST keeps its reservation and never retries after a replay or status refresh", async () =>
   scope("ambiguous", async (_ws, project) => {
     let calls = 0;

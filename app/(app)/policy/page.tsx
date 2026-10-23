@@ -10,7 +10,8 @@ export default function ContentPolicyPage() {
       <P title="Not allowed">
         <p>Sexual content involving anyone under 18, in any form, real or generated.</p>
         <p>Sexual content of a real person who has not agreed to it.</p>
-        <p>A real person&rsquo;s likeness used to deceive: putting words in their mouth, showing them doing what they did not do, or passing generated footage off as real. An identity trained from photos needs the consent of the person in them, and you confirm that when you train one.</p>
+        <p>A real person&rsquo;s likeness used to deceive: putting words in their mouth, showing them doing what they did not do, or passing generated footage off as real.</p>
+        <p>Consent is recorded, never required: who ticked, when, and a file if you have one.</p>
         <p>Content that harasses, threatens or dehumanises people for who they are, or that incites violence.</p>
         <p>Anything unlawful where you or the platform operate, and anything that tries to defeat an engine&rsquo;s own safety rules.</p>
       </P>

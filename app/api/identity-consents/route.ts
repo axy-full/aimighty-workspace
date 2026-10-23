@@ -26,7 +26,7 @@ export const GET = withTenant(async (req: Request) => {
   const subject = q.get("subject");
   if (!ID.test(projectId) || (subject != null && !ID.test(subject))) return Response.json({ error: "Which production?" }, { status: 400, headers });
   try {
-    return Response.json({ consents: await listConsents(projectId, subject) }, { headers });
+    return Response.json({ consents: await listConsents(projectId, subject, got.user.id) }, { headers });
   } catch (error) { return refused(error); }
 });
 
