@@ -38,8 +38,9 @@ test("a Verify check is priced, charged once, stored, and read back free; nobody
     expect(saved.ok(), await saved.text()).toBe(true);
     const url = `/api/workbench/development?projectId=${project.id}`;
     const state = await request.get(url, { headers }).then((r) => r.json()) as DevelopmentState;
-    const model = state.models.find((m) => m.vision && m.id.startsWith("anthropic/")) ?? state.models.find((m) => m.vision)!;
-    const input = { projectId: project.id, requestId: randomUUID(), kind: "verify", model: model.id, effort: "auto", nodeId: "check" };
+    /* No menu of thinking models (never disclosed): only that one is connected. The judge runs the Low slot whatever is sent, so "auto" is sent. */
+    expect(state).toMatchObject({ configured: true, models: [] });
+    const input = { projectId: project.id, requestId: randomUUID(), kind: "verify", model: "auto", effort: "auto", nodeId: "check" };
     const meterRows = async () => (await platform.execute({ sql: "SELECT * FROM meter_events WHERE workspace_id=?", args: [account.workspace.id] })).rows;
 
     const quoted = await request.post("/api/workbench/development", { headers, data: { ...input, quoteOnly: true } });
