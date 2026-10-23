@@ -132,7 +132,7 @@ test("P2: an odd-case stored scope reads as read-only; a prepare token's PATCH, 
   expect((await closed(new Request(`${ORIGIN}/x`, { method: "POST" }), undefined as never)).status).toBe(403);
 });
 
-/* ── M1: identity training needs a live consent record on every path ─────────────────────────────────────────── */
+/* ── M1: every path reads a cited consent tick the same way; a malformed citation is refused, and no training waits for consent ── */
 
 async function soulRoute(who: Who) {
   const sent: unknown[] = [], claimed: string[] = [];
@@ -149,7 +149,7 @@ async function soulRoute(who: Who) {
   return { route, sent, claimed };
 }
 
-test("P1 + P5 (M1): training is refused, in words, before anything is claimed or sent, without a live record that matches the production, the cast member and the use", async () => {
+test("P1 + P5 (M1): a malformed tick citation (no production, another production's or cast member's tick, no cast member) is refused in words before anything is claimed or sent; a training with no consent record, or one that doesn't allow the use, proceeds and records who ticked and when", async () => {
   const who = member();
   const { route, sent, claimed } = await soulRoute(who);
   const live = await record({ subjectKey: "node-x" });
@@ -191,7 +191,7 @@ test("P1 + P5 (M1): training is refused, in words, before anything is claimed or
   await runInTenant(A, async () => { await expect(consent.consentForTraining(live.id, [], "node-x")).rejects.toThrow(/production/i); });
 });
 
-test("M1: the older identity-training route needs the same live record", async () => {
+test("M1: the older identity-training route reads a cited tick the same way (consentForTraining)", async () => {
   const src = readFileSync("app/api/identities/[id]/train/route.ts", "utf8");
   expect(src).toContain("consentForTraining(");
 });

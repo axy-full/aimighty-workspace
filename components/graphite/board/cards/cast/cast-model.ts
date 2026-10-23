@@ -8,7 +8,8 @@ import { lockProblem } from "@/lib/workbench/master-lock";
 import { resolveAsset } from "@/lib/workbench/node-graph";
 import { refKindOf } from "@/lib/workbench/ref-kind";
 import type { Asset, Project } from "@/lib/workbench/studio";
-import type { SoulIdentity } from "@/lib/workbench/soul-identity";
+import { soulIdentityAsset, type SoulIdentity } from "@/lib/workbench/soul-identity";
+import { RigBuildError } from "@/lib/production/rig-build";
 import { isShotNode } from "@/lib/workspace/shots";
 
 /*
@@ -48,6 +49,8 @@ export type CastCardData = {
    * asset keeps an older binding and a newer training was bound to the entry). The card follows the newest of them.
    */
   identityIds?: string[];
+  /** The identity the card's own asset renders with, when it has one. */
+  assetIdentityId?: string | null;
   /** The card is a locked master. */
   master: boolean;
   /** Lock as master is possible right now (a stored picture on a Cast, Environment or Element card). */
@@ -129,8 +132,13 @@ export function castStatus(d: CastCardData, identities: readonly SoulIdentity[] 
   return d.still ? { text: "Not locked", tone: "idle" } : { text: "No still yet", tone: "idle" };
 }
 
-/** The card a training was pressed from: the production it was pressed in, and the cast member, captured at the press. */
-export type PressedCard = { projectId: string; entryId: string | null; nodeId: string | null };
+/**
+ * The card a training was pressed from: the production it was pressed in, and the cast member, captured at the press.
+ * `name` is the cast member's name then (the card's title): a bind made later, after a reply or from a parked bind,
+ * lands only on a cast member that still has that name, so a renamed or replaced one is never given someone else's
+ * identity (review 4 of #888, R4-1).
+ */
+export type PressedCard = { projectId: string; entryId: string | null; nodeId: string | null; name?: string | null };
 
 /**
  * Binds an identity a person started training from a character's Inspector to that character's card (Rig save), so
@@ -143,6 +151,11 @@ export type PressedCard = { projectId: string; entryId: string | null; nodeId: s
  */
 export function bindCastIdentity(project: Project, card: PressedCard, identityId: string): Project {
   if (project.id !== card.projectId) return project;
+  /* The cast member has to be the one pressed from: the same name as at the press (when it was captured). */
+  const named = (name: string | undefined) => card.name == null || (name != null && norm(name) === norm(card.name));
+  const pressedEntry = card.entryId ? project.production?.cast?.entries.find((e) => e.id === card.entryId) : undefined;
+  const pressedNode = card.nodeId ? project.nodes.find((n) => n.id === card.nodeId) : undefined;
+  if ((pressedEntry && !named(pressedEntry.name)) || (pressedNode && !named(pressedNode.title))) return project;
   let next = project;
   const cast = next.production?.cast;
   const hasEntry = Boolean(card.entryId && cast?.entries.some((e) => e.id === card.entryId));
@@ -155,6 +168,31 @@ export function bindCastIdentity(project: Project, card: PressedCard, identityId
     next = { ...next, assets: next.assets.map((a) => (a.id === asset.id ? { ...a, soulIdentityId: identityId } : a)) };
   }
   return next;
+}
+
+/**
+ * A character whose own asset still renders with an earlier identity (a locked asset keeps its binding, R3-3) while a
+ * newer one is ready on its cast entry: the card says "Renders with the earlier sheet · Update". Null otherwise. Only a
+ * ready identity can be moved onto the asset (an identity still training can't render yet).
+ */
+export function earlierSheetOf(d: Pick<CastCardData, "identityId" | "identityIds" | "assetIdentityId">, identities: readonly SoulIdentity[] | null): SoulIdentity | null {
+  const newest = identityOf(d, identities);
+  if (!d.assetIdentityId || !newest || newest.id === d.assetIdentityId || newest.status !== "ready") return null;
+  return newest;
+}
+
+/**
+ * "Update": moves the card's asset onto the newer identity through the existing bind (lib/workbench/soul-identity.ts
+ * `soulIdentityAsset`), which never changes a locked asset: it refuses, in words, until the asset is unlocked. A
+ * locked master is also kept as it is by the Rig's own write (it says so). Pure; throws RigBuildError with the words.
+ */
+export function updateToNewerSheet(project: Project, nodeId: string, identity: SoulIdentity): Project {
+  const node = project.nodes.find((n) => n.id === nodeId);
+  const asset = node ? resolveAsset(node, project.nodes, project.assets) : undefined;
+  if (!asset || !project.assets.some((a) => a.id === asset.id)) throw new RigBuildError("This card's picture is no longer in this project.");
+  let moved: Asset;
+  try { moved = soulIdentityAsset(project, identity, "Character", asset.id); } catch (error) { throw new RigBuildError(error instanceof Error ? error.message : "The identity could not be moved."); }
+  return { ...project, assets: project.assets.map((a) => (a.id === asset.id ? moved : a)) };
 }
 
 /**
@@ -213,6 +251,7 @@ function nodeCards(src: Pick<BoardSource, "project" | "masters">): { card: Board
       variant, source: "node", nodeId: node.id, entryId: entry?.id ?? null, title: node.title, description: (asset?.description ?? node.text ?? "").trim(),
       still: assetStill(asset), shots: appearsIn(project, variant, node.title), identityId: asset?.soulIdentityId ?? entry?.identityId ?? null,
       identityIds: [...new Set([asset?.soulIdentityId, entry?.identityId].filter((v): v is string => Boolean(v)))],
+      assetIdentityId: asset?.soulIdentityId ?? null,
       master, lockable: !master && lockProblem(node, project, false) === null, plates: 0, chosen: false,
       rendering: Boolean(entry?.pending?.length), prompt: (entry ? castStillPrompt(entry) : "") || asset?.prompt?.trim() || (asset?.description ?? "").trim() || node.title.trim(),
       retired: entry ? retiredModelOf(entry) : null,

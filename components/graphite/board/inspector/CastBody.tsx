@@ -43,7 +43,7 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
      one that needs review (uncertain, until it is reconciled) or a ready identity, so a paid press is never repeated. */
   const trainable = state.status === "ready" && state.data != null && idView.stage !== "unread" && (!identity || identity.status === "failed");
   /* The card this press was made from, captured now (the production and the cast member); the reply binds only there. */
-  const pressed = { entryId: data.entryId, nodeId: data.nodeId };
+  const pressed = { entryId: data.entryId, nodeId: data.nodeId, name: data.title };
   /* Bound now when that production is the open one; otherwise (another is open, or the board can't take the edit now)
      parked for it, and bound the next time it is open (parked-binds.ts, applied by the board), so its card follows the
      training and never offers Train again for it. */

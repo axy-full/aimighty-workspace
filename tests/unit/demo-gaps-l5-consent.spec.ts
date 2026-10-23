@@ -50,7 +50,7 @@ test("the pure rules: a tick needs only what it is for; every other field is opt
   ];
   for (const [over, words] of refusals) expect(() => cleanConsent(draft(over), at), JSON.stringify(over)).toThrow(words);
   expect(() => cleanConsent(draft({ until: "2026-10-01" }), at)).toThrow(ConsentError);
-  const record = { id: "c1", projectId: "p", subjectKey: "s", subjectLabel: "Lead", personName: "A Person", face: true, voice: true, uses: ["production", "ads", "social"] as const, otherUse: "", untilAt: endOfDay("2027-09-30")!, attested: true, hasRecording: true, recordingUrl: null, recordedAt: at, recordedBy: "You", mine: true, revokedAt: null, identityId: null };
+  const record = { id: "c1", projectId: "p", subjectKey: "s", subjectLabel: "Lead", personName: "A Person", face: true, voice: true, uses: ["production", "ads", "social"] as const, otherUse: "", untilAt: endOfDay("2027-09-30")!, attested: true, hasRecording: true, fileKind: "recording" as const, recordingUrl: null, recordedAt: at, recordedBy: "You", mine: true, revokedAt: null, identityId: null };
   expect(consentSummary({ ...record, uses: [...record.uses] }, at)).toBe("Face and voice · this production, ads, social posts · until 30 Sep 2027 · ticked 6 Oct 2026 by You");
   expect(consentSummary({ ...record, uses: [...record.uses], revokedAt: at }, at)).toBe("Consent withdrawn 6 Oct 2026");
   /* A bare tick says who ticked and when, and nothing it was not told. */
@@ -64,7 +64,7 @@ test("the pure rules: a tick needs only what it is for; every other field is opt
 
 test("the Cast card's states come from the records: not ticked, ticked, training, ready, failed and what was billed", async () => {
   const { identityCardView, billedWords, ownLiveTicks } = await import("../../lib/security/identity-card");
-  const live = { id: "c1", projectId: "p", subjectKey: "lead", subjectLabel: "Lead", personName: "A Person", face: true, voice: false, uses: ["production" as const, "identity" as const], otherUse: "", untilAt: Date.now() + DAY as number | null, attested: true, hasRecording: true, recordingUrl: null, recordedAt: Date.now(), recordedBy: "You", mine: true, revokedAt: null, identityId: null };
+  const live = { id: "c1", projectId: "p", subjectKey: "lead", subjectLabel: "Lead", personName: "A Person", face: true, voice: false, uses: ["production" as const, "identity" as const], otherUse: "", untilAt: Date.now() + DAY as number | null, attested: true, hasRecording: true, fileKind: "recording" as const, recordingUrl: null, recordedAt: Date.now(), recordedBy: "You", mine: true, revokedAt: null, identityId: null };
   /* Each person's box is their own: a teammate's live tick is not theirs to untick, and a withdrawn one is not live. */
   const theirs = { ...live, id: "c2", recordedBy: "Teammate", mine: false, recordedAt: Date.now() + 1 };
   expect(ownLiveTicks([live, theirs], "lead").map((r) => r.id)).toEqual(["c1"]);
@@ -357,4 +357,57 @@ test("identity training refuses every token and agent before anything is sent; w
   expect(sent).toHaveLength(3);
   const after = await import("../../lib/tenant").then(({ runInTenant }) => runInTenant(A, () => consentLib.getConsent(live.id)));
   expect(after?.identityId).toBe("soul_new_2");
+});
+
+test("a signed release as a PDF is the tick's file, kept as privately as a recording: not an upload, not in any token's reach, opened only by its recorder, an owner or an admin; images are not accepted yet", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const consentLib = await import("../../lib/security/consent");
+  const words = await import("../../lib/security/consent-words");
+  const peopleOnly = await import("../../lib/security/people-only");
+  const tokens = ["read", "prepare", "render"].map((scope, i) => ({ id: `tok_pdf_${scope}`, userId: "member", scope, raw: rawToken(A, String(40 + i)) }));
+  await seedPeople(A, [{ id: "member", name: "Member" }, { id: "other", name: "Other member" }, { id: "owner", name: "You" }], tokens);
+  const PDF = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n");
+  const tick = await runInTenant(A, async () => {
+    /* Storing one is a person's act; it has to be a PDF; images still wait for the owner's word (review-558 P6). */
+    await expect(consentLib.storeConsentRecording({ bytes: PDF, mime: "application/pdf" }, { user: { id: "member" }, token: { scope: "prepare" } })).rejects.toBeInstanceOf(peopleOnly.PeopleOnlyError);
+    await expect(consentLib.storeConsentRecording({ bytes: Buffer.from("<html>not a pdf</html>"), mime: "application/pdf" }, { user: { id: "member" } })).rejects.toThrow(/isn't a PDF/);
+    await expect(consentLib.storeConsentRecording({ bytes: PDF, mime: "image/png" }, { user: { id: "member" } })).rejects.toThrow(/sound or video/);
+    const stored = await consentLib.storeConsentRecording({ bytes: PDF, mime: "application/pdf" }, { user: { id: "member" } });
+    /* Never an upload: not in the uploads table. */
+    expect(JSON.stringify((await db().execute("SELECT id FROM uploads")).rows)).not.toContain(stored.id);
+    const made = await consentLib.recordConsent({ projectId: "prod_one", subjectKey: "node-pdf", recordingId: stored.id }, { user: { id: "member" } });
+    expect(made).toMatchObject({ hasRecording: true, fileKind: "document" });
+    return made;
+  });
+  const deps = (who: Who) => authAs(who).then((auth) => ({ "@/lib/auth": auth, "@/lib/security/consent": consentLib, "@/lib/security/consent-words": words, "@/lib/security/people-only": peopleOnly }));
+  const open = async (who: Who) => {
+    const r = load<typeof import("../../app/api/identity-consents/[id]/recording/route")>("app/api/identity-consents/[id]/recording/route.ts", await deps(who));
+    return r.GET(scoped(who, `http://localhost/api/identity-consents/${tick.id}/recording`), { params: Promise.resolve({ id: tick.id }) });
+  };
+  /* The recorder and an owner get it, as a download in a sandbox; another member and every token are refused. */
+  const mine = await open(people(A));
+  expect(mine.status).toBe(200);
+  expect(mine.headers.get("content-type")).toBe("application/pdf");
+  expect(mine.headers.get("content-disposition")).toMatch(/^attachment;/);
+  expect(mine.headers.get("content-security-policy")).toBe("sandbox");
+  expect(Buffer.from(await mine.arrayBuffer()).subarray(0, 5).toString("latin1")).toBe("%PDF-");
+  expect((await open({ ...people(A), userId: "owner", name: "You", role: "owner" })).status).toBe(200);
+  expect((await open({ ...people(A), userId: "other", name: "Other member" })).status).toBe(403);
+  for (const t of tokens) expect((await open({ ...people(A), mode: "token", bearer: t.raw })).status, `${t.scope} token opens`).toBe(403);
+  /* Not in the uploads list, for a person or a token. */
+  for (const who of [people(A), ...tokens.map((t) => ({ ...people(A), mode: "token" as const, bearer: t.raw }))]) {
+    const route = load<typeof import("../../app/api/uploads/route")>("app/api/uploads/route.ts", {
+      "@/lib/auth": await authAs(who), "@/lib/tenant": await import("../../lib/tenant"),
+      "@/lib/workbench/request-scope": await import("../../lib/workbench/request-scope"),
+      "@/lib/uploadReservations": { abandonUpload: async () => {}, beginDirectUpload: async () => {}, uploadFailure: () => null, UploadError: class extends Error {} },
+      "@/lib/uploadIntake": { storeReferenceUpload: async () => {} },
+      "@/lib/uploadLibrary": await import("../../lib/uploadLibrary"), "@/lib/assetPagination": await import("../../lib/assetPagination"),
+    });
+    const res = await route.GET(new Request("http://localhost/api/uploads"), undefined as never);
+    expect(JSON.stringify(await res.json().catch(() => ({})))).not.toMatch(/crec_/);
+  }
+  /* The tick's listing says it is a document, and carries no address but the consent route's own. */
+  const listed = await runInTenant(A, () => consentLib.listConsents("prod_one", "node-pdf", "member"));
+  expect(listed[0]).toMatchObject({ fileKind: "document", recordingUrl: `/api/identity-consents/${tick.id}/recording` });
 });

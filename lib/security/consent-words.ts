@@ -70,6 +70,8 @@ export type ConsentRecord = {
   /** The attest box was ticked too (optional). */
   attested: boolean;
   hasRecording: boolean;
+  /** What the file is, when there is one: a recording, or a signed release (a PDF). */
+  fileKind: ConsentFileKind | null;
   /** The recording, served by the consent route only: the recorder, an owner or an admin, signed in. */
   recordingUrl: string | null;
   recordedAt: number;
@@ -79,6 +81,9 @@ export type ConsentRecord = {
   revokedAt: number | null;
   identityId: string | null;
 };
+
+/** A tick's file: a recording of the person agreeing (sound or video), or their signed release (a PDF document). */
+export type ConsentFileKind = "recording" | "document";
 
 export class ConsentError extends Error {
   constructor(message: string, readonly status = 400) { super(message); this.name = "ConsentError"; }

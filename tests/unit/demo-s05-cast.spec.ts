@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { appearsIn, bindCastIdentity, castLabel, castStatus, consentLine, deriveCast, identityOf, renderPreset, shotsWords, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
+import { appearsIn, bindCastIdentity, castLabel, castStatus, consentLine, deriveCast, earlierSheetOf, identityOf, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
 import { parkBind, takeParked } from "../../components/graphite/board/cards/cast/parked-binds";
 import type { BoardCard, BoardSource } from "../../lib/board/types";
 import type { SoulIdentity } from "../../lib/workbench/soul-identity";
@@ -149,4 +149,38 @@ test("a bind parked for a production is taken once, in the order pressed, only f
   /* One left unopened for 30 days is dropped. */
   parkBind("scope-a", { projectId: "prod_c", entryId: "cast-01", nodeId: null, identityId: "soul_5" }, 0);
   expect(takeParked("scope-a", "prod_c", 31 * 86_400_000)).toEqual([]);
+});
+
+test("a parked or in-flight bind lands only on the cast member that still has the name it was pressed under (R4-1)", () => {
+  const pressedIn = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Lead" })] } });
+  const at = { projectId: pressedIn.id, entryId: "cast-01", nodeId: null };
+  expect(bindCastIdentity(pressedIn, { ...at, name: "Lead" }, "soul_new").production?.cast?.entries[0].identityId).toBe("soul_new");
+  /* The name is compared as the card compares names: case and spaces at the ends don't matter. */
+  expect(bindCastIdentity(pressedIn, { ...at, name: " lead " }, "soul_new").production?.cast?.entries[0].identityId).toBe("soul_new");
+  /* Renamed, or another cast member in the same slot: nothing is bound. */
+  const renamed = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Another person" })] } });
+  const untouched = bindCastIdentity({ ...renamed, id: pressedIn.id } as Project, { ...at, name: "Lead" }, "soul_new");
+  expect(untouched.production?.cast?.entries[0].identityId).toBeUndefined();
+  /* A canvas card renamed since the press is skipped too. */
+  const asset = { id: "a1", name: "Lead", kind: "image", category: "Character", url: "/x", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] } as Asset;
+  const onCanvas = { ...pressedIn, production: undefined, assets: [asset], nodes: [{ id: "n1", assetId: "a1", title: "Someone else", type: "reference", x: 0, y: 0, width: 200, linked: [] } as unknown as CanvasNode] } as Project;
+  expect(bindCastIdentity(onCanvas, { projectId: onCanvas.id, entryId: null, nodeId: "n1", name: "Lead" }, "soul_new")).toBe(onCanvas);
+});
+
+test("a card whose own asset renders with an earlier sheet says so and offers Update, which moves an unlocked asset and refuses a locked one in words", () => {
+  const old = identity({ id: "soul_old", status: "ready", createdAt: 1, references: [{ uploadId: "up_old" }] });
+  const fresh = identity({ id: "soul_new", status: "ready", createdAt: 2, references: [{ uploadId: "up_new" }] });
+  const data = { identityId: "soul_old", identityIds: ["soul_old", "soul_new"], assetIdentityId: "soul_old" };
+  expect(earlierSheetOf(data, [old, fresh])?.id).toBe("soul_new");
+  /* Nothing to say when the asset already renders with the newest, or the newer one isn't ready yet. */
+  expect(earlierSheetOf({ ...data, assetIdentityId: "soul_new" }, [old, fresh])).toBeNull();
+  expect(earlierSheetOf(data, [old, { ...fresh, status: "training" }])).toBeNull();
+  expect(earlierSheetOf({ ...data, assetIdentityId: null }, [old, fresh])).toBeNull();
+  const asset = (locked: boolean) => ({ id: "a1", name: "Lead", kind: "image", category: "Character", url: "/x", description: "", prompt: "", status: "Draft", locked, version: 1, refs: [], soulIdentityId: "soul_old" }) as Asset;
+  const withAsset = (locked: boolean) => ({ ...project(), assets: [asset(locked)], nodes: [{ id: "n1", assetId: "a1", title: "Lead", type: "reference", x: 0, y: 0, width: 200, linked: [] } as unknown as CanvasNode] }) as Project;
+  /* Update moves an unlocked asset onto the newer identity (the existing bind: lib/workbench/soul-identity.ts). */
+  const moved = updateToNewerSheet(withAsset(false), "n1", fresh);
+  expect(moved.assets[0]).toMatchObject({ id: "a1", soulIdentityId: "soul_new", uploadId: "up_new" });
+  /* A locked asset is never changed: the existing bind refuses, in words. */
+  expect(() => updateToNewerSheet(withAsset(true), "n1", fresh)).toThrow(/Unlock this asset/);
 });

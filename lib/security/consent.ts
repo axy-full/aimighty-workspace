@@ -3,7 +3,7 @@ import { db, ready, now, id as newId } from "../db";
 import { requireTenant } from "../tenant";
 import { securityAuditStatement } from "../securityAudit";
 import { assertPerson, type Caller } from "./people-only";
-import { CONSENT_USES, ConsentError, cleanConsent, consentLive, type ConsentInput, type ConsentRecord, type ConsentUse } from "./consent-words";
+import { CONSENT_USES, ConsentError, cleanConsent, consentLive, type ConsentFileKind, type ConsentInput, type ConsentRecord, type ConsentUse } from "./consent-words";
 
 /**
  * Identity consent ticks (Gaps A, Identity on the Cast card). A TICK, NOT A GATE (owner, 23 Oct 2026, 13:15 IST): a
@@ -82,7 +82,7 @@ function toRecord(r: Row, who: Map<string, string>, viewer?: string | null): Con
   return {
     id: String(r.id), projectId: String(r.project_id), subjectKey: String(r.subject_key), subjectLabel: String(r.subject_label ?? ""),
     personName: String(r.person_name), face: Number(r.covers_face) === 1, voice: Number(r.covers_voice) === 1, uses, otherUse: String(r.other_use ?? ""),
-    untilAt: Number(r.until_at) > 0 ? Number(r.until_at) : null, attested: Number(r.attested) === 1, hasRecording: Boolean(r.recording_id), recordingUrl: r.recording_id ? `/api/identity-consents/${encodeURIComponent(String(r.id))}/recording` : null, recordedAt: Number(r.recorded_at),
+    untilAt: Number(r.until_at) > 0 ? Number(r.until_at) : null, attested: Number(r.attested) === 1, hasRecording: Boolean(r.recording_id), fileKind: r.recording_id ? fileKindOf(r.file_mime) ?? "recording" : null, recordingUrl: r.recording_id ? `/api/identity-consents/${encodeURIComponent(String(r.id))}/recording` : null, recordedAt: Number(r.recorded_at),
     recordedBy: who.get(String(r.recorded_by)) ?? null, mine: viewer != null && String(r.recorded_by) === viewer,
     revokedAt: r.revoked_at == null ? null : Number(r.revoked_at), identityId: r.identity_id == null ? null : String(r.identity_id),
   };
@@ -92,7 +92,8 @@ function toRecord(r: Row, who: Map<string, string>, viewer?: string | null): Con
 export async function listConsents(projectId: string, subjectKey?: string | null, viewer?: string | null): Promise<ConsentRecord[]> {
   await consentsReady();
   const rs = await db().execute({
-    sql: `SELECT * FROM identity_consents WHERE project_id = ?${subjectKey ? " AND subject_key = ?" : ""} ORDER BY recorded_at DESC, id DESC LIMIT 200`,
+    sql: `SELECT c.*, f.mime AS file_mime FROM identity_consents c LEFT JOIN consent_recordings f ON f.id = c.recording_id
+          WHERE c.project_id = ?${subjectKey ? " AND c.subject_key = ?" : ""} ORDER BY c.recorded_at DESC, c.id DESC LIMIT 200`,
     args: subjectKey ? [projectId, subjectKey] : [projectId],
   });
   const who = await names(rs.rows.map((r) => String(r.recorded_by)));
@@ -101,7 +102,7 @@ export async function listConsents(projectId: string, subjectKey?: string | null
 
 export async function getConsent(id: string, viewer?: string | null): Promise<ConsentRecord | null> {
   await consentsReady();
-  const rs = await db().execute({ sql: `SELECT * FROM identity_consents WHERE id = ? LIMIT 1`, args: [id] });
+  const rs = await db().execute({ sql: `SELECT c.*, f.mime AS file_mime FROM identity_consents c LEFT JOIN consent_recordings f ON f.id = c.recording_id WHERE c.id = ? LIMIT 1`, args: [id] });
   const row = rs.rows[0];
   if (!row) return null;
   return toRecord(row, await names([String(row.recorded_by)]), viewer);
@@ -109,12 +110,25 @@ export async function getConsent(id: string, viewer?: string | null): Promise<Co
 
 /* ── The recording ──────────────────────────────────────────────────────── */
 
-/** A recording travels in one request: about a minute of voice, or a short clip. */
+/** A tick's file travels in one request: about a minute of voice, a short clip, or a signed release. */
 export const MAX_RECORDING_BYTES = 4 * 1024 * 1024;
-const RECORDING_TYPES: Record<string, string> = {
-  "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
-  "video/webm": "webm", "video/mp4": "mp4", "video/quicktime": "mov",
+/**
+ * What a tick's file may be, by type: a recording of the person agreeing (sound or video), or their signed release as
+ * a PDF, a document for the lawyer (owner, 23 Oct 2026, 17:10). Every kind is stored and served the same private way.
+ * Adding a type is one line here. Images are not accepted yet: that waits for the owner's word on review-558's P6.
+ */
+export const CONSENT_FILE_TYPES: Record<string, { ext: string; kind: ConsentFileKind }> = {
+  "audio/webm": { ext: "webm", kind: "recording" }, "audio/ogg": { ext: "ogg", kind: "recording" }, "audio/mp4": { ext: "m4a", kind: "recording" },
+  "audio/x-m4a": { ext: "m4a", kind: "recording" }, "audio/aac": { ext: "aac", kind: "recording" }, "audio/mpeg": { ext: "mp3", kind: "recording" },
+  "audio/wav": { ext: "wav", kind: "recording" }, "audio/x-wav": { ext: "wav", kind: "recording" },
+  "video/webm": { ext: "webm", kind: "recording" }, "video/mp4": { ext: "mp4", kind: "recording" }, "video/quicktime": { ext: "mov", kind: "recording" },
+  "application/pdf": { ext: "pdf", kind: "document" },
 };
+/** A document has to be what it says: a PDF starts with its signature. */
+const SIGNATURES: Partial<Record<ConsentFileKind, (bytes: Buffer) => boolean>> = {
+  document: (bytes) => bytes.subarray(0, 5).toString("latin1") === "%PDF-",
+};
+export const fileKindOf = (mime: unknown): ConsentFileKind | null => (typeof mime === "string" ? CONSENT_FILE_TYPES[mime]?.kind ?? null : null);
 
 /**
  * Stores the recording of a person agreeing, by the person recording the consent. It is not an upload: it has its own
@@ -124,9 +138,11 @@ const RECORDING_TYPES: Record<string, string> = {
 export async function storeConsentRecording(input: { bytes: Buffer; mime: string }, caller: Caller & { user: { id: string } }, at = now()): Promise<{ id: string; seconds: null }> {
   assertPerson(caller);
   const mime = input.mime.split(";")[0].trim().toLowerCase();
-  const ext = RECORDING_TYPES[mime];
-  if (!ext) throw new ConsentError("The recording has to be sound or video of the person agreeing.");
+  const type = CONSENT_FILE_TYPES[mime];
+  if (!type) throw new ConsentError("The file has to be sound or video of the person agreeing, or their signed release as a PDF.");
+  const { ext } = type;
   if (!input.bytes.length) throw new ConsentError("Nothing was recorded. Try again.");
+  if (SIGNATURES[type.kind] && !SIGNATURES[type.kind]!(input.bytes)) throw new ConsentError("That file isn't a PDF. Add the signed release as a PDF.");
   if (input.bytes.length > MAX_RECORDING_BYTES) throw new ConsentError("Keep the recording under 4 MB: about a minute of the person agreeing.", 413);
   await consentsReady();
   const { createHash } = await import("node:crypto");
@@ -141,7 +157,7 @@ export async function storeConsentRecording(input: { bytes: Buffer; mime: string
 }
 
 /** A record's recording, for the recorder, an owner or an admin, by session; nobody else and never a token. */
-export async function readConsentRecording(consentId: string, caller: Caller & { user: { id: string; role?: string; owner?: boolean } }): Promise<{ bytes: Buffer; mime: string }> {
+export async function readConsentRecording(consentId: string, caller: Caller & { user: { id: string; role?: string; owner?: boolean } }): Promise<{ bytes: Buffer; mime: string; kind: ConsentFileKind }> {
   assertPerson(caller);
   await consentsReady();
   const rs = await db().execute({
@@ -153,7 +169,7 @@ export async function readConsentRecording(consentId: string, caller: Caller & {
   const admin = caller.user.owner === true || caller.user.role === "admin";
   if (String(row.recorded_by) !== caller.user.id && !admin) throw new ConsentError("The person who recorded it, or an owner or admin, can play it.", 403);
   const { readConsentRecordingBytes } = await import("../storage");
-  return { bytes: await readConsentRecordingBytes(String(row.id), String(row.ext)), mime: String(row.mime) };
+  return { bytes: await readConsentRecordingBytes(String(row.id), String(row.ext)), mime: String(row.mime), kind: fileKindOf(String(row.mime)) ?? "recording" };
 }
 
 /** The recording has to be one this person made for it, in this workspace. */

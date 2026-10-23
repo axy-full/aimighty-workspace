@@ -20,7 +20,7 @@ import { CastWell } from "./CastWell";
 import { CutoutAction } from "./CutoutAction";
 import { cutoutView } from "./cutout-model";
 import { CastBody } from "../../inspector/CastBody";
-import { VARIANT_LABEL, castLabel, castStatus, consentLine, identityOf, renderPreset, shotsWords, type CastCardData } from "./cast-model";
+import { VARIANT_LABEL, castLabel, castStatus, consentLine, earlierSheetOf, identityOf, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "./cast-model";
 import "./cast.css";
 
 /*
@@ -65,6 +65,15 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
   const training = state.data?.terms.trainingCredits ?? null;
+  /* The card's own asset still renders with an earlier identity while a newer one is ready (owner, 23 Oct 2026, 17:10):
+     the card says so, and Update moves the asset through the existing bind, which refuses a locked asset in words. */
+  const earlier = data.variant === "cast" && act && data.nodeId ? earlierSheetOf(data, identities) : null;
+  const updateSheet = () => {
+    if (!earlier || !data.nodeId) return;
+    const nodeId = data.nodeId;
+    const refused = ctx.rig.apply((p) => updateToNewerSheet(p, nodeId, earlier));
+    if (refused) ctx.toast(refused); else void ctx.rig.save();
+  };
   const lock = async () => {
     if (!data.nodeId) return;
     const refused = await ctx.rig.lockMaster(data.nodeId);
@@ -90,6 +99,12 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
           <IdentityBlock scope={ctx.scope} projectKey={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()}
             view={idView} consents={consents.state} trainingCredits={training} canAct={act}
             spendOff={ctx.exploreOnly ?? null} onTrain={() => ctx.openInspector(card.id)} />
+        ) : null}
+        {earlier ? (
+          <div className="gx-cast-earlier" data-testid="cast-earlier-sheet">
+            <span>Renders with the earlier sheet</span>
+            <Btn onClick={(e) => { e.stopPropagation(); updateSheet(); }} data-testid="cast-update-sheet">Update</Btn>
+          </div>
         ) : null}
         {act ? (
           <div className="gx-cast-acts">

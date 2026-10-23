@@ -24,7 +24,10 @@ import "./security.css";
  */
 
 /* "kept": the live tick's own recording, left as it is unless a new one is made. */
-type Rec = { state: "none" } | { state: "kept"; url: string | null } | { state: "recording"; started: number } | { state: "uploading" } | { state: "done"; uploadId: string; url: string | null; seconds: number | null; when: string };
+/* The tick's file: a recording of the person agreeing, or their signed release (a PDF, a document for the lawyer). */
+type FileKind = "recording" | "document";
+type Rec = { state: "none" } | { state: "kept"; url: string | null; kind: FileKind } | { state: "recording"; started: number } | { state: "uploading" }
+  | { state: "done"; uploadId: string; url: string | null; seconds: number | null; when: string; kind: FileKind };
 
 const secondsWords = (s: number | null) => (s == null ? "" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`);
 
@@ -61,7 +64,7 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
   const [earliest] = useState(() => dayOf(Date.now() + 86_400_000));
   const [attested, setAttested] = useState(live?.attested ?? false);
   /* A failed new recording falls back to the tick's own file. */
-  const kept: Rec = live?.hasRecording ? { state: "kept", url: live.recordingUrl } : { state: "none" };
+  const kept: Rec = live?.hasRecording ? { state: "kept", url: live.recordingUrl, kind: live.fileKind ?? "recording" } : { state: "none" };
   const [rec, setRec] = useState<Rec>(kept);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -81,14 +84,15 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
     setRec({ state: "uploading" }); setProblem(null);
     try {
       /* Its own store, never an upload (review of #558, M2): not in the library, not a reference, not a token's. */
-      const type = (blob.type || (/\.wav$/i.test(name) ? "audio/wav" : "audio/webm")).split(";")[0];
+      const type = (blob.type || (/\.wav$/i.test(name) ? "audio/wav" : /\.pdf$/i.test(name) ? "application/pdf" : "audio/webm")).split(";")[0];
       const response = await scoped("/api/identity-consents/recording", { method: "POST", headers: { "Content-Type": type }, body: blob });
       const body = await response.json().catch(() => null) as { recording?: { id: string }; error?: string } | null;
       if (!response.ok || !body?.recording) throw new Error(body?.error ?? "The recording could not be saved. Try again.");
       const stored = { id: body.recording.id, durationS: null as number | null };
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
       objectUrl.current = URL.createObjectURL(blob);
-      setRec({ state: "done", uploadId: stored.id, url: objectUrl.current, seconds: seconds ?? stored.durationS, when: "recorded just now" });
+      const kind: FileKind = type === "application/pdf" ? "document" : "recording";
+      setRec({ state: "done", uploadId: stored.id, url: objectUrl.current, seconds: seconds ?? stored.durationS, when: kind === "document" ? "added just now" : "recorded just now", kind });
     } catch (error) {
       restore();
       setProblem(error instanceof Error && error.message ? error.message : "The recording could not be saved. Try again.");
@@ -204,13 +208,13 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
             <input className="gsec-input" type="date" value={until} min={earliest} onChange={(e) => { const v = e.target.value; detail(() => setUntil(v)); }} data-testid="consent-until" />
           </label>
           <div className="gsec-field">
-            <span className="gsec-eyebrow">Recording</span>
+            <span className="gsec-eyebrow">Recording or signed release</span>
             <div className="gsec-rec" data-testid="consent-recording">
               <span className="gsec-rec-words">
-                <span>The person, saying they agree</span>
+                <span>The person agreeing, or their signed release (PDF)</span>
                 <span className="gsec-sub" data-testid="consent-recording-state">
-                  {rec.state === "done" ? `statement${rec.seconds ? ` · ${secondsWords(rec.seconds)}` : ""} · ${rec.when}`
-                    : rec.state === "kept" ? "statement on file"
+                  {rec.state === "done" ? `${rec.kind === "document" ? "signed release" : "statement"}${rec.seconds ? ` · ${secondsWords(rec.seconds)}` : ""} · ${rec.when}`
+                    : rec.state === "kept" ? (rec.kind === "document" ? "signed release on file" : "statement on file")
                     : rec.state === "recording" ? "Recording… press Stop when they have said it"
                     : rec.state === "uploading" ? "Saving the recording…"
                     : "Not recorded yet"}
@@ -218,13 +222,14 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
               </span>
               <span className="gsec-rec-acts">
                 {rec.state === "recording" ? <button type="button" className="gsec-btn" onClick={stop} data-testid="consent-stop">Stop</button> : null}
-                {(rec.state === "done" || rec.state === "kept") && rec.url ? <button type="button" className="gsec-btn" onClick={() => void new Audio(rec.url!).play().catch(() => setProblem("This recording can't play here."))} data-testid="consent-play">Play</button> : null}
+                {(rec.state === "done" || rec.state === "kept") && rec.url && rec.kind === "recording" ? <button type="button" className="gsec-btn" onClick={() => void new Audio(rec.url!).play().catch(() => setProblem("This recording can't play here."))} data-testid="consent-play">Play</button> : null}
+                {(rec.state === "done" || rec.state === "kept") && rec.url && rec.kind === "document" ? <a className="gsec-btn" href={rec.url} download="signed-release.pdf" data-testid="consent-open">Open</a> : null}
                 {/* A tick's own file is kept for good: it is played, never replaced. */}
                 {rec.state === "none" || rec.state === "done" ? (
                   <button type="button" className="gsec-btn" onClick={() => void start()} data-testid="consent-record">{rec.state === "none" ? "Record" : "Record again"}</button>
                 ) : null}
                 {rec.state === "none" ? <button type="button" className="gsec-btn" onClick={() => file.current?.click()} data-testid="consent-file">Use a file</button> : null}
-                <input ref={file} type="file" accept="audio/*,video/*" hidden onChange={(e) => pick(e.target.files?.[0])} data-testid="consent-file-input" />
+                <input ref={file} type="file" accept="audio/*,video/*,application/pdf" hidden onChange={(e) => pick(e.target.files?.[0])} data-testid="consent-file-input" />
               </span>
             </div>
           </div>
