@@ -80,21 +80,9 @@ export const DEFAULT_RULES: PlatformRule[] = [
   { id: "nb-photographic", scope: "nano-banana", apply: "writer", on: true, text: "Frame and light in photographic terms — 35mm, eye level, shallow depth, soft window light — rather than film-set jargon." },
 ];
 
-export type PlatformCaps = {
-  /** Credits a new production starts capped at; null means no cap. */
-  defaultCapCredits: number | null;
-  /** Credits a new workspace opens with; null means the deployment's SIGNUP_CREDITS. */
-  signupCredits: number | null;
-  /** The share of a production's cap that warns the producer. */
-  warnPct: number;
-  /** Renders a workspace may have going at once; past it a take waits for a slot. */
-  concurrency: number;
-  /** Renders a workspace may start in an hour. */
-  rendersPerHour: number;
-  /** What a workspace may keep, in gigabytes. */
-  storageGb: number;
-};
-export const DEFAULT_CAPS: PlatformCaps = { defaultCapCredits: null, signupCredits: null, warnPct: 80, concurrency: 4, rendersPerHour: 60, storageGb: 50 };
+/* The caps every new workspace starts with: lib/platformCaps.ts, which the platform console imports on its own. */
+import { DEFAULT_CAPS, type PlatformCaps } from "./platformCaps";
+export { DEFAULT_CAPS, type PlatformCaps } from "./platformCaps";
 
 /** The text jobs Atomik and the writer run, each routed to a model (brief 1.8): enhancement is high-volume and runs fast and cheap; ideas and shots can afford a stronger one. */
 export type TextJob = "enhance" | "idea" | "shot";

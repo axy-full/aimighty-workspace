@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
-import { RULE_SCOPES, RULE_SCOPE_LABELS, type LayerKey, type PlatformRule, type RuleApply, type RuleScope } from "@/lib/platformLayer";
+import type { LayerKey, PlatformRule } from "@/lib/platformLayer";
+import { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "@/lib/ruleScopes";
 import { IconButton, Segment, useToast } from "../ui";
 import { adminSend, useAdminRead } from "./api";
 import { Head, Switch } from "./parts";

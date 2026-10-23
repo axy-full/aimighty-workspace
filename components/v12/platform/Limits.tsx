@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { DEFAULT_CAPS, type LayerKey, type PlatformCaps } from "@/lib/platformLayer";
+import type { LayerKey } from "@/lib/platformLayer";
+import { DEFAULT_CAPS, type PlatformCaps } from "@/lib/platformCaps";
 import { useToast } from "../ui";
 import { adminSend, useAdminRead } from "./api";
 import { Head } from "./parts";
