@@ -18,11 +18,11 @@ import { claimBinding, reserveGenerationSpend, SpendReservationError } from "./g
 import { writeGenerationOutcome, deliverGenerationSettlement } from "./generationSettlement";
 import { elevenConfigured, submitDubbing, dubbingStatus, downloadDubbedAudio, dubbingUsd, dubbingUsdPerMinute, ElevenLabsError } from "./elevenlabs";
 import { ELEVENLABS_RATES, OFFERED_DUBBING_MODES, type DubbingMode } from "./vendorRates";
-import { findStoredSource, resolveStoredDuration, readStoredSourceBytes, inspectAudioBuffer, billableMinutes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
+import { findStoredSource, isSourceRefusal, lookupStoredSource, resolveStoredDuration, readStoredSourceBytes, inspectAudioBuffer, billableMinutes, SOURCE_BYTES_LIMIT, type StoredSource } from "./mediaSource.server";
 import { DUBBING_SOURCE_AUTO, isDubbingLanguage, dubbingLanguageLabel } from "./workbench/dubbing-options";
 import type { AdmissionActor, AdmissionExecution, AdmissionReply } from "./admissionTypes";
 import { admissionReply, admissionCheckpoint, assertAdmissionActor } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
+import { movedPriceBody, pressFigure, pressFigureProblem } from "./pressFigure";
 
 /**
  * Dubbing: an ASYNCHRONOUS ElevenLabs project, kept as a durable workflow.
@@ -119,13 +119,14 @@ const isMode = (value: unknown): value is DubbingMode => typeof value === "strin
 
 /** The source: one stored audio or video original with a measured length. */
 export async function resolveDubbingSource(body: { sourceUploadId?: unknown; sourceGenId?: unknown }): Promise<
-  { source: StoredSource; seconds: number } | { error: string; status: number }
+  { source: StoredSource; seconds: number } | { error: string; status: number; code?: string }
 > {
   const uploadId = body.sourceUploadId ? String(body.sourceUploadId) : "";
   const genId = body.sourceGenId ? String(body.sourceGenId) : "";
   if ((!uploadId && !genId) || (uploadId && genId)) return { error: "Pick one audio or video original to dub.", status: 400 };
   if ((uploadId && !SOURCE_ID.test(uploadId)) || (genId && !SOURCE_ID.test(genId))) return { error: "That source is not valid.", status: 400 };
-  const source = await findStoredSource(uploadId ? { uploadId } : { genId });
+  const source = await lookupStoredSource(uploadId ? { uploadId } : { genId });
+  if (isSourceRefusal(source)) return { error: source.error, code: source.code, status: source.status };
   if (!source) return { error: "That original is not in this workspace.", status: 404 };
   if (source.bytes > SOURCE_BYTES_LIMIT) return { error: "Dubbing takes a source up to 100 MB.", status: 400 };
   const length = await resolveStoredDuration(source);
@@ -151,7 +152,7 @@ export async function executeDubbingAdmission(
     return admissionReply({ error: "Sound isn't connected for this workspace. Ask the platform to connect it." }, { status: 400 });
 
   const resolved = await resolveDubbingSource(body);
-  if ("error" in resolved) return admissionReply({ error: resolved.error }, { status: resolved.status });
+  if ("error" in resolved) return admissionReply({ error: resolved.error, ...(resolved.code ? { code: resolved.code } : {}) }, { status: resolved.status });
   const { source, seconds } = resolved;
   const sourceLang = String(body.sourceLang ?? DUBBING_SOURCE_AUTO).trim().toLowerCase();
   const targetLang = String(body.targetLang ?? "").trim().toLowerCase();
@@ -176,13 +177,18 @@ export async function executeDubbingAdmission(
   /* The approval unit (lib/credits.ts quotedCredits): never a margin beside the dollars in `price`. */
   const estimatedCredits = quotedCredits(reservedUsd, "elevenlabs");
   const inCredits = creditsApply(requireTenant());
-  /* Guardrail 4 at the quote, before the dub take or its job row is written: no failed take is left in the Library (lib/shotCap.ts › jobLineNow). */
-  const over = jobLineNow({ credits: estimatedCredits, usd: reservedUsd, key: "elevenlabs", actor: got, auto: options.run?.auto === true });
-  if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   if (quoteOnly)
     return admissionReply({ estimatedCredits, price: inCredits ? estimatedCredits : reservedUsd, unit: inCredits ? "cr" : "usd", sourceSeconds: seconds, minutes, mode });
-  if (body.maxCredits != null && (!Number.isInteger(body.maxCredits) || (body.maxCredits as number) < 0 || estimatedCredits > (body.maxCredits as number)))
-    return admissionReply({ error: "The dubbing estimate exceeds the approved credit amount. Review the price before submitting." }, { status: 409 });
+  /* The figure on the button (lib/pressFigure.ts): one that is not a whole number of credits is no figure; one under today's
+     price is a moved price, refused with the new figure and never admitted above what was shown. A press with no figure at all
+     is refused below, past the checkpoint, still before the take, its job row or any reservation is written. */
+  if (body.maxCredits != null) {
+    const figure = pressFigure(body.maxCredits);
+    const problem = pressFigureProblem(figure);
+    if (problem) return admissionReply(problem.body, { status: problem.status });
+    if (estimatedCredits > figure!)
+      return admissionReply(movedPriceBody({ estimatedCredits, price: inCredits ? estimatedCredits : reservedUsd, unit: inCredits ? "cr" : "usd" }), { status: 409 });
+  }
   const wall = await allowanceCheck("elevenlabs", reservedUsd, "elevenlabs");
   if (!wall.ok) return admissionReply({ error: wall.error }, { status: wall.status });
   const capV = await checkCap(projectId, reservedUsd, "elevenlabs");
@@ -195,6 +201,9 @@ export async function executeDubbingAdmission(
   const compiled = { task: "dub", sourceKind: source.kind, sourceId: source.id, sourceSeconds: seconds, minutes, sourceLang, targetLang, mode, projectId, shotId };
   const stopped = admissionCheckpoint(options, body, got, "audio", reservedUsd, "elevenlabs", compiled);
   if (stopped) return stopped;
+  /* A press carries the figure that was on its button (owner, 21 Oct 2026; lib/pressFigure.ts). The route refuses one without it
+     before its key is claimed; any other path is refused here, before anything is written, reserved or submitted. */
+  { const problem = pressFigureProblem(body.maxCredits); if (problem) return admissionReply(problem.body, { status: problem.status }); }
 
   const genId = newId("gen"), jobId = `dub_${randomUUID().replaceAll("-", "")}`, ts = now();
   const params = {

@@ -14,6 +14,7 @@ import { currentTenant } from "@/lib/tenant";
 
 import { runPaidText, quotePaidText, paidTextQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { tokenSpendRefusal } from "@/lib/tokenSpend";
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,8 @@ export const POST = withTenant(async function POST(req: Request) {
   if (quoteOnly) { const scopeFailure = paidTextQuoteScopeFailure(req); if (scopeFailure) return scopeFailure; }
   /* The sample workspace spends nothing: answered before the request is claimed. A quote still answers. */
   if (!quoteOnly) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before the request is claimed. */
+  if (!quoteOnly) { const refused = tokenSpendRefusal({ maxCredits: body?.maxCredits }, got.token); if (refused) return refused; }
   const run = async () => {
   try {
   const projectId = String(body.projectId ?? "");
@@ -73,7 +76,8 @@ export const POST = withTenant(async function POST(req: Request) {
     `SCENE ${n} — ${scene.title || "Untitled"} (${scene.secs}s):\n${scene.prose || "(empty)"}`,
     `THE RULE SAYS: ${hint.engine} (${hint.why}). Follow it unless a shot is clearly otherwise, and say why.`,
   ].filter(Boolean).join("\n\n");
-  const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 2400, kind: "shots", mock: "shots" as const, createdBy: got.user.id, projectId };
+  const input = { model, effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }], maxTokens: 2400, kind: "shots", mock: "shots" as const, createdBy: got.user.id,
+    /* Its model call's span (lib/modelTrace.ts): ids and settings only. */ trace: { site: "atomik.shots" as const, step: "shots", model, effort: effort ?? "auto" }, projectId };
   if (quoteOnly) return paidTextQuoteResponse(await quotePaidText(input));
   const result = await runPaidText({ ...input, maxCredits: requestMaxCredits(body.maxCredits, body.effort !== undefined) });
   const shots = shotsFromReply(result.text, castNames);

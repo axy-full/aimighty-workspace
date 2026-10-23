@@ -1,9 +1,8 @@
 "use client";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { cleanRule } from "@/lib/approvalRule";
 import { MODELS, displayModelName, isOffered } from "@/lib/models";
 import { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "@/lib/platformLayer";
-import { APPROVAL_OPTIONS, AT_CAP_OPTIONS, CAP_WARN_OPTIONS, EDIT_FORMAT_OPTIONS } from "@/lib/settingValues";
+import { AT_CAP_OPTIONS, CAP_WARN_OPTIONS, EDIT_FORMAT_OPTIONS } from "@/lib/settingValues";
 import { WORKSPACE_TABS } from "@/lib/shell/ia";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, type EnhancerProvider } from "@/lib/shell/enhancer";
 import { revealClear } from "@/lib/shell/reveal";
@@ -134,7 +133,6 @@ export function WorkspaceView({ account }: { account: WorkspaceAccount | null })
 type Settings = { settings: Record<string, string>; defaults: Record<string, string> };
 /** What the server enforces for a stored value, so the select shows the rule in force — not the first option. */
 function inForce(key: string, raw: string): string {
-  if (key === "approvalRule") return cleanRule(raw);
   if (key === "editOutputFormat") return raw === "mov" ? "mov" : "mp4";
   if (key === "atCap") return raw === "stop" || raw === "warn" ? raw : "producer";
   return raw;
@@ -191,8 +189,6 @@ function General({ name, onRenamed }: { name: string; onRenamed: (name: string) 
         <label className="wsx-label"><span className="gx-eyebrow">Workspace name</span>
           <input className="gx-field" value={title ?? name} maxLength={80} readOnly={!owner} title={owner ? undefined : "The owner names the workspace."} onChange={(e) => setTitle(e.target.value)} data-testid="ws-name" />
         </label>
-        {select("approvalRule", "Cost approval", APPROVAL_OPTIONS, "ws-approval")}
-        <label className="wsx-label"><span className="gx-eyebrow">Per-shot cap (cr)</span><input className="gx-field" inputMode="numeric" value={value("shotCapCredits")} disabled={!admin || value("approvalRule") !== "cap"} onChange={(e) => set("shotCapCredits", e.target.value.replace(/[^0-9]/g, ""))} data-testid="ws-shot-cap" /></label>
         {select("capWarnPct", "Warn at", CAP_WARN_OPTIONS.some(([v]) => v === value("capWarnPct")) ? CAP_WARN_OPTIONS : [...CAP_WARN_OPTIONS, [value("capWarnPct"), `${value("capWarnPct")}% of the cap`] as const], "ws-cap-warn")}
         {select("atCap", "At a project's cap", AT_CAP_OPTIONS, "ws-at-cap")}
         {select("defaultVideoModel", "Default video engine", [["", "Platform default"], ...ENGINES("video").map((m) => [m.id, displayModelName(m.id)] as const)], "ws-default-video")}

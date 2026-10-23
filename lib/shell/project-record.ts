@@ -43,7 +43,7 @@ export type RecordApproval = {
   title: string;
   /** "you", or the name the usage ledger gives; null when the record does not say. */
   by: string | null;
-  /** Auto ran it without a tap. */
+  /** History only: Auto ran it without a tap, before Auto went on 20 Oct 2026. */
   auto: boolean;
   at: number | null;
   priced: QueuePrice;

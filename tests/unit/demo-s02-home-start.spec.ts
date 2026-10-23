@@ -15,9 +15,9 @@ test("Start asks with the brief and the chips' aspect and length, cut to Atomik'
 });
 
 test("the thinking figure is the server's: a number to show, off, unpriced, or a read that failed", () => {
-  expect(thinkingFrom({ agent: { enabled: true, run: null, ask: { limit: 200, jobCeiling: 200, planning: 14 } } })).toEqual({ state: "ready", credits: 14 });
+  expect(thinkingFrom({ agent: { enabled: true, run: null, ask: { limit: 200, planning: 14 } } })).toEqual({ state: "ready", credits: 14 });
   expect(thinkingFrom({ agent: { enabled: false, run: null, ask: null } })).toEqual({ state: "off" });
-  expect(thinkingFrom({ agent: { enabled: true, run: null, ask: { limit: 200, jobCeiling: 200, planning: null } } })).toEqual({ state: "unpriced" });
+  expect(thinkingFrom({ agent: { enabled: true, run: null, ask: { limit: 200, planning: null } } })).toEqual({ state: "unpriced" });
   expect(thinkingFrom({ agent: { enabled: true, run: null, ask: null } })).toEqual({ state: "unpriced" });
   expect(thinkingFrom({ agent: { enabled: true, ask: { planning: 0 } } })).toEqual({ state: "unpriced" });
   expect(thinkingFrom(null)).toEqual({ state: "error", message: THINKING_READ_FAILED });

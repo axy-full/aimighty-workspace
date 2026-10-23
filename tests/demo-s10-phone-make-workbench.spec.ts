@@ -74,10 +74,15 @@ test("Make: the words, the type, the engine line with Change, References with Ad
   await expect(page.getByTestId("phone-make-add")).toHaveText("Add");
   await expect(page.getByTestId("phone-make-change")).toHaveText("Change");
   await expect(page.getByTestId("phone-make-dest")).toHaveText(`Lands in ${name} · Library, and on the board.`);
-  /* Empty, Make waits; pressing it says why and sends nothing. */
+  /* Empty, Make waits; pressing it says why and sends nothing. A clip is priced by its settings, not its words
+     (lib/workspace/use-composer.ts), so the button settles on its price while it waits: the check reads it once the
+     engine line is priced, never the moment before the quote lands. */
   const go = page.getByTestId("phone-make-go");
+  await expect(page.getByTestId("phone-make-engine-line")).toContainText(/ · [\d.,]+ cr$/, { timeout: 60_000 });
+  await expect(go).toHaveText(/^Make · [\d.,]+ cr$/);
+  await expect(go).toHaveAttribute("data-spend", "priced");
   await expect(go).toHaveAttribute("aria-disabled", "true");
-  await expect(go).toHaveAttribute("data-spend", "unpriced");
+  await expect(go).toHaveAttribute("data-waits", "");
   await go.dispatchEvent("click");
   await expect(page.getByTestId("phone-make-blocked")).toHaveText("Say what to make.");
   await floors(page, "Make, empty");

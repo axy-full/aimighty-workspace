@@ -1,3 +1,4 @@
+import { within } from './abortWithin';
 import { recoveryFetch as fetch } from "./recovery";
 import { vendorKey, deploymentIdentityAllowed } from "./vendorKeys";
 import { productionIntended } from "./vercelGuard";
@@ -5,6 +6,7 @@ import { engineMock } from "./mock";
 import { explainTextFailure, mockTextReply, withoutProviderHeader, type MockKind, type TextReply } from "./textReply";
 import { assertTextProvider, openaiDirectPost, textVendor } from './openai-direct';
 import { isDirectRoute, textRoute } from './textRoute';
+import { modelDoor, readTextReply } from './modelTrace';
 /**
  * Vercel AI Gateway — the one door this deployment can always open.
  *
@@ -107,14 +109,21 @@ export type GatewayReply = TextReply;
  */
 export async function gatewayPost(
   body: string,
-  opts: { auth?: Record<string, string>; timeoutMs?: number; mock?: MockKind } = {},
+  opts: { auth?: Record<string, string>; timeoutMs?: number; signal?: AbortSignal; mock?: MockKind } = {},
+): Promise<GatewayReply> {
+  /* A model call's door (lib/modelTrace.ts); inside textPost it is the same call. */
+  return modelDoor(() => sendGatewayPost(body, opts), readTextReply);
+}
+async function sendGatewayPost(
+  body: string,
+  opts: { auth?: Record<string, string>; timeoutMs?: number; signal?: AbortSignal; mock?: MockKind },
 ): Promise<GatewayReply> {
   const mocked = await mockTextReply(body, opts.mock);
   if (mocked) return mocked;
   const input = JSON.parse(body) as Record<string, unknown>;
   if (typeof input.model !== 'string') throw new Error('Choose a language model before submitting.');
   assertTextProvider(input.model, opts.auth);
-  if (textVendor(input.model) === 'openai') return openaiDirectPost(input, { timeoutMs: opts.timeoutMs });
+  if (textVendor(input.model) === 'openai') return openaiDirectPost(input, { timeoutMs: opts.timeoutMs, signal: opts.signal });
   // A vendor switched on in TEXT_DIRECT never reaches the gateway, so its key
   // cannot either. Its calls go through textPost (lib/textDirect.ts).
   if (isDirectRoute(textRoute(input.model))) throw new Error('This model is routed to its provider directly. Send it through the direct text path.');
@@ -123,7 +132,7 @@ export async function gatewayPost(
     method: "POST",
     headers: { ...auth, "Content-Type": "application/json" },
     body,
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 120_000),
+    signal: within(opts.timeoutMs ?? 120_000, opts.signal),
   });
   return { ok: res.ok, status: res.status, text: await res.text() };
 }

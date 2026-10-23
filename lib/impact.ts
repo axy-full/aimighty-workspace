@@ -5,15 +5,12 @@ import { plannedTakeUsd } from "./shotBudgetCost";
 import { DEFAULT_MODEL_ID, getModel } from "./models";
 import { ENGINE_MODEL, type ShotEngine } from "./shotBuilder";
 import { renderKeyNameFor, paidByPlatform, allowanceUsd, platformSpendThisMonth } from "./allowance";
+import { houseCapView } from "./houseCap";
 import { getSetting } from "./settings";
 import { effectiveModels } from "./defaultModels";
 import { creditsApply, creditState } from "./credits";
 import { projectCapSpent, spentBy } from "./caps";
-import { cleanRule, cleanShotCap, jobApprovalLineCredits } from "./approvalRule";
-import { creditUsd } from "./creditTerms";
-import { isAgentId } from "./security/people-only";
-import { shotCreditsSoFar } from "./shotCap";
-import { quoteOf, verdictOf, liveTerms, stampOf, publicQuote, type PublicQuote, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
+import { quoteOf, verdictOf, liveTerms, stampOf, publicQuote, withHouseBands, type PublicQuote, type Quote, type Unit, type Verdict, type Context, type Cap } from "./quote";
 
 /**
  * What changing something costs, before it is changed (brief 3, surface 1b).
@@ -75,7 +72,7 @@ export type Impact = {
  */
 export async function impactOf(
   elementId: string, attributeId: string, versionId: string,
-  opts: { projectId?: string | null; at: number; isAdmin?: boolean; following?: boolean },
+  opts: { projectId?: string | null; at: number; following?: boolean },
 ): Promise<Impact> {
   await ready();
 
@@ -87,13 +84,13 @@ export async function impactOf(
   /* Every production the change actually reaches, not the one that was asked
      about. Without a production named, a shared element spans the workspace
      and each production it lands in has a cap of its own. */
-  const context = await contextFor(described.map((d) => d.shot.projectId), { isAdmin: opts.isAdmin === true });
-
   const unitOf = (d: Described): Unit => ({
     key: d.shot.shotId, usd: d.usd, engine: d.engine,
     spent: d.spent, code: d.shot.code, projectId: d.shot.projectId,
     platformPays: d.platformPays,
   });
+  /* The house counts a held take at its band, as admission does; any other workspace's context is unchanged. */
+  const context = withHouseBands(await contextFor(described.map((d) => d.shot.projectId)), described.map(unitOf));
   const priced = (list: Described[]) => {
     const q = quoteOf(list.map(unitOf), terms);
     return { q, v: verdictOf(q, context) };
@@ -156,7 +153,7 @@ type Described = {
   usd: number;
   /** The MODEL id this is priced at — never the shot's short engine alias. */
   engine: string;
-  /** What this shot has already taken, for the per-shot approval rule. */
+  /** What this shot has already taken (in the quote's stamp; the per-shot rule that judged it was retired on 21 Oct 2026). */
   spent: number;
   /** Whether the platform's money pays for this engine's vendor. */
   platformPays: boolean;
@@ -200,10 +197,9 @@ async function describe(dependents: Dependent[]): Promise<Described[]> {
             WHERE shot_id IN (${holes}) AND review_state = 'approved' AND deleted = 0`,
       args: ids,
     }),
-    /* What each shot has already taken, in one pass rather than one per shot.
-       The per-shot approval rule is about this running total, and the press
-       and the reservation gate read exactly the same figure before they
-       decide — hidden takes included, because they were paid for. */
+    /* What each shot has already taken, in one pass rather than one per shot,
+       hidden takes included, because they were paid for. It goes into the
+       quote's stamp; no rule judges it since the per-shot cap was retired. */
     spentBy("shot_id", ids),
     /* The engine a shot would actually run on when it does not name one:
        this workspace's own default, falling back to the platform's. The same
@@ -255,14 +251,12 @@ async function describe(dependents: Dependent[]): Promise<Described[]> {
  * two of them is two questions. Answering with one cap is how a set is quoted
  * as allowed and then refused halfway through.
  */
-export async function contextFor(projectIds: (string | null)[], opts: { isAdmin: boolean; machine?: boolean }): Promise<Context> {
+export async function contextFor(projectIds: (string | null)[]): Promise<Context> {
   const inCredits = creditsApply(currentTenant()?.workspace);
   const wanted = [...new Set(projectIds.filter((p): p is string => Boolean(p)))];
 
-  const [state, rule, shotCap, warn, atCap, allowanceSpent, capRows] = await Promise.all([
+  const [state, warn, atCap, allowanceSpent, capRows] = await Promise.all([
     inCredits ? creditState() : Promise.resolve(null),
-    getSetting("approvalRule"),
-    getSetting("shotCapCredits"),
     getSetting("capWarnPct"),
     getSetting("atCap"),
     allowanceUsd() == null ? Promise.resolve(0) : platformSpendThisMonth(),
@@ -277,22 +271,14 @@ export async function contextFor(projectIds: (string | null)[], opts: { isAdmin:
   }
 
   const ceiling = allowanceUsd();
+  const house = await houseCapView();
   return {
     balance: state ? state.balance : null,
     allowance: ceiling == null ? null : { cap: ceiling, spent: allowanceSpent },
+    houseCap: house ? { cap: house.capUsd, spent: house.spentUsd } : null,
     caps,
     warnPct: Number(warn) || 80,
-    rule: cleanRule(rule),
-    shotCap: cleanShotCap(shotCap),
-    isAdmin: opts.isAdmin,
-    /* Guardrail 4: the approval line at this workspace's price of a credit, whoever asks (lib/approvalRule.ts). */
-    jobLine: { credits: jobApprovalLineCredits(creditUsd()), machine: opts.machine ?? (currentTenant()?.token != null || isAgentId(currentTenant()?.user?.id)), house: !inCredits, perCredit: creditUsd() },
   };
-}
-
-/** What one shot has already taken, for a quote that is about that shot alone. */
-export async function shotSpent(shotId: string): Promise<number> {
-  return shotCreditsSoFar(shotId);
 }
 
 /**
@@ -307,7 +293,7 @@ export async function shotSpent(shotId: string): Promise<number> {
  * changes the library and a producer would be right not to trust either.
  */
 export async function quoteShots(
-  shotIds: string[], opts: { at: number; isAdmin?: boolean },
+  shotIds: string[], opts: { at: number },
 ): Promise<{ quote: Quote; verdict: Verdict; shots: ImpactShot[]; pricedAt: number; stamp: string }> {
   await ready();
   const wanted = [...new Set(shotIds.filter(Boolean))];
@@ -319,12 +305,13 @@ export async function quoteShots(
     ? await describe(wanted.map((shotId) => ({ shotId, projectId: null, slots: [], pinned: false })))
     : [];
 
-  const context = await contextFor(described.map((d) => d.shot.projectId), { isAdmin: opts.isAdmin === true });
   const units: Unit[] = described.map((d) => ({
     key: d.shot.shotId, usd: d.usd, engine: d.engine,
     spent: d.spent, code: d.shot.code, projectId: d.shot.projectId,
     platformPays: d.platformPays,
   }));
+  /* The house counts a held take at its band, as admission does; any other workspace's context is unchanged. */
+  const context = withHouseBands(await contextFor(described.map((d) => d.shot.projectId)), units);
 
   const quote = quoteOf(units, terms);
   return {

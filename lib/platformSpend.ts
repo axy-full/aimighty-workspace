@@ -1,7 +1,7 @@
 import { currentTenant } from "./tenant";
 import { db, ready } from "./db";
 import { billedTo, type ProviderId } from "./providers";
-import type { VendorKeyName } from "./vendorKeys";
+import type { EngineVendor, VendorKeyName } from "./vendorKeys";
 import { platformDb, platformReady } from './platform';
 import { TEXT_LEDGER_KEY, type TextLedger } from "./openai-direct";
 import { isHouseWorkspace } from "./houseWorkspace";
@@ -43,7 +43,7 @@ const TEXT_LEDGERS_OF = (name: VendorKeyName): TextLedger[] =>
  * accepted job is collected (lib/acceptedJobCredentials.ts), so the flag
  * keeps that meaning.
  */
-export function paidByPlatform(name: VendorKeyName): boolean {
+export function paidByPlatform(name: EngineVendor): boolean {
   void name;
   const ws = currentTenant()?.workspace;
   return Boolean(ws) && !isHouseWorkspace(ws);

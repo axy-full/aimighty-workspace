@@ -39,7 +39,7 @@ const proposal = (limit: number, left: number) => ({
   id: RUN_ID, state: "awaiting_approval", reason: null, goal: "Three shots", mine: true,
   proposal: { title: "Three shots", summary: "", groups: [], cards: 0, wires: 0, tidy: false, next: [], fingerprint: FP },
   steps: [], built: { cards: 0, wires: 0 }, held: [], undo: null, canUndo: false, credits: 14,
-  money: { mode: "ask", limit, jobCeiling: 200, spent: 14, inFlight: 0, left, planning: { state: "settled", credits: 14 } },
+  money: { mode: "ask", limit, spent: 14, inFlight: 0, left, planning: { state: "settled", credits: 14 } },
   paid: [step(1, "Opening"), step(2, "The turn"), step(3, "Close")], at: Date.now(),
 });
 /** The plan gate as the server answers it: built, each render priced, the quote waiting for the one approval. */
@@ -50,7 +50,7 @@ const gate = (prices: [number, number, number]) => {
   return {
     ...base, state: "needs_you", reason: "Opening is ready to render · about 43 cr.",
     paid: base.paid.map((p, i) => ({ ...p, state: "waiting", quote: prices[i], worst: prices[i], canRender: true, fingerprint: FP })),
-    plan: { quote: { total, ceiling: 2 * total, approximate: false, fingerprint: QUOTE_FP, covered: [1, 2, 3], asks: [] }, blocked: null, approval: null },
+    plan: { quote: { total, ceiling: 2 * total, approximate: false, fingerprint: QUOTE_FP, covered: [1, 2, 3] }, blocked: null, approval: null },
   } as unknown as ReturnType<typeof proposal>;
 };
 const sceneNode = (id: string, title: string, boardShotId: string, engine: string, x: number): CanvasNode => ({

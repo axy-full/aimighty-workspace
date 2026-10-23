@@ -90,9 +90,8 @@ export function PlanScreen({ scope, project, runId, online, spendOff = null, onH
                   {s.meta ? <span className="ph-row-line">{s.meta}</span> : null}
                   {!proposal ? <span className="ph-row-line" data-tone={s.state === "failed" ? "waiting" : undefined}>{s.status}</span> : null}
                   {s.unavailable ? <span className="ph-row-line ph-row-line--warn">{s.unavailable}</span> : null}
-                  {s.needsAdmin ? <span className="ph-row-line ph-row-line--warn" data-testid="phone-plan-admin">{model.adminLine}</span> : null}
                 </span>
-                {s.price ? <Price value={s.price} className="ph-plan-price" /> : <span className="ph-row-line">{s.unavailable ? "" : "priced when it runs"}</span>}
+                {s.price ? <Price value={s.price} className="ph-plan-price" /> : <span className="ph-row-line">{s.unavailable ? "" : s.source === "plan" ? "in the plan" : "priced when it runs"}</span>}
               </div>
             ))}
             <Allowance model={model} />
@@ -109,7 +108,6 @@ export function PlanScreen({ scope, project, runId, online, spendOff = null, onH
           </div>
           {budgetLine ? <p className="ph-row-line ph-row-line--warn ph-plan-note" role="note" data-testid="phone-plan-budget-line">{budgetLine}</p> : null}
           {model.modeLine ? <p className="ph-row-line ph-plan-note">{model.modeLine}</p> : null}
-          {model.ruleLine ? <p className="ph-row-line ph-plan-note">{model.ruleLine}</p> : null}
           {model.note && model.primary?.kind !== "render" ? <p className="ph-row-line ph-plan-note">{model.note}</p> : null}
         </div>
       </main>

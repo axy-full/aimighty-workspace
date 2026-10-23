@@ -473,6 +473,12 @@ export function SoundGenerate({
           clearPendingGeneration(window.localStorage, key, attempt.key);
           notifyStorage();
         }
+        /* The price moved since the button showed it (lib/pressFigure.ts): nothing was sent, and the button now carries the new
+           figure, so the next press approves what the person sees. Only for this form's own request, never a recovered one. */
+        if (!pending && e.resolved && e.data.quoteChanged === true && validAudioQuote(e.data)) {
+          const moved = e.data.estimatedCredits;
+          setQuote((q) => ({ ...(q?.key === bodyKey ? q : {}), key: bodyKey, credits: moved }));
+        }
       }
       setError(`${earlier ? `${earlier} ` : ""}${e instanceof Error ? e.message : "The generation could not be submitted."}`);
     } finally {

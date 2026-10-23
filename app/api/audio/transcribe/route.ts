@@ -4,6 +4,7 @@ import { requireRender, withTenant } from "@/lib/auth";
 import { withGenerationRequest, ANSWER_AFTER_MS, type GenerationRequest } from "@/lib/generationRequests";
 import { transcribe } from "@/lib/transcription";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { tokenSpendRefusal } from "@/lib/tokenSpend";
 
 export const dynamic = "force-dynamic";
 /* A transcription's claim is known to be gone at twice this (TRANSCRIPTION_STALE_MS, lib/generationRequests.ts): raise both together. */
@@ -32,5 +33,7 @@ export const POST = withTenant(async function POST(req: Request) {
   if (body?.quoteOnly === true) return perform();
   /* The sample workspace spends nothing, with a project or without: answered before the request is claimed. */
   { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* A token or an MCP client spends only with a ceiling and the quote it was approved at (lib/tokenSpend.ts): refused before the request is claimed. */
+  { const refused = tokenSpendRefusal({ maxCredits: body?.maxCredits }, got.token); if (refused) return refused; }
   return withGenerationRequest(req, got.user.id, perform, { answerAfterMs: ANSWER_AFTER_MS });
 });

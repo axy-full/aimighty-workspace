@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import type { WorkspaceSheet } from "@/lib/platformConsole.server";
 import { HOUSE_NOT_BILLED } from "@/lib/houseWorkspace";
 import { creditsText } from "@/lib/shell/price-words";
+import { houseCapStanding, houseCapUsdText } from "@/lib/houseCapText";
 import { timeAgo } from "@/lib/format";
 import { ContextMenu, IconButton, useOverlay, useToast, type MenuItem } from "../ui";
 import { adminSend, useAdminRead } from "./api";
@@ -105,6 +106,7 @@ function Sheet({ id, summary, onClose, changed }: { id: string; summary: AdminWo
         <div className="v12-pc-sheet-body">
           <div className="v12-pc-minitiles">
             <div className="v12-pc-minitile"><span className="v12-pc-tile-name">Plan</span><strong data-testid="pc-sheet-plan">{data.house ? "House · pays at cost" : data.plan?.label ?? "No plan"}</strong></div>
+            {data.houseCap ? <div className="v12-pc-minitile" data-testid="pc-sheet-house-cap"><span className="v12-pc-tile-name">Monthly cap</span><strong>{houseCapStanding(data.houseCap)}</strong></div> : null}
             <div className="v12-pc-minitile"><span className="v12-pc-tile-name">Credits left</span><strong data-testid="pc-sheet-balance">{data.balance == null ? "—" : <Cr credits={data.balance} />}</strong></div>
           </div>
           <h3 className="v12-pc-h3">Members · {data.members.length}</h3>
@@ -127,7 +129,7 @@ function Sheet({ id, summary, onClose, changed }: { id: string; summary: AdminWo
             <>
               <h3 className="v12-pc-h3">Changes from here</h3>
               <ul className="v12-pc-list" data-testid="pc-sheet-changes">
-                {data.changes.map((c) => <li key={c.id} className="v12-pc-li"><span className="v12-pc-clip">{auditWords(c.action, c.details.credits)}</span><span className="v12-pc-meta">{timeAgo(c.createdAt)}</span></li>)}
+                {data.changes.map((c) => <li key={c.id} className="v12-pc-li"><span className="v12-pc-clip">{auditWords(c.action, c.details.credits, c.details.capUsd, c.details.atPct)}</span><span className="v12-pc-meta">{timeAgo(c.createdAt)}</span></li>)}
               </ul>
             </>
           ) : null}
@@ -139,7 +141,7 @@ function Sheet({ id, summary, onClose, changed }: { id: string; summary: AdminWo
                   <label className="v12-pc-unit"><input className="v12-pc-input v12-pc-num" inputMode="numeric" aria-label="Credits to add" placeholder="Credits" value={amount} disabled={data.house} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} data-testid="pc-grant-amount" /><span>cr</span></label>
                   <input className="v12-pc-input v12-pc-grow" aria-label="Reason" placeholder="Reason · they see it" value={reason} disabled={data.house} onChange={(e) => setReason(e.target.value)} data-testid="pc-grant-reason" />
                 </div>
-                <span title={data.house ? HOUSE_NOT_BILLED : !grantOk ? "Type how many credits to add" : undefined} className="v12-pc-inline">
+                <span title={data.house ? HOUSE_NOT_BILLED : !grantOk ? "Type the credits to add" : undefined} className="v12-pc-inline">
                   <button type="submit" className="v12-pc-primary" disabled={busy || data.house || !grantOk} data-testid="pc-grant-send">Grant credits</button>
                 </span>
               </form>
@@ -173,11 +175,13 @@ function Sheet({ id, summary, onClose, changed }: { id: string; summary: AdminWo
 }
 
 /** A platform-audit line as a sentence: what, and for credits how many (lib/platformAudit.ts). */
-function auditWords(action: string, credits?: number): string {
+function auditWords(action: string, credits?: number, capUsd?: number | null, atPct?: number): string {
   switch (action) {
     case "credits.granted": return credits != null ? `${credits < 0 ? "Took" : "Added"} ${creditsText(Math.abs(credits))}` : "Credits changed";
     case "workspace.paused": return "Paused";
     case "workspace.resumed": return "Resumed";
+    case "housecap.set": return capUsd == null ? "Cap back to the default" : `Cap set to ${houseCapUsdText(capUsd)} a month`;
+    case "housecap.warned": return atPct != null ? `${atPct}% of the monthly cap used` : "Monthly cap warning";
     default: return action;
   }
 }

@@ -251,6 +251,7 @@ Pricing policy (multipliers, margins, floor guard, volume phases) is kept privat
 ### Credits
 - **1 credit = US$0.10, fixed**, the public price. A credit's price is `creditUsd()` (`lib/creditTerms.ts`, overridable by `CREDIT_USD`).
 - Every job is priced from engine cost through the margin table (`margins()` in `lib/creditTerms.ts`, overridable by the `CREDIT_MARGINS` env var) and rounded up to the next whole credit per job. Batches multiply before rounding. The table is keyed by engine, so pricing one engine differently is a config change, not a refactor.
+- **The agent factor (amended 21 October 2026, the owner).** A job Atomik routed (engine chosen by Atomik, the how hidden) carries `AGENT_PRICE_FACTOR` (env-set, default 1.0, the number is the owner's) whatever path started it — button, Make, board, skill or MCP; a job whose caller chose the engine never does. It is a mode price, not a path price (rule 11). The public rate card stays the Director rate card; Agent prices are the all-in quote. Platform-admin margin reporting includes the factor; nothing customer-facing shows it.
 - The ledger stores `engine_cost_usd` and `billed_credits` per job. The rate card is generated from the adapter registry, never hand-edited.
 - Customers never receive vendor costs for work on the platform's keys: no engine cost or margin reaches anyone but a platform admin, and a vendor cost is never shown next to our price. A workspace on its own keys sees its own vendors' dollars.
 - **Draft/hero split is a product default, not a pricing tier.** Recipes route boards to standard panels (1 cr), draft takes to Kling Standard or Wan (4–8 cr), and hero takes to Seedance or Kling Pro (25–45 cr). The composer's model row defaults from the shot's stage in the recipe.
@@ -395,9 +396,36 @@ nothing can leave a plan, and the two differ only for someone who has.
 1. Free grant is one-time, never recurring. Invite approvals are capped per month by a platform setting (`grant_budget_usd`).
 2. Bonus credits never exceed 20% of a pack.
 3. Any workspace consuming more than 25% of the platform's monthly engine spend is flagged to the admin console.
-4. Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.
+4. ~~Any single job estimated above 200 cr requires the workspace's cost approval rule to fire, regardless of the workspace's own setting.~~ Retired 19–20 October 2026; see the amendments below.
 5. Included-credit consumption is metered separately from purchased credits, so statements show what was free and what was paid.
 6. Workspaces flagged `internal: true` carry a pricing override set by the private policy. The flag is set only from the platform admin console, never from workspace settings, and its spend is excluded from margin reporting.
+
+**AMENDED 19 October 2026 — guardrail 4 is retired.** The owner, verbatim: "the 200 cr per-job line (guardrail 4) is retired. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with its Paused state. #815 keeps "a multi-shot press is one job, one approval for the total" and drops the guardrail-4 check; a press whose total would pass the workspace cap is refused at the quote. Update CLAUDE.md's pricing section and the rulebook in the docs PR; a money review on the #815 change. Nothing else in the money behaviour changes."
+
+What replaces it:
+- Every job is approved on its quote before it runs.
+- ~~The only automatic stop is the workspace's monthly spend limit, with its Paused state.~~ Struck 21 October 2026: the monthly limit stays as a mechanism, off by default, owner-only, with no Paused card; the house cap and the platform allowance stay exactly as they are (see the amendment of 21 October 2026 below).
+- A multi-shot press is one job, with one approval for its total. A press whose total would pass the workspace cap is refused at the quote.
+
+**AMENDED 20 October 2026 — every job, single jobs included.** The owner, verbatim: "Guardrail 4 is retired everywhere, single jobs included: no per-job line in the product. Every job is approved on its quote before it runs; the only automatic stop is the workspace's monthly spend limit with Paused. Strike it in CLAUDE.md and the scope with a dated note in the owner's words, and in the code with its own money review; keep the workspace cap and the house cap exactly as they are."
+
+The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by `jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and `lib/quote.ts`) is removed from the code by its own code PR, under its own money review. The workspace cap (its monthly spend limit) and the house cap stay exactly as they are. ~~The workspace's own approval rule (a step over the workspace's own rule cap needs an admin; `lib/approvalRule.ts`) is not guardrail 4 and stays.~~ Retired 21 October 2026: see the amendment of that day below.
+
+**AMENDED 20 October 2026 — Auto goes.** The owner, verbatim: "Q2 Auto goes: every job is approved on its quote; "Ask before every take" off means one approval per step. ~~Q3 a big Atomik step still goes to an admin, keyed to the workspace cap, never to a fixed figure.~~ Q4 the per-render ask over 200 cr goes. Q5 the balance check, token ceilings, run limits, project caps ~~and the per-shot rule~~ stay." The same code PR removes Auto and its no-tap ceiling, and a plan's per-render ask over 200 cr: every render runs on its own tap or a plan's one approval, at its quote. ~~"The workspace cap" in Q3 is the per-shot rule cap in `lib/approvalRule.ts` (owner, 20 October 2026).~~ (Q3, and the per-shot rule in Q5, struck 21 October 2026: the admin approval rule is retired; see below.) An API token or an MCP client spends only inside a monthly ceiling an admin set, carrying its approved quote; the owner, verbatim: "C. Yes: a token with a ceiling spends inside it whatever the workspace's Ask setting — the ceiling is the standing approval. lip_sync follows the same rule once Auto goes, so the two tools behave alike."
+
+**AMENDED 21 October 2026 — a press asked again.** The owner, verbatim: "fix the #815 press route (a repeated press near the cap shows the running press) as its own money PR"; "Retry's price is only the shots left: what failed unbilled re-runs under the same approval; what was charged stays charged"; "held approvals expire as plans do (7 days); an expired one asks again at the current price." With his #811 answer, the approval binds the total: per-shot shifts at or under it run, a higher total asks again.
+
+- Asked again under its key, a press is read before it is priced: shots that started are shown as they stand, at the hold they started at, and are not judged against the cap a second time. Only the shots still to start (never started, or failed at no charge) are priced, capped and checked against the balance (`lib/batchPress.ts`).
+- Retry costs only the shots left, under the approval the press holds, while the press's total stays at or under it; a higher total asks again with the new total.
+- A press's approval is drawn on for 7 days from when it first started something (the plan approval's `PLAN_APPROVAL_MS`). After that, a press that would start anything asks again at today's price.
+
+**AMENDED 21 October 2026 — the admin approval rule is retired.** The owner, verbatim: "the admin approval rule is retired; every member approves their own spend with their own tap on the quote; Atomik, tokens and MCP callers still never approve. This overturns my 20 Oct Q3 ('a big Atomik step still goes to an admin') and rule 14's sentence 'a step over the rule's cap needs an admin' — strike both with this dated note." And: "The monthly limit stays as a mechanism, off by default, owner-only, no Paused card." And: "Auto: retired. Every job is approved on its quote by the person pressing; the 'Ask before every take' setting goes." Asked whether work already waiting for an admin goes back to its own person at a fresh quote and starts only on their tap, with a claim already rendering left to finish, and whether a production at its cap still waits for an admin's Unlock, he answered "yes" to each.
+
+- No step, take or plan waits for an admin. The workspace's cost approval rule and its per-shot cap (the `approvalRule` and `shotCapCredits` settings, read by `lib/approvalRule.ts` and `lib/shotCap.ts`) are removed from the code by their own code PR, under its own money review. A workspace's stored values stay as they are (nothing is erased); nothing reads them, and the settings route refuses them.
+- Work that waited for an admin goes back to its own person at a fresh quote and starts only on their tap; a claim already rendering finishes.
+- A production at its cap still waits for an admin's Unlock.
+- The house cap and the platform allowance stay exactly as they are; so do the balance check, token ceilings and run limits.
+- The monthly spend limit is its own later change: a mechanism, off by default, set by the owner only, with no Paused card.
 
 ---
 
@@ -521,7 +549,7 @@ The two desktop surfaces are **two layers of one screen** behind an `Assets | St
 
 **Also built on the Suites Rig, 2 October 2026.**
 
-- **Atomik's runs.** Asking Atomik for a board carries a limit for the whole run ("up to about N cr") and a mode: Ask (the default) or Auto. The planning turn is metered inside the limit. After the build, each render the plan names is priced first. In Ask it waits for one tap; in Auto, only a draft priced at or under the per-job line goes on its own. The per-job line is the platform's approval line (§7A guardrail 4). The reservation refuses any job that would pass the limit, and a run's take is never held to start later. A refusal pauses the run at "Needs you", with Retry, Skip, Raise the limit or Stop. Atomik's board building stays off in production until the owner turns on `RIG_AGENT_ENABLED`.
+- **Atomik's runs.** Asking Atomik for a board carries a limit for the whole run ("up to about N cr") ~~and a mode: Ask (the default) or Auto~~. The planning turn is metered inside the limit. After the build, each render the plan names is priced first. ~~In Ask it waits for one tap; in Auto, only a draft priced at or under the per-job line goes on its own.~~ ~~The per-job line is the platform's approval line (§7A guardrail 4).~~ **AMENDED 20 October 2026:** guardrail 4 is retired for every job (§7A, "Guardrails in code", AMENDED 19 and 20 October 2026). **AMENDED 20 October 2026 — Auto goes** (§7A): the struck mode is gone, there is no Auto mode; every render waits for its own tap or the plan's one approval, at its quote. The reservation refuses any job that would pass the limit, and a run's take is never held to start later. A refusal pauses the run at "Needs you", with Retry, Skip, Raise the limit or Stop. Atomik's board building stays off in production until the owner turns on `RIG_AGENT_ENABLED`.
 - **Verify.** A Verify card checks one take against the Cast, Environment and Element cards wired into it: identity, wardrobe, environment, props, and artifacts such as extra limbs or warped text. It is one judge call on a vision model from the agent's menu (Claude, OpenAI or Grok), priced first and charged in credits at what it used. The judge only scores; the code turns each score into pass, fail or unsure against fixed thresholds. A failed check fails the card; otherwise any unsure check makes it "Needs you", so nothing passes on a guess. Checking the same take against the same cards again reads the stored scorecard, free. A new version of one of those cards needs a new, priced check.
 - **A tidier board.** Cards snap to a 20 px grid; Alt places one exactly. Notes and section titles are written on the board itself. Each card sits in its kind's section (Cast, Environment, Elements, Refs, Looks, Direction, Shots, Finishing, Review and output) or in one a person made. Tidy lays the board out by sections for everyone, free, and locked cards keep their place. Atomik's build lays out its own cards the same way but adds no section titles.
 - **Old boards.** "Open in the new Rig" on an old board (`/rig/canvas/:board`) brings its cards, inputs and places onto the production's shared canvas, free. The old board is only read and stays editable. Opening it again brings only what is new, and a card someone took off the new Rig stays off.
@@ -767,9 +795,49 @@ recurring billing of any kind (`startCheckout` throws for anything but
 `manual`, so a $49/mo plan today is an admin remembering every month); panel
 allowances and the §2.8 board pipeline they would count.
 
-Guardrail 4's line now has one source, `lib/approvalRule.ts`. Since 2 October
+~~Guardrail 4's line now has one source, `lib/approvalRule.ts`. Since 2 October
 2026 Atomik's Rig runs use it as the most one job may cost without asking
-(§9); nothing else enforces it yet.
+(§9); nothing else enforces it yet.~~
+
+**AMENDED 19 October 2026 — guardrail 4 is retired** (§7A, "Guardrails in
+code", AMENDED 19 October 2026). The owner, verbatim: "the 200 cr per-job line
+(guardrail 4) is retired. Every job is approved on its quote before it runs;
+the only automatic stop is the workspace's monthly spend limit with its Paused
+state. #815 keeps "a multi-shot press is one job, one approval for the total"
+and drops the guardrail-4 check; a press whose total would pass the workspace
+cap is refused at the quote. Update CLAUDE.md's pricing section and the
+rulebook in the docs PR; a money review on the #815 change. Nothing else in the
+money behaviour changes." By 19 October the line was enforced at the press as
+well as in the Rig runs (`jobLineVerdict`, called from
+`lib/generationRequests.ts`, `lib/shotCap.ts` and `lib/quote.ts`), so the
+struck "nothing else enforces it yet" was already out of date.
+
+**AMENDED 20 October 2026 — every job, single jobs included.** The owner,
+verbatim: "Guardrail 4 is retired everywhere, single jobs included: no per-job
+line in the product. Every job is approved on its quote before it runs; the only
+automatic stop is the workspace's monthly spend limit with Paused. Strike it in
+CLAUDE.md and the scope with a dated note in the owner's words, and in the code
+with its own money review; keep the workspace cap and the house cap exactly as
+they are."
+
+The per-job line (`JOB_APPROVAL_LINE_USD` in `lib/approvalRule.ts`, judged by
+`jobLineVerdict` from `lib/generationRequests.ts`, `lib/shotCap.ts` and
+`lib/quote.ts`) is removed from the code by its own code PR, under its own
+money review. The workspace cap (its monthly spend limit) and the house cap
+stay exactly as they are. ~~The workspace's own approval rule (a step over the
+workspace's own rule cap needs an admin; `lib/approvalRule.ts`) is not
+guardrail 4 and stays.~~ Auto went on 20 October 2026, with the same code PR:
+see §7A, "AMENDED 20 October 2026 — Auto goes".
+
+**AMENDED 21 October 2026 — the admin approval rule is retired** (§7A,
+"Guardrails in code", AMENDED 21 October 2026). The owner, verbatim: "the
+admin approval rule is retired; every member approves their own spend with
+their own tap on the quote; Atomik, tokens and MCP callers still never approve.
+This overturns my 20 Oct Q3 ('a big Atomik step still goes to an admin') and
+rule 14's sentence 'a step over the rule's cap needs an admin' — strike both
+with this dated note." `lib/approvalRule.ts` and `lib/shotCap.ts` are removed
+by their own code PR, under its own money review; a production at its cap
+still waits for an admin's Unlock.
 # September 2026 amendment: durable published-context pipelines
 
 The additive pipeline executor introduces immutable versioned DAGs and private creator-owned runs from an explicit published production context. It never publishes a private draft. Each ready image/video/audio stage receives a batch quote and explicit approval; later stages require their own approval after inputs resolve. Permanent attempt keys, CAS revisions, fenced leases, and a persisted wakeup outbox prevent lost responses from creating replacement spend. Review selections become fixed once downstream attempts depend on them. Assembly produces an editorial timeline for the existing browser movie renderer, not a falsely completed movie. New tables and the full limits/recovery contract are documented in `docs/durable-production-pipelines.md`; historical recipes and runs remain compatible. This amendment does not introduce Stripe changes.
@@ -821,3 +889,214 @@ Gen gains a watermarked draft and separately quoted final through the existing v
 The Higgsfield sign-in features are off (ground rule 10). An account route that would price, start or build work refuses it with one plain sentence. Past results stay in the Library and Takes, with their original files and charge lines. Jobs that were already running on the account are still collected; while the account's grant is held, Workspace › Engines lists them and offers Disconnect.
 
 Viral (Motion Transfer, Object Swap and History) and Business › Image ads run on Particl's API key for every workspace and every member. Each take is priced first ("about N cr"), sent once with that figure as its ceiling, and charged in workspace credits. Image ads offers Marketing Studio Image 2.0 Alpha, 2.5 Flare and 2.5 Sunburst; a 2.5 take is settled on the delivered image. Viral's History and Atomik's Compare plan read the project's Library, so runs made earlier on the account stay readable. No workspace plan calls an account route.
+
+# Amendment, 21 October 2026 — ruleset, dataset, stepset
+
+The owner's words, verbatim. The PR that adds this changes docs only. Items marked **[money]** get their own code PR under a money review. Items marked **[schema]** go to the owner before any migration.
+
+## Ruleset
+
+**R1 Positioning (owner):** tools like Artlist cater to those who "walk, talk and speak film"; Particl gives "structured filmmaking in the hands of every other person with a keen interest." Every screen and line of copy is judged against that person (extends ground rule 6).
+
+**R2 Questions are derived, never fixed.** Each step has a checklist of decisions (D1). The agent fills it from everything known (brief, interview, earlier steps, the film record, house defaults); each row is known / assumed / open. Only open rows that change the result or the price are asked — in the film's own nouns, at most three per step, the agent's pick preselected. Assumed rows read "I assumed … · Change". A gap no checklist lists may be asked only in the fixed shapes (something to point at, chips, a default, "talk"). Which rows get asked is deterministic and tested on mocked briefs: a brief that says "Hindi VO" is never asked the language question.
+
+**R3 Judge, don't specify.** Every step shows a proposal first; the question is answered by pointing. "Decide for me" is the default; "Just make it" runs every default to one read-back page and one quote. "Options" is priced, sits at the cheapest stage that answers, and the button says so ("Options · 3 frames · 9 cr"). Options are never free. *(Amended 21 October 2026, below.)*
+
+**R4 Genre (owner):** "each film comes in its own genre." Set once in the Brief, never asked again; it keys per-genre defaults and chip sets at every step (D2). The three options the agent shows are all inside the genre, differing on the axis the genre cares about.
+
+**R5 Continuity.** The storyboard is planned as coverage from D3. Side of the line, time of day and light are scene rows set once. Frames are drawn from the kept cast stills and the kept look. The free self-check flags a crossed line, a missing reaction or a wrong eyeline with one-tap fixes ("Flip" · "Add reaction frame · 3 cr"). "Play as a cut" (animatic, free) is a view on every rail. A frame is the first frame of its shot; "Continue from here" seeds the next shot from the end of the last.
+
+**R6 Shot by shot (owner: "a very step by step and shot by shot process").** Agent mode runs Storyboard and Shots one item at a time. The plan is approved once as "up to N cr"; the person's Keep on item N releases item N+1; stopping charges only what was made. "Board all" / "Shoot all" are chips at the same per-item price with the self-check as the gate between items — offered, never the default. Director mode is one card at a time; the multi-shot press stays as its batch (#815).
+
+**R7 The film record [schema].** One record per film: every checklist row (value, source), every change (when, why — the chip pressed), the interview as spoken, every kept and rejected take with its reason, every approval. It is the agent's only input: every turn loads the whole record (a digest per step always; full detail on demand from the index). It is the LangGraph state, checkpointed as tenant rows. Changes ripple: a changed row lists what downstream it touches and offers "Carry the change", priced if anything is remade. Test: at Deliver, for every mocked film, the agent answers "what did they say at Brief about X" from the record alone; Langfuse shows which rows each turn read.
+
+**R8 Two modes, further apart; no third mode.** Agent is the default front door ("What are we making?" — the interview). Director sits behind one line, "I speak film", and opens with Import or a blank board. Agent: plain words; film words underlined with a one-line definition on hover (tap on phone); works in films; one all-in quote per command; review is Keep · Change something · Options; phone-first. Director: film words, engines, settings, the rate card; works in shots; the take grid; desktop-first. One bridge, one direction: a shot opened in Director mode opens with no engine and no prompt. Nothing in Agent ever shows the how.
+
+**R9 "?" on every step.** A card of three lines (what this step is · what you do · what comes next) and a 15-second loop. Opens itself once on a stranger's first visit to a step, then waits behind "?". Last line "Show me on my film" runs Atomik on the person's own project, priced as a planning turn. Cards are static text shipped with the app (D5); loops load lazily from storage (Cloudflare R2); nothing generated live. On the phone, a sheet.
+
+**R10 Director mode, comprehensive:** angle, shot size, move, light, camera, lens, depth of field, frame rate, grain — pickers with pictures, Auto default, folded in the Inspector (rule 13). They write prompt lines through the rule library and set an engine parameter only where one exists. This is the camera bank of ground rule 3: platform list, workspace additions. The panel's "?" says a camera or lens name nudges the look; no engine simulates the glass. None of it appears in Agent mode.
+
+**R11 Agent margin [money] (owner: "Agent mode is the money maker").** One factor applied in the quote path to agent-originated jobs: AGENT_PRICE_FACTOR, env-set, default 1.0 until the owner sets the number, read nowhere else, shown nowhere; the all-in quote hides the breakdown. The number is the owner's.
+
+**R12 Recipes by outcome.** The + menu offers five or six outcomes per rail in plain words ("Make my product the hero"); each is upload + ≤4 chips + one quote, built as a board skill (rule 12). Techniques live inside Options at a step, priced. Not a preset gallery.
+
+**R13 Elements for people who own nothing.** ~~A stock cast and stock places in the platform layer, pickable in one tap;~~ a voice bound to each cast member; a real face needs consent on file; a character sheet from 1–5 photos with one hint: "even lighting and a plain background works best."
+
+**R14 Money copy [money] (owner's call, later):** plan cards in films ("about two 30-second ads a month"); price on the button; Top up on the button when short; a 480p draft row on the rate card.
+
+**R15 Not taken from Artlist:** engines in the user's face, Unlimited tiers, a second canvas, hover-only prices, an agent that names the engine, a prompt asked of the person.
+
+## Dataset (tables in code, platform layer, overridable per workspace)
+
+**D1 Checklists** — per rail × step, one row per decision: id · what it sets downstream · default source (brief field / earlier step / rail / house history / none) · money attached · question shape (pick one / A-B / yes-no / tap the frame / upload) · decide-for-me allowed. Beside lib/productionModel/filmTypes.ts.
+
+**D2 Genre table** — ten genres per rail × the steps that vary: Script pacing and beat count; Treatment deck style and "what's off" chips; Look palettes and chips; Storyboard coverage bias; Shots duration and move defaults; Sound moods and voice sets; Edit rhythm and end-on default. The owner writes the rows.
+
+**D3 Coverage patterns** — dialogue → shot/reverse on one side of the line; action → action then reaction; entering → wide then close; product → approach then detail; screen-direction rules.
+
+**D4 Picker vocabularies and the camera bank** (R10), a picture per item.
+
+**D5 "?" cards** — rails × steps × three lines (the Ad film set is written and approved: the product speaks, not Atomik) + one loop per step. *(Order amended in (ii), D3.)*
+
+**D6 Glossary** — film words, one-line definition, thumbnail; feeds Agent underlines and Director tooltips. One vocabulary (rule 5). The draft is `docs/glossary-d6-draft.md` (21 Oct 2026).
+
+**D7 Recipes per rail** (R12); ~~stock cast and places (R13)~~.
+
+**D8 House defaults** — a row a workspace has answered the same way three times becomes its default and stops being asked (from the ledger).
+
+## Stepset
+
+**S1** The per-step catalogue (Script → Deliver, plus the other rails' extra stages) is the example bank for D1, not a fixed list: each stage opens with a proposal, a judging prompt, at most three bare questions only where no default exists and money is attached, and what each answer sets and carries forward.
+
+**S2 Agent mode sequence:** Brief (interview, genre) → read-back "How I'll make it" → Script → Treatment → Elements → Look → Storyboard (shot by shot; play as a cut) → Shots (shot by shot; preflight; one quote) → Sound → Edit → Deliver. A stranger is asked once; nothing is asked twice. *(Step order as amended 21 October 2026 in (ii), D3: Elements before Look; the film types' rails in `lib/productionModel/filmTypes.ts` follow it.)*
+
+## The owner's answers on this amendment, 21 October 2026
+
+1. **R11 and rule 11.** Rule 11 stays: the same tool costs the same through every path. The factor is a mode price, keyed on who chose the engine. Rule 11 and § Pricing carry the sentence.
+2. **R8, R15 and rule 13.** In Agent mode the Auto line shows the what and the price ("Final · 5 s · 51 cr · Change"). Rule 13's engine-named example becomes the Director example. The example's label changes, not the rule.
+3. **R5 and rule 14.** Decided 18 Oct: "Atomik's own check of its work is free and is never a line." The self-check is free to the person and absorbed as a cost row in admin reporting, as search is. Rule 14's planning-turn sentence covers Atomik's thinking for the person, not its check of its own work.
+4. **R14** is [money]. The 480p draft row is a rate-card change and gets its own money PR when the owner calls it.
+5. **R7 and tracing.** Ids and timings only, never words (rule 17). The interview as spoken lives in the film record in Turso and nowhere else; tracing logs row ids.
+- **R6:** one approval; Keep releases the next item, with no second tap.
+- **R8:** "no third mode" means Agent and Director. The Ask/Auto spend setting is a separate thing.
+
+**Correction, 21 October 2026 (the owner): R13 and D7.** Strike "a stock cast and stock places in the platform layer, pickable in one tap" and "stock cast and places (R13)". Particl ships no stock elements, cast or environments. Every element is the person's own, uploaded from references or generated from the script line under the plan's quote, and Atomik teaches the newcomer how (the Elements "?" card, "Show me on my film", the upload hint "even lighting and a plain background works best", the consent tick for a real face). Everything else in R13 stands.
+
+## Additions, 21 October 2026 (the owner's follow-up to the amendment)
+
+The owner's words. This PR is docs only; code PRs follow.
+
+**R16 File names are Particl's.** Every file a person downloads, exports or sees in the Library — takes, frames, images, sound, masters — is renamed on the way out:
+`prtcl-<project>-s<shot>-t<take>-a<asset>-<yyyymmdd>.<ext>`, e.g. `prtcl-mirror-s04-t02-a01-20261021.mp4`.
+For things without a shot the shot slot names the kind: el (element), lk (look), tr (treatment page), sd (sound), ms (master): `prtcl-mirror-el03-a01-20261021.png` · `prtcl-mirror-ms01-a01-20261105.mov`.
+Lowercase, hyphens, no spaces; project is the production's slug; numbers zero-padded to two digits; date is the day the file was made. The vendor's file name never reaches a person. Ground rule 4 lists today's "file naming" among the things that work: this PR names the current scheme and extends it, and every reader of a file name (Library, export, review links, Deliver) is listed in the PR.
+Also strip what we control inside the file: container and image metadata fields that name a tool, encoder or software. **[legal, owner]** Invisible watermarks and signed provenance manifests that some vendors embed may not be ours to remove; the owner decides with counsel before any stripping of those, and until then they stay.
+
+**R17 Failures never name the vendor.** In Agent mode a refused or failed job reads "Nothing billed" (or what it cost) in Particl's words; vendor refusal text is never shown raw. In Director mode the engine is known, but the refusal is still rewritten in plain words and the vendor's own message never appears.
+
+**R18 Quick Look tools by mode.** The lasso, the element selector and "Change this · one quote" in Quick Look are Agent mode only. The Director's Quick Look judges and compares; the Director fixes by hand through Inputs and the prompt.
+
+**R3, amended:** Options are never free — the three frames are billed, and the ideation behind them is billed as a band (18 Oct: everything Atomik makes is charged and quoted first).
+
+**D6:** the glossary draft is attached (`docs/glossary-d6-draft.md`): ~150 words, plain-word definitions in our own words, each marked A (Agent underline) or D (Director picker tooltip), grouped by step. Terms were checked against the standard handbook vocabulary; no book text is reproduced. The owner edits; then it ships as data with a thumbnail or loop per entry.
+
+# Amendment, 21 October 2026 (ii)
+
+The owner's decisions of 21 October 2026 (evening), in his words. Items already recorded earlier on 21 October are kept where they are, and only pointed to here. This PR is docs only. Code PRs follow as marked: **[money]** under a money review; **[schema]** flagged to the owner before any migration.
+
+## A · Spend approvals [money]
+
+Recorded earlier today (docs/redesign-plan.md, Owner decisions, 21 Oct):
+- **A1:** the admin approval rule is retired. Every member approves their own spend with their own tap on the quote. The monthly limit is off by default and owner-only, with no Paused card. The house cap is unchanged.
+- **A2:** Auto is retired, and guardrail-4 lands first, then the approval-rule PR.
+- **A3:** "free" is lowercase.
+- **A4:** the 4K-refusal fix (#865).
+- **A5:** the scoping pass and its estimate.
+
+The strikes of rule 14's "a step over the rule's cap needs an admin" and of the 20 Oct Q3 travel with the approval-rule code PR.
+
+## B · Prices [money]
+
+**B1** Recorded earlier today (docs/redesign-plan.md, "export and render pricing"): rendering what was already made and billed is free; another tool's processing inside a render is priced as one figure; 4K is free only if the takes were made and billed at 4K.
+
+**B2** Atomik's bands (Reading, Research, Analysis, Writing) are priced by size at quote time from rates in my private policy through the price path — never a fixed figure in code or copy. Because the cost depends on what the material contains (charts, images, scans), the quote is a range ("12–30 cr") or a ceiling ("up to 30 cr"); the Preflight names what will be read; the person approves the top; the top is reserved; the receipt settles at what was used. Engine steps stay exact. An Agent all-in quote that includes a band reads "up to N cr" and settles at actual. This amends the 18 Oct "charged exactly" for bands only. A workspace may set an owner-only allowance ("Atomik may read up to N cr per document without asking"); under it nothing asks, over it one tap.
+
+**B3** Nothing intelligent is free. Priced and quoted first: auditions, Options (the frames and the ideation), Enhance, transcription (by minutes, as a ceiling), reading documents and reference films, research, writing, Atomik's re-cuts, generated previews. Free means no model ran: Preflight and quote, hand edits, crops and exports of what was made, the animatic from kept frames, Keep, Send, undo.
+
+**B4** Two bounded exceptions. Atomik's own check of its work stays free (18 Oct): a judge call on the take (sampled frames or the still) with the shot's own rows, never the record; one pass per take, one more on a remake; cheapest capable model; cost absorbed in the Agent factor; per-take cost traced. The visitor bar is free to the visitor: a fixed number of questions per visitor, a small fixed context (the ? cards, the glossary, the plans), the cheapest model, no tools but the tour of the sample production; its spend marked "visitor" in house spend (#839).
+
+**B5** The first Agent turn in a Director-first project is a Reading turn, quoted as a ceiling and charged once; the record is digested per step and later turns read the digest inside their band price; a mode switch alone never bills.
+
+**B6** Transcription: offered on every new film's Brief; priced by minutes as a ceiling; the transcript is shown for approval; editing it is free; more talking is quoted again. The same for uploaded briefs, brand guidelines and campaign documents.
+
+**B7** GST is Stripe's job (rate, GSTIN, invoices), not the pricing section's; the only copy is "+ GST" on the plan card for Indian addresses, after the Stripe wiring.
+
+## C · The film record (R7, added) [schema]
+
+**C1** The record is written by both modes. Every Director-mode action writes rows (what was made, kept, rejected, with reasons); every free-text input writes "said" lines with source and step (prompts, notes, comments, titles, bar commands); the Director's engine and settings per shot are agent-private rows the agent reads and Agent mode never shows.
+
+**C2** The first Agent call in a Director-first project opens with the read-back assembled from the record ("Here's what I'm working from"), asks at most three questions for rows nothing answers, never asks what the brief document or the Director's own work already answers. "Brief from the board" drafts the brief and checklist from the record as a priced Writing turn. Tested on mocked Director-first projects; Langfuse shows the rows read, ids only.
+
+**C3** Reference films are read for structure only — cuts, shot sizes, moves, durations, the product moment, pacing, light, music turns — never content; priced by minutes as a ceiling; shown as "What I took from your reference" rows with Change; they set beat lengths, coverage bias and cut rhythm.
+
+**C4** Director mode's detail comes from the record, not the Director: a node shows a "Using" row (look · cast · rules · genre); Enhance · 1 cr (sample; the figure comes from the quote path only, owner 21 Oct) turns a short prompt into the full one, shown before the press; with no record, the rail's and the genre's defaults fill the gaps.
+
+## D · Corrections to the morning amendment
+
+**D1** R13 and D7 (recorded earlier today; struck above): Particl ships no stock elements, cast or environments; every element is the person's own.
+
+**D2** R9 (recorded earlier today): "from storage (Cloudflare R2)".
+
+**D3** S2 and D5: the step order is Brief · Script · Treatment · Elements · Look · Storyboard · Shots · Sound · Edit · Deliver (Elements before Look). Update the rails in lib/productionModel/filmTypes.ts, the "Sent → …" targets and the ? cards' order.
+
+**D4** R3, amended (recorded earlier today): Options are never free — the frames are billed and the ideation behind them is billed as a band.
+
+## E · New rules from the owner's v31.4 review (R19–R27; they shape the build, not only the prototype)
+
+**R19** Card states, one chip per card: To make · N cr → Making… → Ready to judge → Kept / Needs you → Sent → <step>. "Needs you" = a question, a self-check flag or a failed step. "Awaiting approval" sits on the quote card, never on the asset. Everything else lives in the preview.
+
+**R20** Chips and questions are derived from what is on the card: a product never shows a face chip; the chip set comes from the element rows of that picture. At most three questions on any card; "Skip the rest" is "Decide for me".
+
+*Amended 22 October 2026: see Amendment (iii), the owner's v31.5 review, R20.*
+
+**R21** The selection tool (lasso, element selector, "Change this · one quote") exists only where a picture is the subject — Elements, Look, Storyboard, Shots, Make — and only in Agent mode (R18). Never on Sound.
+
+*Restated 22 October 2026: see Amendment (iii), the owner's v31.5 review, R21.*
+
+**R22** Make: Agent's Make is "say it → one quote", no model named. Director's Make is a simple generator — text to image, text to video, image to video — with the model picker, settings and a wide prompt field. Model names in Director's Make only; no board in Make.
+
+**R23** Beats and frames are numbered; the number is the story order; drag to renumber; "Number the beats" when an import had none. Script shows beats only (no pictures), as Cards, List or the Director's Page; no free canvas at Script.
+
+*Amended 22 October 2026: see Amendment (iii), the owner's v31.5 review, R23.*
+
+**R24** ~~Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote). One canvas tool: drag on empty pans, drag on a card moves, wheel pans, Space pans; no separate Hand tool.~~ *Struck 22 October 2026 (owner's v31.5 review): reversed, see Amendment (iii), v31.5 review, R24.* *Its first sentence returns as its own rule, R36 (owner, 22 October 2026, 08:45 IST); see Amendment (iii).*
+
+**R25** ~~The bar is a smart box: docked only when nothing is selected; clicking anything opens it beside the thing — Agent: "Tell Atomik about this…" with derived chips; Director: the click's options and a wide prompt field.~~ *Struck 22 October 2026 (owner's v31.5 review): reversed, see Amendment (iii), v31.5 review, R25.*
+
+**R26** Treatment's editor is Keynote-grade on the Polotno tools: a vertical page navigator that follows the scroll, a page canvas, an inspector of Design · Text · Image · Page — never x·y·w·h. Palettes and looks may come from outside (a Pinterest board, an uploaded deck) as a priced Reading turn. Sound's preview is the mixer (video over stacked layers, Add a layer). Edit in Agent mode lays the line-up first, then quoted prompt revisions; Director's Edit has multiple bins. Storyboard keeps the Director's controls and adds Layers.
+
+**R27** The rail hides with a visible handle that brings it back on every screen.
+
+## F · Open for the owner, not for the lead
+
+The Visitor hero line; the genre table rows; the Agent factor's number; rupee vs dollar billing; provenance-mark disclosure; the 4K figure.
+
+# Amendment, 21 October 2026 (iii)
+
+The owner's answers of 21 October 2026, 22:15 IST, in his words where quoted. Docs only. Code follows in the PRs named.
+
+1. **Rule 14, a fourth form for bands.** "12–30 cr": rule 14 gets a fourth form, for bands only — N–M cr, reserved at M, settled at what was used ("the cost range can be given, but not the absolute cost"). Recorded under rule 14 in CLAUDE.md and docs/particl-sow-2026-10-04.md in this PR.
+2. **The owner-only allowance (B2)** is a no-tap path on purpose: "bill at the end" — a ceiling the workspace owner approves once, per document, off by default; the same shape as a token's ceiling (#854), not Auto. Build it as a ceiling, never a mode.
+3. **"Enhance · 1 cr" (C4) is a sample** (rule 14: every price in a design is a sample). The figure comes from the quote path only; C4 above is marked "(sample)".
+4. **The visitor bar gets a hard cap:** questions per visitor per day and a house daily ceiling, both settings whose names live in the code and whose values the owner sets in the self-host configuration; at the cap the bar says "Sign in to keep going". It lives in #839. The numbers are the owner's, later.
+5. **C1 "said" lines are tenant data:** workspace-scoped rows, never in Langfuse or telemetry (rule 17: ids and timings only). The schema PR's body says so.
+6. **Recraft over MCP:** no, for now. Recraft stays prepare-only until its first real run has the owner's yes.
+7. **A person's audio or dubbing press carries the figure that was on its button,** like the Director press (#860), in its own small PR under money review.
+8. **The monthly spend limit is rule 14's budget ceiling:** one setting, owner-only, off by default; #835 builds it. The house cap warns on a raise only. The engine hold stays: an engine is rebuilt on the price file (like #846) only when the demo needs it, and the owner names which.
+
+## The owner's v31.5 review, 22 October 2026 (00:05 IST)
+
+The owner's words, verbatim; only the bullets and the bold item ids are added. R24 and R25 are struck in Amendment (ii) E above with a dated note; R20, R21 and R23 there point here. R29 is **[money]**: its code PR goes under a money review.
+
+- **R24 reversed:** two canvas tools, Select (V) and Hand (H); in Select a drag on empty space is a marquee; Hand pans; Space is Hand in either; wheel pans; ⌘-wheel or pinch zooms about the cursor, damped, never a fixed step; "just copy the canvas of Luma": a fine dot grid fixed under zoom — "it's the cards that get zoomed in and out".
+- **R25 reversed:** "Keep it at the bottom only. I don't want to see any options or text hanging around on the canvas anywhere. If it's information regarding all cards, it should be tucked away in the inspector. If it's per card, it should be in the space bar or double-click preview of the card."
+- **R23 amended:** Script has Cards · List · Page in both modes; Page is the screenplay viewer and editor, hand edits free.
+- **R20 amended:** a question names the cards or beats it is about and offers the real alternatives; one with no concrete alternatives is not asked.
+- **R28** Genre first.
+- **R29 [money]** the plan is charged: free are the person's own "said" rows and the Preflight questions; one quote ("Plan the film", bands as a range or ceiling) is approved before any decided row appears.
+- **R30** a take accepts any number of inputs (rows with roles and ×).
+- **R31** the shot number is an editable control; a drop never renumbers.
+- **R32** Delete/Backspace to Trash with Undo; double-click on empty space makes the step's card, on a card opens Quick Look.
+- **R33** the Director's field is the width of the bar, multi-line, Enhance an icon in it.
+- **R34** the right rail holds the tabs once; the panel shows one tab.
+- **R35** Make: a centred bar with Agent · Director above it; Agent asks "What are we making?" then one quote; Director keeps the generator.
+- **R21 restated:** no selection tool in Director mode anywhere, Quick Look included.
+- Strike R24 and R25 with a dated note
+
+## The owner, 22 October 2026 (08:45 IST): R36
+
+The owner's words, verbatim; only the bold item id is added. R24 stays struck, and R31 is unchanged.
+
+"The R24 drop sentence comes back as its own rule, R36: "Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote)." R24 itself stays struck. R31 is unchanged."
+
+- **R36** Every canvas accepts a dropped file and places it as the right thing for the step (reference, element, frame, clip, document with its Reading quote).

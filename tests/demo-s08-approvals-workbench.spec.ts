@@ -125,7 +125,7 @@ test("a held take in this workspace is approved through its own route at the pri
 const RUN = `rar_${"a".repeat(24)}`;
 const FP = "f".repeat(64);
 const project = { productionId: "prod_fx", draftId: null, name: "Project one" };
-const base = { where: "Make", project, needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false };
+const base = { where: "Make", project, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false };
 const at = Date.now() - 3_600_000;
 const FIXTURE = {
   inCredits: true,
@@ -136,7 +136,7 @@ const FIXTURE = {
     { ...base, id: `board-render:${RUN}:2`, source: "board-render", where: "Board", title: "Dialogue line", at: at + 2, price: { kind: "up-to", credits: 1 },
       approve: { kind: "board-render", productionId: "prod_fx", runId: RUN, seq: 2, fingerprint: FP }, decline: { kind: "board-skip", productionId: "prod_fx", runId: RUN, seq: 2 }, open: { kind: "board", productionId: "prod_fx", draftId: null } },
     { ...base, id: `board-render:${RUN}:3`, source: "board-render", where: "Board", title: "Hero take", at: at + 3, price: { kind: "exact", credits: 43 },
-      needsAdmin: true, canApprove: false, why: "Members up to 40 cr a shot; an admin above it",
+      canApprove: false, why: "Only the person who asked Atomik for this run can approve its renders.",
       approve: { kind: "board-render", productionId: "prod_fx", runId: RUN, seq: 3, fingerprint: FP }, decline: null, open: { kind: "board", productionId: "prod_fx", draftId: null } },
     { ...base, id: "thread:ach_fx", source: "thread", where: "Atomik", title: "Plan three takes", at: at + 4, price: { kind: "up-to", credits: 2 },
       step: { n: 1, of: 3 }, note: "Step 1 of 3 · Keyframes",
@@ -178,10 +178,11 @@ test("every kind of wait reads as the code has it; one tap approves only the lis
   await expect(page.locator(`[data-item="held:gen_fx_a"]`).getByTestId("approval-approve")).toHaveText("Approve · 3 cr");
   await expect(page.locator(`[data-item="board-render:${RUN}:2"]`).getByTestId("approval-approve")).toHaveText("Approve · up to 1 cr");
   await expect(page.locator(`[data-item="board-plan:rar_fx"]`).getByTestId("approval-approve")).toHaveText("Approve · free");
-  /* Over the rule: no Approve, and the rule by role. */
-  const admin = page.locator(`[data-item="board-render:${RUN}:3"]`);
-  await expect(admin.getByTestId("approval-approve")).toHaveCount(0);
-  await expect(admin.getByTestId("approval-why")).toHaveText("Members up to 40 cr a shot; an admin above it");
+  /* Someone else's render: no Approve, and whose it is (no item waits for an admin since 21 Oct 2026). */
+  const theirs = page.locator(`[data-item="board-render:${RUN}:3"]`);
+  await expect(theirs.getByTestId("approval-approve")).toHaveCount(0);
+  await expect(theirs.getByTestId("approval-why")).toHaveText("Only the person who asked Atomik for this run can approve its renders.");
+  await expect(page.getByTestId("approvals")).not.toContainText(/needs an admin|an admin above/i);
   /* The sample spends nothing; a short balance offers Top up instead of Approve. */
   await expect(page.locator(`[data-item="held:gen_fx_sample"]`)).toContainText("Sample production · nothing here spends credits");
   const short = page.locator(`[data-item="held:gen_fx_short"]`);
@@ -196,15 +197,20 @@ test("every kind of wait reads as the code has it; one tap approves only the lis
 
   /* The rules: shown, not changed here. */
   const spend = page.getByTestId("spend-without-asking");
-  await expect(spend.getByRole("button", { name: "Ask" })).toHaveAttribute("aria-current", "true");
-  await expect(spend.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-disabled", "true");
+  /* No Auto (owner, 20 Oct 2026): every paid step waits for a person, and there is no Ask/Auto choice to show. */
+  await expect(spend.getByTestId("spend-mode")).toHaveText("Each paid step waits for a person.");
+  await expect(spend.getByRole("button", { name: "Auto" })).toHaveCount(0);
+  await expect(page.getByTestId("spend-auto-line")).toHaveCount(0);
   await expect(spend.getByTestId("spend-edit")).toHaveText("Edit in Settings › Spending rules ›");
-  await expect(page.getByTestId("who-may-approve")).toContainText(/Any job over [\d,]+ cr needs an admin’s tap, even under Auto\./);
+  /* No platform per-job line (owner, 20 Oct 2026: guardrail 4 retired), and no admin approval rule (21 Oct 2026): each person approves their own spend. */
+  await expect(page.getByTestId("who-may-approve")).toBeVisible();
+  await expect(page.getByTestId("who-may-approve")).toContainText("Each person approves their own spend.");
+  await expect(page.getByTestId("who-may-approve")).not.toContainText(/Any job over|even under Auto/);
 
   await floors(page, info.project.use.isMobile === true);
   await shoot(page, info.project.name, "approvals-kinds");
 
-  /* Approve in one go: under 10 cr covers the release and the render, not the admin's, the plan's step, the sample, the short one or the build. */
+  /* Approve in one go: under 10 cr covers the release and the render, not someone else's, the plan's step, the sample, the short one or the build. */
   const batch = page.getByTestId("approve-in-one-go");
   await expect(batch.getByTestId("batch-line")).toHaveText("Keyframe retake (3 cr) · Dialogue line (up to 1 cr)");
   await expect(batch.getByTestId("batch-in-plan")).toContainText("Plan three takes");
@@ -216,9 +222,10 @@ test("every kind of wait reads as the code has it; one tap approves only the lis
     { url: "/api/jobs/gen_fx_a/release", body: { credits: 3 } },
     { url: "/api/workbench/team-canvas", body: { action: "agent.render", productionId: "prod_fx", runId: RUN, seq: 2, fingerprint: FP } },
   ]);
-  /* A higher figure lists what it leaves out for an admin. */
+  /* A higher figure leaves nothing out for an admin: there is no such list; someone else's render is simply not this person's to press. */
   await batch.getByTestId("batch-under").fill("50");
-  await expect(batch.getByTestId("batch-admin-out")).toContainText("Hero take");
+  await expect(batch.getByTestId("batch-admin-out")).toHaveCount(0);
+  await expect(batch.getByTestId("batch-line")).not.toContainText("Hero take");
 });
 
 
@@ -277,8 +284,9 @@ test("phone Home: every kind of wait reads as the code has it, each priced row a
   await expect(row("Keyframe retake").getByTestId("phone-row-approve")).toHaveText("3 cr");
   await expect(row("Dialogue line").getByTestId("phone-row-approve")).toHaveText("up to 1 cr");
   await expect(row("Three shots on the board").getByTestId("phone-row-plan")).toHaveText("free");
-  /* Over the rule: no button, and who may press it. */
-  await expect(row("Hero take")).toContainText("Needs an admin");
+  /* Someone else's render: no button, and whose it is. */
+  await expect(row("Hero take")).toContainText("Only the person who asked Atomik for this run can approve its renders.");
+  await expect(row("Hero take")).not.toContainText(/needs an admin/i);
   await expect(row("Hero take").getByRole("button")).toHaveCount(0);
   /* The sample spends nothing: its row says so and offers no priced button at all. */
   await expect(row("Sample take")).toContainText("Sample production · nothing here spends credits");

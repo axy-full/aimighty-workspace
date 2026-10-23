@@ -136,7 +136,7 @@ function useRecreate(items: LibraryEntry[]) {
  * figure. Everything the drawn panel has no place for yet — the source's frames and download, the references'
  * order, the run's status and Cancel, Recent and History — follows below, as the Viral page had it.
  */
-export function ViralTool({ scope, page, project, items }: { scope: string; page: ViralPage; project: Project | null; items: LibraryEntry[] }) {
+export function ViralTool({ scope, page, project, items, projects = "ready" }: { scope: string; page: ViralPage; project: Project | null; items: LibraryEntry[]; projects?: "loading" | "ready" | "error" }) {
   const shell = useShell();
   const places = usePlaces();
   const session = useSession();
@@ -195,20 +195,40 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
     place(fit.map((m): ViralMedia => ({ id: m.key, sourceId: m.id, origin: m.origin, kind: m.kind as "video" | "image", name: m.name, url: m.url, seconds: m.seconds })));
     return keptNote([...unreadable, ...media.filter((m) => !fit.includes(m)).map((m) => m.name)], "this takes one source video and reference pictures.");
   };
-  /* A tile from anywhere, or files from the device: uploaded into the project and placed at once. */
+  /* Files from the device: uploaded into the project and placed at once. */
+  const upload = useCallback((projectId: string, files: File[]) => {
+    setNote(`Uploading ${files.length === 1 ? files[0].name : `${files.length} files`}…`);
+    void uploadFilesToProject(scope, projectId, files).then(({ uploads, notes }) => {
+      const medias = uploads.flatMap((u): ViralMedia[] => (u.kind === "video" || u.kind === "image" ? [{ id: `upload:${u.id}`, sourceId: u.id, origin: "upload", kind: u.kind, name: u.filename, url: u.url, seconds: u.durationS ?? null }] : []));
+      place(medias);
+      if (notes.length || medias.length < uploads.length) setNote([...notes, ...(medias.length < uploads.length ? ["Only videos and pictures go in this well; the rest is kept in the Library."] : [])].join(" "));
+    }).catch((error: unknown) => setNote(error instanceof Error ? error.message : "The files could not be uploaded."));
+  }, [scope, place]);
+  /* Files dropped while the projects are loading (or being retried) are held, each drop as its own upload, and go up when the
+     project arrives. If the read ends with no project at all, they are let go and the note says so. */
+  const held = useRef<File[][]>([]);
+  useEffect(() => {
+    if (!held.current.length) return;
+    if (project) {
+      const drops = held.current;
+      held.current = [];
+      for (const files of drops) upload(project.id, files);
+    } else if (projects === "ready") {
+      held.current = [];
+      setNote("Open a project first.");
+    }
+  }, [project, projects, upload]);
+  /* A tile from anywhere, or files from the device. */
   const dropped = (e: React.DragEvent) => {
     e.preventDefault(); setOver(false);
     const { ids, files } = readDrop(e.dataTransfer, project?.assets);
     const found = ids.map((id) => findMedia(items, id));
     place(found.filter((m): m is ViralMedia => Boolean(m)), found.filter((m) => !m).length);
     if (!files.length) return;
-    if (!project) { setNote("Open a project first; dropped files are kept in its Library."); return; }
-    setNote(`Uploading ${files.length === 1 ? files[0].name : `${files.length} files`}…`);
-    void uploadFilesToProject(scope, project.id, files).then(({ uploads, notes }) => {
-      const medias = uploads.flatMap((u): ViralMedia[] => (u.kind === "video" || u.kind === "image" ? [{ id: `upload:${u.id}`, sourceId: u.id, origin: "upload", kind: u.kind, name: u.filename, url: u.url, seconds: u.durationS ?? null }] : []));
-      place(medias);
-      if (notes.length || medias.length < uploads.length) setNote([...notes, ...(medias.length < uploads.length ? ["Only videos and pictures go in this well; the rest is kept in the Library."] : [])].join(" "));
-    }).catch((error: unknown) => setNote(error instanceof Error ? error.message : "The files could not be uploaded."));
+    /* While the read failed, the Try again banner above speaks; the drop waits for it. */
+    if (!project && projects !== "ready") { held.current.push(files); setNote(projects === "loading" ? "Uploading once the project opens…" : null); return; }
+    if (!project) { setNote("Open a project first."); return; }
+    upload(project.id, files);
   };
   const drop = {
     onDragOver: (e: React.DragEvent) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); setOver(true); } },

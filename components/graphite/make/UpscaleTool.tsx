@@ -4,7 +4,7 @@ import LazyMedia from "@/components/LazyMedia";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { usePlaces } from "@/components/graphite/atomik/panel/use-places";
 import { useBodyQuote, quotePrice } from "@/lib/shell/use-quote";
-import { ASTRA_MODEL, DEFAULT_ASTRA } from "@/lib/astra";
+import { ALREADY_4K_CODE, ASTRA_MODEL, DEFAULT_ASTRA } from "@/lib/astra";
 import { DEFAULT_TOPAZ_IMAGE } from "@/lib/topaz";
 import { FRAME_RATES, IMAGE_SCALES, imageUpscaleBody, upscaleModel, upscaleSources, upscaleSurface, videoUpscaleBody, type UpscaleSource } from "@/lib/shell/upscale";
 import { priceLabel, type SpendPrice } from "@/lib/spend";
@@ -84,6 +84,8 @@ export function UpscaleTool({ scope, project, items }: { scope: string; project:
   const recovering = Boolean(pending);
   const saved = pending ? (JSON.parse(pending.body) as Record<string, unknown>) : null;
   const price: SpendPrice = recovering ? (typeof saved?.maxCredits === "number" ? { upTo: saved.maxCredits } : null) : quotePrice(ready?.quote);
+  /* A clip already at 4K: the server's line stands where the price would, with nothing to retry (lib/astra.ts). */
+  const at4K = !recovering && quote.state === "error" && quote.code === ALREADY_4K_CODE;
   const reason = recovering ? null : !project ? "Open a project first." : !production ? "Saving this project…" : !source ? CHOOSE : quote.state === "error" ? quote.reason : !ready ? "Reading the price…" : null;
   const waits = busy || (!recovering && !ready);
   /* An unsettled request is what is shown, as it was saved: its kind and its setting, not the tool's defaults after a reload. */
@@ -163,8 +165,8 @@ export function UpscaleTool({ scope, project, items }: { scope: string; project:
       {recovering ? <p className="gx-gen-note" role="status" data-testid="upscale-recover">An upscale you sent was not confirmed. Recover it: the same request is checked, and it is never sent twice.</p> : null}
       {reason ? (
         <div className="vr-reason-row">
-          <p className="gx-reason" id="up-reason" data-testid="upscale-reason">{reason}</p>
-          {quote.state === "error" ? <span className="gx-hint">Change the source or Try again by choosing it again.</span> : null}
+          <p className="gx-reason" id="up-reason" data-testid="upscale-reason" data-code={at4K ? ALREADY_4K_CODE : undefined}>{reason}</p>
+          {quote.state === "error" && !at4K ? <span className="gx-hint">Change the source or Try again by choosing it again.</span> : null}
         </div>
       ) : null}
       {problem || paid.error ? <p className="gx-gen-error" role="alert" data-testid="upscale-problem">{problem ?? paid.error}</p> : null}

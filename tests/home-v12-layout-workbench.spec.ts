@@ -15,7 +15,7 @@ const PLACE = "Opening sequence of the harbour film, second pass over the whole 
 const item = (id: string, title: string, credits: number): QueueItem => ({
   id, title, source: "held", where: PLACE, at: Date.now() - 5 * 60_000,
   project: { productionId: "prod-x", draftId: null, name: "The long-named harbour film with a second cut" },
-  price: { kind: "exact", credits }, needsAdmin: false, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
+  price: { kind: "exact", credits }, canApprove: true, why: null, shortBy: null, note: null, step: null, sample: false,
   approve: { kind: "release", genId: id, credits }, decline: null, open: { kind: "take", genId: id, draftId: null },
 });
 
@@ -46,6 +46,10 @@ async function openHome(page: Page, items: QueueItem[], takes = 6) {
   await page.goto("/suites?view=home");
   await expect(page.getByTestId("v12-home")).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId("v12-home-tile")).toHaveCount(takes, { timeout: 60_000 });
+  /* Home is a chunk loaded on demand (next/dynamic, components/graphite/screens.tsx); on the dev server its stylesheet is added to the
+     page after Home first draws, so its tiles can be counted while the page is still unstyled (the bar 19 px tall, nothing to scroll).
+     No size is read until that stylesheet applies: Home is its flex column. */
+  await expect.poll(() => page.locator(".v12-hm").evaluate((el) => getComputedStyle(el).display), { timeout: 30_000, message: "Home's stylesheet applies" }).toBe("flex");
 }
 
 test("the Waiting strip keeps every item's action whole and counts what it does not show; names are cut at a word, never by CSS", async ({ page }, info) => {
@@ -141,6 +145,9 @@ test("the last row of boards clears the bar: with a tile picked, with a note, an
   const size = page.viewportSize()!;
   await page.setViewportSize({ width: size.width, height: 620 });
   const clear = async (label: string) => {
+    /* The page's room follows the bar on the bar's ResizeObserver, which reports in the frame after the bar grows: a note in the DOM
+       has the bar at its new height while the room is still the old one until then. Read once the page has had its frames. */
+    await settled(page);
     await page.evaluate(() => { const s = document.querySelector(".v12-hm-scroll")!; s.scrollTop = s.scrollHeight; });
     const bar = await page.locator(".v12-hm-bar").boundingBox();
     const cards = await page.getByTestId("v12-home-board").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().bottom));

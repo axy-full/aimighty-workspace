@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
+import { AGE_CONFIRM_REFUSAL, ageConfirmedStatement } from "./ageConfirm";
 import { assertInvitationSession } from "./accountInvitationSession";
 import {
   accountDbReady,
@@ -29,6 +30,8 @@ export type SignupInput = {
   password: string;
   planId?: string;
   cadence?: string;
+  /** The 18+ and Terms tick (lib/ageConfirm.ts). Required to begin or accept a sign-up: an account is never made without it. */
+  ageConfirmed?: boolean;
 };
 type Registration = {
   email: string;
@@ -38,12 +41,21 @@ type Registration = {
   plan_id: PaidPlan;
   cadence: Cadence;
   expires_at: number;
+  created_at: number;
   verified_at: number | null;
   account_id: string | null;
   request_id: string | null;
 };
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
+/**
+ * A registration begun with the tick keeps its link's hash behind this marker (no column is added: only this file reads or writes `token_hash`). A bare hash is a registration an older server
+ * wrote, begun without the tick: it is never resent or verified into an account, so no account is made and no 18+ line written without the tick (lib/ageConfirm.ts). Already-verified rows of
+ * either form still resume.
+ */
+const TICKED = "a1:";
+const tickedHash = (value: string) => TICKED + hash(value);
+const wasTicked = (row: unknown) => String((row as { token_hash?: unknown }).token_hash ?? "").startsWith(TICKED);
 const cleanChoice = (plan?: string, cadence?: string): SignupChoice => ({
   planId: chosenPlanFrom(plan) as PaidPlan,
   /* Yearly is hidden (lib/plans.ts YEARLY_SHOWN): a carried "annual" is kept as monthly until it returns. */
@@ -103,6 +115,8 @@ async function emailLimits(email: string, source: string) {
 /** No account or external resource is created until this one-use email proof is consumed. */
 export async function beginSignup(input: SignupInput, source: string) {
   await accountDbReady();
+  /* A registration row is the only way verifySignup can make an account, so the tick is required here (and the account's history line is written there). */
+  if (input.ageConfirmed !== true) throw new AccountError(AGE_CONFIRM_REFUSAL);
   const data = validated(input);
   if (await findAccountByEmail(data.email))
     throw new AccountError(
@@ -127,7 +141,7 @@ export async function beginSignup(input: SignupInput, source: string) {
       );
     await tx.execute({
       sql: `INSERT INTO signup_registrations(email,name,password_hash,workspace_name,plan_id,cadence,token_hash,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)
-   ON CONFLICT(email) DO UPDATE SET name=excluded.name,password_hash=excluded.password_hash,workspace_name=excluded.workspace_name,plan_id=excluded.plan_id,cadence=excluded.cadence,token_hash=excluded.token_hash,expires_at=excluded.expires_at,updated_at=excluded.updated_at`,
+   ON CONFLICT(email) DO UPDATE SET name=excluded.name,password_hash=excluded.password_hash,workspace_name=excluded.workspace_name,plan_id=excluded.plan_id,cadence=excluded.cadence,token_hash=excluded.token_hash,expires_at=excluded.expires_at,created_at=excluded.created_at,updated_at=excluded.updated_at`,
       args: [
         data.email,
         data.name,
@@ -135,7 +149,7 @@ export async function beginSignup(input: SignupInput, source: string) {
         data.workspace,
         data.planId,
         data.cadence,
-        hash(token),
+        tickedHash(token),
         expiresAt,
         now(),
         now(),
@@ -160,9 +174,11 @@ export async function resendSignup(emailInput: string, source: string) {
       })
     ).rows[0];
     if (!row) return null;
+    /* A registration begun without the tick (an older server's) is not refreshed: its owner starts again. */
+    if (!wasTicked(row)) throw new AccountError("That sign-up is out of date. Start sign-up again.", 410);
     await tx.execute({
       sql: "UPDATE signup_registrations SET token_hash=?,expires_at=?,updated_at=? WHERE email=? AND verified_at IS NULL",
-      args: [hash(token), expiresAt, now(), email],
+      args: [tickedHash(token), expiresAt, now(), email],
     });
     return { email, name: String(row.name), token, expiresAt };
   });
@@ -202,8 +218,8 @@ export async function verifySignup(
   return accountTransaction(async (tx) => {
     const r = (
       await tx.execute({
-        sql: "SELECT * FROM signup_registrations WHERE token_hash=?",
-        args: [hash(token)],
+        sql: "SELECT * FROM signup_registrations WHERE token_hash IN (?,?)",
+        args: [tickedHash(token), hash(token)],
       })
     ).rows[0] as unknown as Registration | undefined;
     if (!r || r.expires_at < now())
@@ -225,6 +241,12 @@ export async function verifySignup(
         cadence: r.cadence,
       };
     }
+    /* Not yet verified: only a registration begun with the tick may become an account (an older server's row has a bare hash). */
+    if (!wasTicked(r))
+      throw new AccountError(
+        "This verification link has expired or is not valid. Request another email.",
+        410,
+      );
     const existing = (
       await tx.execute({
         sql: "SELECT id FROM accounts WHERE email=?",
@@ -241,6 +263,8 @@ export async function verifySignup(
       sql: "INSERT INTO accounts(id,email,name,password_hash,created_at,accepted_policy_at) VALUES(?,?,?,?,?,?)",
       args: [owner.id, owner.email, owner.name, r.password_hash, now(), now()],
     });
+    /* The tick was required to begin this registration (beginSignup); its date is the account's. */
+    await tx.execute(ageConfirmedStatement(owner.id));
     const requestId = await prepareWorkspace(tx, {
       owner,
       name: r.workspace_name,
@@ -261,6 +285,7 @@ export async function acceptSignupInvitation(
   signedInAccountId?: string,
   signedInSession?: string,
 ) {
+  if (input.ageConfirmed !== true) throw new AccountError(AGE_CONFIRM_REFUSAL);
   const data = validated(input),
     welcomeCredits = await approvedWelcomeCredits();
   return accountTransaction(async (tx) => {
@@ -320,7 +345,7 @@ export async function acceptSignupInvitation(
           name: String(existing.name),
         }
       : { id: newId("usr"), email: data.email, name: data.name };
-    if (!existing)
+    if (!existing) {
       await tx.execute({
         sql: "INSERT INTO accounts(id,email,name,password_hash,created_at,accepted_policy_at) VALUES(?,?,?,?,?,?)",
         args: [
@@ -332,6 +357,9 @@ export async function acceptSignupInvitation(
           now(),
         ],
       });
+      /* The 18+ confirmation, with its date, in the same transaction as the account (lib/ageConfirm.ts). */
+      await tx.execute(ageConfirmedStatement(owner.id));
+    }
     const requestId = await prepareWorkspace(tx, {
       owner,
       name: data.workspace,

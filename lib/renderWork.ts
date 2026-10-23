@@ -818,7 +818,14 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
     }
     const credits = produced.credits;
     // A per-minute task states its dollars itself; the credit tasks price from the plan.
-    const cost = produced.costUsd != null ? produced.costUsd : usdForCredits(credits, tier);
+    const reported = produced.costUsd != null ? produced.costUsd : usdForCredits(credits, tier);
+    /* A sound settles at what it cost, never past what was reserved for it: the figure its quote was priced from
+       (lib/audioAdmission.ts vendorUsd), so nobody is charged above the price they approved (rule 14), as a dub
+       settles at its reservation. What the vendor charged past it is the platform's, recorded for its admin desk
+       (lib/meter.ts overrunUsd). */
+    const reserved = job.kind === "audio" ? job.estUsd ?? usdForCredits(job.estCredits, null) : reported;
+    const over = reported > reserved;
+    const cost = over ? reserved : reported;
     await writeGenerationOutcome(
       {
         sql: `UPDATE generations
@@ -852,6 +859,7 @@ return await withRecoveryJob(requireTenant().id, job.genId, async () => {
         model: job.modelId,
         status: "succeeded",
         engineCostUsd: cost,
+        ...(over ? { overrunUsd: reported - reserved } : {}),
         durationMs: ms,
       },
     );
@@ -890,8 +898,8 @@ return await withRecoveryJob(requireTenant().id, genId, async () => {
           FROM generations WHERE id=? AND deleted=0 AND status NOT IN ('succeeded','failed','cancelled')`,
     args: [genId],
   })).rows[0];
-  // Nothing left to end (already over, hidden, or a dubbing project its own workflow owns).
-  if (!row || (row.kind === "audio" && row.task === "dub")) {
+  // Nothing left to end (already over, hidden, or a dubbing project, lip-sync job or Recraft still its own workflow owns).
+  if (!row || (row.kind === "audio" && row.task === "dub") || (row.kind === "video" && row.task === "lipsync") || (row.kind === "image" && row.task === "recraft_image")) {
     await deliverGenerationSettlement(genId);
     return;
   }

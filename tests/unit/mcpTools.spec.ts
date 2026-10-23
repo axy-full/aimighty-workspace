@@ -131,19 +131,19 @@ test("a render names its project exactly; a partial name is never guessed for a 
   const generate = (path: string, body?: unknown) => (path === "/api/generate" ? { id: "gen_1", body } : path === "/api/generate/quote" ? { estimatedCredits: 18, price: 18, unit: "cr", fingerprint: "a".repeat(64) } : undefined);
 
   const guess = caller(projects.filter((p) => p.id !== "p2"), generate);
-  await expect(runTool("render_shot", { prompt: "Rain on glass.", project: "Rain" }, guess.call as never, "")).rejects.toThrow('Did you mean "Rainbow Launch" (p1)');
+  await expect(runTool("render_shot", { prompt: "Rain on glass.", project: "Rain" }, guess.call as never, "", { spends: true })).rejects.toThrow('Did you mean "Rainbow Launch" (p1)');
   expect(guess.calls.map((c) => c.path)).not.toContain("/api/generate");
 
   const exact = caller(projects, generate);
-  const text = await runTool("render_shot", { prompt: "Rain on glass.", project: "rain" }, exact.call as never, "");
+  const text = await runTool("render_shot", { prompt: "Rain on glass.", project: "rain" }, exact.call as never, "", { spends: true });
   expect(text).toContain("project: Rain");
   expect(exact.calls.find((c) => c.path === "/api/generate")?.body).toMatchObject({ projectId: "p2" });
 
   const twins = caller(projects, generate);
-  await expect(runTool("render_shot", { prompt: "Rain.", project: "monsoon film" }, twins.call as never, "")).rejects.toThrow("Give the project id");
+  await expect(runTool("render_shot", { prompt: "Rain.", project: "monsoon film" }, twins.call as never, "", { spends: true })).rejects.toThrow("Give the project id");
   expect(twins.calls.map((c) => c.path)).not.toContain("/api/generate");
   const byId = caller(projects, generate);
-  await runTool("render_shot", { prompt: "Rain.", project: "p4" }, byId.call as never, "");
+  await runTool("render_shot", { prompt: "Rain.", project: "p4" }, byId.call as never, "", { spends: true });
   expect(byId.calls.find((c) => c.path === "/api/generate")?.body).toMatchObject({ projectId: "p4" });
 
   // Reading may take a partial name that fits exactly one project.

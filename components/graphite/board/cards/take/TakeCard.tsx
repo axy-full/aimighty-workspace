@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type CSSProperties } from "react";
 import LazyMedia from "@/components/LazyMedia";
+import { SampleClipCredit } from "@/components/ui/SampleClipCredit";
 import { ReleaseTake } from "@/components/graphite/ReleaseTake";
 import { Price } from "@/components/graphite/Price";
 import { useVerifications } from "@/components/workspace/rig/use-verifications";
@@ -199,6 +200,7 @@ export function TakeCard({ data, ctx }: CardProps<TakeCardData>) {
       aria-label={[row.title, v ? `${v.label}` : "no take yet", v && needsReview(v) ? "needs review" : null].filter(Boolean).join(" · ")} data-testid="take-card" data-node={row.nodeId}>
       <div className="gx-take-media">
         <Picture version={v} frame={row.frame} name={row.title} />
+        <SampleClipCredit take={v?.genId} over />
         {v && !data.grid ? <Progress version={v} typicalMs={row.typicalMs} /> : null}
         {grid.state ? <RenderOverlay state={grid.state} cancelling={grid.cancelling.busy === grid.genId} pending={Boolean(grid.genId && grid.state.stage === "queue" && grid.cancelling.pending.has(grid.genId))}
           onCancel={grid.state.cancel?.cancellable && grid.genId ? () => void grid.cancelling.cancel(grid.genId!, grid.state!.cancel!.via!) : undefined} /> : null}
@@ -271,6 +273,7 @@ export function ReviewTakeCard({ card, data, ctx }: CardProps<TakeCardData>) {
     <article className="gx-take gx-take--review" data-rejecting={rejecting || undefined} style={{ "--gx-take-well": `${wellHeight(560, ctx.project.aspect)}px` } as CSSProperties} data-status={current.status} data-dim={current.status === "changes" || undefined} aria-label={`${row.title} · ${current.label}`} data-testid="take-review">
       <div className="gx-take-media">
         <Picture version={current} frame={row.frame} name={row.title} />
+        <SampleClipCredit take={current.genId} over />
         <VersionChips row={row} current={current} onPick={(v) => { setPickedId(v.genId); cancel(); }} />
         {current.media === "video" && judgeable(current) ? <span className="gx-take-play gx-take-play--lg" aria-hidden="true">▶</span> : null}
       </div>

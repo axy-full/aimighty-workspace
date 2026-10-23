@@ -67,7 +67,7 @@ test("Connections: a token that prepares jobs, shown once; it can't approve, spe
       ["POST", "/api/generate", { prompt: "x" }],
       ["POST", "/api/jobs/gen-none/release", { credits: 43 }],
       ["POST", "/api/atomik/steps/step-none/claim", {}],
-      ["PATCH", "/api/settings", { shotCapCredits: "5000" }],
+      ["PATCH", "/api/settings", { productionBudgetCredits: "5000" }],
       ["POST", "/api/workspaces/topups", { pack: "starter" }],
       ["POST", "/api/identity-consents", { projectId: "p", subjectKey: "s", personName: "A Person", face: true, uses: ["production"], until: "2030-01-01", recordingId: "u", attested: true }],
       ["POST", "/api/identity-consents/recording", "RIFF"],

@@ -5,10 +5,10 @@ import path from "node:path";
 import type { TenantWorkspace } from "../../lib/tenant";
 
 /**
- * Atomik chat steps are their own person's (owner, 12 Oct): a member is shown their own steps and nothing of anyone else's (not even a count); an admin is shown
- * another MEMBER's step only while it needs an admin's tap (over the per-shot cap, or over guardrail 4's line), and then only its title and its price; as soon as
- * it needs no admin it is gone. Another admin's step, and every decision on a chat that is not theirs, are absent. Atomik's agent identities see nothing extra.
- * Real temporary databases; sign-in is a fake; nothing is sent or spent.
+ * Atomik chat steps are their own person's (owner, 12 Oct): each person is shown their own steps and nothing of anyone else's (not even a count).
+ * Since 21 Oct 2026 that holds for an admin too: "the admin approval rule is retired; every member approves their own spend with their own tap on
+ * the quote". Until then an admin was shown another member's step over the workspace's per-shot cap; now no stored rule or cap shows one. Atomik's
+ * agent identities see nothing extra. Real temporary databases; sign-in is a fake; nothing is sent or spent.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-approvals-steps-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -23,6 +23,11 @@ const workspace = (id: string): TenantWorkspace => ({
   ownerId: "u_owner", createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 4, rendersPerHour: null, storageQuotaBytes: null, deletedAt: null,
 });
 const A = workspace(`ws_stepsa${T}`), B = workspace(`ws_stepsb${T}`);
+/* A per-shot cap stored before the rule was retired, between a cheap step (US$0.5 of engine) and a big one (US$40): it used to send the big one to an admin. Synthetic dollars, made up for this test. */
+const capBetween = async () => {
+  const { billCredits, marginKeyOf } = await import("../../lib/creditTerms");
+  return billCredits(0.5, marginKeyOf("video", MODEL)) + 1;
+};
 
 async function seed(ws: TenantWorkspace, chats: { id: string; by: string; usd: number; secret: string }[]) {
   const { platformDb, platformReady } = await import("../../lib/platform");
@@ -45,7 +50,9 @@ async function seed(ws: TenantWorkspace, chats: { id: string; by: string; usd: n
           args: [`st_${c.id}`, c.id, `ma_${c.id}`, `Step of ${c.id}`, `${c.secret} prompt`, MODEL, c.usd, JSON.stringify([{ uploadId: `${c.secret}-attach` }]), now - 45_000, now - 45_000] },
       ]),
     ], "write");
-    await setSetting("approvalRule", "anyone", "u_admin");
+    /* The retired rule as a workspace stored it (the row stays; nothing reads it): members up to the cap a shot, an admin above it. */
+    await setSetting("approvalRule", "cap", "u_admin");
+    await setSetting("shotCapCredits", String(await capBetween()), "u_admin");
   });
 }
 
@@ -54,7 +61,7 @@ const read = async (ws: TenantWorkspace, viewer: { id: string; role: string; own
   const { readApprovals } = await import("../../lib/control-room/approvals.server");
   return runInTenant(ws, () => readApprovals(viewer, now));
 };
-/* An admin's sheet of another person's step has an opaque key, so it is counted as "sheet"; a person's own is their chat's id. */
+/* An admin's sheet of another person's step had an opaque key: counted as "sheet", so one would show; a person's own is their chat's id. */
 const threads = (reply: Awaited<ReturnType<typeof read>>) => reply.items.filter((i) => i.source === "thread").map((i) => (i.id.startsWith("thread-step:") ? "sheet" : i.id)).sort();
 
 test.beforeAll(async () => {
@@ -71,7 +78,7 @@ test.beforeAll(async () => {
 test("a member sees only their own chat steps: another member's is absent, and no total or title of it leaves", async () => {
   const a = await read(A, { id: "u_a", role: "member" });
   expect(threads(a)).toEqual(["thread:ach_a"]);
-  expect(a.items.find((i) => i.id === "thread:ach_a")).toMatchObject({ title: "SECRETA chat", needsAdmin: false });
+  expect(a.items.find((i) => i.id === "thread:ach_a")).toMatchObject({ title: "SECRETA chat", canApprove: true });
   const json = JSON.stringify(a);
   expect(json).not.toMatch(/SECRETB|SECRETBIG|SECRETADM|SECRETOWN|ach_b|ach_big/);
   /* The same for the other member, and a decision is only on their own chats too. */
@@ -81,49 +88,44 @@ test("a member sees only their own chat steps: another member's is absent, and n
   expect(a.items.length).toBe(1);
 });
 
-test("an admin sees another member's step only while it needs an admin: over the line, only its title and price; an under-the-line step is absent", async () => {
-  const { jobApprovalLineCredits } = await import("../../lib/approvalRule");
-  const { creditUsd, billCredits, marginKeyOf } = await import("../../lib/creditTerms");
+test("an admin sees no other member's step, the one over the stored per-shot cap included: no title, no price, no sheet", async () => {
+  const { billCredits, marginKeyOf } = await import("../../lib/creditTerms");
   const admin = await read(A, { id: "u_admin", role: "admin" });
-  /* ach_a and ach_b are under the line: absent. ach_big (a member's) is over it: shown. Another admin's and the owner's are absent. */
-  expect(threads(admin)).toEqual(["sheet"]);
-  const credits = billCredits(40, marginKeyOf("video", MODEL));
-  expect(credits).toBeGreaterThan(jobApprovalLineCredits(creditUsd()));
-  const item = admin.items.find((i) => i.source === "thread")!;
-  expect(item.id).toMatch(/^thread-step:[0-9a-f]{16}$/);
-  expect(item).toMatchObject({ title: "Step of ach_big", price: { kind: "up-to", credits }, needsAdmin: true, note: null, step: null, where: "Atomik", canApprove: true, decline: null, open: { kind: "none" } });
-  /* An admin may approve it (owner, 13 Oct): the step's id is what the claim needs; there is no chat id and nothing to open. */
-  expect(item.approve).toEqual({ kind: "thread", chatId: null, stepId: "st_ach_big", productionId: null });
+  /* ach_big is over the stored cap (it used to be shown to an admin, title and price): absent now, like every member's step. */
+  expect(billCredits(40, marginKeyOf("video", MODEL))).toBeGreaterThan(await capBetween());
+  expect(threads(admin)).toEqual([]);
   const json = JSON.stringify(admin);
-  expect(json, "no chat words, prompt or attachment").not.toMatch(/SECRET/);
-  expect(json).not.toMatch(/A plan|first_ask|attach|uploadId|"prompt"/);
-  expect(json).not.toMatch(/"chatId":"|thread:ach_|"id":"st_ach/);
+  expect(json, "no chat words, prompt, attachment, title or step id").not.toMatch(/SECRET|Step of|st_ach|ach_big|thread-step:/);
   expect(admin.decided.length).toBe(0);
 });
 
-test("the per-shot cap rule counts too, and the step goes as soon as it needs no admin", async () => {
+test("whatever rule and cap a workspace stored, an admin is shown none of a member's steps", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { setSetting } = await import("../../lib/settings");
   const { billCredits, marginKeyOf } = await import("../../lib/creditTerms");
   const cheap = billCredits(0.5, marginKeyOf("video", MODEL));
+  /* A cap under every step: every step used to need an admin. */
   await runInTenant(A, async () => { await setSetting("approvalRule", "cap", "u_admin"); await setSetting("shotCapCredits", String(Math.max(1, cheap - 1)), "u_admin"); });
   const over = await read(A, { id: "u_admin", role: "admin" });
-  expect(threads(over), "over the cap, the cheap steps need an admin too").toEqual(["sheet", "sheet", "sheet"]);
+  expect(threads(over), "a stored cap under every step shows none of them").toEqual([]);
   expect(JSON.stringify(over)).not.toMatch(/SECRET/);
-  await runInTenant(A, async () => { await setSetting("shotCapCredits", String(cheap + 1000), "u_admin"); });
-  const under = await read(A, { id: "u_admin", role: "admin" });
-  expect(threads(under), "above the cap again, only the guardrail's one is left").toEqual(["sheet"]);
+  /* No rule at all: the same. */
   await runInTenant(A, async () => { await setSetting("approvalRule", "anyone", "u_admin"); });
+  expect(threads(await read(A, { id: "u_admin", role: "admin" }))).toEqual([]);
+  /* Each member still sees their own, at its price, theirs to continue. */
+  expect(threads(await read(A, { id: "u_b", role: "member" }))).toEqual(["thread:ach_b", "thread:ach_big"]);
+  /* Back to the seeded rows for the specs after this one. */
+  const seeded = await capBetween();
+  await runInTenant(A, async () => { await setSetting("approvalRule", "cap", "u_admin"); await setSetting("shotCapCredits", String(seeded), "u_admin"); });
 });
 
-test("the workspace owner is an admin here; an admin's own chat shows in full to them, another admin's does not; an agent identity sees nothing extra; another workspace is its own", async () => {
+test("the workspace owner and each admin see their own chat in full and no one else's; an agent identity sees nothing extra; another workspace is its own", async () => {
   const owner = await read(A, { id: "u_owner", role: "admin", owner: true });
-  expect(threads(owner).sort()).toEqual(["sheet", "thread:ach_owner"]);
+  expect(threads(owner)).toEqual(["thread:ach_owner"]);
   expect(owner.items.find((i) => i.id === "thread:ach_owner")?.title).toBe("SECRETOWN chat");
-  expect(owner.items.find((i) => i.id.startsWith("thread-step:"))?.title).toBe("Step of ach_big");
-  expect(JSON.stringify(owner)).not.toMatch(/SECRETBIG|SECRETADM|SECRETA\b|SECRETB\b/);
+  expect(JSON.stringify(owner)).not.toMatch(/SECRETBIG|SECRETADM|SECRETA\b|SECRETB\b|Step of ach_big/);
   const admin2 = await read(A, { id: "u_admin2", role: "admin" });
-  expect(threads(admin2).sort()).toEqual(["sheet", "thread:ach_adm2"]);
+  expect(threads(admin2)).toEqual(["thread:ach_adm2"]);
   /* Atomik's agent identity: no chat is its own, and it is never an admin. */
   const agent = await read(A, { id: "agent:run1", role: "admin", owner: true });
   expect(threads(agent)).toEqual([]);

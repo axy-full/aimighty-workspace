@@ -118,11 +118,11 @@ test("the published rate card, from the code", async () => {
   expect(row("Prompt enhancement", "per prompt")).toBe(1);
 });
 
-test("plans, the welcome grant, the Starter pack and the approval line at US$0.10", async () => {
+test("plans, the welcome grant, the Starter pack at US$0.10; no platform per-job line and no Auto ceiling (retired 20 Oct 2026); the suggested run limit reads 200 cr", async () => {
   const { DEFAULT_PLANS } = await import("../../lib/plans");
   const { signupCredits, creditUsd } = await import("../../lib/creditTerms");
   const { packs } = await import("../../lib/packs");
-  const { JOB_APPROVAL_LINE_USD, jobApprovalLineCredits } = await import("../../lib/approvalRule");
+  const limits = await import("../../lib/workbench/rig-agent-limits") as Record<string, unknown> & typeof import("../../lib/workbench/rig-agent-limits");
 
   expect(DEFAULT_PLANS.map((p) => [p.label, p.priceUsd, p.includedCredits])).toEqual([
     ["Invite", 0, 0], ["Studio", 49, 400], ["Agency", 199, 1600], ["Production", 999, 9000],
@@ -135,6 +135,12 @@ test("plans, the welcome grant, the Starter pack and the approval line at US$0.1
   const starter = packs().find((p) => p.id === "starter")!;
   expect([starter.usd, starter.credits, starter.bonus]).toEqual([50, 500, 0]);
 
-  expect(JOB_APPROVAL_LINE_USD).toBe(20);
-  expect(jobApprovalLineCredits(creditUsd())).toBe(200);
+  /* Guardrail 4 is retired (owner, 20 Oct 2026): the code carries no platform per-job line. The module that held it, the workspace's approval rule, went
+     on 21 Oct 2026 with the admin approval rule, so no file is left to carry it (tests/unit/noPerJobLine.spec.ts reads the source for the names). */
+  const { existsSync } = await import("node:fs");
+  expect(existsSync("lib/approvalRule.ts"), "lib/approvalRule.ts").toBe(false);
+  /* Auto is gone too (owner, 20 Oct 2026): no no-tap ceiling is left. What is left of the 200 cr figure is the run limit the ask form suggests, a suggestion only. */
+  for (const gone of ["AUTO_NO_TAP_CEILING_USD", "autoNoTapCeilingCredits", "RIG_AGENT_JOB_CEILING_CREDITS", "rigJobCeiling", "effectiveJobCeiling"]) expect(limits[gone], gone).toBeUndefined();
+  expect(limits.SUGGESTED_RUN_LIMIT_USD).toBe(20);
+  expect(limits.suggestedRunLimitCredits(creditUsd())).toBe(200);
 });

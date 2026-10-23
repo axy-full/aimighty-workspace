@@ -5,6 +5,7 @@ import { planLines } from "@/lib/marketing/plans";
 import { BUSINESS, ENTERPRISE, businessFromUsd, plansIn } from "@/lib/plans";
 import { usd } from "@/lib/marketing/format";
 import { APP_HREF, PRICING_HREF, SIGN_IN_HREF, SITE_SUITES, shot } from "@/lib/marketing/site";
+import { SITE } from "@/lib/copy";
 import AccessForm from "./AccessForm";
 import { Chips, Cols, Grid, Head, Section, Tile, Window } from "./ui";
 
@@ -111,7 +112,7 @@ function RequestAccess({ member }: { member: boolean }) {
     <section id="access" className="mk-section mk-access" aria-label="Request access">
       <div className="mk-wrap">
         <span style={{ color: "var(--gx-accent-text)" }}><ParticlMark size={24} /></span>
-        <h2 className="mk-h2">Invite-only, built for small teams.</h2>
+        <h2 className="mk-h2">{SITE.inviteOnly}</h2>
         <p className="mk-lead">A stranger with an invite gets from email to first render in five minutes. Invites are one-time links, sent by a person.</p>
         {member ? (
           <a href={APP_HREF} className="mk-btn gx-primary" style={{ height: 44 }}>Open Particl</a>

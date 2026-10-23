@@ -1,4 +1,5 @@
 "use client";
+import { SampleClipCredit } from "@/components/ui/SampleClipCredit";
 import { spendAttrsOf } from "@/lib/spend";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { countsByDraft, sortQueue, viaPlan, type QueueItem } from "@/lib/control-room/queue";
@@ -35,8 +36,8 @@ const when = (at: number, now: number) => {
  * Needs you is three kinds of row, in this order:
  *  - what waits for a person's approval, from stream 8's one queue (lib/control-room/queue.ts), with its price
  *    as the button. A press goes through that item's own existing person-only route (lib/control-room/approve.ts)
- *    at that price; nothing new approves anything. An item over the per-shot rule says it needs an admin, a sample
- *    item says nothing in it spends, and a short balance offers Top up instead;
+ *    at that price; nothing new approves anything. A sample item says nothing in it spends, and a short balance
+ *    offers Top up instead;
  *  - takes rendering, from the jobs tray the header already reads, with "Notify me";
  *  - the open project's takes to review, which open the full-screen review.
  *
@@ -118,7 +119,7 @@ function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan, onThread }
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const short = (item.shortBy ?? 0) > 0;
   const line = [item.project.name, item.where, item.step ? `step ${item.step.n} of ${item.step.of}` : null, when(item.at, now)].filter(Boolean).join(" · ");
-  const note = item.sample ? (item.unchecked ? CHECK_LINE : SAMPLE_LINE) : short ? `Short by ${creditsText(item.shortBy!)}` : item.needsAdmin && !item.canApprove ? "Needs an admin" : !item.canApprove ? item.why : item.note;
+  const note = item.sample ? (item.unchecked ? CHECK_LINE : SAMPLE_LINE) : short ? `Short by ${creditsText(item.shortBy!)}` : !item.canApprove ? item.why : item.note;
   const approve = async () => {
     setBusy(true);
     const out = await approvals.approve(item);
@@ -155,7 +156,7 @@ function ApprovalRow({ item, approvals, online, now, onTopUp, onPlan, onThread }
       <span className="ph-row-text">
         <span className="ph-row-title">{item.title}</span>
         <span className="ph-row-line">{line}</span>
-        {note ? <span className={`ph-row-line${item.needsAdmin || short ? " ph-row-line--warn" : ""}`}>{note}</span> : null}
+        {note ? <span className={`ph-row-line${short ? " ph-row-line--warn" : ""}`}>{note}</span> : null}
       </span>
       {action}
     </div>
@@ -192,6 +193,7 @@ function ProjectCard({ scope, card, open, onOpen }: { scope: string; card: Proje
   }, [visible]);
   const cover = useProjectCover(scope, card.id, visible);
   return (
+    <>
     <button ref={ref} type="button" className="ph-project" aria-current={open || undefined} onClick={onOpen} data-testid="phone-project">
       <span className="ph-project-pic" aria-hidden="true">
         {cover?.kind === "image" ? <img src={cover.url} alt="" loading="lazy" /> : cover?.kind === "video" ? <video src={cover.url} muted playsInline preload="metadata" /> : null}
@@ -204,5 +206,8 @@ function ProjectCard({ scope, card, open, onOpen }: { scope: string; card: Proje
         <span className="ph-chev" aria-hidden="true">›</span>
       </span>
     </button>
+    {/* The starter's sample clip is this card's cover: its credit stands beside the card, not inside the button (a link cannot be). */}
+    {cover ? <SampleClipCredit take={cover.url} className="ph-project-credit" /> : null}
+    </>
   );
 }

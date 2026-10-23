@@ -1,9 +1,11 @@
+import { within } from './abortWithin';
 import { textCacheBilling, textCostUsd, type CatalogModel } from './catalog';
 import type { LanguageModelUsage } from 'ai';
 import { vendorKey, type VendorKeyName } from './vendorKeys';
 import { recoveryFetch } from './recovery';
 import type { TextReply as GatewayReply } from './textReply';
 import { textRoute, type TextRoute } from './textRoute';
+import { modelDoor, readTextReply } from './modelTrace';
 
 /**
  * The billing vendor the money paths read: the door the call takes
@@ -157,11 +159,15 @@ function gatewayResponse(value: Record<string, unknown>) {
   return { id: value.id, model: value.model, provider: 'openai', choices: [{ index: 0, message: { role: 'assistant', content: content.join(''), ...(refusals.length ? { refusal: refusals.join('') } : {}) }, finish_reason: refusals.length ? 'content_filter' : details.reason === 'max_output_tokens' ? 'length' : value.status === 'failed' ? 'error' : 'stop' }],
     usage: { prompt_tokens: usage.input_tokens, completion_tokens: usage.output_tokens, total_tokens: usage.total_tokens, prompt_tokens_details: usage.input_tokens_details, completion_tokens_details: usage.output_tokens_details }, ...(value.error ? { error: value.error } : {}) };
 }
-export async function openaiDirectPost(input: Record<string, unknown>, options: { timeoutMs?: number; fetch?: typeof fetch } = {}): Promise<GatewayReply> {
+export async function openaiDirectPost(input: Record<string, unknown>, options: { timeoutMs?: number; signal?: AbortSignal; fetch?: typeof fetch } = {}): Promise<GatewayReply> {
+  /* A model call's door (lib/modelTrace.ts); inside textPost or gatewayPost it is the same call. */
+  return modelDoor(() => sendOpenaiDirect(input, options), readTextReply);
+}
+async function sendOpenaiDirect(input: Record<string, unknown>, options: { timeoutMs?: number; signal?: AbortSignal; fetch?: typeof fetch }): Promise<GatewayReply> {
   const key = typeof input.model === 'string' ? directOpenAIKey(input.model) : null;
   if (!key) throw new Error('The language account is not connected for this workspace.');
   const { endpoint, body } = openAIDirectBody(input);
-  const response = await openAIFetch(options.fetch ?? recoveryFetch)(`${OPENAI_BASE()}/${endpoint}`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(options.timeoutMs ?? 120000) });
+  const response = await openAIFetch(options.fetch ?? recoveryFetch)(`${OPENAI_BASE()}/${endpoint}`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: within(options.timeoutMs ?? 120000, options.signal) });
   const raw = await response.text();
   let result: Record<string, unknown>;
   try { result = record(JSON.parse(raw)); }

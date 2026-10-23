@@ -32,7 +32,7 @@ export function outcomeProviderFor(provider: string | null | undefined): Outcome
   const door = billedTo(provider ?? "byteplus");
   if (door === "vercel") return "gateway";
   switch (provider) {
-    case "higgsfield": case "byteplus": case "google": case "openai": case "xai": case "fal": case "elevenlabs": return provider;
+    case "higgsfield": case "byteplus": case "google": case "openai": case "xai": case "fal": case "elevenlabs": case "syncso": case "sarvam": case "recraft": return provider;
     default: return "byteplus";
   }
 }

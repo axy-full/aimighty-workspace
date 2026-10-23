@@ -97,10 +97,18 @@ function door(dirName: string, actor: AdmissionActor = OWNER): Handler {
 
 /** One request per paid door, a body each would accept far enough to spend (as tests/unit/demo-s12-sample-workspace-off.spec.ts). */
 const DIGEST = "a".repeat(64);
-const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
+const DOORS: { dir: string; body: Record<string, unknown>; id?: string; quote?: true }[] = [
   { dir: "generate", body: { model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" } },
-  { dir: "audio", body: { task: "sound", text: "Soft rain", durationSeconds: 5, projectId: "film" } },
+  /* Quoted first, then pressed with the quote's own approval, so the press reaches the hold (not a fingerprint that stops it before). */
+  { dir: "generate/batch", quote: true, body: { members: [{ model: "dreamina-seedance-2-0-260128", prompt: "A tree in rain", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }, { model: "dreamina-seedance-2-0-260128", prompt: "A tree in sun", ratio: "16:9", resolution: "720p", duration: 5, projectId: "film" }] } },
+  /* A person's sound press carries the figure that was on its button (owner, 21 Oct 2026, lib/pressFigure.ts): quoted first, then pressed at that figure. */
+  { dir: "audio", quote: true, body: { task: "sound", text: "Soft rain", durationSeconds: 5, projectId: "film" } },
   { dir: "audio/dub", body: { sourceUploadId: "up_line", targetLanguage: "es" } },
+  /* Lip-sync is off unless its engine is on for the workspace, so THIS press only proves the door is shut while it is off: it stops at "no such tool" and spends nothing, at any cap.
+     The cap wall with the engine ON is proved in tests/unit/lipSync.spec.ts: a listed workspace at its own $0 cap is refused 429 in the cap's words, nothing held, written or sent. */
+  { dir: "lipsync", body: { clipUploadId: "up_clip", audioUploadId: "up_line", projectId: "film", maxCredits: 100000 } },
+  /* Recraft is the same: THIS press only proves its door is shut while the engine is off. The cap wall with the engine ON is proved in tests/unit/recraft.spec.ts. */
+  { dir: "recraft", body: { tool: "image", prompt: "A tree in rain", maxCredits: 100000 } },
   { dir: "audio/transcribe", body: { sourceUploadId: "up_line", diarize: true, maxCredits: 100000 } },
   { dir: "jobs/[id]/release", body: { credits: 10 }, id: "gen_held" },
   { dir: "atomik/steps/[id]/claim", body: {}, id: "step_1" },
@@ -127,7 +135,7 @@ const DOORS: { dir: string; body: Record<string, unknown>; id?: string }[] = [
    earlier, at a missing row, an unconnected engine or a text model with no price while the catalogue is offline, and
    are covered by the reservation itself, below: every one of them reserves through it). Listed so
    the harness cannot quietly stop reaching them: each must hold uncapped, and be refused at the cap. */
-const REACHES_THE_HOLD = ["generate", "audio"];
+const REACHES_THE_HOLD = ["generate", "generate/batch", "audio"];
 
 let n = 0;
 const name = (what: string) => `cap-${what}-${++n}`.replace(/[^a-z0-9-]/gi, "-");
@@ -194,11 +202,22 @@ async function spent() {
 const NOTHING = { holds: 0, reservations: 0, provider: 0, balance: 10000 };
 
 async function press(entry: (typeof DOORS)[number], key: string): Promise<{ status: number; body: Record<string, unknown> }> {
+  /* A door that approves a quote (`quote`): its quote first, and the press carries that quote's fingerprint and total. A quote refused (at a cap) leaves the press nothing to approve with but a stand-in, which the door must refuse as well. */
+  let body = entry.body;
+  if (entry.quote) {
+    const quoted = await post(entry, `${key}-quote`, { ...entry.body, quoteOnly: true });
+    body = quoted.status === 200
+      ? { ...entry.body, fingerprint: quoted.body.fingerprint, maxCredits: quoted.body.ceilingCredits ?? quoted.body.estimatedCredits }
+      : { ...entry.body, fingerprint: "0".repeat(64), maxCredits: 100000 };
+  }
+  return post(entry, key, body);
+}
+async function post(entry: (typeof DOORS)[number], key: string, payload: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
   const { requireTenant } = mod<typeof import("../../lib/tenant")>("lib/tenant");
   const req = new Request(`http://localhost/api/${entry.dir.replace("[id]", entry.id ?? "x")}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": key.replace(/[^A-Za-z0-9.:_-]/g, "-"), "X-Workbench-Scope": `particl-active-${requireTenant().id}-owner` },
-    body: JSON.stringify(entry.body),
+    body: JSON.stringify(payload),
   });
   const res = await door(entry.dir)(req, { params: Promise.resolve({ id: entry.id ?? "x" }) });
   const text = await res.text();
@@ -373,6 +392,10 @@ const RESERVERS: Record<string, Reserver> = {
   "lib/generationAdmission.ts": { reserve: "await reserveGenerationSpend(", count: 3, vendor: ["runIdentityRender(started.genId", 'enqueueRender(genId, "image")', "runInline(genId)", 'enqueueRender(genId, "video")', "submitVideoRow(genId)"] },
   "lib/audioAdmission.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ['enqueueRender(genId, "audio")', "runInline(genId)"] },
   "lib/dubbing.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["?? submitDubbing)("] },
+  /* Lip-sync (sync.so): reserved at admission, before its row is ever advanced; every vendor call is in the advance step, which only runs on a funded row. */
+  "lib/lipSync.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.upload ?? uploadAsset)(", "await (deps.submit ?? submitLipSync)("] },
+  /* Recraft: reserved at admission, before its row is ever advanced; its one vendor call (per tool) is in the advance step, which only runs on a funded row. */
+  "lib/recraftImage.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await (deps.generate ?? generateImage)(", "await (deps.removeBackground ?? removeBackground)(", "await (deps.vectorize ?? vectorize)("] },
   "lib/transcription.ts": { reserve: "?? reserveGenerationSpend)(", count: 1, vendor: ["?? grokTranscribe)("] },
   "lib/held.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["submitVideoRow(r.id)", "runInline(r.id)"] },
   "lib/paidText.ts": { reserve: "await reserveGenerationSpend(", count: 1, vendor: ["await submit("] },
@@ -394,8 +417,12 @@ const SETTLE_ONLY: Record<string, string> = {
 };
 const DOOR_MODULE: Record<string, string> = {
   "generate": "lib/generationAdmission.ts",
+  /* A batch is its members' own admissions, each reserving in generationAdmission; the batch adds the sum's judgement and no reservation of its own. */
+  "generate/batch": "lib/generationAdmission.ts",
   "audio": "lib/audioAdmission.ts",
   "audio/dub": "lib/dubbing.ts",
+  "lipsync": "lib/lipSync.ts",
+  "recraft": "lib/recraftImage.ts",
   "audio/transcribe": "lib/transcription.ts",
   "jobs/[id]/release": "lib/held.ts",
   /* Taking a step claims it; the step's render is paid through admission. */

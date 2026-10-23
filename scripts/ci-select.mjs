@@ -5,11 +5,12 @@
 //     Prints the plan as JSON; with $GITHUB_OUTPUT set, also writes `mode` and `runs` there.
 //
 // Three modes:
-//   full  the whole browser suite (today's 22 jobs). Every push to release/1 or main, every PR into main, and any PR
+//   full  the whole browser suite (today's 22 jobs). Every push to release/1 or main, every PR into main, any PR that
+//         changes a browser spec (owner, 19 Oct 2026: such a PR runs the full plan at its head before merge), and any PR
 //         that touches a path that is not on the slim list below. When in doubt, full.
 //   slim  a PR into release/1 whose every changed path is a presentational new-interface file (CSS, or a component with no
-//         fetch and no money word that nothing outside components/v12 imports), a test or documentation: the specs it touches
-//         plus a fixed guard set. Everything in lib/ is full, including lib/v12/.
+//         fetch and no money word that nothing outside components/v12 imports), a unit test or other non-browser test file,
+//         or documentation: the specs its paths map to plus a fixed guard set. Everything in lib/ is full, including lib/v12/.
 //   docs  a PR that only changes documentation: no browser specs (the unit shards and `core` still run).
 // Every mode but docs also runs the five-minute test. The unit shards and `core` run in every mode.
 //
@@ -63,12 +64,19 @@ const NEVER = [
    API route is not presentational: full. ("placeholder" is not a hold.) */
 const MONEY_TEXT = /quote|price|\bcr\b|credit|charge|billed|\bhold|\bheld|refund|cancel|approv|ledger|workspace_id|fetch\(|\/api\//i;
 
-/* A guard or safety test: any change to one is a full run, and the plan says so for the owner's review. */
-const GUARD_TEST = /^tests\/.*(spend-buttons|spend-ratchet|paidRoutes|helpers\/spend|privacy|switch-off|newInterfaceSwitch|one-design|ui-names|tooltip-audit|signin.?retired|audit-money|r1-port-paid-sends)/i;
+/* A guard or safety test: any change to one is a full run, and the plan says so for the owner's review. The review client link's
+   tenant-separation spec counts as a privacy guard though its name does not say so (owner, 22 Oct 2026: "a small stricter PR that
+   teaches scripts/ci-select.mjs to count this test as a privacy guard, so the next change to it runs full"). */
+const GUARD_TEST = /^tests\/.*(spend-buttons|spend-ratchet|paidRoutes|helpers\/spend|privacy|switch-off|newInterfaceSwitch|one-design|ui-names|tooltip-audit|signin.?retired|audit-money|r1-port-paid-sends|unit\/demo-gaps-l5-client-link\.spec)/i;
 export const isGuardTest = (path) => GUARD_TEST.test(path);
 const isDocs = (path) => DOCS.some((re) => re.test(path));
 const isTest = (path) => TESTS.some((re) => re.test(path));
 const isV12Component = (path) => /^components\/v12\//.test(path);
+/* A browser spec: any .spec.ts under tests/, at any depth, outside the unit shards (tests/unit/) and the ops tests (tests/ops/). Owner, 19 Oct 2026: "#840
+   merged with the browser suite skipped at its head, which is not 24/24; from now on any PR that touches tests/*.spec.ts or claims to
+   fix the suite runs the full plan at its head before merge." So a PR that changes one is a full run, never slim. */
+const BROWSER_SPEC = /^tests\/(?!unit\/|ops\/).+\.spec\.ts$/;
+export const isBrowserSpec = (path) => BROWSER_SPEC.test(path);
 
 /**
  * Whether a changed path may run slim. `read(path)`: the file's text at the PR's head, or null when it was deleted;
@@ -111,6 +119,8 @@ const AREAS = [
 const areaSpecs = (path) => { for (const [re, list] of AREAS) if (re.test(path)) return list; return ALL_V12; };
 
 const unique = (list) => [...new Set(list)];
+/* The first five paths of a list, and how many more. */
+const few = (list) => `${list.slice(0, 5).join(", ")}${list.length > 5 ? ` and ${list.length - 5} more` : ""}`;
 
 /**
  * @param {{ event: string, base: string, files: string[], specs: string[], read?: (path: string) => string | null, exposed?: Set<string> }} input
@@ -125,17 +135,19 @@ export function select({ event, base, files, specs, read = () => null, exposed =
   if (!changed.length) return full("no changed files could be read: the whole suite");
 
   const guards = changed.filter(isGuardTest);
-  if (guards.length) reasons.push(`guard test changed: owner review (${guards.slice(0, 5).join(", ")}${guards.length > 5 ? ` and ${guards.length - 5} more` : ""})`);
+  if (guards.length) reasons.push(`guard test changed: owner review (${few(guards)})`);
+  const browserSpecs = changed.filter(isBrowserSpec);
+  if (browserSpecs.length) reasons.push(`changes a browser spec (${few(browserSpecs)}): the full plan at its head (owner, 19 Oct 2026: "any PR that touches tests/*.spec.ts … runs the full plan at its head before merge")`);
   const loud = changed.filter((path) => !slimOk(path, { read, exposed }));
-  if (loud.length) return full(`touches ${loud.slice(0, 5).join(", ")}${loud.length > 5 ? ` and ${loud.length - 5} more` : ""}: money, sign-in, tenant separation, shared code, or a new-interface file that is not presentational`);
+  if (loud.length) return full(`touches ${few(loud)}: money, sign-in, tenant separation, shared code, or a new-interface file that is not presentational`);
+  if (browserSpecs.length) return { mode: "full", reasons, runs: [], fiveMinute: true };
 
   if (changed.every(isDocs)) return { mode: "docs", reasons: ["documentation only: the unit shards and core, no browser specs"], runs: [], fiveMinute: false };
 
   const exists = new Set(specs);
   const v12 = specs.filter((s) => V12_SPEC.test(s));
   const picked = new Set();
-  for (const path of changed) {
-    if (/^tests\/[^/]+\.spec\.ts$/.test(path)) { if (exists.has(path)) picked.add(path); continue; } // a changed spec runs itself
+  for (const path of changed) { // a changed browser spec never gets here: it made the run full above
     if (!isV12Component(path)) continue;
     const list = areaSpecs(path);
     for (const s of list === ALL_V12 ? v12 : list) if (exists.has(s)) picked.add(s);

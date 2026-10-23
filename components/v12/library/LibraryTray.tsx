@@ -8,7 +8,7 @@ import type { ProjectSummary } from "@/lib/workspace/data";
 import { STUB_KINDS, castKindsOf, TRAY_HINT, TRAY_KINDS, TRAY_SOURCES, filterTray, masonry, trayItems, type CastKind, type TrayItem } from "@/lib/v12/library";
 import { requestMention } from "@/lib/v12/mention";
 import { keyOf } from "@/lib/v12/keymap";
-import { TRAY_TOGGLE_EVENT, inField, useTrayLibrary, useTrayState } from "@/lib/v12/useLibraryTray";
+import { inField, useTrayLibrary, useTrayState } from "@/lib/v12/useLibraryTray";
 import { Kbd, Menu, Segment, Tooltip, useOverlay, useOverlayStack, type MenuItem } from "@/components/v12/ui";
 import { TrayMenu } from "../menus/TrayMenu";
 import { useMenuAt } from "../menus/menu-items";
@@ -77,12 +77,7 @@ export function LibraryTray({ project, projects, library }: { project: Project |
     return () => window.removeEventListener("keydown", onKey, true);
   }, [toggle, stack]);
   useOverlay("drawer", tray.open, () => setOpen(false));
-  /* The right-click menu's "Library L" asks for the same toggle. */
-  useEffect(() => {
-    const onToggle = () => setOpen((was) => !was);
-    window.addEventListener(TRAY_TOGGLE_EVENT, onToggle);
-    return () => window.removeEventListener(TRAY_TOGGLE_EVENT, onToggle);
-  }, [setOpen]);
+  /* The right-click menu's and Make's Library ask for the same toggle: useTrayState listens for it (lib/v12/useLibraryTray.ts). */
 
   return (
     <>

@@ -7,6 +7,7 @@ import { CrewError, claimRound, listMembers, listMessages, readSession, releaseR
 import { xaiConnected } from "@/lib/crew/xai";
 import { currentTenant } from "@/lib/tenant";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { tokenSpendRefusal } from "@/lib/tokenSpend";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -34,7 +35,11 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
   const caller = await crewCaller(req, true);
   if (caller.response) return caller.response;
   /* The sample workspace spends nothing: answered before the round is claimed or reserved. A quote still answers. */
-  if ((await req.clone().json().catch(() => ({})))?.quoteOnly !== true) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  const asked = await req.clone().json().catch(() => ({}));
+  if (asked?.quoteOnly !== true) { const off = await sampleWorkspaceOff(); if (off) return off; }
+  /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before
+     the room is read, the round claimed or anything reserved. Its quote still answers. */
+  if (asked?.quoteOnly !== true) { const refused = tokenSpendRefusal({ maxCredits: asked?.maxCredits }); if (refused) return refused; }
   try {
     const session = await readSession(caller.userId, (await params).id);
     if (!session) throw new CrewError("That room is not in this workspace.", 404);

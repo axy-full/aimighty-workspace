@@ -4,7 +4,7 @@ import { db, now, ready } from "@/lib/db";
 import type { PreparedAdmission } from "../admissionTypes";
 import type { CanvasOp, OpOutcome } from "./canvas-ops-model";
 import { PLAN_APPROVAL_GUARDS, PLAN_APPROVAL_SCHEMA } from "./plan-approval";
-import type { CompiledPlan, RigAgentMode, RigAgentState, RigAgentStepState, StepTool } from "./rig-agent-plan";
+import { runModeOf, type CompiledPlan, type RigAgentMode, type RigAgentState, type RigAgentStepState, type StepTool } from "./rig-agent-plan";
 
 /*
  * rig_agent_runs and rig_agent_steps: an Atomik run on a production's Rig
@@ -100,7 +100,7 @@ const COLUMNS: Record<string, [string, string][]> = {
   rig_agent_steps: [
     ["admission", "TEXT"], ["quote_credits", "REAL"], ["band", "INTEGER"], ["approved_at", "INTEGER"], ["approved_by", "TEXT"],
     ["approved_fingerprint", "TEXT"], ["reason", "TEXT"], ["pause", "TEXT"], ["settled_at", "INTEGER"], ["outcome", "TEXT"],
-    /* The plan approval that covered this render (null: a tap or Auto), and the shot's step a fix re-renders. */
+    /* The plan approval that covered this render (null: a person's own tap, or Auto before 20 Oct 2026), and the shot's step a fix re-renders. */
     ["approval_id", "TEXT"], ["fix_of", "INTEGER"],
   ],
 };
@@ -141,11 +141,25 @@ export async function rigAgentExists(executor: Executor = db()): Promise<boolean
 export type UndoRecord = { removed: number; kept: number; reasons: string[] };
 export type PlanUsage = { model: string; inputTokens: number; outputTokens: number; steps: number };
 /** One approval of a run's limit: at the ask, or a raise later (only ever by the person who asked). */
-export type LimitRecord = { credits: number; mode: RigAgentMode; jobCeiling: number; by: string; at: number };
+export type LimitRecord = {
+  credits: number; by: string; at: number;
+  /** Stored history only: records made before 20 Oct 2026 may say "auto" and carry Auto's ceiling (`jobCeiling`). Nothing reads either; a new record says "ask". */
+  mode?: string; jobCeiling?: number;
+};
 /** The planning turn's charge: reserved at its ceiling while Atomik plans, then settled at what it used, or released. */
 export type PlanCharge = "reserved" | "settled" | "released";
 /** Why a paid step waits for a person. */
-export type PauseKind = "limit" | "credits" | "admin" | "refused" | "unpriced" | "record";
+export type PauseKind = "limit" | "credits" | "refused" | "unpriced" | "record";
+
+/**
+ * A render that waited for an admin goes back to its own person (owner, 21 Oct 2026: the admin approval rule is retired; work already waiting
+ * for an admin "goes back to its own person at a fresh quote and starts only on their tap"). A step stored paused for an admin is read as one
+ * that needs pricing again, with no price and no admission of its own: its person's "Price again" quotes it afresh, and nothing sends it until
+ * they tap. The row itself is left as stored.
+ */
+export const BACK_TO_ITS_PERSON = "This render is yours to approve now. Price it again; it starts only on your tap.";
+/** A run's note that named an admin (stored before 21 Oct 2026), and what it reads as now. */
+const ADMIN_NOTE = /An admin (?:has to press this one|must start it)|Ask an admin to render it|\b(?:waits|wait) for an admin\b/;
 
 export type RunRow = {
   id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; mode: RigAgentMode;
@@ -154,8 +168,6 @@ export type RunRow = {
   undoneAt: number | null; undoneBy: string | null; undo: UndoRecord | null;
   /** The limit the person approved for the run, in credits (null: asked before limits, so nothing after the build is paid). */
   capCredits: number | null;
-  /** The per-job line in force when the limit was approved: Auto never runs a render priced above it (nor above today's). */
-  perJobCap: number | null;
   limits: LimitRecord[];
   planCharge: PlanCharge | null;
   /** The files attached to the ask (`upload:<id>`), checked against the production's Library as it was asked and again before planning. */
@@ -176,7 +188,7 @@ export type StepRow = {
   quoteCredits: number | null;
   band: number | null;
   approvedAt: number | null;
-  /** A user id (a tap, or the person's plan approval), or `auto` (Auto mode, under the per-job line). */
+  /** A user id (a tap, or the person's plan approval). A step stored before 20 Oct 2026 may say `auto`: that is no person's approval, so it is never sent on it. */
   approvedBy: string | null;
   /** The plan approval that covered it, when one did (no tap of its own). */
   approvalId: string | null;
@@ -188,6 +200,11 @@ export type StepRow = {
   pause: PauseKind | null;
   settledAt: number | null;
   outcome: "not_billed" | "charged" | "unknown" | null;
+  /**
+   * Stored paused for an admin (before 21 Oct 2026) and read as its person's to price again (BACK_TO_ITS_PERSON). Its stored approval columns
+   * are hidden here; "Price again" clears them in the database too, so no tap or plan approval from before comes back with the fresh quote.
+   */
+  handedBack?: true;
 };
 
 const parse = <T,>(text: unknown, fallback: T): T => { if (text == null) return fallback; try { return JSON.parse(String(text)) as T; } catch { return fallback; } };
@@ -197,11 +214,12 @@ const str = (v: unknown) => (v == null ? null : String(v));
 function runOf(r: Record<string, unknown>): RunRow {
   return {
     id: String(r.id), productionId: String(r.production_id), draftId: String(r.draft_id), owner: String(r.owner), requestId: String(r.request_id),
-    goal: String(r.goal), mode: r.mode === "auto" ? "auto" : "ask", model: String(r.model), state: String(r.state) as RigAgentState, reason: str(r.reason),
+    goal: String(r.goal), mode: runModeOf(r.mode), model: String(r.model), state: String(r.state) as RigAgentState,
+    reason: ADMIN_NOTE.test(String(r.reason ?? "")) ? BACK_TO_ITS_PERSON : str(r.reason),
     plan: parse<CompiledPlan | null>(r.plan, null), fingerprint: str(r.plan_fingerprint),
     planningStartedAt: num(r.planning_started_at), approvedAt: num(r.approved_at), approvedBy: str(r.approved_by), finishedAt: num(r.finished_at),
     undoneAt: num(r.undone_at), undoneBy: str(r.undone_by), undo: parse<UndoRecord | null>(r.undo, null),
-    capCredits: num(r.cap_credits), perJobCap: num(r.per_job_cap), limits: parse<LimitRecord[]>(r.limits, []),
+    capCredits: num(r.cap_credits), limits: parse<LimitRecord[]>(r.limits, []),
     planCharge: r.plan_charge === "reserved" || r.plan_charge === "settled" || r.plan_charge === "released" ? r.plan_charge : null,
     attachments: ((list: unknown) => (Array.isArray(list) ? list.filter((a): a is string => typeof a === "string") : []))(parse<unknown>(r.attachments, [])),
     leaseUntil: Number(r.lease_until ?? 0), wakeAt: num(r.wake_at), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
@@ -209,6 +227,10 @@ function runOf(r: Record<string, unknown>): RunRow {
 }
 
 function stepOf(r: Record<string, unknown>): StepRow {
+  /* Paused for an admin (stored before 21 Oct 2026): its person's to price again (BACK_TO_ITS_PERSON). */
+  const handedBack = String(r.pause ?? "") === "admin";
+  if (handedBack)
+    r = { ...r, pause: "unpriced", reason: BACK_TO_ITS_PERSON, admission: null, quote_credits: null, band: null, approved_at: null, approved_by: null, approved_fingerprint: null, approval_id: null };
   return {
     id: String(r.id), runId: String(r.run_id), seq: Number(r.seq), tool: String(r.tool) as StepTool, label: String(r.label), purpose: String(r.purpose),
     nodeId: str(r.node_id), attempt: Number(r.attempt ?? 0), ops: parse<CanvasOp[]>(r.prepared, []), opId: str(r.op_id),
@@ -219,6 +241,7 @@ function stepOf(r: Record<string, unknown>): StepRow {
     reason: str(r.reason), pause: (str(r.pause) as PauseKind | null), settledAt: num(r.settled_at),
     outcome: r.outcome === "not_billed" || r.outcome === "charged" || r.outcome === "unknown" ? r.outcome : null,
     approvalId: str(r.approval_id), fixOf: num(r.fix_of),
+    ...(handedBack ? { handedBack: true as const } : {}),
   };
 }
 
@@ -261,16 +284,16 @@ export function newRunId() {
 
 export async function insertRun(tx: Transaction, run: {
   id: string; productionId: string; draftId: string; owner: string; requestId: string; goal: string; model: string; at: number;
-  /** The limit the person approved as they asked, the mode, and the per-job line then in force. */
-  limit: { credits: number; mode: RigAgentMode; jobCeiling: number };
+  /** The limit the person approved as they asked. The run's mode is always "ask" (no Auto since 20 Oct 2026); `per_job_cap` is left empty. */
+  limit: { credits: number };
   /** The files attached to the ask, already checked (`upload:<id>`). */
   attachments?: readonly string[];
 }) {
-  const limits: LimitRecord[] = [{ credits: run.limit.credits, mode: run.limit.mode, jobCeiling: run.limit.jobCeiling, by: run.owner, at: run.at }];
+  const limits: LimitRecord[] = [{ credits: run.limit.credits, mode: "ask", by: run.owner, at: run.at }];
   await tx.execute({
     sql: `INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,mode,cap_credits,per_job_cap,limits,model,state,lease_until,wake_at,created_at,updated_at,attachments)
           VALUES(?,?,?,?,?,?,?,?,?,?,?,'planning',0,?,?,?,?)`,
-    args: [run.id, run.productionId, run.draftId, run.owner, run.requestId, run.goal, run.limit.mode, run.limit.credits, run.limit.jobCeiling,
+    args: [run.id, run.productionId, run.draftId, run.owner, run.requestId, run.goal, "ask", run.limit.credits, null,
       JSON.stringify(limits), run.model, run.at, run.at, run.at, run.attachments?.length ? JSON.stringify(run.attachments) : null],
   });
 }

@@ -39,8 +39,8 @@ export function twoFactorWords(m: Pick<Member, "twoStep">): string | null {
 /** The code's three roles and only these: no other role, and no limit set per role. What each may do, as the routes allow it. */
 export const ROLES = [
   { id: "owner", name: "Owner", line: "Everything, including billing, keys, roles and the sign-in rule" },
-  { id: "admin", name: "Admin", line: "The team, spending rules and approvals over the per-shot cap" },
-  { id: "member", name: "Member", line: "Makes and reviews; a shot over the cap waits for an admin" },
+  { id: "admin", name: "Admin", line: "The team, spending rules and a production's Unlock past its cap" },
+  { id: "member", name: "Member", line: "Makes, reviews and approves their own spend" },
 ] as const;
 export type RoleId = (typeof ROLES)[number]["id"];
 /** How many people hold each role, from the owner's roster (null when the viewer may not see roles). */
@@ -159,7 +159,10 @@ const agoWords = (at: number, now: number): string => {
  */
 export function tokenLine(t: ApiToken, unit: TokenUnit, now = Date.now()): string {
   if (unit === "credits") return tokenFacts(t, unit, now);
-  return [scopeWords(t.scope), t.scope === "prepare" ? "a person approves each" : null, t.lastUsed ? `used ${agoWords(t.lastUsed, now)}` : "never used"].filter(Boolean).join(" · ");
+  return [scopeWords(t.scope), t.scope === "prepare" ? "a person approves each" : null,
+    /* A token that can generate spends only inside a ceiling an admin set (lib/tokenSpend.ts); the figure is not shown here. */
+    t.scope === "render" && t.capUsd == null ? "no ceiling · prepares and prices only" : null,
+    t.lastUsed ? `used ${agoWords(t.lastUsed, now)}` : "never used"].filter(Boolean).join(" · ");
 }
 
 /* ── Advanced › Tools ───────────────────────────────────────────────── */

@@ -46,7 +46,6 @@ export function ActivityPill({ approvals, draftId, onBoard }: { approvals: Appro
     const to = item.open;
     if (to.kind === "take") { select(to.draftId); shell.openMake("recent"); return; }
     if (to.kind === "board") { if (to.draftId) onBoard(to.draftId); else shell.goBoard({ closeMake: true }); return; }
-    if (to.kind === "none") return;
     select(item.project.draftId);
     openAtomikChat({ chatId: to.chatId, projectId: to.productionId });
     shell.openAtomik("panel");

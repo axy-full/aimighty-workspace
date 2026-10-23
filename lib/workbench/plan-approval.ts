@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Client, Transaction } from "@libsql/client";
-import { creditFigure, fromTenths, toTenths } from "../runLimit";
+import { fromTenths, toTenths } from "../runLimit";
+import { PLAN_APPROVAL_MS } from "./rig-agent-plan";
 
 /*
  * A plan is approved once (CLAUDE.md rule 14; the scope's § 0 Money): one tap by the person who asked Atomik
@@ -26,8 +27,8 @@ import { creditFigure, fromTenths, toTenths } from "../runLimit";
 export const PLAN_CEILING_MULTIPLE = 2;
 /** At most this many fixes per shot under one approval; a further one asks at its price. */
 export const MAX_FIXES_PER_SHOT = 2;
-/** How long an approval may be drawn on (owner decision 4), unless the run is stopped or undone first. */
-export const PLAN_APPROVAL_MS = 7 * 24 * 60 * 60 * 1000;
+/** How long an approval may be drawn on (owner decision 4), unless the run is stopped or undone first: one figure, kept with the plan's bounds so a client reads the same. */
+export { PLAN_APPROVAL_MS };
 
 export const PEOPLE_ONLY = "Only a person approves spending. Atomik, outside agents and tokens can prepare a plan, never approve it.";
 export const THIRD_FIX = `This shot has had its ${MAX_FIXES_PER_SHOT} fixes under this plan. Another one asks at its own price.`;
@@ -73,8 +74,6 @@ export type PlanQuote =
     ready: true;
     /** The renders one approval covers. */
     steps: PlanStepQuote[];
-    /** Renders that ask on their own: above the per-job line, or needing an admin (with their own price, when known). */
-    asks: { seq: number; title: string; worst: number | null; why: "line" | "admin" }[];
     totalTenths: number;
     ceilingTenths: number;
     total: number;
@@ -93,32 +92,30 @@ const KEEPS_PRICE: readonly string[] = ["limit", "credits"];
 
 /**
  * The plan's quote from its render steps: every original render not yet sent must carry the server's price.
- * A render above the per-job line is listed to ask on its own and is not in the total.
+ * Every priced render is listed and in the total, whatever its price (rule 14: a plan is approved once, its listed renders at their listed
+ * prices up to its total; the per-render ask over 200 cr was removed on 20 Oct 2026). No render asks on its own for an admin: the admin
+ * approval rule was retired on 21 Oct 2026 (owner: "every member approves their own spend with their own tap on the quote").
  */
-export function planQuote(steps: readonly QuoteInputStep[], jobLine: number): PlanQuote {
+export function planQuote(steps: readonly QuoteInputStep[]): PlanQuote {
   const open = steps.filter((s) => s.fixOf == null && OPEN.includes(s.state));
   if (!open.length) return { ready: false, reason: "Nothing in this plan is waiting to render." };
   const listed: PlanStepQuote[] = [];
-  const asks: { seq: number; title: string; worst: number | null; why: "line" | "admin" }[] = [];
   let approximate = false;
   for (const s of open) {
-    /* One that needs an admin asks on its own and holds up nothing else (owner decision L5): never in T, never in the plan's room. */
-    if (s.state === "paused" && s.pause === "admin") { asks.push({ seq: s.seq, title: s.title, worst: s.worst, why: "admin" }); continue; }
     const priced = s.quote != null && s.worst != null && !!s.fingerprint && !!s.nodeId && (s.state === "waiting" || (s.state === "paused" && KEEPS_PRICE.includes(s.pause ?? "")));
     if (!priced) {
       return { ready: false, reason: s.state === "paused" && s.reason ? `${s.title}: ${s.reason}` : `${s.title} is not priced yet.` };
     }
     if (toTenths(s.worst!) > toTenths(s.quote!)) approximate = true;
-    if (toTenths(s.worst!) > toTenths(jobLine)) { asks.push({ seq: s.seq, title: s.title, worst: s.worst!, why: "line" }); continue; }
     listed.push({ seq: s.seq, nodeId: s.nodeId!, title: s.title, quote: s.quote!, worst: s.worst!, fingerprint: s.fingerprint! });
   }
-  if (!listed.length) return { ready: false, reason: `Every render here is over the ${creditFigure(jobLine)} cr a render may cost inside a plan, so each asks on its own.` };
   const totalTenths = listed.reduce((sum, s) => sum + toTenths(s.worst), 0);
   const ceilingTenths = totalTenths * PLAN_CEILING_MULTIPLE;
   const fingerprint = createHash("sha256").update(JSON.stringify({
-    v: 1, steps: listed.map((s) => [s.seq, s.fingerprint, toTenths(s.worst)]), asks: asks.map((a) => a.seq), ceilingTenths,
+    /* `asks` stays in the hashed record, always empty since 21 Oct 2026 (it listed renders that waited for an admin), so a plan's fingerprint is what it was. */
+    v: 1, steps: listed.map((s) => [s.seq, s.fingerprint, toTenths(s.worst)]), asks: [] as number[], ceilingTenths,
   })).digest("hex");
-  return { ready: true, steps: listed, asks, totalTenths, ceilingTenths, total: fromTenths(totalTenths), ceiling: fromTenths(ceilingTenths), approximate, fingerprint };
+  return { ready: true, steps: listed, totalTenths, ceilingTenths, total: fromTenths(totalTenths), ceiling: fromTenths(ceilingTenths), approximate, fingerprint };
 }
 
 /* ── The approval, and what it covers ─────────────────────────────────── */
@@ -147,13 +144,12 @@ export type CoverStep = { seq: number; fixOf: number | null; quote: number; wors
 
 /**
  * Whether one render is covered by the plan's approval, with no new tap: a listed render at the very price
- * approved, or a fix drawn under it priced no higher than its shot, never above the per-job line. Room under the
+ * approved, or a fix drawn under it priced no higher than its shot, whatever the price (no per-render line since 20 Oct 2026). Room under the
  * total is the reservation's to enforce (the run's limit); this says only whether the tap is already given.
  */
-export function coverage(approval: PlanApprovalRow, step: CoverStep, at: number, jobLine: number): { ok: true } | { ok: false; reason: string } {
+export function coverage(approval: PlanApprovalRow, step: CoverStep, at: number): { ok: true } | { ok: false; reason: string } {
   const closed = approvalClosed(approval, at);
   if (closed) return { ok: false, reason: closed };
-  if (toTenths(step.worst) > toTenths(jobLine)) return { ok: false, reason: `Over the ${creditFigure(jobLine)} cr a render may cost without its own tap, so it asks.` };
   if (step.fixOf == null) {
     const listed = approval.steps.find((s) => s.seq === step.seq);
     if (!listed) return { ok: false, reason: NOT_IN_PLAN };

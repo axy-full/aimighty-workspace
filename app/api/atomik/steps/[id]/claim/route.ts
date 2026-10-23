@@ -4,7 +4,7 @@ import { claimStep, getStep, reconcileRunningSteps, stepForBrowser } from "@/lib
 import { ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
 import { ARCHIVED_NOTE, threadArchived } from "@/lib/atomikThreads";
 import { PEOPLE_ONLY, isPerson } from "@/lib/security/people-only";
-import { STEP_GONE, adminStepSheet, stepIsMine } from "@/lib/atomikAccess";
+import { STEP_GONE, stepIsMine } from "@/lib/atomikAccess";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 
 export const dynamic = "force-dynamic";
@@ -30,37 +30,27 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
   /* The sample workspace spends nothing: no step is taken there. */
   { const off = await sampleWorkspaceOff(); if (off) return off; }
   const { id } = await ctx.params;
-  /* Claiming marks a step running, which approves its spend, and hands back its prompt. The step's person claims it (lib/atomikAccess.ts), and an admin claims another
-     member's only while it needs an admin's tap (over the per-shot cap or the 200 cr line; owner, 13 Oct). Anyone else is told it is gone, as an unknown step is, and the step is
-     left as it was. Asked after the people-only and sample refusals, which do not depend on the step. */
-  const mine = (await stepIsMine(id, got.user)) === true;
-  if (!mine && !(await adminStepSheet(id, got.user))) return NextResponse.json({ error: STEP_GONE }, { status: 404 });
-  /* What an admin is handed is the step itself, never its chat: no chat id, message id or position (owner, 13 Oct). */
-  const shown = (s: Parameters<typeof stepForBrowser>[0]) => {
-    const view = stepForBrowser(s);
-    if (mine) return view;
-    const { chatId: _chat, messageId: _message, position: _position, ...own } = view as Record<string, unknown>;
-    void _chat; void _message; void _position;
-    return own;
-  };
+  /* Claiming marks a step running, which approves its spend, and hands back its prompt: the step's person's alone (lib/atomikAccess.ts). Anyone else,
+     an admin included, is told it is gone, as an unknown step is, and the step is left as it was (owner, 21 Oct 2026: the admin approval rule is retired;
+     "every member approves their own spend with their own tap on the quote"). Asked after the people-only and sample refusals, which do not depend on the step. */
+  if ((await stepIsMine(id, got.user)) !== true) return NextResponse.json({ error: STEP_GONE }, { status: 404 });
 
   /* A step planned on the connected account is never claimed: nothing here
      runs on that account any more, so it stays exactly as it was. */
   const pending = await getStep(id);
   if (pending && isAccountStep(pending))
-    return NextResponse.json({ error: ACCOUNT_STEP_NOTE, step: shown(pending) }, { status: 409 });
+    return NextResponse.json({ error: ACCOUNT_STEP_NOTE, step: stepForBrowser(pending) }, { status: 409 });
   /* A step in an archived thread waits, unpaid, until its thread is restored (lib/atomikThreads.ts). */
   if (pending && (await threadArchived(pending.chatId)))
-    return NextResponse.json({ error: ARCHIVED_NOTE, step: shown(pending) }, { status: 409 });
+    return NextResponse.json({ error: ARCHIVED_NOTE, step: stepForBrowser(pending) }, { status: 409 });
 
-  /* An admin's claim keeps the chat out of the step's render key (it is `atomik-step:<step>`), so no response carries the chat's id. */
-  let step = await claimStep(id, got.user.id, { chatless: !mine });
+  let step = await claimStep(id, got.user.id);
   /* A step left running by an approval that never reached the renderer is
      settled first; if nothing was sent, it is proposed again and this
      approval may take it. */
   if (!step && pending?.status === "running" && !pending.genId && (await reconcileRunningSteps(pending.chatId)))
-    step = await claimStep(id, got.user.id, { chatless: !mine });
-  if (step) return NextResponse.json({ step: shown(step) });
+    step = await claimStep(id, got.user.id);
+  if (step) return NextResponse.json({ step: stepForBrowser(step) });
 
   /* Nothing was claimed. Say which of the two reasons it was, because
      "already running" and "gone" want different things from the person. */
@@ -73,7 +63,7 @@ export const POST = withTenant(async function POST(_req: NextRequest, ctx: Ctx) 
       error: existing.status === "rejected"
         ? "That one was already turned down."
         : "That one is already running — it was approved a moment ago.",
-      step: shown(existing),
+      step: stepForBrowser(existing),
     },
     { status: 409 },
   );

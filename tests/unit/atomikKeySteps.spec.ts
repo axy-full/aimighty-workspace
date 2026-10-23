@@ -437,8 +437,14 @@ test("from a brief to priced library steps: each is priced on its admission quot
       expect(quote.ok, JSON.stringify(quote)).toBe(true);
       if (quote.ok) expect(quote.value.quote.estimatedCredits).toBe(step.estCredits);
     }
-    /* Auto mode or not, a paid step waits for Continue: no job, no charge beyond the planning turn. */
-    expect(loaded.chat.agentMode).toBe("auto");
+    /* No Auto (owner, 20 Oct 2026): a chat asked for "auto" by an older caller is stored and read as "ask", and a paid step waits for Continue: no job, no charge beyond the planning turn. */
+    expect(loaded.chat.agentMode).toBe("ask");
+    expect(String((await s.database.db().execute({ sql: "SELECT agent_mode FROM atomik_chats WHERE id=?", args: [chatId] })).rows[0].agent_mode)).toBe("ask");
+    /* A row stored "auto" before the change reads as "ask"; a patch asking for "auto" writes "ask". */
+    await s.database.db().execute({ sql: "UPDATE atomik_chats SET agent_mode='auto' WHERE id=?", args: [chatId] });
+    expect((await atomik.getChat(chatId))!.chat.agentMode).toBe("ask");
+    await atomik.patchChat(chatId, { agentMode: "auto" });
+    expect(String((await s.database.db().execute({ sql: "SELECT agent_mode FROM atomik_chats WHERE id=?", args: [chatId] })).rows[0].agent_mode)).toBe("ask");
     expect(loaded.steps.every((step) => step.status === "proposed" && step.genId === null)).toBe(true);
     expect((await s.database.db().execute("SELECT COUNT(*) AS n FROM generations")).rows[0].n).toBe(0);
     expect(loaded.chat.status).toBe("waiting");

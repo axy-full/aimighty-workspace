@@ -10,6 +10,7 @@ import { astraRenderRequestSchema, AstraRenderError, astraRenderAvailability, li
 import { enqueueAstraRender, recoverAstraRenders } from '@/lib/astra-blender/render-dispatch';
 import { LEDGER_UNIT_PAUSED } from "@/lib/ledgerUnit";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { tokenSpendRefusal } from "@/lib/tokenSpend";
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -45,6 +46,8 @@ export const POST = withTenant(async (req: Request) => { const auth = await requ
         return response(await quoteAstraRender(input, auth.user.id));
     /* The sample workspace spends nothing: answered before a job is written or reserved. */
     { const off = await sampleWorkspaceOff(); if (off) return off; }
+    /* A token or an MCP client spends only with a ceiling and the quote it was approved at: `maxCredits` and the quote's `quoteDigest` (lib/tokenSpend.ts). Refused before a job is written. */
+    { const refused = tokenSpendRefusal({ maxCredits: input.maxCredits, fingerprint: input.quoteDigest, needsFingerprint: true }, auth.token); if (refused) return refused; }
     const result = await prepareAstraRender(input, auth.user.id, auth.token);
     if (result.scheduled) {
         const store = currentTenant()!;

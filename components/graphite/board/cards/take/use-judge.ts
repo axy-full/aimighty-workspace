@@ -17,6 +17,9 @@ export { REJECT_REASON_MAX };
  * - Reject: the trail's "changes" mark, and the reason (required: one line, 3 to 500 characters) as a note on that take
  *   (POST /api/notes), recorded with the person and the time. The version is kept; nothing more is spent.
  *   Undo clears the mark; the note stays as history.
+ * - Take back an approval: the version goes back to Ready, as it was before it was approved when that is known (an
+ *   artist's "picked" is restored if this page saw it approved from picked; otherwise "", Needs review). Undo
+ *   approves it again. Only a person: the route refuses anyone else clearing a sign-off.
  *
  * Nothing here is paid and nothing is erased.
  */
@@ -25,7 +28,21 @@ export type Judge = {
   busy: string | null;
   approve: (row: Pick<ShotTakes, "index" | "versions">, version: ShotVersion) => Promise<boolean>;
   reject: (row: Pick<ShotTakes, "index" | "versions">, version: ShotVersion, reason: string) => Promise<boolean>;
+  /** An approved version back to Ready (its earlier Ready state when known), with an Undo that approves it again. */
+  unapprove: (row: Pick<ShotTakes, "index">, version: ShotVersion) => Promise<boolean>;
 };
+
+/*
+ * The Ready state each version had when this page approved it, so that taking the approval back restores an artist's
+ * "picked" instead of losing it. Per scope and take; only Ready states are kept ("changes" before an approval comes back
+ * as Ready, since taking an approval back is "back to Ready"). Unknown (approved elsewhere, or before a reload): "".
+ */
+const readyBefore = new Map<string, ReviewState>();
+const readyKey = (scope: string, genId: string) => `${scope}\n${genId}`;
+/** What taking back an approval of `genId` writes: its Ready state before it was approved, when this page knows it. */
+export function readyStateBeforeApproval(scope: string, genId: string): ReviewState {
+  return readyBefore.get(readyKey(scope, genId)) === "picked" ? "picked" : "";
+}
 
 
 export async function postTakeNote(scope: string, genId: string, text: string): Promise<void> {
@@ -43,8 +60,22 @@ export async function postTakeNote(scope: string, genId: string, text: string): 
 
 export type JudgeToast = (text: string, undo?: { label: string; run: () => void }) => void;
 
-export function useJudge(scope: string, projectId: string, toast: JudgeToast): Judge {
+/**
+ * What a surface may change about the judge's words and its reason rule, never what it writes. Left out, everything is as it has always been (the take
+ * cards, review mode, the Inspector). The v25 card and preview pass theirs (`V25_JUDGE`, components/v12/board/card-model.ts): "sent" (owner, 20 Oct 2026) and
+ * their own reason rule ("Other" needs a line, one word is enough).
+ */
+export type JudgeOptions = {
+  /** The word in ✓'s toast: "Shot 2 v1 approved" by default. */
+  approved?: string;
+  /** Why a reason may not be written, or null: the trail's rule (3 to 500 characters) by default. */
+  reasonProblem?: (reason: string) => string | null;
+};
+
+export function useJudge(scope: string, projectId: string, toast: JudgeToast, options?: JudgeOptions): Judge {
   const [busy, setBusy] = useState<string | null>(null);
+  const approvedWord = options?.approved ?? "approved";
+  const problemOf = options?.reasonProblem ?? rejectReasonProblem;
   const restore = useCallback(async (states: readonly { genId: string; state: ReviewState }[]) => {
     try {
       for (const s of states) await reviewProjectTake(scope, projectId, s.genId, s.state);
@@ -60,8 +91,10 @@ export function useJudge(scope: string, projectId: string, toast: JudgeToast): J
     const before = [{ genId: version.genId, state: reviewStateOf(version.status) }, ...others.map((v) => ({ genId: v.genId, state: "approved" as const }))];
     try {
       await reviewProjectTake(scope, projectId, version.genId, "approved");
+      if (version.status !== "approved") readyBefore.set(readyKey(scope, version.genId), reviewStateOf(version.status) === "picked" ? "picked" : "");
       for (const v of others) await reviewProjectTake(scope, projectId, v.genId, "");
-      toast(`Shot ${row.index} ${version.label} approved`, { label: `Shot ${row.index} ${version.label} approved`, run: () => { void restore(before); } });
+      const said = `Shot ${row.index} ${version.label} ${approvedWord}`;
+      toast(said, { label: said, run: () => { void restore(before); } });
       return true;
     } catch (error) {
       toast(error instanceof Error ? error.message : "The review was not saved.");
@@ -69,10 +102,10 @@ export function useJudge(scope: string, projectId: string, toast: JudgeToast): J
     } finally {
       setBusy(null);
     }
-  }, [busy, scope, projectId, toast, restore]);
+  }, [busy, scope, projectId, toast, restore, approvedWord]);
 
   const reject = useCallback(async (row: Pick<ShotTakes, "index" | "versions">, version: ShotVersion, reason: string) => {
-    if (busy || rejectReasonProblem(reason)) return false;
+    if (busy || problemOf(reason)) return false;
     setBusy(version.genId);
     const before = [{ genId: version.genId, state: reviewStateOf(version.status) }];
     try {
@@ -88,7 +121,24 @@ export function useJudge(scope: string, projectId: string, toast: JudgeToast): J
     } finally {
       setBusy(null);
     }
+  }, [busy, scope, projectId, toast, restore, problemOf]);
+
+  const unapprove = useCallback(async (row: Pick<ShotTakes, "index">, version: ShotVersion) => {
+    if (busy || version.status !== "approved") return false;
+    setBusy(version.genId);
+    const back = readyStateBeforeApproval(scope, version.genId);
+    try {
+      await reviewProjectTake(scope, projectId, version.genId, back);
+      const said = `Shot ${row.index} ${version.label} is Ready again`;
+      toast(said, { label: said, run: () => { void restore([{ genId: version.genId, state: "approved" }]); } });
+      return true;
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "The review was not saved.");
+      return false;
+    } finally {
+      setBusy(null);
+    }
   }, [busy, scope, projectId, toast, restore]);
 
-  return { busy, approve, reject };
+  return { busy, approve, reject, unapprove };
 }

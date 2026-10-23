@@ -38,7 +38,7 @@ export const POST = withTenant(async function POST(req: Request) {
   const projectId = asked && asked !== "all" && asked !== "unfiled" ? asked : null;
 
   const impact = await impactOf(port.elementId, port.attributeId, port.versionId, {
-    projectId, at: now(), isAdmin: got.user.role === "admin",
+    projectId, at: now(),
   });
   return NextResponse.json({ impact });
 });

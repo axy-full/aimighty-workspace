@@ -46,8 +46,7 @@ export type ApproveRef =
   | { kind: "board-approve"; productionId: string; runId: string; fingerprint: string; plan?: boolean }
   | { kind: "board-render"; productionId: string; runId: string; seq: number; fingerprint: string }
   /* A plan's step: approved by the plan's own Continue, at its live price (ThreadCheckpoint). */
-  /* `chatId` is null on another member's step an admin is shown as a title and a price: nothing opens or continues it from here. */
-  | { kind: "thread"; chatId: string | null; stepId: string; productionId: string | null };
+  | { kind: "thread"; chatId: string; stepId: string; productionId: string | null };
 
 /** "Not now": the item's own existing path. Nothing is charged by any of them. */
 export type DeclineRef =
@@ -60,9 +59,7 @@ export type DeclineRef =
 export type OpenRef =
   | { kind: "take"; genId: string; draftId: string | null }
   | { kind: "board"; productionId: string; draftId: string | null }
-  | { kind: "thread"; chatId: string; productionId: string | null }
-  /* Nothing to open (an admin is shown a step that is another person's as a title and a price only). */
-  | { kind: "none" };
+  | { kind: "thread"; chatId: string; productionId: string | null };
 
 export type QueueItem = {
   /** Stable across reads: `<source>:<record id>`. */
@@ -75,8 +72,6 @@ export type QueueItem = {
   at: number;
   project: QueueProject;
   price: QueuePrice;
-  /** Over the workspace's per-shot rule: an admin presses it, and Approve in one go leaves it out. */
-  needsAdmin: boolean;
   /** This viewer may press Approve now. */
   canApprove: boolean;
   /** Why not, in the product's words, when they may not. */
@@ -109,7 +104,7 @@ export type DecidedItem = {
   id: string;
   title: string;
   project: QueueProject;
-  /** "approved", "released", "skipped", "set aside", "turned down", or Auto's "spent without asking". */
+  /** "approved", "released", "skipped", "set aside", "turned down", or, for a step before Auto went on 20 Oct 2026, Auto's "spent without asking". */
   what: string;
   /** Who decided, under the usage ledger's naming rule; null when the record does not say. */
   by: string | null;
@@ -164,8 +159,8 @@ export function countsByDraft(items: readonly QueueItem[]): Map<string, number> 
   return out;
 }
 
-/** A step approved with its plan's own Continue (the person's own chat), as against another member's over-line step an admin approves from here. */
-export const viaPlan = (item: QueueItem) => item.approve?.kind === "thread" && item.approve.chatId !== null;
+/** A step approved with its plan's own Continue (the person's own chat). */
+export const viaPlan = (item: QueueItem) => item.approve?.kind === "thread";
 
 /**
  * An item a person can press here. A plan's step opens its Continue, which
@@ -180,12 +175,12 @@ export function pressable(item: QueueItem): boolean {
 /**
  * May this item go in "Approve in one go"? Only an item with a one-call path
  * (a held take's release, a board render), a credit price, this viewer's to
- * press, within the per-shot rule, with the balance to cover it, and not in
+ * press, with the balance to cover it, and not in
  * the sample. A plan's step keeps its own Continue; a proposed build is
  * approved on its own.
  */
 export function batchable(item: QueueItem): boolean {
-  if (!pressable(item) || item.needsAdmin || (item.shortBy ?? 0) > 0) return false;
+  if (!pressable(item) || (item.shortBy ?? 0) > 0) return false;
   if (item.approve?.kind !== "release" && item.approve?.kind !== "board-render") return false;
   return item.price !== null && item.price.kind !== "free";
 }
@@ -193,8 +188,6 @@ export function batchable(item: QueueItem): boolean {
 export type Batch = {
   /** What one tap approves, in the order it is sent. */
   items: QueueItem[];
-  /** Under the figure but over the per-shot rule: listed, and left out. */
-  adminOut: QueueItem[];
   /** Under the figure but a plan's step: approved in its own plan. */
   inPlan: QueueItem[];
   /** What the batch approves, as one price ("up to" if any part is); null when it is empty. */
@@ -213,8 +206,7 @@ export function selectBatch(items: readonly QueueItem[], under: number): Batch {
   const batch = sorted.filter((item) => batchable(item) && below(item, under));
   return {
     items: batch,
-    adminOut: sorted.filter((item) => item.needsAdmin && below(item, under) && !item.sample),
-    inPlan: sorted.filter((item) => item.source === "thread" && below(item, under) && !item.needsAdmin && !item.sample),
+    inPlan: sorted.filter((item) => item.source === "thread" && below(item, under) && !item.sample),
     total: batch.length ? priceSum(batch.map((item) => item.price)) : null,
   };
 }

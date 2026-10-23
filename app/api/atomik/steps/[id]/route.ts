@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireUser, withTenant } from "@/lib/auth";
 import { getStep, patchStep, stepForBrowser, StepEditError, type StepStatus } from "@/lib/atomik";
 import { ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
-import { STEP_GONE, adminStepSheet, stepIsMine } from "@/lib/atomikAccess";
+import { STEP_GONE, stepIsMine } from "@/lib/atomikAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +14,8 @@ export const GET = withTenant(async function GET(_req: NextRequest, ctx: Ctx) {
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
-  /* A step is its chat's person's (lib/atomikAccess.ts). The one other reader is an admin, while another member's step needs an admin's tap, and then only its id, title and price. */
-  if ((await stepIsMine(id, got.user)) !== true) {
-    const sheet = await adminStepSheet(id, got.user);
-    return sheet ? NextResponse.json({ id: sheet.stepId, title: sheet.title, credits: sheet.credits }) : NextResponse.json({ error: STEP_GONE }, { status: 404 });
-  }
+  /* A step is its chat's person's (lib/atomikAccess.ts): to anyone else it is gone. */
+  if ((await stepIsMine(id, got.user)) !== true) return NextResponse.json({ error: STEP_GONE }, { status: 404 });
   const step = await getStep(id);
   if (!step) return NextResponse.json({ error: STEP_GONE }, { status: 404 });
   return NextResponse.json(stepForBrowser(step));
@@ -40,7 +37,7 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
   const got = await requireUser();
   if (got.response) return got.response;
   const { id } = await ctx.params;
-  /* Only the step's person edits it, turns it down or records what became of it: to anyone else it is gone. (An admin is shown another member's over-line step to read, not to change.) */
+  /* Only the step's person edits it, turns it down or records what became of it: to anyone else it is gone. */
   if ((await stepIsMine(id, got.user)) !== true) return NextResponse.json({ error: STEP_GONE }, { status: 404 });
 
   const cur = await getStep(id);

@@ -15,6 +15,7 @@ import { DevelopmentError, developmentRequestSchema, developmentState, listDevel
 import { enqueueDevelopmentJob } from '@/lib/workbench/development-worker';
 import { LEDGER_UNIT_PAUSED } from "@/lib/ledgerUnit";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
+import { tokenSpendRefusal } from "@/lib/tokenSpend";
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -88,6 +89,8 @@ export const POST = withTenant(async (req: Request) => {
     if (quoteOnly) return response(await quoteDevelopmentJob(input, auth.user.id), 200, creditsApply(currentTenant()?.workspace) && paidByPlatform(textKeyName(input.model)));
     /* The sample workspace spends nothing: answered before a job is written or reserved. */
     { const off = await sampleWorkspaceOff(); if (off) return off; }
+    /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before a job is written. */
+    { const refused = tokenSpendRefusal({ maxCredits: input.maxCredits }, auth.token); if (refused) return refused; }
     const prepared = await prepareDevelopmentJob(input, auth.user.id, auth.token);
     if (prepared.scheduled) await schedule(prepared.job.id, auth.user.id);
     return response({ job: prepared.job }, ['queued', 'running'].includes(prepared.job.status) ? 202 : 200);

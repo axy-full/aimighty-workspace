@@ -44,6 +44,8 @@ export function cardShape(kind: AgentKind): { type: NodeType; refKind?: RefKind;
 
 /** Bounds on one plan: what one build may make and wire. */
 export const PLAN_LIMITS = { cards: 24, wires: 60, next: 24, title: 120, text: 2000, goal: 2000, summary: 400 } as const;
+/** How long a plan's approval may be drawn on (owner decision 4), unless the run is stopped or undone first. Here, with the plan's other bounds, so a client can read it (lib/workbench/plan-approval.ts, which holds the approvals, is server-only). */
+export const PLAN_APPROVAL_MS = 7 * 24 * 60 * 60 * 1000;
 /** The ratios a planned shot may ask for (the Rig's own set; the engine's range is applied when the shot is read). */
 export const SHOT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"] as const;
 const KEY = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -261,6 +263,13 @@ export type CompiledStep = {
   state: "proposed" | "next";
 };
 export type CompiledPlan = {
+  /**
+   * "chips": made from a step's quick answers by the server alone, with no thinking turn (lib/workbench/rig-agent-chips.ts); absent: Atomik's own proposal.
+   * `step` is the board step it is for and `setup` the answers its renders are priced and sent with. All three are part of what a person approves (the fingerprint).
+   */
+  kind?: "chips"; step?: string; setup?: { quality: "draft" | "final"; length: number };
+  /** Who made a chips plan: a person on the board (absent reads as that), or a tool (an outside agent over MCP, preparing it for them). A tool never replaces a person's. */
+  madeBy?: "tool";
   title: string; summary: string;
   cards: CompiledCard[];
   wires: { from: string; to: string }[];
@@ -347,7 +356,7 @@ export function compilePlan(draft: PlanDraft, input: { runId: string; title: str
 
 /** What a proposal's fingerprint covers: everything the person approves, in one canonical text. */
 export function planFingerprintText(plan: CompiledPlan): string {
-  return JSON.stringify({ title: plan.title, summary: plan.summary, cards: plan.cards, wires: plan.wires, tidy: plan.tidy, next: plan.next, steps: plan.steps.map((s) => [s.seq, s.tool, s.state, s.ops]) });
+  return JSON.stringify({ ...(plan.kind ? { kind: plan.kind, step: plan.step ?? null, setup: plan.setup ?? null, madeBy: plan.madeBy ?? null } : {}), title: plan.title, summary: plan.summary, cards: plan.cards, wires: plan.wires, tidy: plan.tidy, next: plan.next, steps: plan.steps.map((s) => [s.seq, s.tool, s.state, s.ops]) });
 }
 
 /* ── Undo ─────────────────────────────────────────────────────────────── */
@@ -387,7 +396,7 @@ export function undoOps(canvas: Pick<TeamCanvas, "nodes" | "serverMade">, author
 
 /* ── What the run card shows (never a model, a cost or a key) ─────────── */
 
-/** `needs_you`: the run waits for a person — a render to tap (Ask), one over the per-job line, the limit, or a refusal. */
+/** `needs_you`: the run waits for a person — a render to tap, the limit, or a refusal. */
 export type RigAgentState = "planning" | "awaiting_approval" | "running" | "paused" | "needs_you" | "done" | "stopped" | "failed";
 export const ACTIVE_STATES: readonly RigAgentState[] = ["planning", "awaiting_approval", "running", "paused", "needs_you"];
 /**
@@ -400,16 +409,21 @@ export type RigAgentStepState =
   | "proposed" | "queued" | "done" | "skipped" | "next"
   | "waiting" | "approved" | "sending" | "rendering" | "failed" | "paused";
 export type RigAgentStepView = { seq: number; label: string; state: RigAgentStepState; held: string[] };
-export type RigAgentMode = "ask" | "auto";
-export const RIG_AGENT_MODES: readonly RigAgentMode[] = ["ask", "auto"];
+/**
+ * How a run asks: "ask", every render approved by a person on its quote (its own tap, or the plan's one approval).
+ * There is no Auto since 20 October 2026 (owner: "Auto goes: every job is approved on its quote"). A run stored with "auto"
+ * (before then) and a request that still says "auto" read as "ask": one approval per step, never a render without a person.
+ */
+export type RigAgentMode = "ask";
+export const RIG_AGENT_MODES: readonly RigAgentMode[] = ["ask"];
+/** Any stored or requested mode, as the run now behaves: always "ask". */
+export function runModeOf(stored: unknown): RigAgentMode { void stored; return "ask"; }
 
 /** What the run may spend and what it has spent (credits only: never a vendor's cost). */
 export type RigAgentMoneyView = {
   mode: RigAgentMode;
   /** The limit the person approved for this run. */
   limit: number;
-  /** In Auto, a render priced up to this runs without asking; anything more asks. */
-  jobCeiling: number;
   /** Charged so far: finished work at its final charge. */
   spent: number;
   /** Reserved by work in flight, at its estimate. */
@@ -435,8 +449,8 @@ export type RigAgentPaidStepView = {
   /** The same two in the engines' dollars, for the house workspace only (it pays at cost, in dollars). Display only: nothing is quoted, held or billed from it. */
   quoteUsd?: number | null;
   worstUsd?: number | null;
-  /** Why it paused, when it did: the limit, the balance, an admin, a refusal, a price it has not got, or its record. */
-  pause: "limit" | "credits" | "admin" | "refused" | "unpriced" | "record" | null;
+  /** Why it paused, when it did: the limit, the balance, a refusal, a price it has not got, or its record. */
+  pause: "limit" | "credits" | "refused" | "unpriced" | "record" | null;
   /** What it was charged, once the ledger has settled it. */
   charged: number | null;
   /** For a take that failed: what the ledger shows the provider did with the charge. */
@@ -453,6 +467,8 @@ export type RigAgentPaidStepView = {
   fixOf?: number | null;
   /** Covered by the plan's one approval (no tap of its own). */
   inPlan?: boolean;
+  /** A chips plan's step priced only in the plan's one total: it is told no price of its own (lib/workbench/rig-agent.ts onePrice). */
+  planPriced?: boolean;
 };
 
 /**
@@ -461,7 +477,7 @@ export type RigAgentPaidStepView = {
  */
 export type RigAgentPlanView = {
   /** The server's quote while the plan waits for its approval; null once approved, or while a render has no price. */
-  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; asks: number[]; totalUsd?: number | null } | null;
+  quote: { total: number; ceiling: number; approximate: boolean; fingerprint: string; covered: number[]; totalUsd?: number | null } | null;
   /** Why the plan cannot be approved yet (a render not priced), when it cannot. */
   blocked: string | null;
   approval: {
@@ -487,6 +503,12 @@ export type RigAgentProposalView = {
 };
 export type RigAgentRunView = {
   id: string; state: RigAgentState; reason: string | null; goal: string;
+  /** "chips": a plan the server made from a step's quick answers, no thinking turn and no planning charge; "ask": Atomik's own proposal. */
+  kind?: "ask" | "chips";
+  /** The board step a chips plan is for (e.g. "shots"); null for an ask. */
+  step?: string | null;
+  /** A chips plan made by a tool that replaced an earlier tool-made plan still waiting for approval. */
+  replaced?: boolean;
   /** The viewer asked for this build (only they approve it). */
   mine: boolean;
   proposal: RigAgentProposalView | null;
@@ -510,15 +532,12 @@ export { creditFigure };
 
 /**
  * The proposal as the card shows it: the cards by kind, the wires, the tidy, and what comes next.
- * In Auto, the renders say how much one may cost without asking.
  */
-export function proposalView(plan: CompiledPlan, fingerprint: string, money?: Pick<RigAgentMoneyView, "mode" | "jobCeiling"> | null): RigAgentProposalView {
+export function proposalView(plan: CompiledPlan, fingerprint: string): RigAgentProposalView {
   const groups = AGENT_KINDS.map((kind) => ({ kind, label: AGENT_KIND_LABELS[kind], titles: plan.cards.filter((c) => c.kind === kind).map((c) => c.title) })).filter((g) => g.titles.length);
   const renders = plan.next.filter((n) => n.what === "render").length, locks = plan.next.filter((n) => n.what === "lock").length;
   const next = [
-    ...(renders ? [money?.mode === "auto"
-      ? `Next: render ${plural(renders, "shot")} · priced; drafts up to about ${creditFigure(money.jobCeiling)} cr each run on their own`
-      : `Next: render ${plural(renders, "shot")} · priced, each one approved first`] : []),
+    ...(renders ? [`Next: render ${plural(renders, "shot")} · priced, each one approved first`] : []),
     ...(locks ? [`Next: lock ${plural(locks, "master")} · a person locks them`] : []),
   ];
   return { title: plan.title, summary: plan.summary, groups, cards: plan.cards.length, wires: plan.wires.length, tidy: plan.tidy, next, fingerprint };

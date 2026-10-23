@@ -24,24 +24,29 @@ async function openJoin(page: Page, google: boolean) {
 }
 const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 
-test("the join sheet draws Continue with Google only when it is on, beside Continue with email, with the policy line; a visitor's page asks nothing to know", async ({ page }) => {
+test("the join sheet draws Continue with Google only when it is on, beside Continue with email, with the required 18+ tick; a visitor's page asks nothing to know", async ({ page }) => {
   test.setTimeout(240_000);
   const asked: string[] = [];
   page.on("request", (r) => { const path = new URL(r.url()).pathname; if (path.startsWith("/api/")) asked.push(path); });
   await openJoin(page, false);
   await expect(page.getByTestId("v12-join-email")).toBeVisible();
   await expect(page.getByTestId("v12-join-google")).toHaveCount(0);
-  await expect(page.getByTestId("v12-join-google-policy")).toHaveCount(0);
+  await expect(page.getByTestId("v12-join-age")).toHaveCount(0);
   await noOverflow(page);
   const started = await stubStart(page);
   await openJoin(page, true);
   const google = page.getByTestId("v12-join-google");
   await expect(google).toBeVisible();
   await expect(google).toHaveText("Continue with Google");
-  await expect(page.getByTestId("v12-join-google-policy")).toContainText("content policy");
-  await expect(page.getByTestId("v12-join-google-policy").getByRole("link", { name: "terms" })).toHaveAttribute("href", "/terms");
+  await expect(page.getByTestId("v12-join-age-row")).toHaveText("I'm 18 or older and agree to the Terms");
+  await expect(page.getByTestId("v12-join-age-row").getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms");
   expect(asked.filter((path) => path.startsWith("/api/auth/google"))).toEqual([]);
   await page.getByTestId("v12-join-code").fill("an-invite-code-123");
+  /* The tick is required: without it the form does not post, and Google is not started. */
+  await google.click();
+  await page.waitForTimeout(500);
+  expect(started).toHaveLength(0);
+  await page.getByTestId("v12-join-age").check();
   await google.click();
   await expect.poll(() => started.length).toBe(1);
   /* The join sheet starts with a form POST from its own page: only that keeps the invite (lib/googleSignIn.ts startIntent). */

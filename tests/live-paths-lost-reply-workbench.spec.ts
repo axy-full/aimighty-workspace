@@ -143,12 +143,14 @@ test("MCP render_shot called again with the same request_id after its reply was 
   const tenantUrl = await grant(signed.workspace.id);
   const minted = await page.request.post("/api/tokens", {
     headers: { "X-Workbench-Scope": `particl-active-${signed.workspace.id}-${me.id}` },
-    data: { name: "Lost reply MCP fixture", scope: "render" },
+    /* With a monthly ceiling, set by the admin who makes it (owner, 20 Oct 2026): a token with none only prepares and prices (lib/tokenSpend.ts). */
+    data: { name: "Lost reply MCP fixture", scope: "render", capCredits: 10_000 },
   });
   expect(minted.ok(), await minted.text()).toBe(true);
   const token = (await minted.json()).token as string;
   const since = Date.now();
   const requestId = `lost-reply-${randomUUID()}`;
+  const prices: string[] = [];
   const render = async (id: number) => {
     const reply = await page.request.post("/api/mcp", {
       headers: { Authorization: `Bearer ${token}` },
@@ -156,6 +158,7 @@ test("MCP render_shot called again with the same request_id after its reply was 
     });
     expect(reply.ok(), await reply.text()).toBe(true);
     const text = String((await reply.json()).result?.content?.[0]?.text ?? "");
+    prices.push(/price: (\d+) cr/.exec(text)?.[1] ?? text);
     return /id: (\S+)/.exec(text)?.[1] ?? text;
   };
   /* The client never saw the first reply, so it calls again with the same request_id. */
@@ -164,6 +167,14 @@ test("MCP render_shot called again with the same request_id after its reply was 
   const books = await ledger(tenantUrl, signed.workspace.id, { sql: "1=1", args: [] }, since);
   expect({ same: againId === firstId, made: books.jobs.length, billed: books.charges.length }).toEqual({ same: true, made: 1, billed: 1 });
   expect(books.jobs).toEqual([firstId]);
+  /* The render carried its approved quote: the price the tool was told is the ceiling the take was admitted under (params.quote). */
+  const tenant = createClient({ url: tenantUrl, timeout: 10_000 });
+  try {
+    const quote = (await tenant.execute({ sql: "SELECT json_extract(params,'$.quote.credits') AS credits, json_extract(params,'$.quote.maxCredits') AS approved FROM generations WHERE id=?", args: [firstId] })).rows[0];
+    expect({ credits: Number(quote?.credits), approved: Number(quote?.approved) }).toEqual({ credits: Number(prices[0]), approved: Number(prices[0]) });
+  } finally {
+    tenant.close();
+  }
 });
 
 test("PATCH /api/atomik/steps/:id records a step's state and nothing else: it cannot start, approve or bill a render", async ({ page }) => {

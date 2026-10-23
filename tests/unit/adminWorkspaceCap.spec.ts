@@ -83,7 +83,7 @@ test("an own $0 cap is a wall, never 'no cap': it outranks the deployment defaul
     if (before == null) delete process.env.PLATFORM_ALLOWANCE_USD; else process.env.PLATFORM_ALLOWANCE_USD = before;
   }
   const quote = { totalCredits: 2, unitCredits: 2, units: 1, usd: 0.1, lines: [{ key: "k", credits: 2, count: 1, usd: 0.1, spent: 0, code: "S1", projectId: null, platformPays: true }] };
-  const context = { balance: 1000, caps: {}, warnPct: 80, rule: "anyone" as const, shotCap: 0, isAdmin: true };
+  const context = { balance: 1000, caps: {}, warnPct: 80 };
   const walled = verdictOf(quote, { ...context, allowance: { cap: 0, spent: 0 } });
   expect(walled).toMatchObject({ allow: false, gate: "allowance" });
   /* The quote says what the wall says: only the platform raises this cap, never "an admin can raise it". */

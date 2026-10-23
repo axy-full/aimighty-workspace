@@ -1,8 +1,9 @@
 import { billCreditsWith, marginFor, creditUsd, margins } from "./creditTerms";
 import { capVerdict, type CapRule, type CapUnit } from "./caps";
-import { jobLineVerdict, shotCapVerdict, ruleLine, type ApprovalRule } from "./approvalRule";
 import { heldMessage } from "./held";
 import { ALLOWANCE_REACHED } from "./allowance";
+import { HOUSE_CAP_REACHED, houseCapState, houseCapWarning } from "./houseCapText";
+import { holdBandOf } from "./cinemaHold";
 
 /**
  * The quote engine (brief 3): what a thing costs, resolved before the button
@@ -48,8 +49,8 @@ export type Unit = {
   count?: number;
   /**
    * What the shot this job belongs to has already taken, and what it is
-   * called. The per-shot rule is written about one shot's running total, so
-   * judging a set without them is judging a different rule.
+   * called. Part of the quote's stamp (a shot that took more since is a new
+   * quote); no rule judges it since the per-shot cap was retired (21 Oct 2026).
    */
   spent?: number;
   code?: string;
@@ -69,8 +70,7 @@ export type Unit = {
 /**
  * One priced job, carrying what the verdict needs to judge it on its own.
  *
- * The gates are per-job, not per-total: a shot's own running total decides the
- * approval rule, its own production decides the cap, and only the jobs the
+ * The gates are per-job, not per-total: its own production decides the cap, and only the jobs the
  * platform pays for touch the balance. Rolling those up before judging is how
  * a quote starts disagreeing with the press.
  */
@@ -167,7 +167,6 @@ export function quoteOf(units: Unit[], terms: Terms = liveTerms()): Quote {
    Not an approximation of the press: the same walls, in the same order, with
    the same arguments. The order below is app/api/generate/route.ts's own —
 
-     the approval rule      refuses, 403
      the monthly allowance  refuses, 429
      the production's cap   refuses, 409
      the credit balance     does NOT refuse; the take is parked as held
@@ -179,7 +178,7 @@ export function quoteOf(units: Unit[], terms: Terms = liveTerms()): Quote {
    fact accept. */
 
 /** Which wall this ran into, in the order the render path checks them. */
-export type Gate = "ok" | "approval" | "allowance" | "cap" | "held";
+export type Gate = "ok" | "allowance" | "cap" | "held";
 
 export type Verdict = {
   /** Whether the press would be accepted at all. Held work is accepted. */
@@ -205,21 +204,36 @@ export type Context = {
   balance: number | null;
   /** The monthly ceiling on the platform's engines, in dollars, or null. */
   allowance: { cap: number; spent: number } | null;
+  /**
+   * The house workspace's monthly engine cap and what it has spent this month (lib/houseCap.ts), in dollars; null for every other workspace.
+   * `bands`: the hold band of each line that holds its ceiling (Cinema Studio, lib/cinemaHold.ts), by line key (withHouseBands), so the
+   * house's quote counts it against the house cap at cost times its band, as admission and the reservation do (the house cap only).
+   */
+  houseCap?: { cap: number; spent: number; bands?: Record<string, number> } | null;
   /** The cap of each production the quote touches, keyed by its id. */
   caps: Record<string, Cap>;
   warnPct: number;
-  /** The workspace's approval rule, the ceiling it uses, and who is asking. */
-  rule: ApprovalRule;
-  shotCap: number;
-  isAdmin: boolean;
-  /**
-   * Guardrail 4 (lib/approvalRule.ts › jobLineVerdict): the approval line in credits at this workspace's price of a credit, and whether
-   * the asker is a machine (a token, an MCP client, Atomik). Absent: no line is judged here (the press still judges it).
-   */
-  jobLine?: { credits: number; machine: boolean; /** The house, which pays no credits: its lines are judged at cost (the engine's dollars at `perCredit`, no margin), worded without figures. */ house?: boolean; perCredit?: number };
 };
 
-const fmt = (n: number): string => `${Math.round(n).toLocaleString("en-US")} cr`;
+
+/**
+ * The house's context with the band of each line that holds its ceiling (lib/cinemaHold.ts holdBandOf, from the line's model), so its quote
+ * counts a held take against the house's monthly cap as admission does: its cost times its band. The bands are read by the house cap's
+ * check below and by nothing else. Any other workspace has no house cap, and its context is returned as it came, the same object: its
+ * quote does not change.
+ */
+export function withHouseBands(c: Context, units: Unit[]): Context {
+  if (!c.houseCap) return c;
+  const bands: Record<string, number> = {};
+  for (const u of units) { const band = holdBandOf(u.engine); if (band > 1) bands[u.key] = band; }
+  return { ...c, houseCap: { ...c.houseCap, bands } };
+}
+
+/** The band a house line is counted at against the house cap: its hold band when it holds its ceiling, else 1 (every line of every other workspace). */
+const houseBandOf = (c: Context, l: QuoteLine): number => {
+  const band = c.houseCap?.bands?.[l.key];
+  return band != null && Number.isInteger(band) && band > 1 ? band : 1;
+};
 
 export function verdictOf(q: Quote, c: Context): Verdict {
   /* A choice that spends nothing is never gated. Leaving existing takes alone
@@ -227,32 +241,8 @@ export function verdictOf(q: Quote, c: Context): Verdict {
      of room, and a cap it does not spend against must not be what stops it. */
   if (q.totalCredits === 0) return { allow: true, gate: "ok", line: "", notice: "" };
 
-  /* The approval rule, judged one shot at a time against that shot's own
-     running total — which is what the rule says and what the press does.
-     Judging the set on its sum would stop a member under a rule the workspace
-     never set; judging it with no history at all would wave through the second
-     take of a shot already at its ceiling. */
-  /* Guardrail 4, whatever the rule and whatever the shot: a line priced above the approval line (its takes multiplied first: a line stands for
-     every take it carries) needs an admin's own tap; a machine is refused outright. The same words as the press (lib/approvalRule.ts). */
-  if (c.jobLine) {
-    const house = c.jobLine.house === true;
-    for (const l of q.lines) {
-      /* Only work the platform pays for has a credit price to refuse, and the house, which is judged at cost. */
-      if (!house && !l.platformPays) continue;
-      const credits = house ? billCreditsWith(l.usd, 1, c.jobLine.perCredit ?? creditUsd()) : l.credits;
-      const stop = jobLineVerdict({ credits, lineCredits: c.jobLine.credits, isAdmin: c.isAdmin, machine: c.jobLine.machine, figures: !house }, fmt);
-      if (stop.blocked) return { allow: false, gate: "approval", line: stop.line, notice: "" };
-    }
-  }
-  if (c.rule === "cap" && !c.isAdmin) {
-    for (const l of q.lines) {
-      const stop = shotCapVerdict({
-        rule: c.rule, isAdmin: c.isAdmin, cap: c.shotCap,
-        shotCredits: l.spent, takeCredits: l.credits, code: l.code || "This shot",
-      }, fmt);
-      if (stop.blocked) return { allow: false, gate: "approval", line: stop.line, notice: "" };
-    }
-  }
+  /* No approval rule judges a quote: the workspace's cost approval rule and its per-shot cap were retired on 21 Oct 2026
+     (owner: "every member approves their own spend with their own tap on the quote"). What follows are the walls that stay. */
 
   /* The workspace's monthly ceiling on the platform's engines. Only the jobs
      the platform actually pays for count against it. */
@@ -275,6 +265,15 @@ export function verdictOf(q: Quote, c: Context): Verdict {
      answering it with one cap would let a run through that the press refuses
      halfway. */
   let notice = "";
+  /* The house's own monthly cap: a wall at the cap, a warning from 80% (the figures are the studio's own dollars, so the words may name them). */
+  if (c.houseCap) {
+    /* A held take at its hold, cost times band: what admission and the reservation count it at. */
+    const needs = q.lines.reduce((n, l) => n + l.usd * houseBandOf(c, l), 0);
+    const now = houseCapState(c.houseCap.cap, c.houseCap.spent);
+    const after = houseCapState(c.houseCap.cap, c.houseCap.spent + needs);
+    if (now.stop || c.houseCap.spent + needs > c.houseCap.cap + 1e-9) return { allow: false, gate: "allowance", notice: "", line: HOUSE_CAP_REACHED };
+    if (after.warn) notice = houseCapWarning(after);
+  }
   const byProject = new Map<string, number>();
   for (const l of q.lines) {
     const key = l.projectId ?? "";
@@ -304,12 +303,7 @@ export function verdictOf(q: Quote, c: Context): Verdict {
     }
   }
 
-  return {
-    allow: true, gate: "ok", notice,
-    /* Nothing is in the way, so the only thing worth saying is the rule that
-       would have applied, which is what 2.2 asks the composer to show. */
-    line: ruleLine(c.rule, c.shotCap, fmt),
-  };
+  return { allow: true, gate: "ok", notice, line: "" };
 }
 
 /* ── Staleness ──────────────────────────────────────────────────────────── */

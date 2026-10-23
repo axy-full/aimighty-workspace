@@ -26,7 +26,7 @@ import {
   type DialogueLine,
 } from "@/lib/elevenlabs";
 import { GROK_TTS_MODEL, GROK_VOICE_ID, audioVendor, grokSpeechUsd, grokVoiceConfigured, listGrokVoices } from "@/lib/xaiVoice";
-import { findStoredSource, resolveStoredDuration, SOURCE_BYTES_LIMIT } from "@/lib/mediaSource.server";
+import { isSourceRefusal, lookupStoredSource, resolveStoredDuration, SOURCE_BYTES_LIMIT, type StoredSource } from "@/lib/mediaSource.server";
 import { getShot } from "@/lib/shots";
 import {
   claimBinding,
@@ -47,6 +47,7 @@ import { isBatchId } from "@/lib/variations";
 import { checkCap } from "@/lib/caps";
 import { checkLimits, checkQuota, slotsMessage } from "@/lib/limits";
 import { sampleWorkspaceRefusal } from "@/lib/demo/spend-guard.server";
+import { movedPriceBody, pressFigure, pressFigureProblem } from "@/lib/pressFigure";
 
 import type {
   AdmissionActor,
@@ -62,7 +63,6 @@ import {
   admitPrepared,
   assertAdmissionActor,
 } from "./admissionSupport";
-import { jobLineNow } from "./shotCap";
 
 const MAX_TEXT = 5000;
 export type AudioTask = "speech" | "sound" | "music" | "dialogue" | "voiceChange";
@@ -77,14 +77,15 @@ const SOURCE_ID = /^[A-Za-z0-9_-]{1,128}$/;
  * with the reason rather than priced from a guess.
  */
 export async function resolveVoiceChangeSource(body: { sourceUploadId?: unknown; sourceGenId?: unknown }): Promise<
-  | { source: NonNullable<Awaited<ReturnType<typeof findStoredSource>>>; seconds: number }
-  | { error: string; status: number }
+  | { source: StoredSource; seconds: number }
+  | { error: string; status: number; code?: string }
 > {
   const uploadId = body.sourceUploadId ? String(body.sourceUploadId) : "";
   const genId = body.sourceGenId ? String(body.sourceGenId) : "";
   if ((!uploadId && !genId) || (uploadId && genId)) return { error: "Pick one audio original to change the voice of.", status: 400 };
   if ((uploadId && !SOURCE_ID.test(uploadId)) || (genId && !SOURCE_ID.test(genId))) return { error: "That audio source is not valid.", status: 400 };
-  const source = await findStoredSource(uploadId ? { uploadId } : { genId });
+  const source = await lookupStoredSource(uploadId ? { uploadId } : { genId });
+  if (isSourceRefusal(source)) return { error: source.error, code: source.code, status: source.status };
   if (!source) return { error: "That audio original is not in this workspace.", status: 404 };
   if (source.mediaKind !== "audio") return { error: "Voice change takes an audio original. Export the clip's sound first for a video.", status: 400 };
   if (source.bytes > SOURCE_BYTES_LIMIT) return { error: "Voice change takes a source up to 100 MB.", status: 400 };
@@ -180,7 +181,7 @@ export async function executeAudioAdmission(
      Activity and the library say which track was re-voiced. */
   const voiceChange = task === "voiceChange" ? await resolveVoiceChangeSource(body) : null;
   if (voiceChange && "error" in voiceChange)
-    return admissionReply({ error: voiceChange.error }, { status: voiceChange.status });
+    return admissionReply({ error: voiceChange.error, ...(voiceChange.code ? { code: voiceChange.code } : {}) }, { status: voiceChange.status });
   const text = (
     dialogue
       ? dialogue.lines.map((line) => line.text).join("\n")
@@ -354,9 +355,6 @@ export async function executeAudioAdmission(
   const terms = currentBillingTerms("audio", modelId);
   /* The approval unit (lib/credits.ts quotedCredits): never a margin beside the dollars in `price`. */
   const estimatedCredits = quotedCredits(vendorUsd, terms);
-  /* Guardrail 4 at the quote and before anything is created: a sound over the approval line needs an admin's own tap (lib/shotCap.ts › jobLineNow). */
-  const over = jobLineNow({ credits: estimatedCredits, usd: vendorUsd, key: vendor, actor: got, auto: options.run?.auto === true });
-  if (over) return admissionReply({ error: over, needsAdmin: true }, { status: 403 });
   if (quoteOnly)
     return admissionReply({
       estimatedCredits,
@@ -364,19 +362,20 @@ export async function executeAudioAdmission(
       unit: creditsApply(requireTenant()) ? "cr" : "usd",
       ...(voiceChange ? { sourceSeconds: voiceChange.seconds, minutes: Math.max(1, Math.ceil(voiceChange.seconds / 60 - 1e-9)) } : {}),
     });
-  if (
-    body.maxCredits != null &&
-    (!Number.isInteger(body.maxCredits) ||
-      body.maxCredits < 0 ||
-      estimatedCredits > body.maxCredits)
-  ) {
-    return admissionReply(
-      {
-        error:
-          "The audio estimate exceeds the approved credit amount. Review the price before submitting.",
-      },
-      { status: 409 },
-    );
+  /* The figure on the button (lib/pressFigure.ts): one that is not a whole number of credits is no figure; one under today's
+     price is a moved price, refused with the new figure and never admitted above what was shown. A press with no figure at all
+     is refused below, past the checkpoint a preparation stops at, still before anything is filed. */
+  if (body.maxCredits != null) {
+    const figure = pressFigure(body.maxCredits);
+    const problem = pressFigureProblem(figure);
+    if (problem) return admissionReply(problem.body, { status: problem.status });
+    if (estimatedCredits > figure!) {
+      const inCredits = creditsApply(requireTenant());
+      return admissionReply(
+        movedPriceBody({ estimatedCredits, price: inCredits ? estimatedCredits : vendorUsd, unit: inCredits ? "cr" : "usd" }),
+        { status: 409 },
+      );
+    }
   }
   const wall = await allowanceCheck(
     vendor,
@@ -421,6 +420,10 @@ export async function executeAudioAdmission(
     },
   );
   if (stopped) return stopped;
+  /* A press carries the figure that was on its button (owner, 21 Oct 2026; lib/pressFigure.ts). The route refuses one without it
+     before its key is claimed; every other path that reaches here to file a take is refused here, before anything is filed, held,
+     reserved or sent. A prepared request (the pipeline, Atomik) carries its quoted figure (lib/admissionSupport.ts). */
+  { const problem = pressFigureProblem(body.maxCredits); if (problem) return admissionReply(problem.body, { status: problem.status }); }
   const ts = now();
   // The claim is bound in the same write: a claim naming no job proves there is none.
   const binding = await claimBinding(requestClaim, genId);

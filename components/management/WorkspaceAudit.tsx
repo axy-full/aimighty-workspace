@@ -19,6 +19,10 @@ type AuditEvent = {
     mode?: string;
     scope?: string;
     expiresAt?: number;
+    ceilingUnit?: string;
+    ceilingBefore?: number | null;
+    ceilingAfter?: number | null;
+    legacyCleared?: boolean;
   };
 };
 type AuditPage = {
@@ -47,6 +51,7 @@ export const labels: Record<string, string> = {
   "workspace.restored": "Restored the workspace",
   "api_token.created": "Created API token",
   "api_token.revoked": "Revoked API token",
+  "api_token.ceiling_set": "Set an API token's monthly ceiling",
   "review_link.created": "Created review link",
   "review_link.revoked": "Revoked review link",
   "identity_consent.recorded": "Recorded identity consent",
@@ -214,6 +219,12 @@ export default function WorkspaceAudit({ scope }: { scope: string }) {
               );
             if (event.details.scope)
               details.push(`Permission: ${event.details.scope}`);
+            /* A token's ceiling, in credits; the house's dollar figure is not shown here. */
+            if (event.details.ceilingUnit === "cr") {
+              const word = (n: number | null | undefined) => (n == null ? "none" : `${n.toLocaleString("en-US")} cr`);
+              details.push(`Ceiling: ${word(event.details.ceilingBefore)} → ${word(event.details.ceilingAfter)}`);
+            }
+            if (event.details.legacyCleared) details.push("Replaced the ceiling set before credits");
             if (event.details.expiresAt)
               details.push(
                 `Expires ${new Date(event.details.expiresAt).toLocaleString()}`,

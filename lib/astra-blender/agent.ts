@@ -1,5 +1,6 @@
 import { isDirectText } from '../openai-direct';
 import { stepTextUsage } from '../textDirect';
+import { modelDoor, modelTelemetry, readSdkResult } from '../modelTrace';
 import { ToolLoopAgent, Output, isStepCount, tool, type LanguageModel, type ModelMessage } from 'ai';
 import type { SharedV4ProviderOptions } from '@ai-sdk/provider';
 import { z } from 'zod';
@@ -71,7 +72,7 @@ export function createAstraAgent(envelope: AstraAgentEnvelope, model: LanguageMo
   let checks = 0;
   const trace: unknown[] = [];
   if (envelope.mode === 'native') return new ToolLoopAgent({ model, instructions: astraAgentInstructions('native'), maxOutputTokens: envelope.maxTokens,
-    maxRetries: 0, stopWhen: isStepCount(ASTRA_AGENT_STEPS), providerOptions: envelope.providerOptions,
+    maxRetries: 0, stopWhen: isStepCount(ASTRA_AGENT_STEPS), providerOptions: envelope.providerOptions, experimental_telemetry: modelTelemetry('3d-blocking-agent'),
     output: Output.object({ schema: astraNativeResultSchema }),
     tools: { check_program: tool({ description: 'Validate the native source document and its available asset bindings. Does not execute or certify Python.', inputSchema: astraNativeResultSchema,
       execute: async value => {
@@ -89,7 +90,7 @@ export function createAstraAgent(envelope: AstraAgentEnvelope, model: LanguageMo
     },
   });
   return new ToolLoopAgent({ model, instructions: astraAgentInstructions(), maxOutputTokens: envelope.maxTokens,
-    maxRetries: 0, stopWhen: isStepCount(ASTRA_AGENT_STEPS), providerOptions: envelope.providerOptions,
+    maxRetries: 0, stopWhen: isStepCount(ASTRA_AGENT_STEPS), providerOptions: envelope.providerOptions, experimental_telemetry: modelTelemetry('3d-blocking-agent'),
     output: Output.object({ schema: astraAgentResultSchema }),
     tools: { check_scene: tool({ description: 'Check a complete scene candidate for valid geometry, referenced assets and locked-object preservation. At most two checks.', inputSchema: astraAgentResultSchema,
       execute: async result => {
@@ -117,7 +118,9 @@ export async function runAstraAgent(envelope: AstraAgentEnvelope, auth: Record<s
     return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }], usage: { cost: 0 } }) };
   }
   const model = languageModel(ASTRA_BLENDER_MODEL, { auth });
-  const result = await createAstraAgent(envelope, model, checkpoint).generate({ messages: astraAgentMessages(envelope), abortSignal: AbortSignal.timeout(260000) });
+  const agent = createAstraAgent(envelope, model, checkpoint);
+  type Generated = Awaited<ReturnType<typeof agent.generate>>;
+  const result = await modelDoor<Generated>(() => agent.generate({ messages: astraAgentMessages(envelope), abortSignal: AbortSignal.timeout(260000) }), readSdkResult);
   // Return even invalid scene JSON with its usage so the durable job can settle
   // the real completed attempt, instead of losing accounting during validation.
   return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(result.output) } }],

@@ -97,6 +97,21 @@ async function seed(ws: TenantWorkspace, cost: typeof COST = COST) {
       { sql: take, args: ["g_voice", "p_margin", null, "audio", "eleven_multilingual_sts_v2", "Voice change",
         JSON.stringify({ task: "voiceChange", estUsd: cost.voice, estCredits: 1234, credits: 1234, tier: "creator" }),
         "u_admin", at + 3, at + 3, "elevenlabs", cost.voice, null, null, null, "/api/media/g_voice", 1234] },
+      /* A lip-sync take (sync.so, direct): its params carry the workflow's own record, the vendor's per-second rate and what it reserved, its job and asset ids,
+         its poll lease, the consent ids and the face still's hash. A credit workspace (or anyone) reads none of it (lib/directEnginePublic.ts). */
+      { sql: take, args: ["g_lipsync", "p_margin", null, "video", "lipsync-2-pro", "Lip-sync · harbour",
+        JSON.stringify({ task: "lipsync", job: "fix", estUsd: cost.dub, estCredits: 0, lipsync: {
+          status: "done", model: "lipsync-2-pro", syncMode: "bounce", seconds: 5, audioSeconds: 5, rateUsdPerSecond: cost.dubRate, reservedUsd: cost.dub, estimateCredits: 7,
+          consentId: "consent_margin", castMemberId: "cast_margin", use: "production", faceSha256: "a".repeat(64), voiceConsentId: null, funded: 1, claimedAt: at,
+          syncId: "vendor-job-lipsync-1", videoAsset: "vendor-asset-v", audioAsset: "vendor-asset-a", submittedAt: at, lastPolledAt: at, pollUntil: at, settled: 1, cleanupDue: 1, cleanupTries: 2, vendorDeleted: 0, reconcile: 1 } }),
+        "u_member", at + 5, at + 5, "syncso", 0, null, null, null, "/api/media/g_lipsync", null] },
+      /* A Recraft take: its params carry the workflow's record, the per-image rate it was quoted at, the reserved dollars, the units Recraft stated and the source.
+         Nobody reads any of it (lib/directEnginePublic.ts keeps the take's own words). */
+      { sql: take, args: ["g_recraft", "p_margin", null, "image", "recraftv4_1", "A heron at dusk",
+        JSON.stringify({ task: "recraft_image", job: "keyframe", ratio: "1:1", size: "1024x1024", estUsd: cost.still, estCredits: 0, recraft: {
+          status: "done", tool: "image", model: "recraftv4_1", size: "1024x1024", style: null, source: { kind: "upload", id: "up_vendor_src" },
+          rateUsd: cost.still, reservedUsd: cost.still, estimateCredits: 3, funded: 1, claimedAt: at, sendingAt: at, statedUnits: 7777, settled: 1, reconcile: 1 } }),
+        "u_member", at + 8, at + 8, "recraft", 0, null, null, null, "/api/media/g_recraft", null] },
       /* A starter take: nothing was rendered, and its display price is the vendor's. */
       { sql: take, args: ["g_demo", "p_margin", "s_margin", "video", DEFAULT_MODEL_ID, "Demo take",
         JSON.stringify({ demo: true, demoCostUsd: cost.demo, resolution: "1080p", duration: 5 }),
@@ -167,6 +182,8 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/jobs/[id] (a failed provider job)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_failed?sync=0", params: { id: "g_failed" } },
   { name: "GET /api/jobs/[id] (a dub)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_dub?sync=0", params: { id: "g_dub" } },
   { name: "GET /api/jobs/[id] (a voice change)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_voice?sync=0", params: { id: "g_voice" } },
+  { name: "GET /api/jobs/[id] (a lip-sync take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_lipsync?sync=0", params: { id: "g_lipsync" } },
+  { name: "GET /api/jobs/[id] (a Recraft take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_recraft?sync=0", params: { id: "g_recraft" } },
   { name: "GET /api/jobs/[id] (a starter take)", file: "app/api/jobs/[id]/route.ts", url: "/api/jobs/g_demo?sync=0", params: { id: "g_demo" } },
   { name: "GET /api/atomik", file: "app/api/atomik/route.ts", url: "/api/atomik" },
   { name: "GET /api/atomik/[id]", file: "app/api/atomik/[id]/route.ts", url: "/api/atomik/ach_margin", params: { id: "ach_margin" } },
@@ -181,6 +198,7 @@ const ROUTES: RouteCase[] = [
   { name: "GET /api/usage", file: "app/api/usage/route.ts", url: "/api/usage" },
   { name: "GET /api/usage?rows=1", file: "app/api/usage/route.ts", url: "/api/usage?rows=1" },
   { name: "GET /api/usage/summary", file: "app/api/usage/summary/route.ts", url: "/api/usage/summary", ownKeys: true },
+  { name: "GET /api/usage/house-cap", file: "app/api/usage/house-cap/route.ts", url: "/api/usage/house-cap" },
   /* `capUsd` is the ceiling the customer typed for their own token, in the dollars they pay, not a vendor figure. */
   { name: "GET /api/tokens", file: "app/api/tokens/route.ts", url: "/api/tokens", allow: { allowKeys: ["capUsd"] } },
   { name: "GET /api/workspaces/keys", file: "app/api/workspaces/keys/route.ts", url: "/api/workspaces/keys" },

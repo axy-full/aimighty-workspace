@@ -57,11 +57,12 @@ export const STATUS_LABEL: Record<ReachStatus, string> = {
 /** Tools that write: a read-only token is refused them (lib/auth withTenant refuses its non-GET calls). */
 const WRITES = new Set(["render_shot", "create_project"]);
 /** The one tool a prepare token writes with: a job a person approves (lib/security/prepared-jobs.ts). */
-const PREPARES = new Set(["prepare_shot"]);
+const PREPARES = new Set(["prepare_shot", "plan_step"]);
 /** One line per tool; tests/unit/toolsConnections.spec.ts fails when lib/mcp.ts gains a tool this page does not describe. */
 export const MCP_TOOL_LINES: Readonly<Record<string, string>> = Object.freeze({
   render_shot: "Starts a video take and returns its id",
   prepare_shot: "Prepares a video take; a person approves it in Particl",
+  plan_step: "Prepares and prices a board step's quick plan; a person approves it in Particl",
   wait_for_render: "Waits for a take, then reports what it cost",
   list_renders: "Recent takes, by project, status or prompt",
   get_render: "One take, with a link to watch or save it",
@@ -160,6 +161,8 @@ export type ApiToken = {
   capCredits?: number | null; legacyCeiling?: boolean;
   /** Workspaces on their own keys. */
   capUsd?: number | null;
+  /** Another member's token that can generate, listed to an admin to set its ceiling (GET /api/tokens `others`): its maker's name. */
+  owner?: string | null;
 };
 export type TokenUnit = "credits" | "usd";
 
@@ -192,11 +195,11 @@ export function tokenFacts(token: ApiToken, unit: TokenUnit, now = Date.now()): 
       const spent = token.spendThisMonth;
       if (token.capCredits != null) parts.push(`${cr(spent)} of ${cr(token.capCredits)} this month`);
       else if (token.legacyCeiling) parts.push(`${cr(spent)} this month · ceiling set before credits`);
-      else parts.push(`${cr(spent)} this month · no ceiling`);
+      else parts.push(`${cr(spent)} this month · no ceiling · prepares and prices only`);
     } else {
       const spent = token.spendThisMonth;
       if (token.capUsd != null) parts.push(`${usd(spent)} of ${usd(token.capUsd)} this month`);
-      else parts.push(`${usd(spent)} this month · no ceiling`);
+      else parts.push(`${usd(spent)} this month · no ceiling · prepares and prices only`);
     }
   }
   parts.push(token.lastUsed ? `used ${ago(token.lastUsed, now)}` : "never used");
@@ -212,31 +215,39 @@ export function ceilingShare(token: ApiToken, unit: TokenUnit): number | null {
 }
 
 /** Reads a GET /api/tokens reply defensively. The route says `unit: "cr"` for a credit workspace. */
-export function parseTokens(value: unknown): { unit: TokenUnit; tokens: ApiToken[] } | null {
+export function parseTokens(value: unknown): { unit: TokenUnit; tokens: ApiToken[]; others?: ApiToken[] } | null {
   if (!value || typeof value !== "object") return null;
-  const { tokens, unit } = value as { tokens?: unknown; unit?: unknown };
+  const { tokens, unit, others } = value as { tokens?: unknown; unit?: unknown; others?: unknown };
   if (!Array.isArray(tokens)) return null;
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
-  const out: ApiToken[] = [];
-  for (const t of tokens) {
-    if (!t || typeof t !== "object") return null;
-    const r = t as Record<string, unknown>;
-    if (typeof r.id !== "string" || typeof r.name !== "string") return null;
-    out.push({
-      /* Only the word itself reads as spending: an unknown scope is shown as read-only. */
-      id: r.id, name: r.name, scope: r.scope === "render" ? "render" : r.scope === "prepare" ? "prepare" : "read",
-      lastUsed: num(r.lastUsed), createdAt: num(r.createdAt) ?? 0,
-      spendThisMonth: num(r.spendThisMonth) ?? 0,
-      capCredits: num(r.capCredits), legacyCeiling: r.legacyCeiling === true,
-      capUsd: num(r.capUsd),
-    });
-  }
-  return { unit: unit === "cr" || unit === "credits" ? "credits" : "usd", tokens: out };
+  const read = (list: unknown[]): ApiToken[] | null => {
+    const out: ApiToken[] = [];
+    for (const t of list) {
+      if (!t || typeof t !== "object") return null;
+      const r = t as Record<string, unknown>;
+      if (typeof r.id !== "string" || typeof r.name !== "string") return null;
+      out.push({
+        /* Only the word itself reads as spending: an unknown scope is shown as read-only. */
+        id: r.id, name: r.name, scope: r.scope === "render" ? "render" : r.scope === "prepare" ? "prepare" : "read",
+        lastUsed: num(r.lastUsed), createdAt: num(r.createdAt) ?? 0,
+        spendThisMonth: num(r.spendThisMonth) ?? 0,
+        capCredits: num(r.capCredits), legacyCeiling: r.legacyCeiling === true,
+        capUsd: num(r.capUsd),
+        ...(typeof r.owner === "string" ? { owner: r.owner } : {}),
+      });
+    }
+    return out;
+  };
+  const mine = read(tokens);
+  if (!mine) return null;
+  /* An admin's list also carries the other members' tokens that can generate, to set their ceilings. */
+  const theirs = Array.isArray(others) ? read(others) : null;
+  return { unit: unit === "cr" || unit === "credits" ? "credits" : "usd", tokens: mine, ...(theirs ? { others: theirs } : {}) };
 }
 
 /**
  * The ceiling field, read the way POST /api/tokens reads it (lib/tokenCeiling.ts).
- * Blank is "no ceiling" and has to be said on purpose (`blank`), so the page
+ * Blank is "no ceiling" (the token then only prepares and prices) and has to be said on purpose (`blank`), so the page
  * can make the person confirm it rather than mint an unbounded token by
  * leaving a field empty.
  */
@@ -247,6 +258,11 @@ export function readCeiling(raw: string, unit: TokenUnit): { value: number | nul
   }
   const read = parseCeiling(raw);
   return "error" in read ? read : { value: read.capUsd, blank: read.capUsd == null };
+}
+
+/** The body PATCH /api/tokens/[id]/ceiling takes (an admin's): the ceiling in the workspace's unit, or null for none. */
+export function ceilingBody(unit: TokenUnit, ceiling: number | null): { capCredits: number | null } | { capUsd: number | null } {
+  return unit === "credits" ? { capCredits: ceiling } : { capUsd: ceiling };
 }
 
 /** The body a POST /api/tokens sends: the ceiling in the workspace's unit, and none on a read-only token. */

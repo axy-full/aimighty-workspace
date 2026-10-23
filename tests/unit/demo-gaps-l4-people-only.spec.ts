@@ -128,7 +128,7 @@ const read = async <T,>(sql: string): Promise<T[]> => {
   return runInTenant(WS, async () => (await db().execute(sql)).rows as unknown as T[]);
 };
 
-test("setting the budget per production and the per-shot cap: a signed-in admin can; an admin's own render token cannot, and nothing changes", async () => {
+test("setting the budget per production: a signed-in admin can; an admin's own render token cannot, and nothing changes; the retired approval rule and per-shot cap are refused whole, even for an admin (21 Oct 2026)", async () => {
   await seed();
   const api = await harness();
   mode = "token";
@@ -137,10 +137,14 @@ test("setting the budget per production and the per-shot cap: a signed-in admin 
   expect(await read("SELECT key FROM settings WHERE key IN ('productionBudgetCredits','shotCapCredits','approvalRule')")).toEqual([]);
 
   mode = "session";
-  const byPerson = await api.settings.PATCH(req("/api/settings", "PATCH", { productionBudgetCredits: "400", approvalRule: "cap", shotCapCredits: "50" }), undefined as never);
+  /* With the retired keys in the same save: refused whole (410), nothing written. */
+  const retired = await api.settings.PATCH(req("/api/settings", "PATCH", { productionBudgetCredits: "400", approvalRule: "cap", shotCapCredits: "50" }), undefined as never);
+  expect(retired.status, await retired.clone().text()).toBe(410);
+  expect(await read("SELECT key FROM settings WHERE key IN ('productionBudgetCredits','shotCapCredits','approvalRule')")).toEqual([]);
+  const byPerson = await api.settings.PATCH(req("/api/settings", "PATCH", { productionBudgetCredits: "400" }), undefined as never);
   expect(byPerson.status, await byPerson.clone().text()).toBe(200);
   const rows = await read<{ key: string; value: string; updated_by: string }>("SELECT key,value,updated_by FROM settings WHERE key IN ('productionBudgetCredits','shotCapCredits','approvalRule') ORDER BY key");
-  expect(rows.map((r) => [r.key, r.value])).toEqual([["approvalRule", "cap"], ["productionBudgetCredits", "400"], ["shotCapCredits", "50"]]);
+  expect(rows.map((r) => [r.key, r.value])).toEqual([["productionBudgetCredits", "400"]]);
   /* The setting keeps who changed it last: a person. */
   expect(new Set(rows.map((r) => r.updated_by))).toEqual(new Set(["boss"]));
   /* Nonsense is refused before anything is written. */
@@ -207,16 +211,17 @@ test("Ask an admin: Atomik's identity is refused; an admin is told they can do i
     const before = await read("SELECT key,value FROM settings ORDER BY key");
     const r = await lib.askAdmin({ id: "mem", name: "Studio member", admin: false }, { about: "rules" }, deps);
     expect(r).toEqual({ asked: 2, line: "Asked. The owner and admins were told; nothing was spent." });
-    expect(told).toEqual([{ ids: ["boss", "second"], title: "Studio member asks an admin", body: "About the budget per production or the per-shot cap, in Settings › Spending rules.", url: "/suites?view=workspace&ws=rules" }]);
+    expect(told).toEqual([{ ids: ["boss", "second"], title: "Studio member asks an admin", body: "About the budget per production, in Settings › Spending rules.", url: "/suites?view=workspace&ws=rules" }]);
     expect(await read("SELECT key,value FROM settings ORDER BY key")).toEqual(before);
-    /* A step that is not on a plan here is not asked about. */
-    await expect(lib.askAdmin({ id: "mem", name: "Studio member", admin: false }, { about: "step", productionId: "prod-l4", runId: "rar_none", seq: 1 }, deps)).rejects.toMatchObject({ status: 404 });
+    /* A step is not asked about any more (21 Oct 2026): refused, nobody told. */
+    await expect(lib.askAdmin({ id: "mem2", name: "Studio member", admin: false }, { about: "step", productionId: "prod-l4", runId: "rar_none", seq: 1 } as never, deps)).rejects.toMatchObject({ status: 400, message: lib.ASK_RULES_ONLY });
+    expect(told).toHaveLength(1);
   });
   expect(lib.isPersonId("boss")).toBe(true);
   expect(lib.isPersonId("agent:rar_1")).toBe(false);
 });
 
-test("the budget per production: a production with no cap of its own follows it; its own cap wins; the gate's verdict and the paused line use it", async () => {
+test("the budget per production: a production with no cap of its own follows it; its own cap wins; the gate's verdict and the warning's share use it", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const caps = await import("../../lib/caps");
   await runInTenant(WS, async () => {
@@ -228,17 +233,18 @@ test("the budget per production: a production with no cap of its own follows it;
     await db().execute("UPDATE projects SET cap_credits=150 WHERE id='prod-l4'");
     expect(await caps.projectCap("prod-l4")).toMatchObject({ cap: 150, from: "production" });
     await db().execute("UPDATE projects SET cap_credits=NULL WHERE id='prod-l4'");
-    /* Nothing spent yet: a 7 cr render is far from the 320 cr pause. */
-    expect(await caps.budgetAsk("prod-l4", 7)).toBeNull();
-    expect(await caps.budgetAsk("prod-l4", 320)).toMatchObject({ pause: { pauseAt: 320, reached: true }, line: "Paused at 80 % of the budget: 0 of 400 cr used. Continue or stop." });
-    /* Unlocked by an admin: past its cap it goes on; below the cap the ask still stands. */
-    await db().execute("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
-    expect(await caps.budgetAsk("prod-l4", 320)).not.toBeNull();
-    await db().execute("UPDATE projects SET cap_unlocked=0 WHERE id='prod-l4'");
+    /* The share as the gate reckons spend (projectCapSpent) and the pure pause (budgetPause): nothing spent yet, a 7 cr render is far from the 320 cr
+       share; a 320 cr one reaches it. (budgetAsk, the Auto gate's ask, went with Auto on 20 Oct 2026; its unlock case went with it.) */
+    const pauseOf = async (needs: number) => { const row = await caps.projectCapSpent("prod-l4"); return row && row.cap != null ? caps.budgetPause({ cap: row.cap, spent: row.spent, needs, warnPct: 80 }) : null; };
+    expect(await pauseOf(7)).toMatchObject({ pauseAt: 320, reached: false });
+    const reached = (await pauseOf(320))!;
+    expect(reached).toMatchObject({ pauseAt: 320, reached: true });
+    /* No Paused card (owner, 21 Oct 2026): no line words a pause, and Auto's ask is gone. */
+    for (const gone of ["budgetAsk", "budgetPauseLine"]) expect((caps as Record<string, unknown>)[gone], gone).toBeUndefined();
     /* Cleared: no budget, no cap, no pause. */
     await setSetting("productionBudgetCredits", "", "boss");
     expect(await caps.projectCap("prod-l4")).toMatchObject({ cap: null, from: null });
-    expect(await caps.budgetAsk("prod-l4", 99999)).toBeNull();
+    expect(await pauseOf(99999)).toBeNull();
   });
 });
 
@@ -297,7 +303,7 @@ test("one cap everywhere: with a workspace budget, the projects list and the pro
   await runInTenant(WS, () => setSetting("productionBudgetCredits", "", "boss"));
 });
 
-test("an unlock belongs to the cap it was given for: a new cap or a new budget re-locks it and re-arms the warning; a stale unlock never silences the 80 % ask (P6)", async () => {
+test("an unlock belongs to the cap it was given for: a new cap or a new budget re-locks it and re-arms the warning; the 80 % share stands at the new cap (P6)", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const caps = await import("../../lib/caps");
   const api = await harness();
@@ -307,13 +313,13 @@ test("an unlock belongs to the cap it was given for: a new cap or a new budget r
   /* Unlocked at the old cap (a direct write: the route's own Unlock is tied to the cap shown, demo-gaps-l4-budget-gate). */
   await exec("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
   await exec("UPDATE projects SET cap_warned_at=1 WHERE id='prod-l4'");
-  /* A new cap: re-locked, the warning re-armed, and the ask at 800 of 1,000 cr stands. */
+  /* A new cap: re-locked, the warning re-armed, and the 80 % share is at 800 of 1,000 cr. */
   expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capCredits: 1000 }), ctx as never)).status).toBe(200);
   expect(await read("SELECT cap_credits,cap_unlocked,cap_warned_at FROM projects WHERE id='prod-l4'")).toEqual([{ cap_credits: 1000, cap_unlocked: 0, cap_warned_at: null }]);
-  expect(await runInTenant(WS, () => caps.budgetAsk("prod-l4", 900))).toMatchObject({ pause: { pauseAt: 800, reached: true } });
-  /* Unlocked again below the cap: the ask still stands (an unlock lets a production past its cap, not past the ask). */
+  /* The share at the new cap, as the gate reckons spend (budgetAsk, the Auto gate's ask, went with Auto on 20 Oct 2026). */
+  const row = (await runInTenant(WS, () => caps.projectCapSpent("prod-l4")))!;
+  expect(caps.budgetPause({ cap: row.cap, spent: row.spent, needs: 900, warnPct: 80 })).toMatchObject({ pauseAt: 800, reached: true });
   await exec("UPDATE projects SET cap_unlocked=1 WHERE id='prod-l4'");
-  expect(await runInTenant(WS, () => caps.budgetAsk("prod-l4", 900))).not.toBeNull();
   /* Setting the same cap again changes nothing; clearing it re-locks. */
   expect((await api.project.PATCH(req("/api/projects/prod-l4", "PATCH", { capCredits: 1000 }), ctx as never)).status).toBe(200);
   expect(await read("SELECT cap_unlocked FROM projects WHERE id='prod-l4'")).toEqual([{ cap_unlocked: 1 }]);
@@ -335,53 +341,36 @@ test("an unlock belongs to the cap it was given for: a new cap or a new budget r
   expect((await api.settings.PATCH(req("/api/settings", "PATCH", { productionBudgetCredits: "" }), undefined as never)).status).toBe(200);
 });
 
-test("Ask an admin judges a step as the gate does (what the shot holds plus this render; a step paused for an admin is over), counts every ask, refused or not, once per person and step every ten minutes", async () => {
+test("Ask an admin has no step subject (the admin approval rule was retired on 21 Oct 2026): a step paused for an admin, or one over a stored cap, is refused, nobody is told and no ask is counted", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { setSetting } = await import("../../lib/settings");
   const { db } = await import("../../lib/db");
-  const { billCreditsWith, marginFor } = await import("../../lib/creditTerms");
   const lib = await import("../../lib/control-room/ask-admin");
   const store = await import("../../lib/workbench/rig-agent-store");
-  const SEEDANCE = "dreamina-seedance-2-5-260628";
   let now = 1_000_000_000;
   const told: string[][] = [];
-  /* The real over-cap check (lib/control-room/ask-admin.ts overCap): no stub. */
   const deps = { admins: async () => [{ id: "boss" }], tell: async (ids: string[]) => { told.push(ids); }, now: () => now };
   await runInTenant(WS, async () => {
     await setSetting("approvalRule", "cap", "boss");
+    await setSetting("shotCapCredits", "1", "boss");
     await store.rigAgentReady();
-    /* Shot A already holds one take; its credits are what the gate counts for it (lib/caps.ts spentBy). */
-    const held = billCreditsWith(1, marginFor(SEEDANCE), 0.10);
     await db().batch([
-      { sql: "INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,project_id,shot_id,cost_usd,created_by) VALUES('g_shot_a','" + SEEDANCE + "','a','{}','succeeded',0,0,'video','prod-l4','shot_a',1,'mem')", args: [] },
       { sql: "INSERT INTO rig_agent_runs(id,production_id,draft_id,owner,request_id,goal,model,state,plan,created_at,updated_at) VALUES('rar_ask','prod-l4','d','mem','req-ask','g','auto','needs_you',NULL,0,0)", args: [] },
-      /* Step 1 the run paused for an admin at send time: over, whatever its own price. */
+      /* Step 1 paused for an admin before 21 Oct 2026; step 2 priced over the stored cap. */
       { sql: "INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,quote_credits,band,pause,created_at,updated_at) VALUES('step_paused','rar_ask',1,'render','Shot 1','take','{}','paused',20,1,'admin',0,0)", args: [] },
-      /* Step 2: priced at 20 cr for shot A. */
       { sql: "INSERT INTO rig_agent_steps(id,run_id,seq,tool,label,purpose,prepared,state,quote_credits,band,admission,created_at,updated_at) VALUES('step_quoted','rar_ask',2,'render','Shot 2','take','{}','waiting',20,1,'{\"request\":{\"shotId\":\"shot_a\"}}',0,0)", args: [] },
     ], "write");
-    const me = { id: "mem", name: "Studio member", admin: false };
-    const step = (seq: number) => ({ about: "step" as const, productionId: "prod-l4", runId: "rar_ask", seq });
-
-    /* Paused for an admin: over, though 20 cr alone is under the 50 cr cap. */
-    await setSetting("shotCapCredits", "50", "boss");
-    expect(await lib.askAdmin(me, step(1), deps)).toMatchObject({ asked: 1 });
-    /* What the shot holds plus this render exactly at the cap is not over it: refused, nobody told. */
-    await setSetting("shotCapCredits", String(held + 20), "boss");
-    await expect(lib.askAdmin(me, step(2), deps)).rejects.toMatchObject({ status: 409, message: lib.ASK_NOT_OVER });
-    expect(told).toHaveLength(1);
-    /* The refused ask counted: asked again at once, it is not judged again. */
-    await expect(lib.askAdmin(me, step(2), deps)).rejects.toMatchObject({ status: 429 });
-    /* A credit over the cap with what the shot holds (the render alone is far under it): over, told, after the window. */
-    await setSetting("shotCapCredits", String(held + 19), "boss");
-    now += 11 * 60_000;
-    expect(await lib.askAdmin(me, step(2), deps)).toMatchObject({ asked: 1 });
-    expect(told).toHaveLength(2);
-    /* Within ten minutes: refused, nobody told twice; another person is their own count. */
-    now += 5 * 60_000;
-    await expect(lib.askAdmin(me, step(2), deps)).rejects.toMatchObject({ status: 429 });
-    expect(await lib.askAdmin({ ...me, id: "mem2" }, step(2), deps)).toMatchObject({ asked: 1 });
-    expect(told).toHaveLength(3);
+    /* A person of their own: no earlier test's ask counts against them. */
+    const me = { id: "mem_steps", name: "Studio member", admin: false };
+    for (const seq of [1, 2])
+      await expect(lib.askAdmin(me, { about: "step", productionId: "prod-l4", runId: "rar_ask", seq } as never, deps)).rejects.toMatchObject({ status: 400, message: lib.ASK_RULES_ONLY });
+    expect(told).toEqual([]);
+    /* Nothing was counted: the person's ask about the rules goes at once. */
+    expect(await lib.askAdmin(me, { about: "rules" }, deps)).toMatchObject({ asked: 1 });
+    now += 1;
+    /* The step paused for an admin reads as its own person's to price again. */
+    const [paused] = await store.stepsOf(db(), "rar_ask");
+    expect(paused).toMatchObject({ seq: 1, state: "paused", pause: "unpriced", quoteCredits: null, reason: store.BACK_TO_ITS_PERSON });
     await setSetting("approvalRule", "anyone", "boss");
     await setSetting("shotCapCredits", "50", "boss");
   });

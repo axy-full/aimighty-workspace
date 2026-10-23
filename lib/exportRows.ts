@@ -10,6 +10,7 @@ import { buildFilename } from "./naming";
 import { presignedReadUrl, usingBlob, videoPath, imagePath, audioPath, modelPath } from "./storage";
 import { originalMediaOf } from "./originalMedia";
 import { isDemoMediaUrl } from "./demoProduction";
+import { SAMPLE_CLIP_CREDIT_TEXT, isSampleClipUrl } from "./sampleClip";
 
 /**
  * The workspace's takes as rows a spreadsheet can read, each with the
@@ -21,17 +22,21 @@ export type ExportRow = {
   id: string; createdAt: number; production: string; shotCode: string; shotTitle: string; take: string;
   kind: string; engine: string; resolution: string; duration: string; status: string;
   credits: number; usd: number; prompt: string; filename: string; url: string; bytes: number | null;
+  /** The starter's sample clip carries its credit (lib/sampleClip.ts); empty for every other take. */
+  credit?: string;
 };
 
 
 /** One row per take, the money column in the workspace's unit. */
 export function takesCsv(rows: ExportRow[], unit: "cr" | "$"): string {
   const head = ["id", "created", "production", "shot", "shot_title", "take", "kind", "engine", "resolution", "duration", "status", unit === "cr" ? "credits" : "usd", "prompt", "filename", "url"];
+  /* A "credit" column only when a take in the file is the starter's sample clip (Big Buck Bunny, CC BY 3.0): every other export keeps its columns exactly. */
+  const credited = rows.some((r) => r.credit);
   const lines = rows.map((r) => [
     r.id, new Date(r.createdAt).toISOString(), r.production, r.shotCode, r.shotTitle, r.take, r.kind, r.engine, r.resolution, r.duration, r.status,
-    unit === "cr" ? r.credits : Math.round(r.usd * 10000) / 10000, r.prompt, r.filename, r.url,
+    unit === "cr" ? r.credits : Math.round(r.usd * 10000) / 10000, r.prompt, r.filename, r.url, ...(credited ? [r.credit ?? ""] : []),
   ].map(csvCell).join(","));
-  return [head.join(","), ...lines].join("\r\n") + "\r\n";
+  return [[...head, ...(credited ? ["credit"] : [])].join(","), ...lines].join("\r\n") + "\r\n";
 }
 
 /** Presigns in flight at once: seconds for a few thousand takes, never a flood on the store. */
@@ -78,6 +83,7 @@ export async function exportRows(): Promise<{ rows: ExportRow[]; unit: "cr" | "$
       duration: kind === "video" && p.duration ? `${p.duration}s` : "", status: String(r.status),
       credits: unit === "cr" ? Number(r.receipt_credits ?? 0) : 0, usd: unit === "$" ? usd : 0,
       prompt: String(r.prompt ?? ""), filename, url: hasMaster ? `/api/media/${id}` : "", bytes: r.bytes == null ? null : Number(r.bytes),
+      ...(isSampleClipUrl(String(r.stored_url ?? "")) ? { credit: SAMPLE_CLIP_CREDIT_TEXT } : {}),
     };
     rows.push(row);
     if (hasMaster && blob)

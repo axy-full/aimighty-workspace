@@ -180,13 +180,18 @@ test("desktop: the sample board is explorable and says nothing is saved; every a
   await expect(page.getByTestId("v12-visitor-board")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("v12-visitor-pill")).toHaveText("Sample · changes on the sample aren’t saved");
   await expect(page.getByTestId("v12-stage-kind")).toHaveText("FILM");
-  expect(await page.getByTestId("v12-stage-row").count()).toBe(8);
+  expect(await page.getByTestId("v12-stage-row").count()).toBe(11);
   await expect(page.getByTestId("v12-visitor-stage")).toHaveText("Storyboard");
   const cards = page.getByTestId("v12-visitor-card");
   await expect(cards).toHaveCount(3);
   await cards.nth(2).getByTestId("v12-visitor-approve").click();
   await expect(page.getByTestId("v12-join-title")).toHaveText("To change the sample you need a Particl account");
   await page.keyboard.press("Escape");
+  await page.locator('[data-testid="v12-stage-row"][data-stage="shots"] .v12-rail-btn').click();
+  await expect(page.getByTestId("v12-visitor-stage")).toHaveText("Shots");
+  /* The board's crumb goes back to the Brief, as before Treatment and Pitch joined the rail. */
+  await page.locator(".v12-crumb-board").click();
+  await expect(page.getByTestId("v12-visitor-stage")).toHaveText("Brief");
   await page.locator('[data-testid="v12-stage-row"][data-stage="shots"] .v12-rail-btn').click();
   await expect(page.getByTestId("v12-visitor-stage")).toHaveText("Shots");
   await page.getByTestId("v12-visitor-plan-approve").click();

@@ -13,12 +13,12 @@ import { cleanRounds, clientRoundModel, nextRoundNumber, roundChanges, roundLine
 import { shotTakes } from "../take/take-model";
 import { useNewInterface } from "@/lib/session";
 import { planLineKey, planMoneyState } from "./money-state";
-import { MoneyActions, MoneyLine, PausedBody, useMoveOffer, usePlanBudget, usePlanBudgetLine, useTopUpLabel } from "./MoneyStates";
+import { MoneyActions, MoneyLine, useMoveOffer, usePlanBudgetLine, useTopUpLabel } from "./MoneyStates";
 import "./plan.css";
 
 /**
  * The plan card (design/particl-graphite/README.md § 3.1 e; CLAUDE.md rule 14): what the plan makes and what each
- * step costs, the balance after, admin marks, and Hold · Change · the primary. Before the build the primary is
+ * step costs, the balance after, and Hold · Change · the primary. Before the build the primary is
  * Build · free; at the plan gate it is the price, "Approve · 93 cr", under "Make 3 shots · 93 cr · at most 186 cr":
  * one approval by the person who asked covers the listed renders and up to two fixes per shot, within that ceiling.
  * After approval it stays while the run works, showing each step, what the plan has used, and any render that asks.
@@ -42,10 +42,9 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   /* The money states (./money-state.ts): read only what the state at hand needs. The sample has none. */
   const live = Boolean(data.run) && !data.sample;
   const topUp = useTopUpLabel(ctx.scope, live && model?.phase === "proposal" && model.balance?.short != null);
-  const budget = usePlanBudget(ctx.scope, ctx.productionId, live && model?.phase === "needs-you");
   const move = useMoveOffer(ctx, live ? data.run : null, live ? model : null);
   const budgetLine = usePlanBudgetLine(ctx.scope, ctx.productionId, live ? data.run?.id ?? null : null, live ? planLineKey(model?.primary, data.run?.money) : null);
-  const money = live && model ? planMoneyState({ model, admin: plan.admin, shotCap: plan.rule?.rule === "cap" ? plan.rule.cap : null, budget, topUp, move }) : null;
+  const money = live && model ? planMoneyState({ model, topUp, move }) : null;
   /* The Inspector shows the same steps from this model: the server is asked for each price once. */
   useEffect(() => { publishPlanModel(runId, model); }, [runId, model]);
   if (!model) return null;
@@ -54,19 +53,17 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
   /* At the plan gate the steps are shown at once: they are what the one approval covers. */
   const gate = model.primary?.kind === "plan" && model.runId !== "sample";
   const short = model.balance?.short != null && proposal && !money;
-  const paused = money?.kind === "paused" ? money : null;
   const acting = money && money.kind !== "failed" && !(proposal && plan.held);
   return (
-    <article className="gx-plan" data-phase={model.phase} data-round={round || undefined} data-money={money?.kind} data-testid="board-plan" aria-label={paused?.title ?? model.title}>
+    <article className="gx-plan" data-phase={model.phase} data-round={round || undefined} data-money={money?.kind} data-testid="board-plan" aria-label={model.title}>
       <div className="gx-plan-head">
-        <div className="gx-plan-title">{paused?.title ?? model.title}</div>
-        {paused ? <div className="gx-plan-line" data-testid="board-plan-line">{paused.sub}</div>
-          : lines ? <div className="gx-plan-line" data-testid="board-plan-line">{lines}</div> : null}
+        <div className="gx-plan-title">{model.title}</div>
+        {lines ? <div className="gx-plan-line" data-testid="board-plan-line">{lines}</div> : null}
         {proposal && plan.held ? <div className="gx-plan-line" role="status">On hold · nothing spent</div> : null}
       </div>
-      {paused ? <PausedBody state={paused} /> : money ? <MoneyLine state={money} /> : null}
+      {money ? <MoneyLine state={money} /> : null}
       {budgetLine ? <div className="gx-plan-state" role="note" data-testid="board-plan-budget-line"><span className="gx-plan-dot" aria-hidden="true" />{budgetLine}</div> : null}
-      {money && (money.kind === "admin" || money.kind === "unavailable") && money.restLine ? <div className="gx-plan-why" data-testid="board-plan-rest">{money.restLine}</div> : null}
+      {money && money.kind === "unavailable" && money.restLine ? <div className="gx-plan-why" data-testid="board-plan-rest">{money.restLine}</div> : null}
       {short ? (
         <div className="gx-plan-short" role="status">
           <span>{balanceLine(model)} · Top up, then approve. Nothing is spent until you do.</span>
@@ -83,7 +80,7 @@ export function PlanCard({ data, ctx }: CardProps<PlanData>) {
           </>
         ) : null}
         {acting ? (
-          <MoneyActions state={money!} ctx={ctx} run={data.run} primary={model.primary} busy={plan.busy} readOnly={readOnly} move={move}
+          <MoneyActions state={money!} ctx={ctx} primary={model.primary} busy={plan.busy} readOnly={readOnly} move={move}
             onPrimary={() => { if (model.primary) void plan.act(model.primary); }} />
         ) : model.primary && !(proposal && plan.held) ? <PrimaryButton primary={model.primary} busy={plan.busy} onPress={() => void plan.act(model.primary!)} /> : null}
       </div>
@@ -120,14 +117,12 @@ export function Steps({ model }: { model: PlanModel }) {
             <span>{s.title}</span>{s.meta ? <span className="gx-plan-step-meta"> · {s.meta}</span> : null}
             {model.phase !== "proposal" ? <span className="gx-plan-step-status">{s.status}</span> : null}
             {s.unavailable ? <span className="gx-plan-step-flag">{s.unavailable}</span> : null}
-            {s.asksAlone ? <span className="gx-plan-step-flag" data-testid="board-plan-asks">{s.asksAlone}</span> : null}
-            {s.needsAdmin ? <span className="gx-plan-step-flag" data-testid="board-plan-admin">{model.adminLine}</span> : null}
           </span>
           {s.state === "failed" && s.status === "Failed · nothing billed" ? <span className="gx-plan-step-later">nothing billed</span>
-            : s.price ? <Price value={s.price} className="gx-plan-step-price" /> : <span className="gx-plan-step-later">{s.unavailable ? "" : "priced when it runs"}</span>}
+            : s.price ? <Price value={s.price} className="gx-plan-step-price" />
+            : <span className="gx-plan-step-later">{s.unavailable ? "" : s.source === "plan" ? "in the plan" : "priced when it runs"}</span>}
         </div>
       ))}
-      {model.ruleLine ? <div className="gx-plan-step gx-plan-step--quiet"><span>{model.ruleLine}</span></div> : null}
     </div>
   );
 }

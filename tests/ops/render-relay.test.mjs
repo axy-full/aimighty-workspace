@@ -289,3 +289,10 @@ test("a worker name that resolves to a public address is never connected to: the
     assert.equal(hits, 0);
   } finally { await relay.close(); await new Promise((resolve) => public_.close(resolve)); }
 });
+
+test("one relay per worker kind: remotion-1 (with the platform's suffix) is accepted beside render-1; remotion-2 and mixed names are not; the one name decides what a relay serves", () => {
+  assert.deepEqual(routesFor({ workers: 1, targets: ["remotion-1"] }), [{ listenPort: 8081, host: "remotion-1", port: 8790 }]);
+  assert.deepEqual(configFromEnv({ RELAY_TARGET_1: "remotion-1-abc123" }).map((r) => r.host), ["remotion-1-abc123"]);
+  assert.deepEqual(configFromEnv({}).map((r) => r.host), ["render-1"], "the default is still the Astra worker");
+  for (const host of ["remotion-2", "remotion", "remotion-1.evil", "Remotion-1", "remotion-1-", "render-remotion-1", "remotion-1_x", "0x1010101"]) assert.throws(() => routesFor({ workers: 1, targets: [host] }), /worker container name/, host);
+});

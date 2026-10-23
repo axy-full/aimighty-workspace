@@ -4,17 +4,20 @@ import { assertRecoveryOpen, reserveRecoveryContinuation } from "./recovery";
 import { db, ready, now } from "./db";
 import { meter } from "./meter";
 import { currentTenant } from "./tenant";
-import { creditState } from "./credits";
+import { creditState, creditsApply } from "./credits";
 import { billCredits, heldPriceNow, marginKeyOf } from "./creditTerms";
 import { holdBandOf } from "./cinemaHold";
-import { reserveGenerationSpend, SpendReservationError } from "./generationRequests";
+import { reserveGenerationSpend, SpendReservationError, TokenNoCeilingError } from "./generationRequests";
+import { HELD_TAKE_NO_CEILING } from "./tokenSpend";
+import { hasSpendingCeiling } from "./tokenCeiling";
+import { isPerson } from "./security/people-only";
 import { enqueueRender } from "./inngest";
 import { runInline } from "./renderWork";
 import { submitVideoRow } from "./submitVideo";
 import { invalidate, PROJECTS_KEY } from "./cache";
 import { sendMail, mailConfigured } from "./mail";
 import { backgroundMailOrigin } from "./site";
-import { membershipRole, workspaceAdmins } from "./platform";
+import { workspaceAdmins } from "./platform";
 import { workspaceLimits, standing } from "./limits";
 import { notify } from "./push";
 import { SETTINGS_CREDITS } from "./shell/settings";
@@ -158,24 +161,6 @@ type HeldRow = {
   pool: boolean; since: number;
 };
 
-/**
- * Whether a released take skips the shot's credit cap. That is its author's
- * standing (an admin's take was never capped), or an admin pressing Release
- * on it — never whoever's poll happened to settle another take and start
- * the line. An author who has left the workspace is capped.
- */
-function shotCapExemption(adminReleasing: boolean): (author: string | null) => Promise<boolean> {
-  const roles = new Map<string, Promise<boolean>>();
-  return async (author) => {
-    if (adminReleasing) return true;
-    const ws = currentTenant()?.workspace;
-    if (!author || !ws) return false;
-    if (!roles.has(author))
-      roles.set(author, membershipRole(ws.id, author).then((role) => role === "owner" || role === "admin").catch(() => false));
-    return roles.get(author)!;
-  };
-}
-
 async function heldRows(only?: string): Promise<HeldRow[]> {
   await ready();
   const rs = await db().execute({
@@ -250,6 +235,10 @@ export function movedPrice(needs: number): string {
  * `after` behind a recovery continuation). With `only`, a take that does not
  * start comes back with `refused`: why, in the words to show.
  *
+ * A take a token with no ceiling made never starts on its own (lib/tokenSpend.ts). A person's own
+ * Release of it, at the figure they were shown, is that person's approval and starts it at that
+ * figure, recorded under them (owner, 20 Oct 2026, answer A).
+ *
  * Takes held for credits keep their order among themselves: the first the
  * balance does not cover stops that line. A take that only waited for a
  * slot, or one that cannot start for a reason of its own (a project, shot
@@ -270,7 +259,6 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
   const [limits, st] = await Promise.all([workspaceLimits(), standing()]);
   let running = st.running;
   const defer: Defer = opts.defer ?? continueAfterResponse();
-  const exempt = shotCapExemption(opts.only ? currentTenant()?.user?.role === "admin" : false);
   const released: string[] = [];
   let creditsStalled = false;
   let refusal: ReleaseRefusal | undefined;
@@ -282,6 +270,11 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
   const workspaceId = currentTenant()?.workspace?.id ?? null;
   const outOfLine = async (r: HeldRow) => { if (r.pool && workspaceId) await leavePool(r.id, workspaceId).catch(() => false); };
   const inLine = async (r: HeldRow) => { if (workspaceId) await queueForPool(SHARED_POOL, { id: r.id, workspaceId, queuedAt: r.since }).catch(() => {}); };
+  /* A person's own press: one take, at a stated figure, by a signed-in person who is not a token or an agent id. The route
+     admits nobody else (app/api/jobs/[id]/release/route.ts); asked again here, so no other caller passes as a person. */
+  const tenant = currentTenant();
+  const person = opts.only && opts.approved != null && tenant?.user && isPerson({ user: tenant.user, token: tenant.token }) ? tenant.user.id : null;
+  const inCredits = creditsApply(tenant?.workspace);
   let stoppedAt = rows.length;
   for (const [index, r] of rows.entries()) {
     /* An old or incomplete snapshot cannot authorize a free or guessed reservation. Keep the take intact. */
@@ -297,6 +290,11 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
     }
     /* One person's press approves one figure: a price that moved since it was shown starts nothing. */
     if (opts.only && opts.approved != null && r.needs !== opts.approved) { refuse(409, repriced(r.needs), r); continue; }
+    /* Made by a token with no ceiling: only a person's own press starts it, and that press is the person's approval (owner, 20 Oct 2026,
+       answer A; "every job is approved on its quote by the person pressing", 21 Oct). It is judged as that person, not the token, and only
+       at the figure they were shown: a press at any other figure was answered just above with the price now, nothing reserved. Anyone
+       else's release still meets the token's wall below (HELD_TAKE_NO_CEILING). */
+    const approvedBy = person && r.token && !hasSpendingCeiling(r.token, inCredits) && r.needs === opts.approved ? person : null;
     /* Nobody approved a price that moved while the take waited for credits: it is left, said, for a person to
        release at the new figure (its card offers Release at it), and it holds up nobody behind it. */
     if (!opts.only && balance != null && r.needs !== r.heldAt) {
@@ -324,9 +322,7 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
       await reserveGenerationSpend({ id: r.id, kind: r.kind, engine: r.engine, model: r.model, status: "running",
                     engineCostUsd: r.estUsd, projectId: r.projectId, shotId: r.shotId, createdBy: r.createdBy },
                     /* A take that holds its ceiling (Cinema Studio) starts at the hold its `needs` approved. */
-                    { token: r.token, shotCapExempt: r.shotId ? await exempt(r.createdBy) : false, holdBand: holdBandOf(r.model),
-                      /* Guardrail 4 (a job over the approval line): its author's standing, or an admin pressing Release, as for the shot cap. */
-                      adminTap: await exempt(r.createdBy) });
+                    { token: approvedBy ? undefined : r.token, ...(approvedBy ? { approvedBy } : {}), holdBand: holdBandOf(r.model) });
     } catch (e) {
       /* Nothing else stops it, only a shared slot: it waits in that line (from its own hold time), unreserved and unsent. */
       if (e instanceof ProviderPoolBusyError) {
@@ -341,6 +337,8 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
       }
       console.error(`release ${r.id}: not metered —`, (e as Error).message);
       const status = e instanceof SpendReservationError ? e.status : 503;
+      /* Made by a token with no ceiling (lib/tokenSpend.ts): said to the person at Release, and on the take, in words that name who acts. It stays held. */
+      if (e instanceof TokenNoCeilingError) e.message = HELD_TAKE_NO_CEILING;
       /* Short at the reservation (another take reserved credits meanwhile): said with the balance as it is now. */
       const left = status === 402 && opts.only ? ((await creditState().catch(() => null))?.balance ?? balance) : balance;
       refuse(status, status === 402 ? stillShort(r.needs, left) : e instanceof SpendReservationError ? e.message : "This take could not be started just now. Nothing was charged.", r);
@@ -367,12 +365,13 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
     const t = now();
     const next = r.kind === "video" ? "queued" : "running";
     // The clock restarts: the janitor measures a take from when it was sent, and it is sent now.
+    /* Who approved it, when a person's press did (above): the author (`created_by`) stays as it is. */
     const upd = await db().execute({
       sql: `UPDATE generations
             SET status = ?, created_at = ?, updated_at = ?, error = NULL,
-                params = json_remove(json_set(params, '$.releasedAt', ?), '$.held')
+                params = json_remove(json_set(params, '$.releasedAt', ?${approvedBy ? ", '$.releasedBy', ?" : ""}), '$.held')
             WHERE id = ? AND status = 'held'`,
-      args: [next, t, t, t, r.id],
+      args: approvedBy ? [next, t, t, t, approvedBy, r.id] : [next, t, t, t, r.id],
     });
     if (!upd.rowsAffected) {
       // Discarded between its reservation and its release: nothing may stay reserved for it.

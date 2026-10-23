@@ -23,10 +23,9 @@ import { memoDrop } from "./memo";
  * reversal divides exactly what was multiplied.
  *
  * What is converted, and why:
- *  - caps and limits a person set, in credits: the shot cap setting
- *    (`shotCapCredits`), production and project credit caps, API tokens'
- *    monthly credit ceilings, an Atomik run's approved limit, per-job line and
- *    limit history;
+ *  - caps and limits a person set, in credits: production and project credit
+ *    caps, API tokens' monthly credit ceilings, an Atomik run's approved limit, Auto's ceiling as
+ *    stored before 20 Oct 2026 (history, never read) and limit history;
  *  - approved figures waiting to be spent: an Atomik step's approved quote and
  *    ceiling (`admission.request.maxCredits`), a pipeline attempt's prepared
  *    ceiling;
@@ -59,7 +58,7 @@ export type TenantPlan = {
   reverses?: string | null;
   /** The whole factor (8), for caps the owner chose to multiply. */
   factor?: number;
-  /** The owner's choice per cap, keyed `<table>:<id>` (`settings:shotCapCredits`); a cap not named is kept. */
+  /** The owner's choice per cap, keyed `<table>:<id>` (`api_tokens:<id>`); a cap not named is kept. */
   caps?: Record<string, CapChoice>;
   /** The price held takes are re-priced at (a dry run before CREDIT_USD changes names it); default CREDIT_USD. */
   unitUsd?: number;
@@ -137,10 +136,14 @@ const ROWS_SCHEMA = [
 type CapNow = { capId: string; what: string; id: string; value: number; table: string;
   round: (n: number) => number; write: (c: Exec, value: number) => Promise<unknown> };
 
-/** Every saved cap in this workspace's database: the shot cap setting, then each table's. */
-async function capsNow(c: Exec): Promise<CapNow[]> {
+/**
+ * Every saved cap in this workspace's database, each table's. The per-shot cap setting (`shotCapCredits`) is not one any more: it was retired
+ * on 21 Oct 2026 with the admin approval rule, gates nothing, and its stored row is left as it is, so it is not listed for the owner's choice.
+ * `retiredShotCap`: only for a reversal of a conversion that recorded that row before then, so what was multiplied is divided back exactly.
+ */
+async function capsNow(c: Exec, opts: { retiredShotCap?: boolean } = {}): Promise<CapNow[]> {
   const out: CapNow[] = [];
-  if (await tableExists(c, "settings")) {
+  if (opts.retiredShotCap && (await tableExists(c, "settings"))) {
     for (const r of (await c.execute(`SELECT value FROM settings WHERE key='shotCapCredits'`)).rows) {
       const n = num(r.value);
       if (n == null) continue;
@@ -191,7 +194,7 @@ async function work(c: Exec, plan: TenantPlan): Promise<TenantFigure[]> {
     const choice: CapChoice = plan.caps?.[capId] === "x8" ? "x8" : "keep";
     return { f: choice === "x8" ? (plan.factor ?? 1) : 1, choice };
   };
-  for (const cap of await capsNow(c)) {
+  for (const cap of await capsNow(c, { retiredShotCap: recorded?.has("settings\u0000shotCapCredits") === true })) {
     const { f, choice } = capFactor(cap.capId);
     const after = cap.round(cap.value * f);
     figures.push({ what: cap.what, id: cap.id, before: cap.value, after, cap: { id: cap.capId, choice } });
