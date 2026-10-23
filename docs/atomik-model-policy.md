@@ -47,7 +47,7 @@ Each setting is a slot, and the deployment's env names its model (owner, 23 Octo
 
 A slot's id must also be routable on the deployment's door. On the direct Anthropic door that means it has a `DIRECT_MODEL_IDS` entry in `lib/textRoute.ts`, which maps the catalogue id to Anthropic's own: of the accepted ids, only the current generation qualifies there (the `anthropic/claude-<name>-5` and `anthropic/claude-<name>-5.<minor>` ids that the owner's key listed on 11 October 2026); the older ones (`anthropic/claude-<name>-4…` and earlier) have no direct door. A slot naming an id the door cannot route is not served, so its turns fall back as below or are refused.
 
-- A slot that is unset, or names any other value (an id outside the verified catalogue, another family, a vendor's spelling), is empty. Every turn that needs it is refused before anything is quoted, claimed, saved or charged: "Atomik's thinking isn't connected right now. Nothing billed." A run is refused before its request is claimed, a chat turn before the message is saved, and a board plan before its run is written. No other slot stands in for an empty one.
+- A slot that is unset, or names any other value (an id outside the verified catalogue, another family, a vendor's spelling), is empty. Every turn that needs it is refused before anything is quoted, claimed, saved or charged: "Atomik's thinking isn't connected right now. Nothing billed." A new run is refused before its request is claimed, a chat turn before the message is saved, and a board plan before its run is written; a retry under a key that already has a claim (or a board request already asked) gets that claim's saved answer instead. No other slot stands in for an empty one.
 - An effort must be a named effort the reasoning compiler knows: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. Anything else reads as `high`.
 - A bad value never stops the app from starting. The verified catalogue stays the source of each slot's price.
 
@@ -101,7 +101,7 @@ With no writer set up, or one the catalogue does not serve, the Treatment's pros
 
 Nothing is charged for the setting itself. Each turn is priced through the price path at what it runs (its estimate includes the setting's effort), and settled at what it used.
 
-Every run of Atomik's thinking (a chat turn, ideas, shot lists, a Treatment scene and the memory read) needs the ceiling its person approved on the quote, whatever the caller sent (owner, 23 Oct 2026). Without one it is refused before anything is claimed or charged. A job is billed what it used, never past its estimate, on any door.
+Every run of Atomik's thinking (a chat turn, ideas, shot lists, a Treatment scene and the memory read) needs the ceiling its person approved on the quote, whatever the caller sent (owner, 23 Oct 2026). Without one it is refused before anything is reserved or billed: for an API token or an MCP client before its request is claimed (`tokenSpendRefusal`), and for a browser session after the request is recorded (so a retry under its key gets the same answer) and before any reservation. A job is billed what it used, never past its estimate, on any door.
 
 This policy carries no band figure: each setting's band rates sit in the private policy and come with their own money PR.
 
