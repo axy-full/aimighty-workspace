@@ -14,7 +14,7 @@ import sharp from "sharp";
  * Output: <REDESIGN_SHOTS_DIR or ../redesign-shots>/<name>/<width>x<height>-{app,proto,beside}.png
  */
 
-/* REDESIGN_PROTOTYPE_DIR points at another round of the prototype; the default is the repo's own design, v31.16 (v12 is kept beside it as the reference). */
+/* REDESIGN_PROTOTYPE_DIR points at another round of the prototype; the default is the repo's own design, v31.16, the only one. */
 const ROOT = path.resolve(process.env.REDESIGN_PROTOTYPE_DIR ?? path.join(__dirname, "../../design/particl-v31.16"));
 /* REDESIGN_PROTOTYPE_PAGE picks the page of that folder: v31.16 is one export ("Particl v31.16.dc.html", the default) with a page per screen beside it. */
 const PAGE = process.env.REDESIGN_PROTOTYPE_PAGE ?? "Particl v31.16.dc.html";

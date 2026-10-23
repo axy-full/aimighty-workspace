@@ -2,7 +2,7 @@
 
 The running log of the overnight redesign build. A restarted session reads this file first, then docs/redesign-plan.md, and picks up from **Next** below.
 
-- **Design:** design/particl-v31.16 is the design (owner, 23 Oct 2026: it replaces design/particl-prototype-15, removed); v12 is kept as the reference (owner, 13 Oct 2026). Each screen PR deletes the design/particl-graphite file(s) it replaces; the plan's work-item table names which.
+- **Design:** design/particl-v31.16 is the design (owner, 23 Oct 2026: it replaces design/particl-prototype-15, removed); design/particl-prototype-12 is removed too (owner, 23 Oct 2026, 14:35: one design, nothing else). Each screen PR deletes the design/particl-graphite file(s) it replaces; the plan's work-item table names which.
 - **Branch base:** every redesign branch stacks on `ci/verify-release1` (#612, NEEDS AKSHAY). Today CI only runs on PRs into main; with that commit in the branch, CI runs on PRs into release/1 too. Merge #612 first: the redesign PRs' diffs then drop it.
 - **Switch:** `lib/newInterface.ts`. On for the house workspace (`ws_legacy`, lib/houseWorkspace.ts) and for workspaces in the site setting `newInterfaceWorkspaces` (empty by default). Off for every customer workspace. Client: `useNewInterface()` (lib/session.tsx). Tests: `signInToRedesign()` (tests/helpers/newInterface.ts).
 - **Screenshots:** `tests/redesign/*.shots.ts` with `captureBeside()` (tests/helpers/redesignShots.ts), run with `-c playwright.redesign.config.ts` at 1440×900 and 1280×800 against a local mock server. Then `node scripts/redesign/publish-shots.mjs --pr <n> --from ../redesign-shots/<screen>` pushes the images to the `redesign-screenshots` branch and prints the Markdown for the PR body.
