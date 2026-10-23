@@ -99,7 +99,7 @@ These amend the ground rules above and the scope they were copied from (the full
   - Each setting has its own band rates in the private policy; nothing is charged for the setting itself.
 - **Owner answers (23 Oct, 10:30 IST; Amendment (iii), M).**
   - The design is `design/particl-v31.16/`; prototype 15 is removed and prototype 12 stays the reference. The one-design guard still asserts one design.
-  - B4 is reversed (22 Oct, 21:15, v31.14): a double-click makes a node and never opens the Inspector; a new Director node shows "What is it?" on the card; in Agent mode the panel opens itself only for a question or a suggestion.
+  - (iii) B4 is reversed (22 Oct, 21:15, v31.14): a double-click makes a node and never opens the Inspector; a new Director node shows "What is it?" on the card; in Agent mode the panel opens itself only for a question or a suggestion.
   - Thinking Medium is the default; G's named default is struck (E wins).
   - Prices in the design are samples; § Pricing is the only source. The How page's "What it buys" lines are regenerated from the rate card before publishing.
   - The judge widens to every asset kind and the one suggestion line, absorbed, never a line, no change to the quote.
