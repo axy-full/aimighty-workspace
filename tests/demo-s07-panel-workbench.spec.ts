@@ -6,6 +6,7 @@ import { signInWithNewInterface } from "./helpers/newInterface";
 import { forbidPaidWork } from "./helpers/workspaceFixtures";
 import { isCompact } from "./helpers/shellMode";
 import { smallTextIn } from "./helpers/s07Floors";
+import { thinkingModelNames } from "./helpers/uiStrings";
 import { newProject } from "../lib/workbench/studio";
 
 /*
@@ -128,6 +129,9 @@ test("a request: Ask · up to N cr from the server, sent with N as its ceiling, 
   const send = panel.getByTestId("atomik-send");
   await expect(send).toHaveText(/^Ask · up to \d+ cr$/, { timeout: 20_000 });
   const shown = Number((await send.textContent())!.match(/up to (\d+) cr/)![1]);
+  /* The quote's head: the Thinking level the turn is quoted at (a new workspace's is Medium); no model or effort is on the panel. */
+  await expect(panel.getByTestId("atomik-thinking")).toHaveText("Thinking · Medium");
+  expect(thinkingModelNames(await panel.innerText())).toEqual([]);
   await shot(page, "panel-ask-priced", info);
   await send.click();
   await expect(panel.getByTestId("atomik-thread-line").first()).toContainText("plan a short film about the market at dawn", { timeout: 30_000 });

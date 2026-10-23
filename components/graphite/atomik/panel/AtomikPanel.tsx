@@ -19,6 +19,7 @@ import { Glyph } from "../../icons";
 import { Price, usePriceTitle } from "../../Price";
 import { MemoryLine } from "./MemoryLine";
 import { useHowFacts, useWideEnough } from "./use-atomik-panel";
+import { thinkingHead } from "@/lib/settingValues";
 import { usePlaces } from "./use-places";
 import "./panel.css";
 
@@ -222,6 +223,8 @@ function Panel({ mode, query, onClose, productionId }: { mode: "panel" | "how"; 
         ) : null}
       </div>
       <div className="ak-compose">
+        {/* The quote's head: the Thinking level this turn is quoted at (the workspace's setting), never a model or an effort. */}
+        {!spendOff && intent.kind === "ask" && thinkingHead(a.quote?.thinking) ? <p className="ak-note ak-thinking" data-testid="atomik-thinking">{thinkingHead(a.quote?.thinking)}</p> : null}
         {a.recoveryText ? (
           <p className="ak-note" role="status">A request didn’t finish. <button type="button" className="ak-link" disabled={a.busy} onClick={() => void a.send(a.recoveryText ?? "")}>Recover it</button></p>
         ) : null}

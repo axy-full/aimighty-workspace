@@ -44,7 +44,12 @@ export function thinkingWord(value: unknown): string {
   return THINKING_OPTIONS.find(([v]) => v === value)?.[1] ?? "Medium";
 }
 
-const allowed =(options: readonly (readonly [string, string])[], value: unknown) => options.some(([v]) => v === String(value));
+/** A planning quote's head, "Thinking · Medium": only for a level the server sent with the quote (never a guess), else null. */
+export function thinkingHead(level: unknown): string | null {
+  return THINKING_OPTIONS.some(([v]) => v === level) ? `Thinking · ${thinkingWord(level)}` : null;
+}
+
+const allowed = (options: readonly (readonly [string, string])[], value: unknown) => options.some(([v]) => v === String(value));
 
 /** A whole number of credits from 1 up to a million, as a person types it (digits only). */
 export function wholeCredits(value: unknown): boolean {

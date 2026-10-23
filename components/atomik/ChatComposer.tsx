@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { unkeptReason, type SkillView } from "@/lib/atomikSkillsText";
+import { thinkingHead } from "@/lib/settingValues";
 import { useAtomik } from "./AtomikProvider";
 import { ComposerSkillDialogs, SaveSkillButton, SkillHints, sayAboutChat, skillOptionId, useComposerSkills, useSkillNotice } from "./skills/ComposerSkills";
 
@@ -46,7 +47,8 @@ export function ChatComposer({ inputHeight = 48 }: { inputHeight?: 44 | 46 | 48 
       }}
       style={{height:inputHeight}} className="w-full min-w-0 rounded-card border border-border-mid bg-card px-3 text-[16px] text-ink placeholder:text-ink-muted" />
     {command && <p data-testid="atomik-skill-command" className="text-[12px] leading-relaxed text-ink-body [overflow-wrap:anywhere]">/{command.skill.slug} plans its steps for nothing; each is then priced and waits for your Continue.</p>}
-    {a.quote && !recovering && !command && <p className="text-[11px] leading-relaxed text-ink-muted">up to {a.quote.estimateCredits} cr</p>}
+    {/* The quote's head: the Thinking level the turn was quoted at (the workspace's setting), never a model or an effort, then its ceiling. */}
+    {a.quote && !recovering && !command && <p data-testid="atomik-quote-head" className="text-[12px] leading-relaxed text-ink-body">{[thinkingHead(a.quote.thinking), `up to ${a.quote.estimateCredits} cr`].filter(Boolean).join(" · ")}</p>}
     {a.quoteError && !recovering && !command && <p role="alert" className="text-[12px] text-ink-body">{a.quoteError}</p>}
     {recovering && <p className="text-[11px] leading-relaxed text-ink-muted">Recover the original request at its saved price.</p>}
     {/* min-h-11 is 2.75rem, 41px on the 15px root: on a phone or a touch screen Send is a full 44px target. */}

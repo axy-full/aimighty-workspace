@@ -108,11 +108,23 @@ test("chat: the composer's list, the quote, the new chat, a turn, and the chat r
     const quoted = await answer(await index.POST!(json("/api/atomik", { quoteOnly: true, text: "Plan two shots at the market.", ...SENT })));
     expect(quoted.status).toBe(200);
     expectNothingDisclosed("POST /api/atomik quote", quoted.body);
+    /* The quote's head is the Thinking level it was quoted at, and a planning quote sends nothing else beside its price. */
+    expect(Object.keys(quoted.body).sort()).toEqual(["estimateCredits", "thinking"]);
+    expect(quoted.body.thinking).toBe("medium");
     const made = await answer(await index.POST!(json("/api/atomik", { projectId: null, ...SENT })));
     const id = String(made.body.id);
     const ctx = { params: Promise.resolve({ id }) };
     const quote = await answer(await turn.POST!(json(`/api/atomik/${id}`, { quoteOnly: true, text: "Plan two shots.", ...SENT }), ctx));
     expectNothingDisclosed("POST /api/atomik/[id] quote", quote.body);
+    expect(Object.keys(quote.body).sort()).toEqual(["estimateCredits", "thinking"]);
+    expect(quote.body.thinking).toBe("medium");
+    /* An admin's other level is what the next quote says, still a word and never the slot's model or effort. */
+    const { setSetting } = await import("../../lib/settings");
+    await setSetting("atomikThinking", "high", person.id);
+    const high = await answer(await turn.POST!(json(`/api/atomik/${id}`, { quoteOnly: true, text: "Plan two shots.", ...SENT }), ctx));
+    expect(high.body.thinking).toBe("high");
+    expectNothingDisclosed("POST /api/atomik/[id] quote at High", high.body);
+    await setSetting("atomikThinking", "medium", person.id);
     /* The composer's source (GET /api/atomik, read by components/atomik/AtomikProvider.tsx): no menu of thinking models, only whether one is served. */
     const listed = await answer(await index.GET!(new Request("https://particl.test/api/atomik")));
     expect(listed.status, JSON.stringify(listed.body).slice(0, 300)).toBe(200);

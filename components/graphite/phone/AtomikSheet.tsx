@@ -124,7 +124,7 @@ function Sheet({ productionId, query, online, places, onClose }: { productionId:
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => { body.current?.scrollTo?.({ top: body.current.scrollHeight }); }, [lines.length, a.messages.length]);
   const empty = !thread && !lines.length;
-  const cost = thinkingLine(intent, a.quote?.estimateCredits ?? null);
+  const cost = thinkingLine(intent, a.quote?.estimateCredits ?? null, a.quote?.thinking);
   const why = spendOff ?? note ?? blocked ?? button.reason ?? a.error;
 
   return (

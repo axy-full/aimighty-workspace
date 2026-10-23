@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { newPaletteIndex, searchNewPalette } from "../../lib/shell/palette";
 import { askButton, atomikIntent, isHowQuestion, matchPlace, thinkingLine } from "../../lib/shell/atomik-panel";
+import { thinkingHead } from "../../lib/settingValues";
 import { selectBatch, type QueueItem } from "../../lib/control-room/queue";
 
 /*
@@ -83,6 +84,13 @@ test("the thinking line says what thinking may cost, or that a question is free"
   expect(thinkingLine(atomikIntent("how do I invite someone?"), null)).toBe("A question about Particl · answered free");
   expect(thinkingLine(atomikIntent("plan the film"), 24)).toBe("Atomik’s thinking may cost up to 24 cr · it plans and prices first; nothing is spent without your approval");
   expect(thinkingLine(atomikIntent("plan the film"), null)).not.toMatch(/\d/);
+  /* With the Thinking level the quote came back with, the line opens with it; a level that is not one of the three, or no price, adds nothing. */
+  expect(thinkingLine(atomikIntent("plan the film"), 24, "high")).toBe("Thinking · High · up to 24 cr · it plans and prices first; nothing is spent without your approval");
+  expect(thinkingLine(atomikIntent("plan the film"), 24, "ultra")).toBe(thinkingLine(atomikIntent("plan the film"), 24));
+  expect(thinkingLine(atomikIntent("plan the film"), null, "low")).toBe("Atomik plans and prices first; nothing is spent without your approval");
+  expect(thinkingLine(atomikIntent("how do I invite someone?"), null, "low")).toBe("A question about Particl · answered free");
+  expect(thinkingHead("medium")).toBe("Thinking · Medium");
+  for (const level of [undefined, null, "", "Medium", "auto", 2]) expect(thinkingHead(level), String(level)).toBeNull();
 });
 
 /* ⌘K's approve card reads the one queue (stream 8): what it covers is selectBatch's, never a list of its own. */

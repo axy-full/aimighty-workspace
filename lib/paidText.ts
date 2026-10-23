@@ -20,6 +20,7 @@ import {
   STALE_CLAIM_MS,
 } from "./generationRequests";
 import type { TextRun } from "./engines/types";
+import type { Thinking } from "./atomikModelPolicy";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { noteModelCall, traceModelCall, type ModelCallMeta, type ModelSiteId } from "./modelTrace";
 
@@ -120,7 +121,10 @@ export function textRequestEstimate(
 
 export type PaidTextQuote = { model: string; effort: string; estimateCredits: number; estimateUsd?: number };
 /** A quote as a person is sent it: its price only. The model and effort stay on the server (Amendment (iii) §E: never disclosed). */
-export type PaidTextQuoteShown = Omit<PaidTextQuote, "model" | "effort">;
+export type PaidTextQuoteShown = Omit<PaidTextQuote, "model" | "effort"> & {
+  /** The Thinking level a planning turn was quoted at, never a model or an effort (atomikQuoteResponse). */
+  thinking?: Thinking;
+};
 type QuotedTextInput = {
   model: string; effort?: string; maxTokens: number; messages: unknown[]; maxCredits?: number;
   /**
@@ -186,11 +190,15 @@ export async function quotePaidText(input: QuotedTextInput, override?: CatalogMo
 export function paidTextQuoteResponse(quote: PaidTextQuote): Response {
   return Response.json(atomikPublicResponse(quote, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
 }
-/** An Atomik quote as a member is sent it: the price only. The thinking model and effort stay on the server (Amendment (iii) §E: never disclosed). */
-export function atomikQuoteResponse(quote: PaidTextQuote): Response {
+/**
+ * An Atomik quote as a member is sent it: the price, and for a planning turn the Thinking level it was quoted at (High · Medium · Low,
+ * the quote's head; lib/atomikThinking.ts › workspaceThinking). The thinking model and effort stay on the server (Amendment (iii) §E:
+ * never disclosed). The level is a word for the person; it changes nothing about the price.
+ */
+export function atomikQuoteResponse(quote: PaidTextQuote, level?: { thinking: Thinking }): Response {
   const { model: _model, effort: _effort, ...shown } = quote;
   void _model; void _effort;
-  return Response.json(atomikPublicResponse(shown satisfies PaidTextQuoteShown, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
+  return Response.json(atomikPublicResponse({ ...(shown satisfies PaidTextQuoteShown), ...(level ? { thinking: level.thinking } : {}) }, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
 }
 export function paidTextQuoteScopeFailure(req: Request): Response | null {
   const tenant = requireTenant();

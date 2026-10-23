@@ -1,6 +1,7 @@
 import { parseMemoryCommand } from "@/lib/atomikMemoryText";
 import { BATCH_UNDER_DEFAULT, cleanUnder } from "@/lib/control-room/queue";
 import { priceWords, upTo, FREE, type PriceValue } from "./price-words";
+import { thinkingHead } from "@/lib/settingValues";
 
 /**
  * Atomik in the new interface (design/particl-graphite/README.md § 1, § 3.4):
@@ -70,10 +71,15 @@ export function askButton(intent: AtomikIntent, quote: AskQuote): { label: strin
   return { label: "Ask", price: null, disabled: true, reason: quote.error ?? "Atomik's thinking has no price right now, so nothing can be sent." };
 }
 
-/** The line under a request in ⌘K and on the phone: what thinking may cost, or that how-to answers are free. */
-export function thinkingLine(intent: AtomikIntent, credits: number | null): string {
+/**
+ * The line under a request in ⌘K and on the phone: what thinking may cost, or that how-to answers are free. With the Thinking level the
+ * quote came back with (lib/paidText.ts › atomikQuoteResponse), the line opens with it: "Thinking · Medium · up to N cr · …".
+ */
+export function thinkingLine(intent: AtomikIntent, credits: number | null, level?: unknown): string {
   if (intent.kind !== "ask") return "A question about Particl · answered free";
   const words = priceWords(upTo(credits));
+  const head = words ? thinkingHead(level) : null;
+  if (head) return `${head} · ${words} · it plans and prices first; nothing is spent without your approval`;
   return words
     ? `Atomik’s thinking may cost ${words} · it plans and prices first; nothing is spent without your approval`
     : "Atomik plans and prices first; nothing is spent without your approval";

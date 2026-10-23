@@ -1,5 +1,6 @@
 import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
 import { THINKING_UNAVAILABLE } from "@/lib/atomikModelPolicy";
+import { workspaceThinking } from "@/lib/atomikThinking";
 import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
@@ -128,9 +129,10 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const rules = writerRulesByScope(await effectiveRules());
     /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
     const inputs = await plannerInputs(got.user.id, projectId);
+    /* The quote's head names the Thinking level it was quoted at (a read of the workspace's setting), never the model. */
     if (quoteOnly) return atomikQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, viewOnly, context, memory, rules,
       library: inputs.library, presets: inputs.presets,
-      userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
+      userMessage: { text, attachments: cleanAttachments(b.attachments) } }), { thinking: await workspaceThinking() });
     /* Every turn runs under the ceiling its person approved on the quote (owner, 23 Oct 2026): refused before the message is saved, nothing billed. */
     const maxCredits = requestMaxCredits(b.maxCredits, true);
     await addUserMessage(id, text, cleanAttachments(b.attachments));
