@@ -29,7 +29,11 @@ process.env.CREDIT_USD = "0.10";
 process.env.ENGINE_MOCK = "1";
 process.env.PARTICL_TEST_MOCK_DELAYS = "1";
 
-test.beforeAll(async () => { await alignLedgerUnit(); });
+/* Atomik's thinking reads the checked-in catalogue here, never the gateway's live list: the slots (playwright.config.ts) are picked from it,
+   and a live read would make the run depend on the network and on whatever another spec in this worker left cached. Put back after. */
+const priorCatalog = process.env.MODEL_CATALOG;
+test.beforeAll(async () => { process.env.MODEL_CATALOG = "static"; await alignLedgerUnit(); });
+test.afterAll(() => { if (priorCatalog === undefined) delete process.env.MODEL_CATALOG; else process.env.MODEL_CATALOG = priorCatalog; });
 
 /** A ceiling the person approved, roomy enough for any of these mocked writing quotes. */
 const APPROVED = 1_000;
@@ -441,7 +445,7 @@ test("POST /api/atomik/treatment/scene opts in: pending past the deadline, finis
   process.env.MODEL_CATALOG = "static";
   /* A served OpenAI id, read from the snapshot (never written down). */
   const { staticCatalog } = await import("../../lib/catalog");
-  process.env.TREATMENT_WRITER_MODEL = staticCatalog().find((m) => m.id.startsWith("openai/gpt-") && m.type === "language")!.id;
+  process.env.TREATMENT_WRITER_MODEL = staticCatalog().find((m) => m.owner === "openai" && m.type === "language" && /^openai\/[a-z0-9][a-z0-9._-]*$/.test(m.id))!.id;
   try {
     const loaded = await route("app/api/atomik/treatment/scene/route.ts", ws, { "@/lib/atomikDocs": { ...atomikDocs, getTreatment: async () => treatment } });
     const { reply, settled } = await pressedPastDeadline(ws, loaded, "http://localhost/api/atomik/treatment/scene", { projectId: "p1", n: 1, maxCredits: APPROVED });
