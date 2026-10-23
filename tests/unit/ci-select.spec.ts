@@ -1,5 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 /**
  * Which browser specs a pull request runs (scripts/ci-select.mjs; docs/ci.md): the whole suite after a merge and for any change that
@@ -12,7 +15,7 @@ type Plan = { mode: "full" | "slim" | "docs"; reasons: string[]; runs: Run[]; fi
 type Input = { event: string; base: string; files: string[]; specs: string[]; read?: (path: string) => string | null; exposed?: Set<string> };
 const script = async () => (await import("../../scripts/ci-select.mjs")) as {
   select: (input: Input) => Plan;
-  exposedV12: () => Set<string>;
+  exposedV12: (root?: string) => Set<string>;
   exposedFrom: (files: string[], read: (path: string) => string | null) => Set<string>;
   GUARDS: { workbench: string[]; customer: string[]; switchOff: string[]; switchOffGrep: string };
   WORKBENCH_SPEC: RegExp; CUSTOMER_SPEC: RegExp;
@@ -25,9 +28,9 @@ const script = async () => (await import("../../scripts/ci-select.mjs")) as {
 const switchOffSpec = (name: string) => `test("switch off: today's ${name}, with none of it", async () => {});`;
 const FIXTURE: Record<string, string> = {
   /* New-interface specs, each with its own switch-off test or none, as the build's were. */
-  ...Object.fromEntries(["board-frame", "board-kinds", "campaign", "library-tray", "menus", "render", "rig", "rounds", "settings-billing", "shell", "shots", "social", "visitor"]
+  ...Object.fromEntries(["board-frame", "board-kinds", "campaign", "library-tray", "menus", "render", "rig", "rounds", "settings-billing", "shell", "shots", "social"]
     .map((n) => [`tests/${n}-v12-workbench.spec.ts`, switchOffSpec(n)])),
-  ...Object.fromEntries(["header", "primitives", "home", "make", "deliver"].map((n) => [`tests/${n}-v12-workbench.spec.ts`, `test("the ${n}", async () => {});`])),
+  ...Object.fromEntries(["header", "primitives", "home", "make", "deliver", "visitor"].map((n) => [`tests/${n}-v12-workbench.spec.ts`, `test("the ${n}", async () => {});`])),
   "tests/home-v12-layout-workbench.spec.ts": `test("Home's layout", async () => {});`,
   /* The switch-off browser check every build behind the switch is held to. */
   "tests/switch-off-customers-workbench.spec.ts": switchOffSpec("app"),
@@ -141,6 +144,42 @@ test("what a file outside components/v12 imports from it is exposed, directly or
   for (const path of exposedV12()) expect(path, path).toMatch(/^components\/v12\//);
 });
 
+test("the plan job's reading of the repository is the fixture's: git's tracked and new files, never its ignored ones", async () => {
+  const { exposedV12, exposedFrom } = await script();
+  const root = mkdtempSync(join(tmpdir(), "ci-select-"));
+  try {
+    const write = (path: string, text: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), text); };
+    const tracked = Object.keys(FIXTURE).filter((p) => p.startsWith("components/"));
+    for (const path of tracked) write(path, FIXTURE[path]);
+    /* A new file the PR adds that git does not track yet (ls-files --others): it is read. */
+    const untracked = { "components/graphite/Draft.tsx": `import { Composer } from "@/components/v12/make/Composer";` };
+    /* An ignored file (--exclude-standard): never read, so what only it imports is not exposed. */
+    const ignored = { "components/graphite/Ignored.tsx": `import { Greeting } from "@/components/v12/home/Greeting";` };
+    for (const [path, text] of Object.entries({ ...untracked, ...ignored, ".gitignore": "components/graphite/Ignored.tsx\n" })) write(path, text);
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    execFileSync("git", ["add", "--", ...tracked, ".gitignore"], { cwd: root });
+    const files: Record<string, string> = { ...Object.fromEntries(tracked.map((p) => [p, FIXTURE[p]])), ...untracked };
+    const fromRepo = exposedV12(root);
+    expect([...fromRepo].sort()).toEqual([...exposedFrom(Object.keys(files), (path) => files[path] ?? null)].sort());
+    expect(fromRepo.has("components/v12/rounds/RoundCard")).toBe(true);
+    expect(fromRepo.has("components/v12/ui/Price")).toBe(true);
+    expect(fromRepo.has("components/v12/make/Composer"), "an untracked new file's imports count").toBe(true);
+    expect(fromRepo.has("components/v12/home/Greeting"), "an ignored file's imports do not").toBe(false);
+    for (const path of fromRepo) expect(path, path).toMatch(/^components\/v12\//);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the switch-off guard on disk: each switch-off check that exists holds a switch-off test, and at least one switch-off source exists", async () => {
+  const { GUARDS } = await script();
+  const guards = GUARDS.switchOff.filter((path) => existsSync(path));
+  for (const path of guards) expect(readFileSync(path, "utf8"), path).toMatch(/switch off/);
+  /* Before the prototype-12 build was deleted its specs carried their own switch-off tests; after, the check above does. Either way one is there. */
+  const own = readdirSync("tests").filter((n) => /-v12-.*workbench\.spec\.ts$/.test(n)).map((n) => `tests/${n}`).filter((path) => /switch off/.test(readFileSync(path, "utf8")));
+  expect(guards.length + own.length, "a switch-off source on disk: the slim plans' switch-off run is never silently empty").toBeGreaterThan(0);
+});
+
 test("a stylesheet that something outside components/v12 imports is shared: the whole suite", async () => {
   /* components/graphite/board/BoardView.tsx imports components/v12/board/board.css; the shell imports v12.css. */
   for (const css of ["components/v12/board/board.css", "components/v12/v12.css"]) {
@@ -157,7 +196,7 @@ test("any change to a guard or safety test is a full run, and the plan says it n
     "tests/unit/spend-buttons.spec.ts", "tests/unit/spend-ratchet.json", "tests/spend-buttons-workbench.spec.ts", "tests/helpers/paidRoutes.ts", "tests/unit/platformOwnerPrivacy.spec.ts",
     "tests/unit/v12-privacy.spec.ts", "tests/unit/new-interface-switch-off.spec.ts", "tests/unit/newInterfaceSwitch.spec.ts", "tests/unit/one-design-guard.spec.ts", "tests/unit/ui-names-guard.spec.ts",
     "tests/unit/v12-tooltip-audit.spec.ts", "tests/signin-retired-workbench.spec.ts", "tests/unit/signinRetiredGuard.spec.ts", "tests/audit-money-workbench.spec.ts", "tests/r1-port-paid-sends-workbench.spec.ts",
-    "tests/unit/demo-gaps-l5-client-link.spec.ts",
+    "tests/unit/demo-gaps-l5-client-link.spec.ts", "tests/unit/ci-select.spec.ts",
   ];
   for (const file of guards) {
     const plan = await pr([file], "release/1", "pull_request", unexposed);
@@ -191,7 +230,7 @@ test("CSS and tests run slim: their own specs plus the fixed guard set, and noth
   /* Only specs that have a switch-off test: a chunk of none would fail with "No tests found". */
   for (const spec of off.specs) {
     expect(/-v12-.*workbench\.spec\.ts$/.test(spec) || GUARDS.switchOff.includes(spec), spec).toBe(true);
-    expect(readReal(spec), spec).toMatch(/switch off/);
+    expect(existsSync(spec) ? readFileSync(spec, "utf8") : FIXTURE[spec], spec).toMatch(/switch off/);
   }
   expect(off.specs).not.toContain("tests/rounds-v12-workbench.spec.ts");
   const customer = plan.runs.find((r) => r.suite === "customer")!;
