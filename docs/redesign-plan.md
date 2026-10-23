@@ -7,7 +7,7 @@ Written 10 Oct 2026 by the lead, at the owner's request ("write the plan into th
 
 ## The brief (owner, 10 Oct)
 
-- **The design:** design/particl-v31.16 is the design (owner, 23 Oct 2026: v31.16 replaces design/particl-prototype-15, which is removed; git history keeps it). design/particl-prototype-12 is kept as the one reference (owner, 13 Oct 2026). It replaces design/particl-graphite, and each screen PR deletes the graphite design file(s) it replaces.
+- **The design:** design/particl-v31.16 is the design (owner, 23 Oct 2026: v31.16 replaces design/particl-prototype-15, which is removed; git history keeps it). ~~design/particl-prototype-12 is kept as the one reference (owner, 13 Oct 2026).~~ design/particl-prototype-12 is removed too (owner, 23 Oct 2026, 14:35: one design, nothing else; the prototype-12 build is deleted in its own PR). It replaces design/particl-graphite, and each screen PR deletes the graphite design file(s) it replaces.
 - **Switch:** everything is built on release/1 behind the per-workspace switch. It is off for every customer workspace and on only for the internal house workspace.
 - **Work order:**
   - P1 Shell
@@ -153,7 +153,7 @@ The earlier "Owner decisions" sections (10 Oct to 21 Oct) are on `redesign/integ
    - xAI leaves the Atomik allowlist (confirmed 23 Oct). Band rates stay in the private policy.
 7. **The PR plan (L).** Docs; the copy table and strings test; the model policy; the record **[schema]**; the question engine on the Brief; one step a PR in S2 order; adapters on a second lane; the judge; "How Particl works"; measurement.
 8. **Owner answers (23 Oct, 10:30 IST; Amendment (iii), M).**
-   - The design is `design/particl-v31.16/`; prototype 15 is removed; prototype 12 stays the reference; the one-design guard still asserts one design.
+   - The design is `design/particl-v31.16/`, the only design folder; prototypes 15 and 12 are removed (14:35); the one-design guard fails any second design folder.
    - (iii) B4 reversed (22 Oct, 21:15, v31.14): a double-click makes a node and never opens the Inspector; a new Director node shows "What is it?" on the card; in Agent mode the panel opens itself only for a question or a suggestion.
    - Thinking Medium is the default; G's named default is struck (E wins).
    - Prices in the design are samples; § Pricing is the only source; "What it buys" is regenerated from the rate card before publishing.
