@@ -89,6 +89,12 @@ export const DEFAULTS = {
   lockNewAssets: "0",
   /* §13 · Rig & locks · Train on create: "ask" (the switch, off), "always" (the switch, on), "never" (no switch). */
   trainOnCreate: "ask",
+  /**
+   * Atomik's thinking for the workspace: "high", "medium" or "low" (lib/atomikModelPolicy.ts THINKING_SETTINGS), shown only as
+   * High · Medium · Low. The model and effort behind each are never shown. An admin sets it; a production's own setting at the
+   * Brief (a later PR) will win over it.
+   */
+  atomikThinking: "medium",
 } as const;
 
 export type SettingKey = keyof typeof DEFAULTS;

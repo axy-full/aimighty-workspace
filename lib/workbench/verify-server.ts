@@ -86,7 +86,8 @@ function publicVerification(row: Row): TakeVerification {
     id: String(row.id), takeId: String(row.take_id), verifyNodeId: String(row.verify_node_id),
     masterSet: String(row.master_set), rubric: Number(row.rubric), framesKey: String(row.frames_key),
     masters: JSON.parse(String(row.masters)), frames: JSON.parse(String(row.frames)), checks: JSON.parse(String(row.checks)),
-    verdict: String(row.verdict) as Verdict, judgeModel: String(row.judge_model),
+    /* The judge's model stays in the row (judge_model), never in what a member is sent (Amendment (iii) §E). */
+    verdict: String(row.verdict) as Verdict,
     credits: Number(row.credits), ownKey: !Number(row.funded_by_platform), createdAt: Number(row.created_at),
   };
 }

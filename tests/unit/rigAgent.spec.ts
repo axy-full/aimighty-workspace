@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import { FAST_STILL_ENGINE } from "../helpers/runtimeIds";
+import { GEMINI_IDS, GROK_IDS, LOW, MEDIUM, OPENAI_IDS } from "../helpers/thinkingSlots";
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -170,17 +172,16 @@ test("the planner stays inside its bounds: a turn that answers nothing proposes 
   expect(mockPlanCalls(snapshotOf({ goal: "Just one shot of the pier" })).calls.filter((c) => c.tool === "create_node" && c.input.kind === "shot")).toHaveLength(1);
 });
 
-test("the planner thinks with Claude, OpenAI or Grok from Atomik's policy: Auto picks among them, an explicit choice is never swapped", () => {
-  /* Cheapest first, as atomikModels orders a priced menu: Auto takes the first of its choices. */
-  const menu = [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }, { id: "anthropic/claude-sonnet-5.5" }, { id: "openai/gpt-5.5" }];
-  expect(selectPlannerModel("auto", menu)).toBe("anthropic/claude-sonnet-5.5");
-  /* With only OpenAI connected, Auto keeps an OpenAI choice of its own (GPT-5.5, where GPT-5.5 Pro was). */
-  expect(selectPlannerModel("auto", [{ id: "openai/gpt-5-nano" }, { id: "openai/gpt-5.5" }])).toBe("openai/gpt-5.5");
-  expect(selectPlannerModel("auto", [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }])).toBe("spacexai/grok-4.7");
-  expect(selectPlannerModel("openai/gpt-5.5", menu)).toBe("openai/gpt-5.5");
-  expect(() => selectPlannerModel("google/gemini-3.1-pro-preview", menu)).toThrow(/Claude, OpenAI or Grok/);
-  expect(() => selectPlannerModel("openai/gpt-5.4", menu)).toThrow(/not available/);
-  expect(() => selectPlannerModel("auto", [{ id: "google/gemini-3.1-pro-preview" }])).toThrow(/No Claude, OpenAI or Grok/);
+test("the planner thinks with Claude at the Thinking setting: the setting's model when served, never swapped, and never Grok, OpenAI or Gemini", async () => {
+  /* Owner, 22 Oct 2026: a plan turn runs the setting's model (lib/atomikModelPolicy › thinkingFor); a run's saved model is not asked. */
+  const { ATOMIK_THINKING, THINKING_UNAVAILABLE, thinkingFor } = await import("../../lib/atomikModelPolicy");
+  /* Medium's and Low's slots on the menu (tests/helpers/thinkingSlots), High's not. */
+  const menu = [{ id: GEMINI_IDS[0] }, { id: GROK_IDS[0] }, { id: LOW }, { id: MEDIUM }, { id: OPENAI_IDS[0] }];
+  for (const setting of ["medium", "low"] as const) expect(selectPlannerModel(thinkingFor(setting, "plan").model!, menu), setting).toBe(ATOMIK_THINKING[setting].model);
+  /* The model a plan is priced at must be on the priced menu (plannerPrice picks it with selectAtomikThinking, Claude only): otherwise refused in plain words. */
+  expect(() => selectPlannerModel(thinkingFor("high", "plan").model!, menu)).toThrow(THINKING_UNAVAILABLE);
+  for (const id of [OPENAI_IDS[0], GROK_IDS[0], GEMINI_IDS[0]]) expect(() => selectPlannerModel(id, menu), id).toThrow(THINKING_UNAVAILABLE);
+  expect(() => selectPlannerModel(MEDIUM, [{ id: OPENAI_IDS[0] }])).toThrow(THINKING_UNAVAILABLE);
 });
 
 test("the board snapshot the planner reads is bounded and names each card's kind", () => {
@@ -189,7 +190,7 @@ test("the board snapshot the planner reads is bounded and names each card's kind
     assets: [image("captain"), image("pier", "Environment"), { ...image("memo"), kind: "document" }],
     production: {
       cast: { entries: [{ id: "c1", name: "The captain", kind: "character", description: "Weathered.", prompt: "", takes: [], referenceAssetId: "captain" }] },
-      environment: { world: "", model: "gemini-3.1-flash-image", entries: [{ id: "e1", name: "The pier", notes: "Dawn.", prompt: "", references: [], plates: [{ assetId: "pier", at: "", source: "upload" }], selected: "pier" }] },
+      environment: { world: "", model: FAST_STILL_ENGINE, entries: [{ id: "e1", name: "The pier", notes: "Dawn.", prompt: "", references: [], plates: [{ assetId: "pier", at: "", source: "upload" }], selected: "pier" }] },
     },
   };
   const nodes: CanvasNode[] = [{ id: "w", title: "World", type: "element", assetId: "pier", x: 0, y: 0, width: 280, linked: [] }, scene("s1", { locked: true })];
@@ -539,4 +540,33 @@ test("the rig-agent worker: an Inngest function on its own event, a native worke
   /* A malformed event never reaches a tenant. */
   const { handleRigAgent } = await import("../../lib/workbench/rig-agent");
   await expect(handleRigAgent({ runId: "not-a-run", productionId: "prod-1", workspaceId: "ws_1" })).rejects.toThrow(/Invalid rig agent event/);
+});
+
+test("an empty Thinking slot refuses a new board ask before its run is written; a retry of a run already asked still finds it", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const agent = await import("../../lib/workbench/rig-agent");
+  const { THINKING_UNAVAILABLE, thinkingModelEnv } = await import("../../lib/atomikModelPolicy");
+  await runInTenant(await seed("empty-slot"), async () => {
+    const ask = (requestId: string) => agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId, goal: "The captain on the pier.", limit: LIMIT });
+    const asked = await ask("req-slot-0001");
+    const runs = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM rig_agent_runs")).rows[0].n);
+    expect(await runs()).toBe(1);
+    /* The mocked engines price the planner without the catalogue: off for this check, with the checked-in catalogue and Medium's slot unset
+       (the gateway key a fixture, never sent: plannerPrice reads the catalogue only), so plannerPrice refuses as it would live. */
+    const saved = { mock: process.env.ENGINE_MOCK, catalog: process.env.MODEL_CATALOG, gateway: process.env.AI_GATEWAY_API_KEY, openai: process.env.OPENAI_API_KEY, medium: process.env[thinkingModelEnv("medium")] };
+    delete process.env.ENGINE_MOCK; process.env.MODEL_CATALOG = "static"; process.env.AI_GATEWAY_API_KEY = "test-only-never-sent";
+    /* No vendor key while the mock is off: nothing in this test may reach a provider. */
+    delete process.env.OPENAI_API_KEY;
+    delete process.env[thinkingModelEnv("medium")];
+    try {
+      await expect(ask("req-slot-0002")).rejects.toMatchObject({ status: 503, message: THINKING_UNAVAILABLE });
+      expect(await runs(), "no run row is written for the refused ask").toBe(1);
+      /* A retry of the run already asked is that run, whatever the slot says now. */
+      expect((await ask("req-slot-0001")).id).toBe(asked.id);
+    } finally {
+      for (const [key, value] of [["ENGINE_MOCK", saved.mock], ["MODEL_CATALOG", saved.catalog], ["AI_GATEWAY_API_KEY", saved.gateway], ["OPENAI_API_KEY", saved.openai], [thinkingModelEnv("medium"), saved.medium]] as const)
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  });
 });

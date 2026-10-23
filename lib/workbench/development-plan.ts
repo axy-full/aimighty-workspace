@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { parseScreenplay, MAX_SCRIPT_CHARS } from './screenplay';
 import type { DevelopmentKind, DevelopmentResult, DevelopmentStage } from './development-types';
 import { readVerifyAnswer, verifyInstructions, type VerifySnapshot } from './verify-judge';
+import { NO_MODEL_NAME } from '../atomikModelPolicy';
 
 export const DEVELOPMENT_STAGES: DevelopmentStage[] = ['draft', 'critique', 'refine'];
 /**
@@ -315,7 +316,11 @@ function beatsheetInstructions(stage: DevelopmentStage): string {
   ].filter(Boolean).join('\n');
 }
 
+/** Every development step's instructions, with the line every Atomik thinking prompt carries (lib/atomikModelPolicy.ts NO_MODEL_NAME). */
 export function developmentInstructions(kind: DevelopmentKind, stage: DevelopmentStage): string {
+  return `${stepInstructions(kind, stage)}\n${NO_MODEL_NAME}`;
+}
+function stepInstructions(kind: DevelopmentKind, stage: DevelopmentStage): string {
   if (kind === 'verify') return verifyInstructions();
   if (kind === 'write') return writerInstructions(stage);
   if (kind === 'beatsheet') return beatsheetInstructions(stage);

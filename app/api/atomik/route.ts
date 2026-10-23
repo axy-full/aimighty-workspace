@@ -3,13 +3,12 @@ import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
 import { currentTenant, runWithStore } from "@/lib/tenant";
 import { reserveRecoveryContinuation } from "@/lib/recovery";
-import { listChats, createChat, engines, requestEffort, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, chatModeOf } from "@/lib/atomik";
-import { atomikEffortOptions } from "@/lib/atomik-reasoning";
+import { listChats, createChat, engines, runTurn, projectContext, VIEW_ONLY_INSTRUCTION, chatModeOf, memberChat } from "@/lib/atomik";
 import { cleanAttachments } from "@/lib/attachments";
 import { effectiveRules } from "@/lib/rules";
 import { writerRulesByScope } from "@/lib/platformLayer";
-import { paidTextFailure, paidTextQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
-import { menuFor, type CatalogModel } from "@/lib/catalog";
+import { paidTextFailure, atomikQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
+import { menuFor } from "@/lib/catalog";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, plannerPresetsStale, refreshPlannerPresets } from "@/lib/atomikLibrary";
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
@@ -17,42 +16,12 @@ import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 export const dynamic = "force-dynamic";
 
 /**
- * The chat list and the planner menu.
+ * The chat list, the engines, and whether Atomik's thinking is connected.
  *
- * Both in one response because the screen needs both to draw its first
- * frame, and the menu is a cached read of the gateway's catalogue rather
- * than a query — asking for it separately would cost a round trip to save
- * nothing.
+ * No thinking model is listed: the models behind High · Medium · Low are the deployment's and are never
+ * shown to a member (docs/atomik-model-policy.md). `configured` says only whether any of them is served,
+ * so the page knows Thinking is available; the picker draws nothing without a list.
  */
-
-/** A coarse band, not a price.
- *
- *  Text pricing is per token, so a number here would be a rate nobody can
- *  turn into "what will this conversation cost me". Three bands answer the
- *  question people actually have, which is whether this planner is the
- *  cheap one or the expensive one. */
-function band(m: CatalogModel): "Low cost" | "Medium cost" | "High cost" | "" {
-  const p = m.pricing as Record<string, unknown> | null;
-  const out = Number(p?.output);
-  if (!Number.isFinite(out)) return "";
-  const perM = out * 1e6;
-  /* Cut where the models actually cluster, not on round numbers. Output
-     rates run in three groups: the cheap open-weight planners land under
-     $3, the mid-tier frontier models between there and $15, and only the
-     top of each house is above. Tighter cuts put GLM at $2.20 and Kimi at
-     $2.00 in different bands, which tells a reader nothing true. */
-  return perM <= 3 ? "Low cost" : perM <= 15 ? "Medium cost" : "High cost";
-}
-
-/* No per-token price here. The gateway's rate is what the platform pays for
-   a planner, and the menu is read by every workspace, credit ones included;
-   the band says cheap or dear, and a turn's price is its quote, in credits. */
-const shape = (m: CatalogModel) => ({
-  id: m.id, name: m.name, owner: m.owner, released: m.released,
-  description: m.description.slice(0, 120),
-  band: band(m), efforts: atomikEffortOptions(m),
-  vision: m.inputModalities?.includes("image") ?? false,
-});
 
 export const GET = withTenant(async function GET() {
   const got = await requireUser();
@@ -67,12 +36,10 @@ export const GET = withTenant(async function GET() {
     after(await reserveRecoveryContinuation("after-response", () => runWithStore(store, refreshPlannerPresets)));
   }
   return NextResponse.json({
-    chats,
+    /* No thinking model or effort on a chat a person is sent (lib/atomik › memberChat), and no menu of them: only whether one is served. */
+    chats: chats.map((chat) => memberChat(chat)),
     engines: eng,
-    models: {
-      featured: menu.featured.map(shape),
-      rest: menu.rest.map(shape),
-    },
+    configured: menu.featured.length + menu.rest.length > 0,
   });
 });
 
@@ -94,8 +61,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     /* The project's library and presets for library steps, read as the turn will read them. */
     const inputs = await plannerInputs(auth.user.id, projectId);
     const viewOnly = Boolean(readProject && !projectId);
-    return paidTextQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, viewOnly,
-      model: typeof body.model === "string" ? body.model : "auto", effort: requestEffort(body.effort),
+    /* The model and effort are the workspace's Thinking setting (lib/atomikThinking.ts): a sent model or effort is not a choice, and is ignored. */
+    return atomikQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, viewOnly,
       context: [viewOnly ? VIEW_ONLY_INSTRUCTION : "", await projectContext(readProject)].filter(Boolean).join("\n\n"), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
       memory: await plannerMemoryText({ projectId: readProject, query: text, viewer: got.user.id }).catch(() => ""),
@@ -108,8 +75,8 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     userId: got.user.id,
     /* The project a chat keeps: one its maker may READ (their own board, a teammate's shared board, any project that is not a private board); a private board of someone else's, or an id that is none, is stored as no project (the same answer for both). Spending, step filing and memory writes need more, and are decided separately (admission, and the turn). */
     projectId: await contextProjectOr(got.user, typeof body.projectId === "string" ? body.projectId : null),
-    model: typeof body.model === "string" && body.model ? body.model : "auto",
-    effort: requestEffort(body.effort),
+    /* A new chat follows the Thinking setting; each turn stores what it ran. A sent model or effort is ignored. */
+    model: "auto",
     /* "auto" from an older caller is accepted and stored as "ask": no Auto since 20 Oct 2026. */
     agentMode: chatModeOf(body.agentMode),
   });

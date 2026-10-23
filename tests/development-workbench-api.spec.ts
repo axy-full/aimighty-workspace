@@ -33,14 +33,17 @@ test('real development HTTP persists every script section, resumes idempotently,
     const initial = await initialResponse.json() as DevelopmentState;
     expect(initial.configured).toBe(true);
     expect(initial.jobs).toEqual([]);
-    expect(initial.models.length).toBeGreaterThan(0);
-    expect(initial.models.every(model => /^(anthropic\/claude-|openai\/|spacexai\/grok-)/.test(model.id))).toBe(true);
-    const model = initial.models.find(value => value.id.includes('haiku')) ?? initial.models.find(value => value.id.startsWith('anthropic/')) ?? initial.models[0];
-    const input: DevelopmentRequest = { projectId: project.id, requestId: randomUUID(), kind: 'screenplay', model: model.id, effort: 'auto', instructions: 'Preserve the entire source, including the final room.' };
+    /* No menu of thinking models (never disclosed, docs/atomik-model-policy.md): only that one is connected. The server runs the Thinking setting's whatever is sent. */
+    expect(initial.models).toEqual([]);
+    expect(initial).not.toHaveProperty('defaultModel');
+    const input: DevelopmentRequest = { projectId: project.id, requestId: randomUUID(), kind: 'screenplay', model: 'auto', effort: 'auto', instructions: 'Preserve the entire source, including the final room.' };
     const quoted = await request.post('/api/workbench/development', { headers, data: { ...input, quoteOnly: true } });
     expect(quoted.ok(), await quoted.text()).toBe(true);
     const quote = await quoted.json() as DevelopmentQuote;
-    expect(quote).toMatchObject({ quoteOnly: true, model: model.id, kind: 'screenplay', effort: 'auto', sourceCharacters: project.script.length });
+    expect(quote).toMatchObject({ quoteOnly: true, kind: 'screenplay', sourceCharacters: project.script.length });
+    /* The model and effort that run are Atomik's thinking, kept on the server and never sent (Amendment (iii) §E, 22 Oct 2026). */
+    expect(quote).not.toHaveProperty('model');
+    expect(quote).not.toHaveProperty('effort');
     expect(quote.chunks).toBeGreaterThanOrEqual(2);
     expect(quote.calls).toBe(quote.chunks * 3);
     expect(quote.sourceHash).toBe(createHash('sha256').update(sourceCanonical(project, 'screenplay')).digest('hex'));

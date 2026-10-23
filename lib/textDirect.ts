@@ -168,7 +168,8 @@ function reasoning(vendor: DirectVendor, model: string, input: Record<string, un
       // The SDK adds the budget back onto max_tokens; the approved ceiling already includes it.
       maxOutputTokens = maxTokens - budget;
     } else if (effort !== undefined) {
-      if (!CLAUDE_EFFORTS.has(effort)) notSent(`That effort setting is not available for ${model}.`);
+      /* No model in what a member reads (Amendment (iii) §E). */
+      if (!CLAUDE_EFFORTS.has(effort)) notSent('That effort setting is not available.');
       own.effort = effort;
       if (!CLAUDE_EFFORT_ONLY.test(model)) own.thinking = { type: 'adaptive' };
     }
@@ -179,7 +180,7 @@ function reasoning(vendor: DirectVendor, model: string, input: Record<string, un
     else if (effort !== undefined) thinkingConfig.thinkingLevel = effort;
     if (Object.keys(thinkingConfig).length) own.thinkingConfig = thinkingConfig;
   } else {
-    if (int(budget)) notSent(`A reasoning token budget is not available for ${model}.`);
+    if (int(budget)) notSent('A reasoning token budget is not available.');
     if (off) own.reasoningEffort = 'none';
     else if (effort !== undefined) own.reasoningEffort = effort;
   }

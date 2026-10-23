@@ -1,4 +1,9 @@
 import { defineConfig } from "@playwright/test";
+import { thinkingSlotEnv } from "./tests/helpers/thinking-slots.mjs";
+
+/* Atomik's Thinking slots for every spec and any server this config starts: the deployment names them (lib/atomikModelPolicy.ts);
+   here, three verified Claude ids picked from the checked-in catalogue by price (tests/helpers/thinking-slots.mjs). */
+Object.assign(process.env, thinkingSlotEnv());
 
 /**
  * Phase 0 acceptance — every route at the three phone viewports, signed

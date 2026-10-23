@@ -54,9 +54,9 @@ export async function gatewayAuth(): Promise<Record<string, string>> {
 }
 
 /** What a gateway error should say to a person, by status. */
-export function explainGatewayFailure(status: number, text: string): string | null {
-  /* A direct provider's own error is explained by the text paths (lib/textReply.ts); the rest is the gateway's. */
-  const provider = explainTextFailure(status, text);
+export function explainGatewayFailure(status: number, text: string, member = false): string | null {
+  /* A direct provider's own error is explained by the text paths (lib/textReply.ts); the rest is the gateway's. `member`: never the provider's own words. */
+  const provider = explainTextFailure(status, text, member);
   if (provider) return provider;
   if (status === 403 && /free tier|RestrictedModels/i.test(text)) {
     return "The model gateway is on its free tier, which does not include this model. " +

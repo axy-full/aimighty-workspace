@@ -1,4 +1,5 @@
 import { RecoveryFence, RECOVERY_PROTOCOL } from "../lib/recovery/control.mjs";
+import { thinkingSlotEnv } from "../tests/helpers/thinking-slots.mjs";
 /** Local-only full HTTP rehearsal. No Stripe validation or external provider calls. */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -53,6 +54,8 @@ Object.assign(process.env, {
   NODE_ENV: "development",
   NEXT_TELEMETRY_DISABLED: "1",
   ENGINE_MOCK: "1",
+  /* Atomik's Thinking slots: the deployment names them; here, three verified Claude ids picked by catalogue price. */
+  ...thinkingSlotEnv(),
   PLATFORM_DATABASE_URL: `file:${path.join(dir, "platform.db")}`,
   TURSO_DATABASE_URL: `file:${path.join(dir, "primary.db")}`,
   PLATFORM_AUTH_TOKEN: "",
@@ -612,7 +615,8 @@ try {
     );
   }
   assert.equal(
-    usage.byModel.find((row) => row.model === "mock-visible-text").credits,
+    /* Atomik's thinking is one "Thinking" row, model "atomik" (Amendment (iii) §E: the model is never shown). */
+    usage.byModel.find((row) => row.model === "atomik" && row.kind === "text").credits,
     7,
   );
   assert.equal(

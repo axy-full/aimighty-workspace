@@ -1,40 +1,34 @@
 import { test, expect } from "@playwright/test";
+import { NOT_TEXT_IDS } from "../helpers/runtimeIds";
+import { GEMINI_IDS, GROK_IDS, HIGH, LOW, MEDIUM, OPENAI_IDS, OTHER_CLAUDE } from "../helpers/thinkingSlots";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { selectAtomikModel } from "../../lib/atomikModelPolicy";
+import { thinkingFor } from "../../lib/atomikModelPolicy";
 
-test("Auto ignores unrelated providers and respects an available explicit route", () => {
-  const available = ["new-provider/new-model", "anthropic/claude-opus-4.7", "anthropic/claude-sonnet-4.6"];
-  expect(selectAtomikModel("auto", available, "new-provider/new-model")).toBe("anthropic/claude-sonnet-4.6");
-  expect(selectAtomikModel("auto", available, "anthropic/claude-opus-4.7")).toBe("anthropic/claude-opus-4.7");
-  expect(() => selectAtomikModel("auto", ["new-provider/new-model"])).toThrow("No supported Atomik");
-});
+/*
+ * Atomik's thinking is the workspace's setting (owner, 22 Oct 2026; Amendment (iii) §E): the model behind each setting is the
+ * deployment's env (a slot), never a model a request names, and nothing falls back to another paid model. tests/unit/atomikThinking.spec.ts
+ * holds the slots, the turn rules and the Treatment writer; these hold the catalogue it draws on and the routes that read it.
+ */
 
-test("an explicit retired or unapproved thinking model cannot silently become a different paid model", () => {
-  const available = ["anthropic/claude-sonnet-4.6", "openai/gpt-5.5"];
-  expect(selectAtomikModel("openai/gpt-5.5", available)).toBe("openai/gpt-5.5");
-  expect(() => selectAtomikModel("google/gemini-3-pro-image", available)).toThrow("not offered");
-  /* A model Atomik used to offer is refused with the reason, never swapped for another paid model. */
-  expect(() => selectAtomikModel("google/gemini-3.1-pro-preview", [...available, "google/gemini-3.1-pro-preview"])).toThrow("no longer offered in Atomik");
-  expect(() => selectAtomikModel("openai/gpt-5.4", available)).toThrow("currently unavailable");
-  /* A dropped id is not refused: it is its alias, the nearest offered model (lib/modelAliases.ts). */
-  expect(selectAtomikModel("openai/gpt-5.5-pro", available)).toBe("openai/gpt-5.5");
-  expect(selectAtomikModel("anthropic/claude-sonnet-4.6", available)).toBe("anthropic/claude-sonnet-4.6");
-});
-
-test("the planner catalogue is the Claude, OpenAI and Grok part of the verified text catalogue, and excludes media and classifiers", async () => {
-  const { ATOMIK_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS, isAtomikModel, isVerifiedTextModel, isRetiredAtomikModel } = await import('../../lib/atomikModelPolicy');
+test("the planner catalogue is the slots' models, all verified Claude text, and excludes media and classifiers", async () => {
+  const { CLAUDE_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS, atomikModelIds, isAtomikModel, isVerifiedTextModel, isRetiredAtomikModel } = await import('../../lib/atomikModelPolicy');
   expect(VERIFIED_TEXT_MODEL_IDS.length).toBe(83);
-  expect(ATOMIK_MODEL_IDS.length).toBe(72);
-  for (const id of ['openai/gpt-6-astra', 'anthropic/claude-opus-5', 'anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5', 'openai/gpt-4o-mini', 'spacexai/grok-4.7', 'spacexai/grok-4.1-fast-reasoning']) expect(isAtomikModel(id)).toBe(true);
-  /* Gemini is verified text, used by the prompt enhancer, and no longer Atomik's. */
-  for (const id of ['google/gemini-3.8-flash', 'google/gemini-3.1-pro-preview']) {
+  /* Three Claude models only (owner, 23 Oct 2026): the slots' models; every other Claude id is verified text but not Atomik's. */
+  expect(atomikModelIds()).toEqual([HIGH, MEDIUM, LOW]);
+  for (const id of atomikModelIds()) { expect(isAtomikModel(id), id).toBe(true); expect(isVerifiedTextModel(id), id).toBe(true); }
+  const others = CLAUDE_MODEL_IDS.filter((id) => ![HIGH, MEDIUM, LOW].includes(id));
+  expect(others.length).toBeGreaterThan(0);
+  for (const id of others) { expect(isAtomikModel(id), id).toBe(false); expect(isVerifiedTextModel(id), id).toBe(true); }
+  /* Gemini, Grok and OpenAI are verified text (the prompt enhancer reads them) and no longer Atomik's thinking. */
+  for (const id of [...GEMINI_IDS, ...GROK_IDS, ...OPENAI_IDS]) {
     expect(isAtomikModel(id), id).toBe(false);
     expect(isVerifiedTextModel(id), id).toBe(true);
     expect(isRetiredAtomikModel(id), id).toBe(true);
   }
-  for (const id of ['openai/gpt-image-2', 'openai/gpt-oss-safeguard-20b', 'google/gemma-3-27b-it', 'anthropic/not-a-real-model', 'spacexai/grok-imagine-image-2.0', 'spacexai/grok-tts']) {
+  /* Media, speech and classifier entries of the catalogue, and an id that is none of its: not Atomik's, not retired text. */
+  for (const id of [...NOT_TEXT_IDS, 'anthropic/not-a-real-model']) {
     expect(isAtomikModel(id), id).toBe(false);
     expect(isRetiredAtomikModel(id), id).toBe(false);
   }
@@ -48,30 +42,17 @@ test('Gateway reasoning metadata rejects malformed and unknown controls', async 
   ]);
 });
 
-test("Auto without a route prefers its own choices: OpenAI-only plans on GPT-5.5, never the first OpenAI id in the catalogue", () => {
-  const openai = ["openai/gpt-3.5-turbo", "openai/gpt-4o-mini", "openai/gpt-5-nano", "openai/gpt-5.5"];
-  const claude = ["anthropic/claude-haiku-4.5", "anthropic/claude-opus-4.7", "anthropic/claude-sonnet-4.6"];
-  expect(selectAtomikModel("auto", openai)).toBe("openai/gpt-5.5");
-  expect(selectAtomikModel("auto", claude)).toBe("anthropic/claude-sonnet-4.6");
-  expect(selectAtomikModel("auto", ["anthropic/claude-haiku-4.5", "anthropic/claude-opus-4.6"])).toBe("anthropic/claude-opus-4.6");
-  /* Auto's own list (Sonnet 5.5, Opus 5.5, Sonnet 5, Opus 5, GPT-5.5) outranks an older Claude. */
-  expect(selectAtomikModel("auto", [...openai, ...claude])).toBe("openai/gpt-5.5");
-  expect(selectAtomikModel("auto", [...openai, ...claude, "anthropic/claude-sonnet-5"])).toBe("anthropic/claude-sonnet-5");
-  /* The platform's route still wins when it is served, even outside Auto's list; a dropped route is its alias. */
-  expect(selectAtomikModel("auto", [...openai, ...claude], "openai/gpt-4o-mini")).toBe("openai/gpt-4o-mini");
-  expect(selectAtomikModel("auto", openai, "anthropic/claude-opus-5")).toBe("openai/gpt-5.5");
-  expect(selectAtomikModel("auto", [...openai, ...claude], "openai/gpt-5.5-pro")).toBe("openai/gpt-5.5");
-  /* With none of Auto's choices served, the catalogue order decides, as before. */
-  expect(selectAtomikModel("auto", ["openai/gpt-4o-mini", "openai/gpt-3.5-turbo"])).toBe("openai/gpt-3.5-turbo");
-});
-
-test("every Atomik text entry point resolves Auto the same way: an OpenAI-only workspace plans on GPT-5.5", async () => {
-  /* The chat turn, the ideas and shots drafts, the treatment scene and the memory read all pick through resolveModel. */
+test("every Atomik text entry point resolves through the policy, and a workspace without Claude does not plan on OpenAI", async () => {
+  /* The chat turn, the ideas and shots drafts, the treatment scene and the memory read all pick through textJobPick (resolveModel). */
   const atomik = readFileSync("lib/atomik.ts", "utf8");
-  expect(atomik).toMatch(/const model = await resolveModel\(opts\.model \?\? chat\.model, "shot"\);/);
-  expect(atomik).toMatch(/try \{ return selectAtomikModel\(want, /);
-  for (const route of ["ideas/draft", "shots/draft", "treatment/scene", "memory/read"])
-    expect(readFileSync(`app/api/atomik/${route}/route.ts`, "utf8"), route).toMatch(/const model = await resolveModel\(typeof body\.model === "string" \? body\.model\.slice\(0, 120\) : "auto", "(idea|shot)"\);/);
+  expect(atomik).toMatch(/const \{ model, effort \} = await textJobPick\("plan"\);/);
+  expect(atomik).toMatch(/return \(await textJobPick\(job === "idea" \|\| job === "shot" \? "writing" : job\)\)\.model;/);
+  for (const [route, turn] of [["ideas/draft", "writing"], ["shots/draft", "writing"], ["treatment/scene", "treatment"], ["memory/read", "routine"]] as const) {
+    const source = readFileSync(`app/api/atomik/${route}/route.ts`, "utf8");
+    expect(source, route).toContain(`await resolveModel("auto", "${turn}")`);
+    expect(source, route).toContain(`await thinkingRun("${turn}", model)`);
+    expect(source, `${route}: the body's model is not read`).not.toMatch(/body\.model/);
+  }
 
   const keys = ["MODEL_CATALOG", "ENGINE_MOCK", "OPENAI_API_KEY", "AI_GATEWAY_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "TEXT_DIRECT", "VERCEL", "VERCEL_OIDC_TOKEN", "PLATFORM_DATABASE_URL"] as const;
   const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
@@ -88,11 +69,29 @@ test("every Atomik text entry point resolves Auto the same way: an OpenAI-only w
       return new Response(JSON.stringify({ data: committed.models.filter((m) => m.id.startsWith("openai/")).map((m) => ({ id: m.id.slice(7) })) }), { status: 200 });
     }) as typeof fetch;
     const { resolveModel } = await import("../../lib/atomik");
-    expect(await resolveModel("auto", "idea")).toBe("openai/gpt-5.5");
-    expect(await resolveModel("auto", "shot")).toBe("openai/gpt-5.5");
-    expect(await resolveModel("openai/gpt-5.5-pro", "idea")).toBe("openai/gpt-5.5");
+    /* OpenAI-only: the setting's Claude model is not served, so the job is refused in plain words, and nothing plans on OpenAI. */
+    for (const [sent, job] of [["auto", "idea"], [OPENAI_IDS[0], "shot"], [OPENAI_IDS[1], "writing"]] as const)
+      await expect(resolveModel(sent, job), `${sent} ${job}`).rejects.toThrow("Atomik's thinking isn't connected right now. Nothing billed.");
   } finally {
     globalThis.fetch = realFetch;
     for (const k of keys) if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+  }
+});
+
+test("with Claude served, every text job runs the setting's model whatever it was sent", async () => {
+  const prior = process.env.ENGINE_MOCK, priorCatalog = process.env.MODEL_CATALOG;
+  /* The checked-in snapshot (every entry served under the mock), never the gateway's live list. */
+  process.env.ENGINE_MOCK = "1"; process.env.MODEL_CATALOG = "static";
+  try {
+    const { resolveModel } = await import("../../lib/atomik");
+    /* Outside a workspace the setting reads as the default, Medium. */
+    for (const sent of ["auto", OPENAI_IDS[0], GROK_IDS[0], GEMINI_IDS[0], OTHER_CLAUDE[0]]) {
+      expect(await resolveModel(sent, "idea"), sent).toBe(thinkingFor("medium", "writing").model);
+      expect(await resolveModel(sent, "plan"), sent).toBe(MEDIUM);
+      expect(await resolveModel(sent, "routine"), sent).toBe(LOW);
+    }
+  } finally {
+    if (prior === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = prior;
+    if (priorCatalog === undefined) delete process.env.MODEL_CATALOG; else process.env.MODEL_CATALOG = priorCatalog;
   }
 });

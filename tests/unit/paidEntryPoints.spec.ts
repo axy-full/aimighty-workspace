@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import { OPENAI_IDS } from "../helpers/thinkingSlots";
+import { ASTRA, EFFORT_CLAUDE } from "../helpers/runtimeIds";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -171,14 +173,18 @@ test("an empty answer is paid to the provider but settles at zero, like a refuse
 
 test("a settled answer reports what the ledger billed, in credits", async () =>
   scope("text_credits", async () => {
-    const { runPaidText } = await import("../../lib/paidText");
+    const { runPaidText, quotePaidText } = await import("../../lib/paidText");
+    const { billCredits } = await import("../../lib/creditTerms");
+    const quote = await quotePaidText(call, model);
     const out = await runPaidText(call, {
       model,
       submit: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "A usable logline." } }], usage: { cost: 0.4 } }) }),
     });
     const event = (await metered("text_credits"))[0];
-    expect(Number(event.billed_credits)).toBe(6);
-    expect(out.credits).toBe(6);
+    /* What the ledger billed: what it used, never past its estimate (money review 3, 23 Oct 2026). The provider's 0.4 is above this fixture's estimate, so it bills the estimate. */
+    expect(billCredits(0.4, "text")).toBeGreaterThan(quote.estimateCredits);
+    expect(Number(event.billed_credits)).toBe(quote.estimateCredits);
+    expect(out.credits).toBe(quote.estimateCredits);
     expect(out.costUsd).toBeCloseTo(0.4, 6);
   }));
 
@@ -539,7 +545,7 @@ test("legacy reasoning quotes are read-only and the paid request reserves the qu
     const { quotePaidText, runPaidText } = await import("../../lib/paidText");
     const { db } = await import("../../lib/db");
     const thinking: CatalogModel = {
-      ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", maxTokens: 32768,
+      ...model, id: EFFORT_CLAUDE, owner: "anthropic", maxTokens: 32768,
       tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }],
     };
     const request = { ...call, id: "quoted_reasoning", model: thinking.id, effort: "high" };
@@ -596,7 +602,7 @@ test("legacy invalid efforts and incompatible image references fail before a pai
 test("an older text request without effort keeps its original output limit and wire fields", async () =>
   scope("text_old_effort", async () => {
     const { runPaidText } = await import("../../lib/paidText");
-    const thinking: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", maxTokens: 32768,
+    const thinking: CatalogModel = { ...model, id: EFFORT_CLAUDE, owner: "anthropic", maxTokens: 32768,
       tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }] };
     const { createChat, getChat } = await import("../../lib/atomik");
     const chatId = await createChat({ userId: "test_user", projectId: null, model: thinking.id, agentMode: "ask" });
@@ -615,7 +621,7 @@ test("an older text request without effort keeps its original output limit and w
 test("premium reasoning is available within its explicit quote while old unquoted text retains its budget", async () =>
   scope("text_premium_quote", async () => {
     const { quotePaidText, runPaidText } = await import("../../lib/paidText");
-    const premium: CatalogModel = { ...model, id: "openai/gpt-5.5-pro", owner: "openai", maxTokens: 32768,
+    const premium: CatalogModel = { ...model, id: OPENAI_IDS[0], owner: "openai", maxTokens: 32768,
       pricing: { input: "0.0000301", output: "0.000293" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["high"] }] };
     expect(await vendorRatesIn(premium.pricing)).toEqual([]);
     const request = { ...call, model: premium.id, effort: "high", maxTokens: 4000 };
@@ -634,7 +640,7 @@ test('legacy direct OpenAI saves cache receipts and price snapshot, retaining un
   try { for (const unknown of [false, true]) await scope(`direct_cache_${unknown}`, async () => {
     const { runPaidText } = await import('../../lib/paidText');
     const { db } = await import('../../lib/db');
-    const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', pricing: { input: .000000117, output: .00000037, input_cache_read: .000000013, input_cache_write: .000000159 } };
+    const priced: CatalogModel = { ...model, id: ASTRA, owner: 'openai', pricing: { input: .000000117, output: .00000037, input_cache_read: .000000013, input_cache_write: .000000159 } };
     expect(await vendorRatesIn(priced.pricing)).toEqual([]);
     let calls = 0;
     const input = { ...call, model: priced.id, id: `direct-cache-${unknown}` };
@@ -665,7 +671,7 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
     const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
     delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = "test-anthropic-key-never-sent";
     try {
-      const claude: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", pricing: { input: .0000017, output: .0000083, input_cache_read: .00000017, input_cache_write: .0000021 } }; // made-up rates: no catalogue entry has them (asserted below)
+      const claude: CatalogModel = { ...model, id: EFFORT_CLAUDE, owner: "anthropic", pricing: { input: .0000017, output: .0000083, input_cache_read: .00000017, input_cache_write: .0000021 } }; // made-up rates: no catalogue entry has them (asserted below)
       expect(await vendorRatesIn(claude.pricing)).toEqual([]);
       const direct = { ...call, model: claude.id, id: "text_direct_billed" };
       const gatewayQuote = await quotePaidText(direct, claude);
