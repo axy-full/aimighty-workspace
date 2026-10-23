@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { ASTRA, ASTRA_VENDOR_ID } from '../helpers/runtimeIds';
 import { LOW, MEDIUM } from '../helpers/thinkingSlots';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -450,7 +451,7 @@ test('a check sends its review copies at low detail, through the Gateway and str
   /* Straight to OpenAI on the platform's own OpenAI key (a key a workspace saved never funds new work): every picture is
      an input image at low detail. */
   const fakeKey = 'test-openai-key-never-sent';
-  const gpt: CatalogModel = { ...model, id: 'openai/gpt-6-astra', name: 'GPT fixture', owner: 'openai' };
+  const gpt: CatalogModel = { ...model, id: ASTRA, name: 'GPT fixture', owner: 'openai' };
   const direct: Record<string, unknown>[] = [];
   const priorKey = process.env.OPENAI_API_KEY;
   process.env.OPENAI_API_KEY = fakeKey;
@@ -458,7 +459,7 @@ test('a check sends its review copies at low detail, through the Gateway and str
     await runInTenant(workspace(), () => executeDevelopmentAgent(call(gpt), { method: 'api-key', token: fakeKey, vendor: 'openai' }, async (url, init) => {
       expect(String(url)).toBe('https://api.openai.com/v1/responses');
       direct.push(JSON.parse(String(init?.body)));
-      return Response.json({ id: 'resp_fixture', object: 'response', created_at: 1, model: 'gpt-6-astra', status: 'completed', output: [{ type: 'message', id: 'msg_fixture', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: '{}', annotations: [] }] }],
+      return Response.json({ id: 'resp_fixture', object: 'response', created_at: 1, model: ASTRA_VENDOR_ID, status: 'completed', output: [{ type: 'message', id: 'msg_fixture', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: '{}', annotations: [] }] }],
         usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } }, error: null, incomplete_details: null });
     }));
   } finally {

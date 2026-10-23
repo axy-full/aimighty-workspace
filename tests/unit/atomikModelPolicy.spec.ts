@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { NOT_TEXT_IDS } from "../helpers/runtimeIds";
 import { GEMINI_IDS, GROK_IDS, HIGH, LOW, MEDIUM, OPENAI_IDS, OTHER_CLAUDE } from "../helpers/thinkingSlots";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,7 +27,8 @@ test("the planner catalogue is the slots' models, all verified Claude text, and 
     expect(isVerifiedTextModel(id), id).toBe(true);
     expect(isRetiredAtomikModel(id), id).toBe(true);
   }
-  for (const id of ['openai/gpt-image-2', 'openai/gpt-oss-safeguard-20b', 'google/gemma-3-27b-it', 'anthropic/not-a-real-model', 'spacexai/grok-imagine-image-2.0', 'spacexai/grok-tts']) {
+  /* Media, speech and classifier entries of the catalogue, and an id that is none of its: not Atomik's, not retired text. */
+  for (const id of [...NOT_TEXT_IDS, 'anthropic/not-a-real-model']) {
     expect(isAtomikModel(id), id).toBe(false);
     expect(isRetiredAtomikModel(id), id).toBe(false);
   }

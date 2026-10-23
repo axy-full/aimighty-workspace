@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { AUDIO_ENGINE, STILL_ENGINE, VIDEO_ENGINE } from "../helpers/runtimeIds";
 import { GEMINI_IDS, GROK_IDS, HIGH, LOW, MEDIUM, OPENAI_IDS, OTHER_CLAUDE } from "../helpers/thinkingSlots";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,10 +27,10 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(dir, "primary.db")}`;
 process.env.KEYRING_SECRET ??= "unit-test-keyring-secret-unit-test-keyring";
 process.env.ENGINE_MOCK = "1";
 
-const SEEDANCE = "dreamina-seedance-2-5-260628";
-const STILL = "gemini-3-pro-image";
+const SEEDANCE = VIDEO_ENGINE;
+const STILL = STILL_ENGINE;
 const GEMINI = GEMINI_IDS[0];
-const accountMeta = { model: "kling3_0", type: "video", modelName: "Kling 3.0", jobId: "11111111-1111-4111-8111-000000000001", draftId: "draft", credits: 42, workspaceId: "wallet", workspaceName: "Studio wallet", quoteExpiresAt: 1, input: { type: "video", model: "kling3_0", prompt: "A push in.", parameters: {}, medias: [] } };
+const accountMeta = { model: "account-video", type: "video", modelName: "Account video", jobId: "11111111-1111-4111-8111-000000000001", draftId: "draft", credits: 42, workspaceId: "wallet", workspaceName: "Studio wallet", quoteExpiresAt: 1, input: { type: "video", model: "account-video", prompt: "A push in.", parameters: {}, medias: [] } };
 
 let n = 0;
 function workspace(): TenantWorkspace {
@@ -65,13 +66,13 @@ test("the planner never proposes an account tool: a connected model, its setting
   const reply = JSON.stringify({
     say: "Four shots.",
     propose: [
-      { kind: "video", title: "Push in", prompt: "A slow push in on a bottle.", model: "connected:kling3_0", settings: { duration: 5, mode: "pro" }, preset: "preset-1", batch: "variants", seconds: 5, ratio: "16:9" },
+      { kind: "video", title: "Push in", prompt: "A slow push in on a bottle.", model: "connected:account-video", settings: { duration: 5, mode: "pro" }, preset: "preset-1", batch: "variants", seconds: 5, ratio: "16:9" },
       { kind: "image", title: "Still", prompt: "The bottle on white.", model: "connected:nano_banana_2", settings: { resolution: "2k" }, batch: true },
       { kind: "audio", title: "Hum", prompt: "A soft hum.", model: "connected:mmaudio" },
       { kind: "3d", title: "Bottle model", prompt: "A bottle, as a 3D model.", model: "connected:hunyuan_3d" },
     ],
   });
-  const allowed = [{ id: SEEDANCE, kind: "video" as const }, { id: STILL, kind: "image" as const }, { id: "elevenlabs", kind: "audio" as const }];
+  const allowed = [{ id: SEEDANCE, kind: "video" as const }, { id: STILL, kind: "image" as const }, { id: AUDIO_ENGINE, kind: "audio" as const }];
   for (const turn of [extractTurn(reply, allowed)!, extractTurn(reply)!]) {
     expect(turn.propose.map((p) => p.kind)).toEqual(["video", "image", "audio"]);
     for (const proposal of turn.propose) {
@@ -79,12 +80,12 @@ test("the planner never proposes an account tool: a connected model, its setting
       expect(Object.keys(proposal).sort(), proposal.title).toEqual(["attachments", "kind", "model", "params", "prompt", "title"]);
       for (const key of ["connected", "settings", "preset", "batch", "mode"]) expect(proposal.params, `${proposal.title}: ${key}`).not.toHaveProperty(key);
     }
-    expect(turn.propose[2].model).toBe("elevenlabs");
+    expect(turn.propose[2].model).toBe(AUDIO_ENGINE);
     /* No engine here makes 3D: it is named as not proposed, never made as something else. */
     expect(turn.say).toContain("Not proposed");
     expect(turn.say).toContain("Bottle model");
   }
-  expect(extractTurn(reply, allowed)!.propose.map((p) => p.model)).toEqual([SEEDANCE, STILL, "elevenlabs"]);
+  expect(extractTurn(reply, allowed)!.propose.map((p) => p.model)).toEqual([SEEDANCE, STILL, AUDIO_ENGINE]);
 });
 
 test("the engines Atomik offers the planner are Particl's own; none is on a signed-in account", async () => {
@@ -233,8 +234,8 @@ test("a chat saved on a model Atomik no longer thinks with reads as Auto with no
 
 test("steps planned on the account before stay readable and read-only: never approved, edited, settled or waited on", async () => {
   const { ACCOUNT_STEP_NOTE, accountStep, isAccountStep } = await import("../../lib/atomikAccountStep");
-  expect(accountStep({ model: "connected:kling3_0", params: { connected: accountMeta } })).toEqual({ modelName: "Kling 3.0", credits: 42 });
-  expect(accountStep({ model: "connected:kling3_0", params: {} })).toEqual({ modelName: null, credits: null });
+  expect(accountStep({ model: "connected:account-video", params: { connected: accountMeta } })).toEqual({ modelName: "Account video", credits: 42 });
+  expect(accountStep({ model: "connected:account-video", params: {} })).toEqual({ modelName: null, credits: null });
   expect(isAccountStep({ model: SEEDANCE, params: { connected: { credits: 3 } } })).toBe(true);
   expect(isAccountStep({ model: SEEDANCE, params: { seconds: 5 } })).toBe(false);
   expect(isAccountStep(null)).toBe(false);
@@ -243,20 +244,20 @@ test("steps planned on the account before stay readable and read-only: never app
     const { getChat, listChats, patchStep, reconcileRunningSteps, estimateStepUsd, StepEditError } = await import("../../lib/atomik");
     const { db } = await import("../../lib/db");
     await chat("old");
-    await step({ id: "acct-proposed", chat: "old", model: "connected:kling3_0", params: { connected: accountMeta } });
-    await step({ id: "acct-running", chat: "old", model: "connected:kling3_0", params: { connected: accountMeta }, status: "running" });
-    await step({ id: "acct-done", chat: "old", model: "connected:kling3_0", params: { connected: accountMeta }, status: "done", genId: "gen_kept" });
+    await step({ id: "acct-proposed", chat: "old", model: "connected:account-video", params: { connected: accountMeta } });
+    await step({ id: "acct-running", chat: "old", model: "connected:account-video", params: { connected: accountMeta }, status: "running" });
+    await step({ id: "acct-done", chat: "old", model: "connected:account-video", params: { connected: accountMeta }, status: "done", genId: "gen_kept" });
     await chat("own");
     await step({ id: "own-proposed", chat: "own" });
 
     /* Readable: every row is there as it was stored. */
     const loaded = (await getChat("old"))!;
     expect(loaded.steps.map((s) => [s.id, s.status, s.model])).toEqual([
-      ["acct-proposed", "proposed", "connected:kling3_0"], ["acct-running", "running", "connected:kling3_0"], ["acct-done", "done", "connected:kling3_0"],
+      ["acct-proposed", "proposed", "connected:account-video"], ["acct-running", "running", "connected:account-video"], ["acct-done", "done", "connected:account-video"],
     ]);
     expect(loaded.steps.every((s) => isAccountStep(s) && s.estCostUsd === null)).toBe(true);
     expect(loaded.steps.find((s) => s.id === "acct-done")?.genId).toBe("gen_kept");
-    expect(await estimateStepUsd("video", "connected:kling3_0", { connected: accountMeta })).toBeNull();
+    expect(await estimateStepUsd("video", "connected:account-video", { connected: accountMeta })).toBeNull();
 
     /* Never waited on: an account step does not make its chat need an approval. */
     const chats = await listChats("owner");
@@ -274,7 +275,7 @@ test("steps planned on the account before stay readable and read-only: never app
     expect(rows.map((r) => [String(r.id), String(r.status), r.gen_id == null ? null : String(r.gen_id)])).toEqual([
       ["acct-done", "done", "gen_kept"], ["acct-proposed", "proposed", null], ["acct-running", "running", null],
     ]);
-    for (const r of rows) expect(JSON.parse(String(r.params)).connected).toMatchObject({ credits: 42, modelName: "Kling 3.0" });
+    for (const r of rows) expect(JSON.parse(String(r.params)).connected).toMatchObject({ credits: 42, modelName: "Account video" });
   });
 });
 
@@ -316,7 +317,7 @@ async function route(file: string, fake: Record<string, unknown>): Promise<Recor
 
 test("the claim and step routes refuse an account step with its reason, and claim, patch or settle nothing", async () => {
   const { ACCOUNT_STEP_NOTE } = await import("../../lib/atomikAccountStep");
-  const stored = { id: "acct", chatId: "c", messageId: "m", position: 0, kind: "video", title: "Push in", prompt: "A push in.", model: "connected:kling3_0",
+  const stored = { id: "acct", chatId: "c", messageId: "m", position: 0, kind: "video", title: "Push in", prompt: "A push in.", model: "connected:account-video",
     params: { connected: accountMeta }, refs: [], status: "proposed", genId: null, estCostUsd: null, error: null, createdAt: 1 };
   const touched: string[] = [];
   const fake = {
@@ -343,6 +344,6 @@ test("the claim and step routes refuse an account step with its reason, and clai
   /* Reading it is fine. */
   const read = await steps.GET(new Request("http://localhost/api/atomik/steps/acct"), ctx);
   expect(read.status).toBe(200);
-  expect(await read.json()).toMatchObject({ id: "acct", model: "connected:kling3_0", params: { connected: { credits: 42 } } });
+  expect(await read.json()).toMatchObject({ id: "acct", model: "connected:account-video", params: { connected: { credits: 42 } } });
   expect(touched).toEqual([]);
 });

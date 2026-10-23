@@ -12,6 +12,7 @@ import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { loadRouteModule } from "../helpers/vendorCostScan";
 import { VERIFIED_TEXT_MODEL_IDS, treatmentWriter } from "../../lib/atomikModelPolicy";
 import { DIRECT_MODEL_IDS } from "../../lib/textRoute";
+import { MODELS } from "../../lib/models";
 
 /*
  * The owner, 22 Oct 2026 (Amendment (iii) §E): "never disclose to the user the models and effort settings". Every route that runs
@@ -32,7 +33,7 @@ let WRITER = "";
 test.beforeAll(async () => {
   process.env.MODEL_CATALOG = "static";
   const { staticCatalog } = await import("../../lib/catalog");
-  WRITER = staticCatalog().find((m) => VERIFIED_TEXT_MODEL_IDS.includes(m.id as never) && m.id.startsWith("openai/gpt-") && m.type === "language")!.id;
+  WRITER = staticCatalog().find((m) => VERIFIED_TEXT_MODEL_IDS.includes(m.id as never) && m.owner === "openai" && m.type === "language")!.id;
   process.env.TREATMENT_WRITER_MODEL = WRITER;
   await alignLedgerUnit();
 });
@@ -351,6 +352,7 @@ test("the chat list, Verify scorecards, statements, the usage ledger and the exp
 test("the matcher finds every slot's id, the writer's and an effort, and lets engines through", () => {
   for (const id of [HIGH, MEDIUM, LOW, WRITER, DIRECT_MODEL_IDS[MEDIUM]]) expect(thinkingModelNames(JSON.stringify({ model: id })), id).not.toEqual([]);
   expect(thinkingModelNames("reasoning_effort, effort: high")).toHaveLength(2);
-  expect(thinkingModelNames("Seedance 2.5 · GPT Image 2 · grok-imagine-video · up to 43 cr")).toEqual([]);
+  /* The engines a Director picks are named where they are picked: every engine label, as the menus show it, passes. */
+  expect(thinkingModelNames(`${MODELS.filter((m) => m.kind === "video" || m.kind === "image").map((m) => m.label).join(" · ")} · up to 43 cr`)).toEqual([]);
   expect(effortKeys({ a: [{ effort: "high" }] })).toEqual(["$.a[0].effort"]);
 });

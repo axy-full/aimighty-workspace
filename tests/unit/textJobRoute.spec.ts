@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { DEFAULT_THINKING, VERIFIED_TEXT_MODEL_IDS, thinkingFor } from "../../lib/atomikModelPolicy";
-import { enhanceModelFor } from "../../lib/enhance";
+import { PROMPT_MODELS, enhanceModelFor } from "../../lib/enhance";
 import { textEffect, textModelsByJob } from "../../lib/textJobRoute";
 import { TEXT_JOBS, DEFAULT_LAYER } from "../../lib/platformLayer";
 
@@ -16,6 +16,8 @@ import { TEXT_JOBS, DEFAULT_LAYER } from "../../lib/platformLayer";
  */
 process.env.ENGINE_MOCK = "1";
 const ROUTABLE = [...VERIFIED_TEXT_MODEL_IDS];
+/** The deployment's prompt writers, as it lists them by default (lib/enhance.ts › PROMPT_MODELS): the first is the stand-in. */
+const WRITERS = PROMPT_MODELS();
 
 test("every model a job lists runs exactly as chosen, and every model it leaves out would have run as something else", () => {
   const lists = textModelsByJob(ROUTABLE);
@@ -37,8 +39,8 @@ test("ideas and shots do not list Gemini; prompt enhancement lists only the mode
     expect(lists[job]).toContain(MEDIUM);
   }
   expect(lists.enhance.some((id) => id.startsWith("openai/") || id.startsWith("xai/") || id.startsWith("spacexai/"))).toBe(false);
-  expect(lists.enhance).toContain("anthropic/claude-sonnet-5.5");
-  expect(lists.enhance).toContain("google/gemini-3.1-pro-preview");
+  for (const id of WRITERS) expect(lists.enhance, id).toContain(id);
+  expect(lists.enhance.some((id) => id.startsWith("google/")), "a Gemini the writer is priced for").toBe(true);
 });
 
 test("a saved choice that cannot run says what runs in its place; one that can says so too", () => {
@@ -49,8 +51,8 @@ test("a saved choice that cannot run says what runs in its place; one that can s
   const gpt = ROUTABLE.find((id) => id.startsWith("openai/"))!;
   const effect = textEffect("enhance", gpt, ROUTABLE);
   expect(effect.runnable).toBe(false);
-  /* The enhancer's stand-in is the deployment's own first writer, which the owner made Opus 5.5 on 16 Oct 2026. */
-  expect(effect.runs).toBe("anthropic/claude-opus-5.5");
+  /* The enhancer's stand-in is the deployment's own first writer (the owner's choice, 16 Oct 2026). */
+  expect(effect.runs).toBe(WRITERS[0]);
   /* Nothing Atomik runs is connected: no stand-in. */
   expect(textEffect("idea", gemini, [gemini]).runs).toBeNull();
 });
@@ -79,7 +81,7 @@ test("the admin route sends each job its own list and what a saved choice does",
   expect(body.textModelsByJob.idea.some((id: string) => id.startsWith("google/"))).toBe(false);
   expect(body.textModelsByJob.enhance.includes(OPENAI_IDS[0])).toBe(false);
   expect(body.textEffects.idea).toMatchObject({ runnable: false, runs: MEDIUM });
-  expect(body.textEffects.enhance).toMatchObject({ runnable: false, runs: "anthropic/claude-opus-5.5" });
+  expect(body.textEffects.enhance).toMatchObject({ runnable: false, runs: WRITERS[0] });
   expect(body.textEffects.shot).toMatchObject({ runnable: true });
 });
 
@@ -99,7 +101,8 @@ async function withRouteEnv<T>(env: Partial<Record<(typeof ROUTE_ENV)[number], s
 }
 
 test("a saved enhance choice never reads \"X runs instead\" with X itself: it runs as saved, names the real stand-in, or says nothing can run it", async () => {
-  const saved = "anthropic/claude-sonnet-5.5";
+  /* A writer the enhancer is priced for that is not its first. */
+  const saved = WRITERS[1];
   /* Priced, with a working route, but not on the admin's list: the writer runs it as saved. */
   await withRouteEnv({ ENGINE_MOCK: "1" }, () => {
     expect(textEffect("enhance", saved, [])).toEqual({ saved, runnable: true, runs: saved });
@@ -109,7 +112,8 @@ test("a saved enhance choice never reads \"X runs instead\" with X itself: it ru
     expect(enhanceModelFor(saved)).toBe(saved);
     expect(textEffect("enhance", saved, ROUTABLE)).toEqual({ saved, runnable: false, runs: null });
   });
-  await withRouteEnv({ PROMPT_MODELS: "google/gemini-3.1-pro-preview" }, () => {
+  const gemini = textModelsByJob(ROUTABLE).enhance.find((id) => id.startsWith("google/"))!;
+  await withRouteEnv({ PROMPT_MODELS: gemini }, () => {
     expect(textEffect("enhance", saved, ROUTABLE)).toEqual({ saved, runnable: false, runs: null });
   });
   /* With routes, a saved model the writer is not priced for gets the first of its list that works. */
@@ -132,7 +136,7 @@ test("ideas and shots run the Thinking setting's model when the catalogue serves
   /* Served-but-unlisted saved models are not an error; nothing Atomik runs served means no stand-in. */
   expect(textEffect("idea", gemini, [grok], [gemini])).toEqual({ saved: gemini, runnable: false, runs: null });
   /* A dropped id reads as its alias: what runs is the alias, and it is not "as saved". */
-  const body = await adminRoute({ idea: gemini, shot: opus, enhance: "anthropic/claude-sonnet-5.5" }, [grok], [opus, grok]);
+  const body = await adminRoute({ idea: gemini, shot: opus, enhance: WRITERS[1] }, [grok], [opus, grok]);
   expect(body.textEffects.idea).toEqual({ saved: gemini, runnable: false, runs: opus });
   expect(body.textEffects.shot).toEqual({ saved: opus, runnable: true, runs: opus });
   /* Grok is not Atomik's thinking (owner, 22 Oct 2026): a shot list cannot run it, so it is not offered. */

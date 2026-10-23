@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { AUDIO_ENGINE, MARKETING_STILL_ENGINE, STILL_ENGINE, VIDEO_ENGINE } from "../helpers/runtimeIds";
 import { MEDIUM } from "../helpers/thinkingSlots";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
@@ -37,8 +38,8 @@ process.env.BLOB_READ_WRITE_TOKEN = "";
 
 const MOTION = GENJUTSU_MODELS["motion-transfer"];
 const SWAP = GENJUTSU_MODELS["object-swap"];
-const MARKETING = "higgsfield/marketing-studio-image";
-const SEEDANCE = "dreamina-seedance-2-5-260628";
+const MARKETING = MARKETING_STILL_ENGINE;
+const SEEDANCE = VIDEO_ENGINE;
 const actor: AdmissionActor = {
   user: { id: "owner", email: "owner@example.invalid", name: "Owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null },
 };
@@ -59,7 +60,7 @@ const LIBRARY: LibraryItem[] = [
 ];
 const PRESETS: PresetItem[] = [{ handle: "P1", id: PRESET_ID, name: "Bold studio" }];
 const OFFERED = [
-  { id: SEEDANCE, kind: "video" as const }, { id: "gemini-3-pro-image", kind: "image" as const }, { id: "elevenlabs", kind: "audio" as const },
+  { id: SEEDANCE, kind: "video" as const }, { id: STILL_ENGINE, kind: "image" as const }, { id: AUDIO_ENGINE, kind: "audio" as const },
   { id: MOTION, kind: "video" as const }, { id: SWAP, kind: "video" as const }, { id: MARKETING, kind: "image" as const },
 ];
 const reply = (propose: Record<string, unknown>[]) => JSON.stringify({ say: "Here is the plan.", propose });
@@ -138,8 +139,8 @@ test("a library step with incomplete inputs, or an engine not offered, is named 
   expect(many.propose).toHaveLength(6);
   expect(many.say).toContain("Still 7 — a plan holds at most 6 library steps");
   /* An ordinary step never lands on a library engine by default. */
-  const images = extractTurn(reply([{ kind: "image", title: "Still", prompt: "A still.", model: "invented-model" }]), [{ id: MARKETING, kind: "image" }, { id: "gemini-3-pro-image", kind: "image" }])!;
-  expect(images.propose.map((p) => p.model)).toEqual(["gemini-3-pro-image"]);
+  const images = extractTurn(reply([{ kind: "image", title: "Still", prompt: "A still.", model: "invented-model" }]), [{ id: MARKETING, kind: "image" }, { id: STILL_ENGINE, kind: "image" }])!;
+  expect(images.propose.map((p) => p.model)).toEqual([STILL_ENGINE]);
 });
 
 test("a library step's render is the transform or Marketing Studio request its form sends, and the approval carries the quote", async () => {

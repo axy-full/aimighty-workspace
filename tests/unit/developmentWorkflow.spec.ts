@@ -1,4 +1,5 @@
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
+import { ASTRA, BUDGET_CLAUDE } from "../helpers/runtimeIds";
 import { GEMINI_IDS, GROK_IDS, LOW, MEDIUM, OTHER_CLAUDE } from "../helpers/thinkingSlots";
 import { test, expect } from '@playwright/test';
 import { mkdtempSync } from 'node:fs';
@@ -89,7 +90,7 @@ test('source identity includes whole script, context, format and direction; irre
 
 test('the model menu offers priced Claude models and native effort retains its provider value', () => {
   /* OpenAI and Grok left Atomik's thinking (owner, 22 Oct 2026): the development agent runs Claude, at the Thinking setting. */
-  const openai = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', reasoningOptions: [{ type: 'effort' as const, values: ['low', 'medium', 'high', 'max'] }] };
+  const openai = { ...model, id: ASTRA, owner: 'openai', reasoningOptions: [{ type: 'effort' as const, values: ['low', 'medium', 'high', 'max'] }] };
   expect(developmentModels([model, openai, { ...model, id: GROK_IDS[0] }, { ...model, id: GEMINI_IDS[0] }, { ...model, id: OTHER_CLAUDE[0], pricing: null }]).map(model => model.id)).toEqual([model.id]);
   expect(developmentProviderOptions(openai, 'medium')).toEqual({ openai: { reasoningEffort: 'medium' } });
   expect(developmentProviderOptions(openai, 'max')).toEqual({ gateway: { only: ['openai'] }, openai: { reasoningEffort: 'max' } });
@@ -253,7 +254,7 @@ test('a stale started phase is fenced as uncertain, while queued phases remain r
 
 test('installed SDK emits v4 Gateway protocol with correct OIDC/key authentication and native effort, without retries', async () => {
   const chunk = developmentChunks('INT. ROOM - DAY\nWren enters.')[0];
-  const input: DevelopmentCall = { model: { ...model, id: 'openai/gpt-6-astra', owner: 'openai', reasoningOptions: [{ type: 'effort', values: ['medium'] }] },
+  const input: DevelopmentCall = { model: { ...model, id: ASTRA, owner: 'openai', reasoningOptions: [{ type: 'effort', values: ['medium'] }] },
     effort: 'medium', stage: 'draft', kind: 'screenplay', instructions: 'Return JSON.', prompt: 'Source.', maxTokens: 4000, chunk };
   for (const method of ['oidc', 'api-key'] as const) {
     const calls: { url: string; headers: Headers; body: Record<string, unknown> }[] = [];
@@ -276,7 +277,7 @@ test('installed SDK emits v4 Gateway protocol with correct OIDC/key authenticati
     attempts++; return Response.json({ error: { message: 'Simulated upstream outage' } }, { status: 503 });
   })).rejects.toMatchObject({ providerSubmitted: true });
   expect(attempts).toBe(1);
-  const legacy = { ...model, id: 'anthropic/claude-sonnet-4.5', maxTokens: 8192 };
+  const legacy = { ...model, id: BUDGET_CLAUDE, maxTokens: 8192 };
   let budgetWire: Record<string, unknown> | undefined;
   await executeDevelopmentAgent({ ...input, model: legacy, effort: 'budget:4096', maxTokens: 8096 }, { method: 'api-key', token: 'test-token' }, async (_url, init) => {
     budgetWire = JSON.parse(String(init?.body));
@@ -465,7 +466,7 @@ test('an OpenAI key does not make OpenAI a development model: with only OpenAI s
     const ws = workspace(); ws.keys.openai = 'test-only-never-sent';
     await runInTenant(ws, async () => {
       const { request } = await fixture(), h = harness();
-      const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      const priced: CatalogModel = { ...model, id: ASTRA, owner: 'openai', pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
       h.deps.models = async () => [priced]; request.model = priced.id;
       await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow("Atomik's thinking isn't connected right now. Nothing billed.");
       await expect(prepareDevelopmentJob({ ...request, sourceHash: 'a'.repeat(64), maxCredits: 100, maxUsd: 1 }, 'owner', undefined, h.deps)).rejects.toThrow("Atomik's thinking isn't connected right now. Nothing billed.");

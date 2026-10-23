@@ -343,7 +343,7 @@ test("the read route: Atomik's thinking only (a routine turn), the approved pric
   const { selectAtomikThinking, THINKING_UNAVAILABLE } = await import("../../lib/atomikModelPolicy");
   const { engineFor } = await import("../../lib/engines");
   const { PaidTextError } = await import("../../lib/paidText");
-  const available = [READER.id, GEMINI_IDS[0], OPENAI_IDS[0], "meta/llama-4"];
+  const available = [READER.id, GEMINI_IDS[0], OPENAI_IDS[0], "test/unlisted-model"];
   let sent = 0;
   const quotedWith: string[] = [];
   const extra = {
@@ -377,7 +377,7 @@ test("the read route: Atomik's thinking only (a routine turn), the approved pric
     expect(quotedWith.at(-1)).toBe(READER.id);
     expect(quote.estimateUsd).toBeUndefined();
     /* A model in the body is not a choice (owner, 22 Oct 2026): Gemini, another family or OpenAI is ignored, never refused, and the routine turn's model is quoted. */
-    for (const model of [GEMINI_IDS[0], "meta/llama-4", OPENAI_IDS[0]]) {
+    for (const model of [GEMINI_IDS[0], "test/unlisted-model", OPENAI_IDS[0]]) {
       const asked = await post({ text: PASTE, model, quoteOnly: true });
       expect(asked.status, model).toBe(200);
       expect(quotedWith.at(-1), model).toBe(READER.id);

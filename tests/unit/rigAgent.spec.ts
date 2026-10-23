@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { FAST_STILL_ENGINE } from "../helpers/runtimeIds";
 import { GEMINI_IDS, GROK_IDS, LOW, MEDIUM, OPENAI_IDS } from "../helpers/thinkingSlots";
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { mkdtempSync } from "node:fs";
@@ -189,7 +190,7 @@ test("the board snapshot the planner reads is bounded and names each card's kind
     assets: [image("captain"), image("pier", "Environment"), { ...image("memo"), kind: "document" }],
     production: {
       cast: { entries: [{ id: "c1", name: "The captain", kind: "character", description: "Weathered.", prompt: "", takes: [], referenceAssetId: "captain" }] },
-      environment: { world: "", model: "gemini-3.1-flash-image", entries: [{ id: "e1", name: "The pier", notes: "Dawn.", prompt: "", references: [], plates: [{ assetId: "pier", at: "", source: "upload" }], selected: "pier" }] },
+      environment: { world: "", model: FAST_STILL_ENGINE, entries: [{ id: "e1", name: "The pier", notes: "Dawn.", prompt: "", references: [], plates: [{ assetId: "pier", at: "", source: "upload" }], selected: "pier" }] },
     },
   };
   const nodes: CanvasNode[] = [{ id: "w", title: "World", type: "element", assetId: "pier", x: 0, y: 0, width: 280, linked: [] }, scene("s1", { locked: true })];

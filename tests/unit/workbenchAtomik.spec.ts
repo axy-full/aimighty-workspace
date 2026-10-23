@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { ASTRA } from '../helpers/runtimeIds';
 import { GEMINI_IDS, HIGH, LOW, MEDIUM, OPENAI_IDS, OTHER_CLAUDE } from '../helpers/thinkingSlots';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -358,8 +359,8 @@ test('a higher-effort worker is not expired by a history refresh while inside it
 test('older planners use compatible JSON controls while modern proposals use strict schemas', () => {
   for (const id of ['anthropic/claude-3-haiku','anthropic/claude-opus-4','anthropic/claude-sonnet-4']) expect(atomikResponseFormat(id)).toEqual({});
   for (const id of ['openai/gpt-3.5-turbo','openai/gpt-4-turbo']) expect(atomikResponseFormat(id)).toEqual({ response_format: { type: 'json_object' } });
-  expect(JSON.stringify(atomikResponseFormat('anthropic/claude-opus-5'))).not.toMatch(/minLength|maxLength|maxItems|\$schema/);
-  expect(atomikResponseFormat('openai/gpt-6-astra')).toMatchObject({ response_format: { type: 'json_schema', json_schema: { strict: true } } });
+  expect(JSON.stringify(atomikResponseFormat(MEDIUM))).not.toMatch(/minLength|maxLength|maxItems|\$schema/);
+  expect(atomikResponseFormat(ASTRA)).toMatchObject({ response_format: { type: 'json_schema', json_schema: { strict: true } } });
 });
 
 test('premium models can quote with effort but cannot use the larger ceiling without explicit credit approval', async () => {
@@ -554,7 +555,7 @@ test('a Claude suite step thinks at the setting\'s effort inside its quoted ceil
     // No thinking, adaptive thinking, or a non-Claude model: unchanged. A budget that leaves no answer is refused.
     expect(suiteAgentMaxOutputTokens({ ...envelope, providerOptions: {} })).toBe(envelope.maxTokens);
     expect(suiteAgentMaxOutputTokens({ ...envelope, providerOptions: { anthropic: { thinking: { type: 'adaptive' } } } })).toBe(envelope.maxTokens);
-    expect(suiteAgentMaxOutputTokens({ ...envelope, model: 'openai/gpt-5-mini' })).toBe(envelope.maxTokens);
+    expect(suiteAgentMaxOutputTokens({ ...envelope, model: OPENAI_IDS[0] })).toBe(envelope.maxTokens);
     expect(() => suiteAgentMaxOutputTokens({ ...envelope, providerOptions: { anthropic: { thinking: { type: 'enabled', budgetTokens: envelope.maxTokens } } } })).toThrow();
   });
 });
@@ -566,9 +567,9 @@ test('on the wire, a direct Claude suite step asks Anthropic for exactly the quo
     const { languageModel } = await import('../../lib/language-provider');
     const bodies: Record<string, unknown>[] = [];
     const fetch: typeof globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(String(init?.body))); return Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'Fixture stop.' } }, { status: 400 }); };
-    /* Sonnet 5.5, on the owner's key list; the 5.x models take adaptive thinking and effort, not a token budget
+    /* A current Claude with a direct door (a slot's); the current models take adaptive thinking and effort, not a token budget
        (the budget arithmetic for older models is suiteAgentMaxOutputTokens, above). */
-    const envelope = { suite: 'particl' as const, model: 'anthropic/claude-sonnet-5.5', context: 'Brief.', maxTokens: 6000, inputTokenBudget: 50000, toolResultByteBudget: 20000,
+    const envelope = { suite: 'particl' as const, model: LOW, context: 'Brief.', maxTokens: 6000, inputTokenBudget: 50000, toolResultByteBudget: 20000,
       providerOptions: { anthropic: { thinking: { type: 'adaptive' as const }, effort: 'low' } }, assetIds: [], images: [] };
     await createSuiteAgent(envelope, languageModel(envelope.model, { auth: {}, fetch })).generate({ messages: suiteAgentMessages(envelope) }).catch(() => null);
     expect(bodies).toHaveLength(1);
@@ -701,7 +702,7 @@ for (const agentKind of ['astra'] as ('raw' | 'suite' | 'astra')[]) test(`direct
     const ws = workspace(); ws.keys.openai = 'test-only-never-sent';
     await runInTenant(ws, async () => {
       const { input } = await fixture(), h = harness();
-      const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', maxTokens: 128000, contextWindow: 1050000,
+      const priced: CatalogModel = { ...model, id: ASTRA, owner: 'openai', maxTokens: 128000, contextWindow: 1050000,
         pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125,
           input_tiers: [{ cost: .0000001, max: 150 }, { cost: .0000002, min: 150 }],
           output_tiers: [{ cost: .0000003, max: 150 }, { cost: .0000004, min: 150 }],

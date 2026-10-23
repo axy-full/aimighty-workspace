@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { BUDGET_CLAUDE, FAST_STILL_ENGINE } from '../helpers/runtimeIds';
 import { MEDIUM, OPENAI_IDS } from '../helpers/thinkingSlots';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -89,9 +90,9 @@ test('the Rig agent is offered the shot\'s own pictures first and the newest of 
     picture('frame', { generationId: 'gen-frame', category: 'Storyboard' }), picture('keeper', { generationId: 'gen-keeper', category: 'Character' }),
     picture('plate', { category: 'Environment' }), picture('newest')];
   p.production = {
-    boards: { style: 'live', model: 'gemini-3.1-flash-image', frames: { 'shot-1': { prompt: '', takes: [{ genId: 'gen-frame', style: 'live', at: '' }], selected: 'gen-frame' } } },
+    boards: { style: 'live', model: FAST_STILL_ENGINE, frames: { 'shot-1': { prompt: '', takes: [{ genId: 'gen-frame', style: 'live', at: '' }], selected: 'gen-frame' } } },
     cast: { entries: [{ id: 'c1', name: 'Keeper', kind: 'character', description: '', prompt: 'Keeper', takes: [{ genId: 'gen-keeper', at: '' }], selected: 'gen-keeper' }] },
-    environment: { world: '', model: 'gemini-3.1-flash-image', entries: [{ id: 'e1', name: 'Harbour', notes: '', prompt: '', references: [], plates: [{ assetId: 'plate', at: '', source: 'render' }], selected: 'plate' }] },
+    environment: { world: '', model: FAST_STILL_ENGINE, entries: [{ id: 'e1', name: 'Harbour', notes: '', prompt: '', references: [], plates: [{ assetId: 'plate', at: '', source: 'render' }], selected: 'plate' }] },
   };
   const node = { ...p.nodes.find((n) => n.id === 'scene')!, boardShotId: 'shot-1' };
   const ids = rigAssetChoices(p, node).map((a) => a.id);
@@ -267,9 +268,9 @@ test('the Rig agent is offered every chosen look and every place before any entr
     picture('plate-1-old', { category: 'Environment' }), picture('plate-1-new', { category: 'Environment' }), picture('plate-2', { category: 'Environment' }),
     picture('ref-2a', { category: 'Environment' }), picture('ref-2b', { category: 'Environment' }), picture('newest')];
   p.production = {
-    boards: { style: 'live', model: 'gemini-3.1-flash-image', frames: { 'shot-1': { prompt: '', takes: [{ genId: 'frame-new', style: 'live', at: '' }, { genId: 'frame-old', style: 'live', at: '' }], selected: 'frame-old' } } },
+    boards: { style: 'live', model: FAST_STILL_ENGINE, frames: { 'shot-1': { prompt: '', takes: [{ genId: 'frame-new', style: 'live', at: '' }, { genId: 'frame-old', style: 'live', at: '' }], selected: 'frame-old' } } },
     cast: { entries: cast.map((c) => ({ id: c, name: c, kind: 'character' as const, description: '', prompt: c, takes: Array.from({ length: 20 }, (_, i) => ({ genId: `gen-${c}-${i}`, at: '' })), selected: `gen-${c}-7` })) },
-    environment: { world: '', model: 'gemini-3.1-flash-image', entries: [
+    environment: { world: '', model: FAST_STILL_ENGINE, entries: [
       { id: 'e1', name: 'Harbour', notes: '', prompt: '', references: [], plates: [{ assetId: 'plate-1-new', at: '', source: 'render' }, { assetId: 'plate-1-old', at: '', source: 'render' }], selected: 'plate-1-old' },
       { id: 'e2', name: 'Hut', notes: '', prompt: '', references: ['ref-2a', 'ref-2b'], plates: [{ assetId: 'plate-2', at: '', source: 'upload' }] },
     ] },
@@ -289,8 +290,8 @@ test('the Rig agent is offered every chosen look and every place before any entr
 });
 
 test('a redraft is sized by the room the reasoning leaves, not the whole output ceiling', async () => {
-  /* Sonnet 4.5 answers within 8,192 tokens; a 4,096 thinking budget leaves about 4,096 for the script (about 14,000 characters). */
-  const sonnet: CatalogModel = { ...model, id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', maxTokens: 64_000 };
+  /* An older Claude that thinks on a token budget; a 4,096 thinking budget leaves about 4,096 for the script (about 14,000 characters). */
+  const sonnet: CatalogModel = { ...model, id: BUDGET_CLAUDE, name: 'Claude', maxTokens: 64_000 };
   /* A 32k model at high effort keeps 16,384 tokens for the answer (about 57,000 characters). Since 22 Oct 2026 the model and the
      effort are Atomik's thinking's (the setting's effort is high), whatever the request names. */
   const effortful: CatalogModel = { ...model, name: 'Claude Effort', maxTokens: 32_768, reasoningOptions: [{ type: 'effort', values: ['low', 'medium', 'high'] }] };
