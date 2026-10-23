@@ -65,3 +65,13 @@ export function buildRateTable(unit: Unit): RateTable {
 
   return { unit, models, text, creditUsd: per };
 }
+
+/**
+ * The table a person's browser is handed (GET /api/me, and the session every page and the shell render with, a visitor's too): the
+ * engines' rates, without the writer's. The writer's rates are keyed by the text models' ids, and a model behind Atomik's thinking is
+ * never sent to a person (Amendment (iii) §E); nothing in a browser reads them (lib/rateTable.ts › writerCall is the server's, for the
+ * marketing prices). Every figure the engines' estimates draw on is unchanged.
+ */
+export function memberRateTable(unit: Unit): RateTable {
+  return { ...buildRateTable(unit), text: {} };
+}

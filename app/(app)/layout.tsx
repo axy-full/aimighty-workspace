@@ -7,10 +7,10 @@ import ViewportGuard from "@/components/ViewportGuard";
 import { ProjectProvider } from "@/lib/projectContext";
 import { SessionProvider } from "@/lib/session";
 import { currentContext, userCount, isPlatformOwner } from "@/lib/auth";
-import { effectiveModels } from "@/lib/defaultModels";
+import { memberModels } from "@/lib/defaultModels";
 import { runInTenant } from "@/lib/tenant";
 import { getPlatformLayer } from "@/lib/platform";
-import { buildRateTable } from "@/lib/rateTable.server";
+import { memberRateTable } from "@/lib/rateTable.server";
 import { creditsApply } from "@/lib/credits";
 import { accountScopeFor, workbenchScopeFor } from "@/lib/workbench/request-scope";
 import UploadRecovery from "@/components/UploadRecovery";
@@ -50,7 +50,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       superAdmin: await isPlatformOwner(user),
       workspaces: ctx?.workspaces ?? [],
       credits: ctx?.workspace ? await creditStateFor(ctx.workspace).catch(() => null) : null,
-      models: ctx?.workspace ? await runInTenant(ctx.workspace, () => effectiveModels()).catch(() => null) : null,
+      /* The engines a composer opens on; never the text jobs' models (lib/defaultModels.ts › memberModels). */
+      models: ctx?.workspace ? await runInTenant(ctx.workspace, () => memberModels()).catch(() => null) : null,
       setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
       /* The rates this browser may see, in the unit this workspace pays in.
          Built here rather than fetched, so a VISITOR gets one too: signed out
@@ -58,7 +59,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
          fell back to dollars — which is how the platform's vendor cost came to
          be printed on a public page. A visitor is quoted credits at the
          platform's own margin, like the customer they might become. */
-      rates: buildRateTable(!ctx?.workspace || creditsApply(ctx.workspace) ? "cr" : "usd"),
+      rates: memberRateTable(!ctx?.workspace || creditsApply(ctx.workspace) ? "cr" : "usd"),
     }}>
     <ProjectProvider>
       {/* The production studio's shared navigation and account controls. */}

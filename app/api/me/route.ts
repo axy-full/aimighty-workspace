@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { creditState, creditsApply } from "@/lib/credits";
 import { requireUser, isPlatformOwner, withTenant } from "@/lib/auth";
 import { currentTenant } from "@/lib/tenant";
-import { effectiveModels } from "@/lib/defaultModels";
+import { memberModels } from "@/lib/defaultModels";
 import { getPlatformLayer } from "@/lib/platform";
-import { buildRateTable } from "@/lib/rateTable.server";
+import { memberRateTable } from "@/lib/rateTable.server";
 import { newInterfaceFor } from "@/lib/newInterface.server";
 
 export const dynamic = "force-dynamic";
@@ -34,8 +34,9 @@ export const GET = withTenant(async function GET() {
        engines' dollars, as its layout and shell already do (creditsApply).
        The vendor's dollars and the margin never cross the wire together,
        which is what §2 means by margin never being shown. */
-    rates: buildRateTable(creditsApply(store?.workspace) || !store?.workspace ? "cr" : "usd"),
-    models: store?.workspace ? await effectiveModels().catch(() => null) : null,
+    rates: memberRateTable(creditsApply(store?.workspace) || !store?.workspace ? "cr" : "usd"),
+    /* The engines a composer opens on; never the text jobs' models (lib/defaultModels.ts › memberModels). */
+    models: store?.workspace ? await memberModels().catch(() => null) : null,
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
   });
 }, { allowMfaEnrollment: true });

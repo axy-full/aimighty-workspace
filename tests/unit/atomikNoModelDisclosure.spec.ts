@@ -485,6 +485,37 @@ test("an effort a model does not offer is refused in words that name no model: e
   });
 });
 
+test("the person's own read and the session every page renders with carry the engines a composer opens on and their rates, never a text model or its rate, at each Thinking level", async () => {
+  const ws = await funded("me");
+  const me = await route("app/api/me/route.ts");
+  const { setSetting } = await import("../../lib/settings");
+  const { effectiveModels, memberModels } = await import("../../lib/defaultModels");
+  const { buildRateTable, memberRateTable } = await import("../../lib/rateTable.server");
+  await inTenant(ws, async () => {
+    /* What is held back: the platform's text jobs, and the writer's rates, are keyed by models the matcher catches. */
+    expect(thinkingModelNames(JSON.stringify((await effectiveModels()).text))).not.toEqual([]);
+    expect(thinkingModelNames(JSON.stringify(buildRateTable("cr").text))).not.toEqual([]);
+    for (const level of ["high", "medium", "low"]) {
+      await setSetting("atomikThinking", level, person.id);
+      const read = await answer(await me.GET!(new Request("https://particl.test/api/me")));
+      expect(read.status, JSON.stringify(read.body).slice(0, 300)).toBe(200);
+      expect(read.body.models).toEqual(await memberModels());
+      expect(Object.keys(read.body.models as object).sort()).toEqual(["image", "video"]);
+      /* The engines' rates are all there, as the composer's estimates read them; the writer's are not. */
+      expect(read.body.rates).toEqual({ ...buildRateTable("cr"), text: {} });
+      expectNothingDisclosed(`GET /api/me at ${level}`, read.body);
+    }
+  });
+  for (const unit of ["cr", "usd"] as const) expectNothingDisclosed(`the rate table a browser is handed (${unit})`, memberRateTable(unit));
+  /* The session the app's pages and the shell are rendered with (a visitor's too) is built from the same reads (a server render, not driven here). */
+  for (const file of ["app/(app)/layout.tsx", "lib/shell/bootstrap.server.ts"]) {
+    const source = readFileSync(file, "utf8");
+    expect(source, file).toContain("memberModels()");
+    expect(source, file).toContain("memberRateTable(");
+    expect(source, file).not.toMatch(/effectiveModels|buildRateTable/);
+  }
+});
+
 test("the matcher finds every slot's id, the writer's and an effort, and lets engines through", () => {
   for (const id of [HIGH, MEDIUM, LOW, WRITER, DIRECT_MODEL_IDS[MEDIUM]]) expect(thinkingModelNames(JSON.stringify({ model: id })), id).not.toEqual([]);
   expect(thinkingModelNames("reasoning_effort, effort: high")).toHaveLength(2);
