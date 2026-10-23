@@ -17,11 +17,14 @@ export async function mockTextReply(body: string, mock?: MockKind): Promise<Text
   return mockCompletion(mock ?? "prompt", body);
 }
 
-/** What a direct provider's error should say to a person, by status: its own words for the four language accounts, null for anything else. */
-export function explainTextFailure(status: number, text: string): string | null {
+/**
+ * What a direct provider's error should say to a person, by status: its own words for the four language accounts, null for anything
+ * else. `member`: without the provider's own message, which can name the model or its effort (Amendment (iii) §E: never disclosed).
+ */
+export function explainTextFailure(status: number, text: string, member = false): string | null {
   try {
     const reply = JSON.parse(text);
-    if (['openai', 'anthropic', 'google', 'xai'].includes(reply.provider)) return status === 401 ? 'The language account rejected the connected API key. Check the language account.' : status === 429 ? 'The language account reached its rate or usage limit. Check the connected language account.' : `The language account could not complete this request (${status}). ${typeof reply.error?.message === 'string' ? reply.error.message.slice(0, 400) : ''}`;
+    if (['openai', 'anthropic', 'google', 'xai'].includes(reply.provider)) return status === 401 ? 'The language account rejected the connected API key. Check the language account.' : status === 429 ? 'The language account reached its rate or usage limit. Check the connected language account.' : `The language account could not complete this request (${status}).${!member && typeof reply.error?.message === 'string' ? ` ${reply.error.message.slice(0, 400)}` : ''}`;
   } catch { /* Not a direct provider's reply. */ }
   return null;
 }

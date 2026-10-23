@@ -1,15 +1,16 @@
 import { admittedProjectOr, contextProjectOr } from "@/lib/draftProject";
+import { THINKING_UNAVAILABLE } from "@/lib/atomikModelPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { TextNotSentError } from "@/lib/textDirect";
 import { requireUser, requireRender, withTenant } from "@/lib/auth";
 import {
-  getChat, patchChat, clearChatProject, deleteChat, VIEW_ONLY_INSTRUCTION, addUserMessage, runTurn, projectContext, requestEffort, reconcileRunningSteps,
-  chatModeOf,
+  getChat, patchChat, clearChatProject, deleteChat, VIEW_ONLY_INSTRUCTION, addUserMessage, runTurn, projectContext, reconcileRunningSteps, memberThread,
+  chatModeOf, resolveModel,
 } from "@/lib/atomik";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { effectiveRules } from "@/lib/rules";
 import { withGenerationRequest, SpendReservationError, ANSWER_AFTER_MS } from "@/lib/generationRequests";
-import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, paidTextQuoteResponse, requestMaxCredits } from "@/lib/paidText";
+import { PaidTextError, paidTextQuoteScopeFailure, paidTextFailure, atomikQuoteResponse, requestMaxCredits } from "@/lib/paidText";
 import { cleanAttachments } from "@/lib/attachments";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, priceKeyStep } from "@/lib/atomikLibrary";
@@ -34,7 +35,8 @@ export const GET = withTenant(async function GET(_req: NextRequest, ctx: Ctx) {
   await reconcileRunningSteps(id);
   const loaded = await getChat(id);
   if (!loaded) return NextResponse.json({ error: "That chat is gone." }, { status: 404 });
-  return NextResponse.json(loaded);
+  /* The thinking model and effort stay on the server (lib/atomik › memberThread). */
+  return NextResponse.json(memberThread(loaded));
 });
 
 export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx) {
@@ -49,15 +51,14 @@ export const PATCH = withTenant(async function PATCH(req: NextRequest, ctx: Ctx)
      spends, and archiving keeps everything in the thread. */
   if (typeof b.title === "string") await renameThread(id, b.title);
   if (typeof b.archived === "boolean") await (b.archived ? archiveThread(id, got.user.id) : restoreThread(id));
+  /* A model or effort in the body is not saved: every turn runs the workspace's Thinking setting (lib/atomikThinking.ts). */
   await patchChat(id, {
-    model: typeof b.model === "string" ? b.model : undefined,
-    effort: requestEffort(b.effort),
     /* "ask", or "auto" from an older caller, is stored as "ask": no Auto since 20 Oct 2026. */
     agentMode: b.agentMode === "ask" || b.agentMode === "auto" ? chatModeOf(b.agentMode) : undefined,
     /* As at creation: only a project this person may read is kept; anything else clears it. */
     projectId: b.projectId === undefined ? undefined : await contextProjectOr(got.user, typeof b.projectId === "string" ? b.projectId : null),
   });
-  return NextResponse.json(await getChat(id));
+  return NextResponse.json(memberThread(await getChat(id)));
   } catch (error) {
     if (error instanceof ThreadError) return NextResponse.json({ error: error.message }, { status: error.status });
     return paidTextFailure(error);
@@ -108,12 +109,11 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   const loaded = await getChat(id);
   if (!loaded) return NextResponse.json({ error: "That chat is gone." }, { status: 404 });
   /* An archived thread is hidden: nothing is planned in it, or paid for, until it is restored. */
-  if (!quoteOnly && loaded.chat.archivedAt != null) return NextResponse.json({ error: ARCHIVED_NOTE, chat: loaded }, { status: 409 });
+  if (!quoteOnly && loaded.chat.archivedAt != null) return NextResponse.json({ error: ARCHIVED_NOTE, chat: memberThread(loaded) }, { status: 409 });
 
   try {
-    const effort = requestEffort(b.effort);
-    if (b.model !== undefined && (typeof b.model !== "string" || !b.model || b.model.length > 120))
-      return NextResponse.json({ error: "Choose an available Atomik model." }, { status: 400 });
+    /* The turn's model and effort are the workspace's Thinking setting (lib/atomikThinking.ts): a model or effort in the body
+       (an older page echoes the quote's back) is ignored, never refused. */
     /* Two questions, asked of this person alone (an admin is no exception here), before anything is reserved (lib/draftProject.ts): the project they may READ (their own board, a teammate's shared
        board) feeds the model's CONTEXT only; the project they may FILE into (their own board, any project that is not a private board) is the one a turn spends against, proposes and prices steps
        for, and writes memory under. Someone else's private board gives neither. The chat's own project is dropped only when it is not even readable. */
@@ -128,24 +128,30 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
     const rules = writerRulesByScope(await effectiveRules());
     /* This person's view of the project's library, for library steps (lib/atomikLibrary.ts): the quote and the turn read the same. */
     const inputs = await plannerInputs(got.user.id, projectId);
-    if (quoteOnly) return paidTextQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, viewOnly, context, memory, model: b.model, effort, rules,
+    if (quoteOnly) return atomikQuoteResponse(await runTurn(id, { quoteOnly: true, projectId, viewOnly, context, memory, rules,
       library: inputs.library, presets: inputs.presets,
       userMessage: { text, attachments: cleanAttachments(b.attachments) } }));
-    const maxCredits = requestMaxCredits(b.maxCredits, b.effort !== undefined);
+    /* Every turn runs under the ceiling its person approved on the quote (owner, 23 Oct 2026): refused before the message is saved, nothing billed. */
+    const maxCredits = requestMaxCredits(b.maxCredits, true);
     await addUserMessage(id, text, cleanAttachments(b.attachments));
     /* A library step is proposed only at a price: the admission quote, as this person, for its exact render. */
-    await runTurn(id, { projectId, viewOnly, context, memory, model: b.model, effort, maxCredits, rules,
+    await runTurn(id, { projectId, viewOnly, context, memory, maxCredits, ceilingRequired: true, rules,
       library: inputs.library, presets: inputs.presets, workbenchProjectId: inputs.studioProjectId,
       priceKeyStep: (body) => priceKeyStep(body, got) });
   } catch (e) {
     if (!quoteOnly) await patchChat(id, { status: "failed" });
     const known = e instanceof PaidTextError || e instanceof SpendReservationError || e instanceof TextNotSentError;
     return NextResponse.json(
-      { error: known ? e.message : "The planning request could not finish. Recover this request before starting another.", chat: await getChat(id) },
+      { error: known ? e.message : "The planning request could not finish. Recover this request before starting another.", chat: memberThread(await getChat(id)) },
       { status: known ? e.status : 502 },
     );
   }
-  return NextResponse.json(await getChat(id));
+  return NextResponse.json(memberThread(await getChat(id)));
   };
+  /* Atomik's thinking connected before the request is claimed or the message saved: an empty slot is refused with nothing written, nothing billed. */
+  if (!quoteOnly) {
+    const off = await resolveModel("auto", "plan").then(() => null, (error: unknown) => error);
+    if (off instanceof Error && off.message === THINKING_UNAVAILABLE) return NextResponse.json({ error: off.message, chat: memberThread(await getChat(id)) }, { status: 503 });
+  }
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });
 });

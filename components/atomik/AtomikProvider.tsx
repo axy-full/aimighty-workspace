@@ -12,7 +12,7 @@ import { useMoney } from "@/lib/price";
 import { useAtomikQuote } from "@/lib/useAtomikQuote";
 import { ARCHIVED_NOTE, chatOfRequest, type Thread } from "@/lib/atomikThreadsText";
 import { useRememberedThread, useThreadSends } from "./threads/useThreadSends";
-import type { PaidTextQuote } from "@/lib/paidText";
+import type { PaidTextQuoteShown } from "@/lib/paidText";
 import type { ThinkingModel } from "./ModelPicker";
 import { ACCOUNT_MODEL_PREFIX, ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
 import { approvedBody, fetchStepQuote, planTotal, quoteMoved, stepPrice, stepRender, type StepQuote, type StepRender, type StepRenderContext } from "@/lib/atomikStepRender";
@@ -138,7 +138,7 @@ export type AtomikLive = {
   setDraftText: (text: string) => void;
   setThinkingModel: (model: string) => void;
   setReasoningEffort: (effort: string) => void;
-  quote: PaidTextQuote | null;
+  quote: PaidTextQuoteShown | null;
   quoteError: string | null;
   quoting: boolean;
   send: (text: string) => Promise<void>;
@@ -418,7 +418,8 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
     if (!t) return;
     if (!recovering && archived) { failIn(key, ARCHIVED_NOTE); return; }
     if (!recovering && (!quote || t !== draftText.trim())) { failIn(key, "Review the current planning estimate before sending."); return; }
-    const requestBody = recovering ? JSON.parse(recovering.body) : { text: t, model: quote!.model, effort: quote!.effort, maxCredits: quote!.estimateCredits };
+    /* The quote's price is what the person approves; the model and effort are the workspace's Thinking setting, kept on the server. */
+    const requestBody = recovering ? JSON.parse(recovering.body) : { text: t, maxCredits: quote!.estimateCredits };
     const viaLegacy = !!recovering && legacyHere;
     let keys = [key], sentScope = composerScope;
     fly(keys, { busy: true }); failIn(key, null);
@@ -428,7 +429,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
         /* Held on screen: the thread stays the one shown once its saved turn, if any, is cleared. */
         setChatFor({ id, projectId: prodKey }); remember(id);
       } else {
-        const r = await fetch("/api/atomik", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: prodKey, model: requestBody.model, effort: requestBody.effort }) });
+        const r = await fetch("/api/atomik", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: prodKey }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error ?? "Atomik couldn't start a conversation.");
         const made = String(j.id);

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { MEDIUM } from "../helpers/thinkingSlots";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -6,7 +7,7 @@ import path from "node:path";
 import ts from "typescript";
 import type { TenantWorkspace } from "../../lib/tenant";
 import { AUTO_MODEL_IDS, aliasModel, MODEL_ALIASES, readsAsAuto } from "../../lib/modelAliases";
-import { ATOMIK_AUTO_MODEL_IDS, ATOMIK_MODEL_IDS, savedAtomikChoice, selectAtomikModel } from "../../lib/atomikModelPolicy";
+import { atomikModelIds, isAtomikModel, savedAtomikChoice, thinkingFor } from "../../lib/atomikModelPolicy";
 import { selectPlannerModel } from "../../lib/workbench/rig-agent-planner";
 import { DEFAULT_TEXT_MODELS, TEXT_JOBS, cleanModels, textModelFor } from "../../lib/platformLayer";
 import { PROMPT_MODELS, enhanceModelFor } from "../../lib/enhance";
@@ -29,7 +30,7 @@ process.env.ENGINE_MOCK = "1";
 const NO_DIRECT_MODEL = ["google/gemini-2.5-flash", "google/gemini-2.5-flash-lite", "google/gemini-2.5-pro", "google/gemini-3.8-flash"];
 const PRICE_TO_CONFIRM = ["google/gemini-3.1-flash-lite", "google/gemini-3.5-flash", "google/gemini-3.7-flash"];
 const REMOVED = [...NO_DIRECT_MODEL, ...PRICE_TO_CONFIRM];
-const served = [...ATOMIK_MODEL_IDS];
+const served = [...atomikModelIds()];
 
 test("the seven removed Gemini ids are exactly the ones that read as Auto, and the ordinary aliases are unchanged", () => {
   expect(REMOVED).toHaveLength(7);
@@ -57,17 +58,14 @@ test("none of the seven is on any menu: no route works for them with every key s
   }
 });
 
-test("a saved Atomik choice reads as Auto: no note, no error, the same model Auto picks", () => {
-  for (const id of REMOVED) {
-    expect(savedAtomikChoice(id), id).toEqual({ model: "auto", note: null });
-    expect(selectAtomikModel(id, served), id).toBe(selectAtomikModel("auto", served));
-    expect(selectAtomikModel("auto", served, id), `${id}: routed`).toBe(selectAtomikModel("auto", served));
-    expect(() => selectPlannerModel(id, served.map((m) => ({ id: m }))), id).not.toThrow();
-    expect(selectPlannerModel(id, served.map((m) => ({ id: m }))), id).toBe(selectPlannerModel("auto", served.map((m) => ({ id: m }))));
-  }
-  expect(selectAtomikModel("auto", served)).toBe(ATOMIK_AUTO_MODEL_IDS[0]);
-  /* A Gemini that stays on the menus is not Auto, and Atomik still refuses it by name as before. */
-  expect(() => selectAtomikModel("google/gemini-3.6-flash", served)).toThrow();
+test("a saved Atomik choice reads as Auto: no note, no error, the same model Auto runs", () => {
+  /* Since 22 Oct 2026 a saved or sent model is not asked at all: every Atomik turn runs the Thinking setting's model (lib/atomikModelPolicy › thinkingFor). */
+  for (const id of REMOVED) expect(savedAtomikChoice(id), id).toEqual({ model: "auto", note: null });
+  const plan = thinkingFor("medium", "plan").model!;
+  expect(plan).toBe(MEDIUM);
+  expect(selectPlannerModel(plan, served.map((m) => ({ id: m })))).toBe(plan);
+  /* A Gemini that stays on the menus is not Atomik's thinking. */
+  expect(isAtomikModel("google/gemini-3.6-flash")).toBe(false);
 });
 
 test("the platform's saved routing and the job defaults: each job reads the default, whatever the saved id", () => {
@@ -152,7 +150,9 @@ test("the quote for a chat saved on any of the seven removed Geminis is Auto's o
   }, { user: { ...me, owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
   const auto = await quote("auto");
   expect(auto.status, "Auto's own quote answers").toBe(200);
-  expect(auto.body, "a model and a price to compare").toMatchObject({ model: expect.any(String), estimateCredits: expect.any(Number) });
+  /* A price to compare; the model that runs is never sent (Amendment (iii) §E, owner 22 Oct 2026). */
+  expect(auto.body, "a price to compare").toMatchObject({ estimateCredits: expect.any(Number) });
+  expect(auto.body).not.toHaveProperty("model");
   for (const id of REMOVED) {
     const saved = await quote(id);
     expect(saved.status, `${id}: no error`).toBe(200);

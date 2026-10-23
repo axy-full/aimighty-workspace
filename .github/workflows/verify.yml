@@ -200,6 +200,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Atomik's Thinking slots for the mocked servers
+        # The deployment names each slot's model (lib/atomikModelPolicy.ts); nothing is mapped in code. CI's
+        # servers get three verified Claude ids picked from the checked-in catalogue by price (test fixtures,
+        # not a recommendation), masked in the log and appended to $GITHUB_ENV.
+        run: node tests/helpers/thinking-slots.mjs --github-env
       - name: Browser suite, this job's sub-shards on fresh dev servers
         # Memory, disk and the largest processes every 30 s, in this step's own
         # log: a runner that is shut down leaves no artifacts, so this is the
@@ -330,6 +335,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Atomik's Thinking slots for the mocked servers
+        # The deployment names each slot's model (lib/atomikModelPolicy.ts); nothing is mapped in code. CI's
+        # servers get three verified Claude ids picked from the checked-in catalogue by price (test fixtures,
+        # not a recommendation), masked in the log and appended to $GITHUB_ENV.
+        run: node tests/helpers/thinking-slots.mjs --github-env
       - name: This pull request's specs and the guard set
         env:
           SUITE: ${{ matrix.suite }}
@@ -379,6 +389,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Atomik's Thinking slots for the mocked servers
+        # The deployment names each slot's model (lib/atomikModelPolicy.ts); nothing is mapped in code. CI's
+        # servers get three verified Claude ids picked from the checked-in catalogue by price (test fixtures,
+        # not a recommendation), masked in the log and appended to $GITHUB_ENV.
+        run: node tests/helpers/thinking-slots.mjs --github-env
       - name: Five-minute test
         run: scripts/ci-run-specs.sh five-minute
       - uses: actions/upload-artifact@v7

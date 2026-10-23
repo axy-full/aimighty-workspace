@@ -144,6 +144,9 @@ async function writerRoutes(ws: TenantWorkspace, text: string) {
     "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/security/people-only": await import("../../lib/security/people-only"),
     "@/lib/atomik": { requestEffort: () => undefined, resolveModel: async () => "test/text" },
+    /* Every run of Atomik's thinking is ours (lib/atomikThinking › thinkingRun never says otherwise); the stubbed model offers no effort, so none is sent. */
+    "@/lib/atomikThinking": { thinkingRun: async () => ({ ours: true }) },
+    "@/lib/atomikModelPolicy": await import("../../lib/atomikModelPolicy"),
     "@/lib/gateway": { gatewayReachable: () => true },
     "@/lib/language-provider": { languageReachable: () => true },
     "@/lib/studio": await import("../../lib/studio"),

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { MEDIUM } from "../helpers/thinkingSlots";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -311,13 +312,14 @@ async function inWorkspace<T>(name: string, fn: (seed: Seed) => Promise<T>): Pro
   }
 }
 
-/** Network is closed except for a canned gateway catalogue holding one Atomik planner. */
+/** Network is closed except for a canned gateway catalogue holding one Atomik planner: the Medium slot's own model (tests/helpers/thinkingSlots),
+    at a made-up rate. */
 async function withCatalogue<T>(fn: () => Promise<T>): Promise<T> {
   const real = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input instanceof Request ? input.url : input);
     if (url.endsWith("/models") && url.includes("ai-gateway.vercel.sh"))
-      return new Response(JSON.stringify({ data: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", type: "language", context_window: 200000, max_tokens: 8000,
+      return new Response(JSON.stringify({ data: [{ id: MEDIUM, name: "Planner", type: "language", context_window: 200000, max_tokens: 8000,
         pricing: { input: "0.000003", output: "0.000015" }, modalities: { input: ["text", "image"], output: ["text"] } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
     throw new Error(`Network is forbidden in the library steps test: ${url}`);
   }) as typeof fetch;

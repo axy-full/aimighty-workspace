@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { MEDIUM } from "../helpers/thinkingSlots";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { readFile, mkdir, writeFile, rm } from "node:fs/promises";
@@ -66,8 +67,9 @@ function workspace(): TenantWorkspace {
     deletedAt: null,
   };
 }
+/* A design turn runs at the setting (Medium): its slot's own model (tests/helpers/thinkingSlots), at a made-up rate. */
 const model: CatalogModel = {
-  id: "anthropic/claude-sonnet-4.6",
+  id: MEDIUM,
   name: "Vision",
   owner: "anthropic",
   type: "language",

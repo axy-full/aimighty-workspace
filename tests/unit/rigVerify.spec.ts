@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { LOW, MEDIUM } from '../helpers/thinkingSlots';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -27,12 +28,14 @@ import type { MeterEvent } from '../../lib/meter';
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-rig-verify-'));
 process.env.PLATFORM_DATABASE_URL = 'file:' + path.join(dir, 'platform.db');
 process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
-/** Test fixture only: a priced vision model (prices are the fixture's, not a real rate card). */
-const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 1_000_000, maxTokens: 64000,
+/** Test fixture only: a priced vision model (prices are the fixture's, not a real rate card), on the judge's own model (Low): three Claude
+    models only (owner, 23 Oct 2026). */
+const model: CatalogModel = { id: LOW, name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 1_000_000, maxTokens: 64000,
   pricing: { input: .0000001, output: .0000003 }, inputModalities: ['text', 'image'], outputModalities: ['text'] };
 const blind: CatalogModel = { ...model, inputModalities: ['text'] };
 /** Test fixture only: a vision model that thinks, priced so its ceiling and its usual use differ by whole credits (the fixture's prices, not a real rate card). */
-const thinker: CatalogModel = { ...model, tags: ['reasoning'], pricing: { input: .00002, output: .0001 } };
+/* A pricier thinker is the judge's own model (Low; owner, 22 Oct 2026): a fallback is never dearer than the setting's model. */
+const thinker: CatalogModel = { ...model, id: LOW, tags: ['reasoning'], pricing: { input: .00002, output: .0001 } };
 /** A workspace on the platform's keys: its checks are priced and charged in credits. */
 function workspace(): TenantWorkspace {
   const id = randomUUID();
@@ -313,7 +316,7 @@ test('an unsure check needs a person; a check needs a model that can see; frames
     const other = fixture();
     other.assets = other.assets.map((a) => (a.id === 'take' ? { ...a, url: '/campaign/hero.webp' } : a));
     await save(other);
-    await expect(quoteDevelopmentJob(request(other), 'owner', harness({}, [blind]).deps)).rejects.toThrow(/cannot see images/);
+    await expect(quoteDevelopmentJob(request(other), 'owner', harness({}, [blind]).deps)).rejects.toThrow("Atomik can't see the take and its masters right now. Nothing billed.");
     await expect(quoteDevelopmentJob(request(other, { attachmentAssetIds: ['frame'] }), 'owner', h.deps)).rejects.toThrow(/take and its masters only/);
     await expect(quoteDevelopmentJob(request(other, { videoFrames: [{ assetId: 'take', uploadId: 'up-1', timeSeconds: 1 }] }), 'owner', h.deps)).rejects.toThrow(/Only a video take/);
     await expect(quoteDevelopmentJob({ ...request(other), kind: 'condense', videoFrames: [{ assetId: 'take', uploadId: 'up-1', timeSeconds: 1 }] }, 'owner', h.deps)).rejects.toThrow(/Only a Verify check takes sampled frames/);
@@ -369,7 +372,8 @@ test('a check is quoted at what one usually uses while its job holds the ceiling
     expect(u.events.map((e) => [e.status, e.engineCostUsd, e.unbilled])).toEqual([['failed', u.reserved[0].engineCostUsd, undefined]]);
     /* Every other agent step is still quoted at its ceiling, with nothing more held. */
     await save({ ...project, brief: 'A courier crosses the dunes at dawn.' });
-    const idea = await quoteDevelopmentJob({ ...request(project), kind: 'idea', nodeId: undefined }, 'owner', h.deps);
+    /* An idea is a Writing turn, at the setting (Medium): its own model, at the same fixture price. */
+    const idea = await quoteDevelopmentJob({ ...request(project), kind: 'idea', nodeId: undefined }, 'owner', harness({}, [{ ...thinker, id: MEDIUM }]).deps);
     expect(idea.estimateCredits).toBeGreaterThan(0);
     expect(idea.holdCredits).toBeUndefined();
   });

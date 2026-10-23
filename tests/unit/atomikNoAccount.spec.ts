@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { GEMINI_IDS, GROK_IDS, HIGH, LOW, MEDIUM, OPENAI_IDS, OTHER_CLAUDE } from "../helpers/thinkingSlots";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -27,7 +28,7 @@ process.env.ENGINE_MOCK = "1";
 
 const SEEDANCE = "dreamina-seedance-2-5-260628";
 const STILL = "gemini-3-pro-image";
-const GEMINI = "google/gemini-3.1-pro-preview";
+const GEMINI = GEMINI_IDS[0];
 const accountMeta = { model: "kling3_0", type: "video", modelName: "Kling 3.0", jobId: "11111111-1111-4111-8111-000000000001", draftId: "draft", credits: 42, workspaceId: "wallet", workspaceName: "Studio wallet", quoteExpiresAt: 1, input: { type: "video", model: "kling3_0", prompt: "A push in.", parameters: {}, medias: [] } };
 
 let n = 0;
@@ -166,66 +167,64 @@ test("the plans Atomik runs on a page never read, quote, submit or poll on the a
   }
 });
 
-/* ── Claude, OpenAI and Grok ─────────────────────────────────────────── */
+/* ── Claude only, at the Thinking setting (owner, 22 Oct 2026) ──────────── */
 
-test("Atomik's planner and agent offer only the Claude, OpenAI and Grok families, with Claude Sonnet 5.5 as the default", async () => {
+test("Atomik's planner and agent think only with Claude, at the workspace's Thinking setting; Medium is the default", async () => {
   const policy = await import("../../lib/atomikModelPolicy");
   const { FEATURED } = await import("../../lib/catalog");
   const family = (id: string) => id.split("/")[0];
-  expect(new Set(policy.ATOMIK_MODEL_IDS.map(family))).toEqual(new Set(["anthropic", "openai", "spacexai"]));
-  expect(policy.ATOMIK_FAMILIES).toEqual(["anthropic", "openai", "spacexai"]);
-  expect(policy.ATOMIK_DEFAULT_MODEL).toBe("anthropic/claude-sonnet-5.5");
-  expect(policy.ATOMIK_MODEL_IDS[0]).toBe(policy.ATOMIK_DEFAULT_MODEL);
-  for (const id of policy.ATOMIK_AUTO_MODEL_IDS) expect(policy.isAtomikModel(id), id).toBe(true);
-  expect([...FEATURED.planner]).toEqual([...policy.ATOMIK_MODEL_IDS]);
-  /* Every family of the verified catalogue outside the three is out of Atomik; the verified list itself is unchanged. */
-  for (const id of policy.VERIFIED_TEXT_MODEL_IDS) expect(policy.isAtomikModel(id), id).toBe(["anthropic", "openai", "spacexai"].includes(family(id)));
+  expect(new Set(policy.atomikModelIds().map(family))).toEqual(new Set(["anthropic"]));
+  expect(policy.ATOMIK_FAMILIES).toEqual(["anthropic"]);
+  expect(policy.DEFAULT_THINKING).toBe("medium");
+  expect(policy.ATOMIK_THINKING[policy.DEFAULT_THINKING].model).toBe(MEDIUM);
+  for (const { model } of Object.values(policy.ATOMIK_THINKING)) expect(policy.isAtomikModel(model!), String(model)).toBe(true);
+  expect([...FEATURED.planner]).toEqual(policy.atomikModelIds());
+  /* Only the three settings' models are Atomik's thinking (owner, 23 Oct 2026); the verified list itself is unchanged. */
+  for (const id of policy.VERIFIED_TEXT_MODEL_IDS) expect(policy.isAtomikModel(id), id).toBe([HIGH, MEDIUM, LOW].includes(id));
+  expect(policy.atomikModelIds()).toEqual([HIGH, MEDIUM, LOW]);
   expect(policy.VERIFIED_TEXT_MODEL_IDS.filter((id) => family(id) === "google").length).toBeGreaterThan(0);
 
-  /* Auto routes among the three only: a Gemini route or a Gemini-only catalogue never plans. */
-  const served = [GEMINI, "google/gemini-3.5-flash", "spacexai/grok-4.7", "openai/gpt-5.5"];
-  expect(policy.selectAtomikModel("auto", served, GEMINI)).toBe("openai/gpt-5.5");
-  expect(policy.selectAtomikModel("auto", [...served, "anthropic/claude-sonnet-4.6"])).toBe("openai/gpt-5.5");
-  expect(policy.selectAtomikModel("auto", [...served, "anthropic/claude-sonnet-5.5"])).toBe("anthropic/claude-sonnet-5.5");
-  expect(() => policy.selectAtomikModel("auto", [GEMINI, "google/gemini-3.5-flash"])).toThrow("No supported Atomik");
+  /* The setting picks among the three only: a Gemini, Grok or OpenAI catalogue never plans, nor a Claude model outside the three; without the
+     setting's model, a cheaper one of the three on every rate does (lib/atomikModelPolicy.ts, cheaperFallback). */
+  const entry = (id: string) => ({ id, name: id, owner: family(id), type: "language" as const, description: "", contextWindow: 200000, maxTokens: 8000, pricing: { input: "0.000003", output: "0.000015" } });
+  const served = [GEMINI, GEMINI_IDS[1], GROK_IDS[0], OPENAI_IDS[0]].map(entry);
+  expect(policy.selectAtomikThinking("medium", "plan", served)).toBeNull();
+  expect(policy.selectAtomikThinking("medium", "plan", [...served, entry(OTHER_CLAUDE[0])])).toBeNull();
+  expect(policy.selectAtomikThinking("medium", "plan", [...served, entry(OTHER_CLAUDE[0]), entry(MEDIUM)])?.model).toBe(MEDIUM);
 
-  /* The workbench agent's priced menu drops what is outside the three families. */
+  /* The workbench agent's priced menu drops what is outside the three. */
   const { atomikModels } = await import("../../lib/workbench/atomik-server");
-  const priced = (id: string) => ({ id, name: id, owner: family(id), type: "language" as const, description: "", contextWindow: 200000, maxTokens: 8000, pricing: { input: "0.000003", output: "0.000015" } });
-  const menu = atomikModels([priced(GEMINI), priced("anthropic/claude-sonnet-4.6"), priced("spacexai/grok-4.7"), priced("openai/gpt-5.5")] as never);
-  expect(menu.map((model) => model.id).sort()).toEqual(["anthropic/claude-sonnet-4.6", "openai/gpt-5.5", "spacexai/grok-4.7"]);
+  const menu = atomikModels([entry(GEMINI), entry(OTHER_CLAUDE[0]), entry(LOW), entry(GROK_IDS[0]), entry(OPENAI_IDS[0])] as never);
+  expect(menu.map((model) => model.id)).toEqual([LOW]);
 
-  /* The picker groups the three families and has no Gemini group. */
+  /* The picker is replaced by Thinking in its own PR (3b-2); until then it groups as before and has no Gemini group. */
   const picker = readFileSync("components/atomik/ModelPicker.tsx", "utf8");
   expect(picker).toContain('const PROVIDERS = ["Claude", "Grok", "OpenAI"] as const;');
   expect(picker).not.toContain("Gemini");
 });
 
-test("a chat saved on a model Atomik no longer offers plans with Auto and says so; a new request naming one is refused", async () => {
+test("a chat saved on a model Atomik no longer thinks with reads as Auto with nothing to say; its stored row is kept, and nothing is refused", async () => {
   const policy = await import("../../lib/atomikModelPolicy");
-  const saved = policy.savedAtomikChoice(GEMINI);
-  expect(saved.model).toBe("auto");
-  expect(saved.note).toBe("Gemini is no longer offered in Atomik, which now plans with Claude, OpenAI and Grok. This chat now uses Auto.");
-  expect(policy.savedAtomikChoice("anthropic/claude-opus-4.7")).toEqual({ model: "anthropic/claude-opus-4.7", note: null });
-  expect(policy.savedAtomikChoice("auto")).toEqual({ model: "auto", note: null });
-  expect(policy.savedAtomikChoice(null)).toEqual({ model: "auto", note: null });
-  expect(() => policy.selectAtomikModel(GEMINI, [GEMINI, "anthropic/claude-sonnet-4.6"])).toThrow("Gemini is no longer offered in Atomik, which now plans with Claude, OpenAI and Grok. Choose one of those, or Auto.");
+  for (const id of [GEMINI, GROK_IDS[0], OPENAI_IDS[0], "auto", null]) expect(policy.savedAtomikChoice(id), String(id)).toEqual({ model: "auto", note: null });
+  /* A Claude model outside the three reads as Auto too (owner, 23 Oct 2026); one of the three reads as itself. */
+  expect(policy.savedAtomikChoice(OTHER_CLAUDE[1])).toEqual({ model: "auto", note: null });
+  expect(policy.savedAtomikChoice(LOW)).toEqual({ model: LOW, note: null });
 
   await inTenant(async () => {
     const { getChat, listChats, patchChat } = await import("../../lib/atomik");
-    const { PaidTextError } = await import("../../lib/paidText");
     const { db } = await import("../../lib/db");
     await chat("gem", GEMINI, "high");
     const loaded = (await getChat("gem"))!;
-    expect(loaded.chat).toMatchObject({ model: "auto", modelNote: saved.note });
+    expect(loaded.chat).toMatchObject({ model: "auto" });
+    expect(loaded.chat.modelNote).toBeUndefined();
     expect(loaded.chat.effort).toBeUndefined();
-    expect((await listChats("owner")).find((c) => c.id === "gem")).toMatchObject({ model: "auto", modelNote: saved.note });
+    expect((await listChats("owner")).find((c) => c.id === "gem")).toMatchObject({ model: "auto" });
     /* The stored row is left as it was: nothing a team made is rewritten. */
     expect((await db().execute({ sql: "SELECT model, effort FROM atomik_chats WHERE id = ?", args: ["gem"] })).rows[0]).toMatchObject({ model: GEMINI, effort: "high" });
-    /* A model Atomik no longer offers is not saved as a new choice. */
-    await expect(patchChat("gem", { model: GEMINI })).rejects.toBeInstanceOf(PaidTextError);
-    await patchChat("gem", { model: "spacexai/grok-4.7" });
-    expect((await getChat("gem"))!.chat).toMatchObject({ model: "spacexai/grok-4.7" });
+    /* A stored model is what a turn ran, never a refused choice: saving one is not refused. */
+    await patchChat("gem", { model: GEMINI });
+    await patchChat("gem", { model: GROK_IDS[0] });
+    expect((await getChat("gem"))!.chat).toMatchObject({ model: "auto" });
     expect((await getChat("gem"))!.chat.modelNote).toBeUndefined();
   });
 });

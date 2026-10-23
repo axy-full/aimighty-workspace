@@ -1,4 +1,4 @@
-import { ATOMIK_MODEL_IDS, isAtomikModel, isVerifiedTextModel } from "./atomikModelPolicy";
+import { atomikModelIds, isAtomikModel, isVerifiedTextModel } from "./atomikModelPolicy";
 import { GATEWAY_BASE, gatewayAuth, gatewayReachable } from "./gateway";
 import { vendorKey } from './vendorKeys';
 import { openAIConnection } from './openai-models';
@@ -12,8 +12,8 @@ import modelCatalogJson from './modelCatalog.json';
  * Everything the Vercel AI Gateway will run, read from the gateway itself.
  *
  * Provider-specific media contracts live in lib/models.ts. This catalogue
- * supplies live availability and prices; Atomik applies a separate verified
- * catalogue of Claude, OpenAI and Grok planning models.
+ * supplies live availability and prices; Atomik thinks with three Claude models
+ * of a separate verified catalogue, one per Thinking setting (lib/atomikModelPolicy.ts).
  * Retired or disconnected models disappear from the menu.
  *
  * MODEL_CATALOG=static serves the same entries from lib/modelCatalog.json, a
@@ -320,9 +320,9 @@ export async function findModel(id: string): Promise<CatalogModel | null> {
  * is silently dropped, so a retirement costs nothing.
  */
 export const FEATURED = {
-  /** Atomik's planning catalogue: the verified Claude, OpenAI and Grok models (lib/atomikModelPolicy). */
-  planner: ATOMIK_MODEL_IDS,
-} as const;
+  /** Atomik's planning catalogue: the configured Thinking slots' models, High to Low (lib/atomikModelPolicy, read from the env when asked). */
+  get planner(): readonly string[] { return atomikModelIds(); },
+};
 
 /** The featured models of one kind that are actually being served,
  *  in the order above, followed by everything else of that kind. */

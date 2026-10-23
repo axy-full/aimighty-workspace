@@ -157,14 +157,18 @@ test("an empty answer is paid to the provider but settles at zero, like a refuse
 
 test("a settled answer reports what the ledger billed, in credits", async () =>
   scope("text_credits", async () => {
-    const { runPaidText } = await import("../../lib/paidText");
+    const { runPaidText, quotePaidText } = await import("../../lib/paidText");
+    const { billCredits } = await import("../../lib/creditTerms");
+    const quote = await quotePaidText(call, model);
     const out = await runPaidText(call, {
       model,
       submit: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "A usable logline." } }], usage: { cost: 0.4 } }) }),
     });
     const event = (await metered("text_credits"))[0];
-    expect(Number(event.billed_credits)).toBe(6);
-    expect(out.credits).toBe(6);
+    /* What the ledger billed: what it used, never past its estimate (money review 3, 23 Oct 2026). The provider's 0.4 is above this fixture's estimate, so it bills the estimate. */
+    expect(billCredits(0.4, "text")).toBeGreaterThan(quote.estimateCredits);
+    expect(Number(event.billed_credits)).toBe(quote.estimateCredits);
+    expect(out.credits).toBe(quote.estimateCredits);
     expect(out.costUsd).toBeCloseTo(0.4, 6);
   }));
 

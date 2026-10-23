@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { MEDIUM } from '../helpers/thinkingSlots';
 import { APICallError, generateText, type LanguageModelUsage } from 'ai';
 import { gatewayPost, explainGatewayFailure, GATEWAY_URL } from '../../lib/gateway';
 import { languageAuth, languageModel } from '../../lib/language-provider';
 import { directTextCostUsd, TEXT_PROVIDER_HEADER, textVendor } from '../../lib/openai-direct';
-import { VERIFIED_TEXT_MODEL_IDS } from '../../lib/atomikModelPolicy';
+import { THINKING_UNAVAILABLE, VERIFIED_TEXT_MODEL_IDS } from '../../lib/atomikModelPolicy';
 import { atomikReasoningRequest } from '../../lib/atomik-reasoning';
 import { directTextRequest, directTextUsage, providerErrorSummary, stepTextUsage, textPost } from '../../lib/textDirect';
 import committedCatalog from '../../lib/modelCatalog.json';
@@ -326,15 +327,25 @@ test('direct text is billed (PR 3): the rig planner prices a direct turn from ra
   // The rig agent prices its planning turn on the direct door and reads the provider's raw counts.
   const { plannerPrice } = await import('../../lib/workbench/rig-agent');
   const { plannerCostUsd } = await import('../../lib/workbench/rig-agent-planner');
+  /* The planning turn is priced at Atomik's thinking for a plan (owner, 22 Oct 2026: the setting's model, Medium by default), not the run's saved model. */
   const price = await plannerPrice('anthropic/claude-sonnet-5');
-  expect(price).toMatchObject({ id: 'anthropic/claude-sonnet-5', direct: true, engine: 'anthropic' });
+  expect(price).toMatchObject({ id: MEDIUM, direct: true, engine: 'anthropic' });
+  // The same usage at the planner's own catalogue entry (its prices read from the entry, not written here).
+  const rate = (key: string) => Number((price.catalog.pricing as Record<string, unknown>)[key]);
+  const plannerUsd = 100 * rate('input') + 60 * rate('input_cache_read') + 40 * rate('input_cache_write') + 25 * rate('output');
+  for (const key of ['input', 'input_cache_read', 'input_cache_write', 'output']) expect(rate(key), key).toBeGreaterThan(0);
   // The SDK's normalised totals leave the cache out; the raw usage does not.
   const step = { inputTokens: 100, outputTokens: 25, totalTokens: 125, raw: anthropicReply().usage } as unknown as LanguageModelUsage;
   expect(stepTextUsage(price.id, step, true)).toMatchObject({ prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } });
-  expect(plannerCostUsd(price.catalog, [step], price.direct)).toBeCloseTo(usd, 15);
+  expect(plannerCostUsd(price.catalog, [step], price.direct)).toBeCloseTo(plannerUsd, 15);
   // On the gateway the same turn keeps its gateway engine and the SDK's totals.
   delete process.env.TEXT_DIRECT;
-  expect(await plannerPrice('anthropic/claude-sonnet-5')).toMatchObject({ direct: false, engine: 'vercel' });
+  expect(await plannerPrice('anthropic/claude-sonnet-5')).toMatchObject({ id: MEDIUM, direct: false, engine: 'vercel' });
+  // Medium's slot unset: refused before anything is priced, never planned on another model.
+  const savedMedium = process.env.ATOMIK_THINKING_MEDIUM_MODEL;
+  delete process.env.ATOMIK_THINKING_MEDIUM_MODEL;
+  try { await expect(plannerPrice('anthropic/claude-sonnet-5')).rejects.toThrow(THINKING_UNAVAILABLE); }
+  finally { process.env.ATOMIK_THINKING_MEDIUM_MODEL = savedMedium; }
   process.env.TEXT_DIRECT = 'anthropic';
 
   // The inline writer (house workspaces) reads PROMPT_MODELS, still under its old name, and goes through the router.

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { GEMINI_IDS, GROK_IDS, LOW, MEDIUM, OPENAI_IDS } from "../helpers/thinkingSlots";
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -170,17 +171,16 @@ test("the planner stays inside its bounds: a turn that answers nothing proposes 
   expect(mockPlanCalls(snapshotOf({ goal: "Just one shot of the pier" })).calls.filter((c) => c.tool === "create_node" && c.input.kind === "shot")).toHaveLength(1);
 });
 
-test("the planner thinks with Claude, OpenAI or Grok from Atomik's policy: Auto picks among them, an explicit choice is never swapped", () => {
-  /* Cheapest first, as atomikModels orders a priced menu: Auto takes the first of its choices. */
-  const menu = [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }, { id: "anthropic/claude-sonnet-5.5" }, { id: "openai/gpt-5.5" }];
-  expect(selectPlannerModel("auto", menu)).toBe("anthropic/claude-sonnet-5.5");
-  /* With only OpenAI connected, Auto keeps an OpenAI choice of its own (GPT-5.5, where GPT-5.5 Pro was). */
-  expect(selectPlannerModel("auto", [{ id: "openai/gpt-5-nano" }, { id: "openai/gpt-5.5" }])).toBe("openai/gpt-5.5");
-  expect(selectPlannerModel("auto", [{ id: "google/gemini-3.1-pro-preview" }, { id: "spacexai/grok-4.7" }])).toBe("spacexai/grok-4.7");
-  expect(selectPlannerModel("openai/gpt-5.5", menu)).toBe("openai/gpt-5.5");
-  expect(() => selectPlannerModel("google/gemini-3.1-pro-preview", menu)).toThrow(/Claude, OpenAI or Grok/);
-  expect(() => selectPlannerModel("openai/gpt-5.4", menu)).toThrow(/not available/);
-  expect(() => selectPlannerModel("auto", [{ id: "google/gemini-3.1-pro-preview" }])).toThrow(/No Claude, OpenAI or Grok/);
+test("the planner thinks with Claude at the Thinking setting: the setting's model when served, never swapped, and never Grok, OpenAI or Gemini", async () => {
+  /* Owner, 22 Oct 2026: a plan turn runs the setting's model (lib/atomikModelPolicy › thinkingFor); a run's saved model is not asked. */
+  const { ATOMIK_THINKING, THINKING_UNAVAILABLE, thinkingFor } = await import("../../lib/atomikModelPolicy");
+  /* Medium's and Low's slots on the menu (tests/helpers/thinkingSlots), High's not. */
+  const menu = [{ id: GEMINI_IDS[0] }, { id: GROK_IDS[0] }, { id: LOW }, { id: MEDIUM }, { id: OPENAI_IDS[0] }];
+  for (const setting of ["medium", "low"] as const) expect(selectPlannerModel(thinkingFor(setting, "plan").model!, menu), setting).toBe(ATOMIK_THINKING[setting].model);
+  /* The model a plan is priced at must be on the priced menu (plannerPrice picks it with selectAtomikThinking, Claude only): otherwise refused in plain words. */
+  expect(() => selectPlannerModel(thinkingFor("high", "plan").model!, menu)).toThrow(THINKING_UNAVAILABLE);
+  for (const id of [OPENAI_IDS[0], GROK_IDS[0], GEMINI_IDS[0]]) expect(() => selectPlannerModel(id, menu), id).toThrow(THINKING_UNAVAILABLE);
+  expect(() => selectPlannerModel(MEDIUM, [{ id: OPENAI_IDS[0] }])).toThrow(THINKING_UNAVAILABLE);
 });
 
 test("the board snapshot the planner reads is bounded and names each card's kind", () => {

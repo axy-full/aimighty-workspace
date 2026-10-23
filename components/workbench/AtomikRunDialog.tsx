@@ -17,11 +17,12 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
 import { studioRequest } from './GenerationDialog';
-import { ModelPicker, EffortPicker, effortLabel, thinkingModelName, type ThinkingModel } from '@/components/atomik/ModelPicker';
+import { ModelPicker, EffortPicker, type ThinkingModel } from '@/components/atomik/ModelPicker';
 import { SaveFailedError, saveThenContinue } from '@/lib/workbench/save-then-continue';
 
 export type AtomikRunTarget = { astraBlender?: AstraRequest; referenceAd?:ReferenceAnalysisSource; suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
-type Quote = { estimateCredits: number; model: string; effort?: string; screenplay?: { chars: number; includedChars: number; truncated: boolean }; key: string };
+/* The price only: the model and effort that run are Atomik's thinking, kept on the server (Amendment (iii) §E). */
+type Quote = { estimateCredits: number; screenplay?: { chars: number; includedChars: number; truncated: boolean }; key: string };
 
 export function AtomikRunDialog({ target, project, scope, models = [], onClose, onSave, onQueued, approximate = false }: {
   target: AtomikRunTarget;
@@ -166,7 +167,7 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
       if (!mounted.current) return;
       await withPendingAtomikLock(scope, project.id, async () => {
         if (!mounted.current) return;
-        const body = pending?.body ?? JSON.stringify({ ...JSON.parse(quoteKey), model: shownQuote!.model, effort: shownQuote!.effort ?? effort, maxCredits: shownQuote!.estimateCredits });
+        const body = pending?.body ?? JSON.stringify({ ...JSON.parse(quoteKey), maxCredits: shownQuote!.estimateCredits });
         // This synchronous durable write must succeed BEFORE the paid POST.
         const record = persistPendingAtomik(window.localStorage, scope, project.id, body);
         restore(record);
@@ -213,12 +214,13 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
           <textarea aria-label="Atomik request" value={request} onChange={event => setRequest(event.target.value)} disabled={busy || !!pending || !loaded} maxLength={12000} />
         </label>
         <div className="generation-options">
-          <div className="atomik-option-field atomik-option-model"><label htmlFor="atomik-request-model">Thinking model</label>
+          {/* The server sends no thinking models (never disclosed) and ignores a pick: with no list the pickers draw nothing, until Thinking replaces them. */}
+          {models.length > 0 && <div className="atomik-option-field atomik-option-model"><label htmlFor="atomik-request-model">Thinking model</label>
             <ModelPicker id="atomik-request-model" label="Atomik request model" value={model} models={suite ? models.filter(item => /^(anthropic|openai)\//.test(item.id)) : models} disabled={!!astraBlender || busy || !!pending || !loaded} onPick={value => { setModel(value); setEffort('auto'); }} />
-          </div>
-          <div className="atomik-option-field"><label htmlFor="atomik-request-effort">Reasoning effort</label>
+          </div>}
+          {models.length > 0 && <div className="atomik-option-field"><label htmlFor="atomik-request-effort">Reasoning effort</label>
             <EffortPicker id="atomik-request-effort" label="Atomik request effort" value={effort} model={models.find(option => option.id === model)} onPick={setEffort} disabled={busy || !!pending || !loaded} />
-          </div>
+          </div>}
           {!astraBlender && <label>Response detail
             <select aria-label="Atomik request depth" value={depth} disabled={busy || !!pending || !loaded} onChange={event => setDepth(event.target.value)}>
               {['Quick', 'Considered', 'Deep'].map(value => <option key={value}>{value}</option>)}
@@ -226,9 +228,9 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
           </label>}
         </div>
         <p className="muted small-copy">{astraBlender ? (astraBlender.mode === 'native' ? 'Includes the saved scene, native 3D source, project brief and selected image references. Review the Python revision before applying it. Native execution has a separate render quote.' : 'Includes the saved 3D scene and project brief. Review and apply the scene proposal before export. No 3D runtime render is started by this request.') : referenceAd ? REFERENCE_AD_LIMITATION + ' Includes the saved campaign brief. Each sampled frame is priced in the estimate.' : <>Includes the saved {role === 'marketing' ? 'campaign brief, project brief, ' : 'brief, '}script, uploaded TXT and actual image references. Selected videos contribute three sampled stills. Images are read as 512px review copies; audio, PDFs and links supply descriptions only.</>}</p>
-        {shownQuote && !pending && <p className="small-copy" data-testid="atomik-run-estimate">{thinkingModelName(shownQuote.model, models)} · {effortLabel(shownQuote.effort ?? effort, models.find(option => option.id === shownQuote.model))} · {approximate ? `about ${shownQuote.estimateCredits} cr · ` : ''}up to {shownQuote.estimateCredits} cr reserved</p>}
+        {shownQuote && !pending && <p className="small-copy" data-testid="atomik-run-estimate">{approximate ? `about ${shownQuote.estimateCredits} cr · ` : ''}up to {shownQuote.estimateCredits} cr reserved</p>}
         {shownQuote?.screenplay?.truncated && !pending && <p className="small-copy" role="status">Reads the first {shownQuote.screenplay.includedChars.toLocaleString()} of {shownQuote.screenplay.chars.toLocaleString()} screenplay characters at this depth; the rest is not seen. Use Development in Script &amp; breakdown for the whole screenplay.</p>}
-        {pending && <p className="small-copy">Original estimate: up to {atomikPendingInput(pending).maxCredits} cr · {effortLabel(atomikPendingInput(pending).effort, models.find(option => option.id === model))}.</p>}
+        {pending && <p className="small-copy">Original estimate: up to {atomikPendingInput(pending).maxCredits} cr.</p>}
         {!pending && !readyFrames && !frameState?.error && <p className="small-copy" role="status">Preparing visual references before the estimate…</p>}
         {!pending && frameState?.key === referenceKey && frameState.error && <p className="save-problem" role="alert">{frameState.error}</p>}
         {error && <p className="save-problem" role="alert">{error}</p>}

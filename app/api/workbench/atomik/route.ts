@@ -7,7 +7,7 @@ import { requireRender, requireUser, withTenant } from '@/lib/auth';
 import { currentTenant, runWithStore } from '@/lib/tenant';
 import { creditsApply } from '@/lib/credits';
 import { atomikPublicResponse } from '@/lib/workbench/atomik-response';
-import { atomikRequestSchema, atomikState, AtomikError, prepareAtomikJob, quoteAtomikJob, runAtomikJob, listAtomikJobs } from '@/lib/workbench/atomik-server';
+import { atomikRequestSchema, atomikState, AtomikError, prepareAtomikJob, quoteAtomikJob, runAtomikJob, listAtomikJobs, publicAtomikJob, publicAtomikQuote } from '@/lib/workbench/atomik-server';
 import { sampleWorkspaceOff } from "@/lib/demo/spend-guard.server";
 import { tokenSpendRefusal } from "@/lib/tokenSpend";
 
@@ -33,8 +33,10 @@ export const GET = withTenant(async (req: Request) => {
   const requestId = new URL(req.url).searchParams.get('requestId');
   if (requestId && !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId)) return response({ error: 'Invalid request identity.' }, 400);
   try {
-    if (requestId) return response({ jobs: await listAtomikJobs(auth.user.id, projectId, undefined, requestId) });
-    return response(await atomikState(auth.user.id, projectId));
+    /* No thinking model or effort in a job, a plan or a quote a member is sent (publicAtomikJob). The menu is the picker's until the Thinking control replaces it. */
+    if (requestId) return response({ jobs: (await listAtomikJobs(auth.user.id, projectId, undefined, requestId)).map(publicAtomikJob) });
+    const state = await atomikState(auth.user.id, projectId);
+    return response({ ...state, jobs: state.jobs.map(publicAtomikJob) });
   }
   catch (error) { return failure(error); }
 });
@@ -53,7 +55,7 @@ export const POST = withTenant(async (req: Request) => {
   if (!parsed.success) return response({ error: 'Check the request, model, effort, response detail and selected references.' }, 400);
   try {
     const { quoteOnly, ...input } = parsed.data;
-    if (quoteOnly) return response(await quoteAtomikJob(input, auth.user.id));
+    if (quoteOnly) return response(publicAtomikQuote(await quoteAtomikJob(input, auth.user.id)));
     /* The sample workspace spends nothing: answered before a job is written or reserved. */
     { const off = await sampleWorkspaceOff(); if (off) return off; }
     /* A token or an MCP client spends only with a ceiling and the quote it was approved at, as `maxCredits` (lib/tokenSpend.ts): refused before a job is written. */
@@ -64,6 +66,7 @@ export const POST = withTenant(async (req: Request) => {
       if (!store) throw new AtomikError('This workspace session expired. Reload the project.', 401);
       after(await reserveRecoveryContinuation('after-response', () => runWithStore(store, () => runAtomikJob(prepared.job.id, auth.user.id))));
     }
-    return response({ job: prepared.job, ...prepared.job }, prepared.job.status === 'queued' || prepared.job.status === 'running' ? 202 : 200);
+    const job = publicAtomikJob(prepared.job);
+    return response({ job, ...job }, prepared.job.status === 'queued' || prepared.job.status === 'running' ? 202 : 200);
   } catch (error) { return failure(error); }
 });

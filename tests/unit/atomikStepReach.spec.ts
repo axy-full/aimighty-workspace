@@ -149,7 +149,7 @@ test("a turn reads a board its person may READ (their own, a teammate's shared b
   const projectOf = (chat: string) => f.tenant.runInTenant(f.ws, async () => (await f.database.db().execute({ sql: "SELECT project_id FROM atomik_chats WHERE id=?", args: [chat] })).rows[0]?.project_id ?? null, { user: who.user });
   const say = async (chat: string) => {
     for (const key of Object.keys(seen) as (keyof typeof seen)[]) seen[key].length = 0;
-    const res = await f.tenant.runInTenant(f.ws, () => turn.POST(new Request("https://particl.test/api/atomik/x", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `turn-${chat}-${run}` }, body: JSON.stringify({ text: "Plan it" }) }) as never, { params: Promise.resolve({ id: chat }) }), { user: who.user });
+    const res = await f.tenant.runInTenant(f.ws, () => turn.POST(new Request("https://particl.test/api/atomik/x", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `turn-${chat}-${run}` }, body: JSON.stringify({ text: "Plan it", maxCredits: 10000 }) }) as never, { params: Promise.resolve({ id: chat }) }), { user: who.user });
     expect(res.status, await res.clone().text()).toBe(200);
     return { context: seen.context[0] ?? null, memory: seen.memory[0] ?? null, library: seen.library[0] ?? null, spend: seen.spend[0] ?? null, viewOnly: seen.viewOnly[0] === true, stored: await projectOf(chat) };
   };
@@ -179,7 +179,7 @@ test("on a view-only shared board the planner is told and proposes no render ste
   const rowsOf = (sql: string, args: string[]) => f.tenant.runInTenant(f.ws, async () => (await f.database.db().execute({ sql, args })).rows, { user: who.user });
   const say = async (chat: string) => {
     contexts.length = 0;
-    const res = await f.tenant.runInTenant(f.ws, () => turn.POST(new Request("https://particl.test/api/atomik/x", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `viewonly-${chat}-${run}` }, body: JSON.stringify({ text: "A tree in the rain, one video" }) }) as never, { params: Promise.resolve({ id: chat }) }), { user: who.user });
+    const res = await f.tenant.runInTenant(f.ws, () => turn.POST(new Request("https://particl.test/api/atomik/x", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `viewonly-${chat}-${run}` }, body: JSON.stringify({ text: "A tree in the rain, one video", maxCredits: 10000 }) }) as never, { params: Promise.resolve({ id: chat }) }), { user: who.user });
     expect(res.status, await res.clone().text()).toBe(200);
     const reply = (await rowsOf("SELECT id, text FROM atomik_messages WHERE chat_id=? AND role='assistant' AND id <> ? ORDER BY created_at DESC LIMIT 1", [chat, `m_${chat}`]))[0];
     const steps = await rowsOf("SELECT id FROM atomik_steps WHERE chat_id=? AND message_id=?", [chat, String(reply.id)]);

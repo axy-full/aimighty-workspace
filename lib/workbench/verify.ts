@@ -89,7 +89,9 @@ export type TakeVerification = {
   /** The key the check is stored under, in the clear: the browser compares it with the card's own. */
   masterSet: string; rubric: number; framesKey: string;
   masters: VerifyMasterRecord[]; frames: VerifyFrame[]; checks: VerifyCheckResult[];
-  verdict: Verdict; judgeModel: string;
+  verdict: Verdict;
+  /** Never sent to a member (Amendment (iii) §E): the row keeps `judge_model`. Older readers may still carry it. */
+  judgeModel?: string;
   /** Credits it was charged (0 on the workspace's own key, where the vendor bills it). */
   credits: number; ownKey: boolean; createdAt: number;
   /** Against the saved board: whether the card that asked still checks this take against these masters. */

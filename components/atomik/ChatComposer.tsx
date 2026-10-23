@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import { unkeptReason, type SkillView } from "@/lib/atomikSkillsText";
 import { useAtomik } from "./AtomikProvider";
-import { EffortPicker, ModelPicker, effortLabel, thinkingModelName } from "./ModelPicker";
+import { EffortPicker, ModelPicker } from "./ModelPicker";
 import { ComposerSkillDialogs, SaveSkillButton, SkillHints, sayAboutChat, skillOptionId, useComposerSkills, useSkillNotice } from "./skills/ComposerSkills";
 
 /** Planning always presents the exact model, effort and credit ceiling before Send.
@@ -34,8 +34,9 @@ export function ChatComposer({ inputHeight = 48 }: { inputHeight?: 44 | 46 | 48 
   return <>
   <form className="flex min-w-0 flex-1 flex-col gap-2" onSubmit={event => { event.preventDefault(); if (waiting) return; if (command) { openSkill(command.skill, command.values); return; } sayAboutChat(null, null); void a.send(a.draftText); }}>
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <ModelPicker value={a.model} models={a.models} onPick={a.setThinkingModel} disabled={locked} compact label="Chat thinking model" />
-      <EffortPicker value={a.effort} model={selected} onPick={a.setReasoningEffort} disabled={locked} compact label="Chat reasoning effort" />
+      {/* The server sends no thinking models (never disclosed) and ignores a pick: with no list the pickers draw nothing, until Thinking replaces them. */}
+      {a.models.length > 0 && <ModelPicker value={a.model} models={a.models} onPick={a.setThinkingModel} disabled={locked} compact label="Chat thinking model" />}
+      {a.models.length > 0 && <EffortPicker value={a.effort} model={selected} onPick={a.setReasoningEffort} disabled={locked} compact label="Chat reasoning effort" />}
       {savable && a.chat && <SaveSkillButton disabled={locked} onOpen={() => { setSaving(a.chat!.id); sayAboutChat(null, null); }} />}
     </div>
     {a.modelNote && !recovering && <p role="note" data-testid="atomik-model-note" className="text-[11px] leading-relaxed text-ink-muted">{a.modelNote}</p>}
@@ -51,9 +52,9 @@ export function ChatComposer({ inputHeight = 48 }: { inputHeight?: 44 | 46 | 48 
       }}
       style={{height:inputHeight}} className="w-full min-w-0 rounded-card border border-border-mid bg-card px-3 text-[16px] text-ink placeholder:text-ink-muted" />
     {command && <p data-testid="atomik-skill-command" className="text-[12px] leading-relaxed text-ink-body [overflow-wrap:anywhere]">/{command.skill.slug} plans its steps for nothing; each is then priced and waits for your Continue.</p>}
-    {a.quote && !recovering && !command && <p className="text-[11px] leading-relaxed text-ink-muted">{thinkingModelName(a.quote.model, a.models)} · {effortLabel(a.quote.effort, a.models.find(model => model.id === a.quote?.model))} · up to {a.quote.estimateCredits} cr</p>}
+    {a.quote && !recovering && !command && <p className="text-[11px] leading-relaxed text-ink-muted">up to {a.quote.estimateCredits} cr</p>}
     {a.quoteError && !recovering && !command && <p role="alert" className="text-[12px] text-ink-body">{a.quoteError}</p>}
-    {recovering && <p className="text-[11px] leading-relaxed text-ink-muted">Recover the original request with its saved model, effort and price.</p>}
+    {recovering && <p className="text-[11px] leading-relaxed text-ink-muted">Recover the original request at its saved price.</p>}
     {/* min-h-11 is 2.75rem, 41px on the 15px root: on a phone or a touch screen Send is a full 44px target. */}
     <button type="submit" disabled={a.busy || waiting || !a.draftText.trim() || (!recovering && !a.quote && !command)}
       className="flex min-h-11 max-md:min-h-[44px] [@media(pointer:coarse)]:min-h-[44px] w-full items-center justify-center rounded-ctl border border-border-mid bg-action hover:bg-action-hover px-3 text-[13px] font-medium text-on-action [overflow-wrap:anywhere] disabled:opacity-50">
