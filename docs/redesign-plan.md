@@ -120,3 +120,7 @@ The last graphite files (`Particl Suites.dc.html`, README, PROMPT and assets) go
 For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signInToRedesign()`, sets the state, and calls `captureBeside(page, "<screen>", "<prototype query>")`.
 - Run it with `-c playwright.redesign.config.ts` against a local mock server, through heavy.sh.
 - Then run `node scripts/redesign/publish-shots.mjs --pr <n> --from ../redesign-shots/<screen>`, which pushes the images to the `redesign-screenshots` branch (images only, never merged) and prints the table for the PR body.
+
+## Design notes
+
+- **The film record (step 3c, Amendment (iii) I) [schema]:** tables, checkpoint rule, turn context, acceptance tests and the migration plan are in [film-record-schema.md](film-record-schema.md). Docs only; nothing migrates before the owner's yes.
