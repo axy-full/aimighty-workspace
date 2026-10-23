@@ -56,9 +56,9 @@ test("the Ad film's Brief floor: H's seven rows in H's order, at most four pills
       expect(set.pills.length, `${row.key}: at most four pills (A1)`).toBeLessThanOrEqual(4);
       if (set.lit !== null) expect(set.pills.map((pill) => pill.id), `${row.key}: the lit pill is a pill`).toContain(set.lit);
       for (const pill of set.pills) {
-        /* Words come from the copy table; a spend limit is a figure the screen writes as "N cr", never words here. */
-        expect(Boolean(pill.copy) !== (pill.credits !== undefined), `${row.key}.${pill.id}: words or credits, one of them`).toBe(true);
-        if (pill.copy) expect(Object.hasOwn(QUESTIONS, pill.copy), `${row.key}.${pill.id}`).toBe(true);
+        /* Every pill's words come from the copy table, and no pill is a figure. */
+        expect(pill.copy && Object.hasOwn(QUESTIONS, pill.copy), `${row.key}.${pill.id}`).toBe(true);
+        expect(pill.id, `${row.key}.${pill.id}`).not.toMatch(/^(cap_)?\d+$/);
       }
     }
     /* A row reads only rows asked before it: no cycle, and nothing it waits on comes after it. */
@@ -67,7 +67,10 @@ test("the Ad film's Brief floor: H's seven rows in H's order, at most four pills
   }
   /* Rule 11: Atomik never picks a spend limit, nor says that consent is on file. */
   const row = (key: string) => AD_FILM_BRIEF.floor.find((r) => r.key === key)!;
-  expect(row("ceiling").agentPicks).toEqual(["none"]);
+  /* The spend limit (film-record-schema A.0, A.2, question 7): person-only, a reference ("none"), no free-text figure. */
+  expect(row("ceiling")).toMatchObject({ personOnly: true, field: false, pills: { pills: [{ id: "none", copy: "ceilingNone" }], lit: "none" } });
+  expect(row("ceiling").answeredBy).not.toContain("house_default");
+  expect(AD_FILM_BRIEF.floor.filter((r) => r.personOnly).map((r) => r.key)).toEqual(["ceiling"]);
   expect(row("real").agentPicks).not.toContain("yes_consent");
   /* The question's words are the copy table's. */
   expect(engineFor(fixture("nothing")).next()?.text).toBe(QUESTIONS.kind);
@@ -171,20 +174,104 @@ test("one answer closes two rows: the field's words, and what H carries to a lat
   expect(questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", { source: { value: "photos", source: "said" } })).answer("material", "nothing").writes.map((w) => w.key)).toEqual(["material"]);
   expect(menu.answer("material", "script").writes.map((w) => w.key)).toEqual(["material"]);
   /* Changing an answer is a change, not a second question. */
-  expect(nothingYet.answer("material", "media").writes.at(-1)).toMatchObject({ key: "material", reason: "change" });
+  expect(nothingYet.answer("material", "media").writes.find((w) => w.key === "material" && w.value === "media")).toMatchObject({ reason: "change" });
 });
 
-test("Decide for me: nothing left open, every open row assumed with Atomik's pick, known rows untouched", () => {
+test("a changed answer carries again: what this row carried is re-carried, or reopened; a person's own answer is never touched", () => {
+  const menu = engineFor(fixture("menu-only"));
+  const nothingYet = menu.answer("material", "nothing");
+  /* nothing → media: Elements' source is re-carried, still from the Brief. */
+  const media = nothingYet.answer("material", "media");
+  expect(media.writes.slice(2)).toEqual([
+    { workspaceId: WS_A, productionId: "prod_menu-only", key: "material", value: "media", source: "said", reason: "change" },
+    { workspaceId: WS_A, productionId: "prod_menu-only", key: "source", value: "photos", source: "earlier_step", reason: "carry", from: "material" },
+  ]);
+  expect(media.record.get("source")).toMatchObject({ value: "photos", source: "earlier_step", carriedFrom: "material" });
+  /* media → script: a script carries nothing, so the carried source reopens, and the Elements step asks it. */
+  const script = media.answer("material", "script");
+  expect(script.writes.at(-1)).toEqual({ workspaceId: WS_A, productionId: "prod_menu-only", key: "source", value: null, source: null, reason: "carry", from: "material" });
+  expect(script.record.get("source")).toBeNull();
+  const elements: Checklist = {
+    filmType: "ad_film",
+    step: "elements",
+    floor: [{
+      key: "source", floor: true, step: "elements", rank: 1, question: "material", shape: "upload", field: false, money: true,
+      pills: { pills: [{ id: "photos" }, { id: "made" }], lit: "made" }, answeredBy: ["brief_material", "drop"], sets: ["training_or_sheet"],
+    }],
+    aboveFloor: [],
+  };
+  expect(questionEngine(elements, script.record).next()?.key).toBe("source");
+  expect(questionEngine(elements, media.record).next()).toBeNull();
+  /* The same re-carry from a record that already holds the carried row (the record writes `carry:<row>`). */
+  const held = questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", {
+    ...fixture("menu-only").read,
+    material: { value: "nothing", source: "said" },
+    source: { value: "made", source: "earlier_step", carriedFrom: "material" },
+  }));
+  expect(held.answer("material", "both").writes.map((w) => [w.key, w.value, w.source])).toEqual([["material", "both", "said"], ["source", "photos", "earlier_step"]]);
+  /* A source the person answered is never overwritten, nor reopened, whatever material becomes. */
+  let said = questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", { ...fixture("menu-only").read, source: { value: "photos", source: "said" } }));
+  for (const value of ["nothing", "media", "script", "both"]) said = said.answer("material", value);
+  expect(said.writes.map((w) => w.key)).toEqual(["material", "material", "material", "material"]);
+  expect(said.record.get("source")).toMatchObject({ value: "photos", source: "said" });
+});
+
+test("a changed kind reopens the length it set, unless the person said a length that still stands", () => {
+  const record = (length: { value: string; source: "said" | "assumed" | "document" }) =>
+    questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", { kind: { value: "ad_film", source: "said" }, length }));
+  /* A length the person did not answer reopens for the new kind, and is asked next with the new kind's pills. */
+  for (const source of ["assumed", "document"] as const) {
+    const changed = record({ value: "30s", source }).answer("kind", "short_film");
+    expect(stateOf(changed, "length"), source).toBe("open");
+    expect(changed.writes.at(-1)).toEqual({ workspaceId: WS_A, productionId: "p", key: "length", value: null, source: null, reason: "change", from: "kind" });
+    expect(changed.next()?.pills.map((pill) => pill.id)).toEqual(["1min", "3min", "5min"]);
+  }
+  /* A said length that is not one of the new kind's choices reopens too. */
+  expect(stateOf(record({ value: "30s", source: "said" }).answer("kind", "short_film"), "length")).toBe("open");
+  /* A said length that still stands is kept: one of the new kind's pills, or the field's own words. */
+  expect(stateOf(record({ value: "15s", source: "said" }).answer("kind", "social"), "length")).toBe("known");
+  expect(record({ value: "45 seconds", source: "said" }).answer("kind", "short_film").rows.find((r) => r.key === "length")).toMatchObject({ state: "known", value: "45 seconds" });
+  /* The same kind again changes nothing; kind and length said together keep the new length. */
+  expect(record({ value: "30s", source: "assumed" }).answer("kind", "ad_film").writes.map((w) => w.key)).toEqual(["kind"]);
+  expect(record({ value: "30s", source: "assumed" }).answer("kind", "short_film", { length: "5min" }).rows.find((r) => r.key === "length")).toMatchObject({ state: "known", value: "5min" });
+});
+
+test("person-only answers: words the caller read never set the spend limit or consent, and nothing is written", () => {
+  const menu = engineFor(fixture("menu-only"));
+  for (const also of [{ ceiling: "none" }, { real: "yes_consent" }] as Record<string, string>[]) {
+    expect(() => menu.answer("length", "30s", also), JSON.stringify(also)).toThrow("Only a person can choose that answer.");
+    expect(() => menu.answer("plays", "phone", also)).toThrow(QuestionEngineError);
+  }
+  expect(menu.writes).toEqual([]);
+  expect(menu.record.get("length")).toBeNull();
+  expect(menu.record.get("ceiling")).toBeNull();
+  /* The person's own direct answer sets them; read words may still say no one is real. */
+  expect(stateOf(menu.answer("ceiling", "none"), "ceiling")).toBe("known");
+  expect(stateOf(menu.answer("real", "yes_consent"), "real")).toBe("known");
+  expect(stateOf(menu.answer("length", "30s", { real: "no_one" }), "real")).toBe("known");
+  /* Only what the person said answers the spend limit: a house default, a document or an assumption leaves it open. */
+  for (const source of ["default", "document", "assumed", "earlier_step"] as const) {
+    const engine = questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", { ...fixture("d11-deck").read, real: { value: "no_one", source: "said" }, ceiling: { value: "none", source } }));
+    expect(stateOf(engine, "ceiling"), source).toBe("open");
+    expect(engine.next()?.key, source).toBe("ceiling");
+  }
+  expect(stateOf(questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", { ceiling: { value: "none", source: "said" } })), "ceiling")).toBe("known");
+});
+
+test("Decide for me: nothing left open but the spend limit, every other open row assumed with Atomik's pick, known rows untouched", () => {
   const picks = { "q:subject": "a ceramic mug", "q:message": "it keeps tea hot", "q:audience": "office workers", "q:tone": "calm" };
   for (const f of BRIEF_FIXTURES) {
     const start = engineFor(f);
     const wasOpen = start.rows.filter((row) => row.state === "open").map((row) => row.key);
     const decided = start.decideForMe({ kind: "ad_film", ...picks });
-    expect(decided.open, f.id).toEqual([]);
-    expect(decided.floorClosed).toBe(true);
-    expect(decided.next()).toBeNull();
+    /* The spend limit is never written by "Decide for me": unset, it means no limit, and only a person sets one. */
+    expect(decided.open, f.id).toEqual(["ceiling"]);
+    expect(decided.writes.some((w) => w.key === "ceiling"), f.id).toBe(false);
+    expect(decided.record.get("ceiling")).toBeNull();
+    expect(decided.next()?.key).toBe("ceiling");
     for (const row of decided.rows) {
-      if (wasOpen.includes(row.key)) expect([row.key, row.state, row.source]).toEqual([row.key, "assumed", "assumed"]);
+      if (row.key === "ceiling") expect(row).toEqual(start.rows.find((r) => r.key === "ceiling"));
+      else if (wasOpen.includes(row.key)) expect([row.key, row.state, row.source]).toEqual([row.key, "assumed", "assumed"]);
       else expect(row, `${f.id}: ${row.key} keeps its value`).toEqual(start.rows.find((r) => r.key === row.key));
     }
     expect(decided.writes.filter((w) => w.reason !== "carry").every((w) => w.reason === "decide_for_me" && w.source === "assumed")).toBe(true);
@@ -194,20 +281,22 @@ test("Decide for me: nothing left open, every open row assumed with Atomik's pic
   const nothing = engineFor(fixture("nothing"));
   const lit = nothing.decideForMe({ kind: "social", ...picks });
   const value = (key: string) => lit.rows.find((row) => row.key === key)?.value;
-  expect(FLOOR_KEYS.map(value)).toEqual(["social", "15s", "wide", "hindi", "no_one", "nothing", "none"]);
+  expect(FLOOR_KEYS.map(value)).toEqual(["social", "15s", "wide", "hindi", "no_one", "nothing", null]);
   /* What Atomik assumed carries as assumed, so it reads "I assumed … · Change" downstream too. */
   expect(lit.writes.find((w) => w.key === "source")).toMatchObject({ value: "made", source: "assumed", reason: "carry", from: "material" });
   /* Atomik's pick wins over the default where it is allowed. */
   expect(nothing.decideForMe({ kind: "ad_film", length: "60s", plays: "phone", ...picks }).rows.filter((r) => ["length", "plays"].includes(r.key)).map((r) => r.value)).toEqual(["60s", "phone"]);
 
   /* Rows a person alone answers (rule 11): Atomik never sets a spend limit, nor says consent is on file. */
-  expect(() => nothing.decideForMe({ kind: "ad_film", ceiling: "cap_500", ...picks })).toThrow(QuestionEngineError);
-  expect(() => nothing.decideForMe({ kind: "ad_film", ceiling: "800", ...picks })).toThrow(QuestionEngineError);
+  for (const ceiling of ["none", "cap_500", "800"]) expect(() => nothing.decideForMe({ kind: "ad_film", ceiling, ...picks })).toThrow("Only a person can choose that answer.");
   expect(() => nothing.decideForMe({ kind: "ad_film", real: "yes_consent", ...picks })).toThrow(QuestionEngineError);
   /* …but a person can, and Atomik's lit pick on the card is never a person-only one. */
-  expect(engineFor(fixture("menu-only")).answer("ceiling", "cap_500").rows.find((r) => r.key === "ceiling")).toMatchObject({ state: "known", value: "cap_500" });
-  const ceilingCard = engineFor(fixture("d11-deck")).answer("real", "no_one").next({ ceiling: "cap_500" });
-  expect(ceilingCard?.pills.map((pill) => [pill.id, pill.credits, pill.lit])).toEqual([["none", null, true], ["cap_200", 200, false], ["cap_500", 500, false]]);
+  expect(engineFor(fixture("menu-only")).answer("ceiling", "none").rows.find((r) => r.key === "ceiling")).toMatchObject({ state: "known", value: "none" });
+  /* No figure is a choice: not a sample pill, not the field's words. */
+  for (const figure of ["cap_200", "cap_500", "500"]) expect(() => engineFor(fixture("menu-only")).answer("ceiling", figure)).toThrow(QuestionEngineError);
+  const ceilingCard = engineFor(fixture("d11-deck")).answer("real", "no_one").next({ ceiling: "none" });
+  expect(ceilingCard).toMatchObject({ key: "ceiling", field: false, fieldLabel: null });
+  expect(ceilingCard?.pills).toEqual([{ id: "none", label: QUESTIONS.ceilingNone, lit: true }]);
 
   /* A row with no default needs a pick: kind has no ★, an above-floor row never has one. */
   expect(() => nothing.decideForMe(picks)).toThrow(/kind/);
