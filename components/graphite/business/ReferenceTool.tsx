@@ -36,7 +36,6 @@ export function ReferenceTool({ scope, editor, items, onOpen }: { scope: string;
   const [edits, setEdits] = useState<Record<string, string>>({});
   const saved = Boolean(p.productionProjectId);
   const agent = useOwnAgent(scope, p.id, saved);
-  const models = agent.data?.models.filter((m) => m.vision) ?? [];
   const setValue = (fn: (current: ReferenceAdConfig) => ReferenceAdConfig) =>
     changeBrief(editor, (b, project) => ({ ...b, referenceAd: fn(normalizeReferenceAd(project, b.referenceAd ?? EMPTY_REFERENCE_AD)) }));
 
@@ -163,7 +162,7 @@ export function ReferenceTool({ scope, editor, items, onOpen }: { scope: string;
       </section>
       <SaveLine editor={editor} testId="reference-save" />
       {dialog && selected ? (
-        <AtomikRunDialog key={`${scope}:${p.id}:${selected.asset.id}`} approximate scope={scope} project={p} models={models}
+        <AtomikRunDialog key={`${scope}:${p.id}:${selected.asset.id}`} approximate scope={scope} project={p}
           target={{ referenceAd: referenceAdBinding(p, value)!, role: "marketing", request: REFERENCE_REVIEW_ASK, model: "auto", effort: "auto", depth: "Considered", refs: [selected.asset.id] }}
           onSave={editor.ensureSaved} onClose={() => setDialog(false)} onQueued={(id) => { setDialog(false); setChosenJob(id); void agent.refresh(); }} />
       ) : null}

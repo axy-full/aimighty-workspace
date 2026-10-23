@@ -10,7 +10,7 @@ import { useProjectLibrary } from "@/lib/workspace/library";
 import { briefOf } from "../../business/own-kit";
 import { BrandTool } from "../../business/BrandTool";
 import { FormatTool } from "../../business/FormatTool";
-import { HooksTool, SUITE_MODEL } from "../../business/HooksTool";
+import { HooksTool } from "../../business/HooksTool";
 import { ProductTool } from "../../business/ProductTool";
 import { REFERENCE_REVIEW_ASK, ReferenceTool } from "../../business/ReferenceTool";
 import { useOwnAgent } from "../../business/use-own-agent";
@@ -112,7 +112,6 @@ export function AdsOverlay({ ctx }: { ctx: BoardCtx }) {
 
   const brief = briefOf(project);
   const room = Math.max(1, 12 - brief.hooks.filter((h) => h.trim()).length);
-  const models = agent.data?.models ?? [];
   const referenceBinding = (() => { try { return referenceAdBinding(project, brief.referenceAd); } catch { return undefined; } })();
   const proposed = freshHooks(brief, snap.proposed);
 
@@ -129,12 +128,12 @@ export function AdsOverlay({ ctx }: { ctx: BoardCtx }) {
         </aside>
       ) : null}
       {session.dialog === "hooks" && saved ? (
-        <AtomikRunDialog key={`${scope}:${pid}:hooks`} approximate scope={scope} project={project} models={models.filter((m) => SUITE_MODEL.test(m.id))}
+        <AtomikRunDialog key={`${scope}:${pid}:hooks`} approximate scope={scope} project={project}
           target={{ suite: "moleculr", request: `[moleculr] ${hooksRequest(brief, room)}`, role: "marketing", model: "auto", effort: "auto", depth: "Considered", refs: [] }}
           onSave={editor.ensureSaved} onClose={() => openDialog(pid, null)} onQueued={() => { openDialog(pid, null); void agent.refresh(); ctx.toast(proposed.length ? "The agent is writing more hooks" : "The agent is writing hooks. They appear on the Hooks card when they are ready."); }} />
       ) : null}
       {session.dialog === "reference" && saved && referenceBinding ? (
-        <AtomikRunDialog key={`${scope}:${pid}:reference`} approximate scope={scope} project={project} models={models.filter((m) => (m as { vision?: boolean }).vision)}
+        <AtomikRunDialog key={`${scope}:${pid}:reference`} approximate scope={scope} project={project}
           target={{ referenceAd: referenceBinding, role: "marketing", request: REFERENCE_REVIEW_ASK, model: "auto", effort: "auto", depth: "Considered", refs: brief.referenceAd?.assetId ? [brief.referenceAd.assetId] : [] }}
           onSave={editor.ensureSaved} onClose={() => openDialog(pid, null)} onQueued={() => { openDialog(pid, null); void agent.refresh(); ctx.toast("The review is running. It appears on the Reference card when it is ready."); }} />
       ) : null}

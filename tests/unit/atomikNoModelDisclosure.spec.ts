@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,8 +18,8 @@ import { MODELS } from "../../lib/models";
  * The owner, 22 Oct 2026 (Amendment (iii) §E): "never disclose to the user the models and effort settings". Every route that runs
  * Atomik's thinking (and the Treatment writer) is driven here, quote and run, under the mocked engines (ENGINE_MOCK=1) and the
  * checked-in catalogue snapshot: no body a member is sent holds a thinking model id, a family-and-version name or an effort field.
- * Real temporary databases; nothing is sent anywhere and nothing is billed for real. The pickers' menus (GET /api/atomik,
- * GET /api/workbench/atomik and /development state) stay until the Thinking control replaces them, and are not driven here.
+ * Real temporary databases; nothing is sent anywhere and nothing is billed for real. The pickers are gone (3b-2); the menus' reads
+ * (GET /api/atomik, GET /api/workbench/atomik and /development state) are driven here too, and carry no model.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-no-model-disclosure-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -94,11 +94,13 @@ const answer = async (res: Response) => ({ status: res.status, body: await res.j
 const SENT = { model: MEDIUM, effort: "high" };
 
 test("chat: the composer's list, the quote, the new chat, a turn, and the chat read back carry no thinking model or effort", async () => {
-  /* The composer's pickers draw only from GET /api/atomik's list, so with none sent they draw nothing. */
-  const provider = readFileSync("components/atomik/AtomikProvider.tsx", "utf8"), composer = readFileSync("components/atomik/ChatComposer.tsx", "utf8");
-  expect(provider).toContain("const models = useMemo(() => [...(index?.models?.featured ?? []), ...(index?.models?.rest ?? [])], [index]);");
-  expect(composer).toContain("{a.models.length > 0 && <ModelPicker");
-  expect(composer).toContain("{a.models.length > 0 && <EffortPicker");
+  /* The pickers are gone (3b-2): a person sets Thinking, never a model. No file draws a model or effort picker, and the composer, its
+     provider, the run dialog and the agent reads that fed them keep no list of thinking models to draw one from. */
+  expect(existsSync("components/atomik/ModelPicker.tsx")).toBe(false);
+  for (const file of ["components/atomik/AtomikProvider.tsx", "components/atomik/ChatComposer.tsx", "components/workbench/AtomikRunDialog.tsx",
+    "components/graphite/business/use-own-agent.ts", "components/workbench/use-production-jobs.ts"]) {
+    expect(readFileSync(file, "utf8"), file).not.toMatch(/ModelPicker|EffortPicker|setThinkingModel|setReasoningEffort|\bmodels\b/);
+  }
   const ws = await funded("chat");
   const index = await route("app/api/atomik/route.ts");
   const turn = await route("app/api/atomik/[id]/route.ts");

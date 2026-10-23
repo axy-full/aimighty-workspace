@@ -3,10 +3,9 @@
 import { useId, useState } from "react";
 import { unkeptReason, type SkillView } from "@/lib/atomikSkillsText";
 import { useAtomik } from "./AtomikProvider";
-import { EffortPicker, ModelPicker } from "./ModelPicker";
 import { ComposerSkillDialogs, SaveSkillButton, SkillHints, sayAboutChat, skillOptionId, useComposerSkills, useSkillNotice } from "./skills/ComposerSkills";
 
-/** Planning always presents the exact model, effort and credit ceiling before Send.
+/** Planning always presents its credit ceiling before Send; Atomik thinks at the workspace's Thinking setting, and no model or effort is shown or picked.
  *  A skill's `/command` opens its run form instead of a planning turn: the run plans for nothing, and each of its
  *  steps is priced and approved like any other (components/atomik/skills). While a command is still being typed,
  *  the skills it matches are listed; the arrow keys move the highlight and Enter opens the highlighted one. */
@@ -14,7 +13,6 @@ export function ChatComposer({ inputHeight = 48 }: { inputHeight?: 44 | 46 | 48 
   const a = useAtomik();
   const recovering = a.recoveryText !== null;
   const locked = a.busy || recovering;
-  const selected = a.models.find(model => model.id === a.model);
   const skills = useComposerSkills(recovering ? "" : a.draftText);
   const [running, setRunning] = useState<{ skill: SkillView; values: Record<string, string> } | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -33,13 +31,9 @@ export function ChatComposer({ inputHeight = 48 }: { inputHeight?: 44 | 46 | 48 
   const openSkill = (skill: SkillView, values: Record<string, string> = {}) => { setRunning({ skill, values }); sayAboutChat(null, null); a.setDraftText(""); };
   return <>
   <form className="flex min-w-0 flex-1 flex-col gap-2" onSubmit={event => { event.preventDefault(); if (waiting) return; if (command) { openSkill(command.skill, command.values); return; } sayAboutChat(null, null); void a.send(a.draftText); }}>
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      {/* The server sends no thinking models (never disclosed) and ignores a pick: with no list the pickers draw nothing, until Thinking replaces them. */}
-      {a.models.length > 0 && <ModelPicker value={a.model} models={a.models} onPick={a.setThinkingModel} disabled={locked} compact label="Chat thinking model" />}
-      {a.models.length > 0 && <EffortPicker value={a.effort} model={selected} onPick={a.setReasoningEffort} disabled={locked} compact label="Chat reasoning effort" />}
-      {savable && a.chat && <SaveSkillButton disabled={locked} onOpen={() => { setSaving(a.chat!.id); sayAboutChat(null, null); }} />}
-    </div>
-    {a.modelNote && !recovering && <p role="note" data-testid="atomik-model-note" className="text-[11px] leading-relaxed text-ink-muted">{a.modelNote}</p>}
+    {savable && a.chat && <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <SaveSkillButton disabled={locked} onOpen={() => { setSaving(a.chat!.id); sayAboutChat(null, null); }} />
+    </div>}
     {said && <p role="status" data-testid="atomik-skill-said" className="text-[12px] leading-relaxed text-ink-body [overflow-wrap:anywhere]">{said}</p>}
     <SkillHints text={recovering ? "" : a.draftText} skills={skills.skills} loading={skills.loading || skills.reading} onPick={(skill) => openSkill(skill)} disabled={locked} listId={listId} active={at}
       failed={skills.failed} onRetry={skills.retry} />

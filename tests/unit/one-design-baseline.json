@@ -20,7 +20,6 @@
     "components/PreviewLayer.css",
     "components/PromptAttach.css",
     "components/astra-blender/astra-blender.module.css",
-    "components/atomik/ModelPicker.module.css",
     "components/atomik/marketing-studio-entry.module.css",
     "components/atomik/skills/skills.module.css",
     "components/atomik/threads/threads.module.css",
