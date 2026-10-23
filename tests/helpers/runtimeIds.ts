@@ -6,7 +6,7 @@ import { ASTRA_BLENDER_MODEL } from "../../lib/astra-blender/scene";
 import { elevenlabs } from "../../lib/engines/elevenlabs";
 import { DEFAULT_MODEL_ID, MARKETING_IMAGE_MODEL_ID, NANO_BANANA_2_ID, NANO_BANANA_PRO_ID } from "../../lib/models";
 import { snapshotModels } from "../../lib/catalog";
-import { CLAUDE_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS } from "../../lib/atomikModelPolicy";
+import { CLAUDE_MODEL_IDS } from "../../lib/atomikModelPolicy";
 
 /** The default video engine, and two still engines (by their engine ids). */
 export const VIDEO_ENGINE = DEFAULT_MODEL_ID;
@@ -26,5 +26,8 @@ const optionsOf = (id: string) => snapshot().find((m) => m.id === id)?.reasoning
 export const BUDGET_CLAUDE = CLAUDE_MODEL_IDS.find((id) => optionsOf(id).some((o) => o.type === "budget_tokens"))!;
 export const EFFORT_CLAUDE = CLAUDE_MODEL_IDS.find((id) => optionsOf(id).some((o) => o.type === "effort") && !optionsOf(id).some((o) => o.type === "budget_tokens"))!;
 
-/** Catalogue ids that are not verified text (media and classifiers), for "not a text model" checks. */
-export const NOT_TEXT_IDS: readonly string[] = snapshot().filter((m) => !(VERIFIED_TEXT_MODEL_IDS as readonly string[]).includes(m.id)).map((m) => m.id);
+/**
+ * Catalogue ids that are not text models at all (stills and other media), for "not a text model" checks: chosen by the catalogue's
+ * own type, not by the verified list, so a check that reads the verified list can fail on them.
+ */
+export const NOT_TEXT_IDS: readonly string[] = snapshot().filter((m) => m.type !== "language").map((m) => m.id);

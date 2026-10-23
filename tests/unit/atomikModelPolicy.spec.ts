@@ -27,8 +27,13 @@ test("the planner catalogue is the slots' models, all verified Claude text, and 
     expect(isVerifiedTextModel(id), id).toBe(true);
     expect(isRetiredAtomikModel(id), id).toBe(true);
   }
-  /* Media, speech and classifier entries of the catalogue, and an id that is none of its: not Atomik's, not retired text. */
+  /* The catalogue's entries that are not text models (by its own type, not the verified list), and an id that is none of its: not
+     Atomik's, not verified text, not retired text. A media id let into the verified list would fail here. */
+  expect(NOT_TEXT_IDS.length).toBeGreaterThan(0);
+  const { snapshotModels } = await import('../../lib/catalog');
+  expect(NOT_TEXT_IDS.map((id) => snapshotModels().find((m) => m.id === id)?.type)).not.toContain('language');
   for (const id of [...NOT_TEXT_IDS, 'anthropic/not-a-real-model']) {
+    expect(isVerifiedTextModel(id), id).toBe(false);
     expect(isAtomikModel(id), id).toBe(false);
     expect(isRetiredAtomikModel(id), id).toBe(false);
   }

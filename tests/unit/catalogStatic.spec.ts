@@ -131,6 +131,14 @@ test("the snapshot is dated, covers every offered id, and names a provider for e
   expect(snapshotModels().length).toBe(committed.models.length + (committed.providerPriced?.length ?? 0));
 });
 
+test("the snapshot's stills and its other entries that are not text models are not verified text, and every verified text id the snapshot lists is a language entry", () => {
+  const media = snapshotModels().filter((m) => m.type !== "language");
+  expect(media.length).toBeGreaterThan(0);
+  /* The stills a still door prices from the catalogue (some the catalogue types as language, for their image output) are not text either. */
+  for (const id of [...media.map((m) => m.id), ...STILL_CATALOG_IDS]) expect(VERIFIED_TEXT_MODEL_IDS as readonly string[], id).not.toContain(id);
+  for (const m of snapshotModels().filter((entry) => (VERIFIED_TEXT_MODEL_IDS as readonly string[]).includes(entry.id))) expect(m.type, m.id).toBe("language");
+});
+
 test(`the snapshot's prices are at most ${MAX_AGE_DAYS} days old`, () => {
   const ageDays = (Date.now() - Date.parse(`${committed.pricedAt}T00:00:00Z`)) / 86_400_000;
   expect(Number.isFinite(ageDays), `pricedAt ${committed.pricedAt} is not a date`).toBe(true);
