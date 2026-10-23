@@ -27,6 +27,24 @@ function exportedAtomikJob(row: Row): Row {
   return { ...row, ...(request ? { request_body: JSON.stringify(request) } : {}), ...(plan ? { result: JSON.stringify(plan) } : {}) };
 }
 
+/**
+ * A meter line's provider outcome as the export carries it: for a credit workspace, no amount the provider billed (vendor dollars); for a
+ * line of Atomik's thinking, no provider's own words (they can name the model) and no provider (Amendment (iii) §E). Unreadable: dropped.
+ */
+function exportedOutcome(raw: unknown, thinking: boolean, credits: boolean): string | null {
+  try {
+    const outcome = JSON.parse(String(raw)) as Record<string, unknown>;
+    if (!outcome || typeof outcome !== "object") return null;
+    if (credits && outcome.billing && typeof outcome.billing === "object") {
+      const billing = { ...(outcome.billing as Record<string, unknown>) };
+      delete billing.amount; delete billing.unit;
+      outcome.billing = billing;
+    }
+    if (thinking) { outcome.message = null; outcome.provider = "atomik"; }
+    return JSON.stringify(outcome);
+  } catch { return null; }
+}
+
 const SHARED_TABLES = [
   "projects",
   "productions",
@@ -222,9 +240,12 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
       /* A line of Atomik's thinking names neither its model nor its vendor (Amendment (iii) §E); the platform's row keeps both. */
       if (name === "meter_events" && exported.kind === "text") { exported.model = "atomik"; exported.engine = "atomik"; }
       if (name === "meter_events" && creditWorkspace) {
+        /* Vendor dollars reach no one but a platform admin: what the job cost the platform, and what it cost past what the workspace was billed. */
         delete exported.engine_cost_usd;
+        delete exported.overrun_usd;
         delete exported.paid_by_platform;
       }
+      if (name === "meter_events" && exported.provider_outcome != null) exported.provider_outcome = exportedOutcome(exported.provider_outcome, exported.kind === "text", creditWorkspace);
       return exported;
     });
   }

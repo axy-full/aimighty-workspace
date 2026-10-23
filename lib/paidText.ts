@@ -545,12 +545,14 @@ return await withRecoveryActivity('paid-text', async () => {
           args: [cost, id],
         })
         .catch(() => {});
-      /* A job another step already settled (refused, declined, refunded) is not metered again here. */
+      /* A job another step already settled (refused, declined, refunded) is not metered again here. A completed one is billed what it used,
+         never past its estimate (as finish() bills it; money review 4): the raw cost stays in the job row, the rest is the platform's. */
       if (completed || moved)
         await meter({
           ...event,
           status: completed ? "succeeded" : "failed",
-          engineCostUsd: cost,
+          engineCostUsd: Math.min(cost, estimate),
+          ...(cost > estimate ? { overrunUsd: cost - estimate } : {}),
         });
       /* An unconfirmed submission is billed its estimate for now; reconcilePaidTextJobs returns it once no request can still be answering. */
       throw new PaidTextError(

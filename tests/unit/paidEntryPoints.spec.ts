@@ -165,9 +165,10 @@ test("a settled answer reports what the ledger billed, in credits", async () =>
       submit: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "A usable logline." } }], usage: { cost: 0.4 } }) }),
     });
     const event = (await metered("text_credits"))[0];
-    /* What the ledger billed: what it used, never past its estimate (money review 3, 23 Oct 2026); the provider's 0.4 is above this fixture's estimate. */
-    expect(Number(event.billed_credits)).toBe(Math.min(billCredits(0.4, "text"), quote.estimateCredits));
-    expect(out.credits).toBe(Number(event.billed_credits));
+    /* What the ledger billed: what it used, never past its estimate (money review 3, 23 Oct 2026). The provider's 0.4 is above this fixture's estimate, so it bills the estimate. */
+    expect(billCredits(0.4, "text")).toBeGreaterThan(quote.estimateCredits);
+    expect(Number(event.billed_credits)).toBe(quote.estimateCredits);
+    expect(out.credits).toBe(quote.estimateCredits);
     expect(out.costUsd).toBeCloseTo(0.4, 6);
   }));
 

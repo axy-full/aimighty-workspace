@@ -318,12 +318,21 @@ test("the chat list, Verify scorecards, statements, the usage ledger and the exp
     const accepted = (await answer(await workbench.POST!(json("/api/workbench/atomik", { ...ask, maxCredits: wq.body.estimateCredits })))).body.job as { id: string };
     const proposal = { intent: "shots", summary: "Wren at the dunes.", steps: ["Open wide."] };
     await server.runAtomikJob(accepted.id, person.id, { run: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(proposal) } }], usage: { prompt_tokens: 10, completion_tokens: 10, cost: 0.001 } }) }) });
+    /* Two more lines of Atomik's thinking: one billed past its estimate (an overrun, the platform's dollars), one failed with a provider's own words that name the model. */
+    const { silentOutcome } = await import("../../lib/providerOutcome");
+    await meter({ id: `text_over_${randomUUID()}`, kind: "text", engine: "anthropic", model: ATOMIK_THINKING.medium.model, status: "succeeded", engineCostUsd: 0.002, overrunUsd: 0.002, projectId: null, createdBy: person.id });
+    await meter({ id: `text_fail_${randomUUID()}`, kind: "text", engine: "anthropic", model: ATOMIK_THINKING.medium.model, status: "failed", engineCostUsd: 0, projectId: null, createdBy: person.id,
+      providerOutcome: silentOutcome("anthropic", "run", "http_400", `${ATOMIK_THINKING.medium.model} rejected reasoning_effort high`) });
     const { workspaceExport } = await import("../../lib/workspaceExport");
     const exported = await workspaceExport(person.id, person.email) as unknown as { contents?: Record<string, unknown[]> } & Record<string, unknown>;
     const jobs = (exported.contents ?? exported).workbench_atomik_jobs as Record<string, unknown>[];
     expect(jobs.length).toBeGreaterThan(0);
     const meterRows = (exported.contents ?? exported).meter_events as Record<string, unknown>[];
     expect(meterRows.some((row) => row.kind === "text" && row.model === "atomik" && row.engine === "atomik")).toBe(true);
+    /* A credit workspace's export carries no vendor dollars: neither what a line cost the platform nor what it cost past its bill. */
+    for (const row of meterRows) { expect(row, String(row.id)).not.toHaveProperty("engine_cost_usd"); expect(row, String(row.id)).not.toHaveProperty("overrun_usd"); }
+    const failedOutcome = meterRows.find((row) => String(row.id).startsWith("text_fail_"))?.provider_outcome;
+    expect(JSON.parse(String(failedOutcome))).toMatchObject({ provider: "atomik", message: null });
     /* The whole export, every table: no thinking model's name, id or effort anywhere in it. */
     expectNothingDisclosed("the whole export", exported);
   });

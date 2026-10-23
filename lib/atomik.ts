@@ -13,7 +13,6 @@ import type { Transaction } from "@libsql/client";
 import { estimateCostUsd, estimateImageCostUsd } from "./vendorPricing";
 import { cinemaStudioEnabled } from "./vendorRates";
 import { PaidTextError, runPaidText, quotePaidText, type PaidTextQuote } from "./paidText";
-import { meter } from "./meter";
 import { platformDb, platformReady } from "./platform";
 import { currentTenant, requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
@@ -1068,8 +1067,8 @@ export async function runTurn(chatId: string | null, opts: TurnOptions = {}): Pr
       turn.ask ? JSON.stringify(turn.ask) : null,
       Date.now() - started, costUsd, model, effort ?? null, ts, result.engine],
   });
-  await meter({ id: messageId, kind: "text", engine: result.engine, model, status: "succeeded", engineCostUsd: costUsd,
-                projectId: chat.projectId, createdBy: chat.createdBy }, { critical: false });
+  /* The turn is metered once, by runPaidText (at what it used, never past its estimate): metering the same id again here at the raw cost
+     re-priced it past the estimate its person approved (money review 4). */
 
   const saved: Step[] = [];
   let pos = 0;

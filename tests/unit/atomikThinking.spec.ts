@@ -398,3 +398,83 @@ test("gateway settlement never bills past the estimate: usage.cost at twice the 
     if (priorDirect === undefined) delete process.env.TEXT_DIRECT; else process.env.TEXT_DIRECT = priorDirect;
   }
 });
+
+/** lib/atomik.ts compiled as it ships, its paid-text door's provider answered here (never sent): every other module the real one. */
+async function atomikWithReply(usageCost: (estimateUsd: number) => number) {
+  const ts = (await import("typescript")).default;
+  const { readFileSync, existsSync } = await import("node:fs");
+  const { createRequire } = await import("node:module");
+  const nodeRequire = createRequire(path.resolve("package.json"));
+  const paidText = await import("../../lib/paidText");
+  const file = path.resolve("lib/atomik.ts");
+  const resolve = (name: string) => {
+    const base = name.startsWith("@/") ? path.resolve(name.slice(2)) : path.resolve(path.dirname(file), name);
+    for (const candidate of [`${base}.ts`, `${base}.tsx`, path.join(base, "index.ts"), base]) if (existsSync(candidate)) return candidate;
+    return base;
+  };
+  const wrapped = { ...paidText, runPaidText: async (input: Parameters<typeof paidText.runPaidText>[0], overrides: Parameters<typeof paidText.runPaidText>[1] = {}) => {
+    const quote = await paidText.quotePaidText(input);
+    return paidText.runPaidText(input, { ...overrides, submit: async () => ({ ok: true, status: 200, text: JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ say: "Two shots at the market.", activity: [], propose: [] }) } }], usage: { cost: usageCost(quote.estimateUsd!) } }) }) });
+  } };
+  const source = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const mod = { exports: {} as typeof import("../../lib/atomik") };
+  new Function("require", "module", "exports", source)((name: string) => (name === "./paidText" ? wrapped : name.startsWith("@/") || name.startsWith(".") ? nodeRequire(resolve(name)) : nodeRequire(name)), mod, mod.exports);
+  return mod.exports;
+}
+
+test("a chat turn through the route never bills past its estimate: usage.cost at twice the estimate debits exactly the estimate's credits", async () => {
+  const ws = await funded("turn-cap");
+  const { platformDb } = await import("../../lib/platform");
+  const { billCredits } = await import("../../lib/creditTerms");
+  let estimate = 0;
+  const atomik = await atomikWithReply((usd) => { estimate = usd; return usd * 2; });
+  const turn = await route("app/api/atomik/[id]/route.ts", { "@/lib/atomik": atomik });
+  const priorDirect = process.env.TEXT_DIRECT;
+  delete process.env.TEXT_DIRECT;
+  try {
+    await inTenant(ws, async () => {
+      const id = await atomik.createChat({ userId: admin.id, projectId: null, model: "auto", agentMode: "ask" });
+      const quote = await answer(await turn.POST!(post(`https://particl.test/api/atomik/${id}`, { quoteOnly: true, text: "Plan two shots." }), { params: Promise.resolve({ id }) }));
+      const sent = await answer(await turn.POST!(post(`https://particl.test/api/atomik/${id}`, { text: "Plan two shots.", maxCredits: quote.body.estimateCredits }), { params: Promise.resolve({ id }) }));
+      expect(sent.status, JSON.stringify(sent.body).slice(0, 300)).toBe(200);
+      const { db } = await import("../../lib/db");
+      const messageId = String((await db().execute({ sql: "SELECT id FROM atomik_messages WHERE chat_id=? AND role='assistant'", args: [id] })).rows[0].id);
+      const line = (await platformDb().execute({ sql: "SELECT billed_credits, engine_cost_usd, overrun_usd FROM meter_events WHERE workspace_id=? AND id=?", args: [ws.id, messageId] })).rows[0];
+      const debit = (await platformDb().execute({ sql: "SELECT credits FROM billing_debits WHERE workspace_id=? AND event_id=?", args: [ws.id, messageId] })).rows[0];
+      expect(billCredits(estimate * 2, "text"), "uncapped, it would have billed more").toBeGreaterThan(Number(quote.body.estimateCredits));
+      expect(Number(line.billed_credits)).toBe(quote.body.estimateCredits);
+      expect(Number(debit.credits)).toBe(quote.body.estimateCredits);
+      expect(Number(line.engine_cost_usd)).toBeCloseTo(estimate, 12);
+      expect(Number(line.overrun_usd)).toBeCloseTo(estimate, 12);
+    });
+  } finally { if (priorDirect === undefined) delete process.env.TEXT_DIRECT; else process.env.TEXT_DIRECT = priorDirect; }
+});
+
+test("the paid-text recovery path never bills past the estimate: an answer that settled, then could not be returned, bills the estimate", async () => {
+  const ws = await funded("recovery-cap");
+  const { quotePaidText, runPaidText } = await import("../../lib/paidText");
+  const { platformDb } = await import("../../lib/platform");
+  const { db } = await import("../../lib/db");
+  const writer: CatalogModel = { id: MEDIUM, name: "Fixture", owner: "anthropic", type: "language", description: "", contextWindow: 1_000_000, maxTokens: 128_000,
+    pricing: { input: "0.000001", output: "0.000005" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }] };
+  const call = { model: MEDIUM, effort: "high", maxTokens: 900, kind: "idea", mock: "idea" as const, messages: [{ role: "user", content: "A lighthouse." }], recordSpend: false };
+  const priorDirect = process.env.TEXT_DIRECT;
+  delete process.env.TEXT_DIRECT;
+  try {
+    await inTenant(ws, async () => {
+      const quote = await quotePaidText(call, writer);
+      const usd = quote.estimateUsd!, id = `rec_cap_${randomUUID()}`;
+      /* The job row settles, then the spend line cannot be written (its table is gone): the recovery path meters it. */
+      await db().execute("DROP TABLE IF EXISTS atomik_spend");
+      await expect(runPaidText({ ...call, id, maxCredits: quote.estimateCredits }, { model: writer,
+        submit: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: '{"logline":"A film"}' } }], usage: { cost: usd * 2 } }) }) }))
+        .rejects.toThrow("could not be returned");
+      const line = (await platformDb().execute({ sql: "SELECT billed_credits, engine_cost_usd, overrun_usd FROM meter_events WHERE workspace_id=? AND id=?", args: [ws.id, id] })).rows[0];
+      expect(Number(line.billed_credits)).toBe(quote.estimateCredits);
+      expect(Number(line.engine_cost_usd)).toBeCloseTo(usd, 12);
+      expect(Number(line.overrun_usd)).toBeCloseTo(usd, 12);
+      expect(Number((await db().execute({ sql: "SELECT cost_usd FROM paid_text_jobs WHERE id=?", args: [id] })).rows[0].cost_usd)).toBeCloseTo(usd * 2, 12);
+    });
+  } finally { if (priorDirect === undefined) delete process.env.TEXT_DIRECT; else process.env.TEXT_DIRECT = priorDirect; }
+});
