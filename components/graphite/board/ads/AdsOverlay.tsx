@@ -55,7 +55,7 @@ export function AdsOverlay({ ctx }: { ctx: BoardCtx }) {
       if (!analysis || parsed.data.createdAt > analysis.createdAt) analysis = parsed.data;
     }
     return {
-      ready: Boolean(agent.data), configured: Boolean(agent.data?.configured && agent.data.models.length), error: agent.error ?? null,
+      ready: Boolean(agent.data), configured: Boolean(agent.data?.configured), error: agent.error ?? null,
       hooksRunning: mine.some(live), referenceRunning: jobs.some((j) => live(j) && j.request === REFERENCE_REVIEW_ASK),
       proposed: mine.slice(0, 4).flatMap((j) => j.plan?.suiteAgent?.hooks ?? []), analysis,
     };
