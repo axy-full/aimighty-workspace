@@ -186,7 +186,7 @@ It is off for every customer workspace. When it is off, nothing is made, read or
 - **Private rows:** only `chose = 'director'` rows are exported. An engine Atomik chose is never exported, per the 17 Oct rule: "Agent jobs never expose an engine in the API, receipts, exports or error messages; Director jobs expose what they chose" (`CLAUDE.md:54`).
 - **Existing rules carry over:** the `_usd` strip, the private-board boundary and the table allowlist (`lib/workspaceExport.ts:12-41`, `:115-143`).
 
-**For the owner, out of scope here:** today's export already writes `generations.model` for every take, Agent jobs included (`lib/workspaceExport.ts:104-106`). This is flagged for 3b-3.
+**For the owner, out of scope here:** today's export already writes `generations.model` for every take, Agent jobs included (`lib/workspaceExport.ts:104-106`). It is flagged for a follow-up PR on the export's engine field (the model-disclosure work after #884).
 
 ---
 
@@ -211,7 +211,7 @@ It is off for every customer workspace. When it is off, nothing is made, read or
 6. **The person's change wins a race.**
    - Atomik's change is dropped, listed and proposed again, and the step's digest is marked stale.
    - *Recommend: yes.*
-7. **House defaults ((ii) D8).**
+7. **House defaults (D8, 21 Oct).**
    - A default needs the three most recent productions the turn's person may reach to agree.
    - Only "said" or "document" answers count; "Decide for me" assumptions do not.
    - The spend limit never becomes a default.
@@ -251,9 +251,9 @@ It is off for every customer workspace. When it is off, nothing is made, read or
   - The item holds the reject reason, the quote and the edges, and reads the take's state live in the same query.
   - Keep (`kept_at`/`kept_by`) does not exist yet. When the Keep PR adds it, that column is the truth too.
   - Only kinds whose own table has no state (a treatment page, a cue, for example) keep their state on the item.
-- **Engine, prompt as sent and settings for a take** are read from `generations` (`lib/db.ts:111-113`), which is the truth for what ran.
+- **Engine, prompt as sent and settings for a take** are read from `generations` (`lib/db.ts:111-113`), which is the truth for what ran. In Agent mode the builder's `generations` join selects state columns only, never `model`, `prompt` or `params`.
   - `film_record_private` holds only what `generations` does not: a Director node's settings before a take exists ((iii) B1), a voice id, and who chose the engine (`director` or `agent`).
-  - The Agent factor is keyed on who chose ((ii) R11, the owner's answer 1).
+  - The Agent factor is keyed on who chose (R11, 21 Oct; the owner's answer 1).
 - **Approvals.** The money tables (`rig_plan_approvals`, `rig_agent_steps`, the meter) stay the truth.
   - The record's approval row keeps what the person saw: the quote, and the allowance left at that moment.
   - It is written after the money commit and can never fail that commit.
@@ -279,7 +279,7 @@ It is off for every customer workspace. When it is off, nothing is made, read or
 - **Credit columns:**
   - `film_record_items.quote_credits`, `film_record_items.cost_credits`;
   - `film_record_approvals.quote_credits`, `quote_low_credits`, `allowance_credits`, `settled_credits`.
-  - All six join SPECS (`lib/creditConversionTenant.ts:77-91`). Their archived copies join through `archived_rows` JSON specs, as CAPS does at `:72`.
+  - All six join SPECS (`lib/creditConversionTenant.ts:77-91`). Their archived copies need a new SPECS entry over `archived_rows.body` (`where: table_name IN ('film_record_items','film_record_approvals')`), as CAPS does for caps at `:72`; none exists today.
 - **Ids** come from `id()` in `lib/db.ts`. Times are epoch ms.
 
 ### A.2 Columns
@@ -418,7 +418,7 @@ The ripple query is one recursive CTE that binds `workspace_id` and `production_
    - advance the head;
    - for each checklist row: skip it if its live version was set by a person after `base_rev`, listing it in `skipped`; otherwise supersede the old version and insert the new;
    - insert the said lines, items, mirrors, private rows and edges;
-   - write the digest, with `based_on_rev = rev - 1` when `skipped` is non-empty, so it reads as stale;
+   - write the digest, with `based_on_rev = base_rev` when `skipped` is non-empty, so the person's racing change is in the next turn's "changed since" and the digest reads as stale;
    - commit.
 
 ### A.4 Context bounds
@@ -429,7 +429,7 @@ The ripple query is one recursive CTE that binds `workspace_id` and `production_
 | changed since | ≤ 30 entries per step, keys and values only |
 | live values | ≤ 400 |
 | current step's row versions | ≤ 120 |
-| current step's said lines | newest 60, or ≤ 24,000 chars. A line cited by no row and no digest entry stays in this list until one cites it |
+| current step's said lines | newest 60, or ≤ 24,000 chars. Uncited lines (no row, no digest entry) count inside the cap and are kept first; cited ones drop oldest first |
 | current step's items in full | ≤ 60: kept, sent and picked, plus the newest 3 per scope (`ROW_NUMBER() OVER (PARTITION BY scope …)`); the rest as counts by scope and state |
 | `record_lookup` | ≤ 50 rows and 12,000 chars per call; ≤ 5 calls per turn; matched by key, by id, or by `instr` within one step's said lines |
 
@@ -471,7 +471,7 @@ The ripple query is one recursive CTE that binds `workspace_id` and `production_
 - **9 Durability.** Inject a failure at open, model, commit, and between commit and checkpoint. Row counts and the head are unchanged; `film_record_turns` is excluded from the count. Then:
   - a retry under the same key after `failed` commits once;
   - a re-run after commit writes nothing and calls no model;
-  - in a person-vs-Atomik race, the person's value stands, the key is in `skipped`, and the digest is stale;
+  - in a person-vs-Atomik race, the person's value stands, the key is in `skipped`, the digest is stale, and the skipped key is in the next turn's "changed since";
   - a fresh process builds a context with the same hash.
 - **10 Size.**
   - A digest over 3,000 chars is refused.
