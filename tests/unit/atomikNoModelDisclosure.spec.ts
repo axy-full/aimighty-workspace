@@ -303,7 +303,13 @@ test("the chat list, Verify scorecards, statements, the usage ledger and the exp
     const ledger = await usageLedgerPage({ source: "ledger", month: null, range: null, cursor: null, limit: 50, id: null, csv: false }, { id: person.id, admin: true });
     expect(JSON.stringify(ledger.rows)).toContain("Atomik · Thinking");
     expectNothingDisclosed("the usage ledger", ledger);
-    expectNothingDisclosed("the usage page", await creditUsage({ id: person.id, admin: true }));
+    /* A second thinking model ran too: the usage page still shows one "Thinking" row, served by "atomik". */
+    const { meter } = await import("../../lib/meter");
+    await meter({ id: `text_nd_${randomUUID()}`, kind: "text", engine: "anthropic", model: ATOMIK_THINKING.low.model, status: "succeeded", engineCostUsd: 0.001, projectId: null, createdBy: person.id });
+    const usage = await creditUsage({ id: person.id, admin: true });
+    const thinking = (usage.byModel as { kind: string; provider: string; label: string; model: string }[]).filter((row) => row.kind === "text");
+    expect(thinking).toEqual([expect.objectContaining({ model: "atomik", label: "Thinking", provider: "atomik" })]);
+    expectNothingDisclosed("the usage page", usage);
 
     /* The export: a Studio Atomik job without its model or effort, in its request or its plan. */
     const workbench = await route("app/api/workbench/atomik/route.ts");
@@ -316,7 +322,10 @@ test("the chat list, Verify scorecards, statements, the usage ledger and the exp
     const exported = await workspaceExport(person.id, person.email) as unknown as { contents?: Record<string, unknown[]> } & Record<string, unknown>;
     const jobs = (exported.contents ?? exported).workbench_atomik_jobs as Record<string, unknown>[];
     expect(jobs.length).toBeGreaterThan(0);
-    expectNothingDisclosed("the export's workbench_atomik_jobs", jobs);
+    const meterRows = (exported.contents ?? exported).meter_events as Record<string, unknown>[];
+    expect(meterRows.some((row) => row.kind === "text" && row.model === "atomik" && row.engine === "atomik")).toBe(true);
+    /* The whole export, every table: no thinking model's name, id or effort anywhere in it. */
+    expectNothingDisclosed("the whole export", exported);
   });
 });
 

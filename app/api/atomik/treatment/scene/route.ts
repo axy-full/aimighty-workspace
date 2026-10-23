@@ -7,7 +7,7 @@ import { now } from "@/lib/db";
 import { getTreatment, sceneFromReply } from "@/lib/atomikDocs";
 import { resolveModel } from "@/lib/atomik";
 import { thinkingRun } from "@/lib/atomikThinking";
-import { TreatmentWriterOff } from "@/lib/atomikModelPolicy";
+import { NO_MODEL_NAME, TreatmentWriterOff } from "@/lib/atomikModelPolicy";
 import { specToPhrase } from "@/lib/studio";
 import { creditsApply } from "@/lib/credits";
 import { currentTenant } from "@/lib/tenant";
@@ -22,6 +22,7 @@ export const maxDuration = 300;
 
 const SYSTEM = [
   "You rewrite ONE scene of a film treatment for a production studio, in the voice of the treatment around it.",
+  NO_MODEL_NAME,
   "You are given the logline, the shot setup the whole production carries, the other scenes' titles and lengths,",
   "and the scene to rewrite with its current title, length and prose. Keep what the scene is for; write it better:",
   "concrete, filmable, present tense, no camera jargon, no hype. Keep every @Name that is already there and invent no new people.",

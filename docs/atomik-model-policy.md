@@ -15,7 +15,7 @@ What a member is sent no longer names them:
 - a Verify scorecard (its list, and a check already stored) carries no judge model;
 - a statement line, a usage-ledger line and a usage page line for Atomik's thinking say "Thinking";
 - a failed job's error is Atomik's own words, never the provider's message ("Atomik could not finish this request. Nothing billed." where true, or what it was charged);
-- the workspace export carries a Studio Atomik job without its model or effort, in its request or its plan.
+- the workspace export carries Atomik's thinking without its model, vendor or effort: a Studio Atomik job (its request and its plan) and its meter lines (`model` and `engine` read `atomik`).
 
 Every Atomik thinking prompt also tells the model not to name itself (`NO_MODEL_NAME`).
 

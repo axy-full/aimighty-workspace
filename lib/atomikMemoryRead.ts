@@ -1,6 +1,7 @@
 import { PaidTextError, quotePaidText, runPaidText, type PaidTextQuote } from "./paidText";
 import type { CatalogModel } from "./catalog";
 import type { TextRun } from "./engines/types";
+import { NO_MODEL_NAME } from "./atomikModelPolicy";
 import { MEMORY_LIMITS, readFence, readProposals, type ReadResult } from "./atomikMemoryText";
 
 /**
@@ -31,6 +32,7 @@ export const MEMORY_READ_KIND = "memory";
 
 export const MEMORY_READ_SYSTEM = [
   "You read notes, a document or another assistant's memory about a brand, and propose short entries for the memory of Atomik, a creative studio's planning agent.",
+  NO_MODEL_NAME,
   'Return ONLY a JSON object: {"entries":[{"kind":"brand"|"audience"|"identity"|"note","text":string}]}. No prose, no code fence.',
   "Each entry is one lasting fact or rule in one or two sentences, under 240 characters, in the source's own words where you can. Propose at most 30 entries, the most useful first, and never the same fact twice.",
   "Kinds: brand (name, voice, look, palette, typography, the products and what they are), audience (who it is for), identity (approved people, characters, mascots or presenters), note (house rules and preferences).",

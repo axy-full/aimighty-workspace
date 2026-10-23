@@ -10,6 +10,8 @@ import { visibleUsageParams } from "./usageParams";
 
 /** A usage line's model as a member reads it: Atomik's thinking says "Thinking", never its model (Amendment (iii) §E); the meter row keeps it. */
 const shownModel = (kind: string, model: string) => (kind === "text" ? { model: "atomik", label: "Thinking" } : { model, label: modelLabel(model) });
+/** Nor who served it. */
+const shownProvider = (kind: string, engine: string) => (kind === "text" ? "atomik" : engine);
 
 type Row = Record<string, unknown>;
 const charge =
@@ -70,7 +72,8 @@ export async function creditUsage(viewer: LedgerViewer) {
       args: [ws.id],
     }),
     p.execute({
-      sql: `SELECT model,engine,kind,SUM(status='succeeded') AS n,SUM(${charge}) AS credits FROM meter_events WHERE workspace_id=? GROUP BY model,engine,kind HAVING credits>0 OR n>0 ORDER BY credits DESC`,
+      /* Atomik's thinking is one "Thinking" row, whatever models ran it and whoever served them (Amendment (iii) §E): grouped as one here, so their count says nothing either. */
+      sql: `SELECT CASE WHEN kind='text' THEN 'atomik' ELSE model END AS model,CASE WHEN kind='text' THEN 'atomik' ELSE engine END AS engine,kind,SUM(status='succeeded') AS n,SUM(${charge}) AS credits FROM meter_events WHERE workspace_id=? GROUP BY 1,2,kind HAVING credits>0 OR n>0 ORDER BY credits DESC`,
       args: [ws.id],
     }),
     p.execute({
@@ -157,7 +160,7 @@ export async function creditUsage(viewer: LedgerViewer) {
     refines: [],
     byModel: models.rows.map((r) => ({
       ...shownModel(String(r.kind), String(r.model)),
-      provider: String(r.engine),
+      provider: shownProvider(String(r.kind), String(r.engine)),
       kind: String(r.kind),
       ...amount(r),
       promptSpend: r.kind === "text" ? Number(r.credits) : 0,
@@ -178,12 +181,12 @@ export async function creditUsage(viewer: LedgerViewer) {
       /* Where the take is NOW (generations.project_id: it may have been moved into a private board since the meter line was written); a line with no take behind it (text, training) has the meter's own project. */
       const now_ = take ? take.project_id : r.project_id;
       if (now_ != null && !takesListed(String(now_)))
-        return { id: "", ...shownModel(String(r.kind), String(r.model)), provider: String(r.engine), kind: String(r.kind), status: String(r.status), title: "A private board", prompt: "", credits: Number(r.credits), params: {}, createdAt: Number(r.created_at), refineLabel: null };
+        return { id: "", ...shownModel(String(r.kind), String(r.model)), provider: shownProvider(String(r.kind), String(r.engine)), kind: String(r.kind), status: String(r.status), title: "A private board", prompt: "", credits: Number(r.credits), params: {}, createdAt: Number(r.created_at), refineLabel: null };
       const detail = descriptionsById.get(String(r.id));
       return {
         id: String(r.id),
         ...shownModel(String(r.kind), String(r.model)),
-        provider: String(r.engine),
+        provider: shownProvider(String(r.kind), String(r.engine)),
         kind: String(r.kind),
         status: String(r.status),
         title: detail?.title

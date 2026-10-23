@@ -219,6 +219,8 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
       })
     ).rows.map((row) => {
       const exported: Row = { ...row };
+      /* A line of Atomik's thinking names neither its model nor its vendor (Amendment (iii) §E); the platform's row keeps both. */
+      if (name === "meter_events" && exported.kind === "text") { exported.model = "atomik"; exported.engine = "atomik"; }
       if (name === "meter_events" && creditWorkspace) {
         delete exported.engine_cost_usd;
         delete exported.paid_by_platform;

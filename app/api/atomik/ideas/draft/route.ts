@@ -4,6 +4,7 @@ import { requireRender, withTenant } from "@/lib/auth";
 
 import { resolveModel } from "@/lib/atomik";
 import { thinkingRun } from "@/lib/atomikThinking";
+import { NO_MODEL_NAME } from "@/lib/atomikModelPolicy";
 
 import { runPaidText, quotePaidText, atomikQuoteResponse, requestMaxCredits, paidTextQuoteScopeFailure, paidTextFailure } from "@/lib/paidText";
 import { withGenerationRequest, ANSWER_AFTER_MS } from "@/lib/generationRequests";
@@ -29,6 +30,7 @@ export const maxDuration = 300;
  */
 const SYSTEM = [
   "You write ideas for films, commercials, music videos and series for a production studio.",
+  NO_MODEL_NAME,
   "You are given a rough note and, sometimes, a few tone words. Write the LOGLINE: one or two sentences,",
   "at most 60 words — who, what happens, and what it should feel like. Concrete, filmable, no hype,",
   "no title, no camera jargon. Then list 3 to 6 TONE tags: short phrases a director would say",

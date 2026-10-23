@@ -15,6 +15,7 @@ import { atomikEffortOptions, atomikReasoningRequest } from "../atomik-reasoning
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, ready, now } from '../db';
+import { platformDb, platformReady } from '../platform';
 import { catalog, textCostUsd, textQuoteCostUsd, type CatalogModel } from '../catalog';
 import { textRun } from '../textDirect';
 import { modelTracingOn, openModelCall } from '../modelTrace';
@@ -574,7 +575,9 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
     const errorText = uncertain
       ? 'The provider result could not be confirmed. The estimate remains reserved; this request will not be submitted again automatically. Review this job before starting another.'
       : error instanceof AtomikError ? error.message.slice(0, 1000)
-      : `Atomik could not finish this request.${cost === 0 ? ' Nothing billed.' : paidByPlatform(textKeyName(job.model)) ? ` Charged ${billCredits(cost, 'text')} cr.` : ''} It will not be retried automatically.`;
+      : `Atomik could not finish this request.${cost === 0 ? ' Nothing billed.' : ''} It will not be retried automatically.`;
+    /* What it was charged is said from the meter's own settled credits (below), so the line and the bill cannot disagree. */
+    const sayCharge = !uncertain && !(error instanceof AtomikError) && cost > 0 && paidByPlatform(textKeyName(job.model));
     if (!raw) {
       const partial = (await db().execute({ sql: 'SELECT provider_response FROM workbench_atomik_jobs WHERE id=? AND owner=?', args: [id, owner] })).rows[0];
       raw = partial?.provider_response ? String(partial.provider_response) : '';
@@ -584,11 +587,25 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       { sql: 'UPDATE atomik_spend SET cost_usd=? WHERE id=?', args: [cost, id] },
     ], 'write');
     await deps.meter(eventFor(job, owner, 'failed', cost), { critical: false });
+    if (sayCharge) {
+      const settled = await settledCredits(id);
+      if (settled != null && settled > 0)
+        await db().execute({ sql: 'UPDATE workbench_atomik_jobs SET error=? WHERE id=? AND owner=?', args: [`Atomik could not finish this request. Charged ${settled} cr. It will not be retried automatically.`, id, owner] });
+    }
   } finally {
     call.end();
   }
 
 });
+}
+
+/** The credits the meter settled a job at, for this workspace; null when there is no settled line to read. */
+async function settledCredits(id: string): Promise<number | null> {
+  try {
+    await platformReady();
+    const row = (await platformDb().execute({ sql: 'SELECT billed_credits FROM meter_events WHERE workspace_id=? AND id=?', args: [requireTenant().id, id] })).rows[0];
+    return row?.billed_credits == null ? null : Number(row.billed_credits);
+  } catch { return null; }
 }
 
 /** Which kind of Studio Atomik job a saved request is, for its model call's span: a fixed word, never the request. Read only while tracing is on. */
