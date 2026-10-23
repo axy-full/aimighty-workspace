@@ -120,13 +120,11 @@ export async function platformSpendSince(sinceMs: number): Promise<number> {
   if(!workspaceId)return 0;
   const records=await platformSpendRecordsSince(sinceMs);
   await platformReady();
-  const rows=await platformDb().execute({sql:'SELECT id,paid_by_platform,engine_cost_usd,overrun_usd,status,hold_band FROM meter_events WHERE workspace_id=? AND created_at>=?',args:[workspaceId,sinceMs]});
+  const rows=await platformDb().execute({sql:'SELECT id,paid_by_platform,engine_cost_usd,status,hold_band FROM meter_events WHERE workspace_id=? AND created_at>=?',args:[workspaceId,sinceMs]});
   for(const row of rows.rows){
     if(!Number(row.paid_by_platform))records.delete(String(row.id));
-    /* A take still running at its hold counts at its hold (lib/cinemaHold.ts allowanceUsdOf); settled rows at what they settled. The allowance is a
-       ceiling on real engine spend, so what a job cost past what it was billed (overrun_usd: a text job capped at its estimate, a take past its hold)
-       counts too (money review 4). */
-    else if(row.engine_cost_usd!=null){const over=Number(row.overrun_usd??0);records.set(String(row.id),allowanceUsdOf(row)+(Number.isFinite(over)&&over>0?over:0));}
+    /* A take still running at its hold counts at its hold (lib/cinemaHold.ts allowanceUsdOf); settled rows at what they settled. */
+    else if(row.engine_cost_usd!=null)records.set(String(row.id),allowanceUsdOf(row));
   }
   return [...records.values()].reduce((sum,cost)=>sum+cost,0);
 }

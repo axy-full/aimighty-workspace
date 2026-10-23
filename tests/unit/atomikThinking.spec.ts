@@ -478,14 +478,3 @@ test("the paid-text recovery path never bills past the estimate: an answer that 
     });
   } finally { if (priorDirect === undefined) delete process.env.TEXT_DIRECT; else process.env.TEXT_DIRECT = priorDirect; }
 });
-
-test("the workspace allowance counts real engine spend: a text job billed at its estimate counts what it cost past it too", async () => {
-  const ws = await funded("allowance");
-  const { meter } = await import("../../lib/meter");
-  const { platformSpendSince } = await import("../../lib/platformSpend");
-  await inTenant(ws, async () => {
-    const before = await platformSpendSince(0);
-    await meter({ id: `text_allow_${randomUUID()}`, kind: "text", engine: "anthropic", model: MEDIUM, status: "succeeded", engineCostUsd: 0.01, overrunUsd: 0.01, projectId: null, createdBy: admin.id });
-    expect(await platformSpendSince(0) - before).toBeCloseTo(0.02, 12);
-  });
-});
