@@ -170,6 +170,9 @@ jobs:
     timeout-minutes: 120
     env:
       ENGINE_MOCK: '1'
+      # The checked-in model catalogue (lib/modelCatalog.json), never the gateway's live list: a run never depends on
+      # what the live list holds today, and makes no call for it (owner, 23 Oct 2026).
+      MODEL_CATALOG: static
       # Lets a mocked text or transcript reply be slowed by a marker in what a
       # spec sends (lib/mock.ts mockDelayMs), so a paid run outlasts the 25 s
       # early answer (tests/r1-paid-answer-pending-workbench.spec.ts). Only
@@ -314,6 +317,9 @@ jobs:
     timeout-minutes: 90
     env:
       ENGINE_MOCK: '1'
+      # The checked-in model catalogue (lib/modelCatalog.json), never the gateway's live list: a run never depends on
+      # what the live list holds today, and makes no call for it (owner, 23 Oct 2026).
+      MODEL_CATALOG: static
       PARTICL_TEST_MOCK_DELAYS: '1'
       APP_ORIGIN: http://localhost:4551
       PW_BASE_URL: http://localhost:4551
@@ -363,6 +369,9 @@ jobs:
     timeout-minutes: 30
     env:
       ENGINE_MOCK: '1'
+      # The checked-in model catalogue (lib/modelCatalog.json), never the gateway's live list: a run never depends on
+      # what the live list holds today, and makes no call for it (owner, 23 Oct 2026).
+      MODEL_CATALOG: static
       PARTICL_TEST_MOCK_DELAYS: '1'
       APP_ORIGIN: http://localhost:4551
       PW_BASE_URL: http://localhost:4551

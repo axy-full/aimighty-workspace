@@ -501,7 +501,7 @@ All paths are relative to the repo root. Nothing was edited. No .env files or pr
 - Price hover in dollars (`components/graphite/Price.tsx`).
 - ETA "about N min left" on board take cards.
 - Variations (batch takes); Fix/Change with words (TakeCard `:163,:213,:239`; `inspector/change-intent.ts`; phone `FixSheet.tsx`).
-- Line drawings, Cut-out, Record consent, Ask the crew.
+- Line drawings, Cut-out, the consent tick (was Record consent; owner, 23 Oct 2026: a tick, not a gate), Ask the crew.
 
 **Partial:**
 - Cancel exists only for Higgsfield Motion/Swap takes and for held jobs.

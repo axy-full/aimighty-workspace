@@ -3,21 +3,29 @@ import { db, ready, now, id as newId } from "../db";
 import { requireTenant } from "../tenant";
 import { securityAuditStatement } from "../securityAudit";
 import { assertPerson, type Caller } from "./people-only";
-import { CONSENT_USES, ConsentError, cleanConsent, consentLive, type ConsentInput, type ConsentRecord, type ConsentUse } from "./consent-words";
+import { CONSENT_USES, ConsentError, cleanConsent, consentLive, type ConsentFileKind, type ConsentInput, type ConsentRecord, type ConsentUse } from "./consent-words";
 
 /**
- * Identity consent records (Gaps A, Identity on the Cast card): the person whose face or voice an identity is
- * trained on agreed to it, for the uses and until the date written down, with a recording of them saying so.
+ * Identity consent ticks (Gaps A, Identity on the Cast card). A TICK, NOT A GATE (owner, 23 Oct 2026, 13:15 IST): a
+ * record is who ticked and when, with an optional file (a recording of the person agreeing, or their signed release);
+ * the other fields (whose face or voice, what it covers, the uses, an end date, the attest box) are optional, kept for
+ * the lawyer's NOC, and nothing refuses to make, train, clone or lip-sync for want of any of it.
  *
- * - Stored in the workspace's own database, in a table of its own made on first use (additive: nothing existing
- *   changes shape). Isolation is which database the query goes to (lib/tenant.ts), and every read also filters by
+ * - Stored in the existing table, unchanged in shape: a field that was not given is stored empty ('' / '[]' / 0), and
+ *   an end date of 0 reads as "none".
+ * - The workspace's own database, in a table of its own made on first use. Isolation is which database the query goes to (lib/tenant.ts), and every read also filters by
  *   production.
- * - Only a person records or withdraws one (lib/security/people-only.ts): a token, an MCP client and Atomik's
- *   `agent:` identities are refused here as well as at the route.
+ * - Only a person ticks or withdraws one (lib/security/people-only.ts; rule 11): a token, an MCP client and
+ *   Atomik's `agent:` identities are refused here as well as at the route, so no machine's tick reads as a person's.
  * - Never deleted. Withdrawing marks it (`revoked_at`, who); the row and its recording stay, as the owner's
  *   never-delete rule asks.
- * - Training an identity of a person cites a live record (`consentForTraining`); the identity it started is linked
- *   back to the record so the card can follow it.
+ * - Details edit the live tick in place (`updateConsent`: who ticked and when stay the ticking person's); the screens
+ *   make a new tick only when there is none, and unticking withdraws every live tick of the cast member.
+ * - A training request may cite a live tick (`consentForTraining`). It is never refused for want of consent: no tick,
+ *   or one withdrawn or ended, trains uncited; what a tick covers or allows is never a condition. A citation that is
+ *   malformed (no production named, another production's or cast member's tick, an id not in this workspace) is
+ *   refused, as before. The Soul identity it started is linked back to the tick. A tick's who and when are only ever
+ *   the ticking person's: a training that cites someone else's tick never records the presser as having ticked.
  */
 
 const SCHEMA = [
@@ -68,44 +76,64 @@ async function names(ids: string[]): Promise<Map<string, string>> {
   return new Map(rs.rows.map((r) => [String(r.id), String(r.name)]));
 }
 
-function toRecord(r: Row, who: Map<string, string>): ConsentRecord {
+/** `viewer`: the signed-in person reading, so each tick says whether it is theirs (`mine`); never an id. */
+function toRecord(r: Row, who: Map<string, string>, viewer?: string | null): ConsentRecord {
   const uses = ((): ConsentUse[] => { try { const v = JSON.parse(String(r.uses_json)); return Array.isArray(v) ? CONSENT_USES.filter((u) => v.includes(u)) : []; } catch { return []; } })();
   return {
     id: String(r.id), projectId: String(r.project_id), subjectKey: String(r.subject_key), subjectLabel: String(r.subject_label ?? ""),
     personName: String(r.person_name), face: Number(r.covers_face) === 1, voice: Number(r.covers_voice) === 1, uses, otherUse: String(r.other_use ?? ""),
-    untilAt: Number(r.until_at), hasRecording: Boolean(r.recording_id), recordingUrl: r.recording_id ? `/api/identity-consents/${encodeURIComponent(String(r.id))}/recording` : null, recordedAt: Number(r.recorded_at),
-    recordedBy: who.get(String(r.recorded_by)) ?? null,
+    untilAt: Number(r.until_at) > 0 ? Number(r.until_at) : null, attested: Number(r.attested) === 1, hasRecording: Boolean(r.recording_id), fileKind: r.recording_id ? fileKindOf(r.file_mime) ?? "recording" : null, recordingUrl: r.recording_id ? `/api/identity-consents/${encodeURIComponent(String(r.id))}/recording` : null, recordedAt: Number(r.recorded_at),
+    recordedBy: who.get(String(r.recorded_by)) ?? null, mine: viewer != null && String(r.recorded_by) === viewer,
     revokedAt: r.revoked_at == null ? null : Number(r.revoked_at), identityId: r.identity_id == null ? null : String(r.identity_id),
   };
 }
 
 /** A production's records, newest first, withdrawn ones included (marked). Optionally one cast member's only. */
-export async function listConsents(projectId: string, subjectKey?: string | null): Promise<ConsentRecord[]> {
+export async function listConsents(projectId: string, subjectKey?: string | null, viewer?: string | null): Promise<ConsentRecord[]> {
   await consentsReady();
   const rs = await db().execute({
-    sql: `SELECT * FROM identity_consents WHERE project_id = ?${subjectKey ? " AND subject_key = ?" : ""} ORDER BY recorded_at DESC, id DESC LIMIT 200`,
+    sql: `SELECT c.*, f.mime AS file_mime FROM identity_consents c LEFT JOIN consent_recordings f ON f.id = c.recording_id
+          WHERE c.project_id = ?${subjectKey ? " AND c.subject_key = ?" : ""} ORDER BY c.recorded_at DESC, c.id DESC LIMIT 200`,
     args: subjectKey ? [projectId, subjectKey] : [projectId],
   });
   const who = await names(rs.rows.map((r) => String(r.recorded_by)));
-  return rs.rows.map((r) => toRecord(r, who));
+  return rs.rows.map((r) => toRecord(r, who, viewer));
 }
 
-export async function getConsent(id: string): Promise<ConsentRecord | null> {
+export async function getConsent(id: string, viewer?: string | null): Promise<ConsentRecord | null> {
   await consentsReady();
-  const rs = await db().execute({ sql: `SELECT * FROM identity_consents WHERE id = ? LIMIT 1`, args: [id] });
+  const rs = await db().execute({ sql: `SELECT c.*, f.mime AS file_mime FROM identity_consents c LEFT JOIN consent_recordings f ON f.id = c.recording_id WHERE c.id = ? LIMIT 1`, args: [id] });
   const row = rs.rows[0];
   if (!row) return null;
-  return toRecord(row, await names([String(row.recorded_by)]));
+  return toRecord(row, await names([String(row.recorded_by)]), viewer);
 }
 
 /* ── The recording ──────────────────────────────────────────────────────── */
 
-/** A recording travels in one request: about a minute of voice, or a short clip. */
-export const MAX_RECORDING_BYTES = 4 * 1024 * 1024;
-const RECORDING_TYPES: Record<string, string> = {
-  "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
-  "video/webm": "webm", "video/mp4": "mp4", "video/quicktime": "mov",
+/** A tick's file travels in one request, up to 15 MB (owner, 23 Oct 2026, 18:25): a recording, or a signed release (a scan included). */
+export const MAX_RECORDING_BYTES = 15 * 1024 * 1024;
+/**
+ * What a tick's file may be, by type: a recording of the person agreeing (sound or video), or their signed release as
+ * a PDF, a document for the lawyer (owner, 23 Oct 2026, 17:10). Every kind is stored and served the same private way.
+ * Adding a type is one line here. Images are not accepted yet: that waits for the owner's word on review-558's P6.
+ */
+export const CONSENT_FILE_TYPES: Record<string, { ext: string; kind: ConsentFileKind }> = {
+  "audio/webm": { ext: "webm", kind: "recording" }, "audio/ogg": { ext: "ogg", kind: "recording" }, "audio/mp4": { ext: "m4a", kind: "recording" },
+  "audio/x-m4a": { ext: "m4a", kind: "recording" }, "audio/aac": { ext: "aac", kind: "recording" }, "audio/mpeg": { ext: "mp3", kind: "recording" },
+  "audio/wav": { ext: "wav", kind: "recording" }, "audio/x-wav": { ext: "wav", kind: "recording" },
+  "video/webm": { ext: "webm", kind: "recording" }, "video/mp4": { ext: "mp4", kind: "recording" }, "video/quicktime": { ext: "mov", kind: "recording" },
+  "application/pdf": { ext: "pdf", kind: "document" },
+  /* A signed release as an image (owner, 23 Oct 2026, 18:25): kept and served exactly as a PDF is. */
+  "image/png": { ext: "png", kind: "image" }, "image/jpeg": { ext: "jpg", kind: "image" }, "image/webp": { ext: "webp", kind: "image" },
 };
+/** A document or an image has to be what it says: its first bytes are its format's signature. */
+const SIGNATURES: Record<string, (bytes: Buffer) => boolean> = {
+  "application/pdf": (b) => b.subarray(0, 5).toString("latin1") === "%PDF-",
+  "image/png": (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  "image/jpeg": (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  "image/webp": (b) => b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP",
+};
+export const fileKindOf = (mime: unknown): ConsentFileKind | null => (typeof mime === "string" ? CONSENT_FILE_TYPES[mime]?.kind ?? null : null);
 
 /**
  * Stores the recording of a person agreeing, by the person recording the consent. It is not an upload: it has its own
@@ -115,10 +143,12 @@ const RECORDING_TYPES: Record<string, string> = {
 export async function storeConsentRecording(input: { bytes: Buffer; mime: string }, caller: Caller & { user: { id: string } }, at = now()): Promise<{ id: string; seconds: null }> {
   assertPerson(caller);
   const mime = input.mime.split(";")[0].trim().toLowerCase();
-  const ext = RECORDING_TYPES[mime];
-  if (!ext) throw new ConsentError("The recording has to be sound or video of the person agreeing.");
-  if (!input.bytes.length) throw new ConsentError("Nothing was recorded. Try again.");
-  if (input.bytes.length > MAX_RECORDING_BYTES) throw new ConsentError("Keep the recording under 4 MB: about a minute of the person agreeing.", 413);
+  const type = CONSENT_FILE_TYPES[mime];
+  if (!type) throw new ConsentError("The file has to be sound or video of the person agreeing, or their signed release as a PDF or an image.");
+  const { ext } = type;
+  if (!input.bytes.length) throw new ConsentError("The file is empty. Try again.");
+  if (SIGNATURES[mime] && !SIGNATURES[mime](input.bytes)) throw new ConsentError(type.kind === "image" ? "That file isn't the image it says. Add the signed release again." : "That file isn't a PDF. Add the signed release as a PDF.");
+  if (input.bytes.length > MAX_RECORDING_BYTES) throw new ConsentError("Keep the file under 15 MB: a few minutes of recording, or a signed release.", 413);
   await consentsReady();
   const { createHash } = await import("node:crypto");
   const { storeConsentRecordingBytes } = await import("../storage");
@@ -132,7 +162,7 @@ export async function storeConsentRecording(input: { bytes: Buffer; mime: string
 }
 
 /** A record's recording, for the recorder, an owner or an admin, by session; nobody else and never a token. */
-export async function readConsentRecording(consentId: string, caller: Caller & { user: { id: string; role?: string; owner?: boolean } }): Promise<{ bytes: Buffer; mime: string }> {
+export async function readConsentRecording(consentId: string, caller: Caller & { user: { id: string; role?: string; owner?: boolean } }): Promise<{ bytes: Buffer; mime: string; kind: ConsentFileKind; ext: string }> {
   assertPerson(caller);
   await consentsReady();
   const rs = await db().execute({
@@ -144,7 +174,7 @@ export async function readConsentRecording(consentId: string, caller: Caller & {
   const admin = caller.user.owner === true || caller.user.role === "admin";
   if (String(row.recorded_by) !== caller.user.id && !admin) throw new ConsentError("The person who recorded it, or an owner or admin, can play it.", 403);
   const { readConsentRecordingBytes } = await import("../storage");
-  return { bytes: await readConsentRecordingBytes(String(row.id), String(row.ext)), mime: String(row.mime) };
+  return { bytes: await readConsentRecordingBytes(String(row.id), String(row.ext)), mime: String(row.mime), kind: fileKindOf(String(row.mime)) ?? "recording", ext: String(row.ext) };
 }
 
 /** The recording has to be one this person made for it, in this workspace. */
@@ -155,28 +185,82 @@ async function recordingProblem(recordingId: string, recorder: string): Promise<
   return null;
 }
 
-/** Records a consent. People only: a token, an MCP client or an agent is refused before anything is read. */
+/**
+ * Records a person's tick: who (this signed-in person) and when (now), with whatever optional fields were given. People
+ * only: a token, an MCP client or an agent is refused before anything is read, so a machine never writes a tick.
+ */
 export async function recordConsent(input: ConsentInput, caller: Caller & { user: { id: string; name?: string } }, at = now()): Promise<ConsentRecord> {
   assertPerson(caller);
   const clean = cleanConsent(input, at);
   await consentsReady();
-  const problem = await recordingProblem(clean.recordingId, caller.user.id);
+  /* A file is optional; one that is given has to be one this person added, in this workspace. */
+  const problem = clean.recordingId ? await recordingProblem(clean.recordingId, caller.user.id) : null;
   if (problem) throw new ConsentError(problem);
   const cid = newId("cns");
   await db().batch([
     {
       sql: `INSERT INTO identity_consents (id, project_id, subject_key, subject_label, person_name, covers_face, covers_voice, uses_json, other_use, until_at, recording_id, attested, recorded_by, recorded_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
-      args: [cid, clean.projectId, clean.subjectKey, clean.subjectLabel, clean.personName, clean.face ? 1 : 0, clean.voice ? 1 : 0, JSON.stringify(clean.uses), clean.otherUse, clean.untilAt, clean.recordingId, caller.user.id, at],
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      args: [cid, clean.projectId, clean.subjectKey, clean.subjectLabel, clean.personName, clean.face ? 1 : 0, clean.voice ? 1 : 0, JSON.stringify(clean.uses), clean.otherUse, clean.untilAt ?? 0, clean.recordingId, clean.attested ? 1 : 0, caller.user.id, at],
     },
-    securityAuditStatement({ workspaceId: requireTenant().id, actorId: caller.user.id, action: "identity_consent.recorded", targetType: "identity_consent", targetId: cid, details: { expiresAt: clean.untilAt } }),
+    securityAuditStatement({ workspaceId: requireTenant().id, actorId: caller.user.id, action: "identity_consent.recorded", targetType: "identity_consent", targetId: cid, details: clean.untilAt != null ? { expiresAt: clean.untilAt } : {} }),
   ], "write");
-  return (await getConsent(cid))!;
+  return (await getConsent(cid, caller.user.id))!;
+}
+
+/**
+ * Adds to the optional details of a live tick, in place. It merges: a field the request leaves out stays as it was.
+ * It never drops the file: a tick that has one keeps it (an empty or missing file id leaves it attached, and another
+ * file is refused); a tick with none may be given one, which has to be this person's own recording. Who ticked and
+ * when are never changed: they stay the ticking person's. Every edit is audited with who made it and when
+ * (`identity_consent.updated`: its actor and time). The person who ticked it, or an owner or admin, may; nobody else,
+ * and never a token or an agent.
+ */
+export async function updateConsent(consentId: string, input: ConsentInput, caller: Caller & { user: { id: string; role?: string; owner?: boolean } }, at = now()): Promise<ConsentRecord> {
+  assertPerson(caller);
+  await consentsReady();
+  const rs = await db().execute({ sql: `SELECT * FROM identity_consents WHERE id = ? LIMIT 1`, args: [consentId] });
+  const row = rs.rows[0];
+  if (!row) throw new ConsentError("That consent record is not in this workspace.", 404);
+  const admin = caller.user.owner === true || caller.user.role === "admin";
+  if (String(row.recorded_by) !== caller.user.id && !admin) throw new ConsentError("The person who ticked it, or an admin, can change its details.", 403);
+  if (row.revoked_at != null || (Number(row.until_at) > 0 && Number(row.until_at) <= at)) throw new ConsentError("That tick is no longer live. Tick it again.", 409);
+  const given = (key: keyof ConsentInput) => Object.prototype.hasOwnProperty.call(input, key) && input[key] !== undefined;
+  const was = toRecord(row, new Map());
+  const keptFile = String(row.recording_id ?? "");
+  const newFile = given("recordingId") && typeof input.recordingId === "string" ? input.recordingId : "";
+  if (keptFile && newFile && newFile !== keptFile) throw new ConsentError("This tick already has its file, and it is kept.", 409);
+  const merged: ConsentInput = {
+    projectId: was.projectId, subjectKey: was.subjectKey,
+    subjectLabel: given("subjectLabel") ? input.subjectLabel : was.subjectLabel,
+    personName: given("personName") ? input.personName : was.personName,
+    face: given("face") ? input.face : was.face,
+    voice: given("voice") ? input.voice : was.voice,
+    uses: given("uses") ? input.uses : was.uses,
+    otherUse: given("otherUse") ? input.otherUse : was.otherUse,
+    until: given("until") ? input.until : was.untilAt ?? undefined,
+    attested: given("attested") ? input.attested : was.attested,
+    recordingId: keptFile || newFile,
+  };
+  const clean = cleanConsent(merged, at);
+  if (!keptFile && clean.recordingId) {
+    const problem = await recordingProblem(clean.recordingId, caller.user.id);
+    if (problem) throw new ConsentError(problem);
+  }
+  await db().batch([
+    {
+      sql: `UPDATE identity_consents SET subject_label = ?, person_name = ?, covers_face = ?, covers_voice = ?, uses_json = ?, other_use = ?, until_at = ?, recording_id = ?, attested = ?
+            WHERE id = ? AND revoked_at IS NULL`,
+      args: [clean.subjectLabel, clean.personName, clean.face ? 1 : 0, clean.voice ? 1 : 0, JSON.stringify(clean.uses), clean.otherUse, clean.untilAt ?? 0, clean.recordingId, clean.attested ? 1 : 0, consentId],
+    },
+    securityAuditStatement({ workspaceId: requireTenant().id, actorId: caller.user.id, action: "identity_consent.updated", targetType: "identity_consent", targetId: consentId, details: clean.untilAt != null ? { expiresAt: clean.untilAt } : {} }),
+  ], "write");
+  return (await getConsent(consentId, caller.user.id))!;
 }
 
 /**
  * Withdraws a record: marked, never erased. The person who recorded it, or an owner or admin, may; nobody else, and
- * never a token or an agent. Training already started stays as it is; a new training needs a live record.
+ * never a token or an agent. Training already started stays as it is; nothing refuses for want of a tick.
  */
 export async function withdrawConsent(consentId: string, caller: Caller & { user: { id: string; role?: string; owner?: boolean } }, at = now()): Promise<boolean> {
   assertPerson(caller);
@@ -194,25 +278,43 @@ export async function withdrawConsent(consentId: string, caller: Caller & { user
   return (done.rowsAffected ?? 0) > 0;
 }
 
+/** A cited tick, with the id of the person who ticked it (server side only: never sent to a browser). */
+export type CitedTick = ConsentRecord & { tickedById: string };
+
 /**
- * The live record a training request cites, or a refusal in words. Every identity training needs one (review of #558,
- * M1): this workspace's, for the production the request names (a request that names none is refused), for the same
- * cast member, allowing identity training, not withdrawn, not ended, and covering the face.
+ * The tick a training request cites (review of #558, M1; owner, 23 Oct 2026: "a tick, not a gate").
+ *
+ * - No tick cited: null. The training proceeds unticked.
+ * - A cited tick that is withdrawn or past its end date: null. The training proceeds, uncited (nothing refuses for
+ *   want of consent).
+ * - A live tick of this workspace, for the production the request names and the same cast member: that tick, with the
+ *   id of the person who ticked it. What it covers and allows are notes for the lawyer's NOC, never a condition.
+ * - A malformed citation is refused in words, before anything is claimed or sent: no production named, an id not in
+ *   this workspace, another production's tick, another cast member's, or no cast member named.
+ *
+ * A failed read is logged (the id and the error code, nothing else) and cites nothing; it never stops a training.
  */
-export async function consentForTraining(consentId: unknown, projectIds: (string | null | undefined)[], subjectKey: unknown, at = now()): Promise<ConsentRecord> {
-  if (typeof consentId !== "string" || !/^[A-Za-z0-9_.:-]{1,160}$/.test(consentId))
-    throw new ConsentError("Training an identity needs the person's consent on record. Record it on the Cast card first.");
+export async function consentForTraining(consentId: unknown, projectIds: (string | null | undefined)[], subjectKey: unknown, at = now()): Promise<CitedTick | null> {
+  if (consentId == null || consentId === "") return null;
+  if (typeof consentId !== "string" || !/^[A-Za-z0-9_.:-]{1,160}$/.test(consentId)) throw new ConsentError("That consent tick could not be read. Open the training from the Cast card.");
   const ids = projectIds.filter((v): v is string => typeof v === "string" && v.length > 0);
   if (!ids.length) throw new ConsentError("Training an identity needs the production it is for. Open it from the production's Cast card.");
-  const record = await getConsent(consentId);
-  if (!record) throw new ConsentError("That consent record is not in this workspace.", 404);
+  let row: Row | undefined;
+  try {
+    await consentsReady();
+    row = (await db().execute({ sql: `SELECT * FROM identity_consents WHERE id = ? LIMIT 1`, args: [consentId] })).rows[0];
+  } catch (error) {
+    const code = (error as { code?: unknown })?.code;
+    console.warn("consent tick: read failed", { consentId, code: typeof code === "string" ? code : "unknown" });
+    return null;
+  }
+  if (!row) throw new ConsentError("That consent record is not in this workspace.", 404);
+  const record = toRecord(row, await names([String(row.recorded_by)]).catch(() => new Map<string, string>()));
   if (!ids.includes(record.projectId)) throw new ConsentError("That consent was recorded for another production.", 409);
   if (typeof subjectKey !== "string" || !subjectKey) throw new ConsentError("Say which cast member this identity is for.");
   if (subjectKey !== record.subjectKey) throw new ConsentError("That consent was recorded for another cast member.", 409);
-  if (!record.uses.includes("identity")) throw new ConsentError("That consent doesn't allow training an identity. Record a consent that allows it.", 409);
-  if (!consentLive(record, at)) throw new ConsentError(record.revokedAt != null ? "That consent was withdrawn. Record it again before training." : "That consent has ended. Record it again before training.", 409);
-  if (!record.face) throw new ConsentError("That consent covers the voice only; training an identity needs the face too.", 409);
-  return record;
+  if (!consentLive(record, at)) return null;
+  return { ...record, tickedById: String(row.recorded_by) };
 }
 
 /** The keys a training request's project answers to: the draft itself and the production it belongs to. */
@@ -227,7 +329,7 @@ export async function projectKeysFor(draftId: unknown, owner: string): Promise<s
   return keys;
 }
 
-/** Links the identity a training request started to the record it cited. */
+/** Links the Soul identity a training request started to the tick it cited (the card follows it). Only the Soul route links. */
 export async function linkConsentIdentity(consentId: string, identityId: string): Promise<void> {
   await consentsReady();
   await db().execute({ sql: `UPDATE identity_consents SET identity_id = ? WHERE id = ? AND revoked_at IS NULL`, args: [identityId, consentId] });

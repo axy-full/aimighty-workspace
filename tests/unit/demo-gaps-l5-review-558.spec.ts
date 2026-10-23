@@ -132,7 +132,7 @@ test("P2: an odd-case stored scope reads as read-only; a prepare token's PATCH, 
   expect((await closed(new Request(`${ORIGIN}/x`, { method: "POST" }), undefined as never)).status).toBe(403);
 });
 
-/* ── M1: identity training needs a live consent record on every path ─────────────────────────────────────────── */
+/* ── M1: every path reads a cited consent tick the same way; a malformed citation is refused, and no training waits for consent ── */
 
 async function soulRoute(who: Who) {
   const sent: unknown[] = [], claimed: string[] = [];
@@ -149,7 +149,7 @@ async function soulRoute(who: Who) {
   return { route, sent, claimed };
 }
 
-test("P1 + P5 (M1): training is refused, in words, before anything is claimed or sent, without a live record that matches the production, the cast member and the use", async () => {
+test("P1 + P5 (M1): a malformed tick citation (no production, another production's or cast member's tick, no cast member) is refused in words before anything is claimed or sent; a training with no consent record, or one that doesn't allow the use, proceeds and records who ticked and when", async () => {
   const who = member();
   const { route, sent, claimed } = await soulRoute(who);
   const live = await record({ subjectKey: "node-x" });
@@ -157,12 +157,10 @@ test("P1 + P5 (M1): training is refused, in words, before anything is claimed or
   const body = (over: Record<string, unknown>) => JSON.stringify({ name: "X", subjectType: "character", references: [{ uploadId: "upl_x" }], consent: true, projectId: "prod_one", subjectKey: "node-x", ...over });
   const post = (over: Record<string, unknown>) => route.POST(scoped(who, `${ORIGIN}/api/soul/identities`, { method: "POST", body: body(over) }), undefined as never);
   const cases: [Record<string, unknown>, RegExp][] = [
-    [{}, /consent/i],                                                    /* the old pages' tick-box alone */
     [{ consentId: live.id, projectId: undefined }, /production/i],      /* P5: no production named */
     [{ consentId: live.id, projectId: "prod_other" }, /another production/i],
     [{ consentId: live.id, subjectKey: "node-other" }, /another cast member/i],
     [{ consentId: live.id, subjectKey: undefined }, /cast member/i],
-    [{ consentId: adsOnly.id }, /training an identity/i],
   ];
   for (const [over, words] of cases) {
     const res = await post(over);
@@ -173,13 +171,27 @@ test("P1 + P5 (M1): training is refused, in words, before anything is claimed or
   expect(claimed).toEqual([]);
   expect((await post({ consentId: live.id })).status).toBe(202);
   expect(sent).toHaveLength(1);
+  /* Owner, 23 Oct 2026, 14:35: "assertions that said 'refuses without consent' become 'proceeds and records who ticked
+     and when'". The two that refused for want of consent now proceed, and each records who ticked and when. */
+  const { runInTenant: inA } = await import("../../lib/tenant");
+  const { getConsent } = await import("../../lib/security/consent");
+  /* The tick-box alone (no consent record): proceeds; the tick is the presser's own, at the press: who is the person
+     whose request it is, and the library records when (soul_identities.consent_at; tests/unit/soulIdentities.spec.ts). */
+  expect((await post({})).status).toBe(202);
+  expect(sent).toHaveLength(2);
+  expect(sent[1]).toMatchObject({ consent: true });
+  expect(claimed[1]).toBe("member");
+  /* A record that doesn't allow identity training: proceeds, cites that tick, and the tick keeps who ticked and when. */
+  expect((await post({ consentId: adsOnly.id })).status).toBe(202);
+  expect(sent).toHaveLength(3);
+  expect(await inA(A, () => getConsent(adsOnly.id))).toMatchObject({ identityId: "soul_3", recordedBy: "Member Person", recordedAt: adsOnly.recordedAt });
   /* P1, in the library: no production key is a refusal, not a pass. */
   const consent = await import("../../lib/security/consent");
   const { runInTenant } = await import("../../lib/tenant");
   await runInTenant(A, async () => { await expect(consent.consentForTraining(live.id, [], "node-x")).rejects.toThrow(/production/i); });
 });
 
-test("M1: the older identity-training route needs the same live record", async () => {
+test("M1: the older identity-training route reads a cited tick the same way (consentForTraining)", async () => {
   const src = readFileSync("app/api/identities/[id]/train/route.ts", "utf8");
   expect(src).toContain("consentForTraining(");
 });
@@ -219,7 +231,7 @@ test("P6 (M2): the recording is not in the uploads, the library or any token's r
   const { PeopleOnlyError } = await import("../../lib/security/people-only");
   await runInTenant(A, async () => {
     await expect(consent.storeConsentRecording({ bytes: Buffer.from("x"), mime: "audio/wav" }, { user: { id: "member" }, token: { scope: "prepare" } })).rejects.toBeInstanceOf(PeopleOnlyError);
-    await expect(consent.storeConsentRecording({ bytes: Buffer.from("x"), mime: "image/png" }, { user: { id: "member" } })).rejects.toThrow(/sound or video/);
+    const image = await consent.storeConsentRecording({ bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]), mime: "image/png" }, { user: { id: "member" } }); expect(JSON.stringify((await db().execute("SELECT id FROM uploads")).rows)).not.toContain(image.id);
   });
   /* A record cites only a recording its own recorder made. */
   const theirs = await recording({ ...member(), userId: "other", name: "Other Member" });
@@ -360,7 +372,7 @@ test("L-C: a review link's client key is salted like the login source key, so it
   }
 });
 
-test("L-D: a chunked recording with no Content-Length is stopped at 4 MB as it arrives, never read in full", async () => {
+test("L-D: a chunked recording with no Content-Length is stopped at 15 MB as it arrives, never read in full", async () => {
   const consent = await import("../../lib/security/consent");
   const MB = 1024 * 1024;
   const post = async (chunks: Uint8Array[]) => {
@@ -380,11 +392,11 @@ test("L-D: a chunked recording with no Content-Length is stopped at 4 MB as it a
     const res = await route.POST(req, undefined as never);
     return { res, reads, cancelled };
   };
-  const over = await post(Array.from({ length: 12 }, () => new Uint8Array(MB)));
+  const over = await post(Array.from({ length: 20 }, () => new Uint8Array(MB)));
   expect(over.res.status).toBe(413);
-  expect((await over.res.json()).error).toMatch(/under 4 MB/);
-  /* Four chunks are exactly the limit; the fifth crosses it and nothing after it is pulled. */
-  expect(over.reads).toBe(5);
+  expect((await over.res.json()).error).toMatch(/under 15 MB/);
+  /* Fifteen chunks are exactly the limit; the sixteenth crosses it and nothing after it is pulled. */
+  expect(over.reads).toBe(16);
   expect(over.cancelled).toBe(true);
   const fine = await post([new TextEncoder().encode("RIFF0000"), new TextEncoder().encode("WAVEfmt ")]);
   expect(fine.res.status).toBe(201);
