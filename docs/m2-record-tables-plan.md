@@ -6,6 +6,14 @@ Status: **plan, for the owner's yes.** Docs only. No migration, product code or 
 - **Code read at** `origin/release/1` `f542e552`. Every `file:line` below is on that commit, except the project-delete route after M1, which is cited from M1's commit `5fa9d78f` (local branch `fix/project-delete-archives-steps`, not merged).
 - **M2 starts after M1 merges.** Both change the same delete path.
 
+## In short
+
+1. Nine `film_record_` tables in each workspace's own database, made on first use by one memoised batch of `CREATE … IF NOT EXISTS`, only when `V30_FILM_RECORD` is on. No existing table changes.
+2. A store built only by `filmRecord()`, scoped to the workspace in scope, with #885's idempotent turn commit. Nothing in the product calls it yet.
+3. Project delete archives the record tables that exist, each checked in `sqlite_master` first, in the same transaction as today.
+4. **[money]** The six credit columns, and their archived copies, join the credit-unit conversion. Described here; changed only in the M2 PR, with its own money review.
+5. The owner's export gains the record; fixtures and tests are named in §8–9. Rollback: the switch off; nothing is dropped.
+
 ---
 
 ## 1. How this repo makes tables today
@@ -20,7 +28,9 @@ There are no migration files and no migration runner. Each module makes its own 
 - **Columns added later** go through `columnInstaller` (`lib/schemaInitialization.ts:6-57`): one catalog read, then `ALTER TABLE … ADD COLUMN` only where missing.
 - **SQLite cannot change a CHECK in place** (`steps.ts:99-110`), which is why #885 A.1 keeps enum checks in code.
 
-M2 follows the steps store exactly: the same factory, the same switch shape, the same memoised `ready()`.
+M2 takes two shapes from these:
+- **From the steps store:** the factory, the test-only constructor and the switch (`steps.ts:472-488`).
+- **From `memoryReady`:** the table-making. M2 adds no column to an existing table and never rebuilds one, so it needs neither the steps store's `columnInstaller` nor its statement-by-statement write transaction (`steps.ts:194-206`). It sends its statements as one write batch, memoised per client (`lib/atomikMemory.ts:59-70`), as #885 §5 says.
 
 ---
 
@@ -42,7 +52,7 @@ Columns, keys and bounds are exactly #885 A.1 and A.2. Ids come from `id()` (`li
 
 `filmRecord()` first checks `filmRecordOn`; when it is off it throws `FilmRecordOffError` **before** `db()` is called, so no database gains anything. When on, it calls `ready()` (`lib/db.ts`) and then the store's own `ready()`.
 
-The store's `ready()` sends `FILM_RECORD_SCHEMA` as **one write batch**, memoised per client (`steps.ts:189-215` shape). Every statement is `CREATE TABLE IF NOT EXISTS`, `CREATE [UNIQUE] INDEX IF NOT EXISTS` or `CREATE TRIGGER IF NOT EXISTS`. No foreign keys, so the order is for reading only: each table, then its indexes and triggers.
+The store's `ready()` sends `FILM_RECORD_SCHEMA` as **one write batch**, memoised per client in a `WeakMap` and forgotten on failure (the `memoryReady` shape, `lib/atomikMemory.ts:59-70`). Every statement is `CREATE TABLE IF NOT EXISTS`, `CREATE [UNIQUE] INDEX IF NOT EXISTS` or `CREATE TRIGGER IF NOT EXISTS`. No foreign keys, so the order is for reading only: each table, then its indexes and triggers.
 
 | # | Statement | Source |
 |---|---|---|
@@ -61,7 +71,7 @@ Every table carries `workspace_id TEXT NOT NULL CHECK(workspace_id <> '')`, and 
 **Idempotency and re-runs.**
 - A second boot sends the same batch; every statement finds its object and does nothing. One round trip.
 - A batch is all or nothing, so a database never holds a partial set from M2 itself.
-- A failed boot is forgotten (the `WeakMap` entry is deleted, `steps.ts:208-211`), so the next call retries.
+- A failed boot is forgotten (the `WeakMap` entry is deleted, `lib/atomikMemory.ts:65-68`), so the next call retries.
 - A column added after M2 goes through `columnInstaller`, never a rebuild. No CHECK beyond `workspace_id <> ''` and the person check, so no rebuild is ever needed for a new kind or state.
 - Nothing in M2 runs `DROP`, `RENAME`, `ALTER` or a rewrite of any existing table.
 
@@ -129,11 +139,21 @@ What does not change:
 
 `app/api/export/route.ts:51-54` is owner-only and calls `workspaceExport` (`lib/workspaceExport.ts:114`). M2 adds a `film_record` key there, as #885 §6 describes:
 
-- **Where:** inside the export's read transaction (`:120-227`), **before** the vendor-dollar strip (`:150-162`), so the strip covers it too even though the record has no `_usd` column.
-- **When:** only for tables in the catalog read the export already makes (`:122-126`), switch on or off. A workspace without them gets an empty section. It never creates a table.
-- **Shape:** grouped by production, then step: checklist versions, said lines, items, approval mirrors, edges, digests. No turns, no checkpoints.
+**The shape problem.** `contents` is `Record<string, Row[]>`: the dollar strip walks every value as a list of rows (`:153-160`), and `counts` reads each value's `.length` (`:269-271`). A grouped object put into `contents` would throw in the strip for every credit workspace that has the tables. So M2 does it in three steps (flat rows in `contents`, grouped after the strip):
+
+1. **Read, flat.** Inside the export's read transaction (`:120-227`), before the strip, each exported table's rows go into `contents` under its own key (`film_record_rows`, `film_record_said`, `film_record_items`, `film_record_approvals`, `film_record_private`, `film_record_edges`, `film_record_digests`), each a plain `Row[]`. The strip and `counts` then treat them like every other table. The record has no `_usd` column, but it is covered all the same.
+2. **Group, after the strip.** The seven keys are folded into one `film_record` object, grouped by production, then step, and removed from `contents`. Their row counts are taken first.
+3. **Return.** `counts` keeps one entry per record table (row counts). `film_record` sits beside `...contents` in the returned object (`:263-275`), not inside it.
+
+The rest:
+- **When:** only for tables in the catalog read the export already makes (`:122-126`), switch on or off. A workspace without them gets an empty `film_record`. It never creates a table.
+- **Left out:** `film_record_turns`, `film_record_heads`, and any checkpoint.
 - **Private rows:** only `chose = 'director'` (#885 §6).
-- **Private boards:** a production is exported when it is not a private board, or is the exporting owner's own (`isDraftProject`, `lib/draftProject.ts:20`; the owner's own boards as `projectLister` builds them, `:188-195`). A teammate's board is left out even when shared, as the export's note promises (`lib/workspaceExport.ts:268`) and as the identities query does (`:144-149`).
+- **Private boards, the rule itself:** a production's record is exported when either
+  - its project id is not a private board (`isDraftProject` is false: the id does not start with `prj_wb_`, `lib/draftProject.ts:19-20`); or
+  - it is one of the exporting owner's own boards: `mappedId(DRAFT_PROJECT_PREFIX, workspace id, owner id, project_id)` for each `workbench_projects` row whose `owner` is the exporting owner (as `lib/draftProject.ts:191-192` builds them), plus the owner's held-boards project, `heldBoardsProjectId(workspace id, owner id)` (`:27`).
+
+  Nothing else: not a teammate's board even when shared (`projectLister` also admits shared boards and the marked sample, `:183-185`, `:193-195`, so it is not the definition here), as the export's note promises (`lib/workspaceExport.ts:268`).
 - Every statement binds `workspace_id`.
 
 ---
@@ -189,7 +209,7 @@ All unit specs, file databases, `ENGINE_MOCK=1`, no network. Setup as `tests/uni
 | `filmRecordCreditUnit.spec.ts` **[money]** | the six columns follow | a real run restates the six live columns by their row's own time, and their archived copies by the time inside the copy |
 | | a reversal is exact | a reversal divides exactly what was multiplied, by `credit_unit_rows` |
 | | nothing else moves | a workspace without the record tables converts to the same figures as before M2; a dry run lists the record's figures and writes nothing |
-| `filmRecordExport.spec.ts` | the section | grouped by production and step; no turns; only `chose = 'director'` private rows; no `_usd` key; a teammate's private board is left out; an empty section without the tables, and no table made |
+| `filmRecordExport.spec.ts` | the section | flat rows pass the strip and `counts` in a credit workspace without throwing; `film_record` is grouped by production and step, outside `contents`; no turns or heads; only `chose = 'director'` private rows; no `_usd` key; a teammate's private board is left out, shared or not; an empty `film_record` without the tables, and no table made |
 
 Two halves wait for later steps, because the code they test does not exist in M2: the 200-vs-10 query-count and time-ratio half of test 10, and the context-hash half of test 9, land with the context builder (M4). Tests 1, 3, 4, 6 and 7 land with M3–M5 as #885 §5 assigns them.
 
@@ -219,7 +239,7 @@ Existing specs M2 must keep green without edits: `tests/unit/projectDeleteSteps.
 ## What the owner is asked
 
 1. **Yes to M2 as planned**, built after M1 merges (M1 is local at `5fa9d78f`, not on `release/1`).
-2. **[money] The conversion's `WHERE id=?`** on record tables: a comment stating the database-per-workspace exception, as every `SPECS` table today (recommended), or a bound `workspace_id` filter (a change to the shared loop)?
+2. **[money] When the conversion restates a record row, does it find the row by its id alone, or also check the workspace?** By id alone is what it does for every other table today, safe because each workspace has its own database; M2 would say so in a comment (recommended). Also checking the workspace means changing the loop every table shares.
 3. **[money] Archived copies by their own time:** yes to the small `Spec` extension that reads the row's time from the archived body?
 4. **Delete and export act on the record tables wherever they exist,** switch on or off, since they are the workspace's own data. Yes?
 5. **Fixtures:** M2 ships Mirror and Sand as shapes and volumes; your right answers are needed before M5 and 3d. How will you give them (a document, or a session)?
