@@ -1116,7 +1116,7 @@ The owner's words, verbatim; only the bold item id is added. R24 stays struck, a
 
 # Amendment, 22 October 2026 (iii) — the design lock, the stepset, the record, the floor
 
-*Lead's note (23 Oct 2026): this is the 22 October amendment, the design lock. It comes after "Amendment, 21 October 2026 (iii)" above, which holds rule 14's band form, the v31.5 review and R36. The text is the owner's, copied from `docs/Particl-SOW-amendment-iii-22Oct2026.md`. Two vendor figures were removed from it, as from that file: E's per-token rates and D5's licence price. They are in the private notes. Where this amendment and an earlier rule disagree, this amendment wins; a dated note at each earlier rule says so (R2, R3, R8, R10, D1, S1, C2, R20 and R32).*
+*Lead's note (23 Oct 2026): this is the 22 October amendment, the design lock. It comes after "Amendment, 21 October 2026 (iii)" above, which holds rule 14's band form, the v31.5 review and R36. The text is the owner's, copied from `docs/Particl-SOW-amendment-iii-22Oct2026.md`. Two vendor figures were removed from it, as from that file: E's per-token rates and D5's licence price. They are in the private notes. On 23 October 2026 the owner's corrections and answers went into both copies (B4, G, E, F and M), and E's model names and efforts came out of both. Where this amendment and an earlier rule disagree, this amendment wins; a dated note at each earlier rule says so (R2, R3, R8, R10, D1, S1, C2, R20 and R32).*
 
 For docs/particl-sow-v1.md (after "Amendment, 21 October 2026 (ii)"), docs/redesign-plan.md "Owner decisions", and CLAUDE.md "Owner decisions since 10 Oct 2026". The owner's decisions of 22 October 2026, taken while reviewing Prototype v31.6 through v31.16 (Claude Design) and in the evening's conversation with the advisor; in his words where quoted. This PR is docs only. Code PRs follow as marked: **[money]** under a money review; **[schema]** flagged to the owner before any migration. Pixel sizes, URLs and screen-by-screen detail stay in the prompts (Particl-v31.7 … v31.16-prompt.md) and in the design zip that is THE design (section F); this records what the product is, not how a screen is drawn.
 
@@ -1127,6 +1127,8 @@ Sections: A how Atomik asks · B Director mode · C surfaces · D engines and ve
 **A1 One question at a time.** "The agent will think and ask each question separately. Not present 3 questions at once to the user. That way I want the agent to ask as many questions as it wants for its clarity. And the atomik bar will spin when the agent is thinking." Strike "at most three bare questions" (S1) and "asks at most three questions" (C2): the cap goes; the count is Atomik's. What stands: nothing is asked twice; nothing the brief, the Look, the Elements or the Director's own work already answers is asked (S2, rule 13). "Dont show too many options in agentic mode": at most four answer pills per question, plus a field.
 
 **A2 Study, then suggest — never a random question.** "I dont wanna see random questions. Take your time to study the output once created and then suggest questions basis what you see. It will use up context tokens, but thats fine, make it part of the hidden cost per generation." Before a thing is made, Atomik asks what it needs; after, it studies the result and suggests from what it sees. **[money] Reconcile with B4 (21 Oct) and the 18 Oct rule "Atomik's own check of its work is free and is never a line".** Both say the check is never a line and its cost is absorbed (B4: "absorbed in the Agent factor"), which matches "hidden cost per generation". What widens: B4 bounds the check to one judge call per take on sampled frames with the shot's rows, cheapest capable model; A2 asks for a study that yields suggestions on every kind of asset (face, product, environment, world, frame, take, mix). **NEEDS AKSHAY:** does B4's bound widen to every asset kind and to suggestions, with the cost still absorbed in the factor (no line, no change to the quoted price), or is the study a priced part of the job's single quote? The design shows one price.
+
+*Answered 23 October 2026 (the owner): B4 of 21 Oct widens to every asset kind and to the one suggestion line. The cost stays absorbed in the agent factor, never a line, and the quoted price does not change.*
 
 **A3 Per-kind question sets.** "For every asset, the question set will vary in agentic mode (the agent is allowed to add that thinking time to the render time and then present the asset) or it can take a seperate processing time too." A job shows Thinking · Making · Reviewing; one quote, approved before it starts (rule 14, 18 Oct).
 
@@ -1142,7 +1144,9 @@ Sections: A how Atomik asks · B Director mode · C surfaces · D engines and ve
 
 **B3 Kind first on Elements.** "Every time somebody double clicks in elements (directors mode) first ask them which element they wanna make before you can offer any other settings." Kinds: Cast · Prop · Environment · Vehicle · Wardrobe · Product · Words · World.
 
-**B4 Double-click opens the Inspector too.** A new node opens with its panel on the tab that matters.
+**B4** ~~Double-click opens the Inspector too. A new node opens with its panel on the tab that matters.~~
+
+*Corrected 23 October 2026: the design wins. The owner's decision of 22 Oct, 21:15 (v31.14) reversed B4: a double-click makes a node and never opens the Inspector; a new Director node shows "What is it?" on the card; in Agent mode the panel opens itself only for a question or a suggestion.*
 
 **B5 Sound shows sound.** Shot settings (picture, camera and light) never appear on Sound's inspector; they live on Shots. Edit's Director rail has Sound · Versions · Export and no Settings tile. The playhead drags in both modes.
 
@@ -1151,6 +1155,8 @@ Sections: A how Atomik asks · B Director mode · C surfaces · D engines and ve
 ## C · Surfaces
 
 **C1 "How Particl works" (the logo page).** Features as full-bleed live screens with selling copy, not cards; headed "12 features you didn't know you needed"; a band for Atomik ("a proprietary agent that knows what to ask and does what its asked"); the philosophy line; "Built by filmmakers for likeminded filmmakers"; no "Show me on my film" on this page (it stays as a teaching device in the product, R13 correction, 21 Oct — **confirm**); no "built for small teams"; no Shortcuts section; the engine list carries each vendor's mark; under every plan and pack, "What it buys" at Director prices with a footnote, the figures regenerated from the rate card before publishing (§ Pricing: every price in a design is a sample). Vendor marks on a "works with" list are nominative use; **[legal, owner]** counsel confirms before launch, as with R16's manifests.
+
+*Answered 23 October 2026 (the owner): "Show me on my film" stays inside the product, on the ? cards only, and is gone from "How Particl works". Vendor marks are not blocking; counsel confirms before launch. The How page's figures (the plan row Explore · Create · Master · Business · Enterprise, the engine cards' sample prices and every "What it buys" line) are samples (rule 14): CLAUDE.md § Pricing is the only source, and the "What it buys" lines are regenerated from the rate card before publishing.*
 
 **C2 Home.** One bar; no Settings tile on Home (Settings from the avatar and the + menu).
 
@@ -1178,20 +1184,24 @@ Sections: A how Atomik asks · B Director mode · C surfaces · D engines and ve
 
 ## E · Atomik's thinking: three settings (22 Oct, evening) [money]
 
-The owner, verbatim: "lets have 3 settings. High (Fable 5.1/55 high when it launches) Medium (Opus 5.5 high) Low (Sonnet 5.5 high) (never disclose to the user the models and effort settings".
+The owner, verbatim, with the model names and efforts taken out: "lets have 3 settings. High (…) Medium (…) Low (…) (never disclose to the user the models and effort settings".
 
-- Atomik's thinking has three settings, shown to the person only as **High · Medium · Low** under the word "Thinking". The model behind each and its reasoning effort are never shown: not in the UI, History, receipts, exports, the API, error messages or "How Particl works". The mapping lives in `lib/atomikModelPolicy.ts` only (`ATOMIK_THINKING` → model id + effort), env-overridable, with a test that no model id or effort string reaches any rendered string or API response (extends the no-engine-name test to thinking models).
-- The mapping today: High = Claude Fable 5.1 at high effort (Fable 5.5 when it ships, by a policy update with evidence); Medium = Claude Opus 5.5 at high; Low = Claude Sonnet 5.5 at high. This replaces the 28 Sept policy's default (Sonnet 4.6 first) for Atomik's thinking; the OpenAI family stays for the Treatment's text only (below); the xAI family leaves the allowlist in the same PR unless the owner says otherwise.
+*23 October 2026 (the owner): the model names and efforts are removed from this file. The repo says only this: Thinking has three slots, High · Medium · Low, each env-set and each a Claude model; the mapping lives in Coolify and in the owner's private policy, never in the repo. The Treatment writer is an OpenAI model, env-set.*
+
+- Atomik's thinking has three settings, shown to the person only as **High · Medium · Low** under the word "Thinking". The model behind each and its reasoning effort are never shown: not in the UI, History, receipts, exports, the API, error messages or "How Particl works". The three slots are env-set (`ATOMIK_THINKING`, read by `lib/atomikModelPolicy.ts`), Claude models only; the repo holds no model id or effort for them. A test proves no model id or effort string reaches any rendered string or API response (it extends the no-engine-name test to thinking models).
+- *The mapping that stood here is removed (23 October 2026): it lives in Coolify and the owner's private policy.* The three slots replace the 28 Sept policy's default for Atomik's thinking; the OpenAI family stays for the Treatment's text only (below); the xAI family leaves the allowlist in the same PR (confirmed 23 Oct, M).
 - Where it is set: per production, at the Brief, default Medium; a workspace admin may set the workspace default; the Preflight shows "Thinking · Medium · Change" with its band price. The judge (Reviewing), digests and routine turns run at Low whatever the setting unless the setting is High; the interview, the plan and every Writing · Design turn run at the setting.
-- **[money]** Each setting has its own band rates in the private policy, priced through the price path; a higher setting is a higher "up to N cr". Nothing is charged for the setting itself. Open: whether a Fable high-effort turn is priced as a ceiling (recommended: yes, as every band is, B2).
-- **Treatment text (22 Oct, 22:47, corrected 22:51).** The owner: OpenAI "gpt 6.1 sol" on its high setting writes all the prose in the Treatment deck (idea, logline, story, director's note, characters, world, tone, every section's words) and nothing else; Claude, at the production's Thinking setting, composes everything else: the outline's structure, the pages' design, the system, and every other step. The OpenAI family stays on the allowlist for this one job only, keyed in the policy as `TREATMENT_WRITER` (model id + effort, env-overridable), never shown. The exact API id for "gpt 6.1 sol" is read off the OpenAI console when the key is set and goes to the lead as the string. [money] its band rate sits with the others.
-- **Rates for the band maths.** The per-token rates the owner pasted at 22 Oct 23:01 are kept in the private policy, not in this public file (standing rule: no vendor prices in a public file; removed by the lead on 23 Oct). On those rates, High costs about 2.5× Medium and 5× Low on the same turn. A long record read is mostly cached input, which is why the digest-plus-index memory design keeps a High turn affordable. The GPT 6.1 rate for the Treatment writer is still to be read off the OpenAI console.
-- **NEEDS AKSHAY:** confirm the xAI family leaves the Atomik allowlist, and the Fable 5.1 API rate for the band maths (the advisor does not have it).
+- **[money]** Each setting has its own band rates in the private policy, priced through the price path; a higher setting is a higher "up to N cr". Nothing is charged for the setting itself. Open: whether a High turn is priced as a ceiling (recommended: yes, as every band is, B2).
+- **Treatment text (22 Oct, 22:47, corrected 22:51).** The owner: the Treatment writer, an OpenAI model, env-set, writes all the prose in the Treatment deck (idea, logline, story, director's note, characters, world, tone, every section's words) and nothing else; Claude, at the production's Thinking setting, composes everything else: the outline's structure, the pages' design, the system, and every other step. The OpenAI family stays on the allowlist for this one job only, env-set as `TREATMENT_WRITER_MODEL`, never shown. *(23 October 2026: the owner sets `TREATMENT_WRITER_MODEL` in Coolify; until he does, the Treatment's prose step refuses with "Nothing billed".)* [money] its band rate sits with the others.
+- **Rates for the band maths.** The per-token rates the owner pasted at 22 Oct 23:01 are kept in the private policy, not in this public file (standing rule: no vendor prices in a public file; removed by the lead on 23 Oct). On those rates, High costs about 2.5× Medium and 5× Low on the same turn. A long record read is mostly cached input, which is why the digest-plus-index memory design keeps a High turn affordable. The Treatment writer's rate is still to be read off the OpenAI console.
+- ~~**NEEDS AKSHAY:** confirm the xAI family leaves the Atomik allowlist, and the High setting's API rate for the band maths.~~ *Answered 23 October 2026: xAI leaves Atomik's thinking, confirmed. The band rates are the owner's and private.*
 
 
 ## F · The design lock (22 Oct, 23:53)
 
-The owner: "lets put this into lead." Prototype **v31.16** (`Particl_Prototype_v31.16.zip`) is THE design, per the 18 October decision ("No interface work starts until that zip is in the repo as THE design"). It lands in the repo as `docs/design/v31.16/` with its README.txt as the screen map (every `?view=…&step=…&mode=…` state is a screen the product must have) and its CHANGES.txt as the change record; the prompts v31.7 → v31.16 land beside it as `docs/design/prompts/`. The p311-*.js files are a throwaway rendering of the design, never a source: the lead builds from the README, the prompts and the screens, with the components the repo already has.
+The owner: "lets put this into lead." Prototype **v31.16** (`Particl_Prototype_v31.16.zip`) is THE design, per the 18 October decision ("No interface work starts until that zip is in the repo as THE design"). It lands in the repo as `design/particl-v31.16/` *(23 October 2026: moved from `docs/design/v31.16/` to where the one-design guard expects the design; it replaces design/particl-prototype-15/, removed in the same PR, git history keeps it; design/particl-prototype-12/ stays the one reference)* with its README.txt as the screen map (every `?view=…&step=…&mode=…` state is a screen the product must have) and its CHANGES.txt as the change record; the prompts v31.7 → v31.16 land beside it as `docs/design/prompts/`. The p311-*.js files are a throwaway rendering of the design, never a source: the lead builds from the README, the prompts and the screens, with the components the repo already has.
+
+*Prices in the design (23 October 2026): every price in a design is a sample (rule 14). CLAUDE.md § Pricing is the only source, through the server's price path. That covers every figure the screens draw (quotes, chips, the Preflight, receipts, Top up), the How page's plan row (Explore · Create · Master · Business · Enterprise) and its engine cards, and the sample figures quoted in this amendment (G, J). The How page's "What it buys" lines are regenerated from the rate card before publishing.*
 
 Known defects in v31.16 that the lead does not reproduce and Claude Design fixes in v31.17: a new node can still land over another card; the console reports `<path d="{{ p.d }}">` on load; the Thinking row in the Brief's read-back is below the fold at 1440.
 
@@ -1209,7 +1219,7 @@ ASKS       the checklist rows that may be open here, one at a time (A1, 22 Oct),
            the shape of each (pick one / A-B / yes-no / tap the frame / upload),
            and what answers them without asking (brief field, earlier step, genre, house default)
 CALLS      the tools in the registry it may run, and the engines behind them (Director names them; Agent never does)
-THINKS ON  the thinking model for the step (default Sonnet 4.6; the judge on the cheapest capable model)
+THINKS ON  the production's Thinking setting (E: default Medium; the judge on the cheapest capable model)
 WRITES     the rows it adds to the record: values with source, "said" lines, takes with reasons, approvals
 CARRIES    what the next step inherits without being asked again (rule 13)
 REVIEWS    what the Reviewing tick checks on the result and the one suggestion it may make (A2, 22 Oct)
@@ -1217,6 +1227,8 @@ PRICES     the bands and engine rows in its quote; what is free (no model ran)
 NEVER      what this step must not do or show
 TESTS      the mocked briefs that prove ASKS is deterministic (R2) and WRITES is complete (R7)
 ```
+
+*Struck 23 October 2026 (the owner): THINKS ON's default named a model (the 28 Sept policy's old default). E wins: Thinking Medium is the default, and that old default model is used nowhere from #884 on.*
 
 The ten blocks, as the product stands on 22 October (Agent sequence S2 as amended: Brief → Script → Treatment → Elements → Look → Storyboard → Shots → Sound → Edit → Deliver). The blocks below are the owner's working draft of 22 October; ASKS lists the floor rows (section H) and the above-floor examples; the owner edits the rows, the lead builds and tests the blocks.
 
@@ -1322,7 +1334,7 @@ The ten blocks, as the product stands on 22 October (Agent sequence S2 as amende
 **Make** (no production) gets the same block, shorter: READS the Library; DOES one thing from one line with the composer's tiles; ASKS the kind and the ratio (Agent) and nothing else; CALLS the per-kind tools; WRITES to the Library with "made in Make" as source; REVIEWS the one result with one suggestion.
 
 **The two cross-step blocks:**
-- **The judge (Reviewing).** One prompt per asset kind listing what to look at, in your words (Part 3, item 6). Cheapest capable model; one pass per result, one more on a remake; never a line on the receipt; absorbed as B4 says, pending your answer on scope (amendment iii, A2).
+- **The judge (Reviewing).** One prompt per asset kind listing what to look at, in your words (Part 3, item 6). Cheapest capable model; one pass per result, one more on a remake; never a line on the receipt; absorbed as B4 says (scope answered 23 October 2026, A2: every asset kind and the one suggestion line, still absorbed, no change to the quoted price).
 - **Questions.** The question engine reads the step's checklist (D1), marks each row known / assumed / open from the record, orders the open rows by what changes the result or the price most, and asks the first; after each answer it re-marks (an answer often closes two rows) and asks the next. Deterministic and tested on mocked briefs (R2). "Decide for me" closes every open row with the agent's pick and shows them as "I assumed … · Change".
 
 ---
@@ -1333,6 +1345,8 @@ The ten blocks, as the product stands on 22 October (Agent sequence S2 as amende
 The owner, 22 October: the checklist is the floor, not the ceiling. The rows that must be known before money moves are fixed, deterministic and tested — never asked when the brief answers them, always asked when it doesn't. Above the floor, Atomik (at the production's Thinking setting) asks whatever this film makes genuinely open, one question at a time, as many as it needs, from no list, and stops. R2's "at most three per step" is struck; R2's test ("a brief that says Hindi VO is never asked the language question") now applies to the floor rows and is extended: a brief that answers a floor row never produces its question; a brief that doesn't always does; no above-floor question repeats a row the record holds.
 
 The floor, as drafted 22 October for the owner's strike-through (ids and sources are the lead's; questions, pills and defaults are the owner's):
+
+*Answered 23 October 2026 (the owner): he is editing the floor rows' file. The engine builds the Ad film rows as drafted below until his edit lands.*
 
 How a floor row behaves, every time:
 - It is asked only if nothing already answers it: the brief document, the + menu's choice, an earlier step, a kept thing, or a house default (a row the workspace answered the same way three times). An answered row shows "from the brief · Change", never a question.
@@ -1440,6 +1454,8 @@ Twenty-two rows across the whole production, seven of them at the Brief. For an 
 
 ## I · The film record: how context is held [schema]
 
+*Answered 23 October 2026 (the owner): the record schema is docs/film-record-schema.md, its own docs PR (#885). The owner reads it before any migration.*
+
 The owner (22 Oct): "Memory of each step is the most important thing and context needs to be held infinitely / or needs to be ascertained by a thorough memory log (never shown to the user)." A model's window is not infinite (the largest Atomik can use today is on the order of a million tokens, and cost rises with every token read). So the product never relies on the window. It relies on the **film record** (R7), and the window is only ever a view into it. Four layers, all tenant rows in Turso, all behind `workspace_id` (rule 2), none shown to the person as a log:
 
 1. **The workspace memory** — what is true across productions: house defaults (D8: a row answered the same way three times becomes the default and stops being asked), the trained faces with consent, kept looks and LUTs, the brand's words and colours, the workspace's own vocabulary ("our packshot"), engine preferences a Director set. Read at the start of every production. Never crosses a workspace.
@@ -1486,24 +1502,35 @@ The owner asked whether the node system is useful and whether Director mode mean
 - **D10 Golden productions [new]:** Mirror and Sand as complete mocked records, every row filled as a real production would fill it, the owner's decisions as the right answers; every question-engine, ripple and read-back test runs against them.
 - **D11 Brief fixtures [new]:** three of the owner's own past briefs, client and product names stripped (rule 3), in the shapes people send (a PDF deck, a WhatsApp paragraph, a voice note), for Reading, transcription and the floor tests.
 - **D12 The copy table [new]:** every string the product shows, in one table (`lib/copy.ts` or equivalent) with the forbidden-words test over it; rule C5's voice (short, technical, one-word buttons, "Decide for me" the one multi-word button, R3).
-- **D13 Thinking [new]:** the three settings and their band rates (E), the model mapping in `lib/atomikModelPolicy.ts` only, with the no-model-name test.
+- **D13 Thinking [new]:** the three settings and their band rates (E), three env-set slots, Claude models only (the mapping in Coolify and the owner's private policy, never in the repo; 23 Oct 2026), with the no-model-name test.
 
 ## L · The PR plan (phase order, small PRs, rule 8)
 
 Docs first, then code; every money row under its own review; every schema change flagged before migration; nothing on main from the lead; the design zip and this amendment arrive from the owner.
 
-1. **Docs PR:** this amendment into docs/particl-sow-v1.md, docs/redesign-plan.md "Owner decisions" and CLAUDE.md "Owner decisions since 10 Oct 2026"; `docs/design/v31.16/` with the zip's contents and `docs/design/prompts/` with v31.7–v31.16; the glossary draft untouched.
+1. **Docs PR:** this amendment into docs/particl-sow-v1.md, docs/redesign-plan.md "Owner decisions" and CLAUDE.md "Owner decisions since 10 Oct 2026"; `design/particl-v31.16/` with the zip's contents (23 Oct 2026: moved from `docs/design/v31.16/`, replacing design/particl-prototype-15/; F) and `docs/design/prompts/` with v31.7–v31.16; the glossary draft untouched.
 2. **The copy table and the strings test** (D12): every rendered string moved into one table; `tests/helpers/uiStrings.ts` extended with today's retired lines ("Just make it", "No questions", "the editor is the director's", "Show me on my film" outside the ? cards, "built for small teams", "How many", "Describe the node") and the no-model-name rule (E, D13).
-3. **The model policy PR:** `ATOMIK_THINKING` (High · Medium · Low → model id + effort, env-overridable), `TREATMENT_WRITER` (GPT 6.1 "sol", high, id from the console), xAI leaves the Atomik allowlist, the test that no model id or effort string reaches a rendered string or an API response. Band rates stay in the private policy; this PR carries no figure.
+3. **The model policy PR:** `ATOMIK_THINKING` (High · Medium · Low, three env-set slots, Claude models only; the mapping in Coolify and the owner's private policy), `TREATMENT_WRITER_MODEL` (an OpenAI model, env-set; 23 Oct 2026), xAI leaves the Atomik allowlist, the test that no model id or effort string reaches a rendered string or an API response. Band rates stay in the private policy; this PR carries no figure.
 4. **The record [schema]:** the four layers of section I as tables with their columns, the digest rule, the index, the checkpoint rule, the tracing rule (ids only), the ten acceptance tests; the Mirror and Sand golden records (D10) as fixtures; the owner's yes before the migration.
 5. **The question engine on the Brief:** the floor rows (H) for the Ad film, known / assumed / open from the record, one question at a time, "Decide for me", the Atomik tab in the panel; above-floor questions on; mocked-brief tests and the D11 fixtures.
 6. **One step a PR in S2 order** (Script → Treatment → Elements → Look → Storyboard → Shots → Sound → Edit → Deliver), each with its block from G, its floor rows, its digests, and its mocked tests; the Director's Take tab, remembered settings, one Generate · N cr, and the Prompt row (J) alongside each step that has nodes. [money] rows (Enhance live, Compose) under their reviews.
 7. **Adapters as registry tools, on a second lane:** Docling replacing LibreOffice + Tesseract (#819/#837 context); SAM on fal for selections; Ideogram 4.5 (`IDEOGRAM_API_KEY`, `IDEOGRAM_ENABLED`); World Labs Marble (`WORLDLABS_API_KEY`, `WORLDLABS_ENABLED`; Library kind World [schema]; the Blender angle and move renders on our worker); each with a mocked test proving an agent can run it; bake-offs only on the owner's yes under $20 each in the house workspace (rule 1).
-8. **The judge** (A2, D9) last on each step, once that step's outputs exist, scope per the owner's answer to A2.
+8. **The judge** (A2, D9) last on each step, once that step's outputs exist, scope per the owner's answer to A2 (23 Oct 2026: every asset kind and the one suggestion line).
 9. **"How Particl works"** last, static, from the real screens, with the engine marks and the "What it buys" lines regenerated from the rate card.
 10. **Measurement (rule 17):** time to first render, approvals per session, where people stop, first-take keep rate in Director mode; ids and timings only.
 
 ## M · What is not in this amendment, and what is open
 Money behaviour (the 18–21 Oct decisions) is unchanged except where A2 asks the owner a question. Nothing here changes a price, a cap or an approval; the new rate-card rows in D1–D2 come with their own money PRs.
 
-Open for the owner, 22 October: the judge's scope (A2); "Show me on my film" inside the product (C1); vendor marks to counsel (C1); the Fable band rates (E); the GPT 6.1 API id and rate (E); the floor rows' strike-through (H); the record schema's yes (I, before migration).
+~~Open for the owner, 22 October: the judge's scope (A2); "Show me on my film" inside the product (C1); vendor marks to counsel (C1); the High setting's band rates (E); the Treatment writer's API id and rate (E); the floor rows' strike-through (H); the record schema's yes (I, before migration).~~ All answered 23 October 2026, below.
+
+**The owner's answers, 23 October 2026 (10:30 IST).** Each open item above is answered:
+- **The judge's scope (A2): answered.** B4 of 21 Oct widens to every asset kind and to the one suggestion line. The cost stays absorbed in the agent factor, never a line, and the quoted price does not change.
+- **"Show me on my film" (C1): answered.** It stays inside the product, on the ? cards only. It is gone from "How Particl works".
+- **Vendor marks (C1): answered.** Not blocking. Counsel confirms before launch.
+- **xAI leaves Atomik's thinking (E): answered.** Confirmed. The band rates are the owner's and private.
+- **The Treatment writer's model id (E): answered.** The owner sets `TREATMENT_WRITER_MODEL` in Coolify. Until then, the refusal with "Nothing billed" stands.
+- **The floor rows (H): answered.** The owner is editing the file. The engine builds the Ad film rows as drafted until his edit lands.
+- **The record schema (I): answered.** docs/film-record-schema.md is its own docs PR (#885). The owner reads it before any migration.
+
+**Corrections, 23 October 2026.** B4 is corrected: the design wins (B). G's THINKS ON default is struck: E wins, Thinking Medium is the default (G). The Thinking mapping and the Treatment writer's model are out of this file (E). Every price in the design is a sample; § Pricing is the only source (F). The design lives at `design/particl-v31.16/` (F).

@@ -7,7 +7,7 @@ Written 10 Oct 2026 by the lead, at the owner's request ("write the plan into th
 
 ## The brief (owner, 10 Oct)
 
-- **The design:** design/particl-prototype-15 is the design (owner, 13 Oct 2026: v15 contains all of v14; design/particl-prototype-12 is kept as the one reference). It replaces design/particl-graphite, and each screen PR deletes the graphite design file(s) it replaces.
+- **The design:** design/particl-v31.16 is the design (owner, 23 Oct 2026: v31.16 replaces design/particl-prototype-15, which is removed; git history keeps it). design/particl-prototype-12 is kept as the one reference (owner, 13 Oct 2026). It replaces design/particl-graphite, and each screen PR deletes the graphite design file(s) it replaces.
 - **Switch:** everything is built on release/1 behind the per-workspace switch. It is off for every customer workspace and on only for the internal house workspace.
 - **Work order:**
   - P1 Shell
@@ -126,7 +126,7 @@ For each built screen, a `tests/redesign/<screen>.shots.ts` signs in with `signI
 The earlier "Owner decisions" sections (10 Oct to 21 Oct) are on `redesign/integration`. This section records the decisions in Amendment, 22 October 2026 (iii). The full text is in docs/particl-sow-v1.md and `docs/Particl-SOW-amendment-iii-22Oct2026.md`. These decisions win over older documents, the 18 Oct design decision (v31.2) included.
 
 1. **The design lock (F, 22 Oct 23:53).** The owner: "lets put this into lead."
-   - v31.16 is THE design: `docs/design/v31.16/`. README.txt is the screen map; CHANGES.txt is the change record; the prompts v31.7–v31.16 are in `docs/design/prompts/`.
+   - v31.16 is THE design: `design/particl-v31.16/` (moved from `docs/design/v31.16/` on 23 Oct, replacing prototype 15). README.txt is the screen map; CHANGES.txt is the change record; the prompts v31.7–v31.16 are in `docs/design/prompts/`.
    - The p311-*.js files are a throwaway rendering, never a source.
    - Locked: the step order; pill · rail · canvas · bar · panel; Keep and Sent; the money surfaces; the Atomik tab; the record. Adjustable: words, the How page, pill sizes, which quick starts show.
    - All copy lives in one strings table. "How Particl works" is static and built last.
@@ -135,7 +135,7 @@ The earlier "Owner decisions" sections (10 Oct to 21 Oct) are on `redesign/integ
    - The owner: "The agent will think and ask each question separately. Not present 3 questions at once to the user." Every three-question cap is struck (R2, S1, C2); "Dont show too many options in agentic mode", so at most four pills and a field.
    - "Take your time to study the output once created and then suggest questions basis what you see." A job shows Thinking · Making · Reviewing at one quote.
    - Nothing crowds the one-line bar. Storyboard carries the Look and Elements.
-   - **[money] NEEDS AKSHAY:** the judge's scope (A2 against B4).
+   - **[money]** The judge's scope (A2 against B4): answered 23 Oct, item 8.
 3. **The floor (H).** The checklist is the floor, not the ceiling: twenty-two floor rows, seven at the Brief, tested on mocked briefs. Above the floor, Atomik asks one question at a time, from no list. "Decide for me" is the default and the one multi-word button; "Just make it" is struck from R3.
 4. **Director mode (B, J).**
    - Remembered settings and one Generate · N cr.
@@ -147,8 +147,19 @@ The earlier "Owner decisions" sections (10 Oct to 21 Oct) are on `redesign/integ
    - Ideogram 4.5 **[money]** and World Labs Marble **[money] [schema]**, each a registry tool first. Docling replaces LibreOffice + Tesseract. SAM on fal for selections.
    - Edit engines are chosen by bake-off only on the owner's yes, under $20 each, in the house workspace. Runway's and Luma's attribution clauses go to counsel.
    - The Remotion Editor Starter waits on a check of Edit's transitions. Gemini stays on AI Studio.
-6. **Thinking, three settings (E) [money].** The owner: "lets have 3 settings. High (Fable 5.1/55 high when it launches) Medium (Opus 5.5 high) Low (Sonnet 5.5 high) (never disclose to the user the models and effort settings".
-   - The mapping lives in `lib/atomikModelPolicy.ts` only.
-   - The Treatment's prose goes to `TREATMENT_WRITER`.
-   - xAI leaves the Atomik allowlist (NEEDS AKSHAY: confirm). Band rates stay in the private policy.
+6. **Thinking, three settings (E) [money].** The owner: "lets have 3 settings. High (…) Medium (…) Low (…) (never disclose to the user the models and effort settings" (model names and efforts taken out, 23 Oct).
+   - Three slots, High · Medium · Low, env-set, Claude models only. The mapping lives in Coolify and the owner's private policy, never in the repo.
+   - The Treatment's prose goes to the Treatment writer, an OpenAI model, env-set (`TREATMENT_WRITER_MODEL`).
+   - xAI leaves the Atomik allowlist (confirmed 23 Oct). Band rates stay in the private policy.
 7. **The PR plan (L).** Docs; the copy table and strings test; the model policy; the record **[schema]**; the question engine on the Brief; one step a PR in S2 order; adapters on a second lane; the judge; "How Particl works"; measurement.
+8. **Owner answers (23 Oct, 10:30 IST; Amendment (iii), M).**
+   - The design is `design/particl-v31.16/`; prototype 15 is removed; prototype 12 stays the reference; the one-design guard still asserts one design.
+   - B4 reversed (22 Oct, 21:15, v31.14): a double-click makes a node and never opens the Inspector; a new Director node shows "What is it?" on the card; in Agent mode the panel opens itself only for a question or a suggestion.
+   - Thinking Medium is the default; G's named default is struck (E wins).
+   - Prices in the design are samples; § Pricing is the only source; "What it buys" is regenerated from the rate card before publishing.
+   - The judge widens to every asset kind and the one suggestion line, absorbed, never a line, no change to the quote.
+   - "Show me on my film" stays on the ? cards only, not on "How Particl works". Vendor marks: not blocking; counsel confirms before launch.
+   - xAI leaves Atomik's thinking; band rates are the owner's and private.
+   - `TREATMENT_WRITER_MODEL` is set by the owner in Coolify; until then the refusal with "Nothing billed" stands.
+   - The owner is editing the floor rows; the Ad film rows are built as drafted until his edit lands.
+   - The record schema is its own docs PR (#885, docs/film-record-schema.md); the owner reads it before any migration.
