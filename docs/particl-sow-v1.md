@@ -1235,7 +1235,7 @@ The ten blocks, as the product stands on 22 October (Agent sequence S2 as amende
 **1 · Brief**
 - READS: nothing but the workspace's house defaults (D8), its cast and looks, and any imported document (Reading band, quoted as a ceiling, B2).
 - DOES: the interview. Opens with "What are we making?"; a kind is chosen (the ten film types) or inferred from the first sentence; genre set once (R4).
-- ASKS, one at a time, only the open rows: product or subject · the one thing it must say · who it is for · length and where it plays (sets aspect, frame rate, safe areas) · language(s) · tone inside the genre · real people, if any (consent) · what you already have (upload) · budget ceiling in credits, if the person wants one. A brief document answers most of these before the first question (R2: "Hindi VO" is never asked).
+- ASKS, one at a time, only the open rows: product or subject · the one thing it must say · who it is for · length and where it plays (sets aspect, frame rate, safe areas) · language(s) · tone inside the genre · real people, if any (a consent tick) · what you already have (upload) · budget ceiling in credits, if the person wants one. A brief document answers most of these before the first question (R2: "Hindi VO" is never asked).
 - CALLS: `read_document` (Docling), `transcribe` (minutes, ceiling), the Library search.
 - WRITES: every brief row with its source (said / document / default / assumed); the interview as spoken; the kind, genre, aspect, fps, languages, deliverables.
 - CARRIES: aspect, fps, look words, cast list, language, deliverables — into every step, never asked again.
@@ -1263,11 +1263,11 @@ The ten blocks, as the product stands on 22 October (Agent sequence S2 as amende
 - PRICES: Writing · Design bands per page; hand edits, moving, retyping and the client link are free.
 
 **4 · Elements** (before Look, per the 21 Oct order)
-- READS: the script's cast, props, places and products; the Library (a face already trained, a product already shot); consent rows.
+- READS: the script's cast, props, places and products; the Library (a face already trained, a product already shot); consent ticks.
 - DOES: proposes the element list from the script ("4 cast · 3 props · 2 places · 1 product"); for each, a card made from references (uploaded) or from the line (generated); a world offered when more than two shots share a place.
-- ASKS, per element kind (A3): Cast — a real person or made (consent if real) · age band · one reference or none · voice. Product — the packshot or photos · label kept legible (default yes) · finishes (Colorways). Environment — time of day · interior/exterior · make it a world. World — from the environment card, photos, a panorama, a clip or a line · light it as the Look (after Look exists). Words — the exact text · the surface it sits on.
+- ASKS, per element kind (A3): Cast — a real person or made (a consent tick if real; owner, 23 Oct 2026: a tick, not a gate) · age band · one reference or none · voice. Product — the packshot or photos · label kept legible (default yes) · finishes (Colorways). Environment — time of day · interior/exterior · make it a world. World — from the environment card, photos, a panorama, a clip or a line · light it as the Look (after Look exists). Words — the exact text · the surface it sits on.
 - CALLS: `make_element` (stills engines by kind: a face on the identity engine; a product on the words-and-edits engine; an environment on the keyframe engine), `train_identity`, `make_world`, `fix_label`, `colorways`, `swap_material`, `segment` (SAM) for selections.
-- WRITES: each element with its kind, source (uploaded / generated), references, consent, the takes kept and rejected with reasons, the group it sits in and its name.
+- WRITES: each element with its kind, source (uploaded / generated), references, the consent tick (who ticked, when, a file if one was attached; nothing waits for it, owner 23 Oct 2026), the takes kept and rejected with reasons, the group it sits in and its name.
 - CARRIES: the cast sheet, the product's kept still, the world and its angles — into Storyboard and Shots as references; the voice to Sound.
 - REVIEWS (the study, A2): is the face consistent across the sheet; is the label legible at the frame's size; does the environment match the time of day in the script; is a world worth making. At most one suggestion line.
 - PRICES: per still or sheet; identity training per step; the world, its angles and moves as their own rows **[money]**.
@@ -1416,7 +1416,7 @@ No floor rows. Coverage comes from the patterns (D3), side of the line and time 
 
 | id | Question | Pills | Answered by | Sets | Why floor |
 |---|---|---|---|---|---|
-| voice | Whose voice for @name? | A made voice ★ · Clone from an upload (consent) · One from the Library | Elements › consent; a voice already bound in the Library | the voice row, cloning (priced) vs a made voice | cloning a real voice is consent-gated and priced |
+| voice | Whose voice for @name? | A made voice ★ · Clone from an upload (consent) · One from the Library | Elements › consent; a voice already bound in the Library | the voice row, cloning (priced) vs a made voice | ~~cloning a real voice is consent-gated and priced~~ cloning a real voice carries its consent tick and is priced; nothing waits for the tick (owner, 23 Oct 2026) |
 | music | Music: made, or your own file? | Made ★ · My file (drop it) · None | a drop; the brief | the music row (priced) vs a free import | one is priced, one isn't |
 
 (Lip-sync inherits Script › speech; ambience and effects are proposed and Kept.)

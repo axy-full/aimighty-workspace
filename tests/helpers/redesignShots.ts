@@ -18,7 +18,7 @@ import sharp from "sharp";
 const ROOT = path.resolve(process.env.REDESIGN_PROTOTYPE_DIR ?? path.join(__dirname, "../../design/particl-v31.16"));
 /* REDESIGN_PROTOTYPE_PAGE picks the page of that folder: v31.16 is one export ("Particl v31.16.dc.html", the default) with a page per screen beside it. */
 const PAGE = process.env.REDESIGN_PROTOTYPE_PAGE ?? "Particl v31.16.dc.html";
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".webp": "image/webp", ".css": "text/css", ".txt": "text/plain" };
+const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".webp": "image/webp", ".css": "text/css", ".txt": "text/plain", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".mp4": "video/mp4" };
 
 let served: { server: Server; origin: string } | null = null;
 
