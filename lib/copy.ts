@@ -9,7 +9,7 @@
  * their screens there), and the same test fails a component there that writes words of its own. A copy change is a data PR on this file.
  *
  * Prices are never written here: a price comes from the quote path and is joined to its label at the call site
- * ("Generate · 43 cr"). The words come from docs/design/v31.16 (README.txt and the prompts); every figure in the design is a sample.
+ * ("Generate · 43 cr"). The words come from design/particl-v31.16 (README.txt) and docs/design/prompts; every figure in the design is a sample.
  */
 
 /** The ten steps, in the order of the rail (S2 as amended 21 Oct: Elements before Look). */

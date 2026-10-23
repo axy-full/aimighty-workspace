@@ -7,16 +7,17 @@ import sharp from "sharp";
 /*
  * Screenshots of a built screen beside the prototype URL it matches (docs/redesign-plan.md › "Screenshots").
  *
- * The prototype (design/particl-prototype-15) is served from a local static server started here, never from the
+ * The prototype (design/particl-v31.16 since 23 Oct 2026; the shots in tests/redesign were written against prototype 15, which is gone, and are
+ * redone as each v31.16 step is built) is served from a local static server started here, never from the
  * network: requests to any other host are refused, except Google Fonts (the prototype falls back to the system
  * stack without them), so the stand-in stills load from the prototype's own assets/ folder.
  * Output: <REDESIGN_SHOTS_DIR or ../redesign-shots>/<name>/<width>x<height>-{app,proto,beside}.png
  */
 
-/* REDESIGN_PROTOTYPE_DIR points at another round of the prototype; the default is the repo's own design, v15 (v12 is kept beside it as the reference). */
-const ROOT = path.resolve(process.env.REDESIGN_PROTOTYPE_DIR ?? path.join(__dirname, "../../design/particl-prototype-15"));
-/* REDESIGN_PROTOTYPE_PAGE picks the page of that folder: v25 has the app ("Particl prototype.dc.html", the default) and the board ("Particl board.dc.html") as two pages. */
-const PAGE = process.env.REDESIGN_PROTOTYPE_PAGE ?? "Particl prototype.dc.html";
+/* REDESIGN_PROTOTYPE_DIR points at another round of the prototype; the default is the repo's own design, v31.16 (v12 is kept beside it as the reference). */
+const ROOT = path.resolve(process.env.REDESIGN_PROTOTYPE_DIR ?? path.join(__dirname, "../../design/particl-v31.16"));
+/* REDESIGN_PROTOTYPE_PAGE picks the page of that folder: v31.16 is one export ("Particl v31.16.dc.html", the default) with a page per screen beside it. */
+const PAGE = process.env.REDESIGN_PROTOTYPE_PAGE ?? "Particl v31.16.dc.html";
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".webp": "image/webp", ".css": "text/css", ".txt": "text/plain" };
 
 let served: { server: Server; origin: string } | null = null;

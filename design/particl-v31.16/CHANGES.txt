@@ -1,0 +1,10 @@
+Particl prototype v31.16 · a revision of v31.15 · written 2026-10-22
+
+1. The Prompt row: Director's Settings tab opens with "Prompt · as it will be sent", assembled from the record (scene line, cast and place, the Look, the pickers' lines, the start frame), editable in place, its length in words at the right; ✦ Enhance · N cr and Compose · up to N cr with live prices; the result replaces the text with Undo; assembly is free. &prompt=1 and &prompt=composed.
+2. The Director's bar is for the change: "Change something · tighter, from below, warmer"; Enter applies the words to the Prompt row. "Describe the node" is gone.
+3. Again with… on every take (hover strip and menu): the take duplicated with every setting and the Prompt row, the Inspector opened on it with the row focused; Generate · N cr runs it. &again=s4.
+4. Wires are drawn, never required: they show on hover and selection; the port's drag affordance is gone; the Inputs rows are the wiring. The Take tab shows "Prompt · as sent".
+5. Thinking in Agent mode: High · Medium · Low (Medium default) in the Brief's read-back with a picker (&thinking=1), on the quote's head, in Make's Settings row, and in Settings › Workspace as the default for new productions, admins only (&view=settings&section=workspace). Nothing names a vendor, version or effort; Director mode does not show it.
+6. A new node lands with its top-left at the pointer, inside the canvas, in the group under the pointer or none; &new=director places it at the canvas centre.
+7. Shot numbers are unique on Mirror: Shot 7 · The watch (the Scene 3 frame), Shot 8 · The watch (Scene 4, to make), Shot 9 · Blue room.
+8. The top-left pill keeps one size on "How Particl works"; the phone's Make line wraps inside the gutters; the <path d="{{ p.d }}"> and "{{ bl.d }}" warnings are gone (the paths bind only once their data exists).

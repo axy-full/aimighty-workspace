@@ -4,8 +4,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { uiWordsIn } from "../helpers/uiStrings";
 
 /**
- * One design: design/particl-prototype-15/ is the design (owner, 13 Oct 2026: v15 contains all of v14; docs/redesign-plan.md), with design/particl-prototype-12/
- * kept as the one reference (owner, 13 Oct 2026: v15 is the design, v12 stays as reference), and
+ * One design: design/particl-v31.16/ is the design (owner, 23 Oct 2026: v31.16 is THE design and replaces prototype 15; docs/redesign-plan.md),
+ * with design/particl-prototype-12/ kept as the one reference (owner, 13 Oct 2026, kept on 23 Oct), and
  * app/graphite.css the only token set. design/particl-graphite/ is the outgoing design: its files are deleted screen
  * by screen as the redesign rebuilds them, so it may only shrink (OUTGOING below), never gain a file.
  * The inventory of what is still left of the older designs is docs/old-design-inventory.md; this
@@ -36,7 +36,7 @@ const FONTS = "app/fonts.css";
 /* The same exemptions as the clean slate's guard: the design folder names what it replaced, and two documents are history. */
 const EXEMPT = ["design/particl-graphite/", "design/particl-prototype-12/", "docs/handoff-diff.md", "docs/handover-2026-10-05.md"];
 /* The one current design, and the one reference kept beside it; no other design folder is allowed. */
-const DESIGN = "design/particl-prototype-15/";
+const DESIGN = "design/particl-v31.16/";
 const REFERENCE = "design/particl-prototype-12/";
 /* Every file the outgoing design had when the redesign began. A screen PR deletes the ones it replaces; none is added. */
 const OUTGOING = new Set([
@@ -155,7 +155,7 @@ test("(a) nothing the clean slate deleted comes back, and design/ holds one desi
   expect(back, "deleted by the clean slate, so they stay deleted").toEqual([]);
 
   const otherDesigns = files.filter((path) => path.startsWith("design/") && !path.startsWith(DESIGN) && !path.startsWith(REFERENCE) && !OUTGOING.has(path));
-  expect(otherDesigns, "design/particl-prototype-15/ is the design, design/particl-prototype-12/ the one reference; design/particl-graphite/ only shrinks").toEqual([]);
+  expect(otherDesigns, "design/particl-v31.16/ is the design, design/particl-prototype-12/ the one reference; design/particl-graphite/ only shrinks").toEqual([]);
 
   /* Round 1 of the guest Home is never committed, in any folder. */
   const roundOne = files.filter((path) => /(^|[/_ .-])round[-_ ]?1([/_ .-]|$)/i.test(path));
@@ -163,7 +163,7 @@ test("(a) nothing the clean slate deleted comes back, and design/ holds one desi
 
   /* A Claude Design export (.dc.html, support.js) belongs to the design folder only. */
   const exports = files.filter((path) => /\.dc\.html$|(^|\/)support\.js$/.test(path) && !path.startsWith(DESIGN) && !path.startsWith(REFERENCE) && !OUTGOING.has(path));
-  expect(exports, "design exports live in design/particl-prototype-15/ (or the reference, design/particl-prototype-12/)").toEqual([]);
+  expect(exports, "design exports live in design/particl-v31.16/ (or the reference, design/particl-prototype-12/)").toEqual([]);
 });
 
 /** The custom properties app/graphite.css defines. */
