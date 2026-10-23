@@ -137,8 +137,10 @@ test("a member of another workspace claiming A's scope or switching into A: refu
     const where = `${probe.path(a)} claiming A's scope`;
     expect(leaks(got.text + got.location, a.secrets), `${where} → ${got.status}`).toEqual([]);
   }
-  const switched = await member.post("/api/workspaces/switch", { data: { workspaceId: a.workspaceId }, failOnStatusCode: false });
-  expect(switched.status(), "switching into a workspace you are not a member of").toBeGreaterThanOrEqual(400);
+  /* The route reads `id` (app/api/workspaces/switch/route.ts); the refusal must be the membership one, not the same-origin check's (owner, 23 Oct 2026, 19:35). */
+  const switched = await member.post("/api/workspaces/switch", { data: { id: a.workspaceId }, headers: { Origin: base }, failOnStatusCode: false });
+  expect(switched.status(), "switching into a workspace you are not a member of").toBe(403);
+  expect((await switched.json()) as { error?: string }, "refused for membership, not for the request's origin").toEqual({ error: "Not a workspace of yours." });
   expect((await member.get("/api/me").then((r) => r.json())).workspace?.id).not.toBe(a.workspaceId);
   for (const probe of PROBES) {
     const got = await ask(member, probe, a);

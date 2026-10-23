@@ -91,7 +91,7 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
 }
 
 /**
- * The platform console's address (`?view=platform`): the platform owner is sent to the platform desk (/admin), where
+ * The platform console's address (`?view=admin`): the platform owner is sent to the platform desk (/admin), where
  * everything the console showed lives.
  */
 function PlatformSlot() {

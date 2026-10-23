@@ -37,15 +37,16 @@ test.describe("the new-interface switch on, with nothing built behind it", () =>
     await expect.poll(async () => ((await (await page.request.get("/api/me")).json()) as { workspace?: { newInterface?: boolean } }).workspace?.newInterface ?? false,
       { timeout: 30_000, intervals: [500, 1000, 2000] }).toBe(true);
     const phone = PHONES.includes(info.project.name);
+    /* Nothing of the deleted build is asked for, from Home's first load on. */
+    const asked: string[] = [];
+    page.on("request", (r) => { const path = new URL(r.url()).pathname; if (path.startsWith("/api/v12")) asked.push(path); });
     await page.goto("/suites?view=home");
     if (phone) await expect(page.getByTestId("phone-app")).toBeVisible({ timeout: 90_000 });
     else {
       await expect(page.locator("header.gx-header")).toBeVisible({ timeout: 90_000 });
       await expect(page.getByTestId("screen")).toHaveAttribute("data-screen", "home");
     }
-    /* Nothing of the deleted build is drawn or asked for: no .v12 root, no v12 test id, no /api/v12 read. */
-    const asked: string[] = [];
-    page.on("request", (r) => { const path = new URL(r.url()).pathname; if (path.startsWith("/api/v12")) asked.push(path); });
+    /* Nothing of the deleted build is drawn: no .v12 root, no v12 test id. */
     expect(await page.locator(".v12, [data-testid^='v12-']").count()).toBe(0);
     if (!phone) {
       await page.goto("/suites?view=board");
@@ -166,7 +167,8 @@ test.describe("Make, at the figure on its button", () => {
 
   /* Found by this port (23 Oct 2026): on the live panel the house's still reads "Make · —" with "Priced at cost once the engine's price is read."
      (lib/shell/price-words.ts NO_AT_COST_TITLE), though /api/workbench/engines answers it the engine's dollars; the press itself goes through (above).
-     The prototype-12 Make page showed "$…" here. components/graphite/make/use-make.ts:435 (liveUsd) is where the figure is missing. */
+     The prototype-12 Make page showed "$…" here. The dollars never reach the value drawn: components/graphite/make/price.tsx:21 renders
+     price.value and never reads price.usd, and use-make.ts:437/442 with goFigure (lib/shell/make-price.ts:104, 108) build that value with no usd. */
   test.fixme("house-make-press-v12 › the house's Make button reads the engine's dollars, hovered Pays at cost — fails on the live panel today: it reads \"—\" (see the note above); money display, owner question: fix the live panel's house figure now, or with v31.16's Make?", () => {});
   test.fixme("enhance-house-v12 › the house's Enhance is one total in dollars, \"up to\", hovered Pays at cost: the take's dollars plus the enhancement's estimateUsd, never credits — to port onto the live panel's Auto enhance (components/graphite/make/EngineList.tsx), whose house figure no spec reads yet; owner question: port now, or with v31.16's Make?", () => {});
   test.fixme("enhance-v12 › Variations of an Enhanced take are sent with the enhanced words and no second enhancement, at the figure shown — no home: the live panel's Recent Again (components/graphite/make/use-make.ts) has no spec for it; owner question: port now, or with v31.16's Make?", () => {});
