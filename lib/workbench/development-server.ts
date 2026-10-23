@@ -806,7 +806,8 @@ async function finishDevelopmentJob(row: Row, deps: DevelopmentDependencies) {
   const steps = (await db().execute({ sql: 'SELECT stage,status,cost_usd FROM workbench_development_steps WHERE job_id=? ORDER BY step_index', args: [String(row.id)] })).rows;
   if (!steps.length || steps.some(step => step.status !== 'succeeded')) throw new Error('The workflow has incomplete development phases.');
   const cost = steps.reduce((sum, step) => sum + Number(step.cost_usd ?? 0), 0);
-  const credits = Number(row.funded_by_platform) ? billCredits(cost, 'text') : 0;
+  /* Defence in depth (money review 3): billed what it used, never past the estimate its job reserved, on any door (settleDevelopment caps the meter the same way). */
+  const credits = Number(row.funded_by_platform) ? billCredits(Math.min(cost, Number(row.estimate_usd)), 'text') : 0;
   const finished = { sql: "UPDATE workbench_development_jobs SET status='succeeded',cost_usd=?,credits=?,updated_at=? WHERE id=? AND status='running'", args: [cost, credits, now(), String(row.id)] };
   /* A finished check is stored in the same write that finishes its job: the row exists exactly when the job succeeded. */
   const stored = (JSON.parse(String(row.request_body)) as DevelopmentRequest).kind === 'verify' ? await verificationStatements(row, credits) : [];
@@ -825,7 +826,10 @@ async function settleDevelopment(row: Row, deps: DevelopmentDependencies): Promi
       return true;
     }
     /* A failed run settles at zero for the workspace; an unconfirmed one keeps its approved estimate for review. */
-    await deps.meter({ ...eventFor(row, row.status === 'succeeded' ? 'succeeded' : 'failed', row.status === 'uncertain' ? Number(row.estimate_usd) : Number(row.cost_usd ?? 0)), ...(row.status === 'failed' ? { unbilled: true } : {}) }, { critical: true });
+    /* Never billed past the estimate its job reserved (money review 3): what it really cost stays in cost_usd for the platform admin, and the rest is recorded as the platform's. */
+    const used = row.status === 'uncertain' ? Number(row.estimate_usd) : Number(row.cost_usd ?? 0), ceiling = Number(row.estimate_usd);
+    const billed = Number.isFinite(ceiling) ? Math.min(used, ceiling) : used;
+    await deps.meter({ ...eventFor(row, row.status === 'succeeded' ? 'succeeded' : 'failed', billed), ...(used > billed ? { overrunUsd: used - billed } : {}), ...(row.status === 'failed' ? { unbilled: true } : {}) }, { critical: true });
     // A returned but structurally invalid answer is still a definitive paid
     // result. It must not keep recovery fenced as if the provider were unknown.
     if (row.status === 'failed' && Number(row.cost_usd ?? 0) > 0) await billingTransaction(tx => resolveRecoveryJobTx(tx, requireTenant().id, String(row.id)));

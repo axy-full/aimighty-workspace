@@ -829,3 +829,18 @@ for (const agentKind of ['raw', 'suite'] as const) test(`a TEXT_DIRECT ${agentKi
     for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
   }
 });
+
+test('gateway settlement never bills past the estimate: usage.cost at twice the estimate is metered at the estimate, the rest the platform\'s', async () => {
+  await runInTenant(workspace(), async () => {
+    const { input } = await fixture();
+    const h = harness();
+    const quote = await quoteAtomikJob(input, 'owner', h.deps);
+    const prepared = await prepareAtomikJob({ ...input, maxCredits: quote.estimateCredits }, 'owner', undefined, h.deps);
+    const estimate = prepared.job.estimateUsd;
+    h.deps.run = async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(validReply) } }], usage: { prompt_tokens: 210, completion_tokens: 60, cost: estimate * 2 } }) });
+    await runAtomikJob(prepared.job.id, 'owner', h.deps);
+    expect(h.events.at(-1)).toMatchObject({ status: 'succeeded', engineCostUsd: estimate, overrunUsd: estimate });
+    /* What it really cost stays in the job row, for the platform admin. */
+    expect(Number((await db().execute({ sql: 'SELECT cost_usd FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0].cost_usd)).toBeCloseTo(estimate * 2, 12);
+  });
+});

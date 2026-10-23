@@ -561,12 +561,15 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
     const role = CREW.find(c => c.id === job.role);
     const plan: Plan = { id: job.id, request: job.request, model: job.model, depth: job.depth, ...(job.effort == null ? {} : { effort: job.effort }), refs: job.refs,
       role: job.role === 'marketing' ? 'marketing' : role?.name, applied: false, ...result };
-    const credits = paidByPlatform(textKeyName(job.model)) ? billCredits(cost, 'text') : 0;
+    /* Defence in depth (money review 3): billed what it used, never past the estimate its person approved, on any door. What it really cost stays in
+       cost_usd and atomik_spend for the platform admin; the meter bills the capped figure and records the rest as the platform's. */
+    const billedUsd = Math.min(cost, job.estimateUsd), overrunUsd = cost > job.estimateUsd ? cost - job.estimateUsd : 0;
+    const credits = paidByPlatform(textKeyName(job.model)) ? billCredits(billedUsd, 'text') : 0;
     await db().batch([
       { sql: "UPDATE workbench_atomik_jobs SET status='succeeded',result=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?", args: [JSON.stringify(plan), cost, credits, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
       { sql: 'UPDATE atomik_spend SET cost_usd=? WHERE id=?', args: [cost, id] },
     ], 'write');
-    await deps.meter(eventFor(job, owner, 'succeeded', cost), { critical: false });
+    await deps.meter({ ...eventFor(job, owner, 'succeeded', billedUsd), ...(overrunUsd > 0 ? { overrunUsd } : {}) }, { critical: false });
   } catch (error) {
     call.fail(error);
     const uncertain = submitted && !providerReturned;
@@ -583,10 +586,11 @@ return await withRecoveryJob(requireTenant().id, id, async () => {
       raw = partial?.provider_response ? String(partial.provider_response) : '';
     }
     await db().batch([
-      { sql: 'UPDATE workbench_atomik_jobs SET status=?,error=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?', args: [uncertain ? 'uncertain' : 'failed', errorText, uncertain ? null : cost, uncertain ? null : paidByPlatform(textKeyName(job.model)) ? billCredits(cost, 'text') : 0, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
+      { sql: 'UPDATE workbench_atomik_jobs SET status=?,error=?,cost_usd=?,credits=?,provider_response=?,usage=?,updated_at=? WHERE id=? AND owner=?', args: [uncertain ? 'uncertain' : 'failed', errorText, uncertain ? null : cost, uncertain ? null : paidByPlatform(textKeyName(job.model)) ? billCredits(Math.min(cost, job.estimateUsd), 'text') : 0, raw.slice(0, 150000), JSON.stringify(usage), now(), id, owner] },
       { sql: 'UPDATE atomik_spend SET cost_usd=? WHERE id=?', args: [cost, id] },
     ], 'write');
-    await deps.meter(eventFor(job, owner, 'failed', cost), { critical: false });
+    /* Never billed past its estimate (as on success, above); the rest is the platform's. */
+    await deps.meter({ ...eventFor(job, owner, 'failed', Math.min(cost, job.estimateUsd)), ...(cost > job.estimateUsd ? { overrunUsd: cost - job.estimateUsd } : {}) }, { critical: false });
     if (sayCharge) {
       const settled = await settledCredits(id);
       if (settled != null && settled > 0)

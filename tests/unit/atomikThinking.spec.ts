@@ -363,3 +363,38 @@ test("ideas, shot lists and a scene need the approved ceiling even when the seco
     forgetCatalogCache();
   }
 });
+
+test("gateway settlement never bills past the estimate: usage.cost at twice the estimate bills the estimate, and the raw cost stays for the admin", async () => {
+  const ws = await funded("gateway-cap");
+  const { quotePaidText, runPaidText } = await import("../../lib/paidText");
+  const { platformDb } = await import("../../lib/platform");
+  const { db } = await import("../../lib/db");
+  const writer: CatalogModel = { id: MEDIUM, name: "Fixture", owner: "anthropic", type: "language", description: "", contextWindow: 1_000_000, maxTokens: 128_000,
+    pricing: { input: "0.000001", output: "0.000005" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }] };
+  const call = { model: MEDIUM, effort: "high", maxTokens: 900, kind: "idea", mock: "idea" as const, messages: [{ role: "user", content: "A lighthouse." }] };
+  const priorMock = process.env.ENGINE_MOCK, priorDirect = process.env.TEXT_DIRECT;
+  /* The gateway door: no direct vendor for Claude, and the provider's reply (mocked here, never sent) reports its own usage.cost. */
+  delete process.env.TEXT_DIRECT;
+  try {
+    await inTenant(ws, async () => {
+      const quote = await quotePaidText(call, writer);
+      const usd = quote.estimateUsd!;
+      const id = `gw_cap_${randomUUID()}`;
+      delete process.env.ENGINE_MOCK;
+      const result = await runPaidText({ ...call, id, maxCredits: quote.estimateCredits }, { model: writer,
+        submit: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: '{"logline":"A film"}' } }], usage: { cost: usd * 2 } }) }) });
+      process.env.ENGINE_MOCK = "1";
+      const billed = (await platformDb().execute({ sql: "SELECT billed_credits, engine_cost_usd FROM meter_events WHERE workspace_id=? AND id=?", args: [ws.id, id] })).rows[0];
+      const { billCredits } = await import("../../lib/creditTerms");
+      expect(billCredits(usd * 2, "text"), "uncapped, it would have billed more").toBeGreaterThan(quote.estimateCredits);
+      expect(Number(billed.billed_credits)).toBe(quote.estimateCredits);
+      expect(Number(billed.engine_cost_usd)).toBeCloseTo(usd, 12);
+      expect(result.credits).toBe(quote.estimateCredits);
+      /* What it really cost, for the platform admin. */
+      expect(Number((await db().execute({ sql: "SELECT cost_usd FROM paid_text_jobs WHERE id=?", args: [id] })).rows[0].cost_usd)).toBeCloseTo(usd * 2, 12);
+    });
+  } finally {
+    if (priorMock === undefined) delete process.env.ENGINE_MOCK; else process.env.ENGINE_MOCK = priorMock;
+    if (priorDirect === undefined) delete process.env.TEXT_DIRECT; else process.env.TEXT_DIRECT = priorDirect;
+  }
+});

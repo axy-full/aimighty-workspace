@@ -466,6 +466,10 @@ return await withRecoveryActivity('paid-text', async () => {
       }
       throw new PaidTextError(`${verdict.reason} Nothing was charged.`, 502, { nothingBilled: true });
     }
+    /* Defence in depth (money review 3): the workspace is billed what the job used, never past the estimate its person approved, on any door.
+       A direct door already refuses usage past it (above); a gateway reply's usage.cost is not capped by anything else. What it really cost
+       stays in the job row and atomik_spend for the platform admin; the meter bills the capped figure and records the rest as the platform's. */
+    const billedUsd = Math.min(cost, estimate), overrunUsd = cost > estimate ? cost - estimate : 0;
     const finish = async (): Promise<PaidTextResult> => {
       if (!(await settle(`UPDATE paid_text_jobs SET status='succeeded',cost_usd=?,response_json=?,updated_at=? WHERE id=?`, [cost, response.text, now(), id])))
         /* Answered after the cron's pass refunded it: not charged again, and not delivered as if it had been paid for. */
@@ -474,7 +478,7 @@ return await withRecoveryActivity('paid-text', async () => {
         sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`,
         args: [cost, id],
       });
-      await meter({ ...event, status: "succeeded", engineCostUsd: cost });
+      await meter({ ...event, status: "succeeded", engineCostUsd: billedUsd, ...(overrunUsd > 0 ? { overrunUsd } : {}) });
       return {
         id,
         text: content as string,
@@ -483,7 +487,7 @@ return await withRecoveryActivity('paid-text', async () => {
         engine: event.engine,
         /* What the ledger billed, for the screen that shows it: credits are
            what a workspace on credits sees, never the vendor's dollars. */
-        credits: await meteredCredits(id, paidByPlatform(textKeyName(input.model)) ? billCredits(cost, "text") : 0),
+        credits: await meteredCredits(id, paidByPlatform(textKeyName(input.model)) ? billCredits(billedUsd, "text") : 0),
       };
     };
     if (!input.holdSettlement) return await finish();
@@ -493,7 +497,7 @@ return await withRecoveryActivity('paid-text', async () => {
       const error = await freeFailure(silentOutcome(writer, "run", "not_delivered", `${why} Not billed to the workspace; the provider's own bill for the answer is the platform's.`), "The answer wasn't delivered. Nothing billed.", 499);
       return error;
     };
-    return { id, text: content as string, costUsd: cost, engine: event.engine, credits: paidByPlatform(textKeyName(input.model)) ? billCredits(cost, "text") : 0, finish, abandon };
+    return { id, text: content as string, costUsd: cost, engine: event.engine, credits: paidByPlatform(textKeyName(input.model)) ? billCredits(billedUsd, "text") : 0, finish, abandon };
   } catch (error) {
     const record = (
       await db()
