@@ -21,10 +21,17 @@ export const ASTRA_VENDOR_ID = ASTRA_BLENDER_MODEL.slice("openai/".length);
 
 const snapshot = () => snapshotModels();
 const optionsOf = (id: string) => snapshot().find((m) => m.id === id)?.reasoningOptions ?? [];
+/** The first id that fits, or a clear failure naming what the checked-in catalogue no longer has (never a silent undefined). */
+function first(ids: readonly string[], fits: (id: string) => boolean, what: string): string {
+  const id = ids.find(fits);
+  if (!id) throw new Error(`tests/helpers/runtimeIds.ts: the checked-in catalogue (lib/modelCatalog.json) has no ${what}.`);
+  return id;
+}
 
 /** A verified Claude id whose catalogue entry thinks on a token budget (the older generation), and one that takes a named effort. */
-export const BUDGET_CLAUDE = CLAUDE_MODEL_IDS.find((id) => optionsOf(id).some((o) => o.type === "budget_tokens"))!;
-export const EFFORT_CLAUDE = CLAUDE_MODEL_IDS.find((id) => optionsOf(id).some((o) => o.type === "effort") && !optionsOf(id).some((o) => o.type === "budget_tokens"))!;
+export const BUDGET_CLAUDE = first(CLAUDE_MODEL_IDS, (id) => optionsOf(id).some((o) => o.type === "budget_tokens"), "verified Claude entry that thinks on a token budget");
+export const EFFORT_CLAUDE = first(CLAUDE_MODEL_IDS, (id) => optionsOf(id).some((o) => o.type === "effort") && !optionsOf(id).some((o) => o.type === "budget_tokens"),
+  "verified Claude entry that takes a named effort and no token budget");
 
 /**
  * Catalogue ids that are not text models at all (stills and other media), for "not a text model" checks: chosen by the catalogue's

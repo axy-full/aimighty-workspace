@@ -290,13 +290,13 @@ test('the Rig agent is offered every chosen look and every place before any entr
 });
 
 test('a redraft is sized by the room the reasoning leaves, not the whole output ceiling', async () => {
-  /* An older Claude that thinks on a token budget; a 4,096 thinking budget leaves about 4,096 for the script (about 14,000 characters). */
-  const sonnet: CatalogModel = { ...model, id: BUDGET_CLAUDE, name: 'Claude', maxTokens: 64_000 };
+  /* A model that thinks on a token budget; a 4,096 thinking budget leaves about 4,096 for the script (about 14,000 characters). */
+  const budgeted: CatalogModel = { ...model, id: BUDGET_CLAUDE, name: 'Claude', maxTokens: 64_000 };
   /* A 32k model at high effort keeps 16,384 tokens for the answer (about 57,000 characters). Since 22 Oct 2026 the model and the
      effort are Atomik's thinking's (the setting's effort is high), whatever the request names. */
   const effortful: CatalogModel = { ...model, name: 'Claude Effort', maxTokens: 32_768, reasoningOptions: [{ type: 'effort', values: ['low', 'medium', 'high'] }] };
-  expect(atomikReasoningAllowance(sonnet, 'budget:4096')).toBe(4096);
-  expect(atomikReasoningAllowance(sonnet, 'none')).toBe(0);
+  expect(atomikReasoningAllowance(budgeted, 'budget:4096')).toBe(4096);
+  expect(atomikReasoningAllowance(budgeted, 'none')).toBe(0);
   expect(atomikReasoningAllowance(effortful, 'high')).toBe(16_384);
   expect(atomikReasoningAllowance(model, 'auto')).toBe(0);
   const scene = 'The fox crosses the ice, one careful step at a time.\n\n';
