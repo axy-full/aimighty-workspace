@@ -182,12 +182,15 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
      #888, R3-1) and is made now that this production is open, so its card follows the training and offers no Train
      press for it. A bind the board can't take now stays parked. */
   const openId = rig.status === "ready" && !rig.viewOnly ? rig.project?.id ?? null : null;
-  /* Once per opening of a production: a bind kept parked (a renamed card) is not tried again on every render. */
+  /* Once per opening of a production, and again whenever a cast member's name changes (a card renamed back to the name
+     it was pressed under binds then, in the same opening): a bind kept parked is not tried again on every render. */
+  const castNames = rig.project ? [...(rig.project.production?.cast?.entries ?? []).map((e) => `${e.id}=${e.name}`), ...rig.project.nodes.map((n) => `${n.id}=${n.title}`)].join("\u0001") : "";
   const parkedDoneFor = useRef<string | null>(null);
   useEffect(() => {
     if (!openId) { parkedDoneFor.current = null; return; }
-    if (parkedDoneFor.current === openId) return;
-    parkedDoneFor.current = openId;
+    const pass = `${openId}\u0002${castNames}`;
+    if (parkedDoneFor.current === pass) return;
+    parkedDoneFor.current = pass;
     const parked = takeParked(scope, openId);
     if (!parked.length) return;
     let made = false;
@@ -203,12 +206,12 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
         parkBind(scope, bind, bind.at);
         if (renamed && !RENAMED_TOLD.has(bind.identityId)) {
           RENAMED_TOLD.add(bind.identityId);
-          ws.toast(`Training started for ${bind.name ?? "a cast member"}, whose card was renamed, so it isn't attached. It's listed under Build identity.`);
+          ws.toast(`Training started for ${bind.name ?? "a cast member"}, whose card was renamed. On that card: Attach, or Not this card.`);
         }
       } else made = true;
     }
     if (made) void rig.save();
-  }, [openId, scope, rig, ws]);
+  }, [openId, castNames, scope, rig, ws]);
   const gate = useMemo(() => ({ exploreOnly: liftedHere ? null : onSample.exploreOnly ?? spendOff, readOnly: viewing ?? onSample.readOnly }), [liftedHere, onSample, spendOff, viewing]);
   /* While it is lifted the board's line says so (for anyone else its paid controls stay closed in the sample's words). */
   const pill = lift?.lifted && gate.exploreOnly !== CHECK_LINE ? LIFT_LINE : gate.exploreOnly;

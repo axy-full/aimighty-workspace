@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { appearsIn, bindCastIdentity, bindProblem, parkedForCard, castLabel, castStatus, consentLine, deriveCast, earlierSheetOf, identityOf, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
+import { appearsIn, attachHeld, bindCastIdentity, bindProblem, castBindingOf, heldBindFor, parkedForCard, restoreCastBinding, startedBindStep, castLabel, castStatus, consentLine, deriveCast, earlierSheetOf, identityOf, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
 import { parkBind, takeParked } from "../../components/graphite/board/cards/cast/parked-binds";
 import type { BoardCard, BoardSource } from "../../lib/board/types";
 import type { SoulIdentity } from "../../lib/workbench/soul-identity";
@@ -196,4 +196,31 @@ test("a bind that can't land says why, and the card it stands for is found by it
   expect(parkedForCard(parked, { entryId: "cast-01", nodeId: null })?.identityId).toBe("soul_1");
   expect(parkedForCard(parked, { entryId: null, nodeId: "n9" })?.identityId).toBe("soul_2");
   expect(parkedForCard(parked, { entryId: "cast-02", nodeId: null })).toBeNull();
+});
+
+test("what a training's reply does with its bind: bind now, or park it and say why (bindStarted's decision)", () => {
+  const open = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Lead" })] } });
+  const at = { projectId: open.id, entryId: "cast-01", nodeId: null, name: "Lead" };
+  expect(startedBindStep(open, at)).toEqual({ action: "bind" });
+  expect(startedBindStep({ ...open, id: "another_production" } as Project, at)).toEqual({ action: "park", why: "elsewhere" });
+  expect(startedBindStep({ ...withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya" })] } }), id: open.id } as Project, at)).toEqual({ action: "park", why: "renamed" });
+  expect(startedBindStep(null, at)).toEqual({ action: "park", why: "closed" });
+});
+
+test("a held bind is one whose card was renamed (R6-3); Attach binds it without the name check, and Undo puts the card back exactly", () => {
+  const renamed = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya", identityId: "soul_before" })] } });
+  const bind = { projectId: renamed.id, entryId: "cast-01", nodeId: null, name: "Lead", identityId: "soul_new", at: 1 };
+  expect(heldBindFor([bind], renamed, { entryId: "cast-01", nodeId: null })?.identityId).toBe("soul_new");
+  /* Parked for another production, or under the card's own name: not held here. */
+  expect(heldBindFor([{ ...bind, projectId: "another_production" }], renamed, { entryId: "cast-01", nodeId: null })).toBeNull();
+  expect(heldBindFor([{ ...bind, name: "Maya" }], renamed, { entryId: "cast-01", nodeId: null })).toBeNull();
+  const was = castBindingOf(renamed, bind);
+  expect(was).toEqual({ entry: "soul_before", asset: null });
+  const attached = attachHeld(renamed, bind, bind.identityId);
+  expect(attached.production?.cast?.entries[0].identityId).toBe("soul_new");
+  expect(restoreCastBinding(attached, bind, was).production?.cast?.entries[0].identityId).toBe("soul_before");
+  /* A card that had no binding before is left with none on Undo. */
+  const fresh = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya" })] } });
+  const back = restoreCastBinding(attachHeld(fresh, { ...bind, projectId: fresh.id }, "soul_new"), { ...bind, projectId: fresh.id }, castBindingOf(fresh, bind));
+  expect(back.production?.cast?.entries[0]).not.toHaveProperty("identityId");
 });

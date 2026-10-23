@@ -36,7 +36,7 @@ async function seed(page: Page) {
 
   /* `pressed`: the identity a priced press in the Inspector started (answered by the browser below; nothing reaches the
      server, so nothing trains or spends), listed as training from then on. */
-  const state = { stage: "none" as Stage, pressed: null as null | { body: Record<string, unknown> } };
+  const state = { stage: "none" as Stage, pressed: null as null | { body: Record<string, unknown> }, pressedAs: null as null | Record<string, unknown> };
   const json = (route: Route, body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   /* One still of the person in the library, for the build form to pick (its picture is never fetched for anything paid). */
   const still = { id: "upl_l5_face", filename: "lead.png", mime: "image/png", kind: "image", bytes: 100, width: 512, height: 512, durationS: null, sha256: "c".repeat(64), url: "/api/uploads/upl_l5_face", createdAt: 1 };
@@ -50,7 +50,7 @@ async function seed(page: Page) {
   });
   await page.route("**/api/soul/identities?**", (route) => {
     if (route.request().method() !== "GET") return route.abort();
-    if (state.pressed) return json(route, { identities: [pressedIdentity], configured: true, generationAvailable: true, terms: { minPhotos: 1, maxPhotos: 40, trainingCredits: 54, versions: [{ version: "v1", trainingCredits: 54 }] } });
+    if (state.pressed) return json(route, { identities: [{ ...pressedIdentity, ...(state.pressedAs ?? {}) }], configured: true, generationAvailable: true, terms: { minPhotos: 1, maxPhotos: 40, trainingCredits: 54, versions: [{ version: "v1", trainingCredits: 54 }] } });
     const identity = state.stage === "none" ? [] : [{
       id: "soul_l5", projectId: null, name: "Lead v1", description: "", subjectType: "character", references: [], previewUrl: null, createdAt: 1, updatedAt: 1, renderModel: "soul_2",
       status: state.stage === "training" ? "training" : state.stage === "ready" ? "ready" : "failed",
@@ -357,40 +357,94 @@ test("A training whose reply lands while another production is open: back in its
   expect(errors).toEqual([]);
 });
 
-test("A training whose cast member was renamed while it was out is held, not dropped: the card says it was started for the old name and offers no Train, here or in the Inspector", async ({ page }, info) => {
+test("A training whose cast member was renamed while it was out is held, with a way out: Attach or Not this card (each undoable), the tick still there, no Train until its outcome; then the outcome with its charge", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name) || !desktop(page), "the board canvas and its Train press are desktop only; phones have no Train press to repeat");
-  const { project, scope, paid } = await seed(page);
-  /* The reply landed after the cast member was renamed: its bind is parked under the name it was pressed for, as the
-     app parks it (components/graphite/board/cards/cast/parked-binds.ts). */
+  const { project, scope, state, paid } = await seed(page);
+  /* The training is listed (still training); its reply landed after the cast member was renamed, so its bind is parked
+     under the name it was pressed for, as the app parks it (components/graphite/board/cards/cast/parked-binds.ts). */
+  state.pressed = { body: {} };
+  const key = `particl-parked-identity-binds:${scope}`;
   const bind = { projectId: project.id, entryId: "cast-lead", nodeId: null, name: "Old name", identityId: "soul_l5_new", at: Date.now() };
-  await page.addInitScript(({ key, value }) => { try { localStorage.setItem(key, value); } catch { /* storage off */ } }, { key: `particl-parked-identity-binds:${scope}`, value: JSON.stringify([bind]) });
+  await page.addInitScript(({ key, value }) => { try { if (!sessionStorage.getItem("seeded")) { localStorage.setItem(key, value); sessionStorage.setItem("seeded", "1"); } } catch { /* storage off */ } }, { key, value: JSON.stringify([bind]) });
+  const errors = watchErrors(page);
+  const card = page.getByTestId("cast-card").filter({ hasText: "ivory coat" });
+  const toCast = async () => {
+    await expect(page.getByTestId("board")).toBeVisible();
+    await expect(card).toHaveCount(1);
+    await page.waitForTimeout(500);
+    await page.locator('[data-region="cast"]').click();
+    await page.waitForTimeout(900);
+  };
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  /* Opening the production tries the bind: the name no longer matches, so it is held, and the toast says what to do. */
+  await expect(page.getByText("Training started for Old name, whose card was renamed. On that card: Attach, or Not this card.")).toBeVisible();
+  await toCast();
+  await expect(card.getByTestId("cast-status")).toHaveText("Training started for Old name");
+  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+  /* The consent tick is still there (optional, never a gate). */
+  await expect(card.getByTestId("consent-tick-box")).toBeVisible();
+  await expect(card.getByTestId("identity-held-attach")).toHaveText("Attach to Lead");
+  await shot(page, "identity-renamed-held", info);
+  /* The Inspector offers no priced form while it is held. */
+  await card.getByTestId("cast-title").click();
+  const insp = page.getByTestId("board-inspector");
+  await expect(insp.getByTestId("insp-cast")).toBeVisible();
+  await expect(insp.getByTestId("insp-build")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  /* Not this card: the card is free to train; Undo holds it again. */
+  await card.getByTestId("identity-held-dismiss").click();
+  await expect(card.getByTestId("cast-status")).toHaveText("No identity yet");
+  await expect(card.getByTestId("identity-train")).toHaveCount(1);
+  await page.getByRole("button", { name: "Undo" }).first().click();
+  await expect(card.getByTestId("cast-status")).toHaveText("Training started for Old name");
+  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+
+  /* Attach to Lead: the person says it is the same person; the card follows the training. Undo holds it again. */
+  await card.getByTestId("identity-held-attach").click();
+  await expect(card.getByTestId("cast-status")).toHaveText("Training");
+  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+  await page.getByRole("button", { name: "Undo" }).first().click();
+  await expect(card.getByTestId("cast-status")).toHaveText("Training started for Old name");
+
+  /* Once its outcome is known, the card is no longer held: a failure says what it cost (rule 14), and Train is back. */
+  state.pressedAs = { status: "failed", creditsBilled: 54, error: "Two photos are too dark" };
+  await page.reload();
+  await toCast();
+  await expect(card.getByTestId("identity-held-outcome")).toHaveText("Training for Old name failed · Billed 54 cr");
+  await expect(card.getByTestId("cast-status")).toHaveText("No identity yet");
+  await expect(card.getByTestId("identity-train")).toHaveCount(1);
+  await expect(card.getByTestId("identity-held-attach")).toHaveCount(0);
+  await expect(card.getByTestId("identity-held-dismiss")).toHaveCount(1);
+  expect(paid).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("A bind held under a cast member's earlier name lands when the card has that name again: reopened, the card follows the training", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name) || !desktop(page), "the board canvas is desktop only");
+  const { project, scope, state, paid } = await seed(page);
+  state.pressed = { body: {} };
+  /* Parked under "Lead", the card's name again (renamed back): opening the production binds it. */
+  const bind = { projectId: project.id, entryId: "cast-lead", nodeId: null, name: "Lead", identityId: "soul_l5_new", at: Date.now() };
+  await page.addInitScript(({ key, value }) => { try { if (!sessionStorage.getItem("seeded")) { localStorage.setItem(key, value); sessionStorage.setItem("seeded", "1"); } } catch { /* storage off */ } }, { key: `particl-parked-identity-binds:${scope}`, value: JSON.stringify([bind]) });
   const errors = watchErrors(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
   await expect(page.getByTestId("board")).toBeVisible();
   const card = page.getByTestId("cast-card").filter({ hasText: "ivory coat" });
   await expect(card).toHaveCount(1);
-  /* Opening the production tries the bind: the name no longer matches, so it is kept parked and said once. */
-  await expect(page.getByText("Training started for Old name, whose card was renamed, so it isn't attached. It's listed under Build identity.")).toBeVisible();
   await page.waitForTimeout(500);
   await page.locator('[data-region="cast"]').click();
   await page.waitForTimeout(900);
-  await expect(card.getByTestId("cast-status")).toHaveText("Training started for Old name");
+  await expect(card.getByTestId("cast-status")).toHaveText("Training");
   await expect(card.getByTestId("identity-train")).toHaveCount(0);
-  await expect(card.getByTestId("identity-retry")).toHaveCount(0);
-  /* The Inspector offers no priced form for it either. */
-  await card.getByTestId("cast-title").click();
-  const insp = page.getByTestId("board-inspector");
-  await expect(insp.getByTestId("insp-cast")).toBeVisible();
-  await expect(insp.getByTestId("insp-build")).toHaveCount(0);
-  await shot(page, "identity-renamed-held", info);
-  /* Still held after a reload: never dropped. */
+  /* Bound through the Rig save: it holds after a reload, with nothing parked any more. */
   await page.reload();
   await expect(page.getByTestId("board")).toBeVisible();
   await page.waitForTimeout(500);
   await page.locator('[data-region="cast"]').click();
   await page.waitForTimeout(900);
-  await expect(card.getByTestId("cast-status")).toHaveText("Training started for Old name");
-  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+  await expect(card.getByTestId("cast-status")).toHaveText("Training");
+  expect(await page.evaluate((key) => localStorage.getItem(key), `particl-parked-identity-binds:${scope}`)).toBeNull();
   expect(paid).toEqual([]);
   expect(errors).toEqual([]);
 });

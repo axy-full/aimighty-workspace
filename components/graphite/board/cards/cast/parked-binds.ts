@@ -50,6 +50,14 @@ export function parkBind(scope: string, bind: Omit<ParkedBind, "at">, at = Date.
   write(scope, [...kept, { ...bind, at }]);
 }
 
+/** Drops one parked bind ("Not this card", or once it is attached). Returns it, for Undo. */
+export function dropParked(scope: string, identityId: string): ParkedBind | null {
+  const all = read(scope);
+  const found = all.find((p) => p.identityId === identityId) ?? null;
+  if (found) write(scope, all.filter((p) => p.identityId !== identityId));
+  return found;
+}
+
 /** The binds parked in this workspace, as they are now (for the cards: a card with one says its training was started). */
 export function useParked(scope: string | null): readonly ParkedBind[] {
   return useSyncExternalStore(

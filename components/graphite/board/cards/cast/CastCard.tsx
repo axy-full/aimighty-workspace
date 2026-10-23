@@ -11,7 +11,7 @@ import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { useIdentities } from "@/lib/workspace/identities";
 import { usePaidAction } from "@/lib/usePaidAction";
-import { useParked } from "./parked-binds";
+import { dropParked, parkBind, useParked } from "./parked-binds";
 import { useState } from "react";
 import type { BoardCard } from "@/lib/board/types";
 import { defineCard, type BoardCtx, type CardProps } from "../types";
@@ -21,7 +21,7 @@ import { CastWell } from "./CastWell";
 import { CutoutAction } from "./CutoutAction";
 import { cutoutView } from "./cutout-model";
 import { CastBody } from "../../inspector/CastBody";
-import { VARIANT_LABEL, castLabel, castStatus, consentLine, earlierSheetOf, identityOf, parkedForCard, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "./cast-model";
+import { VARIANT_LABEL, attachHeld, castBindingOf, castLabel, castStatus, consentLine, earlierSheetOf, heldBindFor, identityOf, renderPreset, restoreCastBinding, shotsWords, updateToNewerSheet, type CastBinding, type CastCardData } from "./cast-model";
 import "./cast.css";
 
 /*
@@ -60,12 +60,33 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
      charged twice; never a second Train press. Read only: nothing is sent from the card. */
   const saved = usePaidAction(`soul-identity:${ctx.project.id}`, signedIn && data.variant === "cast", { signedIn, requestScope: ctx.scope }).pending;
   const sentFrom = (() => { try { return saved ? (JSON.parse(saved.body) as { subjectKey?: unknown }).subjectKey ?? null : null; } catch { return null; } })();
-  /* A training started from this card that is held for it (its card was renamed since the press): said, never Train again. */
+  /* A training started from this card and held for it (its card was renamed since the press, R6-3): said by name, with
+     Attach and Not this card (free, undoable); held from Train only until its outcome is known (R6-1). */
   const parked = useParked(signedIn && data.variant === "cast" ? ctx.scope : null);
-  const held = parkedForCard(parked.filter((p) => p.projectId === ctx.project.id), data);
+  const held = heldBindFor(parked, ctx.project, data);
   const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent,
     readFailed: consents.state.status === "error" || state.status === "error", requestSaved: sentFrom === card.id,
-    startedFor: held ? held.name ?? "" : null });
+    held: held ? { name: held.name ?? "", identity: identities?.find((i) => i.id === held.identityId) ?? null } : null });
+  /* "Attach to <name>": the person says it is the same person; the bind runs without the name check. Undo puts the
+     card's bindings back and holds the training again. */
+  const attach = () => {
+    if (!held) return;
+    let was: CastBinding = { entry: null, asset: null };
+    const refused = ctx.rig.apply((p) => { was = castBindingOf(p, held); return attachHeld(p, held, held.identityId); });
+    if (refused) { ctx.toast(refused); return; }
+    dropParked(ctx.scope, held.identityId);
+    void ctx.rig.save();
+    ctx.toast(`Attached to ${data.title.trim() || "this card"}`, { label: "Undo", run: () => {
+      if (!ctx.rig.apply((p) => restoreCastBinding(p, held, was))) void ctx.rig.save();
+      parkBind(ctx.scope, held, held.at);
+    } });
+  };
+  /* "Not this card": drops this one held bind; the training stays listed under Build identity. Undo holds it again. */
+  const notThis = () => {
+    if (!held) return;
+    dropParked(ctx.scope, held.identityId);
+    ctx.toast("Not attached. It stays listed under Build identity.", { label: "Undo", run: () => parkBind(ctx.scope, held, held.at) });
+  };
   const status = data.variant === "cast" && !data.retired && !data.rendering && signedIn ? { text: idView.text, tone: idView.tone } : castStatus(data, identities);
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
@@ -103,7 +124,8 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
           /* Identity and its consent tick (Gaps A): ticked by a person if they choose; trained from the Inspector's form. */
           <IdentityBlock scope={ctx.scope} projectKey={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()}
             view={idView} consents={consents.state} trainingCredits={training} canAct={act}
-            spendOff={ctx.exploreOnly ?? null} onTrain={() => ctx.openInspector(card.id)} />
+            spendOff={ctx.exploreOnly ?? null} onTrain={() => ctx.openInspector(card.id)}
+            heldActions={held ? { currentName: data.title.trim() || "this card", onAttach: attach, onDismiss: notThis } : null} />
         ) : null}
         {/* A locked asset can't move: it says so rather than offer an Update that can only fail. Update also swaps the
             asset's portrait for the newer identity's and raises its version (the existing bind). */}

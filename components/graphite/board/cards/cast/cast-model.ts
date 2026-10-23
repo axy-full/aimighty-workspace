@@ -163,6 +163,62 @@ export function parkedForCard<T extends PressedCard>(parked: readonly T[], d: Pi
 }
 
 /**
+ * The bind held for this card in this project: one parked for it whose cast member was renamed since the press (R6-3:
+ * only "renamed"; a bind parked for another production is not held here, it lands when its production opens).
+ */
+export function heldBindFor<T extends PressedCard>(parked: readonly T[], project: Project, d: Pick<CastCardData, "entryId" | "nodeId">): T | null {
+  return parkedForCard(parked.filter((p) => p.projectId === project.id && bindProblem(project, p) === "renamed"), d);
+}
+
+/**
+ * What a training's reply does with its bind (CastBody's bindStarted): bind it now, or park it, and why. `open` is the
+ * project open when the reply lands (null when none can take the edit then).
+ */
+export function startedBindStep(open: Project | null, card: PressedCard): { action: "bind" } | { action: "park"; why: "elsewhere" | "renamed" | "closed" } {
+  if (!open) return { action: "park", why: "closed" };
+  const problem = bindProblem(open, card);
+  return problem ? { action: "park", why: problem } : { action: "bind" };
+}
+
+/** "Attach to <current name>": the person says the renamed card is the same person, and the bind runs without the name check. */
+export const attachHeld = (project: Project, card: PressedCard, identityId: string): Project => bindCastIdentity(project, { ...card, name: null }, identityId);
+
+/** The card's bindings as they are (its cast entry's and its asset's), so an Attach can be undone exactly. */
+export type CastBinding = { entry: string | null; asset: string | null };
+export function castBindingOf(project: Project, card: PressedCard): CastBinding {
+  const entry = card.entryId ? project.production?.cast?.entries.find((e) => e.id === card.entryId) : undefined;
+  const node = card.nodeId ? project.nodes.find((n) => n.id === card.nodeId) : undefined;
+  const asset = node ? resolveAsset(node, project.nodes, project.assets) : undefined;
+  return { entry: entry?.identityId ?? null, asset: asset?.soulIdentityId ?? null };
+}
+
+/** Puts a card's bindings back as they were (Undo of an Attach). Pure. */
+export function restoreCastBinding(project: Project, card: PressedCard, was: CastBinding): Project {
+  if (project.id !== card.projectId) return project;
+  let next = project;
+  const cast = next.production?.cast;
+  if (card.entryId && cast && next.production) {
+    next = { ...next, production: { ...next.production, cast: { ...cast, entries: cast.entries.map((e) => {
+      if (e.id !== card.entryId) return e;
+      const rest = { ...e };
+      delete rest.identityId;
+      return was.entry ? { ...rest, identityId: was.entry } : rest;
+    }) } } };
+  }
+  const node = card.nodeId ? next.nodes.find((n) => n.id === card.nodeId) : undefined;
+  const asset = node ? resolveAsset(node, next.nodes, next.assets) : undefined;
+  if (asset && !asset.locked && next.assets.some((a) => a.id === asset.id)) {
+    next = { ...next, assets: next.assets.map((a) => {
+      if (a.id !== asset.id) return a;
+      const rest = { ...a };
+      delete rest.soulIdentityId;
+      return was.asset ? { ...rest, soulIdentityId: was.asset } : rest;
+    }) };
+  }
+  return next;
+}
+
+/**
  * Binds an identity a person started training from a character's Inspector to that character's card (Rig save), so
  * the card follows it: training, then ready, or failed with its charge and Retry; never "No identity yet" with the
  * Train press offered again. Pure. It binds only into the production the press was made in: any other project comes

@@ -22,7 +22,7 @@ import "./security.css";
  *   "Retry · N cr" back to the same form.
  * The price is the server's (`terms.trainingCredits`, the rate card's identity training). Nothing here spends.
  */
-export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, view, consents, trainingCredits, canAct, spendOff, onTrain }: {
+export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, view, consents, trainingCredits, canAct, spendOff, onTrain, heldActions = null }: {
   scope: string; projectKey: string; subjectKey: string; subjectLabel: string;
   /** The card's identity and consent, worked out once by the card (lib/security/identity-card.ts). */
   view: IdentityCardView;
@@ -34,6 +34,11 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
   spendOff?: string | null;
   /** Opens the build form (the Inspector), armed with the live consent. */
   onTrain: () => void;
+  /**
+   * A training held for this card (renamed since the press): "Attach to <current name>" (the person says it is the same
+   * person) and "Not this card". Both free and undoable; nothing is spent or sent.
+   */
+  heldActions?: { currentName: string; onAttach: () => void; onDismiss: () => void } | null;
 }) {
   const state = consents;
   const price = exact(trainingCredits);
@@ -57,7 +62,7 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
   return (
     <div className="gsec-id" data-stage={view.stage} data-testid="identity-block">
       {/* The tick takes the label's place while there is something to train, so the card keeps its rows. */}
-      {canAct && (view.stage === "no-consent" || view.stage === "recorded" || view.stage === "failed") ? (
+      {canAct && (view.stage === "no-consent" || view.stage === "recorded" || view.stage === "failed" || view.stage === "started") ? (
         <div className="gsec-id-head">
           <ConsentTick scope={scope} projectKey={projectKey} subjectKey={subjectKey} subjectLabel={subjectLabel} ready={state.status === "ready"} />
         </div>
@@ -70,6 +75,7 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
           {view.why ? <> · {view.why}</> : null}
         </span>
       ) : null}
+      {view.held?.outcome ? <span className="gsec-id-billed" data-testid="identity-held-outcome">{view.held.outcome}</span> : null}
       {canAct ? (
         <div className="gsec-id-acts">
           {view.stage === "no-consent" || view.stage === "recorded" ? train("Train Identity", "identity-train", true) : null}
@@ -78,6 +84,16 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
               never charged twice. Never a second Train press. */}
           {view.stage === "sent" ? (
             <button type="button" className="gsec-btn gsec-primary nodrag nopan" onClick={stop(onTrain)} onDoubleClick={(e) => e.stopPropagation()} data-testid="identity-recover">Recover</button>
+          ) : null}
+          {/* A training held for this card: attach it (until it has failed: then there is nothing to attach), or say it
+              isn't this card's. Free and undoable. */}
+          {view.held && heldActions ? (
+            <>
+              {!view.held.outcome || view.held.ready ? (
+                <button type="button" className="gsec-btn nodrag nopan" onClick={stop(heldActions.onAttach)} onDoubleClick={(e) => e.stopPropagation()} data-testid="identity-held-attach">Attach to {heldActions.currentName}</button>
+              ) : null}
+              <button type="button" className="gsec-btn nodrag nopan" onClick={stop(heldActions.onDismiss)} onDoubleClick={(e) => e.stopPropagation()} data-testid="identity-held-dismiss">Not this card</button>
+            </>
           ) : null}
         </div>
       ) : null}

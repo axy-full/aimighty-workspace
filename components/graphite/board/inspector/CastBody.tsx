@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { CastWell } from "../cards/cast/CastWell";
-import { VARIANT_LABEL, bindCastIdentity, bindProblem, parkedForCard, castStatus, consentLine, identityOf, shotsWords, type CastCardData } from "../cards/cast/cast-model";
+import { VARIANT_LABEL, bindCastIdentity, heldBindFor, startedBindStep, castStatus, consentLine, identityOf, shotsWords, type CastCardData } from "../cards/cast/cast-model";
 import type { CardProps } from "../cards/types";
 import { CastIdentities } from "@/components/graphite/production/CastIdentities";
 import { Price } from "@/components/graphite/Price";
@@ -36,9 +36,10 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
   const consents = useConsents(signedIn && data.variant === "cast" ? ctx.scope : null, consentKey);
   /* A training started from this card and held for it (renamed since the press): no second priced press here either. */
   const parked = useParked(signedIn && data.variant === "cast" ? ctx.scope : null);
-  const held = parkedForCard(parked.filter((p) => p.projectId === ctx.project.id), data);
+  const held = heldBindFor(parked, ctx.project, data);
   const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent,
-    readFailed: consents.state.status === "error" || state.status === "error", startedFor: held ? held.name ?? "" : null });
+    readFailed: consents.state.status === "error" || state.status === "error",
+    held: held ? { name: held.name ?? "", identity: identities?.find((i) => i.id === held.identityId) ?? null } : null });
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
   /* Offered only once the identities and ticks were read (as the card: "Couldn't read this · reload" offers nothing), and
@@ -52,16 +53,17 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
      training and never offers Train again for it. */
   const bindStarted = (identityId: string, pressedIn: string) => {
     const at = { ...pressed, projectId: pressedIn };
-    let problem: ReturnType<typeof bindProblem> = null;
+    let step: ReturnType<typeof startedBindStep> = startedBindStep(null, at);
     const refused = ctx.rig.apply((p) => {
-      problem = bindProblem(p, at);
-      return bindCastIdentity(p, at, identityId);
+      step = startedBindStep(p, at);
+      return step.action === "bind" ? bindCastIdentity(p, at, identityId) : p;
     });
-    if (refused || problem) {
-      /* Kept, never dropped: the card says the training was started, and never offers Train for it again (R5-2). */
+    if (refused || step.action === "park") {
+      /* Kept, never dropped: a renamed card holds it with Attach and Not this card; another production binds it when it
+         opens (R5-2, R6-1). */
       parkBind(ctx.scope, { ...at, identityId });
-      ctx.toast(problem === "renamed"
-        ? `Training started for ${at.name}, whose card was renamed, so it isn't attached. It's listed under Build identity.`
+      ctx.toast(!refused && step.action === "park" && step.why === "renamed"
+        ? `Training started for ${at.name}, whose card was renamed. On that card: Attach, or Not this card.`
         : "The training started. Its card follows it when that production is open again.");
       return;
     }

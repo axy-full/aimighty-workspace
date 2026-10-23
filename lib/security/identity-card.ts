@@ -36,6 +36,12 @@ export type IdentityCardView = {
   /** Why it failed, as the trainer said; null when it did not say. */
   why: string | null;
   identity: IdentityLike | null;
+  /**
+   * A training started from this card and held for it (its card was renamed since the press): the name it was started
+   * for, and, once that training is ready or has failed, its outcome in words (with the charge on a failure, rule 14).
+   * The card then offers Attach or Not this card; it is held (no Train) only until the outcome is known.
+   */
+  held: { name: string; outcome: string | null; ready: boolean } | null;
 };
 
 /** The record that speaks for a cast member: the newest live one, else the newest of any. */
@@ -71,8 +77,8 @@ export function identityCardView(input: {
   readFailed?: boolean;
   /** A training request from this production is saved with its reply unread: the card offers Recover, never Train. */
   requestSaved?: boolean;
-  /** A training started from this card is held for it, under the name it was started for (the card was renamed since). */
-  startedFor?: string | null;
+  /** A training started from this card is held for it, under the name it was started for (the card was renamed since), with that training as listed. */
+  held?: { name: string; identity: IdentityLike | null } | null;
   at?: number;
 }): IdentityCardView {
   const at = input.at ?? Date.now();
@@ -82,7 +88,12 @@ export function identityCardView(input: {
   const started = consent?.identityId ? input.identities?.find((i) => i.id === consent.identityId) ?? null : null;
   const identity = input.bound ?? started;
   const consentLine = consent ? consentSummary(consent, at) : input.earlier ?? "Not ticked. Only a person ticks it.";
-  const base = { consent: consentLine, consentId: live?.id ?? null, billed: null, why: null, identity };
+  const h = input.held ?? null;
+  const name = h?.name || "this cast member";
+  const outcome = h?.identity?.status === "ready" ? `Identity ready for ${name}`
+    : h?.identity?.status === "failed" ? `Training for ${name} failed · ${billedWords(h.identity.creditsBilled)}` : null;
+  const held = h ? { name, outcome, ready: h.identity?.status === "ready" } : null;
+  const base = { consent: consentLine, consentId: live?.id ?? null, billed: null, why: null, identity, held };
   if (identity?.status === "ready") return { ...base, stage: "ready", text: `Identity ready · ${identity.name}`, tone: "done" };
   if (identity?.status === "submitting" || identity?.status === "training") return { ...base, stage: "training", text: "Training", tone: "working" };
   if (identity?.status === "failed" || identity?.status === "uncertain") {
@@ -94,7 +105,8 @@ export function identityCardView(input: {
   }
   if (input.readFailed) return { ...base, stage: "unread", text: "Couldn't read this · reload", tone: "waiting" };
   if (input.requestSaved) return { ...base, stage: "sent", text: "Training sent · reply not read yet", tone: "waiting" };
-  if (input.startedFor != null) return { ...base, stage: "started", text: `Training started for ${input.startedFor || "this cast member"}`, tone: "waiting" };
+  /* Held only until its outcome is known: then the card is free to train again, and says the outcome beside. */
+  if (held && !outcome) return { ...base, stage: "started", text: `Training started for ${name}`, tone: "waiting" };
   if (live) return { ...base, stage: "recorded", text: "Consent ticked · ready to train", tone: "idle" };
   return { ...base, stage: "no-consent", text: "No identity yet", tone: "idle" };
 }
