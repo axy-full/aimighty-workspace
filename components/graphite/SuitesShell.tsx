@@ -1,8 +1,8 @@
 "use client";
 import { rigDeleteHandler, setRigUndoSink, type RigUndo } from "@/lib/shell/rig-commands";
 import { newProject } from "@/lib/workbench/studio";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNewInterface, useSession } from "@/lib/session";
+import { useEffect, useRef, useState } from "react";
+import { useSession } from "@/lib/session";
 import { AtomikHost, type PlanBridge } from "@/lib/workspace/atomik-host";
 import { useAccount, useProjects, type WorkspaceAccount } from "@/lib/workspace/data";
 import { useScopedFetch } from "@/lib/useScopedFetch";
@@ -15,7 +15,7 @@ import { GenerateComposer } from "@/components/workspace/GenerateComposer";
 import { GenerationStrip } from "@/components/workspace/GenerationStrip";
 import { inField, inSelectionSurface, parseCtx, shortcutApplies, shortcutCommand, type CtxCapabilities, type CtxCommand, type CtxTarget } from "@/lib/shell/context-menu";
 import { holdAgentRequest, prefillAgentRequest, takeHeldAgentRequest } from "@/lib/shell/agent-draft";
-import { setMakeIsPage, useShell } from "@/lib/shell/state";
+import { useShell } from "@/lib/shell/state";
 import { useSampleWorkspace } from "@/lib/demo/use-sample";
 import { useRecreatePrice } from "@/lib/shell/use-recreate-price";
 import { ctxPrice } from "@/lib/shell/recreate-price";
@@ -39,16 +39,6 @@ import { Palette } from "./Palette";
 import { PROJECT_NAME_MAX, ProjectHead } from "./ProjectHead";
 import { StageStrip } from "./StageStrip";
 import { useCompact } from "@/lib/shell/use-compact";
-import { isMakeTool } from "@/lib/shell/make";
-import dynamic from "next/dynamic";
-/* The new interface's frame loads only for a workspace that has it (lib/newInterface.ts): customers never download it.
-   SuitesApp draws nothing until the browser is there, so the frame's own chunk is the only wait, and only for them. */
-const loadV12Shell = () => import("@/components/v12/V12Shell");
-/* While its chunk arrives the body keeps its place (an empty stage), never a blank window. */
-const V12Shell = dynamic(() => loadV12Shell().then((m) => m.V12Shell), { loading: () => <div className="gx-stage" data-testid="v12-loading" /> });
-const LibraryTray = dynamic(() => import("@/components/v12/library/LibraryTray").then((m) => m.LibraryTray), { ssr: false });
-/* Make as a page (redesign C3): only with the switch on at desktop sizes, so a customer never downloads it. */
-const V12Make = dynamic(() => import("@/components/v12/make/V12Make").then((m) => m.V12Make));
 import { useRig } from "@/components/workspace/rig/RigProvider";
 import { TabBar } from "./TabBar";
 import { SwitchingVeil } from "./SwitchingVeil";
@@ -255,13 +245,8 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
         else if (state.agentOpen) dispatch({ type: "patch", patch: { agentOpen: false } });
         /* Atomik's panel (new interface) closes after ⌘K and the menus, before Make, unless a sheet is open over it. */
         else if (shell.atomik && !document.querySelector(".gx-veil")) shell.closeAtomik();
-        /* Make closes with Esc, except from a field (Esc there closes the field's own list first) or while a sheet is open over it.
-           Make as a page (the new interface's, [data-v12-make]) is a place, not a panel: Esc does not leave it, and a quick
-           tool open over it (Motion transfer, Object swap, Upscale) goes back to the page. */
-        else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil")) {
-          if (!document.querySelector("[data-v12-make]")) shell.closeMake();
-          else if (isMakeTool(shell.make)) shell.setMake(shell.lastMake);
-        }
+        /* Make closes with Esc, except from a field (Esc there closes the field's own list first) or while a sheet is open over it. */
+        else if (shell.make && !inField(event.target) && !document.querySelector(".gx-veil")) shell.closeMake();
         return;
       }
       /* ⌥M opens and closes Make (README § 6), from anywhere, a field included: ⌥M types nothing a prompt needs. */
@@ -370,24 +355,8 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
   const phoneOn = shell.phone.on;
   const phonePage = shell.view === "workspace" ? { title: "Settings", body: shell.screen === "settings" ? <SettingsBody ctx={screenCtx} /> : <WorkspaceView account={account} /> } : null;
 
-  /* The new interface's frame (components/v12/V12Shell.tsx), for a workspace with the switch on (lib/newInterface.ts), at
-     desktop sizes only: a phone keeps PhoneApp. Like the phone's own choice above it reads the viewport, which the shell
-     knows from its first render (SuitesApp draws nothing until the browser has it), so neither frame flashes first.
-     With the switch off the header and body below render exactly as they always have. */
-  const newInterface = useNewInterface();
-  /* The frame's chunk starts loading as soon as the switch is known to be on, before the frame is first asked for. */
-  useEffect(() => { if (newInterface) void loadV12Shell(); }, [newInterface]);
-  /* The address the page opened with: Make's page (lazy) can mount after the workspace has rewritten the address, so it reads
-     what was asked for (`mk=`, `viewer=1`) from here, once. Its first mount spends it; a later visit reads the live address. */
-  const [openedWith, setOpenedWith] = useState<string | undefined>(() => (typeof window === "undefined" ? undefined : window.location.search));
-  const spendOpenedWith = useCallback(() => setOpenedWith(undefined), []);
-  const v12 = newInterface && !compact && !phoneOn;
-  /* With the switch on at desktop sizes, Make is a page in the frame's body (components/v12/make), not a panel; its quick
-     tools (Motion transfer, Object swap, Upscale) still open as today's panel over that page. */
-  const v12Make = v12 && Boolean(shell.make);
-  /* Make is a page in the new frame: leaving for Home, a board or Settings leaves it (lib/shell/state.tsx stayMake). */
-  useEffect(() => { setMakeIsPage(v12); return () => setMakeIsPage(false); }, [v12]);
-  const makePanel = Boolean(shell.make) && !phoneOn && !(v12Make && !isMakeTool(shell.make));
+  /* One shell for every workspace, the new-interface switch on or off (lib/newInterface.ts): no design is built behind the switch yet. */
+  const makePanel = Boolean(shell.make) && !phoneOn;
   const header = <Header account={account} project={project?.name ?? null} bar={bar} />;
   const desktopBody = <>
         {bar ? null : <StageStrip />}
@@ -447,21 +416,14 @@ export function SuitesShell({ scope, initialAccount, planBridge }: { scope: stri
         {phoneOn ? (linkCard ? (
           /* A link to a take that cannot show it yet says what it is doing on a phone too: the phone's own screens draw nothing for it. */
           <div className="gx-screen gx-scroll" data-testid="screen" data-screen="link"><div className="gx-stage" data-testid="content">{linkCard}</div></div>
-        ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : v12 ? (
-          <V12Shell header={{ account, project, projects: data.projects, onPick: pickProject }}>{v12Make ? (
-            <Boundary what="Make" probe="gen" resetKey={`v12-make:${scope}`} fallback={(fault) => <div className="gx-fault-view gx-scroll"><PanelFault fault={fault} name="gen" /></div>}>
-              <V12Make initialSearch={openedWith} onOpened={spendOpenedWith} scope={scope} project={project} projects={data.status} projectsError={projectsError} onRetry={data.retry}
-                workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })} balance={account?.credits?.balance ?? null} />
-            </Boundary>
-          ) : desktopBody}<LibraryTray project={project} projects={data.projects} library={library} /></V12Shell>
-        ) : <>{header}{desktopBody}</>}
+        ) : <PhoneMount ctx={screenCtx} page={phonePage} />) : <>{header}{desktopBody}</>}
         {/* Make (README § 3.2): a panel over whatever is on screen, beside the Inspector's column when that is open. Its draft
             stays editable while the project list recovers ("Try again", never "Retry": that word is a take's own action). */}
         {makePanel ? (
           <Boundary what="Make" probe="gen" resetKey={`gen:${project?.id ?? ""}`} fallback={(fault) => <aside className="gx-make" aria-label="Make"><PanelFault fault={fault} name="gen" actions={<button type="button" className="gx-hbtn" onClick={shell.closeMake}>Close</button>} /></aside>}>
             <MakePanel scope={scope} project={project} items={items} library={library} projects={data.status} projectsError={projectsError} onRetry={data.retry}
               workspaceName={account?.workspace?.name ?? null} onProject={(id) => selectProject(id, { replace: true })}
-              balance={account?.credits?.balance ?? null} aspect={aspect} onClose={v12Make ? () => shell.setMake(shell.lastMake) : undefined} />
+              balance={account?.credits?.balance ?? null} aspect={aspect} />
           </Boundary>
         ) : null}
         <Boundary what="Search" probe="palette" resetKey={shell.palette ? "open" : "closed"} fallback={(fault) => !shell.palette ? null : (

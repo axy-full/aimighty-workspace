@@ -112,7 +112,7 @@ export type Shell = {
   /** The platform console (`?view=admin`, lib/platformConsole.ts): a section, and a workspace's side sheet on All workspaces. The owner's; the server refuses it to anyone else. */
   goPlatform: (section?: PlatformSectionId, sheet?: string | null) => void;
   /** The board: `?view=board`, with the kind, a region, the List view or a start. */
-  goBoard: (opts?: { newBoard?: string | true; kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean }) => void;
+  goBoard: (opts?: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean }) => void;
   /** One of the control room's four pages (approvals, runs, memory, saved-skills): the same addresses as ever. */
   goControlRoom: (page: "approvals" | "runs" | "memory" | "saved-skills") => void;
   /** Opens Atomik's panel (or "how"), with the words handed over; today's Atomik Agent page when the panel has not landed. */
@@ -223,11 +223,7 @@ const carry = (extra: Readonly<Record<string, string>>): Readonly<Record<string,
   Object.fromEntries(CARRIED_OVER.filter((key) => key in extra).map((key) => [key, extra[key]]));
 
 /** Make over a page someone moves to: kept, except on a phone, where the panel is the whole screen. */
-/* Make as a page (the new interface at desktop sizes, redesign C3) is a place like Home or a board: going anywhere else leaves it.
-   Today's Make is a panel over the page, so it stays open across navigation. SuitesShell says which one is on screen. */
-let makeIsPage = false;
-export function setMakeIsPage(on: boolean) { makeIsPage = on; }
-const stayMake = (make: MakeTab | null) => (make && ((typeof window !== "undefined" && window.innerWidth < PHONE_BELOW) || makeIsPage) ? null : make);
+const stayMake = (make: MakeTab | null) => (make && typeof window !== "undefined" && window.innerWidth < PHONE_BELOW ? null : make);
 /** Below this, Make is full width (components/graphite/make.css). */
 export const PHONE_BELOW = 768;
 
@@ -381,10 +377,8 @@ export function ShellProvider({ children, initialSearch }: { children: ReactNode
 
   const goPlatform = useCallback((section: PlatformSectionId = "overview", sheet?: string | null) => { navigate(platformAddress(section, sheet)); }, [navigate]);
 
-  const goBoard = useCallback((opts: { newBoard?: string | true; kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean } = {}) => {
+  const goBoard = useCallback((opts: { kind?: BoardKindId; region?: string; list?: boolean; start?: string; atomik?: boolean; drawer?: "library" | "history"; frame?: string; closeMake?: boolean } = {}) => {
     const q = new URLSearchParams({ view: "board" });
-    /* The new interface's "New board" tab (components/v12/board/NewBoard.tsx): a kind card to open on, or just the tab. */
-    if (opts.newBoard) { q.set("newboard", "1"); if (typeof opts.newBoard === "string") q.set("pick", opts.newBoard); }
     if (opts.kind) q.set("kind", opts.kind);
     if (opts.region) q.set("region", opts.region);
     /* The design's frame letter: `m` is the board's Crew review, `n` its Project record (lib/board/routes.ts). */

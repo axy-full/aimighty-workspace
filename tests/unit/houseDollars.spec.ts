@@ -5,7 +5,6 @@ import {
   CREDITS_MODE, FREE, NO_AT_COST_FIGURE, NO_AT_COST_TITLE, creditsText, dollarDisplay, exact, heldExact, modeOf, priceSum, priceTitle, priceView, priceWords, setDollarDisplay, upTo,
   type DollarMode,
 } from "../../lib/shell/price-words";
-import { NO_AT_COST_PRICE } from "../../lib/v12/quote";
 import { limitBoxText, limitFromBox } from "../../lib/shell/run-limit-input";
 
 /*
@@ -61,7 +60,6 @@ test("in dollar display every price words its dollars and none says cr", () => {
 test("a quote with no dollar figure reads a dash and says why, never its credits times a credit's price", () => {
   expect(priceWords(exact(8), HOUSE)).toBe(NO_AT_COST_FIGURE);
   expect(priceWords(upTo(16), HOUSE)).toBe(NO_AT_COST_FIGURE);
-  expect(NO_AT_COST_TITLE).toBe(NO_AT_COST_PRICE);
   expect(priceTitle(exact(8), 0.1, HOUSE)).toBe(NO_AT_COST_TITLE);
   expect(priceView(exact(8), 0.1, HOUSE)).toMatchObject({ text: "—", title: NO_AT_COST_TITLE });
   /* A sum with a part that has none has none either. */
