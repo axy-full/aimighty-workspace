@@ -65,14 +65,17 @@ At the moment training is sent, inside the existing training route's one claimed
 
 `createSoulIdentity` makes the identity in one write transaction **before anything is reserved or sent** (`lib/soulIdentities.ts:681-739`): it inserts the identity as `submitting` (`:692`) and stores the claim's reply in the same write (`:729-737`). The record's `INSERT` goes into that same transaction, right after the identity's:
 
-- so an identity never exists without its record, and a record never exists without its identity;
+- so an identity sent from a card (both fields below present and valid) never exists without its record, and a record never exists without its identity;
 - it is written before the reservation (`:742`) and before the trainer is asked (`:780`), so every device sees it for the whole time the training runs.
 
 Details:
 - `subjectKey` is already in the request body the Inspector sends (`components/graphite/production/CastIdentities.tsx:110-112`). It joins `CreateSoulIdentityInput` (`lib/soulIdentities.ts:388-400`) as an optional field. **The client body does not change**, so the request's fingerprint and every saved request replay exactly as before.
-- **A record never stops a training.** No `subjectKey`, or a malformed one (not an id of 1–160 letters, digits, `_` or `-`), writes no record and trains as before. It is never refused.
+- **A record is written only when both fields are there:**
+  - `projectId` is present. `cleanInput` accepts a training with no production (`lib/soulIdentities.ts:422-428`), and `project_id` is `NOT NULL`, so without this condition such a body would fail the identity's own transaction and refuse the training. With a production named, `productionFor` has already checked it is the person's own draft, in the same transaction, before the identity is inserted (`:682-686`);
+  - `subjectKey` passes the rule the consent tick already uses for the same card id: `/^[A-Za-z0-9_.:-]{1,160}$/` (`lib/security/consent-words.ts:92`, applied to `subjectKey` at `:116-117`). That rule fits how card ids are made: an entry's card is `cast:<kind>:<entry id>` (`components/graphite/board/cards/cast/cast-model.ts:379`, used at `:423`, `:436`), and a canvas node's card is the node's id (`:402`). The PR shares that one rule rather than writing a second.
+- **A record never stops a training.** No `projectId`, no `subjectKey`, or a `subjectKey` that fails the rule: no record is written, and the training goes ahead exactly as before. Nothing is refused for it.
 - **The route file does not change.** The write lives in `lib/soulIdentities.ts`. This also keeps `tests/unit/demo-gaps-l5-review-558.spec.ts:137-149` (a guard that loads this route with a fixed module list) untouched.
-- `sent_by` is the person in scope; `createSoulIdentity` already refuses anyone else and any token or agent (`:658-664`). `project_id` is the request's `projectId`, already checked against the person's own draft (`productionFor`, `:682-686`).
+- **Scoping:** the `INSERT` binds `workspace_id` to `requireTenant().id`, the workspace in scope, never to anything in the request. `sent_by` is the person in scope; `createSoulIdentity` already refuses anyone else and any token or agent (`:658-664`). `project_id` is the request's `projectId`, checked as above.
 
 ---
 
@@ -128,7 +131,12 @@ Training is a paid step. This plan does not change **what** is charged, **when**
 | Consent | `route.ts:67-78`, `:86` | unchanged. The record has no consent column and is written ticked or not. A tick is never required (#894); no gate is added |
 | The credit-unit conversion | `lib/creditConversionTenant.ts:68-91` | the table has no credit column, so nothing joins it |
 
-The one new way the identity's write can fail is the same way it can fail today: the database refusing a write. Then nothing is reserved or sent, and the claim answers as it does now. The table is made in `soulIdentitiesReady()` before the transaction opens, so the `INSERT` never meets a missing table.
+The record's `INSERT` adds no new reason for the identity's write to fail:
+- it runs only when `projectId` is present and `subjectKey` passes the rule (§4), so every `NOT NULL` column has a value;
+- `identity_id` is the id just made, so the primary key cannot collide;
+- the table is made in `soulIdentitiesReady()` before the transaction opens, so it is never missing.
+
+What is left is the database refusing a write, which would refuse the identity's own `INSERT` today. Then nothing is reserved or sent, and the claim answers as it does now.
 
 No vendor call, tool, MCP door or price path is added or changed.
 
@@ -142,7 +150,9 @@ Unit specs on file databases, `ENGINE_MOCK=1`, no network; the browser spec on t
 |---|---|---|
 | `tests/unit/identityTrainingSent.spec.ts` | a press from a card records its card | an unticked press with `subjectKey` writes one record (this workspace, this production, this card, this person) in the identity's own write, before any reservation |
 | | ticked or not | ticked and unticked presses both record and both train; nothing is refused for want of a tick |
-| | no card, no record | without `subjectKey`, or with a malformed one, no record is written and the training goes ahead as before |
+| | no card, no record | without `subjectKey`, or with one that fails the consent rule, no record is written and the training goes ahead as before |
+| | no production, no record | a body with a valid `subjectKey` and no `projectId` trains exactly as before: the identity is made, nothing is refused, and no record is written |
+| | card ids pass | both kinds of card id (`cast:<kind>:<entry id>` and a node id) are recorded |
 | | a replay writes nothing new | the same `Idempotency-Key` replayed returns the first reply and leaves exactly one record |
 | | refused, nothing billed | a refused reservation leaves the identity failed unsent, the record in place, and nothing billed |
 | | money unchanged | the same press with and without `subjectKey` writes the same reservation, meter row, billed credits, settlement and reply (ids and times aside) |
@@ -172,4 +182,10 @@ Kept green without edits: `tests/unit/demo-gaps-l5-consent.spec.ts`, `tests/unit
 3. **Written inside the identity's transaction** (recommended: never an identity without its record), or after it, best effort, as the consent link is (`route.ts:85-86`), which leaves a gap of up to a few minutes while the trainer is asked?
 4. **No switch;** a revert is the rollback. Yes?
 5. **The Inspector fix in the same PR** (§5: the form is offered by the card's stage, not the bound identity alone; UI only, no money). Yes?
-6. **Not in this plan:** a ready identity found through the record (or the consent link) but never bound to its card says "Identity ready" while the card still renders without it, until the pressing browser binds it. Should any device offer Attach (free, undoable, the held path's existing button) for it? A separate UI PR if yes.
+6. **What happens to the record elsewhere.** It holds ids, a time, and `sent_by` (a person's id). As planned:
+   - **Project delete** leaves it. The identities it points at stay too (the route re-files them, `app/api/projects/[id]/route.ts:177`), and the record is only read beside its identity.
+   - **Workspace export** leaves it out. It is bookkeeping, as `generation_requests` is, and is not in the export's allowlist (`lib/workspaceExport.ts:48-76`).
+   - **Identity purge** runs only inside a workspace purge (`lib/purge.ts:157`), which then removes the whole database (`:207-212`), record included. A purged identity is never listed (`lib/soulIdentities.ts:374`), so its record is never shown.
+
+   Recommend as written. Or should the record be archived with a project delete, or be in the export?
+7. **Not in this plan:** a ready identity found through the record (or the consent link) but never bound to its card says "Identity ready" while the card still renders without it, until the pressing browser binds it. Should any device offer Attach (free, undoable, the held path's existing button) for it? A separate UI PR if yes.
