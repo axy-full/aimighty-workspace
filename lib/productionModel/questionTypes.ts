@@ -1,0 +1,144 @@
+import type { QUESTIONS } from "../copy";
+
+/**
+ * The question engine's shapes (Amendment, 22 October 2026 (iii), G "Questions", H and K D1; SOW R2 and D1).
+ *
+ * A step's checklist is two tables (K, D1): the floor rows (H: fixed, deterministic, tested) and the above-floor rows (an
+ * example bank for Atomik, never a list it is limited to). The engine marks each row known / assumed / open from the record,
+ * orders the open floor rows, and gives the next one question. It calls no model and bills nothing: Atomik's picks for
+ * "Decide for me" arrive as input.
+ *
+ * Types only. The record (docs/film-record-schema.md, `film_record_rows`) does not exist yet; `RecordView` is the read-only
+ * view it will satisfy, and today fixtures satisfy it.
+ */
+
+/** Where a row's value came from: the record's `source` column (film-record-schema A.2), word for word. */
+export type RowSource = "said" | "document" | "earlier_step" | "default" | "assumed";
+
+/**
+ * How a row reads (R2): known = said, read from a document or carried from an earlier step ("from the brief · Change");
+ * assumed = a house default or Atomik's pick ("I assumed … · Change"); open = nothing answers it yet.
+ */
+export type RowState = "known" | "assumed" | "open";
+
+/** D1's question shapes. */
+export type QuestionShape = "pick_one" | "a_b" | "yes_no" | "tap_frame" | "upload";
+
+/** A key into the copy table's QUESTIONS section: every word a question shows comes from lib/copy.ts (D12). */
+export type QuestionCopyKey = keyof typeof QUESTIONS;
+
+/**
+ * One answer pill. `id` is the value written to the record. `copy` is its words; a spend-limit pill has `credits` instead and
+ * the screen writes it as "N cr" (rule 14), so no figure sits in the copy table.
+ */
+export type Pill = { readonly id: string; readonly copy?: QuestionCopyKey; readonly credits?: number };
+
+/** A row's pills and the one lit by default (H: ★). At most four pills (A1); "Other" is the field, not a pill. */
+export type PillSet = { readonly pills: readonly Pill[]; readonly lit: string | null };
+
+/** Pills that depend on another row's value (H: length's pills are "by kind"). A value the map lacks gets the field only. */
+export type PillsBy = { readonly by: string; readonly sets: Readonly<Record<string, PillSet>> };
+
+/** A value an answer carries to another row (H, "Answered by": e.g. Brief › material answers Elements › source). */
+export type Carry = { readonly key: string; readonly value: string };
+
+/** A floor row (H): one decision that must be known before money moves. */
+export type FloorRow = {
+  readonly key: string;
+  readonly floor: true;
+  /** The step whose checklist holds the row (a production step kind, lib/productionModel/filmTypes.ts). */
+  readonly step: string;
+  /** What changes the result or the price most comes first: 1 is the most. See questionEngine.ts, "The order". */
+  readonly rank: number;
+  readonly question: QuestionCopyKey;
+  readonly shape: QuestionShape;
+  readonly pills: PillSet | PillsBy;
+  /** H: "a field for anything else" (the pill the owner wrote as "Other"). */
+  readonly field: boolean;
+  /** Rows whose value this row's question reads; it is never asked while one of them is open. */
+  readonly dependsOn?: readonly string[];
+  /**
+   * D1's "decide-for-me allowed": the only values "Decide for me" may set. Absent: any pill, or any field value. A row a person
+   * alone answers (rule 11: the spend limit; consent) lists only what Atomik may assume, never the person's own choices.
+   */
+  readonly agentPicks?: readonly string[];
+  /** H "Answered by", where the answer is another floor row: pill id → the values it carries. */
+  readonly carries?: Readonly<Record<string, readonly Carry[]>>;
+  /** D1: what answers it without asking (H's "Answered by" column), as ids. */
+  readonly answeredBy: readonly string[];
+  /** D1: what it sets downstream (H's "Sets" column), as ids. */
+  readonly sets: readonly string[];
+  /** D1: money attached. Every floor row has money attached (H's "Why floor"). */
+  readonly money: true;
+};
+
+/**
+ * An above-floor row (K, D1): an example for Atomik of what this step may make open. It has no words and no pills: Atomik asks
+ * above the floor in its own words, one question at a time, from no list (H). The engine marks it, so a row the record holds
+ * is never asked again (H: "no above-floor question repeats a row the record holds"). Keys are `q:<slug>` (film-record-schema A.2).
+ */
+export type AboveFloorRow = { readonly key: string; readonly floor: false; readonly step: string };
+
+export type ChecklistRow = FloorRow | AboveFloorRow;
+
+/** One step's checklist on one rail (D1: per rail × step). */
+export type Checklist = {
+  readonly filmType: string;
+  readonly step: string;
+  readonly floor: readonly FloorRow[];
+  readonly aboveFloor: readonly AboveFloorRow[];
+};
+
+/** One row's live value in the record, with the workspace it belongs to (rule 2: the engine refuses another workspace's row). */
+export type RecordValue = { readonly workspaceId: string; readonly value: string; readonly source: RowSource };
+
+/**
+ * What is known: the read-only view the film record will satisfy (one live version per key, film-record-schema A.0). Bound to
+ * one workspace and one production.
+ */
+export interface RecordView {
+  readonly workspaceId: string;
+  readonly productionId: string;
+  /** The live value of one row, or null when nothing answers it. */
+  get(key: string): RecordValue | null;
+}
+
+/** Why a row was written (film-record-schema A.2 `change_reason`; `carry` names the row it came from in `from`). */
+export type WriteReason = "answer" | "change" | "decide_for_me" | "carry";
+
+/** One row the engine wrote this session, for the record's writer to commit. No time: the store stamps it. */
+export type RecordWrite = {
+  readonly workspaceId: string;
+  readonly productionId: string;
+  readonly key: string;
+  readonly value: string;
+  readonly source: RowSource;
+  readonly reason: WriteReason;
+  readonly from?: string;
+};
+
+/** One row as the engine marks it. */
+export type MarkedRow = {
+  readonly key: string;
+  readonly floor: boolean;
+  readonly state: RowState;
+  readonly value: string | null;
+  readonly source: RowSource | null;
+};
+
+/** A pill as a question shows it: its words (or credits) and whether it is the lit default. */
+export type QuestionPill = { readonly id: string; readonly label: string | null; readonly credits: number | null; readonly lit: boolean };
+
+/** The one question to ask next (A1: one at a time; at most four pills, plus a field). */
+export type Question = {
+  readonly key: string;
+  readonly text: string;
+  readonly shape: QuestionShape;
+  readonly pills: readonly QuestionPill[];
+  readonly field: boolean;
+  /** The words for the field ("Other"), when the row has one. */
+  readonly fieldLabel: string | null;
+};
+
+/** Atomik's picks for "Decide for me", by row key: supplied by the caller, never made here. */
+export type Picks = Readonly<Record<string, string>>;
