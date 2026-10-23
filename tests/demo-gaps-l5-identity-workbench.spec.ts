@@ -77,19 +77,26 @@ async function notClipped(card: ReturnType<Page["getByTestId"]>, where: string) 
   expect(out, `${where}: clipped on the card`).toEqual([]);
 }
 
-/** The details, folded away under the tick: nothing asks for the tick first, and giving a detail ticks the box. */
+/**
+ * The details, folded away under the tick. The tick is never inferred: a detail leaves the box as it is, and Save with
+ * the box unticked saves nothing and says so. Only the person's own click on "Consent given" ticks it.
+ */
 async function recordConsent(page: Page, root: ReturnType<Page["getByTestId"]>, wait = 30_000) {
   await expect(root.getByTestId("consent-tick-box")).not.toBeChecked();
   await expect(root.getByTestId("consent-save")).not.toHaveAttribute("aria-disabled", /.*/);
   await expect(root.getByTestId("consent-person")).toBeHidden();
   await root.getByTestId("consent-more-head").click();
   await root.getByTestId("consent-person").fill("A Person");
-  await expect(root.getByTestId("consent-tick-box")).toBeChecked();
+  await expect(root.getByTestId("consent-tick-box")).not.toBeChecked();
+  await root.getByTestId("consent-save").click();
+  await expect(root.getByTestId("consent-problem")).toHaveText("Nothing saved. Tick Consent given to keep these details.");
   for (const id of ["consent-face", "consent-voice", "consent-use-production", "consent-use-identity", "consent-use-ads"]) await root.getByTestId(id).click();
   await root.getByTestId("consent-until").fill(new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10));
   await root.getByTestId("consent-file-input").setInputFiles({ name: "consent-statement.wav", mimeType: "audio/wav", buffer: silentWav() });
   await expect(root.getByTestId("consent-recording-state")).toContainText("recorded just now", { timeout: wait });
   await root.getByTestId("consent-attest-box").check();
+  await expect(root.getByTestId("consent-tick-box")).not.toBeChecked();
+  await root.getByTestId("consent-tick-box").check();
   await expect(root.getByTestId("consent-save")).not.toHaveAttribute("aria-disabled", /.*/);
   await page.waitForTimeout(300);
 }
@@ -158,6 +165,8 @@ test("Identity on the Cast card: not ticked, ticked and unticked on the card, th
   await dialog.getByTestId("consent-more-head").click();
   await expect(dialog.getByTestId("consent-person")).toHaveValue("A Person");
   await expect(dialog.getByTestId("consent-recording-state")).toHaveText("statement on file");
+  /* The tick's own file is kept for good: played, never replaced. */
+  await expect(dialog.getByTestId("consent-record")).toHaveCount(0);
   await dialog.getByTestId("consent-person").fill("A Person, by release");
   const patched = page.waitForResponse((r) => r.url().includes("/api/identity-consents/") && r.request().method() === "PATCH");
   await dialog.getByTestId("consent-save").click();
@@ -245,7 +254,7 @@ test("A training pressed with no tick binds to the cast card: the card shows it 
   await card.getByTestId("identity-train").click();
   const insp = page.getByTestId("board-inspector");
   const form = insp.getByTestId("insp-build");
-  await expect(form.getByTestId("soul-build")).toHaveText(/^Train Identity · about 54 cr$/);
+  await expect(form.getByTestId("soul-build")).toHaveText(/^Train Identity · 54 cr$/);
   await form.getByTestId("soul-still-upl_l5_face").click();
   /* The press, unticked: the browser answers it (202), so nothing trains or spends. */
   const saved = page.waitForResponse((r) => r.url().includes("/api/workbench/projects") && r.request().method() === "PUT");

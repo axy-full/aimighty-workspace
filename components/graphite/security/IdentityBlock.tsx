@@ -4,7 +4,7 @@ import { Price } from "@/components/graphite/Price";
 import { exact } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
 import type { IdentityCardView } from "@/lib/security/identity-card";
-import { consentLive } from "@/lib/security/consent-words";
+import { ownLiveTicks } from "@/lib/security/identity-card";
 import { useConsents, type ConsentsState } from "@/lib/security/use-consents";
 import { ConsentDialog } from "./ConsentDialog";
 import "./security.css";
@@ -59,12 +59,12 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
       {/* The tick takes the label's place while there is something to train, so the card keeps its rows. */}
       {canAct && (view.stage === "no-consent" || view.stage === "recorded" || view.stage === "failed") ? (
         <div className="gsec-id-head">
-          <ConsentTick scope={scope} projectKey={projectKey} subjectKey={subjectKey} subjectLabel={subjectLabel} liveId={view.consentId} ready={state.status === "ready"} />
+          <ConsentTick scope={scope} projectKey={projectKey} subjectKey={subjectKey} subjectLabel={subjectLabel} ready={state.status === "ready"} />
         </div>
       ) : <span className="gsec-id-label">Consent</span>}
       <span className="gsec-id-line" data-testid="identity-consent">{consentLine}</span>
       {view.stage === "training" ? <span className="gsec-bar" role="progressbar" aria-label="Training" aria-valuetext="Training; the trainer reports no progress" data-testid="identity-progress" /> : null}
-      {view.stage === "failed" ? (
+      {view.stage === "failed" || view.stage === "review" ? (
         <span data-testid="identity-failed">
           <span className="gsec-id-billed" data-testid="identity-billed">{view.billed}</span>
           {view.why ? <> · {view.why}</> : null}
@@ -82,14 +82,13 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
 
 /**
  * The consent tick (owner, 23 Oct 2026: a tick, not a gate), on the Cast card and in its Inspector: one plain line,
- * the box and Details as a link. Unticked until a person ticks it; ticking records who ticked and when, at once
- * (everything saves itself); unticking withdraws it, marked and never erased. Details opens the optional fields. Only
- * a person ticks: the route refuses tokens and agents.
+ * the box and Details as a link. The box is the reading person's own tick: unticked until they tick it, even when a
+ * teammate has ticked; ticking records who ticked and when, at once (everything saves itself); unticking withdraws
+ * their own tick, marked and never erased. Details opens the optional fields of their own tick. Only a person ticks:
+ * the route refuses tokens and agents.
  */
-export function ConsentTick({ scope, projectKey, subjectKey, subjectLabel, liveId, ready }: {
+export function ConsentTick({ scope, projectKey, subjectKey, subjectLabel, ready }: {
   scope: string; projectKey: string; subjectKey: string; subjectLabel: string;
-  /** The live tick, when there is one. */
-  liveId: string | null;
   /** The records have been read, so the box shows what is on file. */
   ready: boolean;
 }) {
@@ -98,16 +97,17 @@ export function ConsentTick({ scope, projectKey, subjectKey, subjectLabel, liveI
   const [pending, setPending] = useState<boolean | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const ticked = liveId != null;
+  /* The box is this person's own tick: ticked when they have a live one, whoever else has ticked. */
+  const own = ownLiveTicks(state.consents, subjectKey);
+  const ticked = own.length > 0;
   const busy = pending != null;
   const flip = async () => {
     if (busy || !ready) return;
     setPending(!ticked); setProblem(null);
-    /* Unticking withdraws every live tick of this cast member (there is one; older data may hold more), so the box
-       always ends unticked. */
-    const lives = state.consents.filter((r) => r.subjectKey === subjectKey && consentLive(r)).map((r) => r.id);
+    /* Unticking withdraws this person's own live ticks (one; older data may hold more), never anyone else's, so their
+       box always ends unticked. */
     let failed: string | null = null;
-    if (ticked) { for (const id of lives.length ? lives : [liveId]) failed = (await withdraw(id)) ?? failed; }
+    if (ticked) { for (const r of own) failed = (await withdraw(r.id)) ?? failed; }
     else failed = (await record({ projectId: projectKey, subjectKey, subjectLabel })).error;
     setPending(null);
     if (failed) setProblem(failed);

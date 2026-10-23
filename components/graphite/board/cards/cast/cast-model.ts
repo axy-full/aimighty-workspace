@@ -124,14 +124,20 @@ export function castStatus(d: CastCardData, identities: readonly SoulIdentity[] 
   return d.still ? { text: "Not locked", tone: "idle" } : { text: "No still yet", tone: "idle" };
 }
 
+/** The card a training was pressed from: the production it was pressed in, and the cast member, captured at the press. */
+export type PressedCard = { projectId: string; entryId: string | null; nodeId: string | null };
+
 /**
  * Binds an identity a person started training from a character's Inspector to that character's card (Rig save), so
  * the card follows it: training, then ready, or failed with its charge and Retry; never "No identity yet" with the
- * Train press offered again. Pure. The card reads the asset's `soulIdentityId` first, then the production cast entry's
- * `identityId`: the entry is set when there is one, and the card's own (unlocked) asset when it carries a binding
- * already or there is no entry. A locked asset is left as it is.
+ * Train press offered again. Pure. It binds only into the production the press was made in: any other project comes
+ * back unchanged (the same object), so a reply that lands after a switch never touches another production's cast.
+ * The card reads the asset's `soulIdentityId` first, then the production cast entry's `identityId`: the entry is set
+ * when there is one, and the card's own (unlocked) asset when it carries a binding already or there is no entry. A
+ * locked asset is left as it is.
  */
-export function bindCastIdentity(project: Project, card: Pick<CastCardData, "entryId" | "nodeId">, identityId: string): Project {
+export function bindCastIdentity(project: Project, card: PressedCard, identityId: string): Project {
+  if (project.id !== card.projectId) return project;
   let next = project;
   const cast = next.production?.cast;
   const hasEntry = Boolean(card.entryId && cast?.entries.some((e) => e.id === card.entryId));

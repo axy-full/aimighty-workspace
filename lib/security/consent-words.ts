@@ -74,6 +74,8 @@ export type ConsentRecord = {
   recordingUrl: string | null;
   recordedAt: number;
   recordedBy: string | null;
+  /** The tick is the reading person's own (their tick to untick); never an id. */
+  mine: boolean;
   revokedAt: number | null;
   identityId: string | null;
 };

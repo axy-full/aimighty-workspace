@@ -14,11 +14,15 @@ const ENDPOINT = "/api/soul/identities";
 const STATUS: Record<SoulIdentity["status"], string> = { submitting: "Sending", training: "Training", ready: "Ready", failed: "Failed", uncertain: "Needs review" };
 type Reference = { uploadId: string } | { genId: string };
 
-/** A version's fixed training price, as the workspace pays it; null when it has none (then it is not offered). */
+/**
+ * A version's training price, as the workspace pays it; null when it has none (then it is not offered). It is the
+ * server's fixed price, the exact figure the press sends as its approval (`maxCredits`, or `maxUsd` on the
+ * workspace's own keys), so it reads "N cr" (rule 14), never "about".
+ */
 export function trainingPrice(version: SoulTrainingVersion | null | undefined): string | null {
   if (!version) return null;
-  if (typeof version.trainingCredits === "number") return `about ${version.trainingCredits.toLocaleString("en-US")} cr`;
-  if (typeof version.trainingCostUsd === "number") return `about $${version.trainingCostUsd.toFixed(2)}`;
+  if (typeof version.trainingCredits === "number") return `${version.trainingCredits.toLocaleString("en-US")} cr`;
+  if (typeof version.trainingCostUsd === "number") return `$${version.trainingCostUsd.toFixed(2)}`;
   return null;
 }
 
@@ -50,8 +54,11 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
   subjectKey?: string | null;
   defaultName?: string;
   onTrained?: () => void;
-  /** A training the server took (202), or recovered: the board binds it to the cast card so the card follows it. */
-  onStarted?: (identity: SoulIdentity) => void;
+  /**
+   * A training the server took (202), or recovered: the board binds it to the cast card so the card follows it.
+   * `pressedIn` is the production the press was made in, captured at the press (the open one may differ by the reply).
+   */
+  onStarted?: (identity: SoulIdentity, pressedIn: string) => void;
 }) {
   const { toast } = useWorkspace();
   const { state, refresh } = useIdentities(scope, projectId);
@@ -82,6 +89,8 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
     : null;
 
   const train = async () => {
+    /* The production this press is made in, captured now: the reply can take minutes, and another may be open by then. */
+    const pressedIn = projectId;
     if (busy) return;
     setBusy(true); setOutcome(null);
     try {
@@ -104,7 +113,7 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
       }
       const { data: reply } = await paid.run<{ identity: SoulIdentity }>(ENDPOINT, body);
       const identity = reply.identity;
-      onStarted?.(identity);
+      onStarted?.(identity, pressedIn);
       if (identity.status === "failed" || identity.status === "uncertain") setOutcome({ error: true, text: identity.error || "Training needs review. Its status is listed below." });
       else {
         setOutcome({ error: false, text: `${identity.name} is training for ${familyOf(identity)}. It is listed below; characters can render with it once it is ready.` });

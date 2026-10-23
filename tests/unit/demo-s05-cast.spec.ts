@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { appearsIn, castLabel, castStatus, consentLine, deriveCast, renderPreset, shotsWords, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
+import { appearsIn, bindCastIdentity, castLabel, castStatus, consentLine, deriveCast, renderPreset, shotsWords, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
 import type { BoardCard, BoardSource } from "../../lib/board/types";
 import type { SoulIdentity } from "../../lib/workbench/soul-identity";
 import type { Asset, CanvasNode, Project } from "../../lib/workbench/studio";
@@ -104,4 +104,20 @@ test("an entry built earlier on an account that is no longer used is shown read-
   const [card] = cards(p);
   expect(card.data.retired).toBeTruthy();
   expect(castStatus(card.data, null).text).toBe("Built earlier · read-only");
+});
+
+test("a training binds only to the card it was pressed from, in the production it was pressed in; another production is left as it is", () => {
+  const pressedIn = withProduction(project(), { cast: { entries: [entry({ id: "cast-01" })] } });
+  const bound = bindCastIdentity(pressedIn, { projectId: pressedIn.id, entryId: "cast-01", nodeId: null }, "soul_new");
+  expect(bound.production?.cast?.entries[0].identityId).toBe("soul_new");
+  /* The same cast entry id in another production (ids such as cast-01 repeat across productions): nothing changes. */
+  const other = { ...withProduction(project(), { cast: { entries: [entry({ id: "cast-01" })] } }), id: "another_production" } as Project;
+  const untouched = bindCastIdentity(other, { projectId: pressedIn.id, entryId: "cast-01", nodeId: null }, "soul_new");
+  expect(untouched).toBe(other);
+  expect(untouched.production?.cast?.entries[0].identityId).toBeUndefined();
+  /* A locked asset is never rebound. */
+  const locked = { ...pressedIn, assets: [{ id: "a1", name: "Lead", kind: "image", category: "Character", url: "/x", description: "", prompt: "", status: "Draft", locked: true, version: 1, refs: [], soulIdentityId: "soul_old" } as Asset],
+    nodes: [{ id: "n1", assetId: "a1", title: "Lead", type: "reference", x: 0, y: 0, width: 200, linked: [] } as unknown as CanvasNode] } as Project;
+  const lockedBound = bindCastIdentity(locked, { projectId: locked.id, entryId: null, nodeId: "n1" }, "soul_new");
+  expect(lockedBound.assets[0].soulIdentityId).toBe("soul_old");
 });

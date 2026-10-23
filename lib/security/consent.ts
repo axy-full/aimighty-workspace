@@ -76,34 +76,35 @@ async function names(ids: string[]): Promise<Map<string, string>> {
   return new Map(rs.rows.map((r) => [String(r.id), String(r.name)]));
 }
 
-function toRecord(r: Row, who: Map<string, string>): ConsentRecord {
+/** `viewer`: the signed-in person reading, so each tick says whether it is theirs (`mine`); never an id. */
+function toRecord(r: Row, who: Map<string, string>, viewer?: string | null): ConsentRecord {
   const uses = ((): ConsentUse[] => { try { const v = JSON.parse(String(r.uses_json)); return Array.isArray(v) ? CONSENT_USES.filter((u) => v.includes(u)) : []; } catch { return []; } })();
   return {
     id: String(r.id), projectId: String(r.project_id), subjectKey: String(r.subject_key), subjectLabel: String(r.subject_label ?? ""),
     personName: String(r.person_name), face: Number(r.covers_face) === 1, voice: Number(r.covers_voice) === 1, uses, otherUse: String(r.other_use ?? ""),
     untilAt: Number(r.until_at) > 0 ? Number(r.until_at) : null, attested: Number(r.attested) === 1, hasRecording: Boolean(r.recording_id), recordingUrl: r.recording_id ? `/api/identity-consents/${encodeURIComponent(String(r.id))}/recording` : null, recordedAt: Number(r.recorded_at),
-    recordedBy: who.get(String(r.recorded_by)) ?? null,
+    recordedBy: who.get(String(r.recorded_by)) ?? null, mine: viewer != null && String(r.recorded_by) === viewer,
     revokedAt: r.revoked_at == null ? null : Number(r.revoked_at), identityId: r.identity_id == null ? null : String(r.identity_id),
   };
 }
 
 /** A production's records, newest first, withdrawn ones included (marked). Optionally one cast member's only. */
-export async function listConsents(projectId: string, subjectKey?: string | null): Promise<ConsentRecord[]> {
+export async function listConsents(projectId: string, subjectKey?: string | null, viewer?: string | null): Promise<ConsentRecord[]> {
   await consentsReady();
   const rs = await db().execute({
     sql: `SELECT * FROM identity_consents WHERE project_id = ?${subjectKey ? " AND subject_key = ?" : ""} ORDER BY recorded_at DESC, id DESC LIMIT 200`,
     args: subjectKey ? [projectId, subjectKey] : [projectId],
   });
   const who = await names(rs.rows.map((r) => String(r.recorded_by)));
-  return rs.rows.map((r) => toRecord(r, who));
+  return rs.rows.map((r) => toRecord(r, who, viewer));
 }
 
-export async function getConsent(id: string): Promise<ConsentRecord | null> {
+export async function getConsent(id: string, viewer?: string | null): Promise<ConsentRecord | null> {
   await consentsReady();
   const rs = await db().execute({ sql: `SELECT * FROM identity_consents WHERE id = ? LIMIT 1`, args: [id] });
   const row = rs.rows[0];
   if (!row) return null;
-  return toRecord(row, await names([String(row.recorded_by)]));
+  return toRecord(row, await names([String(row.recorded_by)]), viewer);
 }
 
 /* ── The recording ──────────────────────────────────────────────────────── */
@@ -183,27 +184,45 @@ export async function recordConsent(input: ConsentInput, caller: Caller & { user
     },
     securityAuditStatement({ workspaceId: requireTenant().id, actorId: caller.user.id, action: "identity_consent.recorded", targetType: "identity_consent", targetId: cid, details: clean.untilAt != null ? { expiresAt: clean.untilAt } : {} }),
   ], "write");
-  return (await getConsent(cid))!;
+  return (await getConsent(cid, caller.user.id))!;
 }
 
 /**
- * Edits the optional details of a live tick in place. Who ticked and when are never changed: they stay the ticking
- * person's. The person who ticked it, or an owner or admin, may; nobody else, and never a token or an agent. A file
- * that is newly given has to be one this person added. The edit is audited; the tick itself is never re-made.
+ * Adds to the optional details of a live tick, in place. It merges: a field the request leaves out stays as it was.
+ * It never drops the file: a tick that has one keeps it (an empty or missing file id leaves it attached, and another
+ * file is refused); a tick with none may be given one, which has to be this person's own recording. Who ticked and
+ * when are never changed: they stay the ticking person's. Every edit is audited with who made it and when
+ * (`identity_consent.updated`: its actor and time). The person who ticked it, or an owner or admin, may; nobody else,
+ * and never a token or an agent.
  */
 export async function updateConsent(consentId: string, input: ConsentInput, caller: Caller & { user: { id: string; role?: string; owner?: boolean } }, at = now()): Promise<ConsentRecord> {
   assertPerson(caller);
   await consentsReady();
-  const rs = await db().execute({ sql: `SELECT project_id, subject_key, recorded_by, revoked_at, until_at, recording_id FROM identity_consents WHERE id = ? LIMIT 1`, args: [consentId] });
+  const rs = await db().execute({ sql: `SELECT * FROM identity_consents WHERE id = ? LIMIT 1`, args: [consentId] });
   const row = rs.rows[0];
   if (!row) throw new ConsentError("That consent record is not in this workspace.", 404);
   const admin = caller.user.owner === true || caller.user.role === "admin";
   if (String(row.recorded_by) !== caller.user.id && !admin) throw new ConsentError("The person who ticked it, or an admin, can change its details.", 403);
   if (row.revoked_at != null || (Number(row.until_at) > 0 && Number(row.until_at) <= at)) throw new ConsentError("That tick is no longer live. Tick it again.", 409);
-  /* A file left out keeps the tick's own; "" removes it; a new id replaces it. */
-  const recordingId = input.recordingId === undefined ? String(row.recording_id ?? "") : input.recordingId;
-  const clean = cleanConsent({ ...input, recordingId, projectId: String(row.project_id), subjectKey: String(row.subject_key) }, at);
-  if (clean.recordingId && clean.recordingId !== String(row.recording_id ?? "")) {
+  const given = (key: keyof ConsentInput) => Object.prototype.hasOwnProperty.call(input, key) && input[key] !== undefined;
+  const was = toRecord(row, new Map());
+  const keptFile = String(row.recording_id ?? "");
+  const newFile = given("recordingId") && typeof input.recordingId === "string" ? input.recordingId : "";
+  if (keptFile && newFile && newFile !== keptFile) throw new ConsentError("This tick already has its file, and it is kept.", 409);
+  const merged: ConsentInput = {
+    projectId: was.projectId, subjectKey: was.subjectKey,
+    subjectLabel: given("subjectLabel") ? input.subjectLabel : was.subjectLabel,
+    personName: given("personName") ? input.personName : was.personName,
+    face: given("face") ? input.face : was.face,
+    voice: given("voice") ? input.voice : was.voice,
+    uses: given("uses") ? input.uses : was.uses,
+    otherUse: given("otherUse") ? input.otherUse : was.otherUse,
+    until: given("until") ? input.until : was.untilAt ?? undefined,
+    attested: given("attested") ? input.attested : was.attested,
+    recordingId: keptFile || newFile,
+  };
+  const clean = cleanConsent(merged, at);
+  if (!keptFile && clean.recordingId) {
     const problem = await recordingProblem(clean.recordingId, caller.user.id);
     if (problem) throw new ConsentError(problem);
   }
@@ -215,7 +234,7 @@ export async function updateConsent(consentId: string, input: ConsentInput, call
     },
     securityAuditStatement({ workspaceId: requireTenant().id, actorId: caller.user.id, action: "identity_consent.updated", targetType: "identity_consent", targetId: consentId, details: clean.untilAt != null ? { expiresAt: clean.untilAt } : {} }),
   ], "write");
-  return (await getConsent(consentId))!;
+  return (await getConsent(consentId, caller.user.id))!;
 }
 
 /**

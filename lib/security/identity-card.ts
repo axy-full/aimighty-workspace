@@ -14,7 +14,8 @@ import { consentLive, consentSummary, type ConsentRecord } from "./consent-words
  */
 export type IdentityLike = { id: string; name: string; status: "submitting" | "training" | "ready" | "failed" | "uncertain"; creditsBilled: number | null; error: string | null; createdAt: number };
 
-export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed" | "unread";
+/* "review": a training whose submission is uncertain. Nothing is offered to press again until it is reconciled. */
+export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed" | "review" | "unread";
 export type Tone = "done" | "working" | "waiting" | "idle";
 
 export type IdentityCardView = {
@@ -37,6 +38,14 @@ export type IdentityCardView = {
 export function currentConsent(records: readonly ConsentRecord[], subjectKey: string, at = Date.now()): ConsentRecord | null {
   const mine = records.filter((r) => r.subjectKey === subjectKey).sort((a, b) => b.recordedAt - a.recordedAt);
   return mine.find((r) => consentLive(r, at)) ?? mine[0] ?? null;
+}
+
+/**
+ * The reading person's own live ticks for a cast member, newest first. Each person's "Consent given" is their own:
+ * another member may tick beside a live tick that isn't theirs, and unticking withdraws only their own.
+ */
+export function ownLiveTicks(records: readonly ConsentRecord[], subjectKey: string, at = Date.now()): ConsentRecord[] {
+  return records.filter((r) => r.subjectKey === subjectKey && r.mine && consentLive(r, at)).sort((a, b) => b.recordedAt - a.recordedAt);
 }
 
 /** "Nothing billed", "Billed 54 cr" or "Charge not confirmed yet", from the ledger's figure for this training. */
@@ -70,7 +79,7 @@ export function identityCardView(input: {
   if (identity?.status === "submitting" || identity?.status === "training") return { ...base, stage: "training", text: "Training", tone: "working" };
   if (identity?.status === "failed" || identity?.status === "uncertain") {
     return {
-      ...base, stage: "failed", tone: "waiting",
+      ...base, stage: identity.status === "uncertain" ? "review" : "failed", tone: "waiting",
       text: identity.status === "uncertain" ? "Training needs review" : "Training failed",
       billed: billedWords(identity.creditsBilled), why: identity.error,
     };

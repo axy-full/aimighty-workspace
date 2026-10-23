@@ -1,20 +1,22 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { ATTEST_LINE, CONSENT_USES, USE_LABEL, consentLive, dayOf, type ConsentRecord } from "@/lib/security/consent-words";
-import { currentConsent } from "@/lib/security/identity-card";
+import { ATTEST_LINE, CONSENT_USES, USE_LABEL, dayOf, type ConsentRecord } from "@/lib/security/consent-words";
+import { ownLiveTicks } from "@/lib/security/identity-card";
 import { useConsents, type ConsentDraft } from "@/lib/security/use-consents";
 import "./security.css";
 
 /*
  * The consent tick a PERSON gives (Gaps A, "?view=board&gap=identity&state=consent"; phone "screen=consent"). A tick,
- * not a gate (owner, 23 Oct 2026). The form opens on the cast member's live tick when there is one (ticked, its details
- * filled) and unticked when there is none. The details are folded away and optional, kept for the lawyer's NOC: whose
- * face and voice it is, what it covers, the uses allowed, an end date, a recording of that person saying they agree,
- * and the attest box. Nothing waits on any of it, and nothing asks for the tick first: editing a detail ticks the box.
- * Save edits the live tick in place (who ticked and when stay its ticker's), makes the tick only when there is none,
- * and withdraws the live tick when the box was unticked. Ticking is a person's press in a signed-in browser; the
- * route refuses tokens and agents, so Atomik can't do this.
+ * not a gate (owner, 23 Oct 2026). The form is the reading person's own tick: it opens on their live tick when they
+ * have one (ticked, its details filled) and unticked when they have none, whoever else has ticked. The details are
+ * folded away and optional, kept for the lawyer's NOC: whose face and voice it is, what it covers, the uses allowed, an
+ * end date, a recording of that person saying they agree, and the attest box. Nothing waits on any of it.
+ * The tick is never inferred: only the person's own click on "Consent given" ticks it; a detail does not.
+ * Save: ticked, it adds the details to their live tick in place (merged; its file is never dropped; who ticked and
+ * when stay theirs), or makes their tick when they have none. Unticked, it withdraws their own live ticks (the same
+ * set the card's untick withdraws); with none, it saves nothing and says so. Ticking is a person's press in a
+ * signed-in browser; the route refuses tokens and agents, so Atomik can't do this.
  *
  * The recording is made here with the microphone (or a sound or video file the person already has) and stored apart
  * from uploads, where only the recorder, an owner or an admin can play it; nothing is sent anywhere else. Nothing
@@ -38,11 +40,13 @@ export function ConsentForm(props: FormProps) {
   if (state.status === "idle" || state.status === "loading") {
     return <p className="gsec-sub" role="status" data-testid="consent-reading">Reading…</p>;
   }
-  const found = state.status === "ready" ? currentConsent(state.consents, props.subjectKey) : null;
-  return <TickForm {...props} live={found && consentLive(found) ? found : null} />;
+  const own = state.status === "ready" ? ownLiveTicks(state.consents, props.subjectKey) : [];
+  return <TickForm {...props} own={own} />;
 }
 
-function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel, layout, live }: FormProps & { live: ConsentRecord | null }) {
+function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel, layout, own }: FormProps & { own: ConsentRecord[] }) {
+  /* The person's own newest live tick, if any: the one the form edits. */
+  const live = own[0] ?? null;
   const { record, update, withdraw } = useConsents(scope, projectId);
   const scoped = useScopedFetch(scope);
   /* The tick: unticked until the person ticks it, or ticked, its details filled, when it is already on file. Every
@@ -85,7 +89,6 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
       objectUrl.current = URL.createObjectURL(blob);
       setRec({ state: "done", uploadId: stored.id, url: objectUrl.current, seconds: seconds ?? stored.durationS, when: "recorded just now" });
-      setTicked(true);
     } catch (error) {
       restore();
       setProblem(error instanceof Error && error.message ? error.message : "The recording could not be saved. Try again.");
@@ -121,19 +124,26 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
   const stop = () => media.current?.recorder.stop();
   const pick = (f: File | undefined) => { if (f) void store(f, f.name, null); };
 
-  /* Giving a detail is giving consent: the box ticks with it, so nothing ever asks for the tick first. */
-  const detail = (fn: () => void) => { fn(); setTicked(true); setProblem(null); };
+  /* A detail is only a detail: the tick is the person's own click on "Consent given", never inferred from typing. */
+  const detail = (fn: () => void) => { fn(); setProblem(null); };
   const toggleUse = (use: string) => detail(() => setUses((all) => (all.includes(use) ? all.filter((u) => u !== use) : [...all, use])));
   /* A recording still saving is waited for rather than dropped; nothing else holds Save. */
   const why = rec.state === "recording" || rec.state === "uploading" ? "The recording is still saving." : null;
 
   const save = async () => {
     if (why || busy) { if (why) setProblem(why); return; }
-    /* Unticked with nothing on file: nothing to keep. */
-    if (!ticked && !live) { onCancel(); return; }
+    /* Unticked with no tick of theirs on file: nothing is saved, and the form says so (or closes, if nothing was given). */
+    if (!ticked && !live) {
+      const gave = personName.trim() || face || voice || uses.length || (other ?? "").trim() || until || attested || rec.state === "done";
+      if (gave) { setProblem("Nothing saved. Tick Consent given to keep these details."); return; }
+      onCancel();
+      return;
+    }
     setBusy(true); setProblem(null);
-    if (!ticked && live) {
-      const failed = await withdraw(live.id);
+    if (!ticked) {
+      /* Unticked: withdraw this person's own live ticks, the same set the card's untick withdraws. */
+      let failed: string | null = null;
+      for (const r of own) failed = (await withdraw(r.id)) ?? failed;
       setBusy(false);
       if (failed) { setProblem(failed); return; }
       onDone(null);
@@ -142,8 +152,8 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
     const draft: ConsentDraft = {
       projectId, subjectKey, subjectLabel, personName: personName.trim(), face, voice,
       uses, otherUse: (other ?? "").trim(), until, attested,
-      /* A new file replaces the old; the live tick's own file is kept unless one was made here; none is "none". */
-      ...(rec.state === "done" ? { recordingId: rec.uploadId } : rec.state === "kept" ? {} : { recordingId: "" }),
+      /* A file made here is attached; a tick's own file is never dropped (the server keeps it either way). */
+      ...(rec.state === "done" ? { recordingId: rec.uploadId } : {}),
     };
     const out = live ? await update(live.id, draft) : await record(draft);
     setBusy(false);
@@ -209,7 +219,8 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
               <span className="gsec-rec-acts">
                 {rec.state === "recording" ? <button type="button" className="gsec-btn" onClick={stop} data-testid="consent-stop">Stop</button> : null}
                 {(rec.state === "done" || rec.state === "kept") && rec.url ? <button type="button" className="gsec-btn" onClick={() => void new Audio(rec.url!).play().catch(() => setProblem("This recording can't play here."))} data-testid="consent-play">Play</button> : null}
-                {rec.state === "none" || rec.state === "done" || rec.state === "kept" ? (
+                {/* A tick's own file is kept for good: it is played, never replaced. */}
+                {rec.state === "none" || rec.state === "done" ? (
                   <button type="button" className="gsec-btn" onClick={() => void start()} data-testid="consent-record">{rec.state === "none" ? "Record" : "Record again"}</button>
                 ) : null}
                 {rec.state === "none" ? <button type="button" className="gsec-btn" onClick={() => file.current?.click()} data-testid="consent-file">Use a file</button> : null}

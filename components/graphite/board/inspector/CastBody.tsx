@@ -37,9 +37,21 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
     readFailed: consents.state.status === "error" || state.status === "error" });
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
-  /* Offered while there is something to train: no identity, or one that failed (Retry). Never beside a training in flight
-     or a ready identity, so a started training is never pressed again. */
-  const trainable = identity?.status !== "ready" && identity?.status !== "training" && identity?.status !== "submitting";
+  /* Offered while there is something to train: no identity, or one that failed (Retry). Never beside a training in flight,
+     one that needs review (uncertain, until it is reconciled) or a ready identity, so a paid press is never repeated. */
+  const trainable = !identity || identity.status === "failed";
+  /* The card this press was made from, captured now (the production and the cast member); the reply binds only there. */
+  const pressed = { entryId: data.entryId, nodeId: data.nodeId };
+  const bindStarted = (identityId: string, pressedIn: string) => {
+    let elsewhere = false;
+    const refused = ctx.rig.apply((p) => {
+      elsewhere = p.id !== pressedIn;
+      return bindCastIdentity(p, { ...pressed, projectId: pressedIn }, identityId);
+    });
+    if (refused) { ctx.toast(`The training started, but its card could not follow it: ${refused}`); return; }
+    if (elsewhere) { ctx.toast("The training started in another production. Open it there to follow it on its card."); return; }
+    void ctx.rig.save();
+  };
   const copy = () => { void navigator.clipboard?.writeText(data.prompt).then(() => ctx.toast("Prompt copied"), () => ctx.toast("The prompt could not be copied.")); };
   const lock = async () => {
     if (!data.nodeId) return;
@@ -62,7 +74,7 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
           {/* The tick (a person's own, recorded at once) and the optional details; nothing waits on it. */}
           {act && trainable ? (
             <div className="gsec-id-head" data-testid="insp-consent-tick">
-              <ConsentTick scope={ctx.scope} projectKey={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()} liveId={idView.consentId} ready={consents.state.status === "ready"} />
+              <ConsentTick scope={ctx.scope} projectKey={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()} ready={consents.state.status === "ready"} />
             </div>
           ) : null}
         </section>
@@ -85,7 +97,7 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
             <CastIdentities scope={ctx.scope} projectId={ctx.project.id} items={items} save={ctx.rig.save}
               consent={idView.consentId ? { id: idView.consentId, line: idView.consent, subjectKey: card.id } : null} subjectKey={card.id}
               defaultName={data.title.trim()} onTrained={() => void consents.refresh()}
-              onStarted={(started) => { if (!ctx.rig.apply((p) => bindCastIdentity(p, data, started.id))) void ctx.rig.save(); }} />
+              onStarted={(started, pressedIn) => bindStarted(started.id, pressedIn)} />
           </div>
         </section>
       ) : null}
