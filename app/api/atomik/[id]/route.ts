@@ -148,10 +148,11 @@ export const POST = withTenant(async function POST(req: NextRequest, ctx: Ctx) {
   }
   return NextResponse.json(memberThread(await getChat(id)));
   };
-  /* Atomik's thinking connected before the request is claimed or the message saved: an empty slot is refused with nothing written, nothing billed. */
-  if (!quoteOnly) {
+  /* Atomik's thinking connected before a NEW request is claimed or its message saved: an empty slot is refused with nothing written,
+     nothing billed. A retry under a key that already has a claim gets that claim's answer, whatever the slot says now. */
+  const admit = async () => {
     const off = await resolveModel("auto", "plan").then(() => null, (error: unknown) => error);
-    if (off instanceof Error && off.message === THINKING_UNAVAILABLE) return NextResponse.json({ error: off.message, chat: memberThread(await getChat(id)) }, { status: 503 });
-  }
-  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });
+    return off instanceof Error && off.message === THINKING_UNAVAILABLE ? NextResponse.json({ error: off.message, chat: memberThread(await getChat(id)) }, { status: 503 }) : null;
+  };
+  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS, admit });
 });

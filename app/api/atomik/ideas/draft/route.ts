@@ -94,7 +94,8 @@ export const POST = withTenant(async function POST(req: Request) {
   return NextResponse.json({ ...out, ...(await textRunCost(result)) });
   } catch (error) { return paidTextFailure(error); }
   };
-  /* Atomik's thinking connected before the request is claimed: an empty slot is refused with nothing written, nothing billed. */
-  if (!quoteOnly) { const off = await resolveModel("auto", "writing").then(() => null, (error: unknown) => error); if (off instanceof Error && off.message === THINKING_UNAVAILABLE) return paidTextFailure(off); }
-  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS });
+  /* Atomik's thinking connected before a NEW request is claimed: an empty slot is refused with nothing written, nothing billed. A retry
+     under a key that already has a claim gets that claim's answer (its saved reply), whatever the slot says now. */
+  const admit = async () => { const off = await resolveModel("auto", "writing").then(() => null, (error: unknown) => error); return off instanceof Error && off.message === THINKING_UNAVAILABLE ? paidTextFailure(off) : null; };
+  return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run, { answerAfterMs: ANSWER_AFTER_MS, admit });
 });
