@@ -363,6 +363,24 @@ test("the chat list, Verify scorecards, statements, the usage ledger and the exp
   });
 });
 
+test("the settings read and an admin's Thinking save carry the level only: no thinking model, version or effort", async () => {
+  const ws = await funded("settings");
+  const settings = await route("app/api/settings/route.ts", { "@/lib/auth": { ...(await import("../../lib/auth")), withTenant: (fn: Handler) => fn,
+    requireUser: async () => ({ user: person }), requireAdmin: async () => ({ user: person }) } });
+  await inTenant(ws, async () => {
+    for (const level of ["high", "low", "medium"]) {
+      const saved = await answer(await settings.PATCH!(json("/api/settings", { atomikThinking: level }, "PATCH")));
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      expectNothingDisclosed(`PATCH /api/settings ${level}`, saved.body);
+      const read = await answer(await settings.GET!(new Request("https://particl.test/api/settings")));
+      expect(read.status).toBe(200);
+      expect((read.body.settings as Record<string, string>).atomikThinking).toBe(level);
+      /* The whole read a member is sent, the platform's defaults included: the level is there, no thinking model is. */
+      expectNothingDisclosed(`GET /api/settings at ${level}`, read.body);
+    }
+  });
+});
+
 test("the matcher finds every slot's id, the writer's and an effort, and lets engines through", () => {
   for (const id of [HIGH, MEDIUM, LOW, WRITER, DIRECT_MODEL_IDS[MEDIUM]]) expect(thinkingModelNames(JSON.stringify({ model: id })), id).not.toEqual([]);
   expect(thinkingModelNames("reasoning_effort, effort: high")).toHaveLength(2);
