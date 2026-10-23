@@ -136,7 +136,7 @@ All tests run under `ENGINE_MOCK=1` on file databases, with no vendor call (rule
 | 5 | Mode separation | `tests/unit/filmRecordModeSeparation.spec.ts` | Only listed modules import the private module. Private values echoed by a scripted model never reach an Agent-mode reply, History, receipt or error |
 | 6 | Never shown | `tests/unit/filmRecordNeverShown.spec.ts` | No route under `app/api` (by glob) returns record ids or interview sentinel strings, outside the listed views |
 | 7 | Tracing | `tests/unit/filmRecordTracing.spec.ts` | The record span carries ids, counts and timings only |
-| 8 | Privacy and consent | `tests/unit/filmRecordPrivacy.spec.ts` | Nothing crosses a workspace or another member's private board. No real face or voice without consent. No machine approver |
+| 8 | Privacy and consent | `tests/unit/filmRecordPrivacy.spec.ts` | Nothing crosses a workspace or another member's private board. A real face or voice cites its consent tick when there is one, and nothing is refused for want of it. No machine approver |
 | 9 | Durability | `tests/unit/filmRecordDurability.spec.ts` | A failure leaves the record unchanged. Retry under the same key works. A crash after the commit duplicates nothing. The person wins a race |
 | 10 | Size | `tests/unit/filmRecordSize.spec.ts` | 200 takes vs 10: the same query count, indexed plans, a capped payload, a time ratio ≤ 1.5 |
 | — | Nothing trains on it | not a test | the vendor's data-use setting on the key, set by the owner |
@@ -146,6 +146,8 @@ All tests run under `ENGINE_MOCK=1` on file databases, with no vendor call (rule
 ## 5. The migration plan, for the owner's yes
 
 **Nothing below runs until the owner says yes.** One small PR per step, in this order (rule 8).
+
+Each step has its own yes (owner, 23 Oct 2026, 13:15): M1 may go after deploy #6 (it is neither money nor a schema change); M2 and every later step each wait for his yes before it runs. Approving this plan approves no step.
 
 **The switch.** `V30_FILM_RECORD` is on only when all three hold:
 
@@ -186,7 +188,7 @@ It is off for every customer workspace. When it is off, nothing is made, read or
 - **Private rows:** only `chose = 'director'` rows are exported. An engine Atomik chose is never exported, per the 17 Oct rule: "Agent jobs never expose an engine in the API, receipts, exports or error messages; Director jobs expose what they chose" (`CLAUDE.md:54`).
 - **Existing rules carry over:** the `_usd` strip, the private-board boundary and the table allowlist (`lib/workspaceExport.ts:12-41`, `:115-143`).
 
-**For the owner, out of scope here:** today's export already writes `generations.model` for every take, Agent jobs included (`lib/workspaceExport.ts:104-106`). It is flagged for a follow-up PR on the export's engine field (the model-disclosure work after #884).
+**For the owner, out of scope here:** today's export already writes `generations.model` for every take, Agent jobs included (`lib/workspaceExport.ts:104-106`). It is flagged for a follow-up PR on the export's engine field (the model-disclosure work in 3b-3).
 
 ---
 
@@ -345,7 +347,7 @@ Never edited: a correction is a new line. Indexes:
 | reject_said_id | TEXT | yes | |
 | quote_credits, cost_credits | REAL | yes | credit columns |
 | cost_state | TEXT | no, `quoted` | `quoted` · `settled` · `nothing_billed` · `unknown` |
-| approval_id, consent_ref | TEXT | yes | `consent_ref` = `identity_consents.id`, required for a real face, voice or lip-sync |
+| approval_id, consent_ref | TEXT | yes | `consent_ref` = `identity_consents.id`, optional: it cites the consent tick (who ticked, when, a file if any) when one was recorded. Nothing is refused without it (owner, 23 Oct 2026: consent is a tick, never a gate) |
 | mode, made_by, made_at, updated_at | | no | |
 
 Indexes:
@@ -466,7 +468,7 @@ The ripple query is one recursive CTE that binds `workspace_id` and `production_
   - Two databases, then one file holding two workspace ids (the `tests/unit/productionSteps.spec.ts:15-23` setup): nothing is read, listed, exported or archived across them.
   - The store throws with no tenant or with another tenant.
   - A house-default or Director-preference query run for member A never counts member B's private board.
-  - A real face, voice or lip-sync item without `consent_ref` is refused.
+  - A real face, voice or lip-sync item without `consent_ref` is written and made, never refused; with a tick on record, `consent_ref` cites it.
   - An `agent:` approver is refused by the CHECK and the triggers.
 - **9 Durability.** Inject a failure at open, model, commit, and between commit and checkpoint. Row counts and the head are unchanged; `film_record_turns` is excluded from the count. Then:
   - a retry under the same key after `failed` commits once;
