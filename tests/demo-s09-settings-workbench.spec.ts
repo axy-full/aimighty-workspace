@@ -387,8 +387,9 @@ test("Advanced: Models, Tools and Workspace in folds, from the routes that serve
   const { errors, writes } = await open(page, "/suites?view=workspace&tab=advanced&open=models");
   await expect(page.getByTestId("settings-title")).toHaveText("Advanced");
   await expect(page.getByTestId("settings-fold-models")).toHaveAttribute("data-open", "true");
-  await expect(page.getByTestId("settings-thinking")).toContainText("Claude, OpenAI and Grok · Auto starts here");
-  await expect(page.getByTestId("settings-effort").locator(".gs-row-v")).toHaveText("Auto");
+  /* Atomik's thinking is no model and no effort here (Amendment (iii) §E): it is the Workspace fold's Thinking (tests/thinking-setting-workbench.spec.ts). */
+  await expect(page.getByTestId("settings-fold-models").getByTestId("settings-thinking")).toHaveCount(0);
+  await expect(page.getByTestId("settings-fold-models")).not.toContainText(/thinking model|reasoning effort|Auto starts here/i);
   await expect(page.getByTestId("settings-view")).not.toContainText(/\bDepth\b/);
   await expect(page.getByTestId("settings-engines").locator(".gs-row-v")).toHaveText("2 available");
   await expect(page.getByTestId("settings-fold-tools")).not.toHaveAttribute("data-open", "true");
@@ -399,9 +400,6 @@ test("Advanced: Models, Tools and Workspace in folds, from the routes that serve
   await page.getByTestId("settings-engines-show").click();
   await expect(page.getByTestId("settings-engine")).toHaveCount(3);
   await expect(page.getByTestId("engine-xai")).toBeVisible();
-  await page.getByTestId("settings-thinking-change").click();
-  /* Atomik's panel on a desktop (`atomik=1`); on a phone the sheet is its own screen (`screen=atomik`, components/graphite/phone/phone-model.ts). */
-  await expect.poll(() => param(page, "atomik") === "1" || param(page, "screen") === "atomik" || param(page, "page") === "agent").toBe(true);
   await page.goto("/suites?view=workspace&tab=advanced");
   await expect(page.getByTestId("settings-fold-models")).not.toHaveAttribute("data-open", "true");
   await page.getByTestId("settings-fold-tools-toggle").click();

@@ -77,7 +77,6 @@ const UNTIL_MODEL_POLICY: readonly { path: string; text: string; count: number }
   { path: "components/atomik/ModelPicker.tsx", text: "Reasoning effort", count: 2 },
   { path: "components/atomik/ModelPicker.tsx", text: "Choose a model to set its reasoning effort.", count: 1 },
   { path: "components/workbench/AtomikRunDialog.tsx", text: "Reasoning effort", count: 1 },
-  { path: "components/graphite/settings/advanced/AdvancedSection.tsx", text: "Reasoning effort", count: 1 },
   /* The crew's per-member agent and its effort setting: the owner's call in the model-policy PR (Crew runs on xAI; E says xAI leaves Atomik). */
   { path: "app/api/crew/members/route.ts", text: "Choose low, medium or high effort.", count: 1 },
 ];

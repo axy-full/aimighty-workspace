@@ -174,12 +174,13 @@ export function tokenLine(t: ApiToken, unit: TokenUnit, now = Date.now()): strin
  */
 export type ReachPlace =
   | { to: "atomik" }
-  | { to: "settings"; section: "advanced" | "connections"; open?: "models" | "mcp" }
+  | { to: "settings"; section: "advanced" | "connections"; open?: "models" | "mcp" | "workspace" }
   | { to: "make" }
   | { to: "suite"; suite: "studio"; page: "edit" | "astra" };
 export const REACH_PLACES: Readonly<Record<string, { label: string; line?: string; action: string; place: ReachPlace }>> = Object.freeze({
   plan: { label: "Plan & price", action: "Open", place: { to: "atomik" } },
-  thinking: { label: "Thinking models", action: "Open", place: { to: "settings", section: "advanced", open: "models" } },
+  /* Atomik's thinking is a level, never a model (Amendment (iii) §E): the row opens the Workspace fold's Thinking. */
+  thinking: { label: "Thinking", line: "High · Medium · Low, for every production", action: "Open", place: { to: "settings", section: "advanced", open: "workspace" } },
   engines: { label: "Particl engines", action: "Open", place: { to: "make" } },
   sound: { label: "Voice, sound & music", action: "Open", place: { to: "suite", suite: "studio", page: "edit" } },
   astra: { label: "3D blocking", line: "Block a scene in 3D before anything renders", action: "Open", place: { to: "suite", suite: "studio", page: "astra" } },

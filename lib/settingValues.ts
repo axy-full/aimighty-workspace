@@ -39,7 +39,12 @@ export const THINKING_OPTIONS: readonly (readonly [string, string])[] = [
   ["low", "Low"],
 ];
 
-const allowed = (options: readonly (readonly [string, string])[], value: unknown) => options.some(([v]) => v === String(value));
+/** The word a person reads for a stored Thinking value: High, Medium or Low; Medium (the default) for anything else, as the server reads it. */
+export function thinkingWord(value: unknown): string {
+  return THINKING_OPTIONS.find(([v]) => v === value)?.[1] ?? "Medium";
+}
+
+const allowed =(options: readonly (readonly [string, string])[], value: unknown) => options.some(([v]) => v === String(value));
 
 /** A whole number of credits from 1 up to a million, as a person types it (digits only). */
 export function wholeCredits(value: unknown): boolean {
