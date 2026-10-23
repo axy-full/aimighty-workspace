@@ -99,8 +99,10 @@ export function atomikEffortOptions(model: CatalogModel): AtomikEffortOption[] {
   return result;
 }
 
-function invalidEffort(model: CatalogModel): Error & { status: number } {
-  return Object.assign(new Error(`That effort setting is not available for ${model.name}. Choose one of this model's supported settings.`), { status: 422 });
+/* Names no model: the message reaches the person through every text route (lib/paidText.ts › paidTextFailure), and the model behind
+   Atomik's thinking or the Treatment writer is never disclosed (Amendment (iii) §E). */
+function invalidEffort(): Error & { status: number } {
+  return Object.assign(new Error("That effort setting is not available."), { status: 422 });
 }
 
 const EFFORT_ALLOWANCE: Record<string, number> = { none: 0, minimal: 1_024, low: 4_096, medium: 8_192, high: 16_384, xhigh: 24_576, max: MAX_OUTPUT_TOKENS };
@@ -127,8 +129,8 @@ export function atomikReasoningAllowance(model: CatalogModel, effort: string | u
 export function atomikReasoningRequest(model: CatalogModel, effort: string | undefined, visibleTokens: number, maxVisible: number = MAX_VISIBLE_TOKENS): AtomikReasoningRequest {
   // Older clients did not send effort. Preserve their existing response ceiling.
   if (effort === undefined) return { maxTokens: Math.min(visibleTokens, model.maxTokens ?? Infinity), providerOptions: {} };
-  if (!atomikEffortOptions(model).some(option => option.value === effort)) throw invalidEffort(model);
-  if (!Number.isFinite(visibleTokens) || visibleTokens <= 0) throw invalidEffort(model);
+  if (!atomikEffortOptions(model).some(option => option.value === effort)) throw invalidEffort();
+  if (!Number.isFinite(visibleTokens) || visibleTokens <= 0) throw invalidEffort();
   const visible = Math.min(Math.max(MAX_VISIBLE_TOKENS, maxVisible), Math.max(MIN_ANSWER_TOKENS, Math.floor(visibleTokens)));
   const limit = outputLimit(model);
   const request: AtomikReasoningRequest = { maxTokens: Math.min(visible, limit), providerOptions: {} };
@@ -139,7 +141,7 @@ export function atomikReasoningRequest(model: CatalogModel, effort: string | und
   }
   if (effort.startsWith("budget:")) {
     request.maxTokens = Math.min(limit, visible + reserved);
-    if (reserved >= request.maxTokens) throw invalidEffort(model);
+    if (reserved >= request.maxTokens) throw invalidEffort();
     request.requestFields = { reasoning: { enabled: true, max_tokens: reserved } };
     return request;
   }

@@ -381,6 +381,25 @@ test("the settings read and an admin's Thinking save carry the level only: no th
   });
 });
 
+test("an effort a model does not offer is refused in words that name no model: each Thinking slot's and the Treatment writer's", async () => {
+  const ws = await funded("effort");
+  const { staticCatalog } = await import("../../lib/catalog");
+  const { quotePaidText, paidTextFailure } = await import("../../lib/paidText");
+  await inTenant(ws, async () => {
+    for (const [label, id] of [["High", HIGH], ["Medium", MEDIUM], ["Low", LOW], ["the Treatment writer", WRITER]] as const) {
+      /* The catalogue's own name for the model is one the matcher catches: had the refusal named it, this would fail. */
+      expect(thinkingModelNames(staticCatalog().find((m) => m.id === id)!.name), label).not.toEqual([]);
+      const refused = await quotePaidText({ model: id, effort: "not-an-effort", maxTokens: 400, messages: [{ role: "user", content: "Plan two shots." }] }).then(() => null, (error: unknown) => error);
+      expect(refused, label).toBeInstanceOf(Error);
+      /* paidTextFailure is the one way every Atomik and Treatment route answers such a refusal. */
+      const said = await answer(paidTextFailure(refused));
+      expect(said.status, label).toBe(400);
+      expect(said.body.error, label).toBe("That effort setting is not available.");
+      expectNothingDisclosed(`an unoffered effort at ${label}`, said.body);
+    }
+  });
+});
+
 test("the matcher finds every slot's id, the writer's and an effort, and lets engines through", () => {
   for (const id of [HIGH, MEDIUM, LOW, WRITER, DIRECT_MODEL_IDS[MEDIUM]]) expect(thinkingModelNames(JSON.stringify({ model: id })), id).not.toEqual([]);
   expect(thinkingModelNames("reasoning_effort, effort: high")).toHaveLength(2);

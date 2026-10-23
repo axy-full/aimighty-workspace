@@ -104,7 +104,9 @@ test("unsupported settings fail with a friendly 422 before a request can be crea
       throw new Error("Expected invalid effort to be rejected");
     } catch (error) {
       expect((error as Error & { status?: number }).status).toBe(422);
-      expect((error as Error).message).toContain(entry.name);
+      /* The refusal names no model (Amendment (iii) §E): it reaches the person through every text route. */
+      expect((error as Error).message).toBe("That effort setting is not available.");
+      expect((error as Error).message).not.toContain(entry.name);
     }
   }
   const unknown = model("openai/future-model", undefined);
