@@ -6,10 +6,11 @@ import { readBoundedBytes, RequestBodyError } from "@/lib/requestBody";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
-const TOO_LONG = "Keep the recording under 4 MB: about a minute of the person agreeing.";
+const TOO_LONG = "Keep the file under 15 MB: a few minutes of recording, or a signed release.";
 
 /**
- * The recording of a person agreeing, for a consent record (lib/security/consent.ts). Its own store, never an upload:
+ * A consent tick's file (lib/security/consent.ts): a recording of the person agreeing, or their signed release as a
+ * PDF. Its own store, never an upload:
  * it is not listed in the library, can't be picked as a reference and is never sent to an engine. People only.
  */
 export const POST = withTenant(async (req: Request) => {
@@ -22,7 +23,7 @@ export const POST = withTenant(async (req: Request) => {
     body = await readBoundedBytes(req, MAX_RECORDING_BYTES);
   } catch (error) {
     if (!(error instanceof RequestBodyError)) throw error;
-    return Response.json({ error: error.status === 413 ? TOO_LONG : "Send the recording as the request body." }, { status: error.status, headers });
+    return Response.json({ error: error.status === 413 ? TOO_LONG : "Send the file as the request body." }, { status: error.status, headers });
   }
   try {
     const bytes = Buffer.from(body.buffer, body.byteOffset, body.byteLength);

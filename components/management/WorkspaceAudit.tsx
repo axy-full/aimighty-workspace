@@ -55,6 +55,7 @@ export const labels: Record<string, string> = {
   "review_link.created": "Created review link",
   "review_link.revoked": "Revoked review link",
   "identity_consent.recorded": "Recorded identity consent",
+  "identity_consent.updated": "Changed identity consent details",
   "identity_consent.withdrawn": "Withdrew identity consent",
 };
 const targetLabels: Record<string, string> = {

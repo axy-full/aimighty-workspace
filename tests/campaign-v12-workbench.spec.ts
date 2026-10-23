@@ -138,8 +138,8 @@ test.describe("desktop, switch on", () => {
     /* Prices: a video format asks the server and reads N cr (or a dash), a still set says quoted; no figure is typed in the page. */
     await expect(page.locator('[data-format="unboxing"] [data-testid="v12-format-state"]')).toContainText(/One run · (\d[\d,]* cr|—|…)/, { timeout: 30_000 });
     await expect(page.locator('[data-format="photoshoot"] [data-testid="v12-format-state"]')).toHaveText("One run · quoted");
-    /* A person on camera needs a consent record. */
-    await expect(page.locator('[data-format="talking-review"]').getByTestId("v12-format-consent")).toContainText("consent record");
+    /* A person on camera carries a consent tick (owner, 23 Oct 2026: a tick, not a gate). */
+    await expect(page.locator('[data-format="talking-review"]').getByTestId("v12-format-consent")).toContainText("consent tick");
     /* Pick one: the brief is chosen (free) and the one filled button opens Make with it. */
     await expect(page.getByTestId("v12-formats-make")).toBeDisabled();
     await page.locator('[data-format="unboxing"]').getByTestId("v12-format-pick").click();

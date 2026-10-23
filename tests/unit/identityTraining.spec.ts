@@ -82,13 +82,13 @@ const nextServer = () => createRequire(path.resolve("package.json"))("next/serve
 
 test("the train route refuses a run that costs more than the approved price, before any money check", async () => {
   const usd = 3.6;
-  const started: string[] = [], walls: number[] = [];
+  const started: string[] = [], walls: number[] = [], ticks: ({ by: string; at?: number } | null)[] = [];
   let inCredits = true;
   const route = load("app/api/identities/[id]/train/route.ts", {
     "next/server": nextServer(),
     "@/lib/auth": { requireRender: async () => ({ user: { id: "caller" } }), withTenant: (h: Handler) => h },
     "@/lib/demo/spend-guard.server": { sampleWorkspaceOff: async () => null },
-    "@/lib/identities": { getIdentity: async (id: string) => ({ id, projectId: "prod_fixture" }), trainCostUsd: () => usd, startTraining: async (id: string) => { started.push(id); return { id, status: "training" }; }, identityForBrowser: (i: object) => i },
+    "@/lib/identities": { getIdentity: async (id: string) => ({ id, projectId: "prod_fixture" }), trainCostUsd: () => usd, startTraining: async (id: string, consent?: { by: string; at?: number }) => { started.push(id); ticks.push(consent ?? null); return { id, status: "training" }; }, identityForBrowser: (i: object) => i },
     "@/lib/credits": { creditsApply: () => inCredits },
     "@/lib/tenant": { currentTenant: () => null },
     "@/lib/allowance": { allowanceCheck: async (_v: string, cost: number) => { walls.push(cost); return { ok: true }; } },
@@ -96,10 +96,13 @@ test("the train route refuses a run that costs more than the approved price, bef
     "@/lib/creditTerms": { billCredits },
     "@/lib/identityTraining": { trainApprovalProblem },
     "@/lib/generationRequests": { withGenerationRequest: (_r: Request, _u: string, run: () => Promise<Response>) => run(), SpendReservationError: class extends Error {} },
-    /* Training records consent, so the route is people-only; the caller here is a signed-in person. */
+    /* Training is a person's priced press, so the route is people-only; the caller here is a signed-in person. */
     "@/lib/security/people-only": await import("../../lib/security/people-only"),
-    /* Every training cites a live consent record (lane 5); its own rules are tested in demo-gaps-l5-review-558. */
-    "@/lib/security/consent": { consentForTraining: async () => ({ id: "cns_fixture" }), projectKeysFor: async () => ["prod_fixture"] },
+    /* A tick, not a gate (owner, 23 Oct 2026): "cns_a" stands for a live tick that member A made; anything else cites nothing. */
+    "@/lib/security/consent": {
+      consentForTraining: async (id: unknown) => (id === "cns_a" ? { id: "cns_a", tickedById: "member_a", recordedAt: 1_234 } : null),
+      projectKeysFor: async () => ["prod_fixture"],
+    },
     "@/lib/security/consent-words": { ConsentError: class extends Error { status = 400; } },
   });
   const post = (body: unknown) => route.POST(
@@ -129,6 +132,22 @@ test("the train route refuses a run that costs more than the approved price, bef
   const probe = await post({ consent: true, maxUsd: 0.01, maxCredits: credits });
   expect(probe.status).toBe(202);
   expect(started).toEqual(["idn_1", "idn_1"]);
+
+  /* A tick, not a gate (owner, 23 Oct 2026): with no tick the same priced press trains, and records no tick; with the
+     tick, the person who pressed is recorded as having ticked. The price check above is unchanged. */
+  const unticked = await post({ maxCredits: credits });
+  expect(unticked.status).toBe(202);
+  expect(started).toEqual(["idn_1", "idn_1", "idn_1"]);
+  expect(ticks).toEqual([{ by: "caller" }, { by: "caller" }, null]);
+  const overNoTick = await post({ maxCredits: credits - 1 });
+  expect(overNoTick.status).toBe(409);
+  expect(started).toHaveLength(3);
+  /* A ticks; the caller presses citing A's tick: the identity records A's tick, A's own time, never the presser. */
+  const cited = await post({ maxCredits: credits, consentId: "cns_a", subjectKey: "node-lead" });
+  expect(cited.status).toBe(202);
+  expect(ticks[3]).toEqual({ by: "member_a", at: 1_234 });
+  /* The fal route never links a tick: identity_consents.identity_id is the Soul identity the Cast card follows. */
+  expect(readFileSync("app/api/identities/[id]/train/route.ts", "utf8")).not.toContain("linkConsentIdentity");
 });
 
 test("a retried New asset hands back the caller's own untrained identity instead of a name clash", async () => {

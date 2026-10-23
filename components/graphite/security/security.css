@@ -27,6 +27,10 @@
 .gsec-check { flex: none; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; border: 1px solid var(--gx-hover-border); border-radius: 4px; font-size: 12px; color: var(--gx-on-accent); }
 .gsec-attest input:checked + .gsec-check { background: var(--gx-accent); border-color: var(--gx-accent); }
 .gsec-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+/* The optional fields, folded away under the tick (owner, 23 Oct 2026: a tick, not a gate). */
+.gsec-more-body { display: flex; flex-direction: column; gap: 14px; padding-top: 8px; }
+.gsec-more-head { display: list-item; min-height: 32px; padding: 6px 0; box-sizing: border-box; color: var(--gx-text-2); font-size: var(--gx-fs-meta); cursor: pointer; }
+.gsec-more-head:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
 .gsec-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 32px; padding: 0 12px; border: 1px solid var(--gx-btn-border); border-radius: var(--gx-r-ctl); background: transparent; color: var(--gx-text); font: 500 var(--gx-fs-control)/1.2 var(--gx-font); white-space: nowrap; cursor: pointer; transition: border-color var(--gx-t) var(--gx-ease), background var(--gx-t) var(--gx-ease); }
 .gsec-btn:hover:not(:disabled):not([aria-disabled="true"]) { border-color: var(--gx-hover-border); }
 .gsec-btn:disabled, .gsec-btn[aria-disabled="true"] { color: var(--gx-disabled); cursor: default; }
@@ -39,13 +43,14 @@
 /* Phones: the step fills the screen under the phone's header; every target is 44 px. */
 .gsec-form[data-layout="phone"] { padding: 16px; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 .gsec-form[data-layout="phone"] .gsec-input, .gsec-form[data-layout="phone"] .gsec-btn, .gsec-form[data-layout="phone"] .gsec-chip { min-height: 44px; border-radius: var(--gx-r-ctl-phone); }
+.gsec-form[data-layout="phone"] .gsec-more-head { min-height: 44px; }
 .gsec-form[data-layout="phone"] .gsec-acts { flex-direction: column-reverse; }
 .gsec-phone-note { padding: 24px 16px; }
 .gsec-form[data-layout="phone"] .gsec-acts .gsec-btn { width: 100%; font-size: 15px; }
 @media (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
   .gsec-layer { padding: 8px; }
   .gsec-dialog { padding: 16px; max-height: calc(100dvh - 16px); }
-  .gsec-input, .gsec-btn, .gsec-chip { min-height: 44px; }
+  .gsec-input, .gsec-btn, .gsec-chip, .gsec-more-head { min-height: 44px; }
 }
 
 /* ── The identity block on a Cast card ── */
@@ -59,6 +64,19 @@
 @media (prefers-reduced-motion: reduce) { .gsec-bar::after { animation: none; left: 0; width: 100%; opacity: .5; } }
 .gsec-id-acts { display: flex; flex-wrap: wrap; gap: 6px; }
 .gsec-id-acts .gsec-btn { min-height: 28px; height: 28px; padding: 0 10px; font-size: 13px; }
+/* The consent tick, on the card (where the block's label was) and in the Inspector: one plain line, the box and
+   Details as a link. A person's own press, recorded at once (who and when); unticking withdraws it. */
+.gsec-id-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.gsec-tick { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 20px; color: var(--gx-text); font: 500 13px/1.2 var(--gx-font); cursor: pointer; }
+.gsec-tick input { position: absolute; inset: -1px; width: calc(100% + 2px); height: calc(100% + 2px); margin: 0; opacity: 0; cursor: pointer; }
+.gsec-tick input:disabled { cursor: default; }
+.gsec-tick:focus-within { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+.gsec-tick .gsec-check { margin-top: 0; }
+.gsec-tick input:checked + .gsec-check { background: var(--gx-accent); border-color: var(--gx-accent); }
+.gsec-tick-link { min-height: 20px; padding: 0 2px; border: 0; background: transparent; color: var(--gx-text-2); font: 500 13px/1.2 var(--gx-font); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.gsec-tick-link:hover { color: var(--gx-text); }
+.gsec-tick-link:focus-visible { outline: 2px solid var(--gx-accent); outline-offset: 2px; }
+@media (max-width: 767px), (max-height: 500px) and (pointer: coarse) { .gsec-tick, .gsec-tick-link { min-height: 44px; } }
 
 /* ── The client link in Crew review ── */
 .gsec-link { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--gx-card-border); border-radius: var(--gx-r-card); font-size: var(--gx-fs-meta); color: var(--gx-text-2); }

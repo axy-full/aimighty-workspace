@@ -8,7 +8,8 @@ import { lockProblem } from "@/lib/workbench/master-lock";
 import { resolveAsset } from "@/lib/workbench/node-graph";
 import { refKindOf } from "@/lib/workbench/ref-kind";
 import type { Asset, Project } from "@/lib/workbench/studio";
-import type { SoulIdentity } from "@/lib/workbench/soul-identity";
+import { soulIdentityAsset, type SoulIdentity } from "@/lib/workbench/soul-identity";
+import { RigBuildError } from "@/lib/production/rig-build";
 import { isShotNode } from "@/lib/workspace/shots";
 
 /*
@@ -43,6 +44,15 @@ export type CastCardData = {
   shots: number[];
   /** The identity a character renders with (a Soul ID of this workspace). */
   identityId: string | null;
+  /**
+   * Every identity the card is bound to: its asset's, then its production cast entry's (they differ when a locked
+   * asset keeps an older binding and a newer training was bound to the entry). The card follows the newest of them.
+   */
+  identityIds?: string[];
+  /** The identity the card's own asset renders with, when it has one. */
+  assetIdentityId?: string | null;
+  /** The card's own asset is locked: its identity can't be moved until it is unlocked. */
+  assetLocked?: boolean;
   /** The card is a locked master. */
   master: boolean;
   /** Lock as master is possible right now (a stored picture on a Cast, Environment or Element card). */
@@ -107,8 +117,8 @@ export function castStatus(d: CastCardData, identities: readonly SoulIdentity[] 
   if (d.retired) return { text: "Built earlier · read-only", tone: "idle" };
   if (d.variant === "cast") {
     if (d.rendering) return { text: "Rendering a still", tone: "working" };
-    if (!d.identityId) return { text: "No identity yet", tone: "idle" };
-    const identity = identities?.find((i) => i.id === d.identityId);
+    if (!d.identityId && !d.identityIds?.length) return { text: "No identity yet", tone: "idle" };
+    const identity = identityOf(d, identities);
     if (!identity) return { text: "Identity attached", tone: "idle" };
     if (identity.status === "ready") return { text: `Identity ready · ${identity.name}`, tone: "done" };
     if (identity.status === "failed" || identity.status === "uncertain") return { text: "Identity needs review", tone: "waiting" };
@@ -124,9 +134,219 @@ export function castStatus(d: CastCardData, identities: readonly SoulIdentity[] 
   return d.still ? { text: "Not locked", tone: "idle" } : { text: "No still yet", tone: "idle" };
 }
 
-/** The identity of a character card, from the workspace's list. */
-export const identityOf = (d: Pick<CastCardData, "identityId">, identities: readonly SoulIdentity[] | null): SoulIdentity | null =>
-  d.identityId ? identities?.find((i) => i.id === d.identityId) ?? null : null;
+/**
+ * The card a training was pressed from: the production it was pressed in, and the cast member, captured at the press.
+ * `name` is the cast member's name then (the card's title): a bind made later, after a reply or from a parked bind,
+ * lands only on a cast member that still has that name, so a renamed or replaced one is never given someone else's
+ * identity (review 4 of #888, R4-1).
+ */
+export type PressedCard = { projectId: string; entryId: string | null; nodeId: string | null; name?: string | null };
+
+/**
+ * Why a bind can't be made into this project now, or null: "elsewhere" (another production is open), or "renamed" (the
+ * cast member pressed from no longer has the name it had at the press). Either way the bind is kept (parked) and the
+ * card says the training was started; it never offers Train again for it (review 5 of #888, R5-2).
+ */
+export function bindProblem(project: Project, card: PressedCard): "elsewhere" | "renamed" | null {
+  if (project.id !== card.projectId) return "elsewhere";
+  /* The cast member has to be the one pressed from: the same name as at the press (when it was captured). */
+  const named = (name: string | undefined) => card.name == null || (name != null && norm(name) === norm(card.name));
+  const pressedEntry = card.entryId ? project.production?.cast?.entries.find((e) => e.id === card.entryId) : undefined;
+  const pressedNode = card.nodeId ? project.nodes.find((n) => n.id === card.nodeId) : undefined;
+  if ((pressedEntry && !named(pressedEntry.name)) || (pressedNode && !named(pressedNode.title))) return "renamed";
+  return null;
+}
+
+/** The parked bind that stands for this card (the same cast entry or canvas card), if any. */
+export function parkedForCard<T extends PressedCard>(parked: readonly T[], d: Pick<CastCardData, "entryId" | "nodeId">): T | null {
+  return parked.find((p) => (d.entryId != null && p.entryId === d.entryId) || (d.nodeId != null && p.nodeId === d.nodeId)) ?? null;
+}
+
+/**
+ * The bind held for this card in this project: one parked for it whose cast member was renamed since the press (R6-3:
+ * only "renamed"; a bind parked for another production is not held here, it lands when its production opens).
+ */
+type AttachedLike = PressedCard & { identityId: string; attached?: boolean; was?: CastBinding; attachedName?: string };
+
+export function heldBindFor<T extends AttachedLike>(parked: readonly T[], project: Project, d: Pick<CastCardData, "entryId" | "nodeId">): T | null {
+  return parkedForCard(parked.filter((p) => p.projectId === project.id && (p.attached
+    /* Attached by the person: held again only when the attach was undone exactly (R7-2, R8-1). */
+    ? attachedState(project, p) === "undone"
+    : bindProblem(project, p) === "renamed")), d);
+}
+
+/**
+ * Where an attached bind stands (R8-1): "attached" (the card is bound to it), "undone" (the card's binding is exactly
+ * what it was before the attach, under the same name: held again), or "stale" (anything else: another identity bound
+ * by any route, the entry id reused under another name, the card gone). A stale record is dropped by the board.
+ */
+export function attachedState(project: Project, p: AttachedLike): "attached" | "undone" | "stale" {
+  const entry = p.entryId ? project.production?.cast?.entries.find((e) => e.id === p.entryId) : undefined;
+  const node = p.nodeId ? project.nodes.find((n) => n.id === p.nodeId) : undefined;
+  const name = entry?.name ?? node?.title;
+  if (name == null) return "stale";
+  /* While attached, a rename is the person's own and the record follows it (attachedRenames); names are compared only
+     once the card is no longer bound to the attached identity (R9-2). */
+  if (isBoundTo(project, p, p.identityId)) return "attached";
+  if (p.attachedName != null && norm(name) !== norm(p.attachedName)) return "stale";
+  const now = castBindingOf(project, p);
+  if (p.was && now.entry === p.was.entry && now.asset === p.was.asset) return "undone";
+  return "stale";
+}
+
+/**
+ * Attached records whose card was renamed while still bound to them (R9-2): the record takes the card's new name, so an
+ * undo of the attach after the rename holds the card again. For the board to rewrite.
+ */
+export function attachedRenames<T extends AttachedLike>(project: Project, parked: readonly T[]): { identityId: string; name: string }[] {
+  const out: { identityId: string; name: string }[] = [];
+  for (const p of parked) {
+    if (!p.attached || p.projectId !== project.id || attachedState(project, p) !== "attached") continue;
+    const entry = p.entryId ? project.production?.cast?.entries.find((e) => e.id === p.entryId) : undefined;
+    const node = p.nodeId ? project.nodes.find((n) => n.id === p.nodeId) : undefined;
+    const name = entry?.name ?? node?.title;
+    if (name != null && (p.attachedName == null || norm(name) !== norm(p.attachedName))) out.push({ identityId: p.identityId, name });
+  }
+  return out;
+}
+
+/** The attached records for this project that no longer guard anything (R8-1), for the board to drop. */
+export const staleAttached = <T extends AttachedLike>(project: Project, parked: readonly T[]): T[] =>
+  parked.filter((p) => p.attached && p.projectId === project.id && attachedState(project, p) === "stale");
+
+/** The card is bound to this identity (on its cast entry or its asset). */
+export const isBoundTo = (project: Project, card: PressedCard, identityId: string): boolean => {
+  const b = castBindingOf(project, card);
+  return b.entry === identityId || b.asset === identityId;
+};
+
+/** The cast members' names in a project, as one signature: when it changes, parked binds are tried again (R6, R7-4). */
+export const castNamesOf = (project: Project | null): string => project
+  ? [...(project.production?.cast?.entries ?? []).map((e) => `${e.id}=${e.name}`), ...project.nodes.map((n) => `${n.id}=${n.title}`)].join("\u0001")
+  : "";
+
+/**
+ * The board's pass over the binds parked for the open project (BoardView): which to bind now, and which to keep
+ * parked because their card was renamed. Pure, so a card renamed back while the production stays open binds in the
+ * same opening (the board runs the pass again when `castNamesOf` changes).
+ */
+export function parkedPass<T extends PressedCard>(project: Project, parked: readonly T[]): { bind: T[]; renamed: T[] } {
+  const bind: T[] = [], renamed: T[] = [];
+  for (const p of parked) {
+    if (p.projectId !== project.id) continue;
+    if (bindProblem(project, p) === "renamed") renamed.push(p); else bind.push(p);
+  }
+  return { bind, renamed };
+}
+
+/**
+ * What a training's reply does with its bind (CastBody's bindStarted): bind it now, or park it, and why. `open` is the
+ * project open when the reply lands (null when none can take the edit then).
+ */
+export function startedBindStep(open: Project | null, card: PressedCard): { action: "bind" } | { action: "park"; why: "elsewhere" | "renamed" | "closed" } {
+  if (!open) return { action: "park", why: "closed" };
+  const problem = bindProblem(open, card);
+  return problem ? { action: "park", why: problem } : { action: "bind" };
+}
+
+/** "Attach to <current name>": the person says the renamed card is the same person, and the bind runs without the name check. */
+export const attachHeld = (project: Project, card: PressedCard, identityId: string): Project => bindCastIdentity(project, { ...card, name: null }, identityId);
+
+/** The card's bindings as they are (its cast entry's and its asset's), so an Attach can be undone exactly. */
+export type CastBinding = { entry: string | null; asset: string | null };
+export function castBindingOf(project: Project, card: PressedCard): CastBinding {
+  const entry = card.entryId ? project.production?.cast?.entries.find((e) => e.id === card.entryId) : undefined;
+  const node = card.nodeId ? project.nodes.find((n) => n.id === card.nodeId) : undefined;
+  const asset = node ? resolveAsset(node, project.nodes, project.assets) : undefined;
+  return { entry: entry?.identityId ?? null, asset: asset?.soulIdentityId ?? null };
+}
+
+/** Puts a card's bindings back as they were (Undo of an Attach). Pure. */
+export function restoreCastBinding(project: Project, card: PressedCard, was: CastBinding): Project {
+  if (project.id !== card.projectId) return project;
+  let next = project;
+  const cast = next.production?.cast;
+  if (card.entryId && cast && next.production) {
+    next = { ...next, production: { ...next.production, cast: { ...cast, entries: cast.entries.map((e) => {
+      if (e.id !== card.entryId) return e;
+      const rest = { ...e };
+      delete rest.identityId;
+      return was.entry ? { ...rest, identityId: was.entry } : rest;
+    }) } } };
+  }
+  const node = card.nodeId ? next.nodes.find((n) => n.id === card.nodeId) : undefined;
+  const asset = node ? resolveAsset(node, next.nodes, next.assets) : undefined;
+  if (asset && !asset.locked && next.assets.some((a) => a.id === asset.id)) {
+    next = { ...next, assets: next.assets.map((a) => {
+      if (a.id !== asset.id) return a;
+      const rest = { ...a };
+      delete rest.soulIdentityId;
+      return was.asset ? { ...rest, soulIdentityId: was.asset } : rest;
+    }) };
+  }
+  return next;
+}
+
+/**
+ * Binds an identity a person started training from a character's Inspector to that character's card (Rig save), so
+ * the card follows it: training, then ready, or failed with its charge and Retry; never "No identity yet" with the
+ * Train press offered again. Pure. It binds only into the production the press was made in: any other project comes
+ * back unchanged (the same object), so a reply that lands after a switch never touches another production's cast.
+ * The entry is set when there is one, and the card's own (unlocked) asset when it carries a binding already or there is
+ * no entry. A locked asset is left as it is (its lock is respected); the card follows the newest identity it is bound
+ * to (`identityOf`), so the newer training on the entry is the one shown.
+ */
+export function bindCastIdentity(project: Project, card: PressedCard, identityId: string): Project {
+  if (bindProblem(project, card)) return project;
+  let next = project;
+  const cast = next.production?.cast;
+  const hasEntry = Boolean(card.entryId && cast?.entries.some((e) => e.id === card.entryId));
+  if (hasEntry && next.production && cast) {
+    next = { ...next, production: { ...next.production, cast: { ...cast, entries: cast.entries.map((e) => (e.id === card.entryId ? { ...e, identityId } : e)) } } };
+  }
+  const node = card.nodeId ? next.nodes.find((n) => n.id === card.nodeId) : undefined;
+  const asset = node ? resolveAsset(node, next.nodes, next.assets) : undefined;
+  if (asset && !asset.locked && next.assets.some((a) => a.id === asset.id) && (asset.soulIdentityId || !hasEntry)) {
+    next = { ...next, assets: next.assets.map((a) => (a.id === asset.id ? { ...a, soulIdentityId: identityId } : a)) };
+  }
+  return next;
+}
+
+/**
+ * A character whose own asset still renders with an earlier identity (a locked asset keeps its binding, R3-3) while a
+ * newer one is ready on its cast entry: the card says "Renders with the earlier sheet · Update". Null otherwise. Only a
+ * ready identity can be moved onto the asset (an identity still training can't render yet).
+ */
+export function earlierSheetOf(d: Pick<CastCardData, "identityId" | "identityIds" | "assetIdentityId">, identities: readonly SoulIdentity[] | null): SoulIdentity | null {
+  const newest = identityOf(d, identities);
+  if (!d.assetIdentityId || !newest || newest.id === d.assetIdentityId || newest.status !== "ready") return null;
+  return newest;
+}
+
+/**
+ * "Update": moves the card's asset onto the newer identity through the existing bind (lib/workbench/soul-identity.ts
+ * `soulIdentityAsset`), which never changes a locked asset: it refuses, in words, until the asset is unlocked. A
+ * locked master is also kept as it is by the Rig's own write (it says so). Pure; throws RigBuildError with the words.
+ */
+export function updateToNewerSheet(project: Project, nodeId: string, identity: SoulIdentity): Project {
+  const node = project.nodes.find((n) => n.id === nodeId);
+  const asset = node ? resolveAsset(node, project.nodes, project.assets) : undefined;
+  if (!asset || !project.assets.some((a) => a.id === asset.id)) throw new RigBuildError("This card's picture is no longer in this project.");
+  let moved: Asset;
+  try { moved = soulIdentityAsset(project, identity, "Character", asset.id); } catch (error) { throw new RigBuildError(error instanceof Error ? error.message : "The identity could not be moved."); }
+  return { ...project, assets: project.assets.map((a) => (a.id === asset.id ? moved : a)) };
+}
+
+/**
+ * The identity of a character card, from the workspace's list: of the identities it is bound to, the newest training
+ * (review 3 of #888, R3-3). A locked asset keeps its older binding, and a newer training bound to the cast entry is the
+ * one the card follows, so the card never keeps offering Retry on an older failed identity.
+ */
+export function identityOf(d: Pick<CastCardData, "identityId" | "identityIds">, identities: readonly SoulIdentity[] | null): SoulIdentity | null {
+  const ids = d.identityIds?.length ? d.identityIds : d.identityId ? [d.identityId] : [];
+  const found = ids.map((id) => identities?.find((i) => i.id === id)).filter((i): i is SoulIdentity => Boolean(i));
+  return found.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+}
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "12 Sep 2026", in UTC, the same on every machine. */
@@ -172,6 +392,8 @@ function nodeCards(src: Pick<BoardSource, "project" | "masters">): { card: Board
     const data: CastCardData = {
       variant, source: "node", nodeId: node.id, entryId: entry?.id ?? null, title: node.title, description: (asset?.description ?? node.text ?? "").trim(),
       still: assetStill(asset), shots: appearsIn(project, variant, node.title), identityId: asset?.soulIdentityId ?? entry?.identityId ?? null,
+      identityIds: [...new Set([asset?.soulIdentityId, entry?.identityId].filter((v): v is string => Boolean(v)))],
+      assetIdentityId: asset?.soulIdentityId ?? null, assetLocked: asset?.locked === true,
       master, lockable: !master && lockProblem(node, project, false) === null, plates: 0, chosen: false,
       rendering: Boolean(entry?.pending?.length), prompt: (entry ? castStillPrompt(entry) : "") || asset?.prompt?.trim() || (asset?.description ?? "").trim() || node.title.trim(),
       retired: entry ? retiredModelOf(entry) : null,
