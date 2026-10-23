@@ -602,7 +602,7 @@ test("premium reasoning is available within its explicit quote while old unquote
   scope("text_premium_quote", async () => {
     const { quotePaidText, runPaidText } = await import("../../lib/paidText");
     const premium: CatalogModel = { ...model, id: "openai/gpt-5.5-pro", owner: "openai", maxTokens: 32768,
-      pricing: { input: "0.00003", output: "0.0003" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["high"] }] };
+      pricing: { input: "0.0000301", output: "0.0003" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["high"] }] };
     const request = { ...call, model: premium.id, effort: "high", maxTokens: 4000 };
     const quote = await quotePaidText(request, premium);
     expect(quote.estimateUsd).toBeGreaterThan(1);
@@ -649,12 +649,16 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
     const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
     delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = "test-anthropic-key-never-sent";
     try {
-      const claude: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", pricing: { input: .000001, output: .000005, input_cache_read: .0000001, input_cache_write: .00000125 } }; // made-up rates, the vendor's ratios
+      const claude: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", pricing: { input: .0000017, output: .0000083, input_cache_read: .00000017, input_cache_write: .0000021 } }; // made-up rates: no catalogue entry has them (asserted below)
+      const { snapshotModels } = await import("../../lib/catalog");
+      /* The fixture states no vendor's rate: no catalogue entry has any of its four (owner, 23 Oct 2026). */
+      const listed = new Set(snapshotModels().flatMap((m) => Object.values((m.pricing ?? {}) as Record<string, unknown>).map(Number)));
+      for (const value of Object.values(claude.pricing as Record<string, number>)) expect(listed.has(Number(value)), String(value)).toBe(false);
       const direct = { ...call, model: claude.id, id: "text_direct_billed" };
       const gatewayQuote = await quotePaidText(direct, claude);
       process.env.TEXT_DIRECT = "anthropic";
       const quote = await quotePaidText(direct, claude);
-      // A cold cache write (1.25× input) is the most a direct Claude call can cost.
+      // A cold cache write is the most a direct Claude call can cost.
       expect(quote.estimateUsd!).toBeGreaterThan(gatewayQuote.estimateUsd!);
       let calls = 0;
       const submit = async (request: { body: string }) => {
@@ -663,7 +667,7 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
           usage: { prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } } }) };
       };
       const result = await runPaidText(direct, { model: claude, submit });
-      const usd = 100 * .000001 + 60 * .0000001 + 40 * .00000125 + 25 * .000005;
+      const usd = 100 * .0000017 + 60 * .00000017 + 40 * .0000021 + 25 * .0000083;
       expect(calls).toBe(1);
       expect(result.costUsd).toBeCloseTo(usd, 15);
       expect(quote.estimateUsd!).toBeGreaterThanOrEqual(result.costUsd);

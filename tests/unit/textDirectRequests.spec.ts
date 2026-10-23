@@ -239,6 +239,16 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
     expect(Number(p.input_cache_read), id).toBeLessThan(Number(p.input));
     expect(Number(p.input_cache_write), id).toBeGreaterThan(Number(p.input));
   }
+  /* The three Claude pricing rows, pinned without stating them: any change to a figure in lib/modelCatalog.json (10x off,
+     swapped, an older model's rates copied over) fails here until the new figures are checked against the vendor and this
+     hash is updated on purpose. */
+  {
+    const { snapshotModels: rowsOf } = await import('../../lib/catalog');
+    const { createHash } = await import('node:crypto');
+    const ids = ['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'];
+    const rows = JSON.stringify(ids.map(id => [id, rowsOf().find(m => m.id === id)?.pricing]));
+    expect(createHash('sha256').update(rows).digest('hex')).toBe('90620a4dfc925a2d74055f4888ed95702665944fdf86d11fcdda0ea0824f72bb');
+  }
   // And as the catalogue snapshot states each (lib/modelCatalog.json): every rate a direct Claude call settles at is there and positive, Opus above Sonnet
   // above Haiku for input and output, and Haiku 5.5's flat rate is its first prompt tier's.
   const { snapshotModels } = await import('../../lib/catalog');
