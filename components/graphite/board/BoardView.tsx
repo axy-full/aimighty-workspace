@@ -38,6 +38,8 @@ import { madeCards, type MadeEntry } from "./cards/set-board";
 import { ShotList } from "./cards/board/ShotList";
 import type { BoardCtx, BoardSelection } from "./cards/types";
 import { EmptyBoard } from "./EmptyBoard";
+import { bindCastIdentity } from "./cards/cast/cast-model";
+import { parkBind, takeParked } from "./cards/cast/parked-binds";
 import { HoverCluster } from "./HoverCluster";
 import { BoardInspector } from "./inspector";
 import { GapOverlays } from "./GapOverlays";
@@ -173,6 +175,21 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     && (lift.productionId == null || lift.productionId === (project.productionProjectId ?? null));
   /* A teammate's board opens view-only (lib/workbench/team-boards.ts): the stage header says whose it is, and every control that honours `readOnly` is off. */
   const viewing = rig.viewOnly ? viewOnlyLine(rig.viewOnly.owner.name) : null;
+  /* A training pressed in this production whose reply landed while another was open: its bind was parked (review 3 of
+     #888, R3-1) and is made now that this production is open, so its card follows the training and offers no Train
+     press for it. A bind the board can't take now stays parked. */
+  const openId = rig.status === "ready" && !rig.viewOnly ? rig.project?.id ?? null : null;
+  useEffect(() => {
+    if (!openId) return;
+    const parked = takeParked(scope, openId);
+    if (!parked.length) return;
+    let made = false;
+    for (const bind of parked) {
+      const refused = rig.apply((p) => bindCastIdentity(p, bind, bind.identityId));
+      if (refused) parkBind(scope, bind, bind.at); else made = true;
+    }
+    if (made) void rig.save();
+  }, [openId, scope, rig]);
   const gate = useMemo(() => ({ exploreOnly: liftedHere ? null : onSample.exploreOnly ?? spendOff, readOnly: viewing ?? onSample.readOnly }), [liftedHere, onSample, spendOff, viewing]);
   /* While it is lifted the board's line says so (for anyone else its paid controls stay closed in the sample's words). */
   const pill = lift?.lifted && gate.exploreOnly !== CHECK_LINE ? LIFT_LINE : gate.exploreOnly;

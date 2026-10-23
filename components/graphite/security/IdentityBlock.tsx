@@ -74,6 +74,11 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
         <div className="gsec-id-acts">
           {view.stage === "no-consent" || view.stage === "recorded" ? train("Train Identity", "identity-train", true) : null}
           {view.stage === "failed" ? train("Retry", "identity-retry", true) : null}
+          {/* A training sent from here whose reply wasn't read: Recover (in the Inspector) asks about that same request and is
+              never charged twice. Never a second Train press. */}
+          {view.stage === "sent" ? (
+            <button type="button" className="gsec-btn gsec-primary nodrag nopan" onClick={stop(onTrain)} onDoubleClick={(e) => e.stopPropagation()} data-testid="identity-recover">Recover</button>
+          ) : null}
         </div>
       ) : null}
     </div>

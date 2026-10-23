@@ -43,6 +43,11 @@ export type CastCardData = {
   shots: number[];
   /** The identity a character renders with (a Soul ID of this workspace). */
   identityId: string | null;
+  /**
+   * Every identity the card is bound to: its asset's, then its production cast entry's (they differ when a locked
+   * asset keeps an older binding and a newer training was bound to the entry). The card follows the newest of them.
+   */
+  identityIds?: string[];
   /** The card is a locked master. */
   master: boolean;
   /** Lock as master is possible right now (a stored picture on a Cast, Environment or Element card). */
@@ -107,8 +112,8 @@ export function castStatus(d: CastCardData, identities: readonly SoulIdentity[] 
   if (d.retired) return { text: "Built earlier · read-only", tone: "idle" };
   if (d.variant === "cast") {
     if (d.rendering) return { text: "Rendering a still", tone: "working" };
-    if (!d.identityId) return { text: "No identity yet", tone: "idle" };
-    const identity = identities?.find((i) => i.id === d.identityId);
+    if (!d.identityId && !d.identityIds?.length) return { text: "No identity yet", tone: "idle" };
+    const identity = identityOf(d, identities);
     if (!identity) return { text: "Identity attached", tone: "idle" };
     if (identity.status === "ready") return { text: `Identity ready · ${identity.name}`, tone: "done" };
     if (identity.status === "failed" || identity.status === "uncertain") return { text: "Identity needs review", tone: "waiting" };
@@ -132,9 +137,9 @@ export type PressedCard = { projectId: string; entryId: string | null; nodeId: s
  * the card follows it: training, then ready, or failed with its charge and Retry; never "No identity yet" with the
  * Train press offered again. Pure. It binds only into the production the press was made in: any other project comes
  * back unchanged (the same object), so a reply that lands after a switch never touches another production's cast.
- * The card reads the asset's `soulIdentityId` first, then the production cast entry's `identityId`: the entry is set
- * when there is one, and the card's own (unlocked) asset when it carries a binding already or there is no entry. A
- * locked asset is left as it is.
+ * The entry is set when there is one, and the card's own (unlocked) asset when it carries a binding already or there is
+ * no entry. A locked asset is left as it is (its lock is respected); the card follows the newest identity it is bound
+ * to (`identityOf`), so the newer training on the entry is the one shown.
  */
 export function bindCastIdentity(project: Project, card: PressedCard, identityId: string): Project {
   if (project.id !== card.projectId) return project;
@@ -152,9 +157,16 @@ export function bindCastIdentity(project: Project, card: PressedCard, identityId
   return next;
 }
 
-/** The identity of a character card, from the workspace's list. */
-export const identityOf = (d: Pick<CastCardData, "identityId">, identities: readonly SoulIdentity[] | null): SoulIdentity | null =>
-  d.identityId ? identities?.find((i) => i.id === d.identityId) ?? null : null;
+/**
+ * The identity of a character card, from the workspace's list: of the identities it is bound to, the newest training
+ * (review 3 of #888, R3-3). A locked asset keeps its older binding, and a newer training bound to the cast entry is the
+ * one the card follows, so the card never keeps offering Retry on an older failed identity.
+ */
+export function identityOf(d: Pick<CastCardData, "identityId" | "identityIds">, identities: readonly SoulIdentity[] | null): SoulIdentity | null {
+  const ids = d.identityIds?.length ? d.identityIds : d.identityId ? [d.identityId] : [];
+  const found = ids.map((id) => identities?.find((i) => i.id === id)).filter((i): i is SoulIdentity => Boolean(i));
+  return found.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+}
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "12 Sep 2026", in UTC, the same on every machine. */
@@ -200,6 +212,7 @@ function nodeCards(src: Pick<BoardSource, "project" | "masters">): { card: Board
     const data: CastCardData = {
       variant, source: "node", nodeId: node.id, entryId: entry?.id ?? null, title: node.title, description: (asset?.description ?? node.text ?? "").trim(),
       still: assetStill(asset), shots: appearsIn(project, variant, node.title), identityId: asset?.soulIdentityId ?? entry?.identityId ?? null,
+      identityIds: [...new Set([asset?.soulIdentityId, entry?.identityId].filter((v): v is string => Boolean(v)))],
       master, lockable: !master && lockProblem(node, project, false) === null, plates: 0, chosen: false,
       rendering: Boolean(entry?.pending?.length), prompt: (entry ? castStillPrompt(entry) : "") || asset?.prompt?.trim() || (asset?.description ?? "").trim() || node.title.trim(),
       retired: entry ? retiredModelOf(entry) : null,

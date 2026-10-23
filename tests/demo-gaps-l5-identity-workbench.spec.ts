@@ -1,6 +1,8 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { signInWithNewInterface } from "./helpers/newInterface";
+import { createClient } from "@libsql/client";
 import { newProject } from "../lib/workbench/studio";
+import { localPlatformDbUrl } from "./helpers/workbenchLocal";
 import { SIZES, desktop, floors, phone, shot, silentWav, watchErrors, watchPaid } from "./helpers/l5";
 
 /*
@@ -63,7 +65,7 @@ async function seed(page: Page) {
     const body = await real.json() as { consents: { identityId: string | null }[] };
     return json(route, { consents: body.consents.map((c, i) => (i === 0 ? { ...c, identityId: "soul_l5" } : c)) });
   });
-  return { project, productionProjectId, state, paid: watchPaid(page) };
+  return { project, productionProjectId, state, scope, workspaceId, paid: watchPaid(page) };
 }
 
 /** Everything on the card is drawn inside it: the title, every line and every button (nothing squeezed or cut). */
@@ -278,5 +280,79 @@ test("A training pressed with no tick binds to the cast card: the card shows it 
   await expect(card.getByTestId("identity-train")).toHaveCount(0);
   /* The one paid request was the press itself, answered in the browser. */
   expect(paid).toEqual(["/api/soul/identities"]);
+  expect(errors).toEqual([]);
+});
+
+test("A training whose reply lands while another production is open: back in its own production the card offers Recover (the same request, never sent twice), never Train, then follows it; the other production is untouched", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name) || !desktop(page), "the board canvas and its Train press are desktop only; phones have no Train press to repeat");
+  const { project, state, scope, workspaceId, paid } = await seed(page);
+  /* A second production with the same cast entry id (ids such as cast-lead repeat across productions). The Invite plan
+     holds one project, so this workspace is on Studio, as tests/helpers/v12Header.ts does (local mock servers only). */
+  const platform = createClient({ url: localPlatformDbUrl(), timeout: 10_000 });
+  try { await platform.execute({ sql: "UPDATE workspaces SET plan_id='studio' WHERE id=?", args: [workspaceId] }); } finally { platform.close(); }
+  const other = { ...project, ...newProject("Second fixture"), brief: project.brief, production: project.production };
+  const savedOther = await page.request.put("/api/workbench/projects", { headers: { "X-Workbench-Scope": scope }, data: { project: other, revision: 0 } });
+  expect(savedOther.ok(), await savedOther.text()).toBe(true);
+  /* The first reply is held until the other production is open; the browser answers every press (nothing reaches the
+     server), and each carries its idempotency key. */
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const keys: string[] = [];
+  let answered = 0;
+  await page.route("**/api/soul/identities", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    keys.push(route.request().headers()["idempotency-key"] ?? "");
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    await held;
+    state.pressed = { body };
+    await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ identity: { id: "soul_l5_new", projectId: null, name: "Lead", description: "", subjectType: "character", references: [], previewUrl: null, createdAt: 2, updatedAt: 2, renderModel: "soul_2", status: "submitting", creditsBilled: null, error: null } }) });
+    answered++;
+  });
+  const errors = watchErrors(page);
+  const card = page.getByTestId("cast-card").filter({ hasText: "ivory coat" });
+  const toCast = async () => {
+    await expect(page.getByTestId("board")).toBeVisible();
+    await expect(card).toHaveCount(1);
+    await page.waitForTimeout(500);
+    await page.locator('[data-region="cast"]').click();
+    await page.waitForTimeout(900);
+  };
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  await toCast();
+  await expect(card.getByTestId("cast-status")).toHaveText("No identity yet");
+  await card.getByTestId("identity-train").click();
+  const insp = page.getByTestId("board-inspector");
+  await insp.getByTestId("insp-build").getByTestId("soul-still-upl_l5_face").click();
+  await insp.getByTestId("insp-build").getByTestId("soul-build").click();
+  await expect.poll(() => keys.length).toBe(1);
+
+  /* The other production opens while the press is out; then its reply lands. */
+  await page.locator('[data-suite-tab="home"]').click();
+  await page.locator(`[data-testid="home-project"][data-project="${other.id}"]`).click();
+  await expect(page.locator('[data-suite-tab="project"] .gx-seg-label')).toHaveText("Second fixture");
+  release();
+  await expect.poll(() => answered).toBe(1);
+
+  /* Back in its own production (after a reload, too): the card offers Recover, never a second Train press. */
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  await toCast();
+  await expect(card.getByTestId("cast-status")).toHaveText("Training sent · reply not read yet");
+  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+  await shot(page, "identity-sent-elsewhere", info);
+  /* Recover asks about that same request (the same key: never a second run, never charged twice), and the card follows. */
+  await card.getByTestId("identity-recover").click();
+  await insp.getByTestId("soul-recover-run").click();
+  await expect.poll(() => answered).toBe(2);
+  expect(keys[1]).toBe(keys[0]);
+  await expect(card.getByTestId("cast-status")).toHaveText("Training");
+  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+  await expect(card.getByTestId("identity-recover")).toHaveCount(0);
+  await expect(insp.getByTestId("insp-build")).toHaveCount(0);
+  /* The other production's card (the same cast entry id) was never bound to it, and still offers its own Train. */
+  await page.goto(`/suites?project=${other.id}&view=board`);
+  await toCast();
+  await expect(card.getByTestId("cast-status")).toHaveText("No identity yet");
+  await expect(card.getByTestId("identity-train")).toHaveCount(1);
+  expect(paid).toEqual(["/api/soul/identities", "/api/soul/identities"]);
   expect(errors).toEqual([]);
 });

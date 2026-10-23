@@ -83,6 +83,10 @@ test("the Cast card's states come from the records: not ticked, ticked, training
   const started = { ...live, identityId: "soul_1" };
   expect(identityCardView({ consents: [started], subjectKey: "lead", bound: null, identities: [identity("training", null)] })).toMatchObject({ stage: "training", text: "Training" });
   expect(identityCardView({ consents: [started], subjectKey: "lead", bound: null, identities: [identity("ready", 54)] })).toMatchObject({ stage: "ready", text: "Identity ready · Lead v1" });
+  /* A training sent from this card whose reply wasn't read here: Recover, never Train; an identity on file wins. */
+  expect(identityCardView({ consents: [], subjectKey: "lead", bound: null, identities: [], requestSaved: true })).toMatchObject({ stage: "sent", text: "Training sent · reply not read yet" });
+  expect(identityCardView({ consents: [], subjectKey: "lead", bound: identity("training", null), identities: [], requestSaved: true }).stage).toBe("training");
+  expect(identityCardView({ consents: [], subjectKey: "lead", bound: null, identities: [], requestSaved: true, readFailed: true }).stage).toBe("unread");
   /* An uncertain submission needs review: no Retry and no Train until it is reconciled (the card offers neither). */
   expect(identityCardView({ consents: [started], subjectKey: "lead", bound: null, identities: [{ ...identity("failed", null), status: "uncertain" as const }] })).toMatchObject({ stage: "review", text: "Training needs review", billed: "Charge not confirmed yet" });
   /* "Nothing billed" only when the ledger shows nothing billed; a charge is named; no figure is "not confirmed". */

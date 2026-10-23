@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { appearsIn, bindCastIdentity, castLabel, castStatus, consentLine, deriveCast, renderPreset, shotsWords, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
+import { appearsIn, bindCastIdentity, castLabel, castStatus, consentLine, deriveCast, identityOf, renderPreset, shotsWords, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
+import { parkBind, takeParked } from "../../components/graphite/board/cards/cast/parked-binds";
 import type { BoardCard, BoardSource } from "../../lib/board/types";
 import type { SoulIdentity } from "../../lib/workbench/soul-identity";
 import type { Asset, CanvasNode, Project } from "../../lib/workbench/studio";
@@ -115,9 +116,37 @@ test("a training binds only to the card it was pressed from, in the production i
   const untouched = bindCastIdentity(other, { projectId: pressedIn.id, entryId: "cast-01", nodeId: null }, "soul_new");
   expect(untouched).toBe(other);
   expect(untouched.production?.cast?.entries[0].identityId).toBeUndefined();
-  /* A locked asset is never rebound. */
+  /* A locked asset is never rebound (its lock is respected); the newer training goes on the cast entry. */
   const locked = { ...pressedIn, assets: [{ id: "a1", name: "Lead", kind: "image", category: "Character", url: "/x", description: "", prompt: "", status: "Draft", locked: true, version: 1, refs: [], soulIdentityId: "soul_old" } as Asset],
     nodes: [{ id: "n1", assetId: "a1", title: "Lead", type: "reference", x: 0, y: 0, width: 200, linked: [] } as unknown as CanvasNode] } as Project;
-  const lockedBound = bindCastIdentity(locked, { projectId: locked.id, entryId: null, nodeId: "n1" }, "soul_new");
+  const lockedBound = bindCastIdentity(locked, { projectId: locked.id, entryId: "cast-01", nodeId: "n1" }, "soul_new");
   expect(lockedBound.assets[0].soulIdentityId).toBe("soul_old");
+  expect(lockedBound.production?.cast?.entries[0].identityId).toBe("soul_new");
+});
+
+test("a card bound to an older identity on a locked asset and a newer one on its cast entry follows the newer: never Retry on the old failure", () => {
+  const old = identity({ id: "soul_old", status: "failed", createdAt: 1, error: "Too dark" });
+  const fresh = identity({ id: "soul_new", status: "training", createdAt: 2 });
+  const data = { identityId: "soul_old", identityIds: ["soul_old", "soul_new"] };
+  expect(identityOf(data, [old, fresh])?.id).toBe("soul_new");
+  expect(castStatus({ ...cards(project())[0]?.data, variant: "cast", retired: null, rendering: false, ...data } as CastCardData, [old, fresh]).text).toBe("Identity training");
+  /* With only the old one listed, it is the one shown; with one binding, it behaves as before. */
+  expect(identityOf(data, [old])?.id).toBe("soul_old");
+  expect(identityOf({ identityId: "soul_old" }, [old, fresh])?.id).toBe("soul_old");
+});
+
+test("a bind parked for a production is taken once, in the order pressed, only for that production and workspace", () => {
+  parkBind("scope-a", { projectId: "prod_a", entryId: "cast-01", nodeId: null, identityId: "soul_1" }, 1_000);
+  parkBind("scope-a", { projectId: "prod_a", entryId: "cast-02", nodeId: null, identityId: "soul_2" }, 2_000);
+  parkBind("scope-a", { projectId: "prod_b", entryId: "cast-01", nodeId: null, identityId: "soul_3" }, 2_500);
+  parkBind("scope-b", { projectId: "prod_a", entryId: "cast-01", nodeId: null, identityId: "soul_4" }, 2_500);
+  /* The same identity is parked once. */
+  parkBind("scope-a", { projectId: "prod_a", entryId: "cast-01", nodeId: null, identityId: "soul_1" }, 1_500);
+  expect(takeParked("scope-a", "prod_a", 3_000).map((p) => p.identityId)).toEqual(["soul_1", "soul_2"]);
+  expect(takeParked("scope-a", "prod_a", 3_000)).toEqual([]);
+  expect(takeParked("scope-a", "prod_b", 3_000).map((p) => p.identityId)).toEqual(["soul_3"]);
+  expect(takeParked("scope-b", "prod_a", 3_000).map((p) => p.identityId)).toEqual(["soul_4"]);
+  /* One left unopened for 30 days is dropped. */
+  parkBind("scope-a", { projectId: "prod_c", entryId: "cast-01", nodeId: null, identityId: "soul_5" }, 0);
+  expect(takeParked("scope-a", "prod_c", 31 * 86_400_000)).toEqual([]);
 });

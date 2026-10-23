@@ -15,7 +15,9 @@ import { consentLive, consentSummary, type ConsentRecord } from "./consent-words
 export type IdentityLike = { id: string; name: string; status: "submitting" | "training" | "ready" | "failed" | "uncertain"; creditsBilled: number | null; error: string | null; createdAt: number };
 
 /* "review": a training whose submission is uncertain. Nothing is offered to press again until it is reconciled. */
-export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed" | "review" | "unread";
+/* "sent": a training was sent from this production and its reply was not read here (the person left the production while
+   it was out); the request is saved, and Recover asks about that same request, never sending it twice. */
+export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed" | "review" | "sent" | "unread";
 export type Tone = "done" | "working" | "waiting" | "idle";
 
 export type IdentityCardView = {
@@ -65,6 +67,8 @@ export function identityCardView(input: {
   earlier?: string | null;
   /** The consent ticks or the identities could not be read: the card says so, and offers no training it can't place. */
   readFailed?: boolean;
+  /** A training request from this production is saved with its reply unread: the card offers Recover, never Train. */
+  requestSaved?: boolean;
   at?: number;
 }): IdentityCardView {
   const at = input.at ?? Date.now();
@@ -85,6 +89,7 @@ export function identityCardView(input: {
     };
   }
   if (input.readFailed) return { ...base, stage: "unread", text: "Couldn't read this · reload", tone: "waiting" };
+  if (input.requestSaved) return { ...base, stage: "sent", text: "Training sent · reply not read yet", tone: "waiting" };
   if (live) return { ...base, stage: "recorded", text: "Consent ticked · ready to train", tone: "idle" };
   return { ...base, stage: "no-consent", text: "No identity yet", tone: "idle" };
 }

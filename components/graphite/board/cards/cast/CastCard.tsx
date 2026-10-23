@@ -10,6 +10,7 @@ import { useConsents } from "@/lib/security/use-consents";
 import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { useIdentities } from "@/lib/workspace/identities";
+import { usePaidAction } from "@/lib/usePaidAction";
 import { useState } from "react";
 import type { BoardCard } from "@/lib/board/types";
 import { defineCard, type BoardCtx, type CardProps } from "../types";
@@ -53,8 +54,13 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
   /* A character's state is its identity and consent together (Gaps A); a place's and an element's are as before. */
   const consentKey = consentProjectKey(ctx.project);
   const consents = useConsents(signedIn && data.variant === "cast" ? ctx.scope : null, consentKey);
+  /* A training sent from this card whose reply wasn't read here (the person left the production while it was out): its
+     request is saved (lib/usePaidAction.ts), and the card offers Recover, which asks about that same request and is never
+     charged twice; never a second Train press. Read only: nothing is sent from the card. */
+  const saved = usePaidAction(`soul-identity:${ctx.project.id}`, signedIn && data.variant === "cast", { signedIn, requestScope: ctx.scope }).pending;
+  const sentFrom = (() => { try { return saved ? (JSON.parse(saved.body) as { subjectKey?: unknown }).subjectKey ?? null : null; } catch { return null; } })();
   const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent,
-    readFailed: consents.state.status === "error" || state.status === "error" });
+    readFailed: consents.state.status === "error" || state.status === "error", requestSaved: sentFrom === card.id });
   const status = data.variant === "cast" && !data.retired && !data.rendering && signedIn ? { text: idView.text, tone: idView.tone } : castStatus(data, identities);
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
