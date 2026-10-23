@@ -102,6 +102,8 @@ export type ModelDef = {
   kind: "video" | "image";
   /** Not offered in the composer's model menu — reached from its own screen. */
   hidden?: boolean;
+  /** The engine's own environment kill switch (lib/engineModels.ts): the model is offered, and admission takes it, only where that switch is "1" AND the workspace is the house or on the site list (lib/engineGate.ts). Such a row is `hidden` here and is added to the lists a gated workspace reads. */
+  engineSwitch?: string;
   /** No longer offered for NEW work, anywhere. Not `hidden` (which means
    *  "reached from its own screen"): a retired model is in no offer list and
    *  admission refuses it (`retiredReason`), but it stays in the registry so
@@ -200,6 +202,8 @@ const XAI_IMAGE_MODELS: [string, string, string, string[], string][] = [
 /** The ids of Google's two still engines, named once here (the routing table) so nothing else spells a Gemini model id in a request path. */
 export const NANO_BANANA_PRO_ID = "gemini-3-pro-image" as const;
 export const NANO_BANANA_2_ID = "gemini-3.1-flash-image" as const;
+/** Nano Banana 2.1 ("an update to Nano Banana 2", Google's models page of 13 Oct 2026: "New Stable"). On a switch of its own (NANOBANANA21_ENABLED, lib/engineModels.ts): the house workspace and the workspaces the platform owner lists. */
+export const NANO_BANANA_21_ID = "gemini-nano-banana-2.1" as const;
 
 export const MODELS: ModelDef[] = [
   {
@@ -469,6 +473,31 @@ export const MODELS: ModelDef[] = [
     maxVideoSecondsTotal: 0,
     note: "Nano Banana 2, the quick still engine — half the price of Pro, up to 4K, up to 14 refs.",
   },
+  {
+    // Nano Banana 2.1: an update to Nano Banana 2 (Gemini 3.1 Flash Image), cheaper again.
+    // Output prices read off ai.google.dev/gemini-api/docs/pricing, 16 Oct 2026: 1K $0.0336, 2K $0.0504, 4K $0.113 (priced at 3780 tokens, $0.1134; no 512 price is listed: not offered).
+    // Served on the Gemini API by its own id; it has no gateway row yet.
+    id: NANO_BANANA_21_ID,
+    billing: "image",
+    use: "Quick stills, cheaper than Nano Banana 2.",
+    label: "Nano Banana 2.1",
+    short: "NB 2.1",
+    family: "nano-banana",
+    provider: "google",
+    kind: "image",
+    hidden: true,
+    engineSwitch: "NANOBANANA21_ENABLED",
+    paramStyle: "fields",
+    resolutions: ["1K", "2K", "4K"],
+    ratios: ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"],
+    durations: [],
+    supportsAudio: false,
+    supportsCameraFixed: false,
+    maxReferenceImages: 14,
+    maxReferenceVideos: 0,
+    maxVideoSecondsTotal: 0,
+    note: "Nano Banana 2.1, the quick still engine — cheaper than Nano Banana 2, up to 4K.",
+  },
   /* OpenAI's GPT Image (owner, 23 September: OpenAI image models in image
      gens). Quality takes the resolution slot — Medium, High, Low — and the
      ratio picks the size (lib/vendorImages.ts). Direct on the OpenAI key,
@@ -730,6 +759,7 @@ const DIRECT_FAMILIES: [RegExp, string][] = [
   [/seedance-1/, "Seedance 1.0"],
   [/kling.*pro/, "Kling 3.0 Pro"],
   [/kling/, "Kling 3.0"],
+  [/nano-banana-2\.1/, "Nano Banana 2.1"],
   [/flash-image|nano-banana-2/, "Nano Banana 2"],
   [/gemini-.*image|nano-banana/, "Nano Banana Pro"],
   [/^eleven_/, "Eleven"],

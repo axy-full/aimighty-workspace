@@ -28,6 +28,8 @@ export const TYPICAL_DEFAULTS_BY_MODEL: Readonly<Record<string, TypicalBounds>> 
   "fal-ai/kling-video/v3/standard": { lowMs: 1 * MIN, highMs: 2 * MIN },
   /* Nano Banana 2 · usually 20–40 s */
   "gemini-3.1-flash-image": { lowMs: 20 * S, highMs: 40 * S },
+  /* Nano Banana 2.1 · assumed as quick as Nano Banana 2 */
+  "gemini-nano-banana-2.1": { lowMs: 20 * S, highMs: 40 * S },
 };
 
 /**

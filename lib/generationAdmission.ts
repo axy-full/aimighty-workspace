@@ -25,6 +25,7 @@ import { isSoulRenderBatch, isSoulRenderModel } from "@/lib/soulRenderTypes";
 import { estimateSoulRender, soulRenderInput, SoulRenderError } from "@/lib/soulRender";
 
 import { allowanceCheck, paidByPlatform, renderKeyNameFor } from "@/lib/allowance";
+import { gatedModelRefusal } from "@/lib/engineModels";
 import { db, ready, now, id } from "@/lib/db";
 import { type VideoParams, type Reference, type ImageRole } from "@/lib/ark";
 import {
@@ -533,6 +534,9 @@ export async function executeGenerationAdmission(
        already made are untouched — they are read, collected and settled elsewhere. */
     const retired = retiredReason(modelId);
     if (retired) return admissionReply({ error: retired, code: "engine_retired" }, { status: 410 });
+    /* An engine behind its own switch (Nano Banana 2.1): off here, it is an id nobody has heard of, before anything is priced or reserved. */
+    const notHere = await gatedModelRefusal(modelId);
+    if (notHere) return admissionReply({ error: notHere }, { status: 400 });
     const genjutsu = isGenjutsuModel(modelId);
     if (genjutsu) {
       if (!options.checkpoint) return admissionReply({ error: "Review a live transform quote before submitting this take." }, { status: 400 });
