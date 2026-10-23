@@ -11,6 +11,7 @@ import {
   type CompareMode, type ReviewAction,
 } from "./review-model";
 import "./review.css";
+import TieredImg from "@/components/TieredImg";
 
 /*
  * Review mode (README § 3.1 frame l, § 6; U1 item 6): one take at a time, full screen under the header.
@@ -43,8 +44,8 @@ function Media({ version, mediaRef, label, accent }: { version: ShotVersion; med
     <div className="gx-review-media" data-accent={accent || undefined}>
       {version.media === "video"
         ? <video ref={mediaRef} src={version.url ?? undefined} playsInline preload="metadata" className="gx-review-el" data-testid="review-video" />
-        /* eslint-disable-next-line @next/next/no-img-element */
-        : <img src={version.url ?? undefined} alt="" className="gx-review-el" draggable={false} data-testid="review-image" />}
+        /* In width tiers at the size it is drawn (components/TieredImg.tsx). */
+        : <TieredImg src={version.url} alt="" className="gx-review-el" draggable={false} data-testid="review-image" />}
       {label ? <span className="gx-review-label" data-accent={accent || undefined}>{label}</span> : null}
     </div>
   );

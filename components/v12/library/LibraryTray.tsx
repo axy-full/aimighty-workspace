@@ -13,6 +13,7 @@ import { Kbd, Menu, Segment, Tooltip, useOverlay, useOverlayStack, type MenuItem
 import { TrayMenu } from "../menus/TrayMenu";
 import { useMenuAt } from "../menus/menu-items";
 import "./library.css";
+import TieredImg from "@/components/TieredImg";
 
 /** useLayoutEffect on the client (it runs in the commit, after the DOM is changed), a plain effect where there is no layout to read. */
 const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -184,8 +185,8 @@ function Tray({ project, projects, library, tray, onBoard, onClose }: {
                       data-testid="v12-library-tile" data-source={item.source} data-id={item.id}>
                       <span className="v12-lib-pic" style={{ aspectRatio: item.aspect }}>
                         {item.url && item.media === "image" ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={item.url} alt="" loading="lazy" decoding="async" draggable={false} />
+                          /* In width tiers at the size it is drawn (components/TieredImg.tsx). */
+                          <TieredImg src={item.url} alt="" loading="lazy" decoding="async" draggable={false} />
                         ) : item.url && item.media === "video" ? (
                           <video src={`${item.url}#t=0.1`} muted playsInline preload="metadata" />
                         ) : <span className="v12-lib-glyph" aria-hidden="true">{item.media === "audio" ? "♪" : "▤"}</span>}

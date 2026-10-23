@@ -7,6 +7,7 @@ import { renderState } from "@/lib/v12/renderState";
 import type { TypicalTimesReply } from "@/lib/v12/typicalTimes";
 import { renderTakeOf } from "./use-results";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
+import TieredImg from "@/components/TieredImg";
 
 /** The width the grid has to fill, read as it changes. */
 function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
@@ -106,8 +107,8 @@ function Tile({ tile, width, now, typical, trayPrice, paysInDollars, selected, o
       {done ? (
         <>
           {tile.kind === "image" ? (
-            // eslint-disable-next-line @next/next/no-img-element -- Particl's own media route, already sized
-            <img className="v12-mk-media" src={tile.url!} alt="" loading="lazy" draggable={false} />
+            /* Particl's own media route, in width tiers at the size it is drawn (components/TieredImg.tsx). */
+            <TieredImg className="v12-mk-media" src={tile.url} alt="" loading="lazy" draggable={false} />
           ) : tile.kind === "video" ? (
             <video className="v12-mk-media" src={tile.url!} muted playsInline preload="metadata" aria-hidden="true" />
           ) : (

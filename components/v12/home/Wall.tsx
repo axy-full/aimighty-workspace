@@ -3,6 +3,7 @@ import type { CSSProperties, MouseEvent } from "react";
 import { clipFrameUrl, wallLayout, type WallTile } from "@/lib/v12/home";
 import { Tooltip } from "@/components/v12/ui/Tooltip";
 import { FitText } from "./FitText";
+import TieredImg from "@/components/TieredImg";
 
 /**
  * The wall (docs/redesign/inventory.md § 5.9 · 2): this workspace's newest finished stills and clips on a 6-column
@@ -45,8 +46,8 @@ export function Wall({ tiles, status, row, picked, onPick, onRemix, onMenu, onBr
             data-faded={picked && !on ? "" : undefined} data-testid="v12-home-tile" data-tile={tile.id} onContextMenu={onMenu ? (e) => onMenu(e, tile) : undefined}>
             {tile.media === "video"
               ? <video className="v12-hm-tile-media" src={clipFrameUrl(tile.url)} muted playsInline preload="metadata" aria-hidden="true" onError={() => onBroken?.(tile)} />
-              // eslint-disable-next-line @next/next/no-img-element -- Particl's own media route (/api/media), already sized
-              : <img className="v12-hm-tile-media" src={tile.url} alt="" loading="lazy" decoding="async" onError={() => onBroken?.(tile)} />}
+              /* Particl's own media route, in width tiers at the size it is drawn (components/TieredImg.tsx). */
+              : <TieredImg className="v12-hm-tile-media" src={tile.url} alt="" loading="lazy" decoding="async" onError={() => onBroken?.(tile)} />}
             <Tooltip name={`${tile.title} · ${tile.type}`} line="Make one like this: click to pick it, or right-click for more.">
               <button type="button" className="v12-hm-tile-pick" onClick={() => onPick(tile)} aria-pressed={on}
                 aria-label={`${on ? "Picked" : "Pick"}: ${tile.title}`} data-testid="v12-home-tile-pick" />

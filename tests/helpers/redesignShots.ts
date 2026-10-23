@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { sizeTag } from "./ownerSizes";
 
 /*
  * Screenshots of a built screen beside the prototype URL it matches (docs/redesign-plan.md › "Screenshots").
@@ -11,8 +12,13 @@ import sharp from "sharp";
  * redone as each v31.16 step is built) is served from a local static server started here, never from the
  * network: requests to any other host are refused, except Google Fonts (the prototype falls back to the system
  * stack without them), so the stand-in stills load from the prototype's own assets/ folder.
- * Output: <REDESIGN_SHOTS_DIR or ../redesign-shots>/<name>/<width>x<height>-{app,proto,beside}.png
+ * Output: <REDESIGN_SHOTS_DIR or ../redesign-shots>/<name>/<tag>-{app,proto,beside}.png, where <tag> is 1920x1080, or 2560x1440@2x at a
+ * pixel ratio of 2 (the Studio and Pro Displays, tests/helpers/ownerSizes.ts). At a pixel ratio above 1 the PNGs are in device pixels (a
+ * 3008x1692 viewport at 2 is 6016x3384), the side-by-side is a WebP only (its PNG would be 12000 px wide), and every shot also gets a
+ * downscaled -{app,proto,beside}.webp, the file a PR table shows; the PNG stays for pixel-checking.
  */
+/** The width a PR-table WebP is downscaled to (a side-by-side gets two of them). */
+export const TABLE_WEBP_WIDTH = 1600;
 
 /* REDESIGN_PROTOTYPE_DIR points at another round of the prototype; the default is the repo's own design, v31.16, the only one. */
 const ROOT = path.resolve(process.env.REDESIGN_PROTOTYPE_DIR ?? path.join(__dirname, "../../design/particl-v31.16"));
@@ -83,9 +89,11 @@ export async function captureBeside(appPage: Page, name: string, protoQuery: str
   const options = typeof arg === "function" ? { prepare: arg } : arg;
   const phone = Boolean((options as { phone?: boolean }).phone);
   const size = appPage.viewportSize() ?? { width: 1440, height: 900 };
+  /* The pixel ratio the page is drawn at: the screenshots are in device pixels, so the side-by-side canvas is too. */
+  const dpr = await appPage.evaluate(() => window.devicePixelRatio);
   const dir = path.resolve(process.env.REDESIGN_SHOTS_DIR ?? "../redesign-shots", name);
   await mkdir(dir, { recursive: true });
-  const tag = `${size.width}x${size.height}`;
+  const tag = sizeTag(size.width, size.height, dpr);
   const app = await appPage.screenshot({ animations: "disabled" });
   const proto = await appPage.context().newPage();
   try {
@@ -94,15 +102,25 @@ export async function captureBeside(appPage: Page, name: string, protoQuery: str
     await openPrototype(proto, protoQuery);
     if (options.prepare) { await options.prepare(proto); await proto.waitForTimeout(400); }
     const protoShot = await proto.screenshot({ animations: "disabled", ...(phone ? { clip: { x: (1440 - size.width) / 2, y: 0, width: size.width, height: Math.min(size.height, 900) } } : {}) });
-    const gap = 16;
-    const beside = await sharp({ create: { width: size.width * 2 + gap, height: size.height, channels: 3, background: "#808080" } })
-      .composite([{ input: app, left: 0, top: 0 }, { input: protoShot, left: size.width + gap, top: 0 }])
-      .png().toBuffer();
-    const files = [`${tag}-app.png`, `${tag}-proto.png`, `${tag}-beside.png`];
+    const gap = Math.round(16 * dpr), w = Math.round(size.width * dpr), h = Math.round(size.height * dpr);
+    /* Composited first, resized after: sharp resizes before it composites, so a pipeline holding both would shrink the canvas under full-size shots. */
+    const composite = await sharp({ create: { width: w * 2 + gap, height: h, channels: 3, background: "#808080" } })
+      .composite([{ input: app, left: 0, top: 0 }, { input: protoShot, left: w + gap, top: 0 }]).png().toBuffer();
+    const names = { app: `${tag}-app`, proto: `${tag}-proto`, beside: `${tag}-beside` };
+    const files = [`${names.app}.png`, `${names.proto}.png`];
     await writeFile(path.join(dir, files[0]), app);
     await writeFile(path.join(dir, files[1]), protoShot);
-    await writeFile(path.join(dir, files[2]), beside);
-    await writeFile(path.join(dir, `${tag}.json`), JSON.stringify({ name, app: appPage.url().replace(/^https?:\/\/[^/]+/, ""), prototype: protoQuery, size }, null, 2));
+    if (dpr === 1) {
+      files.push(`${names.beside}.png`);
+      await writeFile(path.join(dir, files[2]), composite);
+    }
+    /* Downscaled WebPs for the PR table: one screen is no wider than TABLE_WEBP_WIDTH, the side-by-side no wider than two of them; never enlarged. */
+    const webp = (input: Buffer, maxWidth: number) => sharp(input).resize({ width: maxWidth, withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
+    for (const [key, input, maxWidth] of [["app", app, TABLE_WEBP_WIDTH], ["proto", protoShot, TABLE_WEBP_WIDTH], ["beside", composite, TABLE_WEBP_WIDTH * 2]] as const) {
+      files.push(`${names[key]}.webp`);
+      await writeFile(path.join(dir, `${names[key]}.webp`), await webp(input, maxWidth));
+    }
+    await writeFile(path.join(dir, `${tag}.json`), JSON.stringify({ name, app: appPage.url().replace(/^https?:\/\/[^/]+/, ""), prototype: protoQuery, size, dpr }, null, 2));
     return { dir, files };
   } finally {
     await proto.close();

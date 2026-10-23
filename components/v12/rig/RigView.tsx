@@ -14,6 +14,7 @@ import { useOverlay } from "@/components/v12/ui/overlay";
 import { uid, type CanvasNode } from "@/lib/workbench/studio";
 import { GROUP_LABEL, STATE_WORD, impactPrice, lengthOf, redrawn, shotsList, shotsWord, stepName, stepPriceText, type RigGroup, type RigInput, type RigModel, type RigShot } from "./model";
 import "./rig.css";
+import TieredImg from "@/components/TieredImg";
 
 /**
  * The Rig, the board's fourth view (redesign P5; docs/redesign/inventory.md § 9; prototype L283–L291): "see what feeds what, and
@@ -44,8 +45,8 @@ function Thumb({ still, kind, className }: { still: { url: string; kind: "image"
   if (!still) return <span className={`${className} v12-rig-thumb-empty`} aria-hidden="true" />;
   return still.kind === "video"
     ? <video className={className} src={still.url} muted playsInline preload="metadata" aria-hidden="true" style={{ objectPosition: cropOf(kind ?? "") }} />
-    // eslint-disable-next-line @next/next/no-img-element -- Particl's own media route, already sized
-    : <img className={className} src={still.url} alt="" loading="lazy" draggable={false} style={{ objectPosition: cropOf(kind ?? "") }} />;
+    /* Particl's own media route, in width tiers at the size it is drawn (components/TieredImg.tsx). */
+    : <TieredImg className={className} src={still.url} alt="" loading="lazy" draggable={false} style={{ objectPosition: cropOf(kind ?? "") }} />;
 }
 
 export function RigView({ model, project, scope, userId, apply, onStage, onAsk, readOnly }: {

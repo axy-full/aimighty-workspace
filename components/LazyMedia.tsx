@@ -5,6 +5,7 @@ import { posterSrc } from "@/lib/format";
 import { posterTier } from "@/lib/posterTier";
 import { assetIdFromUrl, previewAttrs } from "@/lib/preview";
 import { dragAttrs } from "@/lib/drop";
+import TieredImg from "@/components/TieredImg";
 
 /**
  * A render on a wall, done the way galleries do it.
@@ -272,8 +273,8 @@ export default function LazyMedia({
       {!show ? (
         placeholder ?? <span className="desk-grid block h-full w-full" />
       ) : kind === "image" ? (
-        /* eslint-disable-next-line @next/next/no-img-element */
-        <img src={url} alt={alt ?? ""} draggable={false} className="h-full w-full object-cover" onError={onFail} />
+        /* Width tiers at the size it is drawn (components/TieredImg.tsx). */
+        <TieredImg src={url} alt={alt ?? ""} draggable={false} className="h-full w-full object-cover" onError={onFail} />
       ) : poster === "fail" ? (
         <video
           src={posterSrc(url)} muted preload="metadata" playsInline draggable={false} onError={onFail}
