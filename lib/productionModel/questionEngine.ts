@@ -66,18 +66,31 @@ const isSource = (value: unknown): value is RowSource => typeof value === "strin
 export function inMemoryRecord(
   workspaceId: string,
   productionId: string,
-  rows: Readonly<Record<string, { value: string; source: RowSource }>>,
+  rows: Readonly<Record<string, { value: string; source: RowSource; carriedFrom?: string }>>,
 ): RecordView {
-  const held = new Map(Object.entries(rows).map(([key, row]) => [key, Object.freeze({ workspaceId, value: row.value, source: row.source })]));
+  const held = new Map(
+    Object.entries(rows).map(([key, row]) => [key, Object.freeze({ workspaceId, value: row.value, source: row.source, ...(row.carriedFrom ? { carriedFrom: row.carriedFrom } : {}) })]),
+  );
   return Object.freeze({ workspaceId, productionId, get: (key: string) => held.get(key) ?? null });
 }
 
-/** The base record with this session's writes on top; the latest write to a key wins. */
+/** The base record with this session's writes on top; the latest write to a key wins, and a null write reopens the row. */
 function withWrites(base: RecordView, writes: readonly RecordWrite[]): RecordView {
-  const latest = new Map<string, RecordValue>();
-  for (const write of writes) latest.set(write.key, { workspaceId: write.workspaceId, value: write.value, source: write.source });
-  return Object.freeze({ workspaceId: base.workspaceId, productionId: base.productionId, get: (key: string) => latest.get(key) ?? base.get(key) });
+  const latest = new Map<string, RecordValue | null>();
+  for (const write of writes) {
+    latest.set(
+      write.key,
+      write.value === null || write.source === null
+        ? null
+        : { workspaceId: write.workspaceId, value: write.value, source: write.source, ...(write.reason === "carry" && write.from ? { carriedFrom: write.from } : {}) },
+    );
+  }
+  return Object.freeze({ workspaceId: base.workspaceId, productionId: base.productionId, get: (key: string) => (latest.has(key) ? latest.get(key)! : base.get(key)) });
 }
+
+/** Every pill id a row can show, whatever the row it reads holds. */
+const everyPill = (row: FloorRow): string[] =>
+  ("by" in row.pills ? Object.values(row.pills.sets) : [row.pills]).flatMap((set) => set.pills.map((pill) => pill.id));
 
 export interface QuestionEngine {
   readonly workspaceId: string;
@@ -97,8 +110,9 @@ export interface QuestionEngine {
   answer(key: string, value: string, also?: Readonly<Record<string, string>>): QuestionEngine;
   /**
    * "Decide for me": every open row closed with Atomik's pick (source `assumed`). A floor row without a pick takes its lit
-   * default (H: ★); an above-floor row has none, so it needs a pick. A row a person alone answers takes only what Atomik may
-   * assume (`agentPicks`). Rows that are already known or assumed keep their value.
+   * default (H: ★); an above-floor row has none, so it needs a pick. A row with `agentPicks` takes only what Atomik may
+   * assume. A person-only row (the spend limit) is never written: it stays unset, which means no limit, and a pick for it is
+   * refused. Rows that are already known or assumed keep their value.
    */
   decideForMe(picks: Picks): QuestionEngine;
   /** Whether Atomik may ask an above-floor question about `key`: never a floor row, never a row the record holds (H). */
@@ -138,8 +152,14 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
     return value;
   };
 
-  const rows: MarkedRow[] = all.map((row) => {
+  /* A person-only row counts as answered only when the person said it (rule 11; film-record-schema question 7). */
+  const answered = (row: ChecklistRow): RecordValue | null => {
     const value = read(row.key);
+    return value && row.floor && row.personOnly && value.source !== "said" ? null : value;
+  };
+
+  const rows: MarkedRow[] = all.map((row) => {
+    const value = answered(row);
     return { key: row.key, floor: row.floor, state: value ? STATE_OF[value.source] : "open", value: value?.value ?? null, source: value?.source ?? null };
   });
   const isOpen = new Set(rows.filter((row) => row.state === "open").map((row) => row.key));
@@ -159,23 +179,58 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
   const open = ordered.map((row) => row.key);
   const firstFloor = (ordered.find((row) => row.floor && !(row.dependsOn ?? []).some((key) => isOpen.has(key))) ?? null) as FloorRow | null;
 
-  /** Whether a value is one this row takes from this answerer. Throws, naming nothing, when it is not. */
-  const check = (row: ChecklistRow, value: string, by: "person" | "agent", readNow: (key: string) => RecordValue | null) => {
+  /**
+   * Whether a value is one this row takes from this answerer. Throws, naming nothing, when it is not. `person` is the person's
+   * own direct answer; `read` is words the caller read for another row (`also`); `agent` is Atomik's pick. Only a person's own
+   * direct answer sets a person-only row or a value outside `agentPicks` (rule 11, rule 14).
+   */
+  const check = (row: ChecklistRow, value: string, by: "person" | "read" | "agent", readNow: (key: string) => RecordValue | null) => {
     if (typeof value !== "string" || !value.trim() || value.length > MAX_VALUE) throw new QuestionEngineError(NOT_A_CHOICE);
     if (!row.floor) return;
+    if (by !== "person" && row.personOnly) throw new QuestionEngineError(PERSON_ONLY);
     const isPill = pillsOf(row, readNow).pills.some((pill) => pill.id === value);
     if (!isPill && !row.field) throw new QuestionEngineError(NOT_A_CHOICE);
-    if (by === "agent" && row.agentPicks && !row.agentPicks.includes(value)) throw new QuestionEngineError(PERSON_ONLY);
+    if (by !== "person" && row.agentPicks && !row.agentPicks.includes(value)) throw new QuestionEngineError(PERSON_ONLY);
   };
 
-  /** Writes one row and what it carries (H "Answered by"), each carried row only where nothing answers it yet. */
+  /** Whether a row's held value still stands once the row it reads has changed: one of its pills now, or the field's own words. */
+  const stillValid = (row: FloorRow, value: string, readNow: (key: string) => RecordValue | null) =>
+    pillsOf(row, readNow).pills.some((pill) => pill.id === value) || (row.field && !everyPill(row).includes(value));
+
+  /**
+   * Writes one row, then:
+   *  - what it carries (H "Answered by"): a carried row is written where nothing answers it, or where this same row carried it
+   *    before (a changed answer carries again; one that carries nothing reopens it). A row a person answered is never touched;
+   *  - when its value changed, every row that reads it (`dependsOn`) reopens unless the person said it and it still stands.
+   */
   const write = (out: RecordWrite[], row: ChecklistRow, value: string, source: RowSource, reason: RecordWrite["reason"]) => {
+    const now = () => withWrites(base, [...writes, ...out]);
+    const previous = now().get(row.key)?.value ?? null;
     out.push({ workspaceId, productionId, key: row.key, value, source, reason });
-    if (!row.floor || !row.carries || !Object.hasOwn(row.carries, value)) return;
-    const now = withWrites(base, [...writes, ...out]);
-    for (const carry of row.carries[value]) {
-      if (now.get(carry.key)) continue;
-      out.push({ workspaceId, productionId, key: carry.key, value: carry.value, source: source === "said" ? "earlier_step" : "assumed", reason: "carry", from: row.key });
+    if (!row.floor) return;
+    if (row.carries) {
+      const carried = Object.hasOwn(row.carries, value) ? row.carries[value] : [];
+      const carrySource: RowSource = source === "said" ? "earlier_step" : "assumed";
+      for (const target of [...new Set(Object.values(row.carries).flat().map((carry) => carry.key))]) {
+        const held = now().get(target);
+        const ours = held?.carriedFrom === row.key;
+        if (held && !ours) continue;
+        const carry = carried.find((c) => c.key === target);
+        if (carry) {
+          if (!(ours && held!.value === carry.value && held!.source === carrySource)) {
+            out.push({ workspaceId, productionId, key: target, value: carry.value, source: carrySource, reason: "carry", from: row.key });
+          }
+        } else if (ours) {
+          out.push({ workspaceId, productionId, key: target, value: null, source: null, reason: "carry", from: row.key });
+        }
+      }
+    }
+    if (previous === null || previous === value) return;
+    for (const dependant of checklist.floor.filter((r) => (r.dependsOn ?? []).includes(row.key))) {
+      const view = now();
+      const held = view.get(dependant.key);
+      if (!held || (held.source === "said" && stillValid(dependant, held.value, (k) => view.get(k)))) continue;
+      out.push({ workspaceId, productionId, key: dependant.key, value: null, source: null, reason: "change", from: row.key });
     }
   };
 
@@ -192,13 +247,14 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
       if (!firstFloor) return null;
       const set = pillsOf(firstFloor, read);
       const pick = picks && Object.hasOwn(picks, firstFloor.key) ? picks[firstFloor.key] : undefined;
-      const pickable = (id: string) => set.pills.some((pill) => pill.id === id) && (!firstFloor.agentPicks || firstFloor.agentPicks.includes(id));
+      const pickable = (id: string) =>
+        !firstFloor.personOnly && set.pills.some((pill) => pill.id === id) && (!firstFloor.agentPicks || firstFloor.agentPicks.includes(id));
       const lit = pick !== undefined && pickable(pick) ? pick : set.lit;
       return {
         key: firstFloor.key,
         text: QUESTIONS[firstFloor.question],
         shape: firstFloor.shape,
-        pills: set.pills.map((pill) => ({ id: pill.id, label: pill.copy ? QUESTIONS[pill.copy] : null, credits: pill.credits ?? null, lit: pill.id === lit })),
+        pills: set.pills.map((pill) => ({ id: pill.id, label: pill.copy ? QUESTIONS[pill.copy] : null, lit: pill.id === lit })),
         field: firstFloor.field,
         fieldLabel: firstFloor.field ? QUESTIONS.other : null,
       };
@@ -214,19 +270,28 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
       for (const [k, v] of stated) {
         const row = rowOf(k)!;
         const now = withWrites(base, [...writes, ...out]);
-        check(row, v, "person", (key) => now.get(key));
+        /* Only the row asked is the person's own direct answer; the others are words the caller read. */
+        check(row, v, k === key ? "person" : "read", (key) => now.get(key));
         write(out, row, v, "said", now.get(k) ? "change" : "answer");
       }
       return build(checklist, base, [...writes, ...out]);
     },
 
     decideForMe(picks) {
-      for (const key of Object.keys(picks)) if (!rowOf(key)) throw new QuestionEngineError(NOT_ON_LIST);
+      for (const key of Object.keys(picks)) {
+        const row = rowOf(key);
+        if (!row) throw new QuestionEngineError(NOT_ON_LIST);
+        if (row.floor && row.personOnly) throw new QuestionEngineError(PERSON_ONLY);
+      }
       const out: RecordWrite[] = [];
-      /* Row by row in asking order, re-reading after each, so a decided kind sets the length's pills before length is decided. */
+      /* Row by row in asking order, re-reading after each, so a decided kind sets the length's pills before length is decided.
+         A person-only row is passed over: it stays unset. */
       for (;;) {
         const step = build(checklist, base, [...writes, ...out]);
-        const key = step.open[0];
+        const key = step.open.find((k) => {
+          const row = rowOf(k)!;
+          return !(row.floor && row.personOnly);
+        });
         if (key === undefined) break;
         const row = rowOf(key)!;
         const now = step.record;

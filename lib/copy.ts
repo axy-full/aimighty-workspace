@@ -140,8 +140,8 @@ export const PLACEHOLDERS = {
 
 /**
  * The Brief's floor questions and pills (Amendment (iii) H, "Brief (the interview)"), as the owner drafted them for the Ad film,
- * until his edit of the floor rows lands. "Other" is the field. A spend-limit pill is a figure, written "N cr" at the call
- * site, so none is here. Read by lib/productionModel/checklists.ts.
+ * until his edit of the floor rows lands. "Other" is the field. The spend limit offers "No limit" only: H's
+ * figures are samples awaiting the owner's ruling (lib/productionModel/checklists.ts). Read by lib/productionModel/checklists.ts.
  */
 export const QUESTIONS = {
   other: "Other",

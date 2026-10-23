@@ -125,11 +125,16 @@ const BRIEF_FLOOR: readonly FloorRow[] = [
     rank: 7,
     question: "ceiling",
     shape: "pick_one",
-    pills: pillSet("none", { id: "none", copy: "ceilingNone" }, { id: "cap_200", credits: 200 }, { id: "cap_500", credits: 500 }),
-    field: true,
-    /* Only a person sets a spend limit (rule 11, rule 14); "Decide for me" leaves it at No limit (film-record-schema A.0). */
-    agentPicks: ["none"],
-    answeredBy: ["workspace_monthly_limit", "house_default"],
+    /* The record holds a reference to the production's cap, never a figure (film-record-schema A.0, A.2): "none" is
+       {"cap":"none"}. H's other two pills, 200 cr and 500 cr, are SAMPLES awaiting the owner's ruling: a figure cannot be a
+       reference without a way to set the production's cap from here, which does not exist, so they are wired to nothing and
+       written nowhere. No field: no free-text figure. */
+    pills: pillSet("none", { id: "none", copy: "ceilingNone" }),
+    field: false,
+    /* Only a person sets a spend limit (rule 11, rule 14): "Decide for me" never writes it, and a house default never answers
+       it (film-record-schema question 7). Left unset, it means no limit. */
+    personOnly: true,
+    answeredBy: ["workspace_monthly_limit"],
     sets: ["production_cap"],
     money: true,
   },

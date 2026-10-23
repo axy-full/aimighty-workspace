@@ -27,11 +27,8 @@ export type QuestionShape = "pick_one" | "a_b" | "yes_no" | "tap_frame" | "uploa
 /** A key into the copy table's QUESTIONS section: every word a question shows comes from lib/copy.ts (D12). */
 export type QuestionCopyKey = keyof typeof QUESTIONS;
 
-/**
- * One answer pill. `id` is the value written to the record. `copy` is its words; a spend-limit pill has `credits` instead and
- * the screen writes it as "N cr" (rule 14), so no figure sits in the copy table.
- */
-export type Pill = { readonly id: string; readonly copy?: QuestionCopyKey; readonly credits?: number };
+/** One answer pill. `id` is the value written to the record, never a figure; `copy` is its words in the copy table. */
+export type Pill = { readonly id: string; readonly copy?: QuestionCopyKey };
 
 /** A row's pills and the one lit by default (H: ★). At most four pills (A1); "Other" is the field, not a pill. */
 export type PillSet = { readonly pills: readonly Pill[]; readonly lit: string | null };
@@ -62,6 +59,12 @@ export type FloorRow = {
    * alone answers (rule 11: the spend limit; consent) lists only what Atomik may assume, never the person's own choices.
    */
   readonly agentPicks?: readonly string[];
+  /**
+   * A row only a person's own direct answer sets (rule 11, rule 14: the spend limit). "Decide for me" never writes it, words the
+   * caller read (`answer`'s `also`) never set it, and only a value the person said counts: a house default, a document or an
+   * assumption leaves it open (film-record-schema A.0 and question 7: the spend limit never becomes a default).
+   */
+  readonly personOnly?: true;
   /** H "Answered by", where the answer is another floor row: pill id → the values it carries. */
   readonly carries?: Readonly<Record<string, readonly Carry[]>>;
   /** D1: what answers it without asking (H's "Answered by" column), as ids. */
@@ -89,8 +92,12 @@ export type Checklist = {
   readonly aboveFloor: readonly AboveFloorRow[];
 };
 
-/** One row's live value in the record, with the workspace it belongs to (rule 2: the engine refuses another workspace's row). */
-export type RecordValue = { readonly workspaceId: string; readonly value: string; readonly source: RowSource };
+/**
+ * One row's live value in the record, with the workspace it belongs to (rule 2: the engine refuses another workspace's row).
+ * `carriedFrom` names the row whose answer carried it here (film-record-schema A.2 `change_reason` `carry:<row>`), so a changed
+ * answer there can carry again; a row a person answered has none and is never overwritten by a carry.
+ */
+export type RecordValue = { readonly workspaceId: string; readonly value: string; readonly source: RowSource; readonly carriedFrom?: string };
 
 /**
  * What is known: the read-only view the film record will satisfy (one live version per key, film-record-schema A.0). Bound to
@@ -103,7 +110,10 @@ export interface RecordView {
   get(key: string): RecordValue | null;
 }
 
-/** Why a row was written (film-record-schema A.2 `change_reason`; `carry` names the row it came from in `from`). */
+/**
+ * Why a row was written (film-record-schema A.2 `change_reason`). `from` names the row that caused it: the row a `carry` came
+ * from, or, on a `change` that reopens a row, the row it reads whose answer changed (a new kind reopens length).
+ */
 export type WriteReason = "answer" | "change" | "decide_for_me" | "carry";
 
 /** One row the engine wrote this session, for the record's writer to commit. No time: the store stamps it. */
@@ -111,8 +121,9 @@ export type RecordWrite = {
   readonly workspaceId: string;
   readonly productionId: string;
   readonly key: string;
-  readonly value: string;
-  readonly source: RowSource;
+  /** Null reopens the row: asked, not answered (film-record-schema A.2: value and source are NULL together). */
+  readonly value: string | null;
+  readonly source: RowSource | null;
   readonly reason: WriteReason;
   readonly from?: string;
 };
@@ -126,8 +137,8 @@ export type MarkedRow = {
   readonly source: RowSource | null;
 };
 
-/** A pill as a question shows it: its words (or credits) and whether it is the lit default. */
-export type QuestionPill = { readonly id: string; readonly label: string | null; readonly credits: number | null; readonly lit: boolean };
+/** A pill as a question shows it: its words and whether it is the lit default. */
+export type QuestionPill = { readonly id: string; readonly label: string | null; readonly lit: boolean };
 
 /** The one question to ask next (A1: one at a time; at most four pills, plus a field). */
 export type Question = {
