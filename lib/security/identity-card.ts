@@ -1,11 +1,12 @@
 import { consentLive, consentSummary, type ConsentRecord } from "./consent-words";
 
 /**
- * What the Cast card for a character says about its identity and its consent (Gaps A, Identity frames: consent not
- * recorded, consent on file, training, ready, failed). Pure: the card and the tests read the same answer.
+ * What the Cast card for a character says about its identity and its consent tick (Gaps A, Identity frames: not
+ * ticked, ticked, training, ready, failed). Pure: the card and the tests read the same answer.
  *
- * Only what is recorded is said:
- * - the consent is the cast member's newest record (a live one first);
+ * A tick, not a gate (owner, 23 Oct 2026): training is offered whether or not the consent is ticked; the tick is only
+ * recorded and shown. Only what is recorded is said:
+ * - the consent is the cast member's newest tick (a live one first);
  * - the identity is the one the card renders with, else the one a training request citing the consent started;
  * - training shows no percentage or time left: the trainer reports none (an indeterminate bar, lead decision 20);
  * - a failed training says "Nothing billed" only when the ledger shows nothing was billed for it, the charge when it
@@ -21,9 +22,9 @@ export type IdentityCardView = {
   /** The state line on the card. */
   text: string;
   tone: Tone;
-  /** The consent line: the record in words, or why there is none. */
+  /** The consent line: the tick in words, or that there is none. */
   consent: string;
-  /** The live record a training request cites; null when there is none. */
+  /** The live tick a training request cites; null when there is none (training is offered all the same). */
   consentId: string | null;
   /** What a failed training was billed, in words; null when not failed. */
   billed: string | null;
@@ -57,12 +58,11 @@ export function identityCardView(input: {
 }): IdentityCardView {
   const at = input.at ?? Date.now();
   const consent = currentConsent(input.consents, input.subjectKey, at);
-  const holding = consent && consentLive(consent, at) ? consent : null;
-  /* Training cites only a record that covers the face and allows identity training (the server checks the same). */
-  const live = holding && holding.face && holding.uses.includes("identity") ? holding : null;
+  /* Any live tick is cited: what it covers and the uses are optional notes for the lawyer, never a condition. */
+  const live = consent && consentLive(consent, at) ? consent : null;
   const started = consent?.identityId ? input.identities?.find((i) => i.id === consent.identityId) ?? null : null;
   const identity = input.bound ?? started;
-  const consentLine = consent ? consentSummary(consent, at) : input.earlier ?? "Not recorded yet. Only a person records it.";
+  const consentLine = consent ? consentSummary(consent, at) : input.earlier ?? "Not ticked. Only a person ticks it.";
   const base = { consent: consentLine, consentId: live?.id ?? null, billed: null, why: null, identity };
   if (identity?.status === "ready") return { ...base, stage: "ready", text: `Identity ready · ${identity.name}`, tone: "done" };
   if (identity?.status === "submitting" || identity?.status === "training") return { ...base, stage: "training", text: "Training", tone: "working" };
@@ -73,7 +73,6 @@ export function identityCardView(input: {
       billed: billedWords(identity.creditsBilled), why: identity.error,
     };
   }
-  if (live) return { ...base, stage: "recorded", text: "Consent recorded · ready to train", tone: "idle" };
-  if (holding) return { ...base, stage: "no-consent", text: "Consent doesn't allow identity training", tone: "waiting" };
-  return { ...base, stage: "no-consent", text: "Consent not recorded", tone: "waiting" };
+  if (live) return { ...base, stage: "recorded", text: "Consent ticked · ready to train", tone: "idle" };
+  return { ...base, stage: "no-consent", text: "No identity yet", tone: "idle" };
 }

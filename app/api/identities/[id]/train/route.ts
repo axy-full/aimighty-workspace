@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { startTraining, trainCostUsd, identityForBrowser, getIdentity } from "@/lib/identities";
-import { consentForTraining, projectKeysFor } from "@/lib/security/consent";
-import { ConsentError } from "@/lib/security/consent-words";
+import { consentTick, linkConsentIdentity, projectKeysFor } from "@/lib/security/consent";
 import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
 import { billCredits } from "@/lib/creditTerms";
@@ -42,27 +41,22 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withTenant(async function POST(req: Request, { params }: Ctx) {
   const got = await requireRender();
   if (got.response) return got.response;
-  /* `consent: true` below is recorded as the person's consent (consent_by): people only, never a token or an agent. */
+  /* Training is a person's priced press, as it has always been here: a token or an agent is refused before anything is
+     read. So `consent: true` below, recorded as the tick (consent_by, consent_at), is only ever a person's. */
   if (!isPerson({ user: got.user, token: got.token })) return NextResponse.json({ error: PEOPLE_ONLY }, { status: 403 });
   /* The sample workspace spends nothing: answered before the request is claimed. */
   { const off = await sampleWorkspaceOff(); if (off) return off; }
-  /* Every training cites a live consent record for this identity's production and cast member, allowing identity
-     training (review of #558, M1): checked, and refused in words, before anything is claimed or sent. */
-  {
-    const peek = await req.clone().json().catch(() => ({})) as { consentId?: unknown; subjectKey?: unknown };
-    const identity = await getIdentity((await params).id);
-    if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    try {
-      await consentForTraining(peek.consentId, await projectKeysFor(identity.projectId, got.user.id), peek.subjectKey);
-    } catch (error) {
-      if (error instanceof ConsentError) return NextResponse.json({ error: error.message }, { status: error.status });
-      throw error;
-    }
-  }
+  /* A tick, not a gate (owner, 23 Oct 2026): a training that cites a live tick for this identity's production and cast
+     member is linked to it; one that cites none, or one that doesn't fit, trains all the same. Nothing is refused here. */
+  const peek = await req.clone().json().catch(() => ({})) as { consentId?: unknown; subjectKey?: unknown };
+  const known = await getIdentity((await params).id);
+  if (!known) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const tick = await consentTick(peek.consentId, await projectKeysFor(known.projectId, got.user.id), peek.subjectKey);
   return withGenerationRequest(req, got.user.id, async () => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
-  if (body.consent !== true) return NextResponse.json({ error: "Confirm you have the right to train on this person's face." }, { status: 400 });
+  /* The tick at the press: recorded when the person ticked it (or cites a live tick), never required. */
+  const ticked = body.consent === true || tick != null;
 
   /* The same three walls the render path uses, in the same order, priced at
      what this actually costs rather than at zero.
@@ -88,7 +82,9 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   }
 
   try {
-    const identity = await startTraining(id, { by: got.user.id });
+    const identity = await startTraining(id, ticked ? { by: got.user.id } : undefined);
+    /* A lost link never fails a training that has started: the tick and the run both stand. */
+    if (tick && identity) await linkConsentIdentity(tick.id, identity.id).catch(() => undefined);
     return NextResponse.json({ identity: identity && { ...identityForBrowser(identity), trained: false } }, { status: 202 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: e instanceof SpendReservationError ? e.status : 400 });

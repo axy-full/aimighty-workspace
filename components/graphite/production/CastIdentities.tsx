@@ -35,16 +35,19 @@ function familyOf(identity: SoulIdentity): string {
  * Studio › Cast › Build identity, on the platform's key: name it, choose what
  * it renders with (Standard, 2 or Cinema — only versions with a
  * training price are offered), pick 1–40 stills of the same person from this
- * project, confirm the rights, and it trains in this workspace at its fixed
- * price, shown on the button before anything is sent. Only this workspace's
+ * project, and it trains in this workspace at its fixed price, shown on the
+ * button before anything is sent. The consent tick is recorded with it when
+ * there is one, and never waited for (owner, 23 Oct 2026: a tick, not a gate). Only this workspace's
  * own identities are listed (never the provider site's characters); earlier ones
  * stay listed, read-only. A lost reply is recovered by its saved request, never
  * sent twice.
  */
-export function CastIdentities({ scope, projectId, items, save, consent = null, defaultName = "", onTrained }: {
+export function CastIdentities({ scope, projectId, items, save, consent = null, subjectKey = null, defaultName = "", onTrained }: {
   scope: string; projectId: string; items: LibraryEntry[]; save: () => Promise<boolean>;
-  /** A recorded consent (the board's Cast card, Gaps A): it stands in for the rights box and is cited by the request. */
+  /** The live consent tick (the board's Cast card, Gaps A), when there is one: cited by the request, never required. */
   consent?: { id: string; line: string; subjectKey: string } | null;
+  /** The cast member this identity is for (the Cast card's id). */
+  subjectKey?: string | null;
   defaultName?: string;
   onTrained?: () => void;
 }) {
@@ -74,8 +77,6 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
     : !version || !price ? "No identity version has a training price yet."
     : !name.trim() ? "Name the identity."
     : picked.length < min || picked.length > max ? `Pick ${min}–${max} stills of the same person (${picked.length} picked).`
-    /* Every training cites a person's consent record (review of #558, M1): the tick-box alone no longer trains. */
-    : !consent ? "Record the person's consent on the board's Cast card first; training needs it."
     : null;
 
   const train = async () => {
@@ -93,7 +94,9 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
           const e = stills.find((s) => s.take.id === id);
           return !e ? [] : [e.asset.origin === "upload" ? { uploadId: e.take.sourceId } : { genId: e.take.sourceId }];
         });
-        body = { projectId, name: name.trim(), description: "", subjectType: "character", references, consent: true, ...(consent ? { consentId: consent.id, subjectKey: consent.subjectKey } : {}), modelVersion: version.version,
+        /* The tick, when there is one, is the person's and is cited; with none the training proceeds unticked. */
+        body = { projectId, name: name.trim(), description: "", subjectType: "character", references, consent: Boolean(consent),
+          ...(consent ? { consentId: consent.id, subjectKey: consent.subjectKey } : subjectKey ? { subjectKey } : {}), modelVersion: version.version,
           ...(typeof version.trainingCredits === "number" ? { maxCredits: version.trainingCredits } : { maxUsd: version.trainingCostUsd }) };
       }
       const { data: reply } = await paid.run<{ identity: SoulIdentity }>(ENDPOINT, body);
@@ -166,7 +169,7 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
           </div>
           {consent ? (
             <div className="gx-gen-row" data-testid="soul-consent-record">
-              <span className="gx-eyebrow" data-functional-label="">Consent on file</span>
+              <span className="gx-eyebrow" data-functional-label="">Consent ticked</span>
               <p className="gx-hint">{consent.line}</p>
             </div>
           ) : null}

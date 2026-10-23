@@ -26,8 +26,8 @@ import "./cast.css";
  * Frame h's three cards: a character (Cast), a place (Environment) and an element, in "Cast, environment and
  * elements" (README § 3.1). Each shows its picture, its own words, its state in one line, and the shots it is in.
  *
- * - A character shows its identity's state and its consent (components/graphite/security/IdentityBlock.tsx): a person
- *   records consent first, then Train Identity (its fixed training price) opens the Inspector's form, armed with it.
+ * - A character shows its identity's state and its consent tick (components/graphite/security/IdentityBlock.tsx): a
+ *   person may tick it; Train Identity (its fixed training price) opens the Inspector's form, ticked or not.
  * - Render a still and Render a plate hand the words to Make, which quotes the price before anything is sent.
  * - Lock as master is free and anyone's: the Rig's own lock (RigContext.lockMaster).
  * - Nothing here is shown or sent without a signed-in person, and an offline board is read-only.
@@ -79,7 +79,7 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
           {shots ? <span className="gx-cast-shots" data-testid="cast-shots">{shots}</span> : null}
         </div>
         {data.variant === "cast" ? (
-          /* Identity and its consent (Gaps A): recorded by a person, then trained from the Inspector's form. */
+          /* Identity and its consent tick (Gaps A): ticked by a person if they choose; trained from the Inspector's form. */
           <IdentityBlock scope={ctx.scope} projectKey={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()}
             view={idView} consents={consents.state} trainingCredits={training} canAct={act}
             spendOff={ctx.exploreOnly ?? null} onTrain={() => ctx.openInspector(card.id)} />

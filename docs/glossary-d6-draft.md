@@ -168,8 +168,8 @@ The owner edits this draft; then it ships as data (SOW amendment of 21 October 2
 * prop (A) — a thing a person uses or that matters in the shot.
 * set / location / environment (A) — where the scene happens.
 * product (A) — the thing the ad is about.
-* likeness (A) — a real person's face or voice; needs their consent on file.
-* consent / release (A) — the person's recorded permission to use their face or voice.
+* likeness (A) — a real person's face or voice; carries a consent tick (who ticked, when, a file if one was attached) and "uploaded" origin. *Owner, 23 Oct 2026: a tick, not a gate.* Nothing refuses to make, train, clone or lip-sync for want of it.
+* consent / release (A) — the tick a person gives that the one whose face or voice it is agreed. Whose it is, what it covers, the uses, an end date, a recording or release and the attest box are optional fields on the tick, kept for the lawyer's NOC, never required to proceed. *Owner, 23 Oct 2026: a tick, not a gate.*
 * reference (A) — a picture or clip that shows what you mean.
 * element (A) — any person, place or thing the film holds to from shot to shot.
 

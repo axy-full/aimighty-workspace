@@ -85,7 +85,7 @@ export type CampaignFormat = {
   line: string;
   /** The catalogue brief Make runs for it, or null when none exists. */
   templateId: string | null;
-  /** A real person's face on camera asks for a consent record. */
+  /** A real person's face on camera carries a consent tick (never a gate: owner, 23 Oct 2026). */
   person: boolean;
   /** Why it cannot be made at all today, or null. */
   notBuilt: string | null;
@@ -93,7 +93,7 @@ export type CampaignFormat = {
 
 export const CAMPAIGN_FORMATS: readonly CampaignFormat[] = [
   { id: "product-video-ad", title: "Product video ad", line: "15 s · the product, its setting, the line", templateId: "motion-orbit", person: false, notBuilt: null },
-  { id: "talking-review", title: "Talking review", line: "A person on camera · consent record", templateId: "ugc-presenter", person: true, notBuilt: null },
+  { id: "talking-review", title: "Talking review", line: "A person on camera · consent tick", templateId: "ugc-presenter", person: true, notBuilt: null },
   { id: "unboxing", title: "Unboxing", line: "The pack opened, the product revealed", templateId: "ugc-silent", person: false, notBuilt: null },
   { id: "try-on", title: "Try-on", line: "The product on a person, in a still", templateId: "editorial-model", person: false, notBuilt: null },
   { id: "tutorial", title: "Tutorial", line: "Three steps to using it", templateId: "ugc-faceless", person: false, notBuilt: null },

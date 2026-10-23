@@ -93,13 +93,14 @@ test("the Cast region draws a character, a place and an element: their words, st
   await expect(lead.getByTestId("identity-train")).toHaveCount(0);
   await expect(lead.getByTestId("cast-render")).toHaveText("Render a still");
 
-  /* The one with no identity says so, shows the fixed training price, and has no consent on record. */
+  /* The one with no identity says so, shows the fixed training price, and has no consent ticked. */
   const second = card(page, "grey coat");
-  /* Lane 5 (Gaps A): a character with no identity asks for a person's consent record first; training waits for it. */
-  await expect(second.getByTestId("cast-status")).toHaveText("Consent not recorded");
-  await expect(second.getByTestId("identity-consent")).toContainText("Not recorded yet");
+  /* A tick, not a gate (owner, 23 Oct 2026): the consent is an unticked tick, and training doesn't wait for it. */
+  await expect(second.getByTestId("cast-status")).toHaveText("No identity yet");
+  await expect(second.getByTestId("identity-consent")).toContainText("Not ticked");
+  await expect(second.getByTestId("consent-tick-box")).not.toBeChecked();
   await expect(second.getByTestId("identity-train")).toHaveText("Train Identity · 54 cr");
-  await expect(second.getByTestId("identity-train")).toBeDisabled();
+  await expect(second.getByTestId("identity-train")).toBeEnabled();
 
   await expect(card(page, "Stall row").getByTestId("cast-status")).toHaveText("No plate yet");
   await expect(card(page, "Stall row").getByTestId("cast-render")).toHaveText("Render a plate");
@@ -124,7 +125,7 @@ test("the Cast region draws a character, a place and an element: their words, st
   expect(paid).toEqual([]);
 });
 
-test("a character's Inspector holds the consent and, until an identity is ready, the Build identity form with its consent box", async ({ page }, info) => {
+test("a character's Inspector holds the consent tick and, until an identity is ready, the Build identity form", async ({ page }, info) => {
   test.skip(!desktop(page), "phone widths open the project's Record (stream 10); the canvas is desktop only");
   const { project, paid } = await seed(page);
   await page.goto(`/suites?project=${project.id}&view=board`);
@@ -135,12 +136,14 @@ test("a character's Inspector holds the consent and, until an identity is ready,
   await expect(insp.getByTestId("insp-cast-consent")).toHaveText("Training consent confirmed 12 Sep 2026 by Tester");
   await expect(insp.getByTestId("insp-build")).toHaveCount(0);
 
-  /* The character that has none: its Inspector asks for a person's consent record before the build form (lane 5, Gaps A). */
+  /* The character that has none: its Inspector shows the unticked tick and the build form, which doesn't wait for it
+     (owner, 23 Oct 2026: a tick, not a gate). */
   await card(page, "grey coat").getByTestId("cast-title").click();
   await expect(insp.getByTestId("insp-cast")).toContainText("Second");
-  await expect(insp.getByTestId("insp-consent-needed")).toBeVisible();
-  await expect(insp.getByTestId("insp-build")).toHaveCount(0);
-  await expect(insp.getByTestId("insp-cast-consent")).toContainText("Not recorded yet");
+  await expect(insp.getByTestId("insp-consent-tick")).toBeVisible();
+  await expect(insp.getByTestId("insp-consent-tick").getByTestId("consent-tick-box")).not.toBeChecked();
+  await expect(insp.getByTestId("insp-build")).toHaveCount(1);
+  await expect(insp.getByTestId("insp-cast-consent")).toContainText("Not ticked");
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: `${SHOTS}/cast-inspector-${info.project.name.replace("workbench-", "")}.png` });
   await page.keyboard.press("Escape");

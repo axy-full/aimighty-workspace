@@ -15,6 +15,7 @@ import { withRetry } from "./providers";
 import { meter, assertMeterFunding } from "./meter";
 import { fetchBytes } from "./mockFs";
 import { currentTenant, requireTenant } from "./tenant";
+import { PeopleOnlyError, isPerson } from "./security/people-only";
 import { creditsApply } from "./credits";
 import { billCredits } from "./creditTerms";
 import { reserveGenerationSpend } from "./generationRequests";
@@ -363,6 +364,11 @@ async function trainingReady() {
   await trainingBoot.get(workspace);
 }
 
+/**
+ * `consent`: the person's tick at the press (who ticked; when is now), recorded on the identity. Optional: a training
+ * with no tick trains all the same (owner, 23 Oct 2026: "a tick, not a gate"). Only a person ticks (rule 11): a tick
+ * from an agent identity, or under an API or MCP token, is refused before anything is claimed or sent.
+ */
 export async function startTraining(id: string, consent?: { by: string }, overrides: {
   archive?: (identity: Identity) => Promise<string>;
   submit?: typeof falSubmit;
@@ -376,12 +382,13 @@ export async function startTraining(id: string, consent?: { by: string }, overri
     const prior = (await db().execute({ sql: `SELECT status FROM identity_training_runs WHERE id=?`, args: [identity.trainingRunId] })).rows[0];
     if (prior?.status === "uncertain") throw new Error("The previous training submission is uncertain. Reconcile it before purchasing another run.");
   }
-  if (!consent?.by && !identity.consentAt) throw new Error("Confirm you have the right to train on this person's face.");
+  if (consent && !isPerson({ user: { id: consent.by }, token: currentTenant()?.token })) throw new PeopleOnlyError();
+  const tickBy = consent?.by ?? null, tickAt = consent ? now() : null;
   if (identity.photos.length < MIN_PHOTOS) throw new Error(`Add at least ${MIN_PHOTOS} photos first — ${RECOMMENDED_PHOTOS} is the sweet spot.`);
   if (!usingBlob() && !overrides.archive) throw new Error("Training needs the deployed store: the trainer fetches a signed photo archive.");
   const runId = newId("train");
   const claimed = await db().execute({ sql: `UPDATE identities SET status='training',training_run_id=?,request_id=NULL,error=NULL,
-    consent_by=COALESCE(?,consent_by),consent_at=COALESCE(consent_at,?),updated_at=? WHERE id=? AND status<>'training'`, args: [runId, consent?.by ?? null, now(), now(), id] });
+    consent_by=COALESCE(?,consent_by),consent_at=COALESCE(consent_at,?),updated_at=? WHERE id=? AND status<>'training'`, args: [runId, tickBy, tickAt, now(), id] });
   if (!claimed.rowsAffected) throw new Error("Training was already started by another request.");
   let reserved = false; let submitted = false; let handle: string | null = null;
   const event = { id: runId, kind: "training" as const, engine: "fal", model: TRAINER, projectId: identity.projectId, createdBy: consent?.by ?? currentTenant()?.user?.id };
@@ -404,7 +411,7 @@ export async function startTraining(id: string, consent?: { by: string }, overri
     await db().execute({ sql: `UPDATE identity_training_runs SET status='running',request_id=?,updated_at=? WHERE id=?`, args: [handle, now(), runId] });
     await db().execute({ sql: `UPDATE identities SET trainer=?,request_id=?,trigger=?,steps=?,cost_usd=?,error=NULL,
       consent_by=COALESCE(?,consent_by),consent_at=COALESCE(consent_at,?),updated_at=? WHERE id=? AND training_run_id=?`,
-      args: [TRAINER, handle, trigger, TRAIN_STEPS, trainCostUsd(), consent?.by ?? null, now(), now(), id, runId] });
+      args: [TRAINER, handle, trigger, TRAIN_STEPS, trainCostUsd(), tickBy, tickAt, now(), id, runId] });
     return (await getIdentity(id))!;
   } catch (error) {
     const rejected = !submitted || falSubmissionRejected(error);

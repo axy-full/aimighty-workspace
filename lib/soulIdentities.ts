@@ -33,6 +33,7 @@ import {
   type SoulReferenceOrigin,
 } from "./higgsfield";
 import { SOUL_RENDER_MODELS, isSoulVersion } from "./soulRenderTypes";
+import { PEOPLE_ONLY, isPerson } from "./security/people-only";
 
 export const SOUL_TRAINING_MODEL = "higgsfield/soul-id";
 export const SOUL_TRAINING_USD = 2.5;
@@ -101,7 +102,7 @@ export type SoulIdentity = {
   error: string | null;
   /** The model it renders with on the platform's key; null for an identity it cannot render (read-only). */
   renderModel: string | null;
-  /** The training consent that exists: when it was confirmed and by whom (a display name). Read-only. */
+  /** The tick at the press, when there was one: when it was ticked and by whom (a display name). Read-only; null when not ticked. */
   consentAt?: number | null;
   consentBy?: string | null;
 };
@@ -280,8 +281,10 @@ async function publicIdentity(
   bills?: Map<string, number>,
   names?: Map<string, string>,
 ): Promise<SoulIdentity> {
-  /* Who confirmed the training consent (the person who built it) and when: read-only, this workspace's own record. */
-  const consentBy = (names ?? (await personNames([String(row.owner)]))).get(String(row.owner)) ?? null;
+  /* The tick at the press, when there was one: who ticked (the person who built it) and when. consent_at is 0 when it
+     was not ticked (the column is NOT NULL, so "none" is 0, never a time). Read-only, this workspace's own record. */
+  const consentAt = row.consent_at == null || !(Number(row.consent_at) > 0) ? null : Number(row.consent_at);
+  const consentBy = consentAt == null ? null : (names ?? (await personNames([String(row.owner)]))).get(String(row.owner)) ?? null;
   const refs = sources(row);
   const bill = bills
     ? bills.has(String(row.id))
@@ -317,7 +320,7 @@ async function publicIdentity(
         : null,
     error: row.error == null ? null : String(row.error),
     renderModel: renderModelOf(row),
-    consentAt: row.consent_at == null ? null : Number(row.consent_at),
+    consentAt,
     consentBy,
   };
 }
@@ -388,7 +391,8 @@ export type CreateSoulIdentityInput = {
   description?: string;
   subjectType: "character" | "element";
   references: SoulSource[];
-  consent: true;
+  /** The person's tick at the press (owner, 23 Oct 2026: a tick, not a gate). Optional: training proceeds without it. */
+  consent?: boolean;
   maxCredits?: number;
   maxUsd?: number;
   /** The render family to train for (v1 when absent): Soul Standard, Soul 2 or Soul Cinema. */
@@ -414,10 +418,6 @@ function cleanInput(value: CreateSoulIdentityInput): CleanInput {
   if (value.subjectType !== "character" && value.subjectType !== "element")
     throw new SoulIdentityError(
       "Choose Character or Element for this identity.",
-    );
-  if (value.consent !== true)
-    throw new SoulIdentityError(
-      "Confirm you have permission to train an identity of this person or character.",
     );
   if (
     value.projectId != null &&
@@ -658,6 +658,11 @@ export async function createSoulIdentity(
   const owner = currentTenant()?.user?.id;
   if (!owner || owner !== claim.userId)
     throw new SoulIdentityError("Sign in to create an identity.", 401);
+  /* The tick is optional and only a person's (rule 11): a tick under an API or MCP token, or by an agent identity,
+     is refused before anything is claimed or sent; with no tick the training proceeds. */
+  const ticked = value.consent === true;
+  if (ticked && !isPerson({ user: currentTenant()?.user, token: currentTenant()?.token }))
+    throw new SoulIdentityError(PEOPLE_ONLY, 403);
   if (!higgsfieldConfigured())
     throw new SoulIdentityError(
       "Identity training is not configured for this workspace.",
@@ -695,7 +700,8 @@ export async function createSoulIdentity(
         fingerprint,
         ts,
         ts,
-        ts,
+        /* consent_at: when the person ticked, at the press; 0 when they did not (the column is NOT NULL). */
+        ticked ? ts : 0,
         SOUL_REFERENCE_ORIGIN,
         value.modelVersion,
       ],

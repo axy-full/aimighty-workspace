@@ -4,9 +4,11 @@ import { newProject } from "../lib/workbench/studio";
 import { SIZES, desktop, floors, phone, shot, silentWav, watchErrors, watchPaid } from "./helpers/l5";
 
 /*
- * Lane 5 · Identity on the Cast card for the lead (Gaps A). Real local ENGINE_MOCK=1 server and routes: a person
- * records consent (whose face and voice, uses, end date, a recording, the attest box) through the real consent route
- * and a real upload; the card reads it back; Train Identity · 54 cr then opens the build form armed with it. The
+ * Lane 5 · Identity on the Cast card for the lead (Gaps A). A tick, not a gate (owner, 23 Oct 2026): Train Identity ·
+ * 54 cr is there with or without a tick. Real local ENGINE_MOCK=1 server and routes: a person ticks consent on the
+ * card (who and when), unticks it (withdrawn, marked), and ticks it again with the optional details (whose face and
+ * voice, uses, end date, a recording, the attest box) through the real consent route and a real upload; the card reads
+ * it back; Train Identity · 54 cr then opens the build form armed with it. The
  * identity's training states need a training a test may not pay for, so the identities read (and, for those states,
  * which identity the record started) are answered by the browser. Nothing paid is sent. Neutral names only.
  */
@@ -64,10 +66,17 @@ async function notClipped(card: ReturnType<Page["getByTestId"]>, where: string) 
   expect(out, `${where}: clipped on the card`).toEqual([]);
 }
 
+/** The tick with every optional field filled: the tick alone is all Save needs; the rest is folded away. */
 async function recordConsent(page: Page, root: ReturnType<Page["getByTestId"]>, wait = 30_000) {
-  await root.getByTestId("consent-person").fill("A Person");
-  await root.getByTestId("consent-use-ads").click();
+  await expect(root.getByTestId("consent-tick-box")).not.toBeChecked();
   await expect(root.getByTestId("consent-save")).toHaveAttribute("aria-disabled", "true");
+  await expect(root.getByTestId("consent-person")).toBeHidden();
+  await root.getByTestId("consent-tick-box").check();
+  await expect(root.getByTestId("consent-save")).not.toHaveAttribute("aria-disabled", /.*/);
+  await root.getByTestId("consent-more-head").click();
+  await root.getByTestId("consent-person").fill("A Person");
+  for (const id of ["consent-face", "consent-voice", "consent-use-production", "consent-use-identity", "consent-use-ads"]) await root.getByTestId(id).click();
+  await root.getByTestId("consent-until").fill(new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10));
   await root.getByTestId("consent-file-input").setInputFiles({ name: "consent-statement.wav", mimeType: "audio/wav", buffer: silentWav() });
   await expect(root.getByTestId("consent-recording-state")).toContainText("recorded just now", { timeout: wait });
   await root.getByTestId("consent-attest-box").check();
@@ -75,7 +84,7 @@ async function recordConsent(page: Page, root: ReturnType<Page["getByTestId"]>, 
   await page.waitForTimeout(300);
 }
 
-test("Identity on the Cast card: consent not recorded, the consent step, consent on file, training, ready and failed; nothing paid", async ({ page }, info) => {
+test("Identity on the Cast card: not ticked, ticked and unticked on the card, the details, training, ready and failed; nothing paid", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name) || !desktop(page), "the board canvas is desktop only; phones record consent on their own screen (below)");
   const { project, state, paid } = await seed(page);
   const errors = watchErrors(page);
@@ -91,23 +100,40 @@ test("Identity on the Cast card: consent not recorded, the consent step, consent
   };
   await toCast();
 
-  /* Consent not recorded: Record consent, and Train Identity · 54 cr disabled until a record exists. */
-  await expect(card.getByTestId("cast-status")).toHaveText("Consent not recorded");
-  await expect(card.getByTestId("identity-consent")).toHaveText("Not recorded yet. Only a person records it.");
-  await expect(card.getByTestId("identity-record-consent")).toHaveText("Record consent");
+  /* Not ticked: the tick, unticked, and Train Identity · 54 cr ready all the same (owner, 23 Oct 2026: a tick, not a gate). */
+  await expect(card.getByTestId("cast-status")).toHaveText("No identity yet");
+  await expect(card.getByTestId("identity-consent")).toHaveText("Not ticked. Only a person ticks it.");
+  await expect(card.getByTestId("consent-tick-box")).not.toBeChecked();
   const train = card.getByTestId("identity-train");
   await expect(train).toHaveText("Train Identity · 54 cr");
-  await expect(train).toBeDisabled();
-  await expect(train).toHaveAttribute("title", "Needs a consent record first");
+  await expect(train).toBeEnabled();
+  await expect(train).toHaveAttribute("data-spend", /.+/);
+  await expect(train).not.toHaveAttribute("title", /.*/);
   await notClipped(card, "no consent");
   await floors(page, "Identity, no consent");
   await shot(page, "identity-none", info);
 
-  /* The consent step a person completes. */
-  await card.getByTestId("identity-record-consent").click();
+  /* Ticking on the card records who and when at once; unticking withdraws it (marked, never erased). */
+  const ticked = page.waitForResponse((r) => r.url().endsWith("/api/identity-consents") && r.request().method() === "POST");
+  await card.getByTestId("consent-tick-box").check();
+  expect((await ticked).status()).toBe(201);
+  await expect(card.getByTestId("consent-tick-box")).toBeChecked();
+  await expect(card.getByTestId("cast-status")).toHaveText("Consent ticked · ready to train");
+  await expect(card.getByTestId("identity-consent")).toHaveText(/^Ticked \d{1,2} \w{3} \d{4} by Identity Tester$/);
+  await notClipped(card, "ticked");
+  const unticked = page.waitForResponse((r) => r.url().includes("/api/identity-consents/") && r.request().method() === "DELETE");
+  await card.getByTestId("consent-tick-box").uncheck();
+  expect((await unticked).status()).toBe(200);
+  await expect(card.getByTestId("consent-tick-box")).not.toBeChecked();
+  await expect(card.getByTestId("cast-status")).toHaveText("No identity yet");
+  await expect(card.getByTestId("identity-consent")).toHaveText(/^Consent withdrawn \d{1,2} \w{3} \d{4}$/);
+  await expect(train).toBeEnabled();
+
+  /* The details a person may add, folded away under the tick. */
+  await card.getByTestId("consent-details").click();
   const dialog = page.getByTestId("consent-dialog");
   await expect(dialog.getByRole("dialog")).toBeVisible();
-  await expect(dialog).toContainText("Only a person can record this. Atomik can’t.");
+  await expect(dialog).toContainText("Only a person can tick this. Atomik can’t.");
   await recordConsent(page, dialog);
   await floors(page, "Identity, consent step");
   await shot(page, "identity-consent", info);
@@ -116,9 +142,10 @@ test("Identity on the Cast card: consent not recorded, the consent step, consent
   expect((await posted).status()).toBe(201);
   await expect(dialog).toHaveCount(0);
 
-  /* Consent on file: the record in words, and Train Identity · 54 cr opens the build form armed with it. */
-  await expect(card.getByTestId("cast-status")).toHaveText("Consent recorded · ready to train");
-  await expect(card.getByTestId("identity-consent")).toContainText(/^Face and voice · this production, identity training, ads · until \d{1,2} \w{3} \d{4} · recorded \d{1,2} \w{3} \d{4} by Identity Tester$/);
+  /* Ticked with its details: the record in words, and Train Identity · 54 cr opens the build form armed with it. */
+  await expect(card.getByTestId("cast-status")).toHaveText("Consent ticked · ready to train");
+  await expect(card.getByTestId("consent-tick-box")).toBeChecked();
+  await expect(card.getByTestId("identity-consent")).toContainText(/^Face and voice · this production, identity training, ads · until \d{1,2} \w{3} \d{4} · ticked \d{1,2} \w{3} \d{4} by Identity Tester$/);
   await expect(train).toBeEnabled();
   await expect(train).toHaveAttribute("data-spend", /.+/);
   await notClipped(card, "recorded");
@@ -155,7 +182,7 @@ test("Identity on the Cast card: consent not recorded, the consent step, consent
   await expect(page.locator("body")).not.toContainText(/\bMira\b|Sethi|Soul\b/);
 });
 
-test("The phone's consent step: a person records it, full screen, 44 px targets; nothing paid", async ({ page }, info) => {
+test("The phone's consent tick: a person ticks it and may add the details, full screen, 44 px targets; nothing paid", async ({ page }, info) => {
   test.skip(!SIZES.includes(info.project.name) || !phone(page), "phones and the landscape phone; the board's dialog is above");
   const { project, paid } = await seed(page);
   const errors = watchErrors(page);
@@ -166,7 +193,7 @@ test("The phone's consent step: a person records it, full screen, 44 px targets;
     await page.goto(`/suites?project=${project.id}&screen=consent&cast=${encodeURIComponent("cast:cast:cast-lead")}`);
     await expect(screen).toBeVisible();
     await page.waitForLoadState("networkidle");
-    await expect(screen).toContainText("Record consent · Lead");
+    await expect(screen).toContainText("Consent · Lead");
     await recordConsent(page, screen, 15_000);
   }).toPass({ timeout: 100_000 });
   await floors(page, "Phone consent", "[data-testid=phone-consent]");
@@ -174,7 +201,7 @@ test("The phone's consent step: a person records it, full screen, 44 px targets;
   const posted = page.waitForResponse((r) => r.url().endsWith("/api/identity-consents") && r.request().method() === "POST");
   await screen.getByTestId("consent-save").click();
   expect((await posted).status()).toBe(201);
-  await expect(page.getByText(/^Consent recorded · by you · until \d{1,2} \w{3} \d{4}$/)).toBeVisible();
+  await expect(page.getByText(/^Consent ticked · by you · until \d{1,2} \w{3} \d{4}$/)).toBeVisible();
   expect(paid).toEqual([]);
   expect(errors).toEqual([]);
 });

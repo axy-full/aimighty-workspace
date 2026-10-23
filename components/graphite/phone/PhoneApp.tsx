@@ -67,7 +67,7 @@ function useRoute(): [PhoneRoute, (patch: Parameters<typeof phoneSearch>[1], mod
   return [route, go];
 }
 
-const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make", fix: "Review", cut: "Cut", consent: "Record consent" };
+const TITLES: Partial<Record<PhoneScreen, string>> = { home: "Particl", plan: "Plan approval", make: "Make", fix: "Review", cut: "Cut", consent: "Consent" };
 
 /**
  * The phone (design/particl-graphite/README.md § 3.6; "Phone frames.dc.html"): it judges rather than makes.

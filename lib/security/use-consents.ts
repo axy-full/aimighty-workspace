@@ -44,9 +44,10 @@ async function load(scope: string, projectId: string): Promise<void> {
   return e.busy;
 }
 
+/** A tick to record: what it is for, and the optional fields (owner, 23 Oct 2026: a tick, not a gate). */
 export type ConsentDraft = {
-  projectId: string; subjectKey: string; subjectLabel: string; personName: string;
-  face: boolean; voice: boolean; uses: string[]; otherUse: string; until: string; recordingId: string; attested: boolean;
+  projectId: string; subjectKey: string; subjectLabel?: string; personName?: string;
+  face?: boolean; voice?: boolean; uses?: string[]; otherUse?: string; until?: string; recordingId?: string; attested?: boolean;
 };
 
 export function useConsents(scope: string | null, projectId: string | null) {
@@ -62,15 +63,15 @@ export function useConsents(scope: string | null, projectId: string | null) {
   const refresh = useCallback(() => (scope && projectId ? load(scope, projectId) : Promise.resolve()), [scope, projectId]);
 
   const record = useCallback(async (draft: ConsentDraft): Promise<{ consent: ConsentRecord | null; error: string | null }> => {
-    if (!scope) return { consent: null, error: "Reload this page before recording consent." };
+    if (!scope) return { consent: null, error: "Reload this page before ticking consent." };
     try {
       const response = await fetch("/api/identity-consents", { method: "POST", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify(draft) });
       const body = await response.json().catch(() => null);
-      if (!response.ok || !body?.consent) return { consent: null, error: body?.error ?? "The consent could not be recorded. Try again." };
+      if (!response.ok || !body?.consent) return { consent: null, error: body?.error ?? "The tick could not be saved. Try again." };
       await refresh();
       return { consent: body.consent as ConsentRecord, error: null };
     } catch {
-      return { consent: null, error: "The consent could not be recorded. Check the connection and try again." };
+      return { consent: null, error: "The tick could not be saved. Check the connection and try again." };
     }
   }, [scope, refresh]);
 

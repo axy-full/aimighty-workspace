@@ -132,7 +132,8 @@ test("P2: an odd-case stored scope reads as read-only; a prepare token's PATCH, 
   expect((await closed(new Request(`${ORIGIN}/x`, { method: "POST" }), undefined as never)).status).toBe(403);
 });
 
-/* ── M1: identity training needs a live consent record on every path ─────────────────────────────────────────── */
+/* ── M1, reversed by the owner (23 Oct 2026, 13:15 IST: "a tick, not a gate"): training never waits on a consent
+   record; a live tick that fits is cited and linked, on every path, and one that doesn't is simply not cited ──── */
 
 async function soulRoute(who: Who) {
   const sent: unknown[] = [], claimed: string[] = [];
@@ -149,39 +150,43 @@ async function soulRoute(who: Who) {
   return { route, sent, claimed };
 }
 
-test("P1 + P5 (M1): training is refused, in words, before anything is claimed or sent, without a live record that matches the production, the cast member and the use", async () => {
+test("P1 + P5 (M1, reversed 23 Oct 2026): training is never refused for want of a consent record; only a live tick of the same production and cast member is cited", async () => {
   const who = member();
   const { route, sent, claimed } = await soulRoute(who);
   const live = await record({ subjectKey: "node-x" });
-  const adsOnly = await record({ subjectKey: "node-x", uses: ["ads"] });
+  const adsOnly = await record({ subjectKey: "node-y", uses: ["ads"] });
   const body = (over: Record<string, unknown>) => JSON.stringify({ name: "X", subjectType: "character", references: [{ uploadId: "upl_x" }], consent: true, projectId: "prod_one", subjectKey: "node-x", ...over });
   const post = (over: Record<string, unknown>) => route.POST(scoped(who, `${ORIGIN}/api/soul/identities`, { method: "POST", body: body(over) }), undefined as never);
-  const cases: [Record<string, unknown>, RegExp][] = [
-    [{}, /consent/i],                                                    /* the old pages' tick-box alone */
-    [{ consentId: live.id, projectId: undefined }, /production/i],      /* P5: no production named */
-    [{ consentId: live.id, projectId: "prod_other" }, /another production/i],
-    [{ consentId: live.id, subjectKey: "node-other" }, /another cast member/i],
-    [{ consentId: live.id, subjectKey: undefined }, /cast member/i],
-    [{ consentId: adsOnly.id }, /training an identity/i],
+  /* Each of these used to be refused in words; each now trains, and none is linked to the tick. */
+  const cases: Record<string, unknown>[] = [
+    {},                                                    /* the tick-box alone */
+    { consent: undefined },                                /* no tick at all */
+    { consentId: live.id, projectId: undefined },          /* P5: no production named */
+    { consentId: live.id, projectId: "prod_other" },
+    { consentId: live.id, subjectKey: "node-other" },
+    { consentId: live.id, subjectKey: undefined },
   ];
-  for (const [over, words] of cases) {
-    const res = await post(over);
-    expect(res.status, JSON.stringify(over)).toBeGreaterThanOrEqual(400);
-    expect((await res.json()).error, JSON.stringify(over)).toMatch(words);
-  }
-  expect(sent).toEqual([]);
-  expect(claimed).toEqual([]);
-  expect((await post({ consentId: live.id })).status).toBe(202);
-  expect(sent).toHaveLength(1);
-  /* P1, in the library: no production key is a refusal, not a pass. */
+  for (const over of cases) expect((await post(over)).status, JSON.stringify(over)).toBe(202);
+  expect(sent).toHaveLength(cases.length);
+  expect(claimed).toHaveLength(cases.length);
   const consent = await import("../../lib/security/consent");
   const { runInTenant } = await import("../../lib/tenant");
-  await runInTenant(A, async () => { await expect(consent.consentForTraining(live.id, [], "node-x")).rejects.toThrow(/production/i); });
+  expect((await runInTenant(A, () => consent.getConsent(live.id)))?.identityId).toBeNull();
+  /* A tick that allows only ads is cited all the same: the uses are notes for the lawyer, never a condition. */
+  expect((await post({ consentId: adsOnly.id, subjectKey: "node-y" })).status).toBe(202);
+  expect((await runInTenant(A, () => consent.getConsent(adsOnly.id)))?.identityId).toBe(`soul_${sent.length}`);
+  /* The fitting live tick is cited and linked to the identity it started. */
+  expect((await post({ consentId: live.id })).status).toBe(202);
+  expect((await runInTenant(A, () => consent.getConsent(live.id)))?.identityId).toBe(`soul_${sent.length}`);
+  /* P1, in the library: no production key cites nothing, and refuses nothing. */
+  await runInTenant(A, async () => { expect(await consent.consentTick(live.id, [], "node-x")).toBeNull(); });
 });
 
-test("M1: the older identity-training route needs the same live record", async () => {
+test("M1 (reversed 23 Oct 2026): the older identity-training route cites a tick the same way and never refuses for want of one", async () => {
   const src = readFileSync("app/api/identities/[id]/train/route.ts", "utf8");
-  expect(src).toContain("consentForTraining(");
+  expect(src).toContain("consentTick(");
+  expect(src).not.toContain("consentForTraining(");
+  expect(src).not.toMatch(/consent\s*!==\s*true/);
 });
 
 /* ── M2: the consent recording is never an upload; only the recorder, an owner or an admin hears it, by session ── */

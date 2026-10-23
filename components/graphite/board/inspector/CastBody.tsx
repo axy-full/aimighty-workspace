@@ -12,12 +12,13 @@ import { useProjectLibrary } from "@/lib/workspace/library";
 import { consentProjectKey } from "@/lib/security/consent-words";
 import { identityCardView } from "@/lib/security/identity-card";
 import { useConsents } from "@/lib/security/use-consents";
-import { ConsentDialog } from "@/components/graphite/security/ConsentDialog";
+import { ConsentTick } from "@/components/graphite/security/IdentityBlock";
 
 /*
  * The Inspector on a Cast, Environment or Element card (the nearest frame is k: preview, title, the card's own
- * words, its prompt with Copy). A character adds its identity: the state, the training consent that exists, and,
- * until one is ready, the existing Build identity form with its consent box and its fixed price on the button.
+ * words, its prompt with Copy). A character adds its identity: the state, its consent tick, and, until one is ready,
+ * the existing Build identity form with its fixed price on the button. A tick, not a gate (owner, 23 Oct 2026): the
+ * form is there ticked or not; a live tick is cited by the request.
  * Nothing here is shown or sent without a signed-in person.
  */
 
@@ -33,7 +34,6 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
   const consentKey = consentProjectKey(ctx.project);
   const consents = useConsents(signedIn && data.variant === "cast" ? ctx.scope : null, consentKey);
   const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent });
-  const [recording, setRecording] = useState(false);
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
   const copy = () => { void navigator.clipboard?.writeText(data.prompt).then(() => ctx.toast("Prompt copied"), () => ctx.toast("The prompt could not be copied.")); };
@@ -55,6 +55,12 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
         <section>
           <span className="gx-insp-eyebrow">Consent</span>
           <p className="gx-insp-prompt" data-testid="insp-cast-consent">{idView.consent}</p>
+          {/* The tick (a person's own, recorded at once) and the optional details; nothing waits on it. */}
+          {act && identity?.status !== "ready" ? (
+            <div className="gsec-id-head" data-testid="insp-consent-tick">
+              <ConsentTick scope={ctx.scope} projectKey={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()} liveId={idView.consentId} ready={consents.state.status === "ready"} />
+            </div>
+          ) : null}
         </section>
       ) : null}
       {data.prompt ? (
@@ -69,23 +75,14 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
           {lockNote ? <span className="gx-insp-hint" role="alert">{lockNote}</span> : null}
         </div>
       ) : null}
-      {/* Training needs a person's recorded consent first (Gaps A); the form then cites it and shows its price. */}
-      {act && data.variant === "cast" && identity?.status !== "ready" && !idView.consentId && consents.state.status === "ready" ? (
-        <div className="gx-insp-actions" data-testid="insp-consent-needed">
-          <button type="button" className="gx-insp-act" onClick={() => setRecording(true)} data-testid="insp-record-consent">Record consent</button>
-          <span className="gx-insp-hint">Training waits for a consent record. Only a person records it.</span>
-        </div>
-      ) : null}
-      {act && data.variant === "cast" && identity?.status !== "ready" && idView.consentId ? (
+      {act && data.variant === "cast" && identity?.status !== "ready" ? (
         <section data-testid="insp-build">
           <div className="pxw gx-legacy pxw-embed">
             <CastIdentities scope={ctx.scope} projectId={ctx.project.id} items={items} save={ctx.rig.save}
-              consent={{ id: idView.consentId, line: idView.consent, subjectKey: card.id }} defaultName={data.title.trim()} onTrained={() => void consents.refresh()} />
+              consent={idView.consentId ? { id: idView.consentId, line: idView.consent, subjectKey: card.id } : null} subjectKey={card.id}
+              defaultName={data.title.trim()} onTrained={() => void consents.refresh()} />
           </div>
         </section>
-      ) : null}
-      {recording ? (
-        <ConsentDialog scope={ctx.scope} projectId={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()} onClose={() => setRecording(false)} onDone={() => setRecording(false)} />
       ) : null}
     </div>
   );

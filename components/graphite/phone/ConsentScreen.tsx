@@ -5,9 +5,10 @@ import { ConsentForm } from "@/components/graphite/security/ConsentForm";
 import "@/components/graphite/security/security.css";
 
 /**
- * The phone's consent step (Gaps A, "?device=phone&screen=consent"): the same form as the board's dialog, full
- * screen, every target 44 px. It records for one cast member of the open project (`cast=`, the Cast card's id), and
- * only a signed-in person can press it; the route refuses tokens and agents.
+ * The phone's consent tick (Gaps A, "?device=phone&screen=consent"): the same form as the board's dialog, full
+ * screen, every target 44 px: the tick, and the optional fields folded away (owner, 23 Oct 2026: a tick, not a gate).
+ * It records for one cast member of the open project (`cast=`, the Cast card's id), and only a signed-in person can
+ * press it; the route refuses tokens and agents.
  */
 export function castLabelOf(project: Project | null, cast: string | null): string {
   if (!project || !cast) return "";
@@ -25,14 +26,14 @@ export function ConsentScreen({ scope, project, cast, onDone, onCancel }: {
   if (!project || !cast || !label) {
     return (
       <main className="ph-scroll" data-testid="phone-consent-missing">
-        <p className="gsec-sub gsec-phone-note">Open the cast member on the board first; their consent is recorded from there.</p>
+        <p className="gsec-sub gsec-phone-note">Open the cast member on the board first; their consent is ticked from there.</p>
       </main>
     );
   }
   return (
     <main className="ph-scroll" data-testid="phone-consent">
       <ConsentForm scope={scope} projectId={consentProjectKey(project)} subjectKey={cast} subjectLabel={label} layout="phone"
-        onCancel={onCancel} onDone={(c) => onDone(`Consent recorded · by you · until ${dateWords(c.untilAt)}`)} />
+        onCancel={onCancel} onDone={(c) => onDone(`Consent ticked · by you${c.untilAt != null ? ` · until ${dateWords(c.untilAt)}` : ""}`)} />
     </main>
   );
 }
