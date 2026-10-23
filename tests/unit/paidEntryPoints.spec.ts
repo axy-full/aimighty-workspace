@@ -649,7 +649,7 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
     const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
     delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = "test-anthropic-key-never-sent";
     try {
-      const claude: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", pricing: { input: .000003, output: .000015, input_cache_read: .0000003, input_cache_write: .00000375 } };
+      const claude: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", pricing: { input: .000001, output: .000005, input_cache_read: .0000001, input_cache_write: .00000125 } }; // made-up rates, the vendor's ratios
       const direct = { ...call, model: claude.id, id: "text_direct_billed" };
       const gatewayQuote = await quotePaidText(direct, claude);
       process.env.TEXT_DIRECT = "anthropic";
@@ -663,7 +663,7 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
           usage: { prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } } }) };
       };
       const result = await runPaidText(direct, { model: claude, submit });
-      const usd = 100 * .000003 + 60 * .0000003 + 40 * .00000375 + 25 * .000015;
+      const usd = 100 * .000001 + 60 * .0000001 + 40 * .00000125 + 25 * .000005;
       expect(calls).toBe(1);
       expect(result.costUsd).toBeCloseTo(usd, 15);
       expect(quote.estimateUsd!).toBeGreaterThanOrEqual(result.costUsd);
