@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRender, withTenant } from "@/lib/auth";
 import { startTraining, trainCostUsd, identityForBrowser, getIdentity } from "@/lib/identities";
-import { consentTick, linkConsentIdentity, projectKeysFor } from "@/lib/security/consent";
+import { consentForTraining, projectKeysFor } from "@/lib/security/consent";
+import { ConsentError } from "@/lib/security/consent-words";
 import { allowanceCheck } from "@/lib/allowance";
 import { checkLimits } from "@/lib/limits";
 import { billCredits } from "@/lib/creditTerms";
@@ -47,16 +48,26 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   /* The sample workspace spends nothing: answered before the request is claimed. */
   { const off = await sampleWorkspaceOff(); if (off) return off; }
   /* A tick, not a gate (owner, 23 Oct 2026): a training that cites a live tick for this identity's production and cast
-     member is linked to it; one that cites none, or one that doesn't fit, trains all the same. Nothing is refused here. */
+     member carries that tick's own who and when; one that cites none, or a withdrawn or ended one, trains all the same.
+     Only a malformed citation (another production's or cast member's tick, none named) is refused, in words, before
+     anything is claimed or sent (review of #558, M1). This route never links the tick (identity_consents.identity_id
+     is the Soul identity the Cast card follows; an older-trainer id there would hide it). */
   const peek = await req.clone().json().catch(() => ({})) as { consentId?: unknown; subjectKey?: unknown };
   const known = await getIdentity((await params).id);
   if (!known) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const tick = await consentTick(peek.consentId, await projectKeysFor(known.projectId, got.user.id), peek.subjectKey);
+  let tick: Awaited<ReturnType<typeof consentForTraining>>;
+  try {
+    tick = await consentForTraining(peek.consentId, await projectKeysFor(known.projectId, got.user.id), peek.subjectKey);
+  } catch (error) {
+    if (error instanceof ConsentError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
   return withGenerationRequest(req, got.user.id, async () => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
-  /* The tick at the press: recorded when the person ticked it (or cites a live tick), never required. */
-  const ticked = body.consent === true || tick != null;
+  /* Who ticked and when are only ever the ticking person's: the presser's own tick (`consent: true`) at the press, else
+     the cited tick's own recorded_by and recorded_at, else no tick at all. Never required. */
+  const ticker = body.consent === true ? { by: got.user.id } : tick ? { by: tick.tickedById, at: tick.recordedAt } : undefined;
 
   /* The same three walls the render path uses, in the same order, priced at
      what this actually costs rather than at zero.
@@ -82,9 +93,7 @@ export const POST = withTenant(async function POST(req: Request, { params }: Ctx
   }
 
   try {
-    const identity = await startTraining(id, ticked ? { by: got.user.id } : undefined);
-    /* A lost link never fails a training that has started: the tick and the run both stand. */
-    if (tick && identity) await linkConsentIdentity(tick.id, identity.id).catch(() => undefined);
+    const identity = await startTraining(id, ticker);
     return NextResponse.json({ identity: identity && { ...identityForBrowser(identity), trained: false } }, { status: 202 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: e instanceof SpendReservationError ? e.status : 400 });

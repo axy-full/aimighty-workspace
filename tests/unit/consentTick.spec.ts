@@ -11,8 +11,9 @@ import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
  *
  *  - With no tick the training is claimed, reserved and sent, and records no tick.
  *  - A person's tick records who ticked and when.
- *  - Rule 11: a tick by an agent identity, or under an API or MCP token, is refused before anything is claimed,
- *    reserved or sent. It never reads as a person's.
+ *  - A cited tick keeps its own ticker and time; a new tick replaces both, no tick keeps both.
+ *  - Rule 11: training is a person's press. An agent identity, an API or MCP token, or no person at all is refused
+ *    before anything is claimed, reserved or sent, ticked or not; a tick never reads as a machine's.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-consent-tick-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -27,7 +28,7 @@ function workspace(name: string): TenantWorkspace {
   return {
     id: `ws_${name}`, slug: name, name, legacy: false, dbUrl: `file:${path.join(dir, `${name}.db`)}`, dbToken: null, keys: {},
     usesPlatformKeys: true, allowanceUsd: null, gatewayKeyId: null, ownerId: "person", createdAt: 0, suspendedAt: null,
-    suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: null, rendersPerHour: null, storageQuotaBytes: null, deletedAt: null,
+    suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 10, rendersPerHour: 100, storageQuotaBytes: null, deletedAt: null,
   };
 }
 
@@ -82,9 +83,24 @@ test("training with no tick is sent and records no tick; a person's tick records
     expect(tick.by).toBe("person");
     expect(tick.at).toBeGreaterThanOrEqual(before);
     expect(tick.at).toBeLessThanOrEqual(Date.now());
+
+    /* A cited tick keeps its own ticker and time (A ticked; the person here pressed). On a re-train, who and when
+       travel together: a new tick replaces both, no tick keeps both. */
+    const { db } = await import("../../lib/db");
+    await identity("idn_cited");
+    await startTraining("idn_cited", { by: "member_a", at: 1_234 }, deps);
+    expect(await tickOf("idn_cited")).toEqual({ by: "member_a", at: 1_234 });
+    await db().execute("UPDATE identities SET status='failed' WHERE id='idn_cited'");
+    await startTraining("idn_cited", undefined, deps);
+    expect(await tickOf("idn_cited")).toEqual({ by: "member_a", at: 1_234 });
+    await db().execute("UPDATE identities SET status='failed' WHERE id='idn_cited'");
+    await startTraining("idn_cited", { by: "member_b", at: 5_678 }, deps);
+    expect(await tickOf("idn_cited")).toEqual({ by: "member_b", at: 5_678 });
+    /* The press is billed to the person who pressed, never to the ticker. */
+    expect([...new Set((await metered("tick_none")).map((r) => r.created_by))]).toEqual(["person"]);
   }));
 
-test("rule 11: a tick by an agent identity, or under an API or MCP token, is refused before anything is claimed, reserved or sent", async () =>
+test("rule 11: training by an agent identity, under an API or MCP token, or with no person is refused before anything is claimed, reserved or sent, ticked or not", async () =>
   scope("tick_agent", async (ws) => {
     const { startTraining } = await import("../../lib/identities");
     const { PeopleOnlyError } = await import("../../lib/security/people-only");
@@ -95,6 +111,12 @@ test("rule 11: a tick by an agent identity, or under an API or MCP token, is ref
     await expect(startTraining("idn_agent", { by: "agent:run_1" }, deps)).rejects.toBeInstanceOf(PeopleOnlyError);
     await expect(runInTenant(ws, () => startTraining("idn_agent", { by: "person" }, deps), { user: person, token: { id: "tok", name: "Agent", scope: "render", capUsd: null } }))
       .rejects.toBeInstanceOf(PeopleOnlyError);
+    /* Unticked, too: the press itself is a person's (defence in depth behind the people-only routes). */
+    await expect(runInTenant(ws, () => startTraining("idn_agent", undefined, deps), { user: person, token: { id: "tok", name: "Agent", scope: "render", capUsd: null } }))
+      .rejects.toBeInstanceOf(PeopleOnlyError);
+    await expect(runInTenant(ws, () => startTraining("idn_agent", undefined, deps), { user: { ...person, id: "agent:run_1" } })).rejects.toBeInstanceOf(PeopleOnlyError);
+    await expect(runInTenant(ws, () => startTraining("idn_agent", undefined, deps), { user: { ...person, disabled: true } })).rejects.toBeInstanceOf(PeopleOnlyError);
+    await expect(runInTenant(ws, () => startTraining("idn_agent", undefined, deps))).rejects.toBeInstanceOf(PeopleOnlyError);
     expect(calls).toBe(0);
     expect(await metered("tick_agent")).toHaveLength(0);
     expect(await tickOf("idn_agent")).toEqual({ by: null, at: null });

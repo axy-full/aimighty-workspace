@@ -42,7 +42,7 @@ function familyOf(identity: SoulIdentity): string {
  * stay listed, read-only. A lost reply is recovered by its saved request, never
  * sent twice.
  */
-export function CastIdentities({ scope, projectId, items, save, consent = null, subjectKey = null, defaultName = "", onTrained }: {
+export function CastIdentities({ scope, projectId, items, save, consent = null, subjectKey = null, defaultName = "", onTrained, onStarted }: {
   scope: string; projectId: string; items: LibraryEntry[]; save: () => Promise<boolean>;
   /** The live consent tick (the board's Cast card, Gaps A), when there is one: cited by the request, never required. */
   consent?: { id: string; line: string; subjectKey: string } | null;
@@ -50,6 +50,8 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
   subjectKey?: string | null;
   defaultName?: string;
   onTrained?: () => void;
+  /** A training the server took (202), or recovered: the board binds it to the cast card so the card follows it. */
+  onStarted?: (identity: SoulIdentity) => void;
 }) {
   const { toast } = useWorkspace();
   const { state, refresh } = useIdentities(scope, projectId);
@@ -94,13 +96,15 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
           const e = stills.find((s) => s.take.id === id);
           return !e ? [] : [e.asset.origin === "upload" ? { uploadId: e.take.sourceId } : { genId: e.take.sourceId }];
         });
-        /* The tick, when there is one, is the person's and is cited; with none the training proceeds unticked. */
-        body = { projectId, name: name.trim(), description: "", subjectType: "character", references, consent: Boolean(consent),
+        /* A live tick is cited by its id and stays its ticker's: the press never sends `consent: true` for a tick someone
+           else may have made. With none the training proceeds unticked. */
+        body = { projectId, name: name.trim(), description: "", subjectType: "character", references,
           ...(consent ? { consentId: consent.id, subjectKey: consent.subjectKey } : subjectKey ? { subjectKey } : {}), modelVersion: version.version,
           ...(typeof version.trainingCredits === "number" ? { maxCredits: version.trainingCredits } : { maxUsd: version.trainingCostUsd }) };
       }
       const { data: reply } = await paid.run<{ identity: SoulIdentity }>(ENDPOINT, body);
       const identity = reply.identity;
+      onStarted?.(identity);
       if (identity.status === "failed" || identity.status === "uncertain") setOutcome({ error: true, text: identity.error || "Training needs review. Its status is listed below." });
       else {
         setOutcome({ error: false, text: `${identity.name} is training for ${familyOf(identity)}. It is listed below; characters can render with it once it is ready.` });
@@ -176,7 +180,7 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
           <p className="gx-hint" data-testid="soul-terms">Charged once the trainer accepts it, even if training then fails.</p>
           <div className="gx-gen-enhance">
             <button type="button" className="gx-primary pd-go" disabled={Boolean(blocked) || busy} aria-describedby={blocked ? "soul-blocked" : undefined} onClick={() => void train()} data-testid="soul-build">
-              {busy ? "Sending…" : price && version ? `${consent ? "Train Identity" : "Build identity"} · ${price}` : consent ? "Train Identity" : "Build identity"}
+              {busy ? "Sending…" : price && version ? `Train Identity · ${price}` : "Train Identity"}
             </button>
             {blocked ? <span className="gx-reason" id="soul-blocked" data-testid="soul-blocked">{blocked}</span> : null}
           </div>

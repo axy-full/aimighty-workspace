@@ -4,6 +4,7 @@ import { Price } from "@/components/graphite/Price";
 import { exact } from "@/lib/shell/price-words";
 import { spendAttrsOf } from "@/lib/spend";
 import type { IdentityCardView } from "@/lib/security/identity-card";
+import { consentLive } from "@/lib/security/consent-words";
 import { useConsents, type ConsentsState } from "@/lib/security/use-consents";
 import { ConsentDialog } from "./ConsentDialog";
 import "./security.css";
@@ -56,7 +57,7 @@ export function IdentityBlock({ scope, projectKey, subjectKey, subjectLabel, vie
   return (
     <div className="gsec-id" data-stage={view.stage} data-testid="identity-block">
       {/* The tick takes the label's place while there is something to train, so the card keeps its rows. */}
-      {canAct && view.stage !== "ready" && view.stage !== "training" ? (
+      {canAct && (view.stage === "no-consent" || view.stage === "recorded" || view.stage === "failed") ? (
         <div className="gsec-id-head">
           <ConsentTick scope={scope} projectKey={projectKey} subjectKey={subjectKey} subjectLabel={subjectLabel} liveId={view.consentId} ready={state.status === "ready"} />
         </div>
@@ -92,7 +93,7 @@ export function ConsentTick({ scope, projectKey, subjectKey, subjectLabel, liveI
   /** The records have been read, so the box shows what is on file. */
   ready: boolean;
 }) {
-  const { record, withdraw } = useConsents(scope, projectKey);
+  const { state, record, withdraw } = useConsents(scope, projectKey);
   /* The box shows the press at once while it saves; it settles on what the records say. */
   const [pending, setPending] = useState<boolean | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -102,7 +103,12 @@ export function ConsentTick({ scope, projectKey, subjectKey, subjectLabel, liveI
   const flip = async () => {
     if (busy || !ready) return;
     setPending(!ticked); setProblem(null);
-    const failed = ticked ? await withdraw(liveId) : (await record({ projectId: projectKey, subjectKey, subjectLabel })).error;
+    /* Unticking withdraws every live tick of this cast member (there is one; older data may hold more), so the box
+       always ends unticked. */
+    const lives = state.consents.filter((r) => r.subjectKey === subjectKey && consentLive(r)).map((r) => r.id);
+    let failed: string | null = null;
+    if (ticked) { for (const id of lives.length ? lives : [liveId]) failed = (await withdraw(id)) ?? failed; }
+    else failed = (await record({ projectId: projectKey, subjectKey, subjectLabel })).error;
     setPending(null);
     if (failed) setProblem(failed);
   };

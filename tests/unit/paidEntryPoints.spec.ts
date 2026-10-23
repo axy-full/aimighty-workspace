@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CatalogModel } from "../../lib/catalog";
-import type { TenantWorkspace } from "../../lib/tenant";
+import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
 
 const dir = mkdtempSync(path.join(tmpdir(), "particl-paid-entry-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -46,6 +46,9 @@ function workspace(name: string): TenantWorkspace {
     deletedAt: null,
   };
 }
+/* Training is a person's priced press (rule 11; lib/identities.ts › startTraining refuses anyone else): the training
+   scopes run as the signed-in person who presses it. */
+const PRESSER: TenantUser = { id: "test_user", email: "test@example.test", name: "Test", role: "member", owner: false, disabled: false, lastSeen: null, createdAt: 0 };
 async function scope<T>(
   name: string,
   fn: () => Promise<T>,
@@ -63,7 +66,7 @@ async function scope<T>(
   return runInTenant(ws, async () => {
     await ready();
     return fn();
-  });
+  }, name.startsWith("training_") ? { user: PRESSER } : {});
 }
 async function metered(name: string) {
   const { platformDb } = await import("../../lib/platform");

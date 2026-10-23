@@ -53,7 +53,8 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
   /* A character's state is its identity and consent together (Gaps A); a place's and an element's are as before. */
   const consentKey = consentProjectKey(ctx.project);
   const consents = useConsents(signedIn && data.variant === "cast" ? ctx.scope : null, consentKey);
-  const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent });
+  const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent,
+    readFailed: consents.state.status === "error" || state.status === "error" });
   const status = data.variant === "cast" && !data.retired && !data.rendering && signedIn ? { text: idView.text, tone: idView.tone } : castStatus(data, identities);
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;

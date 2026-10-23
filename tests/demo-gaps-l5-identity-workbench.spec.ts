@@ -32,12 +32,23 @@ async function seed(page: Page) {
   const { productionProjectId } = await saved.json() as { productionProjectId: string };
   await page.addInitScript(({ scope, id }) => { try { localStorage.setItem(scope, id); } catch { /* storage off */ } }, { scope, id: project.id });
 
-  const state = { stage: "none" as Stage };
+  /* `pressed`: the identity a priced press in the Inspector started (answered by the browser below; nothing reaches the
+     server, so nothing trains or spends), listed as training from then on. */
+  const state = { stage: "none" as Stage, pressed: null as null | { body: Record<string, unknown> } };
   const json = (route: Route, body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  /* One still of the person in the library, for the build form to pick (its picture is never fetched for anything paid). */
+  const still = { id: "upl_l5_face", filename: "lead.png", mime: "image/png", kind: "image", bytes: 100, width: 512, height: 512, durationS: null, sha256: "c".repeat(64), url: "/api/uploads/upl_l5_face", createdAt: 1 };
   await page.route("**/api/workbench/library?**", (route) => route.request().method() !== "GET" ? route.continue()
-    : json(route, new URL(route.request().url()).searchParams.get("source") === "generations" ? { generations: [], nextPageCursor: null } : { uploads: [], nextCursor: null }));
+    : json(route, new URL(route.request().url()).searchParams.get("source") === "generations" ? { generations: [], nextPageCursor: null } : { uploads: [still], nextCursor: null }));
+  const pressedIdentity = { id: "soul_l5_new", projectId: null, name: "Lead", description: "", subjectType: "character", references: [{ uploadId: still.id }], previewUrl: null, createdAt: 2, updatedAt: 2, renderModel: "soul_2", status: "training", creditsBilled: null, error: null };
+  await page.route("**/api/soul/identities", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    state.pressed = { body: route.request().postDataJSON() as Record<string, unknown> };
+    return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ identity: { ...pressedIdentity, status: "submitting" } }) });
+  });
   await page.route("**/api/soul/identities?**", (route) => {
     if (route.request().method() !== "GET") return route.abort();
+    if (state.pressed) return json(route, { identities: [pressedIdentity], configured: true, generationAvailable: true, terms: { minPhotos: 1, maxPhotos: 40, trainingCredits: 54, versions: [{ version: "v1", trainingCredits: 54 }] } });
     const identity = state.stage === "none" ? [] : [{
       id: "soul_l5", projectId: null, name: "Lead v1", description: "", subjectType: "character", references: [], previewUrl: null, createdAt: 1, updatedAt: 1, renderModel: "soul_2",
       status: state.stage === "training" ? "training" : state.stage === "ready" ? "ready" : "failed",
@@ -66,15 +77,14 @@ async function notClipped(card: ReturnType<Page["getByTestId"]>, where: string) 
   expect(out, `${where}: clipped on the card`).toEqual([]);
 }
 
-/** The tick with every optional field filled: the tick alone is all Save needs; the rest is folded away. */
+/** The details, folded away under the tick: nothing asks for the tick first, and giving a detail ticks the box. */
 async function recordConsent(page: Page, root: ReturnType<Page["getByTestId"]>, wait = 30_000) {
   await expect(root.getByTestId("consent-tick-box")).not.toBeChecked();
-  await expect(root.getByTestId("consent-save")).toHaveAttribute("aria-disabled", "true");
-  await expect(root.getByTestId("consent-person")).toBeHidden();
-  await root.getByTestId("consent-tick-box").check();
   await expect(root.getByTestId("consent-save")).not.toHaveAttribute("aria-disabled", /.*/);
+  await expect(root.getByTestId("consent-person")).toBeHidden();
   await root.getByTestId("consent-more-head").click();
   await root.getByTestId("consent-person").fill("A Person");
+  await expect(root.getByTestId("consent-tick-box")).toBeChecked();
   for (const id of ["consent-face", "consent-voice", "consent-use-production", "consent-use-identity", "consent-use-ads"]) await root.getByTestId(id).click();
   await root.getByTestId("consent-until").fill(new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10));
   await root.getByTestId("consent-file-input").setInputFiles({ name: "consent-statement.wav", mimeType: "audio/wav", buffer: silentWav() });
@@ -142,6 +152,18 @@ test("Identity on the Cast card: not ticked, ticked and unticked on the card, th
   expect((await posted).status()).toBe(201);
   await expect(dialog).toHaveCount(0);
 
+  /* Details again: they open on the live tick, ticked and filled, and Save edits it in place (no second tick). */
+  await card.getByTestId("consent-details").click();
+  await expect(dialog.getByTestId("consent-tick-box")).toBeChecked();
+  await dialog.getByTestId("consent-more-head").click();
+  await expect(dialog.getByTestId("consent-person")).toHaveValue("A Person");
+  await expect(dialog.getByTestId("consent-recording-state")).toHaveText("statement on file");
+  await dialog.getByTestId("consent-person").fill("A Person, by release");
+  const patched = page.waitForResponse((r) => r.url().includes("/api/identity-consents/") && r.request().method() === "PATCH");
+  await dialog.getByTestId("consent-save").click();
+  expect((await patched).status()).toBe(200);
+  await expect(dialog).toHaveCount(0);
+
   /* Ticked with its details: the record in words, and Train Identity · 54 cr opens the build form armed with it. */
   await expect(card.getByTestId("cast-status")).toHaveText("Consent ticked · ready to train");
   await expect(card.getByTestId("consent-tick-box")).toBeChecked();
@@ -201,7 +223,51 @@ test("The phone's consent tick: a person ticks it and may add the details, full 
   const posted = page.waitForResponse((r) => r.url().endsWith("/api/identity-consents") && r.request().method() === "POST");
   await screen.getByTestId("consent-save").click();
   expect((await posted).status()).toBe(201);
-  await expect(page.getByText(/^Consent ticked · by you · until \d{1,2} \w{3} \d{4}$/)).toBeVisible();
+  await expect(page.getByText(/^Consent ticked · until \d{1,2} \w{3} \d{4}$/)).toBeVisible();
   expect(paid).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("A training pressed with no tick binds to the cast card: the card shows it training, with no second Train press; nothing reaches the server", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name) || !desktop(page), "the board canvas and its Train press are desktop only; phones have no Train press to repeat");
+  const { project, state, paid } = await seed(page);
+  const errors = watchErrors(page);
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  await expect(page.getByTestId("board")).toBeVisible();
+  const card = page.getByTestId("cast-card").filter({ hasText: "ivory coat" });
+  await expect(card).toHaveCount(1);
+  await page.waitForTimeout(500);
+  await page.locator('[data-region="cast"]').click();
+  await page.waitForTimeout(900);
+
+  await expect(card.getByTestId("cast-status")).toHaveText("No identity yet");
+  await expect(card.getByTestId("consent-tick-box")).not.toBeChecked();
+  await card.getByTestId("identity-train").click();
+  const insp = page.getByTestId("board-inspector");
+  const form = insp.getByTestId("insp-build");
+  await expect(form.getByTestId("soul-build")).toHaveText(/^Train Identity · about 54 cr$/);
+  await form.getByTestId("soul-still-upl_l5_face").click();
+  /* The press, unticked: the browser answers it (202), so nothing trains or spends. */
+  const saved = page.waitForResponse((r) => r.url().includes("/api/workbench/projects") && r.request().method() === "PUT");
+  await form.getByTestId("soul-build").click();
+  await expect.poll(() => state.pressed).not.toBeNull();
+  expect(state.pressed!.body).not.toHaveProperty("consent");
+  expect(state.pressed!.body).not.toHaveProperty("consentId");
+  expect((await saved).ok()).toBe(true);
+
+  /* The card follows the training it started: no "No identity yet", and no Train press to make again. */
+  await expect(card.getByTestId("cast-status")).toHaveText("Training");
+  await expect(card.getByTestId("identity-progress")).toBeVisible();
+  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+  await expect(insp.getByTestId("insp-build")).toHaveCount(0);
+  await shot(page, "identity-pressed-unticked", info);
+  /* Bound through the Rig save: it holds after a reload. */
+  await page.reload();
+  await expect(page.getByTestId("board")).toBeVisible();
+  await expect(card).toHaveCount(1);
+  await expect(card.getByTestId("cast-status")).toHaveText("Training");
+  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+  /* The one paid request was the press itself, answered in the browser. */
+  expect(paid).toEqual(["/api/soul/identities"]);
   expect(errors).toEqual([]);
 });

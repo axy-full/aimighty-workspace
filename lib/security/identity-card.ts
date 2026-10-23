@@ -14,7 +14,7 @@ import { consentLive, consentSummary, type ConsentRecord } from "./consent-words
  */
 export type IdentityLike = { id: string; name: string; status: "submitting" | "training" | "ready" | "failed" | "uncertain"; creditsBilled: number | null; error: string | null; createdAt: number };
 
-export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed";
+export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed" | "unread";
 export type Tone = "done" | "working" | "waiting" | "idle";
 
 export type IdentityCardView = {
@@ -54,6 +54,8 @@ export function identityCardView(input: {
   identities: readonly IdentityLike[] | null;
   /** The consent an identity trained before records existed carries ("Training consent confirmed … by …"), if any. */
   earlier?: string | null;
+  /** The consent ticks or the identities could not be read: the card says so, and offers no training it can't place. */
+  readFailed?: boolean;
   at?: number;
 }): IdentityCardView {
   const at = input.at ?? Date.now();
@@ -73,6 +75,7 @@ export function identityCardView(input: {
       billed: billedWords(identity.creditsBilled), why: identity.error,
     };
   }
+  if (input.readFailed) return { ...base, stage: "unread", text: "Couldn't read this · reload", tone: "waiting" };
   if (live) return { ...base, stage: "recorded", text: "Consent ticked · ready to train", tone: "idle" };
   return { ...base, stage: "no-consent", text: "No identity yet", tone: "idle" };
 }

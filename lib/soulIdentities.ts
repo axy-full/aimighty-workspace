@@ -658,11 +658,13 @@ export async function createSoulIdentity(
   const owner = currentTenant()?.user?.id;
   if (!owner || owner !== claim.userId)
     throw new SoulIdentityError("Sign in to create an identity.", 401);
-  /* The tick is optional and only a person's (rule 11): a tick under an API or MCP token, or by an agent identity,
-     is refused before anything is claimed or sent; with no tick the training proceeds. */
-  const ticked = value.consent === true;
-  if (ticked && !isPerson({ user: currentTenant()?.user, token: currentTenant()?.token }))
+  /* Training is a person's priced press (rule 11): an API or MCP token, or an agent identity, is refused outright,
+     ticked or not. The request is already claimed by its route envelope; nothing is reserved or sent before this. */
+  if (!isPerson({ user: currentTenant()?.user, token: currentTenant()?.token }))
     throw new SoulIdentityError(PEOPLE_ONLY, 403);
+  /* The presser's own tick at the press (optional; owner, 23 Oct 2026: a tick, not a gate). A tick someone else made is
+     cited by its route and linked, never recorded here as the presser's. */
+  const ticked = value.consent === true;
   if (!higgsfieldConfigured())
     throw new SoulIdentityError(
       "Identity training is not configured for this workspace.",

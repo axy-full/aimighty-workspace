@@ -75,6 +75,20 @@ export function useConsents(scope: string | null, projectId: string | null) {
     }
   }, [scope, refresh]);
 
+  /** Edits a live tick's details in place; who ticked and when stay as they were. */
+  const update = useCallback(async (id: string, draft: ConsentDraft): Promise<{ consent: ConsentRecord | null; error: string | null }> => {
+    if (!scope) return { consent: null, error: "Reload this page before changing the details." };
+    try {
+      const response = await fetch(`/api/identity-consents/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json", "X-Workbench-Scope": scope }, body: JSON.stringify(draft) });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.consent) return { consent: null, error: body?.error ?? "The details could not be saved. Try again." };
+      await refresh();
+      return { consent: body.consent as ConsentRecord, error: null };
+    } catch {
+      return { consent: null, error: "The details could not be saved. Check the connection and try again." };
+    }
+  }, [scope, refresh]);
+
   const withdraw = useCallback(async (id: string): Promise<string | null> => {
     if (!scope) return "Reload this page first.";
     try {
@@ -88,5 +102,5 @@ export function useConsents(scope: string | null, projectId: string | null) {
     }
   }, [scope, refresh]);
 
-  return { state, refresh, record, withdraw };
+  return { state, refresh, record, update, withdraw };
 }

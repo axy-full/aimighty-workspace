@@ -144,7 +144,40 @@ test("only a person records or withdraws consent: tokens, agents and disabled pe
   await runInTenant(B, async () => { expect(await consent.listConsents("prod_one")).toEqual([]); });
 });
 
-test("a training cites a live tick of this production and cast member when it has one, and is never refused for want of one", async () => {
+test("details edit the live tick in place (its who and when stay the ticker's); unticking withdraws it; then a new tick may be made", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const consent = await import("../../lib/security/consent");
+  const { PeopleOnlyError } = await import("../../lib/security/people-only");
+  await seedPeople(A, [{ id: "member", name: "Member" }, { id: "other", name: "Other member" }, { id: "owner", name: "You" }]);
+  await upload(A, "upl_voice", "audio/webm");
+  await upload(A, "upl_other_file", "audio/webm", "other");
+  await runInTenant(A, async () => {
+    const tick = await consent.recordConsent({ projectId: "prod_one", subjectKey: "node-edit" }, { user: { id: "member" } }, 1_000);
+    /* Rule 11 and who may edit: never a token or an agent; not another member; the ticker, or an admin. */
+    await expect(consent.updateConsent(tick.id, draft(), { user: { id: "agent:run_1", role: "admin" } })).rejects.toBeInstanceOf(PeopleOnlyError);
+    await expect(consent.updateConsent(tick.id, draft(), { user: { id: "member" }, token: { scope: "render" } })).rejects.toBeInstanceOf(PeopleOnlyError);
+    await expect(consent.updateConsent(tick.id, draft(), { user: { id: "other", role: "member" } })).rejects.toThrow(/admin/);
+    /* The details land on the same tick; who ticked and when are unchanged. */
+    const edited = await consent.updateConsent(tick.id, draft({ subjectKey: "ignored", projectId: "ignored" }), { user: { id: "member" } });
+    expect(edited).toMatchObject({ id: tick.id, subjectKey: "node-edit", projectId: "prod_one", recordedBy: "Member", recordedAt: 1_000, personName: "A Person", face: true, voice: true, attested: true, hasRecording: true });
+    /* An admin's edit is still the ticker's tick; a file left out keeps the tick's own; another person's file is refused. */
+    const byAdmin = await consent.updateConsent(tick.id, { personName: "A Person, by release", attested: true }, { user: { id: "owner", role: "admin", owner: true } });
+    expect(byAdmin).toMatchObject({ id: tick.id, recordedBy: "Member", recordedAt: 1_000, personName: "A Person, by release", hasRecording: true, face: false, uses: [] });
+    await expect(consent.updateConsent(tick.id, { recordingId: "upl_other_file" }, { user: { id: "member" } })).rejects.toThrow(/recording you made/);
+    expect((await consent.listConsents("prod_one", "node-edit"))).toHaveLength(1);
+    const audit = await db().execute({ sql: "SELECT action FROM security_audit WHERE target_id = ? ORDER BY created_at, rowid", args: [tick.id] });
+    expect(audit.rows.map((r) => r.action)).toEqual(["identity_consent.recorded", "identity_consent.updated", "identity_consent.updated"]);
+    /* Unticking withdraws it; then the details can't be edited, and a new tick may be made. */
+    expect(await consent.withdrawConsent(tick.id, { user: { id: "member" } })).toBe(true);
+    await expect(consent.updateConsent(tick.id, draft(), { user: { id: "member" } })).rejects.toThrow(/no longer live/);
+    const again = await consent.recordConsent({ projectId: "prod_one", subjectKey: "node-edit" }, { user: { id: "other" } });
+    expect(again).toMatchObject({ recordedBy: "Other member", revokedAt: null });
+    expect(again.id).not.toBe(tick.id);
+  });
+});
+
+test("a training cites a live tick of this production and cast member when it has one; it is never refused for want of one, only for a malformed citation", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const consent = await import("../../lib/security/consent");
   await seedPeople(A, [{ id: "member", name: "Member" }]);
@@ -152,25 +185,27 @@ test("a training cites a live tick of this production and cast member when it ha
   await upload(A, "upl_voice", "audio/webm");
   await runInTenant(A, async () => {
     const live = await consent.recordConsent(draft({ subjectKey: "node-two" }), { user: { id: "member" } });
-    expect((await consent.consentTick(live.id, ["draft_x", "prod_one"], "node-two"))?.id).toBe(live.id);
-    /* What doesn't fit is simply not cited: never a refusal. */
-    expect(await consent.consentTick(live.id, ["draft_x", "prod_other"], "node-two")).toBeNull();
-    expect(await consent.consentTick(live.id, ["prod_one"], "node-other")).toBeNull();
-    expect(await consent.consentTick(live.id, [], "node-two")).toBeNull();
-    expect(await consent.consentTick("cns_nope", ["prod_one"], "node-two")).toBeNull();
-    expect(await consent.consentTick(undefined, ["prod_one"], "node-two")).toBeNull();
-    expect(await consent.consentTick(live.id, ["prod_one"], "node-two", Date.now() + 400 * DAY)).toBeNull();
+    expect(await consent.consentForTraining(live.id, ["draft_x", "prod_one"], "node-two")).toMatchObject({ id: live.id, tickedById: "member", recordedBy: "Member", recordedAt: live.recordedAt });
+    /* No tick, or one no longer live: cites nothing, and the training proceeds (owner, 23 Oct 2026: a tick, not a gate). */
+    expect(await consent.consentForTraining(undefined, ["prod_one"], "node-two")).toBeNull();
+    expect(await consent.consentForTraining(undefined, [], undefined)).toBeNull();
+    expect(await consent.consentForTraining(live.id, ["prod_one"], "node-two", Date.now() + 400 * DAY)).toBeNull();
     /* What a tick covers is a note, never a condition: a voice-only tick, or a bare one, is cited all the same. */
     const voice = await consent.recordConsent(draft({ subjectKey: "node-three", face: false }), { user: { id: "member" } });
-    expect((await consent.consentTick(voice.id, ["prod_one"], "node-three"))?.id).toBe(voice.id);
+    expect((await consent.consentForTraining(voice.id, ["prod_one"], "node-three"))?.id).toBe(voice.id);
     const bare = await consent.recordConsent({ projectId: "prod_one", subjectKey: "node-four" }, { user: { id: "member" } });
-    expect((await consent.consentTick(bare.id, ["prod_one"], "node-four"))?.id).toBe(bare.id);
+    expect((await consent.consentForTraining(bare.id, ["prod_one"], "node-four"))?.id).toBe(bare.id);
+    /* A malformed citation is still refused, in words (review of #558, M1). */
+    await expect(consent.consentForTraining(live.id, ["draft_x", "prod_other"], "node-two")).rejects.toThrow(/another production/);
+    await expect(consent.consentForTraining(live.id, ["prod_one"], "node-other")).rejects.toThrow(/another cast member/);
+    await expect(consent.consentForTraining(live.id, [], "node-two")).rejects.toThrow(/production/);
+    await expect(consent.consentForTraining("cns_nope", ["prod_one"], "node-two")).rejects.toThrow(/not in this workspace/);
     await consent.withdrawConsent(live.id, { user: { id: "member", role: "member" } });
-    expect(await consent.consentTick(live.id, ["prod_one"], "node-two")).toBeNull();
+    expect(await consent.consentForTraining(live.id, ["prod_one"], "node-two")).toBeNull();
   });
   /* A tick id from workspace A means nothing in workspace B. */
   const [{ id }] = await runInTenant(A, () => consent.listConsents("prod_one", "node-three"));
-  await runInTenant(B, async () => { expect(await consent.consentTick(id, ["prod_one"], "node-three")).toBeNull(); });
+  await runInTenant(B, async () => { await expect(consent.consentForTraining(id, ["prod_one"], "node-three")).rejects.toThrow(/not in this workspace/); });
 });
 
 function people(ws: typeof A): Who { return { mode: "session", ws, userId: "member", name: "Member", role: "member", bearer: "" }; }
@@ -258,23 +293,30 @@ test("identity training refuses every token and agent before anything is sent; w
   expect(sent).toHaveLength(1);
   expect(sent[0].consent).toBeUndefined();
 
-  /* A live tick is cited: the training carries it, and the tick is linked to the identity it started. */
+  /* A live tick is cited and linked to the identity it started. A ticks; B presses: the tick stays A's, and the press
+     never re-records it as B's (no `consent: true` is put on B's training). */
+  await seedPeople(A, [{ id: "member", name: "Member" }, { id: "other", name: "Other member" }], tokens);
   const live = await import("../../lib/tenant").then(({ runInTenant }) => runInTenant(A, () => consentLib.recordConsent(draft({ subjectKey: "node-train" }), { user: { id: "member" } })));
+  Object.assign(who, { userId: "other", name: "Other member" });
   const ok = await route.POST(scoped(who, "http://localhost/api/soul/identities", { method: "POST", body: body({ consentId: live.id, consent: undefined }) }), undefined as never);
   expect(ok.status).toBe(202);
   expect(sent).toHaveLength(2);
-  expect(sent[1].consent).toBe(true);
+  expect(sent[1].consent).toBeUndefined();
   const linked = await import("../../lib/tenant").then(({ runInTenant }) => runInTenant(A, () => consentLib.getConsent(live.id)));
-  expect(linked?.identityId).toBe("soul_new_2");
+  expect(linked).toMatchObject({ identityId: "soul_new_2", recordedBy: "Member", recordedAt: live.recordedAt });
+  Object.assign(who, { userId: "member", name: "Member" });
 
-  /* A withdrawn tick, or one for another production, is not cited, and the training proceeds all the same. */
+  /* A withdrawn tick is not cited, and the training proceeds all the same; a malformed citation is refused, unsent. */
   await import("../../lib/tenant").then(({ runInTenant }) => runInTenant(A, () => consentLib.withdrawConsent(live.id, { user: { id: "member" } })));
-  for (const over of [{ consentId: live.id, consent: undefined }, { consentId: live.id, projectId: "prod_other", consent: undefined }, { consentId: "cns_nope", consent: undefined }]) {
-    const res = await route.POST(scoped(who, "http://localhost/api/soul/identities", { method: "POST", body: body(over) }), undefined as never);
-    expect(res.status, JSON.stringify(over)).toBe(202);
-    expect(sent[sent.length - 1].consent, JSON.stringify(over)).toBeUndefined();
+  const withdrawn = await route.POST(scoped(who, "http://localhost/api/soul/identities", { method: "POST", body: body({ consentId: live.id, consent: undefined }) }), undefined as never);
+  expect(withdrawn.status).toBe(202);
+  expect(sent).toHaveLength(3);
+  expect(sent[2].consent).toBeUndefined();
+  for (const [over, status] of [[{ consentId: live.id, projectId: "prod_other" }, 409], [{ consentId: "cns_nope" }, 404]] as const) {
+    const res = await route.POST(scoped(who, "http://localhost/api/soul/identities", { method: "POST", body: body({ ...over, consent: undefined }) }), undefined as never);
+    expect(res.status, JSON.stringify(over)).toBe(status);
   }
-  expect(sent).toHaveLength(5);
+  expect(sent).toHaveLength(3);
   const after = await import("../../lib/tenant").then(({ runInTenant }) => runInTenant(A, () => consentLib.getConsent(live.id)));
   expect(after?.identityId).toBe("soul_new_2");
 });

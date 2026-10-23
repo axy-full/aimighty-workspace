@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { CastWell } from "../cards/cast/CastWell";
-import { VARIANT_LABEL, castStatus, consentLine, identityOf, shotsWords, type CastCardData } from "../cards/cast/cast-model";
+import { VARIANT_LABEL, bindCastIdentity, castStatus, consentLine, identityOf, shotsWords, type CastCardData } from "../cards/cast/cast-model";
 import type { CardProps } from "../cards/types";
 import { CastIdentities } from "@/components/graphite/production/CastIdentities";
 import { Price } from "@/components/graphite/Price";
@@ -33,9 +33,13 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
   const consent = data.variant === "cast" ? consentLine(identity, signedIn) : null;
   const consentKey = consentProjectKey(ctx.project);
   const consents = useConsents(signedIn && data.variant === "cast" ? ctx.scope : null, consentKey);
-  const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent });
+  const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent,
+    readFailed: consents.state.status === "error" || state.status === "error" });
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
+  /* Offered while there is something to train: no identity, or one that failed (Retry). Never beside a training in flight
+     or a ready identity, so a started training is never pressed again. */
+  const trainable = identity?.status !== "ready" && identity?.status !== "training" && identity?.status !== "submitting";
   const copy = () => { void navigator.clipboard?.writeText(data.prompt).then(() => ctx.toast("Prompt copied"), () => ctx.toast("The prompt could not be copied.")); };
   const lock = async () => {
     if (!data.nodeId) return;
@@ -56,7 +60,7 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
           <span className="gx-insp-eyebrow">Consent</span>
           <p className="gx-insp-prompt" data-testid="insp-cast-consent">{idView.consent}</p>
           {/* The tick (a person's own, recorded at once) and the optional details; nothing waits on it. */}
-          {act && identity?.status !== "ready" ? (
+          {act && trainable ? (
             <div className="gsec-id-head" data-testid="insp-consent-tick">
               <ConsentTick scope={ctx.scope} projectKey={consentKey} subjectKey={card.id} subjectLabel={data.title.trim()} liveId={idView.consentId} ready={consents.state.status === "ready"} />
             </div>
@@ -75,12 +79,13 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
           {lockNote ? <span className="gx-insp-hint" role="alert">{lockNote}</span> : null}
         </div>
       ) : null}
-      {act && data.variant === "cast" && identity?.status !== "ready" ? (
+      {act && data.variant === "cast" && trainable ? (
         <section data-testid="insp-build">
           <div className="pxw gx-legacy pxw-embed">
             <CastIdentities scope={ctx.scope} projectId={ctx.project.id} items={items} save={ctx.rig.save}
               consent={idView.consentId ? { id: idView.consentId, line: idView.consent, subjectKey: card.id } : null} subjectKey={card.id}
-              defaultName={data.title.trim()} onTrained={() => void consents.refresh()} />
+              defaultName={data.title.trim()} onTrained={() => void consents.refresh()}
+              onStarted={(started) => { if (!ctx.rig.apply((p) => bindCastIdentity(p, data, started.id))) void ctx.rig.save(); }} />
           </div>
         </section>
       ) : null}

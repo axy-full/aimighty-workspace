@@ -19,8 +19,13 @@ import { CONSENT_USES, ConsentError, cleanConsent, consentLive, type ConsentInpu
  *   Atomik's `agent:` identities are refused here as well as at the route, so no machine's tick reads as a person's.
  * - Never deleted. Withdrawing marks it (`revoked_at`, who); the row and its recording stay, as the owner's
  *   never-delete rule asks.
- * - A training request may cite a live tick (`consentTick`); it is never refused for citing none, or one that
- *   doesn't match. The identity it started is linked back to the tick so the card can follow it.
+ * - Details edit the live tick in place (`updateConsent`: who ticked and when stay the ticking person's); the screens
+ *   make a new tick only when there is none, and unticking withdraws every live tick of the cast member.
+ * - A training request may cite a live tick (`consentForTraining`). It is never refused for want of consent: no tick,
+ *   or one withdrawn or ended, trains uncited; what a tick covers or allows is never a condition. A citation that is
+ *   malformed (no production named, another production's or cast member's tick, an id not in this workspace) is
+ *   refused, as before. The Soul identity it started is linked back to the tick. A tick's who and when are only ever
+ *   the ticking person's: a training that cites someone else's tick never records the presser as having ticked.
  */
 
 const SCHEMA = [
@@ -182,6 +187,38 @@ export async function recordConsent(input: ConsentInput, caller: Caller & { user
 }
 
 /**
+ * Edits the optional details of a live tick in place. Who ticked and when are never changed: they stay the ticking
+ * person's. The person who ticked it, or an owner or admin, may; nobody else, and never a token or an agent. A file
+ * that is newly given has to be one this person added. The edit is audited; the tick itself is never re-made.
+ */
+export async function updateConsent(consentId: string, input: ConsentInput, caller: Caller & { user: { id: string; role?: string; owner?: boolean } }, at = now()): Promise<ConsentRecord> {
+  assertPerson(caller);
+  await consentsReady();
+  const rs = await db().execute({ sql: `SELECT project_id, subject_key, recorded_by, revoked_at, until_at, recording_id FROM identity_consents WHERE id = ? LIMIT 1`, args: [consentId] });
+  const row = rs.rows[0];
+  if (!row) throw new ConsentError("That consent record is not in this workspace.", 404);
+  const admin = caller.user.owner === true || caller.user.role === "admin";
+  if (String(row.recorded_by) !== caller.user.id && !admin) throw new ConsentError("The person who ticked it, or an admin, can change its details.", 403);
+  if (row.revoked_at != null || (Number(row.until_at) > 0 && Number(row.until_at) <= at)) throw new ConsentError("That tick is no longer live. Tick it again.", 409);
+  /* A file left out keeps the tick's own; "" removes it; a new id replaces it. */
+  const recordingId = input.recordingId === undefined ? String(row.recording_id ?? "") : input.recordingId;
+  const clean = cleanConsent({ ...input, recordingId, projectId: String(row.project_id), subjectKey: String(row.subject_key) }, at);
+  if (clean.recordingId && clean.recordingId !== String(row.recording_id ?? "")) {
+    const problem = await recordingProblem(clean.recordingId, caller.user.id);
+    if (problem) throw new ConsentError(problem);
+  }
+  await db().batch([
+    {
+      sql: `UPDATE identity_consents SET subject_label = ?, person_name = ?, covers_face = ?, covers_voice = ?, uses_json = ?, other_use = ?, until_at = ?, recording_id = ?, attested = ?
+            WHERE id = ? AND revoked_at IS NULL`,
+      args: [clean.subjectLabel, clean.personName, clean.face ? 1 : 0, clean.voice ? 1 : 0, JSON.stringify(clean.uses), clean.otherUse, clean.untilAt ?? 0, clean.recordingId, clean.attested ? 1 : 0, consentId],
+    },
+    securityAuditStatement({ workspaceId: requireTenant().id, actorId: caller.user.id, action: "identity_consent.updated", targetType: "identity_consent", targetId: consentId, details: clean.untilAt != null ? { expiresAt: clean.untilAt } : {} }),
+  ], "write");
+  return (await getConsent(consentId))!;
+}
+
+/**
  * Withdraws a record: marked, never erased. The person who recorded it, or an owner or admin, may; nobody else, and
  * never a token or an agent. Training already started stays as it is; nothing refuses for want of a tick.
  */
@@ -201,18 +238,43 @@ export async function withdrawConsent(consentId: string, caller: Caller & { user
   return (done.rowsAffected ?? 0) > 0;
 }
 
+/** A cited tick, with the id of the person who ticked it (server side only: never sent to a browser). */
+export type CitedTick = ConsentRecord & { tickedById: string };
+
 /**
- * The tick a training request cites, when it cites one that fits: this workspace's, for the production the request
- * names, for the same cast member, and live. Null otherwise. Never a refusal (owner, 23 Oct 2026: "a tick, not a
- * gate"): a request with no tick, or one that doesn't fit, trains all the same and is simply not linked to a tick.
+ * The tick a training request cites (review of #558, M1; owner, 23 Oct 2026: "a tick, not a gate").
+ *
+ * - No tick cited: null. The training proceeds unticked.
+ * - A cited tick that is withdrawn or past its end date: null. The training proceeds, uncited (nothing refuses for
+ *   want of consent).
+ * - A live tick of this workspace, for the production the request names and the same cast member: that tick, with the
+ *   id of the person who ticked it. What it covers and allows are notes for the lawyer's NOC, never a condition.
+ * - A malformed citation is refused in words, before anything is claimed or sent: no production named, an id not in
+ *   this workspace, another production's tick, another cast member's, or no cast member named.
+ *
+ * A failed read is logged (the id and the error code, nothing else) and cites nothing; it never stops a training.
  */
-export async function consentTick(consentId: unknown, projectIds: (string | null | undefined)[], subjectKey: unknown, at = now()): Promise<ConsentRecord | null> {
-  if (typeof consentId !== "string" || !/^[A-Za-z0-9_.:-]{1,160}$/.test(consentId)) return null;
+export async function consentForTraining(consentId: unknown, projectIds: (string | null | undefined)[], subjectKey: unknown, at = now()): Promise<CitedTick | null> {
+  if (consentId == null || consentId === "") return null;
+  if (typeof consentId !== "string" || !/^[A-Za-z0-9_.:-]{1,160}$/.test(consentId)) throw new ConsentError("That consent tick could not be read. Open the training from the Cast card.");
   const ids = projectIds.filter((v): v is string => typeof v === "string" && v.length > 0);
-  if (!ids.length || typeof subjectKey !== "string" || !subjectKey) return null;
-  const record = await getConsent(consentId).catch(() => null);
-  if (!record || !ids.includes(record.projectId) || record.subjectKey !== subjectKey || !consentLive(record, at)) return null;
-  return record;
+  if (!ids.length) throw new ConsentError("Training an identity needs the production it is for. Open it from the production's Cast card.");
+  let row: Row | undefined;
+  try {
+    await consentsReady();
+    row = (await db().execute({ sql: `SELECT * FROM identity_consents WHERE id = ? LIMIT 1`, args: [consentId] })).rows[0];
+  } catch (error) {
+    const code = (error as { code?: unknown })?.code;
+    console.warn("consent tick: read failed", { consentId, code: typeof code === "string" ? code : "unknown" });
+    return null;
+  }
+  if (!row) throw new ConsentError("That consent record is not in this workspace.", 404);
+  const record = toRecord(row, await names([String(row.recorded_by)]).catch(() => new Map<string, string>()));
+  if (!ids.includes(record.projectId)) throw new ConsentError("That consent was recorded for another production.", 409);
+  if (typeof subjectKey !== "string" || !subjectKey) throw new ConsentError("Say which cast member this identity is for.");
+  if (subjectKey !== record.subjectKey) throw new ConsentError("That consent was recorded for another cast member.", 409);
+  if (!consentLive(record, at)) return null;
+  return { ...record, tickedById: String(row.recorded_by) };
 }
 
 /** The keys a training request's project answers to: the draft itself and the production it belongs to. */
@@ -227,7 +289,7 @@ export async function projectKeysFor(draftId: unknown, owner: string): Promise<s
   return keys;
 }
 
-/** Links the identity a training request started to the record it cited. */
+/** Links the Soul identity a training request started to the tick it cited (the card follows it). Only the Soul route links. */
 export async function linkConsentIdentity(consentId: string, identityId: string): Promise<void> {
   await consentsReady();
   await db().execute({ sql: `UPDATE identity_consents SET identity_id = ? WHERE id = ? AND revoked_at IS NULL`, args: [identityId, consentId] });

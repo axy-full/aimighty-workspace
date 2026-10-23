@@ -33,7 +33,7 @@ export function ConsentScreen({ scope, project, cast, onDone, onCancel }: {
   return (
     <main className="ph-scroll" data-testid="phone-consent">
       <ConsentForm scope={scope} projectId={consentProjectKey(project)} subjectKey={cast} subjectLabel={label} layout="phone"
-        onCancel={onCancel} onDone={(c) => onDone(`Consent ticked · by you${c.untilAt != null ? ` · until ${dateWords(c.untilAt)}` : ""}`)} />
+        onCancel={onCancel} onDone={(c) => onDone(!c ? "Consent withdrawn" : `Consent ticked${c.untilAt != null ? ` · until ${dateWords(c.untilAt)}` : ""}`)} />
     </main>
   );
 }

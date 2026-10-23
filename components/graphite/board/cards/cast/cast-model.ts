@@ -124,6 +124,28 @@ export function castStatus(d: CastCardData, identities: readonly SoulIdentity[] 
   return d.still ? { text: "Not locked", tone: "idle" } : { text: "No still yet", tone: "idle" };
 }
 
+/**
+ * Binds an identity a person started training from a character's Inspector to that character's card (Rig save), so
+ * the card follows it: training, then ready, or failed with its charge and Retry; never "No identity yet" with the
+ * Train press offered again. Pure. The card reads the asset's `soulIdentityId` first, then the production cast entry's
+ * `identityId`: the entry is set when there is one, and the card's own (unlocked) asset when it carries a binding
+ * already or there is no entry. A locked asset is left as it is.
+ */
+export function bindCastIdentity(project: Project, card: Pick<CastCardData, "entryId" | "nodeId">, identityId: string): Project {
+  let next = project;
+  const cast = next.production?.cast;
+  const hasEntry = Boolean(card.entryId && cast?.entries.some((e) => e.id === card.entryId));
+  if (hasEntry && next.production && cast) {
+    next = { ...next, production: { ...next.production, cast: { ...cast, entries: cast.entries.map((e) => (e.id === card.entryId ? { ...e, identityId } : e)) } } };
+  }
+  const node = card.nodeId ? next.nodes.find((n) => n.id === card.nodeId) : undefined;
+  const asset = node ? resolveAsset(node, next.nodes, next.assets) : undefined;
+  if (asset && !asset.locked && next.assets.some((a) => a.id === asset.id) && (asset.soulIdentityId || !hasEntry)) {
+    next = { ...next, assets: next.assets.map((a) => (a.id === asset.id ? { ...a, soulIdentityId: identityId } : a)) };
+  }
+  return next;
+}
+
 /** The identity of a character card, from the workspace's list. */
 export const identityOf = (d: Pick<CastCardData, "identityId">, identities: readonly SoulIdentity[] | null): SoulIdentity | null =>
   d.identityId ? identities?.find((i) => i.id === d.identityId) ?? null : null;
