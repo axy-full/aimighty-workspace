@@ -194,20 +194,31 @@ test("invite codes reveal nothing without the code; a wrong code is the same ans
   expect(leaks(await res.text(), a.secrets)).toEqual([]);
 });
 
-test("in the new interface, a member of another workspace who opens A's board link is told they have no access, and sees nothing of the board", async ({ page }) => {
+test("a member of another workspace who opens A's board link sees only their own board, never A's, and nothing of it", async ({ page }) => {
+  /* The switch on, as before; since the prototype-12 build was deleted (owner, 23 Oct 2026, 20:00) it draws the live shell, which shows the member
+     their own board (or their first run) for a board that is not theirs. */
   await signInToRedesign(page.request, "Other Workspace Member");
   await expect.poll(async () => (await page.request.get("/api/me").then((r) => r.json())).workspace?.newInterface, { timeout: 30_000, intervals: [500, 1_000, 2_000] }).toBe(true);
   const seen: string[] = [];
-  page.on("response", async (res) => { if (new URL(res.url()).pathname.startsWith("/api/")) seen.push(await res.text().catch(() => "")); });
+  /* Every read of A's board this page made, and what the server answered it. */
+  const askedForA: { project: unknown }[] = [];
+  page.on("response", async (res) => {
+    const url = new URL(res.url());
+    if (!url.pathname.startsWith("/api/")) return;
+    const text = await res.text().catch(() => "");
+    seen.push(text);
+    if (url.pathname === "/api/workbench/projects" && url.searchParams.get("id") === a.draftId) { try { askedForA.push(JSON.parse(text) as { project: unknown }); } catch { askedForA.push({ project: text || null }); } }
+  });
   await page.goto(`/suites?view=board&project=${encodeURIComponent(a.draftId)}`);
-  const none = page.getByTestId("v12-no-access");
-  await expect(none).toBeVisible({ timeout: 60_000 });
-  await expect(none.getByRole("heading")).toHaveText("You don’t have access to this board.");
-  /* Neutral words (owner, 10 Oct): it never says whose the board is. */
-  await expect(none).not.toContainText("another workspace");
+  /* The member's own board, or the first run of a workspace with none: never A's. */
+  await expect(page.getByTestId("board").or(page.getByTestId("board-no-project")).first()).toBeVisible({ timeout: 60_000 });
+  await page.waitForTimeout(2_000);
+  /* The board drawn is not A's: whatever the page asked about A's board, the server answered with no project. */
+  for (const answer of askedForA) expect(answer.project ?? null, "the server's answer to the page's read of A's board").toBeNull();
+  const me = await page.request.get("/api/me").then((r) => r.json()) as { id: string; workspace: { id: string } };
+  const mine = await page.request.get(`/api/workbench/projects?id=${encodeURIComponent(a.draftId)}`, { headers: { "X-Workbench-Scope": `particl-active-${me.workspace.id}-${me.id}` } }).then((r) => r.json()) as { project?: unknown };
+  expect(mine.project ?? null, "A's board is not the member's to read").toBeNull();
   const text = await page.locator("body").innerText();
   expect(leaks(text, a.secrets.filter((s) => s !== a.draftId)), "the page").toEqual([]);
   expect(leaks(seen.join("\n"), a.secrets.filter((s) => s !== a.draftId)), "every answer the page got from the server").toEqual([]);
-  await page.getByTestId("v12-no-access-home").click();
-  await expect(page.getByTestId("v12-home")).toBeVisible({ timeout: 30_000 });
 });

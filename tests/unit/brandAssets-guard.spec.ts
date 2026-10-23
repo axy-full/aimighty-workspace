@@ -94,12 +94,6 @@ test("(c) the header's logo is the brand's mark and wordmark from public/brand, 
   expect(body, "no typed wordmark").not.toMatch(/>\s*particl\s*</i);
   expect(logo.replace(/\/\*[\s\S]*?\*\//g, ""), "the header logo uses no lockup").not.toMatch(/particl-lockup/);
   /* Every header draws it through BrandLogo (the v12 ones through HeaderLogo, which does), and none makes a logo of its own. */
-  expect(read("components/v12/shell/Logo.tsx"), "HeaderLogo draws BrandLogo").toMatch(/<BrandLogo\b/);
-  for (const file of ["components/v12/shell/Header.tsx", "components/v12/visitor/VisitorHeader.tsx"]) {
-    const text = read(file);
-    expect(text, `${file} draws HeaderLogo`).toMatch(/<HeaderLogo\b/);
-    expect(text, `${file} draws no logo of its own`).not.toMatch(/TRAIL|className="v12-logo|Mark"|particl-lockup/);
-  }
   const customer = read("components/graphite/Header.tsx");
   expect(customer, "today's customer header draws BrandLogo").toMatch(/<BrandLogo\b/);
   expect(customer, "today's customer header draws no logo of its own").not.toMatch(/TRAIL|<circle|gx-brand-name|particl-lockup/);
@@ -134,7 +128,7 @@ test("(c) the full lockup is named only on sign-in, marketing and document surfa
  */
 export const LOGO_SURFACES = [
   "components/graphite/Header.tsx", "components/graphite/FaultPage.tsx", "components/graphite/NoWorkspace.tsx", "components/graphite/guest/GuestHeader.tsx",
-  "components/graphite/phone/PhoneChrome.tsx", "components/v12/shell/Logo.tsx",
+  "components/graphite/phone/PhoneChrome.tsx",
 ];
 test("(c) every logo surface draws BrandLogo: the app and guest headers, the error and no-workspace pages and the phone's top bar", () => {
   for (const file of LOGO_SURFACES) {
@@ -149,7 +143,7 @@ test("(c) every logo surface draws BrandLogo: the app and guest headers, the err
 test("(c) no typed-name logo anywhere in components/: no gx-brand-name element, and no header types its name", () => {
   const files = walk("components", (f) => /\.(tsx|css)$/.test(f));
   expect(files.filter((file) => /\bgx-brand-name\b/.test(read(file))), "files that still have the typed-name logo class (the list of known typed names is gone; draw BrandLogo)").toEqual([]);
-  const headers = ["components/shell/Header.tsx", "components/ui/BrandLogo.tsx", "components/v12/visitor/VisitorHeader.tsx", ...LOGO_SURFACES];
+  const headers = ["components/shell/Header.tsx", "components/ui/BrandLogo.tsx", ...LOGO_SURFACES];
   const typed = headers.filter((file) => /className="[^"]*(?:brand-name|logo-name|wordmark-text)[^"]*"[^>]*>\s*particl\s*</i.test(read(file)));
   expect(typed, "headers that type their name; draw the brand's mark and wordmark (BrandLogo) instead").toEqual([]);
 });

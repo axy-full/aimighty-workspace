@@ -217,6 +217,10 @@ test.describe("the draft's board fields: the project schema takes them and refus
     expect(projectSchema.safeParse({ ...project, boardRounds: [{ ...round, n: 1 }] }).success).toBe(false);
     expect(projectSchema.safeParse({ ...project, boardRounds: [{ ...round, before: { x: "g" } }] }).success).toBe(false);
     expect(projectSchema.safeParse({ ...project, boardRounds: [{ ...round, extra: true }] }).success).toBe(false);
+    /* At most twenty rounds: the twentieth saves, a twenty-first is refused. */
+    const rounds = (count: number) => Array.from({ length: count }, (_, i) => ({ ...round, n: i + 2, runId: `run-${i + 1}` }));
+    expect(projectSchema.safeParse({ ...project, boardRounds: rounds(20) }).success).toBe(true);
+    expect(projectSchema.safeParse({ ...project, boardRounds: rounds(21) }).success).toBe(false);
   });
 });
 
