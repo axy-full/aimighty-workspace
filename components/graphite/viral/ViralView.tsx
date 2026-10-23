@@ -195,20 +195,32 @@ export function ViralTool({ scope, page, project, items }: { scope: string; page
     place(fit.map((m): ViralMedia => ({ id: m.key, sourceId: m.id, origin: m.origin, kind: m.kind as "video" | "image", name: m.name, url: m.url, seconds: m.seconds })));
     return keptNote([...unreadable, ...media.filter((m) => !fit.includes(m)).map((m) => m.name)], "this takes one source video and reference pictures.");
   };
-  /* A tile from anywhere, or files from the device: uploaded into the project and placed at once. */
+  /* Files from the device: uploaded into the project and placed at once. */
+  const upload = useCallback((projectId: string, files: File[]) => {
+    setNote(`Uploading ${files.length === 1 ? files[0].name : `${files.length} files`}…`);
+    void uploadFilesToProject(scope, projectId, files).then(({ uploads, notes }) => {
+      const medias = uploads.flatMap((u): ViralMedia[] => (u.kind === "video" || u.kind === "image" ? [{ id: `upload:${u.id}`, sourceId: u.id, origin: "upload", kind: u.kind, name: u.filename, url: u.url, seconds: u.durationS ?? null }] : []));
+      place(medias);
+      if (notes.length || medias.length < uploads.length) setNote([...notes, ...(medias.length < uploads.length ? ["Only videos and pictures go in this well; the rest is kept in the Library."] : [])].join(" "));
+    }).catch((error: unknown) => setNote(error instanceof Error ? error.message : "The files could not be uploaded."));
+  }, [scope, place]);
+  /* Files dropped before the project has loaded are held, and go up when it arrives, never lost to a quick drop. */
+  const held = useRef<File[]>([]);
+  useEffect(() => {
+    if (!project || !held.current.length) return;
+    const files = held.current;
+    held.current = [];
+    upload(project.id, files);
+  }, [project, upload]);
+  /* A tile from anywhere, or files from the device. */
   const dropped = (e: React.DragEvent) => {
     e.preventDefault(); setOver(false);
     const { ids, files } = readDrop(e.dataTransfer, project?.assets);
     const found = ids.map((id) => findMedia(items, id));
     place(found.filter((m): m is ViralMedia => Boolean(m)), found.filter((m) => !m).length);
     if (!files.length) return;
-    if (!project) { setNote("Open a project first; dropped files are kept in its Library."); return; }
-    setNote(`Uploading ${files.length === 1 ? files[0].name : `${files.length} files`}…`);
-    void uploadFilesToProject(scope, project.id, files).then(({ uploads, notes }) => {
-      const medias = uploads.flatMap((u): ViralMedia[] => (u.kind === "video" || u.kind === "image" ? [{ id: `upload:${u.id}`, sourceId: u.id, origin: "upload", kind: u.kind, name: u.filename, url: u.url, seconds: u.durationS ?? null }] : []));
-      place(medias);
-      if (notes.length || medias.length < uploads.length) setNote([...notes, ...(medias.length < uploads.length ? ["Only videos and pictures go in this well; the rest is kept in the Library."] : [])].join(" "));
-    }).catch((error: unknown) => setNote(error instanceof Error ? error.message : "The files could not be uploaded."));
+    if (!project) { held.current.push(...files); setNote("Open a project first; dropped files are kept in its Library."); return; }
+    upload(project.id, files);
   };
   const drop = {
     onDragOver: (e: React.DragEvent) => { if (isDroppable(e.dataTransfer)) { e.preventDefault(); setOver(true); } },
