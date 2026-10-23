@@ -894,3 +894,60 @@ export async function readConsentRecordingBytes(id: string, ext: string): Promis
   if (usingCloud()) return readCloud(consentRecordingPath(id, ext));
   return readFile(localConsentFile(id, ext));
 }
+
+/* ── Document imports (v30, lib/docImport) ────────────────────────────────
+ * Always under ws/<workspace id>/, the studio's original workspace included:
+ * a new kind of object gets no bare path. File names are fixed shapes the
+ * importer chooses (source.<ext>, result.json, images/<n>.<ext>), never a
+ * name taken from inside a document, and the import id is a generated id.
+ * There is no tenant fallback: with no workspace in scope this throws.
+ * -------------------------------------------------------------------- */
+const IMPORT_ID = /^[A-Za-z0-9_-]{8,80}$/;
+const IMPORT_FILE = /^(?:source\.[a-z0-9]{1,5}|result\.json|images\/\d{1,4}\.[a-z0-9]{1,5})$/;
+const IMPORT_DIR = path.join(process.cwd(), ".data", "imports");
+
+export function importObjectPath(importId: string, file: string): string {
+  const ws = currentTenant()?.workspace;
+  if (!ws || !/^[A-Za-z0-9_-]+$/.test(ws.id)) throw new Error("No workspace is in scope for this import.");
+  if (!IMPORT_ID.test(importId) || !IMPORT_FILE.test(file)) throw new Error("Invalid import path.");
+  return `ws/${ws.id}/imports/${importId}/${file}`;
+}
+
+const localImportFile = (key: string) => path.join(IMPORT_DIR, ...key.split("/"));
+
+export async function storeImportBytes(importId: string, file: string, buf: Buffer, contentType: string): Promise<string> {
+  const key = importObjectPath(importId, file);
+  return await withRecoveryActivity("storage", async () => {
+    if (usingCloud()) {
+      await cloudBackend().put(key, buf, { contentType, overwrite: true });
+      return key;
+    }
+    const local = localImportFile(key);
+    await mkdir(path.dirname(local), { recursive: true });
+    await writeFile(local, buf);
+    return key;
+  });
+}
+
+/** An import object, refused (not truncated) past maxBytes. */
+export async function readImportBytes(importId: string, file: string, maxBytes: number): Promise<Buffer> {
+  const key = importObjectPath(importId, file);
+  const tooLarge = () => new Error(`The import file is larger than ${Math.round(maxBytes / (1024 * 1024))} MB.`);
+  if (usingCloud()) {
+    const found = await cloudBackend().get(key);
+    if (!found) throw new Error("blob not found");
+    const reader = found.stream.getReader(), chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      total += part.value.length;
+      if (total > maxBytes) { await reader.cancel().catch(() => {}); throw tooLarge(); }
+      chunks.push(part.value);
+    }
+    return Buffer.concat(chunks);
+  }
+  const local = localImportFile(key);
+  if ((await stat(local)).size > maxBytes) throw tooLarge();
+  return readFile(local);
+}
