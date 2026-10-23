@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { CastWell } from "../cards/cast/CastWell";
-import { VARIANT_LABEL, bindCastIdentity, castStatus, consentLine, identityOf, shotsWords, type CastCardData } from "../cards/cast/cast-model";
+import { VARIANT_LABEL, bindCastIdentity, bindProblem, parkedForCard, castStatus, consentLine, identityOf, shotsWords, type CastCardData } from "../cards/cast/cast-model";
 import type { CardProps } from "../cards/types";
 import { CastIdentities } from "@/components/graphite/production/CastIdentities";
 import { Price } from "@/components/graphite/Price";
@@ -13,7 +13,7 @@ import { consentProjectKey } from "@/lib/security/consent-words";
 import { identityCardView } from "@/lib/security/identity-card";
 import { useConsents } from "@/lib/security/use-consents";
 import { ConsentTick } from "@/components/graphite/security/IdentityBlock";
-import { parkBind } from "../cards/cast/parked-binds";
+import { parkBind, useParked } from "../cards/cast/parked-binds";
 
 /*
  * The Inspector on a Cast, Environment or Element card (the nearest frame is k: preview, title, the card's own
@@ -34,14 +34,17 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
   const consent = data.variant === "cast" ? consentLine(identity, signedIn) : null;
   const consentKey = consentProjectKey(ctx.project);
   const consents = useConsents(signedIn && data.variant === "cast" ? ctx.scope : null, consentKey);
+  /* A training started from this card and held for it (renamed since the press): no second priced press here either. */
+  const parked = useParked(signedIn && data.variant === "cast" ? ctx.scope : null);
+  const held = parkedForCard(parked.filter((p) => p.projectId === ctx.project.id), data);
   const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent,
-    readFailed: consents.state.status === "error" || state.status === "error" });
+    readFailed: consents.state.status === "error" || state.status === "error", startedFor: held ? held.name ?? "" : null });
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
   /* Offered only once the identities and ticks were read (as the card: "Couldn't read this · reload" offers nothing), and
      only while there is something to train: no identity, or one that failed (Retry). Never beside a training in flight,
      one that needs review (uncertain, until it is reconciled) or a ready identity, so a paid press is never repeated. */
-  const trainable = state.status === "ready" && state.data != null && idView.stage !== "unread" && (!identity || identity.status === "failed");
+  const trainable = state.status === "ready" && state.data != null && idView.stage !== "unread" && idView.stage !== "started" && (!identity || identity.status === "failed");
   /* The card this press was made from, captured now (the production and the cast member); the reply binds only there. */
   const pressed = { entryId: data.entryId, nodeId: data.nodeId, name: data.title };
   /* Bound now when that production is the open one; otherwise (another is open, or the board can't take the edit now)
@@ -49,14 +52,17 @@ export function CastBody({ card, data, ctx }: CardProps<CastCardData>) {
      training and never offers Train again for it. */
   const bindStarted = (identityId: string, pressedIn: string) => {
     const at = { ...pressed, projectId: pressedIn };
-    let elsewhere = false;
+    let problem: ReturnType<typeof bindProblem> = null;
     const refused = ctx.rig.apply((p) => {
-      elsewhere = p.id !== pressedIn;
+      problem = bindProblem(p, at);
       return bindCastIdentity(p, at, identityId);
     });
-    if (refused || elsewhere) {
+    if (refused || problem) {
+      /* Kept, never dropped: the card says the training was started, and never offers Train for it again (R5-2). */
       parkBind(ctx.scope, { ...at, identityId });
-      ctx.toast("The training started. Its card follows it when that production is open again.");
+      ctx.toast(problem === "renamed"
+        ? `Training started for ${at.name}, whose card was renamed, so it isn't attached. It's listed under Build identity.`
+        : "The training started. Its card follows it when that production is open again.");
       return;
     }
     void ctx.rig.save();

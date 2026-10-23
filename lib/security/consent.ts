@@ -141,9 +141,9 @@ export async function storeConsentRecording(input: { bytes: Buffer; mime: string
   const type = CONSENT_FILE_TYPES[mime];
   if (!type) throw new ConsentError("The file has to be sound or video of the person agreeing, or their signed release as a PDF.");
   const { ext } = type;
-  if (!input.bytes.length) throw new ConsentError("Nothing was recorded. Try again.");
+  if (!input.bytes.length) throw new ConsentError("The file is empty. Try again.");
   if (SIGNATURES[type.kind] && !SIGNATURES[type.kind]!(input.bytes)) throw new ConsentError("That file isn't a PDF. Add the signed release as a PDF.");
-  if (input.bytes.length > MAX_RECORDING_BYTES) throw new ConsentError("Keep the recording under 4 MB: about a minute of the person agreeing.", 413);
+  if (input.bytes.length > MAX_RECORDING_BYTES) throw new ConsentError("Keep the file under 4 MB: about a minute of recording, or a short PDF.", 413);
   await consentsReady();
   const { createHash } = await import("node:crypto");
   const { storeConsentRecordingBytes } = await import("../storage");

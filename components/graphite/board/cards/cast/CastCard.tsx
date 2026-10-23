@@ -11,6 +11,7 @@ import { useShell } from "@/lib/shell/state";
 import { useSession } from "@/lib/session";
 import { useIdentities } from "@/lib/workspace/identities";
 import { usePaidAction } from "@/lib/usePaidAction";
+import { useParked } from "./parked-binds";
 import { useState } from "react";
 import type { BoardCard } from "@/lib/board/types";
 import { defineCard, type BoardCtx, type CardProps } from "../types";
@@ -20,7 +21,7 @@ import { CastWell } from "./CastWell";
 import { CutoutAction } from "./CutoutAction";
 import { cutoutView } from "./cutout-model";
 import { CastBody } from "../../inspector/CastBody";
-import { VARIANT_LABEL, castLabel, castStatus, consentLine, earlierSheetOf, identityOf, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "./cast-model";
+import { VARIANT_LABEL, castLabel, castStatus, consentLine, earlierSheetOf, identityOf, parkedForCard, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "./cast-model";
 import "./cast.css";
 
 /*
@@ -59,8 +60,12 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
      charged twice; never a second Train press. Read only: nothing is sent from the card. */
   const saved = usePaidAction(`soul-identity:${ctx.project.id}`, signedIn && data.variant === "cast", { signedIn, requestScope: ctx.scope }).pending;
   const sentFrom = (() => { try { return saved ? (JSON.parse(saved.body) as { subjectKey?: unknown }).subjectKey ?? null : null; } catch { return null; } })();
+  /* A training started from this card that is held for it (its card was renamed since the press): said, never Train again. */
+  const parked = useParked(signedIn && data.variant === "cast" ? ctx.scope : null);
+  const held = parkedForCard(parked.filter((p) => p.projectId === ctx.project.id), data);
   const idView = identityCardView({ consents: consents.state.consents, subjectKey: card.id, bound: identity, identities, earlier: consent,
-    readFailed: consents.state.status === "error" || state.status === "error", requestSaved: sentFrom === card.id });
+    readFailed: consents.state.status === "error" || state.status === "error", requestSaved: sentFrom === card.id,
+    startedFor: held ? held.name ?? "" : null });
   const status = data.variant === "cast" && !data.retired && !data.rendering && signedIn ? { text: idView.text, tone: idView.tone } : castStatus(data, identities);
   const shots = shotsWords(data.shots);
   const act = signedIn && !ctx.offline && !data.retired;
@@ -100,10 +105,16 @@ export function CastCard({ card, data, ctx, selected }: CardProps<CastCardData>)
             view={idView} consents={consents.state} trainingCredits={training} canAct={act}
             spendOff={ctx.exploreOnly ?? null} onTrain={() => ctx.openInspector(card.id)} />
         ) : null}
+        {/* A locked asset can't move: it says so rather than offer an Update that can only fail. Update also swaps the
+            asset's portrait for the newer identity's and raises its version (the existing bind). */}
         {earlier ? (
           <div className="gx-cast-earlier" data-testid="cast-earlier-sheet">
-            <span>Renders with the earlier sheet</span>
-            <Btn onClick={(e) => { e.stopPropagation(); updateSheet(); }} data-testid="cast-update-sheet">Update</Btn>
+            {data.assetLocked ? <span>Renders with the earlier sheet · Unlock to update</span> : (
+              <>
+                <span>Renders with the earlier sheet</span>
+                <Btn onClick={(e) => { e.stopPropagation(); updateSheet(); }} data-testid="cast-update-sheet">Update</Btn>
+              </>
+            )}
           </div>
         ) : null}
         {act ? (

@@ -51,6 +51,8 @@ export type CastCardData = {
   identityIds?: string[];
   /** The identity the card's own asset renders with, when it has one. */
   assetIdentityId?: string | null;
+  /** The card's own asset is locked: its identity can't be moved until it is unlocked. */
+  assetLocked?: boolean;
   /** The card is a locked master. */
   master: boolean;
   /** Lock as master is possible right now (a stored picture on a Cast, Environment or Element card). */
@@ -141,6 +143,26 @@ export function castStatus(d: CastCardData, identities: readonly SoulIdentity[] 
 export type PressedCard = { projectId: string; entryId: string | null; nodeId: string | null; name?: string | null };
 
 /**
+ * Why a bind can't be made into this project now, or null: "elsewhere" (another production is open), or "renamed" (the
+ * cast member pressed from no longer has the name it had at the press). Either way the bind is kept (parked) and the
+ * card says the training was started; it never offers Train again for it (review 5 of #888, R5-2).
+ */
+export function bindProblem(project: Project, card: PressedCard): "elsewhere" | "renamed" | null {
+  if (project.id !== card.projectId) return "elsewhere";
+  /* The cast member has to be the one pressed from: the same name as at the press (when it was captured). */
+  const named = (name: string | undefined) => card.name == null || (name != null && norm(name) === norm(card.name));
+  const pressedEntry = card.entryId ? project.production?.cast?.entries.find((e) => e.id === card.entryId) : undefined;
+  const pressedNode = card.nodeId ? project.nodes.find((n) => n.id === card.nodeId) : undefined;
+  if ((pressedEntry && !named(pressedEntry.name)) || (pressedNode && !named(pressedNode.title))) return "renamed";
+  return null;
+}
+
+/** The parked bind that stands for this card (the same cast entry or canvas card), if any. */
+export function parkedForCard<T extends PressedCard>(parked: readonly T[], d: Pick<CastCardData, "entryId" | "nodeId">): T | null {
+  return parked.find((p) => (d.entryId != null && p.entryId === d.entryId) || (d.nodeId != null && p.nodeId === d.nodeId)) ?? null;
+}
+
+/**
  * Binds an identity a person started training from a character's Inspector to that character's card (Rig save), so
  * the card follows it: training, then ready, or failed with its charge and Retry; never "No identity yet" with the
  * Train press offered again. Pure. It binds only into the production the press was made in: any other project comes
@@ -150,12 +172,7 @@ export type PressedCard = { projectId: string; entryId: string | null; nodeId: s
  * to (`identityOf`), so the newer training on the entry is the one shown.
  */
 export function bindCastIdentity(project: Project, card: PressedCard, identityId: string): Project {
-  if (project.id !== card.projectId) return project;
-  /* The cast member has to be the one pressed from: the same name as at the press (when it was captured). */
-  const named = (name: string | undefined) => card.name == null || (name != null && norm(name) === norm(card.name));
-  const pressedEntry = card.entryId ? project.production?.cast?.entries.find((e) => e.id === card.entryId) : undefined;
-  const pressedNode = card.nodeId ? project.nodes.find((n) => n.id === card.nodeId) : undefined;
-  if ((pressedEntry && !named(pressedEntry.name)) || (pressedNode && !named(pressedNode.title))) return project;
+  if (bindProblem(project, card)) return project;
   let next = project;
   const cast = next.production?.cast;
   const hasEntry = Boolean(card.entryId && cast?.entries.some((e) => e.id === card.entryId));
@@ -251,7 +268,7 @@ function nodeCards(src: Pick<BoardSource, "project" | "masters">): { card: Board
       variant, source: "node", nodeId: node.id, entryId: entry?.id ?? null, title: node.title, description: (asset?.description ?? node.text ?? "").trim(),
       still: assetStill(asset), shots: appearsIn(project, variant, node.title), identityId: asset?.soulIdentityId ?? entry?.identityId ?? null,
       identityIds: [...new Set([asset?.soulIdentityId, entry?.identityId].filter((v): v is string => Boolean(v)))],
-      assetIdentityId: asset?.soulIdentityId ?? null,
+      assetIdentityId: asset?.soulIdentityId ?? null, assetLocked: asset?.locked === true,
       master, lockable: !master && lockProblem(node, project, false) === null, plates: 0, chosen: false,
       rendering: Boolean(entry?.pending?.length), prompt: (entry ? castStillPrompt(entry) : "") || asset?.prompt?.trim() || (asset?.description ?? "").trim() || node.title.trim(),
       retired: entry ? retiredModelOf(entry) : null,

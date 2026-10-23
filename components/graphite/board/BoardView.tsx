@@ -38,7 +38,7 @@ import { madeCards, type MadeEntry } from "./cards/set-board";
 import { ShotList } from "./cards/board/ShotList";
 import type { BoardCtx, BoardSelection } from "./cards/types";
 import { EmptyBoard } from "./EmptyBoard";
-import { bindCastIdentity } from "./cards/cast/cast-model";
+import { bindCastIdentity, bindProblem } from "./cards/cast/cast-model";
 import { parkBind, takeParked } from "./cards/cast/parked-binds";
 import { HoverCluster } from "./HoverCluster";
 import { BoardInspector } from "./inspector";
@@ -145,6 +145,9 @@ const inField = (target: EventTarget | null) => {
   return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 };
 
+/* The renamed-card binds already told in this tab: said once, then the card itself says it. */
+const RENAMED_TOLD = new Set<string>();
+
 function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   useEffect(() => markBoardOpen(), []);
   const rig = useRig();
@@ -179,17 +182,33 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
      #888, R3-1) and is made now that this production is open, so its card follows the training and offers no Train
      press for it. A bind the board can't take now stays parked. */
   const openId = rig.status === "ready" && !rig.viewOnly ? rig.project?.id ?? null : null;
+  /* Once per opening of a production: a bind kept parked (a renamed card) is not tried again on every render. */
+  const parkedDoneFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!openId) return;
+    if (!openId) { parkedDoneFor.current = null; return; }
+    if (parkedDoneFor.current === openId) return;
+    parkedDoneFor.current = openId;
     const parked = takeParked(scope, openId);
     if (!parked.length) return;
     let made = false;
     for (const bind of parked) {
-      const refused = rig.apply((p) => bindCastIdentity(p, bind, bind.identityId));
-      if (refused) parkBind(scope, bind, bind.at); else made = true;
+      /* A cast member renamed since the press is not given the identity: the bind stays parked, its card says the
+         training was started for its old name, and it never offers Train for it again (R5-2). */
+      let renamed = false;
+      const refused = rig.apply((p) => {
+        renamed = bindProblem(p, bind) === "renamed";
+        return bindCastIdentity(p, bind, bind.identityId);
+      });
+      if (refused || renamed) {
+        parkBind(scope, bind, bind.at);
+        if (renamed && !RENAMED_TOLD.has(bind.identityId)) {
+          RENAMED_TOLD.add(bind.identityId);
+          ws.toast(`Training started for ${bind.name ?? "a cast member"}, whose card was renamed, so it isn't attached. It's listed under Build identity.`);
+        }
+      } else made = true;
     }
     if (made) void rig.save();
-  }, [openId, scope, rig]);
+  }, [openId, scope, rig, ws]);
   const gate = useMemo(() => ({ exploreOnly: liftedHere ? null : onSample.exploreOnly ?? spendOff, readOnly: viewing ?? onSample.readOnly }), [liftedHere, onSample, spendOff, viewing]);
   /* While it is lifted the board's line says so (for anyone else its paid controls stay closed in the sample's words). */
   const pill = lift?.lifted && gate.exploreOnly !== CHECK_LINE ? LIFT_LINE : gate.exploreOnly;

@@ -17,7 +17,9 @@ export type IdentityLike = { id: string; name: string; status: "submitting" | "t
 /* "review": a training whose submission is uncertain. Nothing is offered to press again until it is reconciled. */
 /* "sent": a training was sent from this production and its reply was not read here (the person left the production while
    it was out); the request is saved, and Recover asks about that same request, never sending it twice. */
-export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed" | "review" | "sent" | "unread";
+/* "started": a training started from this card that couldn't be attached to it (its card was renamed since the press):
+   kept parked, and said in words; never a Train press for it again. */
+export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed" | "review" | "sent" | "started" | "unread";
 export type Tone = "done" | "working" | "waiting" | "idle";
 
 export type IdentityCardView = {
@@ -69,6 +71,8 @@ export function identityCardView(input: {
   readFailed?: boolean;
   /** A training request from this production is saved with its reply unread: the card offers Recover, never Train. */
   requestSaved?: boolean;
+  /** A training started from this card is held for it, under the name it was started for (the card was renamed since). */
+  startedFor?: string | null;
   at?: number;
 }): IdentityCardView {
   const at = input.at ?? Date.now();
@@ -90,6 +94,7 @@ export function identityCardView(input: {
   }
   if (input.readFailed) return { ...base, stage: "unread", text: "Couldn't read this · reload", tone: "waiting" };
   if (input.requestSaved) return { ...base, stage: "sent", text: "Training sent · reply not read yet", tone: "waiting" };
+  if (input.startedFor != null) return { ...base, stage: "started", text: `Training started for ${input.startedFor || "this cast member"}`, tone: "waiting" };
   if (live) return { ...base, stage: "recorded", text: "Consent ticked · ready to train", tone: "idle" };
   return { ...base, stage: "no-consent", text: "No identity yet", tone: "idle" };
 }

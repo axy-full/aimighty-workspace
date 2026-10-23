@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { appearsIn, bindCastIdentity, castLabel, castStatus, consentLine, deriveCast, earlierSheetOf, identityOf, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
+import { appearsIn, bindCastIdentity, bindProblem, parkedForCard, castLabel, castStatus, consentLine, deriveCast, earlierSheetOf, identityOf, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
 import { parkBind, takeParked } from "../../components/graphite/board/cards/cast/parked-binds";
 import type { BoardCard, BoardSource } from "../../lib/board/types";
 import type { SoulIdentity } from "../../lib/workbench/soul-identity";
@@ -183,4 +183,17 @@ test("a card whose own asset renders with an earlier sheet says so and offers Up
   expect(moved.assets[0]).toMatchObject({ id: "a1", soulIdentityId: "soul_new", uploadId: "up_new" });
   /* A locked asset is never changed: the existing bind refuses, in words. */
   expect(() => updateToNewerSheet(withAsset(true), "n1", fresh)).toThrow(/Unlock this asset/);
+});
+
+test("a bind that can't land says why, and the card it stands for is found by its cast entry or canvas card (R5-2)", () => {
+  const pressedIn = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Lead" })] } });
+  const at = { projectId: pressedIn.id, entryId: "cast-01", nodeId: null, name: "Lead" };
+  expect(bindProblem(pressedIn, at)).toBeNull();
+  expect(bindProblem({ ...pressedIn, id: "another_production" } as Project, at)).toBe("elsewhere");
+  const renamed = { ...withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Another person" })] } }), id: pressedIn.id } as Project;
+  expect(bindProblem(renamed, at)).toBe("renamed");
+  const parked = [{ ...at, identityId: "soul_1", at: 1 }, { projectId: pressedIn.id, entryId: null, nodeId: "n9", name: "Prop", identityId: "soul_2", at: 2 }];
+  expect(parkedForCard(parked, { entryId: "cast-01", nodeId: null })?.identityId).toBe("soul_1");
+  expect(parkedForCard(parked, { entryId: null, nodeId: "n9" })?.identityId).toBe("soul_2");
+  expect(parkedForCard(parked, { entryId: "cast-02", nodeId: null })).toBeNull();
 });

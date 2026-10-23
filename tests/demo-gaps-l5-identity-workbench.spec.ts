@@ -356,3 +356,41 @@ test("A training whose reply lands while another production is open: back in its
   expect(paid).toEqual(["/api/soul/identities", "/api/soul/identities"]);
   expect(errors).toEqual([]);
 });
+
+test("A training whose cast member was renamed while it was out is held, not dropped: the card says it was started for the old name and offers no Train, here or in the Inspector", async ({ page }, info) => {
+  test.skip(!SIZES.includes(info.project.name) || !desktop(page), "the board canvas and its Train press are desktop only; phones have no Train press to repeat");
+  const { project, scope, paid } = await seed(page);
+  /* The reply landed after the cast member was renamed: its bind is parked under the name it was pressed for, as the
+     app parks it (components/graphite/board/cards/cast/parked-binds.ts). */
+  const bind = { projectId: project.id, entryId: "cast-lead", nodeId: null, name: "Old name", identityId: "soul_l5_new", at: Date.now() };
+  await page.addInitScript(({ key, value }) => { try { localStorage.setItem(key, value); } catch { /* storage off */ } }, { key: `particl-parked-identity-binds:${scope}`, value: JSON.stringify([bind]) });
+  const errors = watchErrors(page);
+  await page.goto(`/suites?project=${project.id}&view=board`);
+  await expect(page.getByTestId("board")).toBeVisible();
+  const card = page.getByTestId("cast-card").filter({ hasText: "ivory coat" });
+  await expect(card).toHaveCount(1);
+  /* Opening the production tries the bind: the name no longer matches, so it is kept parked and said once. */
+  await expect(page.getByText("Training started for Old name, whose card was renamed, so it isn't attached. It's listed under Build identity.")).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.locator('[data-region="cast"]').click();
+  await page.waitForTimeout(900);
+  await expect(card.getByTestId("cast-status")).toHaveText("Training started for Old name");
+  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+  await expect(card.getByTestId("identity-retry")).toHaveCount(0);
+  /* The Inspector offers no priced form for it either. */
+  await card.getByTestId("cast-title").click();
+  const insp = page.getByTestId("board-inspector");
+  await expect(insp.getByTestId("insp-cast")).toBeVisible();
+  await expect(insp.getByTestId("insp-build")).toHaveCount(0);
+  await shot(page, "identity-renamed-held", info);
+  /* Still held after a reload: never dropped. */
+  await page.reload();
+  await expect(page.getByTestId("board")).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.locator('[data-region="cast"]').click();
+  await page.waitForTimeout(900);
+  await expect(card.getByTestId("cast-status")).toHaveText("Training started for Old name");
+  await expect(card.getByTestId("identity-train")).toHaveCount(0);
+  expect(paid).toEqual([]);
+  expect(errors).toEqual([]);
+});

@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import type { PressedCard } from "./cast-model";
 
 /*
@@ -17,6 +18,8 @@ const KEY = "particl-parked-identity-binds:";
 /** A parked bind older than this is dropped: the production was not opened again in time, and the card's own list still shows it. */
 const KEEP_MS = 30 * 86_400_000;
 const memory = new Map<string, ParkedBind[]>();
+const listeners = new Set<() => void>();
+const NONE: ParkedBind[] = [];
 
 function read(scope: string): ParkedBind[] {
   const held = memory.get(scope);
@@ -33,6 +36,7 @@ function read(scope: string): ParkedBind[] {
 
 function write(scope: string, all: ParkedBind[]): void {
   memory.set(scope, all);
+  for (const l of listeners) l();
   try {
     if (typeof localStorage === "undefined") return;
     if (all.length) localStorage.setItem(KEY + scope, JSON.stringify(all));
@@ -44,6 +48,15 @@ function write(scope: string, all: ParkedBind[]): void {
 export function parkBind(scope: string, bind: Omit<ParkedBind, "at">, at = Date.now()): void {
   const kept = read(scope).filter((p) => p.identityId !== bind.identityId && at - p.at < KEEP_MS);
   write(scope, [...kept, { ...bind, at }]);
+}
+
+/** The binds parked in this workspace, as they are now (for the cards: a card with one says its training was started). */
+export function useParked(scope: string | null): readonly ParkedBind[] {
+  return useSyncExternalStore(
+    (l) => { listeners.add(l); return () => { listeners.delete(l); }; },
+    () => (scope ? read(scope) : NONE),
+    () => NONE,
+  );
 }
 
 /** Takes (and removes) the binds parked for a production, oldest first, so the newest training binds last. */

@@ -87,7 +87,7 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
       const type = (blob.type || (/\.wav$/i.test(name) ? "audio/wav" : /\.pdf$/i.test(name) ? "application/pdf" : "audio/webm")).split(";")[0];
       const response = await scoped("/api/identity-consents/recording", { method: "POST", headers: { "Content-Type": type }, body: blob });
       const body = await response.json().catch(() => null) as { recording?: { id: string }; error?: string } | null;
-      if (!response.ok || !body?.recording) throw new Error(body?.error ?? "The recording could not be saved. Try again.");
+      if (!response.ok || !body?.recording) throw new Error(body?.error ?? "The file could not be saved. Try again.");
       const stored = { id: body.recording.id, durationS: null as number | null };
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
       objectUrl.current = URL.createObjectURL(blob);
@@ -95,7 +95,7 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
       setRec({ state: "done", uploadId: stored.id, url: objectUrl.current, seconds: seconds ?? stored.durationS, when: kind === "document" ? "added just now" : "recorded just now", kind });
     } catch (error) {
       restore();
-      setProblem(error instanceof Error && error.message ? error.message : "The recording could not be saved. Try again.");
+      setProblem(error instanceof Error && error.message ? error.message : "The file could not be saved. Try again.");
     }
   };
 
@@ -216,8 +216,8 @@ function TickForm({ scope, projectId, subjectKey, subjectLabel, onDone, onCancel
                   {rec.state === "done" ? `${rec.kind === "document" ? "signed release" : "statement"}${rec.seconds ? ` · ${secondsWords(rec.seconds)}` : ""} · ${rec.when}`
                     : rec.state === "kept" ? (rec.kind === "document" ? "signed release on file" : "statement on file")
                     : rec.state === "recording" ? "Recording… press Stop when they have said it"
-                    : rec.state === "uploading" ? "Saving the recording…"
-                    : "Not recorded yet"}
+                    : rec.state === "uploading" ? "Saving the file…"
+                    : "Nothing added yet"}
                 </span>
               </span>
               <span className="gsec-rec-acts">
