@@ -221,4 +221,6 @@ test("a member of another workspace who opens A's board link sees only their own
   const text = await page.locator("body").innerText();
   expect(leaks(text, a.secrets.filter((s) => s !== a.draftId)), "the page").toEqual([]);
   expect(leaks(seen.join("\n"), a.secrets.filter((s) => s !== a.draftId)), "every answer the page got from the server").toEqual([]);
+  /* Neutral words (owner, 10 Oct): the page never says the board is another workspace's. */
+  expect(text, "the page never says \"another workspace\"").not.toMatch(/another workspace/i);
 });

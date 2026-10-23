@@ -93,7 +93,7 @@ test("(c) the header's logo is the brand's mark and wordmark from public/brand, 
   expect(body, "no inline drawing").not.toMatch(/<svg|<circle|TRAIL/);
   expect(body, "no typed wordmark").not.toMatch(/>\s*particl\s*</i);
   expect(logo.replace(/\/\*[\s\S]*?\*\//g, ""), "the header logo uses no lockup").not.toMatch(/particl-lockup/);
-  /* Every header draws it through BrandLogo (the v12 ones through HeaderLogo, which does), and none makes a logo of its own. */
+  /* Every header draws it through BrandLogo, and none makes a logo of its own. */
   const customer = read("components/graphite/Header.tsx");
   expect(customer, "today's customer header draws BrandLogo").toMatch(/<BrandLogo\b/);
   expect(customer, "today's customer header draws no logo of its own").not.toMatch(/TRAIL|<circle|gx-brand-name|particl-lockup/);
