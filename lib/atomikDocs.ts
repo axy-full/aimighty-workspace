@@ -16,7 +16,8 @@ export type Idea = {
   effort?: string;
   createdBy: string; createdAt: number; updatedAt: number;
 };
-/** A scene; `by` says who wrote its current words — "you", or the model id — and `at` when (brief 1.8). */
+/** A scene; `by` says who wrote its current words — "you", or "atomik" — and `at` when (brief 1.8). Scenes stored before 23 Oct 2026 may
+ *  hold the writer's model id and effort: they read as "atomik", without the effort (shownScenes). */
 export type Scene = { n: number; title: string; secs: number; prose: string; by?: string; effort?: string; at?: number };
 export type TreatmentVersion = { version: number; by: string; at: number };
 export type Note = { id: string; by: string; scene: number; text: string; at: number };
@@ -32,6 +33,20 @@ const json = <T,>(raw: unknown, fallback: T): T => {
   try { return JSON.parse(raw) as T; } catch { return fallback; }
 };
 
+/**
+ * A treatment's scenes as they are read: who wrote a scene is "you" or "atomik", never the writer's model, and no effort (Amendment (iii)
+ * §E: never disclosed). Older rows stored the model id and the effort a scene was written at; they are read without them, and the next
+ * save writes them so.
+ */
+export function shownScenes(scenes: Scene[]): Scene[] {
+  return (Array.isArray(scenes) ? scenes : []).map((scene) => {
+    if (!scene || typeof scene !== "object") return scene;
+    const { by, effort: _effort, ...rest } = scene;
+    void _effort;
+    return { ...rest, ...(typeof by === "string" && by ? { by: by === "you" ? "you" : "atomik" } : {}) };
+  });
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function rowToIdea(r: any): Idea {
   const state = ["open", "pinned", "production", "parked"].includes(r.state) ? r.state : "open";
@@ -45,11 +60,20 @@ export function rowToIdea(r: any): Idea {
     createdBy: r.created_by ?? "", createdAt: Number(r.created_at ?? 0), updatedAt: Number(r.updated_at ?? 0),
   };
 }
+/**
+ * An idea as a person (or an API token) is sent it: the thinking model it was written with and its effort stay on the server
+ * (Amendment (iii) §E: never disclosed). The row keeps both.
+ */
+export function memberIdea<I extends Pick<Idea, "model" | "effort">>(idea: I): Omit<I, "model" | "effort"> {
+  const { model: _model, effort: _effort, ...rest } = idea;
+  void _model; void _effort;
+  return rest;
+}
 export function rowToTreatment(r: any): Treatment {
   return {
     id: r.id, projectId: r.project_id, ideaId: r.idea_id ?? null, draft: Number(r.draft ?? 1),
     title: r.title ?? "", logline: r.logline ?? "", setup: json<Record<string, string>>(r.setup, {}),
-    scenes: json<Scene[]>(r.scenes, []), notes: json<Note[]>(r.notes, []),
+    scenes: shownScenes(json<Scene[]>(r.scenes, [])), notes: json<Note[]>(r.notes, []),
     updatedBy: r.updated_by ?? "", createdAt: Number(r.created_at ?? 0), updatedAt: Number(r.updated_at ?? 0),
   };
 }
@@ -116,8 +140,8 @@ export async function upsertTreatment(input: {
   const scenes = input.scenes.slice(0, 40).map((s, i) => ({
     n: i + 1, title: String(s.title ?? "").slice(0, 120),
     secs: Math.max(0, Math.min(600, Math.round(Number(s.secs) || 0))), prose: String(s.prose ?? "").slice(0, 8000),
-    ...(typeof s.by === "string" && s.by ? { by: s.by.slice(0, 80) } : {}),
-    ...(typeof s.effort === "string" && s.effort ? { effort: s.effort.slice(0, 32) } : {}),
+    /* Who wrote it, as it is read (shownScenes): "you" or "atomik", and no effort. */
+    ...(typeof s.by === "string" && s.by ? { by: s.by === "you" ? "you" : "atomik" } : {}),
     ...(Number.isFinite(Number(s.at)) && Number(s.at) > 0 ? { at: Number(s.at) } : {}),
   }));
   let notes = input.notes.slice(0, 200);
@@ -191,7 +215,7 @@ export async function getTreatmentVersion(projectId: string, version: number): P
   const shown = await storedActorMaskHere();
   return {
     projectId, draft: Number(r.version), title: String(r.title ?? ""), logline: String(r.logline ?? ""), setup: json<Record<string, string>>(r.setup, {}),
-    scenes: json<Scene[]>(r.scenes, []), notes: json<Note[]>(r.notes, []), updatedBy: String(shown(String(r.by ?? ""))), updatedAt: Number(r.created_at ?? 0), at: Number(r.created_at ?? 0),
+    scenes: shownScenes(json<Scene[]>(r.scenes, [])), notes: json<Note[]>(r.notes, []), updatedBy: String(shown(String(r.by ?? ""))), updatedAt: Number(r.created_at ?? 0), at: Number(r.created_at ?? 0),
   };
 }
 

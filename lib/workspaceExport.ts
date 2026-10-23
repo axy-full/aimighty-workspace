@@ -8,6 +8,7 @@ import { publicDirectParams } from "./directEnginePublic";
 import { PipelineStore } from "./pipeline/store";
 import { publicRun } from "./pipeline/public";
 import type { CompiledPipeline } from "./pipeline/schema";
+import { shownScenes, type Scene } from "./atomikDocs";
 
 // An allowlist keeps new credential/session tables out of customer exports.
 /**
@@ -43,6 +44,19 @@ function exportedOutcome(raw: unknown, thinking: boolean, credits: boolean): str
     if (thinking) { outcome.message = null; outcome.provider = "atomik"; }
     return JSON.stringify(outcome);
   } catch { return null; }
+}
+
+/**
+ * Atomik's writing as the export carries it (Amendment (iii) §E: never disclosed): an idea without the thinking model it was written with
+ * or its effort, and a treatment's scenes (and its kept drafts') saying "you" or "atomik", never the writer's model, and no effort. The
+ * rows keep what they stored.
+ */
+function exportedWriting(name: string, row: Row): Row {
+  if (name === "ideas") { const { model: _model, effort: _effort, ...rest } = row; void _model; void _effort; return rest; }
+  if ((name === "treatments" || name === "treatment_versions") && typeof row.scenes === "string") {
+    try { return { ...row, scenes: JSON.stringify(shownScenes(JSON.parse(row.scenes) as Scene[])) }; } catch { return row; }
+  }
+  return row;
 }
 
 const SHARED_TABLES = [
@@ -126,9 +140,7 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     );
     for (const name of SHARED_TABLES) {
       contents[name] = tables.has(name)
-        ? (await tx.execute(`SELECT * FROM ${name}`)).rows.map((row) => ({
-            ...row,
-          }))
+        ? (await tx.execute(`SELECT * FROM ${name}`)).rows.map((row) => exportedWriting(name, { ...row }))
         : [];
     }
     contents.users = (

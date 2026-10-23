@@ -4,7 +4,7 @@ import { db, ready } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
 import { requestEffort } from "@/lib/atomik";
 import { paidTextFailure } from "@/lib/paidText";
-import { listIdeas, createIdea } from "@/lib/atomikDocs";
+import { listIdeas, createIdea, memberIdea } from "@/lib/atomikDocs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +22,9 @@ export const GET = withTenant(async function GET() {
   const users = await db().execute(`SELECT id, name FROM users`);
   const names = new Map((users.rows as any[]).map((r) => [String(r.id), String(r.name)]));
   return NextResponse.json({
+    /* No thinking model or effort on an idea a person is sent (memberIdea). */
     ideas: ideas.map((i) => ({
-      ...i,
+      ...memberIdea(i),
       projectId: i.projectId && !listed(i.projectId) ? null : i.projectId,
       projectName: i.projectId ? projects.get(i.projectId)?.name ?? null : null,
       shots: i.projectId ? projects.get(i.projectId)?.shots ?? 0 : 0,
@@ -44,6 +45,6 @@ export const POST = withTenant(async function POST(req: Request) {
   const model = typeof body.model === "string" && body.model && body.model !== "auto" ? body.model.slice(0, 120) : null;
   try {
   const idea = await createIdea({ logline, tone, refs, model, effort: requestEffort(body.effort), createdBy: got.user.id });
-  return NextResponse.json({ idea });
+  return NextResponse.json({ idea: memberIdea(idea) });
   } catch (error) { return paidTextFailure(error); }
 });

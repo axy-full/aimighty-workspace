@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, ready, now } from "@/lib/db";
 import { requireUser, withTenant } from "@/lib/auth";
-import { getIdea } from "@/lib/atomikDocs";
+import { getIdea, memberIdea } from "@/lib/atomikDocs";
 import { archiveAndDelete } from "@/lib/archive";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,8 @@ export const PATCH = withTenant(async function PATCH(req: Request, { params }: C
   if (!sets.length) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
   sets.push("updated_at = ?"); args.push(now(), id);
   await db().execute({ sql: `UPDATE ideas SET ${sets.join(", ")} WHERE id = ?`, args });
-  return NextResponse.json({ idea: await getIdea(id) });
+  const edited = await getIdea(id);
+  return NextResponse.json({ idea: edited && memberIdea(edited) });
 });
 
 export const DELETE = withTenant(async function DELETE(_req: Request, { params }: Ctx) {

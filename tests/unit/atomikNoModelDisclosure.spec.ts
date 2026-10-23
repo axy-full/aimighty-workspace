@@ -381,6 +381,63 @@ test("the settings read and an admin's Thinking save carry the level only: no th
   });
 });
 
+test("ideas and the Treatment as older rows stored them (with the model and effort they were written at): the lists, an edit, a kept draft and the export carry neither, at each Thinking level", async () => {
+  const ws = await funded("documents");
+  const ideas = await route("app/api/atomik/ideas/route.ts");
+  const idea = await route("app/api/atomik/ideas/[id]/route.ts");
+  const treatment = await route("app/api/atomik/treatment/route.ts");
+  const { db } = await import("../../lib/db");
+  const { createIdea } = await import("../../lib/atomikDocs");
+  const { setSetting } = await import("../../lib/settings");
+  const { workspaceExport } = await import("../../lib/workspaceExport");
+  await inTenant(ws, async () => {
+    for (const [level, id] of [["high", HIGH], ["medium", MEDIUM], ["low", LOW]] as const) {
+      await setSetting("atomikThinking", level, person.id);
+      /* An idea written up at this level before 23 Oct 2026: the row holds the slot's model and its effort. */
+      const stored = await createIdea({ logline: `A lighthouse keeper at ${level}.`, tone: [], refs: [], model: id, effort: "high", createdBy: person.id });
+      expect((await db().execute({ sql: "SELECT model, effort FROM ideas WHERE id=?", args: [stored.id] })).rows[0]).toMatchObject({ model: id, effort: "high" });
+      const listed = await answer(await ideas.GET!(new Request("https://particl.test/api/atomik/ideas")));
+      expect(listed.status).toBe(200);
+      expect((listed.body.ideas as { id: string }[]).map((i) => i.id)).toContain(stored.id);
+      expectNothingDisclosed(`GET /api/atomik/ideas at ${level}`, listed.body);
+      const ctx = { params: Promise.resolve({ id: stored.id }) };
+      const pinned = await answer(await idea.PATCH!(json(`/api/atomik/ideas/${stored.id}`, { pin: true }, "PATCH"), ctx));
+      expect(pinned.status).toBe(200);
+      expectNothingDisclosed(`PATCH /api/atomik/ideas/[id] at ${level}`, pinned.body);
+      /* An older page that still sends the slot's model and an effort with a new card: neither comes back. */
+      const made = await answer(await ideas.POST!(json("/api/atomik/ideas", { logline: `A ferry at ${level}.`, ...SENT, model: id })));
+      expect(made.status).toBe(200);
+      expectNothingDisclosed(`POST /api/atomik/ideas at ${level}`, made.body);
+
+      /* A treatment whose scenes were written at this level (and by the Treatment writer), and a draft kept from it. */
+      const projectId = `nd-treatment-${level}-${randomUUID().slice(0, 8)}`;
+      await db().execute({ sql: "INSERT INTO projects(id,name,created_at) VALUES(?,?,0)", args: [projectId, `Treatment ${level}`] });
+      const scenes = [
+        { n: 1, title: "Platform", secs: 12, prose: "Rain on the platform.", by: id, effort: "high", at: 1 },
+        { n: 2, title: "Carriage", secs: 9, prose: "She counts the stops.", by: WRITER, effort: "xhigh", at: 2 },
+        { n: 3, title: "Terminus", secs: 7, prose: "The doors open.", by: "you", at: 3 },
+      ];
+      await db().execute({ sql: "INSERT INTO treatments(id,project_id,draft,title,logline,setup,scenes,notes,updated_by,created_at,updated_at) VALUES(?,?,2,?,?,?,?,?,?,1,5)",
+        args: [`trt_${randomUUID()}`, projectId, "Night train", "A courier on the last night train.", "{}", JSON.stringify(scenes), "[]", person.name] });
+      await db().execute({ sql: `INSERT INTO treatment_versions(id,project_id,version,title,logline,setup,scenes,notes,"by",created_at) VALUES(?,?,1,?,?,?,?,?,?,4)`,
+        args: [`tv_${randomUUID()}`, projectId, "Night train", "A courier.", "{}", JSON.stringify(scenes), "[]", person.name] });
+      const read = await answer(await treatment.GET!(new Request(`https://particl.test/api/atomik/treatment?${new URLSearchParams({ projectId, version: "1" })}`)));
+      expect(read.status, JSON.stringify(read.body).slice(0, 300)).toBe(200);
+      /* Who wrote each scene is still said: Atomik, or the person. */
+      for (const copy of [read.body.treatment, read.body.snapshot] as { scenes: { by?: string }[] }[]) expect(copy.scenes.map((s) => s.by)).toEqual(["atomik", "atomik", "you"]);
+      expectNothingDisclosed(`GET /api/atomik/treatment at ${level}`, read.body);
+      /* A save from a page that still holds the stored scenes: the answer, and the row it writes, carry neither. */
+      const saved = await answer(await treatment.PUT!(json("/api/atomik/treatment", { projectId, title: "Night train", logline: "A courier.", setup: {}, scenes, notes: [], expectedUpdatedAt: 5, bump: true }, "PUT")));
+      expect(saved.status, JSON.stringify(saved.body).slice(0, 300)).toBe(200);
+      expectNothingDisclosed(`PUT /api/atomik/treatment at ${level}`, saved.body);
+      const row = String((await db().execute({ sql: "SELECT scenes FROM treatments WHERE project_id=?", args: [projectId] })).rows[0].scenes);
+      expectNothingDisclosed(`the saved treatment row at ${level}`, JSON.parse(row));
+    }
+    /* The export, every table: the older idea rows and treatment rows hold the slots' models; what is sent holds none. */
+    expectNothingDisclosed("the export of ideas and treatments", await workspaceExport(person.id, person.email));
+  });
+});
+
 test("an effort a model does not offer is refused in words that name no model: each Thinking slot's and the Treatment writer's", async () => {
   const ws = await funded("effort");
   const { staticCatalog } = await import("../../lib/catalog");
