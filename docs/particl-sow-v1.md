@@ -926,7 +926,7 @@ The owner's words, verbatim. The PR that adds this changes docs only. Items mark
 
 **R12 Recipes by outcome.** The + menu offers five or six outcomes per rail in plain words ("Make my product the hero"); each is upload + ≤4 chips + one quote, built as a board skill (rule 12). Techniques live inside Options at a step, priced. Not a preset gallery.
 
-**R13 Elements for people who own nothing.** ~~A stock cast and stock places in the platform layer, pickable in one tap;~~ a voice bound to each cast member; a real face needs consent on file; a character sheet from 1–5 photos with one hint: "even lighting and a plain background works best."
+**R13 Elements for people who own nothing.** ~~A stock cast and stock places in the platform layer, pickable in one tap;~~ a voice bound to each cast member; ~~a real face needs consent on file;~~ a real face carries a consent tick (who ticked, when, a file if one was attached) and nothing waits for it (owner, 23 Oct 2026: a tick, not a gate); a character sheet from 1–5 photos with one hint: "even lighting and a plain background works best."
 
 **R14 Money copy [money] (owner's call, later):** plan cards in films ("about two 30-second ads a month"); price on the button; Top up on the button when short; a 480p draft row on the rate card.
 

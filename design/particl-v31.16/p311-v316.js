@@ -35,7 +35,7 @@ export const M316 = {
     st.extra = st.extra.concat([el('el-maya', '@maya · Cast', MF[22], '@maya', 'Cast', 'mirror:shots', 's7', .8), el('el-watch', '@watch · Prop', MF[14], '@watch', 'Prop', 'mirror:shots', 's7'), el('lk-s7', 'Blue night · Look', MF[9], 'Blue night', 'Look', 'mirror:shots', 's7'), el('el-bottle', '@bottle · Brand & Product', SF.bottle || this.SF.key4, '@bottle', 'Brand & Product', 'sand:shots', 'nd-end', 1), el('lk-end', 'Amber on black · Look', SF.end, 'Amber on black', 'Look', 'sand:shots', 'nd-end')]);
     ['mirror:el-maya', 'mirror:el-watch', 'mirror:lk-s7', 'sand:el-bottle', 'sand:lk-end'].forEach(k => { st.st[k] = 'kept'; st.ans[k] = true; });
     st.joins['mirror:s7'] = ['fr-s7', 'el-maya', 'el-watch', 'lk-s7']; st.joins['sand:nd-end'] = ['el-bottle', 'lk-end'];
-    const nd = st.extra.find(x => x.id === 'nd-end'); if (nd) { nd.inputs = []; nd.pre = [{ id: 'ttl', label: 'Title · DUNE · Eau de Parfum', sub: 'Text' }]; }
+    const nd = st.extra.find(x => x.id === 'nd-end'); if (nd) { nd.inputs = []; nd.pre = [{ id: 'ttl', label: 'Title · HALVETH · Eau de Parfum', sub: 'Text' }]; }
     return st;
   },
   mount316() {

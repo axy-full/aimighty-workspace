@@ -9,7 +9,7 @@ export function data3111(c) {
   c.QUICK.push(['A still with words in it', 'still', 'Say the words in quotes · they will read'], ['Fix the text', 'change', 'Drop the picture · the words are redrawn legibly, the rest untouched']);
   c.ARRANGE.push(['Poster', 'poster'], ['World page', 'world']);
   c.WORLDS = { mirror: { id: 'flat-world', env: 'env-flat', name: '@flat · world', from: 'from 4 photos', angles: [['Angle 1', 'wide', '24 mm', 'the door'], ['Angle 2', 'medium', '35 mm', 'the mirror'], ['Angle 3', 'close', '50 mm', 'the window']] } };
-  c.WORDS = { mirror: { en: ['MIRROR', 'the packshot has no label'], hi: ['आईना', 'the packshot has no label'] }, sand: { en: ['DUNE · Eau de Parfum', 'DUNE'], hi: ['ड्यून · ओ दे परफ़्यूम', 'ड्यून'] } };
+  c.WORDS = { mirror: { en: ['MIRROR', 'the packshot has no label'], hi: ['आईना', 'the packshot has no label'] }, sand: { en: ['HALVETH · Eau de Parfum', 'HALVETH'], hi: ['ड्यून · ओ दे परफ़्यूम', 'ड्यून'] } };
 }
 
 export function install3111(c) {
