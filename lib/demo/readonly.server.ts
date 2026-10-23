@@ -43,10 +43,10 @@ export async function sampleProductionRefusal(productionId: string, person = cur
 }
 
 /** The refusal for saving a draft that is, or is linked to, the sample: a copy someone opened, or the board the mark was made from. Making one's own copy is not asked. */
-export async function sampleDraftRefusal(owner: string, project: { id: string; productionProjectId?: string | null }): Promise<Response | null> {
-  if (!(await isSampleDraft(owner, project.id, project.productionProjectId))) return null;
+export async function sampleDraftRefusal(owner: string, project: { id: string; productionProjectId?: string | null }, actor: string = owner): Promise<Response | null> {
+  if (!(await isSampleDraft(owner, project.id, project.productionProjectId, undefined, actor))) return null;
   const mark = await sampleMarkNow();
-  return mark ? sampleWriteRefusal(mark.projectId, { id: owner }) : null;
+  return mark ? sampleWriteRefusal(mark.projectId, { id: actor }) : null;
 }
 
 /**

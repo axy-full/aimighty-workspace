@@ -485,6 +485,8 @@ export const saveSchema = z
     project: projectSchema,
     revision: z.number().int().min(0),
     write: draftWriteTagSchema.optional(),
+    /* The key the board is stored under, when the saver is not its author (a teammate with write reach, an admin). Absent: the saver's own board. */
+    owner: z.string().regex(/^[A-Za-z0-9_.:-]{1,120}$/).optional(),
   })
   .superRefine(({ project }, context) => {
     try { if (project.astraNative) validateAstraNativeBindings(project.astraNative, [...project.assets, ...(project.sharedAssets ?? [])]); } catch(error) {context.addIssue({code:"custom",path:["project","astraNative"],message:(error as Error).message});}

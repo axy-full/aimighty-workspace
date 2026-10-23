@@ -22,7 +22,8 @@ export type DraftReceipt = {
   productionProjectId?: string;
   shotMappings?: Record<string, string>;
 };
-export type DraftWrite = { project: Project; revision: number };
+/** `owner`: the key the board is stored under, when the editor is not its author (a teammate with write reach); absent, the editor's own board. */
+export type DraftWrite = { project: Project; revision: number; owner?: string };
 
 /** A bounded request; browser/network failures remain distinct from a rejected save. */
 export async function draftRequest<T>(
@@ -244,13 +245,13 @@ export type CheckedWrite = { landed: number | null; project: Project | null; rev
  * land, so the answer never changes. Throws when it cannot be asked: the
  * outcome is still unknown then.
  */
-export async function checkDraftWrite(base: string, scope: string, projectId: string, tag: DraftWriteTag): Promise<CheckedWrite> {
+export async function checkDraftWrite(base: string, scope: string, projectId: string, tag: DraftWriteTag, owner?: string): Promise<CheckedWrite> {
   let data: unknown;
   try {
     data = await draftRequest<unknown>(base + "/projects", scope, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "check-write", projectId, write: tag }),
+      body: JSON.stringify({ action: "check-write", projectId, write: tag, ...(owner ? { owner } : {}) }),
     });
   } catch (error) {
     if (!(error instanceof DraftRequestError)) throw incompleteWrite();
@@ -298,7 +299,7 @@ export async function writeDraft(
       throw error;
     }
     /* Throws (still unknown) when the server cannot be asked; the caller's own retry reads and writes again. */
-    const checked = await checkDraftWrite(base, scope, write.project.id, tag);
+    const checked = await checkDraftWrite(base, scope, write.project.id, tag, write.owner);
     if (checked.landed === null || !checked.project)
       throw new DraftRequestError("Connection interrupted before the save arrived. Nothing was saved; your edits are still here.", true, false);
     const result = receipt({ revision: checked.landed, productionProjectId: checked.project.productionProjectId, shotMappings: checked.project.shotMappings }, checked.landed);
@@ -332,6 +333,8 @@ export type MergedWrite = {
   ancestors?: MergeOptions["ancestors"];
   /** What this editor made from a source both windows share, as made (recordMade; merge3's `made`). */
   made?: MergeOptions["made"];
+  /** The key the board is stored under, when the editor is not its author (see DraftWrite). */
+  owner?: string;
 };
 
 /** What a merged save holds, and what of this editor's did not fit it (a full list another window filled first), said plainly. */
@@ -378,7 +381,7 @@ export async function writeMergedDraft(
 
   const settle = async (tag: DraftWriteTag, carried: Project, edited: Project) => {
     writer.unconfirmed = { projectId: mine.id, seq: tag.seq, mine: carried, base: edited };
-    const checked = await checkDraftWrite(base, scope, mine.id, tag);
+    const checked = await checkDraftWrite(base, scope, mine.id, tag, write.owner);
     writer.unconfirmed = null;
     return checked;
   };
@@ -403,7 +406,7 @@ export async function writeMergedDraft(
     if (writer.setAside) throw setAside();
     const tag = { writer: writer.id, seq: ++writer.seq };
     try {
-      const receipt = await putDraft(base, scope, { project: body, revision }, tag);
+      const receipt = await putDraft(base, scope, { project: body, revision, ...(write.owner ? { owner: write.owner } : {}) }, tag);
       return { project: { ...body, productionProjectId: receipt.productionProjectId, shotMappings: receipt.shotMappings }, revision: receipt.revision, notes };
     } catch (error) {
       const conflict = isDraftConflict(error);

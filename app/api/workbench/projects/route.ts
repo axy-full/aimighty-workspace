@@ -7,17 +7,24 @@ import { db } from '@/lib/db';
 import { draftWriteTagSchema, saveSchema } from '@/lib/workbench/studio-schema';
 import { saveProblem } from '@/lib/workbench/save-problem';
 import { newProject, type Project } from '@/lib/workbench/studio';
-import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible, checkDraftWrite, DraftConflictError } from '@/lib/workbench/records';
+import { workbenchReady, readDraft, mapNodeShot, saveDraft, publishBible, checkDraftWrite, setBoardSharing, DraftConflictError } from '@/lib/workbench/records';
 import {requireTenant} from '@/lib/tenant';
 import {workbenchScopeProblem} from '@/lib/workbench/request-scope';
 import {openStarterDraft, StarterUnavailableError} from '@/lib/workbench/starter-draft';
 import { storedActorMaskHere } from '@/lib/platformOwnerPrivacy';
-import { sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
+import { boardKeyFor, maySetSharing, sampleViewOnly, sharedBoardOfProduction, sharedBoardOwnerOf, findTeamBoard, listTeamBoards, otherOwnersBoard, readTeamBoard, viewOnlyRefusal } from '@/lib/workbench/team-boards';
 
 export const dynamic='force-dynamic';
 const noStore={'Cache-Control':'no-store'};
 function originProblem(req:Request) {
   return crossOriginProblem(req);
+}
+
+/** A write to a board that is not the person's to write, answered as it always was: view-only, naming the maker, when the board is shared and visible; otherwise not found. */
+async function notYours(me:string,draftId:string){
+  const theirs=await otherOwnersBoard(requireTenant(),me,draftId);
+  if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
+  return Response.json({error:'Save your project first.'},{status:404});
 }
 
 export const GET=withTenant(async(req:Request)=>{
@@ -100,14 +107,18 @@ export const PUT=withTenant(async(req:Request)=>{
   const parsed=saveSchema.safeParse(value);
   if(!parsed.success)return Response.json({error:saveProblem(parsed.error)},{status:400});
   await workbenchReady();
-  const {project:p,revision,write}=parsed.data;
+  const {project:p,revision,write,owner:claimed}=parsed.data;
+  /* The key the board is stored under: the person's own, or a teammate's the person may write (lib/workbench/team-boards.ts › boardKeyFor). */
+  const key=await boardKeyFor(requireTenant(),auth.user,claimed,p.id);
+  if('refused' in key)return notYours(auth.user.id,p.id);
+  const storageOwner=key.owner;
   /* A teammate's board opens view-only: a save of it is refused here, never kept as a second copy under this person's name. */
-  const theirs=await otherOwnersBoard(requireTenant(),auth.user.id,p.id);
+  const theirs=storageOwner===auth.user.id?await otherOwnersBoard(requireTenant(),auth.user.id,p.id):null;
   if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
   /* The marked sample production is read-only for everyone, its marker and the workspace's owner included: a save of it, of a copy opened of it or of the board it was marked from is refused in the same words. */
-  const stored=(await readDraft(auth.user.id,p.id))?.project.productionProjectId;
-  if(await isSampleDraft(auth.user.id,p.id,p.productionProjectId||stored)){const{owner}=await sampleViewOnly(requireTenant());return Response.json({error:viewOnlyRefusal(owner.name),code:'view_only'},{status:403,headers:noStore});}
-  try{return Response.json(await saveDraft(auth.user.id,p,revision,write));}
+  const stored=(await readDraft(storageOwner,p.id))?.project.productionProjectId;
+  if(await isSampleDraft(storageOwner,p.id,p.productionProjectId||stored,undefined,auth.user.id)){const{owner}=await sampleViewOnly(requireTenant());return Response.json({error:viewOnlyRefusal(owner.name),code:'view_only'},{status:403,headers:noStore});}
+  try{return Response.json(await saveDraft(storageOwner,p,revision,write,auth.user.id));}
   catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
 });
 
@@ -140,39 +151,39 @@ export const POST=withTenant(async(req:Request)=>{
     const p:Project={...newProject(String(row.name)),description:String(row.description||''),productionProjectId:String(row.id),...(shared?{brief:shared.brief,script:shared.script,scriptFormat:shared.scriptFormat==='adfilm'?'adfilm':'screenplay',scriptSource:shared.scriptSource,scriptReviews:shared.scriptReviews,direction:shared.direction,assets:shared.assets,nodes:shared.nodes,sharedAssets:shared.assets,sharedNodes:shared.nodes,sharedAssetIds:shared.assets.map((a:{id:string})=>a.id),sharedNodeIds:shared.nodes.map((n:{id:string})=>n.id),bibleVersion:Number(latest!.version)}:{})};
     return projectResponse(req,{project:p,revision:0,...(viewOnly?{viewOnly:{owner:viewOnly}}:{})});
   }
+  /* The key the board is stored under (`owner` in the body): the person's own, or a teammate's the person may write. */
+  const key=await boardKeyFor(requireTenant(),auth.user,typeof body.owner==='string'?body.owner:undefined,body.projectId);
+  if('refused' in key)return notYours(auth.user.id,body.projectId);
+  const storageOwner=key.owner;
   if(body.action==='check-write'){
     /* A save whose reply was lost: did it land (and at which revision)? Checking fences it off, so the answer is final; the draft comes back as it is now. */
     const write=draftWriteTagSchema.safeParse(body.write);
     if(!write.success)return Response.json({error:'Name the save to check.'},{status:400});
-    const landed=await checkDraftWrite(auth.user.id,body.projectId,write.data);
-    const now=await readDraft(auth.user.id,body.projectId);
+    const landed=await checkDraftWrite(storageOwner,body.projectId,write.data);
+    const now=await readDraft(storageOwner,body.projectId);
     return projectResponse(req,{landed,project:now?.project??null,revision:now?.revision??0});
   }
-  const draft=await readDraft(auth.user.id,body.projectId);
-  if(!draft){
-    const theirs=await otherOwnersBoard(requireTenant(),auth.user.id,body.projectId);
-    if(theirs)return Response.json({error:viewOnlyRefusal(theirs.name),code:'view_only'},{status:403,headers:noStore});
-    return Response.json({error:'Save your project first.'},{status:404});
-  }
+  const draft=await readDraft(storageOwner,body.projectId);
+  if(!draft)return notYours(auth.user.id,body.projectId);
   /* The sample's copies and the board it was marked from are nobody's to share, publish or map into the sample: view-only for everyone (lib/demo/readonly.server.ts). */
-  if(body.action==='team-share'||body.action==='map-shot'||body.action==='publish'){const{sampleDraftRefusal}=await import('@/lib/demo/readonly.server');const refused=await sampleDraftRefusal(auth.user.id,draft.project);if(refused)return refused;}
+  if(body.action==='team-share'||body.action==='map-shot'||body.action==='publish'){const{sampleDraftRefusal}=await import('@/lib/demo/readonly.server');const refused=await sampleDraftRefusal(storageOwner,draft.project,auth.user.id);if(refused)return refused;}
   if(body.action==='team-share'){
-    /* The author shares a board with the workspace's team, or stops (lib/workbench/team-boards.ts): one flag in the draft's own JSON, so nothing
-       else about it changes. Only the author's own draft is found here; a teammate's gets the same "not saved" answer as every other write. */
+    /* The author shares a board with the workspace's team, or stops (lib/workbench/team-boards.ts): the flags are the SERVER's, in the draft's own JSON,
+       and this is the only thing that changes them (a save keeps what is stored). Not a teammate who may edit the board's cards. */
     if(typeof body.shared!=='boolean')return Response.json({error:'Say whether to share this board.'},{status:400});
+    if(!maySetSharing(auth.user,storageOwner))return Response.json({error:'Only the board’s owner can change who it is shared with.',code:'owner_only'},{status:403,headers:noStore});
     if(body.shared===(draft.project.teamShared===true))return Response.json({ok:true,shared:body.shared,revision:draft.revision});
-    try{
-      const saved=await saveDraft(auth.user.id,{...draft.project,teamShared:body.shared},draft.revision);
-      return Response.json({ok:true,shared:body.shared,revision:saved.revision});
-    }catch(error){return Response.json({error:error instanceof Error?error.message:'Cannot save project.',...(error instanceof DraftConflictError?{code:error.code}:{})},{status:409});}
+    const changed=await setBoardSharing(storageOwner,body.projectId,{teamShared:body.shared},auth.user.id);
+    if(!changed)return Response.json({error:'Save your project first.'},{status:404});
+    return Response.json({ok:true,shared:changed.teamShared,revision:changed.revision});
   }
   if(body.action==='map-shot'){
-    try{return Response.json({productionProjectId:draft.project.productionProjectId,shotId:await mapNodeShot(auth.user.id,draft.project,String(body.nodeId||''))})}
+    try{return Response.json({productionProjectId:draft.project.productionProjectId,shotId:await mapNodeShot(storageOwner,draft.project,String(body.nodeId||''),auth.user.id)})}
     catch(e){return Response.json({error:e instanceof Error?e.message:'Cannot map this node'},{status:400})}
   }
   if(body.action==='publish'){
     if(!Number.isInteger(body.expectedBibleVersion)||body.expectedBibleVersion<0)return Response.json({error:'Load the current shared context before publishing.'},{status:400});
-    try{return projectResponse(req,await publishBible(auth.user.id,auth.user.name,body.projectId,body.expectedBibleVersion));}
+    try{return projectResponse(req,await publishBible(storageOwner,auth.user.name,body.projectId,body.expectedBibleVersion,auth.user.id));}
     catch(error){
       const problem=error as Error&{code?:string;currentVersion?:number};
       return Response.json({error:problem.message||'Unable to publish shared context.',...(problem.code==='bible_conflict'?{code:problem.code,currentVersion:problem.currentVersion}:{})},{status:problem.code==='bible_conflict'?409:400});
