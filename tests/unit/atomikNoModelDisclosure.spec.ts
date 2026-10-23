@@ -80,7 +80,7 @@ type Handler = (req: Request, ctx?: { params: Promise<Record<string, string>> })
 async function route(file: string, extra: Record<string, unknown> = {}) {
   const auth = await import("../../lib/auth");
   const next = createRequire(path.resolve("package.json"))("next/server") as Record<string, unknown>;
-  return loadRouteModule<{ GET?: Handler; POST?: Handler; PATCH?: Handler }>(file, {
+  return loadRouteModule<{ GET?: Handler; POST?: Handler; PATCH?: Handler; PUT?: Handler }>(file, {
     "@/lib/auth": { ...auth, withTenant: (fn: Handler) => fn, requireUser: async () => ({ user: person }), requireRender: async () => ({ user: person }), requireSession: async () => ({ user: person }) },
     "@/lib/requestOrigin": { crossOriginProblem: () => null },
     /* Work handed to after() is not run here: the test runs what it needs itself. */
