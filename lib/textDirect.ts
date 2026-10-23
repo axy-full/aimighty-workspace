@@ -32,6 +32,12 @@ export type TextPostOptions = {
   mock?: MockKind;
   /** Tests inject the transport; production uses the recovery fetch. */
   fetch?: typeof fetch;
+  /**
+   * A caller's own key for a direct door (the visitor bar's, lib/visitor/bar.ts), used instead of the platform's
+   * vendor key and never alongside it. Refused, with nothing sent, for any model whose door is not direct: such a key
+   * never reaches the gateway or another vendor.
+   */
+  apiKey?: string;
 };
 
 export async function textPost(body: string, opts: TextPostOptions = {}): Promise<TextReply> {
@@ -45,6 +51,7 @@ async function routeTextPost(body: string, opts: TextPostOptions): Promise<TextR
   const input = record(JSON.parse(body));
   if (typeof input.model !== 'string') throw new Error('Choose a language model before submitting.');
   const route = textRoute(input.model);
+  if (opts.apiKey !== undefined && !isDirectRoute(route)) return { ok: false, status: 422, text: JSON.stringify({ error: { message: 'A caller key is accepted only for a direct language door; nothing was sent.' } }) };
   if (isDirectRoute(route)) {
     assertTextProvider(input.model, opts.auth);
     return directTextPost(route, input, opts);
@@ -273,7 +280,7 @@ async function directTextPost(vendor: DirectVendor, input: Record<string, unknow
   try {
     const request = directTextRequest(vendor, input);
     const fetcher = opts.fetch ?? recoveryFetch;
-    const model = languageModel(String(input.model), { auth: opts.auth ?? {}, fetch: (url, init) => { sent = true; return fetcher(url, init); } });
+    const model = languageModel(String(input.model), { auth: opts.auth ?? {}, fetch: (url, init) => { sent = true; return fetcher(url, init); }, ...(opts.apiKey !== undefined ? { apiKey: opts.apiKey } : {}) });
     const format = request.responseFormat;
     // The text output spec with a JSON response format: the provider is asked for
     // JSON, and the answer is returned as text without the SDK's eager parse

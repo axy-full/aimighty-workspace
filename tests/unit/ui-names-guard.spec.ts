@@ -138,6 +138,7 @@ test("Soul, Higgsfield, Persona and Marketing Studio appear in no UI string anyw
   const NOT_SHOWN = new Set([
     "lib/vendorNames.ts", /* the list of names that must never be shown, and the renames that scrub them from provider text */
     "lib/workbench/development-plan.ts", /* a prompt sent to the planning model, never printed */
+    "lib/visitor/screen.ts", /* the visitor bar's list of names it holds back, never shown (owner, 17 Oct 2026: "That extends a guard; it doesn't weaken one") */
   ]);
   const s = scanned();
   const all = [...Object.values(s.strict).flat(), ...Object.values(s.ratchet).flat()];
