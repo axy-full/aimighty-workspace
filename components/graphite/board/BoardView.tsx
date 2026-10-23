@@ -64,6 +64,7 @@ import { roundCardsFor, type RoundCardData } from "@/components/v12/rounds/round
 import { RoundCard } from "@/components/v12/rounds/RoundCard";
 import { bottomClear, gridCards, gridDefs, onGrid, useStageColumns } from "@/components/v12/board/stage-grid";
 import { useScreenScale } from "@/components/v12/board/use-screen-scale";
+import { deviceRatio, snapViewport } from "@/lib/board/viewport-pixels";
 import { GRID_ORIGIN } from "@/lib/v12/board/grid";
 import { openBlocking } from "./blocking/blocking-store";
 import { useShotsBatch } from "@/components/v12/render/use-batch";
@@ -228,9 +229,10 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     const { width, height } = store.getState();
     /* A drawer lies over the canvas's left edge: what a glide brings into view stays clear of it. */
     const left = drawer ? DRAWER_WIDTH : 0;
-    return centre
+    /* On whole device pixels (lib/board/viewport-pixels.ts): a viewport between two pixels draws every border on the board soft. */
+    return snapViewport(centre
       ? { x: left + (width - left) / 2 - (box.x + box.w / 2) * zoom, y: height / 2 - (box.y + box.h / 2) * zoom, zoom }
-      : { x: left + INSET - box.x * zoom, y: INSET - box.y * zoom, zoom };
+      : { x: left + INSET - box.x * zoom, y: INSET - box.y * zoom, zoom }, deviceRatio());
   }, [drawer, store]);
   const [inView, setInView] = useState<RegionId | null>(null);
   const measureInView = useCallback((viewport: Viewport) => {
@@ -319,7 +321,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       const box = placed.arranged ?? placed.bounds;
       const from = box ? viewportFor(box, scale) : { x: INSET, y: INSET, zoom: scale };
       const shift = (GRID_ORIGIN - INSET) * scale;
-      const next = onGrid(stage.id) ? { ...from, x: from.x + shift, y: from.y + shift } : from;
+      const next = snapViewport(onGrid(stage.id) ? { ...from, x: from.x + shift, y: from.y + shift } : from, deviceRatio());
       opening.current = { scale, view: next };
       void flow.setViewport(next).then(() => measureInView(next));
     };
@@ -341,7 +343,7 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
       const top = INSET + (GRID_ORIGIN - INSET) * scale - box.y * viewport.zoom;
       const y = Math.min(viewport.y + (floor - bottom), top);
       if (bottom < floor - 1 && y > viewport.y + 1) {
-        const next = { ...viewport, y };
+        const next = snapViewport({ ...viewport, y }, deviceRatio());
         void flow.setViewport(next, { duration: 150 }).then(() => measureInView(next));
         return;
       }
