@@ -438,6 +438,34 @@ test("ideas and the Treatment as older rows stored them (with the model and effo
   });
 });
 
+test("a saved project's Atomik plans, as pages saved them from job replies that named the model and effort: the project read and the export carry neither, at each Thinking level", async () => {
+  const ws = await funded("plans");
+  const projects = await route("app/api/workbench/projects/route.ts");
+  const { db } = await import("../../lib/db");
+  const { seedProject } = await import("../../lib/workbench/studio");
+  const { projectSchema } = await import("../../lib/workbench/studio-schema");
+  const { workspaceExport } = await import("../../lib/workspaceExport");
+  const server = await import("../../lib/workbench/atomik-server");
+  await inTenant(ws, async () => {
+    await server.atomikReady();
+    for (const [level, id] of [["high", HIGH], ["medium", MEDIUM], ["low", LOW]] as const) {
+      const project = seedProject();
+      project.id = `nd-plans-${level}-${randomUUID().slice(0, 8)}`; project.productionProjectId = `real-${randomUUID()}`;
+      project.plans = [{ id: `plan_${level}`, request: "Make a shot proposal", model: id, depth: "Quick", effort: "high", intent: "shots", summary: "Wren at the dunes.", steps: ["Open wide."], applied: true, refs: [] }];
+      /* The body a page saved before 23 Oct 2026 is a valid project: the plan's model and effort are what it kept. */
+      expect(projectSchema.safeParse(project).success).toBe(true);
+      await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`${person.id}:${project.id}`, person.id, project.id, project.name, JSON.stringify(project), Date.now()] });
+      const read = await answer(await projects.GET!(new Request(`https://particl.test/api/workbench/projects?${new URLSearchParams({ id: project.id })}`)));
+      expect(read.status, JSON.stringify(read.body).slice(0, 300)).toBe(200);
+      const plans = (read.body.project as { plans: { id: string; model: string; applied: boolean }[] }).plans;
+      /* The plan is still there, applied, and says it is Atomik's. */
+      expect(plans).toEqual([expect.objectContaining({ id: `plan_${level}`, model: "atomik", applied: true })]);
+      expectNothingDisclosed(`GET /api/workbench/projects?id at ${level}`, read.body);
+    }
+    expectNothingDisclosed("the export of saved projects", await workspaceExport(person.id, person.email));
+  });
+});
+
 test("an effort a model does not offer is refused in words that name no model: each Thinking slot's and the Treatment writer's", async () => {
   const ws = await funded("effort");
   const { staticCatalog } = await import("../../lib/catalog");

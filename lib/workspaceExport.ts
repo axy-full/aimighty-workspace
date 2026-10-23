@@ -9,6 +9,7 @@ import { PipelineStore } from "./pipeline/store";
 import { publicRun } from "./pipeline/public";
 import type { CompiledPipeline } from "./pipeline/schema";
 import { shownScenes, type Scene } from "./atomikDocs";
+import { publicPlans } from "./workbench/public-plan";
 
 // An allowlist keeps new credential/session tables out of customer exports.
 /**
@@ -48,13 +49,17 @@ function exportedOutcome(raw: unknown, thinking: boolean, credits: boolean): str
 
 /**
  * Atomik's writing as the export carries it (Amendment (iii) §E: never disclosed): an idea without the thinking model it was written with
- * or its effort, and a treatment's scenes (and its kept drafts') saying "you" or "atomik", never the writer's model, and no effort. The
- * rows keep what they stored.
+ * or its effort, a treatment's scenes (and its kept drafts') saying "you" or "atomik", never the writer's model, and no effort, and a saved
+ * project's Atomik plans without either. The rows keep what they stored.
  */
 function exportedWriting(name: string, row: Row): Row {
   if (name === "ideas") { const { model: _model, effort: _effort, ...rest } = row; void _model; void _effort; return rest; }
   if ((name === "treatments" || name === "treatment_versions") && typeof row.scenes === "string") {
     try { return { ...row, scenes: JSON.stringify(shownScenes(JSON.parse(row.scenes) as Scene[])) }; } catch { return row; }
+  }
+  /* A saved project's Atomik plans, as readDraft reads them (lib/workbench/public-plan.ts). */
+  if (name === "workbench_projects" && typeof row.body === "string") {
+    try { const body = JSON.parse(row.body); return body && typeof body === "object" && "plans" in body ? { ...row, body: JSON.stringify({ ...body, plans: publicPlans(body.plans) }) } : row; } catch { return row; }
   }
   return row;
 }
@@ -185,7 +190,7 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
               sql: `SELECT * FROM ${name} WHERE owner=?`,
               args: [ownerId],
             })
-          ).rows.map((row) => ({ ...row }))
+          ).rows.map((row) => exportedWriting(name, { ...row }))
         : [];
     }
     contents.workbench_atomik_jobs = tables.has("workbench_atomik_jobs")

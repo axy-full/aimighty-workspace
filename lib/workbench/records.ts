@@ -13,6 +13,7 @@ import {assertUploadsOpenable,currentViewer,openableAmong,warmOpenable} from '@/
 import {diffForTeam} from './team-canvas-model';
 import {applyTeamCanvasPatch, teamCanvasReady, TeamCanvasError} from './team-canvas';
 import {scheduleCanvasPush} from './canvas-push';
+import {publicPlans} from './public-plan';
 
 const initialized = new WeakMap<Client, Promise<void>>();
 export async function workbenchReady() {
@@ -48,7 +49,9 @@ export async function readDraft(owner: string, id: string): Promise<{project: Pr
   // Mapping can finish after the last draft save. Rebuild identities on every
   // load so a reload after provider submission still recovers that node's job.
   const mappings=(await db().execute({sql:'SELECT m.node_id,m.shot_id FROM workbench_shots m JOIN shots s ON s.id=m.shot_id WHERE m.owner=? AND m.draft_id=?',args:[owner,id]})).rows;
-  return {project:{...JSON.parse(String(row.body)),shotMappings:Object.fromEntries(mappings.map(r=>[String(r.node_id),String(r.shot_id)]))},revision:Number(row.revision)};
+  // Its Atomik plans read as Atomik's, with no thinking model or effort (Amendment (iii) §E): pages saved them from job replies that named both.
+  const body=JSON.parse(String(row.body));
+  return {project:{...body,...(body&&typeof body==='object'&&'plans' in body?{plans:publicPlans(body.plans)}:{}),shotMappings:Object.fromEntries(mappings.map(r=>[String(r.node_id),String(r.shot_id)]))},revision:Number(row.revision)};
 }
 
 const writes = new Map<string, Promise<unknown>>();

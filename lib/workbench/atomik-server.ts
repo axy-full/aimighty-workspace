@@ -31,6 +31,7 @@ import { reserveGenerationSpend } from '../generationRequests';
 import { CREW } from './crew';
 import { projectSchema } from './studio-schema';
 import type { Plan, Project } from './studio';
+import { publicAtomikPlan } from './public-plan';
 import { requireTenant, type TenantToken } from '../tenant';
 import { plannerMemory } from '../atomikMemory';
 import { MEMORY_ABOUT, type PlannerMemoryItem } from '../atomikMemoryText';
@@ -622,14 +623,9 @@ function atomikJobVariant(body: string): string | null {
 
 /**
  * What a member is sent of a job, a plan or a quote: no thinking model and no effort (Amendment (iii) §E: never disclosed). The job
- * row, its request and its ledger line keep them, for settlement and the platform admin. A plan keeps a `model` (a saved project's
- * plans require one) that says only "atomik".
+ * row, its request and its ledger line keep them, for settlement and the platform admin. A plan reads through publicAtomikPlan
+ * (lib/workbench/public-plan.ts).
  */
-export function publicAtomikPlan<P extends Plan>(plan: P): P {
-  const { effort: _effort, ...rest } = plan;
-  void _effort;
-  return { ...rest, model: 'atomik', ...(rest.referenceAdAnalysis ? { referenceAdAnalysis: { ...rest.referenceAdAnalysis, model: 'atomik' } } : {}) } as P;
-}
 export function publicAtomikJob<J extends Pick<AtomikJob, 'model' | 'effort' | 'plan'>>(job: J): Omit<J, 'model' | 'effort'> {
   const { model: _model, effort: _effort, ...rest } = job;
   void _model; void _effort;
