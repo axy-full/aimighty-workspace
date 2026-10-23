@@ -9,7 +9,9 @@ import { platformDb, platformReady } from "./platform";
 import { paidByPlatformEngine, platformSpendRecordsSince } from "./platformSpend";
 import { allowanceUsd, allowanceUsdOfStored } from "./allowance";
 import { cycleBounds } from "./cycle";
-import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
+import { billCreditsWith, creditUsd } from "./creditTerms";
+import { syncCreditReceipts } from "./creditReceipts";
+import { billedCreditsExpr } from "./creditSql";
 import { creditsApply } from "./credits";
 import { isHouseWorkspace } from "./houseWorkspace";
 import { LEDGER_UNIT_PAUSED, ledgerOpenTx, restateFactor, workspaceUnitTx } from "./ledgerUnit";
@@ -534,12 +536,14 @@ async function reserveGenerationSpendLocked(event: MeterEvent, options: Reservat
   const since = cycleBounds(1, now()).start;
   const monthlyRecords = monthlyCap == null ? new Map<string, number>() : await platformSpendRecordsSince(since);
   // Preserve historical charges predating the meter; merge ledger estimates by id.
-  const rows = await db().execute(`SELECT id,project_id,shot_id,token_id,kind,model,created_at,status,deleted,
-    COALESCE(cost_usd,0)+COALESCE(refine_cost_usd,0) AS cost FROM generations`);
+  /* A take counts at its receipt, else the figure frozen for it (lib/estimatedCredits.ts), else 0 (billedCreditsExpr): never one worked out now at today's margins. */
+  await syncCreditReceipts().catch(() => { /* the meter's rows below still count; a take reads the receipts and frozen figures already local */ });
+  const rows = await db().execute(`SELECT g.id,g.project_id,g.shot_id,g.token_id,g.kind,g.model,g.created_at,g.status,g.deleted,
+    COALESCE(g.cost_usd,0)+COALESCE(g.refine_cost_usd,0) AS cost, ${billedCreditsExpr("g")} AS estimated FROM generations g`);
   const baseline = new Map<string, Baseline>(rows.rows.map((r) => [String(r.id), {
     id: String(r.id), projectId: r.project_id == null ? null : String(r.project_id), shotId: r.shot_id == null ? null : String(r.shot_id),
     tokenId: r.token_id == null ? null : String(r.token_id), cost: Number(r.cost),
-    credits: billCreditsWith(Number(r.cost), marginFor(marginKeyOf(String(r.kind), String(r.model))), 0.10), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
+    credits: Number(r.estimated), createdAt: Number(r.created_at), status: String(r.status), deleted: Boolean(r.deleted),
   }]));
   /* A run that was stopped or switched off reserves nothing: asked last, just before the write (it reads the
      workspace's own database, which is never read inside the platform's write). */
