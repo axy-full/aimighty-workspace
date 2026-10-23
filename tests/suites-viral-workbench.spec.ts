@@ -191,7 +191,9 @@ test("the source's own tools: a frame saved to the project joins the references,
 test("a clip dropped before the project has loaded is held, and goes up when the project arrives", async ({ page, playwright }, info) => {
   test.skip(!DESKTOP.includes(info.project.name), "the quick tools are Make's panel modes; the phone draws none of them");
   test.setTimeout(120_000);
-  await seed(page, playwright, "owner");
+  const s = await seed(page, playwright, "owner");
+  const finished: string[] = [];
+  page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/uploads/finish") finished.push(request.url()); });
   /* The project's read is held back until the clip is on the well, so the drop lands with no project open. */
   let release = () => {};
   const loaded = new Promise<void>((resolve) => { release = resolve; });
@@ -199,9 +201,12 @@ test("a clip dropped before the project has loaded is held, and goes up when the
   await page.goto("/suites?suite=subatomik&page=swap&sp=swap");
   await expect(page.getByTestId("make-title")).toHaveText("Object swap");
   await dropFiles(page, [CLIP]);
-  await expect(page.getByText("Open a project first; dropped files are kept in its Library.")).toBeVisible();
+  await expect(page.getByText("Uploading once the project opens…")).toBeVisible();
+  expect(finished, "nothing goes up before the project is open").toEqual([]);
   release();
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4", { timeout: 60_000 });
+  expect(finished, "the held clip goes up once").toHaveLength(1);
+  expect(s.errors).toEqual([]);
 });
 
 test("a member of a managed workspace runs Viral on the workspace's credits: the strip, no owner card, no key badge, and the take lands", async ({ page, playwright }, info) => {

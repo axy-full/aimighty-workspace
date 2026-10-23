@@ -59,7 +59,7 @@ export function Make({ scope, project, items, library, projects = "ready", proje
       <div className="gx-mk-body gx-scroll" data-testid="gen-view">
         {projectsError ? <LoadBanner banner={{ tone: "error", message: projectsError }} onRetry={onRetry ?? (() => undefined)} testId="projects-error" /> : null}
         {make.tool === "upscale" ? <UpscaleTool key="upscale" scope={scope} project={project} items={items} />
-          : make.tool ? <ViralTool key={make.tool} scope={scope} page={make.tool} project={project} items={items} />
+          : make.tool ? <ViralTool key={make.tool} scope={scope} page={make.tool} project={project} items={items} projects={projects} />
           : make.recent ? <Recent scope={scope} project={project} items={items} library={library} projects={projects} make={make} />
           : <Compose make={make} scope={scope} />}
       </div>
