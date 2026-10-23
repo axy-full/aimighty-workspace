@@ -553,8 +553,10 @@ test("an empty Thinking slot refuses a new board ask before its run is written; 
     expect(await runs()).toBe(1);
     /* The mocked engines price the planner without the catalogue: off for this check, with the checked-in catalogue and Medium's slot unset
        (the gateway key a fixture, never sent: plannerPrice reads the catalogue only), so plannerPrice refuses as it would live. */
-    const saved = { mock: process.env.ENGINE_MOCK, catalog: process.env.MODEL_CATALOG, gateway: process.env.AI_GATEWAY_API_KEY, medium: process.env[thinkingModelEnv("medium")] };
+    const saved = { mock: process.env.ENGINE_MOCK, catalog: process.env.MODEL_CATALOG, gateway: process.env.AI_GATEWAY_API_KEY, openai: process.env.OPENAI_API_KEY, medium: process.env[thinkingModelEnv("medium")] };
     delete process.env.ENGINE_MOCK; process.env.MODEL_CATALOG = "static"; process.env.AI_GATEWAY_API_KEY = "test-only-never-sent";
+    /* No vendor key while the mock is off: nothing in this test may reach a provider. */
+    delete process.env.OPENAI_API_KEY;
     delete process.env[thinkingModelEnv("medium")];
     try {
       await expect(ask("req-slot-0002")).rejects.toMatchObject({ status: 503, message: THINKING_UNAVAILABLE });
@@ -562,7 +564,7 @@ test("an empty Thinking slot refuses a new board ask before its run is written; 
       /* A retry of the run already asked is that run, whatever the slot says now. */
       expect((await ask("req-slot-0001")).id).toBe(asked.id);
     } finally {
-      for (const [key, value] of [["ENGINE_MOCK", saved.mock], ["MODEL_CATALOG", saved.catalog], ["AI_GATEWAY_API_KEY", saved.gateway], [thinkingModelEnv("medium"), saved.medium]] as const)
+      for (const [key, value] of [["ENGINE_MOCK", saved.mock], ["MODEL_CATALOG", saved.catalog], ["AI_GATEWAY_API_KEY", saved.gateway], ["OPENAI_API_KEY", saved.openai], [thinkingModelEnv("medium"), saved.medium]] as const)
         if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
   });

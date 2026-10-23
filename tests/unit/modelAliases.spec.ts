@@ -110,7 +110,7 @@ test("no offered list, default or Auto list names a dropped id; the catalogue ke
 });
 
 test("Atomik's thinking never plans on a dropped id: no setting names one, and OpenAI's ids, the Pro among them, are not Atomik's", async () => {
-  /* Owner, 22 Oct 2026: Atomik thinks with Claude at the Thinking setting; Auto's old list (and GPT-5.5 where GPT-5.5 Pro was) is gone with it. */
+  /* Owner, 22 Oct 2026: Atomik thinks with Claude at the Thinking setting; Auto's old list, OpenAI's ids among them, is gone with it. */
   for (const { model } of Object.values(ATOMIK_THINKING)) expect(isDroppedModel(model!), String(model)).toBe(false);
   const { atomikModels } = await import("../../lib/workbench/atomik-server");
   const { selectPlannerModel } = await import("../../lib/workbench/rig-agent-planner");
