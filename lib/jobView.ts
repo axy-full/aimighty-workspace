@@ -1,0 +1,364 @@
+import { csvCell } from "./csvCell";
+import { failureLine, type FailureLine } from "./errors";
+import { displayModelName, findModel, providerOf } from "./models";
+import { PROVIDER_NAME, parseOutcome, takeFailure } from "./providerOutcome";
+import { fromTenths } from "./runLimit";
+import {
+  COMMAND_STATES, DECIDERS, JOB_STATUSES, PRODUCTS,
+  type CommandState, type Decider, type JobProduct, type JobStatus,
+} from "./quotedJobs/vocabulary";
+
+/**
+ * THE serializer for v30 jobs (docs/plans/v30-data-model.md § 4.4; PR A3). It is the only code that turns a stored
+ * `quoted_jobs` row (with its take, provenance and receipt) into JSON, CSV or a sentence, and every v30 read model
+ * (History, aggregates, CSV export, step receipts, error lines, Recreate) must go through it.
+ *
+ * Rule 1 of the owner's 17 Oct brief: an Agent job never exposes its engine. Not in the API, History, receipts, exports
+ * or error messages. A Director job exposes what it chose.
+ *   - decider 'agent': an allowlist of fields that cannot hold an engine (ids, the closed lists, the quote, the actual,
+ *     timestamps, our own error sentence). No engine, model or provider; no settings, prompt or inputs. A failure line
+ *     is told `provider: null`, so it says "The provider" and never a name, and carries no provider code or words.
+ *     Recreate hands Director an EMPTY engine (brief rule 6), and its settings carry no engine-only key and no task named
+ *     after an engine. As a last layer, every free-text field of an Agent output that NAMES the engine, as a whole word,
+ *     is dropped: its id, its name and the name's leading word ("Seedance"), its family ("kling"), its provider, the
+ *     take's model, and the recorded engine, model and provider. Whole words only, so "fal" never drops "waterfall",
+ *     "false" or "Falguni": switching modes loses nothing it need not (brief rule 6).
+ *   - decider 'director': the engine it chose (id and label), its settings, inputs and prompt.
+ *
+ * Money (CLAUDE.md § Pricing): no vendor cost ever leaves here, for either decider. The stored row carries none, and a
+ * take's settings are an allowlist, so a cost a take's params happen to hold is never copied. The quote is in credits,
+ * one unit for every workspace (the house's at cost, as quotedCredits() counts it). The actual is the meter's, through
+ * its workspace replica `credit_receipts` (lib/creditReceipts.ts): never stored here.
+ *
+ * Refunds (owner, 17 Oct): "A refunded failure shows 0 cr on the receipt and the word refund never appears; vendor
+ * refunds stay internal." So `refund_status` is stored on every failed or cancelled job and NO output here carries it,
+ * nor the word "refund", for any workspace (the house included). The receipt line is the meter's charge (`actual`).
+ *
+ * Pure: no database. The store (lib/quotedJobs/store.ts) reads the rows and hands them here.
+ */
+
+/** A stored job row as the store reads it: `quoted_jobs.*` plus the joined columns it aliases. */
+export type StoredJob = Record<string, unknown>;
+/** A stored command row as the store reads it: `agent_commands.*` plus `total_credits` and `job_count`. */
+export type StoredCommand = Record<string, unknown>;
+
+export type ViewOptions = {
+  /** Does the viewing workspace pay in credits (lib/credits.ts creditsApply)? Then its receipts are read. */
+  credits: boolean;
+};
+
+export type JobQuote = { credits: number };
+export type JobEngine = { id: string; label: string };
+
+export type PublicJob = {
+  id: string;
+  productionId: string | null;
+  stepId: string | null;
+  nodeId: string | null;
+  commandId: string | null;
+  decider: Decider;
+  product: JobProduct;
+  status: JobStatus;
+  /** The price shown before it ran. */
+  quote: JobQuote | null;
+  /** What was charged, from the meter's receipt; null until there is one. */
+  actual: { credits: number } | null;
+  takeId: string | null;
+  /** Our own sentence for a failure; never a vendor's words. */
+  error: string | null;
+  createdBy: string;
+  quotedAt: number;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  /** Director only: what it chose. Always null for an Agent job. */
+  engine: JobEngine | null;
+  settings: Record<string, string | number | boolean> | null;
+  inputs: { ports: string[]; cast: string[] } | null;
+  prompt: string | null;
+};
+
+export type PublicCommand = {
+  id: string;
+  productionId: string | null;
+  stepId: string | null;
+  instruction: string;
+  state: CommandState;
+  /** The total shown before it ran. */
+  quote: JobQuote | null;
+  /** The sum of its jobs' receipts (never stored); null where credits do not apply. */
+  total: { credits: number } | null;
+  jobs: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type Recipe = { product: JobProduct; engine: string; settings: Record<string, string | number | boolean>; inputs: { ports: string[]; cast: string[] }; prompt: string };
+
+/* ── reading a stored row ─────────────────────────────────────────────── */
+
+const str = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+const num = (v: unknown): number | null => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+const oneOf = <T extends string>(list: readonly T[], v: unknown, fallback: T): T => (list.includes(v as T) ? (v as T) : fallback);
+const json = (v: unknown): unknown => {
+  if (typeof v !== "string" || !v) return null;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return null;
+  }
+};
+const record = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+
+/**
+ * A take's settings anyone may see: the shape of the render, never who made it or what it cost. An allowlist, so a
+ * credential fingerprint, a vendor cost or an engine name a take's params hold is never copied (none of these names
+ * an engine).
+ */
+export const SETTING_KEYS = [
+  "ratio", "resolution", "duration", "seed", "cameraFixed", "generateAudio", "task", "fps60", "draft",
+  "characterOrientation", "outputFormat", "sourceResolution",
+] as const;
+
+/** Settings only one engine takes: they would say which engine an Agent job used, so an Agent output never carries them. */
+export const ENGINE_ONLY_KEYS: readonly string[] = ["cameraFixed", "characterOrientation", "fps60", "sourceResolution"];
+
+/** An Agent job's task in neutral words (lib/tasks.ts TaskId). A task named after an engine is renamed; an unknown one is dropped. */
+export const AGENT_TASK: Readonly<Record<string, string>> = {
+  generate: "generate", edit: "edit", extend: "extend", motion: "motion", upscale: "upscale", reframe: "reframe", genjutsu: "transform",
+};
+
+function agentSettings(settings: Record<string, string | number | boolean>): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(settings)) {
+    if (ENGINE_ONLY_KEYS.includes(key)) continue;
+    if (key === "task") {
+      const task = typeof value === "string" ? AGENT_TASK[value] : undefined;
+      if (task) out.task = task;
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+function settingsOf(row: StoredJob): Record<string, string | number | boolean> {
+  const params = record(json(row.take_params)) ?? {};
+  const recorded = record(json(row.take_recorded));
+  const setup = record(recorded?.setup) ?? {};
+  const out: Record<string, string | number | boolean> = {};
+  for (const key of SETTING_KEYS) {
+    const v = params[key];
+    if (typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v))) out[key] = v;
+  }
+  /* The Setup carried in (lib/setup.ts): angle, move, light … Keys are Setup's own names; values are option ids or words. */
+  for (const [key, v] of Object.entries(setup)) if (/^[a-z][a-zA-Z]{0,31}$/.test(key) && typeof v === "string") out[`setup.${key}`] = v;
+  return out;
+}
+
+function inputsOf(row: StoredJob): { ports: string[]; cast: string[] } {
+  const recorded = record(json(row.take_recorded));
+  const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  return { ports: strings(recorded?.ports), cast: strings(recorded?.cast) };
+}
+
+function quoteOf(tenths: unknown): JobQuote | null {
+  const t = num(tenths);
+  return t === null ? null : { credits: fromTenths(t) };
+}
+
+/**
+ * Words in a model's own name that are plain English or Particl's own product names, never an engine's: they are not
+ * matched on their own (a prompt about a product, a motion or a cinema keeps its words). The full name still is.
+ */
+const NOT_ENGINE_WORDS = new Set([
+  "the", "engine", "image", "video", "audio", "model", "standard", "pro", "cinema", "studio", "identity", "motion", "object", "product",
+  "upscale", "cutout", "expand", "transform", "marketing", "still", "render", "character", "creative", "background", "remove", "reframe",
+]);
+/** Particl's own names for a feature (lib/uiNames.ts and the registry's labels), not an engine's: not matched as names. */
+const NOT_ENGINE_PHRASES = new Set(["product image", "identity render", "motion transfer", "object swap"]);
+const genericNeedle = (needle: string): boolean =>
+  NOT_ENGINE_WORDS.has(needle) || NOT_ENGINE_PHRASES.has(needle) || /^(?:identity|id) /.test(needle) || !/\p{L}{2,}/u.test(needle);
+/** A name's tier or version words at its end ("Seedance 2.5", "Nano Banana Pro", "Cinema Studio 4.0"): stripped to get the brand. */
+const TRAILING = /^(?:v?\d+(?:\.\d+)*[a-z]?|pro|standard|std|fast|mini|lite|turbo|max|plus|hd|preview|flash)$/i;
+const SEPARATORS = /[\s_-]+/;
+const leading = (text: string) => text.trim().split(/[\s/_.-]+/)[0] ?? "";
+function unversioned(label: string): string {
+  const words = label.trim().split(/\s+/);
+  while (words.length > 1 && TRAILING.test(words[words.length - 1])) words.pop();
+  return words.join(" ");
+}
+
+/**
+ * Everything that names this job's engine: each id and its leading segment ("dreamina"), each name with and without its
+ * trailing version or tier ("Nano Banana"), the name's leading word ("Seedance"), the short name, the family and its
+ * first word, and the provider, for the job's engine, the take's model and the recorded engine, model and provider.
+ */
+export function engineNeedles(row: StoredJob): string[] {
+  const recorded = record(json(row.take_recorded));
+  const outcome = parseOutcome(row.take_outcome);
+  const ids = [str(row.engine), str(row.take_model), str(recorded?.engine), str(recorded?.model), str(recorded?.provider)].filter((x): x is string => !!x);
+  const names: string[] = [];
+  for (const id of ids) {
+    names.push(leading(id));
+    /* Each `/` segment of an id, and the same without a trailing image/video/audio word ("higgsfield/marketing-studio-image"
+       gives "marketing studio"). Segments are not cut by version: "ray-2-flash" stays itself. */
+    for (const segment of id.split("/")) names.push(segment, segment.replace(/[\s_-]+(?:image|video|audio)$/i, ""));
+    const label = displayModelName(id);
+    names.push(label, unversioned(label), leading(label));
+    const provider = providerOf(id);
+    if (provider) names.push(provider);
+    const model = findModel(id);
+    if (model)
+      names.push(model.label, unversioned(model.label), leading(model.label), model.short, unversioned(model.short), leading(model.short), model.family, leading(model.family));
+  }
+  if (outcome) names.push(outcome.provider, PROVIDER_NAME[outcome.provider]);
+  return [...new Set([...ids, ...names].map((n) => String(n ?? "").trim().toLowerCase().split(SEPARATORS).join(" ")).filter((n) => n.length >= 3 && n !== "the engine" && !genericNeedle(n)))];
+}
+
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** A brand's own suffixes a short name may run on into ("LumaAI", "FalAI", "SoulID", "… Labs"). */
+const BRAND_SUFFIX = "(?:ai|labs|id)";
+
+/**
+ * One needle as a pattern. It always starts a word ("fal" is never found in "waterfall", "kling" never in "sparkling").
+ * Inside it, a space, "_" or "-" may be any of them or nothing ("Nano Banana", "nano-banana", "NanoBanana"). After it:
+ *   - a digit may follow any needle ("Kling3", "Nano2");
+ *   - a needle that ends in a digit never runs on into letters ("cinema 4" is not "Cinema 4K");
+ *   - a needle of five letters or more may run on into letters ("KlingAI", "SeedanceV2");
+ *   - a shorter one may run on only into a brand suffix (ai, labs, id) that ends the word ("LumaAI", "SoulID"), so
+ *     "false", "Falguni", "Brian" and "soulful" keep their words.
+ */
+function needlePattern(needle: string): string {
+  const body = needle.split(SEPARATORS).map(escape).join("[\\s_-]*");
+  const letters = (needle.match(/\p{L}/gu) ?? []).length;
+  const after = /\p{N}$/u.test(needle) ? "(?!\\p{L})"
+    : letters >= 5 ? ""
+    : `(?:[\\s_-]?${BRAND_SUFFIX}(?!\\p{L})|(?!\\p{L}))`;
+  return `(?<![\\p{L}\\p{N}])${body}${after}`;
+}
+
+const DROP = Symbol("drop");
+
+/** The last layer for an Agent output: a free-text value naming the engine is removed (its key with it), never sent. */
+function scrub<T>(value: T, needles: string[]): T {
+  if (!needles.length) return value;
+  const pattern = new RegExp(needles.map(needlePattern).join("|"), "iu");
+  const names = (s: string) => pattern.test(s);
+  const walk = (v: unknown): unknown => {
+    if (typeof v === "string") return names(v) ? DROP : v;
+    if (Array.isArray(v)) return v.map(walk).filter((x) => x !== DROP);
+    if (v && typeof v === "object")
+      return Object.fromEntries(Object.entries(v).filter(([k]) => !names(k)).map(([k, x]) => [k, walk(x)] as const).filter(([, x]) => x !== DROP));
+    return v;
+  };
+  const out = walk(value);
+  return (out === DROP ? null : out) as T;
+}
+
+/* ── the views ────────────────────────────────────────────────────────── */
+
+export const deciderOf = (row: StoredJob): Decider => oneOf(DECIDERS, row.decider, "agent");
+
+/** One job as any v30 read model sends it. An unreadable decider is read as Agent: the stricter side. */
+export function publicJob(row: StoredJob, opts: ViewOptions): PublicJob {
+  const decider = deciderOf(row);
+  const receipt = num(row.receipt_credits);
+  const base = {
+    id: String(row.id),
+    productionId: str(row.production_id),
+    stepId: str(row.step_id),
+    nodeId: str(row.node_id),
+    commandId: str(row.command_id),
+    decider,
+    product: oneOf(PRODUCTS, row.product, "generation"),
+    status: oneOf(JOB_STATUSES, row.status, "queued"),
+    quote: quoteOf(row.quote_tenths),
+    actual: opts.credits && receipt !== null ? { credits: receipt } : null,
+    takeId: str(row.take_id),
+    error: str(row.error_public),
+    createdBy: String(row.created_by ?? ""),
+    quotedAt: Number(row.quoted_at),
+    createdAt: Number(row.created_at),
+    startedAt: num(row.started_at),
+    finishedAt: num(row.finished_at),
+  };
+  if (decider === "agent") {
+    const view: PublicJob = { ...base, engine: null, settings: null, inputs: null, prompt: null };
+    return { ...view, error: scrub(view.error, engineNeedles(row)) };
+  }
+  const engine = str(row.engine);
+  return {
+    ...base,
+    engine: engine ? { id: engine, label: displayModelName(engine) } : null,
+    settings: row.take_id ? settingsOf(row) : null,
+    inputs: row.take_id ? inputsOf(row) : null,
+    prompt: str(row.take_prompt),
+  };
+}
+
+export const publicJobs = (rows: StoredJob[], opts: ViewOptions): PublicJob[] => rows.map((row) => publicJob(row, opts));
+
+/** Words about a vendor's refund: never in a view (owner, 17 Oct: "the word refund never appears"). */
+const REFUND_WORDS = /refund/i;
+
+/**
+ * The failure line for a job whose take failed, from the take's own outcome: what happened and the next step. It never
+ * says what the vendor did with the charge, for any workspace or decider (owner, 17 Oct: "vendor refunds stay
+ * internal"); what the job cost is its receipt (`actual`). An Agent job's line also carries no provider, no provider
+ * code and no provider words, so it is our own sentence only.
+ */
+export function jobErrorLine(row: StoredJob, opts: ViewOptions): FailureLine | null {
+  const status = oneOf(JOB_STATUSES, row.status, "queued");
+  if (status !== "failed" && status !== "cancelled") return null;
+  const failure = { ...takeFailure(parseOutcome(row.take_outcome), { credits: opts.credits }), billing: null, charge: null };
+  const cancelled = { cancelled: status === "cancelled" };
+  if (deciderOf(row) === "agent") return scrub(failureLine({ ...failure, provider: null, code: failure.kind, message: null }, cancelled), engineNeedles(row));
+  const line = failureLine(failure, cancelled);
+  /* The provider's own words, shown to a Director on its own key, may talk about a refund: then they are not shown. */
+  return line.detail && REFUND_WORDS.test(line.detail) ? { ...line, detail: null } : line;
+}
+
+/** What Recreate starts from. An Agent job hands Director an empty engine (brief rule 6); a Director job its own. */
+export function recreateRecipe(row: StoredJob): Recipe {
+  const product = oneOf(PRODUCTS, row.product, "generation");
+  const recipe: Recipe = { product, engine: "", settings: settingsOf(row), inputs: inputsOf(row), prompt: str(row.take_prompt) ?? "" };
+  if (deciderOf(row) === "director") return { ...recipe, engine: str(row.engine) ?? "" };
+  const clean = scrub({ ...recipe, settings: agentSettings(recipe.settings) }, engineNeedles(row));
+  return { ...clean, engine: "", prompt: clean.prompt ?? "" };
+}
+
+/** The CSV of jobs, one row each, every cell through csvCell. The engine column is empty on every Agent row. */
+export const JOB_CSV_HEADER = ["job", "production", "step", "decider", "product", "status", "quote_credits", "credits", "engine", "engine_id", "prompt", "created_at"] as const;
+
+export function jobCsv(rows: StoredJob[], opts: ViewOptions): string {
+  const lines = [JOB_CSV_HEADER.join(",")];
+  for (const row of rows) {
+    const job = publicJob(row, opts);
+    lines.push([
+      job.id, job.productionId, job.stepId, job.decider, job.product, job.status, job.quote?.credits ?? null, job.actual?.credits ?? null,
+      job.engine?.label ?? null, job.engine?.id ?? null, job.prompt, new Date(job.createdAt).toISOString(),
+    ].map((cell) => csvCell(cell)).join(","));
+  }
+  return lines.join("\n") + "\n";
+}
+
+/** One Agent command: the instruction, its quoted total, and the sum of its jobs' receipts. Commands carry no engine. */
+export function publicCommand(row: StoredCommand, opts: ViewOptions): PublicCommand {
+  const total = num(row.total_credits);
+  return {
+    id: String(row.id),
+    productionId: str(row.production_id),
+    stepId: str(row.step_id),
+    instruction: String(row.instruction ?? ""),
+    state: oneOf(COMMAND_STATES, row.state, "quoted"),
+    quote: quoteOf(row.quote_tenths),
+    total: opts.credits ? { credits: total ?? 0 } : null,
+    jobs: num(row.job_count) ?? 0,
+    createdBy: String(row.created_by ?? ""),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  };
+}
