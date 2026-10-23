@@ -192,8 +192,13 @@ test("a clip dropped before the project has loaded is held, and goes up when the
   test.skip(!DESKTOP.includes(info.project.name), "the quick tools are Make's panel modes; the phone draws none of them");
   test.setTimeout(120_000);
   const s = await seed(page, playwright, "owner");
-  const finished: string[] = [];
-  page.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/uploads/finish") finished.push(request.url()); });
+  /* Every upload request, and each filing into a project (one per uploaded file: a second upload of the same file reuses its record and sends no new finish, but is filed again). */
+  const uploads: string[] = [], filed: unknown[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/uploads")) uploads.push(`${request.method()} ${path}`);
+    if (request.method() === "POST" && path === "/api/workbench/library") filed.push((request.postDataJSON() as { projectId?: string }).projectId);
+  });
   /* The project's read is held back until the clip is on the well, so the drop lands with no project open. */
   let release = () => {};
   const loaded = new Promise<void>((resolve) => { release = resolve; });
@@ -202,10 +207,10 @@ test("a clip dropped before the project has loaded is held, and goes up when the
   await expect(page.getByTestId("make-title")).toHaveText("Object swap");
   await dropFiles(page, [CLIP]);
   await expect(page.getByText("Uploading once the project opens…")).toBeVisible();
-  expect(finished, "nothing goes up before the project is open").toEqual([]);
+  expect(uploads.filter((call) => call.startsWith("POST")), "nothing goes up before the project is open").toEqual([]);
   release();
   await expect(page.getByTestId("viral-source")).toContainText("walk.mp4", { timeout: 60_000 });
-  expect(finished, "the held clip goes up once").toHaveLength(1);
+  expect(filed, "the held clip goes up once, into the seeded project").toEqual([s.projectId]);
   expect(s.errors).toEqual([]);
 });
 

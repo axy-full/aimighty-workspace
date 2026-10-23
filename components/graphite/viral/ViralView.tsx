@@ -204,14 +204,20 @@ export function ViralTool({ scope, page, project, items, projects = "ready" }: {
       if (notes.length || medias.length < uploads.length) setNote([...notes, ...(medias.length < uploads.length ? ["Only videos and pictures go in this well; the rest is kept in the Library."] : [])].join(" "));
     }).catch((error: unknown) => setNote(error instanceof Error ? error.message : "The files could not be uploaded."));
   }, [scope, place]);
-  /* Files dropped while the project is still loading are held, each drop as its own upload, and go up when it arrives. */
+  /* Files dropped while the projects are loading (or being retried) are held, each drop as its own upload, and go up when the
+     project arrives. If the read ends with no project at all, they are let go and the note says so. */
   const held = useRef<File[][]>([]);
   useEffect(() => {
-    if (!project || !held.current.length) return;
-    const drops = held.current;
-    held.current = [];
-    for (const files of drops) upload(project.id, files);
-  }, [project, upload]);
+    if (!held.current.length) return;
+    if (project) {
+      const drops = held.current;
+      held.current = [];
+      for (const files of drops) upload(project.id, files);
+    } else if (projects === "ready") {
+      held.current = [];
+      setNote("Open a project first.");
+    }
+  }, [project, projects, upload]);
   /* A tile from anywhere, or files from the device. */
   const dropped = (e: React.DragEvent) => {
     e.preventDefault(); setOver(false);
@@ -219,7 +225,8 @@ export function ViralTool({ scope, page, project, items, projects = "ready" }: {
     const found = ids.map((id) => findMedia(items, id));
     place(found.filter((m): m is ViralMedia => Boolean(m)), found.filter((m) => !m).length);
     if (!files.length) return;
-    if (!project && projects === "loading") { held.current.push(files); setNote("Uploading once the project opens…"); return; }
+    /* While the read failed, the Try again banner above speaks; the drop waits for it. */
+    if (!project && projects !== "ready") { held.current.push(files); setNote(projects === "loading" ? "Uploading once the project opens…" : null); return; }
     if (!project) { setNote("Open a project first."); return; }
     upload(project.id, files);
   };
