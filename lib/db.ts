@@ -503,6 +503,30 @@ const SCHEMA = [
      at            INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_lock_events_element ON element_lock_events(element_id, at)`,
+  /* Every pick, approval, send-back and clear of a take, append-only (lib/takeReview.ts; docs/plans/step-0-data.md). The take keeps only its latest mark; this keeps who, by
+     which channel, and why. The account id stays in this workspace's database; the person's own words stay in `notes` (note_id), never copied here. Rows are only ever added. */
+  `CREATE TABLE IF NOT EXISTS take_review_events (
+     id         TEXT PRIMARY KEY,
+     gen_id     TEXT NOT NULL,
+     /* picked | approved | changes | cleared */
+     action     TEXT NOT NULL,
+     /* the account id; '' for nobody */
+     actor_id   TEXT NOT NULL,
+     /* person | token | agent | system */
+     via        TEXT NOT NULL,
+     token_id   TEXT,
+     /* JSON array of reason codes, only for a send-back (lib/rejectReasons.ts) */
+     reasons    TEXT,
+     drift      TEXT,
+     note_id    TEXT,
+     /* for a system clear: master_changed */
+     cause      TEXT,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_take_review_events_gen ON take_review_events(gen_id, created_at)`,
+  /* Append-only is enforced, not promised: a row is never changed or removed, by anything (the pattern of SECURITY_AUDIT_SCHEMA). */
+  `CREATE TRIGGER IF NOT EXISTS take_review_events_no_update BEFORE UPDATE ON take_review_events BEGIN SELECT RAISE(ABORT,'Review history is append-only'); END`,
+  `CREATE TRIGGER IF NOT EXISTS take_review_events_no_delete BEFORE DELETE ON take_review_events BEGIN SELECT RAISE(ABORT,'Review history is append-only'); END`,
   /* What one shot points at. A wire lands on a slot, not on a node, so the
      slot and its ordinal are the address: a shot holding two characters has
      character 0 and character 1, and each is bound on its own.
