@@ -228,6 +228,8 @@ export function requestMaxCredits(value: unknown, required = false): number | un
 /** A settled text job; a held one (`holdSettlement`) also carries the two ways to end it. */
 export type PaidTextResult = {
   id: string; text: string; costUsd: number; engine: string; credits: number;
+  /** What the meter billed the job at (what it used, never past its estimate), and what it cost past that, the platform's. */
+  billedUsd?: number; overrunUsd?: number;
   finish?: () => Promise<PaidTextResult>;
   abandon?: (why: string) => Promise<PaidTextError>;
 };
@@ -483,6 +485,7 @@ return await withRecoveryActivity('paid-text', async () => {
         id,
         text: content as string,
         costUsd: cost,
+        billedUsd, overrunUsd,
         /* The ledger this job was reserved and settled on (its meter engine), for the caller's own rows. */
         engine: event.engine,
         /* What the ledger billed, for the screen that shows it: credits are
