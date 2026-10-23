@@ -612,7 +612,8 @@ try {
     );
   }
   assert.equal(
-    usage.byModel.find((row) => row.model === "mock-visible-text").credits,
+    /* Atomik's thinking is one "Thinking" row, model "atomik" (Amendment (iii) §E: the model is never shown). */
+    usage.byModel.find((row) => row.model === "atomik" && row.kind === "text").credits,
     7,
   );
   assert.equal(

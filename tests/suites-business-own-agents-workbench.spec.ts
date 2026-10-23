@@ -105,7 +105,9 @@ test("Hooks: twelve lines kept by hand; the Campaign agent is priced at about N 
   await run.click();
   await expect(dialog).toHaveCount(0);
   expect(agent!.paid).toHaveLength(1);
-  expect(agent!.paid[0]).toMatchObject({ maxCredits: 3, model: MODEL });
+  /* The press carries the approved ceiling; the model that runs is Atomik's thinking, decided on the server (Amendment (iii) §E): the quote's model is not echoed back. */
+  expect(agent!.paid[0]).toMatchObject({ maxCredits: 3 });
+  expect(agent!.paid[0].model).not.toBe(MODEL);
 
   const result = page.getByTestId("hooks-run");
   await expect(result).toContainText("Salt, not sugar.");

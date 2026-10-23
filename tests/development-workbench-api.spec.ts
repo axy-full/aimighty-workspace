@@ -40,7 +40,10 @@ test('real development HTTP persists every script section, resumes idempotently,
     const quoted = await request.post('/api/workbench/development', { headers, data: { ...input, quoteOnly: true } });
     expect(quoted.ok(), await quoted.text()).toBe(true);
     const quote = await quoted.json() as DevelopmentQuote;
-    expect(quote).toMatchObject({ quoteOnly: true, model: model.id, kind: 'screenplay', effort: 'auto', sourceCharacters: project.script.length });
+    expect(quote).toMatchObject({ quoteOnly: true, kind: 'screenplay', sourceCharacters: project.script.length });
+    /* The model and effort that run are Atomik's thinking, kept on the server and never sent (Amendment (iii) §E, 22 Oct 2026). */
+    expect(quote).not.toHaveProperty('model');
+    expect(quote).not.toHaveProperty('effort');
     expect(quote.chunks).toBeGreaterThanOrEqual(2);
     expect(quote.calls).toBe(quote.chunks * 3);
     expect(quote.sourceHash).toBe(createHash('sha256').update(sourceCanonical(project, 'screenplay')).digest('hex'));
