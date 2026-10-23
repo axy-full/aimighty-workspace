@@ -59,13 +59,9 @@ export const STARTER_PRODUCTION: StarterProduction = {
   cast: [STARTER_CAST, { name: "Mule", kind: "prop", description: "A battered cargo bicycle, orange frame, canvas panniers, a bell that does not work." }],
 };
 
-/** Where a rule applies: a kind, or one engine family's dialect. */
-export type RuleScope = "all" | "video" | "image" | "seedance-2" | "kling-3" | "nano-banana";
-export const RULE_SCOPES: RuleScope[] = ["all", "video", "image", "seedance-2", "kling-3", "nano-banana"];
-export const RULE_SCOPE_LABELS: Record<RuleScope, string> = {
-  all: "video + stills", video: "video", image: "stills", "seedance-2": "Seedance only", "kling-3": "Kling only", "nano-banana": "Nano Banana only",
-};
-export type RuleApply = "writer" | "prompt";
+/* Where a rule applies, and its words: lib/ruleScopes.ts, which a browser imports on its own. */
+import { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "./ruleScopes";
+export { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "./ruleScopes";
 export type PlatformRule = { id: string; text: string; scope: RuleScope; apply: RuleApply; on: boolean };
 
 /** The seed from the brief (2.5): what one team learned, for everyone. */

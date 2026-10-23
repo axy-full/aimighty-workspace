@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useSession } from "@/lib/session";
-import { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "@/lib/platformLayer";
+import { RULE_SCOPES, RULE_SCOPE_LABELS, type RuleApply, type RuleScope } from "@/lib/ruleScopes";
 import { Btn, Note, Problem, Row } from "../parts";
 import { useRead, useWrite } from "../use-settings";
 
