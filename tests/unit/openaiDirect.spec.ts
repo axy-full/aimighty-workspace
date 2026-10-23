@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
@@ -72,7 +73,8 @@ test('installed OpenAI SDK sends Responses structured output and native maximum 
 });
 test('development agent sends one direct OpenAI request and reports submitted errors without fallback', async () => {
   await runInTenant(workspace({ openai: fakeKey }), async () => {
-    const input: DevelopmentCall = { model: { id: model, name: 'GPT-6 Astra', owner: 'openai', type: 'language', description: '', contextWindow: 1050000, maxTokens: 128000, reasoningOptions: [{ type: 'effort', values: ['high'] }], pricing: { input: .00001, output: .00005 } }, effort: 'high', stage: 'draft', kind: 'idea', instructions: 'Develop ideas.', prompt: 'A film.', maxTokens: 4000, chunk: { index: 0, start: 0, end: 7, segments: [] } };
+    const input: DevelopmentCall = { model: { id: model, name: 'GPT-6 Astra', owner: 'openai', type: 'language', description: '', contextWindow: 1050000, maxTokens: 128000, reasoningOptions: [{ type: 'effort', values: ['high'] }], pricing: { input: .00000632, output: .0000548 } }, effort: 'high', stage: 'draft', kind: 'idea', instructions: 'Develop ideas.', prompt: 'A film.', maxTokens: 4000, chunk: { index: 0, start: 0, end: 7, segments: [] } };
+    expect(vendorRatesIn(input.model.pricing)).toEqual([]);
     let calls = 0;
     await expect(executeDevelopmentAgent(input, { method: 'api-key', token: fakeKey, vendor: 'openai' }, async (url) => { calls++; expect(String(url)).toBe('https://api.openai.com/v1/responses'); return Response.json({ error: { message: 'Fixture outage', type: 'server_error', code: 'server_error' } }, { status: 503 }); })).rejects.toMatchObject({ providerSubmitted: true });
     expect(calls).toBe(1);
@@ -91,11 +93,12 @@ test('incomplete and refused Responses retain paid usage and expose the correct 
 
 
 test('raw and SDK receipts preserve cache categories and missing SDK defaults never become known zero', async () => {
-  const priced = { id: model, owner: 'openai', name: 'Astra', type: 'language' as const, description: '', contextWindow: 1050000, maxTokens: 128000, pricing: { input: .00001, output: .00005, input_cache_read: .000001, input_cache_write: .0000125 } };
+  const priced = { id: model, owner: 'openai', name: 'Astra', type: 'language' as const, description: '', contextWindow: 1050000, maxTokens: 128000, pricing: { input: .00000632, output: .0000548, input_cache_read: .000000438, input_cache_write: .00000881 } };
+  expect(vendorRatesIn(priced.pricing)).toEqual([]);
   await runInTenant(workspace({ openai: fakeKey }), async () => {
     const direct = await openaiDirectPost({ model, messages: [{ role: 'user', content: 'Return JSON.' }] }, { fetch: async () => Response.json(response()) });
     const usage = JSON.parse(direct.text).usage;
-    expect(directTextCostUsd(priced, usage)).toBeCloseTo(58 * .00001 + 12 * .000001 + 30 * .0000125 + 20 * .00005, 12);
+    expect(directTextCostUsd(priced, usage)).toBeCloseTo(58 * .00000632 + 12 * .000000438 + 30 * .00000881 + 20 * .0000548, 12);
     for (const details of [{}, { cached_tokens: 0 }, { cache_write_tokens: 0 }, { cached_tokens: null, cache_write_tokens: 0 }, { cached_tokens: '0', cache_write_tokens: 0 }, { cached_tokens: 80, cache_write_tokens: 30 }]) expect(directTextCostUsd(priced, { ...usage, prompt_tokens_details: details })).toBeNull();
     for (const missing of [false, true]) {
       const value = response();

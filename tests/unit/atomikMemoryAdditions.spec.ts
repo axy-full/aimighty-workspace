@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -238,7 +239,7 @@ test("the brand kit's lines are offered to pick; each picked line lands as an or
 /* ── Atomik reads a paste: paid, priced first, kept only when ticked ─── */
 
 const READER: CatalogModel = { id: "anthropic/claude-sonnet-5.5", name: "Reader", owner: "anthropic", type: "language", description: "", contextWindow: 200000, maxTokens: 8192,
-  pricing: { input: "0.00003", output: "0.00015" } };
+  pricing: { input: "0.0000127", output: "0.000289" } };
 const PASTE = ["- Brand colours are teal and warm sand", "- Our audience is skaters in coastal towns", "- Packs are $49 each", "- A premium price point, never discount-led", "- Always end on the board"].join("\n");
 /** A provider's reply: the proposals as `content`, at `cost`. */
 const replyWith = (content: string, cost = 0.01) => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content } }], usage: { cost, prompt_tokens: 900, completion_tokens: 120 } }) });
@@ -400,4 +401,8 @@ test("the read route: Atomik's models only, the approved price required, a lost 
     const refused = await tokened.POST(new Request("https://studio.test/api/atomik/memory/read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: PASTE, quoteOnly: true }) }));
     expect(refused.status).toBe(403);
   });
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(READER.pricing)).toEqual([]);
 });

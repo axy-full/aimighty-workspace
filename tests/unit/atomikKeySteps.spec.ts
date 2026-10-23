@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -318,7 +319,7 @@ async function withCatalogue<T>(fn: () => Promise<T>): Promise<T> {
     const url = String(input instanceof Request ? input.url : input);
     if (url.endsWith("/models") && url.includes("ai-gateway.vercel.sh"))
       return new Response(JSON.stringify({ data: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", type: "language", context_window: 200000, max_tokens: 8000,
-        pricing: { input: "0.000003", output: "0.000015" }, modalities: { input: ["text", "image"], output: ["text"] } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+        pricing: { input: "0.00000227", output: "0.00000981" }, modalities: { input: ["text", "image"], output: ["text"] } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
     throw new Error(`Network is forbidden in the library steps test: ${url}`);
   }) as typeof fetch;
   try {
@@ -639,3 +640,9 @@ test("a library step keeps its engine and inputs; its price comes only from its 
     await setSetting("atomikEngines", JSON.stringify([SWAP]), actor.user.id);
     expect((await atomik.keyStepEngines()).map((e) => e.id)).toEqual([MOTION, MARKETING]);
   }));
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", async () => withCatalogue(async () => {
+  const listed = await (await fetch("https://ai-gateway.vercel.sh/v1/models")).json() as { data: { id: string; pricing: unknown }[] };
+  expect(listed.data.length).toBeGreaterThan(0);
+  for (const m of listed.data) expect(vendorRatesIn(m.pricing), m.id).toEqual([]);
+}));

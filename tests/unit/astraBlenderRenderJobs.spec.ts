@@ -1,5 +1,6 @@
 import { PROJECT_LIMITS } from '../../lib/workbench/project-limits';
 import { test, expect } from '@playwright/test';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -12,7 +13,7 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(directory, 'primary.db')}`;
 process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
 process.env.ENGINE_MOCK = '1';
 process.env.ASTRA_BLENDER_SNAPSHOT_ID = 'snap_verified-test';
-process.env.ASTRA_BLENDER_RATE_CARD = JSON.stringify({ cpuUsdPerHour: 0.128, memoryUsdPerGbHour: 0.0212, egressUsdPerGb: 0.15, createUsd: 0.0000006 });
+process.env.ASTRA_BLENDER_RATE_CARD = JSON.stringify({ cpuUsdPerHour: 0.274, memoryUsdPerGbHour: 0.0416, egressUsdPerGb: 0.323, createUsd: 0.000000472 }); // made-up rates, not the vendor's
 // Self-hosted (off Vercel): the runtime is connected only with all three control-plane credentials.
 // Set per file and restored after it, so later spec files in this worker never see them.
 const RUNTIME_CREDENTIALS = { VERCEL_TOKEN: 'unit-test-token', VERCEL_TEAM_ID: 'team_unit_test', VERCEL_PROJECT_ID: 'prj_unit_test' };
@@ -135,3 +136,7 @@ test('a job another host claimed between this host\'s checks and its failure is 
  expect((await m.db().execute({sql:'SELECT status,runtime_id,settled,error FROM astra_render_jobs WHERE id=?',args:[first.job.id]})).rows[0]).toMatchObject({status:'starting',runtime_id:hostA,settled:0,error:null});
  expect(Number((await m.db().execute('SELECT COUNT(*) AS n FROM astra_render_storage')).rows[0].n)).toBe(1);
 }));
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(JSON.parse(process.env.ASTRA_BLENDER_RATE_CARD ?? 'null'))).toEqual([]);
+});

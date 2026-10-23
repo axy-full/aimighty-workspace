@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { readFile, mkdir, writeFile, rm } from "node:fs/promises";
@@ -75,7 +76,7 @@ const model: CatalogModel = {
   inputModalities: ["text", "image"],
   contextWindow: 200000,
   maxTokens: 8192,
-  pricing: { input: 0.0000001, output: 0.0000003 },
+  pricing: { input: 0.0000000486, output: 0.000000575 },
 };
 const result = {
   summary: "A restrained product reveal in sampled frames.",
@@ -559,4 +560,8 @@ test("a dual-ID asset inspects the same canonical generation used by preview and
     expect(inspected).toBe(1);
     expect(loaded.images).toHaveLength(12);
   });
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
 });

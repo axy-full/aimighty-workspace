@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -191,7 +192,8 @@ test("Atomik's planner and agent offer only the Claude, OpenAI and Grok families
 
   /* The workbench agent's priced menu drops what is outside the three families. */
   const { atomikModels } = await import("../../lib/workbench/atomik-server");
-  const priced = (id: string) => ({ id, name: id, owner: family(id), type: "language" as const, description: "", contextWindow: 200000, maxTokens: 8000, pricing: { input: "0.000003", output: "0.000015" } });
+  const priced = (id: string) => ({ id, name: id, owner: family(id), type: "language" as const, description: "", contextWindow: 200000, maxTokens: 8000, pricing: { input: "0.00000433", output: "0.0000169" } });
+  expect(vendorRatesIn(priced(GEMINI).pricing)).toEqual([]);
   const menu = atomikModels([priced(GEMINI), priced("anthropic/claude-sonnet-4.6"), priced("spacexai/grok-4.7"), priced("openai/gpt-5.5")] as never);
   expect(menu.map((model) => model.id).sort()).toEqual(["anthropic/claude-sonnet-4.6", "openai/gpt-5.5", "spacexai/grok-4.7"]);
 

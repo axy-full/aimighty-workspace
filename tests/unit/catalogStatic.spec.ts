@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -15,23 +16,32 @@ import { OFFERED_CATALOG_IDS, PRICED_TEXT_IDS, SNAPSHOT_CATALOG_IDS, STILL_CATAL
 import { AUTO_MODEL_IDS, DROPPED_MODEL_IDS } from "../../lib/modelAliases";
 import committedJson from "../../lib/modelCatalog.json";
 import { DIRECT_PRICE_TO_CONFIRM, UNMAPPED_DIRECT_MODEL_IDS } from "../../lib/textRoute";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 
 /*
  * lib/modelCatalog.json freezes the gateway's public /v1/models for the ids we
  * offer (scripts/ops/snapshot-catalog.mjs). Prices feed billing, so the snapshot
  * must price every model a feature can pick, and must serve exactly what the
- * live read serves. The fixture is the verbatim excerpt, for every offered id,
- * of the same saved response the snapshot was written from (2026-10-08):
- * refresh the two together (snapshot-catalog.mjs --from=<saved> --priced-at=<day>).
+ * live read serves. The fixture is the excerpt, for every offered id, of the
+ * same saved response the snapshot was written from (2026-10-08), with every
+ * price figure made up: no vendor rate is written in a public file (owner,
+ * 23 Oct 2026). Its shape (keys, tiers, regions, tier bounds) is the saved
+ * response's; the prices it is read with are the snapshot's, which are pinned
+ * below by a hash, so every comparison runs on the prices the snapshot was
+ * written from. Refresh the two together (snapshot-catalog.mjs --from=<saved>
+ * --priced-at=<day>), making the fixture's figures up again and updating the hash.
  */
 const committed = committedJson as unknown as CatalogSnapshot;
-const fixture = JSON.parse(readFileSync(path.join(__dirname, "../fixtures/gateway-models-2026-10-08.json"), "utf8")) as { data: unknown[] };
+const synthetic = JSON.parse(readFileSync(path.join(__dirname, "../fixtures/gateway-models-2026-10-08.json"), "utf8")) as { data: { id: string; pricing?: unknown }[] };
+const snapshotPricing = new Map(committed.models.map((m) => [m.id, m.pricing]));
+/* The saved response as the snapshot priced it: the fixture with the snapshot's prices in place of the made-up ones. */
+const fixture = { data: synthetic.data.map((m) => ({ ...m, pricing: snapshotPricing.get(m.id) })) as unknown[] };
 const SOURCE = "https://ai-gateway.vercel.sh/v1/models";
 const MAX_AGE_DAYS = 120;
-/* The live list also carries models we do not offer; the snapshot must drop them. */
+/* The live list also carries models we do not offer; the snapshot must drop them. Made-up prices, like the fixture's. */
 const UNOFFERED = [
-  { id: "google/veo-3.1-generate-001", type: "video", pricing: { video_duration_pricing: [{ resolution: "1080p", cost_per_second: "0.4" }] } },
-  { id: "bfl/flux-2-pro", type: "image", pricing: { image: "0.03" } },
+  { id: "google/veo-3.1-generate-001", type: "video", pricing: { video_duration_pricing: [{ resolution: "1080p", cost_per_second: "0.0437" }] } },
+  { id: "bfl/flux-2-pro", type: "image", pricing: { image: "0.0173" } },
 ];
 const gatewayData = [...fixture.data, ...UNOFFERED];
 
@@ -69,6 +79,27 @@ const priceOf = (value: unknown): number | null => {
   const n = typeof value === "string" && value.trim() ? Number(value) : typeof value === "number" ? value : NaN;
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
+
+test("the fixture states no vendor's rate: its figures are made up, its shape is the saved response's, and the snapshot's prices are pinned", async () => {
+  const isFigure = (v: unknown) => typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v));
+  const shape = (v: unknown): unknown => Array.isArray(v) ? v.map(shape)
+    : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shape(x)])) : isFigure(v) ? "<figure>" : v;
+  const figures = (v: unknown): number[] => v && typeof v === "object" ? Object.values(v).flatMap(figures) : isFigure(v) ? [Number(v)] : [];
+  for (const m of synthetic.data) {
+    expect(snapshotPricing.has(m.id), m.id).toBe(true);
+    // Every key, tier bound, size and flag where the saved response had it; only the figures differ.
+    expect(JSON.stringify(shape(m.pricing)), m.id).toBe(JSON.stringify(shape(snapshotPricing.get(m.id))));
+  }
+  for (const m of [...synthetic.data, ...UNOFFERED]) {
+    // Each figure is rate-sized, so the check below sees all of them, and no catalogue entry has any of them.
+    expect(figures(m.pricing).filter((n) => !(n > 0 && n < 1)), m.id).toEqual([]);
+    expect(vendorRatesIn(m.pricing), m.id).toEqual([]);
+  }
+  /* The snapshot's prices for the fixture's ids, pinned without stating them: they are the saved response's, and any change to
+     a figure in lib/modelCatalog.json fails here until it is checked against the source and this hash is updated on purpose. */
+  const rows = JSON.stringify(fixture.data.map((m) => [(m as { id: string }).id, (m as { pricing: unknown }).pricing]));
+  expect(createHash("sha256").update(rows).digest("hex")).toBe("262350a75bd51aa3dd63b5a010d7420f9a112bb6c4b3a674f87c82844f9f60cf");
+});
 
 test("every model a feature can pick has input and output prices and a provider in the snapshot", () => {
   const mustPrice = [...new Set<string>([

@@ -42,8 +42,8 @@ app (storeVideo)                 Cloudflare                          provider
 | Item | Unit price (verify at order time) | Per 500 MB video |
 |---|---|---|
 | Workers Paid base | about $5 / month, includes 10M requests and 30M CPU-ms | — |
-| Queue operations | about $0.40 per million ops (write + read + delete ≈ 3 ops per message), first 1M/month included | 3 ops |
-| R2 Class A (CreateMultipartUpload, UploadPart, Complete) | about $4.50 per million | ~65 ops at 8 MiB parts |
+| Queue operations | priced per the vendor's public rate (write + read + delete ≈ 3 ops per message), first 1M/month included | 3 ops |
+| R2 Class A (CreateMultipartUpload, UploadPart, Complete) | priced per the vendor's public rate | ~65 ops at 8 MiB parts |
 | R2 storage | about $0.015 / GB-month | unchanged from today |
 | Egress from R2 | free | — |
 

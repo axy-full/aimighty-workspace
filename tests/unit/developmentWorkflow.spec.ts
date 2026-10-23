@@ -1,5 +1,6 @@
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from '@playwright/test';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,7 +17,7 @@ import type { MeterEvent } from '../../lib/meter';
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-development-'));
 process.env.PLATFORM_DATABASE_URL = 'file:' + path.join(dir, 'platform.db');
 process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
-const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .0000001, output: .0000003 } };
+const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .000000101, output: .000000139 } };
 function workspace(): TenantWorkspace {
   const id = randomUUID();
   return { id, slug: 'unit', name: 'Unit', legacy: false, dbUrl: 'file:' + path.join(dir, id + '.db'), dbToken: null,
@@ -459,7 +460,8 @@ test('direct development prices its saved per-step cache receipt and stops on un
     const ws = workspace(); ws.keys.openai = 'test-only-never-sent';
     await runInTenant(ws, async () => {
       const { request } = await fixture(), h = harness();
-      const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', pricing: { input: .000000101, output: .000000139, input_cache_read: .0000000137, input_cache_write: .000000122 } };
+      expect(vendorRatesIn(priced.pricing)).toEqual([]);
       h.deps.models = async () => [priced]; request.model = priced.id;
       const { job } = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
       h.deps.models = async () => { throw new Error('Must use saved model snapshot.'); };
@@ -470,7 +472,7 @@ test('direct development prices its saved per-step cache receipt and stops on un
       expect(saved.status).toBe(unknown ? 'uncertain' : 'succeeded');
       expect(h.calls).toHaveLength(unknown ? 1 : 3);
       if (unknown) { expect(saved.costUsd).toBeNull(); expect(h.events.at(-1)?.engineCostUsd).toBe(job.estimateUsd); }
-      else expect(saved.costUsd).toBeCloseTo(3 * (30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003), 12);
+      else expect(saved.costUsd).toBeCloseTo(3 * (30 * .000000101 + 30 * .0000000137 + 40 * .000000122 + 20 * .000000139), 12);
       const receipt = (await db().execute({ sql: 'SELECT usage,response FROM workbench_development_steps WHERE job_id=? AND step_index=0', args: [job.id] })).rows[0];
       expect(String(receipt.usage)).toContain('cached_tokens'); expect(String(receipt.response)).toContain('summary');
     });
@@ -487,7 +489,8 @@ test('a TEXT_DIRECT development job is quoted at its cold cache ceiling and sett
       process.env.TEXT_DIRECT = 'anthropic';
       // Without cache prices a direct Claude call has no ceiling: refused before any reservation.
       await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toMatchObject({ status: 503 });
-      const priced: CatalogModel = { ...model, pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      const priced: CatalogModel = { ...model, pricing: { input: .000000101, output: .000000139, input_cache_read: .0000000137, input_cache_write: .000000122 } };
+      expect(vendorRatesIn(priced.pricing)).toEqual([]);
       h.deps.models = async () => [priced];
       const quote = await quoteDevelopmentJob(request, 'owner', h.deps);
       delete process.env.TEXT_DIRECT;
@@ -505,10 +508,14 @@ test('a TEXT_DIRECT development job is quoted at its cold cache ceiling and sett
       const [done] = await listDevelopmentJobs('owner', request.projectId, undefined, h.deps);
       expect(done.status).toBe('succeeded');
       expect(h.calls).toHaveLength(3);
-      expect(done.costUsd).toBeCloseTo(3 * (30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003), 15);
+      expect(done.costUsd).toBeCloseTo(3 * (30 * .000000101 + 30 * .0000000137 + 40 * .000000122 + 20 * .000000139), 15);
       expect(h.events.at(-1)).toMatchObject({ engine: 'anthropic', status: 'succeeded' });
     });
   } finally {
     for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
   }
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
 });

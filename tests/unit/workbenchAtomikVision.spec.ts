@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import path from "node:path";
@@ -97,7 +98,7 @@ const model: CatalogModel = {
   contextWindow: 200000,
   maxTokens: 8000,
   inputModalities: ["text", "image"],
-  pricing: { input: 0.0000001, output: 0.0000003 },
+  pricing: { input: 0.0000000787, output: 0.000000227 },
 };
 async function upload(id: string, mime = "image/png", size = 200) {
   await db().execute({
@@ -655,4 +656,8 @@ test("durable browser recovery preserves exact sampled frame IDs and timestamps"
   const recovered = readPendingAtomik(storage, "scope", "p")!;
   expect(recovered.body).toBe(body);
   expect(atomikPendingInput(recovered).videoFrames).toEqual(videoFrames);
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
 });

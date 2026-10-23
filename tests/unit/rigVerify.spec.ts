@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -29,10 +30,10 @@ process.env.PLATFORM_DATABASE_URL = 'file:' + path.join(dir, 'platform.db');
 process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
 /** Test fixture only: a priced vision model (prices are the fixture's, not a real rate card). */
 const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 1_000_000, maxTokens: 64000,
-  pricing: { input: .0000001, output: .0000003 }, inputModalities: ['text', 'image'], outputModalities: ['text'] };
+  pricing: { input: .000000136, output: .000000359 }, inputModalities: ['text', 'image'], outputModalities: ['text'] };
 const blind: CatalogModel = { ...model, inputModalities: ['text'] };
 /** Test fixture only: a vision model that thinks, priced so its ceiling and its usual use differ by whole credits (the fixture's prices, not a real rate card). */
-const thinker: CatalogModel = { ...model, tags: ['reasoning'], pricing: { input: .00002, output: .0001 } };
+const thinker: CatalogModel = { ...model, tags: ['reasoning'], pricing: { input: .0000193, output: .0000445 } };
 /** A workspace on the platform's keys: its checks are priced and charged in credits. */
 function workspace(): TenantWorkspace {
   const id = randomUUID();
@@ -464,3 +465,6 @@ test('a check sends its review copies at low detail, through the Gateway and str
   expect(images.map((part) => part.detail)).toEqual(['low', 'low']);
 });
 
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  for (const m of [model, thinker]) expect(vendorRatesIn(m.pricing)).toEqual([]);
+});

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 
 // Worker processes are shared across spec files, so the environment this
 // test needs is set inside the test and restored afterwards; nothing here
@@ -7,11 +8,11 @@ const ENV_KEYS = ["OPENAI_API_KEY", "AI_GATEWAY_API_KEY", "ENGINE_MOCK", "AI_GAT
 
 const gateway = {
   data: [
-    { id: "openai/gpt-6-astra", type: "language", pricing: { input: "0.00001", output: "0.00005" } },
-    { id: "openai/gpt-5.5-fast", type: "language", pricing: { input: "0.00001", output: "0.00005" } },
-    { id: "openai/gpt-image-2", type: "image", pricing: { input: "0.00001", output: "0.00005" } },
-    { id: "openai/tts-1-hd", type: "speech", pricing: { input: "0.00001", output: "0.00005" } },
-    { id: "anthropic/claude-sonnet-5", type: "language", pricing: { input: "0.00001", output: "0.00005" } },
+    { id: "openai/gpt-6-astra", type: "language", pricing: { input: "0.0000149", output: "0.0000411" } },
+    { id: "openai/gpt-5.5-fast", type: "language", pricing: { input: "0.0000149", output: "0.0000411" } },
+    { id: "openai/gpt-image-2", type: "image", pricing: { input: "0.0000149", output: "0.0000411" } },
+    { id: "openai/tts-1-hd", type: "speech", pricing: { input: "0.0000149", output: "0.0000411" } },
+    { id: "anthropic/claude-sonnet-5", type: "language", pricing: { input: "0.0000149", output: "0.0000411" } },
   ],
 };
 
@@ -51,4 +52,8 @@ test("a configured OpenAI key gates only its language models, never Gateway-serv
       else process.env[key] = saved[key];
     }
   }
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  for (const m of gateway.data) expect(vendorRatesIn(m.pricing), m.id).toEqual([]);
 });

@@ -172,7 +172,7 @@ Every model goes in through the same door: a verified price, a mocked test, one 
 | Remotion | Designed captions, cards, ad versions, final cut | $100/mo from go-live (10,000 renders) |
 | Hostinger KVM 8 + Coolify | Own server and deploys | $25.99/mo (2-year term) |
 | Cloudflare Pro + R2 | Domain, security; media storage, no egress fees | $20/mo; $0.015/GB-month |
-| Turso | One database per workspace | Free / $4.99 / $24.92 |
+| Turso | One database per workspace | Free; paid plans priced per the vendor's public rate |
 | Resend, Web Push | Email; phone notifications | Free / $20/mo; free |
 | GlitchTip, Uptime Kuma | Errors; uptime alerts | Free (self-hosted) |
 | Playwright, k6 | Tests; load tests | Free |

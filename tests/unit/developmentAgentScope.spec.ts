@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -17,7 +18,7 @@ import type { CatalogModel } from '../../lib/catalog';
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-development-scope-'));
 process.env.PLATFORM_DATABASE_URL = 'file:' + path.join(dir, 'platform.db');
 process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
-const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 1_000_000, maxTokens: 64000, pricing: { input: .0000001, output: .0000003 } };
+const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 1_000_000, maxTokens: 64000, pricing: { input: .000000222, output: .000000577 } };
 function workspace(): TenantWorkspace {
   const id = randomUUID();
   return { id, slug: 'unit', name: 'Unit', legacy: false, dbUrl: 'file:' + path.join(dir, id + '.db'), dbToken: null,
@@ -309,4 +310,8 @@ test('a redraft is sized by the room the reasoning leaves, not the whole output 
       expect((await quoteDevelopmentJob(request(p, 'write', { fromBeats: true, model: chosen.id, effort: light }), 'owner', h.deps)).calls).toBe(3);
     });
   }
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
 });

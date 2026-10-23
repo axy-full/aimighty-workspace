@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { MockLanguageModelV4 } from 'ai/test';
 import { APICallError, type LanguageModelV4GenerateResult, type LanguageModelV4Content } from '@ai-sdk/provider';
 import { createAstraAgent, astraAgentMessages, astraAgentInputTokens, ASTRA_AGENT_INPUT_TOKENS, type AstraAgentEnvelope } from '../../lib/astra-blender/agent';
@@ -9,7 +10,7 @@ import { atomikPendingInput, persistPendingAtomik } from '../../lib/workbench/at
 
 const scene = createAstraScene('product');
 const candidate = { summary: 'A product study.', steps: ['Prepare the scene.'], sceneJson: JSON.stringify(scene) };
-function envelope(): AstraAgentEnvelope { return { model: ASTRA_BLENDER_MODEL, context: 'Create a product scene.', scene, baseSceneDigest: 'a'.repeat(64), maxTokens: 12000, inputTokenBudget: ASTRA_AGENT_INPUT_TOKENS, assetIds: [], providerOptions: { openai: { reasoningEffort: 'medium' } }, pricingModel: { id: ASTRA_BLENDER_MODEL, name: 'GPT-6 Astra', type: 'language', owner: 'openai', description: '', contextWindow: 1050000, maxTokens: 128000, pricing: { input: .00001, output: .00005 } } }; }
+function envelope(): AstraAgentEnvelope { return { model: ASTRA_BLENDER_MODEL, context: 'Create a product scene.', scene, baseSceneDigest: 'a'.repeat(64), maxTokens: 12000, inputTokenBudget: ASTRA_AGENT_INPUT_TOKENS, assetIds: [], providerOptions: { openai: { reasoningEffort: 'medium' } }, pricingModel: { id: ASTRA_BLENDER_MODEL, name: 'GPT-6 Astra', type: 'language', owner: 'openai', description: '', contextWindow: 1050000, maxTokens: 128000, pricing: { input: .0000184, output: .0000478 } } }; }
 function response(content: LanguageModelV4Content[], tools = false): LanguageModelV4GenerateResult { return { content, finishReason: { unified: tools ? 'tool-calls' : 'stop', raw: undefined }, usage: { inputTokens: { total: 200, noCache: 200, cacheRead: undefined, cacheWrite: undefined }, outputTokens: { total: 100, text: 100, reasoning: undefined } }, warnings: [] }; }
 
 test('the real SDK loop validates the candidate then disables tools for the final call', async () => {
@@ -70,4 +71,8 @@ test('native agent validates source bindings with real SDK tools and retains vis
   expect(model.doGenerateCalls[1].tools ?? []).toEqual([]);
   expect(astraAgentInputTokens(input, astraAgentMessages(input))).toBeGreaterThan(astraAgentInputTokens({ ...input, images: [] }, astraAgentMessages({ ...input, images: [] })) + 8000);
   expect(() => astraAgentInputTokens(input, [{ role: 'user', content: [{ type: 'image', image: 'data:image/png;base64,unapproved' }] }])).toThrow('Unreviewed image');
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(envelope().pricingModel.pricing)).toEqual([]);
 });

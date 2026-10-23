@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,7 +17,7 @@ process.env.PLATFORM_DATABASE_URL = `file:${path.join(directory, 'platform.db')}
 process.env.TURSO_DATABASE_URL = `file:${path.join(directory, 'primary.db')}`;
 process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
 process.env.ENGINE_MOCK = '1';
-process.env.ASTRA_BLENDER_RATE_CARD = JSON.stringify({ cpuUsdPerHour: 0.128, memoryUsdPerGbHour: 0.0212, egressUsdPerGb: 0.15, createUsd: 0.0000006 });
+process.env.ASTRA_BLENDER_RATE_CARD = JSON.stringify({ cpuUsdPerHour: 0.0531, memoryUsdPerGbHour: 0.00883, egressUsdPerGb: 0.322, createUsd: 0.000000226 }); // made-up rates, not the vendor's
 const [W1, W2, W3] = WORKER_URLS;
 const SELFHOST = { ASTRA_RENDER_BACKEND: 'selfhost', ASTRA_WORKER_URLS: WORKER_URLS.join(','), ASTRA_WORKER_SECRET: WORKER_SECRET };
 const VERCEL = { ASTRA_RENDER_BACKEND: 'vercel', ASTRA_BLENDER_SNAPSHOT_ID: 'snap_verified-test', VERCEL_TOKEN: 'unit-test-token', VERCEL_TEAM_ID: 'team_unit_test', VERCEL_PROJECT_ID: 'prj_unit_test' };
@@ -349,3 +350,7 @@ test('a self-hosted session is stopped before the outputs are stored, so a slow 
     // One stop on the worker: the later stop in cleanup is not repeated once the first was confirmed.
     expect(pool.calls.filter(call => call.method === 'DELETE')).toHaveLength(1);
 }));
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(JSON.parse(process.env.ASTRA_BLENDER_RATE_CARD ?? 'null'))).toEqual([]);
+});

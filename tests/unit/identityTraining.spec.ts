@@ -170,7 +170,7 @@ test("a retried New asset hands back the caller's own untrained identity instead
       listIdentities: async () => fixtures,
       updateIdentity: async (id: string, patch: { photos: string[]; description?: string }) => { updated.push({ id, ...patch }); return { ...fixtures.find((f) => f.id === id), ...patch }; },
       createIdentity: async (input: { name: string }) => { created.push(input.name); if (input.name === "Rowan" || input.name === "Tove") throw new Error(`There is already an identity called ${input.name}.`); return { id: "idn_new", name: input.name }; },
-      syncIdentity: async () => ({}), MIN_PHOTOS: 5, MAX_PHOTOS: 40, RECOMMENDED_PHOTOS: "", TRAIN_STEPS: 1500, trainCostUsd: () => 3.6, RENDER_USD_PER_MP: 0.035, TRAINER: "trainer",
+      syncIdentity: async () => ({}), MIN_PHOTOS: 5, MAX_PHOTOS: 40, RECOMMENDED_PHOTOS: "", TRAIN_STEPS: 1500, trainCostUsd: () => 3.6, RENDER_USD_PER_MP: 0.0167 /* made up, not the vendor's rate */, TRAINER: "trainer",
       identityForBrowser: (i: { loraUrl?: string | null }) => ({ ...i, loraUrl: undefined, trained: Boolean(i.loraUrl) }),
     },
     "@/lib/fal": { falConfigured: () => true },

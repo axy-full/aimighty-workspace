@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,7 +25,7 @@ delete process.env.PLATFORM_ALLOWANCE_USD;
 
 const OWNER: AdmissionActor = { user: { id: "owner", email: "owner@example.invalid", name: "owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null } };
 const WRITER = "anthropic/claude-haiku-4.5";
-const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language", description: "", contextWindow: 100000, maxTokens: 5000, pricing: { input: "0.000001", output: "0.000002" } };
+const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language", description: "", contextWindow: 100000, maxTokens: 5000, pricing: { input: "0.000000555", output: "0.00000152" } };
 
 const nodeRequire = createRequire(path.resolve("package.json"));
 function resolveSource(from: string, name: string): string {
@@ -294,4 +295,8 @@ test("words replaced while a press is on its way: the new words get their own pr
     const moved = await runs.run(fetcher, c, () => ({ scope: "particl-active-ws2-owner", body: c.body }));
     expect(moved).toEqual({ ok: false, stale: true });
   });
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(MODEL.pricing)).toEqual([]);
 });

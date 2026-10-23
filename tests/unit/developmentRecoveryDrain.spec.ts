@@ -1,5 +1,6 @@
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { test, expect } from '@playwright/test';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { createClient } from '@libsql/client';
 import { mkdtempSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -32,7 +33,8 @@ for (const condition of ['queued-phase', 'started-phase', 'uncertain-phase', 'pa
     const ws = (await getWorkspace(workspaceId))!;
     const native = createPlatformDatabaseClient({ url: ws.dbUrl });
     const fixturePlatform = createClient({ url: process.env.PLATFORM_DATABASE_URL! });
-    const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude fixture', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .0000001, output: .0000003 } };
+    const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude fixture', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .0000000426, output: .000000331 } };
+    expect(vendorRatesIn(model.pricing)).toEqual([]);
     let jobId = '';
     await runInTenant(ws, async () => {
       await ready(); await fundFixtureWorkspace();

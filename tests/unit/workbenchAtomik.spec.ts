@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -17,7 +18,7 @@ import type { LanguageModelV4GenerateResult } from '@ai-sdk/provider';
 import { createSuiteAgent, suiteAgentMessages } from '../../lib/workbench/suite-agent';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'particl-workbench-atomik-'));
-const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Economy', owner: 'test', type: 'language', inputModalities: ['text', 'image'], description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000001', output: '0.0000003' } };
+const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Economy', owner: 'test', type: 'language', inputModalities: ['text', 'image'], description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: '0.0000000929', output: '0.000000703' } };
 const validReply = { intent: 'shots', summary: 'Wren enters the dunes after the sphere catches first light.', steps: ['Open on the mirrored dunes for 96 frames at 24 fps.', 'Hold the encounter for 144 frames; keep Wren’s ivory scarf consistent.'] };
 function workspace(): TenantWorkspace {
   const id = randomUUID();
@@ -58,7 +59,8 @@ test('the crew includes marketing alongside the production departments and Genie
 });
 
 test('catalog selection uses priced language models and chooses economy by cost', () => {
-  const expensive = { ...model, id: 'anthropic/claude-opus-4.7', pricing: { input: .00001, output: .00005 } };
+  const expensive = { ...model, id: 'anthropic/claude-opus-4.7', pricing: { input: .0000159, output: .0000189 } };
+  expect(vendorRatesIn(expensive.pricing)).toEqual([]);
   expect(atomikModels([expensive, { ...model, id: 'anthropic/claude-opus-4.6', pricing: null }, { ...model, id: 'openai/gpt-5.5-pro', type: 'image' }, { ...model, id: 'test/unapproved', pricing: { input: 0, output: 0 } }, model]).map(m => m.id)).toEqual(['anthropic/claude-sonnet-4.6','anthropic/claude-opus-4.7']);
 });
 
@@ -351,7 +353,8 @@ test('premium models can quote with effort but cannot use the larger ceiling wit
   await runInTenant(workspace(), async () => {
     const { input } = await fixture();
     const h = harness();
-    const premium: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', name: 'GPT-6 Astra', maxTokens: 128000, pricing: { input: .00001, output: .00005 }, reasoningOptions: [{ type: 'effort', values: ['low','medium','high','xhigh','max'] }] };
+    const premium: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', name: 'GPT-6 Astra', maxTokens: 128000, pricing: { input: .0000159, output: .0000189 }, reasoningOptions: [{ type: 'effort', values: ['low','medium','high','xhigh','max'] }] };
+    expect(vendorRatesIn(premium.pricing)).toEqual([]);
     h.deps.models = async () => [premium];
     const request = { ...input, model: premium.id, effort: 'max' };
     const quote = await quoteAtomikJob(request, 'owner', h.deps);
@@ -371,7 +374,7 @@ test('unknown declared context-tier prices cannot become a free quote or reserva
   await runInTenant(workspace(), async () => {
     const { input } = await fixture();
     const h = harness();
-    h.deps.models = async () => [{ ...model, pricing: { input: .00001, output: .00005, input_tiers: [{ min: 0, cost: 'unknown' }] } }];
+    h.deps.models = async () => [{ ...model, pricing: { input: .0000159, output: .0000189, input_tiers: [{ min: 0, cost: 'unknown' }] } }];
     await expect(quoteAtomikJob(input, 'owner', h.deps)).rejects.toThrow('no confirmed price');
     await expect(prepareAtomikJob(input, 'owner', undefined, h.deps)).rejects.toThrow('no confirmed price');
     expect(h.reservations()).toBe(0);
@@ -472,10 +475,11 @@ test('SDK suite steps settle using their own context tiers and the saved price, 
   await runInTenant({ ...workspace(), keys: {}, usesPlatformKeys: true }, async () => {
     const { input } = await fixture(), h = harness();
     const priced: CatalogModel = { ...model, pricing: {
-      input: .0000001, output: .0000003,
-      input_tiers: [{ min: 0, max: 150, cost: .0000001 }, { min: 150, cost: .0000004 }],
-      output_tiers: [{ min: 0, max: 150, cost: .0000003 }, { min: 150, cost: .0000006 }],
+      input: .0000000929, output: .000000703,
+      input_tiers: [{ min: 0, max: 150, cost: .0000000929 }, { min: 150, cost: .00000111 }],
+      output_tiers: [{ min: 0, max: 150, cost: .000000703 }, { min: 150, cost: .00000158 }],
     } };
+    expect(vendorRatesIn(priced.pricing)).toEqual([]);
     h.deps.models = async () => [priced];
     const request = { ...input, suite: 'moleculr' as const, refs: [], effort: 'auto', maxCredits: 10000 };
     const { job } = await prepareAtomikJob(request, 'owner', undefined, h.deps);
@@ -629,7 +633,8 @@ test('Astra uses the exact requested model, binds the saved scene and prices bot
     const { createAstraScene, ASTRA_BLENDER_MODEL } = await import('../../lib/astra-blender/scene');
     const { astraSceneDigest } = await import('../../lib/astra-blender/proposal');
     const { ASTRA_AGENT_INPUT_TOKENS, ASTRA_AGENT_STEPS } = await import('../../lib/astra-blender/agent');
-    const astraModel = { ...model, id: ASTRA_BLENDER_MODEL, owner: 'openai', maxTokens: 128000, contextWindow: 1050000, pricing: { input: .00001, output: .00005 }, reasoningOptions: [{ type: 'effort' as const, values: ['low', 'medium', 'high', 'xhigh', 'max'] }] };
+    const astraModel = { ...model, id: ASTRA_BLENDER_MODEL, owner: 'openai', maxTokens: 128000, contextWindow: 1050000, pricing: { input: .0000159, output: .0000189 }, reasoningOptions: [{ type: 'effort' as const, values: ['low', 'medium', 'high', 'xhigh', 'max'] }] };
+    expect(vendorRatesIn(astraModel.pricing)).toEqual([]);
     const h = harness(); h.deps.models = async () => [astraModel, model];
     const request = { ...input, model: ASTRA_BLENDER_MODEL, refs: [], effort: 'medium', astraBlender: { sceneDigest: await astraSceneDigest(createAstraScene('product')) } };
     const quote = await quoteAtomikJob(request, 'owner', h.deps);
@@ -653,7 +658,7 @@ test('Astra proposals use durable paid accounting and do not replay a duplicate 
     const { createAstraScene, ASTRA_BLENDER_MODEL } = await import('../../lib/astra-blender/scene');
     const { astraSceneDigest } = await import('../../lib/astra-blender/proposal');
     const h = harness(); let runs = 0;
-    h.deps.models = async () => [{ ...model, id: ASTRA_BLENDER_MODEL, owner: 'openai', maxTokens: 128000, contextWindow: 1050000, pricing: { input: .00001, output: .00005 } }];
+    h.deps.models = async () => [{ ...model, id: ASTRA_BLENDER_MODEL, owner: 'openai', maxTokens: 128000, contextWindow: 1050000, pricing: { input: .0000159, output: .0000189 } }];
     h.deps.runAstra = async envelope => { runs++; const scene = structuredClone(envelope.scene); scene.name = 'Astra product'; return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Product scene.', steps: ['Preserved geometry.'], sceneJson: JSON.stringify(scene) }) } }], usage: { steps: [{ prompt_tokens: 200, completion_tokens: 100 }] } }) }; };
     const inputAstra = { ...input, model: ASTRA_BLENDER_MODEL, refs: [], astraBlender: { sceneDigest: await astraSceneDigest(createAstraScene('product')) }, maxCredits: 1000 };
     const prepared = await prepareAtomikJob(inputAstra, 'owner', undefined, h.deps);
@@ -683,11 +688,12 @@ for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agent
     await runInTenant(ws, async () => {
       const { input } = await fixture(), h = harness();
       const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', maxTokens: 128000, contextWindow: 1050000,
-        pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125,
-          input_tiers: [{ cost: .0000001, max: 150 }, { cost: .0000002, min: 150 }],
-          output_tiers: [{ cost: .0000003, max: 150 }, { cost: .0000004, min: 150 }],
-          input_cache_read_tiers: [{ cost: .00000001, max: 150 }, { cost: .00000002, min: 150 }],
-          input_cache_write_tiers: [{ cost: .000000125, max: 150 }, { cost: .00000025, min: 150 }] } };
+        pricing: { input: .0000000929, output: .000000703, input_cache_read: .00000000964, input_cache_write: .000000241,
+          input_tiers: [{ cost: .0000000929, max: 150 }, { cost: .000000293, min: 150 }],
+          output_tiers: [{ cost: .000000703, max: 150 }, { cost: .00000111, min: 150 }],
+          input_cache_read_tiers: [{ cost: .00000000964, max: 150 }, { cost: .0000000118, min: 150 }],
+          input_cache_write_tiers: [{ cost: .000000241, max: 150 }, { cost: .000000623, min: 150 }] } };
+      expect(vendorRatesIn(priced.pricing)).toEqual([]);
       h.deps.models = async () => [priced];
       const scene = createAstraScene('product');
       const request = { ...input, model: priced.id, refs: [], maxCredits: 0,
@@ -711,7 +717,7 @@ for (const agentKind of ['raw', 'suite', 'astra'] as const) test(`direct ${agent
       expect(calls).toBe(1);
       expect(saved.status).toBe(unknown ? 'uncertain' : 'succeeded');
       if (unknown) { expect(saved.costUsd).toBeNull(); expect(h.events.at(-1)?.engineCostUsd).toBe(prepared.job.estimateUsd); }
-      else expect(saved.costUsd).toBeCloseTo((30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003) * (agentKind === 'raw' ? 1 : 2), 12);
+      else expect(saved.costUsd).toBeCloseTo((30 * .0000000929 + 30 * .00000000964 + 40 * .000000241 + 20 * .000000703) * (agentKind === 'raw' ? 1 : 2), 12);
       const receipt = (await db().execute({ sql: 'SELECT provider_response,usage FROM workbench_atomik_jobs WHERE id=?', args: [prepared.job.id] })).rows[0];
       expect(String(receipt.provider_response)).toContain('cached_tokens'); expect(String(receipt.usage)).toContain('cached_tokens');
     });
@@ -731,7 +737,8 @@ for (const agentKind of ['raw', 'suite'] as const) test(`a TEXT_DIRECT ${agentKi
       process.env.TEXT_DIRECT = 'anthropic';
       // Without cache prices a direct Claude call has no ceiling: refused before any reservation.
       await expect(quoteAtomikJob(request, 'owner', h.deps)).rejects.toMatchObject({ status: 503 });
-      const priced: CatalogModel = { ...model, pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      const priced: CatalogModel = { ...model, pricing: { input: .0000000929, output: .000000703, input_cache_read: .00000000964, input_cache_write: .000000241 } };
+      expect(vendorRatesIn(priced.pricing)).toEqual([]);
       h.deps.models = async () => [priced];
       const quote = await quoteAtomikJob(request, 'owner', h.deps);
       delete process.env.TEXT_DIRECT;
@@ -757,7 +764,7 @@ for (const agentKind of ['raw', 'suite'] as const) test(`a TEXT_DIRECT ${agentKi
       expect(sent).toBe(1);
       const [done] = await listAtomikJobs('owner', input.projectId, { meter: h.deps.meter }, request.requestId);
       expect(done.status).toBe('succeeded');
-      expect(done.costUsd).toBeCloseTo((30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003) * (agentKind === 'raw' ? 1 : 2), 15);
+      expect(done.costUsd).toBeCloseTo((30 * .0000000929 + 30 * .00000000964 + 40 * .000000241 + 20 * .000000703) * (agentKind === 'raw' ? 1 : 2), 15);
       expect(h.events.at(-1)).toMatchObject({ engine: 'anthropic', status: 'succeeded' });
       // Approved on the gateway, then TEXT_DIRECT switched Claude to Anthropic: refused before the provider, nothing charged.
       h.deps.models = async () => [priced];
@@ -775,4 +782,8 @@ for (const agentKind of ['raw', 'suite'] as const) test(`a TEXT_DIRECT ${agentKi
     globalThis.fetch = realFetch;
     for (const [name, value] of [['ENGINE_MOCK', saved.mock], ['TEXT_DIRECT', saved.direct], ['ANTHROPIC_API_KEY', saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
   }
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
 });

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,7 +21,7 @@ delete process.env.PLATFORM_ALLOWANCE_USD;
 
 const OWNER: AdmissionActor = { user: { id: "owner", email: "owner@example.invalid", name: "owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null } };
 const WRITER = "anthropic/claude-haiku-4.5";
-const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language" as const, description: "", contextWindow: 100000, maxTokens: 5000, pricing: { input: "0.000001", output: "0.000002" } };
+const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language" as const, description: "", contextWindow: 100000, maxTokens: 5000, pricing: { input: "0.000000898", output: "0.000000944" } };
 const OLD = 31 * 60_000;
 
 type Submit = () => Promise<{ ok: boolean; status: number; text: string }>;
@@ -243,4 +244,8 @@ test("a pass that settled the meter but could not mark the job is finished by a 
     expect(await state("ws_ptr_partial", "text_partial")).toMatchObject({ job: "refunded", meter: "failed", billed: 0, debit: 0 });
     expect(await balance("ws_ptr_partial")).toBe(before);
   });
+});
+
+test("no fixture in this file states a vendor's rate (its prices are made up; no catalogue entry has them)", () => {
+  expect(vendorRatesIn(MODEL.pricing)).toEqual([]);
 });
