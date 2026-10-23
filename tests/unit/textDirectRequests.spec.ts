@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { HIGH, LOW, MEDIUM } from '../helpers/thinkingSlots';
+import { HIGH, LOW, MEDIUM, OPENAI_IDS, OTHER_CLAUDE } from '../helpers/thinkingSlots';
 import { generateText, tool } from 'ai';
 import { z } from 'zod';
 import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
@@ -265,14 +265,14 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
   expect(await textIds()).toEqual([]);
 });
 
-test('defaults: enhancement, ideas and shots on Opus 5.5 (the owner, 16 Oct 2026, for enhancement); Atomik thinks at the Medium slot by default', () => {
+test('defaults: enhancement, ideas and shots on the owner\'s enhancement default (16 Oct 2026); Atomik thinks at the Medium slot by default', () => {
   expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-opus-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
   /* Auto's list is gone (owner, 22 Oct 2026): the setting's model runs; without it, only a Claude model no dearer than it, never OpenAI (these entries carry no price, so none qualifies). */
   const entry = (id: string) => ({ id, name: id, owner: id.split('/')[0], type: 'language' as const, description: '', contextWindow: 200_000, maxTokens: 8_000, pricing: null });
-  expect(selectAtomikThinking('medium', 'plan', [MEDIUM, 'openai/gpt-5.5'].map(entry))?.model).toBe(MEDIUM);
-  expect(selectAtomikThinking('medium', 'plan', ['anthropic/claude-sonnet-4.6', LOW, 'openai/gpt-5.5'].map(entry))).toBeNull();
-  expect(selectAtomikThinking('medium', 'plan', ['anthropic/claude-sonnet-4.6', 'openai/gpt-5.5'].map(entry))).toBeNull();
-  expect(selectAtomikThinking('medium', 'plan', ['openai/gpt-5.5'].map(entry))).toBeNull();
+  expect(selectAtomikThinking('medium', 'plan', [MEDIUM, OPENAI_IDS[0]].map(entry))?.model).toBe(MEDIUM);
+  expect(selectAtomikThinking('medium', 'plan', [OTHER_CLAUDE[0], LOW, OPENAI_IDS[0]].map(entry))).toBeNull();
+  expect(selectAtomikThinking('medium', 'plan', [OTHER_CLAUDE[0], OPENAI_IDS[0]].map(entry))).toBeNull();
+  expect(selectAtomikThinking('medium', 'plan', [OPENAI_IDS[0]].map(entry))).toBeNull();
   for (const id of Object.values(DEFAULT_TEXT_MODELS)) expect(TEXT_MODEL_IDS).toContain(id);
   expect(TEXT_MODEL_IDS).toEqual(expect.arrayContaining(['openai/gpt-5.5', 'openai/gpt-5.4', 'spacexai/grok-4.7', 'google/gemini-3.6-flash']));
 });

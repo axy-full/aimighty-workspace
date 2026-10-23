@@ -328,7 +328,7 @@ test('direct text is billed (PR 3): the rig planner prices a direct turn from ra
   const { plannerPrice } = await import('../../lib/workbench/rig-agent');
   const { plannerCostUsd } = await import('../../lib/workbench/rig-agent-planner');
   /* The planning turn is priced at Atomik's thinking for a plan (owner, 22 Oct 2026: the setting's model, Medium by default), not the run's saved model. */
-  const price = await plannerPrice('anthropic/claude-sonnet-5');
+  const price = await plannerPrice('auto');
   expect(price).toMatchObject({ id: MEDIUM, direct: true, engine: 'anthropic' });
   // The same usage at the planner's own catalogue entry (its prices read from the entry, not written here).
   const rate = (key: string) => Number((price.catalog.pricing as Record<string, unknown>)[key]);
@@ -340,11 +340,11 @@ test('direct text is billed (PR 3): the rig planner prices a direct turn from ra
   expect(plannerCostUsd(price.catalog, [step], price.direct)).toBeCloseTo(plannerUsd, 15);
   // On the gateway the same turn keeps its gateway engine and the SDK's totals.
   delete process.env.TEXT_DIRECT;
-  expect(await plannerPrice('anthropic/claude-sonnet-5')).toMatchObject({ id: MEDIUM, direct: false, engine: 'vercel' });
+  expect(await plannerPrice('auto')).toMatchObject({ id: MEDIUM, direct: false, engine: 'vercel' });
   // Medium's slot unset: refused before anything is priced, never planned on another model.
   const savedMedium = process.env.ATOMIK_THINKING_MEDIUM_MODEL;
   delete process.env.ATOMIK_THINKING_MEDIUM_MODEL;
-  try { await expect(plannerPrice('anthropic/claude-sonnet-5')).rejects.toThrow(THINKING_UNAVAILABLE); }
+  try { await expect(plannerPrice('auto')).rejects.toThrow(THINKING_UNAVAILABLE); }
   finally { process.env.ATOMIK_THINKING_MEDIUM_MODEL = savedMedium; }
   process.env.TEXT_DIRECT = 'anthropic';
 

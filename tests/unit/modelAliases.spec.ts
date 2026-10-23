@@ -1,5 +1,5 @@
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
-import { HIGH, LOW, MEDIUM } from "../helpers/thinkingSlots";
+import { LOW, MEDIUM, OPENAI_IDS, OTHER_CLAUDE } from "../helpers/thinkingSlots";
 import { test, expect } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -114,11 +114,11 @@ test("Atomik's thinking never plans on a dropped id: no setting names one, and O
   for (const { model } of Object.values(ATOMIK_THINKING)) expect(isDroppedModel(model!), String(model)).toBe(false);
   const { atomikModels } = await import("../../lib/workbench/atomik-server");
   const { selectPlannerModel } = await import("../../lib/workbench/rig-agent-planner");
-  expect(atomikModels(["openai/gpt-5-nano", "openai/gpt-4.1-nano", "openai/gpt-5.5", "openai/gpt-5.5-pro"].map(entry))).toEqual([]);
-  expect(() => selectPlannerModel("openai/gpt-5.5", [{ id: "openai/gpt-5.5" }])).toThrow(THINKING_UNAVAILABLE);
+  expect(atomikModels([...OPENAI_IDS, ...DROPPED_MODEL_IDS.filter((id) => id.startsWith("openai/"))].map(entry))).toEqual([]);
+  expect(() => selectPlannerModel(OPENAI_IDS[0], [{ id: OPENAI_IDS[0] }])).toThrow(THINKING_UNAVAILABLE);
   /* Three Claude models only (owner, 23 Oct 2026): another Claude id is off the menu too. */
-  const outside = VERIFIED_TEXT_MODEL_IDS.find((id) => id.startsWith("anthropic/") && ![HIGH, MEDIUM, LOW].includes(id))!;
-  const menu = atomikModels(["openai/gpt-5.5", outside, MEDIUM, LOW].map(entry));
+  const outside = OTHER_CLAUDE[0];
+  const menu = atomikModels([OPENAI_IDS[0], outside, MEDIUM, LOW].map(entry));
   expect(menu.map((m) => m.id).sort()).toEqual([MEDIUM, LOW].sort());
   expect(selectPlannerModel(MEDIUM, menu)).toBe(MEDIUM);
 });
@@ -227,7 +227,7 @@ test("a quote for a dropped id is the alias's quote, which is the Thinking setti
 test("a development request saved before the drop, naming a dropped id, finds its job on retry instead of a conflict", async () => {
   const { seedProject } = await import("../../lib/workbench/studio");
   const { developmentSourceHash, prepareDevelopmentJob, quoteDevelopmentJob } = await import("../../lib/workbench/development-server");
-  const models = ["openai/gpt-5.5", MEDIUM].map(entry);
+  const models = [OPENAI_IDS[0], MEDIUM].map(entry);
   let reservations = 0;
   const deps = {
     models: async () => models, allowance: async () => ({ ok: true as const }),

@@ -540,3 +540,30 @@ test("the rig-agent worker: an Inngest function on its own event, a native worke
   const { handleRigAgent } = await import("../../lib/workbench/rig-agent");
   await expect(handleRigAgent({ runId: "not-a-run", productionId: "prod-1", workspaceId: "ws_1" })).rejects.toThrow(/Invalid rig agent event/);
 });
+
+test("an empty Thinking slot refuses a new board ask before its run is written; a retry of a run already asked still finds it", async () => {
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  const agent = await import("../../lib/workbench/rig-agent");
+  const { THINKING_UNAVAILABLE, thinkingModelEnv } = await import("../../lib/atomikModelPolicy");
+  await runInTenant(await seed("empty-slot"), async () => {
+    const ask = (requestId: string) => agent.askRigAgent({ productionId: "prod-1", draftId: "draft-1", userId: "ana", requestId, goal: "The captain on the pier.", limit: LIMIT });
+    const asked = await ask("req-slot-0001");
+    const runs = async () => Number((await db().execute("SELECT COUNT(*) AS n FROM rig_agent_runs")).rows[0].n);
+    expect(await runs()).toBe(1);
+    /* The mocked engines price the planner without the catalogue: off for this check, with the checked-in catalogue and Medium's slot unset
+       (the gateway key a fixture, never sent: plannerPrice reads the catalogue only), so plannerPrice refuses as it would live. */
+    const saved = { mock: process.env.ENGINE_MOCK, catalog: process.env.MODEL_CATALOG, gateway: process.env.AI_GATEWAY_API_KEY, medium: process.env[thinkingModelEnv("medium")] };
+    delete process.env.ENGINE_MOCK; process.env.MODEL_CATALOG = "static"; process.env.AI_GATEWAY_API_KEY = "test-only-never-sent";
+    delete process.env[thinkingModelEnv("medium")];
+    try {
+      await expect(ask("req-slot-0002")).rejects.toMatchObject({ status: 503, message: THINKING_UNAVAILABLE });
+      expect(await runs(), "no run row is written for the refused ask").toBe(1);
+      /* A retry of the run already asked is that run, whatever the slot says now. */
+      expect((await ask("req-slot-0001")).id).toBe(asked.id);
+    } finally {
+      for (const [key, value] of [["ENGINE_MOCK", saved.mock], ["MODEL_CATALOG", saved.catalog], ["AI_GATEWAY_API_KEY", saved.gateway], [thinkingModelEnv("medium"), saved.medium]] as const)
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  });
+});

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { GEMINI_IDS, GROK_IDS, MEDIUM } from "../helpers/thinkingSlots";
+import { GEMINI_IDS, GROK_IDS, MEDIUM, OPENAI_IDS } from "../helpers/thinkingSlots";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
@@ -75,9 +75,9 @@ async function adminRoute(text: Record<string, string>, routable: string[], serv
 }
 
 test("the admin route sends each job its own list and what a saved choice does", async () => {
-  const body = await adminRoute({ enhance: "openai/gpt-5.5", idea: "google/gemini-3.1-pro-preview", shot: MEDIUM }, ROUTABLE, ROUTABLE);
+  const body = await adminRoute({ enhance: OPENAI_IDS[0], idea: GEMINI_IDS[0], shot: MEDIUM }, ROUTABLE, ROUTABLE);
   expect(body.textModelsByJob.idea.some((id: string) => id.startsWith("google/"))).toBe(false);
-  expect(body.textModelsByJob.enhance.includes("openai/gpt-5.5")).toBe(false);
+  expect(body.textModelsByJob.enhance.includes(OPENAI_IDS[0])).toBe(false);
   expect(body.textEffects.idea).toMatchObject({ runnable: false, runs: MEDIUM });
   expect(body.textEffects.enhance).toMatchObject({ runnable: false, runs: "anthropic/claude-opus-5.5" });
   expect(body.textEffects.shot).toMatchObject({ runnable: true });

@@ -584,6 +584,30 @@ test("an unset slot is refused before anything is quoted, claimed or saved, and 
   });
 });
 
+test("a retry of a request already answered gets its saved reply when the slot is empty now; only a new request is refused", async () => {
+  const ws = await funded("replay");
+  const ideas = await route("app/api/atomik/ideas/draft/route.ts");
+  const { platformDb } = await import("../../lib/platform");
+  const money = async () => Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", args: [ws.id] })).rows[0].n);
+  const send = (body: Record<string, unknown>, key: string) => inTenant(ws, async () => {
+    const res = await ideas.POST!(new Request("https://particl.test/api/atomik/ideas/draft", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(body) }));
+    return { status: res.status, replayed: res.headers.get("Idempotency-Replayed"), body: await res.json() as Record<string, unknown> };
+  });
+  const brief = { brief: "A lighthouse keeper's last night." };
+  const quote = await send({ ...brief, quoteOnly: true }, `think-${randomUUID()}`);
+  const key = `think-${randomUUID()}`, body = { ...brief, maxCredits: quote.body.estimateCredits };
+  const first = await send(body, key);
+  expect(first.status, JSON.stringify(first.body)).toBe(200);
+  const billed = await money();
+  await withSlotEnv({ [thinkingModelEnv("medium")]: undefined }, async () => {
+    /* The same key: its saved reply, replayed, not "isn't connected", and nothing billed again. */
+    expect(await send(body, key)).toEqual({ status: 200, replayed: "true", body: first.body });
+    /* A new key: refused before anything is claimed. */
+    expect(await send(body, `think-${randomUUID()}`)).toMatchObject({ status: 503, body: { error: THINKING_UNAVAILABLE } });
+  });
+  expect(await money()).toBe(billed);
+});
+
 test("a slot naming an id outside the verified Claude catalogue is refused the same way, whatever the catalogue serves", async () => {
   const ws = await funded("outside");
   const { staticCatalog } = await import("../../lib/catalog");
