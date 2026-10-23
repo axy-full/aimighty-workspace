@@ -38,7 +38,10 @@ export const GUARDS = {
   ],
   /* A customer's board and sign-in, with the switch off. */
   customer: ["tests/customer.spec.ts"],
-  /* "Switch off: customers unchanged": each new-interface spec's own switch-off test, found by name (only specs that have one). */
+  /* "Switch off: customers unchanged": the switch-off browser check every build behind the new-interface switch is held to (it
+     lasts when a build is deleted: the prototype-12 build's own were, 23 Oct 2026), plus each new-interface spec's own switch-off
+     test, found by name (only specs that have one). */
+  switchOff: ["tests/switch-off-customers-workbench.spec.ts"],
   switchOffGrep: "switch off",
 };
 
@@ -158,7 +161,8 @@ export function select({ event, base, files, specs, read = () => null, exposed =
   const workbenchSpecs = inSuite(WORKBENCH_SPEC);
   const customerSpecs = inSuite(CUSTOMER_SPEC);
   /* Only the specs that have a switch-off test: a chunk of specs without one would fail with "No tests found". */
-  const switchOff = v12.filter((s) => !whole.has(s) && /switch off/.test(read(s) ?? "")).sort();
+  const switchOff = unique([...GUARDS.switchOff.filter((s) => exists.has(s)), ...v12])
+    .filter((s) => !whole.has(s) && /switch off/.test(read(s) ?? "")).sort();
 
   const runs = [];
   if (workbenchSpecs.length) runs.push({ name: "specs this PR touches, and the guard specs", suite: "workbench", grep: null, specs: workbenchSpecs });
@@ -172,8 +176,14 @@ export function select({ event, base, files, specs, read = () => null, exposed =
 /* The new-interface files that something outside components/v12 imports, and everything those import inside it, as module paths without
    an extension (the repository at the PR's head). */
 export function exposedV12(root = ".") {
-  const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 })
-    .split("\n").filter((p) => /\.(ts|tsx|mjs|css)$/.test(p) && /^(app|components|lib|tests|scripts)\//.test(p));
+  const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 }).split("\n");
+  return exposedFrom(files, (path) => readFileSync(join(root, path), "utf8"));
+}
+
+/* The same, over a given list of repository paths and a reader for them (pure: tests/unit/ci-select.spec.ts runs it on a fixture tree, so
+   its rules hold whatever components/v12 holds today). A file that cannot be read imports nothing. */
+export function exposedFrom(all, readText) {
+  const files = all.filter((p) => /\.(ts|tsx|mjs|css)$/.test(p) && /^(app|components|lib|tests|scripts)\//.test(p));
   const known = new Set(files.map((p) => p.replace(/\.(tsx?|mjs)$/, "")));
   const specifiers = (text) => [...text.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1]);
   const resolve = (from, spec) => {
@@ -186,7 +196,8 @@ export function exposedV12(root = ".") {
   for (const path of files) {
     if (/\.css$/.test(path)) continue; // a stylesheet imports nothing that matters here; it is found as an import target
     let text;
-    try { text = readFileSync(join(root, path), "utf8"); } catch { continue; }
+    try { text = readText(path); } catch { continue; }
+    if (typeof text !== "string") continue;
     const into = specifiers(text).map((spec) => resolve(path, spec)).filter(Boolean);
     const inside = path.startsWith("components/v12/");
     if (inside) edges.set(path.replace(/\.(tsx?|mjs)$/, ""), into.filter((m) => m.startsWith("components/v12/")));

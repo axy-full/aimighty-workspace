@@ -13,14 +13,51 @@ type Input = { event: string; base: string; files: string[]; specs: string[]; re
 const script = async () => (await import("../../scripts/ci-select.mjs")) as {
   select: (input: Input) => Plan;
   exposedV12: () => Set<string>;
-  GUARDS: { workbench: string[]; customer: string[]; switchOffGrep: string };
+  exposedFrom: (files: string[], read: (path: string) => string | null) => Set<string>;
+  GUARDS: { workbench: string[]; customer: string[]; switchOff: string[]; switchOffGrep: string };
   WORKBENCH_SPEC: RegExp; CUSTOMER_SPEC: RegExp;
 };
-const SPECS = readdirSync("tests").filter((n) => /\.spec\.ts$/.test(n)).map((n) => `tests/${n}`);
-const readReal = (path: string) => { try { return readFileSync(path, "utf8"); } catch { return null; } };
+/*
+ * The new interface as a fixture: its specs and components, and the files outside it that import from it. The rules below are about
+ * new-interface paths whatever components/v12 holds today (the prototype-12 build is deleted, 23 Oct 2026; v31.16 is built behind the
+ * same switch), so they run on this tree, not on the repository's components/v12. The repository's own files are read for everything else.
+ */
+const switchOffSpec = (name: string) => `test("switch off: today's ${name}, with none of it", async () => {});`;
+const FIXTURE: Record<string, string> = {
+  /* New-interface specs, each with its own switch-off test or none, as the build's were. */
+  ...Object.fromEntries(["board-frame", "board-kinds", "campaign", "library-tray", "menus", "render", "rig", "rounds", "settings-billing", "shell", "shots", "social", "visitor"]
+    .map((n) => [`tests/${n}-v12-workbench.spec.ts`, switchOffSpec(n)])),
+  ...Object.fromEntries(["header", "primitives", "home", "make", "deliver"].map((n) => [`tests/${n}-v12-workbench.spec.ts`, `test("the ${n}", async () => {});`])),
+  "tests/home-v12-layout-workbench.spec.ts": `test("Home's layout", async () => {});`,
+  /* The switch-off browser check every build behind the switch is held to. */
+  "tests/switch-off-customers-workbench.spec.ts": switchOffSpec("app"),
+  /* Outside the new interface: the board imports a card, a stage and a stylesheet from it; the shell imports its frame. */
+  "components/graphite/board/BoardView.tsx": `import { RoundCard } from "@/components/v12/rounds/RoundCard";\nimport { FormatsStage } from "@/components/v12/board/campaign/FormatsStage";\nimport "@/components/v12/board/board.css";`,
+  "components/graphite/SuitesShell.tsx": `const loadShell = () => import("@/components/v12/V12Shell");`,
+  /* Inside it: what those import in turn, and files nothing outside imports. */
+  "components/v12/V12Shell.tsx": `import "./v12.css";\nexport const V12Shell = () => null;`,
+  "components/v12/v12.css": ".v12 { color: inherit; }",
+  "components/v12/board/board.css": ".v12 .bd { color: inherit; }",
+  "components/v12/rounds/rounds.css": ".v12 .round { color: inherit; }",
+  "components/v12/rounds/RoundCard.tsx": `import { Price } from "../ui/Price";\nexport const RoundCard = () => <Price />;`,
+  "components/v12/board/campaign/FormatsStage.tsx": `import "./campaign.css";\nexport const FormatsStage = () => null;`,
+  "components/v12/board/campaign/campaign.css": ".v12 .formats { color: inherit; }",
+  "components/v12/ui/Price.tsx": "export const Price = () => <span>{quote.credits} cr</span>;",
+  /* Not presentational: each holds a hold, a cancel, a charge, a price or a fetch. */
+  "components/v12/render/use-render.ts": "export const useRender = () => fetch(`/api/jobs`);",
+  "components/v12/render/use-batch.ts": "export const held = (credits: number) => `${credits} cr held`;",
+  "components/v12/make/use-results.ts": "export const charged = (take: { billed: number }) => take.billed;",
+  "components/v12/rig/model.ts": "export const impactPrice = (quote: number) => quote;",
+  "components/v12/make/Composer.tsx": "export const Composer = () => <button>Make · {price}</button>;",
+  "components/v12/home/Greeting.tsx": "export const Greeting = () => <p>Hello</p>;",
+};
+const FIXTURE_SPECS = Object.keys(FIXTURE).filter((p) => /\.spec\.ts$/.test(p));
+const SPECS = [...new Set([...readdirSync("tests").filter((n) => /\.spec\.ts$/.test(n)).map((n) => `tests/${n}`), ...FIXTURE_SPECS])];
+const readReal = (path: string) => { if (path in FIXTURE) return FIXTURE[path]; try { return readFileSync(path, "utf8"); } catch { return null; } };
+const fixtureExposed = async () => (await script()).exposedFrom(Object.keys(FIXTURE), (path) => FIXTURE[path] ?? null);
 const pr = async (files: string[], base = "release/1", event = "pull_request", over: Partial<Input> = {}) => {
-  const { select, exposedV12 } = await script();
-  return select({ event, base, files, specs: SPECS, read: readReal, exposed: exposedV12(), ...over });
+  const { select } = await script();
+  return select({ event, base, files, specs: SPECS, read: readReal, exposed: await fixtureExposed(), ...over });
 };
 /* Nothing outside components/v12 imports anything: for the cases that need a stylesheet or a file to count as presentational. */
 const unexposed = { exposed: new Set<string>() };
@@ -92,12 +129,16 @@ test("a new-interface file is slim only when it is presentational, unexposed and
 });
 
 test("what a file outside components/v12 imports from it is exposed, directly or through other new-interface files", async () => {
-  const { exposedV12 } = await script();
-  const exposed = exposedV12();
+  const exposed = await fixtureExposed();
   /* BoardView (components/graphite) imports RoundCard and the Campaign stages; those import their own helpers. */
   expect(exposed.has("components/v12/rounds/RoundCard")).toBe(true);
   expect(exposed.has("components/v12/board/campaign/FormatsStage")).toBe(true);
   expect(exposed.has("components/v12/ui/Price")).toBe(true);
+  /* What nothing outside imports is not. */
+  expect(exposed.has("components/v12/home/Greeting")).toBe(false);
+  /* The same reading on the repository itself: only new-interface modules, each one something outside them reaches. */
+  const { exposedV12 } = await script();
+  for (const path of exposedV12()) expect(path, path).toMatch(/^components\/v12\//);
 });
 
 test("a stylesheet that something outside components/v12 imports is shared: the whole suite", async () => {
@@ -106,8 +147,7 @@ test("a stylesheet that something outside components/v12 imports is shared: the 
     const plan = await pr([css]);
     expect(plan.mode, css).toBe("full");
   }
-  const { exposedV12 } = await script();
-  expect(exposedV12().has("components/v12/board/board.css")).toBe(true);
+  expect((await fixtureExposed()).has("components/v12/board/board.css")).toBe(true);
   /* The same stylesheet with nothing importing it from outside is presentational. */
   expect((await pr(["components/v12/board/board.css"], "release/1", "pull_request", unexposed)).mode).toBe("slim");
 });
@@ -146,16 +186,30 @@ test("CSS and tests run slim: their own specs plus the fixed guard set, and noth
     "tests/audit-money-workbench.spec.ts", "tests/marketing-site-workbench.spec.ts", "tests/demo-s15-guest-home-workbench.spec.ts"]) expect(workbench.specs, spec).toContain(spec);
   const off = plan.runs.find((r) => r.grep === GUARDS.switchOffGrep)!;
   expect(off.specs.length).toBeGreaterThan(8);
+  /* The switch-off browser check every build is held to is in it. */
+  for (const spec of GUARDS.switchOff) expect(off.specs, spec).toContain(spec);
   /* Only specs that have a switch-off test: a chunk of none would fail with "No tests found". */
   for (const spec of off.specs) {
-    expect(/-v12-.*workbench\.spec\.ts$/.test(spec), spec).toBe(true);
-    expect(readFileSync(spec, "utf8"), spec).toMatch(/switch off/);
+    expect(/-v12-.*workbench\.spec\.ts$/.test(spec) || GUARDS.switchOff.includes(spec), spec).toBe(true);
+    expect(readReal(spec), spec).toMatch(/switch off/);
   }
   expect(off.specs).not.toContain("tests/rounds-v12-workbench.spec.ts");
   const customer = plan.runs.find((r) => r.suite === "customer")!;
   expect(customer.specs).toEqual(GUARDS.customer);
   expect(new Set(specsOf(plan)).size).toBeLessThan(30);
   for (const spec of specsOf(plan)) expect(SPECS, spec).toContain(spec);
+});
+
+test("with no new-interface spec left, the switch-off run is the switch-off browser check, never empty", async () => {
+  const { GUARDS } = await script();
+  const specs = SPECS.filter((s) => !/-v12-/.test(s));
+  const plan = await pr(["tests/unit/old-build-ports.spec.ts"], "release/1", "pull_request", { ...unexposed, specs });
+  expect(plan.mode).toBe("slim");
+  const off = plan.runs.find((r) => r.grep === GUARDS.switchOffGrep)!;
+  expect(off.specs).toEqual(GUARDS.switchOff);
+  /* A spec with no switch-off test is never put in that run: with the check's text gone, there is no switch-off run at all. */
+  const without = await pr(["tests/unit/old-build-ports.spec.ts"], "release/1", "pull_request", { ...unexposed, specs, read: (path) => (GUARDS.switchOff.includes(path) ? "test(\"nothing\", async () => {});" : readReal(path)) });
+  expect(without.runs.find((r) => r.grep === GUARDS.switchOffGrep)).toBeUndefined();
 });
 
 test("a changed browser spec runs the whole suite; a changed area maps to its own specs; an unmapped new-interface path runs every new-interface spec", async () => {
