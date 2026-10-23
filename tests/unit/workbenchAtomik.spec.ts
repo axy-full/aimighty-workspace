@@ -113,7 +113,8 @@ test('duplicate submissions have one durable claim, one reservation and one paid
     expect(jobs[0].plan?.summary).toEqual(validReply.summary);
     expect(jobs[0].plan?.applied).toBe(false);
     expect(jobs[0].costUsd).toBe(.003);
-    expect(h.events.at(-1)?.engineCostUsd).toBe(.003);
+    /* Metered at what it used, never past its estimate (money review 3, 23 Oct 2026): this fixture's reply reports more than its estimate. */
+    expect(h.events.at(-1)?.engineCostUsd).toBe(Math.min(.003, first.job.estimateUsd));
     expect(h.events.at(-1)?.projectId).toContain('real-project-');
     expect(Number((await db().execute('SELECT cost_usd FROM atomik_spend')).rows[0].cost_usd)).toBe(.003);
   });
