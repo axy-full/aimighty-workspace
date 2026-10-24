@@ -5,7 +5,8 @@ import {
   appendBrief, cleanDraft, draftAspect, draftLength, editedLine, isStarterDraft, nameFromBrief, needsLine, newProjectFor,
   renderingByProject, reusable, shownProjects, withAspect, withLength,
 } from "../../components/graphite/home/home-model";
-import { briefKind } from "../../components/graphite/home/brief-file";
+import { BRIEF_READER_LIMITS, briefKind } from "../../components/graphite/home/brief-file";
+import { MAX_PDF_BYTES, MAX_SCRIPT_PAGES } from "../../lib/workbench/screenplay";
 import { SAMPLE_ENTRY_ON, sampleCard } from "../../components/graphite/home/sample";
 import type { TrayStage } from "../../lib/jobsTray";
 
@@ -124,6 +125,12 @@ test("Attach a brief takes a PDF or a text file, nothing else", () => {
   expect(briefKind({ name: "brief.md", type: "" })).toBe("text");
   expect(briefKind({ name: "brief.docx", type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })).toBeNull();
   expect(briefKind({ name: "frame.png", type: "image/png" })).toBeNull();
+});
+
+/* Owner, 24 Oct 2026 (item 6): until document reading ships, the reader's limits are said in words where a brief is attached. */
+test("Attach a brief says the reader's limits in words, from the reader's own limits", () => {
+  expect(BRIEF_READER_LIMITS).toBe("Up to 20 MB and 400 pages of text. Scanned pages read once document reading ships.");
+  expect([MAX_PDF_BYTES, MAX_SCRIPT_PAGES]).toEqual([20 * 1024 * 1024, 400]);
 });
 
 test("Home's sheet uses only the token set's colours (app/graphite.css)", () => {

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ASPECTS, BRIEF_MAX, GLYPHS, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength, type HomeDraft } from "./home-model";
-import { BRIEF_ACCEPT, BriefFileError, readBriefFile } from "./brief-file";
+import { BRIEF_ACCEPT, BRIEF_READER_LIMITS, BriefFileError, readBriefFile } from "./brief-file";
 import { AttachThumbs } from "../AttachThumbs";
 import { LocalTileMedia } from "../LibraryTile";
 
@@ -22,7 +22,8 @@ export function HomeGlyph({ d }: { d: string }) {
 }
 
 /**
- * "What are we making?" (the master's Home): the brief, Attach a brief (PDF or text, read on this device),
+ * "What are we making?" (the master's Home): the brief, Attach a brief (PDF or text, read on this device; the reader's limits
+ * said under the row, BRIEF_READER_LIMITS),
  * Add references, and the aspect and length chips. Everything here is carried into the project a template
  * makes. The footer (Atomik's thinking line and Start) is PR b's. The added files show under the box as Library tiles
  * (components/graphite/AttachThumbs), each an object URL on this device until Start or a template uploads it; pressing one
@@ -124,6 +125,7 @@ export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile,
           ))}
         </span>
       </div>
+      <p className="gx-hm-note" data-testid="home-attach-hint">{BRIEF_READER_LIMITS}</p>
       {status ? (
         <p className={status.tone === "problem" ? "gx-hm-problem" : "gx-hm-note"} role={status.tone === "problem" ? "alert" : "status"} data-testid="home-box-status">{status.text}</p>
       ) : null}
