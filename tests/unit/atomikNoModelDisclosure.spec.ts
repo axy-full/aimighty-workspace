@@ -728,6 +728,31 @@ test("the prompt writer's model reaches no member: the engines read, the platfor
   });
 });
 
+/*
+ * The stale lines (owner, 24 Oct 2026, item 14 (d)): Atomik's refusals before a quote asked a person to choose another thinking model, Auto,
+ * lower effort or an economy model, none of which a person can choose any more. They are the copy table's now (lib/copy.ts REFUSALS), each
+ * with "Nothing billed.", and keep the words the money paths key on.
+ */
+test("Atomik's refusals before a quote ask for no model, no Auto and no effort: they are the copy table's, with Nothing billed", async () => {
+  const { REFUSALS, refusal } = await import("../../lib/copy");
+  const STALE = /[Cc]hoose (?:another|a (?:priced|larger-context|less expensive)) (?:model|language model)|[Cc]hoose another, or Auto|lower effort|economy model|selected model's/;
+  for (const file of ["lib/paidText.ts", "lib/workbench/rig-agent.ts", "lib/workbench/atomik-server.ts"]) {
+    const source = readFileSync(file, "utf8");
+    expect(source, file).not.toMatch(STALE);
+    expect(source, file).toContain("refusal(REFUSALS.");
+  }
+  for (const [key, line] of Object.entries(REFUSALS)) {
+    const said = refusal(line);
+    expect(modelVendorEffortIn(said), key).toEqual([]);
+    expect(said, key).not.toMatch(/\bmodel\b|\bAuto\b/i);
+    expect(said.endsWith(" Nothing billed."), key).toBe(true);
+  }
+  /* What the money paths read: an unpriced answer (lib/workspace/generate-submit.ts), the request budget and Atomik's spending limit. */
+  expect(refusal(REFUSALS.unpriced)).toContain("no confirmed price");
+  expect(refusal(REFUSALS.overBudget)).toContain("request budget");
+  expect(refusal(REFUSALS.overSpendingLimit)).toContain("spending limit");
+});
+
 test("the matcher finds every slot's id, the writer's and an effort, and lets engines through", () => {
   for (const id of [HIGH, MEDIUM, LOW, WRITER, DIRECT_MODEL_IDS[MEDIUM]]) expect(thinkingModelNames(JSON.stringify({ model: id })), id).not.toEqual([]);
   expect(thinkingModelNames("reasoning_effort, effort: high")).toHaveLength(2);

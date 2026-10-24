@@ -21,6 +21,7 @@ import {
 } from "./generationRequests";
 import type { TextRun } from "./engines/types";
 import type { Thinking } from "./atomikModelPolicy";
+import { REFUSALS, refusal } from "./copy";
 import { sampleWorkspaceRefusal } from "./demo/spend-guard.server";
 import { noteModelCall, traceModelCall, type ModelCallMeta, type ModelSiteId } from "./modelTrace";
 
@@ -98,14 +99,14 @@ export function textRequestEstimate(
     (model.contextWindow != null && input + maxTokens > model.contextWindow)
   )
     throw new PaidTextError(
-      "This request exceeds the selected model's context or output limit. Shorten it or choose another model.",
+      refusal(REFUSALS.tooLong),
       400,
     );
   // A direct call (any vendor) is quoted at its cold cache-write ceiling: it settles at usage × this snapshot.
   const estimate = textQuoteCostUsd(model, input, maxTokens, isDirectText(model.id));
   if (estimate == null || !Number.isFinite(estimate) || estimate <= 0)
     throw new PaidTextError(
-      "This model has no confirmed price. Choose a priced language model.",
+      refusal(REFUSALS.unpriced),
       503,
     );
   const fallback = expandedQuote ? 10 : 1;
@@ -113,7 +114,7 @@ export function textRequestEstimate(
   const cap = Number.isFinite(configured) && configured > 0 ? Math.min(configured, expandedQuote ? 10 : 5) : fallback;
   if (estimate > cap)
     throw new PaidTextError(
-      "This request exceeds the Atomik request budget. Use lower effort, fewer references, shorter context, or an economy model.",
+      refusal(REFUSALS.overBudget),
       409,
     );
   return estimate;
@@ -164,7 +165,7 @@ async function compilePaidText(input: QuotedTextInput, override?: CatalogModel, 
     return Array.isArray(content) && content.some((part) => part && typeof part === "object" && ["image", "image_url", "input_image"].includes(String(part.type)));
   });
   if (usesImages && !model.inputModalities?.includes("image"))
-    throw new PaidTextError("This model cannot read image references. Choose a model with image input or remove the references.", 422);
+    throw new PaidTextError(refusal(REFUSALS.imagesUnread), 422);
   /* The quoted-effort safety cap holds for a quote, and for a run that carries (or must carry) the ceiling its person approved on one; a run that
      needs no ceiling (ceilingRequired false) and has none keeps the older cap. */
   const estimate = textRequestEstimate(model, input.messages, reasoning.maxTokens,

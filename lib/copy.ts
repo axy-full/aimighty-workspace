@@ -148,6 +148,21 @@ export const MONEY = {
   statement: "Download statement",
 } as const;
 
+/**
+ * Why Atomik's thinking or the prompt writer cannot take a request. Nobody chooses a model or an effort any more (the Thinking setting,
+ * Amendment (iii) §E), so none of these asks for one; each is said before anything is reserved, and the call site adds "Nothing billed."
+ */
+export const REFUSALS = {
+  unpriced: "This request has no confirmed price.",
+  overBudget: "Over the request budget. Shorten the request.",
+  overSpendingLimit: "Over Atomik's spending limit. Shorten the request.",
+  tooLong: "Too long for one request. Shorten it.",
+  tooLongForSteps: "Too long for a multi-step run. Shorten it.",
+  imagesUnread: "Atomik cannot read image references here. Remove them.",
+} as const;
+/** A refusal as it is said: its line, then "Nothing billed." (rule 14). */
+export const refusal = (line: (typeof REFUSALS)[keyof typeof REFUSALS]): string => `${line} ${MONEY.nothingBilled}.`;
+
 /** The visitor site and "How Particl works" (v31.12–v31.16). */
 export const SITE = {
   inviteOnly: "Invite only.",
@@ -158,5 +173,5 @@ export const SITE = {
 
 /** The whole table, by section; the strings test walks it. */
 export const COPY = {
-  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, MONEY, SITE,
+  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, MONEY, REFUSALS, SITE,
 } as const;

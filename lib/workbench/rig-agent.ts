@@ -50,6 +50,7 @@ import { orderedIds, withTeamCanvas } from "./team-canvas-model";
 import { rigShots } from "../workspace/shots";
 import { SHOTS_STEP, chipsOf, resolveAnswers } from "./rig-agent-chips";
 import { newProject, type Asset, type CanvasNode, type Project } from "./studio";
+import { REFUSALS, refusal } from "../copy";
 import { readTeamCanvas, requireProduction } from "./team-canvas";
 
 /*
@@ -1010,7 +1011,7 @@ async function planRun(run: RunRow, lease: RunLease, deps: TickDeps): Promise<Ri
   try { price = await (deps.pricing ?? plannerPrice)(run.model); }
   catch (error) { return failRun(run.id, error instanceof PlannerError || error instanceof TextNotSentError ? error.message : "Atomik could not price this plan. Ask again.", ["planning"]); }
   const ceiling = plannerCeilingUsd(price.catalog, snapshot, price.direct);
-  if (ceiling == null) return failRun(run.id, "This thinking model has no confirmed price, so Atomik does not plan with it. Choose another, or Auto.", ["planning"]);
+  if (ceiling == null) return failRun(run.id, refusal(REFUSALS.unpriced), ["planning"]);
   if (run.capCredits == null) return failRun(run.id, "This request has no approved limit, so Atomik does not plan it. Ask again.", ["planning"]);
   try {
     await reserveGenerationSpend(planEvent(run, price, "running", ceiling), {

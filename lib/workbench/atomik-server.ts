@@ -35,6 +35,7 @@ import { publicAtomikPlan } from './public-plan';
 import { requireTenant, type TenantToken } from '../tenant';
 import { plannerMemory } from '../atomikMemory';
 import { MEMORY_ABOUT, type PlannerMemoryItem } from '../atomikMemoryText';
+import { REFUSALS, refusal } from '../copy';
 
 export const atomikRequestSchema = z.object({
   astraBlender: astraRequestSchema.optional(),
@@ -311,17 +312,17 @@ async function compileAtomikRequest(input: AtomikRequest, owner: string, deps: A
   const reasoning = atomikReasoningRequest(model, effort, LIMITS[input.depth].maxTokens);
   const maxTokens = input.astraBlender ? Math.min(32768, reasoning.maxTokens + 8000, model.maxTokens ?? 32768) : reasoning.maxTokens;
   if (model.contextWindow && inputTokens + maxTokens > model.contextWindow) {
-    throw new AtomikError('This model has too little context for the project. Choose a larger-context model or fewer references.');
+    throw new AtomikError(refusal(REFUSALS.tooLong));
   }
   // Bound repeated context, tool schemas/results and prior generated text for all three calls.
   const bounds = suiteAgentBounds(inputTokens, maxTokens);
-  if (input.suite && model.contextWindow && bounds.perStepInputTokens + maxTokens > model.contextWindow) throw new AtomikError('Choose a larger-context model or lower effort for this multi-step agent.', 422);
+  if (input.suite && model.contextWindow && bounds.perStepInputTokens + maxTokens > model.contextWindow) throw new AtomikError(refusal(REFUSALS.tooLongForSteps), 422);
   const perCallEstimate = textQuoteCostUsd(model, input.astraBlender ? ASTRA_AGENT_INPUT_TOKENS : input.suite ? bounds.perStepInputTokens : inputTokens, maxTokens, isDirectText(model.id));
   const estimateUsd = perCallEstimate == null ? null : perCallEstimate * (input.astraBlender ? ASTRA_AGENT_STEPS : input.suite ? SUITE_AGENT_STEPS : 1);
-  if (estimateUsd == null || !Number.isFinite(estimateUsd) || estimateUsd < 0) throw new AtomikError('This model has no confirmed price for the current context. Choose another model or refresh the catalogue.', 503);
+  if (estimateUsd == null || !Number.isFinite(estimateUsd) || estimateUsd < 0) throw new AtomikError(refusal(REFUSALS.unpriced), 503);
   /* The setting's effort always applies where the model offers it, so the request is held to the quoted-effort ceilings. */
   const budgets = atomikBudgets(effort !== undefined || !!input.astraBlender);
-  if (estimateUsd > budgets.maxRequestUsd) throw new AtomikError('This request exceeds the Atomik spending limit. Choose a less expensive model, lower effort, shorter response detail, or fewer references.', 409);
+  if (estimateUsd > budgets.maxRequestUsd) throw new AtomikError(refusal(REFUSALS.overSpendingLimit), 409);
   let providerBody = JSON.stringify({
     model: model.id, max_tokens: maxTokens, ...(isDirectText(model.id) ? { pricingModel: model } : {}),
     ...reasoning.requestFields,
