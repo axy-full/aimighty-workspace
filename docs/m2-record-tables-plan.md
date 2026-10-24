@@ -238,10 +238,10 @@ Existing specs M2 must keep green without edits: `tests/unit/projectDeleteSteps.
 
 ## What the owner is asked
 
-1. **Yes to M2 as planned**, built after M1 merges (M1 is local at `5fa9d78f`, not on `release/1`).
+1. **Yes to M2 as planned.** M1 merged on 24 Oct 2026 as `aad15b26` (#907).
 2. **[money] When the conversion restates a record row, does it find the row by its id alone, or also check the workspace?** By id alone is what it does for every other table today, safe because each workspace has its own database; M2 would say so in a comment (recommended). Also checking the workspace means changing the loop every table shares.
 3. **[money] Archived copies by their own time:** yes to the small `Spec` extension that reads the row's time from the archived body?
 4. **Delete and export act on the record tables wherever they exist,** switch on or off, since they are the workspace's own data. Yes?
 5. **Fixtures:** M2 ships Mirror and Sand as shapes and volumes; your right answers are needed before M5 and 3d. How will you give them (a document, or a session)?
 6. **The test split:** store-level halves of the size and durability tests in M2, builder halves in M4. Yes?
-7. **Found while reading, not part of M2 [money]:** the conversion's header says archived copies of the `SPECS` rows are restated (`lib/creditConversionTenant.ts:39-40`), but only `CAPS` has an `archived_rows` entry (`:72`). Archived Atomik steps, pipeline attempts and the other `SPECS` rows are not restated today. A separate question, for a separate PR if you want it fixed.
+7. **Answered 24 Oct 2026, 15:30 IST (owner, item 4): no PR of its own.** The conversion's header (`lib/creditConversionTenant.ts:39-40`) will say "archived caps", a one-line comment fix made whenever a PR already touches that file. The lead's check found the gap changes nothing for a real workspace today: no `SPECS` table is ever archived or deleted, and nothing reads `archived_rows`.
