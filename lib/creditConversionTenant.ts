@@ -36,8 +36,8 @@ import { memoDrop } from "./memo";
  *  - display mirrors of what the meter charged or quoted (Atomik and
  *    development jobs, Astra renders, dubbing, take checks, crew sessions,
  *    pipeline runs), so a list and the meter agree;
- *  - archived copies of the rows above (a restore must come back in the
- *    right unit).
+ *  - archived caps: the archived copies of project, production and API-token
+ *    caps (a restore must come back in the right unit); no other archived row.
  * A pipeline quote not yet approved is expired instead: it lives ten minutes,
  * and asking again at the new price is safer than editing a priced body.
  * Dollars, and vendors' own credits (ElevenLabs, Higgsfield), are never touched.
